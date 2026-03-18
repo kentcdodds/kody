@@ -44,7 +44,7 @@ export function Layout({
 				href="/apple-touch-icon.png"
 			/>
 			<link rel="manifest" href="/site.webmanifest" />
-			<meta name="theme-color" content="#f47c00" />
+			<meta name="theme-color" content="#2563eb" />
 			<title>${title}</title>
 			<link rel="stylesheet" href="/styles.css" />
 		</head>

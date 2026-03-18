@@ -1,35 +1,35 @@
 :root {
 	color-scheme: light dark;
 
-	/* Colors - Light mode (kody ember) */
-	--color-primary: #f47c00;
-	--color-primary-hover: #e26c00;
-	--color-primary-active: #c85a00;
-	--color-on-primary: #120b08;
-	--color-primary-text: #b04700;
-	--color-background: #f6f6f8;
-	--color-surface: #ececf1;
-	--color-text: #2f2f34;
-	--color-text-muted: #676770;
-	--color-border: #d7d7df;
+	/* Colors - Light mode (blue and gray) */
+	--color-primary: #2563eb;
+	--color-primary-hover: #1d4ed8;
+	--color-primary-active: #1e40af;
+	--color-on-primary: #ffffff;
+	--color-primary-text: #1e40af;
+	--color-background: #f8fafc;
+	--color-surface: #f1f5f9;
+	--color-text: #0f172a;
+	--color-text-muted: #64748b;
+	--color-border: #cbd5e1;
 	--color-danger: #dc2626;
 	--color-danger-hover: #b91c1c;
-	--color-on-danger: #fff7f7;
+	--color-on-danger: #ffffff;
 
-	/* Colors - Dark mode (smoldering ember) */
-	--color-primary-dark: #f6a23a;
-	--color-primary-hover-dark: #f08b1a;
-	--color-primary-active-dark: #d87305;
-	--color-on-primary-dark: #120b08;
-	--color-primary-text-dark: #f6a23a;
-	--color-background-dark: #121216;
-	--color-surface-dark: #1c1c22;
-	--color-text-dark: #f1f1f5;
-	--color-text-muted-dark: #b3b3bd;
-	--color-border-dark: #2b2b33;
+	/* Colors - Dark mode (blue and gray) */
+	--color-primary-dark: #3b82f6;
+	--color-primary-hover-dark: #60a5fa;
+	--color-primary-active-dark: #93c5fd;
+	--color-on-primary-dark: #0f172a;
+	--color-primary-text-dark: #60a5fa;
+	--color-background-dark: #0f172a;
+	--color-surface-dark: #1e293b;
+	--color-text-dark: #f8fafc;
+	--color-text-muted-dark: #94a3b8;
+	--color-border-dark: #334155;
 	--color-danger-dark: #f87171;
 	--color-danger-hover-dark: #ef4444;
-	--color-on-danger-dark: #1f1111;
+	--color-on-danger-dark: #450a0a;
 
 	/* Typography */
 	--font-family: system-ui, sans-serif;
@@ -101,7 +101,7 @@
 }
 
 :root[data-theme='dark'] {
-	/* Colors - Dark mode (smoldering ember) */
+	/* Colors - Dark mode (blue and gray) */
 	--color-primary: var(--color-primary-dark);
 	--color-primary-hover: var(--color-primary-hover-dark);
 	--color-primary-active: var(--color-primary-active-dark);
@@ -124,7 +124,7 @@
 
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
-		/* Colors - Dark mode (smoldering ember) */
+		/* Colors - Dark mode (blue and gray) */
 		--color-primary: var(--color-primary-dark);
 		--color-primary-hover: var(--color-primary-hover-dark);
 		--color-primary-active: var(--color-primary-active-dark);
