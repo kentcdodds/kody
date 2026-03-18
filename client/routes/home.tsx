@@ -98,27 +98,30 @@ export function HomeRoute(_handle: Handle) {
 					width: '100%',
 				}}
 			>
-				<FeatureCard
-					title="MCP Powered"
-					description="Designed to keep the public MCP surface small while exposing a vast graph of capabilities behind the scenes."
-					icon="🔌"
-				/>
-				<FeatureCard
-					title="Highly Portable"
-					description="Built to interoperate across MCP-capable hosts, keeping the focus on the assistant rather than host-specific apps."
-					icon="🚀"
-				/>
-				<FeatureCard
-					title="Personalized"
-					description="Optimized for personal workflows and fast iteration, not generic multi-tenant administration."
-					icon="🧠"
-				/>
+				{renderFeatureCard({
+					title: 'MCP Powered',
+					description:
+						'Designed to keep the public MCP surface small while exposing a vast graph of capabilities behind the scenes.',
+					icon: '🔌',
+				})}
+				{renderFeatureCard({
+					title: 'Highly Portable',
+					description:
+						'Built to interoperate across MCP-capable hosts, keeping the focus on the assistant rather than host-specific apps.',
+					icon: '🚀',
+				})}
+				{renderFeatureCard({
+					title: 'Personalized',
+					description:
+						'Optimized for personal workflows and fast iteration, not generic multi-tenant administration.',
+					icon: '🧠',
+				})}
 			</div>
 		</section>
 	)
 }
 
-function FeatureCard({
+function renderFeatureCard({
 	title,
 	description,
 	icon,
