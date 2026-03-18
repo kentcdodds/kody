@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.next
+.vercel
+.netlify
+coverage
+*.log
+.env*
+!.env.example
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+**/worker-configuration.d.ts
+public/client-entry.js

@@ -1,0 +1,7 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"extends": [
+		"./node_modules/@epic-web/config/oxlint-config.json",
+		"./tools/oxlint/oxlint-rules.json"
+	]
+}

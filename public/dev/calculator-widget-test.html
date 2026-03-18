@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Calculator Widget Test (iframe)</title>
+		<style>
+			body {
+				font-family: system-ui;
+				padding: 1rem;
+			}
+			iframe {
+				border: 1px solid #ccc;
+				width: 100%;
+				min-height: 400px;
+			}
+			.stack {
+				display: grid;
+				gap: 1rem;
+			}
+			.host-chat {
+				margin-top: 0.75rem;
+				padding: 0.75rem;
+				border: 1px solid #ddd;
+				border-radius: 0.5rem;
+				background: #f9f9f9;
+				font-size: 0.95rem;
+			}
+			.host-chat h3 {
+				margin: 0 0 0.5rem;
+				font-size: 0.95rem;
+			}
+			.host-chat ul {
+				margin: 0;
+				padding-left: 1.25rem;
+			}
+			.host-chat li {
+				margin: 0.2rem 0;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Calculator Widget Test</h1>
+		<div class="stack">
+			<section>
+				<h2>Default iframe</h2>
+				<iframe
+					id="calc-default"
+					src="/dev/calculator-ui"
+					title="Calculator"
+				></iframe>
+				<div class="host-chat" data-host-chat="calc-default">
+					<h3>Host chat (default iframe)</h3>
+					<ul data-chat-log></ul>
+				</div>
+			</section>
+			<section>
+				<h2>Sandboxed iframe (MCP host style)</h2>
+				<p>
+					Uses <code>sandbox="allow-scripts"</code> to match ChatGPT/MCP Jam
+					widget restrictions.
+				</p>
+				<iframe
+					id="calc-sandboxed"
+					src="/dev/calculator-ui"
+					sandbox="allow-scripts"
+					title="Calculator (sandboxed)"
+				></iframe>
+				<div class="host-chat" data-host-chat="calc-sandboxed">
+					<h3>Host chat (sandboxed iframe)</h3>
+					<ul data-chat-log></ul>
+				</div>
+			</section>
+		</div>
+		<script>
+			;(() => {
+				const latestProtocolVersion = '2026-01-26'
+				const renderDataType = 'ui-lifecycle-iframe-render-data'
+				const initializedNotificationMethod = 'ui/notifications/initialized'
+				const frameById = {
+					'calc-default': document.getElementById('calc-default'),
+					'calc-sandboxed': document.getElementById('calc-sandboxed'),
+				}
+				const frameState = new Map()
+
+				function resolveFrameId(sourceWindow) {
+					for (const [frameId, iframe] of Object.entries(frameById)) {
+						if (iframe && iframe.contentWindow === sourceWindow) {
+							return frameId
+						}
+					}
+					return null
+				}
+
+				function getOrCreateState(frameId) {
+					const existing = frameState.get(frameId)
+					if (existing) return existing
+					const next = { initialized: false }
+					frameState.set(frameId, next)
+					return next
+				}
+
+				function appendHostChat(frameId, text) {
+					const container = document.querySelector(
+						`[data-host-chat="${frameId}"] [data-chat-log]`,
+					)
+					if (!container) return
+					const item = document.createElement('li')
+					item.setAttribute('data-chat-message', '')
+					item.textContent = text
+					container.append(item)
+				}
+
+				window.addEventListener('message', (event) => {
+					const frameId = resolveFrameId(event.source)
+					if (!frameId) return
+
+					const message = event.data
+					if (!message || typeof message !== 'object') return
+
+					if (message.type === 'ui-request-render-data') {
+						event.source.postMessage(
+							{
+								type: renderDataType,
+								payload: {
+									renderData: {
+										theme: 'light',
+									},
+								},
+							},
+							'*',
+						)
+						return
+					}
+
+					if (message.jsonrpc !== '2.0') return
+
+					if (message.method === 'ui/initialize') {
+						const requestedVersion = message.params?.protocolVersion
+						if (requestedVersion !== latestProtocolVersion) {
+							event.source.postMessage(
+								{
+									jsonrpc: '2.0',
+									id: message.id,
+									error: {
+										code: -32602,
+										message: `Unsupported protocol version: ${requestedVersion}`,
+									},
+								},
+								'*',
+							)
+							return
+						}
+
+						const state = getOrCreateState(frameId)
+						state.initialized = true
+						event.source.postMessage(
+							{
+								jsonrpc: '2.0',
+								id: message.id,
+								result: {
+									protocolVersion: latestProtocolVersion,
+									hostInfo: {
+										name: 'mcp-jam-simulator',
+										version: '1.0.0',
+									},
+									hostCapabilities: {
+										message: {
+											text: {},
+										},
+									},
+									hostContext: {
+										theme: 'light',
+									},
+								},
+							},
+							'*',
+						)
+						return
+					}
+
+					if (message.method === initializedNotificationMethod) {
+						return
+					}
+
+					if (message.method === 'ui/message') {
+						const state = getOrCreateState(frameId)
+						const firstContent = Array.isArray(message.params?.content)
+							? message.params.content[0]
+							: null
+						const text =
+							firstContent &&
+							typeof firstContent === 'object' &&
+							firstContent.type === 'text' &&
+							typeof firstContent.text === 'string'
+								? firstContent.text
+								: null
+
+						if (
+							!state.initialized ||
+							message.params?.role !== 'user' ||
+							!text
+						) {
+							event.source.postMessage(
+								{
+									jsonrpc: '2.0',
+									id: message.id,
+									result: { isError: true },
+								},
+								'*',
+							)
+							return
+						}
+
+						appendHostChat(frameId, text)
+						event.source.postMessage(
+							{
+								jsonrpc: '2.0',
+								id: message.id,
+								result: {},
+							},
+							'*',
+						)
+					}
+				})
+			})()
+		</script>
+	</body>
+</html>

@@ -1,0 +1,41 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "kody-mock-ai",
+	"compatibility_date": "2026-01-31",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"main": "./worker.ts",
+	"preview_urls": true,
+	"observability": { "enabled": true },
+	"env": {
+		"production": {
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody",
+					"database_id": "c64eb497-a93d-4af4-bfb7-62beda9552b6",
+					"migrations_dir": "../../migrations",
+				},
+			],
+		},
+		"preview": {
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody-preview",
+					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
+					"migrations_dir": "../../migrations",
+				},
+			],
+		},
+		"test": {
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody-preview",
+					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
+					"migrations_dir": "../../migrations",
+				},
+			],
+		},
+	},
+}

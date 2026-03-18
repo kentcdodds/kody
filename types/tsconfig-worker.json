@@ -1,0 +1,47 @@
+{
+	"extends": "@epic-web/config/typescript",
+	"compilerOptions": {
+		"composite": true,
+		"allowImportingTsExtensions": true,
+		"tsBuildInfoFile": "../node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+		"target": "ES2023",
+		"lib": ["ES2023", "WebWorker", "WebWorker.Iterable"],
+		"baseUrl": ".",
+		// Force MCP SDK to resolve to the hoisted install to avoid duplicate
+		// private type conflicts when multiple copies are present.
+		"paths": {
+			"@modelcontextprotocol/sdk": [
+				"../node_modules/@modelcontextprotocol/sdk"
+			],
+			"@modelcontextprotocol/sdk/*": [
+				"../node_modules/@modelcontextprotocol/sdk/*"
+			]
+		},
+		"module": "ESNext",
+		"types": [],
+		"moduleResolution": "bundler",
+		"verbatimModuleSyntax": true,
+		"moduleDetection": "force",
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"erasableSyntaxOnly": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true
+	},
+	"include": [
+		"./env.d.ts",
+		"./env-schema.ts",
+		"./worker-configuration.d.ts",
+		"../shared/**/*.ts",
+		"../mock-servers/**/*.ts",
+		"../worker/**/*.ts",
+		"../server/**/*.ts",
+		"../mcp/**/*.ts"
+	],
+	"exclude": [
+		"**/*.test.ts",
+		"**/*.spec.ts",
+		"../**/*.test.ts",
+		"../**/*.spec.ts"
+	]
+}

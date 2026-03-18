@@ -1,0 +1,165 @@
+name: 🚀 Deploy (production)
+
+on:
+  workflow_run:
+    workflows:
+      - '✅ Validate'
+    types:
+      - completed
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  sha-guard:
+    runs-on: ubuntu-latest
+    name: 🧾 Production deploy guard
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
+    outputs:
+      should_deploy: ${{ steps.sha_guard.outputs.should_deploy }}
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: 🧾 Ensure validated SHA is main HEAD
+        id: sha_guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          HEAD_SHA="$(git rev-parse origin/main)"
+          if [ "$HEAD_SHA" != "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping deploy: validated SHA is not current main HEAD."
+            echo "validated=${{ github.event.workflow_run.head_sha }}"
+            echo "head=$HEAD_SHA"
+            exit 0
+          fi
+          echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: 🚀 Deploy to production
+    needs: sha-guard
+    if: needs.sha-guard.outputs.should_deploy == 'true'
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: 🧰 Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: latest
+
+      - name: 📥 Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: 🧱 Ensure production resources (D1 + KV)
+        id: resources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          bun tools/ci/production-resources.ts ensure --out-config wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+
+      - name: 🔐 Sync Cloudflare Secrets (bulk)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+        run: >
+          bun tools/ci/sync-worker-secrets.ts --env production --set-from-env
+          COOKIE_SECRET --set-from-env AI_GATEWAY_ID --set-from-env-optional
+          APP_BASE_URL --set-from-env-optional RESEND_API_KEY
+          --set-from-env-optional RESEND_FROM_EMAIL
+
+      - name: 🗄️ Apply D1 Migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
+        run:
+          bun ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
+          "$WRANGLER_CONFIG"
+
+      - name: ☁️ Deploy to Cloudflare Workers
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          DEPLOY_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
+        run: |
+          set -euo pipefail
+
+          bun run deploy -- --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy.log
+
+          DEPLOY_URL="${APP_BASE_URL:-}"
+          if [ -z "$DEPLOY_URL" ]; then
+            DEPLOY_URL="$(node -e "const fs = require('node:fs'); const t = fs.readFileSync('deploy.log','utf8'); const m = t.match(/https:\\/\\/[a-zA-Z0-9._-]+\\.workers\\.dev/g); process.stdout.write(m?.at(-1) ?? '')")"
+          fi
+
+          if [ -n "$DEPLOY_URL" ]; then
+            echo "url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🩺 Healthcheck (production)
+        shell: bash
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          EXPECTED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEPLOY_URL:-}" ]; then
+            echo "Missing deploy URL output; cannot run healthcheck." >&2
+            exit 1
+          fi
+
+          if [ -z "${EXPECTED_COMMIT_SHA:-}" ]; then
+            echo "Missing expected commit SHA; cannot verify deployment version." >&2
+            exit 1
+          fi
+
+          HEALTHCHECK_URL="${DEPLOY_URL%/}/health"
+          echo "Healthcheck URL: $HEALTHCHECK_URL"
+
+          attempts=20
+          delay_seconds=3
+
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --location --max-time 10 \
+              --header "Accept: application/json" \
+              "$HEALTHCHECK_URL" > health.json && \
+              node -e "const fs = require('node:fs'); const body = fs.readFileSync('health.json','utf8'); const json = JSON.parse(body); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true) { console.error('healthcheck-unexpected-response', json); process.exit(1); } if (json?.commitSha !== expected) { console.error('healthcheck-unexpected-commit-sha', { expected, actual: json?.commitSha }); process.exit(1); } console.log('healthcheck-ok', json);"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "Healthcheck failed after ${attempts} attempts: $HEALTHCHECK_URL" >&2
+          if [ -f health.json ]; then
+            echo "Last response body:" >&2
+            cat health.json >&2
+          fi
+          exit 1

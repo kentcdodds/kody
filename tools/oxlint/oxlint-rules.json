@@ -1,0 +1,6 @@
+{
+	"jsPlugins": ["./local-plugin.js"],
+	"rules": {
+		"kody-custom/no-example-identifier": "error"
+	}
+}
