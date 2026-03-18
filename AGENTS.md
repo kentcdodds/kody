@@ -4,6 +4,8 @@ Use Bun for installs and scripts (`bun install`, `bun run ...`). Do not use npm.
 
 This file is intentionally brief. Detailed instructions live in focused docs:
 
+- Project intent and scope:
+  - [docs/project-intent.md](./docs/project-intent.md)
 - Setup, checks, docs maintenance, preview deploys, and seeding:
   - [docs/agents/setup.md](./docs/agents/setup.md)
 - Code style conventions:

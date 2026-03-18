@@ -1,12 +1,16 @@
-# kody Template Setup
+# kody Setup
 
 <!--
 If you're an agent reading this, do as much as you can yourself and then
 tell the user what else they need to do themselves.
 -->
 
-Use these steps to generate a new project from this template and run it on
-Cloudflare Workers.
+Use these steps to run `kody` locally and on Cloudflare Workers.
+
+If you are here to understand the purpose of this repository rather than set it
+up, read [`docs/project-intent.md`](./project-intent.md) first. This repo still
+has some template lineage in its docs and structure, but the current project
+intent is to build a personal assistant with an MCP-first architecture.
 
 ## Create the project with degit
 

@@ -46,6 +46,8 @@ Quick notes for getting a local kody environment running.
 
 ## Documentation maintenance
 
+- Read `docs/project-intent.md` before making product-level changes or writing
+  docs that describe the project's goals.
 - Update `docs/agents` when behavior, workflows, architecture notes, or
   verification guidance change.
 - Treat docs updates as part of done work.

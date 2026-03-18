@@ -2,7 +2,7 @@
   <img src="./public/logo.png" alt="kody logo" width="400" />
 
   <p>
-    <strong>A starter and reference for building full-stack web applications on Cloudflare Workers</strong>
+    <strong>An experimental personal assistant platform built on Cloudflare Workers and MCP</strong>
   </p>
 
   <p>
@@ -16,9 +16,16 @@
 
 ---
 
-kody ships a Remix-powered UI, server routing, and OAuth-protected MCP
-endpoints so you can build both a user-facing app and tooling APIs on the same
-Worker.
+`kody` is currently an experiment in building a personal assistant that can
+work across AI agent hosts that support MCP.
+
+Today this repo includes a Remix-powered UI, Cloudflare Worker request routing,
+chat-agent plumbing, and OAuth-protected MCP endpoints. The long-term direction
+is not a huge static tool catalog. It is a compact MCP surface with broader
+capabilities hidden behind Code Mode style search and execute flows.
+
+This project is intentionally single-user right now and is being built for
+`me@kentcdodds.com`.
 
 ## Quick Start
 
@@ -32,6 +39,9 @@ start the dev server.
 See [`docs/getting-started.md`](./docs/getting-started.md) for the full setup
 paths and expectations.
 
+If you are trying to understand what this repository is for, start with
+[`docs/project-intent.md`](./docs/project-intent.md).
+
 ## Tech Stack
 
 | Layer           | Technology                                                            |
@@ -44,6 +54,14 @@ paths and expectations.
 | MCP State       | [Durable Objects](https://developers.cloudflare.com/durable-objects/) |
 | E2E Testing     | [Playwright](https://playwright.dev/)                                 |
 | Bundler         | [esbuild](https://esbuild.github.io/)                                 |
+
+## Current Scope
+
+- Personal assistant experiment, not a multi-tenant SaaS product
+- MCP-first architecture intended to work across compatible AI agent hosts
+- Compact MCP surface area preferred over a large static tool inventory
+- ChatGPT is a likely primary host target, while keeping the server usable from
+  other MCP hosts where practical
 
 ## How It Works
 
@@ -68,6 +86,7 @@ Request → worker/index.ts
 | [`docs/getting-started.md`](./docs/getting-started.md)             | Setup, environment variables, deploy |
 | [`docs/environment-variables.md`](./docs/environment-variables.md) | Adding new env vars                  |
 | [`docs/cloudflare-offerings.md`](./docs/cloudflare-offerings.md)   | Optional Cloudflare integrations     |
+| [`docs/project-intent.md`](./docs/project-intent.md)               | Scope, goals, and non-goals          |
 | [`docs/agents/setup.md`](./docs/agents/setup.md)                   | Local development and verification   |
 
 ---
