@@ -10,6 +10,7 @@ import { createDb, usersTable } from '#worker/db.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
+const primaryUserEmail = 'me@kentcdodds.com'
 
 function isUniqueConstraintError(error: unknown) {
 	return (
@@ -83,6 +84,24 @@ export function createAuthHandler(appEnv: AppEnv) {
 				return Response.json(
 					{ error: 'Email, password, and mode are required.' },
 					{ status: 400 },
+				)
+			}
+
+			if (normalizedEmail !== primaryUserEmail) {
+				void logAuditEvent({
+					category: 'auth',
+					action: normalizedMode,
+					result: 'failure',
+					email: normalizedEmail,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'email_not_allowed',
+				})
+				return Response.json(
+					{
+						error: `Only ${primaryUserEmail} can sign in or sign up.`,
+					},
+					{ status: 403 },
 				)
 			}
 

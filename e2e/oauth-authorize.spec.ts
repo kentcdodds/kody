@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
 import { createServer } from 'node:http'
 import getPort from 'get-port'
+import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 
 function toBase64Url(bytes: Uint8Array) {
 	return Buffer.from(bytes)
@@ -22,19 +23,9 @@ async function createCodeChallenge(codeVerifier: string) {
 	return toBase64Url(new Uint8Array(digest))
 }
 
-async function createUser(request: APIRequestContext) {
-	const user = {
-		email: `oauth-ui-${crypto.randomUUID()}@example.com`,
-		password: `pw-${crypto.randomUUID()}`,
-	}
-	const response = await request.post('/auth', {
-		data: { ...user, mode: 'signup' },
-		headers: { 'Content-Type': 'application/json' },
-	})
-	if (!response.ok()) {
-		throw new Error(`Failed to create user (${response.status()}).`)
-	}
-	return user
+async function ensureUserExists(request: APIRequestContext) {
+	await ensurePrimaryUserExists(request)
+	return primaryTestUser
 }
 
 async function registerOAuthClient(
@@ -112,7 +103,7 @@ test('oauth authorize page accepts valid credentials for logged-out user', async
 		throw new Error('Playwright baseURL is required for OAuth test.')
 	}
 
-	const user = await createUser(page.request)
+	const user = await ensureUserExists(page.request)
 	const redirectUri = `${baseURL}/oauth/callback`
 	const clientId = await registerOAuthClient(page.request, redirectUri)
 	const codeVerifier = createCodeVerifier()
@@ -152,7 +143,7 @@ test('oauth authorize redirects to loopback callback with code after login', asy
 }) => {
 	const callbackServer = await createLoopbackCallbackServer()
 	try {
-		const user = await createUser(page.request)
+		const user = await ensureUserExists(page.request)
 		const clientId = await registerOAuthClient(
 			page.request,
 			callbackServer.redirectUri,
@@ -192,7 +183,7 @@ test('oauth login link preserves authorize params through login', async ({
 }) => {
 	const callbackServer = await createLoopbackCallbackServer()
 	try {
-		const user = await createUser(page.request)
+		const user = await ensureUserExists(page.request)
 		const clientId = await registerOAuthClient(
 			page.request,
 			callbackServer.redirectUri,

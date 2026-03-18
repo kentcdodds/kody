@@ -13,8 +13,8 @@ type CliOptions = {
 	persistTo?: string
 }
 
-const defaultTestEmail = 'kody@kcd.dev'
-const defaultTestPassword = 'kodylovesyou'
+const defaultTestEmail = 'me@kentcdodds.com'
+const defaultTestPassword = 'iliketwix'
 
 export function parseArgs(argv: Array<string>): CliOptions {
 	const options: CliOptions = {

@@ -143,8 +143,8 @@ bun tools/seed-test-data.ts --local
 
 Default test credentials:
 
-- Email: `kody@kcd.dev`
-- Password: `kodylovesyou`
+- Email: `me@kentcdodds.com`
+- Password: `iliketwix`
 
 ## Build and deploy
 

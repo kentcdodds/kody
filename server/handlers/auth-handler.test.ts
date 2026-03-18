@@ -6,6 +6,7 @@ import { createPasswordHash } from '#server/password-hash.ts'
 import { createAuthHandler } from './auth.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
+const primaryUserEmail = 'me@kentcdodds.com'
 
 function createAuthRequest(
 	body: unknown,
@@ -171,7 +172,7 @@ test('auth handler rejects login with unknown user', async () => {
 		APP_DB: testDb.db,
 	})
 	const authRequest = createAuthRequest(
-		{ email: 'a@b.com', password: 'secret', mode: 'login' },
+		{ email: primaryUserEmail, password: 'secret', mode: 'login' },
 		'http://example.com/auth',
 		handler,
 	)
@@ -181,7 +182,7 @@ test('auth handler rejects login with unknown user', async () => {
 	expect(payload).toEqual({ error: 'Invalid email or password.' })
 })
 
-test('auth handler creates a user and cookie for signup', async () => {
+test('auth handler rejects signup for non-primary email', async () => {
 	const testDb = createTestDb()
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
@@ -193,10 +194,50 @@ test('auth handler creates a user and cookie for signup', async () => {
 		handler,
 	)
 	const response = await authRequest.run()
+	expect(response.status).toBe(403)
+	const payload = await response.json()
+	expect(payload).toEqual({
+		error: `Only ${primaryUserEmail} can sign in or sign up.`,
+	})
+	expect(testDb.users.has('new@b.com')).toBe(false)
+})
+
+test('auth handler rejects login for non-primary email', async () => {
+	const testDb = createTestDb()
+	await testDb.addUser('a@b.com', 'secret')
+	const handler = createAuthHandler({
+		COOKIE_SECRET: testCookieSecret,
+		APP_DB: testDb.db,
+	})
+	const authRequest = createAuthRequest(
+		{ email: 'a@b.com', password: 'secret', mode: 'login' },
+		'http://example.com/auth',
+		handler,
+	)
+	const response = await authRequest.run()
+	expect(response.status).toBe(403)
+	const payload = await response.json()
+	expect(payload).toEqual({
+		error: `Only ${primaryUserEmail} can sign in or sign up.`,
+	})
+})
+
+test('auth handler creates a user and cookie for signup', async () => {
+	const testDb = createTestDb()
+	const handler = createAuthHandler({
+		COOKIE_SECRET: testCookieSecret,
+		APP_DB: testDb.db,
+	})
+	const authRequest = createAuthRequest(
+		{ email: primaryUserEmail, password: 'secret', mode: 'signup' },
+		'http://example.com/auth',
+		handler,
+	)
+	const response = await authRequest.run()
 	expect(response.status).toBe(200)
 	const payload = await response.json()
 	expect(payload).toEqual({ ok: true, mode: 'signup' })
-	expect(testDb.users.has('new@b.com')).toBe(true)
+	expect(testDb.users.has(primaryUserEmail)).toBe(true)
 	const setCookie = response.headers.get('Set-Cookie') ?? ''
 	expect(setCookie).toContain('kody_session=')
 	expect(setCookie).toContain('Max-Age=604800')
@@ -208,9 +249,9 @@ test('auth handler returns ok with a session cookie for login', async () => {
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
 	})
-	await testDb.addUser('a@b.com', 'secret')
+	await testDb.addUser(primaryUserEmail, 'secret')
 	const authRequest = createAuthRequest(
-		{ email: 'a@b.com', password: 'secret', mode: 'login' },
+		{ email: primaryUserEmail, password: 'secret', mode: 'login' },
 		'http://example.com/auth',
 		handler,
 	)
@@ -229,10 +270,10 @@ test('auth handler sets a 30-day cookie when remember me is enabled', async () =
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
 	})
-	await testDb.addUser('remember@b.com', 'secret')
+	await testDb.addUser(primaryUserEmail, 'secret')
 	const authRequest = createAuthRequest(
 		{
-			email: 'remember@b.com',
+			email: primaryUserEmail,
 			password: 'secret',
 			mode: 'login',
 			rememberMe: true,
@@ -255,9 +296,9 @@ test('auth handler sets Secure cookie over https', async () => {
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
 	})
-	await testDb.addUser('secure@b.com', 'secret')
+	await testDb.addUser(primaryUserEmail, 'secret')
 	const authRequest = createAuthRequest(
-		{ email: 'secure@b.com', password: 'secret', mode: 'login' },
+		{ email: primaryUserEmail, password: 'secret', mode: 'login' },
 		'https://example.com/auth',
 		handler,
 	)

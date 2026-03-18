@@ -69,8 +69,8 @@ Use this script to ensure a known test login exists in any deployed environment:
   - Add `--env <name>` when the config uses environment-scoped bindings and the
     environment is not already set via `CLOUDFLARE_ENV`.
 - Default credentials:
-  - email: `kody@kcd.dev`
-  - password: `kodylovesyou`
+  - email: `me@kentcdodds.com`
+  - password: `iliketwix`
 - Override credentials when needed:
   - `bun tools/seed-test-data.ts --email <email> --password <password>`
 - When changing DB schema/model definitions or migrations, review

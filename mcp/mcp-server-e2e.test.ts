@@ -24,6 +24,8 @@ const migrationsDir = join(projectRoot, 'migrations')
 const bunBin = process.execPath
 const defaultTimeoutMs = 60_000
 const calculatorUiResourceUri = 'ui://calculator-app/entry-point.html'
+const primaryUserEmail = 'me@kentcdodds.com'
+const primaryUserPassword = 'iliketwix'
 
 const passwordHashPrefix = 'pbkdf2_sha256'
 const passwordSaltBytes = 16
@@ -94,8 +96,8 @@ async function runWrangler(args: Array<string>) {
 async function createTestDatabase() {
 	const persistDir = await mkdtemp(join(tmpdir(), 'kody-mcp-e2e-'))
 	const user = {
-		email: `mcp-${crypto.randomUUID()}@example.com`,
-		password: `pw-${crypto.randomUUID()}`,
+		email: primaryUserEmail,
+		password: primaryUserPassword,
 	}
 
 	await applyMigrations(persistDir)

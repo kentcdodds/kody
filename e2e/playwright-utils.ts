@@ -1,5 +1,6 @@
 import { test as base } from '@playwright/test'
 import * as setCookieParser from 'set-cookie-parser'
+import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 
 export * from '@playwright/test'
 
@@ -15,8 +16,16 @@ export const test = base.extend<{
 }>({
 	insertNewUser: async ({ page }, use) => {
 		await use(async (options) => {
-			const email = options?.email ?? `user-${crypto.randomUUID()}@example.com`
-			const password = options?.password ?? 'password123'
+			const email = options?.email ?? primaryTestUser.email
+			const password = options?.password ?? primaryTestUser.password
+
+			if (
+				email === primaryTestUser.email &&
+				password === primaryTestUser.password
+			) {
+				await ensurePrimaryUserExists(page.request)
+				return { email, password }
+			}
 
 			const response = await page.request.post('/auth', {
 				data: { email, password, mode: 'signup' },
@@ -32,8 +41,8 @@ export const test = base.extend<{
 	},
 	login: async ({ page }, use) => {
 		await use(async (options) => {
-			const email = options?.email ?? `user-${crypto.randomUUID()}@example.com`
-			const password = options?.password ?? 'password123'
+			const email = options?.email ?? primaryTestUser.email
+			const password = options?.password ?? primaryTestUser.password
 
 			let response = await page.request.post('/auth', {
 				data: { email, password, mode: 'signup' },
