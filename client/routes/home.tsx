@@ -1,11 +1,11 @@
 import { type Handle } from 'remix/component'
-import { Counter } from '#client/counter.tsx'
 import {
 	colors,
 	radius,
 	shadows,
 	spacing,
 	typography,
+	mq,
 } from '#client/styles/tokens.ts'
 
 export function HomeRoute(_handle: Handle) {
@@ -13,28 +13,36 @@ export function HomeRoute(_handle: Handle) {
 		<section
 			css={{
 				display: 'grid',
-				gap: spacing.lg,
+				gap: spacing['2xl'],
 				justifyItems: 'center',
 				textAlign: 'center',
+				padding: spacing.md,
+				[mq.mobile]: {
+					padding: spacing.sm,
+					gap: spacing.xl,
+				},
 			}}
 		>
 			<div
 				css={{
 					display: 'grid',
 					gap: spacing.lg,
-					padding: spacing.lg,
-					borderRadius: radius.lg,
+					padding: spacing['2xl'],
+					borderRadius: radius.xl,
 					border: `1px solid ${colors.border}`,
 					background: `linear-gradient(135deg, ${colors.primarySoftStrong}, ${colors.primarySoftest})`,
-					boxShadow: shadows.sm,
-					maxWidth: '36rem',
+					boxShadow: shadows.md,
+					maxWidth: '48rem',
 					width: '100%',
+					[mq.mobile]: {
+						padding: spacing.lg,
+					},
 				}}
 			>
 				<div
 					css={{
 						display: 'grid',
-						gap: spacing.md,
+						gap: spacing.lg,
 						justifyItems: 'center',
 					}}
 				>
@@ -45,27 +53,118 @@ export function HomeRoute(_handle: Handle) {
 							width: '220px',
 							maxWidth: '100%',
 							height: 'auto',
+							[mq.mobile]: {
+								width: '160px',
+							},
 						}}
 					/>
-					<div css={{ display: 'grid', gap: spacing.sm }}>
+					<div css={{ display: 'grid', gap: spacing.md }}>
 						<h1
 							css={{
 								fontSize: typography.fontSize['2xl'],
-								fontWeight: typography.fontWeight.semibold,
+								fontWeight: typography.fontWeight.bold,
 								margin: 0,
 								color: colors.text,
+								[mq.mobile]: {
+									fontSize: typography.fontSize.xl,
+								},
 							}}
 						>
-							kody <span css={{ color: colors.primaryText }}>Remix 3</span>
+							Meet <span css={{ color: colors.primaryText }}>kody</span>
 						</h1>
-						<p css={{ margin: 0, color: colors.textMuted }}>
-							Remix 3 components running on the client, backed by Remix 3
-							routing in the worker.
+						<p
+							css={{
+								margin: 0,
+								color: colors.textMuted,
+								fontSize: typography.fontSize.lg,
+								lineHeight: 1.6,
+								[mq.mobile]: {
+									fontSize: typography.fontSize.base,
+								},
+							}}
+						>
+							Your personal assistant, built to work from any AI agent host that supports MCP.
 						</p>
 					</div>
 				</div>
 			</div>
-			<Counter setup={{ initial: 1 }} />
+
+			<div
+				css={{
+					display: 'grid',
+					gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+					gap: spacing.lg,
+					maxWidth: '64rem',
+					width: '100%',
+				}}
+			>
+				<FeatureCard
+					title="MCP Powered"
+					description="Designed to keep the public MCP surface small while exposing a vast graph of capabilities behind the scenes."
+					icon="🔌"
+				/>
+				<FeatureCard
+					title="Highly Portable"
+					description="Built to interoperate across MCP-capable hosts, keeping the focus on the assistant rather than host-specific apps."
+					icon="🚀"
+				/>
+				<FeatureCard
+					title="Personalized"
+					description="Optimized for personal workflows and fast iteration, not generic multi-tenant administration."
+					icon="🧠"
+				/>
+			</div>
 		</section>
+	)
+}
+
+function FeatureCard({
+	title,
+	description,
+	icon,
+}: {
+	title: string
+	description: string
+	icon: string
+}) {
+	return (
+		<div
+			css={{
+				display: 'grid',
+				gap: spacing.sm,
+				padding: spacing.lg,
+				borderRadius: radius.lg,
+				border: `1px solid ${colors.border}`,
+				background: colors.surface,
+				boxShadow: shadows.sm,
+				textAlign: 'left',
+				transition: 'transform 0.2s ease-in-out',
+				'&:hover': {
+					transform: 'translateY(-2px)',
+					boxShadow: shadows.md,
+				},
+			}}
+		>
+			<div css={{ fontSize: '2rem', marginBottom: spacing.xs }}>{icon}</div>
+			<h3
+				css={{
+					fontSize: typography.fontSize.lg,
+					fontWeight: typography.fontWeight.semibold,
+					margin: 0,
+					color: colors.text,
+				}}
+			>
+				{title}
+			</h3>
+			<p
+				css={{
+					margin: 0,
+					color: colors.textMuted,
+					lineHeight: 1.5,
+				}}
+			>
+				{description}
+			</p>
+		</div>
 	)
 }
