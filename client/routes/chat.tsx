@@ -1694,6 +1694,57 @@ export function ChatRoute(handle: Handle) {
 									</div>
 								</form>
 							</div>
+						) : hasThreadInUrl ? (
+							<div
+								css={{
+									flex: 1,
+									minHeight: 0,
+									display: 'flex',
+									flexDirection: 'column',
+									gap: spacing.md,
+								}}
+							>
+								<div
+									css={{
+										flexShrink: 0,
+										display: 'flex',
+										alignItems: 'center',
+										gap: spacing.sm,
+									}}
+								>
+									<a
+										href="/chat"
+										aria-label="Back to chats"
+										css={{
+											display: 'none',
+											alignItems: 'center',
+											justifyContent: 'center',
+											width: '2rem',
+											height: '2rem',
+											borderRadius: radius.full,
+											color: colors.text,
+											textDecoration: 'none',
+											backgroundColor: colors.background,
+											border: `1px solid ${colors.border}`,
+											flexShrink: 0,
+											[mq.tablet]: {
+												display: 'inline-flex',
+											},
+										}}
+									>
+										{renderBackArrowIcon()}
+									</a>
+									<p
+										css={{
+											margin: 0,
+											color: colors.textMuted,
+											fontSize: typography.fontSize.sm,
+										}}
+									>
+										Loading chat...
+									</p>
+								</div>
+							</div>
 						) : null}
 					</div>
 				</div>
