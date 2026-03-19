@@ -80,6 +80,11 @@ test('mobile /chat uses URL-driven single-panel navigation', async ({
 		page.getByRole('heading', { name: 'Chats', exact: true }),
 	).toBeVisible()
 	await expect(page.getByRole('link', { name: 'Back to chats' })).toHaveCount(0)
+
+	await page.setViewportSize({ width: 1280, height: 900 })
+
+	await expect(page).toHaveURL(/\/chat\/.+/)
+	await expect(page.getByPlaceholder('Send a message…')).toBeVisible()
 })
 
 test('creates and deletes chat threads when authenticated', async ({
