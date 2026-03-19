@@ -9,7 +9,7 @@ declare namespace Cloudflare {
 	interface Env {
 		OAUTH_KV: KVNamespace;
 		APP_DB: D1Database;
-		LOADER: WorkerLoader;
+		LOADER?: WorkerLoader;
 		AI: Ai;
 		ASSETS: Fetcher;
 		AI_MODE: "remote";

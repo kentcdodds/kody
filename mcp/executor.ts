@@ -1,6 +1,7 @@
 import {
 	DynamicWorkerExecutor,
 	normalizeCode,
+	type Executor,
 	type ExecuteResult,
 } from '@cloudflare/codemode'
 import { type CapabilitySpec } from './capabilities/types.ts'
@@ -9,10 +10,20 @@ const charsPerToken = 4
 const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
 
+const loaderUnavailableMessage =
+	'Code execution is unavailable: the WorkerLoader binding is not present in this environment (closed beta).'
+
+class UnavailableExecutor implements Executor {
+	async execute(): Promise<ExecuteResult> {
+		return { result: undefined, error: loaderUnavailableMessage }
+	}
+}
+
 export function createSearchExecutor(
 	env: Env,
 	capabilities: Record<string, CapabilitySpec>,
-) {
+): Executor {
+	if (!env.LOADER) return new UnavailableExecutor()
 	return new DynamicWorkerExecutor({
 		loader: env.LOADER,
 		timeout: 30_000,
@@ -22,7 +33,8 @@ export function createSearchExecutor(
 	})
 }
 
-export function createExecuteExecutor(env: Env) {
+export function createExecuteExecutor(env: Env): Executor {
+	if (!env.LOADER) return new UnavailableExecutor()
 	return new DynamicWorkerExecutor({
 		loader: env.LOADER,
 		timeout: 30_000,
@@ -170,7 +182,7 @@ function truncateExecutionResult(value: unknown) {
 	const text =
 		typeof value === 'string'
 			? value
-			: JSON.stringify(value, null, 2) ?? 'undefined'
+			: (JSON.stringify(value, null, 2) ?? 'undefined')
 
 	if (text.length <= maxChars) return text
 
@@ -178,4 +190,3 @@ function truncateExecutionResult(value: unknown) {
 		text.length / charsPerToken,
 	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Use more specific queries to reduce response size.`
 }
-

@@ -24,11 +24,6 @@
 				"binding": "AI",
 				"remote": true,
 			},
-			"worker_loaders": [
-				{
-					"binding": "LOADER",
-				},
-			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
@@ -71,11 +66,6 @@
 				"binding": "AI",
 				"remote": true,
 			},
-			"worker_loaders": [
-				{
-					"binding": "LOADER",
-				},
-			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
