@@ -58,6 +58,14 @@ Local development uses `.env`, which Wrangler loads automatically:
   so Wrangler can authenticate Workers AI requests against the correct account)
 - `CLOUDFLARE_API_TOKEN` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests)
+- `SENTRY_DSN` (optional Cloudflare Worker secret; enables error reporting and
+  tracing for the Worker and Durable Objects)
+- `SENTRY_ENVIRONMENT` (set per deploy via `wrangler.jsonc` `vars` as
+  `production`, `preview`, or `test`; optional override via env for local dev)
+- `SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`, defaults to **`1.0`** in code
+  when unset — full sampling for low traffic; lower if volume grows)
+- `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to
+  `/health` versioning)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `.env`.
@@ -76,6 +84,14 @@ Configure these secrets for GitHub Actions workflows:
 - `RESEND_API_KEY` (optional, required to send via Resend in non-mock
   environments)
 - `RESEND_FROM_EMAIL` (optional, required to send via Resend)
+- `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
+  paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
+- `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
+  `project:releases` / source map upload permissions — used only by CI to run
+  `bun run sentry:upload-sourcemaps` after deploy)
+- **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
+  organization and project **slugs** for source map upload — same values as in
+  the Sentry wizard’s `--org` / `--project` flags)
 
 How to get/set each secret:
 
@@ -104,6 +120,18 @@ How to get/set each secret:
 - `RESEND_FROM_EMAIL` (optional)
   - Use your verified sender/from address in Resend (for example
     `noreply@example.com`), then store it as a secret.
+- `SENTRY_DSN` (optional)
+  - In Sentry: create a project, copy the DSN, and add it as the repository
+    secret `SENTRY_DSN`. Production and preview deploy workflows sync it with
+    `sync-worker-secrets.ts` when the secret is present.
+- `SENTRY_AUTH_TOKEN` (optional)
+  - In Sentry: **Settings → Auth Tokens** (or Organization settings), create a
+    token that can upload releases/source maps, and store it as the
+    `SENTRY_AUTH_TOKEN` repository secret.
+- `SENTRY_ORG` / `SENTRY_PROJECT` (optional)
+  - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
+    `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
+    `npx @sentry/wizard@latest -i sourcemaps`).
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

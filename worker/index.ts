@@ -1,4 +1,6 @@
+import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
+import { getWorkerSentryOptions } from '#sentry/cloudflare-options.ts'
 import { ChatAgent } from '#worker/chat-agent.ts'
 import { MCP } from '#mcp/index.ts'
 import { chatAgentBasePath } from '#shared/chat-routes.ts'
@@ -140,7 +142,10 @@ const oauthProvider = new OAuthProvider({
  * Aligns with @cloudflare/workers-oauth-provider's addCorsHeaders for well-known routes.
  * (See OAuthProviderImpl.fetch in that package.)
  */
-function addOAuthDiscoveryCorsHeaders(response: Response, request: Request): Response {
+function addOAuthDiscoveryCorsHeaders(
+	response: Response,
+	request: Request,
+): Response {
 	const origin = request.headers.get('Origin')
 	if (!origin) {
 		return response
@@ -157,9 +162,10 @@ function addOAuthDiscoveryCorsHeaders(response: Response, request: Request): Res
 	})
 }
 
-export default {
+const workerHandler = {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
+
 		// OAuthProvider serves this URL first and defaults `resource` to the origin only.
 		// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our
 		// token audience; otherwise authorize stores origin but the token request sends
@@ -178,8 +184,12 @@ export default {
 				const metadataRequest =
 					request.method === 'GET'
 						? request
-						: new Request(request.url, { method: 'GET', headers: request.headers })
-				const metadataResponse = handleProtectedResourceMetadata(metadataRequest)
+						: new Request(request.url, {
+								method: 'GET',
+								headers: request.headers,
+							})
+				const metadataResponse =
+					handleProtectedResourceMetadata(metadataRequest)
 				if (request.method === 'HEAD') {
 					return addOAuthDiscoveryCorsHeaders(
 						new Response(null, {
@@ -195,3 +205,8 @@ export default {
 		return oauthProvider.fetch(request, env, ctx)
 	},
 } satisfies ExportedHandler<Env>
+
+export default Sentry.withSentry(
+	(env: Env) => getWorkerSentryOptions(env),
+	workerHandler,
+)

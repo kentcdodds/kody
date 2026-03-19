@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { capabilityHandlers } from '#mcp/capabilities/registry.ts'
@@ -91,7 +92,16 @@ export async function registerExecuteTool(agent: MCP) {
 						}),
 				]),
 			)
-			const result = await executor.execute(wrapExecuteCode(code), fns)
+			const result = await Sentry.startSpan(
+				{
+					name: 'mcp.tool.execute',
+					op: 'mcp.tool',
+					attributes: {
+						'mcp.tool': 'execute',
+					},
+				},
+				async () => executor.execute(wrapExecuteCode(code), fns),
+			)
 			const durationMs = Math.round(performance.now() - startedAt)
 
 			if (result.error) {
@@ -108,6 +118,7 @@ export async function registerExecuteTool(agent: MCP) {
 					sandboxError: true,
 					errorName,
 					errorMessage,
+					cause: result.error,
 				})
 				return {
 					content: [

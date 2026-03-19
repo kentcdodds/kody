@@ -44,6 +44,19 @@ types, runtime validation, and documentation in sync.
      - `.github/workflows/deploy.yml` (production deploys)
      - `.github/workflows/preview.yml` (preview deploys)
 
+## Sentry
+
+Optional Worker secret and vars (see `types/env-schema.ts` and
+`sentry/cloudflare-options.ts`):
+
+- `SENTRY_DSN` — ingest URL from your Sentry project. When unset, the Worker
+  skips `Sentry.withSentry`; Durable Objects use the same options builder and
+  will not send events without a DSN.
+- `SENTRY_ENVIRONMENT` — also set as a Wrangler `var` per environment in
+  `wrangler.jsonc` for deploys.
+- `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample
+  all traces). Set lower (e.g. `0.1`) for higher traffic or Sentry quota.
+
 ## Why Zod?
 
 Zod gives type inference for `Env`-driven values and a single runtime gate that

@@ -57,6 +57,7 @@ export function defineCapability<
 					failurePhase: 'parse_input',
 					errorName,
 					errorMessage,
+					cause: error,
 				})
 				throw error
 			}
@@ -78,6 +79,7 @@ export function defineCapability<
 					failurePhase: 'handler',
 					errorName,
 					errorMessage,
+					cause: error,
 				})
 				throw error
 			}
@@ -109,6 +111,7 @@ export function defineCapability<
 					failurePhase: 'parse_output',
 					errorName,
 					errorMessage,
+					cause: error,
 				})
 				throw error
 			}

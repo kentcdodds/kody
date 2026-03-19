@@ -74,6 +74,35 @@ const optionalAiModeSchema = createSchema<
 	return fail(`Expected one of: ${aiModeValues.join(', ')}`, context.path)
 })
 
+const optionalSentryTracesSampleRateSchema = createSchema<
+	unknown,
+	number | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (typeof value === 'number') {
+		if (!Number.isFinite(value) || value < 0 || value > 1) {
+			return fail(
+				'SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1',
+				context.path,
+			)
+		}
+		return { value }
+	}
+	if (typeof value === 'string') {
+		const trimmed = value.trim()
+		if (!trimmed) return { value: undefined }
+		const n = Number.parseFloat(trimmed)
+		if (!Number.isFinite(n) || n < 0 || n > 1) {
+			return fail(
+				'SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1',
+				context.path,
+			)
+		}
+		return { value: n }
+	}
+	return fail('Expected number or numeric string', context.path)
+})
+
 export const EnvSchema = object({
 	COOKIE_SECRET: string().refine(
 		(value) => value.length >= 32,
@@ -90,6 +119,9 @@ export const EnvSchema = object({
 	AI_GATEWAY_ID: optionalNonEmptyStringSchema,
 	AI_MOCK_BASE_URL: optionalUrlStringSchema,
 	AI_MOCK_API_KEY: optionalNonEmptyStringSchema,
+	SENTRY_DSN: optionalUrlStringSchema,
+	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
+	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

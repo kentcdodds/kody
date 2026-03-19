@@ -74,3 +74,38 @@ Full page navigations still occur for:
 
 This keeps cross-origin behavior narrow while still allowing same-origin browser
 and API requests.
+
+## Observability (Sentry)
+
+The Worker default export is wrapped with `Sentry.withSentry` from
+`@sentry/cloudflare` (see `worker/index.ts`) so incoming `fetch` requests are
+traced and uncaught errors can be reported when `SENTRY_DSN` is configured.
+
+The **MCP** (`MCP` / `MCP_OBJECT`) and **chat** (`ChatAgent`) Durable Objects
+are each wrapped with `Sentry.instrumentDurableObjectWithSentry` (see
+`mcp/index.ts` and `worker/chat-agent.ts`) because they run in separate isolates
+from the top-level Worker.
+
+Shared options are built in `sentry/cloudflare-options.ts`: **release** comes
+from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and
+**environment** defaults from `SENTRY_ENVIRONMENT` in `wrangler.jsonc` per
+deploy target.
+
+MCP tools emit structured `mcp-event` logs via `mcp/observability.ts`. On
+failures, the same module sends Sentry events (with MCP tags and context);
+sandbox user-code failures are reported at **warning** severity, while
+capability handler bugs use **error**.
+
+### Source maps
+
+`wrangler.jsonc` sets
+[`upload_source_maps`](https://developers.cloudflare.com/workers/wrangler/configuration/#source-maps),
+and `bun run deploy` passes
+`--outdir .wrangler/sentry-bundle --upload-source-maps` so the bundle + maps are
+generated consistently. To symbolicate stack traces in **Sentry** (not only in
+Cloudflare), configure
+[Cloudflare source maps in Sentry](https://docs.sentry.io/platforms/javascript/guides/cloudflare/sourcemaps/):
+add GitHub **repository variables** `SENTRY_ORG` and `SENTRY_PROJECT`, a
+`SENTRY_AUTH_TOKEN` **secret** with release upload scopes, then CI runs
+`bun run sentry:upload-sourcemaps` after deploy using the same **release** as
+`APP_COMMIT_SHA`.

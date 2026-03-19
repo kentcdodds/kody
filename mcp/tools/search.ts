@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { capabilitySpecs } from '#mcp/capabilities/registry.ts'
@@ -121,7 +122,16 @@ export async function registerSearchTool(agent: MCP) {
 			const startedAt = performance.now()
 			const { baseUrl, hasUser } = callerContextFields(agent.getCallerContext())
 			const executor = createSearchExecutor(agent.getEnv(), capabilitySpecs)
-			const result = await executor.execute(wrapSearchCode(code), {})
+			const result = await Sentry.startSpan(
+				{
+					name: 'mcp.tool.search',
+					op: 'mcp.tool',
+					attributes: {
+						'mcp.tool': 'search',
+					},
+				},
+				async () => executor.execute(wrapSearchCode(code), {}),
+			)
 			const durationMs = Math.round(performance.now() - startedAt)
 
 			if (result.error) {
@@ -137,6 +147,7 @@ export async function registerSearchTool(agent: MCP) {
 					sandboxError: true,
 					errorName,
 					errorMessage,
+					cause: result.error,
 				})
 				return {
 					content: [

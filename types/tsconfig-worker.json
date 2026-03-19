@@ -34,6 +34,7 @@
 		"./worker-configuration.d.ts",
 		"../shared/**/*.ts",
 		"../mock-servers/**/*.ts",
+		"../sentry/**/*.ts",
 		"../worker/**/*.ts",
 		"../server/**/*.ts",
 		"../mcp/**/*.ts"

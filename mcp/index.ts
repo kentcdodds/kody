@@ -1,7 +1,9 @@
+import * as Sentry from '@sentry/cloudflare'
 import { invariant } from '@epic-web/invariant'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 import { McpAgent } from 'agents/mcp'
+import { buildSentryOptions } from '#sentry/cloudflare-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 import { registerResources } from './register-resources.ts'
 import { registerTools } from './register-tools.ts'
@@ -48,7 +50,7 @@ MCP App tools
 	`.trim(),
 } as const
 
-export class MCP extends McpAgent<Env, State, Props> {
+class MCPBase extends McpAgent<Env, State, Props> {
 	server = new McpServer(serverMetadata.implementation, {
 		instructions: serverMetadata.instructions,
 		jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
@@ -72,3 +74,11 @@ export class MCP extends McpAgent<Env, State, Props> {
 		return baseUrl
 	}
 }
+
+export const MCP = Sentry.instrumentDurableObjectWithSentry(
+	(env: Env) => buildSentryOptions(env),
+	MCPBase,
+)
+
+/** Agent instance type for tool/resource registration (the Durable Object export is a wrapped class). */
+export type MCP = InstanceType<typeof MCP>

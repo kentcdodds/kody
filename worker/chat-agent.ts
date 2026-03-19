@@ -1,4 +1,6 @@
+import * as Sentry from '@sentry/cloudflare'
 import { AIChatAgent } from '@cloudflare/ai-chat'
+import { buildSentryOptions } from '#sentry/cloudflare-options.ts'
 import {
 	type StreamTextOnFinishCallback,
 	type ToolSet,
@@ -171,7 +173,7 @@ function createKnownMockToolResult(
 	return null
 }
 
-export class ChatAgent extends AIChatAgent<Env> {
+class ChatAgentBase extends AIChatAgent<Env> {
 	waitForMcpConnections = true
 	private runtimeContext: {
 		appUserId: number
@@ -468,3 +470,8 @@ export class ChatAgent extends AIChatAgent<Env> {
 		})
 	}
 }
+
+export const ChatAgent = Sentry.instrumentDurableObjectWithSentry(
+	(env: Env) => buildSentryOptions(env),
+	ChatAgentBase,
+)

@@ -109,6 +109,30 @@ test('do_math capability logs parse_input failure and rethrows', async () => {
 	expect(event.failurePhase).toBe('parse_input')
 })
 
+test('logMcpEvent reports failure without throwing when Sentry is off', () => {
+	const originalInfo = console.info
+	console.info = () => {}
+	try {
+		expect(() =>
+			logMcpEvent({
+				category: 'mcp',
+				tool: 'search',
+				toolName: 'search',
+				outcome: 'failure',
+				durationMs: 1,
+				baseUrl: 'https://example.com',
+				hasUser: false,
+				sandboxError: true,
+				errorName: 'Error',
+				errorMessage: 'user code failed',
+				cause: new Error('user code failed'),
+			}),
+		).not.toThrow()
+	} finally {
+		console.info = originalInfo
+	}
+})
+
 test('do_math capability logs success for valid invocation', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
