@@ -92,11 +92,7 @@ test('creates and deletes chat threads when authenticated', async ({
 	login,
 }) => {
 	await login()
-	await page.goto('/chat')
-
-	await page.getByRole('textbox', { name: 'Message' }).fill('Hello there')
-	await page.getByRole('button', { name: 'Send message' }).click()
-	await expect(page).toHaveURL(/\/chat\/.+/)
+	await createThread(page, 'Hello there')
 	const createdThreadPath = new URL(page.url()).pathname
 	await expect(page.getByRole('heading', { name: 'New chat' })).toBeVisible()
 	await expect(
