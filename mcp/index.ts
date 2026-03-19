@@ -42,6 +42,8 @@ How to use search
 - Example: search({ query: 'calculator or basic arithmetic on two numbers' })
 - Example: search({ query: 'GitHub REST API repository or issues', detail: true })
 - Example: search({ query: 'Cursor Cloud agents API' })
+- Example: search({ query: 'GitHub REST API documentation markdown' })
+- Example: search({ query: 'Cursor Cloud Agents API documentation markdown' })
 
 Destructive GitHub access
 - Some capabilities are marked destructive: they can change or delete remote data (for example github_rest with POST, PUT, PATCH, or DELETE).
