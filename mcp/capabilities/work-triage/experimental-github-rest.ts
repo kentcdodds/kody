@@ -24,7 +24,9 @@ const inputSchema = z
 		query: z
 			.record(z.string(), z.string())
 			.optional()
-			.describe('Optional query string parameters (values coerced to strings).'),
+			.describe(
+				'Optional query string parameters (values coerced to strings).',
+			),
 		body: z
 			.unknown()
 			.optional()
@@ -36,7 +38,10 @@ const inputSchema = z
 
 const outputSchema = z.object({
 	status: z.number().describe('HTTP status code from GitHub.'),
-	body: z.unknown().nullable().describe('Parsed JSON body, or null for empty/204.'),
+	body: z
+		.unknown()
+		.nullable()
+		.describe('Parsed JSON body, or null for empty/204.'),
 })
 
 function assertSafeGithubPath(path: string) {

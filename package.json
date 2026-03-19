@@ -32,6 +32,7 @@
     "preview:e2e": "bun run build:mcp-apps && bun run migrate:e2e && bun ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "generate-types": "bun ./wrangler-env.ts types ./types/worker-configuration.d.ts",
     "typecheck": "tsc -b --noEmit",
+    "test": "bun test ./server ./mock-servers ./mcp/github ./mcp/capabilities/work-triage",
     "inspect": "bunx -p @mcpjam/inspector inspector",
     "validate": "concurrently --kill-others-on-fail -n format,lint,build,typecheck,test,test:mcp -c green,yellow,blue,magenta,cyan,red \"bun run format:check\" \"bun run lint:fix\" \"bun run build\" \"bun run typecheck\" \"bun run test:e2e\" \"bun run test:mcp\"",
     "test:e2e": "bun tools/prepare-e2e-env.ts && playwright test",

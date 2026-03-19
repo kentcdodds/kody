@@ -145,7 +145,8 @@ How to get/set each value:
     search) under **GitHub → Settings → Developer settings**, then add it as the
     repository secret `KODY_GITHUB_TOKEN` (not `GITHUB_TOKEN` — GitHub rejects
     that name). The production deploy workflow exports it as `GITHUB_TOKEN` only
-    for `sync-worker-secrets.ts`, which stores it on the Worker as `GITHUB_TOKEN`.
+    for `sync-worker-secrets.ts`, which stores it on the Worker as
+    `GITHUB_TOKEN`.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock
