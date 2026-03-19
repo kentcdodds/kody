@@ -17,6 +17,9 @@ is trying to become.
   MCP auth.
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
   Objects.
+- [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
+  for securely reaching local-network systems through an outbound agent
+  connection.
 
 ## Source of truth in code
 
