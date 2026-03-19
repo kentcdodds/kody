@@ -769,7 +769,7 @@ export function ChatRoute(handle: Handle) {
 		return didLoad
 	}
 
-	async function refreshThreads(signal?: AbortSignal) {
+	async function refreshThreads(signal?: AbortSignal): Promise<boolean> {
 		try {
 			threadListCursor = null
 			let nextCursor: string | null = null
@@ -782,17 +782,19 @@ export function ChatRoute(handle: Handle) {
 					totalCount: page.totalCount,
 				}
 			}, signal)
-			if (!didLoad) return
+			if (!didLoad) return false
 			threadListCursor = nextCursor
 			setThreadState('ready')
 			scheduleThreadListScrollFadeSync()
 			await syncActiveThreadFromLocation()
+			return true
 		} catch (error) {
-			if (signal?.aborted) return
+			if (signal?.aborted) return false
 			setThreadState(
 				'error',
 				error instanceof Error ? error.message : 'Unable to load threads.',
 			)
+			return false
 		}
 	}
 
@@ -913,7 +915,16 @@ export function ChatRoute(handle: Handle) {
 
 	return () => {
 		if (threadStatus === 'loading') {
-			handle.queueTask(refreshThreads)
+			void handle.queueTask(async (signal) => {
+				const loaded = await refreshThreads(signal)
+				// Initial load flips isLoadingInitial to true, which re-renders and aborts this
+				// queueTask's signal (Remix). The aborted fetch then returns didLoad: false while
+				// onSnapshot still leaves threadStatus as 'ready' with an empty list, so no further
+				// refresh was scheduled. Retry once so desktop /chat can redirect and the list populates.
+				if (!loaded && threadStatus !== 'error') {
+					await refreshThreads()
+				}
+			})
 		}
 
 		const threads = getThreads()
