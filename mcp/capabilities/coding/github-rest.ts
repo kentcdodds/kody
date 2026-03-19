@@ -6,28 +6,27 @@ import { type CapabilityContext } from '../types.ts'
 
 const httpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 
-const inputSchema = z
-	.object({
-		method: httpMethodSchema.describe(
-			'HTTP method the GitHub endpoint expects (GET for reads; POST, PUT, PATCH, or DELETE when the REST docs call for them).',
+const inputSchema = z.object({
+	method: httpMethodSchema.describe(
+		'HTTP method the GitHub endpoint expects (GET for reads; POST, PUT, PATCH, or DELETE when the REST docs call for them).',
+	),
+	path: z
+		.string()
+		.min(1)
+		.describe(
+			'GitHub REST path starting with / (for example /repos/octocat/Hello-World). Do not include a scheme or host.',
 		),
-		path: z
-			.string()
-			.min(1)
-			.describe(
-				'GitHub REST path starting with / (for example /repos/octocat/Hello-World). Do not include a scheme or host.',
-			),
-		query: z
-			.record(z.string(), z.string())
-			.optional()
-			.describe(
-				'Optional query string parameters. All values are sent as strings.',
-			),
-		body: z
-			.unknown()
-			.optional()
-			.describe('Optional JSON body for POST, PUT, PATCH, or DELETE requests.'),
-	})
+	query: z
+		.record(z.string(), z.string())
+		.optional()
+		.describe(
+			'Optional query string parameters. All values are sent as strings.',
+		),
+	body: z
+		.unknown()
+		.optional()
+		.describe('Optional JSON body for POST, PUT, PATCH, or DELETE requests.'),
+})
 
 const outputSchema = z.object({
 	status: z.number().describe('HTTP status code from GitHub.'),

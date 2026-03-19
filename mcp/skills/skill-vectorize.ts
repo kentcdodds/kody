@@ -21,7 +21,10 @@ export async function upsertSkillVector(
 	])
 }
 
-export async function deleteSkillVector(env: Env, skillId: string): Promise<void> {
+export async function deleteSkillVector(
+	env: Env,
+	skillId: string,
+): Promise<void> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index) return
 	await index.deleteByIds([skillVectorId(skillId)])

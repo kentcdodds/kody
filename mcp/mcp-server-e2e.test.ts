@@ -566,11 +566,7 @@ test(
 			(m) => m.type === 'capability' && m.name === 'do_math',
 		)
 		expect(topMath?.domain).toBe('math')
-		expect(topMath?.requiredInputFields).toEqual([
-			'left',
-			'right',
-			'operator',
-		])
+		expect(topMath?.requiredInputFields).toEqual(['left', 'right', 'operator'])
 		expect(topMath?.readOnly).toBeUndefined()
 		expect(topMath?.inputFields).toBeUndefined()
 

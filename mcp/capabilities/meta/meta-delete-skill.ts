@@ -20,7 +20,10 @@ export const metaDeleteSkillCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: true,
 		inputSchema: z.object({
-			skill_id: z.string().min(1).describe('Skill id returned by meta_save_skill.'),
+			skill_id: z
+				.string()
+				.min(1)
+				.describe('Skill id returned by meta_save_skill.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {

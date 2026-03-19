@@ -73,7 +73,9 @@ export type SkillSearchHitDetail = SkillSearchHitSummary & {
 
 export type SkillSearchHit = SkillSearchHitSummary | SkillSearchHitDetail
 
-export type CapabilitySearchHitTyped = { type: 'capability' } & CapabilitySearchHit
+export type CapabilitySearchHitTyped = {
+	type: 'capability'
+} & CapabilitySearchHit
 
 export type UnifiedSearchMatch = CapabilitySearchHitTyped | SkillSearchHit
 
@@ -145,7 +147,9 @@ async function searchSkillsForUser(input: {
 	}
 
 	const docsById = Object.fromEntries(
-		input.rows.map((row) => [row.id, skillRowEmbedDoc(row, input.specs)] as const),
+		input.rows.map(
+			(row) => [row.id, skillRowEmbedDoc(row, input.specs)] as const,
+		),
 	)
 
 	const lexicalOrder = sortIdsByScore(ids, (id) =>
@@ -280,14 +284,12 @@ export async function searchUnified(input: {
 		CAPABILITY_SEARCH_RRF_K,
 	)
 	const allKeys = [...new Set([...capKeys, ...skillKeys])]
-	const sortedKeys = sortIdsByScore(allKeys, (k) => fusedCross.get(k) ?? 0).slice(
-		0,
-		Math.max(1, input.limit),
-	)
+	const sortedKeys = sortIdsByScore(
+		allKeys,
+		(k) => fusedCross.get(k) ?? 0,
+	).slice(0, Math.max(1, input.limit))
 
-	const capByName = new Map(
-		capResult.matches.map((m) => [m.name, m] as const),
-	)
+	const capByName = new Map(capResult.matches.map((m) => [m.name, m] as const))
 	const skillById = new Map(
 		skillResult.matches.map((m) => [m.skillId, m] as const),
 	)

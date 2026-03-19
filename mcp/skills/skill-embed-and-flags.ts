@@ -53,9 +53,13 @@ export function buildSkillEmbedText(
 		capCount += 1
 		const fields = [...spec.inputFields, ...spec.outputFields].join(' ')
 		denorm.push(
-			[name, spec.domain, spec.description, spec.keywords.join(' '), fields].join(
-				'\n',
-			),
+			[
+				name,
+				spec.domain,
+				spec.description,
+				spec.keywords.join(' '),
+				fields,
+			].join('\n'),
 		)
 	}
 	const text = [...baseParts, ...denorm].join('\n')
@@ -93,8 +97,7 @@ export function deriveTrustFlags(
 		if (!spec.idempotent) idempotentAnd = false
 	}
 
-	const readOnlyDerived =
-		inferencePartial ? null : readOnlyAnd
+	const readOnlyDerived = inferencePartial ? null : readOnlyAnd
 
 	let idempotentDerived: boolean | null = null
 	if (!inferencePartial) {
@@ -126,7 +129,11 @@ export function validateSkillSaveFlags(input: {
 		}
 	}
 
-	if (trusted && input.derived.readOnlyDerived === false && input.agentReadOnly) {
+	if (
+		trusted &&
+		input.derived.readOnlyDerived === false &&
+		input.agentReadOnly
+	) {
 		return {
 			ok: false,
 			message:

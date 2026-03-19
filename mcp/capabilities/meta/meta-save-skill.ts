@@ -34,11 +34,21 @@ const inputSchema = z.object({
 		.describe(
 			'Explicit capability names to merge with static inference (for dynamic codemode[variable] access).',
 		),
-	read_only: z.boolean().describe('Whether this skill is read-only (validated against inferred caps).'),
-	idempotent: z.boolean().describe('Whether the skill is idempotent (heuristic validation when inference is trusted).'),
+	read_only: z
+		.boolean()
+		.describe(
+			'Whether this skill is read-only (validated against inferred caps).',
+		),
+	idempotent: z
+		.boolean()
+		.describe(
+			'Whether the skill is idempotent (heuristic validation when inference is trusted).',
+		),
 	destructive: z
 		.boolean()
-		.describe('Whether the skill performs destructive operations (validated against inferred caps).'),
+		.describe(
+			'Whether the skill performs destructive operations (validated against inferred caps).',
+		),
 })
 
 const outputSchema = z.object({
@@ -57,14 +67,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 		name: 'meta_save_skill',
 		description:
 			'Save a reusable codemode skill for the signed-in user. To change an existing skill in place, use meta_update_skill instead.',
-		keywords: [
-			'skill',
-			'save',
-			'codemode',
-			'recipe',
-			'reuse',
-			'persist',
-		],
+		keywords: ['skill', 'save', 'codemode', 'recipe', 'reuse', 'persist'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,

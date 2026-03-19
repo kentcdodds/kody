@@ -43,7 +43,7 @@ function peekMemberPropertyName(
 		'type' in property &&
 		(property as { type: string }).type === 'Literal'
 	) {
-		const v = (property as { value: unknown }).value
+		const v = (property as unknown as { value: unknown }).value
 		if (typeof v === 'string' && v.length > 0) return v
 	}
 	onPartial()
@@ -51,7 +51,9 @@ function peekMemberPropertyName(
 }
 
 /** Walk ESTree-ish nodes produced by acorn; collect codemode.<name> accesses. */
-export function inferCodemodeCapabilitiesFromAst(program: Program): InferCodemodeCapabilitiesResult {
+export function inferCodemodeCapabilitiesFromAst(
+	program: Program,
+): InferCodemodeCapabilitiesResult {
 	const staticSet = new Set<string>()
 	let inferencePartial = false
 	const markPartial = () => {
@@ -83,13 +85,13 @@ export function inferCodemodeCapabilitiesFromAst(program: Program): InferCodemod
 		}
 
 		if (n.type === 'ChainExpression') {
-			const expr = (n as { expression: unknown }).expression
+			const expr = (n as unknown as { expression: unknown }).expression
 			visit(expr)
 		}
 
 		for (const key of Object.keys(n)) {
 			if (key === 'type') continue
-			const v = (n as Record<string, unknown>)[key]
+			const v = (n as unknown as Record<string, unknown>)[key]
 			if (v === null || v === undefined) continue
 			if (typeof v === 'object' && !Array.isArray(v) && 'type' in v) {
 				visit(v)
@@ -111,7 +113,9 @@ export function inferCodemodeCapabilitiesFromAst(program: Program): InferCodemod
  * Parse normalized codemode source (same options as `@cloudflare/codemode` `normalizeCode`).
  * On parse failure, returns empty static set and `inferencePartial: true`.
  */
-export function inferCodemodeCapabilities(normalizedSource: string): InferCodemodeCapabilitiesResult {
+export function inferCodemodeCapabilities(
+	normalizedSource: string,
+): InferCodemodeCapabilitiesResult {
 	try {
 		const program = parse(normalizedSource, {
 			ecmaVersion: 'latest',

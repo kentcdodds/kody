@@ -41,10 +41,7 @@ function assertCursorCloudDocsPath(path: string) {
 			'path must start with `/` and must not include a host (for example use `/docs/cloud-agent/api/endpoints`).',
 		)
 	}
-	if (
-		!trimmed.startsWith('/docs/') &&
-		!trimmed.startsWith('/docs-static/')
-	) {
+	if (!trimmed.startsWith('/docs/') && !trimmed.startsWith('/docs-static/')) {
 		throw new Error(
 			'path must start with `/docs/` or `/docs-static/` on cursor.com.',
 		)

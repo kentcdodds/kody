@@ -18,18 +18,27 @@ const outputSchema = z.object({
 	hint: z.string().optional(),
 })
 
+function formatExecutionError(error: unknown): string {
+	if (typeof error === 'string') return error
+	if (error instanceof Error) return error.message
+	return String(error)
+}
+
 export const metaRunSkillCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'meta_run_skill',
 		description:
-			'Execute a saved skill\'s codemode in the same sandbox as the MCP execute tool. On failure, the structured result includes a hint for updating the skill (meta_update_skill).',
+			"Execute a saved skill's codemode in the same sandbox as the MCP execute tool. On failure, the structured result includes a hint for updating the skill (meta_update_skill).",
 		keywords: ['skill', 'run', 'execute'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
 		inputSchema: z.object({
-			skill_id: z.string().min(1).describe('Skill id returned by meta_save_skill.'),
+			skill_id: z
+				.string()
+				.min(1)
+				.describe('Skill id returned by meta_save_skill.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
@@ -50,12 +59,7 @@ export const metaRunSkillCapability = defineDomainCapability(
 			if (exec.error) {
 				return {
 					ok: false,
-					error:
-						typeof exec.error === 'string'
-							? exec.error
-							: exec.error instanceof Error
-								? exec.error.message
-								: String(exec.error),
+					error: formatExecutionError(exec.error),
 					logs: exec.logs ?? [],
 					hint: runFailureHint,
 				}

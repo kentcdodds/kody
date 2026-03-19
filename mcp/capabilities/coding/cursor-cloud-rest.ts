@@ -6,30 +6,29 @@ import { type CapabilityContext } from '../types.ts'
 
 const httpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 
-const inputSchema = z
-	.object({
-		method: httpMethodSchema.describe(
-			'HTTP method the Cursor Cloud endpoint expects (GET for reads; POST, PUT, PATCH, or DELETE when the API docs call for them).',
+const inputSchema = z.object({
+	method: httpMethodSchema.describe(
+		'HTTP method the Cursor Cloud endpoint expects (GET for reads; POST, PUT, PATCH, or DELETE when the API docs call for them).',
+	),
+	path: z
+		.string()
+		.min(1)
+		.describe(
+			'Cursor Cloud API path starting with /v0/ (e.g. GET /v0/agents lists; POST /v0/agents launches an agent — there is no /v0/agents/launch). Do not include a scheme or host. Full reference: https://cursor.com/docs/cloud-agent/api/endpoints',
 		),
-		path: z
-			.string()
-			.min(1)
-			.describe(
-				'Cursor Cloud API path starting with /v0/ (e.g. GET /v0/agents lists; POST /v0/agents launches an agent — there is no /v0/agents/launch). Do not include a scheme or host. Full reference: https://cursor.com/docs/cloud-agent/api/endpoints',
-			),
-		query: z
-			.record(z.string(), z.string())
-			.optional()
-			.describe(
-				'Optional query string parameters. All values are sent as strings.',
-			),
-		body: z
-			.unknown()
-			.optional()
-			.describe(
-				'Optional JSON body for POST, PUT, PATCH, or DELETE. Launch (POST /v0/agents) requires prompt.text and source.repository (GitHub URL), not repo/task/title fields — see official OpenAPI.',
-			),
-	})
+	query: z
+		.record(z.string(), z.string())
+		.optional()
+		.describe(
+			'Optional query string parameters. All values are sent as strings.',
+		),
+	body: z
+		.unknown()
+		.optional()
+		.describe(
+			'Optional JSON body for POST, PUT, PATCH, or DELETE. Launch (POST /v0/agents) requires prompt.text and source.repository (GitHub URL), not repo/task/title fields — see official OpenAPI.',
+		),
+})
 
 const outputSchema = z.object({
 	status: z.number().describe('HTTP status code from the Cursor API.'),

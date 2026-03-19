@@ -91,16 +91,10 @@ export async function prepareSkillPersistence(
 		specs: capabilitySpecs,
 	})
 	if (unknownNames.length > 0) {
-		throw new Error(
-			`Unknown capability name(s): ${unknownNames.join(', ')}.`,
-		)
+		throw new Error(`Unknown capability name(s): ${unknownNames.join(', ')}.`)
 	}
 	const inferencePartial = infer.inferencePartial || merged.length === 0
-	const derived = deriveTrustFlags(
-		merged,
-		capabilitySpecs,
-		inferencePartial,
-	)
+	const derived = deriveTrustFlags(merged, capabilitySpecs, inferencePartial)
 	const validation = validateSkillSaveFlags({
 		agentReadOnly: args.read_only,
 		agentDestructive: args.destructive,
