@@ -65,9 +65,6 @@ export function HomeRoute(_handle: Handle) {
 								fontWeight: typography.fontWeight.bold,
 								margin: 0,
 								color: colors.text,
-								[mq.mobile]: {
-									fontSize: typography.fontSize.xl,
-								},
 							}}
 						>
 							Meet <span css={{ color: colors.primaryText }}>kody</span>
