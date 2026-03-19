@@ -497,7 +497,7 @@ test(
 		const result = await mcpClient.client.listTools()
 		const toolNames = result.tools.map((tool) => tool.name)
 
-		expect(toolNames.sort()).toEqual(['do_math', 'open_calculator_ui'])
+		expect(toolNames.sort()).toEqual(['execute', 'open_calculator_ui', 'search'])
 	},
 	{ timeout: defaultTimeoutMs },
 )
@@ -515,7 +515,7 @@ test(
 		const result = await mcpClient.client.listTools()
 		const toolNames = result.tools.map((tool) => tool.name)
 
-		expect(toolNames.sort()).toEqual(['do_math', 'open_calculator_ui'])
+		expect(toolNames.sort()).toEqual(['execute', 'open_calculator_ui', 'search'])
 
 		const resourcesResult = await mcpClient.client.listResources()
 		const resourceUris = resourcesResult.resources.map(
@@ -528,25 +528,85 @@ test(
 )
 
 test(
-	'mcp server executes do_math tool',
+	'mcp server searches capabilities',
 	async () => {
 		await using database = await createTestDatabase()
 		await using server = await startDevServer(database.persistDir)
 		await using mcpClient = await createMcpClient(server.origin, database.user)
 
 		const result = await mcpClient.client.callTool({
-			name: 'do_math',
+			name: 'search',
 			arguments: {
-				left: 8,
-				right: 4,
-				operator: '+',
+				code: `async () => {
+					const matches = findCapabilities({
+						domain: 'math',
+						inputField: 'operator',
+						readOnly: true,
+					})
+
+					return {
+						matches,
+						capability: getCapability('do_math'),
+					}
+				}`,
 			},
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
 			| Record<string, unknown>
 			| undefined
-		expect(structuredResult?.result).toBe(12)
+		const searchResult = structuredResult?.result as
+			| Record<string, unknown>
+			| undefined
+		const matches = searchResult?.matches as Array<Record<string, unknown>> | undefined
+		const capability = searchResult?.capability as Record<string, unknown> | undefined
+		const inputSchema = capability?.inputSchema as Record<string, unknown> | undefined
+		expect(matches?.[0]?.name).toBe('do_math')
+		expect(matches?.[0]?.domain).toBe('math')
+		expect(matches?.[0]?.requiredInputFields).toEqual(['left', 'right', 'operator'])
+		expect(matches?.[0]?.readOnly).toBeUndefined()
+		expect(matches?.[0]?.inputFields).toBeUndefined()
+		expect(capability?.readOnly).toBe(true)
+		expect(capability?.inputFields).toEqual(expect.arrayContaining(['operator']))
+		expect(inputSchema?.required).toEqual(['left', 'right', 'operator'])
+
+		const textOutput =
+			(result as CallToolResult).content.find(
+				(item): item is Extract<ContentBlock, { type: 'text' }> =>
+					item.type === 'text',
+			)?.text ?? ''
+
+		expect(textOutput).toContain('do_math')
+	},
+	{ timeout: defaultTimeoutMs },
+)
+
+test(
+	'mcp server executes do_math via execute tool',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
+
+		const result = await mcpClient.client.callTool({
+			name: 'execute',
+			arguments: {
+				code: `async () =>
+					await codemode.do_math({
+						left: 8,
+						right: 4,
+						operator: '+',
+					})`,
+			},
+		})
+
+		const structuredResult = (result as CallToolResult).structuredContent as
+			| Record<string, unknown>
+			| undefined
+		const executeResult = structuredResult?.result as
+			| Record<string, unknown>
+			| undefined
+		expect(executeResult?.result).toBe(12)
 
 		const textOutput =
 			(result as CallToolResult).content.find(

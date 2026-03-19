@@ -56,6 +56,7 @@
   },
   "dependencies": {
     "@cloudflare/ai-chat": "^0.1.8",
+    "@cloudflare/codemode": "^0.2.1",
     "@cloudflare/workers-oauth-provider": "^0.3.0",
     "@epic-web/invariant": "^1.0.0",
     "@mcp-ui/server": "6.1.0",
