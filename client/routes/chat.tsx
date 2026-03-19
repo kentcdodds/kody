@@ -869,15 +869,23 @@ export function ChatRoute(handle: Handle) {
 		actionError = null
 		update()
 		const previousActiveThreadId = activeThreadId
+		const shouldReturnToChatList =
+			previousActiveThreadId === threadId && isTabletViewport()
 		try {
 			await deleteThread(threadId)
 			deleteThreadChecks.delete(threadId)
 			if (previousActiveThreadId === threadId) {
 				clearActiveThread()
 			}
+			if (shouldReturnToChatList) {
+				navigate('/chat')
+			}
 			await refreshThreads()
 			scheduleThreadListScrollFadeSync()
-			if (previousActiveThreadId === threadId && !isTabletViewport()) {
+			if (shouldReturnToChatList) {
+				return
+			}
+			if (previousActiveThreadId === threadId) {
 				const nextThread = getThreads()[0]
 				if (nextThread) {
 					navigate(buildThreadHref(nextThread.id))
@@ -961,7 +969,7 @@ export function ChatRoute(handle: Handle) {
 				// onSnapshot still leaves threadStatus as 'ready' with an empty list, so no further
 				// refresh was scheduled. Retry once so desktop /chat can redirect and the list populates.
 				if (!loaded && threadStatus !== 'error') {
-					await refreshThreads()
+					await refreshThreads(handle.signal)
 				}
 			})
 		}
