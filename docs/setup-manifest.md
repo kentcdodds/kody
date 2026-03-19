@@ -70,14 +70,15 @@ Local development uses `.env`, which Wrangler loads automatically:
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `.env`.
 
-## GitHub Actions secrets
+## GitHub Actions configuration
 
-Configure these secrets for GitHub Actions workflows:
+Configure these GitHub Actions secrets and variables for workflows:
 
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account)
 - `COOKIE_SECRET` (same format as local)
-- `APP_BASE_URL` (optional, used by the production deploy)
+- `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
+  deploy)
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
@@ -93,7 +94,7 @@ Configure these secrets for GitHub Actions workflows:
   organization and project **slugs** for source map upload — same values as in
   the Sentry wizard’s `--org` / `--project` flags)
 
-How to get/set each secret:
+How to get/set each value:
 
 - `CLOUDFLARE_API_TOKEN`
   - In Cloudflare Dashboard, create an API Token with permissions to deploy

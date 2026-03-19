@@ -80,13 +80,13 @@ automatically on first CI deploy. Cloudflare deploys do not auto-create those
 resources from bindings alone, so the workflow runs an explicit ensure step
 before migrations/deploy.
 
-2. Configure GitHub Actions secrets for deploy:
+2. Configure GitHub Actions secrets and variables for deploy:
 
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account)
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32` or similar)
-- See `docs/setup-manifest.md` (`GitHub Actions secrets`) for full optional
-  secrets and where to get each value.
+- See `docs/setup-manifest.md` (`GitHub Actions configuration`) for full
+  optional secrets/variables and where to get each value.
 
 3. Deploy:
 
