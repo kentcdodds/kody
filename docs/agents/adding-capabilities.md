@@ -1,5 +1,8 @@
 # Adding capabilities
 
+User-persisted codemode skills (`meta` domain) are documented in
+[`mcp-skills.md`](./mcp-skills.md).
+
 Kody exposes a compact MCP surface (`search` and `execute`) and keeps the real
 capability graph behind that surface. To add a new capability, register it
 through a **domain** and the **builtin registry**—do not add a new public MCP

@@ -10,7 +10,7 @@ export function getCapabilityVectorIndex(env: Env): VectorizeIndex | undefined {
 export const CAPABILITY_EMBEDDING_MODEL = '@cf/baai/bge-small-en-v1.5'
 export const CAPABILITY_EMBEDDING_DIMENSIONS = 384
 
-const rrfK = 60
+export const CAPABILITY_SEARCH_RRF_K = 60
 
 function fnv1a32(input: string): number {
 	let hash = 2_166_136_261
@@ -41,7 +41,7 @@ export function deterministicEmbedding(
 	return [...vec]
 }
 
-function cosineSimilarity(
+export function cosineSimilarity(
 	a: ReadonlyArray<number>,
 	b: ReadonlyArray<number>,
 ): number {
@@ -73,7 +73,7 @@ export function lexicalScore(query: string, doc: string): number {
 	return intersection / q.size
 }
 
-function reciprocalRankFusion(
+export function reciprocalRankFusion(
 	rankedLists: Array<Array<string>>,
 	k: number,
 ): Map<string, number> {
@@ -87,7 +87,7 @@ function reciprocalRankFusion(
 	return scores
 }
 
-function sortIdsByScore(
+export function sortIdsByScore(
 	ids: ReadonlyArray<string>,
 	scoreFn: (id: string) => number,
 ): Array<string> {
@@ -158,7 +158,7 @@ export function isCapabilitySearchOffline(env: Env): boolean {
 	return false
 }
 
-async function embedQueryWithAi(
+export async function embedTextForVectorize(
 	env: Env,
 	text: string,
 ): Promise<Array<number>> {
@@ -177,6 +177,8 @@ export async function searchCapabilities(input: {
 	limit: number
 	detail: boolean
 	specs: Record<string, CapabilitySpec>
+	/** When set (online only), Vectorize query uses this metadata filter first; falls back to unfiltered if no spec ids match. */
+	vectorMetadataFilter?: VectorizeVectorMetadataFilter
 }): Promise<{ matches: Array<CapabilitySearchHit>; offline: boolean }> {
 	const q = input.query.trim()
 	const specs = input.specs
@@ -204,17 +206,35 @@ export async function searchCapabilities(input: {
 		vectorOrder = sortIdsByScore(ids, (id) => simById[id]!)
 	} else {
 		const index = getCapabilityVectorIndex(input.env)!
-		const qVec = await embedQueryWithAi(input.env, q)
-		const matches = await index.query(qVec, {
-			topK: Math.min(Math.max(ids.length, input.limit * 5), 100),
-			returnMetadata: 'none',
-		})
-		const seen = new Set<string>()
-		const fromIndex: Array<string> = []
-		for (const m of matches.matches) {
-			if (typeof m.id !== 'string' || !specs[m.id] || seen.has(m.id)) continue
-			seen.add(m.id)
-			fromIndex.push(m.id)
+		const qVec = await embedTextForVectorize(input.env, q)
+		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
+
+		async function queryVectorize(filter?: VectorizeVectorMetadataFilter) {
+			return index.query(qVec, {
+				topK,
+				returnMetadata: 'none',
+				...(filter ? { filter } : {}),
+			})
+		}
+
+		let vecMatches = await queryVectorize(input.vectorMetadataFilter)
+		const collectFromMatches = (
+			raw: typeof vecMatches.matches,
+		): { fromIndex: Array<string>; seen: Set<string> } => {
+			const seen = new Set<string>()
+			const fromIndex: Array<string> = []
+			for (const m of raw) {
+				if (typeof m.id !== 'string' || !specs[m.id] || seen.has(m.id)) continue
+				seen.add(m.id)
+				fromIndex.push(m.id)
+			}
+			return { fromIndex, seen }
+		}
+
+		let { fromIndex, seen } = collectFromMatches(vecMatches.matches)
+		if (fromIndex.length === 0 && input.vectorMetadataFilter) {
+			vecMatches = await queryVectorize(undefined)
+			;({ fromIndex, seen } = collectFromMatches(vecMatches.matches))
 		}
 		vectorOrder = [...fromIndex, ...ids.filter((id) => !seen.has(id))]
 	}
@@ -228,7 +248,10 @@ export async function searchCapabilities(input: {
 		vectorRankById.set(vectorOrder[r]!, r + 1)
 	}
 
-	const fused = reciprocalRankFusion([lexicalOrder, vectorOrder], rrfK)
+	const fused = reciprocalRankFusion(
+		[lexicalOrder, vectorOrder],
+		CAPABILITY_SEARCH_RRF_K,
+	)
 	const ordered = sortIdsByScore(ids, (id) => fused.get(id) ?? 0).slice(
 		0,
 		Math.max(1, Math.min(input.limit, ids.length)),

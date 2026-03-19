@@ -2,6 +2,7 @@
 export const capabilityDomainNames = {
 	coding: 'coding',
 	math: 'math',
+	meta: 'meta',
 } as const
 
 export type CapabilityDomain =

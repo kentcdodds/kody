@@ -562,15 +562,17 @@ test(
 			| undefined
 
 		expect(searchPayload?.offline).toBe(true)
-		expect(matches?.[0]?.name).toBe('do_math')
-		expect(matches?.[0]?.domain).toBe('math')
-		expect(matches?.[0]?.requiredInputFields).toEqual([
+		const topMath = matches?.find(
+			(m) => m.type === 'capability' && m.name === 'do_math',
+		)
+		expect(topMath?.domain).toBe('math')
+		expect(topMath?.requiredInputFields).toEqual([
 			'left',
 			'right',
 			'operator',
 		])
-		expect(matches?.[0]?.readOnly).toBeUndefined()
-		expect(matches?.[0]?.inputFields).toBeUndefined()
+		expect(topMath?.readOnly).toBeUndefined()
+		expect(topMath?.inputFields).toBeUndefined()
 
 		const textOutput =
 			(result as CallToolResult).content.find(
@@ -608,7 +610,9 @@ test(
 		const searchResult = searchPayload?.matches as
 			| Array<Record<string, unknown>>
 			| undefined
-		const capability = searchResult?.[0]
+		const capability = searchResult?.find(
+			(m) => m.type === 'capability' && m.name === 'do_math',
+		)
 		const inputSchema = capability?.inputSchema as
 			| Record<string, unknown>
 			| undefined
@@ -622,6 +626,7 @@ test(
 			| Record<string, Record<string, unknown>>
 			| undefined
 
+		expect(capability?.type).toBe('capability')
 		expect(capability?.name).toBe('do_math')
 		expect(capability?.keywords).toEqual(
 			expect.arrayContaining(['arithmetic', 'calculation', 'divide']),
@@ -680,6 +685,7 @@ test(
 			)?.text ?? ''
 
 		expect(textOutput).toContain('12')
+		expect(textOutput).toContain('meta_save_skill')
 	},
 	{ timeout: defaultTimeoutMs },
 )

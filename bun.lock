@@ -13,6 +13,7 @@
         "@modelcontextprotocol/ext-apps": "^1.2.2",
         "@modelcontextprotocol/sdk": "1.26.0",
         "@sentry/cloudflare": "^10.45.0",
+        "acorn": "^8.16.0",
         "agents": "^0.7.6",
         "get-port": "^7.1.0",
         "remix": "3.0.0-alpha.3",

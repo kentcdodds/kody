@@ -5,7 +5,8 @@ import {
 	capabilityDomains,
 	capabilitySpecs,
 } from '#mcp/capabilities/registry.ts'
-import { searchCapabilities } from '#mcp/capabilities/capability-search.ts'
+import { searchUnified } from '#mcp/capabilities/unified-search.ts'
+import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
 import { type MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
@@ -36,16 +37,18 @@ const capabilityDomainSummary = capabilityDomains
 
 const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities',
+	title: 'Search Capabilities And Skills',
 	description: `
-Search Kody capabilities by natural language before calling \`execute\`.
+Search Kody **builtin capabilities** and your saved **skills** (meta domain) by natural language before calling \`execute\`.
+
+Each match has **type** \`capability\` or \`skill\`. Use \`meta_get_skill\` / \`meta_run_skill\` for full skill code.
 
 Domains (for context only—put hints in your \`query\` string; there are no filter fields):
 ${capabilityDomainSummary}
 
-Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. Refine your wording to narrow results—there are no structured filters.
+Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. **Skills** require an authenticated MCP user.
 
-Optional **limit** (default 15) caps how many capabilities are returned. **detail: true** includes full descriptions, keywords, flags, and JSON schemas.
+Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, etc.; for capabilities: JSON schemas where applicable).
 
 Example arguments:
 - \`{ "query": "arithmetic or calculator", "limit": 10 }\`
@@ -78,28 +81,37 @@ export async function registerSearchTool(agent: MCP) {
 					.min(1)
 					.max(100)
 					.optional()
-					.describe('Max number of capabilities to return (default 15).'),
+					.describe('Max number of results to return (default 15).'),
 				detail: z
 					.boolean()
 					.optional()
-					.describe('Include full metadata and JSON schemas when true.'),
+					.describe('Include full metadata / schemas when true.'),
 			},
 			annotations: searchTool.annotations,
 		},
 		async (args: { query: string; limit?: number; detail?: boolean }) => {
 			const startedAt = performance.now()
-			const { baseUrl, hasUser } = callerContextFields(agent.getCallerContext())
+			const callerContext = agent.getCallerContext()
+			const { baseUrl, hasUser } = callerContextFields(callerContext)
+			const userId = callerContext.user?.userId ?? null
 
-			const searchSpan = async () =>
-				searchCapabilities({
+			const searchSpan = async () => {
+				const skillRows =
+					userId != null
+						? await listMcpSkillsByUserId(agent.getEnv().APP_DB, userId)
+						: []
+				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,
 					limit: args.limit ?? defaultSearchLimit,
 					detail: args.detail === true,
 					specs: capabilitySpecs,
+					userId,
+					skillRows,
 				})
+			}
 
-			let result: Awaited<ReturnType<typeof searchCapabilities>>
+			let result: Awaited<ReturnType<typeof searchUnified>>
 			try {
 				result = await Sentry.startSpan(
 					{

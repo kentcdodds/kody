@@ -1,12 +1,8 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { capabilityHandlers } from '#mcp/capabilities/registry.ts'
-import {
-	createExecuteExecutor,
-	formatExecutionOutput,
-	wrapExecuteCode,
-} from '#mcp/executor.ts'
+import { formatExecutionOutput } from '#mcp/executor.ts'
+import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { type MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
@@ -77,20 +73,12 @@ export async function registerExecuteTool(agent: MCP) {
 		async ({ code }: { code: string }) => {
 			const startedAt = performance.now()
 			const env = agent.getEnv()
-			const executor = createExecuteExecutor(env)
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
-			const registeredCapabilityCount = Object.keys(capabilityHandlers).length
-			const fns = Object.fromEntries(
-				Object.entries(capabilityHandlers).map(([name, handler]) => [
-					name,
-					(args: unknown) =>
-						handler((args ?? {}) as Record<string, unknown>, {
-							env,
-							callerContext,
-						}),
-				]),
+			const { capabilityHandlers } = await import(
+				'#mcp/capabilities/registry.ts'
 			)
+			const registeredCapabilityCount = Object.keys(capabilityHandlers).length
 			const result = await Sentry.startSpan(
 				{
 					name: 'mcp.tool.execute',
@@ -99,7 +87,7 @@ export async function registerExecuteTool(agent: MCP) {
 						'mcp.tool': 'execute',
 					},
 				},
-				async () => executor.execute(wrapExecuteCode(code), fns),
+				async () => runCodemodeWithRegistry(env, callerContext, code),
 			)
 			const durationMs = Math.round(performance.now() - startedAt)
 
@@ -145,11 +133,13 @@ export async function registerExecuteTool(agent: MCP) {
 				registeredCapabilityCount,
 			})
 
+			const saveSkillHint =
+				'\n\nYou can persist reusable codemode with `meta_save_skill` (meta domain); use `meta_update_skill` to replace an existing saved skill.'
 			return {
 				content: [
 					{
 						type: 'text',
-						text: formatExecutionOutput(result),
+						text: `${formatExecutionOutput(result)}${saveSkillHint}`,
 					},
 				],
 				structuredContent: {

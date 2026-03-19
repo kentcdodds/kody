@@ -23,12 +23,12 @@ const serverMetadata = {
 	},
 	instructions: `
 This is a two-step system:
-1. Use 'search' to discover capabilities.
-2. Use 'execute' to call them via 'codemode[capabilityName](args)'.
+1. Use 'search' to discover builtin capabilities and saved skills (when authenticated).
+2. Use 'execute' to call them via 'codemode[capabilityName](args)', or use meta domain tools to run saved skills.
 
 Quick start
-- Call 'search' first to discover what Kody can do.
-- Call 'execute' next to run the capability you found.
+- Call 'search' first to discover what Kody can do (results include type 'capability' or 'skill').
+- Call 'execute' or 'meta_run_skill' next to run code; use 'meta_save_skill' to persist reusable codemode; use 'meta_update_skill' to replace an existing skill's code in place.
 
 Domains
 ${domainInstructions}
@@ -36,6 +36,7 @@ ${domainInstructions}
 How to use search
 - Call the 'search' tool with a natural-language 'query' describing what you need (optional 'limit', 'detail').
 - Narrow results by rephrasing 'query'—there are no structured filter arguments.
+- Saved skills appear when the MCP client provides an authenticated user; use 'meta_get_skill' for full skill code.
 - Use domain descriptions above as vocabulary hints in your query text.
 - Use 'detail: true' when you need full JSON schemas and metadata.
 - Example: search({ query: 'calculator or basic arithmetic on two numbers' })

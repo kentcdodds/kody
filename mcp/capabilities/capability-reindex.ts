@@ -35,7 +35,7 @@ export async function reindexCapabilityVectors(
 		const vectors = batch.map((spec, index_) => ({
 			id: spec.name,
 			values: rows[index_]!,
-			metadata: { domain: spec.domain },
+			metadata: { domain: spec.domain, kind: 'builtin' },
 		}))
 
 		await index.upsert(vectors)
