@@ -32,7 +32,9 @@ export function defineCapability<
 			? { outputSchema: toJsonSchema(definition.outputSchema) }
 			: {}),
 		async handler(args, ctx) {
-			const parsedArgs = inputParser(args) as InferCapabilitySchema<TInputSchema>
+			const parsedArgs = inputParser(
+				args,
+			) as InferCapabilitySchema<TInputSchema>
 			const result = await definition.handler(parsedArgs, ctx)
 			return outputParser ? outputParser(result) : result
 		},
@@ -47,7 +49,9 @@ function createSchemaParser(schema: CapabilitySchemaDefinition) {
 	return (value: unknown) => value
 }
 
-function toJsonSchema(schema: CapabilitySchemaDefinition): CapabilityJsonSchema {
+function toJsonSchema(
+	schema: CapabilitySchemaDefinition,
+): CapabilityJsonSchema {
 	if (isZodSchema(schema)) {
 		return normalizeJsonSchemaDefaultsOptional(
 			z.toJSONSchema(schema),
@@ -80,10 +84,13 @@ function normalizeJsonSchemaDefaultsOptional(schema: unknown): unknown {
 		Array.isArray(normalizedSchema.required)
 	) {
 		const required = normalizedSchema.required.filter(
-			(propertyName): propertyName is string => typeof propertyName === 'string',
+			(propertyName): propertyName is string =>
+				typeof propertyName === 'string',
 		)
 		const optionalByDefault = required.filter((propertyName) => {
-			const propertySchema = (properties as Record<string, unknown>)[propertyName]
+			const propertySchema = (properties as Record<string, unknown>)[
+				propertyName
+			]
 			return (
 				propertySchema &&
 				typeof propertySchema === 'object' &&
@@ -108,8 +115,6 @@ function normalizeJsonSchemaDefaultsOptional(schema: unknown): unknown {
 	return normalizedSchema
 }
 
-function isZodSchema(
-	schema: CapabilitySchemaDefinition,
-): schema is z.ZodType {
+function isZodSchema(schema: CapabilitySchemaDefinition): schema is z.ZodType {
 	return schema instanceof z.ZodType
 }

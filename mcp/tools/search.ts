@@ -9,7 +9,9 @@ import {
 import { type MCP } from '#mcp/index.ts'
 
 const capabilityDomains = Array.from(
-	new Set(Object.values(capabilitySpecs).map((capability) => capability.domain)),
+	new Set(
+		Object.values(capabilitySpecs).map((capability) => capability.domain),
+	),
 ).sort()
 
 // TODO: If the domain list grows large, replace this inline hint with a

@@ -14,9 +14,8 @@ export type CapabilityJsonSchema = JsonSchemaToolDescriptor['inputSchema']
 // Capability authors may provide Zod or raw JSON Schema.
 export type CapabilitySchemaDefinition = CapabilityJsonSchema | ZodType
 
-export type InferCapabilitySchema<TSchema> = TSchema extends ZodType<infer TOutput>
-	? TOutput
-	: Record<string, unknown>
+export type InferCapabilitySchema<TSchema> =
+	TSchema extends ZodType<infer TOutput> ? TOutput : Record<string, unknown>
 
 // Authoring-time shape before schemas are normalized to JSON Schema.
 export type CapabilityDefinition<

@@ -52,7 +52,8 @@ function formatNumberForMarkdown(value: number, precision: number) {
 export const doMathCapability = defineCapability({
 	name: 'do_math',
 	domain: 'math',
-	description: 'Compute a single arithmetic operation over two numbers. Division by zero is rejected.',
+	description:
+		'Compute a single arithmetic operation over two numbers. Division by zero is rejected.',
 	tags: ['arithmetic', 'calculation'],
 	keywords: ['add', 'subtract', 'multiply', 'divide', 'precision'],
 	readOnly: true,
