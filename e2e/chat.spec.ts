@@ -110,6 +110,7 @@ test('creates and deletes chat threads when authenticated', async ({
 test('responds to mock tool commands in chat', async ({ page, login }) => {
 	await login()
 	await createThread(page, `tool setup ${Date.now()}`)
+	const messages = page.locator('#chat-messages-scroll-container')
 
 	await page
 		.getByRole('textbox', { name: 'Message' })
@@ -118,18 +119,12 @@ test('responds to mock tool commands in chat', async ({ page, login }) => {
 
 	await expect(page).toHaveURL(/\/chat\/.+/)
 	await expect(
-		page
-			.locator('#chat-messages-scroll-container')
-			.getByText('tool:do_math;left=1;right=2;operator=+'),
+		messages.getByText('tool:do_math;left=1;right=2;operator=+').last(),
 	).toBeVisible()
 	await expect(
-		page
-			.locator('#chat-messages-scroll-container')
-			.getByText('## ✅ Result', { exact: false }),
+		messages.getByText('## ✅ Result', { exact: false }).last(),
 	).toBeVisible()
 	await expect(
-		page
-			.locator('#chat-messages-scroll-container')
-			.getByText('**Result**: `3`', { exact: false }),
+		messages.getByText('**Result**: `3`', { exact: false }).last(),
 	).toBeVisible()
 })
