@@ -1,6 +1,6 @@
 /**
  * Minimal GitHub REST API v3 mock for local dev and tests.
- * Mirrors only the routes used by work-triage capabilities.
+ * Mirrors only the routes used by the GitHub REST capability and client tests.
  */
 
 type MockGithubEnv = {
@@ -23,30 +23,6 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 	},
 	{
 		method: 'GET',
-		path: '/repos/{owner}/{repo}/pulls',
-		description: 'List pull requests (supports head=owner:branch, state=open)',
-		requiresAuth: true,
-	},
-	{
-		method: 'GET',
-		path: '/repos/{owner}/{repo}/commits/{ref}/status',
-		description: 'Combined commit status',
-		requiresAuth: true,
-	},
-	{
-		method: 'GET',
-		path: '/repos/{owner}/{repo}/pulls/{pull_number}/reviews',
-		description: 'List PR reviews',
-		requiresAuth: true,
-	},
-	{
-		method: 'GET',
-		path: '/search/issues',
-		description: 'Search issues (subset of query params for mock fixtures)',
-		requiresAuth: true,
-	},
-	{
-		method: 'GET',
 		path: '/__mocks',
 		description: 'Mock dashboard (HTML)',
 		requiresAuth: false,
@@ -59,13 +35,12 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 	},
 ]
 
-/** Fixture PR #42 — mergeable with one failing check and mixed reviews */
-const fixturePullHeadSha = 'abc123def456abc123def456abc123def456abcd'
+/** Fixture PR #42 used by client and capability tests. */
 const fixturePull = {
 	number: 42,
 	state: 'open',
-	title: 'Mock PR: tighten work triage smoke test',
-	body: '## Summary\nDeterministic mock PR for local `work-triage` capabilities.',
+	title: 'Mock PR: tighten GitHub REST smoke test',
+	body: '## Summary\nDeterministic mock PR for local `github_rest` capability tests.',
 	user: {
 		login: 'octokitten',
 		id: 1,
@@ -84,7 +59,7 @@ const fixturePull = {
 	head: {
 		label: 'kentcdodds:fix/ci',
 		ref: 'fix/ci',
-		sha: fixturePullHeadSha,
+		sha: 'abc123def456abc123def456abc123def456abcd',
 		user: { login: 'kentcdodds', id: 3 },
 		repo: {
 			name: 'kody',
@@ -103,95 +78,6 @@ const fixturePull = {
 			private: false,
 		},
 	},
-}
-
-const fixtureCombinedStatus = {
-	state: 'failure',
-	statuses: [
-		{
-			state: 'success',
-			description: 'lint passed',
-			context: 'lint',
-			target_url: 'https://github.com/kentcdodds/kody/actions',
-		},
-		{
-			state: 'failure',
-			description: 'typecheck failed',
-			context: 'types',
-			target_url: 'https://github.com/kentcdodds/kody/actions',
-		},
-	],
-	sha: fixturePullHeadSha,
-	total_count: 2,
-}
-
-const fixtureReviews = [
-	{
-		id: 101,
-		user: { login: 'reviewer-one', id: 10 },
-		body: 'LGTM with nits',
-		state: 'APPROVED',
-		submitted_at: '2026-01-15T18:00:00Z',
-	},
-	{
-		id: 102,
-		user: { login: 'reviewer-two', id: 11 },
-		body: 'Please fix types',
-		state: 'CHANGES_REQUESTED',
-		submitted_at: '2026-01-16T09:30:00Z',
-	},
-]
-
-const fixtureSecondPull = {
-	number: 7,
-	state: 'open',
-	title: 'Mock PR: docs housekeeping',
-	user: { login: 'doc-bot', id: 20 },
-	html_url: 'https://github.com/kentcdodds/kody/pull/7',
-	head: {
-		label: 'kentcdodds:chore/docs',
-		ref: 'chore/docs',
-		sha: 'def456def456def456def456def456def456def4',
-		user: { login: 'kentcdodds', id: 3 },
-		repo: { name: 'kody', full_name: 'kentcdodds/kody', private: false },
-	},
-	base: fixturePull.base,
-	draft: false,
-	mergeable: true,
-	mergeable_state: 'clean',
-	merged: false,
-}
-
-const fixtureSearchAssigneeIssue = {
-	id: 9001,
-	number: 11,
-	state: 'open',
-	title: 'Mock issue assigned to you',
-	html_url: 'https://github.com/kentcdodds/kody/issues/11',
-	repository_url: 'https://api.github.com/repos/kentcdodds/kody',
-	labels: [{ name: 'bug', color: 'd73a4a' }],
-	assignee: { login: 'kentcdodds', id: 100 },
-	assignees: [{ login: 'kentcdodds', id: 100 }],
-	user: { login: 'octokitten', id: 1 },
-	created_at: '2026-01-10T12:00:00Z',
-	updated_at: '2026-01-18T08:00:00Z',
-}
-
-const fixtureSearchReviewRequestedPr = {
-	id: 9002,
-	number: 99,
-	state: 'open',
-	title: 'Mock PR awaiting your review',
-	html_url: 'https://github.com/epic-web-dev/epic-stack/pull/99',
-	repository_url: 'https://api.github.com/repos/epic-web-dev/epic-stack',
-	pull_request: {
-		url: 'https://api.github.com/repos/epic-web-dev/epic-stack/pulls/99',
-		html_url: 'https://github.com/epic-web-dev/epic-stack/pull/99',
-	},
-	labels: [],
-	user: { login: 'contributor', id: 50 },
-	created_at: '2026-01-17T10:00:00Z',
-	updated_at: '2026-01-17T16:00:00Z',
 }
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -279,80 +165,6 @@ function pullResponseNumber(owner: string, repo: string, pullNumber: number) {
 	return json({ message: 'Not Found', documentation_url: '' }, { status: 404 })
 }
 
-function listPulls(owner: string, repo: string, url: URL) {
-	const head = url.searchParams.get('head')?.trim()
-	if (head?.includes(':')) {
-		return json([fixturePull])
-	}
-	const state = url.searchParams.get('state') ?? 'open'
-	if (state === 'open' && owner === 'kentcdodds' && repo === 'kody') {
-		return json([fixturePull, fixtureSecondPull])
-	}
-	return json([fixturePull])
-}
-
-function combinedStatus(owner: string, repo: string, ref: string) {
-	void owner
-	void repo
-	if (ref === fixturePullHeadSha || ref.startsWith('abc123')) {
-		return json(fixtureCombinedStatus)
-	}
-	return json({
-		state: 'success',
-		statuses: [],
-		sha: ref,
-		total_count: 0,
-	})
-}
-
-function listReviews(
-	owner: string,
-	repo: string,
-	pullNumber: number,
-): Response {
-	if (pullNumber === 42 && owner === 'kentcdodds' && repo === 'kody') {
-		return json(fixtureReviews)
-	}
-	return json([])
-}
-
-function searchIssues(url: URL) {
-	const q = (url.searchParams.get('q') ?? '').toLowerCase()
-	const perPage = Math.min(
-		100,
-		Math.max(1, Number.parseInt(url.searchParams.get('per_page') ?? '10', 10)),
-	)
-
-	const items: Array<unknown> = []
-	if (
-		q.includes('review-requested:') ||
-		q.includes('review_requested:') ||
-		q.includes('review-requested:kentcdodds')
-	) {
-		items.push(fixtureSearchReviewRequestedPr)
-	}
-	if (q.includes('assignee:')) {
-		items.push(fixtureSearchAssigneeIssue)
-	}
-	// Default combined queue when query looks like "is:open assignee"
-	if (
-		items.length === 0 &&
-		(q.includes('assignee') || q.includes('is:issue'))
-	) {
-		items.push(fixtureSearchAssigneeIssue)
-	}
-	if (items.length === 0 && q.includes('is:pr')) {
-		items.push(fixtureSearchReviewRequestedPr)
-	}
-
-	const slice = items.slice(0, perPage)
-	return json({
-		total_count: slice.length,
-		incomplete_results: false,
-		items: slice,
-	})
-}
-
 async function handleGetMeta(request: Request, env: MockGithubEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
 	return json({
@@ -384,7 +196,7 @@ async function handleDashboard(request: Request, env: MockGithubEnv, url: URL) {
 					.replaceAll('{owner}', 'kentcdodds')
 					.replaceAll('{repo}', 'kody')
 					.replaceAll('{pull_number}', '42')
-					.replaceAll('{ref}', fixturePullHeadSha),
+					.replaceAll('{ref}', fixturePull.head.sha),
 				dashboardToken,
 			)
 			const pathCell =
@@ -455,16 +267,6 @@ function routeApi(
 	}
 
 	const pathname = url.pathname
-	const mPull = pathname.match(
-		/^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews\/?$/,
-	)
-	if (request.method === 'GET' && mPull) {
-		const owner = mPull[1]!
-		const repo = mPull[2]!
-		const num = mPull[3]!
-		return listReviews(owner, repo, Number.parseInt(num, 10))
-	}
-
 	const mPullNum = pathname.match(
 		/^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/?$/,
 	)
@@ -473,22 +275,6 @@ function routeApi(
 		const repo = mPullNum[2]!
 		const num = mPullNum[3]!
 		return pullResponseNumber(owner, repo, Number.parseInt(num, 10))
-	}
-
-	const mPullsList = pathname.match(/^\/repos\/([^/]+)\/([^/]+)\/pulls\/?$/)
-	if (request.method === 'GET' && mPullsList) {
-		return listPulls(mPullsList[1]!, mPullsList[2]!, url)
-	}
-
-	const mStatus = pathname.match(
-		/^\/repos\/([^/]+)\/([^/]+)\/commits\/([^/]+)\/status\/?$/,
-	)
-	if (request.method === 'GET' && mStatus) {
-		return combinedStatus(mStatus[1]!, mStatus[2]!, mStatus[3]!)
-	}
-
-	if (request.method === 'GET' && pathname === '/search/issues') {
-		return searchIssues(url)
 	}
 
 	return null

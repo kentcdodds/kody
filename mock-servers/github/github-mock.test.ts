@@ -195,7 +195,7 @@ test(
 		expect(prResp.status).toBe(200)
 		const pr = (await prResp.json()) as { number: number; title: string }
 		expect(pr.number).toBe(42)
-		expect(pr.title).toContain('work triage')
+		expect(pr.title).toContain('GitHub REST')
 	},
 	{ timeout: defaultTimeoutMs },
 )
@@ -209,27 +209,6 @@ test(
 		const url = new URL('/repos/kentcdodds/kody/pulls/42', server.origin)
 		const prResp = await fetch(url)
 		expect(prResp.status).toBe(401)
-	},
-	{ timeout: defaultTimeoutMs },
-)
-
-test(
-	'github mock search issues returns deterministic items',
-	async () => {
-		const token = 'test-github-mock-token'
-		await using server = await startMockGithubWorker(token)
-
-		const searchUrl = new URL('/search/issues', server.origin)
-		searchUrl.searchParams.set('q', 'is:open assignee:kentcdodds')
-		const resp = await fetch(searchUrl, {
-			headers: { authorization: `Bearer ${token}` },
-		})
-		expect(resp.status).toBe(200)
-		const body = (await resp.json()) as {
-			items: Array<{ title: string }>
-		}
-		expect(body.items.length).toBeGreaterThan(0)
-		expect(body.items[0]?.title).toContain('assigned')
 	},
 	{ timeout: defaultTimeoutMs },
 )

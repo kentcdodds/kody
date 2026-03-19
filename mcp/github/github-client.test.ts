@@ -93,7 +93,7 @@ async function startGithubMock(token: string) {
 }
 
 test(
-	'GitHubRestClient talks to mock for PR, status, and reviews',
+	'GitHubRestClient rawRequest reads a pull request from the mock',
 	async () => {
 		const token = 'client-test-token'
 		await using mock = await startGithubMock(token)
@@ -101,24 +101,20 @@ test(
 			token: mock.token,
 			baseUrl: mock.origin,
 		})
-		const pr = await client.getPullRequest('kentcdodds', 'kody', 42)
-		expect(pr.title).toContain('work triage')
-
-		const status = await client.getCombinedStatus(
-			'kentcdodds',
-			'kody',
-			pr.head.sha,
-		)
-		expect(status.state).toBe('failure')
-
-		const reviews = await client.listPullReviews('kentcdodds', 'kody', 42)
-		expect(reviews.length).toBeGreaterThan(0)
+		const response = await client.rawRequest({
+			method: 'GET',
+			path: '/repos/kentcdodds/kody/pulls/42',
+		})
+		expect(response.status).toBe(200)
+		const body = response.body as { number?: number; title?: string }
+		expect(body.number).toBe(42)
+		expect(body.title).toContain('GitHub REST')
 	},
 	{ timeout: timeoutMs },
 )
 
 test(
-	'createGitHubRestClient uses GITHUB_API_BASE_URL when set',
+	'createGitHubRestClient uses GITHUB_API_BASE_URL for rawRequest',
 	async () => {
 		const token = 'client-test-token-2'
 		await using mock = await startGithubMock(token)
@@ -126,8 +122,46 @@ test(
 			GITHUB_TOKEN: mock.token,
 			GITHUB_API_BASE_URL: mock.origin,
 		} as Pick<Env, 'GITHUB_TOKEN' | 'GITHUB_API_BASE_URL'>)
-		const search = await client.searchIssues('is:open assignee:x', 5)
-		expect(search.items.length).toBeGreaterThan(0)
+		const response = await client.rawRequest({
+			method: 'GET',
+			path: '/repos/kentcdodds/kody/pulls/42',
+		})
+		expect(response.status).toBe(200)
 	},
 	{ timeout: timeoutMs },
 )
+
+test('GitHubRestClient rawRequest sends JSON bodies with DELETE', async () => {
+	const originalFetch = globalThis.fetch
+	let capturedRequest: Request | null = null
+
+	globalThis.fetch = (async (input, init) => {
+		capturedRequest = new Request(input, init)
+		return new Response(JSON.stringify({ ok: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}) as typeof fetch
+
+	try {
+		const client = new GitHubRestClient({
+			token: 'delete-body-token',
+			baseUrl: 'https://api.github.test',
+		})
+		const response = await client.rawRequest({
+			method: 'DELETE',
+			path: '/repos/kentcdodds/kody/issues/42/labels/bug',
+			body: { reason: 'cleanup' },
+		})
+
+		expect(response.status).toBe(200)
+		expect(capturedRequest).not.toBeNull()
+		expect(capturedRequest?.method).toBe('DELETE')
+		expect(capturedRequest?.headers.get('content-type')).toBe(
+			'application/json',
+		)
+		expect(await capturedRequest?.text()).toBe('{"reason":"cleanup"}')
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})

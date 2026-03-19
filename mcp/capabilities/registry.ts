@@ -1,9 +1,9 @@
 import { type JsonSchemaToolDescriptors } from '@cloudflare/codemode'
+import { codingCapabilities } from './coding/index.ts'
 import { mathCapabilities } from './math/index.ts'
-import { workTriageCapabilities } from './work-triage/index.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
 
-const allCapabilities = [...mathCapabilities, ...workTriageCapabilities]
+const allCapabilities = [...mathCapabilities, ...codingCapabilities]
 
 function createCapabilityMap(capabilities: Array<Capability>) {
 	const entries = capabilities.map(

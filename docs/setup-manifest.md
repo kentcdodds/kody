@@ -66,8 +66,8 @@ Local development uses `.env`, which Wrangler loads automatically:
   when unset — full sampling for low traffic; lower if volume grows)
 - `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to
   `/health` versioning)
-- `GITHUB_TOKEN` (optional Worker secret; fine-grained PAT for GitHub REST used
-  by `work-triage` MCP capabilities)
+- `GITHUB_TOKEN` (optional Worker secret; fine-grained PAT for `kody-bot` used
+  by the `github_rest` MCP capability)
 - `GITHUB_API_BASE_URL` (optional; defaults to `https://api.github.com`. Local
   `bun run dev` targets the GitHub mock unless `SKIP_GITHUB_MOCK=1`)
 
@@ -91,9 +91,9 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `RESEND_FROM_EMAIL` (optional, required to send via Resend)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
-- `KODY_GITHUB_TOKEN` (optional; `work-triage` MCP capabilities — see below;
-  deploy maps this to the Worker secret `GITHUB_TOKEN` because GitHub Actions
-  forbids repository secrets named `GITHUB_*`)
+- `KODY_GITHUB_TOKEN` (optional; bot token for the `github_rest` capability —
+  see below; deploy maps this to the Worker secret `GITHUB_TOKEN` because
+  GitHub Actions forbids repository secrets named `GITHUB_*`)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `bun run sentry:upload-sourcemaps` after deploy)
@@ -141,12 +141,12 @@ How to get/set each value:
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
     `npx @sentry/wizard@latest -i sourcemaps`).
 - `KODY_GITHUB_TOKEN` (optional)
-  - Create a fine-grained personal access token (read-only repo/issue/pull +
-    search) under **GitHub → Settings → Developer settings**, then add it as the
+  - Create a fine-grained personal access token for the `kody-bot` account
+    under **GitHub → Settings → Developer settings**, then add it as the
     repository secret `KODY_GITHUB_TOKEN` (not `GITHUB_TOKEN` — GitHub rejects
     that name). The production deploy workflow exports it as `GITHUB_TOKEN` only
     for `sync-worker-secrets.ts`, which stores it on the Worker as
-    `GITHUB_TOKEN`.
+    `GITHUB_TOKEN` so GitHub REST calls execute as `kody-bot`.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

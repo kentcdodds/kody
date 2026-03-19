@@ -18,7 +18,7 @@ Quick notes for getting a local kody environment running.
 - `bun run dev` (starts mock API servers automatically and sets
   `RESEND_API_BASE_URL`, `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and (unless
   `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` + `GITHUB_TOKEN` to the local
-  GitHub mock Worker).
+  GitHub mock Worker for the `github_rest` capability).
 - Add new mock API servers by following `docs/agents/mock-api-servers.md`.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
   starting `bun run dev`.
