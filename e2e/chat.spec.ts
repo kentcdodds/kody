@@ -1,5 +1,7 @@
 import { expect, test, type Page } from './playwright-utils.ts'
 
+test.describe.configure({ mode: 'serial' })
+
 async function createThread(page: Page, message: string) {
 	await page.goto('/chat')
 	await page.getByPlaceholder('Send a message…').fill(message)
