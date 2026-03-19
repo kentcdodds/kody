@@ -497,7 +497,11 @@ test(
 		const result = await mcpClient.client.listTools()
 		const toolNames = result.tools.map((tool) => tool.name)
 
-		expect(toolNames.sort()).toEqual(['execute', 'open_calculator_ui', 'search'])
+		expect(toolNames.sort()).toEqual([
+			'execute',
+			'open_calculator_ui',
+			'search',
+		])
 	},
 	{ timeout: defaultTimeoutMs },
 )
@@ -515,7 +519,11 @@ test(
 		const result = await mcpClient.client.listTools()
 		const toolNames = result.tools.map((tool) => tool.name)
 
-		expect(toolNames.sort()).toEqual(['execute', 'open_calculator_ui', 'search'])
+		expect(toolNames.sort()).toEqual([
+			'execute',
+			'open_calculator_ui',
+			'search',
+		])
 
 		const resourcesResult = await mcpClient.client.listResources()
 		const resourceUris = resourcesResult.resources.map(
@@ -558,16 +566,32 @@ test(
 		const searchResult = structuredResult?.result as
 			| Record<string, unknown>
 			| undefined
-		const matches = searchResult?.matches as Array<Record<string, unknown>> | undefined
-		const capability = searchResult?.capability as Record<string, unknown> | undefined
-		const inputSchema = capability?.inputSchema as Record<string, unknown> | undefined
+		const matches = searchResult?.matches as
+			| Array<Record<string, unknown>>
+			| undefined
+		const capability = searchResult?.capability as
+			| Record<string, unknown>
+			| undefined
+		const inputSchema = capability?.inputSchema as
+			| Record<string, unknown>
+			| undefined
 		expect(matches?.[0]?.name).toBe('do_math')
 		expect(matches?.[0]?.domain).toBe('math')
-		expect(matches?.[0]?.requiredInputFields).toEqual(['left', 'right', 'operator'])
+		expect(matches?.[0]?.requiredInputFields).toEqual([
+			'left',
+			'right',
+			'operator',
+		])
 		expect(matches?.[0]?.readOnly).toBeUndefined()
 		expect(matches?.[0]?.inputFields).toBeUndefined()
+		expect(capability?.keywords).toEqual(
+			expect.arrayContaining(['arithmetic', 'add', 'precision']),
+		)
+		expect(capability?.tags).toBeUndefined()
 		expect(capability?.readOnly).toBe(true)
-		expect(capability?.inputFields).toEqual(expect.arrayContaining(['operator']))
+		expect(capability?.inputFields).toEqual(
+			expect.arrayContaining(['operator']),
+		)
 		expect(inputSchema?.required).toEqual(['left', 'right', 'operator'])
 
 		const textOutput =
@@ -577,6 +601,63 @@ test(
 			)?.text ?? ''
 
 		expect(textOutput).toContain('do_math')
+	},
+	{ timeout: defaultTimeoutMs },
+)
+
+test(
+	'mcp server search detail mode includes schema field descriptions',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
+
+		const result = await mcpClient.client.callTool({
+			name: 'search',
+			arguments: {
+				code: `async () =>
+					findCapabilities({
+						domain: 'math',
+						inputField: 'operator',
+						detail: true,
+					})`,
+			},
+		})
+
+		const structuredResult = (result as CallToolResult).structuredContent as
+			| Record<string, unknown>
+			| undefined
+		const searchResult = structuredResult?.result as
+			| Array<Record<string, unknown>>
+			| undefined
+		const capability = searchResult?.[0]
+		const inputSchema = capability?.inputSchema as
+			| Record<string, unknown>
+			| undefined
+		const outputSchema = capability?.outputSchema as
+			| Record<string, unknown>
+			| undefined
+		const inputProperties = inputSchema?.properties as
+			| Record<string, Record<string, unknown>>
+			| undefined
+		const outputProperties = outputSchema?.properties as
+			| Record<string, Record<string, unknown>>
+			| undefined
+
+		expect(capability?.name).toBe('do_math')
+		expect(capability?.keywords).toEqual(
+			expect.arrayContaining(['arithmetic', 'calculation', 'divide']),
+		)
+		expect(capability?.tags).toBeUndefined()
+		expect(inputSchema?.description).toBe(
+			'Inputs for a single arithmetic operation. Use precision to control formatted display output only.',
+		)
+		expect(inputProperties?.operator?.description).toBe(
+			'Operator. Valid values: "+", "-", "*", "/".',
+		)
+		expect(outputProperties?.expression?.description).toBe(
+			'Expression string, for example: "8 + 4".',
+		)
 	},
 	{ timeout: defaultTimeoutMs },
 )

@@ -69,7 +69,6 @@ function createDetailedCapabilitySummary(capability) {
 		name: capability.name,
 		domain: capability.domain,
 		description: capability.description,
-		tags: capability.tags,
 		keywords: capability.keywords,
 		readOnly: capability.readOnly,
 		idempotent: capability.idempotent,
@@ -77,6 +76,8 @@ function createDetailedCapabilitySummary(capability) {
 		inputFields: capability.inputFields,
 		requiredInputFields: capability.requiredInputFields,
 		outputFields: capability.outputFields,
+		inputSchema: capability.inputSchema,
+		outputSchema: capability.outputSchema,
 	};
 }
 
@@ -90,8 +91,12 @@ export function findCapabilities(query = {}) {
 	const text = typeof query.text === "string" ? query.text.trim().toLowerCase() : "";
 	const domain =
 		typeof query.domain === "string" ? query.domain.trim().toLowerCase() : "";
-	const tag =
-		typeof query.tag === "string" ? query.tag.trim().toLowerCase() : "";
+	const keyword =
+		typeof query.keyword === "string"
+			? query.keyword.trim().toLowerCase()
+			: typeof query.tag === "string"
+				? query.tag.trim().toLowerCase()
+				: "";
 	const inputField =
 		typeof query.inputField === "string"
 			? query.inputField.trim().toLowerCase()
@@ -112,9 +117,9 @@ export function findCapabilities(query = {}) {
 		.filter((capability) => {
 			if (domain && capability.domain.toLowerCase() !== domain) return false;
 			if (
-				tag &&
-				!capability.tags.some(
-					(value) => value.toLowerCase() === tag,
+				keyword &&
+				!capability.keywords.some(
+					(value) => value.toLowerCase() === keyword,
 				)
 			) {
 				return false;
@@ -141,7 +146,6 @@ export function findCapabilities(query = {}) {
 					capability.name,
 					capability.domain,
 					capability.description,
-					...capability.tags,
 					...capability.keywords,
 					...capability.inputFields,
 					...capability.outputFields,
@@ -170,7 +174,7 @@ function truncateExecutionResult(value: unknown) {
 	const text =
 		typeof value === 'string'
 			? value
-			: JSON.stringify(value, null, 2) ?? 'undefined'
+			: (JSON.stringify(value, null, 2) ?? 'undefined')
 
 	if (text.length <= maxChars) return text
 
@@ -178,4 +182,3 @@ function truncateExecutionResult(value: unknown) {
 		text.length / charsPerToken,
 	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Use more specific queries to reduce response size.`
 }
-

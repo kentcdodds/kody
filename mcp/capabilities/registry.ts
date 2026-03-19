@@ -5,9 +5,12 @@ import { type Capability, type CapabilitySpec } from './types.ts'
 const allCapabilities = [...mathCapabilities]
 
 function createCapabilityMap(capabilities: Array<Capability>) {
-	const entries = capabilities.map((capability) => [capability.name, capability] as const)
+	const entries = capabilities.map(
+		(capability) => [capability.name, capability] as const,
+	)
 	const duplicates = entries.filter(
-		([name], index) => entries.findIndex(([entryName]) => entryName === name) !== index,
+		([name], index) =>
+			entries.findIndex(([entryName]) => entryName === name) !== index,
 	)
 	if (duplicates.length > 0) {
 		const names = duplicates.map(([name]) => name).join(', ')
@@ -17,38 +20,47 @@ function createCapabilityMap(capabilities: Array<Capability>) {
 }
 
 function createCapabilitySpecs(capabilities: Array<Capability>) {
-	const entries = capabilities.map((capability) => [
-		capability.name,
-		{
-			name: capability.name,
-			domain: capability.domain,
-			description: capability.description,
-			tags: capability.tags,
-			keywords: capability.keywords,
-			readOnly: capability.readOnly,
-			idempotent: capability.idempotent,
-			destructive: capability.destructive,
-			inputFields: getSchemaPropertyNames(capability.inputSchema),
-			requiredInputFields: getSchemaRequiredFields(capability.inputSchema),
-			outputFields: capability.outputSchema
-				? getSchemaPropertyNames(capability.outputSchema)
-				: [],
-			inputSchema: capability.inputSchema,
-			...(capability.outputSchema ? { outputSchema: capability.outputSchema } : {}),
-		},
-	] as const)
+	const entries = capabilities.map(
+		(capability) =>
+			[
+				capability.name,
+				{
+					name: capability.name,
+					domain: capability.domain,
+					description: capability.description,
+					keywords: capability.keywords,
+					readOnly: capability.readOnly,
+					idempotent: capability.idempotent,
+					destructive: capability.destructive,
+					inputFields: getSchemaPropertyNames(capability.inputSchema),
+					requiredInputFields: getSchemaRequiredFields(capability.inputSchema),
+					outputFields: capability.outputSchema
+						? getSchemaPropertyNames(capability.outputSchema)
+						: [],
+					inputSchema: capability.inputSchema,
+					...(capability.outputSchema
+						? { outputSchema: capability.outputSchema }
+						: {}),
+				},
+			] as const,
+	)
 	return Object.fromEntries(entries) as Record<string, CapabilitySpec>
 }
 
 function createCapabilityToolDescriptors(capabilities: Array<Capability>) {
-	const entries = capabilities.map((capability) => [
-		capability.name,
-		{
-			description: capability.description,
-			inputSchema: capability.inputSchema,
-			...(capability.outputSchema ? { outputSchema: capability.outputSchema } : {}),
-		},
-	] as const)
+	const entries = capabilities.map(
+		(capability) =>
+			[
+				capability.name,
+				{
+					description: capability.description,
+					inputSchema: capability.inputSchema,
+					...(capability.outputSchema
+						? { outputSchema: capability.outputSchema }
+						: {}),
+				},
+			] as const,
+	)
 	return Object.fromEntries(entries) as JsonSchemaToolDescriptors
 }
 
@@ -59,7 +71,9 @@ function getSchemaPropertyNames(schema: unknown) {
 
 function getSchemaRequiredFields(schema: unknown) {
 	const required = getSchemaArrayProperty(schema, 'required')
-	return required ? required.filter((value): value is string => typeof value === 'string') : []
+	return required
+		? required.filter((value): value is string => typeof value === 'string')
+		: []
 }
 
 function getSchemaRecordProperty(schema: unknown, key: string) {

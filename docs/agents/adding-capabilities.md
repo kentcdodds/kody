@@ -121,11 +121,12 @@ Use handlers for things like:
 
 Public MCP behavior should be verified through the compact tool surface:
 
-- use `search` to confirm the capability is discoverable through `findCapabilities`
+- use `search` to confirm the capability is discoverable through
+  `findCapabilities`
 - use `execute` to confirm the capability runs correctly
 
-Prefer E2E tests in `mcp/mcp-server-e2e.test.ts` over testing the registry
-shape in isolation. This keeps the tests focused on the real MCP contract.
+Prefer E2E tests in `mcp/mcp-server-e2e.test.ts` over testing the registry shape
+in isolation. This keeps the tests focused on the real MCP contract.
 
 ## Naming
 

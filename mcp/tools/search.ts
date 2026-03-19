@@ -9,7 +9,9 @@ import {
 import { type MCP } from '#mcp/index.ts'
 
 const capabilityDomains = Array.from(
-	new Set(Object.values(capabilitySpecs).map((capability) => capability.domain)),
+	new Set(
+		Object.values(capabilitySpecs).map((capability) => capability.domain),
+	),
 ).sort()
 
 // TODO: If the domain list grows large, replace this inline hint with a
@@ -33,26 +35,24 @@ interface CapabilitySummary {
 
 interface DetailedCapabilitySummary extends CapabilitySummary {
   description: string;
-  tags: string[];
   keywords: string[];
   readOnly: boolean;
   idempotent: boolean;
   destructive: boolean;
   inputFields: string[];
   outputFields: string[];
-}
-
-interface CapabilityInfo extends DetailedCapabilitySummary {
   inputSchema: unknown;
   outputSchema?: unknown;
 }
+
+interface CapabilityInfo extends DetailedCapabilitySummary {}
 
 declare const capabilities: Record<string, CapabilityInfo>;
 declare function getCapability(name: string): CapabilityInfo | undefined;
 declare function findCapabilities(query?: {
   text?: string;
   domain?: string;
-  tag?: string;
+  keyword?: string;
   inputField?: string;
   outputField?: string;
   readOnly?: boolean;
@@ -72,6 +72,9 @@ Use \`detail: true\` or \`getCapability(name)\` when you need richer metadata or
 full schemas.
 
 Examples:
+
+\`async () =>
+  findCapabilities({ domain: 'math', keyword: 'arithmetic' })\`
 
 \`async () =>
   findCapabilities({ domain: 'math', inputField: 'operator' })\`
