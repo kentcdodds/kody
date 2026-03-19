@@ -48,6 +48,11 @@ function buildThreadHref(threadId: string) {
 
 const TABLET_MEDIA_QUERY = `(max-width: ${breakpoints.tablet})`
 
+type LegacyMediaQueryList = MediaQueryList & {
+	addListener?: (listener: (event: MediaQueryListEvent) => void) => void
+	removeListener?: (listener: (event: MediaQueryListEvent) => void) => void
+}
+
 function isTabletViewport() {
 	if (typeof window === 'undefined') return false
 	return window.matchMedia(TABLET_MEDIA_QUERY).matches
@@ -796,23 +801,25 @@ export function ChatRoute(handle: Handle) {
 	}
 
 	if (typeof window !== 'undefined') {
-		const mediaQueryList = window.matchMedia(TABLET_MEDIA_QUERY)
+		const mediaQueryList = window.matchMedia(
+			TABLET_MEDIA_QUERY,
+		) as LegacyMediaQueryList
 		const handleViewportChange = () => {
 			queueThreadLocationSync()
 		}
 
-		if ('addEventListener' in mediaQueryList) {
+		if (typeof mediaQueryList.addEventListener === 'function') {
 			mediaQueryList.addEventListener('change', handleViewportChange)
-		} else {
+		} else if (typeof mediaQueryList.addListener === 'function') {
 			mediaQueryList.addListener(handleViewportChange)
 		}
 
 		handle.signal.addEventListener(
 			'abort',
 			() => {
-				if ('removeEventListener' in mediaQueryList) {
+				if (typeof mediaQueryList.removeEventListener === 'function') {
 					mediaQueryList.removeEventListener('change', handleViewportChange)
-				} else {
+				} else if (typeof mediaQueryList.removeListener === 'function') {
 					mediaQueryList.removeListener(handleViewportChange)
 				}
 			},
