@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import {
+	callerContextFields,
+	errorFields,
+	logMcpEvent,
+} from '#mcp/observability.ts'
+import {
 	type Capability,
 	type CapabilityDefinition,
 	type CapabilityJsonSchema,
@@ -32,11 +37,81 @@ export function defineCapability<
 			? { outputSchema: toJsonSchema(definition.outputSchema) }
 			: {}),
 		async handler(args, ctx) {
-			const parsedArgs = inputParser(
-				args,
-			) as InferCapabilitySchema<TInputSchema>
-			const result = await definition.handler(parsedArgs, ctx)
-			return outputParser ? outputParser(result) : result
+			const startedAt = performance.now()
+			const { baseUrl, hasUser } = callerContextFields(ctx.callerContext)
+
+			let parsedArgs: InferCapabilitySchema<TInputSchema>
+			try {
+				parsedArgs = inputParser(args) as InferCapabilitySchema<TInputSchema>
+			} catch (error) {
+				const { errorName, errorMessage } = errorFields(error)
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'capability',
+					capabilityName: definition.name,
+					domain: definition.domain,
+					outcome: 'failure',
+					durationMs: Math.round(performance.now() - startedAt),
+					baseUrl,
+					hasUser,
+					failurePhase: 'parse_input',
+					errorName,
+					errorMessage,
+				})
+				throw error
+			}
+
+			let result: Awaited<ReturnType<typeof definition.handler>>
+			try {
+				result = await definition.handler(parsedArgs, ctx)
+			} catch (error) {
+				const { errorName, errorMessage } = errorFields(error)
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'capability',
+					capabilityName: definition.name,
+					domain: definition.domain,
+					outcome: 'failure',
+					durationMs: Math.round(performance.now() - startedAt),
+					baseUrl,
+					hasUser,
+					failurePhase: 'handler',
+					errorName,
+					errorMessage,
+				})
+				throw error
+			}
+
+			try {
+				const finalized = outputParser ? outputParser(result) : result
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'capability',
+					capabilityName: definition.name,
+					domain: definition.domain,
+					outcome: 'success',
+					durationMs: Math.round(performance.now() - startedAt),
+					baseUrl,
+					hasUser,
+				})
+				return finalized
+			} catch (error) {
+				const { errorName, errorMessage } = errorFields(error)
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'capability',
+					capabilityName: definition.name,
+					domain: definition.domain,
+					outcome: 'failure',
+					durationMs: Math.round(performance.now() - startedAt),
+					baseUrl,
+					hasUser,
+					failurePhase: 'parse_output',
+					errorName,
+					errorMessage,
+				})
+				throw error
+			}
 		},
 	}
 }

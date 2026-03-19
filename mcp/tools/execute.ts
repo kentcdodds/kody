@@ -7,6 +7,11 @@ import {
 	wrapExecuteCode,
 } from '#mcp/executor.ts'
 import { type MCP } from '#mcp/index.ts'
+import {
+	callerContextFields,
+	errorFields,
+	logMcpEvent,
+} from '#mcp/observability.ts'
 
 const executeTool = {
 	name: 'execute',
@@ -70,9 +75,12 @@ export async function registerExecuteTool(agent: MCP) {
 			annotations: executeTool.annotations,
 		},
 		async ({ code }: { code: string }) => {
+			const startedAt = performance.now()
 			const env = agent.getEnv()
 			const executor = createExecuteExecutor(env)
 			const callerContext = agent.getCallerContext()
+			const { baseUrl, hasUser } = callerContextFields(callerContext)
+			const registeredCapabilityCount = Object.keys(capabilityHandlers).length
 			const fns = Object.fromEntries(
 				Object.entries(capabilityHandlers).map(([name, handler]) => [
 					name,
@@ -84,8 +92,23 @@ export async function registerExecuteTool(agent: MCP) {
 				]),
 			)
 			const result = await executor.execute(wrapExecuteCode(code), fns)
+			const durationMs = Math.round(performance.now() - startedAt)
 
 			if (result.error) {
+				const { errorName, errorMessage } = errorFields(result.error)
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'execute',
+					toolName: 'execute',
+					outcome: 'failure',
+					durationMs,
+					baseUrl,
+					hasUser,
+					registeredCapabilityCount,
+					sandboxError: true,
+					errorName,
+					errorMessage,
+				})
 				return {
 					content: [
 						{
@@ -100,6 +123,17 @@ export async function registerExecuteTool(agent: MCP) {
 					isError: true,
 				}
 			}
+
+			logMcpEvent({
+				category: 'mcp',
+				tool: 'execute',
+				toolName: 'execute',
+				outcome: 'success',
+				durationMs,
+				baseUrl,
+				hasUser,
+				registeredCapabilityCount,
+			})
 
 			return {
 				content: [

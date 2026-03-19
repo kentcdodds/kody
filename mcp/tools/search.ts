@@ -7,6 +7,11 @@ import {
 	wrapSearchCode,
 } from '#mcp/executor.ts'
 import { type MCP } from '#mcp/index.ts'
+import {
+	callerContextFields,
+	errorFields,
+	logMcpEvent,
+} from '#mcp/observability.ts'
 
 const capabilityDomains = Array.from(
 	new Set(
@@ -113,10 +118,26 @@ export async function registerSearchTool(agent: MCP) {
 			annotations: searchTool.annotations,
 		},
 		async ({ code }: { code: string }) => {
+			const startedAt = performance.now()
+			const { baseUrl, hasUser } = callerContextFields(agent.getCallerContext())
 			const executor = createSearchExecutor(agent.getEnv(), capabilitySpecs)
 			const result = await executor.execute(wrapSearchCode(code), {})
+			const durationMs = Math.round(performance.now() - startedAt)
 
 			if (result.error) {
+				const { errorName, errorMessage } = errorFields(result.error)
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'search',
+					toolName: 'search',
+					outcome: 'failure',
+					durationMs,
+					baseUrl,
+					hasUser,
+					sandboxError: true,
+					errorName,
+					errorMessage,
+				})
 				return {
 					content: [
 						{
@@ -131,6 +152,16 @@ export async function registerSearchTool(agent: MCP) {
 					isError: true,
 				}
 			}
+
+			logMcpEvent({
+				category: 'mcp',
+				tool: 'search',
+				toolName: 'search',
+				outcome: 'success',
+				durationMs,
+				baseUrl,
+				hasUser,
+			})
 
 			return {
 				content: [

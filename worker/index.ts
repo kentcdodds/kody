@@ -17,6 +17,7 @@ import {
 	handleProtectedResourceMetadata,
 	isProtectedResourceMetadataRequest,
 	mcpResourcePath,
+	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
 import { withCors } from './utils.ts'
 
@@ -135,8 +136,62 @@ const oauthProvider = new OAuthProvider({
 	scopesSupported: oauthScopes,
 })
 
+/**
+ * Aligns with @cloudflare/workers-oauth-provider's addCorsHeaders for well-known routes.
+ * (See OAuthProviderImpl.fetch in that package.)
+ */
+function addOAuthDiscoveryCorsHeaders(response: Response, request: Request): Response {
+	const origin = request.headers.get('Origin')
+	if (!origin) {
+		return response
+	}
+	const headers = new Headers(response.headers)
+	headers.set('Access-Control-Allow-Origin', origin)
+	headers.set('Access-Control-Allow-Methods', '*')
+	headers.set('Access-Control-Allow-Headers', 'Authorization, *')
+	headers.set('Access-Control-Max-Age', '86400')
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	})
+}
+
 export default {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
+		const url = new URL(request.url)
+		// OAuthProvider serves this URL first and defaults `resource` to the origin only.
+		// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our
+		// token audience; otherwise authorize stores origin but the token request sends
+		// `/mcp` → invalid_target. Serve the same document as the `/mcp` metadata path.
+		if (url.pathname === protectedResourceMetadataPath) {
+			if (request.method === 'OPTIONS') {
+				return addOAuthDiscoveryCorsHeaders(
+					new Response(null, {
+						status: 204,
+						headers: { 'Content-Length': '0' },
+					}),
+					request,
+				)
+			}
+			if (request.method === 'GET' || request.method === 'HEAD') {
+				const metadataRequest =
+					request.method === 'GET'
+						? request
+						: new Request(request.url, { method: 'GET', headers: request.headers })
+				const metadataResponse = handleProtectedResourceMetadata(metadataRequest)
+				if (request.method === 'HEAD') {
+					return addOAuthDiscoveryCorsHeaders(
+						new Response(null, {
+							status: metadataResponse.status,
+							headers: metadataResponse.headers,
+						}),
+						request,
+					)
+				}
+				return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
+			}
+		}
 		return oauthProvider.fetch(request, env, ctx)
 	},
 } satisfies ExportedHandler<Env>

@@ -6,30 +6,41 @@ This document explains how an incoming request moves through the system.
 
 All traffic enters the Worker at `worker/index.ts`.
 
-The `fetch` handler is wrapped by `OAuthProvider` from
+The default `fetch` handler delegates to `OAuthProvider` from
 `@cloudflare/workers-oauth-provider`, which means OAuth endpoints and token
 infrastructure are available alongside normal app routes.
+
+Before that, `GET`/`HEAD`/`OPTIONS` on `/.well-known/oauth-protected-resource`
+are handled in `worker/index.ts` itself. The OAuth provider library’s built-in
+handler for that path advertises `resource` as the request **origin** only; this
+app’s MCP server is identified by `<origin>/mcp`. Serving our own metadata on
+that URL keeps the RFC 8707 `resource` value consistent for clients (e.g. some
+MCP stacks) that discover metadata from the 401 `resource_metadata` URL and
+would otherwise get `invalid_target` at the token endpoint.
 
 ## Routing order
 
 Requests are handled in this order:
 
-1. OAuth authorization endpoints:
+1. Protected resource metadata (base path only, before `OAuthProvider`):
+   - `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
+2. OAuth authorization endpoints:
    - `/oauth/authorize`
    - `/oauth/authorize-info`
    - `/oauth/callback`
-2. Browser noise endpoint:
+3. Browser noise endpoint:
    - `/.well-known/appspecific/com.chrome.devtools.json` (returns 204)
-3. OAuth protected resource metadata endpoint:
-   - `/.well-known/oauth-protected-resource` (and the `/mcp` variant)
-4. MCP endpoint:
+4. OAuth protected resource metadata endpoint (inside the default handler, for
+   the `/mcp` suffix path only):
+   - `/.well-known/oauth-protected-resource/mcp`
+5. MCP endpoint:
    - `/mcp` (requires OAuth bearer token)
-5. Internal chat agent endpoint:
+6. Internal chat agent endpoint:
    - `/chat-agent/:threadId...` (requires the app session cookie and routes to
      the per-thread chat Agent instance)
-6. Static assets:
+7. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
-7. App server routes:
+8. App server routes:
    - Everything else is handled by `server/handler.ts`
 
 ## App server flow
