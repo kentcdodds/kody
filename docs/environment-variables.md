@@ -57,6 +57,21 @@ Optional Worker secret and vars (see `types/env-schema.ts` and
 - `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample
   all traces). Set lower (e.g. `0.1`) for higher traffic or Sentry quota.
 
+## GitHub (`work-triage` capabilities)
+
+Optional Worker secrets/vars (see `types/env-schema.ts` and
+`mcp/github/github-rest-client.ts`):
+
+- `GITHUB_TOKEN` — Bearer token for `api.github.com` (fine-grained PAT
+  recommended). When unset, `summarize_pr_status`, `get_review_queue`, and
+  `get_next_work_items` fail fast with a setup hint. In GitHub Actions you
+  cannot create a repository secret named `GITHUB_*`; production deploy reads
+  **`KODY_GITHUB_TOKEN`** and syncs it to this Worker secret (see
+  `docs/setup-manifest.md`).
+- `GITHUB_API_BASE_URL` — REST API base URL; defaults to
+  `https://api.github.com` when unset. Local `bun run dev` sets this to the
+  GitHub mock Worker unless `SKIP_GITHUB_MOCK=1`.
+
 ## Why Zod?
 
 Zod gives type inference for `Env`-driven values and a single runtime gate that

@@ -88,12 +88,14 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # Repo secrets cannot start with GITHUB_ (reserved). Worker still uses GITHUB_TOKEN.
+          GITHUB_TOKEN: ${{ secrets.KODY_GITHUB_TOKEN }}
         run: >
           bun tools/ci/sync-worker-secrets.ts --env production --set-from-env
           COOKIE_SECRET --set-from-env AI_GATEWAY_ID --set-from-env-optional
           APP_BASE_URL --set-from-env-optional RESEND_API_KEY
           --set-from-env-optional RESEND_FROM_EMAIL --set-from-env-optional
-          SENTRY_DSN
+          SENTRY_DSN --set-from-env-optional GITHUB_TOKEN
 
       - name: 🗄️ Apply D1 Migrations
         env:

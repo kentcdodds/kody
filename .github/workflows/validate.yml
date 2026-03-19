@@ -85,7 +85,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: ✅ Run Bun Tests
-        run: bun test ./server ./mock-servers
+        run: bun test ./server ./mock-servers ./mcp/github ./mcp/capabilities/work-triage
 
   e2e:
     runs-on: ubuntu-latest

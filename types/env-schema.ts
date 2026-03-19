@@ -122,6 +122,8 @@ export const EnvSchema = object({
 	SENTRY_DSN: optionalUrlStringSchema,
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,
+	GITHUB_TOKEN: optionalNonEmptyStringSchema,
+	GITHUB_API_BASE_URL: optionalUrlStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

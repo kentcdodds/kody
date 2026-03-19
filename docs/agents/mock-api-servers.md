@@ -15,6 +15,9 @@ it can also be deployed alongside the main app.
 4. In `cli.ts`, start the mock Worker during `bun run dev` (via `wrangler dev`)
    and set `ACME_API_BASE_URL` to the mock Worker origin.
 
+See `mock-servers/github/` for the GitHub REST subset mock used by `work-triage`
+capabilities (started by `bun run dev` unless `SKIP_GITHUB_MOCK=1`).
+
 ### Tips
 
 - Prefer D1 for storing mock requests/messages so the mock can run both locally

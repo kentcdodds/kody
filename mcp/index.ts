@@ -34,6 +34,12 @@ How to use search
 - Use 'detail: true' or 'getCapability(name)' when you need richer metadata or schemas.
 - Your code must be an async arrow function that returns the result.
 - Example: findCapabilities({ domain: 'math', inputField: 'operator' })
+- Example: findCapabilities({ domain: 'work-triage', keyword: 'github' })
+
+Destructive and low-level GitHub access
+- Some capabilities are marked destructive: they can change or delete remote data (for example experimental_github_rest with POST, PUT, PATCH, or DELETE).
+- Before execute on a destructive or mutating call, confirm the exact path, method, and payload with the user unless they already asked for that precise operation.
+- Prefer higher-level work-triage capabilities when they cover the task; use experimental_github_rest only when necessary.
 
 How to use execute
 - The sandbox provides a 'codemode' object with async methods for each capability.

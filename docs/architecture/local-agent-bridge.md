@@ -21,8 +21,8 @@ MCP-capable hosts would be translated into command messages, routed through the
 cloud layer, executed locally by the agent, and returned over the same
 connection.
 
-In other words, the local network would not host a public API. Instead, it
-would participate as a connected runtime behind an outbound session.
+In other words, the local network would not host a public API. Instead, it would
+participate as a connected runtime behind an outbound session.
 
 ## Proposed architecture
 
