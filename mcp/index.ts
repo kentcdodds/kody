@@ -49,7 +49,7 @@ Destructive GitHub access
 - Before execute on a destructive or mutating call, confirm the exact path, method, and payload with the user unless they already asked for that precise operation.
 
 Destructive Cursor Cloud Agents access
-- The cursor_cloud_rest capability can launch, stop, delete, or otherwise change Cursor Cloud Agents (POST/PUT/PATCH/DELETE). It uses your CURSOR_API_KEY and spends Cursor quota when you hit the real API.
+- The cursor_cloud_rest capability can launch, stop, delete, or otherwise change Cursor Cloud Agents (POST/PUT/PATCH/DELETE). Writes may consume Cursor quota when calling the real API.
 - Official endpoints and request bodies: https://cursor.com/docs/cloud-agent/api/endpoints
 - Before execute on a mutating call, confirm the exact path, method, and JSON body with the user unless they already approved that exact operation.
 

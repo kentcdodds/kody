@@ -9,7 +9,7 @@ const httpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 const inputSchema = z
 	.object({
 		method: httpMethodSchema.describe(
-			'HTTP method. GET is read-only. POST/PUT/PATCH/DELETE can mutate GitHub state and should be used only when the user has explicitly approved the exact change.',
+			'HTTP method the GitHub endpoint expects (GET for reads; POST, PUT, PATCH, or DELETE when the REST docs call for them).',
 		),
 		path: z
 			.string()
@@ -28,9 +28,6 @@ const inputSchema = z
 			.optional()
 			.describe('Optional JSON body for POST, PUT, PATCH, or DELETE requests.'),
 	})
-	.describe(
-		'Low-level GitHub REST call. Requests run as the configured GitHub token identity, which is intended to be the kody-bot account rather than kentcdodds. For POST, PUT, PATCH, or DELETE, confirm the exact path, method, and body with the user before executing unless they already approved that exact change.',
-	)
 
 const outputSchema = z.object({
 	status: z.number().describe('HTTP status code from GitHub.'),
@@ -63,7 +60,7 @@ export const githubRestCapability = defineDomainCapability(
 	{
 		name: 'github_rest',
 		description:
-			'Low-level GitHub REST v3 access with method, path, optional query, and optional JSON body. Authenticated requests act as the configured GitHub token identity, which should be the kody-bot account rather than kentcdodds. Non-GET methods can mutate or delete GitHub data, so confirm exact write operations with the user before executing them unless they explicitly requested that exact change.',
+			'Low-level GitHub REST v3 access: method, path, optional query, optional JSON body. Authenticated as the configured token (GitHub user @kody-bot). Any HTTP method the GitHub REST API defines for a path is supported.',
 		keywords: ['github', 'rest', 'api', 'raw', 'low-level', 'fetch', 'bot'],
 		readOnly: false,
 		idempotent: false,

@@ -9,7 +9,7 @@ const httpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 const inputSchema = z
 	.object({
 		method: httpMethodSchema.describe(
-			'HTTP method. GET is read-only. POST/PUT/PATCH/DELETE can launch, stop, delete, or otherwise mutate Cursor Cloud Agents — confirm with the user before non-GET unless they explicitly approved the exact call.',
+			'HTTP method the Cursor Cloud endpoint expects (GET for reads; POST, PUT, PATCH, or DELETE when the API docs call for them).',
 		),
 		path: z
 			.string()
@@ -30,9 +30,6 @@ const inputSchema = z
 				'Optional JSON body for POST, PUT, PATCH, or DELETE. Launch (POST /v0/agents) requires prompt.text and source.repository (GitHub URL), not repo/task/title fields — see official OpenAPI.',
 			),
 	})
-	.describe(
-		'Low-level Cursor Cloud Agents API call. Uses HTTP Basic auth (API key as username, empty password per Cursor API). If request shape is unclear, open the official docs before executing.',
-	)
 
 const outputSchema = z.object({
 	status: z.number().describe('HTTP status code from the Cursor API.'),
@@ -70,7 +67,7 @@ export const cursorCloudRestCapability = defineDomainCapability(
 	{
 		name: 'cursor_cloud_rest',
 		description:
-			'Low-level Cursor Cloud Agents API access (https://api.cursor.com): method, path under /v0/, optional query, optional JSON body. Launch: POST `/v0/agents` (same path as list; not `/v0/agents/launch`) with prompt.text + source.repository per docs. Authenticated with CURSOR_API_KEY using HTTP Basic (key as username, empty password). Non-GET calls can mutate agents and consume quota; confirm path/method/body with the user unless they explicitly approved. https://cursor.com/docs/cloud-agent/api/endpoints',
+			'Low-level Cursor Cloud Agents API access (https://api.cursor.com): method, path under /v0/, optional query, optional JSON body. Launch: POST `/v0/agents` (same path as list; not `/v0/agents/launch`) with prompt.text + source.repository per docs. Use the method each endpoint documents; writes may change agents or use quota. https://cursor.com/docs/cloud-agent/api/endpoints',
 		keywords: [
 			'cursor',
 			'cloud agents',
