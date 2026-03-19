@@ -1,4 +1,23 @@
-import { expect, test } from './playwright-utils.ts'
+import { expect, test, type Page } from './playwright-utils.ts'
+
+async function createThread(page: Page, title: string) {
+	const createResponse = await page.request.post('/chat-threads')
+	expect(createResponse.ok()).toBeTruthy()
+
+	const createPayload = (await createResponse.json()) as {
+		thread?: { id?: string }
+	}
+	const threadId = createPayload.thread?.id
+	expect(threadId).toBeTruthy()
+
+	const renameResponse = await page.request.post('/chat-threads/update', {
+		data: { threadId, title },
+		headers: { 'Content-Type': 'application/json' },
+	})
+	expect(renameResponse.ok()).toBeTruthy()
+
+	return threadId as string
+}
 
 test('redirects to login when unauthenticated', async ({ page }) => {
 	await page.goto('/chat')
@@ -11,10 +30,61 @@ test('loads chat page when authenticated', async ({ page, login }) => {
 	await expect(
 		page.getByRole('heading', { name: 'Chats', exact: true }),
 	).toBeVisible()
-	await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible()
+	await expect(page.getByPlaceholder('Send a message…')).toBeVisible()
 	await expect(
 		page.getByRole('button', { name: 'Create your first thread' }),
 	).toHaveCount(0)
+})
+
+test('desktop /chat redirects to the first thread when one exists', async ({
+	page,
+	login,
+}) => {
+	await login()
+	const threadId = await createThread(page, `desktop-thread-${Date.now()}`)
+
+	await page.goto('/chat')
+
+	await expect(page).toHaveURL(new RegExp(`/chat/${threadId}$`))
+	await expect(
+		page.getByRole('heading', { name: 'Chats', exact: true }),
+	).toBeVisible()
+	await expect(page.getByPlaceholder('Send a message…')).toBeVisible()
+})
+
+test('mobile /chat uses URL-driven single-panel navigation', async ({
+	page,
+	login,
+}) => {
+	await login()
+	await page.setViewportSize({ width: 390, height: 844 })
+	const threadTitle = `mobile-thread-${Date.now()}`
+	const threadId = await createThread(page, threadTitle)
+
+	await page.goto('/chat')
+
+	await expect(page).toHaveURL(/\/chat$/)
+	await expect(
+		page.getByRole('heading', { name: 'Chats', exact: true }),
+	).toBeVisible()
+	await expect(page.getByRole('textbox', { name: 'Message' })).toHaveCount(0)
+
+	await page.getByRole('button', { name: new RegExp(threadTitle) }).click()
+
+	await expect(page).toHaveURL(new RegExp(`/chat/${threadId}$`))
+	await expect(
+		page.getByRole('heading', { name: 'Chats', exact: true }),
+	).toBeHidden()
+	await expect(page.getByRole('link', { name: 'Back to chats' })).toBeVisible()
+	await expect(page.getByPlaceholder('Send a message…')).toBeVisible()
+
+	await page.getByRole('link', { name: 'Back to chats' }).click()
+
+	await expect(page).toHaveURL(/\/chat$/)
+	await expect(
+		page.getByRole('heading', { name: 'Chats', exact: true }),
+	).toBeVisible()
+	await expect(page.getByRole('link', { name: 'Back to chats' })).toHaveCount(0)
 })
 
 test('creates and deletes chat threads when authenticated', async ({

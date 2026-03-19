@@ -113,7 +113,9 @@ export function App(handle: Handle) {
 					fontFamily: typography.fontFamily,
 					boxSizing: 'border-box',
 					[mq.tablet]: isChatLayout
-						? {}
+						? {
+								padding: `${spacing.sm} ${spacing.sm} 0`,
+							}
 						: {
 								padding: spacing.xl,
 							},
@@ -133,6 +135,12 @@ export function App(handle: Handle) {
 						gap: spacing.md,
 						flexWrap: 'wrap',
 						marginBottom: isChatLayout ? spacing.lg : spacing.xl,
+						[mq.tablet]: isChatLayout
+							? {
+									gap: spacing.sm,
+									marginBottom: spacing.sm,
+								}
+							: {},
 						[mq.mobile]: {
 							gap: spacing.sm,
 							marginBottom: isChatLayout ? spacing.md : spacing.lg,
