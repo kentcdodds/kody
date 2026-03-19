@@ -798,6 +798,7 @@ export function ChatRoute(handle: Handle) {
 		void handle.queueTask(async () => {
 			await syncActiveThreadFromLocation()
 		})
+		void handle.update()
 	}
 
 	if (typeof window !== 'undefined') {
