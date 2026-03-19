@@ -825,11 +825,7 @@ export function ChatRoute(handle: Handle) {
 			await deleteThread(threadId)
 			deleteThreadChecks.delete(threadId)
 			if (activeThreadId === threadId) {
-				activeClient?.close()
-				activeClient = null
-				activeThreadId = null
-				resetChatSnapshot()
-				disconnectedIndicator.reset()
+				clearActiveThread()
 			}
 			await refreshThreads()
 			scheduleThreadListScrollFadeSync()
