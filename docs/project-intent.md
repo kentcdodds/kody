@@ -3,11 +3,11 @@
 `kody` is an experiment in building a personal assistant that can work from any
 AI agent host that supports MCP.
 
-The core idea is to keep the public MCP surface small while still making a
-large number of capabilities available behind that surface. The current
-direction is to follow Cloudflare's Code Mode approach: expose a tiny set of
-stable tools such as search and execute, then implement the broader capability
-graph in code rather than as hundreds of individually described MCP tools.
+The core idea is to keep the public MCP surface small while still making a large
+number of capabilities available behind that surface. The current direction is
+to follow Cloudflare's Code Mode approach: expose a tiny set of stable tools
+such as search and execute, then implement the broader capability graph in code
+rather than as hundreds of individually described MCP tools.
 
 ## What this repo is
 
@@ -70,8 +70,8 @@ When working in this repo, do not assume:
 - This project is trying to become a generic starter kit for others.
 - The main goal is enterprise-grade least-privilege design for many users.
 
-Also do not document future capabilities as if they already exist. It is fine
-to describe intent, experiments, and likely direction, but keep present-tense
+Also do not document future capabilities as if they already exist. It is fine to
+describe intent, experiments, and likely direction, but keep present-tense
 claims limited to behavior that exists in the repository today.
 
 ## Documentation guidance

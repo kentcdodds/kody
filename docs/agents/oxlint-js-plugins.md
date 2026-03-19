@@ -50,8 +50,8 @@ Create a temporary file containing the sentinel identifier and run:
 bun run lint -- ./tmp-oxlint-plugin-rule-test.js
 ```
 
-You should see a lint error from `kody-custom/no-example-identifier`.
-Delete the temporary file after verification.
+You should see a lint error from `kody-custom/no-example-identifier`. Delete the
+temporary file after verification.
 
 ## References
 

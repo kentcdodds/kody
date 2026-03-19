@@ -65,9 +65,6 @@ export function HomeRoute(_handle: Handle) {
 								fontWeight: typography.fontWeight.bold,
 								margin: 0,
 								color: colors.text,
-								[mq.mobile]: {
-									fontSize: typography.fontSize.xl,
-								},
 							}}
 						>
 							Meet <span css={{ color: colors.primaryText }}>kody</span>
@@ -83,7 +80,8 @@ export function HomeRoute(_handle: Handle) {
 								},
 							}}
 						>
-							Your personal assistant, built to work from any AI agent host that supports MCP.
+							Your personal assistant, built to work from any AI agent host that
+							supports MCP.
 						</p>
 					</div>
 				</div>
@@ -96,6 +94,10 @@ export function HomeRoute(_handle: Handle) {
 					gap: spacing.lg,
 					maxWidth: '64rem',
 					width: '100%',
+					[mq.mobile]: {
+						gridTemplateColumns: '1fr',
+						gap: spacing.md,
+					},
 				}}
 			>
 				{renderFeatureCard({
@@ -146,6 +148,9 @@ function renderFeatureCard({
 					transform: 'translateY(-2px)',
 					boxShadow: shadows.md,
 				},
+				[mq.mobile]: {
+					padding: spacing.md,
+				},
 			}}
 		>
 			<div css={{ fontSize: '2rem', marginBottom: spacing.xs }}>{icon}</div>
@@ -155,6 +160,9 @@ function renderFeatureCard({
 					fontWeight: typography.fontWeight.semibold,
 					margin: 0,
 					color: colors.text,
+					[mq.mobile]: {
+						fontSize: typography.fontSize.base,
+					},
 				}}
 			>
 				{title}
@@ -164,6 +172,9 @@ function renderFeatureCard({
 					margin: 0,
 					color: colors.textMuted,
 					lineHeight: 1.5,
+					[mq.mobile]: {
+						fontSize: typography.fontSize.sm,
+					},
 				}}
 			>
 				{description}

@@ -16,8 +16,8 @@
 
 ---
 
-`kody` is currently an experiment in building a personal assistant that can
-work across AI agent hosts that support MCP.
+`kody` is currently an experiment in building a personal assistant that can work
+across AI agent hosts that support MCP.
 
 Today this repo includes a Remix-powered UI, Cloudflare Worker request routing,
 chat-agent plumbing, and OAuth-protected MCP endpoints. The long-term direction

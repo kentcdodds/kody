@@ -50,9 +50,7 @@ test('rejects signup for non-primary email', async ({ page }) => {
 
 	await expect(page).toHaveURL(/\/signup$/)
 	await expect(
-		page.getByText(
-			`Only ${primaryTestUser.email} can sign in or sign up.`,
-		),
+		page.getByText(`Only ${primaryTestUser.email} can sign in or sign up.`),
 	).toBeVisible()
 })
 

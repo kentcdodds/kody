@@ -22,10 +22,10 @@ Quick notes for getting a local kody environment running.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
   starting `bun run dev`.
 - When `AI_MODE=remote`, set `AI_GATEWAY_ID`, `CLOUDFLARE_ACCOUNT_ID`, and
-  `CLOUDFLARE_API_TOKEN` in `.env`; remote AI mode now requires requests to
-  flow through a configured Cloudflare AI Gateway using your Cloudflare
-  account credentials. If any are missing, `bun run dev` fails fast with an
-  explanatory startup error.
+  `CLOUDFLARE_API_TOKEN` in `.env`; remote AI mode now requires requests to flow
+  through a configured Cloudflare AI Gateway using your Cloudflare account
+  credentials. If any are missing, `bun run dev` fails fast with an explanatory
+  startup error.
 - Local remote inference does not require `wrangler dev --remote`; the normal
   dev server keeps local Durable Objects/D1 while routing Workers AI calls
   through Cloudflare using the configured account credentials.
