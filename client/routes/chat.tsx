@@ -16,7 +16,9 @@ import {
 } from '#client/scroll-container.ts'
 import { createSpinDelay } from '#client/spin-delay.ts'
 import {
+	breakpoints,
 	colors,
+	mq,
 	radius,
 	shadows,
 	spacing,
@@ -42,6 +44,18 @@ function getSelectedThreadIdFromLocation() {
 
 function buildThreadHref(threadId: string) {
 	return `/chat/${threadId}`
+}
+
+const TABLET_MEDIA_QUERY = `(max-width: ${breakpoints.tablet})`
+
+type LegacyMediaQueryList = MediaQueryList & {
+	addListener?: (listener: (event: MediaQueryListEvent) => void) => void
+	removeListener?: (listener: (event: MediaQueryListEvent) => void) => void
+}
+
+function isTabletViewport() {
+	if (typeof window === 'undefined') return false
+	return window.matchMedia(TABLET_MEDIA_QUERY).matches
 }
 
 const MESSAGES_SCROLL_CONTAINER_ID = 'chat-messages-scroll-container'
@@ -314,6 +328,21 @@ function renderTrashIcon() {
 	)
 }
 
+function renderBackArrowIcon() {
+	return (
+		<svg
+			aria-hidden="true"
+			viewBox="0 0 24 24"
+			css={{ width: '1rem', height: '1rem' }}
+		>
+			<path
+				d="M14.707 5.293 8 12l6.707 6.707-1.414 1.414L5.172 12l8.121-8.121z"
+				fill="currentColor"
+			/>
+		</svg>
+	)
+}
+
 const SEND_BUTTON_SIZE_REM = 2.5
 const SEND_BUTTON_INSET_REM = 0.375
 const INPUT_MIN_HEIGHT_REM = SEND_BUTTON_SIZE_REM + SEND_BUTTON_INSET_REM * 2
@@ -323,6 +352,7 @@ const INPUT_RIGHT_PADDING = `${SEND_BUTTON_SIZE_REM + SEND_BUTTON_INSET_REM * 2}
 const SEND_BUTTON_SIZE = `${SEND_BUTTON_SIZE_REM}rem`
 const SEND_BUTTON_INSET = `${SEND_BUTTON_INSET_REM}rem`
 const CHAT_PANEL_HEIGHT = 'calc(100vh - 7rem)'
+const CHAT_PANEL_HEIGHT_MOBILE = 'calc(100vh - 5.5rem)'
 /**
  * The outer border should follow the button's contour plus its inset from the edge.
  * radius = button radius + inset
@@ -406,6 +436,16 @@ export function ChatRoute(handle: Handle) {
 
 	function resetChatSnapshot() {
 		chatSnapshot = createInitialSnapshot()
+	}
+
+	function clearActiveThread() {
+		activeClient?.close()
+		activeClient = null
+		activeThreadId = null
+		resetChatSnapshot()
+		disconnectedIndicator.reset()
+		setMessageScrollFades(false, false)
+		update()
 	}
 
 	function getThreads() {
@@ -648,15 +688,11 @@ export function ChatRoute(handle: Handle) {
 		syncInFlight = true
 		try {
 			const locationThreadId = getSelectedThreadIdFromLocation()
+			const hasThreadInUrl = Boolean(locationThreadId)
+			const shouldUseSinglePanelLayout = isTabletViewport()
 			const threads = getThreads()
 			if (threads.length === 0) {
-				activeClient?.close()
-				activeClient = null
-				activeThreadId = null
-				resetChatSnapshot()
-				disconnectedIndicator.reset()
-				setMessageScrollFades(false, false)
-				update()
+				clearActiveThread()
 				if (locationThreadId) {
 					navigate('/chat')
 				}
@@ -683,8 +719,18 @@ export function ChatRoute(handle: Handle) {
 				getThreads().find((thread) => thread.id === locationThreadId)
 					? locationThreadId
 					: null
-			const resolvedThreadId = selectedThread ?? getThreads()[0]?.id ?? null
-			if (!resolvedThreadId) return
+
+			if (!selectedThread && !hasThreadInUrl && shouldUseSinglePanelLayout) {
+				clearActiveThread()
+				return
+			}
+
+			const fallbackThreadId = getThreads()[0]?.id ?? null
+			const resolvedThreadId = selectedThread ?? fallbackThreadId
+			if (!resolvedThreadId) {
+				clearActiveThread()
+				return
+			}
 
 			if (locationThreadId !== resolvedThreadId) {
 				navigate(buildThreadHref(resolvedThreadId))
@@ -719,7 +765,7 @@ export function ChatRoute(handle: Handle) {
 		return didLoad
 	}
 
-	async function refreshThreads(signal?: AbortSignal) {
+	async function refreshThreads(signal?: AbortSignal): Promise<boolean> {
 		try {
 			threadListCursor = null
 			let nextCursor: string | null = null
@@ -732,25 +778,69 @@ export function ChatRoute(handle: Handle) {
 					totalCount: page.totalCount,
 				}
 			}, signal)
-			if (!didLoad) return
+			if (!didLoad) return false
 			threadListCursor = nextCursor
 			setThreadState('ready')
 			scheduleThreadListScrollFadeSync()
 			await syncActiveThreadFromLocation()
+			return true
 		} catch (error) {
-			if (signal?.aborted) return
+			if (signal?.aborted) return false
 			setThreadState(
 				'error',
 				error instanceof Error ? error.message : 'Unable to load threads.',
 			)
+			return false
 		}
+	}
+
+	function queueThreadLocationSync() {
+		void handle.queueTask(async () => {
+			await syncActiveThreadFromLocation()
+		})
+		void handle.update()
+	}
+
+	if (typeof window !== 'undefined') {
+		let wasTabletViewport = isTabletViewport()
+		const mediaQueryList = window.matchMedia(
+			TABLET_MEDIA_QUERY,
+		) as LegacyMediaQueryList
+		const handleViewportChange = () => {
+			const isTablet = isTabletViewport()
+			if (isTablet === wasTabletViewport) return
+			wasTabletViewport = isTablet
+			queueThreadLocationSync()
+		}
+
+		handle.on(window, {
+			resize: handleViewportChange,
+		})
+
+		if (typeof mediaQueryList.addEventListener === 'function') {
+			mediaQueryList.addEventListener('change', handleViewportChange)
+		} else if (typeof mediaQueryList.addListener === 'function') {
+			mediaQueryList.addListener(handleViewportChange)
+		}
+
+		handle.signal.addEventListener(
+			'abort',
+			() => {
+				if (typeof mediaQueryList.removeEventListener === 'function') {
+					mediaQueryList.removeEventListener('change', handleViewportChange)
+				} else if (typeof mediaQueryList.removeListener === 'function') {
+					mediaQueryList.removeListener(handleViewportChange)
+				}
+			},
+			{ once: true },
+		)
+
+		queueThreadLocationSync()
 	}
 
 	handle.on(routerEvents, {
 		navigate: () => {
-			void handle.queueTask(async () => {
-				await syncActiveThreadFromLocation()
-			})
+			queueThreadLocationSync()
 		},
 	})
 
@@ -778,23 +868,32 @@ export function ChatRoute(handle: Handle) {
 	async function handleDeleteThread(threadId: string) {
 		actionError = null
 		update()
+		const previousActiveThreadId = activeThreadId
+		const shouldReturnToChatList =
+			previousActiveThreadId === threadId && isTabletViewport()
 		try {
 			await deleteThread(threadId)
 			deleteThreadChecks.delete(threadId)
-			if (activeThreadId === threadId) {
-				activeClient?.close()
-				activeClient = null
-				activeThreadId = null
-				resetChatSnapshot()
-				disconnectedIndicator.reset()
+			if (previousActiveThreadId === threadId) {
+				clearActiveThread()
+			}
+			if (shouldReturnToChatList) {
+				navigate('/chat')
 			}
 			await refreshThreads()
 			scheduleThreadListScrollFadeSync()
-			const nextThread = getThreads()[0]
-			if (nextThread) {
-				navigate(buildThreadHref(nextThread.id))
-				await connectThread(nextThread.id)
-			} else {
+			if (shouldReturnToChatList) {
+				return
+			}
+			if (previousActiveThreadId === threadId) {
+				const nextThread = getThreads()[0]
+				if (nextThread) {
+					navigate(buildThreadHref(nextThread.id))
+					await connectThread(nextThread.id)
+					return
+				}
+			}
+			if (previousActiveThreadId === threadId || !previousActiveThreadId) {
 				navigate('/chat')
 			}
 		} catch (error) {
@@ -863,13 +962,23 @@ export function ChatRoute(handle: Handle) {
 
 	return () => {
 		if (threadStatus === 'loading') {
-			handle.queueTask(refreshThreads)
+			void handle.queueTask(async (signal) => {
+				const loaded = await refreshThreads(signal)
+				// Initial load flips isLoadingInitial to true, which re-renders and aborts this
+				// queueTask's signal (Remix). The aborted fetch then returns didLoad: false while
+				// onSnapshot still leaves threadStatus as 'ready' with an empty list, so no further
+				// refresh was scheduled. Retry once so desktop /chat can redirect and the list populates.
+				if (!loaded && threadStatus !== 'error') {
+					await refreshThreads(handle.signal)
+				}
+			})
 		}
 
 		const threads = getThreads()
 		const activeThread = activeThreadId
 			? (threads.find((thread) => thread.id === activeThreadId) ?? null)
 			: null
+		const hasThreadInUrl = Boolean(getSelectedThreadIdFromLocation())
 		const showEmptyStateComposer =
 			!activeThread && threads.length === 0 && threadStatus !== 'error'
 
@@ -892,6 +1001,11 @@ export function ChatRoute(handle: Handle) {
 						gridTemplateColumns: '18rem minmax(0, 1fr)',
 						alignItems: 'stretch',
 						minHeight: CHAT_PANEL_HEIGHT,
+						[mq.tablet]: {
+							gridTemplateColumns: '1fr',
+							gap: 0,
+							minHeight: CHAT_PANEL_HEIGHT_MOBILE,
+						},
 					}}
 				>
 					<aside
@@ -908,6 +1022,13 @@ export function ChatRoute(handle: Handle) {
 							top: spacing.lg,
 							height: CHAT_PANEL_HEIGHT,
 							overflow: 'hidden',
+							[mq.tablet]: {
+								display: hasThreadInUrl ? 'none' : 'flex',
+								position: 'static',
+								top: 'auto',
+								height: CHAT_PANEL_HEIGHT_MOBILE,
+								borderRadius: radius.md,
+							},
 						}}
 					>
 						<button
@@ -1211,6 +1332,13 @@ export function ChatRoute(handle: Handle) {
 							boxShadow: shadows.sm,
 							height: CHAT_PANEL_HEIGHT,
 							overflow: 'hidden',
+							[mq.tablet]: {
+								display: hasThreadInUrl ? 'flex' : 'none',
+								padding: spacing.md,
+								boxShadow: 'none',
+								borderRadius: radius.md,
+								height: CHAT_PANEL_HEIGHT_MOBILE,
+							},
 						}}
 					>
 						{activeThread ? (
@@ -1226,56 +1354,87 @@ export function ChatRoute(handle: Handle) {
 								>
 									<div
 										css={{
-											position: 'relative',
+											display: 'flex',
+											alignItems: 'center',
+											gap: spacing.sm,
 											minWidth: 0,
 										}}
 									>
-										<span
-											aria-hidden={!disconnectedIndicator.isShowing}
-											aria-label={
-												disconnectedIndicator.isShowing
-													? 'Not connected'
-													: undefined
-											}
-											title={
-												disconnectedIndicator.isShowing
-													? 'Chat is not connected'
-													: undefined
-											}
+										<a
+											href="/chat"
+											aria-label="Back to chats"
 											css={{
-												position: 'absolute',
-												left: `calc(-1 * ${spacing.md})`,
-												top: '50%',
-												width: '0.5rem',
-												height: '0.5rem',
+												display: 'none',
+												alignItems: 'center',
+												justifyContent: 'center',
+												width: '2rem',
+												height: '2rem',
 												borderRadius: radius.full,
-												backgroundColor: colors.danger,
-												transform: disconnectedIndicator.isShowing
-													? 'translateY(-50%) scale(1)'
-													: 'translateY(-50%) scale(0.85)',
-												boxShadow: `0 0 0 2px ${colors.surface}`,
-												opacity: disconnectedIndicator.isShowing ? 1 : 0,
-												pointerEvents: disconnectedIndicator.isShowing
-													? 'auto'
-													: 'none',
-												transition: `opacity ${transitions.normal}, transform ${transitions.normal}`,
+												color: colors.text,
+												textDecoration: 'none',
+												backgroundColor: colors.background,
+												border: `1px solid ${colors.border}`,
+												flexShrink: 0,
+												[mq.tablet]: {
+													display: 'inline-flex',
+												},
 											}}
-										/>
-										<h3 css={{ margin: 0, color: colors.text, minWidth: 0 }}>
-											<EditableText
-												id={`thread-title-${activeThread.id}`}
-												ariaLabel="Chat title"
-												value={activeThread.title}
-												onSave={(value) =>
-													handleRenameThread(activeThread.id, value)
+										>
+											{renderBackArrowIcon()}
+										</a>
+										<div
+											css={{
+												position: 'relative',
+												minWidth: 0,
+											}}
+										>
+											<span
+												aria-hidden={!disconnectedIndicator.isShowing}
+												aria-label={
+													disconnectedIndicator.isShowing
+														? 'Not connected'
+														: undefined
 												}
-												buttonCss={{
-													whiteSpace: 'nowrap',
-													overflow: 'hidden',
-													textOverflow: 'ellipsis',
+												title={
+													disconnectedIndicator.isShowing
+														? 'Chat is not connected'
+														: undefined
+												}
+												css={{
+													position: 'absolute',
+													left: `calc(-1 * ${spacing.md})`,
+													top: '50%',
+													width: '0.5rem',
+													height: '0.5rem',
+													borderRadius: radius.full,
+													backgroundColor: colors.danger,
+													transform: disconnectedIndicator.isShowing
+														? 'translateY(-50%) scale(1)'
+														: 'translateY(-50%) scale(0.85)',
+													boxShadow: `0 0 0 2px ${colors.surface}`,
+													opacity: disconnectedIndicator.isShowing ? 1 : 0,
+													pointerEvents: disconnectedIndicator.isShowing
+														? 'auto'
+														: 'none',
+													transition: `opacity ${transitions.normal}, transform ${transitions.normal}`,
 												}}
 											/>
-										</h3>
+											<h3 css={{ margin: 0, color: colors.text, minWidth: 0 }}>
+												<EditableText
+													id={`thread-title-${activeThread.id}`}
+													ariaLabel="Chat title"
+													value={activeThread.title}
+													onSave={(value) =>
+														handleRenameThread(activeThread.id, value)
+													}
+													buttonCss={{
+														whiteSpace: 'nowrap',
+														overflow: 'hidden',
+														textOverflow: 'ellipsis',
+													}}
+												/>
+											</h3>
+										</div>
 									</div>
 								</div>
 
@@ -1287,6 +1446,9 @@ export function ChatRoute(handle: Handle) {
 										maxWidth: '56rem',
 										width: '100%',
 										margin: '0 auto',
+										[mq.tablet]: {
+											maxWidth: '100%',
+										},
 									}}
 								>
 									<div
@@ -1427,6 +1589,9 @@ export function ChatRoute(handle: Handle) {
 										maxWidth: '56rem',
 										width: '100%',
 										margin: '0 auto',
+										[mq.tablet]: {
+											maxWidth: '100%',
+										},
 									}}
 								>
 									<label css={{ display: 'grid', gap: spacing.xs }}>
@@ -1451,7 +1616,7 @@ export function ChatRoute(handle: Handle) {
 														resizeMessageInput(event.currentTarget),
 													keydown: handleComposerKeyDown,
 												}}
-												placeholder='Ask a question or send "help" when using the local mock.'
+												placeholder="Send a message…"
 												css={{
 													display: 'block',
 													width: '100%',
@@ -1519,6 +1684,9 @@ export function ChatRoute(handle: Handle) {
 									margin: '0 auto',
 									width: '100%',
 									paddingBottom: spacing.sm,
+									[mq.tablet]: {
+										maxWidth: '100%',
+									},
 								}}
 							>
 								<form
@@ -1543,7 +1711,7 @@ export function ChatRoute(handle: Handle) {
 													resizeMessageInput(event.currentTarget),
 												keydown: handleComposerKeyDown,
 											}}
-											placeholder='Ask a question or send "help" when using the local mock.'
+											placeholder="Send a message…"
 											css={{
 												display: 'block',
 												width: '100%',
@@ -1585,6 +1753,57 @@ export function ChatRoute(handle: Handle) {
 										</button>
 									</div>
 								</form>
+							</div>
+						) : hasThreadInUrl ? (
+							<div
+								css={{
+									flex: 1,
+									minHeight: 0,
+									display: 'flex',
+									flexDirection: 'column',
+									gap: spacing.md,
+								}}
+							>
+								<div
+									css={{
+										flexShrink: 0,
+										display: 'flex',
+										alignItems: 'center',
+										gap: spacing.sm,
+									}}
+								>
+									<a
+										href="/chat"
+										aria-label="Back to chats"
+										css={{
+											display: 'none',
+											alignItems: 'center',
+											justifyContent: 'center',
+											width: '2rem',
+											height: '2rem',
+											borderRadius: radius.full,
+											color: colors.text,
+											textDecoration: 'none',
+											backgroundColor: colors.background,
+											border: `1px solid ${colors.border}`,
+											flexShrink: 0,
+											[mq.tablet]: {
+												display: 'inline-flex',
+											},
+										}}
+									>
+										{renderBackArrowIcon()}
+									</a>
+									<p
+										css={{
+											margin: 0,
+											color: colors.textMuted,
+											fontSize: typography.fontSize.sm,
+										}}
+									>
+										Loading chat...
+									</p>
+								</div>
 							</div>
 						) : null}
 					</div>
