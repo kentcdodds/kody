@@ -17,10 +17,10 @@ A **domain** is the single source of truth for:
 
 Authoring flow:
 
-1. **`defineDomainCapability(domain, definition)`** — wrap each capability
-   (from `mcp/capabilities/define-domain-capability.ts`). Pass the domain id
-   from `capabilityDomainNames` in `mcp/capabilities/domain-metadata.ts`. Do
-   **not** put `domain` on the inner object; the helper supplies it.
+1. **`defineDomainCapability(domain, definition)`** — wrap each capability (from
+   `mcp/capabilities/define-domain-capability.ts`). Pass the domain id from
+   `capabilityDomainNames` in `mcp/capabilities/domain-metadata.ts`. Do **not**
+   put `domain` on the inner object; the helper supplies it.
 2. **`defineDomain({ name, description, keywords?, capabilities })`** — from
    `mcp/capabilities/define-domain.ts`. Validates that every capability’s
    `domain` matches `name` and that names are unique within the domain.
@@ -108,8 +108,8 @@ domain when you introduce a new system boundary or ownership area (e.g.
 
 1. Add a new key to `capabilityDomainNames` in `domain-metadata.ts` (this
    extends the `CapabilityDomain` union).
-2. Add `mcp/capabilities/<name>/domain.ts`, capability files, and `index.ts`
-   if you want a barrel.
+2. Add `mcp/capabilities/<name>/domain.ts`, capability files, and `index.ts` if
+   you want a barrel.
 3. Append the new domain to the `builtinDomains` array in `builtin-domains.ts`.
 
 You do not edit `registry.ts` for routine additions—only `builtin-domains` and
@@ -118,15 +118,14 @@ the domain modules.
 ## How to add one
 
 1. Create the capability file under the right domain folder.
-2. Export it with `defineDomainCapability(capabilityDomainNames.<domain>, {
-   ... })`.
+2. Export it with
+   `defineDomainCapability(capabilityDomainNames.<domain>, { ... })`.
 3. Add helpful `tags`/`keywords` when they improve search.
 4. Include the capability in that domain’s **`domain.ts`**:
    `capabilities: [..., yourCapability]`.
-5. If the domain uses `index.ts`, ensure it still exports
-   `domain` / `codingCapabilities`-style aliases as needed for local imports.
-6. Add or update tests in `mcp/mcp-server-e2e.test.ts` for MCP-visible
-   behavior.
+5. If the domain uses `index.ts`, ensure it still exports `domain` /
+   `codingCapabilities`-style aliases as needed for local imports.
+6. Add or update tests in `mcp/mcp-server-e2e.test.ts` for MCP-visible behavior.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
 

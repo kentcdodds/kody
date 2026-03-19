@@ -18,7 +18,7 @@ magic.
   public internet and third-party services; prefer local fakes/fixtures.
 - Prefer fast unit tests for server logic; keep e2e tests focused on journeys.
 - Run server/unit tests with
-  `bun test ./server ./mock-servers ./mcp/github ./mcp/capabilities`
+  `bun test ./server ./mock-servers ./mcp/github ./mcp/cursor ./mcp/capabilities`
   (same paths as `bun run test`) to avoid Playwright spec discovery and
   accidental matches like `mcp-server-e2e`.
 

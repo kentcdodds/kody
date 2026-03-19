@@ -11,10 +11,7 @@ export function defineDomainCapability<
 	TOutputSchema extends CapabilitySchemaDefinition | undefined = undefined,
 >(
 	domain: CapabilityDomain,
-	definition: Omit<
-		CapabilityDefinition<TInputSchema, TOutputSchema>,
-		'domain'
-	>,
+	definition: Omit<CapabilityDefinition<TInputSchema, TOutputSchema>, 'domain'>,
 ): Capability {
 	return defineCapability({
 		...definition,

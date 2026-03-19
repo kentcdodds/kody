@@ -66,11 +66,23 @@ Optional Worker secrets/vars (see `types/env-schema.ts` and
   recommended) for the `kody-bot` account. GitHub REST calls act as that bot
   identity rather than as `kentcdodds`. When unset, `github_rest` fails fast
   with a setup hint. In GitHub Actions you cannot create a repository secret
-  named `GITHUB_*`; production deploy reads **`KODY_GITHUB_TOKEN`** and syncs
-  it to this Worker secret (see `docs/setup-manifest.md`).
+  named `GITHUB_*`; production deploy reads **`KODY_GITHUB_TOKEN`** and syncs it
+  to this Worker secret (see `docs/setup-manifest.md`).
 - `GITHUB_API_BASE_URL` — REST API base URL; defaults to
   `https://api.github.com` when unset. Local `bun run dev` sets this to the
   GitHub mock Worker unless `SKIP_GITHUB_MOCK=1`.
+
+## Cursor Cloud Agents (`cursor_cloud_rest` capability)
+
+Optional Worker secrets/vars (see `types/env-schema.ts` and
+`mcp/cursor/cursor-cloud-client.ts`):
+
+- `CURSOR_API_KEY` — Cursor API key ([dashboard](https://cursor.com/settings)).
+  The Cursor Cloud API uses **HTTP Basic** auth (key as username, empty
+  password). When unset, `cursor_cloud_rest` fails fast with a setup hint.
+- `CURSOR_API_BASE_URL` — API base URL; defaults to `https://api.cursor.com`
+  when unset. Local `bun run dev` sets this to the Cursor mock Worker unless
+  `SKIP_CURSOR_MOCK=1`. See `docs/agents/mock-api-servers.md`.
 
 ## Why Zod?
 

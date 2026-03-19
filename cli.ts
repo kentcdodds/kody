@@ -44,6 +44,7 @@ let workerOrigin = ''
 let mockResendProcess: ChildProcess | null = null
 let mockAiProcess: ChildProcess | null = null
 let mockGithubProcess: ChildProcess | null = null
+let mockCursorProcess: ChildProcess | null = null
 let mockEnvOverrides: Record<string, string> = {}
 
 void startDev().catch((error) => {
@@ -64,9 +65,12 @@ async function startDev() {
 	shutdown = setupShutdown(
 		() => devChildren,
 		() =>
-			[mockResendProcess, mockAiProcess, mockGithubProcess].filter(
-				Boolean,
-			) as Array<ChildProcess>,
+			[
+				mockResendProcess,
+				mockAiProcess,
+				mockGithubProcess,
+				mockCursorProcess,
+			].filter(Boolean) as Array<ChildProcess>,
 	)
 }
 
@@ -356,6 +360,57 @@ async function attachGithubMock(
 	console.log(dim(`GitHub mock base URL ${baseUrl}`))
 }
 
+async function attachCursorMock(
+	mockEnv: Record<string, string>,
+	anchorPort: number,
+) {
+	if (process.env.SKIP_CURSOR_MOCK?.trim() === '1') {
+		return
+	}
+	if (
+		hasEnvValue(mockEnv.CURSOR_API_BASE_URL) &&
+		isChildRunning(mockCursorProcess)
+	) {
+		return
+	}
+	if (mockCursorProcess && !mockCursorProcess.killed) {
+		await stopChild(mockCursorProcess)
+		mockCursorProcess = null
+	}
+	const cursorPort = await getPort({
+		port: Array.from({ length: 20 }, (_, index) => anchorPort + 140 + index),
+	})
+	const baseUrl = `http://127.0.0.1:${cursorPort}`
+	const apiToken = `mock-cursor-${randomUUID()}`
+	const child = runBunScript(
+		'dev:mock-cursor',
+		[
+			'--port',
+			String(cursorPort),
+			'--ip',
+			'127.0.0.1',
+			'--var',
+			`MOCK_API_TOKEN:${apiToken}`,
+		],
+		{},
+	)
+	mockCursorProcess = child
+	child.once('exit', () => {
+		if (mockCursorProcess === child) {
+			mockCursorProcess = null
+		}
+	})
+	mockEnv.CURSOR_API_BASE_URL = baseUrl
+	mockEnv.CURSOR_API_KEY = apiToken
+	const didStart = await waitForMockReady(baseUrl, child)
+	if (!didStart) {
+		console.warn(
+			`Mock Cursor Cloud worker did not become ready within ${mockReadyTimeoutMs}ms.`,
+		)
+	}
+	console.log(dim(`Cursor Cloud mock base URL ${baseUrl}`))
+}
+
 async function ensureMockServers() {
 	const previousMockEnvOverrides = { ...mockEnvOverrides }
 	const desiredAiMode = resolveAiMode()
@@ -385,6 +440,7 @@ async function ensureMockServers() {
 			10,
 		)
 		await attachGithubMock(mockEnvOverrides, anchorFromReuse)
+		await attachCursorMock(mockEnvOverrides, anchorFromReuse)
 		return mockEnvOverrides
 	}
 
@@ -419,6 +475,10 @@ async function ensureMockServers() {
 		if (mockGithubProcess && !mockGithubProcess.killed) {
 			await stopChild(mockGithubProcess)
 			mockGithubProcess = null
+		}
+		if (mockCursorProcess && !mockCursorProcess.killed) {
+			await stopChild(mockCursorProcess)
+			mockCursorProcess = null
 		}
 		const baseUrl = `http://127.0.0.1:${mockPort}`
 		const apiToken = `mock-resend-${randomUUID()}`
@@ -465,6 +525,7 @@ async function ensureMockServers() {
 			mockEnvOverrides.AI_MOCK_API_KEY =
 				previousMockEnvOverrides.AI_MOCK_API_KEY ?? ''
 			await attachGithubMock(mockEnvOverrides, mockPort)
+			await attachCursorMock(mockEnvOverrides, mockPort)
 			return mockEnvOverrides
 		}
 		const aiPort = await getPort({
@@ -509,6 +570,7 @@ async function ensureMockServers() {
 	}
 
 	await attachGithubMock(mockEnvOverrides, mockPort)
+	await attachCursorMock(mockEnvOverrides, mockPort)
 
 	return mockEnvOverrides
 }

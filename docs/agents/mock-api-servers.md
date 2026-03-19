@@ -18,6 +18,11 @@ it can also be deployed alongside the main app.
 See `mock-servers/github/` for the GitHub REST subset mock used by the
 `github_rest` capability (started by `bun run dev` unless `SKIP_GITHUB_MOCK=1`).
 
+See `mock-servers/cursor/` for a small
+[Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints)
+subset mock used by the `cursor_cloud_rest` capability (started by `bun run dev`
+unless `SKIP_CURSOR_MOCK=1`).
+
 ### Tips
 
 - Prefer D1 for storing mock requests/messages so the mock can run both locally

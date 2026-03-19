@@ -70,6 +70,10 @@ Local development uses `.env`, which Wrangler loads automatically:
   by the `github_rest` MCP capability)
 - `GITHUB_API_BASE_URL` (optional; defaults to `https://api.github.com`. Local
   `bun run dev` targets the GitHub mock unless `SKIP_GITHUB_MOCK=1`)
+- `CURSOR_API_KEY` (optional Worker secret; Cursor Cloud Agents API key for the
+  `cursor_cloud_rest` MCP capability)
+- `CURSOR_API_BASE_URL` (optional; defaults to `https://api.cursor.com`. Local
+  `bun run dev` targets the Cursor mock unless `SKIP_CURSOR_MOCK=1`)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `.env`.
@@ -92,8 +96,10 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `KODY_GITHUB_TOKEN` (optional; bot token for the `github_rest` capability —
-  see below; deploy maps this to the Worker secret `GITHUB_TOKEN` because
-  GitHub Actions forbids repository secrets named `GITHUB_*`)
+  see below; deploy maps this to the Worker secret `GITHUB_TOKEN` because GitHub
+  Actions forbids repository secrets named `GITHUB_*`)
+- `CURSOR_API_KEY` (optional; Cursor Cloud API key for `cursor_cloud_rest`;
+  syncs to the Worker when set in GitHub Actions)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `bun run sentry:upload-sourcemaps` after deploy)
@@ -141,12 +147,16 @@ How to get/set each value:
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
     `npx @sentry/wizard@latest -i sourcemaps`).
 - `KODY_GITHUB_TOKEN` (optional)
-  - Create a fine-grained personal access token for the `kody-bot` account
-    under **GitHub → Settings → Developer settings**, then add it as the
-    repository secret `KODY_GITHUB_TOKEN` (not `GITHUB_TOKEN` — GitHub rejects
-    that name). The production deploy workflow exports it as `GITHUB_TOKEN` only
-    for `sync-worker-secrets.ts`, which stores it on the Worker as
-    `GITHUB_TOKEN` so GitHub REST calls execute as `kody-bot`.
+  - Create a fine-grained personal access token for the `kody-bot` account under
+    **GitHub → Settings → Developer settings**, then add it as the repository
+    secret `KODY_GITHUB_TOKEN` (not `GITHUB_TOKEN` — GitHub rejects that name).
+    The production deploy workflow exports it as `GITHUB_TOKEN` only for
+    `sync-worker-secrets.ts`, which stores it on the Worker as `GITHUB_TOKEN` so
+    GitHub REST calls execute as `kody-bot`.
+- `CURSOR_API_KEY` (optional)
+  - Create an API key in **Cursor → Settings**, then add it as the repository
+    secret `CURSOR_API_KEY`. The production deploy workflow can sync it to the
+    Worker when present (see `.github/workflows/deploy.yml`).
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

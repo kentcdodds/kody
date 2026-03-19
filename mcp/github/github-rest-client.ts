@@ -95,7 +95,6 @@ export class GitHubRestClient {
 			)
 		}
 	}
-
 }
 
 function formatRateLimitHint(response: Response) {

@@ -44,12 +44,19 @@ How to use search
 - Your code must be an async arrow function that returns the result.
 - Example: findCapabilities({ domain: 'math', inputField: 'operator' })
 - Example: findCapabilities({ domain: 'coding', keyword: 'github' })
+- Example: findCapabilities({ domain: 'coding', keyword: 'cursor' })
 - Example: getCapability('github_rest')
+- Example: getCapability('cursor_cloud_rest')
 
 Destructive GitHub access
 - Some capabilities are marked destructive: they can change or delete remote data (for example github_rest with POST, PUT, PATCH, or DELETE).
 - GitHub requests run as the configured token identity; in production this is intended to be the kody-bot account rather than kentcdodds.
 - Before execute on a destructive or mutating call, confirm the exact path, method, and payload with the user unless they already asked for that precise operation.
+
+Destructive Cursor Cloud Agents access
+- The cursor_cloud_rest capability can launch, stop, delete, or otherwise change Cursor Cloud Agents (POST/PUT/PATCH/DELETE). It uses your CURSOR_API_KEY and spends Cursor quota when you hit the real API.
+- Official endpoints and request bodies: https://cursor.com/docs/cloud-agent/api/endpoints
+- Before execute on a mutating call, confirm the exact path, method, and JSON body with the user unless they already approved that exact operation.
 
 How to use execute
 - The sandbox provides a 'codemode' object with async methods for each capability.
