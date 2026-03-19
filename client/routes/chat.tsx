@@ -789,11 +789,42 @@ export function ChatRoute(handle: Handle) {
 		}
 	}
 
+	function queueThreadLocationSync() {
+		void handle.queueTask(async () => {
+			await syncActiveThreadFromLocation()
+		})
+	}
+
+	if (typeof window !== 'undefined') {
+		const mediaQueryList = window.matchMedia(TABLET_MEDIA_QUERY)
+		const handleViewportChange = () => {
+			queueThreadLocationSync()
+		}
+
+		if ('addEventListener' in mediaQueryList) {
+			mediaQueryList.addEventListener('change', handleViewportChange)
+		} else {
+			mediaQueryList.addListener(handleViewportChange)
+		}
+
+		handle.signal.addEventListener(
+			'abort',
+			() => {
+				if ('removeEventListener' in mediaQueryList) {
+					mediaQueryList.removeEventListener('change', handleViewportChange)
+				} else {
+					mediaQueryList.removeListener(handleViewportChange)
+				}
+			},
+			{ once: true },
+		)
+
+		queueThreadLocationSync()
+	}
+
 	handle.on(routerEvents, {
 		navigate: () => {
-			void handle.queueTask(async () => {
-				await syncActiveThreadFromLocation()
-			})
+			queueThreadLocationSync()
 		},
 	})
 
@@ -821,19 +852,24 @@ export function ChatRoute(handle: Handle) {
 	async function handleDeleteThread(threadId: string) {
 		actionError = null
 		update()
+		const previousActiveThreadId = activeThreadId
 		try {
 			await deleteThread(threadId)
 			deleteThreadChecks.delete(threadId)
-			if (activeThreadId === threadId) {
+			if (previousActiveThreadId === threadId) {
 				clearActiveThread()
 			}
 			await refreshThreads()
 			scheduleThreadListScrollFadeSync()
-			const nextThread = getThreads()[0]
-			if (nextThread) {
-				navigate(buildThreadHref(nextThread.id))
-				await connectThread(nextThread.id)
-			} else {
+			if (previousActiveThreadId === threadId && !isTabletViewport()) {
+				const nextThread = getThreads()[0]
+				if (nextThread) {
+					navigate(buildThreadHref(nextThread.id))
+					await connectThread(nextThread.id)
+					return
+				}
+			}
+			if (previousActiveThreadId === threadId || !previousActiveThreadId) {
 				navigate('/chat')
 			}
 		} catch (error) {

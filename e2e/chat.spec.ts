@@ -4,6 +4,8 @@ test.describe.configure({ mode: 'serial' })
 
 async function createThread(page: Page, message: string) {
 	await page.goto('/chat')
+	await page.getByRole('button', { name: 'New thread' }).click()
+	await expect(page).toHaveURL(/\/chat\/.+/)
 	await page.getByPlaceholder('Send a message…').fill(message)
 	await page.getByRole('button', { name: 'Send message' }).click()
 	await expect(page).toHaveURL(/\/chat\/.+/)
@@ -58,7 +60,11 @@ test('mobile /chat uses URL-driven single-panel navigation', async ({
 	).toBeVisible()
 	await expect(page.getByPlaceholder('Send a message…')).toBeHidden()
 
-	await page.getByRole('complementary').getByRole('button').first().click()
+	await page
+		.locator('#chat-thread-list-scroll-container')
+		.getByRole('button')
+		.first()
+		.click()
 
 	await expect(page).toHaveURL(/\/chat\/.+/)
 	await expect(
