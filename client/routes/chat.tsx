@@ -801,12 +801,20 @@ export function ChatRoute(handle: Handle) {
 	}
 
 	if (typeof window !== 'undefined') {
+		let wasTabletViewport = isTabletViewport()
 		const mediaQueryList = window.matchMedia(
 			TABLET_MEDIA_QUERY,
 		) as LegacyMediaQueryList
 		const handleViewportChange = () => {
+			const isTablet = isTabletViewport()
+			if (isTablet === wasTabletViewport) return
+			wasTabletViewport = isTablet
 			queueThreadLocationSync()
 		}
+
+		handle.on(window, {
+			resize: handleViewportChange,
+		})
 
 		if (typeof mediaQueryList.addEventListener === 'function') {
 			mediaQueryList.addEventListener('change', handleViewportChange)
