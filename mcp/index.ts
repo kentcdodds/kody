@@ -28,7 +28,8 @@ This is a two-step system:
 
 Quick start
 - Call 'search' first to discover what Kody can do (results include type 'capability' or 'skill').
-- Call 'execute' or 'meta_run_skill' next to run code; use 'meta_save_skill' to persist reusable codemode; use 'meta_update_skill' to replace an existing skill's code in place.
+- Call 'execute' or 'meta_run_skill' next to run code.
+- Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
 
 Domains
 ${domainInstructions}

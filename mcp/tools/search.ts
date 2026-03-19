@@ -41,7 +41,7 @@ const searchTool = {
 	description: `
 Search Kody **builtin capabilities** and your saved **skills** (meta domain) by natural language before calling \`execute\`.
 
-Each match has **type** \`capability\` or \`skill\`. Use \`meta_get_skill\` / \`meta_run_skill\` for full skill code.
+Each match has **type** \`capability\` or \`skill\`. Use \`meta_get_skill\` / \`meta_run_skill\` for full skill code. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill.
 
 Domains (for context only—put hints in your \`query\` string; there are no filter fields):
 ${capabilityDomainSummary}

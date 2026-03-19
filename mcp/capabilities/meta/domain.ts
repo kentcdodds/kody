@@ -9,7 +9,7 @@ import { metaUpdateSkillCapability } from './meta-update-skill.ts'
 export const metaDomain = defineDomain({
 	name: capabilityDomainNames.meta,
 	description:
-		'Save, update, list via search, load, run, and delete user-scoped codemode skills.',
+		'Save, update, list via search, load, run, and delete user-scoped codemode skills. Save skills only for reasonably repeatable workflows (reusable patterns), not one-off or highly bespoke tasks.',
 	keywords: ['skill', 'meta', 'save', 'recipe', 'codemode'],
 	capabilities: [
 		metaSaveSkillCapability,

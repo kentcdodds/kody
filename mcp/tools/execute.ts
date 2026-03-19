@@ -133,7 +133,7 @@ export async function registerExecuteTool(agent: MCP) {
 			})
 
 			const saveSkillHint =
-				'\n\nYou can persist reusable codemode with `meta_save_skill` (meta domain); use `meta_update_skill` to replace an existing saved skill.'
+				'\n\nIf this codemode represents a reasonably repeatable workflow (not a one-off), you can persist it with `meta_save_skill` (meta domain); use `meta_update_skill` to replace code for an existing saved skill.'
 			return {
 				content: [
 					{

@@ -4,6 +4,8 @@ Authenticated users can save **codemode** snippets as **skills**: D1 row +
 Vectorize embedding keyed by `skill_<uuid>` with metadata
 `{ kind: 'skill', userId }`.
 
+**When to save:** Agents should use **`meta_save_skill`** only for workflows that are **reasonably repeatable**—patterns expected to run again with similar structure or inputs. One-off tasks, unique ad-hoc requests, and highly bespoke work should use **`execute`** only; do not persist them as skills.
+
 ## Flow
 
 - **`search`** returns unified hits with `type: 'capability'` or `type: 'skill'`
