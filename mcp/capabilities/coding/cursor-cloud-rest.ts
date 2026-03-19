@@ -15,7 +15,7 @@ const inputSchema = z
 			.string()
 			.min(1)
 			.describe(
-				'Cursor Cloud API path starting with /v0/ (for example /v0/agents). Do not include a scheme or host. Full reference: https://cursor.com/docs/cloud-agent/api/endpoints',
+				'Cursor Cloud API path starting with /v0/ (e.g. GET /v0/agents lists; POST /v0/agents launches an agent — there is no /v0/agents/launch). Do not include a scheme or host. Full reference: https://cursor.com/docs/cloud-agent/api/endpoints',
 			),
 		query: z
 			.record(z.string(), z.string())
@@ -26,7 +26,9 @@ const inputSchema = z
 		body: z
 			.unknown()
 			.optional()
-			.describe('Optional JSON body for POST, PUT, PATCH, or DELETE requests.'),
+			.describe(
+				'Optional JSON body for POST, PUT, PATCH, or DELETE. Launch (POST /v0/agents) requires prompt.text and source.repository (GitHub URL), not repo/task/title fields — see official OpenAPI.',
+			),
 	})
 	.describe(
 		'Low-level Cursor Cloud Agents API call. Uses HTTP Basic auth (API key as username, empty password per Cursor API). If request shape is unclear, open the official docs before executing.',
@@ -68,7 +70,7 @@ export const cursorCloudRestCapability = defineDomainCapability(
 	{
 		name: 'cursor_cloud_rest',
 		description:
-			'Low-level Cursor Cloud Agents API access (https://api.cursor.com): method, path under /v0/, optional query, optional JSON body. Authenticated with CURSOR_API_KEY using HTTP Basic (API key as username, empty password — see https://cursor.com/docs/cloud-agent/api/endpoints). Non-GET calls can create, change, or delete cloud agents and consume quota; confirm exact path, method, and body with the user before mutating unless they explicitly requested that operation. For request/response shapes and rate limits, use the docs link in this description.',
+			'Low-level Cursor Cloud Agents API access (https://api.cursor.com): method, path under /v0/, optional query, optional JSON body. Launch: POST `/v0/agents` (same path as list; not `/v0/agents/launch`) with prompt.text + source.repository per docs. Authenticated with CURSOR_API_KEY using HTTP Basic (key as username, empty password). Non-GET calls can mutate agents and consume quota; confirm path/method/body with the user unless they explicitly approved. https://cursor.com/docs/cloud-agent/api/endpoints',
 		keywords: [
 			'cursor',
 			'cloud agents',
