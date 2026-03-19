@@ -3,6 +3,7 @@ import { invariant } from '@epic-web/invariant'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 import { McpAgent } from 'agents/mcp'
+import { capabilityDomains } from '#mcp/capabilities/registry.ts'
 import { buildSentryOptions } from '#sentry/cloudflare-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 import { registerResources } from './register-resources.ts'
@@ -10,6 +11,10 @@ import { registerTools } from './register-tools.ts'
 
 export type State = {}
 export type Props = McpServerProps
+
+const domainInstructions = capabilityDomains
+	.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
+	.join('\n')
 
 const serverMetadata = {
 	implementation: {
@@ -25,8 +30,12 @@ Quick start
 - Call 'search' first to discover what Kody can do.
 - Call 'execute' next to run the capability you found.
 
+Domains
+${domainInstructions}
+
 How to use search
 - The sandbox provides a 'capabilities' object keyed by name.
+- Use the domain descriptions above to choose the right area before filtering capabilities.
 - Use 'findCapabilities(...)' as the default helper for targeted discovery.
 - Use 'getCapability(name)' for exact-name lookup when you already know the capability.
 - Use the raw 'capabilities' map for arbitrary JavaScript queries that are not covered by the helper parameters.

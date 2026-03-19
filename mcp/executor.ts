@@ -12,12 +12,13 @@ const maxChars = maxTokens * charsPerToken
 export function createSearchExecutor(
 	env: Env,
 	capabilities: Record<string, CapabilitySpec>,
+	domains: Record<string, string>,
 ) {
 	return new DynamicWorkerExecutor({
 		loader: env.LOADER,
 		timeout: 30_000,
 		modules: {
-			'capabilities.js': createCapabilitiesModuleSource(capabilities),
+			'capabilities.js': createCapabilitiesModuleSource(capabilities, domains),
 		},
 	})
 }
@@ -34,7 +35,7 @@ export function wrapSearchCode(code: string) {
 
 	return [
 		'async () => {',
-		'  const { capabilities, getCapability, findCapabilities } = await import("capabilities.js");',
+		'  const { capabilities, domains, getCapability, getDomain, listDomains, findCapabilities } = await import("capabilities.js");',
 		`  const run = ${normalizedCode};`,
 		'  return await run();',
 		'}',
@@ -52,9 +53,11 @@ export function formatExecutionOutput(result: ExecuteResult) {
 
 function createCapabilitiesModuleSource(
 	capabilities: Record<string, CapabilitySpec>,
+	domains: Record<string, string>,
 ) {
 	return `
 const capabilities = ${JSON.stringify(capabilities, null, 2)};
+const domains = ${JSON.stringify(domains, null, 2)};
 
 function createCapabilitySummary(capability) {
 	return {
@@ -90,9 +93,21 @@ function createDetailedCapabilitySummary(capability) {
 }
 
 export { capabilities };
+export { domains };
 
 export function getCapability(name) {
 	return capabilities[name];
+}
+
+export function getDomain(name) {
+	return domains[name];
+}
+
+export function listDomains() {
+	return Object.entries(domains).map(([name, description]) => ({
+		name,
+		description,
+	}));
 }
 
 export function findCapabilities(query = {}) {

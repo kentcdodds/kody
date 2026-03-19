@@ -28,3 +28,8 @@ is trying to become.
 - Router and HTTP route mapping: `server/router.ts` and `server/routes.ts`
 - OAuth handlers: `worker/oauth-handlers.ts`
 - MCP auth checks: `worker/mcp-auth.ts`
+- MCP capability catalog: domain modules under `mcp/capabilities/*/domain.ts`,
+  merged list in `mcp/capabilities/builtin-domains.ts`, built by
+  `mcp/capabilities/build-capability-registry.ts`, re-exported from
+  `mcp/capabilities/registry.ts` (see
+  [`../agents/adding-capabilities.md`](../agents/adding-capabilities.md)).

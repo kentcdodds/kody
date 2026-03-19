@@ -1,7 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { capabilitySpecs } from '#mcp/capabilities/registry.ts'
+import {
+	capabilityDomains,
+	capabilityDomainDescriptionsByName,
+	capabilitySpecs,
+} from '#mcp/capabilities/registry.ts'
 import {
 	createSearchExecutor,
 	formatExecutionOutput,
@@ -14,11 +18,9 @@ import {
 	logMcpEvent,
 } from '#mcp/observability.ts'
 
-const capabilityDomains = Array.from(
-	new Set(
-		Object.values(capabilitySpecs).map((capability) => capability.domain),
-	),
-).sort()
+const capabilityDomainSummary = capabilityDomains
+	.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
+	.join('\n')
 
 // TODO: If the domain list grows large, replace this inline hint with a
 // dedicated `findDomains()` helper in the search sandbox.
@@ -29,9 +31,15 @@ const searchTool = {
 Search Kody capabilities. Use this tool first to discover the right capability
 before calling \`execute\`.
 
-Current domains: ${capabilityDomains.join(', ')}.
+Domains:
+${capabilityDomainSummary}
 
 Available in your code:
+
+interface DomainInfo {
+  name: string;
+  description: string;
+}
 
 interface CapabilitySummary {
   name: string;
@@ -54,7 +62,10 @@ interface DetailedCapabilitySummary extends CapabilitySummary {
 interface CapabilityInfo extends DetailedCapabilitySummary {}
 
 declare const capabilities: Record<string, CapabilityInfo>;
+declare const domains: Record<string, string>;
 declare function getCapability(name: string): CapabilityInfo | undefined;
+declare function getDomain(name: string): string | undefined;
+declare function listDomains(): DomainInfo[];
 declare function findCapabilities(query?: {
   text?: string;
   domain?: string;
@@ -72,8 +83,12 @@ Your code must be an async arrow function that returns the result.
 returns a compact summary by default.
 \`getCapability(name)\` is for exact-name lookup when you already know the
 capability you want to inspect.
+\`listDomains()\` and \`getDomain(name)\` explain what each domain is for before
+you filter by domain.
 \`capabilities\` is the low-level source-of-truth map for arbitrary JavaScript
 queries that are not covered by the helper parameters.
+Use the domain descriptions to pick the right domain first when the task could
+fit multiple areas.
 Use \`detail: true\` or \`getCapability(name)\` when you need richer metadata or
 full schemas. When a schema is present, the corresponding \`inputFields\` or
 \`outputFields\` list is omitted to avoid repeating the same information.
@@ -85,6 +100,10 @@ Examples:
 
 \`async () =>
   findCapabilities({ domain: 'math', inputField: 'operator' })\`
+
+\`async () => listDomains()\`
+
+\`async () => getDomain('coding')\`
 
 \`async () => getCapability('do_math')\`
 
@@ -121,7 +140,11 @@ export async function registerSearchTool(agent: MCP) {
 		async ({ code }: { code: string }) => {
 			const startedAt = performance.now()
 			const { baseUrl, hasUser } = callerContextFields(agent.getCallerContext())
-			const executor = createSearchExecutor(agent.getEnv(), capabilitySpecs)
+			const executor = createSearchExecutor(
+				agent.getEnv(),
+				capabilitySpecs,
+				capabilityDomainDescriptionsByName,
+			)
 			const result = await Sentry.startSpan(
 				{
 					name: 'mcp.tool.search',

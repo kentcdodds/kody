@@ -19,6 +19,8 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/agents/remix/index.md](./docs/agents/remix/index.md)
   - [docs/agents/cloudflare-agents-sdk.md](./docs/agents/cloudflare-agents-sdk.md)
   - [docs/agents/mcp-apps-starter-guide.md](./docs/agents/mcp-apps-starter-guide.md)
+- MCP capabilities (search/execute graph, domains, registry):
+  - [docs/agents/adding-capabilities.md](./docs/agents/adding-capabilities.md)
 - Project setup references:
   - [docs/getting-started.md](./docs/getting-started.md)
   - [docs/environment-variables.md](./docs/environment-variables.md)

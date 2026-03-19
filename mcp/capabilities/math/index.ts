@@ -1,3 +1,6 @@
-import { doMathCapability } from './do-math.ts'
+import { mathDomain } from './domain.ts'
 
-export const mathCapabilities = [doMathCapability]
+export { mathDomain } from './domain.ts'
+export { doMathCapability } from './do-math.ts'
+
+export const mathCapabilities = mathDomain.capabilities

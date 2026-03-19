@@ -1,3 +1,6 @@
-import { githubRestCapability } from './github-rest.ts'
+import { codingDomain } from './domain.ts'
 
-export const codingCapabilities = [githubRestCapability]
+export { codingDomain } from './domain.ts'
+export { githubRestCapability } from './github-rest.ts'
+
+export const codingCapabilities = codingDomain.capabilities

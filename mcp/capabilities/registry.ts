@@ -1,107 +1,19 @@
-import { type JsonSchemaToolDescriptors } from '@cloudflare/codemode'
-import { codingCapabilities } from './coding/index.ts'
-import { mathCapabilities } from './math/index.ts'
-import { type Capability, type CapabilitySpec } from './types.ts'
+import { buildCapabilityRegistry } from './build-capability-registry.ts'
+import { builtinDomains } from './builtin-domains.ts'
 
-const allCapabilities = [...mathCapabilities, ...codingCapabilities]
+const registry = buildCapabilityRegistry(builtinDomains)
 
-function createCapabilityMap(capabilities: Array<Capability>) {
-	const entries = capabilities.map(
-		(capability) => [capability.name, capability] as const,
-	)
-	const duplicates = entries.filter(
-		([name], index) =>
-			entries.findIndex(([entryName]) => entryName === name) !== index,
-	)
-	if (duplicates.length > 0) {
-		const names = duplicates.map(([name]) => name).join(', ')
-		throw new Error(`Duplicate capability names: ${names}`)
-	}
-	return Object.fromEntries(entries)
-}
+export const capabilityList = registry.capabilityList
 
-function createCapabilitySpecs(capabilities: Array<Capability>) {
-	const entries = capabilities.map(
-		(capability) =>
-			[
-				capability.name,
-				{
-					name: capability.name,
-					domain: capability.domain,
-					description: capability.description,
-					keywords: capability.keywords,
-					readOnly: capability.readOnly,
-					idempotent: capability.idempotent,
-					destructive: capability.destructive,
-					inputFields: getSchemaPropertyNames(capability.inputSchema),
-					requiredInputFields: getSchemaRequiredFields(capability.inputSchema),
-					outputFields: capability.outputSchema
-						? getSchemaPropertyNames(capability.outputSchema)
-						: [],
-					inputSchema: capability.inputSchema,
-					...(capability.outputSchema
-						? { outputSchema: capability.outputSchema }
-						: {}),
-				},
-			] as const,
-	)
-	return Object.fromEntries(entries) as Record<string, CapabilitySpec>
-}
+export const capabilityDomains = registry.capabilityDomains
 
-function createCapabilityToolDescriptors(capabilities: Array<Capability>) {
-	const entries = capabilities.map(
-		(capability) =>
-			[
-				capability.name,
-				{
-					description: capability.description,
-					inputSchema: capability.inputSchema,
-					...(capability.outputSchema
-						? { outputSchema: capability.outputSchema }
-						: {}),
-				},
-			] as const,
-	)
-	return Object.fromEntries(entries) as JsonSchemaToolDescriptors
-}
+export const capabilityDomainDescriptionsByName =
+	registry.capabilityDomainDescriptionsByName
 
-function getSchemaPropertyNames(schema: unknown) {
-	const properties = getSchemaRecordProperty(schema, 'properties')
-	return properties ? Object.keys(properties) : []
-}
+export const capabilityMap = registry.capabilityMap
 
-function getSchemaRequiredFields(schema: unknown) {
-	const required = getSchemaArrayProperty(schema, 'required')
-	return required
-		? required.filter((value): value is string => typeof value === 'string')
-		: []
-}
+export const capabilitySpecs = registry.capabilitySpecs
 
-function getSchemaRecordProperty(schema: unknown, key: string) {
-	if (!schema || typeof schema !== 'object') return null
-	const value = (schema as Record<string, unknown>)[key]
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-	return value as Record<string, unknown>
-}
+export const capabilityToolDescriptors = registry.capabilityToolDescriptors
 
-function getSchemaArrayProperty(schema: unknown, key: string) {
-	if (!schema || typeof schema !== 'object') return null
-	const value = (schema as Record<string, unknown>)[key]
-	return Array.isArray(value) ? value : null
-}
-
-export const capabilityList = allCapabilities
-
-export const capabilityMap = createCapabilityMap(capabilityList)
-
-export const capabilitySpecs = createCapabilitySpecs(capabilityList)
-
-export const capabilityToolDescriptors =
-	createCapabilityToolDescriptors(capabilityList)
-
-export const capabilityHandlers = Object.fromEntries(
-	Object.entries(capabilityMap).map(([name, capability]) => [
-		name,
-		capability.handler,
-	]),
-) as Record<string, Capability['handler']>
+export const capabilityHandlers = registry.capabilityHandlers

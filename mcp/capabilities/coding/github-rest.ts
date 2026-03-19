@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createGitHubRestClient } from '#mcp/github/github-rest-client.ts'
-import { defineCapability } from '../define-capability.ts'
+import { defineDomainCapability } from '../define-domain-capability.ts'
+import { capabilityDomainNames } from '../domain-metadata.ts'
 import { type CapabilityContext } from '../types.ts'
 
 const httpMethodSchema = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
@@ -57,25 +58,27 @@ function assertSafeGithubPath(path: string) {
 	}
 }
 
-export const githubRestCapability = defineCapability({
-	name: 'github_rest',
-	domain: 'coding',
-	description:
-		'Low-level GitHub REST v3 access with method, path, optional query, and optional JSON body. Authenticated requests act as the configured GitHub token identity, which should be the kody-bot account rather than kentcdodds. Non-GET methods can mutate or delete GitHub data, so confirm exact write operations with the user before executing them unless they explicitly requested that exact change.',
-	keywords: ['github', 'rest', 'api', 'raw', 'low-level', 'fetch', 'bot'],
-	readOnly: false,
-	idempotent: false,
-	destructive: true,
-	inputSchema,
-	outputSchema,
-	async handler(args, ctx: CapabilityContext) {
-		assertSafeGithubPath(args.path)
-		const client = createGitHubRestClient(ctx.env)
-		return client.rawRequest({
-			method: args.method,
-			path: args.path.trim(),
-			query: args.query,
-			body: args.body,
-		})
+export const githubRestCapability = defineDomainCapability(
+	capabilityDomainNames.coding,
+	{
+		name: 'github_rest',
+		description:
+			'Low-level GitHub REST v3 access with method, path, optional query, and optional JSON body. Authenticated requests act as the configured GitHub token identity, which should be the kody-bot account rather than kentcdodds. Non-GET methods can mutate or delete GitHub data, so confirm exact write operations with the user before executing them unless they explicitly requested that exact change.',
+		keywords: ['github', 'rest', 'api', 'raw', 'low-level', 'fetch', 'bot'],
+		readOnly: false,
+		idempotent: false,
+		destructive: true,
+		inputSchema,
+		outputSchema,
+		async handler(args, ctx: CapabilityContext) {
+			assertSafeGithubPath(args.path)
+			const client = createGitHubRestClient(ctx.env)
+			return client.rawRequest({
+				method: args.method,
+				path: args.path.trim(),
+				query: args.query,
+				body: args.body,
+			})
+		},
 	},
-})
+)

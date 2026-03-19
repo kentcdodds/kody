@@ -555,6 +555,8 @@ test(
 					return {
 						matches,
 						capability: getCapability('do_math'),
+						domainList: listDomains(),
+						codingDescription: getDomain('coding'),
 					}
 				}`,
 			},
@@ -575,6 +577,14 @@ test(
 		const inputSchema = capability?.inputSchema as
 			| Record<string, unknown>
 			| undefined
+		const domainList = searchResult?.domainList as
+			| Array<Record<string, unknown>>
+			| undefined
+		const codingDescription = searchResult?.codingDescription as
+			| string
+			| undefined
+		expect(domainList?.map((d) => d.name).sort()).toEqual(['coding', 'math'])
+		expect(codingDescription).toContain('GitHub')
 		expect(matches?.[0]?.name).toBe('do_math')
 		expect(matches?.[0]?.domain).toBe('math')
 		expect(matches?.[0]?.requiredInputFields).toEqual([

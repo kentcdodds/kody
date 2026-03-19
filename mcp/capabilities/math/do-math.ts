@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { defineCapability } from '../define-capability.ts'
+import { defineDomainCapability } from '../define-domain-capability.ts'
+import { capabilityDomainNames } from '../domain-metadata.ts'
 import { type CapabilityContext } from '../types.ts'
 
 type OperationFn = (left: number, right: number) => number
@@ -49,51 +50,53 @@ function formatNumberForMarkdown(value: number, precision: number) {
 	return rounded.includes('.') ? rounded.replace(/\.?0+$/, '') : rounded
 }
 
-export const doMathCapability = defineCapability({
-	name: 'do_math',
-	domain: 'math',
-	description:
-		'Compute a single arithmetic operation over two numbers. Division by zero is rejected.',
-	keywords: [
-		'arithmetic',
-		'calculation',
-		'add',
-		'subtract',
-		'multiply',
-		'divide',
-		'precision',
-	],
-	readOnly: true,
-	idempotent: true,
-	inputSchema: doMathArgsSchema.describe(
-		'Inputs for a single arithmetic operation. Use precision to control formatted display output only.',
-	),
-	outputSchema: doMathOutputSchema,
-	async handler(args, _ctx: CapabilityContext) {
-		const { left, right, operator, precision } = args
+export const doMathCapability = defineDomainCapability(
+	capabilityDomainNames.math,
+	{
+		name: 'do_math',
+		description:
+			'Compute a single arithmetic operation over two numbers. Division by zero is rejected.',
+		keywords: [
+			'arithmetic',
+			'calculation',
+			'add',
+			'subtract',
+			'multiply',
+			'divide',
+			'precision',
+		],
+		readOnly: true,
+		idempotent: true,
+		inputSchema: doMathArgsSchema.describe(
+			'Inputs for a single arithmetic operation. Use precision to control formatted display output only.',
+		),
+		outputSchema: doMathOutputSchema,
+		async handler(args, _ctx: CapabilityContext) {
+			const { left, right, operator, precision } = args
 
-		if (operator === '/' && right === 0) {
-			throw new Error(
-				'Division by zero. Next: Choose a non-zero right operand.',
-			)
-		}
+			if (operator === '/' && right === 0) {
+				throw new Error(
+					'Division by zero. Next: Choose a non-zero right operand.',
+				)
+			}
 
-		const operation = operations[operator]
-		const result = operation(left, right)
-		if (!Number.isFinite(result)) {
-			throw new Error(
-				'Result is not a finite number. Next: Use smaller inputs or choose a different operator.',
-			)
-		}
+			const operation = operations[operator]
+			const result = operation(left, right)
+			if (!Number.isFinite(result)) {
+				throw new Error(
+					'Result is not a finite number. Next: Use smaller inputs or choose a different operator.',
+				)
+			}
 
-		return {
-			left,
-			operator,
-			right,
-			expression: `${left} ${operator} ${right}`,
-			result,
-			formattedResult: formatNumberForMarkdown(result, precision),
-			precisionUsed: precision,
-		}
+			return {
+				left,
+				operator,
+				right,
+				expression: `${left} ${operator} ${right}`,
+				result,
+				formattedResult: formatNumberForMarkdown(result, precision),
+				precisionUsed: precision,
+			}
+		},
 	},
-})
+)

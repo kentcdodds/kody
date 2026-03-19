@@ -15,6 +15,10 @@ Installed in this repo as `agents` in `package.json` (currently `^0.7.4`).
 
 - MCP server uses `McpAgent` in `mcp/index.ts` and is served via
   `MCP.serve(...)` in `worker/index.ts`.
+- Capabilities exposed through the compact `search` / `execute` tools are
+  registered per-domain (`mcp/capabilities/*/domain.ts`) and merged in
+  `mcp/capabilities/builtin-domains.ts`; see
+  [adding capabilities](./adding-capabilities.md).
 - This project is not organized around the React hook APIs from the SDK; for
   non-React clients, use `AgentClient` from `agents/client`.
 

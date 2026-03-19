@@ -1,5 +1,6 @@
 import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { type ZodType } from 'zod'
+import { type CapabilityDomain } from './domain-metadata.ts'
 import { type McpCallerContext } from '#shared/chat.ts'
 
 export type CapabilityContext = {
@@ -25,7 +26,7 @@ export type CapabilityDefinition<
 		| undefined,
 > = {
 	name: string
-	domain: string
+	domain: CapabilityDomain
 	description: string
 	keywords?: Array<string>
 	tags?: Array<string>
@@ -47,7 +48,7 @@ export type CapabilityDefinition<
 // Runtime/registry shape after schema normalization.
 export type Capability = {
 	name: string
-	domain: string
+	domain: CapabilityDomain
 	description: string
 	keywords: Array<string>
 	readOnly: boolean
@@ -63,7 +64,7 @@ export type Capability = {
 
 export type CapabilitySpec = {
 	name: string
-	domain: string
+	domain: CapabilityDomain
 	description: string
 	keywords: Array<string>
 	readOnly: boolean
@@ -74,4 +75,22 @@ export type CapabilitySpec = {
 	outputFields: Array<string>
 	inputSchema: JsonSchemaToolDescriptor['inputSchema']
 	outputSchema?: JsonSchemaToolDescriptor['outputSchema']
+}
+
+/** Registry / MCP instruction row derived from a `DomainSpec`. */
+export type CapabilityDomainMetadata = {
+	name: CapabilityDomain
+	description: string
+	keywords?: Array<string>
+}
+
+/**
+ * Single source of truth for a domain: metadata plus its capabilities.
+ * Pass an array of these to `buildCapabilityRegistry` (see `builtin-domains.ts`).
+ */
+export type DomainSpec = {
+	name: CapabilityDomain
+	description: string
+	keywords?: Array<string>
+	capabilities: Array<Capability>
 }
