@@ -88,7 +88,7 @@ test('creates and deletes chat threads when authenticated', async ({
 	await expect(page.getByRole('heading', { name: 'New chat' })).toBeVisible()
 	await expect(
 		page
-			.getByRole('complementary')
+			.locator('#chat-messages-scroll-container')
 			.getByText('This is a mock completion', { exact: false }),
 	).toBeVisible()
 	await expect(
