@@ -80,11 +80,12 @@ test('creates and deletes chat threads when authenticated', async ({
 }) => {
 	await login()
 	await page.goto('/chat')
+	await page.getByRole('button', { name: 'New thread' }).click()
+	await expect(page).toHaveURL(/\/chat\/.+/)
+	const createdThreadPath = new URL(page.url()).pathname
 
 	await page.getByRole('textbox', { name: 'Message' }).fill('Hello there')
 	await page.getByRole('button', { name: 'Send message' }).click()
-	await expect(page).toHaveURL(/\/chat\/.+/)
-	const createdThreadPath = new URL(page.url()).pathname
 	await expect(page.getByRole('heading', { name: 'New chat' })).toBeVisible()
 	await expect(
 		page
@@ -109,6 +110,8 @@ test('creates and deletes chat threads when authenticated', async ({
 test('responds to mock tool commands in chat', async ({ page, login }) => {
 	await login()
 	await page.goto('/chat')
+	await page.getByRole('button', { name: 'New thread' }).click()
+	await expect(page).toHaveURL(/\/chat\/.+/)
 
 	await page
 		.getByRole('textbox', { name: 'Message' })
