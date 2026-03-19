@@ -1,6 +1,9 @@
 import { type Handle } from 'remix/component'
 import { buildAuthLink } from '#client/auth-links.ts'
-import { getPathname, listenToRouterNavigation } from '#client/client-router.tsx'
+import {
+	getPathname,
+	listenToRouterNavigation,
+} from '#client/client-router.tsx'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
 import {
 	colors,

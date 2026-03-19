@@ -64,9 +64,7 @@ export function AccountRoute(handle: Handle) {
 					>
 						{email ? `Welcome, ${email}` : 'Welcome'}
 					</h1>
-					<p css={{ color: colors.textMuted }}>
-						You are signed in to kody.
-					</p>
+					<p css={{ color: colors.textMuted }}>You are signed in to kody.</p>
 				</header>
 				{status === 'loading' ? (
 					<p css={{ color: colors.textMuted }}>Loading your account…</p>

@@ -70,8 +70,7 @@ Configure these secrets for GitHub Actions workflows:
   account)
 - `COOKIE_SECRET` (same format as local)
 - `APP_BASE_URL` (optional, used by the production deploy)
-- `AI_GATEWAY_ID` (required for production deploys that use remote AI
-  inference)
+- `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
 - `RESEND_API_KEY` (optional, required to send via Resend in non-mock
@@ -107,6 +106,6 @@ How to get/set each secret:
     `noreply@example.com`), then store it as a secret.
 
 Preview deploys for pull requests create a separate Worker per PR named
-`<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per
-mock service named `<app-name>-pr-<number>-mock-<service>`. The same
+`<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock
+service named `<app-name>-pr-<number>-mock-<service>`. The same
 `CLOUDFLARE_API_TOKEN` must be able to create/update and delete those Workers.
