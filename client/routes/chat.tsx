@@ -727,16 +727,7 @@ export function ChatRoute(handle: Handle) {
 				return
 			}
 
-			if (!hasThreadInUrl && shouldUseSinglePanelLayout) {
-				clearActiveThread()
-				return
-			}
-
 			if (locationThreadId !== resolvedThreadId) {
-				if (!hasThreadInUrl && shouldUseSinglePanelLayout) {
-					clearActiveThread()
-					return
-				}
 				navigate(buildThreadHref(resolvedThreadId))
 				return
 			}
