@@ -116,7 +116,9 @@ test('creates and deletes chat threads when authenticated', async ({
 
 test('responds to mock tool commands in chat', async ({ page, login }) => {
 	await login()
-	await createThread(page, `tool setup ${Date.now()}`)
+	await page.goto('/chat')
+	await page.getByRole('button', { name: 'New thread' }).click()
+	await expect(page).toHaveURL(/\/chat\/.+/)
 	const messages = page.locator('#chat-messages-scroll-container')
 
 	await page
