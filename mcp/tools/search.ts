@@ -39,8 +39,8 @@ interface DetailedCapabilitySummary extends CapabilitySummary {
   readOnly: boolean;
   idempotent: boolean;
   destructive: boolean;
-  inputFields: string[];
-  outputFields: string[];
+  inputFields?: string[];
+  outputFields?: string[];
   inputSchema: unknown;
   outputSchema?: unknown;
 }
@@ -69,7 +69,8 @@ capability you want to inspect.
 \`capabilities\` is the low-level source-of-truth map for arbitrary JavaScript
 queries that are not covered by the helper parameters.
 Use \`detail: true\` or \`getCapability(name)\` when you need richer metadata or
-full schemas.
+full schemas. When a schema is present, the corresponding \`inputFields\` or
+\`outputFields\` list is omitted to avoid repeating the same information.
 
 Examples:
 

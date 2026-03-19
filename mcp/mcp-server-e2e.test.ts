@@ -587,7 +587,6 @@ test(
 		expect(capability?.keywords).toEqual(
 			expect.arrayContaining(['arithmetic', 'add', 'precision']),
 		)
-		expect(capability?.tags).toBeUndefined()
 		expect(capability?.readOnly).toBe(true)
 		expect(capability?.inputFields).toEqual(
 			expect.arrayContaining(['operator']),
@@ -648,7 +647,13 @@ test(
 		expect(capability?.keywords).toEqual(
 			expect.arrayContaining(['arithmetic', 'calculation', 'divide']),
 		)
-		expect(capability?.tags).toBeUndefined()
+		expect(capability?.inputFields).toBeUndefined()
+		expect(capability?.outputFields).toBeUndefined()
+		expect(capability?.requiredInputFields).toEqual([
+			'left',
+			'right',
+			'operator',
+		])
 		expect(inputSchema?.description).toBe(
 			'Inputs for a single arithmetic operation. Use precision to control formatted display output only.',
 		)

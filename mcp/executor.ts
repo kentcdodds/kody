@@ -65,7 +65,7 @@ function createCapabilitySummary(capability) {
 }
 
 function createDetailedCapabilitySummary(capability) {
-	return {
+	const summary = {
 		name: capability.name,
 		domain: capability.domain,
 		description: capability.description,
@@ -73,12 +73,20 @@ function createDetailedCapabilitySummary(capability) {
 		readOnly: capability.readOnly,
 		idempotent: capability.idempotent,
 		destructive: capability.destructive,
-		inputFields: capability.inputFields,
 		requiredInputFields: capability.requiredInputFields,
-		outputFields: capability.outputFields,
 		inputSchema: capability.inputSchema,
 		outputSchema: capability.outputSchema,
 	};
+
+	if (!capability.inputSchema) {
+		summary.inputFields = capability.inputFields;
+	}
+
+	if (!capability.outputSchema) {
+		summary.outputFields = capability.outputFields;
+	}
+
+	return summary;
 }
 
 export { capabilities };
@@ -94,8 +102,6 @@ export function findCapabilities(query = {}) {
 	const keyword =
 		typeof query.keyword === "string"
 			? query.keyword.trim().toLowerCase()
-			: typeof query.tag === "string"
-				? query.tag.trim().toLowerCase()
 				: "";
 	const inputField =
 		typeof query.inputField === "string"
