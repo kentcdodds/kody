@@ -22,6 +22,7 @@ import {
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
 import { withCors } from './utils.ts'
+import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 
 export { ChatAgent, MCP }
 
@@ -40,6 +41,10 @@ const appHandler = withCors({
 	},
 	async handler(request, env, ctx) {
 		const url = new URL(request.url)
+
+		if (url.pathname === '/__maintenance/reindex-capabilities') {
+			return handleCapabilityReindexRequest(request, env)
+		}
 
 		if (url.pathname === oauthPaths.authorize) {
 			return handleAuthorizeRequest(request, env)

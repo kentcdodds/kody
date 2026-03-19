@@ -9,10 +9,11 @@ tool per capability.
 
 A **domain** is the single source of truth for:
 
-- Stable id (`name`) used for search filtering and logging
+- Stable id (`name`) used for search ranking and logging
 - Human-facing `description` (shown in MCP server instructions and the search
   tool)
-- Optional `keywords` for future discovery helpers
+- Optional `keywords` — folded into the embed text used for MCP `search`
+  (Vectorize + lexical fusion); good keywords improve retrieval
 - The `Capability[]` that belong to that domain
 
 Authoring flow:
@@ -196,8 +197,8 @@ Use handlers for things like:
 
 Public MCP behavior should be verified through the compact tool surface:
 
-- use `search` to confirm the capability is discoverable through
-  `findCapabilities`
+- use `search` with a **query** string to confirm the capability surfaces in
+  ranked results
 - use `execute` to confirm the capability runs correctly
 
 Prefer E2E tests in `mcp/mcp-server-e2e.test.ts` for the real MCP contract.

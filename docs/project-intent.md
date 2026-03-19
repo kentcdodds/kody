@@ -5,9 +5,10 @@ AI agent host that supports MCP.
 
 The core idea is to keep the public MCP surface small while still making a large
 number of capabilities available behind that surface. The current direction is
-to follow Cloudflare's Code Mode approach: expose a tiny set of stable tools
-such as search and execute, then implement the broader capability graph in code
-rather than as hundreds of individually described MCP tools.
+to follow Cloudflare's Code Mode approach for execution: expose a tiny set of
+stable tools such as `search` (capability discovery) and `execute` (sandboxed
+capability calls), then implement the broader capability graph in code rather
+than as hundreds of individually described MCP tools.
 
 ## What this repo is
 
@@ -52,8 +53,8 @@ The intended product direction is:
 
 1. Build a personal assistant that can be reached from MCP-capable AI agents.
 2. Keep the MCP contract compact enough that it does not bloat host context.
-3. Hide most capability complexity behind Code Mode style search and execute
-   tools.
+3. Hide most capability complexity behind `search` for discovery and Code Mode
+   `execute` for capability calls.
 4. Treat ChatGPT as a likely primary integration target, while keeping the
    server usable from other MCP hosts when possible.
 

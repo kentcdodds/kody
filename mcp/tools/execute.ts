@@ -36,8 +36,7 @@ Each method accepts one args object matching that capability's \`inputSchema\`
 and returns structured data described by its \`outputSchema\` when present.
 Each capability call resolves to the raw returned value itself, not an MCP
 wrapper object. When chaining calls, read fields from the previous result using
-the capability's \`outputSchema\` from \`search\` detail mode or
-\`getCapability(name)\`.
+the capability's \`outputSchema\` from \`search\` with \`detail: true\`.
 
 Your code must be an async arrow function that returns the result.
 

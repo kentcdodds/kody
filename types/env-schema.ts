@@ -126,6 +126,7 @@ export const EnvSchema = object({
 	GITHUB_API_BASE_URL: optionalUrlStringSchema,
 	CURSOR_API_KEY: optionalNonEmptyStringSchema,
 	CURSOR_API_BASE_URL: optionalUrlStringSchema,
+	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

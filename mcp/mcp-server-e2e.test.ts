@@ -545,46 +545,23 @@ test(
 		const result = await mcpClient.client.callTool({
 			name: 'search',
 			arguments: {
-				code: `async () => {
-					const matches = findCapabilities({
-						domain: 'math',
-						inputField: 'operator',
-						readOnly: true,
-					})
-
-					return {
-						matches,
-						capability: getCapability('do_math'),
-						domainList: listDomains(),
-						codingDescription: getDomain('coding'),
-					}
-				}`,
+				query:
+					'calculation add subtract multiply divide finite number arithmetic',
+				limit: 8,
 			},
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
 			| Record<string, unknown>
 			| undefined
-		const searchResult = structuredResult?.result as
+		const searchPayload = structuredResult?.result as
 			| Record<string, unknown>
 			| undefined
-		const matches = searchResult?.matches as
+		const matches = searchPayload?.matches as
 			| Array<Record<string, unknown>>
 			| undefined
-		const capability = searchResult?.capability as
-			| Record<string, unknown>
-			| undefined
-		const inputSchema = capability?.inputSchema as
-			| Record<string, unknown>
-			| undefined
-		const domainList = searchResult?.domainList as
-			| Array<Record<string, unknown>>
-			| undefined
-		const codingDescription = searchResult?.codingDescription as
-			| string
-			| undefined
-		expect(domainList?.map((d) => d.name).sort()).toEqual(['coding', 'math'])
-		expect(codingDescription).toContain('GitHub')
+
+		expect(searchPayload?.offline).toBe(true)
 		expect(matches?.[0]?.name).toBe('do_math')
 		expect(matches?.[0]?.domain).toBe('math')
 		expect(matches?.[0]?.requiredInputFields).toEqual([
@@ -594,14 +571,6 @@ test(
 		])
 		expect(matches?.[0]?.readOnly).toBeUndefined()
 		expect(matches?.[0]?.inputFields).toBeUndefined()
-		expect(capability?.keywords).toEqual(
-			expect.arrayContaining(['arithmetic', 'add', 'precision']),
-		)
-		expect(capability?.readOnly).toBe(true)
-		expect(capability?.inputFields).toEqual(
-			expect.arrayContaining(['operator']),
-		)
-		expect(inputSchema?.required).toEqual(['left', 'right', 'operator'])
 
 		const textOutput =
 			(result as CallToolResult).content.find(
@@ -624,19 +593,19 @@ test(
 		const result = await mcpClient.client.callTool({
 			name: 'search',
 			arguments: {
-				code: `async () =>
-					findCapabilities({
-						domain: 'math',
-						inputField: 'operator',
-						detail: true,
-					})`,
+				query: 'arithmetic two operands operator precision',
+				limit: 5,
+				detail: true,
 			},
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
 			| Record<string, unknown>
 			| undefined
-		const searchResult = structuredResult?.result as
+		const searchPayload = structuredResult?.result as
+			| Record<string, unknown>
+			| undefined
+		const searchResult = searchPayload?.matches as
 			| Array<Record<string, unknown>>
 			| undefined
 		const capability = searchResult?.[0]

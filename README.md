@@ -22,7 +22,8 @@ across AI agent hosts that support MCP.
 Today this repo includes a Remix-powered UI, Cloudflare Worker request routing,
 chat-agent plumbing, and OAuth-protected MCP endpoints. The long-term direction
 is not a huge static tool catalog. It is a compact MCP surface with broader
-capabilities hidden behind Code Mode style search and execute flows.
+capabilities hidden behind a compact `search` tool plus Code Mode `execute`
+flows.
 
 This project is intentionally single-user right now and is being built for
 `me@kentcdodds.com`.

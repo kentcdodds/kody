@@ -3,14 +3,9 @@ import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import {
 	capabilityDomains,
-	capabilityDomainDescriptionsByName,
 	capabilitySpecs,
 } from '#mcp/capabilities/registry.ts'
-import {
-	createSearchExecutor,
-	formatExecutionOutput,
-	wrapSearchCode,
-} from '#mcp/executor.ts'
+import { searchCapabilities } from '#mcp/capabilities/capability-search.ts'
 import { type MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
@@ -18,103 +13,43 @@ import {
 	logMcpEvent,
 } from '#mcp/observability.ts'
 
+const charsPerToken = 4
+const maxTokens = 6_000
+const maxChars = maxTokens * charsPerToken
+
+function truncateSearchResult(value: unknown): string {
+	const text =
+		typeof value === 'string'
+			? value
+			: (JSON.stringify(value, null, 2) ?? 'undefined')
+
+	if (text.length <= maxChars) return text
+
+	return `${text.slice(0, maxChars)}\n\n--- TRUNCATED ---\nResponse was ~${Math.ceil(
+		text.length / charsPerToken,
+	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Lower the limit or ask a shorter query.`
+}
+
 const capabilityDomainSummary = capabilityDomains
 	.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
 	.join('\n')
 
-// TODO: If the domain list grows large, replace this inline hint with a
-// dedicated `findDomains()` helper in the search sandbox.
 const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities',
 	description: `
-Search Kody capabilities. Use this tool first to discover the right capability
-before calling \`execute\`.
+Search Kody capabilities by natural language before calling \`execute\`.
 
-Domains:
+Domains (for context only—put hints in your \`query\` string; there are no filter fields):
 ${capabilityDomainSummary}
 
-Available in your code:
+Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. Refine your wording to narrow results—there are no structured filters.
 
-interface DomainInfo {
-  name: string;
-  description: string;
-}
+Optional **limit** (default 15) caps how many capabilities are returned. **detail: true** includes full descriptions, keywords, flags, and JSON schemas.
 
-interface CapabilitySummary {
-  name: string;
-  domain: string;
-  requiredInputFields: string[];
-}
-
-interface DetailedCapabilitySummary extends CapabilitySummary {
-  description: string;
-  keywords: string[];
-  readOnly: boolean;
-  idempotent: boolean;
-  destructive: boolean;
-  inputFields?: string[];
-  outputFields?: string[];
-  inputSchema: unknown;
-  outputSchema?: unknown;
-}
-
-interface CapabilityInfo extends DetailedCapabilitySummary {}
-
-declare const capabilities: Record<string, CapabilityInfo>;
-declare const domains: Record<string, string>;
-declare function getCapability(name: string): CapabilityInfo | undefined;
-declare function getDomain(name: string): string | undefined;
-declare function listDomains(): DomainInfo[];
-declare function findCapabilities(query?: {
-  text?: string;
-  domain?: string;
-  keyword?: string;
-  inputField?: string;
-  outputField?: string;
-  readOnly?: boolean;
-  idempotent?: boolean;
-  destructive?: boolean;
-  detail?: boolean;
-}): Array<CapabilitySummary | DetailedCapabilitySummary>;
-
-Your code must be an async arrow function that returns the result.
-\`findCapabilities(...)\` is the default helper for targeted discovery and
-returns a compact summary by default.
-\`getCapability(name)\` is for exact-name lookup when you already know the
-capability you want to inspect.
-\`listDomains()\` and \`getDomain(name)\` explain what each domain is for before
-you filter by domain.
-\`capabilities\` is the low-level source-of-truth map for arbitrary JavaScript
-queries that are not covered by the helper parameters.
-Use the domain descriptions to pick the right domain first when the task could
-fit multiple areas.
-Use \`detail: true\` or \`getCapability(name)\` when you need richer metadata or
-full schemas. When a schema is present, the corresponding \`inputFields\` or
-\`outputFields\` list is omitted to avoid repeating the same information.
-
-Examples:
-
-\`async () =>
-  findCapabilities({ domain: 'math', keyword: 'arithmetic' })\`
-
-\`async () =>
-  findCapabilities({ domain: 'math', inputField: 'operator' })\`
-
-\`async () => listDomains()\`
-
-\`async () => getDomain('coding')\`
-
-\`async () => getCapability('do_math')\`
-
-\`async () =>
-  Object.values(capabilities)
-    .filter((capability) => capability.idempotent && capability.domain === 'math')
-    .map(({ name, domain, requiredInputFields }) => ({
-      name,
-      domain,
-      requiredInputFields,
-    }))\`
+Example arguments:
+- \`{ "query": "arithmetic or calculator", "limit": 10 }\`
+- \`{ "query": "call GitHub REST API", "detail": true }\`
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,
@@ -124,6 +59,8 @@ Examples:
 	} satisfies ToolAnnotations,
 } as const
 
+const defaultSearchLimit = 15
+
 export async function registerSearchTool(agent: MCP) {
 	agent.server.registerTool(
 		searchTool.name,
@@ -131,34 +68,53 @@ export async function registerSearchTool(agent: MCP) {
 			title: searchTool.title,
 			description: searchTool.description,
 			inputSchema: {
-				code: z
+				query: z
 					.string()
-					.describe('JavaScript async arrow function to search capabilities.'),
+					.min(1)
+					.describe('Natural language description of the capability you need.'),
+				limit: z
+					.number()
+					.int()
+					.min(1)
+					.max(100)
+					.optional()
+					.describe('Max number of capabilities to return (default 15).'),
+				detail: z
+					.boolean()
+					.optional()
+					.describe('Include full metadata and JSON schemas when true.'),
 			},
 			annotations: searchTool.annotations,
 		},
-		async ({ code }: { code: string }) => {
+		async (args: { query: string; limit?: number; detail?: boolean }) => {
 			const startedAt = performance.now()
 			const { baseUrl, hasUser } = callerContextFields(agent.getCallerContext())
-			const executor = createSearchExecutor(
-				agent.getEnv(),
-				capabilitySpecs,
-				capabilityDomainDescriptionsByName,
-			)
-			const result = await Sentry.startSpan(
-				{
-					name: 'mcp.tool.search',
-					op: 'mcp.tool',
-					attributes: {
-						'mcp.tool': 'search',
-					},
-				},
-				async () => executor.execute(wrapSearchCode(code), {}),
-			)
-			const durationMs = Math.round(performance.now() - startedAt)
 
-			if (result.error) {
-				const { errorName, errorMessage } = errorFields(result.error)
+			const searchSpan = async () =>
+				searchCapabilities({
+					env: agent.getEnv(),
+					query: args.query,
+					limit: args.limit ?? defaultSearchLimit,
+					detail: args.detail === true,
+					specs: capabilitySpecs,
+				})
+
+			let result: Awaited<ReturnType<typeof searchCapabilities>>
+			try {
+				result = await Sentry.startSpan(
+					{
+						name: 'mcp.tool.search',
+						op: 'mcp.tool',
+						attributes: {
+							'mcp.tool': 'search',
+						},
+					},
+					searchSpan,
+				)
+			} catch (cause) {
+				const durationMs = Math.round(performance.now() - startedAt)
+				const error = cause instanceof Error ? cause : new Error(String(cause))
+				const { errorName, errorMessage } = errorFields(error)
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'search',
@@ -167,25 +123,21 @@ export async function registerSearchTool(agent: MCP) {
 					durationMs,
 					baseUrl,
 					hasUser,
-					sandboxError: true,
+					sandboxError: false,
 					errorName,
 					errorMessage,
-					cause: result.error,
+					cause: error,
 				})
 				return {
-					content: [
-						{
-							type: 'text',
-							text: formatExecutionOutput(result),
-						},
-					],
+					content: [{ type: 'text', text: `Error: ${error.message}` }],
 					structuredContent: {
-						error: result.error,
-						logs: result.logs ?? [],
+						error: error.message,
 					},
 					isError: true,
 				}
 			}
+
+			const durationMs = Math.round(performance.now() - startedAt)
 
 			logMcpEvent({
 				category: 'mcp',
@@ -197,16 +149,20 @@ export async function registerSearchTool(agent: MCP) {
 				hasUser,
 			})
 
+			const payload = {
+				matches: result.matches,
+				offline: result.offline,
+			}
+
 			return {
 				content: [
 					{
 						type: 'text',
-						text: formatExecutionOutput(result),
+						text: truncateSearchResult(payload),
 					},
 				],
 				structuredContent: {
-					result: result.result,
-					logs: result.logs ?? [],
+					result: payload,
 				},
 			}
 		},

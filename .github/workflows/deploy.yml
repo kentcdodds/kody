@@ -91,13 +91,15 @@ jobs:
           # Repo secrets cannot start with GITHUB_ (reserved). Worker still uses GITHUB_TOKEN.
           GITHUB_TOKEN: ${{ secrets.KODY_GITHUB_TOKEN }}
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
         run: >
           bun tools/ci/sync-worker-secrets.ts --env production --set-from-env
           COOKIE_SECRET --set-from-env AI_GATEWAY_ID --set-from-env-optional
           APP_BASE_URL --set-from-env-optional RESEND_API_KEY
           --set-from-env-optional RESEND_FROM_EMAIL --set-from-env-optional
           SENTRY_DSN --set-from-env-optional GITHUB_TOKEN
-          --set-from-env-optional CURSOR_API_KEY
+          --set-from-env-optional CURSOR_API_KEY --set-from-env-optional
+          CAPABILITY_REINDEX_SECRET
 
       - name: 🗄️ Apply D1 Migrations
         env:
@@ -183,3 +185,26 @@ jobs:
             cat health.json >&2
           fi
           exit 1
+
+      - name: 🧭 Reindex capability vectors (Vectorize)
+        shell: bash
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CAPABILITY_REINDEX_SECRET:-}" ]; then
+            echo "Skipping capability reindex (CAPABILITY_REINDEX_SECRET not set)."
+            exit 0
+          fi
+          if [ -z "${DEPLOY_URL:-}" ]; then
+            echo "Skipping capability reindex (no deploy URL)."
+            exit 0
+          fi
+          base="${DEPLOY_URL%/}"
+          echo "POST ${base}/__maintenance/reindex-capabilities"
+          curl --fail --silent --show-error --location --max-time 120 \
+            -X POST \
+            -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
+            -H "Accept: application/json" \
+            "${base}/__maintenance/reindex-capabilities"

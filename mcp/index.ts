@@ -34,19 +34,13 @@ Domains
 ${domainInstructions}
 
 How to use search
-- The sandbox provides a 'capabilities' object keyed by name.
-- Use the domain descriptions above to choose the right area before filtering capabilities.
-- Use 'findCapabilities(...)' as the default helper for targeted discovery.
-- Use 'getCapability(name)' for exact-name lookup when you already know the capability.
-- Use the raw 'capabilities' map for arbitrary JavaScript queries that are not covered by the helper parameters.
-- 'findCapabilities(...)' returns a compact summary by default.
-- Use 'detail: true' or 'getCapability(name)' when you need richer metadata or schemas.
-- Your code must be an async arrow function that returns the result.
-- Example: findCapabilities({ domain: 'math', inputField: 'operator' })
-- Example: findCapabilities({ domain: 'coding', keyword: 'github' })
-- Example: findCapabilities({ domain: 'coding', keyword: 'cursor' })
-- Example: getCapability('github_rest')
-- Example: getCapability('cursor_cloud_rest')
+- Call the 'search' tool with a natural-language 'query' describing what you need (optional 'limit', 'detail').
+- Narrow results by rephrasing 'query'—there are no structured filter arguments.
+- Use domain descriptions above as vocabulary hints in your query text.
+- Use 'detail: true' when you need full JSON schemas and metadata.
+- Example: search({ query: 'calculator or basic arithmetic on two numbers' })
+- Example: search({ query: 'GitHub REST API repository or issues', detail: true })
+- Example: search({ query: 'Cursor Cloud agents API' })
 
 Destructive GitHub access
 - Some capabilities are marked destructive: they can change or delete remote data (for example github_rest with POST, PUT, PATCH, or DELETE).

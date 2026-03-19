@@ -72,6 +72,24 @@ Optional Worker secrets/vars (see `types/env-schema.ts` and
   `https://api.github.com` when unset. Local `bun run dev` sets this to the
   GitHub mock Worker unless `SKIP_GITHUB_MOCK=1`.
 
+## MCP capability search (Vectorize + Workers AI)
+
+Worker bindings (see `wrangler.jsonc`):
+
+- **`CAPABILITY_VECTOR_INDEX`** — Cloudflare Vectorize index for semantic
+  retrieval (`kody-capabilities-prod` / `kody-capabilities-preview`). Create
+  indexes with **`--dimensions=384 --metric=cosine`** to match
+  `@cf/baai/bge-small-en-v1.5` (see `mcp/capabilities/capability-search.ts`).
+  The **`test`** Wrangler environment omits this binding so `bun test` and e2e
+  use the deterministic offline fusion path (`offline: true` in search results).
+
+Optional Worker secret:
+
+- **`CAPABILITY_REINDEX_SECRET`** — Bearer token for
+  `POST /__maintenance/reindex-capabilities` (production deploy workflow calls
+  this after healthcheck when the GitHub secret is set). Local dev uses offline
+  search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+
 ## Cursor Cloud Agents (`cursor_cloud_rest` capability)
 
 Optional Worker secrets/vars (see `types/env-schema.ts` and

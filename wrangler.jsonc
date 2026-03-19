@@ -62,6 +62,12 @@
 					"preview_id": "becbb91b27364709a7e8a9c7533c9ff5",
 				},
 			],
+			"vectorize": [
+				{
+					"binding": "CAPABILITY_VECTOR_INDEX",
+					"index_name": "kody-capabilities-prod",
+				},
+			],
 			"vars": {
 				"AI_MODE": "remote",
 				"AI_MODEL": "@cf/zai-org/glm-4.7-flash",
@@ -108,6 +114,12 @@
 					"binding": "OAUTH_KV",
 					"id": "e2c0caa629a04af198d90fb5ec388f62",
 					"preview_id": "becbb91b27364709a7e8a9c7533c9ff5",
+				},
+			],
+			"vectorize": [
+				{
+					"binding": "CAPABILITY_VECTOR_INDEX",
+					"index_name": "kody-capabilities-preview",
 				},
 			],
 			"vars": {

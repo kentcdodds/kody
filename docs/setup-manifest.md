@@ -11,6 +11,13 @@ This project uses the following resources:
 - KV namespace for OAuth/session storage
   - `binding`: `OAUTH_KV`
   - `title`: `<app-name>-oauth`
+- Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
+  - Production: `kody-capabilities-prod`
+  - Preview: `kody-capabilities-preview`
+  - Create once per account, for example:
+    `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`
+    (same for preview). **Dimensions must match** the embedding model in
+    `mcp/capabilities/capability-search.ts` (`@cf/baai/bge-small-en-v1.5`).
 
 Production CI deploys now ensure these resources exist and create them when
 missing. The post-download script does not create Cloudflare resources and does
@@ -74,6 +81,9 @@ Local development uses `.env`, which Wrangler loads automatically:
   `cursor_cloud_rest` MCP capability)
 - `CURSOR_API_BASE_URL` (optional; defaults to `https://api.cursor.com`. Local
   `bun run dev` targets the Cursor mock unless `SKIP_CURSOR_MOCK=1`)
+- `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
+  `POST /__maintenance/reindex-capabilities` to embed and upsert all
+  capabilities into Vectorize)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `.env`.
@@ -100,6 +110,8 @@ Configure these GitHub Actions secrets and variables for workflows:
   Actions forbids repository secrets named `GITHUB_*`)
 - `CURSOR_API_KEY` (optional; Cursor Cloud API key for `cursor_cloud_rest`;
   syncs to the Worker when set in GitHub Actions)
+- `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
+  when set; synced like other optional secrets)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `bun run sentry:upload-sourcemaps` after deploy)
@@ -157,6 +169,12 @@ How to get/set each value:
   - Create an API key in **Cursor → Settings**, then add it as the repository
     secret `CURSOR_API_KEY`. The production deploy workflow can sync it to the
     Worker when present (see `.github/workflows/deploy.yml`).
+- `CAPABILITY_REINDEX_SECRET` (optional)
+  - Generate a long random secret (for example `openssl rand -hex 32`), store it
+    as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
+    workflow sync it to the Worker. After each production deploy, CI POSTs to
+    `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` to
+    refresh embeddings.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

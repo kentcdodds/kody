@@ -21,6 +21,10 @@ Quick notes for getting a local kody environment running.
   GitHub mock Worker for the `github_rest` capability, and (unless
   `SKIP_CURSOR_MOCK=1`) `CURSOR_API_BASE_URL` + `CURSOR_API_KEY` to the local
   Cursor Cloud mock Worker for the `cursor_cloud_rest` capability).
+- MCP **`search`** uses a deterministic offline ranker in tests and when
+  `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
+  required for `bun test` or unauthenticated local runs). Production uses
+  Vectorize plus Workers AI; see `docs/environment-variables.md`.
 - Add new mock API servers by following `docs/agents/mock-api-servers.md`.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
   starting `bun run dev`.
