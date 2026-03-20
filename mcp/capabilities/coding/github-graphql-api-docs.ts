@@ -7,14 +7,15 @@ import { assertGithubDocsPath } from './github-docs-path.ts'
 
 const GITHUB_DOCS_ORIGIN = 'https://docs.github.com'
 
-const localeRestPrefix = /^\/(?:[a-z]{2}|[a-z]{2}-[a-z]{2})\/rest(?:\/|$)/
+const localeGraphqlPrefix =
+	/^\/(?:[a-z]{2}|[a-z]{2}-[a-z]{2})\/graphql(?:\/|$)/
 
 const inputSchema = z.object({
 	path: z
 		.string()
 		.min(1)
 		.describe(
-			'Path on docs.github.com for REST reference pages, starting with `/{locale}/rest/` (no host). Example: `/en/rest/repos/repos`.',
+			'Path on docs.github.com for GraphQL reference pages, starting with `/{locale}/graphql/` (no host). Example: `/en/graphql/overview`.',
 		),
 })
 
@@ -37,26 +38,26 @@ const outputSchema = z.object({
 		),
 })
 
-function assertGithubRestDocsPath(path: string) {
+function assertGithubGraphqlDocsPath(path: string) {
 	assertGithubDocsPath({
 		path,
-		localePrefix: localeRestPrefix,
-		apiLabel: 'REST',
-		localePrefixExample: '/en/rest/',
-		examplePath: '/en/rest/repos/repos',
-		docsUrl: 'https://docs.github.com/en/rest',
+		localePrefix: localeGraphqlPrefix,
+		apiLabel: 'GraphQL',
+		localePrefixExample: '/en/graphql/',
+		examplePath: '/en/graphql/overview',
+		docsUrl: 'https://docs.github.com/en/graphql',
 	})
 }
 
-export const githubRestApiDocsCapability = defineDomainCapability(
+export const githubGraphqlApiDocsCapability = defineDomainCapability(
 	capabilityDomainNames.coding,
 	{
-		name: 'github_rest_api_docs',
+		name: 'github_graphql_api_docs',
 		description:
-			'Read-only fetch of GitHub REST API reference documentation from docs.github.com with Accept: text/markdown so responses are markdown when available.',
+			'Read-only fetch of GitHub GraphQL API reference documentation from docs.github.com with Accept: text/markdown so responses are markdown when available.',
 		keywords: [
 			'github',
-			'rest',
+			'graphql',
 			'documentation',
 			'docs',
 			'markdown',
@@ -68,7 +69,7 @@ export const githubRestApiDocsCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, _ctx: CapabilityContext) {
-			assertGithubRestDocsPath(args.path)
+			assertGithubGraphqlDocsPath(args.path)
 			const url = new URL(args.path.trim(), GITHUB_DOCS_ORIGIN).toString()
 			return fetchMarkdownPreferredDoc(url)
 		},

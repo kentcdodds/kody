@@ -97,7 +97,7 @@ export class GitHubRestClient {
 	}
 }
 
-function formatRateLimitHint(response: Response) {
+export function formatRateLimitHint(response: Response) {
 	const remaining = response.headers.get('x-ratelimit-remaining')
 	if (remaining === null) return ''
 	const reset = response.headers.get('x-ratelimit-reset')

@@ -57,20 +57,22 @@ Optional Worker secret and vars (see `types/env-schema.ts` and
 - `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample
   all traces). Set lower (e.g. `0.1`) for higher traffic or Sentry quota.
 
-## GitHub (`github_rest` capability)
+## GitHub (`github_rest` + `github_graphql` capabilities)
 
-Optional Worker secrets/vars (see `types/env-schema.ts` and
-`mcp/github/github-rest-client.ts`):
+Optional Worker secrets/vars (see `types/env-schema.ts`,
+`mcp/github/github-rest-client.ts`, and `mcp/github/github-graphql-client.ts`):
 
 - `GITHUB_TOKEN` — Bearer token for `api.github.com` (fine-grained PAT
-  recommended) for the `kody-bot` account. GitHub REST calls act as that bot
-  identity rather than as `kentcdodds`. When unset, `github_rest` fails fast
-  with a setup hint. In GitHub Actions you cannot create a repository secret
-  named `GITHUB_*`; production deploy reads **`KODY_GITHUB_TOKEN`** and syncs it
-  to this Worker secret (see `docs/setup-manifest.md`).
-- `GITHUB_API_BASE_URL` — REST API base URL; defaults to
+  recommended) for the `kody-bot` account. GitHub REST and GraphQL calls act as
+  that bot identity rather than as `kentcdodds`. When unset, `github_rest` and
+  `github_graphql` fail fast with a setup hint. In GitHub Actions you cannot
+  create a repository secret named `GITHUB_*`; production deploy reads
+  **`KODY_GITHUB_TOKEN`** and syncs it to this Worker secret (see
+  `docs/setup-manifest.md`).
+- `GITHUB_API_BASE_URL` — GitHub API base URL; defaults to
   `https://api.github.com` when unset. Local `bun run dev` sets this to the
-  GitHub mock Worker unless `SKIP_GITHUB_MOCK=1`.
+  GitHub mock Worker unless `SKIP_GITHUB_MOCK=1`. GraphQL requests target
+  `${GITHUB_API_BASE_URL}/graphql`.
 
 ## MCP capability search (Vectorize + Workers AI)
 

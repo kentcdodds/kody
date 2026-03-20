@@ -15,8 +15,9 @@ it can also be deployed alongside the main app.
 4. In `cli.ts`, start the mock Worker during `bun run dev` (via `wrangler dev`)
    and set `ACME_API_BASE_URL` to the mock Worker origin.
 
-See `mock-servers/github/` for the GitHub REST subset mock used by the
-`github_rest` capability (started by `bun run dev` unless `SKIP_GITHUB_MOCK=1`).
+See `mock-servers/github/` for the GitHub REST + GraphQL subset mock used by the
+`github_rest` and `github_graphql` capabilities (started by `bun run dev` unless
+`SKIP_GITHUB_MOCK=1`).
 
 See `mock-servers/cursor/` for a small
 [Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints)

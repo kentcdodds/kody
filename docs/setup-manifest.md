@@ -74,9 +74,10 @@ Local development uses `.env`, which Wrangler loads automatically:
 - `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to
   `/health` versioning)
 - `GITHUB_TOKEN` (optional Worker secret; fine-grained PAT for `kody-bot` used
-  by the `github_rest` MCP capability)
+  by the `github_rest` and `github_graphql` MCP capabilities)
 - `GITHUB_API_BASE_URL` (optional; defaults to `https://api.github.com`. Local
-  `bun run dev` targets the GitHub mock unless `SKIP_GITHUB_MOCK=1`)
+  `bun run dev` targets the GitHub mock unless `SKIP_GITHUB_MOCK=1`. GraphQL
+  requests hit `${GITHUB_API_BASE_URL}/graphql`.)
 - `CURSOR_API_KEY` (optional Worker secret; Cursor Cloud Agents API key for the
   `cursor_cloud_rest` MCP capability)
 - `CURSOR_API_BASE_URL` (optional; defaults to `https://api.cursor.com`. Local
@@ -105,7 +106,8 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `RESEND_FROM_EMAIL` (optional, required to send via Resend)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
-- `KODY_GITHUB_TOKEN` (optional; bot token for the `github_rest` capability —
+- `KODY_GITHUB_TOKEN` (optional; bot token for the `github_rest` and
+  `github_graphql` capabilities —
   see below; deploy maps this to the Worker secret `GITHUB_TOKEN` because GitHub
   Actions forbids repository secrets named `GITHUB_*`)
 - `CURSOR_API_KEY` (optional; Cursor Cloud API key for `cursor_cloud_rest`;
