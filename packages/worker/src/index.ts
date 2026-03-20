@@ -1,10 +1,10 @@
 import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
-import { getWorkerSentryOptions } from '#sentry/cloudflare-options.ts'
-import { ChatAgent } from '#worker/chat-agent.ts'
-import { MCP } from '#mcp/index.ts'
-import { chatAgentBasePath } from '#shared/chat-routes.ts'
-import { handleRequest } from '#server/handler.ts'
+import { getWorkerSentryOptions } from '../../../sentry/cloudflare-options.ts'
+import { ChatAgent } from './chat-agent.ts'
+import { MCP } from '../../../mcp/index.ts'
+import { chatAgentBasePath } from '../../../shared/chat-routes.ts'
+import { handleRequest } from '../../../server/handler.ts'
 import { handleChatAgentRequest } from './chat-agent-routing.ts'
 import {
 	apiHandler,
@@ -106,7 +106,7 @@ const appHandler = withCors({
 			(request.method === 'GET' || request.method === 'HEAD')
 		) {
 			const { renderCalculatorUiEntryPoint } =
-				await import('#mcp/apps/calculator-ui-entry-point.ts')
+				await import('../../../mcp/apps/calculator-ui-entry-point.ts')
 			const baseUrl = new URL('/', url.origin)
 			const html = renderCalculatorUiEntryPoint(baseUrl)
 			return new Response(html, {

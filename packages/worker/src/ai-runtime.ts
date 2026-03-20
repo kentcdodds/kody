@@ -6,9 +6,12 @@ import {
 	type UIMessage,
 } from 'ai'
 import { createWorkersAI } from 'workers-ai-provider'
-import { getRemoteAiLocalDevCredentialsError } from '#shared/ai-env-validation.ts'
-import { type AiMode } from '#shared/chat.ts'
-import { buildMockAiScenario, type MockAiResponse } from '#shared/mock-ai.ts'
+import { getRemoteAiLocalDevCredentialsError } from '../../../shared/ai-env-validation.ts'
+import { type AiMode } from '../../../shared/chat.ts'
+import {
+	buildMockAiScenario,
+	type MockAiResponse,
+} from '../../../shared/mock-ai.ts'
 
 const defaultModel = '@cf/zai-org/glm-4.7-flash'
 

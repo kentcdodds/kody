@@ -24,6 +24,7 @@ const migrationsDir = join(projectRoot, 'migrations')
 const bunBin = process.execPath
 const defaultTimeoutMs = 60_000
 const calculatorUiResourceUri = 'ui://calculator-app/entry-point.html'
+const workerConfig = 'packages/worker/wrangler.jsonc'
 const primaryUserEmail = 'me@kentcdodds.com'
 const primaryUserPassword = 'iliketwix'
 
@@ -72,7 +73,7 @@ function escapeSql(value: string) {
 
 async function runWrangler(args: Array<string>) {
 	const proc = Bun.spawn({
-		cmd: [bunBin, 'x', 'wrangler', ...args],
+		cmd: [bunBin, 'x', 'wrangler', '--config', workerConfig, ...args],
 		cwd: projectRoot,
 		stdout: 'pipe',
 		stderr: 'pipe',
@@ -276,6 +277,8 @@ async function startDevServer(persistDir: string) {
 			bunBin,
 			'x',
 			'wrangler',
+			'--config',
+			workerConfig,
 			'dev',
 			'--local',
 			'--env',

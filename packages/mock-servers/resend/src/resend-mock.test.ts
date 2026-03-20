@@ -2,7 +2,7 @@
 import { expect, test } from 'bun:test'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createTemporaryDirectory } from '#tools/temp-directory.ts'
+import { createTemporaryDirectory } from '../../../../tools/temp-directory.ts'
 
 const workerConfig = 'packages/mock-servers/resend/wrangler.jsonc'
 const bunBin = process.execPath

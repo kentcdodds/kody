@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { copyFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
@@ -93,6 +93,8 @@ if (isDevCommand && !hasInspectorPortFlag) {
 	commandArgs.push('--inspector-port', resolvedInspectorPort)
 }
 
+syncDotenvForConfig(getConfigArg(commandArgs))
+
 const processEnv = {
 	...process.env,
 	CLOUDFLARE_ENV: envName,
@@ -161,6 +163,41 @@ function getPortArg(argumentList: ReadonlyArray<string>) {
 	}
 
 	return undefined
+}
+
+function getConfigArg(argumentList: ReadonlyArray<string>) {
+	const inlineConfigArg = argumentList.find((arg) =>
+		arg.startsWith('--config='),
+	)
+	if (inlineConfigArg) {
+		const [, value] = inlineConfigArg.split('=')
+		return value || undefined
+	}
+
+	const configIndex = argumentList.findIndex((arg) => arg === '--config')
+	if (configIndex >= 0) {
+		const value = argumentList[configIndex + 1]
+		return value || undefined
+	}
+
+	return undefined
+}
+
+function syncDotenvForConfig(configPath: string | undefined) {
+	if (!configPath) return
+
+	const rootEnvPath = path.join(process.cwd(), '.env')
+	if (!existsSync(rootEnvPath)) return
+
+	const resolvedConfigPath = path.resolve(process.cwd(), configPath)
+	const configDir = path.dirname(resolvedConfigPath)
+	const configEnvPath = path.join(configDir, '.env')
+
+	if (path.resolve(configEnvPath) === path.resolve(rootEnvPath)) {
+		return
+	}
+
+	copyFileSync(rootEnvPath, configEnvPath)
 }
 
 async function waitForPortFree(port: number, timeoutMs: number) {
