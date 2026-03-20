@@ -7,6 +7,7 @@ import {
 	buildSkillEmbedTextFromStoredRow,
 	prepareSkillPersistence,
 } from '#mcp/skills/skill-mutation.ts'
+import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
 
@@ -31,6 +32,10 @@ const inputSchema = z.object({
 		),
 	search_text: z.string().optional(),
 	uses_capabilities: z.array(z.string()).optional(),
+	parameters: z
+		.array(skillParameterSchema)
+		.optional()
+		.describe('Replacement parameter definitions for the skill.'),
 	read_only: z.boolean(),
 	idempotent: z.boolean(),
 	destructive: z.boolean(),
@@ -96,6 +101,7 @@ export const metaUpdateSkillCapability = defineDomainCapability(
 					code: existing.code,
 					search_text: existing.search_text,
 					uses_capabilities: existing.uses_capabilities,
+				parameters: existing.parameters,
 					inferred_capabilities: existing.inferred_capabilities,
 					inference_partial: existing.inference_partial,
 					read_only: existing.read_only,

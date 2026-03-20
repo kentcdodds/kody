@@ -14,6 +14,10 @@ import {
 import { type CapabilitySpec } from './types.ts'
 import { buildSkillEmbedText } from '#mcp/skills/skill-embed-and-flags.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
+import {
+	parseSkillParameters,
+	type SkillParameterDefinition,
+} from '#mcp/skills/skill-parameters.ts'
 
 function parseJsonStringArray(raw: string): Array<string> {
 	try {
@@ -30,6 +34,7 @@ function skillRowEmbedDoc(
 	specs: Record<string, CapabilitySpec>,
 ): string {
 	const keywords = parseJsonStringArray(row.keywords)
+	const parameters = parseSkillParameters(row.parameters)
 	let inferred: Array<string> = []
 	try {
 		const v = JSON.parse(row.inferred_capabilities) as unknown
@@ -45,6 +50,7 @@ function skillRowEmbedDoc(
 		keywords,
 		searchText: row.search_text,
 		inferredCapabilities: inferred,
+		parameters,
 		specs,
 	})
 }
@@ -69,6 +75,7 @@ export type SkillSearchHitDetail = SkillSearchHitSummary & {
 	inferredCapabilities: Array<string>
 	usesCapabilities: Array<string> | null
 	searchText: string | null
+	parameters: Array<SkillParameterDefinition> | null
 }
 
 export type SkillSearchHit = SkillSearchHitSummary | SkillSearchHitDetail
@@ -101,6 +108,7 @@ function rowToSkillHit(
 		uses = parseJsonStringArray(row.uses_capabilities)
 		if (uses.length === 0) uses = null
 	}
+	const parameters = parseSkillParameters(row.parameters)
 	const base: SkillSearchHitSummary = {
 		type: 'skill',
 		skillId: row.id,
@@ -122,6 +130,7 @@ function rowToSkillHit(
 			inferredCapabilities: inferred,
 			usesCapabilities: uses,
 			searchText: row.search_text,
+			parameters,
 		}
 		return hit
 	}
