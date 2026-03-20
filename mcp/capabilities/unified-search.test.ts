@@ -46,6 +46,7 @@ test('skill search hits include usage hints', async () => {
 
 	expect(skill.usage).toContain('meta_run_skill')
 	expect(skill.usage).toContain(skillRow.id)
+	expect(skill.usage).toContain('"params"')
 })
 
 test('skill detail hits include usage hints', async () => {
@@ -70,4 +71,5 @@ test('skill detail hits include usage hints', async () => {
 
 	expect(skill.usage).toContain('meta_get_skill')
 	expect(skill.usage).toContain(skillRow.id)
+	expect(skill.usage).toContain('"params"')
 })

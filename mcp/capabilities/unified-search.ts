@@ -30,7 +30,7 @@ function parseJsonStringArray(raw: string): Array<string> {
 }
 
 function buildSkillUsage(skillId: string): string {
-	return `Run with meta_run_skill: { "skill_id": "${skillId}", "params": { ... } } (alias: "args"). To inspect code, call meta_get_skill then execute.`
+	return `Run with meta_run_skill: { "skill_id": "${skillId}", "params": { ... } }. To inspect code, call meta_get_skill then execute.`
 }
 
 function skillRowEmbedDoc(

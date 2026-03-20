@@ -32,10 +32,13 @@ Skills can declare **parameters** when saved or updated. Each parameter includes
 `name`, `description`, `type`, and optional `required`/`default` values. Types
 are: `string`, `number`, `boolean`, or `json`.
 
-When running a skill, pass values via `meta_run_skill` **`params`** (or the
-`args` alias). The codemode receives them as the `params` variable (and as the
-first function argument when present). Missing required parameters or unknown
-names are rejected; defaults are applied when provided.
+When running a skill, pass values via `meta_run_skill` **`params`**. The
+codemode receives them as the `params` variable (and as the first function
+argument when present). Missing required parameters or unknown names are
+rejected; defaults are applied when provided.
+
+Example:
+`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds" } })`
 
 ## Flags
 

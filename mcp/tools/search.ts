@@ -41,7 +41,7 @@ const searchTool = {
 	description: `
 Search Kody **builtin capabilities** and your saved **skills** (meta domain) by natural language before calling \`execute\`.
 
-Each match has **type** \`capability\` or \`skill\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\` (alias: \`args\`). If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill.
+Each match has **type** \`capability\` or \`skill\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill.
 
 Domains (for context only—put hints in your \`query\` string; there are no filter fields):
 ${capabilityDomainSummary}
@@ -53,6 +53,7 @@ Optional **limit** (default 15) caps how many results are returned. **detail: tr
 Example arguments:
 - \`{ "query": "arithmetic or calculator", "limit": 10 }\`
 - \`{ "query": "call GitHub REST API", "detail": true }\`
+- To run a skill: \`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds" } })\`
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,
