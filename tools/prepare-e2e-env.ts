@@ -15,6 +15,21 @@ function parseDotenvValue(content: string, key: string) {
 	return null
 }
 
+function setDotenvValue(content: string, key: string, value: string) {
+	const keyPattern = new RegExp(
+		`(^|\\r?\\n)(\\s*(?:export\\s+)?${key}=)[^\\r\\n]*`,
+	)
+	if (keyPattern.test(content)) {
+		return content.replace(
+			keyPattern,
+			(_match, leading, prefix) => `${leading}${prefix}${value}`,
+		)
+	}
+	return content.endsWith('\n')
+		? `${content}${key}=${value}\n`
+		: `${content}\n${key}=${value}\n`
+}
+
 if (!existsSync(examplePath)) {
 	console.error(
 		'Missing .env and .env.example; cannot prepare E2E environment.',
@@ -43,8 +58,10 @@ if (!fallbackCookieSecret || fallbackCookieSecret.length === 0) {
 	process.exit(1)
 }
 
-const nextContents = envContents.endsWith('\n')
-	? `${envContents}COOKIE_SECRET=${fallbackCookieSecret}\n`
-	: `${envContents}\nCOOKIE_SECRET=${fallbackCookieSecret}\n`
+const nextContents = setDotenvValue(
+	envContents,
+	'COOKIE_SECRET',
+	fallbackCookieSecret,
+)
 writeFileSync(envPath, nextContents, 'utf8')
 console.log('Backfilled COOKIE_SECRET in .env for E2E tests.')

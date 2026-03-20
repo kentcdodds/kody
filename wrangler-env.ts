@@ -150,33 +150,28 @@ if (isDevCommand && resolvedPort) {
 process.exit(exitCode)
 
 function getPortArg(argumentList: ReadonlyArray<string>) {
-	const inlinePortArg = argumentList.find((arg) => arg.startsWith('--port='))
-	if (inlinePortArg) {
-		const [, value] = inlinePortArg.split('=')
-		return value || undefined
-	}
-
-	const portIndex = argumentList.findIndex((arg) => arg === '--port')
-	if (portIndex >= 0) {
-		const value = argumentList[portIndex + 1]
-		return value || undefined
-	}
-
-	return undefined
+	return getArgValue(argumentList, '--port')
 }
 
 function getConfigArg(argumentList: ReadonlyArray<string>) {
-	const inlineConfigArg = argumentList.find((arg) =>
-		arg.startsWith('--config='),
+	return getArgValue(argumentList, '--config')
+}
+
+function getArgValue(
+	argumentList: ReadonlyArray<string>,
+	flagName: string,
+) {
+	const inlineArg = argumentList.find((arg) =>
+		arg.startsWith(`${flagName}=`),
 	)
-	if (inlineConfigArg) {
-		const [, value] = inlineConfigArg.split('=')
+	if (inlineArg) {
+		const [, value] = inlineArg.split('=')
 		return value || undefined
 	}
 
-	const configIndex = argumentList.findIndex((arg) => arg === '--config')
-	if (configIndex >= 0) {
-		const value = argumentList[configIndex + 1]
+	const flagIndex = argumentList.findIndex((arg) => arg === flagName)
+	if (flagIndex >= 0) {
+		const value = argumentList[flagIndex + 1]
 		return value || undefined
 	}
 
