@@ -157,13 +157,8 @@ function getConfigArg(argumentList: ReadonlyArray<string>) {
 	return getArgValue(argumentList, '--config')
 }
 
-function getArgValue(
-	argumentList: ReadonlyArray<string>,
-	flagName: string,
-) {
-	const inlineArg = argumentList.find((arg) =>
-		arg.startsWith(`${flagName}=`),
-	)
+function getArgValue(argumentList: ReadonlyArray<string>, flagName: string) {
+	const inlineArg = argumentList.find((arg) => arg.startsWith(`${flagName}=`))
 	if (inlineArg) {
 		const [, value] = inlineArg.split('=')
 		return value || undefined

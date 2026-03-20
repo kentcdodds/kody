@@ -36,6 +36,21 @@
         "wrangler": "^4.72.0",
       },
     },
+    "packages/mock-servers/ai": {
+      "name": "@kody/mock-ai",
+    },
+    "packages/mock-servers/cursor": {
+      "name": "@kody/mock-cursor",
+    },
+    "packages/mock-servers/github": {
+      "name": "@kody/mock-github",
+    },
+    "packages/mock-servers/resend": {
+      "name": "@kody/mock-resend",
+    },
+    "packages/worker": {
+      "name": "@kody/worker",
+    },
   },
   "overrides": {
     "@modelcontextprotocol/sdk": "1.26.0",
@@ -238,6 +253,16 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.9", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.0.3", "@jridgewell/sourcemap-codec": "^1.4.10" } }, "sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ=="],
 
     "@jsdevtools/ono": ["@jsdevtools/ono@7.1.3", "", {}, "sha512-4JQNk+3mVzK3xh2rqd6RB4J46qUR19azEHBneZyTZM+c456qOrbbM/5xcR8huNCCcbVt7+UmizG6GuUvPvKUYg=="],
+
+    "@kody/mock-ai": ["@kody/mock-ai@workspace:packages/mock-servers/ai"],
+
+    "@kody/mock-cursor": ["@kody/mock-cursor@workspace:packages/mock-servers/cursor"],
+
+    "@kody/mock-github": ["@kody/mock-github@workspace:packages/mock-servers/github"],
+
+    "@kody/mock-resend": ["@kody/mock-resend@workspace:packages/mock-servers/resend"],
+
+    "@kody/worker": ["@kody/worker@workspace:packages/worker"],
 
     "@ltd/j-toml": ["@ltd/j-toml@1.38.0", "", {}, "sha512-lYtBcmvHustHQtg4X7TXUu1Xa/tbLC3p2wLvgQI+fWVySguVZJF60Snxijw5EiohumxZbR10kWYFFebh1zotiw=="],
 
