@@ -11,7 +11,7 @@ const maxChars = maxTokens * charsPerToken
 export function createExecuteExecutor(env: Env) {
 	return new DynamicWorkerExecutor({
 		loader: env.LOADER,
-		timeout: 30_000,
+		timeout: 90_000,
 	})
 }
 
