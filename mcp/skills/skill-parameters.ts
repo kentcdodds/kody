@@ -159,7 +159,7 @@ function normalizeSkillCode(code: string): string {
 		) {
 			const statement = ast.body[0]
 			if (statement.expression.type === 'ArrowFunctionExpression') {
-				return source
+				return source.slice(statement.expression.start, statement.expression.end)
 			}
 		}
 		if (
