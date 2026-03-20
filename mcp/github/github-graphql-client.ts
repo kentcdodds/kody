@@ -2,7 +2,7 @@
  * Minimal GitHub GraphQL client for GitHub capabilities.
  */
 
-import { GitHubApiError } from '#mcp/github/github-rest-client.ts'
+import { formatRateLimitHint, GitHubApiError } from '#mcp/github/github-rest-client.ts'
 
 export type GitHubGraphqlClientOptions = {
 	token: string
@@ -92,7 +92,7 @@ export function createGitHubGraphqlClient(
 	}
 	return new GitHubGraphqlClient({
 		token,
-		baseUrl: env.GITHUB_API_BASE_URL?.trim(),
+		baseUrl: env.GITHUB_API_BASE_URL?.trim() || 'https://api.github.com',
 	})
 }
 
@@ -102,13 +102,3 @@ function resolveGraphqlEndpoint(baseUrl: string | undefined) {
 	return `${root}/graphql`
 }
 
-function formatRateLimitHint(response: Response) {
-	const remaining = response.headers.get('x-ratelimit-remaining')
-	if (remaining === null) return ''
-	const reset = response.headers.get('x-ratelimit-reset')
-	const resetHint =
-		reset && /^\d+$/.test(reset)
-			? ` Resets around ${new Date(Number.parseInt(reset, 10) * 1000).toISOString()}.`
-			: ''
-	return ` (rate limit remaining: ${remaining}${resetHint})`
-}
