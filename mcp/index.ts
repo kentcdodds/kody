@@ -31,6 +31,9 @@ Quick start
 - Call 'execute' or 'meta_run_skill' next to run code.
 - Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
 
+Kody source repository
+- Kody (this app and MCP server) is developed at https://github.com/kentcdodds/kody. When you launch a Cursor Cloud Agent to improve Kody itself, use that repository URL (unless the user explicitly points you at another fork or repo).
+
 Domains
 ${domainInstructions}
 

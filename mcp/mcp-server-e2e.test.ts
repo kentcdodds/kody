@@ -515,6 +515,7 @@ test(
 
 		const instructions = mcpClient.client.getInstructions() ?? ''
 		expect(instructions).toContain('Quick start')
+		expect(instructions).toContain('github.com/kentcdodds/kody')
 
 		const result = await mcpClient.client.listTools()
 		const toolNames = result.tools.map((tool) => tool.name)
