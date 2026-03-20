@@ -3,6 +3,7 @@ import { defineDomainCapability } from '../define-domain-capability.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { type CapabilityContext } from '../types.ts'
 import { fetchMarkdownPreferredDoc } from './fetch-markdown-doc.ts'
+import { assertGithubDocsPath } from './github-docs-path.ts'
 
 const GITHUB_DOCS_ORIGIN = 'https://docs.github.com'
 
@@ -38,26 +39,14 @@ const outputSchema = z.object({
 })
 
 function assertGithubGraphqlDocsPath(path: string) {
-	const trimmed = path.trim()
-	if (!trimmed.startsWith('/')) {
-		throw new Error(
-			'path must start with `/` and must not include a host (for example use `/en/graphql/overview`).',
-		)
-	}
-	if (!localeGraphqlPrefix.test(trimmed)) {
-		throw new Error(
-			'path must start with a locale GraphQL prefix such as `/en/graphql/` (see https://docs.github.com/en/graphql).',
-		)
-	}
-	if (trimmed.includes('..')) {
-		throw new Error('path must not contain `..` segments.')
-	}
-	if (/[\s#]/.test(trimmed)) {
-		throw new Error('path contains disallowed characters.')
-	}
-	if (trimmed.length > 2048) {
-		throw new Error('path exceeds maximum length.')
-	}
+	assertGithubDocsPath({
+		path,
+		localePrefix: localeGraphqlPrefix,
+		apiLabel: 'GraphQL',
+		localePrefixExample: '/en/graphql/',
+		examplePath: '/en/graphql/overview',
+		docsUrl: 'https://docs.github.com/en/graphql',
+	})
 }
 
 export const githubGraphqlApiDocsCapability = defineDomainCapability(

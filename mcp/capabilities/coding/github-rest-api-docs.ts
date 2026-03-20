@@ -3,6 +3,7 @@ import { defineDomainCapability } from '../define-domain-capability.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { type CapabilityContext } from '../types.ts'
 import { fetchMarkdownPreferredDoc } from './fetch-markdown-doc.ts'
+import { assertGithubDocsPath } from './github-docs-path.ts'
 
 const GITHUB_DOCS_ORIGIN = 'https://docs.github.com'
 
@@ -37,26 +38,14 @@ const outputSchema = z.object({
 })
 
 function assertGithubRestDocsPath(path: string) {
-	const trimmed = path.trim()
-	if (!trimmed.startsWith('/')) {
-		throw new Error(
-			'path must start with `/` and must not include a host (for example use `/en/rest/repos/repos`).',
-		)
-	}
-	if (!localeRestPrefix.test(trimmed)) {
-		throw new Error(
-			'path must start with a locale REST prefix such as `/en/rest/` (see https://docs.github.com/en/rest).',
-		)
-	}
-	if (trimmed.includes('..')) {
-		throw new Error('path must not contain `..` segments.')
-	}
-	if (/[\s#]/.test(trimmed)) {
-		throw new Error('path contains disallowed characters.')
-	}
-	if (trimmed.length > 2048) {
-		throw new Error('path exceeds maximum length.')
-	}
+	assertGithubDocsPath({
+		path,
+		localePrefix: localeRestPrefix,
+		apiLabel: 'REST',
+		localePrefixExample: '/en/rest/',
+		examplePath: '/en/rest/repos/repos',
+		docsUrl: 'https://docs.github.com/en/rest',
+	})
 }
 
 export const githubRestApiDocsCapability = defineDomainCapability(
