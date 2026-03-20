@@ -169,7 +169,7 @@ function normalizeSkillCode(code: string): string {
 			const decl = ast.body[0].declaration
 			const inner = source.slice(decl.start, decl.end)
 			if (decl.type === 'FunctionDeclaration' && !decl.id) {
-				return `async () => {\nreturn (${inner})();\n}`
+				return `async () => {\nreturn (${inner})(params);\n}`
 			}
 			if (decl.type === 'ClassDeclaration' && !decl.id) {
 				return `async () => {\nreturn (${inner});\n}`
@@ -177,7 +177,7 @@ function normalizeSkillCode(code: string): string {
 			return normalizeSkillCode(inner)
 		}
 		if (ast.body.length === 1 && ast.body[0].type === 'FunctionDeclaration') {
-			return `async () => {\n${source}\nreturn ${ast.body[0].id?.name ?? 'fn'}();\n}`
+			return `async () => {\n${source}\nreturn ${ast.body[0].id?.name ?? 'fn'}(params);\n}`
 		}
 		const last = ast.body[ast.body.length - 1]
 		if (last?.type === 'ExpressionStatement') {
