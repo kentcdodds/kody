@@ -17,6 +17,12 @@ const executeTool = {
 Execute JavaScript code against Kody capabilities. First use \`search\` to find
 the right capability, then call it through \`codemode\`.
 
+To run a saved skill by id, prefer \`meta_run_skill\` with \`skill_id\` and
+optional \`params\` (alias: \`args\`). If you need the saved code, call
+\`meta_get_skill\` and pass the returned code into this tool.
+
+This tool accepts a single argument: \`{ "code": "async () => { ... }" }\`.
+
 Available in your code:
 
 type CapabilityArgs = Record<string, unknown>;

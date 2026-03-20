@@ -33,7 +33,7 @@ export const metaRunSkillCapability = defineDomainCapability(
 	{
 		name: 'meta_run_skill',
 		description:
-			"Execute a saved skill's codemode in the same sandbox as the MCP execute tool. When the skill defines parameters, pass them in params; the code receives them via the params variable or the first function argument. On failure, the structured result includes a hint for updating the skill (meta_update_skill).",
+			"Execute a saved skill's codemode in the same sandbox as the MCP execute tool. When the skill defines parameters, pass them in params (or args); the code receives them via the params variable or the first function argument. On failure, the structured result includes a hint for updating the skill (meta_update_skill).",
 		keywords: ['skill', 'run', 'execute'],
 		readOnly: false,
 		idempotent: false,
@@ -49,9 +49,17 @@ export const metaRunSkillCapability = defineDomainCapability(
 				.describe(
 					'Optional parameter values for this skill (validated against saved definitions when present).',
 				),
+			args: z
+				.record(z.string(), z.unknown())
+				.optional()
+				.describe('Alias for params (optional parameter values for this skill).'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
+			if (args.params && args.args) {
+				throw new Error('Provide either params or args, not both.')
+			}
+			const providedParams = args.params ?? args.args
 			const user = requireMcpUser(ctx.callerContext)
 			const row = await getMcpSkillById(
 				ctx.env.APP_DB,
@@ -64,13 +72,14 @@ export const metaRunSkillCapability = defineDomainCapability(
 			const definitions = parseSkillParameters(row.parameters)
 			const params = applySkillParameters({
 				definitions,
-				values: args.params,
+				values: providedParams,
 			})
+			const shouldPassParams = definitions != null || providedParams !== undefined
 			const exec = await runCodemodeWithRegistry(
 				ctx.env,
 				ctx.callerContext,
 				row.code,
-				definitions || args.params ? params : undefined,
+				shouldPassParams ? params : undefined,
 			)
 			if (exec.error) {
 				return {
