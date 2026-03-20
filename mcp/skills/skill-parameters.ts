@@ -166,22 +166,19 @@ function normalizeSkillCode(code: string): string {
 			sourceType: 'module',
 		})
 		const first = ast.body[0]
-		if (
-			ast.body.length === 1 &&
-			first?.type === 'ExpressionStatement'
-		) {
+		if (ast.body.length === 1 && first?.type === 'ExpressionStatement') {
 			const statement = first
 			if (
 				statement.expression.type === 'ArrowFunctionExpression' ||
 				statement.expression.type === 'FunctionExpression'
 			) {
-				return source.slice(statement.expression.start, statement.expression.end)
+				return source.slice(
+					statement.expression.start,
+					statement.expression.end,
+				)
 			}
 		}
-		if (
-			ast.body.length === 1 &&
-			first?.type === 'ExportDefaultDeclaration'
-		) {
+		if (ast.body.length === 1 && first?.type === 'ExportDefaultDeclaration') {
 			const decl = first.declaration
 			const inner = source.slice(decl.start, decl.end)
 			if (decl.type === 'FunctionDeclaration' && !decl.id) {

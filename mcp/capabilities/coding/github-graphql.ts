@@ -24,10 +24,7 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	status: z.number().describe('HTTP status code from GitHub.'),
-	data: z
-		.unknown()
-		.nullable()
-		.describe('GraphQL data payload when present.'),
+	data: z.unknown().nullable().describe('GraphQL data payload when present.'),
 	errors: z
 		.array(z.unknown())
 		.nullable()
@@ -71,7 +68,12 @@ function normalizeGraphqlResponse(response: {
 		typeof response.body !== 'object' ||
 		Array.isArray(response.body)
 	) {
-		return { status: response.status, data: null, errors: null, extensions: null }
+		return {
+			status: response.status,
+			data: null,
+			errors: null,
+			extensions: null,
+		}
 	}
 	const { data, errors, extensions } = response.body
 	if (errors != null && !Array.isArray(errors)) {

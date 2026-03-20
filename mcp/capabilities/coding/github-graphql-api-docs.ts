@@ -7,8 +7,7 @@ import { assertGithubDocsPath } from './github-docs-path.ts'
 
 const GITHUB_DOCS_ORIGIN = 'https://docs.github.com'
 
-const localeGraphqlPrefix =
-	/^\/(?:[a-z]{2}|[a-z]{2}-[a-z]{2})\/graphql(?:\/|$)/
+const localeGraphqlPrefix = /^\/(?:[a-z]{2}|[a-z]{2}-[a-z]{2})\/graphql(?:\/|$)/
 
 const inputSchema = z.object({
 	path: z

@@ -44,7 +44,9 @@ test('applySkillParameters enforces required and applies defaults', () => {
 	expect(() =>
 		applySkillParameters({ definitions: defs, values: { limit: 2 } }),
 	).toThrow('Missing required skill parameter: owner.')
-	expect(applySkillParameters({ definitions: defs, values: { owner: 'kody' } })).toEqual({
+	expect(
+		applySkillParameters({ definitions: defs, values: { owner: 'kody' } }),
+	).toEqual({
 		owner: 'kody',
 		limit: 5,
 	})

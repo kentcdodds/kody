@@ -107,9 +107,9 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `KODY_GITHUB_TOKEN` (optional; bot token for the `github_rest` and
-  `github_graphql` capabilities —
-  see below; deploy maps this to the Worker secret `GITHUB_TOKEN` because GitHub
-  Actions forbids repository secrets named `GITHUB_*`)
+  `github_graphql` capabilities — see below; deploy maps this to the Worker
+  secret `GITHUB_TOKEN` because GitHub Actions forbids repository secrets named
+  `GITHUB_*`)
 - `CURSOR_API_KEY` (optional; Cursor Cloud API key for `cursor_cloud_rest`;
   syncs to the Worker when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex

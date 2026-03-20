@@ -49,8 +49,7 @@ export function buildSkillEmbedText(
 	const parameterParts =
 		input.parameters && input.parameters.length > 0
 			? input.parameters.map(
-					(param) =>
-						`${param.name}: ${param.description} (${param.type})`,
+					(param) => `${param.name}: ${param.description} (${param.type})`,
 				)
 			: []
 	const denorm: Array<string> = []

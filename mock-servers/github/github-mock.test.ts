@@ -174,12 +174,12 @@ test(
 			service: string
 			authorized: boolean
 			fixturePullNumber?: number
-		supportsGraphql?: boolean
+			supportsGraphql?: boolean
 		}
 		expect(meta.service).toBe('github')
 		expect(meta.authorized).toBe(false)
 		expect(meta.fixturePullNumber).toBe(42)
-	expect(meta.supportsGraphql).toBe(true)
+		expect(meta.supportsGraphql).toBe(true)
 	},
 	{ timeout: defaultTimeoutMs },
 )

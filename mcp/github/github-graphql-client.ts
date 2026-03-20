@@ -2,7 +2,10 @@
  * Minimal GitHub GraphQL client for GitHub capabilities.
  */
 
-import { formatRateLimitHint, GitHubApiError } from '#mcp/github/github-rest-client.ts'
+import {
+	formatRateLimitHint,
+	GitHubApiError,
+} from '#mcp/github/github-rest-client.ts'
 
 export type GitHubGraphqlClientOptions = {
 	token: string
@@ -101,4 +104,3 @@ function resolveGraphqlEndpoint(baseUrl: string | undefined) {
 	if (root.endsWith('/graphql')) return root
 	return `${root}/graphql`
 }
-

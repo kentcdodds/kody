@@ -101,7 +101,7 @@ export const metaUpdateSkillCapability = defineDomainCapability(
 					code: existing.code,
 					search_text: existing.search_text,
 					uses_capabilities: existing.uses_capabilities,
-				parameters: existing.parameters,
+					parameters: existing.parameters,
 					inferred_capabilities: existing.inferred_capabilities,
 					inference_partial: existing.inference_partial,
 					read_only: existing.read_only,

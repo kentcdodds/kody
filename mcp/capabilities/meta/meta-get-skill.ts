@@ -68,7 +68,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 			const keywords = parseStringArray(row.keywords) ?? []
 			const inferred = parseStringArray(row.inferred_capabilities) ?? []
 			const uses = parseStringArray(row.uses_capabilities)
-	const parameters = parseSkillParameters(row.parameters)
+			const parameters = parseSkillParameters(row.parameters)
 			return {
 				skill_id: row.id,
 				title: row.title,
@@ -77,7 +77,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 				code: row.code,
 				search_text: row.search_text,
 				uses_capabilities: uses,
-		parameters,
+				parameters,
 				inferred_capabilities: inferred,
 				inference_partial: row.inference_partial === 1,
 				read_only: row.read_only === 1,
