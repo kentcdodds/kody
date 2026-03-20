@@ -1,9 +1,10 @@
-import { copyFileSync, existsSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
 import getPort from 'get-port'
 import { getRemoteAiLocalDevStartupError } from '#shared/ai-env-validation.ts'
+import { syncDotenvForConfig } from '#tools/wrangler-dotenv-sync.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -93,7 +94,11 @@ if (isDevCommand && !hasInspectorPortFlag) {
 	commandArgs.push('--inspector-port', resolvedInspectorPort)
 }
 
-syncDotenvForConfig(getConfigArg(commandArgs))
+syncDotenvForConfig({
+	workspaceRoot: process.cwd(),
+	configPath: getConfigArg(commandArgs),
+	logger: console,
+})
 
 const processEnv = {
 	...process.env,
@@ -160,7 +165,9 @@ function getConfigArg(argumentList: ReadonlyArray<string>) {
 function getArgValue(argumentList: ReadonlyArray<string>, flagName: string) {
 	const inlineArg = argumentList.find((arg) => arg.startsWith(`${flagName}=`))
 	if (inlineArg) {
-		const [, value] = inlineArg.split('=')
+		const separatorIndex = inlineArg.indexOf('=')
+		const value =
+			separatorIndex >= 0 ? inlineArg.slice(separatorIndex + 1) : undefined
 		return value || undefined
 	}
 
@@ -171,23 +178,6 @@ function getArgValue(argumentList: ReadonlyArray<string>, flagName: string) {
 	}
 
 	return undefined
-}
-
-function syncDotenvForConfig(configPath: string | undefined) {
-	if (!configPath) return
-
-	const rootEnvPath = path.join(process.cwd(), '.env')
-	if (!existsSync(rootEnvPath)) return
-
-	const resolvedConfigPath = path.resolve(process.cwd(), configPath)
-	const configDir = path.dirname(resolvedConfigPath)
-	const configEnvPath = path.join(configDir, '.env')
-
-	if (path.resolve(configEnvPath) === path.resolve(rootEnvPath)) {
-		return
-	}
-
-	copyFileSync(rootEnvPath, configEnvPath)
 }
 
 async function waitForPortFree(port: number, timeoutMs: number) {

@@ -4,47 +4,80 @@ import { join } from 'node:path'
 const envPath = join(process.cwd(), '.env')
 const examplePath = join(process.cwd(), '.env.example')
 
+function escapeForRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function stripSurroundingQuotes(value: string) {
+	if (
+		(value.startsWith('"') && value.endsWith('"')) ||
+		(value.startsWith("'") && value.endsWith("'"))
+	) {
+		return value.slice(1, -1)
+	}
+	return value
+}
+
 function parseDotenvValue(content: string, key: string) {
+	const keyPattern = new RegExp(
+		`^\\s*(?:export\\s+)?${escapeForRegExp(key)}\\s*=\\s*(.*)$`,
+	)
+	let matchedValue: string | null = null
+
 	for (const rawLine of content.split(/\r?\n/)) {
 		const line = rawLine.trim()
 		if (!line || line.startsWith('#')) continue
-		const withoutExport = line.startsWith('export ') ? line.slice(7) : line
-		if (!withoutExport.startsWith(`${key}=`)) continue
-		return withoutExport.slice(key.length + 1).trim()
+
+		const match = rawLine.match(keyPattern)
+		if (!match) continue
+
+		matchedValue = stripSurroundingQuotes(match[1]?.trim() ?? '')
 	}
-	return null
+
+	return matchedValue
 }
 
 function setDotenvValue(content: string, key: string, value: string) {
+	const lines = content.split(/\r?\n/)
 	const keyPattern = new RegExp(
-		`(^|\\r?\\n)(\\s*(?:export\\s+)?${key}=)[^\\r\\n]*`,
+		`^(\\s*(?:export\\s+)?${escapeForRegExp(key)}\\s*=\\s*).*$`,
 	)
-	if (keyPattern.test(content)) {
-		return content.replace(
-			keyPattern,
-			(_match, leading, prefix) => `${leading}${prefix}${value}`,
-		)
-	}
-	return content.endsWith('\n')
-		? `${content}${key}=${value}\n`
-		: `${content}\n${key}=${value}\n`
-}
 
-if (!existsSync(examplePath)) {
-	console.error('Missing .env.example; cannot prepare E2E environment.')
-	process.exit(1)
+	let lastMatchIndex = -1
+	let lastPrefix = `${key}=`
+	for (const [index, line] of lines.entries()) {
+		const match = line.match(keyPattern)
+		if (!match) continue
+		lastMatchIndex = index
+		lastPrefix = match[1] ?? lastPrefix
+	}
+
+	if (lastMatchIndex >= 0) {
+		lines[lastMatchIndex] = `${lastPrefix}${value}`
+		return `${lines.join('\n').replace(/\n*$/, '\n')}`
+	}
+
+	return `${content.replace(/\n*$/, '\n')}${key}=${value}\n`
 }
 
 if (!existsSync(envPath)) {
+	if (!existsSync(examplePath)) {
+		console.error('Missing .env.example; cannot prepare E2E environment.')
+		process.exit(1)
+	}
 	copyFileSync(examplePath, envPath)
 	console.log('Created .env from .env.example for E2E tests.')
-	process.exit(0)
 }
 
 const envContents = readFileSync(envPath, 'utf8')
 const existingCookieSecret = parseDotenvValue(envContents, 'COOKIE_SECRET')
 if (existingCookieSecret && existingCookieSecret.length > 0) {
 	process.exit(0)
+}
+
+if (!existsSync(examplePath)) {
+	console.error('Missing .env.example; cannot prepare E2E environment.')
+	process.exit(1)
 }
 
 const exampleContents = readFileSync(examplePath, 'utf8')
