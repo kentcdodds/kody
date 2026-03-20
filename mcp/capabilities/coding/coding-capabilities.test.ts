@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 import { cursorCloudRestCapability } from './cursor-cloud-rest.ts'
+import { githubGraphqlCapability } from './github-graphql.ts'
 import { githubRestCapability } from './github-rest.ts'
 
 const workerConfig = 'mock-servers/github/wrangler.jsonc'
@@ -10,6 +11,14 @@ const cursorWorkerConfig = 'mock-servers/cursor/wrangler.jsonc'
 const bunBin = process.execPath
 const projectRoot = process.cwd()
 const timeoutMs = 60_000
+const graphqlQuery = `query RepoPull($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      number
+      title
+    }
+  }
+}`
 
 function captureOutput(stream: ReadableStream<Uint8Array> | null) {
 	if (!stream) return
@@ -195,6 +204,46 @@ test(
 		const body = result.body as { number?: number; title?: string }
 		expect(body.number).toBe(42)
 		expect(typeof body.title).toBe('string')
+	},
+	{ timeout: timeoutMs },
+)
+
+test(
+	'github_graphql returns data from mock GitHub',
+	async () => {
+		const token = 'coding-graphql-token'
+		await using mock = await startGithubMock(token)
+		const ctx = mockContext(mock.origin, mock.token)
+		const result = await githubGraphqlCapability.handler(
+			{
+				query: graphqlQuery,
+				variables: { owner: 'kentcdodds', name: 'kody', number: 42 },
+			},
+			ctx,
+		)
+		expect(result.status).toBe(200)
+		const data = result.data as {
+			repository?: { pullRequest?: { number?: number } }
+		}
+		expect(data.repository?.pullRequest?.number).toBe(42)
+	},
+	{ timeout: timeoutMs },
+)
+
+test(
+	'github_graphql rejects empty query',
+	async () => {
+		const token = 'coding-graphql-reject-token'
+		await using mock = await startGithubMock(token)
+		const ctx = mockContext(mock.origin, mock.token)
+		await expect(
+			githubGraphqlCapability.handler(
+				{
+					query: '',
+				},
+				ctx,
+			),
+		).rejects.toThrow('String must contain at least 1 character')
 	},
 	{ timeout: timeoutMs },
 )

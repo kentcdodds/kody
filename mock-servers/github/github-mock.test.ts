@@ -174,10 +174,12 @@ test(
 			service: string
 			authorized: boolean
 			fixturePullNumber?: number
+		supportsGraphql?: boolean
 		}
 		expect(meta.service).toBe('github')
 		expect(meta.authorized).toBe(false)
 		expect(meta.fixturePullNumber).toBe(42)
+	expect(meta.supportsGraphql).toBe(true)
 	},
 	{ timeout: defaultTimeoutMs },
 )
@@ -196,6 +198,40 @@ test(
 		const pr = (await prResp.json()) as { number: number; title: string }
 		expect(pr.number).toBe(42)
 		expect(pr.title).toContain('GitHub REST')
+	},
+	{ timeout: defaultTimeoutMs },
+)
+
+test(
+	'github mock returns GraphQL data with auth',
+	async () => {
+		const token = 'test-github-mock-token'
+		await using server = await startMockGithubWorker(token)
+
+		const query = `query RepoPull($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      number
+      title
+    }
+  }
+}`
+		const response = await fetch(new URL('/graphql', server.origin), {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${token}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				query,
+				variables: { owner: 'kentcdodds', name: 'kody', number: 42 },
+			}),
+		})
+		expect(response.status).toBe(200)
+		const body = (await response.json()) as {
+			data?: { repository?: { pullRequest?: { number?: number } } }
+		}
+		expect(body.data?.repository?.pullRequest?.number).toBe(42)
 	},
 	{ timeout: defaultTimeoutMs },
 )

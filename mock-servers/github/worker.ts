@@ -1,6 +1,6 @@
 /**
- * Minimal GitHub REST API v3 mock for local dev and tests.
- * Mirrors only the routes used by the GitHub REST capability and client tests.
+ * Minimal GitHub REST + GraphQL mock for local dev and tests.
+ * Mirrors only the routes used by the GitHub capabilities and client tests.
  */
 
 type MockGithubEnv = {
@@ -19,6 +19,12 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 		method: 'GET',
 		path: '/repos/{owner}/{repo}/pulls/{pull_number}',
 		description: 'Get a pull request',
+		requiresAuth: true,
+	},
+	{
+		method: 'POST',
+		path: '/graphql',
+		description: 'GraphQL API',
 		requiresAuth: true,
 	},
 	{
@@ -76,6 +82,20 @@ const fixturePull = {
 			name: 'kody',
 			full_name: 'kentcdodds/kody',
 			private: false,
+		},
+	},
+}
+
+const fixtureGraphqlResponse = {
+	data: {
+		repository: {
+			name: 'kody',
+			owner: { login: 'kentcdodds' },
+			pullRequest: {
+				number: 42,
+				title: 'Mock PR: tighten GitHub REST smoke test',
+				url: 'https://github.com/kentcdodds/kody/pull/42',
+			},
 		},
 	},
 }
@@ -171,6 +191,7 @@ async function handleGetMeta(request: Request, env: MockGithubEnv, url: URL) {
 		service: 'github',
 		authorized,
 		fixturePullNumber: fixturePull.number,
+		supportsGraphql: true,
 		endpoints: dashboardEndpoints,
 	})
 }
@@ -235,7 +256,7 @@ async function handleDashboard(request: Request, env: MockGithubEnv, url: URL) {
 	</head>
 	<body>
 		<div class="container">
-			<h1>Mock: GitHub REST</h1>
+			<h1>Mock: GitHub API</h1>
 			<p class="subtitle">${htmlEscape(tokenHint)} · authorized: ${meta.authorized ? 'yes' : 'no'}</p>
 			<table>
 				<thead><tr><th>Method</th><th>Path</th><th>Access</th><th>Description</th></tr></thead>
@@ -254,11 +275,11 @@ async function handleDashboard(request: Request, env: MockGithubEnv, url: URL) {
 	})
 }
 
-function routeApi(
+async function routeApi(
 	request: Request,
 	env: MockGithubEnv,
 	url: URL,
-): Response | null {
+): Promise<Response | null> {
 	if (!isAuthorized(request, env, url)) {
 		return json(
 			{ message: 'Bad credentials', documentation_url: '' },
@@ -277,7 +298,61 @@ function routeApi(
 		return pullResponseNumber(owner, repo, Number.parseInt(num, 10))
 	}
 
+	if (request.method === 'POST' && pathname === '/graphql') {
+		return handleGraphql(request)
+	}
+
 	return null
+}
+
+async function handleGraphql(request: Request) {
+	let body: unknown
+	try {
+		body = await request.json()
+	} catch {
+		return json(
+			{ errors: [{ message: 'Invalid JSON payload.' }], data: null },
+			{ status: 400 },
+		)
+	}
+
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return json(
+			{ errors: [{ message: 'Expected JSON object payload.' }], data: null },
+			{ status: 400 },
+		)
+	}
+
+	const payload = body as Record<string, unknown>
+	const query = typeof payload.query === 'string' ? payload.query : ''
+	const variables =
+		payload.variables &&
+		typeof payload.variables === 'object' &&
+		!Array.isArray(payload.variables)
+			? (payload.variables as Record<string, unknown>)
+			: {}
+
+	if (!query.trim()) {
+		return json(
+			{ errors: [{ message: 'Missing GraphQL query.' }], data: null },
+			{ status: 400 },
+		)
+	}
+
+	if (
+		query.includes('repository') &&
+		query.includes('pullRequest') &&
+		variables.owner === 'kentcdodds' &&
+		variables.name === 'kody' &&
+		variables.number === 42
+	) {
+		return json(fixtureGraphqlResponse)
+	}
+
+	return json({
+		data: null,
+		errors: [{ message: 'Unsupported query for mock GitHub GraphQL.' }],
+	})
 }
 
 export default {
@@ -299,7 +374,7 @@ export default {
 			return handleGetMeta(request, env, url)
 		}
 
-		const apiResponse = routeApi(request, env, url)
+		const apiResponse = await routeApi(request, env, url)
 		if (apiResponse) return apiResponse
 
 		return new Response('Not Found', { status: 404 })
