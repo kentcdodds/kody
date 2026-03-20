@@ -7,7 +7,7 @@ import {
 	GitHubGraphqlClient,
 } from './github-graphql-client.ts'
 
-const workerConfig = 'mock-servers/github/wrangler.jsonc'
+const workerConfig = 'packages/mock-servers/github/wrangler.jsonc'
 const bunBin = process.execPath
 const projectRoot = process.cwd()
 const timeoutMs = 60_000

@@ -52,7 +52,8 @@ let allUsers = await db.query(users).select().all()
 
 This repository uses `remix/data-table` for D1-backed app and mock-server data
 access, but D1 is not a `better-sqlite3` connection. We use a custom adapter at
-`worker/d1-data-table-adapter.ts` and build the runtime in `worker/db.ts`:
+`packages/worker/src/d1-data-table-adapter.ts` and build the runtime in
+`packages/worker/src/db.ts`:
 
 ```ts
 import { createDatabase } from 'remix/data-table'
@@ -61,7 +62,7 @@ import { createD1DataTableAdapter } from '#worker/d1-data-table-adapter.ts'
 let db = createDatabase(createD1DataTableAdapter(env.APP_DB))
 ```
 
-Table metadata and shared table definitions live in `worker/db.ts`.
+Table metadata and shared table definitions live in `packages/worker/src/db.ts`.
 
 ## Adapter packages
 

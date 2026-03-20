@@ -1,9 +1,9 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
+	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "kody",
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-	"main": "./worker/index.ts",
+	"main": "./src/index.ts",
 	"upload_source_maps": true,
 	"migrations": [
 		{
@@ -31,7 +31,7 @@
 				},
 			],
 			"assets": {
-				"directory": "./public",
+				"directory": "../../public",
 				"binding": "ASSETS",
 				"run_worker_first": ["/mcp-apps/*", "/styles.css"],
 			},
@@ -52,7 +52,7 @@
 					"binding": "APP_DB",
 					"database_name": "kody",
 					"database_id": "c64eb497-a93d-4af4-bfb7-62beda9552b6",
-					"migrations_dir": "migrations",
+					"migrations_dir": "../../migrations",
 				},
 			],
 			"kv_namespaces": [
@@ -85,7 +85,7 @@
 				},
 			],
 			"assets": {
-				"directory": "./public",
+				"directory": "../../public",
 				"binding": "ASSETS",
 				"run_worker_first": ["/mcp-apps/*", "/styles.css"],
 			},
@@ -106,7 +106,7 @@
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
 					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
-					"migrations_dir": "migrations",
+					"migrations_dir": "../../migrations",
 				},
 			],
 			"kv_namespaces": [
@@ -139,7 +139,7 @@
 				},
 			],
 			"assets": {
-				"directory": "./public",
+				"directory": "../../public",
 				"binding": "ASSETS",
 				"run_worker_first": ["/mcp-apps/*", "/styles.css"],
 			},
@@ -160,7 +160,7 @@
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
 					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
-					"migrations_dir": "migrations",
+					"migrations_dir": "../../migrations",
 				},
 			],
 			"kv_namespaces": [

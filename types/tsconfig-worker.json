@@ -33,9 +33,9 @@
 		"./env-schema.ts",
 		"./worker-configuration.d.ts",
 		"../shared/**/*.ts",
-		"../mock-servers/**/*.ts",
+		"../packages/mock-servers/**/*.ts",
 		"../sentry/**/*.ts",
-		"../worker/**/*.ts",
+		"../packages/worker/src/**/*.ts",
 		"../server/**/*.ts",
 		"../mcp/**/*.ts"
 	],

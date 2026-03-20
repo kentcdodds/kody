@@ -28,6 +28,9 @@ flows.
 This project is intentionally single-user right now and is being built for
 `me@kentcdodds.com`.
 
+The repo is organized as an Nx monorepo, with the main app worker under
+`packages/worker` and mock Workers under `packages/mock-servers/*`.
+
 ## Quick Start
 
 ```bash
@@ -50,6 +53,7 @@ If you are trying to understand what this repository is for, start with
 | Runtime         | [Cloudflare Workers](https://workers.cloudflare.com/)                 |
 | UI Framework    | [Remix 3](https://remix.run/) (alpha)                                 |
 | Package Manager | [Bun](https://bun.sh/)                                                |
+| Workspace       | [Nx](https://nx.dev/) + Bun workspaces                                |
 | Database        | [Cloudflare D1](https://developers.cloudflare.com/d1/)                |
 | Session/OAuth   | [Cloudflare KV](https://developers.cloudflare.com/kv/)                |
 | MCP State       | [Durable Objects](https://developers.cloudflare.com/durable-objects/) |
@@ -67,7 +71,7 @@ If you are trying to understand what this repository is for, start with
 ## How It Works
 
 ```
-Request → worker/index.ts
+Request → packages/worker/src/index.ts
               │
               ├─→ OAuth handlers
               ├─→ MCP endpoints
@@ -75,7 +79,7 @@ Request → worker/index.ts
               └─→ Server router → Remix components
 ```
 
-- `worker/index.ts` is the entrypoint for Cloudflare Workers
+- `packages/worker/src/index.ts` is the entrypoint for Cloudflare Workers
 - OAuth requests are handled first, then MCP requests, then static assets
 - Non-asset requests fall through to the server handler and router
 - Client assets are bundled into `public/` and served via the `ASSETS` binding

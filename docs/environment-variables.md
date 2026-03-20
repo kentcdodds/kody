@@ -53,7 +53,7 @@ Optional Worker secret and vars (see `types/env-schema.ts` and
   skips `Sentry.withSentry`; Durable Objects use the same options builder and
   will not send events without a DSN.
 - `SENTRY_ENVIRONMENT` — also set as a Wrangler `var` per environment in
-  `wrangler.jsonc` for deploys.
+  `packages/worker/wrangler.jsonc` for deploys.
 - `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample
   all traces). Set lower (e.g. `0.1`) for higher traffic or Sentry quota.
 
@@ -76,7 +76,7 @@ Optional Worker secrets/vars (see `types/env-schema.ts`,
 
 ## MCP capability search (Vectorize + Workers AI)
 
-Worker bindings (see `wrangler.jsonc`):
+Worker bindings (see `packages/worker/wrangler.jsonc`):
 
 - **`CAPABILITY_VECTOR_INDEX`** — Cloudflare Vectorize index for semantic
   retrieval (`kody-capabilities-prod` / `kody-capabilities-preview`). Create

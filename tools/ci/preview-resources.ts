@@ -30,8 +30,8 @@ function parseArgs(argv: Array<string>): {
 
 	const options: CliOptions = {
 		workerName: '',
-		wranglerConfigPath: 'wrangler.jsonc',
-		outConfigPath: 'wrangler-preview.generated.json',
+		wranglerConfigPath: 'packages/worker/wrangler.jsonc',
+		outConfigPath: 'packages/worker/wrangler-preview.generated.json',
 		dryRun: false,
 		d1Location: undefined,
 	}

@@ -10,6 +10,8 @@ Quick notes for getting a local kody environment running.
 ## Install
 
 - `bun install`
+- The repo root hosts the Nx workspace metadata; runtime packages live under
+  `packages/`.
 
 ## Local development
 
@@ -100,11 +102,11 @@ For preview environments, we do a full resource reset:
 1. Delete preview resources:
    - `bun tools/ci/preview-resources.ts cleanup --worker-name <preview-worker-name>`
 2. Recreate preview resources and config:
-   - `bun tools/ci/preview-resources.ts ensure --worker-name <preview-worker-name> --out-config wrangler-preview.generated.json`
+   - `bun tools/ci/preview-resources.ts ensure --worker-name <preview-worker-name> --out-config packages/worker/wrangler-preview.generated.json`
 3. Re-apply remote migrations:
-   - `CLOUDFLARE_ENV=preview bun ./wrangler-env.ts d1 migrations apply APP_DB --remote --config wrangler-preview.generated.json`
+   - `CLOUDFLARE_ENV=preview bun ./wrangler-env.ts d1 migrations apply APP_DB --remote --config packages/worker/wrangler-preview.generated.json`
 4. Seed test account:
-   - `CLOUDFLARE_ENV=preview bun tools/seed-test-data.ts --remote --config wrangler-preview.generated.json`
+   - `CLOUDFLARE_ENV=preview bun tools/seed-test-data.ts --remote --config packages/worker/wrangler-preview.generated.json`
 
 ## PR preview deployments
 

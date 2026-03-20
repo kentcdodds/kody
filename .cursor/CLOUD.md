@@ -23,7 +23,7 @@ A full-stack web application starter built on Cloudflare Workers with Remix 3
 
 ## Architecture
 
-- **Server**: Cloudflare Workers (see `worker/` and `server/`)
+- **Server**: Cloudflare Workers (see `packages/worker/src/` and `server/`)
 - **Client**: Remix 3 components bundled with esbuild (see `client/`)
 - **Database**: Cloudflare D1 (SQLite, auto-handled locally by Wrangler)
 - **MCP Server**: Available at `/mcp` endpoint when worker runs

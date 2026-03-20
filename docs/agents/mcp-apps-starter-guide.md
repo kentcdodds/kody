@@ -174,4 +174,4 @@ Repo-specific implementation references:
 
 - MCP server patterns: `docs/mcp-server-patterns.md`
 - Cloudflare Agents SDK notes: `docs/agents/cloudflare-agents-sdk.md`
-- Worker MCP entrypoint wiring: `worker/index.ts`
+- Worker MCP entrypoint wiring: `packages/worker/src/index.ts`

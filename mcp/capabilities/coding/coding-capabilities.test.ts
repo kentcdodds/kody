@@ -6,8 +6,8 @@ import { cursorCloudRestCapability } from './cursor-cloud-rest.ts'
 import { githubGraphqlCapability } from './github-graphql.ts'
 import { githubRestCapability } from './github-rest.ts'
 
-const workerConfig = 'mock-servers/github/wrangler.jsonc'
-const cursorWorkerConfig = 'mock-servers/cursor/wrangler.jsonc'
+const workerConfig = 'packages/mock-servers/github/wrangler.jsonc'
+const cursorWorkerConfig = 'packages/mock-servers/cursor/wrangler.jsonc'
 const bunBin = process.execPath
 const projectRoot = process.cwd()
 const timeoutMs = 60_000

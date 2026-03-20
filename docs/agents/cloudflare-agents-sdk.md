@@ -14,7 +14,7 @@ Installed in this repo as `agents` in `package.json` (currently `^0.7.4`).
 ## Quick pointers for this repo
 
 - MCP server uses `McpAgent` in `mcp/index.ts` and is served via
-  `MCP.serve(...)` in `worker/index.ts`.
+  `MCP.serve(...)` in `packages/worker/src/index.ts`.
 - Capabilities exposed through the compact `search` / `execute` tools are
   registered per-domain (`mcp/capabilities/*/domain.ts`) and merged in
   `mcp/capabilities/builtin-domains.ts`; see

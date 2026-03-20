@@ -8,11 +8,15 @@ import { getRemoteAiLocalDevStartupError } from '#shared/ai-env-validation.ts'
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
 const args = process.argv.slice(2)
+const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
 
 const hasEnvFlag = args.includes('--env') || args.includes('-e')
 const isDevCommand = args[0] === 'dev'
 const isLocalDevCommand = isDevCommand && args.includes('--local')
 const hasPortFlag = args.includes('--port')
+const hasConfigFlag = args.some(
+	(arg) => arg === '--config' || arg.startsWith('--config='),
+)
 const hasInspectorPortFlag = args.some(
 	(arg) => arg === '--inspector-port' || arg.startsWith('--inspector-port='),
 )
@@ -25,6 +29,13 @@ if (isLocalDevCommand) {
 }
 
 const commandArgs = [...args]
+
+if (
+	!hasConfigFlag &&
+	existsSync(path.join(process.cwd(), defaultWranglerConfigPath))
+) {
+	commandArgs.push('--config', defaultWranglerConfigPath)
+}
 
 if (!hasEnvFlag) {
 	commandArgs.push('--env', envName)

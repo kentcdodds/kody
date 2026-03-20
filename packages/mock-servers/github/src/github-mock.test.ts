@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 
-const workerConfig = 'mock-servers/github/wrangler.jsonc'
+const workerConfig = 'packages/mock-servers/github/wrangler.jsonc'
 const bunBin = process.execPath
 const projectRoot = process.cwd()
 const defaultTimeoutMs = 60_000

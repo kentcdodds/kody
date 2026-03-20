@@ -1,0 +1,15 @@
+{
+	"$schema": "../../../node_modules/nx/schemas/project-schema.json",
+	"name": "mock-resend",
+	"projectType": "application",
+	"sourceRoot": "packages/mock-servers/resend/src",
+	"targets": {
+		"dev": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run dev:mock-resend"
+			}
+		}
+	},
+	"tags": ["scope:mock-server", "service:resend"]
+}

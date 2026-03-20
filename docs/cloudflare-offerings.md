@@ -14,8 +14,8 @@ This guide covers how to add common Cloudflare offerings on top of the starter:
 - AI Gateway
 - An additional KV namespace for app data (separate from `OAUTH_KV`)
 
-All examples assume you are using the template's `wrangler.jsonc` and that you
-run commands from the repo root.
+All examples assume you are using the template's
+`packages/worker/wrangler.jsonc` and that you run commands from the repo root.
 
 ## Authentication: `wrangler login` vs API tokens
 
@@ -69,12 +69,12 @@ Create separate buckets for production vs preview/testing:
 - `bunx wrangler r2 bucket create <app-name>-uploads-preview`
 - `bunx wrangler r2 bucket list`
 
-Wrangler can also update `wrangler.jsonc` for you:
+Wrangler can also update `packages/worker/wrangler.jsonc` for you:
 
 - `bunx wrangler r2 bucket create <app-name>-uploads --binding UPLOADS_BUCKET --env production --update-config`
 - `bunx wrangler r2 bucket create <app-name>-uploads-preview --binding UPLOADS_BUCKET --env preview --update-config`
 
-### Bind the bucket in `wrangler.jsonc`
+### Bind the bucket in `packages/worker/wrangler.jsonc`
 
 Add an `r2_buckets` binding in each environment you want to use it:
 
@@ -123,7 +123,7 @@ Workers AI lets your Worker call Cloudflare-hosted AI models.
 - `bunx wrangler ai models`
 - `bunx wrangler ai models --json`
 
-### Bind Workers AI in `wrangler.jsonc`
+### Bind Workers AI in `packages/worker/wrangler.jsonc`
 
 Add the AI binding per environment:
 
@@ -213,9 +213,9 @@ Create a dedicated namespace for app data, for example `APP_KV`:
 - `bunx wrangler kv namespace create <app-name>-app-preview --binding APP_KV --env production --preview --update-config`
 
 If you are not using `--update-config`, record the namespace IDs and add them to
-`wrangler.jsonc` manually (see next section).
+`packages/worker/wrangler.jsonc` manually (see next section).
 
-### Bind the namespace in `wrangler.jsonc`
+### Bind the namespace in `packages/worker/wrangler.jsonc`
 
 Add a second entry in `kv_namespaces` alongside `OAUTH_KV`:
 
@@ -273,7 +273,7 @@ the TanStack provider packages you use (for example OpenAI or Anthropic):
 - `bun add @tanstack/ai-openai`
 - `bun add @tanstack/ai-anthropic`
 
-#### Bindings (`wrangler.jsonc`)
+#### Bindings (`packages/worker/wrangler.jsonc`)
 
 Add the Workers AI binding in each environment you want:
 

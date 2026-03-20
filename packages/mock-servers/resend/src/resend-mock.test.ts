@@ -4,7 +4,7 @@ import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createTemporaryDirectory } from '#tools/temp-directory.ts'
 
-const workerConfig = 'mock-servers/resend/wrangler.jsonc'
+const workerConfig = 'packages/mock-servers/resend/wrangler.jsonc'
 const bunBin = process.execPath
 const projectRoot = process.cwd()
 const defaultTimeoutMs = 60_000

@@ -24,6 +24,7 @@ package-lock.json
 *.sln
 *.sw?
 .wrangler
+.nx
 .tmp
 .env
 mock-data
@@ -31,3 +32,5 @@ playwright-report
 test-results
 public/client-entry.js
 public/mcp-apps/
+packages/worker/wrangler-preview.generated.json
+packages/worker/wrangler-production.generated.json

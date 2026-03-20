@@ -7,7 +7,7 @@ import {
 	createCursorCloudClient,
 } from './cursor-cloud-client.ts'
 
-const workerConfig = 'mock-servers/cursor/wrangler.jsonc'
+const workerConfig = 'packages/mock-servers/cursor/wrangler.jsonc'
 const bunBin = process.execPath
 const projectRoot = process.cwd()
 const timeoutMs = 60_000

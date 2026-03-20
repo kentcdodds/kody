@@ -38,7 +38,7 @@ test('parseArgs defaults the Wrangler env to production', () => {
 
 test('resolveWranglerEnv infers preview from generated config names', () => {
 	const env = resolveWranglerEnv({
-		config: 'wrangler-preview.generated.json',
+		config: 'packages/worker/wrangler-preview.generated.json',
 	})
 
 	expect(env).toBe('preview')

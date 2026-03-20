@@ -65,8 +65,8 @@ Password reset handlers are in `server/handlers/password-reset.ts`.
 
 ## OAuth for MCP
 
-OAuth endpoints are implemented in `worker/oauth-handlers.ts` and routed from
-`worker/index.ts`.
+OAuth endpoints are implemented in `packages/worker/src/oauth-handlers.ts` and
+routed from `packages/worker/src/index.ts`.
 
 - Authorization endpoint: `/oauth/authorize`
 - Token endpoint: `/oauth/token` (via provider)
@@ -76,7 +76,7 @@ OAuth endpoints are implemented in `worker/oauth-handlers.ts` and routed from
   auth links; those links preserve the full authorize URL in `redirectTo` so
   successful login/signup returns to the original OAuth request
 
-`/mcp` is protected by `worker/mcp-auth.ts`:
+`/mcp` is protected by `packages/worker/src/mcp-auth.ts`:
 
 - Requires `Authorization: Bearer <token>`
 - Token is validated via OAuth provider helpers (`unwrapToken`)
@@ -85,8 +85,8 @@ OAuth endpoints are implemented in `worker/oauth-handlers.ts` and routed from
 
 ## What to read when changing auth
 
-- `worker/index.ts` for route order and integration points
-- `worker/oauth-handlers.ts` for OAuth authorization logic
-- `worker/mcp-auth.ts` for MCP token enforcement
+- `packages/worker/src/index.ts` for route order and integration points
+- `packages/worker/src/oauth-handlers.ts` for OAuth authorization logic
+- `packages/worker/src/mcp-auth.ts` for MCP token enforcement
 - `server/auth-session.ts` for cookie format/signing
 - `server/handlers/auth.ts` for app login/signup flow

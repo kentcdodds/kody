@@ -14,8 +14,9 @@ Current schema is defined by migrations in `migrations/`:
 
 App access pattern:
 
-- `worker/db.ts` defines shared `remix/data-table` table metadata and creates a
-  D1-backed database runtime via `worker/d1-data-table-adapter.ts`
+- `packages/worker/src/db.ts` defines shared `remix/data-table` table metadata
+  and creates a D1-backed database runtime via
+  `packages/worker/src/d1-data-table-adapter.ts`
 - Database row validation and API payload parsing use `remix/data-schema`
 - app handlers and the mock Resend worker perform CRUD/query operations through
   `remix/data-table` (including `findOne`, `create`, `update`, `deleteMany`, and
@@ -26,7 +27,7 @@ App access pattern:
 OAuth provider state is stored in KV through the
 `@cloudflare/workers-oauth-provider` integration.
 
-- Binding is configured in `wrangler.jsonc`
+- Binding is configured in `packages/worker/wrangler.jsonc`
 - This supports OAuth client and token flows without custom storage code in the
   app handlers
 
@@ -50,7 +51,7 @@ Chat conversations run through a chat Agent Durable Object.
 
 ## Configuration reference
 
-Bindings are configured per environment in `wrangler.jsonc`:
+Bindings are configured per environment in `packages/worker/wrangler.jsonc`:
 
 - `APP_DB` (D1)
 - `OAUTH_KV` (KV)

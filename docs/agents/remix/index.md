@@ -44,7 +44,8 @@ Docs for every package in https://github.com/remix-run/remix/tree/main/packages.
   - `remix/data-schema`
   - `remix/data-table`
 - D1 integration uses `remix/data-table` with a repository adapter
-  (`worker/d1-data-table-adapter.ts`) instead of `remix/data-table-sqlite`.
+  (`packages/worker/src/d1-data-table-adapter.ts`) instead of
+  `remix/data-table-sqlite`.
 - Package coverage audit against installed `remix@3.0.0-alpha.3` top-level
   exports: no missing Remix package docs in this index.
 

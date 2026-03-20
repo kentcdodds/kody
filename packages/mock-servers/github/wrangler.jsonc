@@ -1,9 +1,9 @@
 {
-	"$schema": "../../node_modules/wrangler/config-schema.json",
-	"name": "kody-mock-cursor",
+	"$schema": "../../../node_modules/wrangler/config-schema.json",
+	"name": "kody-mock-github",
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-	"main": "./worker.ts",
+	"main": "./src/worker.ts",
 	"preview_urls": true,
 	"observability": { "enabled": true },
 }
