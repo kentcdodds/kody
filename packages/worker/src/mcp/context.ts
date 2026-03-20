@@ -3,7 +3,7 @@ import {
 	mcpCallerContextSchema,
 	type McpCallerContext,
 	type McpUserContext,
-} from '#shared/chat.ts'
+} from '../../../../shared/chat.ts'
 
 export type McpServerProps = McpCallerContext
 

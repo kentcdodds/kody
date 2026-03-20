@@ -17,7 +17,8 @@ This project uses the following resources:
   - Create once per account, for example:
     `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`
     (same for preview). **Dimensions must match** the embedding model in
-    `mcp/capabilities/capability-search.ts` (`@cf/baai/bge-small-en-v1.5`).
+    `packages/worker/src/mcp/capabilities/capability-search.ts`
+    (`@cf/baai/bge-small-en-v1.5`).
 
 Production CI deploys now ensure these resources exist and create them when
 missing. The post-download script does not create Cloudflare resources and does

@@ -85,18 +85,18 @@ configured.
 
 The **MCP** (`MCP` / `MCP_OBJECT`) and **chat** (`ChatAgent`) Durable Objects
 are each wrapped with `Sentry.instrumentDurableObjectWithSentry` (see
-`mcp/index.ts` and `packages/worker/src/chat-agent.ts`) because they run in
-separate isolates from the top-level Worker.
+`packages/worker/src/mcp/index.ts` and `packages/worker/src/chat-agent.ts`)
+because they run in separate isolates from the top-level Worker.
 
 Shared options are built in `sentry/cloudflare-options.ts`: **release** comes
 from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and
 **environment** defaults from `SENTRY_ENVIRONMENT` in
 `packages/worker/wrangler.jsonc` per deploy target.
 
-MCP tools emit structured `mcp-event` logs via `mcp/observability.ts`. On
-failures, the same module sends Sentry events (with MCP tags and context);
-sandbox user-code failures are reported at **warning** severity, while
-capability handler bugs use **error**.
+MCP tools emit structured `mcp-event` logs via
+`packages/worker/src/mcp/observability.ts`. On failures, the same module sends
+Sentry events (with MCP tags and context); sandbox user-code failures are
+reported at **warning** severity, while capability handler bugs use **error**.
 
 ### Source maps
 

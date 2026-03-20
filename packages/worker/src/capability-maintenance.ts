@@ -1,5 +1,5 @@
-import { capabilitySpecs } from '../../../mcp/capabilities/registry.ts'
-import { reindexCapabilityVectors } from '../../../mcp/capabilities/capability-reindex.ts'
+import { capabilitySpecs } from './mcp/capabilities/registry.ts'
+import { reindexCapabilityVectors } from './mcp/capabilities/capability-reindex.ts'
 
 export async function handleCapabilityReindexRequest(
 	request: Request,

@@ -7,7 +7,7 @@ import {
 	type UIMessage,
 } from 'ai'
 import { type Connection, type ConnectionContext } from 'agents'
-import { createMcpCallerContext } from '../../../mcp/context.ts'
+import { createMcpCallerContext } from './mcp/context.ts'
 import { readAuthenticatedAppUser } from '../../../server/authenticated-user.ts'
 import { createChatThreadsStore } from '../../../server/chat-threads.ts'
 import { createAiRuntime, type AiRuntimeResult } from './ai-runtime.ts'

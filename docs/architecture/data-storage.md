@@ -34,7 +34,7 @@ OAuth provider state is stored in KV through the
 ## Durable Objects (`MCP_OBJECT`)
 
 MCP server runtime state is hosted via a Durable Object class (`MCP`) in
-`mcp/index.ts`, exposed through the `/mcp` route.
+`packages/worker/src/mcp/index.ts`, exposed through the `/mcp` route.
 
 - The Worker forwards authorized MCP requests to `MCP.serve(...).fetch`
 - Durable Objects provide a stateful execution model for MCP operations

@@ -5,7 +5,8 @@
   "type": "module",
   "imports": {
     "#worker/*": "./packages/worker/src/*",
-    "#*": "./*"
+    "#*": "./*",
+    "#mcp/*": "./packages/worker/src/mcp/*"
   },
   "description": "A starter and reference for building full stack web applications",
   "scripts": {
@@ -34,13 +35,13 @@
     "preview:e2e": "bun run build:mcp-apps && bun run migrate:e2e && bun ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "generate-types": "bun ./wrangler-env.ts types ./types/worker-configuration.d.ts",
     "typecheck": "tsc -b --noEmit",
-    "test": "bun test ./server ./packages/worker ./packages/mock-servers ./mcp/github ./mcp/cursor ./mcp/capabilities",
+    "test": "bun test ./server ./packages/mock-servers ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts",
     "inspect": "bunx -p @mcpjam/inspector inspector",
     "validate": "concurrently --kill-others-on-fail -n format,lint,build,typecheck,test,test:mcp -c green,yellow,blue,magenta,cyan,red \"bun run format:check\" \"bun run lint:fix\" \"bun run build\" \"bun run typecheck\" \"bun run test:e2e\" \"bun run test:mcp\"",
     "test:e2e": "bun tools/prepare-e2e-env.ts && playwright test",
     "test:e2e:ui": "bun tools/prepare-e2e-env.ts && playwright test --ui",
     "test:e2e:install": "playwright install chromium --with-deps",
-    "test:mcp": "bun run build:mcp-apps && bun test mcp/mcp-server-e2e.test.ts",
+    "test:mcp": "bun run build:mcp-apps && bun test packages/worker/src/mcp/mcp-server-e2e.test.ts",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects"
   },

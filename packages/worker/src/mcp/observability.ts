@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
-import { type McpCallerContext } from '#shared/chat.ts'
+import { type McpCallerContext } from '../../../../shared/chat.ts'
 
 export type McpToolKind = 'search' | 'execute' | 'capability'
 

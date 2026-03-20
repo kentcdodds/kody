@@ -1,4 +1,4 @@
-import { type McpCallerContext } from '#shared/chat.ts'
+import { type McpCallerContext } from '../../../../../../shared/chat.ts'
 
 export function requireMcpUser(context: McpCallerContext) {
 	if (!context.user) {

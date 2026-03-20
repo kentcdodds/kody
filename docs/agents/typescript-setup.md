@@ -23,7 +23,7 @@ We have **three** distinct TypeScript environments, each with its own
   - `wrangler-env.ts`
   - `cli.ts`
   - `docs/post-download.ts`
-  - `mcp/mcp-server-e2e.test.ts`
+  - `packages/worker/src/mcp/mcp-server-e2e.test.ts`
 - **Environment**: Node/Bun (scripts, configs, tests)
 
 ### Worker
@@ -32,7 +32,7 @@ We have **three** distinct TypeScript environments, each with its own
 - **Files**:
   - `packages/worker/src/**/*.ts`
   - `server/**/*.ts`
-  - `mcp/**/*.ts`
+  - `packages/worker/src/mcp/**/*.ts`
   - `types/env.d.ts`, `types/env-schema.ts`
   - generated `types/worker-configuration.d.ts` (via `bun run generate-types`)
 - **Environment**: Cloudflare Workers (`WebWorker`, `WebWorker.Iterable`)
