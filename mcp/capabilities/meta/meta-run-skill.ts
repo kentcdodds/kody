@@ -44,7 +44,7 @@ export const metaRunSkillCapability = defineDomainCapability(
 				.min(1)
 				.describe('Skill id returned by meta_save_skill.'),
 			params: z
-				.record(z.unknown())
+				.record(z.string(), z.unknown())
 				.optional()
 				.describe(
 					'Optional parameter values for this skill (validated against saved definitions when present).',

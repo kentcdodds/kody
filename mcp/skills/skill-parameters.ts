@@ -153,7 +153,7 @@ function stripCodeFences(code: string): string {
 	const match = code.match(
 		/^```(?:js|javascript|typescript|ts|tsx|jsx)?\s*\n([\s\S]*?)```\s*$/,
 	)
-	return match ? match[1] : code
+	return match?.[1] ?? code
 }
 
 function normalizeSkillCode(code: string): string {
@@ -165,11 +165,12 @@ function normalizeSkillCode(code: string): string {
 			ecmaVersion: 'latest',
 			sourceType: 'module',
 		})
+		const first = ast.body[0]
 		if (
 			ast.body.length === 1 &&
-			ast.body[0].type === 'ExpressionStatement'
+			first?.type === 'ExpressionStatement'
 		) {
-			const statement = ast.body[0]
+			const statement = first
 			if (
 				statement.expression.type === 'ArrowFunctionExpression' ||
 				statement.expression.type === 'FunctionExpression'
@@ -179,9 +180,9 @@ function normalizeSkillCode(code: string): string {
 		}
 		if (
 			ast.body.length === 1 &&
-			ast.body[0].type === 'ExportDefaultDeclaration'
+			first?.type === 'ExportDefaultDeclaration'
 		) {
-			const decl = ast.body[0].declaration
+			const decl = first.declaration
 			const inner = source.slice(decl.start, decl.end)
 			if (decl.type === 'FunctionDeclaration' && !decl.id) {
 				return `async () => {\nreturn (${inner})(params);\n}`
@@ -191,8 +192,8 @@ function normalizeSkillCode(code: string): string {
 			}
 			return normalizeSkillCode(inner)
 		}
-		if (ast.body.length === 1 && ast.body[0].type === 'FunctionDeclaration') {
-			return `async () => {\n${source}\nreturn ${ast.body[0].id?.name ?? 'fn'}(params);\n}`
+		if (ast.body.length === 1 && first?.type === 'FunctionDeclaration') {
+			return `async () => {\n${source}\nreturn ${first.id?.name ?? 'fn'}(params);\n}`
 		}
 		const last = ast.body[ast.body.length - 1]
 		if (last?.type === 'ExpressionStatement') {
