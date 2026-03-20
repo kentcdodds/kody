@@ -37,6 +37,9 @@ codemode receives them as the `params` variable (and as the first function
 argument when present). Missing required parameters or unknown names are
 rejected; defaults are applied when provided.
 
+Example:
+`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds" } })`
+
 ## Flags
 
 `read_only`, `destructive`, and `idempotent` are **agent-provided** and

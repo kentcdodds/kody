@@ -29,6 +29,11 @@ function parseJsonStringArray(raw: string): Array<string> {
 	}
 }
 
+function buildSkillUsage(skillId: string): string {
+	const runArgs = JSON.stringify({ skill_id: skillId })
+	return `Run with meta_run_skill: ${runArgs}. Optionally include "params": { ... }. To inspect code, call meta_get_skill then execute.`
+}
+
 function skillRowEmbedDoc(
 	row: McpSkillRow,
 	specs: Record<string, CapabilitySpec>,
@@ -62,6 +67,7 @@ export type SkillSearchHitSummary = {
 	title: string
 	description: string
 	keywords: Array<string>
+	usage: string
 	readOnly: boolean
 	idempotent: boolean
 	destructive: boolean
@@ -116,6 +122,7 @@ function rowToSkillHit(
 		title: row.title,
 		description: row.description,
 		keywords,
+		usage: buildSkillUsage(row.id),
 		readOnly: row.read_only === 1,
 		idempotent: row.idempotent === 1,
 		destructive: row.destructive === 1,
