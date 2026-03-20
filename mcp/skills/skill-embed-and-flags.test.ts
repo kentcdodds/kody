@@ -7,6 +7,7 @@ import {
 	validateSkillSaveFlags,
 	deriveTrustFlags,
 } from './skill-embed-and-flags.ts'
+import { type SkillParameterDefinition } from './skill-parameters.ts'
 
 const fakeSpecs: Record<string, CapabilitySpec> = {
 	do_math: {
@@ -48,15 +49,25 @@ test('mergeInferredCapabilityNames splits unknown names', () => {
 })
 
 test('buildSkillEmbedText includes denormalized capability text', () => {
+	const parameters: Array<SkillParameterDefinition> = [
+		{
+			name: 'owner',
+			description: 'GitHub repo owner.',
+			type: 'string',
+			required: true,
+		},
+	]
 	const text = buildSkillEmbedText({
 		title: 't',
 		description: 'd',
 		keywords: ['k'],
 		searchText: null,
 		inferredCapabilities: ['do_math'],
+		parameters,
 		specs: fakeSpecs,
 	})
 	expect(text).toContain('do_math')
+	expect(text).toContain('owner')
 	expect(text.toLowerCase()).toContain('arithmetic')
 })
 

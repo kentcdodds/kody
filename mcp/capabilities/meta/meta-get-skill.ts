@@ -3,6 +3,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getMcpSkillById } from '#mcp/skills/mcp-skills-repo.ts'
+import {
+	parseSkillParameters,
+	skillParameterSchema,
+} from '#mcp/skills/skill-parameters.ts'
 import { requireMcpUser } from './require-user.ts'
 
 function parseStringArray(raw: string | null): Array<string> | null {
@@ -24,6 +28,7 @@ const outputSchema = z.object({
 	code: z.string(),
 	search_text: z.string().nullable(),
 	uses_capabilities: z.array(z.string()).nullable(),
+	parameters: z.array(skillParameterSchema).nullable(),
 	inferred_capabilities: z.array(z.string()),
 	inference_partial: z.boolean(),
 	read_only: z.boolean(),
@@ -63,6 +68,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 			const keywords = parseStringArray(row.keywords) ?? []
 			const inferred = parseStringArray(row.inferred_capabilities) ?? []
 			const uses = parseStringArray(row.uses_capabilities)
+	const parameters = parseSkillParameters(row.parameters)
 			return {
 				skill_id: row.id,
 				title: row.title,
@@ -71,6 +77,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 				code: row.code,
 				search_text: row.search_text,
 				uses_capabilities: uses,
+		parameters,
 				inferred_capabilities: inferred,
 				inference_partial: row.inference_partial === 1,
 				read_only: row.read_only === 1,

@@ -16,9 +16,9 @@ export async function insertMcpSkill(
 		.prepare(
 			`INSERT INTO mcp_skills (
 				id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, inferred_capabilities, inference_partial,
+				uses_capabilities, parameters, inferred_capabilities, inference_partial,
 				read_only, idempotent, destructive, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -29,6 +29,7 @@ export async function insertMcpSkill(
 			row.code,
 			row.search_text ?? null,
 			row.uses_capabilities ?? null,
+			row.parameters ?? null,
 			row.inferred_capabilities,
 			row.inference_partial,
 			row.read_only,
@@ -48,7 +49,7 @@ export async function getMcpSkillById(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, inferred_capabilities, inference_partial,
+				uses_capabilities, parameters, inferred_capabilities, inference_partial,
 				read_only, idempotent, destructive, created_at, updated_at
 			FROM mcp_skills WHERE id = ? AND user_id = ?`,
 		)
@@ -69,6 +70,7 @@ export async function updateMcpSkill(
 		code: string
 		search_text: string | null
 		uses_capabilities: string | null
+		parameters: string | null
 		inferred_capabilities: string
 		inference_partial: 0 | 1
 		read_only: 0 | 1
@@ -81,7 +83,7 @@ export async function updateMcpSkill(
 		.prepare(
 			`UPDATE mcp_skills SET
 				title = ?, description = ?, keywords = ?, code = ?, search_text = ?,
-				uses_capabilities = ?, inferred_capabilities = ?, inference_partial = ?,
+				uses_capabilities = ?, parameters = ?, inferred_capabilities = ?, inference_partial = ?,
 				read_only = ?, idempotent = ?, destructive = ?, updated_at = ?
 			WHERE id = ? AND user_id = ?`,
 		)
@@ -92,6 +94,7 @@ export async function updateMcpSkill(
 			fields.code,
 			fields.search_text,
 			fields.uses_capabilities,
+			fields.parameters,
 			fields.inferred_capabilities,
 			fields.inference_partial,
 			fields.read_only,
@@ -124,7 +127,7 @@ export async function listMcpSkillsByUserId(
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, inferred_capabilities, inference_partial,
+				uses_capabilities, parameters, inferred_capabilities, inference_partial,
 				read_only, idempotent, destructive, created_at, updated_at
 			FROM mcp_skills WHERE user_id = ?`,
 		)
@@ -144,6 +147,7 @@ function mapRow(r: Record<string, unknown>): McpSkillRow {
 		search_text: r['search_text'] == null ? null : String(r['search_text']),
 		uses_capabilities:
 			r['uses_capabilities'] == null ? null : String(r['uses_capabilities']),
+		parameters: r['parameters'] == null ? null : String(r['parameters']),
 		inferred_capabilities: String(r['inferred_capabilities']),
 		inference_partial: Number(r['inference_partial']) === 1 ? 1 : 0,
 		read_only: Number(r['read_only']) === 1 ? 1 : 0,

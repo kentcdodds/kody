@@ -7,6 +7,11 @@ import {
 	validateSkillSaveFlags,
 } from './skill-embed-and-flags.ts'
 import { type McpSkillRow } from './mcp-skills-types.ts'
+import {
+	normalizeSkillParameters,
+	parseSkillParameters,
+	type SkillParameterInput,
+} from './skill-parameters.ts'
 
 function parseJsonStringArray(raw: string): Array<string> {
 	try {
@@ -23,6 +28,7 @@ export async function buildSkillEmbedTextFromStoredRow(
 ): Promise<string> {
 	const { capabilitySpecs } = await import('#mcp/capabilities/registry.ts')
 	const keywords = parseJsonStringArray(row.keywords)
+	const parameters = parseSkillParameters(row.parameters)
 	let inferred: Array<string> = []
 	try {
 		const v = JSON.parse(row.inferred_capabilities) as unknown
@@ -38,6 +44,7 @@ export async function buildSkillEmbedTextFromStoredRow(
 		keywords,
 		searchText: row.search_text,
 		inferredCapabilities: inferred,
+		parameters,
 		specs: capabilitySpecs,
 	})
 }
@@ -49,6 +56,7 @@ export type SkillPersistenceArgs = {
 	code: string
 	search_text?: string | undefined
 	uses_capabilities?: Array<string> | undefined
+	parameters?: Array<SkillParameterInput> | undefined
 	read_only: boolean
 	idempotent: boolean
 	destructive: boolean
@@ -67,6 +75,7 @@ export type PreparedSkillPersistence = {
 		code: string
 		search_text: string | null
 		uses_capabilities: string | null
+		parameters: string | null
 		inferred_capabilities: string
 		inference_partial: 0 | 1
 		read_only: 0 | 1
@@ -113,12 +122,14 @@ export async function prepareSkillPersistence(
 		)
 	}
 
+	const parameters = normalizeSkillParameters(args.parameters)
 	const embedText = buildSkillEmbedText({
 		title: args.title,
 		description: args.description,
 		keywords: args.keywords,
 		searchText: args.search_text ?? null,
 		inferredCapabilities: merged,
+		parameters,
 		specs: capabilitySpecs,
 	})
 
@@ -131,6 +142,7 @@ export async function prepareSkillPersistence(
 		uses_capabilities: args.uses_capabilities
 			? JSON.stringify(args.uses_capabilities)
 			: null,
+		parameters: parameters ? JSON.stringify(parameters) : null,
 		inferred_capabilities: JSON.stringify(merged),
 		inference_partial: (inferencePartial ? 1 : 0) as 0 | 1,
 		read_only: (args.read_only ? 1 : 0) as 0 | 1,
