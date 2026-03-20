@@ -1,5 +1,9 @@
 {
   "name": "@kody/mock-ai",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "imports": {
+    "#worker/*": "../../worker/src/*",
+    "#shared/*": "../../shared/*"
+  }
 }
