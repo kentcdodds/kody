@@ -33,7 +33,7 @@ export const metaRunSkillCapability = defineDomainCapability(
 	{
 		name: 'meta_run_skill',
 		description:
-			"Execute a saved skill's codemode in the same sandbox as the MCP execute tool. When the skill defines parameters, pass them in params; the code receives them via the params variable or the first function argument. On failure, the structured result includes a hint for updating the skill (meta_update_skill).",
+			"Execute a saved skill's codemode in the same sandbox as the MCP execute tool. When the skill defines parameters, pass them in params; the code receives them via the params variable or the first function argument. Example: meta_run_skill({ \"skill_id\": \"<id>\", \"params\": { \"owner\": \"kentcdodds\", \"days\": 3 } }). On failure, the structured result includes a hint for updating the skill (meta_update_skill).",
 		keywords: ['skill', 'run', 'execute'],
 		readOnly: false,
 		idempotent: false,

@@ -23,9 +23,6 @@ pass the returned code into this tool.
 
 This tool accepts a single argument: \`{ "code": "async () => { ... }" }\`.
 
-Saved skill example (separate tool):
-\`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds", "days": 3 } })\`
-
 Available in your code:
 
 type CapabilityArgs = Record<string, unknown>;
