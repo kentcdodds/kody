@@ -3,6 +3,13 @@
 A full-stack web application starter built on Cloudflare Workers with Remix 3
 (alpha).
 
+## Maintainer note
+
+Cursor Cloud agent definitions/instructions live in this file. When changing
+Kody's Cursor Cloud agent behavior, update `.cursor/CLOUD.md` and keep
+`AGENTS.md` as the brief index. Add deeper guidance in `docs/agents` when
+needed.
+
 ## Quick Reference
 
 | Task             | Command             |
