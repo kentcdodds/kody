@@ -14,9 +14,10 @@ import {
 	type ContentBlock,
 } from '@modelcontextprotocol/sdk/types.js'
 import getPort from 'get-port'
+import { copyFileSync, existsSync } from 'node:fs'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -41,6 +42,20 @@ function toHex(bytes: Uint8Array) {
 	return Array.from(bytes)
 		.map((value) => value.toString(16).padStart(2, '0'))
 		.join('')
+}
+
+function syncDotenvForWranglerConfig() {
+	const rootEnvPath = join(projectRoot, '.env')
+	if (!existsSync(rootEnvPath)) {
+		return
+	}
+
+	const configEnvPath = join(projectRoot, 'packages/worker', '.env')
+	if (resolve(rootEnvPath) === resolve(configEnvPath)) {
+		return
+	}
+
+	copyFileSync(rootEnvPath, configEnvPath)
 }
 
 async function createPasswordHash(password: string) {
@@ -72,6 +87,7 @@ function escapeSql(value: string) {
 }
 
 async function runWrangler(args: Array<string>) {
+	syncDotenvForWranglerConfig()
 	const proc = Bun.spawn({
 		cmd: [bunBin, 'x', 'wrangler', '--config', workerConfig, ...args],
 		cwd: projectRoot,
@@ -261,6 +277,7 @@ async function stopProcess(proc: ReturnType<typeof Bun.spawn>) {
 }
 
 async function startDevServer(persistDir: string) {
+	syncDotenvForWranglerConfig()
 	const port = await getPort({ host: '127.0.0.1' })
 	const inspectorPortBase =
 		port + 10_000 <= 65_535 ? port + 10_000 : Math.max(1, port - 10_000)

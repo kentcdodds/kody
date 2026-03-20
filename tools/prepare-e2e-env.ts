@@ -32,7 +32,7 @@ function setDotenvValue(content: string, key: string, value: string) {
 
 if (!existsSync(examplePath)) {
 	console.error(
-		'Missing .env and .env.example; cannot prepare E2E environment.',
+		'Missing .env.example; cannot prepare E2E environment.',
 	)
 	process.exit(1)
 }
