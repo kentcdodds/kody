@@ -243,7 +243,7 @@ test(
 				},
 				ctx,
 			),
-		).rejects.toThrow('String must contain at least 1 character')
+		).rejects.toThrow('expected string to have >=1 characters')
 	},
 	{ timeout: timeoutMs },
 )
