@@ -2,6 +2,15 @@ import * as acorn from 'acorn'
 import { z } from 'zod'
 
 const skillParameterTypes = ['string', 'number', 'boolean', 'json'] as const
+const reservedParameterNames = new Set([
+	'__proto__',
+	'constructor',
+	'prototype',
+	'__defineGetter__',
+	'__defineSetter__',
+	'__lookupGetter__',
+	'__lookupSetter__',
+])
 
 export type SkillParameterType = (typeof skillParameterTypes)[number]
 
@@ -53,6 +62,9 @@ export function normalizeSkillParameters(
 		if (!name) {
 			throw new Error('Skill parameter name cannot be empty.')
 		}
+		if (reservedParameterNames.has(name)) {
+			throw new Error(`Skill parameter name "${name}" is not allowed.`)
+		}
 		if (seen.has(name)) {
 			throw new Error(`Duplicate skill parameter name: ${name}.`)
 		}
@@ -101,7 +113,7 @@ export function applySkillParameters(input: {
 	if (unknown.length > 0) {
 		throw new Error(`Unknown skill parameter(s): ${unknown.join(', ')}.`)
 	}
-	const resolved: Record<string, unknown> = {}
+	const resolved: Record<string, unknown> = Object.create(null)
 	for (const def of input.definitions) {
 		if (Object.prototype.hasOwnProperty.call(values, def.name)) {
 			const value = values[def.name]
@@ -158,7 +170,10 @@ function normalizeSkillCode(code: string): string {
 			ast.body[0].type === 'ExpressionStatement'
 		) {
 			const statement = ast.body[0]
-			if (statement.expression.type === 'ArrowFunctionExpression') {
+			if (
+				statement.expression.type === 'ArrowFunctionExpression' ||
+				statement.expression.type === 'FunctionExpression'
+			) {
 				return source.slice(statement.expression.start, statement.expression.end)
 			}
 		}
