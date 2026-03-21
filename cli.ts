@@ -421,6 +421,9 @@ async function attachCloudflareMock(
 		return
 	}
 	const shouldPreserveRealToken = resolveAiMode() === 'remote'
+	if (shouldPreserveRealToken) {
+		return
+	}
 	if (
 		hasEnvValue(mockEnv.CLOUDFLARE_API_BASE_URL) &&
 		isChildRunning(mockCloudflareProcess)
@@ -454,10 +457,8 @@ async function attachCloudflareMock(
 			mockCloudflareProcess = null
 		}
 	})
-	if (!shouldPreserveRealToken) {
-		mockEnv.CLOUDFLARE_API_BASE_URL = baseUrl
-		mockEnv.CLOUDFLARE_API_TOKEN = apiToken
-	}
+	mockEnv.CLOUDFLARE_API_BASE_URL = baseUrl
+	mockEnv.CLOUDFLARE_API_TOKEN = apiToken
 	const didStart = await waitForMockReady(baseUrl, child)
 	if (!didStart) {
 		console.warn(
