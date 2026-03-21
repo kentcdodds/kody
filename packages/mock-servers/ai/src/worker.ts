@@ -1,5 +1,5 @@
-import { createDb, mockAiRequestsTable } from '#worker/db.ts'
-import { buildMockAiScenario } from '#shared/mock-ai.ts'
+import { createDb, mockAiRequestsTable } from '@kody/worker/db.ts'
+import { buildMockAiScenario } from '@kody-internal/shared/mock-ai.ts'
 
 type MockAiEnv = {
 	APP_DB: D1Database

@@ -2,8 +2,8 @@
   "name": "@kody/mock-ai",
   "private": true,
   "type": "module",
-  "imports": {
-    "#worker/*": "../../worker/src/*",
-    "#shared/*": "../../shared/*"
+  "dependencies": {
+    "@kody-internal/shared": "workspace:*",
+    "@kody/worker": "workspace:*"
   }
 }

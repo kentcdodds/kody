@@ -28,8 +28,9 @@ flows.
 This project is intentionally single-user right now and is being built for
 `me@kentcdodds.com`.
 
-The repo is organized as an Nx monorepo, with the main app worker under
-`packages/worker` and mock Workers under `packages/mock-servers/*`.
+The repo is organized as an Nx monorepo, with shared modules in
+`packages/shared` (`@kody-internal/shared`), the main app worker under
+`packages/worker`, and mock Workers under `packages/mock-servers/*`.
 
 ## Quick Start
 

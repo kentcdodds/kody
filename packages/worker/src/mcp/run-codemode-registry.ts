@@ -1,4 +1,4 @@
-import { type McpCallerContext } from '../../../../shared/chat.ts'
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 
 export async function buildCodemodeFns(

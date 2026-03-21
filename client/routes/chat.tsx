@@ -30,7 +30,7 @@ import {
 	type ChatThreadListResponse,
 	type ChatThreadSummary,
 	type ChatThreadUpdateResponse,
-} from '#shared/chat.ts'
+} from '@kody-internal/shared/chat.ts'
 
 type ThreadStatus = 'idle' | 'loading' | 'ready' | 'error'
 

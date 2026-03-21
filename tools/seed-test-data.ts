@@ -1,6 +1,6 @@
 import { basename } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
-import { createPasswordHash } from '#shared/password-hash.ts'
+import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 
 type CliOptions = {
 	email: string

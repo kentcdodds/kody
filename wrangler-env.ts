@@ -3,7 +3,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
 import getPort from 'get-port'
-import { getRemoteAiLocalDevStartupError } from '#shared/ai-env-validation.ts'
+import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
 import { syncDotenvForConfig } from '#tools/wrangler-dotenv-sync.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'

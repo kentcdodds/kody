@@ -1,6 +1,6 @@
 import { parseSafe } from 'remix/data-schema'
-import { resendEmailSchema } from '#shared/resend-email.ts'
-import { createDb, mockResendMessagesTable } from '#worker/db.ts'
+import { resendEmailSchema } from '@kody-internal/shared/resend-email.ts'
+import { createDb, mockResendMessagesTable } from '@kody/worker/db.ts'
 
 type MockResendEnv = {
 	APP_DB: D1Database

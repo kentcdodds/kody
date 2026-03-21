@@ -6,7 +6,7 @@ import {
 import { type UIMessage } from 'ai'
 import { AgentClient } from 'agents/client'
 import { createInfiniteList } from '#client/infinite-list.ts'
-import { chatAgentBasePath } from '#shared/chat-routes.ts'
+import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 
 export type ChatClientSnapshot = {
 	messages: Array<UIMessage>

@@ -35,6 +35,6 @@
 		"../docs/post-download.ts",
 		"../packages/worker/src/mcp/mcp-server-e2e.test.ts",
 		"../tools/**/*.ts",
-		"../shared/**/*.ts"
+		"../packages/shared/src/**/*.ts"
 	]
 }
