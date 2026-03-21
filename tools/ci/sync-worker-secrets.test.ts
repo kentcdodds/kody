@@ -1,0 +1,49 @@
+import { test, expect } from 'bun:test'
+import { buildSpawnEnv } from './sync-worker-secrets'
+
+const baseOptions = {
+	env: undefined,
+	name: undefined,
+	config: undefined,
+	dotenvPaths: [],
+	setPairs: [],
+	setFromEnv: [],
+	setFromEnvOptional: [],
+	generateCookieSecret: false,
+	includeEmpty: false,
+	emptyAsSpace: false,
+}
+
+test('buildSpawnEnv removes empty optional vars', () => {
+	const options = {
+		...baseOptions,
+		setFromEnvOptional: ['CLOUDFLARE_API_BASE_URL', 'RESEND_API_KEY'],
+	}
+	const spawnEnv = buildSpawnEnv(options, {
+		CLOUDFLARE_API_BASE_URL: '',
+		RESEND_API_KEY: '',
+		COOKIE_SECRET: 'cookie',
+		PATH: '/usr/bin',
+	})
+
+	expect(spawnEnv.CLOUDFLARE_API_BASE_URL).toBeUndefined()
+	expect(spawnEnv.RESEND_API_KEY).toBeUndefined()
+	expect(spawnEnv.COOKIE_SECRET).toBe('cookie')
+	expect(spawnEnv.PATH).toBe('/usr/bin')
+})
+
+test('buildSpawnEnv keeps optional vars when set', () => {
+	const options = {
+		...baseOptions,
+		setFromEnvOptional: ['CLOUDFLARE_API_BASE_URL'],
+	}
+	const spawnEnv = buildSpawnEnv(options, {
+		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.com',
+		PATH: '/usr/bin',
+	})
+
+	expect(spawnEnv.CLOUDFLARE_API_BASE_URL).toBe(
+		'https://api.cloudflare.com',
+	)
+	expect(spawnEnv.PATH).toBe('/usr/bin')
+})
