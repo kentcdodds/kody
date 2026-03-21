@@ -47,8 +47,10 @@ How to use search
 - Example: search({ query: 'calculator or basic arithmetic on two numbers' })
 - Example: search({ query: 'GitHub REST API repository or issues', detail: true })
 - Example: search({ query: 'Cursor Cloud agents API' })
+- Example: search({ query: 'Cloudflare API zones dns workers d1', detail: true })
 - Example: search({ query: 'GitHub REST API documentation markdown' })
 - Example: search({ query: 'Cursor Cloud Agents API documentation markdown' })
+- Example: search({ query: 'Cloudflare API docs markdown' })
 
 Destructive GitHub access
 - Some capabilities are marked destructive: they can change or delete remote data (for example github_rest with POST, PUT, PATCH, or DELETE).
@@ -58,6 +60,11 @@ Destructive GitHub access
 Destructive Cursor Cloud Agents access
 - The cursor_cloud_rest capability can launch, stop, delete, or otherwise change Cursor Cloud Agents (POST/PUT/PATCH/DELETE). Writes may consume Cursor quota when calling the real API.
 - Official endpoints and request bodies: https://cursor.com/docs/cloud-agent/api/endpoints
+- Before execute on a mutating call, confirm the exact path, method, and JSON body with the user unless they already approved that exact operation.
+
+Destructive Cloudflare access
+- The cloudflare_rest capability can change or delete Cloudflare resources such as DNS records, Workers settings, routes, or account configuration (POST/PUT/PATCH/DELETE).
+- Official API base path and auth: https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/
 - Before execute on a mutating call, confirm the exact path, method, and JSON body with the user unless they already approved that exact operation.
 
 How to use execute

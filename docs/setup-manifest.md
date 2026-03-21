@@ -80,6 +80,10 @@ Local development uses `.env`, which Wrangler loads automatically:
 - `GITHUB_API_BASE_URL` (optional; defaults to `https://api.github.com`. Local
   `bun run dev` targets the GitHub mock unless `SKIP_GITHUB_MOCK=1`. GraphQL
   requests hit `${GITHUB_API_BASE_URL}/graphql`.)
+- `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.
+  Local `bun run dev` targets the Cloudflare mock unless
+  `SKIP_CLOUDFLARE_MOCK=1`. The `cloudflare_rest` capability expects API paths
+  under `/client/v4/`.)
 - `CURSOR_API_KEY` (optional Worker secret; Cursor Cloud Agents API key for the
   `cursor_cloud_rest` MCP capability)
 - `CURSOR_API_BASE_URL` (optional; defaults to `https://api.cursor.com`. Local
@@ -169,6 +173,11 @@ How to get/set each value:
     The production deploy workflow exports it as `GITHUB_TOKEN` only for
     `sync-worker-secrets.ts`, which stores it on the Worker as `GITHUB_TOKEN` so
     GitHub REST calls execute as `kody-bot`.
+- `CLOUDFLARE_API_TOKEN` (optional for `cloudflare_rest`, required for remote
+  AI)
+  - Create a Cloudflare API token with the account permissions needed for the
+    product APIs you want to call. This same secret already powers production
+    deploys and can also be used by the `cloudflare_rest` MCP capability.
 - `CURSOR_API_KEY` (optional)
   - Create an API key in **Cursor → Settings**, then add it as the repository
     secret `CURSOR_API_KEY`. The production deploy workflow can sync it to the

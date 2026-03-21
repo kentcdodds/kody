@@ -25,6 +25,10 @@ See `packages/mock-servers/cursor/` for a small
 subset mock used by the `cursor_cloud_rest` capability (started by `bun run dev`
 unless `SKIP_CURSOR_MOCK=1`).
 
+See `packages/mock-servers/cloudflare/` for a small Cloudflare API v4 subset
+mock used by the `cloudflare_rest` capability (started by `bun run dev` unless
+`SKIP_CLOUDFLARE_MOCK=1`).
+
 ### Tips
 
 - Prefer D1 for storing mock requests/messages so the mock can run both locally

@@ -1,0 +1,5 @@
+{
+  "name": "@kody/mock-cloudflare",
+  "private": true,
+  "type": "module"
+}
