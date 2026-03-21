@@ -454,11 +454,8 @@ async function attachCloudflareMock(
 			mockCloudflareProcess = null
 		}
 	})
-	mockEnv.CLOUDFLARE_API_BASE_URL = baseUrl
-	if (
-		!shouldPreserveRealToken ||
-		!hasEnvValue(process.env.CLOUDFLARE_API_TOKEN)
-	) {
+	if (!shouldPreserveRealToken) {
+		mockEnv.CLOUDFLARE_API_BASE_URL = baseUrl
 		mockEnv.CLOUDFLARE_API_TOKEN = apiToken
 	}
 	const didStart = await waitForMockReady(baseUrl, child)

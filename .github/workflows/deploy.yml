@@ -93,6 +93,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.KODY_GITHUB_TOKEN }}
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           CLOUDFLARE_API_BASE_URL: ${{ secrets.CLOUDFLARE_API_BASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
         run: >
           bun tools/ci/sync-worker-secrets.ts --env production --config
@@ -102,7 +103,8 @@ jobs:
           RESEND_FROM_EMAIL --set-from-env-optional SENTRY_DSN
           --set-from-env-optional GITHUB_TOKEN --set-from-env-optional
           CURSOR_API_KEY --set-from-env-optional CLOUDFLARE_API_BASE_URL
-          --set-from-env-optional CAPABILITY_REINDEX_SECRET
+          --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
+          CAPABILITY_REINDEX_SECRET
 
       - name: 🗄️ Apply D1 Migrations
         env:
