@@ -12,7 +12,7 @@ import {
 import {
 	type JournalEntryRow,
 	type JournalEntrySearchFilters,
-	listJournalEntriesByUserId,
+	searchJournalEntriesByUserId,
 } from './journal-entries-repo.ts'
 import { parseJournalTags } from './shared.ts'
 
@@ -78,7 +78,7 @@ export async function deleteJournalEntryVector(
 	entryId: string,
 ): Promise<void> {
 	const index = getCapabilityVectorIndex(env)
-	if (!index) return
+	if (!index || isCapabilitySearchOffline(env)) return
 	await index.deleteByIds([journalEntryVectorId(entryId)])
 }
 
@@ -89,7 +89,9 @@ export async function searchJournalEntriesSemantic(input: {
 	filters: JournalEntrySearchFilters
 }): Promise<{ rows: Array<JournalEntryRow>; offline: boolean }> {
 	const candidateLimit = Math.min(Math.max(input.filters.limit * 5, 25), 100)
-	const rows = await listJournalEntriesByUserId(input.db, input.userId, {
+	const query = input.filters.query.trim()
+	const rows = await searchJournalEntriesByUserId(input.db, input.userId, {
+		query,
 		limit: candidateLimit,
 		tag: input.filters.tag,
 	})
@@ -103,8 +105,6 @@ export async function searchJournalEntriesSemantic(input: {
 	const docsById = Object.fromEntries(
 		rows.map((row) => [row.id, buildJournalEntryEmbedText(row)] as const),
 	)
-	const query = input.filters.query.trim()
-
 	const lexicalOrder = sortIdsByScore(ids, (id) =>
 		lexicalScore(query, docsById[id]!),
 	)
