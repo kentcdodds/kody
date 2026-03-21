@@ -144,16 +144,26 @@ export async function searchJournalEntriesByUserId(
 ): Promise<Array<JournalEntryRow>> {
 	const query = filters.query.trim().toLowerCase()
 	const normalizedTag = filters.tag?.trim().toLowerCase() ?? ''
-	const likeQuery = `%${escapeLike(query)}%`
 	const tagLike = `%\"${escapeLike(normalizedTag)}\"%`
+	const queryTokens = tokenizeSearchQuery(query)
+	const tokenClauses =
+		queryTokens.length > 0
+			? queryTokens.map(
+					() => `(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(tags) LIKE ? ESCAPE '\\')`,
+				)
+			: [
+					`(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(tags) LIKE ? ESCAPE '\\')`,
+				]
+	const tokenParams = (
+		queryTokens.length > 0 ? queryTokens : [query]
+	).flatMap((token) => {
+		const likeToken = `%${escapeLike(token)}%`
+		return [likeToken, likeToken, likeToken]
+	})
 	const baseSql = `SELECT id, user_id, title, content, tags, entry_at, created_at, updated_at
 		FROM journal_entries
 		WHERE user_id = ?
-			AND (
-				LOWER(title) LIKE ? ESCAPE '\\'
-				OR LOWER(content) LIKE ? ESCAPE '\\'
-				OR LOWER(tags) LIKE ? ESCAPE '\\'
-			)`
+			AND ${tokenClauses.join(' AND ')}`
 	const orderSql = `ORDER BY COALESCE(entry_at, updated_at) DESC, updated_at DESC
 		LIMIT ?`
 	const { results } = normalizedTag
@@ -163,11 +173,11 @@ export async function searchJournalEntriesByUserId(
 					AND LOWER(tags) LIKE ? ESCAPE '\\'
 					${orderSql}`,
 				)
-				.bind(userId, likeQuery, likeQuery, likeQuery, tagLike, filters.limit)
+				.bind(userId, ...tokenParams, tagLike, filters.limit)
 				.all<Record<string, unknown>>()
 		: await db
 				.prepare(`${baseSql} ${orderSql}`)
-				.bind(userId, likeQuery, likeQuery, likeQuery, filters.limit)
+				.bind(userId, ...tokenParams, filters.limit)
 				.all<Record<string, unknown>>()
 	return (results ?? []).map(mapJournalEntryRow)
 }
@@ -190,4 +200,10 @@ function escapeLike(value: string): string {
 		.replaceAll('\\', '\\\\')
 		.replaceAll('%', '\\%')
 		.replaceAll('_', '\\_')
+}
+
+function tokenizeSearchQuery(query: string): Array<string> {
+	return Array.from(
+		new Set(query.match(/[a-z0-9]+/g)?.filter((token) => token.length > 0) ?? []),
+	)
 }
