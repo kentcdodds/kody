@@ -1,5 +1,8 @@
 import { parseSafe } from 'remix/data-schema'
-import { resendEmailSchema, type ResendEmail } from '#shared/resend-email.ts'
+import {
+	resendEmailSchema,
+	type ResendEmail,
+} from '@kody-internal/shared/resend-email.ts'
 
 type ResendClientConfig = {
 	apiBaseUrl: string

@@ -1,0 +1,15 @@
+{
+	"$schema": "../../../node_modules/nx/schemas/project-schema.json",
+	"name": "mock-cursor",
+	"projectType": "application",
+	"sourceRoot": "packages/mock-servers/cursor/src",
+	"targets": {
+		"dev": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run dev:mock-cursor"
+			}
+		}
+	},
+	"tags": ["scope:mock-server", "service:cursor"]
+}

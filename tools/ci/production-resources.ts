@@ -39,8 +39,8 @@ function parseArgs(argv: Array<string>): {
 	}
 
 	const options: CliOptions = {
-		wranglerConfigPath: 'wrangler.jsonc',
-		outConfigPath: 'wrangler-production.generated.json',
+		wranglerConfigPath: 'packages/worker/wrangler.jsonc',
+		outConfigPath: 'packages/worker/wrangler-production.generated.json',
 		dryRun: false,
 		d1Location: undefined,
 		kvTitleOverride: undefined,

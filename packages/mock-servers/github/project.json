@@ -1,0 +1,15 @@
+{
+	"$schema": "../../../node_modules/nx/schemas/project-schema.json",
+	"name": "mock-github",
+	"projectType": "application",
+	"sourceRoot": "packages/mock-servers/github/src",
+	"targets": {
+		"dev": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run dev:mock-github"
+			}
+		}
+	},
+	"tags": ["scope:mock-server", "service:github"]
+}

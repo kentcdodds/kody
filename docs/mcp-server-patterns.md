@@ -282,7 +282,7 @@ and handler colocated. Keep a small `register-tools` module that imports each
 tool module and registers them.
 
 ```typescript
-// mcp/tools/do-math.ts
+// packages/worker/src/mcp/tools/do-math.ts
 export async function registerDoMathTool(agent: MCP) {
 	agent.server.registerTool(
 		'do_math',
@@ -295,7 +295,7 @@ export async function registerDoMathTool(agent: MCP) {
 	)
 }
 
-// mcp/register-tools.ts
+// packages/worker/src/mcp/register-tools.ts
 import { registerDoMathTool } from './tools/do-math.ts'
 export async function registerTools(agent: MCP) {
 	await registerDoMathTool(agent)
@@ -308,9 +308,10 @@ export async function registerTools(agent: MCP) {
 - Tool docs/schemas/handler stay in sync
 - Easier to add/remove tools without touching unrelated tools
 
-**Example in this repo:** Server instructions live in `mcp/index.ts`, and tool
-metadata is colocated with tool registration + schemas in `mcp/tools/do-math.ts`
-(with `mcp/register-tools.ts` as the small aggregator).
+**Example in this repo:** Server instructions live in
+`packages/worker/src/mcp/index.ts`, and tool metadata is colocated with tool
+registration + schemas in `packages/worker/src/mcp/tools/do-math.ts` (with
+`packages/worker/src/mcp/register-tools.ts` as the small aggregator).
 
 ---
 

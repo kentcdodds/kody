@@ -4,19 +4,20 @@ This document explains how an incoming request moves through the system.
 
 ## Entry point
 
-All traffic enters the Worker at `worker/index.ts`.
+All traffic enters the Worker at `packages/worker/src/index.ts`.
 
 The default `fetch` handler delegates to `OAuthProvider` from
 `@cloudflare/workers-oauth-provider`, which means OAuth endpoints and token
 infrastructure are available alongside normal app routes.
 
 Before that, `GET`/`HEAD`/`OPTIONS` on `/.well-known/oauth-protected-resource`
-are handled in `worker/index.ts` itself. The OAuth provider library’s built-in
-handler for that path advertises `resource` as the request **origin** only; this
-app’s MCP server is identified by `<origin>/mcp`. Serving our own metadata on
-that URL keeps the RFC 8707 `resource` value consistent for clients (e.g. some
-MCP stacks) that discover metadata from the 401 `resource_metadata` URL and
-would otherwise get `invalid_target` at the token endpoint.
+are handled in `packages/worker/src/index.ts` itself. The OAuth provider
+library’s built-in handler for that path advertises `resource` as the request
+**origin** only; this app’s MCP server is identified by `<origin>/mcp`. Serving
+our own metadata on that URL keeps the RFC 8707 `resource` value consistent for
+clients (e.g. some MCP stacks) that discover metadata from the 401
+`resource_metadata` URL and would otherwise get `invalid_target` at the token
+endpoint.
 
 ## Routing order
 
@@ -66,7 +67,7 @@ Full page navigations still occur for:
 
 ## CORS behavior
 
-`worker/index.ts` wraps the handler with `withCors`:
+`packages/worker/src/index.ts` wraps the handler with `withCors`:
 
 - CORS headers are only added when `Origin` exactly matches the request origin.
 - Allowed methods are `GET, POST, OPTIONS`.
@@ -78,27 +79,28 @@ and API requests.
 ## Observability (Sentry)
 
 The Worker default export is wrapped with `Sentry.withSentry` from
-`@sentry/cloudflare` (see `worker/index.ts`) so incoming `fetch` requests are
-traced and uncaught errors can be reported when `SENTRY_DSN` is configured.
+`@sentry/cloudflare` (see `packages/worker/src/index.ts`) so incoming `fetch`
+requests are traced and uncaught errors can be reported when `SENTRY_DSN` is
+configured.
 
 The **MCP** (`MCP` / `MCP_OBJECT`) and **chat** (`ChatAgent`) Durable Objects
 are each wrapped with `Sentry.instrumentDurableObjectWithSentry` (see
-`mcp/index.ts` and `worker/chat-agent.ts`) because they run in separate isolates
-from the top-level Worker.
+`packages/worker/src/mcp/index.ts` and `packages/worker/src/chat-agent.ts`)
+because they run in separate isolates from the top-level Worker.
 
 Shared options are built in `sentry/cloudflare-options.ts`: **release** comes
 from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and
-**environment** defaults from `SENTRY_ENVIRONMENT` in `wrangler.jsonc` per
-deploy target.
+**environment** defaults from `SENTRY_ENVIRONMENT` in
+`packages/worker/wrangler.jsonc` per deploy target.
 
-MCP tools emit structured `mcp-event` logs via `mcp/observability.ts`. On
-failures, the same module sends Sentry events (with MCP tags and context);
-sandbox user-code failures are reported at **warning** severity, while
-capability handler bugs use **error**.
+MCP tools emit structured `mcp-event` logs via
+`packages/worker/src/mcp/observability.ts`. On failures, the same module sends
+Sentry events (with MCP tags and context); sandbox user-code failures are
+reported at **warning** severity, while capability handler bugs use **error**.
 
 ### Source maps
 
-`wrangler.jsonc` sets
+`packages/worker/wrangler.jsonc` sets
 [`upload_source_maps`](https://developers.cloudflare.com/workers/wrangler/configuration/#source-maps),
 and `bun run deploy` passes
 `--outdir .wrangler/sentry-bundle --upload-source-maps` so the bundle + maps are

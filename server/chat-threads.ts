@@ -1,5 +1,5 @@
 import { chatThreadsTable, createDb } from '#worker/db.ts'
-import { type ChatThreadSummary } from '#shared/chat.ts'
+import { type ChatThreadSummary } from '@kody-internal/shared/chat.ts'
 
 function toIsoTimestamp(date = new Date()) {
 	return date.toISOString()

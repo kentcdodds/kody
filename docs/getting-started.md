@@ -32,8 +32,8 @@ bun install
 The setup flow assumes:
 
 - Bun is installed (uses `bun`/`bunx`).
-- You run commands from the repo root (needs `wrangler.jsonc` and
-  `package.json`).
+- You run commands from the repo root (needs `nx.json`, `package.json`, and
+  `packages/worker/wrangler.jsonc`).
 - You can write to files in the repository (the script updates config files and
   replaces template `kody` tokens across text files).
 - Wrangler is optional for post-download setup. It is only needed when you
@@ -74,11 +74,11 @@ bun run dev
 bun ./docs/post-download.ts --guided
 ```
 
-This setup step does not create Cloudflare resources or rewrite `wrangler.jsonc`
-resource IDs. The production deploy workflow creates missing D1/KV resources
-automatically on first CI deploy. Cloudflare deploys do not auto-create those
-resources from bindings alone, so the workflow runs an explicit ensure step
-before migrations/deploy.
+This setup step does not create Cloudflare resources or rewrite
+`packages/worker/wrangler.jsonc` resource IDs. The production deploy workflow
+creates missing D1/KV resources automatically on first CI deploy. Cloudflare
+deploys do not auto-create those resources from bindings alone, so the workflow
+runs an explicit ensure step before migrations/deploy.
 
 2. Configure GitHub Actions secrets and variables for deploy:
 
@@ -128,7 +128,7 @@ are missing (for example `--app-name` without `--defaults`, and init choice when
 - `--cookie-secret`: explicit `COOKIE_SECRET` value (otherwise generated).
 
 Cloudflare resources are managed during deploy. The setup script does not create
-Cloudflare resources or rewrite `wrangler.jsonc` resource IDs.
+Cloudflare resources or rewrite `packages/worker/wrangler.jsonc` resource IDs.
 
 ## Local development
 

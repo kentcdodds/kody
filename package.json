@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "imports": {
-    "#*": "./*"
+    "#worker/*": "./packages/worker/src/*",
+    "#*": "./*",
+    "#mcp/*": "./packages/worker/src/mcp/*"
   },
   "description": "A starter and reference for building full stack web applications",
   "scripts": {
@@ -13,10 +15,10 @@
     "dev:client:web": "esbuild client/entry.tsx --bundle --format=esm --target=es2022 --outdir=public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/component --watch",
     "dev:mcp-apps": "esbuild client/mcp-apps/calculator-widget.ts --bundle --format=esm --target=es2022 --outdir=public/mcp-apps --platform=browser --watch",
     "dev:worker": "bun ./wrangler-env.ts dev --local",
-    "dev:mock-resend": "bun ./wrangler-env.ts dev --local --config mock-servers/resend/wrangler.jsonc",
-    "dev:mock-ai": "bun ./wrangler-env.ts dev --local --config mock-servers/ai/wrangler.jsonc",
-    "dev:mock-github": "bun ./wrangler-env.ts dev --local --config mock-servers/github/wrangler.jsonc",
-    "dev:mock-cursor": "bun ./wrangler-env.ts dev --local --config mock-servers/cursor/wrangler.jsonc",
+    "dev:mock-resend": "bun ./wrangler-env.ts dev --local --config packages/mock-servers/resend/wrangler.jsonc",
+    "dev:mock-ai": "bun ./wrangler-env.ts dev --local --config packages/mock-servers/ai/wrangler.jsonc",
+    "dev:mock-github": "bun ./wrangler-env.ts dev --local --config packages/mock-servers/github/wrangler.jsonc",
+    "dev:mock-cursor": "bun ./wrangler-env.ts dev --local --config packages/mock-servers/cursor/wrangler.jsonc",
     "deploy": "bun run build && bun ./wrangler-env.ts deploy --outdir .wrangler/sentry-bundle --upload-source-maps",
     "sentry:upload-sourcemaps": "bun tools/sentry-upload-sourcemaps.ts",
     "build:mcp-apps": "esbuild client/mcp-apps/calculator-widget.ts --bundle --format=esm --target=es2022 --outdir=public/mcp-apps --platform=browser",
@@ -33,13 +35,15 @@
     "preview:e2e": "bun run build:mcp-apps && bun run migrate:e2e && bun ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "generate-types": "bun ./wrangler-env.ts types ./types/worker-configuration.d.ts",
     "typecheck": "tsc -b --noEmit",
-    "test": "bun test ./server ./mock-servers ./mcp/github ./mcp/cursor ./mcp/capabilities",
+    "test": "bun test ./server ./packages/mock-servers ./packages/shared ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts",
     "inspect": "bunx -p @mcpjam/inspector inspector",
     "validate": "concurrently --kill-others-on-fail -n format,lint,build,typecheck,test,test:mcp -c green,yellow,blue,magenta,cyan,red \"bun run format:check\" \"bun run lint:fix\" \"bun run build\" \"bun run typecheck\" \"bun run test:e2e\" \"bun run test:mcp\"",
     "test:e2e": "bun tools/prepare-e2e-env.ts && playwright test",
     "test:e2e:ui": "bun tools/prepare-e2e-env.ts && playwright test --ui",
     "test:e2e:install": "playwright install chromium --with-deps",
-    "test:mcp": "bun run build:mcp-apps && bun test mcp/mcp-server-e2e.test.ts"
+    "test:mcp": "bun run build:mcp-apps && bun test packages/worker/src/mcp/mcp-server-e2e.test.ts",
+    "nx:graph": "nx graph",
+    "nx:show-projects": "nx show projects"
   },
   "devDependencies": {
     "@epic-web/config": "^1.24.1",
@@ -49,6 +53,7 @@
     "@types/set-cookie-parser": "^2.4.10",
     "concurrently": "^9.2.1",
     "esbuild": "^0.27.4",
+    "nx": "^22.6.1",
     "oxlint": "^1.55.0",
     "prettier": "^3.8.1",
     "set-cookie-parser": "^3.0.1",
@@ -60,6 +65,7 @@
     "@modelcontextprotocol/sdk": "1.26.0"
   },
   "dependencies": {
+    "@kody-internal/shared": "workspace:*",
     "@cloudflare/ai-chat": "^0.1.8",
     "@cloudflare/codemode": "^0.2.1",
     "@cloudflare/workers-oauth-provider": "^0.3.0",
@@ -74,5 +80,11 @@
     "remix": "3.0.0-alpha.3",
     "workers-ai-provider": "^3.1.2",
     "zod": "^4.3.6"
-  }
+  },
+  "packageManager": "bun@1.3.11",
+  "workspaces": [
+    "packages/shared",
+    "packages/worker",
+    "packages/mock-servers/*"
+  ]
 }

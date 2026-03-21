@@ -32,12 +32,11 @@
 		"./env.d.ts",
 		"./env-schema.ts",
 		"./worker-configuration.d.ts",
-		"../shared/**/*.ts",
-		"../mock-servers/**/*.ts",
+		"../packages/shared/src/**/*.ts",
+		"../packages/mock-servers/**/*.ts",
 		"../sentry/**/*.ts",
-		"../worker/**/*.ts",
-		"../server/**/*.ts",
-		"../mcp/**/*.ts"
+		"../packages/worker/src/**/*.ts",
+		"../server/**/*.ts"
 	],
 	"exclude": [
 		"**/*.test.ts",

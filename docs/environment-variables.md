@@ -53,14 +53,15 @@ Optional Worker secret and vars (see `types/env-schema.ts` and
   skips `Sentry.withSentry`; Durable Objects use the same options builder and
   will not send events without a DSN.
 - `SENTRY_ENVIRONMENT` — also set as a Wrangler `var` per environment in
-  `wrangler.jsonc` for deploys.
+  `packages/worker/wrangler.jsonc` for deploys.
 - `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample
   all traces). Set lower (e.g. `0.1`) for higher traffic or Sentry quota.
 
 ## GitHub (`github_rest` + `github_graphql` capabilities)
 
 Optional Worker secrets/vars (see `types/env-schema.ts`,
-`mcp/github/github-rest-client.ts`, and `mcp/github/github-graphql-client.ts`):
+`packages/worker/src/mcp/github/github-rest-client.ts`, and
+`packages/worker/src/mcp/github/github-graphql-client.ts`):
 
 - `GITHUB_TOKEN` — Bearer token for `api.github.com` (fine-grained PAT
   recommended) for the `kody-bot` account. GitHub REST and GraphQL calls act as
@@ -76,14 +77,15 @@ Optional Worker secrets/vars (see `types/env-schema.ts`,
 
 ## MCP capability search (Vectorize + Workers AI)
 
-Worker bindings (see `wrangler.jsonc`):
+Worker bindings (see `packages/worker/wrangler.jsonc`):
 
 - **`CAPABILITY_VECTOR_INDEX`** — Cloudflare Vectorize index for semantic
   retrieval (`kody-capabilities-prod` / `kody-capabilities-preview`). Create
   indexes with **`--dimensions=384 --metric=cosine`** to match
-  `@cf/baai/bge-small-en-v1.5` (see `mcp/capabilities/capability-search.ts`).
-  The **`test`** Wrangler environment omits this binding so `bun test` and e2e
-  use the deterministic offline fusion path (`offline: true` in search results).
+  `@cf/baai/bge-small-en-v1.5` (see
+  `packages/worker/src/mcp/capabilities/capability-search.ts`). The **`test`**
+  Wrangler environment omits this binding so `bun test` and e2e use the
+  deterministic offline fusion path (`offline: true` in search results).
 
 Optional Worker secret:
 
@@ -95,7 +97,7 @@ Optional Worker secret:
 ## Cursor Cloud Agents (`cursor_cloud_rest` capability)
 
 Optional Worker secrets/vars (see `types/env-schema.ts` and
-`mcp/cursor/cursor-cloud-client.ts`):
+`packages/worker/src/mcp/cursor/cursor-cloud-client.ts`):
 
 - `CURSOR_API_KEY` — Cursor API key ([dashboard](https://cursor.com/settings)).
   The Cursor Cloud API uses **HTTP Basic** auth (key as username, empty

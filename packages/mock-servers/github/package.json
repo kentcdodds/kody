@@ -1,0 +1,5 @@
+{
+  "name": "@kody/mock-github",
+  "private": true,
+  "type": "module"
+}

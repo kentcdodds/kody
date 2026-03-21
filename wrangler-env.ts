@@ -3,16 +3,21 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
 import getPort from 'get-port'
-import { getRemoteAiLocalDevStartupError } from '#shared/ai-env-validation.ts'
+import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
+import { syncDotenvForConfig } from '#tools/wrangler-dotenv-sync.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
 const args = process.argv.slice(2)
+const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
 
 const hasEnvFlag = args.includes('--env') || args.includes('-e')
 const isDevCommand = args[0] === 'dev'
 const isLocalDevCommand = isDevCommand && args.includes('--local')
 const hasPortFlag = args.includes('--port')
+const hasConfigFlag = args.some(
+	(arg) => arg === '--config' || arg.startsWith('--config='),
+)
 const hasInspectorPortFlag = args.some(
 	(arg) => arg === '--inspector-port' || arg.startsWith('--inspector-port='),
 )
@@ -25,6 +30,13 @@ if (isLocalDevCommand) {
 }
 
 const commandArgs = [...args]
+
+if (
+	!hasConfigFlag &&
+	existsSync(path.join(process.cwd(), defaultWranglerConfigPath))
+) {
+	commandArgs.push('--config', defaultWranglerConfigPath)
+}
 
 if (!hasEnvFlag) {
 	commandArgs.push('--env', envName)
@@ -82,6 +94,12 @@ if (isDevCommand && !hasInspectorPortFlag) {
 	commandArgs.push('--inspector-port', resolvedInspectorPort)
 }
 
+syncDotenvForConfig({
+	workspaceRoot: process.cwd(),
+	configPath: getConfigArg(commandArgs),
+	logger: console,
+})
+
 const processEnv = {
 	...process.env,
 	CLOUDFLARE_ENV: envName,
@@ -137,15 +155,25 @@ if (isDevCommand && resolvedPort) {
 process.exit(exitCode)
 
 function getPortArg(argumentList: ReadonlyArray<string>) {
-	const inlinePortArg = argumentList.find((arg) => arg.startsWith('--port='))
-	if (inlinePortArg) {
-		const [, value] = inlinePortArg.split('=')
+	return getArgValue(argumentList, '--port')
+}
+
+function getConfigArg(argumentList: ReadonlyArray<string>) {
+	return getArgValue(argumentList, '--config')
+}
+
+function getArgValue(argumentList: ReadonlyArray<string>, flagName: string) {
+	const inlineArg = argumentList.find((arg) => arg.startsWith(`${flagName}=`))
+	if (inlineArg) {
+		const separatorIndex = inlineArg.indexOf('=')
+		const value =
+			separatorIndex >= 0 ? inlineArg.slice(separatorIndex + 1) : undefined
 		return value || undefined
 	}
 
-	const portIndex = argumentList.findIndex((arg) => arg === '--port')
-	if (portIndex >= 0) {
-		const value = argumentList[portIndex + 1]
+	const flagIndex = argumentList.findIndex((arg) => arg === flagName)
+	if (flagIndex >= 0) {
+		const value = argumentList[flagIndex + 1]
 		return value || undefined
 	}
 

@@ -23,13 +23,14 @@ is trying to become.
 
 ## Source of truth in code
 
-- Worker entrypoint: `worker/index.ts`
+- Worker entrypoint: `packages/worker/src/index.ts`
 - Server request handler: `server/handler.ts`
 - Router and HTTP route mapping: `server/router.ts` and `server/routes.ts`
-- OAuth handlers: `worker/oauth-handlers.ts`
-- MCP auth checks: `worker/mcp-auth.ts`
-- MCP capability catalog: domain modules under `mcp/capabilities/*/domain.ts`,
-  merged list in `mcp/capabilities/builtin-domains.ts`, built by
-  `mcp/capabilities/build-capability-registry.ts`, re-exported from
-  `mcp/capabilities/registry.ts` (see
+- OAuth handlers: `packages/worker/src/oauth-handlers.ts`
+- MCP auth checks: `packages/worker/src/mcp-auth.ts`
+- MCP capability catalog: domain modules under
+  `packages/worker/src/mcp/capabilities/*/domain.ts`, merged list in
+  `packages/worker/src/mcp/capabilities/builtin-domains.ts`, built by
+  `packages/worker/src/mcp/capabilities/build-capability-registry.ts`,
+  re-exported from `packages/worker/src/mcp/capabilities/registry.ts` (see
   [`../agents/adding-capabilities.md`](../agents/adding-capabilities.md)).

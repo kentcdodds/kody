@@ -4,7 +4,7 @@ import { platform } from 'node:os'
 import readline from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import getPort, { clearLockedPorts } from 'get-port'
-import { getRemoteAiLocalDevStartupError } from '#shared/ai-env-validation.ts'
+import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
 
 const defaultWorkerPort = 3742
 const defaultMockPort = 8788

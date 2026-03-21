@@ -1,0 +1,87 @@
+{
+	"$schema": "../../node_modules/nx/schemas/project-schema.json",
+	"name": "worker",
+	"projectType": "application",
+	"sourceRoot": "packages/worker/src",
+	"targets": {
+		"dev": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run dev"
+			}
+		},
+		"dev-client": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run dev:client"
+			}
+		},
+		"dev-worker": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run dev:worker"
+			}
+		},
+		"build-client-web": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run build:client:web"
+			}
+		},
+		"build-mcp-apps": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run build:mcp-apps"
+			}
+		},
+		"build-client": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run build:client"
+			}
+		},
+		"build": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run build"
+			}
+		},
+		"deploy": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run deploy"
+			}
+		},
+		"migrate-local": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run migrate:local"
+			}
+		},
+		"migrate-e2e": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run migrate:e2e"
+			}
+		},
+		"preview": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run preview"
+			}
+		},
+		"preview-e2e": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run preview:e2e"
+			}
+		},
+		"generate-types": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run generate-types"
+			}
+		}
+	},
+	"tags": ["scope:worker"]
+}

@@ -1,0 +1,24 @@
+{
+	"$schema": "./node_modules/nx/schemas/nx-schema.json",
+	"defaultBase": "main",
+	"workspaceLayout": {
+		"libsDir": "packages"
+	},
+	"targetDefaults": {
+		"dev": {
+			"cache": false
+		},
+		"dev-client": {
+			"cache": false
+		},
+		"dev-worker": {
+			"cache": false
+		},
+		"preview": {
+			"cache": false
+		},
+		"preview-e2e": {
+			"cache": false
+		}
+	}
+}

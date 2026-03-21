@@ -17,12 +17,13 @@ This project uses the following resources:
   - Create once per account, for example:
     `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`
     (same for preview). **Dimensions must match** the embedding model in
-    `mcp/capabilities/capability-search.ts` (`@cf/baai/bge-small-en-v1.5`).
+    `packages/worker/src/mcp/capabilities/capability-search.ts`
+    (`@cf/baai/bge-small-en-v1.5`).
 
 Production CI deploys now ensure these resources exist and create them when
 missing. The post-download script does not create Cloudflare resources and does
-not rewrite `wrangler.jsonc` resource IDs. Cloudflare deploys do not auto-create
-these resources from bindings alone, so the deploy workflow runs
+not rewrite `packages/worker/wrangler.jsonc` resource IDs. Cloudflare deploys do
+not auto-create these resources from bindings alone, so the deploy workflow runs
 `bun tools/ci/production-resources.ts ensure` first.
 
 ## Optional Cloudflare offerings
@@ -67,8 +68,9 @@ Local development uses `.env`, which Wrangler loads automatically:
   so Wrangler can authenticate Workers AI requests)
 - `SENTRY_DSN` (optional Cloudflare Worker secret; enables error reporting and
   tracing for the Worker and Durable Objects)
-- `SENTRY_ENVIRONMENT` (set per deploy via `wrangler.jsonc` `vars` as
-  `production`, `preview`, or `test`; optional override via env for local dev)
+- `SENTRY_ENVIRONMENT` (set per deploy via `packages/worker/wrangler.jsonc`
+  `vars` as `production`, `preview`, or `test`; optional override via env for
+  local dev)
 - `SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`, defaults to **`1.0`** in code
   when unset — full sampling for low traffic; lower if volume grows)
 - `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to

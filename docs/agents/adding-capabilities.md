@@ -22,15 +22,18 @@ A **domain** is the single source of truth for:
 Authoring flow:
 
 1. **`defineDomainCapability(domain, definition)`** — wrap each capability (from
-   `mcp/capabilities/define-domain-capability.ts`). Pass the domain id from
-   `capabilityDomainNames` in `mcp/capabilities/domain-metadata.ts`. Do **not**
-   put `domain` on the inner object; the helper supplies it.
+   `packages/worker/src/mcp/capabilities/define-domain-capability.ts`). Pass the
+   domain id from `capabilityDomainNames` in
+   `packages/worker/src/mcp/capabilities/domain-metadata.ts`. Do **not** put
+   `domain` on the inner object; the helper supplies it.
 2. **`defineDomain({ name, description, keywords?, capabilities })`** — from
-   `mcp/capabilities/define-domain.ts`. Validates that every capability’s
-   `domain` matches `name` and that names are unique within the domain.
-3. **`builtinDomains`** — in `mcp/capabilities/builtin-domains.ts`, list all
-   domains you want in the default server. Order controls the flattening order
-   of `capabilityList` (capabilities from earlier domains come first).
+   `packages/worker/src/mcp/capabilities/define-domain.ts`. Validates that every
+   capability’s `domain` matches `name` and that names are unique within the
+   domain.
+3. **`builtinDomains`** — in
+   `packages/worker/src/mcp/capabilities/builtin-domains.ts`, list all domains
+   you want in the default server. Order controls the flattening order of
+   `capabilityList` (capabilities from earlier domains come first).
 4. **`registry.ts`** — calls `buildCapabilityRegistry(builtinDomains)` and
    re-exports `capabilityList`, `capabilityMap`, `capabilitySpecs`, handlers,
    tool descriptors, and domain metadata for search/MCP instructions.
@@ -39,14 +42,16 @@ To merge extra domains later (e.g. plugins), the seam is:
 `buildCapabilityRegistry([...builtinDomains, ...extraDomains])` with real
 `Capability` handlers (typical Workers model: snapshot at deploy).
 
-`defineCapability()` in `mcp/capabilities/define-capability.ts` is still what
+`defineCapability()` in
+`packages/worker/src/mcp/capabilities/define-capability.ts` is still what
 normalizes Zod → JSON Schema and wraps handlers with logging; domain helpers
 call it for you.
 
 ## Capability shape
 
-Each capability file lives under `mcp/capabilities/<domain>/` and exports a
-normalized capability from **`defineDomainCapability(...)`**.
+Each capability file lives under
+`packages/worker/src/mcp/capabilities/<domain>/` and exports a normalized
+capability from **`defineDomainCapability(...)`**.
 
 Required (inside the `definition` object):
 
@@ -87,7 +92,7 @@ Organize capabilities by domain. Each domain folder should include a
 and one or more capability modules.
 
 ```text
-mcp/capabilities/
+packages/worker/src/mcp/capabilities/
   builtin-domains.ts
   build-capability-registry.ts
   define-capability.ts
@@ -112,8 +117,8 @@ domain when you introduce a new system boundary or ownership area (e.g.
 
 1. Add a new key to `capabilityDomainNames` in `domain-metadata.ts` (this
    extends the `CapabilityDomain` union).
-2. Add `mcp/capabilities/<name>/domain.ts`, capability files, and `index.ts` if
-   you want a barrel.
+2. Add `packages/worker/src/mcp/capabilities/<name>/domain.ts`, capability
+   files, and `index.ts` if you want a barrel.
 3. Append the new domain to the `builtinDomains` array in `builtin-domains.ts`.
 
 You do not edit `registry.ts` for routine additions—only `builtin-domains` and
@@ -129,7 +134,8 @@ the domain modules.
    `capabilities: [..., yourCapability]`.
 5. If the domain uses `index.ts`, ensure it still exports `domain` /
    `codingCapabilities`-style aliases as needed for local imports.
-6. Add or update tests in `mcp/mcp-server-e2e.test.ts` for MCP-visible behavior.
+6. Add or update tests in `packages/worker/src/mcp/mcp-server-e2e.test.ts` for
+   MCP-visible behavior.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
 
@@ -204,11 +210,12 @@ Public MCP behavior should be verified through the compact tool surface:
   ranked results
 - use `execute` to confirm the capability runs correctly
 
-Prefer E2E tests in `mcp/mcp-server-e2e.test.ts` for the real MCP contract.
+Prefer E2E tests in `packages/worker/src/mcp/mcp-server-e2e.test.ts` for the
+real MCP contract.
 
 Registry invariants (duplicate capability names, domain/capability mismatches,
 duplicate domain registration) are covered in
-`mcp/capabilities/build-capability-registry.test.ts`.
+`packages/worker/src/mcp/capabilities/build-capability-registry.test.ts`.
 
 ## Naming
 

@@ -18,24 +18,24 @@ UI and workflows.
 
 Use this file map as the default structure:
 
-- `mcp/index.ts`
+- `packages/worker/src/mcp/index.ts`
   - MCP server + `init()` registration entrypoint.
-- `mcp/register-tools.ts`
+- `packages/worker/src/mcp/register-tools.ts`
   - Aggregates tool registration.
-- `mcp/register-resources.ts`
+- `packages/worker/src/mcp/register-resources.ts`
   - Aggregates resource registration.
-- `mcp/tools/*.ts`
+- `packages/worker/src/mcp/tools/*.ts`
   - One tool per file.
-- `mcp/resources/*.ts`
+- `packages/worker/src/mcp/resources/*.ts`
   - One resource registration module per file.
-- `mcp/apps/*.ts`
+- `packages/worker/src/mcp/apps/*.ts`
   - UI entry-point modules that return HTML/JS payloads for `ui://` resources.
 
 ## Recommended implementation workflow
 
 ### 1) Create an app entry point
 
-Create a dedicated module under `mcp/apps/`:
+Create a dedicated module under `packages/worker/src/mcp/apps/`:
 
 - Export a stable `ui://` URI.
 - Export a render function that returns the app HTML.
@@ -45,7 +45,7 @@ Keep file names lower-kebab-case and prefer one entry point per app.
 
 ### 2) Register the app resource
 
-In `mcp/resources/<your-resource>.ts`:
+In `packages/worker/src/mcp/resources/<your-resource>.ts`:
 
 - Use `registerAppResource(...)` from `@modelcontextprotocol/ext-apps/server`.
 - Return `text/html;profile=mcp-app`.
@@ -59,7 +59,7 @@ In `mcp/resources/<your-resource>.ts`:
 
 ### 3) Register the app-opening tool
 
-In `mcp/tools/<your-tool>.ts`:
+In `packages/worker/src/mcp/tools/<your-tool>.ts`:
 
 - Use `registerAppTool(...)` from `@modelcontextprotocol/ext-apps/server`.
 - Set `_meta.ui.resourceUri` to the **same** `ui://` URI as the resource.
@@ -68,9 +68,9 @@ In `mcp/tools/<your-tool>.ts`:
 
 ### 4) Wire registration in server init
 
-- Add resource registration to `mcp/register-resources.ts`.
-- Add tool registration to `mcp/register-tools.ts`.
-- Ensure `mcp/index.ts` calls both in `init()`.
+- Add resource registration to `packages/worker/src/mcp/register-resources.ts`.
+- Add tool registration to `packages/worker/src/mcp/register-tools.ts`.
+- Ensure `packages/worker/src/mcp/index.ts` calls both in `init()`.
 
 ### 5) Add or update MCP E2E coverage
 
@@ -153,7 +153,8 @@ token values into widget CSS. If you do this in an MCP App resource, set
 
 When removing starter examples (for example calculator + math tool):
 
-1. Delete example modules under `mcp/apps`, `mcp/tools`, and `mcp/resources`.
+1. Delete example modules under `packages/worker/src/mcp/apps`,
+   `packages/worker/src/mcp/tools`, and `packages/worker/src/mcp/resources`.
 2. Replace entries in registration modules.
 3. Update MCP E2E tests to your new tool/resource names and behavior.
 4. Update this guide (or adjacent docs) if your project-specific conventions
@@ -174,4 +175,4 @@ Repo-specific implementation references:
 
 - MCP server patterns: `docs/mcp-server-patterns.md`
 - Cloudflare Agents SDK notes: `docs/agents/cloudflare-agents-sdk.md`
-- Worker MCP entrypoint wiring: `worker/index.ts`
+- Worker MCP entrypoint wiring: `packages/worker/src/index.ts`

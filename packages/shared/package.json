@@ -1,0 +1,11 @@
+{
+  "name": "@kody-internal/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "remix": "3.0.0-alpha.3"
+  }
+}

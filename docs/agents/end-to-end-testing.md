@@ -42,15 +42,16 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   `PLAYWRIGHT_PORT`.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler still loads `.env` values for
   local secrets.
-- Ensure the `env.test` section in `wrangler.jsonc` includes assets, KV, and
-  durable objects since these are not inherited from top-level Wrangler config.
+- Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
+  assets, KV, and durable objects since these are not inherited from top-level
+  Wrangler config.
 - Ensure `.env` includes a `COOKIE_SECRET` var for local sessions.
 - Client routes live in `client/app.tsx` and `client/routes/index.tsx`.
 - API endpoints are defined in `server/routes.ts` and mapped in
   `server/router.ts`.
 
 When adding endpoints that accept bodies, ensure POST/PUT requests are not
-handled by the static asset fetcher in `worker/index.ts`.
+handled by the static asset fetcher in `packages/worker/src/index.ts`.
 
 ## Test data
 

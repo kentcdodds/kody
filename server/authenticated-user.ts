@@ -3,7 +3,7 @@ import {
 	setAuthSessionSecret,
 } from '#server/auth-session.ts'
 import { getEnv } from '#server/env.ts'
-import { type McpUserContext } from '#shared/chat.ts'
+import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 export type AuthenticatedAppUser = {
 	sessionUserId: string
