@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-type CliOptions = {
+export type CliOptions = {
 	env?: string
 	name?: string
 	config?: string
@@ -93,6 +93,11 @@ function parseArgs(argv: Array<string>): CliOptions {
 				break
 			}
 			default: {
+				if (arg.startsWith('--set-from-env-optional=')) {
+					const key = arg.slice('--set-from-env-optional='.length).trim()
+					if (key) options.setFromEnvOptional.push(key)
+					break
+				}
 				if (arg.startsWith('-')) {
 					fail(`Unknown flag: ${arg}`)
 				}
@@ -202,6 +207,24 @@ async function buildSecrets(options: CliOptions) {
 	return secrets
 }
 
+export function buildSpawnEnv(
+	options: CliOptions,
+	baseEnv: NodeJS.ProcessEnv = process.env,
+) {
+	const spawnEnv: Record<string, string> = {}
+	for (const [key, value] of Object.entries(baseEnv)) {
+		if (typeof value === 'string') {
+			spawnEnv[key] = value
+		}
+	}
+	for (const key of options.setFromEnvOptional) {
+		if (spawnEnv[key] !== undefined && spawnEnv[key].length === 0) {
+			delete spawnEnv[key]
+		}
+	}
+	return spawnEnv
+}
+
 function toDotenv(secrets: ReadonlyMap<string, string>) {
 	const lines = Array.from(secrets.entries())
 		.sort(([left], [right]) => left.localeCompare(right))
@@ -212,6 +235,7 @@ function toDotenv(secrets: ReadonlyMap<string, string>) {
 async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 	const bunBin = process.execPath
 	const args = [bunBin, 'x', 'wrangler', 'secret', 'bulk']
+	const spawnEnv = buildSpawnEnv(options)
 	const secretsFilePath = join(
 		tmpdir(),
 		`wrangler-secrets-${Date.now()}-${randomBytes(6).toString('hex')}.env`,
@@ -235,7 +259,7 @@ async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 		const proc = Bun.spawn({
 			cmd: args,
 			stdio: ['ignore', 'inherit', 'inherit'],
-			env: process.env,
+			env: spawnEnv,
 		})
 		const exitCode = await proc.exited
 		if (exitCode !== 0) {
@@ -261,4 +285,6 @@ async function main() {
 	)
 }
 
-await main()
+if (import.meta.main) {
+	await main()
+}
