@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { deleteJournalEntryVector } from './journal-vectorize.ts'
 import { deleteJournalEntry } from './journal-entries-repo.ts'
 import { requireMcpUser } from '../meta/require-user.ts'
 
@@ -32,6 +33,9 @@ export const journalDeleteEntryCapability = defineDomainCapability(
 				user.userId,
 				args.entry_id,
 			)
+			if (deleted) {
+				await deleteJournalEntryVector(ctx.env, args.entry_id)
+			}
 			return { deleted }
 		},
 	},

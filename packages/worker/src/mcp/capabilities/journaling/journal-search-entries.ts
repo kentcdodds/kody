@@ -3,12 +3,12 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { searchJournalEntriesByUserId } from './journal-entries-repo.ts'
 import {
 	journalEntryListOutputSchema,
 	journalEntryRowToOutput,
 	tagFilterSchema,
 } from './shared.ts'
+import { searchJournalEntriesSemantic } from './journal-vectorize.ts'
 
 const inputSchema = z.object({
 	query: z
@@ -53,15 +53,16 @@ export const journalSearchEntriesCapability = defineDomainCapability(
 		outputSchema: journalEntryListOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const rows = await searchJournalEntriesByUserId(
-				ctx.env.APP_DB,
-				user.userId,
-				{
+			const { rows } = await searchJournalEntriesSemantic({
+				env: ctx.env,
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				filters: {
 					query: args.query,
 					limit: args.limit,
 					tag: args.tag,
 				},
-			)
+			})
 			return {
 				entries: rows.map(journalEntryRowToOutput),
 				count: rows.length,

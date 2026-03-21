@@ -149,17 +149,18 @@ export async function searchJournalEntriesByUserId(
 	const tokenClauses =
 		queryTokens.length > 0
 			? queryTokens.map(
-					() => `(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(tags) LIKE ? ESCAPE '\\')`,
+					() =>
+						`(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(tags) LIKE ? ESCAPE '\\')`,
 				)
 			: [
 					`(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(tags) LIKE ? ESCAPE '\\')`,
 				]
-	const tokenParams = (
-		queryTokens.length > 0 ? queryTokens : [query]
-	).flatMap((token) => {
-		const likeToken = `%${escapeLike(token)}%`
-		return [likeToken, likeToken, likeToken]
-	})
+	const tokenParams = (queryTokens.length > 0 ? queryTokens : [query]).flatMap(
+		(token) => {
+			const likeToken = `%${escapeLike(token)}%`
+			return [likeToken, likeToken, likeToken]
+		},
+	)
 	const baseSql = `SELECT id, user_id, title, content, tags, entry_at, created_at, updated_at
 		FROM journal_entries
 		WHERE user_id = ?
@@ -204,6 +205,8 @@ function escapeLike(value: string): string {
 
 function tokenizeSearchQuery(query: string): Array<string> {
 	return Array.from(
-		new Set(query.match(/[a-z0-9]+/g)?.filter((token) => token.length > 0) ?? []),
+		new Set(
+			query.match(/[a-z0-9]+/g)?.filter((token) => token.length > 0) ?? [],
+		),
 	)
 }

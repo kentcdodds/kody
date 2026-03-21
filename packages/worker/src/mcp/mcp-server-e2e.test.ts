@@ -787,7 +787,8 @@ test(
 						tag: 'walk',
 					})
 					const searched = await codemode.journal_search_entries({
-						query: 'long walk patient debugging',
+						query:
+							'what did I write about wanting to step away and clear my head after debugging?',
 						limit: 5,
 						tag: 'walk',
 					})

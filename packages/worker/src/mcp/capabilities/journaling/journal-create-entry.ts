@@ -11,6 +11,10 @@ import {
 	resolveCreateJournalEntryAt,
 	normalizeJournalTags,
 } from './shared.ts'
+import {
+	buildJournalEntryEmbedText,
+	upsertJournalEntryVector,
+} from './journal-vectorize.ts'
 
 export const journalCreateEntryCapability = defineDomainCapability(
 	capabilityDomainNames.journaling,
@@ -40,6 +44,11 @@ export const journalCreateEntryCapability = defineDomainCapability(
 				updated_at: now,
 			}
 			await insertJournalEntry(ctx.env.APP_DB, row)
+			await upsertJournalEntryVector(ctx.env, {
+				entryId,
+				userId: user.userId,
+				embedText: buildJournalEntryEmbedText(row),
+			})
 			return journalEntryRowToOutput(row)
 		},
 	},

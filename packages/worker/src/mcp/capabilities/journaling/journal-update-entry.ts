@@ -12,6 +12,10 @@ import {
 	journalEntryRowToOutput,
 	normalizeJournalTags,
 } from './shared.ts'
+import {
+	buildJournalEntryEmbedText,
+	upsertJournalEntryVector,
+} from './journal-vectorize.ts'
 import { requireMcpUser } from '../meta/require-user.ts'
 
 export const journalUpdateEntryCapability = defineDomainCapability(
@@ -63,6 +67,11 @@ export const journalUpdateEntryCapability = defineDomainCapability(
 			if (!row) {
 				throw new Error('Journal entry could not be loaded after update.')
 			}
+			await upsertJournalEntryVector(ctx.env, {
+				entryId: row.id,
+				userId: user.userId,
+				embedText: buildJournalEntryEmbedText(row),
+			})
 			return journalEntryRowToOutput(row)
 		},
 	},
