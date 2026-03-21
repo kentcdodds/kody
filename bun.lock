@@ -44,6 +44,9 @@
         "@kody/worker": "workspace:*",
       },
     },
+    "packages/mock-servers/cloudflare": {
+      "name": "@kody/mock-cloudflare",
+    },
     "packages/mock-servers/cursor": {
       "name": "@kody/mock-cursor",
     },
@@ -275,6 +278,8 @@
     "@kody-internal/shared": ["@kody-internal/shared@workspace:packages/shared"],
 
     "@kody/mock-ai": ["@kody/mock-ai@workspace:packages/mock-servers/ai"],
+
+    "@kody/mock-cloudflare": ["@kody/mock-cloudflare@workspace:packages/mock-servers/cloudflare"],
 
     "@kody/mock-cursor": ["@kody/mock-cursor@workspace:packages/mock-servers/cursor"],
 

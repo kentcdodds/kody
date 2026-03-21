@@ -1,6 +1,8 @@
 import { codingDomain } from './domain.ts'
 
 export { codingDomain } from './domain.ts'
+export { cloudflareApiDocsCapability } from './cloudflare-api-docs.ts'
+export { cloudflareRestCapability } from './cloudflare-rest.ts'
 export { cursorCloudAgentDocsCapability } from './cursor-cloud-agent-docs.ts'
 export { cursorCloudRestCapability } from './cursor-cloud-rest.ts'
 export { githubGraphqlApiDocsCapability } from './github-graphql-api-docs.ts'

@@ -106,6 +106,20 @@ Optional Worker secrets/vars (see `types/env-schema.ts` and
   when unset. Local `bun run dev` sets this to the Cursor mock Worker unless
   `SKIP_CURSOR_MOCK=1`. See `docs/agents/mock-api-servers.md`.
 
+## Cloudflare API (`cloudflare_rest` capability)
+
+Optional Worker secrets/vars (see `types/env-schema.ts` and
+`packages/worker/src/mcp/cloudflare/cloudflare-rest-client.ts`):
+
+- `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the `cloudflare_rest`
+  capability with `Authorization: Bearer ...`. Local `bun run dev` sets this to
+  the Cloudflare mock token unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`;
+  when unset and no mock is attached, `cloudflare_rest` fails fast with a setup
+  hint.
+- `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
+  `https://api.cloudflare.com` when unset. Local `bun run dev` sets this to the
+  Cloudflare mock Worker unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.
+
 ## Why Zod?
 
 Zod gives type inference for `Env`-driven values and a single runtime gate that

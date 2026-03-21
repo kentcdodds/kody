@@ -661,6 +661,57 @@ test(
 )
 
 test(
+	'mcp server search returns Cloudflare capability results',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
+
+		const result = await mcpClient.client.callTool({
+			name: 'search',
+			arguments: {
+				query: 'cloudflare dns zones workers api docs markdown',
+				limit: 10,
+				detail: true,
+			},
+		})
+
+		const structuredResult = (result as CallToolResult).structuredContent as
+			| Record<string, unknown>
+			| undefined
+		const searchPayload = structuredResult?.result as
+			| Record<string, unknown>
+			| undefined
+		const matches = searchPayload?.matches as
+			| Array<Record<string, unknown>>
+			| undefined
+
+		expect(searchPayload?.offline).toBe(true)
+		expect(
+			matches?.some(
+				(match) =>
+					match.type === 'capability' && match.name === 'cloudflare_rest',
+			),
+		).toBe(true)
+		expect(
+			matches?.some(
+				(match) =>
+					match.type === 'capability' && match.name === 'cloudflare_api_docs',
+			),
+		).toBe(true)
+
+		const textOutput =
+			(result as CallToolResult).content.find(
+				(item): item is Extract<ContentBlock, { type: 'text' }> =>
+					item.type === 'text',
+			)?.text ?? ''
+		expect(textOutput).toContain('cloudflare_rest')
+		expect(textOutput).toContain('cloudflare_api_docs')
+	},
+	{ timeout: defaultTimeoutMs },
+)
+
+test(
 	'mcp server executes do_math via execute tool',
 	async () => {
 		await using database = await createTestDatabase()

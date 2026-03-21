@@ -1,0 +1,15 @@
+{
+	"$schema": "../../../node_modules/nx/schemas/project-schema.json",
+	"name": "mock-cloudflare",
+	"projectType": "application",
+	"sourceRoot": "packages/mock-servers/cloudflare/src",
+	"targets": {
+		"dev": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bun run dev:mock-cloudflare"
+			}
+		}
+	},
+	"tags": ["scope:mock-server", "service:cloudflare"]
+}

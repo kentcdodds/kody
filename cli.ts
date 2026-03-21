@@ -44,6 +44,7 @@ let workerOrigin = ''
 let mockResendProcess: ChildProcess | null = null
 let mockAiProcess: ChildProcess | null = null
 let mockGithubProcess: ChildProcess | null = null
+let mockCloudflareProcess: ChildProcess | null = null
 let mockCursorProcess: ChildProcess | null = null
 let mockEnvOverrides: Record<string, string> = {}
 
@@ -69,6 +70,7 @@ async function startDev() {
 				mockResendProcess,
 				mockAiProcess,
 				mockGithubProcess,
+				mockCloudflareProcess,
 				mockCursorProcess,
 			].filter(Boolean) as Array<ChildProcess>,
 	)
@@ -411,6 +413,61 @@ async function attachCursorMock(
 	console.log(dim(`Cursor Cloud mock base URL ${baseUrl}`))
 }
 
+async function attachCloudflareMock(
+	mockEnv: Record<string, string>,
+	anchorPort: number,
+) {
+	if (process.env.SKIP_CLOUDFLARE_MOCK?.trim() === '1') {
+		return
+	}
+	const shouldPreserveRealToken = resolveAiMode() === 'remote'
+	if (shouldPreserveRealToken) {
+		return
+	}
+	if (
+		hasEnvValue(mockEnv.CLOUDFLARE_API_BASE_URL) &&
+		isChildRunning(mockCloudflareProcess)
+	) {
+		return
+	}
+	if (mockCloudflareProcess && !mockCloudflareProcess.killed) {
+		await stopChild(mockCloudflareProcess)
+		mockCloudflareProcess = null
+	}
+	const cloudflarePort = await getPort({
+		port: Array.from({ length: 20 }, (_, index) => anchorPort + 240 + index),
+	})
+	const baseUrl = `http://127.0.0.1:${cloudflarePort}`
+	const apiToken = `mock-cloudflare-${randomUUID()}`
+	const child = runBunScript(
+		'dev:mock-cloudflare',
+		[
+			'--port',
+			String(cloudflarePort),
+			'--ip',
+			'127.0.0.1',
+			'--var',
+			`MOCK_API_TOKEN:${apiToken}`,
+		],
+		{},
+	)
+	mockCloudflareProcess = child
+	child.once('exit', () => {
+		if (mockCloudflareProcess === child) {
+			mockCloudflareProcess = null
+		}
+	})
+	mockEnv.CLOUDFLARE_API_BASE_URL = baseUrl
+	mockEnv.CLOUDFLARE_API_TOKEN = apiToken
+	const didStart = await waitForMockReady(baseUrl, child)
+	if (!didStart) {
+		console.warn(
+			`Mock Cloudflare worker did not become ready within ${mockReadyTimeoutMs}ms.`,
+		)
+	}
+	console.log(dim(`Cloudflare mock base URL ${baseUrl}`))
+}
+
 async function ensureMockServers() {
 	const previousMockEnvOverrides = { ...mockEnvOverrides }
 	const desiredAiMode = resolveAiMode()
@@ -440,6 +497,7 @@ async function ensureMockServers() {
 			10,
 		)
 		await attachGithubMock(mockEnvOverrides, anchorFromReuse)
+		await attachCloudflareMock(mockEnvOverrides, anchorFromReuse)
 		await attachCursorMock(mockEnvOverrides, anchorFromReuse)
 		return mockEnvOverrides
 	}
@@ -475,6 +533,10 @@ async function ensureMockServers() {
 		if (mockGithubProcess && !mockGithubProcess.killed) {
 			await stopChild(mockGithubProcess)
 			mockGithubProcess = null
+		}
+		if (mockCloudflareProcess && !mockCloudflareProcess.killed) {
+			await stopChild(mockCloudflareProcess)
+			mockCloudflareProcess = null
 		}
 		if (mockCursorProcess && !mockCursorProcess.killed) {
 			await stopChild(mockCursorProcess)
@@ -525,6 +587,7 @@ async function ensureMockServers() {
 			mockEnvOverrides.AI_MOCK_API_KEY =
 				previousMockEnvOverrides.AI_MOCK_API_KEY ?? ''
 			await attachGithubMock(mockEnvOverrides, mockPort)
+			await attachCloudflareMock(mockEnvOverrides, mockPort)
 			await attachCursorMock(mockEnvOverrides, mockPort)
 			return mockEnvOverrides
 		}
@@ -570,6 +633,7 @@ async function ensureMockServers() {
 	}
 
 	await attachGithubMock(mockEnvOverrides, mockPort)
+	await attachCloudflareMock(mockEnvOverrides, mockPort)
 	await attachCursorMock(mockEnvOverrides, mockPort)
 
 	return mockEnvOverrides

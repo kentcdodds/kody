@@ -1,0 +1,100 @@
+/**
+ * Minimal Cloudflare API v4 client for the `cloudflare_rest` capability.
+ * @see https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/
+ */
+
+export type CloudflareRestClientOptions = {
+	apiToken: string
+	baseUrl?: string
+	userAgent?: string
+}
+
+export class CloudflareApiError extends Error {
+	readonly status: number
+	constructor(message: string, options: { status: number; cause?: unknown }) {
+		super(message, { cause: options.cause })
+		this.name = 'CloudflareApiError'
+		this.status = options.status
+	}
+}
+
+const defaultUserAgent = 'kody-cloudflare-rest/1.0'
+const defaultBaseUrl = 'https://api.cloudflare.com'
+
+export class CloudflareRestClient {
+	private readonly apiToken: string
+	private readonly baseUrl: string
+	private readonly userAgent: string
+
+	constructor(options: CloudflareRestClientOptions) {
+		this.apiToken = options.apiToken.trim()
+		this.baseUrl = (options.baseUrl ?? defaultBaseUrl).replace(/\/$/, '')
+		this.userAgent = options.userAgent?.trim() || defaultUserAgent
+	}
+
+	async rawRequest(input: {
+		method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+		path: string
+		query?: Record<string, string>
+		body?: unknown
+	}): Promise<{ status: number; body: unknown | null }> {
+		const pathPart = input.path.startsWith('/') ? input.path : `/${input.path}`
+		const url = new URL(`${this.baseUrl}${pathPart}`)
+		if (input.query) {
+			for (const [key, value] of Object.entries(input.query)) {
+				url.searchParams.set(key, value)
+			}
+		}
+
+		const headers: Record<string, string> = {
+			accept: 'application/json',
+			authorization: `Bearer ${this.apiToken}`,
+			'user-agent': this.userAgent,
+		}
+
+		const init: RequestInit = {
+			method: input.method,
+			headers,
+		}
+
+		if (
+			input.body !== undefined &&
+			(input.method === 'POST' ||
+				input.method === 'PUT' ||
+				input.method === 'PATCH' ||
+				input.method === 'DELETE')
+		) {
+			headers['content-type'] = 'application/json'
+			init.body = JSON.stringify(input.body)
+		}
+
+		const response = await fetch(url.toString(), init)
+		const text = await response.text()
+
+		if (response.status === 204 || !text.trim()) {
+			return { status: response.status, body: null }
+		}
+
+		try {
+			return { status: response.status, body: JSON.parse(text) as unknown }
+		} catch {
+			throw new CloudflareApiError(
+				`Cloudflare API returned non-JSON (${response.status}).`,
+				{ status: response.status },
+			)
+		}
+	}
+}
+
+export function createCloudflareRestClient(
+	env: Pick<Env, 'CLOUDFLARE_API_TOKEN' | 'CLOUDFLARE_API_BASE_URL'>,
+): CloudflareRestClient {
+	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
+	if (!apiToken) {
+		throw new Error(
+			'CLOUDFLARE_API_TOKEN is not set. For local dev, run `bun run dev` so the Cloudflare mock sets a token, or configure a Cloudflare API token from the Cloudflare dashboard.',
+		)
+	}
+	const baseUrl = env.CLOUDFLARE_API_BASE_URL?.trim() || defaultBaseUrl
+	return new CloudflareRestClient({ apiToken, baseUrl })
+}

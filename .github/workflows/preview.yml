@@ -184,7 +184,21 @@ jobs:
             mock_version_preview_url="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const match = text.match(/(?:Version\s+)?Preview URL:\s*(https:\/\/\S+)/i); process.stdout.write(match?.[1] ?? "")' "$deploy_log")"
 
             echo "${service_key}_API_BASE_URL=$mock_url" >> "$OVERRIDES_FILE"
-            echo "${service_key}_API_KEY=$MOCK_API_TOKEN" >> "$OVERRIDES_FILE"
+            case "$service_key" in
+              AI)
+                secret_env_key="AI_MOCK_API_KEY"
+                ;;
+              GITHUB)
+                secret_env_key="GITHUB_TOKEN"
+                ;;
+              CLOUDFLARE)
+                secret_env_key="CLOUDFLARE_API_TOKEN"
+                ;;
+              *)
+                secret_env_key="${service_key}_API_KEY"
+                ;;
+            esac
+            echo "${secret_env_key}=$MOCK_API_TOKEN" >> "$OVERRIDES_FILE"
 
             mock_summary_line="- ${service}: ${mock_url} (\`${mock_worker_name}\`)"
             mock_comment_summary_line="- ${service}: [${mock_url}/__mocks](${mock_url}/__mocks?token=${MOCK_API_TOKEN}) (\`${mock_worker_name}\`)"
