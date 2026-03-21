@@ -661,6 +661,62 @@ test(
 )
 
 test(
+	'mcp server search surfaces journaling capabilities',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
+
+		const result = await mcpClient.client.callTool({
+			name: 'search',
+			arguments: {
+				query:
+					'journal journaling diary reflection entries notes memory search recent list',
+				limit: 10,
+				detail: true,
+			},
+		})
+
+		const structuredResult = (result as CallToolResult).structuredContent as
+			| Record<string, unknown>
+			| undefined
+		const searchPayload = structuredResult?.result as
+			| Record<string, unknown>
+			| undefined
+		const matches = searchPayload?.matches as
+			| Array<Record<string, unknown>>
+			| undefined
+
+		expect(searchPayload?.offline).toBe(true)
+		const journalingMatch = matches?.find(
+			(match) =>
+				match.type === 'capability' && match.name === 'journal_search_entries',
+		)
+		expect(journalingMatch?.domain).toBe('journaling')
+		expect(journalingMatch?.requiredInputFields).toEqual(['query'])
+
+		const createMatch = matches?.find(
+			(match) =>
+				match.type === 'capability' && match.name === 'journal_create_entry',
+		)
+		expect(createMatch?.domain).toBe('journaling')
+		const createInputSchema = createMatch?.inputSchema as
+			| Record<string, unknown>
+			| undefined
+		expect(createInputSchema?.description).toBeUndefined()
+
+		const textOutput =
+			(result as CallToolResult).content.find(
+				(item): item is Extract<ContentBlock, { type: 'text' }> =>
+					item.type === 'text',
+			)?.text ?? ''
+		expect(textOutput).toContain('journal_search_entries')
+		expect(textOutput).toContain('journal_create_entry')
+	},
+	{ timeout: defaultTimeoutMs },
+)
+
+test(
 	'mcp server executes do_math via execute tool',
 	async () => {
 		await using database = await createTestDatabase()
@@ -694,6 +750,101 @@ test(
 			)?.text ?? ''
 
 		expect(textOutput).toContain('12')
+		expect(textOutput).toContain('meta_save_skill')
+	},
+	{ timeout: defaultTimeoutMs },
+)
+
+test(
+	'mcp server executes journaling lifecycle via execute tool',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
+
+		const result = await mcpClient.client.callTool({
+			name: 'execute',
+			arguments: {
+				code: `async () => {
+					const created = await codemode.journal_create_entry({
+						title: 'Morning reflection',
+						content: 'Today I want to focus on patient debugging and clear thinking.',
+						tags: ['Focus', 'Debugging', 'focus'],
+						entry_at: '2026-03-21T09:30:00.000Z',
+					})
+					const fetched = await codemode.journal_get_entry({
+						entry_id: created.entry_id,
+					})
+					const updated = await codemode.journal_update_entry({
+						entry_id: created.entry_id,
+						content:
+							fetched.content +
+							' After lunch I also want to take a long walk.',
+						tags: ['focus', 'walk'],
+					})
+					const listed = await codemode.journal_list_entries({
+						limit: 5,
+						tag: 'walk',
+					})
+					const searched = await codemode.journal_search_entries({
+						query:
+							'what did I write about wanting to step away and clear my head after debugging?',
+						limit: 5,
+						tag: 'walk',
+					})
+					const deleted = await codemode.journal_delete_entry({
+						entry_id: created.entry_id,
+					})
+					const afterDelete = await codemode.journal_list_entries({
+						limit: 5,
+						tag: 'walk',
+					})
+					return {
+						created,
+						updated,
+						listCount: listed.count,
+						searchCount: searched.count,
+						searchedTitle: searched.entries[0]?.title ?? null,
+						deleted: deleted.deleted,
+						afterDeleteCount: afterDelete.count,
+					}
+				}`,
+			},
+		})
+
+		const structuredResult = (result as CallToolResult).structuredContent as
+			| Record<string, unknown>
+			| undefined
+		const executeResult = structuredResult?.result as
+			| Record<string, unknown>
+			| undefined
+		const journalingResult = executeResult as
+			| {
+					created?: Record<string, unknown>
+					updated?: Record<string, unknown>
+					listCount?: number
+					searchCount?: number
+					searchedTitle?: string | null
+					deleted?: boolean
+					afterDeleteCount?: number
+			  }
+			| undefined
+
+		expect(journalingResult?.created?.title).toBe('Morning reflection')
+		expect(journalingResult?.created?.tags).toEqual(['focus', 'debugging'])
+		expect(journalingResult?.updated?.tags).toEqual(['focus', 'walk'])
+		expect(journalingResult?.listCount).toBe(1)
+		expect(journalingResult?.searchCount).toBe(1)
+		expect(journalingResult?.searchedTitle).toBe('Morning reflection')
+		expect(journalingResult?.deleted).toBe(true)
+		expect(journalingResult?.afterDeleteCount).toBe(0)
+
+		const textOutput =
+			(result as CallToolResult).content.find(
+				(item): item is Extract<ContentBlock, { type: 'text' }> =>
+					item.type === 'text',
+			)?.text ?? ''
+		expect(textOutput).toContain('Morning reflection')
 		expect(textOutput).toContain('meta_save_skill')
 	},
 	{ timeout: defaultTimeoutMs },
