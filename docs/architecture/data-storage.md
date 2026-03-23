@@ -27,7 +27,9 @@ App access pattern:
 OAuth provider state is stored in KV through the
 `@cloudflare/workers-oauth-provider` integration.
 
-- Binding is configured in `packages/worker/wrangler.jsonc`
+- Binding is configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
+  supplied at deploy time via generated Wrangler configs, not committed in the
+  template)
 - This supports OAuth client and token flows without custom storage code in the
   app handlers
 
@@ -51,7 +53,8 @@ Chat conversations run through a chat Agent Durable Object.
 
 ## Configuration reference
 
-Bindings are configured per environment in `packages/worker/wrangler.jsonc`:
+Bindings are configured per environment in `packages/worker/wrangler.jsonc`
+(names and bindings only; remote D1/KV IDs come from deploy-generated configs):
 
 - `APP_DB` (D1)
 - `OAUTH_KV` (KV)

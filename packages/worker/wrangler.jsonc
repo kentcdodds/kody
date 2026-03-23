@@ -51,15 +51,12 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody",
-					"database_id": "c64eb497-a93d-4af4-bfb7-62beda9552b6",
 					"migrations_dir": "../../migrations",
 				},
 			],
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
-					"id": "e2c0caa629a04af198d90fb5ec388f62",
-					"preview_id": "becbb91b27364709a7e8a9c7533c9ff5",
 				},
 			],
 			"vectorize": [
@@ -105,15 +102,12 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
 					"migrations_dir": "../../migrations",
 				},
 			],
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
-					"id": "e2c0caa629a04af198d90fb5ec388f62",
-					"preview_id": "becbb91b27364709a7e8a9c7533c9ff5",
 				},
 			],
 			"vectorize": [
@@ -159,15 +153,12 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
 					"migrations_dir": "../../migrations",
 				},
 			],
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
-					"id": "e2c0caa629a04af198d90fb5ec388f62",
-					"preview_id": "becbb91b27364709a7e8a9c7533c9ff5",
 				},
 			],
 			"vars": {

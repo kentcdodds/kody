@@ -12,7 +12,6 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody",
-					"database_id": "c64eb497-a93d-4af4-bfb7-62beda9552b6",
 					"migrations_dir": "../../../migrations",
 				},
 			],
@@ -22,7 +21,6 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
 					"migrations_dir": "../../../migrations",
 				},
 			],
@@ -32,7 +30,6 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"database_id": "0e2f1e31-b7c4-42bc-8133-04627230a25f",
 					"migrations_dir": "../../../migrations",
 				},
 			],

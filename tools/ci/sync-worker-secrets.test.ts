@@ -42,8 +42,6 @@ test('buildSpawnEnv keeps optional vars when set', () => {
 		PATH: '/usr/bin',
 	})
 
-	expect(spawnEnv.CLOUDFLARE_API_BASE_URL).toBe(
-		'https://api.cloudflare.com',
-	)
+	expect(spawnEnv.CLOUDFLARE_API_BASE_URL).toBe('https://api.cloudflare.com')
 	expect(spawnEnv.PATH).toBe('/usr/bin')
 })

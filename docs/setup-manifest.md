@@ -20,11 +20,17 @@ This project uses the following resources:
     `packages/worker/src/mcp/capabilities/capability-search.ts`
     (`@cf/baai/bge-small-en-v1.5`).
 
-Production CI deploys now ensure these resources exist and create them when
-missing. The post-download script does not create Cloudflare resources and does
-not rewrite `packages/worker/wrangler.jsonc` resource IDs. Cloudflare deploys do
-not auto-create these resources from bindings alone, so the deploy workflow runs
-`bun tools/ci/production-resources.ts ensure` first.
+The checked-in
+[`packages/worker/wrangler.jsonc`](../packages/worker/wrangler.jsonc) declares
+bindings and names but **does not** commit remote D1 `database_id` or KV `id` /
+`preview_id`, so forks do not accidentally bind to another project’s resources.
+
+Production CI deploys ensure these resources exist (create when missing) and
+write resolved IDs into `packages/worker/wrangler-production.generated.json`
+before migrations and deploy. Preview deploys do the same per preview worker via
+`packages/worker/wrangler-preview.generated.json` (see `docs/agents/setup.md`).
+Cloudflare deploys do not auto-create these resources from bindings alone, so
+the deploy workflow runs `bun tools/ci/production-resources.ts ensure` first.
 
 ## Optional Cloudflare offerings
 

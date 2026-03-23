@@ -15,6 +15,22 @@ Quick notes for getting a local kody environment running.
 
 ## Local development
 
+- **Cloudflare D1 and KV**: Local development does **not** require creating or
+  linking remote D1 databases or KV namespaces. `bun run dev` runs the worker
+  with local Wrangler persistence for D1/KV emulation.
+- **Production and preview deploys**: GitHub Actions do not rely on IDs baked
+  into the repo. They run `bun tools/ci/production-resources.ts ensure`
+  (production) or `bun tools/ci/preview-resources.ts ensure` (per-preview worker
+  name), which create or resolve the D1 database and OAuth KV namespace, then
+  write generated Wrangler configs with real `database_id` and KV `id` values:
+  `packages/worker/wrangler-production.generated.json` and
+  `packages/worker/wrangler-preview.generated.json` (gitignored). KV titles
+  follow the worker name: production defaults to `<worker-name>-oauth`; preview
+  uses `<preview-worker-name>-oauth-kv` (see `tools/ci/preview-resources.ts`).
+- **Migrating from a legacy D1**: export a remote database to a local SQLite
+  file and copy only the tables you need — see
+  [`docs/agents/d1-legacy-export.md`](./d1-legacy-export.md) and
+  `tools/export-d1-remote-to-sqlite.sh`.
 - Copy `.env.example` to `.env` before starting any work, then update secrets as
   needed.
 - `bun run dev` (starts mock API servers automatically and sets

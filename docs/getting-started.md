@@ -34,6 +34,14 @@ The setup flow assumes:
 - Bun is installed (uses `bun`/`bunx`).
 - You run commands from the repo root (needs `nx.json`, `package.json`, and
   `packages/worker/wrangler.jsonc`).
+- **Cloudflare D1 and KV**: The checked-in
+  [`packages/worker/wrangler.jsonc`](../packages/worker/wrangler.jsonc) declares
+  bindings and `database_name` values but does **not** commit remote resource
+  IDs (`database_id`, KV `id` / `preview_id`). Production and preview deploys
+  run ensure scripts that create or resolve resources and write generated
+  Wrangler configs with real IDs (see `docs/agents/setup.md`). **Local
+  development does not require** provisioning remote D1 or KV; `bun run dev`
+  uses local Wrangler persistence.
 - You can write to files in the repository (the script updates config files and
   replaces template `kody` tokens across text files).
 - Wrangler is optional for post-download setup. It is only needed when you
@@ -74,11 +82,13 @@ bun run dev
 bun ./docs/post-download.ts --guided
 ```
 
-This setup step does not create Cloudflare resources or rewrite
-`packages/worker/wrangler.jsonc` resource IDs. The production deploy workflow
-creates missing D1/KV resources automatically on first CI deploy. Cloudflare
-deploys do not auto-create those resources from bindings alone, so the workflow
-runs an explicit ensure step before migrations/deploy.
+This setup step does not create Cloudflare resources. The checked-in Wrangler
+template omits remote D1/KV IDs on purpose. The production deploy workflow runs
+`bun tools/ci/production-resources.ts ensure`, which creates missing D1/KV
+resources when needed and writes
+`packages/worker/wrangler-production.generated.json` with resolved IDs for that
+deploy. Cloudflare deploys do not auto-create those resources from bindings
+alone, so the workflow runs that ensure step before migrations/deploy.
 
 2. Configure GitHub Actions secrets and variables for deploy:
 
@@ -128,7 +138,8 @@ are missing (for example `--app-name` without `--defaults`, and init choice when
 - `--cookie-secret`: explicit `COOKIE_SECRET` value (otherwise generated).
 
 Cloudflare resources are managed during deploy. The setup script does not create
-Cloudflare resources or rewrite `packages/worker/wrangler.jsonc` resource IDs.
+Cloudflare resources; deploy-time ensure steps inject real D1/KV IDs into
+generated Wrangler configs (not into the checked-in template).
 
 ## Local development
 
