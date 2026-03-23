@@ -90,9 +90,12 @@ Worker bindings (see `packages/worker/wrangler.jsonc`):
 Optional Worker secret:
 
 - **`CAPABILITY_REINDEX_SECRET`** — Bearer token for
-  `POST /__maintenance/reindex-capabilities` (production deploy workflow calls
-  this after healthcheck when the GitHub secret is set). Local dev uses offline
-  search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+  `POST /__maintenance/reindex-capabilities` and
+  `POST /__maintenance/reindex-skills` (production deploy workflow calls both
+  after healthcheck when the GitHub secret is set). Use skill reindex when
+  `mcp_skills` and Vectorize disagree (restore, manual D1 edits, etc.). Local
+  dev uses offline search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is
+  missing.
 
 ## Cursor Cloud Agents (`cursor_cloud_rest` capability)
 

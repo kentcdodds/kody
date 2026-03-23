@@ -52,6 +52,11 @@ inference is trusted (non-partial and non-empty inferred set). Contradictions
 Post-deploy **`/__maintenance/reindex-capabilities`** upserts builtin vectors
 with `kind: 'builtin'` so semantic search can filter builtins vs skills.
 
+**`POST /__maintenance/reindex-skills`** (same `Authorization: Bearer` as
+capabilities, via **`CAPABILITY_REINDEX_SECRET`**) re-embeds every row in
+`mcp_skills` and upserts `skill_<uuid>` vectors. Use when D1 and Vectorize are
+out of sync for saved skills (e.g. after a restore or manual D1 edits).
+
 For broken skills, prefer **`meta_update_skill`** to fix stored code in place;
 alternatively **`meta_delete_skill`** + **`meta_save_skill`**. There is no
 versioning.

@@ -23,6 +23,7 @@ import {
 } from './mcp-auth.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
+import { handleSkillReindexRequest } from './skill-maintenance.ts'
 
 export { ChatAgent, MCP }
 
@@ -44,6 +45,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/reindex-capabilities') {
 			return handleCapabilityReindexRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/reindex-skills') {
+			return handleSkillReindexRequest(request, env)
 		}
 
 		if (url.pathname === oauthPaths.authorize) {

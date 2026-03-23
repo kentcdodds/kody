@@ -95,8 +95,9 @@ Local development uses `.env`, which Wrangler loads automatically:
 - `CURSOR_API_BASE_URL` (optional; defaults to `https://api.cursor.com`. Local
   `bun run dev` targets the Cursor mock unless `SKIP_CURSOR_MOCK=1`)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
-  `POST /__maintenance/reindex-capabilities` to embed and upsert all
-  capabilities into Vectorize)
+  `POST /__maintenance/reindex-capabilities` and
+  `POST /__maintenance/reindex-skills` to embed and upsert builtin capabilities
+  and all user skills into Vectorize)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `.env`.
@@ -192,8 +193,9 @@ How to get/set each value:
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
     workflow sync it to the Worker. After each production deploy, CI POSTs to
-    `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` to
-    refresh embeddings.
+    `/__maintenance/reindex-capabilities` and `/__maintenance/reindex-skills`
+    with `Authorization: Bearer …` to refresh capability and user-skill
+    embeddings.
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

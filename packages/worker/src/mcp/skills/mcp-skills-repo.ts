@@ -136,6 +136,21 @@ export async function listMcpSkillsByUserId(
 	return (results ?? []).map(mapRow)
 }
 
+/** All rows in `mcp_skills` (for maintenance / Vectorize reindex). */
+export async function listAllMcpSkills(
+	db: D1Database,
+): Promise<Array<McpSkillRow>> {
+	const { results } = await db
+		.prepare(
+			`SELECT id, user_id, title, description, keywords, code, search_text,
+				uses_capabilities, parameters, inferred_capabilities, inference_partial,
+				read_only, idempotent, destructive, created_at, updated_at
+			FROM mcp_skills`,
+		)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapRow)
+}
+
 function mapRow(r: Record<string, unknown>): McpSkillRow {
 	return {
 		id: String(r['id']),
