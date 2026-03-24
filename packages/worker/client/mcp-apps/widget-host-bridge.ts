@@ -77,11 +77,14 @@ export function createWidgetHostBridge(
 	}
 	const renderDataMessageType = 'ui-lifecycle-iframe-render-data'
 	const hostContextChangedMethod = 'ui/notifications/host-context-changed'
+	const toolInputMethod = 'ui/notifications/tool-input'
+	const toolResultMethod = 'ui/notifications/tool-result'
 
 	let requestCounter = 0
 	let initialized = false
 	let initializationPromise: Promise<boolean> | null = null
 	const pendingRequests = new Map<string, PendingBridgeRequest>()
+	let latestRenderData: Record<string, unknown> | undefined
 
 	function postMessageToHost(message: Record<string, unknown>) {
 		const hostWindow = globalThis.window?.parent
@@ -93,7 +96,9 @@ export function createWidgetHostBridge(
 
 	function dispatchRenderData(renderData: unknown) {
 		if (!options.onRenderData) return
-		options.onRenderData(isRecord(renderData) ? renderData : undefined)
+		const nextRenderData = isRecord(renderData) ? renderData : undefined
+		latestRenderData = nextRenderData
+		options.onRenderData(nextRenderData)
 	}
 
 	function dispatchHostContext(hostContext: unknown) {
@@ -101,6 +106,35 @@ export function createWidgetHostBridge(
 		options.onHostContextChanged(
 			isRecord(hostContext) ? hostContext : undefined,
 		)
+	}
+
+	function updateRenderData(patch: Record<string, unknown>) {
+		const nextRenderData = {
+			...(latestRenderData ?? {}),
+			...patch,
+		}
+		dispatchRenderData(nextRenderData)
+	}
+
+	function normalizeToolNotificationPayload(
+		params: unknown,
+		key: 'toolInput' | 'toolOutput',
+	) {
+		if (!isRecord(params)) return
+		if (key === 'toolOutput') {
+			const structuredContent = params.structuredContent
+			if (isRecord(structuredContent)) {
+				updateRenderData({ toolOutput: structuredContent })
+				return
+			}
+		}
+		const nestedKey = key === 'toolInput' ? 'input' : 'result'
+		const nestedValue = params[nestedKey]
+		if (isRecord(nestedValue)) {
+			updateRenderData({ [key]: nestedValue })
+			return
+		}
+		updateRenderData({ [key]: params })
 	}
 
 	function handleBridgeResponseMessage(message: unknown) {
@@ -135,12 +169,31 @@ export function createWidgetHostBridge(
 
 		if (message.type === renderDataMessageType) {
 			const payload = isRecord(message.payload) ? message.payload : undefined
-			dispatchRenderData(payload?.renderData)
+			const renderData = isRecord(payload?.renderData)
+				? {
+						...(latestRenderData ?? {}),
+						...payload.renderData,
+					}
+				: payload?.renderData
+			dispatchRenderData(renderData)
 			return
 		}
 
 		if (message.method === hostContextChangedMethod) {
 			dispatchHostContext(message.params)
+			if (isRecord(message.params)) {
+				updateRenderData(message.params)
+			}
+			return
+		}
+
+		if (message.method === toolInputMethod) {
+			normalizeToolNotificationPayload(message.params, 'toolInput')
+			return
+		}
+
+		if (message.method === toolResultMethod) {
+			normalizeToolNotificationPayload(message.params, 'toolOutput')
 		}
 	}
 
@@ -192,7 +245,11 @@ export function createWidgetHostBridge(
 			protocolVersion,
 		})
 			.then((response) => {
-				dispatchHostContext(response.result?.hostContext)
+				const hostContext = response.result?.hostContext
+				dispatchHostContext(hostContext)
+				if (isRecord(hostContext)) {
+					updateRenderData(hostContext)
+				}
 				initialized = true
 				try {
 					postMessageToHost({

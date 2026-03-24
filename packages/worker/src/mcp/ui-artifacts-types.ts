@@ -1,4 +1,4 @@
-export type UiArtifactRuntime = 'javascript'
+export type UiArtifactRuntime = 'html' | 'javascript'
 
 export type UiArtifactRow = {
 	id: string

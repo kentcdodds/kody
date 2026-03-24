@@ -20,12 +20,14 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'App source for the generic MCP UI shell. For v1, this should be a single JavaScript module string that renders into `#app`.',
+			'App source for the generic MCP UI shell. Prefer a self-contained HTML document or fragment so the generated app owns the visible UI. Legacy `javascript` source is still supported for previously saved apps.',
 		),
 	runtime: z
-		.enum(['javascript'])
-		.default('javascript')
-		.describe('Source format accepted by the generic UI shell.'),
+		.enum(['html', 'javascript'])
+		.default('html')
+		.describe(
+			'Source format accepted by the generic UI shell. Prefer `html`; `javascript` is kept for legacy saved apps.',
+		),
 	search_text: z
 		.string()
 		.optional()
@@ -36,7 +38,7 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	app_id: z.string(),
-	runtime: z.enum(['javascript']),
+	runtime: z.enum(['html', 'javascript']),
 })
 
 export const uiSaveAppCapability = defineDomainCapability(

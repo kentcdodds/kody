@@ -100,19 +100,16 @@
 				const demoCode =
 					new URLSearchParams(window.location.search).get('code') ??
 					`
-const root = document.querySelector('[data-generated-ui-root]')
-if (root) {
-	root.innerHTML = \`
-		<div>
-			<h1>Inline app</h1>
-			<button type="button" data-send-message>Send message</button>
-			<button type="button" data-open-link>Open docs</button>
-			<button type="button" data-fullscreen>Fullscreen</button>
-		</div>
-	\`
-	const sendButton = root.querySelector('[data-send-message]')
-	const linkButton = root.querySelector('[data-open-link]')
-	const fullscreenButton = root.querySelector('[data-fullscreen]')
+<main>
+	<h1>Inline app</h1>
+	<button type="button" data-send-message>Send message</button>
+	<button type="button" data-open-link>Open docs</button>
+	<button type="button" data-fullscreen>Fullscreen</button>
+</main>
+<script>
+	const sendButton = document.querySelector('[data-send-message]')
+	const linkButton = document.querySelector('[data-open-link]')
+	const fullscreenButton = document.querySelector('[data-fullscreen]')
 	sendButton?.addEventListener('click', () => {
 		window.kodyWidget.sendMessage('Inline widget says hello')
 	})
@@ -123,9 +120,9 @@ if (root) {
 		const nextMode = await window.kodyWidget.toggleFullscreen()
 		const status = document.createElement('p')
 		status.textContent = 'Mode: ' + nextMode
-		root.append(status)
+		document.body.append(status)
 	})
-}
+<\/script>
 					`.trim()
 
 				function resolveFrameId(sourceWindow) {
@@ -186,10 +183,8 @@ if (root) {
 											renderSource: 'inline_code',
 											title: 'Sandbox shell test',
 											description: 'Sandbox shell render payload.',
-											source: {
-												kind: 'javascript',
-												entrypoint: demoCode,
-											},
+											runtime: 'html',
+											sourceCode: demoCode,
 										},
 									},
 								},
@@ -307,7 +302,7 @@ if (root) {
 											app_id: 'demo-app',
 											title: 'Loaded app',
 											description: 'Loaded from app-only tool.',
-											runtime: 'javascript',
+											runtime: 'html',
 											code: demoCode,
 										},
 									},

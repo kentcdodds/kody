@@ -210,7 +210,7 @@ z.object({
 outputSchema: {
 	app_id: z.string().describe('Persisted app identifier'),
 	title: z.string().describe('Human-facing app title'),
-	runtime: z.literal('javascript'),
+	runtime: z.enum(['html', 'javascript']),
 }
 ```
 

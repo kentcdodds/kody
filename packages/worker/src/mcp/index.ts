@@ -83,6 +83,7 @@ How to use execute
 MCP App tools
 - Use 'open_generated_ui' when you want an interactive UI in MCP App compatible hosts.
 - Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
+- Prefer self-contained HTML so the generated app owns the visible document and the shell stays minimal.
 - The shell supports host messaging, app-triggered tool calls, external links, and display-mode requests when the host allows them.
 	`.trim(),
 } as const

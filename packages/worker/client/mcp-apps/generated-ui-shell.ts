@@ -1,17 +1,17 @@
 import { createWidgetHostBridge } from './widget-host-bridge.js'
 
 type RenderMode = 'inline_code' | 'saved_app'
+type AppRuntime = 'html' | 'javascript'
+type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 
 type RenderEnvelope = {
 	mode: RenderMode
 	code?: string
 	appId?: string
-	title?: string
-	description?: string
+	runtime?: AppRuntime
 }
 
 type RenderDataEnvelope = {
-	toolInput?: Record<string, unknown>
 	toolOutput?: Record<string, unknown>
 	theme?: string
 	displayMode?: string
@@ -27,9 +27,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
 
-function readTheme(source: Record<string, unknown> | undefined) {
-	const theme = source?.theme
-	return theme === 'dark' || theme === 'light' ? theme : undefined
+function coerceRuntime(value: unknown): AppRuntime | undefined {
+	return value === 'html' || value === 'javascript' ? value : undefined
+}
+
+function coerceDisplayMode(value: unknown): DisplayMode | null {
+	return value === 'inline' || value === 'fullscreen' || value === 'pip'
+		? value
+		: null
 }
 
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
@@ -37,152 +42,211 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	const renderSource = value.renderSource ?? value.mode
 	if (renderSource !== 'inline_code' && renderSource !== 'saved_app')
 		return null
-	let code: string | undefined
-	const source = isRecord(value.source) ? value.source : null
-	if (typeof value.code === 'string') {
-		code = value.code
-	} else if (typeof value.sourceCode === 'string') {
-		code = value.sourceCode
-	} else if (source && typeof source.entrypoint === 'string') {
-		code = source.entrypoint
-	}
+	const code =
+		typeof value.sourceCode === 'string'
+			? value.sourceCode
+			: typeof value.code === 'string'
+				? value.code
+				: undefined
 	const appId = typeof value.appId === 'string' ? value.appId : undefined
-	const title = typeof value.title === 'string' ? value.title : undefined
-	const description =
-		typeof value.description === 'string' ? value.description : undefined
-	return { mode: renderSource, code, appId, title, description }
+	const runtime = coerceRuntime(value.runtime) ?? (code ? 'html' : undefined)
+	return { mode: renderSource, code, appId, runtime }
 }
 
 function getEnvelopeFromRenderData(renderData: RenderDataEnvelope | undefined) {
 	const toolOutput = isRecord(renderData?.toolOutput)
 		? renderData.toolOutput
 		: undefined
-	return (
-		coerceRenderEnvelope(toolOutput?.render) ??
-		coerceRenderEnvelope(toolOutput) ??
-		null
-	)
+	return coerceRenderEnvelope(toolOutput)
 }
 
 function initializeGeneratedUiShell() {
 	const documentRef = globalThis.document
-	const windowRef = globalThis.window
-	if (!documentRef || !windowRef) return
+	if (!documentRef || !globalThis.window) return
 
-	const rootElement = documentRef.documentElement
 	const frameElementMaybe = documentRef.querySelector<HTMLIFrameElement>(
 		'[data-generated-ui-frame]',
 	)
-	const titleElementMaybe = documentRef.querySelector<HTMLElement>(
-		'[data-generated-ui-title]',
-	)
-	const descriptionElementMaybe = documentRef.querySelector<HTMLElement>(
-		'[data-generated-ui-description]',
-	)
-	const statusElementMaybe = documentRef.querySelector<HTMLElement>(
-		'[data-generated-ui-status]',
-	)
-	const errorElementMaybe = documentRef.querySelector<HTMLElement>(
-		'[data-generated-ui-error]',
-	)
-	const fullscreenButton = documentRef.querySelector<HTMLButtonElement>(
-		'[data-action="toggle-fullscreen"]',
-	)
-	const openLinkButton = documentRef.querySelector<HTMLButtonElement>(
-		'[data-action="open-link"]',
-	)
-
-	if (
-		!frameElementMaybe ||
-		!titleElementMaybe ||
-		!descriptionElementMaybe ||
-		!statusElementMaybe ||
-		!errorElementMaybe ||
-		!fullscreenButton ||
-		!openLinkButton
-	) {
+	if (!frameElementMaybe) {
 		return
 	}
 	const frameElement = frameElementMaybe
-	const titleElement = titleElementMaybe
-	const descriptionElement = descriptionElementMaybe
-	const statusElement = statusElementMaybe
-	const errorElement = errorElementMaybe
 	const childMessagePrefix = 'kody-generated-ui:'
 
 	let latestRenderData: RenderDataEnvelope | undefined
-	let currentEnvelope: RenderEnvelope | null = null
-	let currentFrameUrl: string | null = null
 
-	function applyTheme(theme: string | undefined) {
-		if (theme === 'dark' || theme === 'light') {
-			rootElement.setAttribute('data-theme', theme)
-			return
+	function getBaseHref() {
+		try {
+			return new URL('/', import.meta.url).toString()
+		} catch {
+			return null
 		}
-		rootElement.removeAttribute('data-theme')
-	}
-
-	function setStatus(text: string) {
-		statusElement.textContent = text
-	}
-
-	function setError(message: string | null) {
-		errorElement.textContent = message ?? ''
-		errorElement.hidden = message == null
-	}
-
-	function setTitleAndDescription(input: {
-		title?: string
-		description?: string
-	}) {
-		titleElement.textContent = input.title ?? 'Generated UI'
-		descriptionElement.textContent =
-			input.description ??
-			'This shell renders inline generated code or a saved app artifact.'
 	}
 
 	function escapeInlineModuleSource(code: string) {
 		return code.replace(/<\/script/gi, '<\\/script')
 	}
 
+	function buildChildBridgeRuntimeSource() {
+		return `
+const shellMessagePrefix = '${childMessagePrefix}';
+let requestCounter = 0;
+function nextRequestId() {
+	requestCounter += 1;
+	return 'generated-ui-' + requestCounter;
+}
+function waitForShellMessage(type, requestId) {
+	return new Promise((resolve) => {
+		function handleMessage(event) {
+			const data = event.data;
+			if (!data || typeof data !== 'object') return;
+			if (data.type !== type) return;
+			const payload = data.payload;
+			if (!payload || typeof payload !== 'object') return;
+			if (payload.requestId !== requestId) return;
+			window.removeEventListener('message', handleMessage);
+			resolve(payload);
+		}
+		window.addEventListener('message', handleMessage);
+	});
+}
+function postRequestAndWaitForShellMessage(type, payload, responseType, requestId) {
+	const pending = waitForShellMessage(responseType, requestId);
+	window.parent.postMessage({
+		type,
+		payload,
+	}, '*');
+	return pending;
+}
+window.kodyWidget = {
+	sendMessage(text) {
+		if (window.parent === window) return false;
+		window.parent.postMessage({
+			type: shellMessagePrefix + 'send-message',
+			payload: { text },
+		}, '*');
+		return true;
+	},
+	openLink(url) {
+		if (window.parent === window) return false;
+		window.parent.postMessage({
+			type: shellMessagePrefix + 'open-link',
+			payload: { url },
+		}, '*');
+		return true;
+	},
+	async requestDisplayMode(mode) {
+		if (window.parent === window) return null;
+		const requestId = nextRequestId();
+		const payload = await postRequestAndWaitForShellMessage(
+			shellMessagePrefix + 'request-display-mode',
+			{ requestId, mode },
+			shellMessagePrefix + 'display-mode-result',
+			requestId,
+		);
+		return typeof payload.mode === 'string' ? payload.mode : null;
+	},
+	async toggleFullscreen() {
+		return await this.requestDisplayMode('fullscreen');
+	},
+	async callTool(name, args) {
+		if (window.parent === window) return null;
+		const requestId = nextRequestId();
+		const payload = await postRequestAndWaitForShellMessage(
+			shellMessagePrefix + 'call-tool',
+			{
+				requestId,
+				name,
+				arguments: args && typeof args === 'object' ? args : undefined,
+			},
+			shellMessagePrefix + 'tool-result',
+			requestId,
+		);
+		return 'result' in payload ? payload.result ?? null : null;
+	},
+};
+window.addEventListener('error', (event) => {
+	console.error(
+		'Generated UI app error:',
+		event.error?.message ?? event.message ?? event.error ?? 'Unknown error',
+	);
+});
+window.addEventListener('unhandledrejection', (event) => {
+	console.error(
+		'Generated UI app rejection:',
+		event.reason?.message ?? event.reason ?? 'Unknown rejection',
+	);
+});
+		`.trim()
+	}
+
 	function buildInlineModuleSource(code: string) {
 		const safeCode = escapeInlineModuleSource(code)
 		return `
-const shellRootElement = document.getElementById('app')
-window.kodyWidget = {
-	sendMessage(text) {
-		if (window.parent === window) return undefined
-		window.parent.postMessage({
-			type: '${childMessagePrefix}send-message',
-			payload: { text },
-		}, '*')
-		return true
-	},
-	openLink(url) {
-		if (window.parent === window) return undefined
-		window.parent.postMessage({
-			type: '${childMessagePrefix}open-link',
-			payload: { url },
-		}, '*')
-		return true
-	},
-	async toggleFullscreen() {
-		if (window.parent === window) return 'inline'
-		window.parent.postMessage({
-			type: '${childMessagePrefix}toggle-fullscreen',
-			payload: {},
-		}, '*')
-		return 'fullscreen'
-	},
-}
+${buildChildBridgeRuntimeSource()}
 ${safeCode}
 		`.trim()
 	}
 
-	function setFrameSource(code: string) {
-		const previousFrameUrl = currentFrameUrl
-		const inlineModuleSource = buildInlineModuleSource(code)
-		const shellHtml = `
+	function renderErrorDocument(message: string) {
+		frameElement.srcdoc = `
+<!doctype html>
+<html lang="en">
+	<body style="margin:0;padding:16px;font:14px/1.5 system-ui,sans-serif;">
+		<pre style="margin:0;white-space:pre-wrap;word-break:break-word;">${message
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')}</pre>
+	</body>
+</html>
+		`.trim()
+	}
+
+	function buildHtmlDocumentFromFragment(code: string) {
+		const baseHref = getBaseHref()
+		const escapedBaseHref = baseHref ? escapeInlineModuleSource(baseHref) : null
+		return `
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		${escapedBaseHref ? `<base href="${escapedBaseHref}" />` : ''}
+		<script>
+${buildChildBridgeRuntimeSource()}
+		</script>
+	</head>
+	<body>
+${code}
+	</body>
+</html>
+		`.trim()
+	}
+
+	function injectIntoHtmlDocument(code: string) {
+		const baseHref = getBaseHref()
+		const injection = `
+${baseHref ? `<base href="${baseHref}" />` : ''}
+<script>
+${buildChildBridgeRuntimeSource()}
+</script>
+		`.trim()
+		if (/<head[\s>]/i.test(code)) {
+			return code.replace(/<head([\s>]*)/i, `<head$1>\n${injection}\n`)
+		}
+		if (/<html[\s>]/i.test(code)) {
+			return code.replace(/<html([\s>])/i, `<html$1><head>${injection}</head>`)
+		}
+		if (/<\/body>/i.test(code)) {
+			return code.replace(/<\/body>/i, `${injection}\n</body>`)
+		}
+		return `${injection}\n${code}`
+	}
+
+	function setFrameSource(code: string, runtime: AppRuntime) {
+		if (runtime === 'javascript') {
+			const inlineModuleSource = buildInlineModuleSource(code)
+			frameElement.srcdoc = `
 <!doctype html>
 <html lang="en">
 	<head>
@@ -199,34 +263,19 @@ ${safeCode}
 	</head>
 	<body>
 		<div id="app" data-generated-ui-root></div>
-		<pre id="app-error" hidden></pre>
-		<script>
-			window.addEventListener('error', (event) => {
-				const target = document.getElementById('app-error');
-				if (!target) return;
-				target.hidden = false;
-				target.textContent = String(event.error?.message ?? event.message ?? event.error ?? 'Unknown inline app error');
-			});
-			window.addEventListener('unhandledrejection', (event) => {
-				const target = document.getElementById('app-error');
-				if (!target) return;
-				target.hidden = false;
-				target.textContent = String(event.reason?.message ?? event.reason ?? 'Unknown inline app rejection');
-			});
-		</script>
 		<script type="module">
 ${inlineModuleSource}
 		</script>
 	</body>
 </html>
-		`.trim()
-		const htmlBlob = new Blob([shellHtml], { type: 'text/html' })
-		const htmlUrl = URL.createObjectURL(htmlBlob)
-		currentFrameUrl = htmlUrl
-		frameElement.src = htmlUrl
-		if (previousFrameUrl) {
-			URL.revokeObjectURL(previousFrameUrl)
+			`.trim()
+			return
 		}
+
+		const htmlSource = /<(?:!doctype|html|head|body)\b/i.test(code)
+			? injectIntoHtmlDocument(code)
+			: buildHtmlDocumentFromFragment(code)
+		frameElement.srcdoc = htmlSource
 	}
 
 	async function resolveSavedAppCode(appId: string) {
@@ -247,100 +296,56 @@ ${inlineModuleSource}
 		if (!code) {
 			throw new Error('Saved app source is missing code.')
 		}
-		const title =
-			structuredContent && typeof structuredContent.title === 'string'
-				? structuredContent.title
-				: undefined
-		const description =
-			structuredContent && typeof structuredContent.description === 'string'
-				? structuredContent.description
-				: undefined
-		return { code, title, description }
+		return {
+			code,
+			runtime: coerceRuntime(structuredContent?.runtime) ?? 'html',
+		}
 	}
 
 	async function renderEnvelope(envelope: RenderEnvelope | null) {
-		currentEnvelope = envelope
 		if (!envelope) {
-			setTitleAndDescription({})
-			setStatus('Waiting for render data from the host.')
-			setError(null)
-			frameElement.removeAttribute('src')
+			frameElement.srcdoc = ''
 			return
 		}
 
-		setTitleAndDescription({
-			title: envelope.title,
-			description: envelope.description,
-		})
-		setError(null)
-
 		if (envelope.mode === 'inline_code') {
 			if (!envelope.code) {
-				setStatus('Unable to render inline code.')
-				setError('The tool result did not include inline code.')
+				renderErrorDocument('The tool result did not include inline code.')
 				return
 			}
-			setFrameSource(envelope.code)
-			setStatus('Rendering inline generated app.')
+			setFrameSource(envelope.code, envelope.runtime ?? 'html')
 			return
 		}
 
 		if (!envelope.appId) {
-			setStatus('Unable to load saved app.')
-			setError('The tool result did not include an app_id.')
+			renderErrorDocument('The tool result did not include an app_id.')
 			return
 		}
 
-		setStatus('Loading saved app.')
 		try {
 			const resolved = await resolveSavedAppCode(envelope.appId)
-			setTitleAndDescription({
-				title: resolved.title ?? envelope.title,
-				description: resolved.description ?? envelope.description,
-			})
-			setFrameSource(resolved.code)
-			setStatus('Rendering saved app.')
+			setFrameSource(resolved.code, resolved.runtime)
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : 'Unknown app loading error.'
-			setStatus('Failed to load saved app.')
-			setError(message)
+			renderErrorDocument(message)
 		}
 	}
 
-	async function toggleFullscreen() {
+	async function requestDisplayMode(mode: DisplayMode) {
 		const displayMode = latestRenderData?.displayMode
 		const availableDisplayModes = Array.isArray(
 			latestRenderData?.availableDisplayModes,
 		)
 			? latestRenderData?.availableDisplayModes
 			: []
-		const nextMode = displayMode === 'fullscreen' ? 'inline' : 'fullscreen'
+		const nextMode =
+			mode === 'fullscreen' && displayMode === 'fullscreen' ? 'inline' : mode
 		if (!availableDisplayModes.includes(nextMode)) {
-			setStatus(`Display mode "${nextMode}" is not available in this host.`)
-			return
+			return null
 		}
 		const resolvedMode = await hostBridge.requestDisplayMode(nextMode)
-		if (!resolvedMode) {
-			setStatus('The host rejected the display mode change.')
-			return
-		}
-		setStatus(`Display mode changed to ${resolvedMode}.`)
-	}
-
-	async function openArtifactPage() {
-		const appId = currentEnvelope?.appId
-		if (!appId) {
-			setStatus('No saved app is active to inspect.')
-			return
-		}
-		const url = new URL(`/app/generated-ui/${appId}`, windowRef.location.origin)
-		const opened = await hostBridge.openLink(url.toString())
-		setStatus(
-			opened
-				? 'Requested that the host open the saved app link.'
-				: 'The host rejected the open-link request.',
-		)
+		return resolvedMode ?? null
 	}
 
 	const hostBridge = createWidgetHostBridge({
@@ -353,28 +358,11 @@ ${inlineModuleSource}
 				? (renderData as RenderDataEnvelope)
 				: undefined
 			latestRenderData = nextRenderData
-			applyTheme(readTheme(nextRenderData))
 			void renderEnvelope(getEnvelopeFromRenderData(nextRenderData))
 		},
-		onHostContextChanged: (hostContext) => {
-			applyTheme(readTheme(hostContext))
-			if (isRecord(hostContext)) {
-				latestRenderData = {
-					...latestRenderData,
-					...hostContext,
-				}
-			}
-		},
 	})
 
-	fullscreenButton.addEventListener('click', () => {
-		void toggleFullscreen()
-	})
-	openLinkButton.addEventListener('click', () => {
-		void openArtifactPage()
-	})
-
-	windowRef.addEventListener('message', (event) => {
+	globalThis.window.addEventListener('message', (event: MessageEvent) => {
 		if (
 			isRecord(event.data) &&
 			typeof event.data.type === 'string' &&
@@ -395,18 +383,56 @@ ${inlineModuleSource}
 				}
 				return
 			}
-			if (event.data.type === `${childMessagePrefix}toggle-fullscreen`) {
-				void toggleFullscreen()
+			if (event.data.type === `${childMessagePrefix}request-display-mode`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const mode = coerceDisplayMode(payload.mode)
+				if (requestId && mode && event.source) {
+					void requestDisplayMode(mode).then((resolvedMode) => {
+						;(event.source as WindowProxy).postMessage(
+							{
+								type: `${childMessagePrefix}display-mode-result`,
+								payload: {
+									requestId,
+									mode: resolvedMode,
+								},
+							},
+							'*',
+						)
+					})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}call-tool`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const name = typeof payload.name === 'string' ? payload.name : null
+				const argumentsValue = isRecord(payload.arguments)
+					? payload.arguments
+					: undefined
+				if (requestId && name && event.source) {
+					void hostBridge
+						.callTool({
+							name,
+							...(argumentsValue ? { arguments: argumentsValue } : {}),
+						})
+						.then((result) => {
+							;(event.source as WindowProxy).postMessage(
+								{
+									type: `${childMessagePrefix}tool-result`,
+									payload: {
+										requestId,
+										result,
+									},
+								},
+								'*',
+							)
+						})
+				}
 				return
 			}
 		}
 		hostBridge.handleHostMessage(event.data)
-	})
-	windowRef.addEventListener('beforeunload', () => {
-		if (currentFrameUrl) {
-			URL.revokeObjectURL(currentFrameUrl)
-			currentFrameUrl = null
-		}
 	})
 
 	void hostBridge.initialize()

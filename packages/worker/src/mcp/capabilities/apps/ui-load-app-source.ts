@@ -9,7 +9,7 @@ const outputSchema = z.object({
 	app_id: z.string(),
 	title: z.string(),
 	description: z.string(),
-	runtime: z.enum(['javascript']),
+	runtime: z.enum(['html', 'javascript']),
 	code: z.string(),
 })
 

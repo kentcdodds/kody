@@ -51,42 +51,6 @@ export async function getUiArtifactById(
 	return mapRow(result)
 }
 
-async function updateUiArtifact(
-	db: D1Database,
-	userId: string,
-	artifactId: string,
-	fields: {
-		title: string
-		description: string
-		keywords: string
-		source: string
-		source_type: string
-		search_text: string | null
-	},
-): Promise<boolean> {
-	const now = new Date().toISOString()
-	const out = await db
-		.prepare(
-			`UPDATE ui_artifacts SET
-				title = ?, description = ?, keywords = ?, source_code = ?, source_type = ?,
-				search_text = ?, updated_at = ?
-			WHERE id = ? AND user_id = ?`,
-		)
-		.bind(
-			fields.title,
-			fields.description,
-			fields.keywords,
-			fields.source,
-			fields.source_type,
-			fields.search_text,
-			now,
-			artifactId,
-			userId,
-		)
-		.run()
-	return (out.meta.changes ?? 0) > 0
-}
-
 export async function deleteUiArtifact(
 	db: D1Database,
 	userId: string,
@@ -110,19 +74,6 @@ export async function listUiArtifactsByUserId(
 			FROM ui_artifacts WHERE user_id = ?`,
 		)
 		.bind(userId)
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapRow)
-}
-
-async function listAllUiArtifacts(
-	db: D1Database,
-): Promise<Array<UiArtifactRow>> {
-	const { results } = await db
-		.prepare(
-			`SELECT id, user_id, title, description, keywords, source_code, source_type,
-				search_text, created_at, updated_at
-			FROM ui_artifacts`,
-		)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }

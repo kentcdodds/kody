@@ -1,19 +1,16 @@
 import { expect, test } from '@playwright/test'
 
 const inlineCode = [
-	'const root = document.querySelector("[data-generated-ui-root]");',
-	'if (root) {',
-	'  root.innerHTML = `',
-	'    <div>',
-	'      <h1>Inline app</h1>',
-	'      <button type="button" data-send-message>Send message</button>',
-	'      <button type="button" data-open-link>Open docs</button>',
-	'      <button type="button" data-fullscreen>Fullscreen</button>',
-	'    </div>',
-	'  `;',
-	'  const sendButton = root.querySelector("[data-send-message]");',
-	'  const linkButton = root.querySelector("[data-open-link]");',
-	'  const fullscreenButton = root.querySelector("[data-fullscreen]");',
+	'<main>',
+	'  <h1>Inline app</h1>',
+	'  <button type="button" data-send-message>Send message</button>',
+	'  <button type="button" data-open-link>Open docs</button>',
+	'  <button type="button" data-fullscreen>Fullscreen</button>',
+	'</main>',
+	'<script>',
+	'  const sendButton = document.querySelector("[data-send-message]");',
+	'  const linkButton = document.querySelector("[data-open-link]");',
+	'  const fullscreenButton = document.querySelector("[data-fullscreen]");',
 	'  sendButton?.addEventListener("click", () => {',
 	'    window.kodyWidget.sendMessage("Inline widget says hello");',
 	'  });',
@@ -24,15 +21,15 @@ const inlineCode = [
 	'    const nextMode = await window.kodyWidget.toggleFullscreen();',
 	'    const status = document.createElement("p");',
 	'    status.textContent = `Mode: ${nextMode}`;',
-	'    root.append(status);',
+	'    document.body.append(status);',
 	'  });',
-	'}',
+	'</script>',
 ].join('\n')
 
 test('generated ui shell renders inline code in default iframe', async ({
 	page,
 }) => {
-	await page.goto('/dev/generated-ui-shell-test')
+	await page.goto('/dev/generated-ui-shell-test.html')
 	await expect(
 		page.getByRole('heading', { name: 'Generated UI Shell Test' }),
 	).toBeVisible()
@@ -49,7 +46,7 @@ test('generated ui shell renders inline code in sandboxed iframe', async ({
 	page,
 }) => {
 	await page.goto(
-		`/dev/generated-ui-shell-test?code=${encodeURIComponent(inlineCode)}`,
+		`/dev/generated-ui-shell-test.html?code=${encodeURIComponent(inlineCode)}`,
 	)
 	const shellFrame = page.frameLocator('#generated-sandboxed')
 	const sandboxedIframe = shellFrame.locator('[data-generated-ui-frame]')
@@ -63,7 +60,7 @@ test('sandboxed generated ui shell supports host messaging actions', async ({
 	page,
 }) => {
 	await page.goto(
-		`/dev/generated-ui-shell-test?code=${encodeURIComponent(inlineCode)}`,
+		`/dev/generated-ui-shell-test.html?code=${encodeURIComponent(inlineCode)}`,
 	)
 	const shellFrame = page.frameLocator('#generated-sandboxed')
 	const sandboxedIframe = shellFrame.locator('[data-generated-ui-frame]')

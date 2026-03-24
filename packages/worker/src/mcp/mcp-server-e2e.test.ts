@@ -733,7 +733,7 @@ test(
 						title: 'Execute generated app',
 						description: 'Saved through execute.',
 						keywords: ['execute', 'ui'],
-						code: 'document.querySelector("#app").innerHTML = "<main><h1>Execute App</h1></main>"',
+						code: '<main><h1>Execute App</h1></main>',
 					})`,
 			},
 		})
@@ -770,7 +770,7 @@ test(
 		const result = await mcpClient.client.callTool({
 			name: 'open_generated_ui',
 			arguments: {
-				code: 'document.querySelector("#app").innerHTML = "<main><h1>Hello Shell</h1><p>Inline app content.</p></main>"',
+				code: '<main><h1>Hello Shell</h1><p>Inline app content.</p></main>',
 				title: 'Inline Hello',
 				description: 'Inline render test.',
 			},
@@ -816,12 +816,9 @@ test(
 
 		expect(generatedResource).toBeDefined()
 		expect(generatedResource?.mimeType).toBe('text/html;profile=mcp-app')
-		expect(generatedResource?.text).toContain('data-generated-ui-shell')
-		expect(generatedResource?.text).toContain('rel="stylesheet"')
-		expect(generatedResource?.text).toContain('styles.css')
-		expect(generatedResource?.text).toContain('--color-primary')
-		expect(generatedResource?.text).toContain('--color-background')
-		expect(generatedResource?.text).toContain("data-theme='dark'")
+		expect(generatedResource?.text).toContain('data-generated-ui-frame')
+		expect(generatedResource?.text).not.toContain('Toggle fullscreen')
+		expect(generatedResource?.text).not.toContain('Open saved app link')
 		expect(generatedResource?.text).toContain('type="module"')
 		expect(generatedResource?.text).toContain('/mcp-apps/generated-ui-shell.js')
 
@@ -839,10 +836,6 @@ test(
 		expect(generatedShellSource).toContain('ui/request-display-mode')
 		expect(generatedShellSource).toContain('ui/open-link')
 		expect(generatedShellSource).toContain('tools/call')
-
-		const stylesResponse = await fetch(new URL('/styles.css', server.origin))
-		expect(stylesResponse.ok).toBe(true)
-		expect(stylesResponse.headers.get('access-control-allow-origin')).toBe('*')
 
 		expect(generatedResourceMeta?.ui?.domain).toBe(server.origin)
 		expect(generatedResourceMeta?.['openai/widgetDomain']).toBe(server.origin)
@@ -868,7 +861,7 @@ test(
 						title: 'Saved Searchable App',
 						description: 'Saved generated UI artifact for search and reopen.',
 						keywords: ['saved', 'searchable', 'ui'],
-						code: 'document.querySelector("#app").innerHTML = "<main><h1>Saved Searchable App</h1></main>"',
+						code: '<main><h1>Saved Searchable App</h1></main>',
 						search_text: 'searchable saved ui artifact demo',
 					})`,
 			},

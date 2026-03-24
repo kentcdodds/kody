@@ -14,7 +14,7 @@ Behavior:
 - Accepts exactly one of \`code\` or \`app_id\`.
 - Use \`code\` to render a new UI artifact immediately without saving it first.
 - Use \`app_id\` to reopen previously saved UI source without sending that source code back through the model.
-- The shell supports host render data, opening external links, requesting fullscreen when supported by the host, sending follow-up messages, and calling app-only tools on the same MCP server.
+- Prefer passing self-contained HTML so the generated app owns the visible UI. The shell only provides a minimal host bridge for follow-up messages, external links, fullscreen requests, and app-only tools.
 
 Use this tool when:
 - You have already generated the UI source and want to render it.
@@ -40,7 +40,7 @@ const inputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'Inline UI source for an ephemeral render. Provide this for a fresh generated UI that does not need to be saved first.',
+				'Inline UI source for an ephemeral render. Prefer a self-contained HTML document or fragment so the generated app defines the entire visible UI.',
 			),
 		app_id: z
 			.string()
@@ -92,6 +92,7 @@ export async function registerOpenGeneratedUiTool(agent: MCP) {
 				appId,
 				title,
 				description,
+				runtime: 'html' as const,
 				sourceCode: args.code ?? null,
 			}
 			return {

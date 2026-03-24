@@ -2,7 +2,9 @@
 
 This guide explains how to build MCP Apps in this starter project in a reusable
 way. The current implementation uses a single generic shell resource that can
-render inline generated code or reopen saved UI artifacts by id.
+render inline generated code or reopen saved UI artifacts by id. The shell is
+intentionally thin: it just hosts an iframe, delivers render payloads, and
+bridges host actions back to the MCP App host.
 
 Use this when replacing starter tools/resources with your own product-specific
 UI and workflows.
@@ -13,7 +15,7 @@ UI and workflows.
   hosts.
 - Keep tool/resource metadata aligned with the MCP Apps specification.
 - Keep implementation modular so starter examples are easy to replace.
-- Ensure apps support host messaging, theming, and predictable validation.
+- Ensure apps support host messaging and predictable validation.
 
 ## Architecture in this repo
 
@@ -40,7 +42,7 @@ Create a dedicated module under `packages/worker/src/mcp/apps/`:
 
 - Export a stable `ui://` URI.
 - Export a render function that returns the app HTML.
-- Keep widget logic local to this module.
+- Keep shell markup minimal and push visible UI into the generated app source.
 
 Keep file names lower-kebab-case and prefer one entry point per app.
 
@@ -68,6 +70,8 @@ In `packages/worker/src/mcp/tools/<your-tool>.ts`:
 - Provide `outputSchema` for machine-usable outputs where relevant.
 - Prefer returning a compact render envelope in `structuredContent` so a single
   shell can render different app payloads per invocation.
+- Prefer self-contained HTML documents or fragments as the render source so the
+  generated app owns the visible document.
 
 ### 4) Wire registration in server init
 
@@ -137,6 +141,19 @@ Recommended render envelope fields in tool `structuredContent`:
 This keeps the shell reusable while avoiding source round-trips through the
 model for saved artifacts.
 
+## HTML-First Contract
+
+Prefer generated app source that is already a complete HTML document, or at
+least a self-contained HTML fragment. That keeps the generic shell simple and
+avoids coupling the app contract to shell-owned containers like `#app`.
+
+If you keep a helper bridge, treat it as transport only:
+
+- send host messages
+- request display modes
+- call app-only tools
+- avoid shipping shell-owned visible controls
+
 ## Theme and design-system guidance
 
 ### Theme support
@@ -144,10 +161,8 @@ model for saved artifacts.
 For robust light/dark behavior:
 
 - Support browser fallback with `prefers-color-scheme`.
-- Also support host-provided theme:
-  - Request render data (`ui-request-render-data`).
-  - Handle host updates (`ui-lifecycle-iframe-render-data`).
-  - Apply `renderData.theme` (`light`/`dark`) when present.
+- If your generated app wants host-provided theme, pass it through your bridge
+  contract explicitly rather than relying on shell-owned UI chrome.
 
 ### Design-system alignment
 
