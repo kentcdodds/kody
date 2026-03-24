@@ -1,9 +1,7 @@
 import { parseSafe } from 'remix/data-schema'
 import { resendEmailSchema } from '@kody-internal/shared/resend-email.ts'
-import { createDb, mockResendMessagesTable } from '@kody/worker/db.ts'
 
 type MockResendEnv = {
-	APP_DB: D1Database
 	MOCK_API_TOKEN?: string
 }
 
@@ -47,7 +45,18 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 	},
 ]
 
-let schemaReady: Promise<void> | null = null
+type StoredMockMessage = {
+	id: string
+	token_hash: string
+	received_at: number
+	from_email: string
+	to_json: string
+	subject: string
+	html: string
+	payload_json: string
+}
+
+const messagesByToken = new Map<string, Array<StoredMockMessage>>()
 
 function htmlEscape(value: string) {
 	return value
@@ -129,29 +138,11 @@ function getTokenPartition(env: MockResendEnv) {
 	return expected ? sha256Hex(expected) : Promise.resolve('public')
 }
 
-type MockResendDb = ReturnType<typeof createDb>
-
-async function ensureSchema(db: MockResendDb) {
-	if (!schemaReady) {
-		schemaReady = (async () => {
-			await db.exec(`CREATE TABLE IF NOT EXISTS mock_resend_messages (
-				id TEXT PRIMARY KEY,
-				token_hash TEXT NOT NULL,
-				received_at INTEGER NOT NULL,
-				from_email TEXT NOT NULL,
-				to_json TEXT NOT NULL,
-				subject TEXT NOT NULL,
-				html TEXT NOT NULL,
-				payload_json TEXT NOT NULL
-			)`)
-			await db.exec(`CREATE INDEX IF NOT EXISTS mock_resend_messages_token_received_at
-				ON mock_resend_messages(token_hash, received_at DESC)`)
-		})().catch((error) => {
-			schemaReady = null
-			throw error
-		})
+function getStoredMessages(tokenHash: string) {
+	if (!messagesByToken.has(tokenHash)) {
+		messagesByToken.set(tokenHash, [])
 	}
-	await schemaReady
+	return messagesByToken.get(tokenHash) ?? []
 }
 
 async function readJsonBody(request: Request) {
@@ -162,38 +153,20 @@ async function readJsonBody(request: Request) {
 	}
 }
 
-async function countMessages(db: MockResendDb, tokenHash: string) {
-	await ensureSchema(db)
-	return db.count(mockResendMessagesTable, {
-		where: { token_hash: tokenHash },
-	})
+function countMessages(tokenHash: string) {
+	return getStoredMessages(tokenHash).length
 }
 
-async function listMessages(
-	db: MockResendDb,
-	tokenHash: string,
-	limit: number,
-) {
-	await ensureSchema(db)
-	return db.findMany(mockResendMessagesTable, {
-		where: { token_hash: tokenHash },
-		orderBy: ['received_at', 'desc'],
-		limit,
-	})
+function listMessages(tokenHash: string, limit: number) {
+	return getStoredMessages(tokenHash).slice(0, limit)
 }
 
-async function getMessage(db: MockResendDb, tokenHash: string, id: string) {
-	await ensureSchema(db)
-	return db.findOne(mockResendMessagesTable, {
-		where: { token_hash: tokenHash, id },
-	})
+function getMessage(tokenHash: string, id: string) {
+	return getStoredMessages(tokenHash).find((message) => message.id === id) ?? null
 }
 
-async function clearMessages(db: MockResendDb, tokenHash: string) {
-	await ensureSchema(db)
-	await db.deleteMany(mockResendMessagesTable, {
-		where: { token_hash: tokenHash },
-	})
+function clearMessages(tokenHash: string) {
+	messagesByToken.set(tokenHash, [])
 }
 
 async function handlePostEmails(
@@ -204,21 +177,18 @@ async function handlePostEmails(
 	if (!isAuthorized(request, env, url)) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
-
-	const db = createDb(env.APP_DB)
 	const body = await readJsonBody(request)
 	const parsed = parseSafe(resendEmailSchema, body)
 	if (!parsed.success) {
 		return json({ error: 'Invalid email payload.' }, { status: 400 })
 	}
 
-	await ensureSchema(db)
 	const tokenHash = await getTokenPartition(env)
 	const now = Date.now()
 	const id = `email_${crypto.randomUUID()}`
 	const payloadJson = JSON.stringify(parsed.value)
 
-	await db.create(mockResendMessagesTable, {
+	getStoredMessages(tokenHash).unshift({
 		id,
 		token_hash: tokenHash,
 		received_at: now,
@@ -236,7 +206,6 @@ async function handlePostEmails(
 async function handleGetMeta(request: Request, env: MockResendEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
-	const db = createDb(env.APP_DB)
 
 	return json({
 		service: 'resend',
@@ -244,7 +213,7 @@ async function handleGetMeta(request: Request, env: MockResendEnv, url: URL) {
 		endpoints: dashboardEndpoints,
 		...(tokenHash
 			? {
-					messageCount: await countMessages(db, tokenHash),
+					messageCount: countMessages(tokenHash),
 				}
 			: {}),
 	})
@@ -258,13 +227,12 @@ async function handleGetMessages(
 	if (!isAuthorized(request, env, url)) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
-	const db = createDb(env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
 	const messageId = url.pathname.startsWith('/__mocks/messages/')
 		? url.pathname.slice('/__mocks/messages/'.length).trim()
 		: ''
 	if (messageId) {
-		const message = await getMessage(db, tokenHash, messageId)
+		const message = getMessage(tokenHash, messageId)
 		if (!message) {
 			return json({ error: 'Not Found' }, { status: 404 })
 		}
@@ -276,7 +244,7 @@ async function handleGetMessages(
 		Math.max(1, Number.parseInt(limitParam || '50', 10)),
 	)
 
-	const messages = await listMessages(db, tokenHash, limit)
+	const messages = listMessages(tokenHash, limit)
 	return json({ count: messages.length, messages })
 }
 
@@ -284,9 +252,8 @@ async function handleClear(request: Request, env: MockResendEnv, url: URL) {
 	if (!isAuthorized(request, env, url)) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
-	const db = createDb(env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
-	await clearMessages(db, tokenHash)
+	clearMessages(tokenHash)
 	return json({ ok: true })
 }
 

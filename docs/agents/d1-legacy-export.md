@@ -58,7 +58,7 @@ ATTACH 'epicflare.sqlite' AS legacy;
 INSERT INTO users SELECT * FROM legacy.users;
 
 -- Repeat for other tables you approved: password_resets, chat_threads,
--- mcp_skills, mock_*, etc. Watch foreign key order (users before children).
+-- mcp_skills, etc. Watch foreign key order (users before children).
 ```
 
 4. Re-export from local `target.sqlite` or use `wrangler d1 execute` with SQL

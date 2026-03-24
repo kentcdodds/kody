@@ -168,7 +168,7 @@ async function startMockResendWorker(persistDir: string, token: string) {
 }
 
 test(
-	'resend mock stores messages in D1 and exposes a count',
+	'resend mock stores messages in memory and exposes a count',
 	async () => {
 		await using tempDir = await createTemporaryDirectory('resend-mock-d1-')
 		const token = 'test-mock-token'

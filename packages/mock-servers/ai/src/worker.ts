@@ -1,8 +1,6 @@
-import { createDb, mockAiRequestsTable } from '@kody/worker/db.ts'
 import { buildMockAiScenario } from '@kody-internal/shared/mock-ai.ts'
 
 type MockAiEnv = {
-	APP_DB: D1Database
 	MOCK_API_TOKEN?: string
 }
 
@@ -46,7 +44,7 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 	},
 ]
 
-const schemaReadyByDb = new WeakMap<D1Database, Promise<void>>()
+const requestsByToken = new Map<string, Array<StoredMockRequest>>()
 
 function json(data: unknown, init: ResponseInit = {}) {
 	const headers = new Headers(init.headers)
@@ -127,41 +125,22 @@ function withTokenQueryParam(baseUrl: URL, href: string, token: string | null) {
 	return `${next.pathname}${next.search}${next.hash}`
 }
 
-async function ensureSchema(
-	db: ReturnType<typeof createDb>,
-	rawDb: D1Database,
-) {
-	const existing = schemaReadyByDb.get(rawDb)
-	if (existing) {
-		await existing
-		return
+type StoredMockRequest = {
+	id: string
+	token_hash: string
+	received_at: number
+	scenario: string
+	last_user_message: string
+	tool_names_json: string
+	request_json: string
+	response_text: string
+}
+
+function getStoredRequests(tokenHash: string) {
+	if (!requestsByToken.has(tokenHash)) {
+		requestsByToken.set(tokenHash, [])
 	}
-
-	const schemaReady = db
-		.exec(
-			`CREATE TABLE IF NOT EXISTS mock_ai_requests (
-				id TEXT PRIMARY KEY,
-				token_hash TEXT NOT NULL,
-				received_at INTEGER NOT NULL,
-				scenario TEXT NOT NULL,
-				last_user_message TEXT NOT NULL,
-				tool_names_json TEXT NOT NULL,
-				request_json TEXT NOT NULL,
-				response_text TEXT NOT NULL
-			)`,
-		)
-		.then(() =>
-			db.exec(`CREATE INDEX IF NOT EXISTS idx_mock_ai_requests_token_received_at
-					ON mock_ai_requests(token_hash, received_at DESC)`),
-		)
-		.then(() => undefined)
-		.catch((error) => {
-			schemaReadyByDb.delete(rawDb)
-			throw error
-		})
-
-	schemaReadyByDb.set(rawDb, schemaReady)
-	await schemaReady
+	return requestsByToken.get(tokenHash) ?? []
 }
 
 function getLastUserMessageText(
@@ -211,10 +190,8 @@ async function handleChat(request: Request, env: MockAiEnv, url: URL) {
 		toolNames,
 	})
 
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
-	await db.create(mockAiRequestsTable, {
+	getStoredRequests(tokenHash).unshift({
 		id: `mock_ai_${crypto.randomUUID()}`,
 		token_hash: tokenHash,
 		received_at: Date.now(),
@@ -230,13 +207,9 @@ async function handleChat(request: Request, env: MockAiEnv, url: URL) {
 
 async function handleMeta(request: Request, env: MockAiEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
 	const requestCount = tokenHash
-		? await db.count(mockAiRequestsTable, {
-				where: { token_hash: tokenHash },
-			})
+		? getStoredRequests(tokenHash).length
 		: undefined
 
 	return json({
@@ -252,14 +225,8 @@ async function handleGetRequests(request: Request, env: MockAiEnv, url: URL) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
-	const requests = await db.findMany(mockAiRequestsTable, {
-		where: { token_hash: tokenHash },
-		orderBy: ['received_at', 'desc'],
-		limit: 100,
-	})
+	const requests = getStoredRequests(tokenHash).slice(0, 100)
 	return json({ count: requests.length, requests })
 }
 
@@ -268,12 +235,8 @@ async function handleClear(request: Request, env: MockAiEnv, url: URL) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
-	await db.deleteMany(mockAiRequestsTable, {
-		where: { token_hash: tokenHash },
-	})
+	requestsByToken.set(tokenHash, [])
 	return json({ ok: true })
 }
 

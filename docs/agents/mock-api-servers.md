@@ -31,8 +31,8 @@ mock used by the `cloudflare_rest` capability (started by `bun run dev` unless
 
 ### Tips
 
-- Prefer D1 for storing mock requests/messages so the mock can run both locally
-  and in PR preview deploys.
+- Avoid persisting mock requests/messages in D1; keep mock state ephemeral to
+  reduce schema drift.
 - Add a `GET /__mocks` dashboard route so it is easy to discover endpoints and
   validate state while debugging.
 - PR previews deploy each mock Worker with the name pattern
