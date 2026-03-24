@@ -21,8 +21,35 @@
 		],
 	},
 	"env": {
-		"production": {},
-		"preview": {},
-		"test": {},
+		"production": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "MockAiState",
+						"name": "MOCK_AI_STATE",
+					},
+				],
+			},
+		},
+		"preview": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "MockAiState",
+						"name": "MOCK_AI_STATE",
+					},
+				],
+			},
+		},
+		"test": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "MockAiState",
+						"name": "MOCK_AI_STATE",
+					},
+				],
+			},
+		},
 	},
 }
