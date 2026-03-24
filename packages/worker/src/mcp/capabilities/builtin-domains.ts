@@ -1,5 +1,5 @@
+import { appsDomain } from './apps/domain.ts'
 import { codingDomain } from './coding/domain.ts'
-import { mathDomain } from './math/domain.ts'
 import { metaDomain } from './meta/domain.ts'
 
 /**
@@ -10,4 +10,4 @@ import { metaDomain } from './meta/domain.ts'
  * extra domain is a real `DomainSpec` with bundled `Capability` handlers
  * (Workers typically snapshot capabilities at deploy time).
  */
-export const builtinDomains = [mathDomain, codingDomain, metaDomain] as const
+export const builtinDomains = [appsDomain, codingDomain, metaDomain] as const

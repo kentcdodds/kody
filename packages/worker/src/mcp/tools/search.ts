@@ -7,6 +7,7 @@ import {
 } from '#mcp/capabilities/registry.ts'
 import { searchUnified } from '#mcp/capabilities/unified-search.ts'
 import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
+import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
@@ -39,9 +40,9 @@ const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities And Skills',
 	description: `
-Search Kody **builtin capabilities** and your saved **skills** (meta domain) by natural language before calling \`execute\`.
+Search Kody **builtin capabilities**, your saved **skills** (meta domain), and your saved **apps** (apps domain) by natural language before calling \`execute\` or opening a UI.
 
-Each match has **type** \`capability\` or \`skill\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill.
+Each match has **type** \`capability\`, \`skill\`, or \`app\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill. Saved apps are reusable UI artifacts and can be reopened without resending their source code through the model.
 
 Domains (for context only—put hints in your \`query\` string; there are no filter fields):
 ${capabilityDomainSummary}
@@ -51,9 +52,10 @@ Pass a **query** string describing what you want to do. Results are ranked with 
 Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, etc.; for capabilities: JSON schemas where applicable).
 
 Example arguments:
-- \`{ "query": "arithmetic or calculator", "limit": 10 }\`
+- \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
 - \`{ "query": "call GitHub REST API", "detail": true }\`
 - To run a skill: \`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds" } })\`
+- To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,
@@ -101,6 +103,10 @@ export async function registerSearchTool(agent: MCP) {
 					userId != null
 						? await listMcpSkillsByUserId(agent.getEnv().APP_DB, userId)
 						: []
+				const uiArtifactRows =
+					userId != null
+						? await listUiArtifactsByUserId(agent.getEnv().APP_DB, userId)
+						: []
 				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,
@@ -109,6 +115,7 @@ export async function registerSearchTool(agent: MCP) {
 					specs: capabilitySpecs,
 					userId,
 					skillRows,
+					uiArtifactRows,
 				})
 			}
 

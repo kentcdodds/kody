@@ -3,21 +3,24 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Calculator Widget Test (iframe)</title>
+		<title>Generated UI Shell Test (iframe)</title>
 		<style>
 			body {
 				font-family: system-ui;
 				padding: 1rem;
 			}
+
 			iframe {
 				border: 1px solid #ccc;
 				width: 100%;
-				min-height: 400px;
+				min-height: 560px;
 			}
+
 			.stack {
 				display: grid;
 				gap: 1rem;
 			}
+
 			.host-chat {
 				margin-top: 0.75rem;
 				padding: 0.75rem;
@@ -26,32 +29,39 @@
 				background: #f9f9f9;
 				font-size: 0.95rem;
 			}
+
 			.host-chat h3 {
 				margin: 0 0 0.5rem;
 				font-size: 0.95rem;
 			}
+
 			.host-chat ul {
 				margin: 0;
 				padding-left: 1.25rem;
 			}
+
 			.host-chat li {
 				margin: 0.2rem 0;
 			}
 		</style>
 	</head>
 	<body>
-		<h1>Calculator Widget Test</h1>
+		<h1>Generated UI Shell Test</h1>
 		<div class="stack">
 			<section>
 				<h2>Default iframe</h2>
 				<iframe
-					id="calc-default"
-					src="/dev/calculator-ui"
-					title="Calculator"
+					id="generated-default"
+					src="/dev/generated-ui"
+					title="Generated UI Shell"
 				></iframe>
-				<div class="host-chat" data-host-chat="calc-default">
+				<div class="host-chat" data-host-chat="generated-default">
 					<h3>Host chat (default iframe)</h3>
 					<ul data-chat-log></ul>
+				</div>
+				<div class="host-chat" data-host-links="generated-default">
+					<h3>Host links (default iframe)</h3>
+					<ul data-link-log></ul>
 				</div>
 			</section>
 			<section>
@@ -61,14 +71,18 @@
 					widget restrictions.
 				</p>
 				<iframe
-					id="calc-sandboxed"
-					src="/dev/calculator-ui"
+					id="generated-sandboxed"
+					src="/dev/generated-ui"
 					sandbox="allow-scripts"
-					title="Calculator (sandboxed)"
+					title="Generated UI Shell (sandboxed)"
 				></iframe>
-				<div class="host-chat" data-host-chat="calc-sandboxed">
+				<div class="host-chat" data-host-chat="generated-sandboxed">
 					<h3>Host chat (sandboxed iframe)</h3>
 					<ul data-chat-log></ul>
+				</div>
+				<div class="host-chat" data-host-links="generated-sandboxed">
+					<h3>Host links (sandboxed iframe)</h3>
+					<ul data-link-log></ul>
 				</div>
 			</section>
 		</div>
@@ -78,10 +92,38 @@
 				const renderDataType = 'ui-lifecycle-iframe-render-data'
 				const initializedNotificationMethod = 'ui/notifications/initialized'
 				const frameById = {
-					'calc-default': document.getElementById('calc-default'),
-					'calc-sandboxed': document.getElementById('calc-sandboxed'),
+					'generated-default': document.getElementById('generated-default'),
+					'generated-sandboxed': document.getElementById('generated-sandboxed'),
 				}
 				const frameState = new Map()
+
+				const demoCode =
+					new URLSearchParams(window.location.search).get('code') ??
+					`
+<main>
+	<h1>Inline app</h1>
+	<button type="button" data-send-message>Send message</button>
+	<button type="button" data-open-link>Open docs</button>
+	<button type="button" data-fullscreen>Fullscreen</button>
+</main>
+<script>
+	const sendButton = document.querySelector('[data-send-message]')
+	const linkButton = document.querySelector('[data-open-link]')
+	const fullscreenButton = document.querySelector('[data-fullscreen]')
+	sendButton?.addEventListener('click', () => {
+		window.kodyWidget.sendMessage('Inline widget says hello')
+	})
+	linkButton?.addEventListener('click', () => {
+		window.kodyWidget.openLink('https://example.com/docs')
+	})
+	fullscreenButton?.addEventListener('click', async () => {
+		const nextMode = await window.kodyWidget.toggleFullscreen()
+		const status = document.createElement('p')
+		status.textContent = 'Mode: ' + nextMode
+		document.body.append(status)
+	})
+<\/script>
+					`.trim()
 
 				function resolveFrameId(sourceWindow) {
 					for (const [frameId, iframe] of Object.entries(frameById)) {
@@ -111,6 +153,17 @@
 					container.append(item)
 				}
 
+				function appendHostLink(frameId, url) {
+					const container = document.querySelector(
+						`[data-host-links="${frameId}"] [data-link-log]`,
+					)
+					if (!container) return
+					const item = document.createElement('li')
+					item.setAttribute('data-open-link', '')
+					item.textContent = url
+					container.append(item)
+				}
+
 				window.addEventListener('message', (event) => {
 					const frameId = resolveFrameId(event.source)
 					if (!frameId) return
@@ -125,6 +178,14 @@
 								payload: {
 									renderData: {
 										theme: 'light',
+										toolOutput: {
+											widget: 'generated_ui',
+											renderSource: 'inline_code',
+											title: 'Sandbox shell test',
+											description: 'Sandbox shell render payload.',
+											runtime: 'html',
+											sourceCode: demoCode,
+										},
 									},
 								},
 							},
@@ -168,9 +229,15 @@
 										message: {
 											text: {},
 										},
+										openLinks: {},
+										serverTools: {
+											listChanged: false,
+										},
 									},
 									hostContext: {
 										theme: 'light',
+										displayMode: 'inline',
+										availableDisplayModes: ['inline', 'fullscreen'],
 									},
 								},
 							},
@@ -213,6 +280,72 @@
 						}
 
 						appendHostChat(frameId, text)
+						event.source.postMessage(
+							{
+								jsonrpc: '2.0',
+								id: message.id,
+								result: {},
+							},
+							'*',
+						)
+						return
+					}
+
+					if (message.method === 'tools/call') {
+						if (message.params?.name === 'ui_load_app_source') {
+							event.source.postMessage(
+								{
+									jsonrpc: '2.0',
+									id: message.id,
+									result: {
+										structuredContent: {
+											app_id: 'demo-app',
+											title: 'Loaded app',
+											description: 'Loaded from app-only tool.',
+											runtime: 'html',
+											code: demoCode,
+										},
+									},
+								},
+								'*',
+							)
+							return
+						}
+					}
+
+					if (message.method === 'ui/request-display-mode') {
+						event.source.postMessage(
+							{
+								jsonrpc: '2.0',
+								id: message.id,
+								result: {
+									mode:
+										message.params?.mode === 'fullscreen'
+											? 'fullscreen'
+											: 'inline',
+								},
+							},
+							'*',
+						)
+						return
+					}
+
+					if (message.method === 'ui/open-link') {
+						if (typeof message.params?.url === 'string') {
+							appendHostLink(frameId, message.params.url)
+						}
+						event.source.postMessage(
+							{
+								jsonrpc: '2.0',
+								id: message.id,
+								result: {},
+							},
+							'*',
+						)
+						return
+					}
+
+					if (message.method === 'ui/update-model-context') {
 						event.source.postMessage(
 							{
 								jsonrpc: '2.0',

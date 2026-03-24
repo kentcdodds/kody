@@ -10,17 +10,17 @@ import {
 import { type SkillParameterDefinition } from './skill-parameters.ts'
 
 const fakeSpecs: Record<string, CapabilitySpec> = {
-	do_math: {
-		name: 'do_math',
-		domain: capabilityDomainNames.math,
-		description: 'Arithmetic on two numbers.',
-		keywords: ['arithmetic', 'add'],
+	ui_save_app: {
+		name: 'ui_save_app',
+		domain: capabilityDomainNames.apps,
+		description: 'Save a generated UI artifact.',
+		keywords: ['app', 'ui', 'artifact'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputFields: ['left', 'right', 'operator'],
-		requiredInputFields: ['left', 'right', 'operator'],
-		outputFields: ['result'],
+		inputFields: ['title', 'description', 'keywords', 'source'],
+		requiredInputFields: ['title', 'description', 'keywords', 'source'],
+		outputFields: ['app_id'],
 		inputSchema: {},
 	},
 	github_rest: {
@@ -40,12 +40,12 @@ const fakeSpecs: Record<string, CapabilitySpec> = {
 
 test('mergeInferredCapabilityNames splits unknown names', () => {
 	const { merged, unknownNames } = mergeInferredCapabilityNames({
-		astStaticNames: ['do_math', 'nope'],
+		astStaticNames: ['ui_save_app', 'nope'],
 		usesCapabilities: undefined,
 		specs: fakeSpecs,
 	})
 	expect(unknownNames).toContain('nope')
-	expect(merged).toEqual(['do_math'])
+	expect(merged).toEqual(['ui_save_app'])
 })
 
 test('buildSkillEmbedText includes denormalized capability text', () => {
@@ -62,13 +62,13 @@ test('buildSkillEmbedText includes denormalized capability text', () => {
 		description: 'd',
 		keywords: ['k'],
 		searchText: null,
-		inferredCapabilities: ['do_math'],
+		inferredCapabilities: ['ui_save_app'],
 		parameters,
 		specs: fakeSpecs,
 	})
-	expect(text).toContain('do_math')
+	expect(text).toContain('ui_save_app')
 	expect(text).toContain('owner')
-	expect(text.toLowerCase()).toContain('arithmetic')
+	expect(text.toLowerCase()).toContain('generated ui artifact')
 })
 
 test('validateSkillSaveFlags rejects read_only with destructive inferred set', () => {

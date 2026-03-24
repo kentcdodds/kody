@@ -208,9 +208,9 @@ z.object({
 
 ```typescript
 outputSchema: {
-	expression: z.string().describe('Expression string, e.g. "8 + 4"'),
-	result: z.number().finite().describe('Exact numeric result (not rounded)'),
-	precisionUsed: z.number().int().min(0).max(15),
+	app_id: z.string().describe('Persisted app identifier'),
+	title: z.string().describe('Human-facing app title'),
+	runtime: z.enum(['html', 'javascript']),
 }
 ```
 
@@ -282,10 +282,11 @@ and handler colocated. Keep a small `register-tools` module that imports each
 tool module and registers them.
 
 ```typescript
-// packages/worker/src/mcp/tools/do-math.ts
-export async function registerDoMathTool(agent: MCP) {
-	agent.server.registerTool(
-		'do_math',
+// packages/worker/src/mcp/tools/open-generated-ui.ts
+export async function registerOpenGeneratedUiTool(agent: MCP) {
+	registerAppTool(
+		agent.server,
+		'open_generated_ui',
 		{
 			/* metadata + schemas */
 		},
@@ -296,9 +297,9 @@ export async function registerDoMathTool(agent: MCP) {
 }
 
 // packages/worker/src/mcp/register-tools.ts
-import { registerDoMathTool } from './tools/do-math.ts'
+import { registerOpenGeneratedUiTool } from './tools/open-generated-ui.ts'
 export async function registerTools(agent: MCP) {
-	await registerDoMathTool(agent)
+	await registerOpenGeneratedUiTool(agent)
 }
 ```
 
@@ -310,8 +311,8 @@ export async function registerTools(agent: MCP) {
 
 **Example in this repo:** Server instructions live in
 `packages/worker/src/mcp/index.ts`, and tool metadata is colocated with tool
-registration + schemas in `packages/worker/src/mcp/tools/do-math.ts` (with
-`packages/worker/src/mcp/register-tools.ts` as the small aggregator).
+registration + schemas in `packages/worker/src/mcp/tools/open-generated-ui.ts`
+(with `packages/worker/src/mcp/register-tools.ts` as the small aggregator).
 
 ---
 

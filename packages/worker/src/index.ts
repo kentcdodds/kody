@@ -105,15 +105,15 @@ const appHandler = withCors({
 			}
 		}
 
-		// Dev route: serve calculator UI for iframe testing (simulates ChatGPT/MCP Jam)
+		// Dev route: serve generated UI shell for iframe testing (simulates ChatGPT/MCP Jam)
 		if (
-			url.pathname === '/dev/calculator-ui' &&
+			url.pathname === '/dev/generated-ui' &&
 			(request.method === 'GET' || request.method === 'HEAD')
 		) {
-			const { renderCalculatorUiEntryPoint } =
-				await import('./mcp/apps/calculator-ui-entry-point.ts')
+			const { renderGeneratedUiShellEntryPoint } =
+				await import('./mcp/apps/generated-ui-shell-entry-point.ts')
 			const baseUrl = new URL('/', url.origin)
-			const html = renderCalculatorUiEntryPoint(baseUrl)
+			const html = renderGeneratedUiShellEntryPoint(baseUrl)
 			return new Response(html, {
 				headers: {
 					'Content-Type': 'text/html; charset=utf-8',

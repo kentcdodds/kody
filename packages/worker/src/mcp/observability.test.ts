@@ -76,7 +76,7 @@ test('logMcpEvent swallows failures from console.info', () => {
 	}
 })
 
-test('do_math capability logs parse_input failure and rethrows', async () => {
+test('ui_save_app capability logs parse_input failure and rethrows', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	console.info = ((tag: unknown, json?: unknown) => {
@@ -85,10 +85,10 @@ test('do_math capability logs parse_input failure and rethrows', async () => {
 		}
 	}) as typeof console.info
 	try {
-		const handler = capabilityMap['do_math'].handler
+		const handler = capabilityMap['ui_save_app'].handler
 		await expect(
 			handler(
-				{ left: 1, right: 2 },
+				{ title: 'Missing fields' },
 				{
 					env: {} as Env,
 					callerContext: createMcpCallerContext({
@@ -104,7 +104,7 @@ test('do_math capability logs parse_input failure and rethrows', async () => {
 	expect(payloads.length).toBe(1)
 	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
 	expect(event.tool).toBe('capability')
-	expect(event.capabilityName).toBe('do_math')
+	expect(event.capabilityName).toBe('ui_save_app')
 	expect(event.outcome).toBe('failure')
 	expect(event.failurePhase).toBe('parse_input')
 })
@@ -133,7 +133,7 @@ test('logMcpEvent reports failure without throwing when Sentry is off', () => {
 	}
 })
 
-test('do_math capability logs success for valid invocation', async () => {
+test('ui_save_app capability logs success for valid invocation', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	console.info = ((tag: unknown, json?: unknown) => {
@@ -142,17 +142,40 @@ test('do_math capability logs success for valid invocation', async () => {
 		}
 	}) as typeof console.info
 	try {
-		const handler = capabilityMap['do_math'].handler
+		const handler = capabilityMap['ui_save_app'].handler
 		const result = await handler(
-			{ left: 2, right: 3, operator: '+' },
 			{
-				env: {} as Env,
+				title: 'Observed app',
+				description: 'Observation test app.',
+				keywords: ['observability'],
+				code: 'document.querySelector("#app")!.innerHTML = "<h1>Observed app</h1>"',
+			},
+			{
+				env: {
+					APP_DB: {
+						prepare() {
+							return {
+								bind() {
+									return {
+										run: async () => ({
+											meta: { changes: 1 },
+										}),
+									}
+								},
+							}
+						},
+					},
+				} as unknown as Env,
 				callerContext: createMcpCallerContext({
 					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+					},
 				}),
 			},
 		)
-		expect((result as { result: number }).result).toBe(5)
+		expect(typeof (result as { app_id: string }).app_id).toBe('string')
 	} finally {
 		console.info = originalInfo
 	}

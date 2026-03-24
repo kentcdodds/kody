@@ -23,7 +23,7 @@ const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const migrationsDir = join(projectRoot, 'packages/worker/migrations')
 const bunBin = process.execPath
 const defaultTimeoutMs = 60_000
-const calculatorUiResourceUri = 'ui://calculator-app/entry-point.html'
+const generatedUiResourceUri = 'ui://generated-ui-shell/entry-point.html'
 const workerConfig = 'packages/worker/wrangler.jsonc'
 const workerEnvFile = 'packages/worker/.env'
 const primaryUserEmail = 'me@kentcdodds.com'
@@ -512,11 +512,7 @@ test(
 		const result = await mcpClient.client.listTools()
 		const toolNames = result.tools.map((tool) => tool.name)
 
-		expect(toolNames.sort()).toEqual([
-			'execute',
-			'open_calculator_ui',
-			'search',
-		])
+		expect(toolNames.sort()).toEqual(['execute', 'open_generated_ui', 'search'])
 	},
 	{ timeout: defaultTimeoutMs },
 )
@@ -535,18 +531,14 @@ test(
 		const result = await mcpClient.client.listTools()
 		const toolNames = result.tools.map((tool) => tool.name)
 
-		expect(toolNames.sort()).toEqual([
-			'execute',
-			'open_calculator_ui',
-			'search',
-		])
+		expect(toolNames.sort()).toEqual(['execute', 'open_generated_ui', 'search'])
 
 		const resourcesResult = await mcpClient.client.listResources()
 		const resourceUris = resourcesResult.resources.map(
 			(resource) => resource.uri,
 		)
 
-		expect(resourceUris).toContain(calculatorUiResourceUri)
+		expect(resourceUris).toContain(generatedUiResourceUri)
 	},
 	{ timeout: defaultTimeoutMs },
 )
@@ -561,14 +553,18 @@ test(
 		const result = await mcpClient.client.callTool({
 			name: 'search',
 			arguments: {
-				query:
-					'calculation add subtract multiply divide finite number arithmetic',
+				query: 'save reusable generated ui artifact and reopen app by id',
 				limit: 8,
 			},
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
-			| Record<string, unknown>
+			| {
+					result?: {
+						matches?: Array<Record<string, unknown>>
+						offline?: boolean
+					}
+			  }
 			| undefined
 		const searchPayload = structuredResult?.result as
 			| Record<string, unknown>
@@ -578,13 +574,18 @@ test(
 			| undefined
 
 		expect(searchPayload?.offline).toBe(true)
-		const topMath = matches?.find(
-			(m) => m.type === 'capability' && m.name === 'do_math',
+		const saveApp = matches?.find(
+			(m) => m.type === 'capability' && m.name === 'ui_save_app',
 		)
-		expect(topMath?.domain).toBe('math')
-		expect(topMath?.requiredInputFields).toEqual(['left', 'right', 'operator'])
-		expect(topMath?.readOnly).toBeUndefined()
-		expect(topMath?.inputFields).toBeUndefined()
+		expect(saveApp?.domain).toBe('apps')
+		expect(saveApp?.requiredInputFields).toEqual([
+			'title',
+			'description',
+			'keywords',
+			'code',
+		])
+		expect(saveApp?.readOnly).toBeUndefined()
+		expect(saveApp?.inputFields).toBeUndefined()
 
 		const textOutput =
 			(result as CallToolResult).content.find(
@@ -592,7 +593,7 @@ test(
 					item.type === 'text',
 			)?.text ?? ''
 
-		expect(textOutput).toContain('do_math')
+		expect(textOutput).toContain('ui_save_app')
 	},
 	{ timeout: defaultTimeoutMs },
 )
@@ -607,14 +608,19 @@ test(
 		const result = await mcpClient.client.callTool({
 			name: 'search',
 			arguments: {
-				query: 'arithmetic two operands operator precision',
+				query: 'load saved app artifact source code runtime app_id',
 				limit: 5,
 				detail: true,
 			},
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
-			| Record<string, unknown>
+			| {
+					result?: {
+						matches?: Array<Record<string, unknown>>
+						offline?: boolean
+					}
+			  }
 			| undefined
 		const searchPayload = structuredResult?.result as
 			| Record<string, unknown>
@@ -623,7 +629,7 @@ test(
 			| Array<Record<string, unknown>>
 			| undefined
 		const capability = searchResult?.find(
-			(m) => m.type === 'capability' && m.name === 'do_math',
+			(m) => m.type === 'capability' && m.name === 'ui_get_app',
 		)
 		const inputSchema = capability?.inputSchema as
 			| Record<string, unknown>
@@ -639,25 +645,18 @@ test(
 			| undefined
 
 		expect(capability?.type).toBe('capability')
-		expect(capability?.name).toBe('do_math')
+		expect(capability?.name).toBe('ui_get_app')
 		expect(capability?.keywords).toEqual(
-			expect.arrayContaining(['arithmetic', 'calculation', 'divide']),
+			expect.arrayContaining(['app', 'ui', 'artifact']),
 		)
 		expect(capability?.inputFields).toBeUndefined()
 		expect(capability?.outputFields).toBeUndefined()
-		expect(capability?.requiredInputFields).toEqual([
-			'left',
-			'right',
-			'operator',
-		])
-		expect(inputSchema?.description).toBe(
-			'Inputs for a single arithmetic operation. Use precision to control formatted display output only.',
+		expect(capability?.requiredInputFields).toEqual(['app_id'])
+		expect(inputProperties?.app_id?.description).toBe(
+			'Saved UI artifact id returned by ui_save_app.',
 		)
-		expect(inputProperties?.operator?.description).toBe(
-			'Operator. Valid values: "+", "-", "*", "/".',
-		)
-		expect(outputProperties?.expression?.description).toBe(
-			'Expression string, for example: "8 + 4".',
+		expect(outputProperties?.code?.description).toBe(
+			'Generated UI source code to render inside the generic shell.',
 		)
 	},
 	{ timeout: defaultTimeoutMs },
@@ -680,7 +679,12 @@ test(
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
-			| Record<string, unknown>
+			| {
+					result?: {
+						matches?: Array<Record<string, unknown>>
+						offline?: boolean
+					}
+			  }
 			| undefined
 		const searchPayload = structuredResult?.result as
 			| Record<string, unknown>
@@ -715,7 +719,7 @@ test(
 )
 
 test(
-	'mcp server executes do_math via execute tool',
+	'mcp server executes ui_save_app via execute tool',
 	async () => {
 		await using database = await createTestDatabase()
 		await using server = await startDevServer(database.persistDir)
@@ -725,21 +729,24 @@ test(
 			name: 'execute',
 			arguments: {
 				code: `async () =>
-					await codemode.do_math({
-						left: 8,
-						right: 4,
-						operator: '+',
+					await codemode.ui_save_app({
+						title: 'Execute generated app',
+						description: 'Saved through execute.',
+						keywords: ['execute', 'ui'],
+						code: '<main><h1>Execute App</h1></main>',
 					})`,
 			},
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
-			| Record<string, unknown>
+			| {
+					result?: Record<string, unknown>
+			  }
 			| undefined
 		const executeResult = structuredResult?.result as
 			| Record<string, unknown>
 			| undefined
-		expect(executeResult?.result).toBe(12)
+		expect(typeof executeResult?.app_id).toBe('string')
 
 		const textOutput =
 			(result as CallToolResult).content.find(
@@ -747,48 +754,53 @@ test(
 					item.type === 'text',
 			)?.text ?? ''
 
-		expect(textOutput).toContain('12')
+		expect(textOutput).toContain('app_id')
 		expect(textOutput).toContain('meta_save_skill')
 	},
 	{ timeout: defaultTimeoutMs },
 )
 
 test(
-	'mcp server executes calculator ui tool and serves resource entry point',
+	'mcp server opens generated ui with inline code and serves shell resource',
 	async () => {
 		await using database = await createTestDatabase()
 		await using server = await startDevServer(database.persistDir)
 		await using mcpClient = await createMcpClient(server.origin, database.user)
 
 		const result = await mcpClient.client.callTool({
-			name: 'open_calculator_ui',
+			name: 'open_generated_ui',
+			arguments: {
+				code: '<main><h1>Hello Shell</h1><p>Inline app content.</p></main>',
+				title: 'Inline Hello',
+				description: 'Inline render test.',
+			},
 		})
 
 		const structuredResult = (result as CallToolResult).structuredContent as
 			| Record<string, unknown>
 			| undefined
-		expect(structuredResult?.widget).toBe('calculator')
-		expect(structuredResult?.resourceUri).toBe(calculatorUiResourceUri)
+		expect(structuredResult?.renderSource).toBe('inline_code')
+		expect(structuredResult?.resourceUri).toBe(generatedUiResourceUri)
 
 		const textOutput =
 			(result as CallToolResult).content.find(
 				(item): item is Extract<ContentBlock, { type: 'text' }> =>
 					item.type === 'text',
 			)?.text ?? ''
-		expect(textOutput).toContain('Calculator widget')
+		expect(textOutput).toContain('Generated UI ready')
 
 		const resourceResult = await mcpClient.client.readResource({
-			uri: calculatorUiResourceUri,
+			uri: generatedUiResourceUri,
 		})
-		const calculatorResource = resourceResult.contents.find(
+		const generatedResource = resourceResult.contents.find(
 			(content): content is { uri: string; mimeType?: string; text: string } =>
-				content.uri === calculatorUiResourceUri &&
+				content.uri === generatedUiResourceUri &&
 				'text' in content &&
 				typeof content.text === 'string',
 		)
-		const calculatorResourceMeta = (
+		const generatedResourceMeta = (
 			resourceResult.contents.find(
-				(content) => content.uri === calculatorUiResourceUri,
+				(content) => content.uri === generatedUiResourceUri,
 			) as { _meta?: Record<string, unknown> } | undefined
 		)?._meta as
 			| {
@@ -802,40 +814,108 @@ test(
 			  }
 			| undefined
 
-		expect(calculatorResource).toBeDefined()
-		expect(calculatorResource?.mimeType).toBe('text/html;profile=mcp-app')
-		expect(calculatorResource?.text).toContain('data-calculator-ui')
-		expect(calculatorResource?.text).toContain('rel="stylesheet"')
-		expect(calculatorResource?.text).toContain('styles.css')
-		expect(calculatorResource?.text).toContain('--color-primary')
-		expect(calculatorResource?.text).toContain('--color-background')
-		expect(calculatorResource?.text).toContain("data-theme='dark'")
-		expect(calculatorResource?.text).toContain('type="module"')
-		expect(calculatorResource?.text).toContain('/mcp-apps/calculator-widget.js')
+		expect(generatedResource).toBeDefined()
+		expect(generatedResource?.mimeType).toBe('text/html;profile=mcp-app')
+		expect(generatedResource?.text).toContain('data-generated-ui-frame')
+		expect(generatedResource?.text).not.toContain('Toggle fullscreen')
+		expect(generatedResource?.text).not.toContain('Open saved app link')
+		expect(generatedResource?.text).toContain('type="module"')
+		expect(generatedResource?.text).toContain('/mcp-apps/generated-ui-shell.js')
 
-		const calculatorWidgetResponse = await fetch(
-			new URL('/mcp-apps/calculator-widget.js', server.origin),
+		const generatedShellResponse = await fetch(
+			new URL('/mcp-apps/generated-ui-shell.js', server.origin),
 		)
-		expect(calculatorWidgetResponse.ok).toBe(true)
+		expect(generatedShellResponse.ok).toBe(true)
 		expect(
-			calculatorWidgetResponse.headers.get('access-control-allow-origin'),
+			generatedShellResponse.headers.get('access-control-allow-origin'),
 		).toBe('*')
-		const calculatorWidgetSource = await calculatorWidgetResponse.text()
-		expect(calculatorWidgetSource).toContain('createWidgetHostBridge')
-		expect(calculatorWidgetSource).toContain('Calculator result:')
-		expect(calculatorWidgetSource).toContain('sendUserMessageWithFallback')
-		expect(calculatorWidgetSource).toContain('ui/initialize')
-		expect(calculatorWidgetSource).toContain('ui/message')
+		const generatedShellSource = await generatedShellResponse.text()
+		expect(generatedShellSource).toContain('createWidgetHostBridge')
+		expect(generatedShellSource).toContain('ui/initialize')
+		expect(generatedShellSource).toContain('ui/message')
+		expect(generatedShellSource).toContain('ui/request-display-mode')
+		expect(generatedShellSource).toContain('ui/open-link')
+		expect(generatedShellSource).toContain('tools/call')
 
-		const stylesResponse = await fetch(new URL('/styles.css', server.origin))
-		expect(stylesResponse.ok).toBe(true)
-		expect(stylesResponse.headers.get('access-control-allow-origin')).toBe('*')
-
-		expect(calculatorResourceMeta?.ui?.domain).toBe(server.origin)
-		expect(calculatorResourceMeta?.['openai/widgetDomain']).toBe(server.origin)
-		expect(calculatorResourceMeta?.ui?.csp?.resourceDomains).toContain(
+		expect(generatedResourceMeta?.ui?.domain).toBe(server.origin)
+		expect(generatedResourceMeta?.['openai/widgetDomain']).toBe(server.origin)
+		expect(generatedResourceMeta?.ui?.csp?.resourceDomains).toContain(
 			server.origin,
 		)
+	},
+	{ timeout: defaultTimeoutMs },
+)
+
+test(
+	'mcp server saves app, search returns app hit, and open_generated_ui supports app_id',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
+
+		const saveResult = await mcpClient.client.callTool({
+			name: 'execute',
+			arguments: {
+				code: `async () =>
+					await codemode.ui_save_app({
+						title: 'Saved Searchable App',
+						description: 'Saved generated UI artifact for search and reopen.',
+						keywords: ['saved', 'searchable', 'ui'],
+						code: '<main><h1>Saved Searchable App</h1></main>',
+						search_text: 'searchable saved ui artifact demo',
+					})`,
+			},
+		})
+
+		const saveStructured = (saveResult as CallToolResult).structuredContent as
+			| {
+					result?: Record<string, unknown>
+			  }
+			| undefined
+		const savedApp = saveStructured?.result as
+			| Record<string, unknown>
+			| undefined
+		const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+		expect(appId).not.toBeNull()
+
+		const searchResult = await mcpClient.client.callTool({
+			name: 'search',
+			arguments: {
+				query: 'searchable saved ui artifact demo',
+				limit: 10,
+				detail: true,
+			},
+		})
+		const searchStructured = (searchResult as CallToolResult)
+			.structuredContent as
+			| {
+					result?: Record<string, unknown>
+			  }
+			| undefined
+		const searchPayload = searchStructured?.result as
+			| Record<string, unknown>
+			| undefined
+		const matches = searchPayload?.matches as
+			| Array<Record<string, unknown>>
+			| undefined
+		const appMatch = matches?.find(
+			(match) => match.type === 'app' && match.appId === appId,
+		)
+		expect(appMatch?.title).toBe('Saved Searchable App')
+		expect(appMatch?.usage).toContain('open_generated_ui')
+
+		const openResult = await mcpClient.client.callTool({
+			name: 'open_generated_ui',
+			arguments: {
+				app_id: appId,
+			},
+		})
+		const openStructured = (openResult as CallToolResult).structuredContent as
+			| Record<string, unknown>
+			| undefined
+		expect(openStructured?.renderSource).toBe('saved_app')
+		expect(openStructured?.appId).toBe(appId)
+		expect(openStructured?.resourceUri).toBe(generatedUiResourceUri)
 	},
 	{ timeout: defaultTimeoutMs },
 )

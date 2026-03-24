@@ -11,12 +11,31 @@ type WidgetHostBridgeOptions = {
 	) => void
 }
 
+type DisplayMode = 'inline' | 'fullscreen' | 'pip'
+
+type ServerToolResult = {
+	content?: Array<unknown>
+	structuredContent?: unknown
+	isError?: boolean
+	_meta?: Record<string, unknown>
+}
+
 type WidgetHostBridge = {
 	handleHostMessage(message: unknown): void
 	initialize(): Promise<boolean>
 	sendUserMessage(text: string): Promise<boolean>
 	sendUserMessageWithFallback(text: string): Promise<boolean>
 	requestRenderData(): boolean
+	callTool(input: {
+		name: string
+		arguments?: Record<string, unknown>
+	}): Promise<ServerToolResult | null>
+	openLink(url: string): Promise<boolean>
+	requestDisplayMode(mode: DisplayMode): Promise<DisplayMode | null>
+	updateModelContext(input: {
+		content?: Array<Record<string, unknown>>
+		structuredContent?: Record<string, unknown>
+	}): Promise<boolean>
 }
 
 type BridgeResponseMessage = {
@@ -58,11 +77,14 @@ export function createWidgetHostBridge(
 	}
 	const renderDataMessageType = 'ui-lifecycle-iframe-render-data'
 	const hostContextChangedMethod = 'ui/notifications/host-context-changed'
+	const toolInputMethod = 'ui/notifications/tool-input'
+	const toolResultMethod = 'ui/notifications/tool-result'
 
 	let requestCounter = 0
 	let initialized = false
 	let initializationPromise: Promise<boolean> | null = null
 	const pendingRequests = new Map<string, PendingBridgeRequest>()
+	let latestRenderData: Record<string, unknown> | undefined
 
 	function postMessageToHost(message: Record<string, unknown>) {
 		const hostWindow = globalThis.window?.parent
@@ -74,7 +96,9 @@ export function createWidgetHostBridge(
 
 	function dispatchRenderData(renderData: unknown) {
 		if (!options.onRenderData) return
-		options.onRenderData(isRecord(renderData) ? renderData : undefined)
+		const nextRenderData = isRecord(renderData) ? renderData : undefined
+		latestRenderData = nextRenderData
+		options.onRenderData(nextRenderData)
 	}
 
 	function dispatchHostContext(hostContext: unknown) {
@@ -82,6 +106,35 @@ export function createWidgetHostBridge(
 		options.onHostContextChanged(
 			isRecord(hostContext) ? hostContext : undefined,
 		)
+	}
+
+	function updateRenderData(patch: Record<string, unknown>) {
+		const nextRenderData = {
+			...(latestRenderData ?? {}),
+			...patch,
+		}
+		dispatchRenderData(nextRenderData)
+	}
+
+	function normalizeToolNotificationPayload(
+		params: unknown,
+		key: 'toolInput' | 'toolOutput',
+	) {
+		if (!isRecord(params)) return
+		if (key === 'toolOutput') {
+			const structuredContent = params.structuredContent
+			if (isRecord(structuredContent)) {
+				updateRenderData({ toolOutput: structuredContent })
+				return
+			}
+		}
+		const nestedKey = key === 'toolInput' ? 'input' : 'result'
+		const nestedValue = params[nestedKey]
+		if (isRecord(nestedValue)) {
+			updateRenderData({ [key]: nestedValue })
+			return
+		}
+		updateRenderData({ [key]: params })
 	}
 
 	function handleBridgeResponseMessage(message: unknown) {
@@ -116,12 +169,31 @@ export function createWidgetHostBridge(
 
 		if (message.type === renderDataMessageType) {
 			const payload = isRecord(message.payload) ? message.payload : undefined
-			dispatchRenderData(payload?.renderData)
+			const renderData = isRecord(payload?.renderData)
+				? {
+						...(latestRenderData ?? {}),
+						...payload.renderData,
+					}
+				: payload?.renderData
+			dispatchRenderData(renderData)
 			return
 		}
 
 		if (message.method === hostContextChangedMethod) {
 			dispatchHostContext(message.params)
+			if (isRecord(message.params)) {
+				updateRenderData(message.params)
+			}
+			return
+		}
+
+		if (message.method === toolInputMethod) {
+			normalizeToolNotificationPayload(message.params, 'toolInput')
+			return
+		}
+
+		if (message.method === toolResultMethod) {
+			normalizeToolNotificationPayload(message.params, 'toolOutput')
 		}
 	}
 
@@ -173,7 +245,11 @@ export function createWidgetHostBridge(
 			protocolVersion,
 		})
 			.then((response) => {
-				dispatchHostContext(response.result?.hostContext)
+				const hostContext = response.result?.hostContext
+				dispatchHostContext(hostContext)
+				if (isRecord(hostContext)) {
+					updateRenderData(hostContext)
+				}
 				initialized = true
 				try {
 					postMessageToHost({
@@ -226,6 +302,82 @@ export function createWidgetHostBridge(
 		}
 	}
 
+	async function callTool(input: {
+		name: string
+		arguments?: Record<string, unknown>
+	}) {
+		const bridgeReady = await initialize()
+		if (!bridgeReady) return null
+
+		try {
+			const response = await sendBridgeRequest('tools/call', {
+				name: input.name,
+				...(input.arguments ? { arguments: input.arguments } : {}),
+			})
+			const result = response.result
+			if (!result) return null
+			return {
+				content: Array.isArray(result.content) ? result.content : undefined,
+				structuredContent: result.structuredContent,
+				isError: result.isError === true,
+				_meta: isRecord(result._meta) ? result._meta : undefined,
+			}
+		} catch {
+			return null
+		}
+	}
+
+	async function openLink(url: string) {
+		const bridgeReady = await initialize()
+		if (!bridgeReady) return false
+
+		try {
+			const response = await sendBridgeRequest('ui/open-link', { url })
+			return response.result?.isError !== true
+		} catch {
+			return false
+		}
+	}
+
+	async function requestDisplayMode(mode: DisplayMode) {
+		const bridgeReady = await initialize()
+		if (!bridgeReady) return null
+
+		try {
+			const response = await sendBridgeRequest('ui/request-display-mode', {
+				mode,
+			})
+			const nextMode = response.result?.mode
+			return nextMode === 'inline' ||
+				nextMode === 'fullscreen' ||
+				nextMode === 'pip'
+				? nextMode
+				: null
+		} catch {
+			return null
+		}
+	}
+
+	async function updateModelContext(input: {
+		content?: Array<Record<string, unknown>>
+		structuredContent?: Record<string, unknown>
+	}) {
+		const bridgeReady = await initialize()
+		if (!bridgeReady) return false
+
+		try {
+			const response = await sendBridgeRequest('ui/update-model-context', {
+				...(input.content ? { content: input.content } : {}),
+				...(input.structuredContent
+					? { structuredContent: input.structuredContent }
+					: {}),
+			})
+			return response.error == null
+		} catch {
+			return false
+		}
+	}
+
 	function requestRenderData() {
 		try {
 			postMessageToHost({
@@ -244,5 +396,9 @@ export function createWidgetHostBridge(
 		sendUserMessage,
 		sendUserMessageWithFallback,
 		requestRenderData,
+		callTool,
+		openLink,
+		requestDisplayMode,
+		updateModelContext,
 	}
 }

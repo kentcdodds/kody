@@ -1,6 +1,6 @@
 import { type MCP } from './index.ts'
-import { registerCalculatorAppResource } from './resources/calculator-app-resource.ts'
+import { registerGeneratedUiAppResource } from './resources/generated-ui-app-resource.ts'
 
 export async function registerResources(agent: MCP) {
-	await registerCalculatorAppResource(agent)
+	await registerGeneratedUiAppResource(agent)
 }

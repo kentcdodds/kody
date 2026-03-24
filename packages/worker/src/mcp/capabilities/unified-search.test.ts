@@ -37,6 +37,7 @@ test('skill search hits include usage hints', async () => {
 		specs,
 		userId: 'user-123',
 		skillRows: [skillRow],
+		uiArtifactRows: [],
 	})
 
 	const skill = result.matches.find((match) => match.type === 'skill')
@@ -62,6 +63,7 @@ test('skill detail hits include usage hints', async () => {
 		specs,
 		userId: 'user-123',
 		skillRows: [skillRow],
+		uiArtifactRows: [],
 	})
 
 	const skill = result.matches.find((match) => match.type === 'skill')

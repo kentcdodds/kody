@@ -45,14 +45,13 @@ Your code must be an async arrow function that returns the result.
 Examples:
 
 \`async () => {
-  const math = 'do_math';
-  const first = await codemode[math]({ left: 3, operator: '*', right: 8 });
-  const second = await codemode[math]({
-    left: first.result,
-    operator: '/',
-    right: 20,
+  const docs = await codemode.github_rest_api_docs({
+    path: '/en/rest/repos/repos',
   });
-  return await codemode[math]({ left: second.result, operator: '+', right: 8 });
+  return {
+    status: docs.status,
+    preview: docs.body.slice(0, 120),
+  };
 }\`
 	`.trim(),
 	annotations: {
