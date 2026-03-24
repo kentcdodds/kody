@@ -836,6 +836,7 @@ test(
 		expect(generatedShellSource).toContain('ui/message')
 		expect(generatedShellSource).toContain('ui/request-display-mode')
 		expect(generatedShellSource).toContain('ui/open-link')
+		expect(generatedShellSource).toContain('executeCode')
 		expect(generatedShellSource).toContain('tools/call')
 
 		expect(generatedResourceMeta?.ui?.domain).toBe(

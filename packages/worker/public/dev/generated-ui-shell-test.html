@@ -105,11 +105,15 @@
 	<button type="button" data-send-message>Send message</button>
 	<button type="button" data-open-link>Open docs</button>
 	<button type="button" data-fullscreen>Fullscreen</button>
+	<button type="button" data-run-code>Run code</button>
+	<pre data-execute-result hidden></pre>
 </main>
 <script>
 	const sendButton = document.querySelector('[data-send-message]')
 	const linkButton = document.querySelector('[data-open-link]')
 	const fullscreenButton = document.querySelector('[data-fullscreen]')
+	const runCodeButton = document.querySelector('[data-run-code]')
+	const executeResult = document.querySelector('[data-execute-result]')
 	sendButton?.addEventListener('click', () => {
 		window.kodyWidget.sendMessage('Inline widget says hello')
 	})
@@ -121,6 +125,14 @@
 		const status = document.createElement('p')
 		status.textContent = 'Mode: ' + nextMode
 		document.body.append(status)
+	})
+	runCodeButton?.addEventListener('click', async () => {
+		const result = await window.kodyWidget.executeCode(
+			'async () => ({ greeting: "Hello from execute" })',
+		)
+		if (!executeResult) return
+		executeResult.hidden = false
+		executeResult.textContent = JSON.stringify(result, null, 2)
 	})
 <\/script>
 					`.trim()
@@ -304,6 +316,23 @@
 											description: 'Loaded from app-only tool.',
 											runtime: 'html',
 											code: demoCode,
+										},
+									},
+								},
+								'*',
+							)
+							return
+						}
+						if (message.params?.name === 'execute') {
+							event.source.postMessage(
+								{
+									jsonrpc: '2.0',
+									id: message.id,
+									result: {
+										structuredContent: {
+											result: {
+												greeting: 'Hello from execute',
+											},
 										},
 									},
 								},

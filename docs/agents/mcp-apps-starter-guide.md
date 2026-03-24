@@ -107,6 +107,23 @@ When a UI should communicate back to the host agent:
   `packages/worker/public/mcp-apps/generated-ui-shell.js`) instead of
   duplicating bridge code.
 
+### Current repo shell contract
+
+The current `generated-ui-shell` exposes a tiny helper on `window.kodyWidget`:
+
+- `sendMessage(text)`
+- `openLink(url)`
+- `toggleFullscreen()`
+- `executeCode(code)`
+
+Keep the interface small and literal. Narrow, well-named helpers are easier for
+agents to use reliably than a generic RPC surface.
+
+`executeCode(code)` is not local eval inside the widget. It posts back to the
+host, and the host fulfills that request by calling the Kody MCP server's
+`execute` tool with `{ code }`. Treat it as a narrow convenience wrapper around
+that host-mediated tool call.
+
 You can also send simplified MCP-UI actions via `window.parent.postMessage(...)`
 (`type: 'tool' | 'prompt' | 'notify' | 'link'`) when using the `mcpApps`
 adapter. Those shorthand actions depend on adapter translation and may not be
@@ -147,11 +164,16 @@ Prefer generated app source that is already a complete HTML document, or at
 least a self-contained HTML fragment. That keeps the generic shell simple and
 avoids coupling the app contract to shell-owned containers like `#app`.
 
+In this repo, prefer body-ready fragments when possible so agents can rely on
+the shell's built-in baseline styles. Preserve full-document HTML support for
+cases where the generated app needs total control over head metadata, scripts,
+or layout.
+
 If you keep a helper bridge, treat it as transport only:
 
 - send host messages
 - request display modes
-- call app-only tools
+- run follow-up code through a narrow helper such as `executeCode`
 - avoid shipping shell-owned visible controls
 
 ## Theme and design-system guidance
@@ -173,6 +195,10 @@ Prefer app token names so widgets stay visually consistent with the host app:
 - `--radius-*`
 - `--shadow-*`
 - shared typography tokens (`--font-*`)
+
+The current shell also ships a lightweight semantic stylesheet so plain HTML
+forms, buttons, tables, lists, and code blocks look reasonable without extra
+CSS. Treat that baseline as a convenience layer, not a component framework.
 
 When app and widget are served from the same origin, prefer referencing the
 canonical stylesheet directly (for example `/styles.css`) instead of copying

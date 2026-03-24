@@ -6,11 +6,15 @@ const inlineCode = [
 	'  <button type="button" data-send-message>Send message</button>',
 	'  <button type="button" data-open-link>Open docs</button>',
 	'  <button type="button" data-fullscreen>Fullscreen</button>',
+	'  <button type="button" data-run-code>Run code</button>',
+	'  <pre data-execute-result hidden></pre>',
 	'</main>',
 	'<script>',
 	'  const sendButton = document.querySelector("[data-send-message]");',
 	'  const linkButton = document.querySelector("[data-open-link]");',
 	'  const fullscreenButton = document.querySelector("[data-fullscreen]");',
+	'  const runCodeButton = document.querySelector("[data-run-code]");',
+	'  const executeResult = document.querySelector("[data-execute-result]");',
 	'  sendButton?.addEventListener("click", () => {',
 	'    window.kodyWidget.sendMessage("Inline widget says hello");',
 	'  });',
@@ -22,6 +26,12 @@ const inlineCode = [
 	'    const status = document.createElement("p");',
 	'    status.textContent = `Mode: ${nextMode}`;',
 	'    document.body.append(status);',
+	'  });',
+	'  runCodeButton?.addEventListener("click", async () => {',
+	'    const result = await window.kodyWidget.executeCode(\'async () => ({ greeting: "Hello from execute" })\');',
+	'    if (!executeResult) return;',
+	'    executeResult.hidden = false;',
+	'    executeResult.textContent = JSON.stringify(result, null, 2);',
 	'  });',
 	'</script>',
 ].join('\n')
@@ -91,5 +101,13 @@ test('sandboxed generated ui shell supports host messaging actions', async ({
 		.click()
 	await expect(
 		sandboxedIframe.contentFrame().getByText('Mode: fullscreen'),
+	).toBeVisible()
+
+	await sandboxedIframe
+		.contentFrame()
+		.getByRole('button', { name: 'Run code' })
+		.click()
+	await expect(
+		sandboxedIframe.contentFrame().getByText('Hello from execute'),
 	).toBeVisible()
 })

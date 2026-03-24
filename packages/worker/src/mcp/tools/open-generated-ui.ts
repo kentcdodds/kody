@@ -14,7 +14,46 @@ Behavior:
 - Accepts exactly one of \`code\` or \`app_id\`.
 - Use \`code\` to render a new UI artifact immediately without saving it first.
 - Use \`app_id\` to reopen previously saved UI source without sending that source code back through the model.
-- Prefer passing self-contained HTML so the generated app owns the visible UI. The shell only provides a minimal host bridge for follow-up messages, external links, fullscreen requests, and app-only tools.
+- \`code\` may be a full HTML document or a fragment. Prefer body content when possible, but full-document HTML is supported when you need total control.
+- The shell provides a tiny standard library on \`window.kodyWidget\` plus lightweight default styles for semantic HTML, forms, tables, buttons, and code blocks.
+- \`executeCode(code)\` posts a request back to the host, and the host handles it by calling the Kody MCP server tool \`execute\` with that same code string.
+
+Mini standard library:
+\`\`\`ts
+declare global {
+  interface Window {
+    kodyWidget: {
+      sendMessage(text: string): boolean
+      openLink(url: string): boolean
+      toggleFullscreen(): Promise<'inline' | 'fullscreen' | 'pip' | null>
+      // Equivalent to calling MCP tool \`execute\` with { code }.
+      executeCode(code: string): Promise<unknown>
+    }
+  }
+}
+\`\`\`
+
+Theme tokens:
+- \`--color-bg\`, \`--color-surface\`, \`--color-fg\`, \`--color-muted\`
+- \`--color-border\`, \`--color-accent\`, \`--color-accent-contrast\`
+- \`--font-body\`, \`--font-mono\`
+- \`--spacing-2\`, \`--spacing-3\`, \`--spacing-4\`, \`--spacing-6\`
+- \`--radius-2\`, \`--radius-3\`, \`--shadow-1\`
+
+Example:
+\`\`\`html
+<form>
+  ...
+</form>
+<script>
+  document.querySelector('form')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const result = await window.kodyWidget.executeCode(\`async () => { ... }\`)
+    window.kodyWidget.sendMessage(\`Done: ...\`)
+    ...
+  })
+</script>
+\`\`\`
 
 Use this tool when:
 - You have already generated the UI source and want to render it.
@@ -39,16 +78,12 @@ const inputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe(
-				'Inline UI source for an ephemeral render. Prefer a self-contained HTML document or fragment so the generated app defines the entire visible UI.',
-			),
+			.describe('Inline UI source to render immediately.'),
 		app_id: z
 			.string()
 			.min(1)
 			.optional()
-			.describe(
-				'Saved UI artifact id to reopen without sending the stored source code back through the model.',
-			),
+			.describe('Saved UI artifact id to reopen.'),
 		title: z
 			.string()
 			.min(1)

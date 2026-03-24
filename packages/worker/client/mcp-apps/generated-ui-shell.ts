@@ -3,6 +3,7 @@ import { createWidgetHostBridge } from './widget-host-bridge.js'
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
+type ThemeName = 'light' | 'dark'
 
 type RenderEnvelope = {
 	mode: RenderMode
@@ -35,6 +36,23 @@ function coerceDisplayMode(value: unknown): DisplayMode | null {
 	return value === 'inline' || value === 'fullscreen' || value === 'pip'
 		? value
 		: null
+}
+
+function coerceTheme(value: unknown): ThemeName | null {
+	return value === 'light' || value === 'dark' ? value : null
+}
+
+function getHostToolErrorMessage(result: HostToolResult | null) {
+	if (!result || result.isError !== true) return null
+	const structuredContent = isRecord(result.structuredContent)
+		? result.structuredContent
+		: null
+	const error = isRecord(structuredContent?.error)
+		? structuredContent.error
+		: null
+	return typeof error?.message === 'string'
+		? error.message
+		: 'Code execution failed.'
 }
 
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
@@ -85,6 +103,250 @@ function initializeGeneratedUiShell() {
 
 	function escapeInlineModuleSource(code: string) {
 		return code.replace(/<\/script/gi, '<\\/script')
+	}
+
+	function escapeHtmlAttribute(value: string) {
+		return value
+			.replaceAll('&', '&amp;')
+			.replaceAll('"', '&quot;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+	}
+
+	function buildShellStyles(theme: ThemeName | null) {
+		const themeSelector = theme ? `html[data-kody-theme="${theme}"]` : ':root'
+		return `
+:root {
+	color-scheme: light dark;
+	--font-body: ui-sans-serif, system-ui, sans-serif;
+	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	--spacing-1: 0.25rem;
+	--spacing-2: 0.5rem;
+	--spacing-3: 0.75rem;
+	--spacing-4: 1rem;
+	--spacing-6: 1.5rem;
+	--radius-2: 0.5rem;
+	--radius-3: 0.75rem;
+	--shadow-1: 0 1px 2px rgb(15 23 42 / 0.08);
+}
+
+${themeSelector} {
+	--color-bg: #ffffff;
+	--color-surface: #f8fafc;
+	--color-fg: #0f172a;
+	--color-muted: #475569;
+	--color-border: #dbe2ea;
+	--color-accent: #2563eb;
+	--color-accent-contrast: #ffffff;
+	--color-code-bg: rgb(15 23 42 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-kody-theme="light"]) {
+		--color-bg: #0f172a;
+		--color-surface: #162033;
+		--color-fg: #e5eef8;
+		--color-muted: #a5b4c7;
+		--color-border: #2a3950;
+		--color-accent: #60a5fa;
+		--color-accent-contrast: #0f172a;
+		--color-code-bg: rgb(148 163 184 / 0.16);
+	}
+}
+
+html[data-kody-theme="dark"] {
+	color-scheme: dark;
+	--color-bg: #0f172a;
+	--color-surface: #162033;
+	--color-fg: #e5eef8;
+	--color-muted: #a5b4c7;
+	--color-border: #2a3950;
+	--color-accent: #60a5fa;
+	--color-accent-contrast: #0f172a;
+	--color-code-bg: rgb(148 163 184 / 0.16);
+}
+
+html[data-kody-theme="light"] {
+	color-scheme: light;
+}
+
+:where(html) {
+	min-height: 100%;
+	background: var(--color-bg);
+	color: var(--color-fg);
+}
+
+:where(body) {
+	min-height: 100%;
+	margin: 0;
+	padding: var(--spacing-4);
+	background: var(--color-bg);
+	color: var(--color-fg);
+	font: 400 14px/1.5 var(--font-body);
+}
+
+:where(body[data-kody-runtime="javascript"]) {
+	padding: 0;
+}
+
+:where(*, *::before, *::after) {
+	box-sizing: border-box;
+}
+
+:where(a) {
+	color: var(--color-accent);
+}
+
+:where(p, ul, ol, dl, pre, table, blockquote, fieldset) {
+	margin: 0 0 var(--spacing-4);
+}
+
+:where(h1, h2, h3, h4, h5, h6) {
+	margin: 0 0 var(--spacing-3);
+	line-height: 1.2;
+}
+
+:where(h1) {
+	font-size: 1.875rem;
+}
+
+:where(h2) {
+	font-size: 1.5rem;
+}
+
+:where(h3) {
+	font-size: 1.25rem;
+}
+
+:where(ul, ol) {
+	padding-left: 1.5rem;
+}
+
+:where(hr) {
+	border: 0;
+	border-top: 1px solid var(--color-border);
+	margin: var(--spacing-6) 0;
+}
+
+:where(code, kbd, samp) {
+	font-family: var(--font-mono);
+	font-size: 0.95em;
+}
+
+:where(code) {
+	background: var(--color-code-bg);
+	border-radius: 0.375rem;
+	padding: 0.1rem 0.35rem;
+}
+
+:where(pre) {
+	overflow-x: auto;
+	padding: var(--spacing-3);
+	background: var(--color-code-bg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-2);
+}
+
+:where(pre code) {
+	background: transparent;
+	padding: 0;
+}
+
+:where(form) {
+	display: grid;
+	gap: var(--spacing-4);
+}
+
+:where(label) {
+	display: grid;
+	gap: var(--spacing-2);
+	font-weight: 600;
+}
+
+:where(input, button, textarea, select) {
+	font: inherit;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+	width: 100%;
+	padding: var(--spacing-2) var(--spacing-3);
+	background: var(--color-surface);
+	color: var(--color-fg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-2);
+	box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+:where(textarea) {
+	min-height: 7rem;
+	resize: vertical;
+}
+
+:where(input[type="checkbox"], input[type="radio"]) {
+	accent-color: var(--color-accent);
+}
+
+:where(button) {
+	width: fit-content;
+	padding: var(--spacing-2) var(--spacing-4);
+	background: var(--color-accent);
+	color: var(--color-accent-contrast);
+	border: 1px solid transparent;
+	border-radius: var(--radius-2);
+	box-shadow: var(--shadow-1);
+	cursor: pointer;
+}
+
+:where(button:disabled, input:disabled, textarea:disabled, select:disabled) {
+	opacity: 0.7;
+	cursor: not-allowed;
+}
+
+:where(button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible) {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+
+:where(table) {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+:where(th, td) {
+	padding: var(--spacing-2) var(--spacing-3);
+	border: 1px solid var(--color-border);
+	text-align: left;
+}
+
+:where(th) {
+	background: var(--color-surface);
+}
+
+:where(blockquote) {
+	margin-left: 0;
+	padding-left: var(--spacing-4);
+	border-left: 3px solid var(--color-border);
+	color: var(--color-muted);
+}
+
+:where([data-generated-ui-root]) {
+	min-height: 100%;
+}
+		`.trim()
+	}
+
+	function buildHeadInjection(theme: ThemeName | null) {
+		const baseHref = getBaseHref()
+		const escapedBaseHref = baseHref ? escapeHtmlAttribute(baseHref) : null
+		return `
+${escapedBaseHref ? `<base href="${escapedBaseHref}" />` : ''}
+<style>
+${buildShellStyles(theme)}
+</style>
+<script>
+${buildChildBridgeRuntimeSource()}
+</script>
+		`.trim()
 	}
 
 	function buildChildBridgeRuntimeSource() {
@@ -149,19 +411,22 @@ window.kodyWidget = {
 	async toggleFullscreen() {
 		return await this.requestDisplayMode('fullscreen');
 	},
-	async callTool(name, args) {
+	async executeCode(code) {
+		if (typeof code !== 'string' || code.length === 0) return null;
 		if (window.parent === window) return null;
 		const requestId = nextRequestId();
 		const payload = await postRequestAndWaitForShellMessage(
-			shellMessagePrefix + 'call-tool',
+			shellMessagePrefix + 'execute-code',
 			{
 				requestId,
-				name,
-				arguments: args && typeof args === 'object' ? args : undefined,
+				code,
 			},
-			shellMessagePrefix + 'tool-result',
+			shellMessagePrefix + 'execute-result',
 			requestId,
 		);
+		if (typeof payload.errorMessage === 'string') {
+			throw new Error(payload.errorMessage);
+		}
 		return 'result' in payload ? payload.result ?? null : null;
 	},
 };
@@ -203,20 +468,16 @@ ${safeCode}
 	}
 
 	function buildHtmlDocumentFromFragment(code: string) {
-		const baseHref = getBaseHref()
-		const escapedBaseHref = baseHref ? escapeInlineModuleSource(baseHref) : null
+		const theme = coerceTheme(latestRenderData?.theme)
 		return `
 <!doctype html>
-<html lang="en">
+<html lang="en"${theme ? ` data-kody-theme="${theme}"` : ''}>
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		${escapedBaseHref ? `<base href="${escapedBaseHref}" />` : ''}
-		<script>
-${buildChildBridgeRuntimeSource()}
-		</script>
+		${buildHeadInjection(theme)}
 	</head>
-	<body>
+	<body data-kody-runtime="fragment">
 ${code}
 	</body>
 </html>
@@ -224,18 +485,21 @@ ${code}
 	}
 
 	function injectIntoHtmlDocument(code: string) {
-		const baseHref = getBaseHref()
-		const injection = `
-${baseHref ? `<base href="${baseHref}" />` : ''}
-<script>
-${buildChildBridgeRuntimeSource()}
-</script>
-		`.trim()
+		const theme = coerceTheme(latestRenderData?.theme)
+		const injection = buildHeadInjection(theme)
+		const themeAttribute = theme ? ` data-kody-theme="${theme}"` : ''
 		if (/<head[\s>]/i.test(code)) {
 			return code.replace(/<head([\s>]*)/i, `<head$1>\n${injection}\n`)
 		}
 		if (/<html[\s>]/i.test(code)) {
-			return code.replace(/<html([\s>])/i, `<html$1><head>${injection}</head>`)
+			const withTheme =
+				themeAttribute && !/\bdata-kody-theme=/i.test(code)
+					? code.replace(/<html(\s*)/i, `<html${themeAttribute}$1`)
+					: code
+			return withTheme.replace(
+				/<html([\s>])/i,
+				`<html$1><head>${injection}</head>`,
+			)
 		}
 		if (/<\/body>/i.test(code)) {
 			return code.replace(/<\/body>/i, `${injection}\n</body>`)
@@ -246,22 +510,18 @@ ${buildChildBridgeRuntimeSource()}
 	function setFrameSource(code: string, runtime: AppRuntime) {
 		if (runtime === 'javascript') {
 			const inlineModuleSource = buildInlineModuleSource(code)
+			const theme = coerceTheme(latestRenderData?.theme)
 			frameElement.srcdoc = `
 <!doctype html>
-<html lang="en">
+<html lang="en"${theme ? ` data-kody-theme="${theme}"` : ''}>
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<style>
-			html, body {
-				margin: 0;
-				padding: 0;
-				min-height: 100%;
-				background: transparent;
-			}
+${buildShellStyles(theme)}
 		</style>
 	</head>
-	<body>
+	<body data-kody-runtime="javascript">
 		<div id="app" data-generated-ui-root></div>
 		<script type="module">
 ${inlineModuleSource}
@@ -403,26 +663,31 @@ ${inlineModuleSource}
 				}
 				return
 			}
-			if (event.data.type === `${childMessagePrefix}call-tool`) {
+			if (event.data.type === `${childMessagePrefix}execute-code`) {
 				const requestId =
 					typeof payload.requestId === 'string' ? payload.requestId : null
-				const name = typeof payload.name === 'string' ? payload.name : null
-				const argumentsValue = isRecord(payload.arguments)
-					? payload.arguments
-					: undefined
-				if (requestId && name && event.source) {
+				const code = typeof payload.code === 'string' ? payload.code : null
+				if (requestId && code && event.source) {
 					void hostBridge
 						.callTool({
-							name,
-							...(argumentsValue ? { arguments: argumentsValue } : {}),
+							name: 'execute',
+							arguments: { code },
 						})
 						.then((result) => {
+							const errorMessage = getHostToolErrorMessage(result)
+							const structuredContent = isRecord(result?.structuredContent)
+								? result.structuredContent
+								: null
 							;(event.source as WindowProxy).postMessage(
 								{
-									type: `${childMessagePrefix}tool-result`,
+									type: `${childMessagePrefix}execute-result`,
 									payload: {
 										requestId,
-										result,
+										result:
+											result?.isError === true
+												? null
+												: (structuredContent?.result ?? null),
+										errorMessage,
 									},
 								},
 								'*',
