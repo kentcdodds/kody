@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./public/logo.png" alt="kody logo" width="400" />
+  <img src="./packages/worker/public/logo.png" alt="kody logo" width="400" />
 
   <p>
     <strong>An experimental personal assistant platform built on Cloudflare Workers and MCP</strong>
@@ -76,14 +76,15 @@ Request → packages/worker/src/index.ts
               │
               ├─→ OAuth handlers
               ├─→ MCP endpoints
-              ├─→ Static assets (public/)
+              ├─→ Static assets (`packages/worker/public/`)
               └─→ Server router → Remix components
 ```
 
 - `packages/worker/src/index.ts` is the entrypoint for Cloudflare Workers
 - OAuth requests are handled first, then MCP requests, then static assets
 - Non-asset requests fall through to the server handler and router
-- Client assets are bundled into `public/` and served via the `ASSETS` binding
+- Client assets are bundled into `packages/worker/public/` and served via the
+  `ASSETS` binding
 
 ## Documentation
 

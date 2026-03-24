@@ -63,7 +63,9 @@ function setDotenvValue(content: string, key: string, value: string) {
 
 if (!existsSync(envPath)) {
 	if (!existsSync(examplePath)) {
-		console.error('Missing packages/worker/.env.example; cannot prepare E2E environment.')
+		console.error(
+			'Missing packages/worker/.env.example; cannot prepare E2E environment.',
+		)
 		process.exit(1)
 	}
 	copyFileSync(examplePath, envPath)
@@ -79,7 +81,9 @@ if (existingCookieSecret && existingCookieSecret.length > 0) {
 }
 
 if (!existsSync(examplePath)) {
-	console.error('Missing packages/worker/.env.example; cannot prepare E2E environment.')
+	console.error(
+		'Missing packages/worker/.env.example; cannot prepare E2E environment.',
+	)
 	process.exit(1)
 }
 

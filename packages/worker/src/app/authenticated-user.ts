@@ -1,8 +1,8 @@
 import {
 	readAuthSessionResult,
 	setAuthSessionSecret,
-} from '#server/auth-session.ts'
-import { getEnv } from '#server/env.ts'
+} from '#app/auth-session.ts'
+import { getEnv } from '#app/env.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 export type AuthenticatedAppUser = {

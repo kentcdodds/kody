@@ -32,9 +32,9 @@ The previously checked-in `database_id` values pointed at D1 databases named
 **`epicflare`** and **`epicflare-preview`**, not `kody` / `kody-preview`. The
 production DB (`epicflare`) contains both:
 
-- **kody / epicflare-shared app tables** (see `migrations/`): `users`,
-  `password_resets`, `chat_threads`, `mcp_skills`, `mock_resend_messages`,
-  `mock_ai_requests`
+- **kody / epicflare-shared app tables** (see `packages/worker/migrations/`):
+  `users`, `password_resets`, `chat_threads`, `mcp_skills`,
+  `mock_resend_messages`, `mock_ai_requests`
 - **Older epicflare-only tables** (not in current kody migrations): e.g.
   `accounts`, `households`, `kids`, `transactions`, `quick_amount_presets`,
   `agents`

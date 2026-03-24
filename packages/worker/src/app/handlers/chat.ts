@@ -1,9 +1,9 @@
 import { type BuildAction } from 'remix/fetch-router'
-import { readAuthSessionResult } from '#server/auth-session.ts'
-import { redirectToLogin } from '#server/auth-redirect.ts'
-import { Layout } from '#server/layout.ts'
-import { render } from '#server/render.ts'
-import { type routes } from '#server/routes.ts'
+import { readAuthSessionResult } from '#app/auth-session.ts'
+import { redirectToLogin } from '#app/auth-redirect.ts'
+import { Layout } from '#app/layout.ts'
+import { render } from '#app/render.ts'
+import { type routes } from '#app/routes.ts'
 
 export const chat = {
 	middleware: [],

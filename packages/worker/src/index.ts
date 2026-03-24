@@ -1,10 +1,10 @@
 import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
-import { getWorkerSentryOptions } from '../../../sentry/cloudflare-options.ts'
 import { ChatAgent } from './chat-agent.ts'
 import { MCP } from './mcp/index.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
-import { handleRequest } from '../../../server/handler.ts'
+import { getWorkerSentryOptions } from './sentry-options.ts'
+import { handleRequest } from '#app/handler.ts'
 import { handleChatAgentRequest } from './chat-agent-routing.ts'
 import {
 	apiHandler,

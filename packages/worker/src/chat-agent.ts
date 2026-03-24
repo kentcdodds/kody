@@ -1,16 +1,16 @@
 import * as Sentry from '@sentry/cloudflare'
 import { AIChatAgent } from '@cloudflare/ai-chat'
-import { buildSentryOptions } from '../../../sentry/cloudflare-options.ts'
 import {
 	type StreamTextOnFinishCallback,
 	type ToolSet,
 	type UIMessage,
 } from 'ai'
 import { type Connection, type ConnectionContext } from 'agents'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { createChatThreadsStore } from '#app/chat-threads.ts'
 import { createMcpCallerContext } from './mcp/context.ts'
-import { readAuthenticatedAppUser } from '../../../server/authenticated-user.ts'
-import { createChatThreadsStore } from '../../../server/chat-threads.ts'
 import { createAiRuntime, type AiRuntimeResult } from './ai-runtime.ts'
+import { buildSentryOptions } from './sentry-options.ts'
 
 function buildSystemPrompt() {
 	return [

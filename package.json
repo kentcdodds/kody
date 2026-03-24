@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "imports": {
+    "#app/*": "./packages/worker/src/app/*",
     "#worker/*": "./packages/worker/src/*",
     "#*": "./*",
     "#mcp/*": "./packages/worker/src/mcp/*"
@@ -12,8 +13,8 @@
   "scripts": {
     "dev": "bun --no-env-file --env-file=packages/worker/.env cli.ts",
     "dev:client": "concurrently --kill-others-on-fail -n web,mcp-apps -c green,cyan \"bun run dev:client:web\" \"bun run dev:mcp-apps\"",
-    "dev:client:web": "esbuild client/entry.tsx --bundle --format=esm --target=es2022 --outdir=public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/component --watch",
-    "dev:mcp-apps": "esbuild client/mcp-apps/calculator-widget.ts --bundle --format=esm --target=es2022 --outdir=public/mcp-apps --platform=browser --watch",
+    "dev:client:web": "esbuild client/entry.tsx --bundle --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/component --watch",
+    "dev:mcp-apps": "esbuild client/mcp-apps/calculator-widget.ts --bundle --format=esm --target=es2022 --outdir=packages/worker/public/mcp-apps --platform=browser --watch",
     "dev:worker": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local",
     "dev:mock-resend": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/resend/wrangler.jsonc",
     "dev:mock-ai": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/ai/wrangler.jsonc",
@@ -22,8 +23,8 @@
     "dev:mock-cloudflare": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/cloudflare/wrangler.jsonc",
     "deploy": "bun run build && bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts deploy --outdir .wrangler/sentry-bundle --upload-source-maps",
     "sentry:upload-sourcemaps": "bun tools/sentry-upload-sourcemaps.ts",
-    "build:mcp-apps": "esbuild client/mcp-apps/calculator-widget.ts --bundle --format=esm --target=es2022 --outdir=public/mcp-apps --platform=browser",
-    "build:client:web": "esbuild client/entry.tsx --bundle --format=esm --target=es2022 --outdir=public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/component",
+    "build:mcp-apps": "esbuild client/mcp-apps/calculator-widget.ts --bundle --format=esm --target=es2022 --outdir=packages/worker/public/mcp-apps --platform=browser",
+    "build:client:web": "esbuild client/entry.tsx --bundle --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/component",
     "build:client": "bun run build:client:web && bun run build:mcp-apps",
     "build": "bun run build:client && bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts build",
     "lint": "oxlint .",
@@ -36,7 +37,7 @@
     "preview:e2e": "bun run build:mcp-apps && bun run migrate:e2e && bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "generate-types": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts types ./types/worker-configuration.d.ts",
     "typecheck": "tsc -b --noEmit",
-    "test": "bun --no-env-file --env-file=packages/worker/.env test ./server ./packages/mock-servers ./packages/shared ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/cloudflare ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts",
+    "test": "bun --no-env-file --env-file=packages/worker/.env test ./packages/worker/src/app ./packages/mock-servers ./packages/shared ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/cloudflare ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts",
     "inspect": "bunx -p @mcpjam/inspector inspector",
     "validate": "concurrently --kill-others-on-fail -n format,lint,build,typecheck,test,test:mcp -c green,yellow,blue,magenta,cyan,red \"bun run format:check\" \"bun run lint:fix\" \"bun run build\" \"bun run typecheck\" \"bun run test:e2e\" \"bun run test:mcp\"",
     "test:e2e": "bun --no-env-file --env-file=packages/worker/.env tools/prepare-e2e-env.ts && playwright test",

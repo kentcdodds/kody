@@ -94,7 +94,8 @@ When a UI should communicate back to the host agent:
 - Keep messages concise and deterministic where possible.
 - For inline `rawHtml` widgets in this repo, prefer reusing the shared runtime
   in `client/mcp-apps/widget-host-bridge.ts` (bundled into
-  `public/mcp-apps/calculator-widget.js`) instead of duplicating bridge code.
+  `packages/worker/public/mcp-apps/calculator-widget.js`) instead of duplicating
+  bridge code.
 
 You can also send simplified MCP-UI actions via `window.parent.postMessage(...)`
 (`type: 'tool' | 'prompt' | 'notify' | 'link'`) when using the `mcpApps`

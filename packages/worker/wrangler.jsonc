@@ -31,7 +31,7 @@
 				},
 			],
 			"assets": {
-				"directory": "../../public",
+				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": ["/mcp-apps/*", "/styles.css"],
 			},
@@ -51,7 +51,7 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody",
-					"migrations_dir": "../../migrations",
+					"migrations_dir": "./migrations",
 				},
 			],
 			"kv_namespaces": [
@@ -82,7 +82,7 @@
 				},
 			],
 			"assets": {
-				"directory": "../../public",
+				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": ["/mcp-apps/*", "/styles.css"],
 			},
@@ -102,7 +102,7 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"migrations_dir": "../../migrations",
+					"migrations_dir": "./migrations",
 				},
 			],
 			"kv_namespaces": [
@@ -133,7 +133,7 @@
 				},
 			],
 			"assets": {
-				"directory": "../../public",
+				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": ["/mcp-apps/*", "/styles.css"],
 			},
@@ -153,7 +153,7 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"migrations_dir": "../../migrations",
+					"migrations_dir": "./migrations",
 				},
 			],
 			"kv_namespaces": [

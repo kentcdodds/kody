@@ -31,8 +31,8 @@ Quick notes for getting a local kody environment running.
   file and copy only the tables you need — see
   [`docs/agents/d1-legacy-export.md`](./d1-legacy-export.md) and
   `tools/export-d1-remote-to-sqlite.sh`.
-- Copy `packages/worker/.env.example` to `packages/worker/.env` before
-  starting any work, then update secrets as needed.
+- Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
+  any work, then update secrets as needed.
 - `bun run dev` (starts mock API servers automatically and sets
   `RESEND_API_BASE_URL`, `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and (unless
   `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` + `GITHUB_TOKEN` to the local

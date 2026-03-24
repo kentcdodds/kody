@@ -1,6 +1,6 @@
-import { setAuthSessionSecret } from './auth-session.ts'
-import { getEnv } from './env.ts'
-import { createAppRouter } from './router.ts'
+import { setAuthSessionSecret } from '#app/auth-session.ts'
+import { getEnv } from '#app/env.ts'
+import { createAppRouter } from '#app/router.ts'
 
 export async function handleRequest(request: Request, env: Env) {
 	try {

@@ -1,6 +1,6 @@
 import { type BuildAction } from 'remix/fetch-router'
-import { destroyAuthCookie, isSecureRequest } from '#server/auth-session.ts'
-import { type routes } from '#server/routes.ts'
+import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
+import { type routes } from '#app/routes.ts'
 
 export const logout = {
 	middleware: [],

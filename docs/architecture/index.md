@@ -24,8 +24,9 @@ is trying to become.
 ## Source of truth in code
 
 - Worker entrypoint: `packages/worker/src/index.ts`
-- Server request handler: `server/handler.ts`
-- Router and HTTP route mapping: `server/router.ts` and `server/routes.ts`
+- App request handler: `packages/worker/src/app/handler.ts`
+- Router and HTTP route mapping: `packages/worker/src/app/router.ts` and
+  `packages/worker/src/app/routes.ts`
 - OAuth handlers: `packages/worker/src/oauth-handlers.ts`
 - MCP auth checks: `packages/worker/src/mcp-auth.ts`
 - MCP capability catalog: domain modules under

@@ -1,6 +1,6 @@
 import { getAgentByName, routeAgentRequest } from 'agents'
-import { readAuthenticatedAppUser } from '../../../server/authenticated-user.ts'
-import { createChatThreadsStore } from '../../../server/chat-threads.ts'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { createChatThreadsStore } from '#app/chat-threads.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 
 function createJsonResponse(data: unknown, init?: ResponseInit) {

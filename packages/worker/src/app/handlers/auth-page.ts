@@ -1,6 +1,6 @@
-import { readAuthSessionResult } from '#server/auth-session.ts'
-import { Layout } from '#server/layout.ts'
-import { render } from '#server/render.ts'
+import { readAuthSessionResult } from '#app/auth-session.ts'
+import { Layout } from '#app/layout.ts'
+import { render } from '#app/render.ts'
 
 function normalizeRedirectTo(value: string | null) {
 	if (!value) return null

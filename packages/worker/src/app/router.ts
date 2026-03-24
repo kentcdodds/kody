@@ -1,26 +1,26 @@
 import { createRouter } from 'remix/fetch-router'
-import { type AppEnv } from '#types/env-schema.ts'
-import { account } from './handlers/account.ts'
-import { createAuthHandler } from './handlers/auth.ts'
-import { chat } from './handlers/chat.ts'
+import { account } from '#app/handlers/account.ts'
+import { createAuthHandler } from '#app/handlers/auth.ts'
+import { chat } from '#app/handlers/chat.ts'
 import {
 	createChatThreadsHandler,
 	createDeleteChatThreadHandler,
 	createUpdateChatThreadHandler,
-} from './handlers/chat-threads.ts'
-import { createHealthHandler } from './handlers/health.ts'
-import { home } from './handlers/home.ts'
-import { login } from './handlers/login.ts'
-import { logout } from './handlers/logout.ts'
+} from '#app/handlers/chat-threads.ts'
+import { createHealthHandler } from '#app/handlers/health.ts'
+import { home } from '#app/handlers/home.ts'
+import { login } from '#app/handlers/login.ts'
+import { logout } from '#app/handlers/logout.ts'
 import {
 	createPasswordResetConfirmHandler,
 	createPasswordResetRequestHandler,
-} from './handlers/password-reset.ts'
-import { session } from './handlers/session.ts'
-import { signup } from './handlers/signup.ts'
-import { Layout } from './layout.ts'
-import { render } from './render.ts'
-import { routes } from './routes.ts'
+} from '#app/handlers/password-reset.ts'
+import { session } from '#app/handlers/session.ts'
+import { signup } from '#app/handlers/signup.ts'
+import { Layout } from '#app/layout.ts'
+import { render } from '#app/render.ts'
+import { routes } from '#app/routes.ts'
+import { type AppEnv } from '../../../../types/env-schema.ts'
 
 export function createAppRouter(appEnv: AppEnv) {
 	const router = createRouter({

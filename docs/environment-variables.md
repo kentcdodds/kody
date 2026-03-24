@@ -10,7 +10,7 @@ types, runtime validation, and documentation in sync.
 
 2. **Validate at runtime**
    - Add the variable to the Zod schema in `types/env-schema.ts`.
-   - `server/env.ts` uses the schema to fail fast at runtime.
+   - `packages/worker/src/app/env.ts` uses the schema to fail fast at runtime.
    - The schema is the single source of truth for validation + types.
 
    Example:
@@ -48,7 +48,7 @@ types, runtime validation, and documentation in sync.
 ## Sentry
 
 Optional Worker secret and vars (see `types/env-schema.ts` and
-`sentry/cloudflare-options.ts`):
+`packages/worker/src/sentry-options.ts`):
 
 - `SENTRY_DSN` — ingest URL from your Sentry project. When unset, the Worker
   skips `Sentry.withSentry`; Durable Objects use the same options builder and

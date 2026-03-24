@@ -35,8 +35,7 @@
 		"../packages/shared/src/**/*.ts",
 		"../packages/mock-servers/**/*.ts",
 		"../sentry/**/*.ts",
-		"../packages/worker/src/**/*.ts",
-		"../server/**/*.ts"
+		"../packages/worker/src/**/*.ts"
 	],
 	"exclude": [
 		"**/*.test.ts",

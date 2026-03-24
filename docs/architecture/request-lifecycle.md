@@ -42,15 +42,17 @@ Requests are handled in this order:
 7. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
 8. App server routes:
-   - Everything else is handled by `server/handler.ts`
+   - Everything else is handled by `packages/worker/src/app/handler.ts`
 
 ## App server flow
 
-`server/handler.ts` validates environment variables and configures session
-cookie signing (`COOKIE_SECRET`) before creating the app router.
+`packages/worker/src/app/handler.ts` validates environment variables and
+configures session cookie signing (`COOKIE_SECRET`) before creating the app
+router.
 
-`server/router.ts` maps route patterns from `server/routes.ts` to handler
-modules (home, auth, account, session, logout, password reset, health).
+`packages/worker/src/app/router.ts` maps route patterns from
+`packages/worker/src/app/routes.ts` to handler modules (home, auth, account,
+session, logout, password reset, health).
 
 ## Client-side navigation flow
 
@@ -88,8 +90,8 @@ are each wrapped with `Sentry.instrumentDurableObjectWithSentry` (see
 `packages/worker/src/mcp/index.ts` and `packages/worker/src/chat-agent.ts`)
 because they run in separate isolates from the top-level Worker.
 
-Shared options are built in `sentry/cloudflare-options.ts`: **release** comes
-from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and
+Shared options are built in `packages/worker/src/sentry-options.ts`: **release**
+comes from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and
 **environment** defaults from `SENTRY_ENVIRONMENT` in
 `packages/worker/wrangler.jsonc` per deploy target.
 

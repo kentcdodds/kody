@@ -2,18 +2,18 @@ import {
 	type AuthRequest,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
-import { getRequestIp, logAuditEvent } from '../../../server/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import {
 	readAuthSessionResult,
 	setAuthSessionSecret,
-} from '../../../server/auth-session.ts'
-import { getEnv } from '../../../server/env.ts'
-import { toHex } from '../../../server/hex.ts'
-import { verifyPassword } from '../../../server/password-hash.ts'
-import { Layout } from '../../../server/layout.ts'
-import { render } from '../../../server/render.ts'
+} from '#app/auth-session.ts'
+import { getEnv } from '#app/env.ts'
+import { Layout } from '#app/layout.ts'
+import { render } from '#app/render.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
+import { toHex } from '@kody-internal/shared/hex.ts'
+import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
 export const oauthPaths = {
 	authorize: '/oauth/authorize',

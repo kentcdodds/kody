@@ -1,12 +1,15 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { enum_, object, parseSafe, string } from 'remix/data-schema'
-import { createAuthCookie, isSecureRequest } from '#server/auth-session.ts'
-import { getRequestIp, logAuditEvent } from '#server/audit-log.ts'
-import { normalizeEmail } from '#server/normalize-email.ts'
-import { createPasswordHash, verifyPassword } from '#server/password-hash.ts'
-import { type routes } from '#server/routes.ts'
-import { type AppEnv } from '#types/env-schema.ts'
+import { createAuthCookie, isSecureRequest } from '#app/auth-session.ts'
+import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { normalizeEmail } from '#app/normalize-email.ts'
+import { type routes } from '#app/routes.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import {
+	createPasswordHash,
+	verifyPassword,
+} from '@kody-internal/shared/password-hash.ts'
+import { type AppEnv } from '../../../../../types/env-schema.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]

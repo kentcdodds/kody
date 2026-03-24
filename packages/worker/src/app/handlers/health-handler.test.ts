@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from 'bun:test'
 import { RequestContext } from 'remix/fetch-router'
-import { createHealthHandler } from './health.ts'
+import { createHealthHandler } from '#app/handlers/health.ts'
 
 function createHealthRequestContext() {
 	return new RequestContext(new Request('https://example.com/health'))

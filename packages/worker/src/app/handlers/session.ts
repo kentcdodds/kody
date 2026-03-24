@@ -1,6 +1,6 @@
 import { type BuildAction } from 'remix/fetch-router'
-import { readAuthSessionResult } from '#server/auth-session.ts'
-import { type routes } from '#server/routes.ts'
+import { readAuthSessionResult } from '#app/auth-session.ts'
+import { type routes } from '#app/routes.ts'
 
 function jsonResponse(data: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(data), {

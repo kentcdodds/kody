@@ -6,7 +6,7 @@ This project uses three Cloudflare storage systems for different purposes.
 
 Relational app data lives in D1.
 
-Current schema is defined by migrations in `migrations/`:
+Current schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash
 - `password_resets`: hashed reset tokens with expiry and foreign key to users

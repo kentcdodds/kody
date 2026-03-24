@@ -5,8 +5,8 @@ import {
 	createAuthCookie,
 	setAuthSessionSecret,
 	type AuthSession,
-} from '#server/auth-session.ts'
-import { session } from './session.ts'
+} from '#app/auth-session.ts'
+import { session } from '#app/handlers/session.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const rememberedSession: AuthSession = {

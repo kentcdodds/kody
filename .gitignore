@@ -30,7 +30,7 @@ package-lock.json
 mock-data
 playwright-report
 test-results
-public/client-entry.js
-public/mcp-apps/
+packages/worker/public/client-entry.js
+packages/worker/public/mcp-apps/
 packages/worker/wrangler-preview.generated.json
 packages/worker/wrangler-production.generated.json

@@ -1,9 +1,9 @@
 /// <reference types="bun" />
 import { beforeAll, expect, test } from 'bun:test'
 import { RequestContext } from 'remix/fetch-router'
-import { setAuthSessionSecret } from '#server/auth-session.ts'
-import { createPasswordHash } from '#server/password-hash.ts'
-import { createAuthHandler } from './auth.ts'
+import { setAuthSessionSecret } from '#app/auth-session.ts'
+import { createAuthHandler } from '#app/handlers/auth.ts'
+import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const primaryUserEmail = 'me@kentcdodds.com'

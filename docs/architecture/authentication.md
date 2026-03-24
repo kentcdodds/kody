@@ -7,7 +7,8 @@
 
 ## Browser app sessions
 
-Session cookie behavior is implemented in `server/auth-session.ts`.
+Session cookie behavior is implemented in
+`packages/worker/src/app/auth-session.ts`.
 
 - Cookie name: `kody_session`
 - `httpOnly: true`
@@ -24,27 +25,29 @@ The cookie payload stores:
 - `email`
 - `rememberMe` and `issuedAt` for remembered sessions
 
-`server/handler.ts` calls `setAuthSessionSecret` on each request so cookie
-signing and verification are available to handlers.
+`packages/worker/src/app/handler.ts` calls `setAuthSessionSecret` on each
+request so cookie signing and verification are available to handlers.
 
 ## Login and signup
 
-`POST /auth` is implemented by `server/handlers/auth.ts`.
+`POST /auth` is implemented by `packages/worker/src/app/handlers/auth.ts`.
 
 - Accepts JSON body with `email`, `password`, `mode` (`login` or `signup`), and
   optional `rememberMe` for logins
 - Uses D1 (`users` table) for user lookups and inserts
-- Hashes passwords with `server/password-hash.ts`
+- Hashes passwords with `@kody-internal/shared/password-hash.ts`
 - Returns signed session cookie via `Set-Cookie` on success
-- Emits structured audit events through `server/audit-log.ts`
+- Emits structured audit events through `packages/worker/src/app/audit-log.ts`
 
 Related handlers:
 
-- `GET /login` and `GET /signup`: `server/handlers/auth-page.ts`
-- `POST /logout`: `server/handlers/logout.ts`
-- `POST /session`: `server/handlers/session.ts` for session status checks
-- `GET /account`: `server/handlers/account.ts` (redirects to login if missing
-  session)
+- `GET /login` and `GET /signup`:
+  `packages/worker/src/app/handlers/auth-page.ts`
+- `POST /logout`: `packages/worker/src/app/handlers/logout.ts`
+- `POST /session`: `packages/worker/src/app/handlers/session.ts` for session
+  status checks
+- `GET /account`: `packages/worker/src/app/handlers/account.ts` (redirects to
+  login if missing session)
 
 ### Client session refresh behavior
 
@@ -55,7 +58,8 @@ prevents transient logged-out UI during concurrent re-renders.
 
 ## Password reset
 
-Password reset handlers are in `server/handlers/password-reset.ts`.
+Password reset handlers are in
+`packages/worker/src/app/handlers/password-reset.ts`.
 
 - `POST /password-reset` creates a one-time token and stores only its hash
 - `POST /password-reset/confirm` verifies token hash and expiry, then updates
@@ -88,5 +92,5 @@ routed from `packages/worker/src/index.ts`.
 - `packages/worker/src/index.ts` for route order and integration points
 - `packages/worker/src/oauth-handlers.ts` for OAuth authorization logic
 - `packages/worker/src/mcp-auth.ts` for MCP token enforcement
-- `server/auth-session.ts` for cookie format/signing
-- `server/handlers/auth.ts` for app login/signup flow
+- `packages/worker/src/app/auth-session.ts` for cookie format/signing
+- `packages/worker/src/app/handlers/auth.ts` for app login/signup flow

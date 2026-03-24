@@ -12,7 +12,7 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody",
-					"migrations_dir": "../../../migrations",
+					"migrations_dir": "../../../packages/worker/migrations",
 				},
 			],
 		},
@@ -21,7 +21,7 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"migrations_dir": "../../../migrations",
+					"migrations_dir": "../../../packages/worker/migrations",
 				},
 			],
 		},
@@ -30,7 +30,7 @@
 				{
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
-					"migrations_dir": "../../../migrations",
+					"migrations_dir": "../../../packages/worker/migrations",
 				},
 			],
 		},

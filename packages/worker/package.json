@@ -9,6 +9,7 @@
     "@kody-internal/shared": "workspace:*"
   },
   "imports": {
+    "#app/*": "./src/app/*",
     "#worker/*": "./src/*",
     "#mcp/*": "./src/mcp/*"
   }

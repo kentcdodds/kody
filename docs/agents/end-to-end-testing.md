@@ -48,8 +48,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - Ensure `packages/worker/.env` includes a `COOKIE_SECRET` var for local
   sessions.
 - Client routes live in `client/app.tsx` and `client/routes/index.tsx`.
-- API endpoints are defined in `server/routes.ts` and mapped in
-  `server/router.ts`.
+- API endpoints are defined in `packages/worker/src/app/routes.ts` and mapped in
+  `packages/worker/src/app/router.ts`.
 
 When adding endpoints that accept bodies, ensure POST/PUT requests are not
 handled by the static asset fetcher in `packages/worker/src/index.ts`.

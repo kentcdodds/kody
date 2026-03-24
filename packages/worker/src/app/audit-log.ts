@@ -1,4 +1,4 @@
-import { toHex } from './hex.ts'
+import { toHex } from '@kody-internal/shared/hex.ts'
 
 type AuditEvent = {
 	category: 'auth' | 'oauth'
