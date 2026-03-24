@@ -141,7 +141,12 @@ function initializeGeneratedUiShell() {
 			'This shell renders inline generated code or a saved app artifact.'
 	}
 
+	function escapeInlineModuleSource(code: string) {
+		return code.replace(/<\/script/gi, '<\\/script')
+	}
+
 	function buildInlineModuleSource(code: string) {
+		const safeCode = escapeInlineModuleSource(code)
 		return `
 const shellRootElement = document.getElementById('app')
 window.kodyWidget = {
@@ -170,7 +175,7 @@ window.kodyWidget = {
 		return 'fullscreen'
 	},
 }
-${code}
+${safeCode}
 		`.trim()
 	}
 

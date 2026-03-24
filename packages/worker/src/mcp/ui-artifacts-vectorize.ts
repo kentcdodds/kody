@@ -21,7 +21,7 @@ export async function upsertUiArtifactVector(
 	])
 }
 
-export async function deleteUiArtifactVector(
+async function deleteUiArtifactVector(
 	env: Env,
 	appId: string,
 ): Promise<void> {

@@ -51,7 +51,7 @@ export async function getUiArtifactById(
 	return mapRow(result)
 }
 
-export async function updateUiArtifact(
+async function updateUiArtifact(
 	db: D1Database,
 	userId: string,
 	artifactId: string,
@@ -114,7 +114,7 @@ export async function listUiArtifactsByUserId(
 	return (results ?? []).map(mapRow)
 }
 
-export async function listAllUiArtifacts(
+async function listAllUiArtifacts(
 	db: D1Database,
 ): Promise<Array<UiArtifactRow>> {
 	const { results } = await db
