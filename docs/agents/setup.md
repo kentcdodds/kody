@@ -95,8 +95,8 @@ Quick notes for getting a local kody environment running.
 ## Home Connector Docker publishing
 
 Pushes to `main` that change `packages/home-connector/**`, `package.json`,
-`bun.lock`, `.dockerignore`, or `.github/workflows/home-connector-publish.yml`
-run the dedicated Home Connector publish workflow.
+`bun.lock`, or `.github/workflows/home-connector-publish.yml` run the dedicated
+Home Connector publish workflow.
 
 - The workflow reruns `bun test ./packages/home-connector` before publishing.
 - Docker Hub auth comes from GitHub Actions secrets `DOCKERHUB_USERNAME` and
