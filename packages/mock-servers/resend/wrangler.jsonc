@@ -6,5 +6,47 @@
 	"main": "./src/worker.ts",
 	"preview_urls": true,
 	"observability": { "enabled": true },
-	"env": {},
+	"migrations": [
+		{
+			"new_classes": ["MockResendMessagesDurableObject"],
+			"tag": "v1",
+		},
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "MockResendMessagesDurableObject",
+				"name": "MOCK_RESEND_STATE",
+			},
+		],
+	},
+	"env": {
+		"production": {
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody",
+					"migrations_dir": "../../../packages/worker/migrations",
+				},
+			],
+		},
+		"preview": {
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody-preview",
+					"migrations_dir": "../../../packages/worker/migrations",
+				},
+			],
+		},
+		"test": {
+			"d1_databases": [
+				{
+					"binding": "APP_DB",
+					"database_name": "kody-preview",
+					"migrations_dir": "../../../packages/worker/migrations",
+				},
+			],
+		},
+	},
 }

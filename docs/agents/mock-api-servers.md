@@ -31,8 +31,8 @@ mock used by the `cloudflare_rest` capability (started by `bun run dev` unless
 
 ### Tips
 
-- Avoid persisting mock requests/messages in D1; keep mock state ephemeral to
-  reduce schema drift.
+- Avoid persisting mock requests/messages in D1; keep mock state in a Durable
+  Object to reduce schema drift while still providing per-mock durability.
 - Add a `GET /__mocks` dashboard route so it is easy to discover endpoints and
   validate state while debugging.
 - PR previews deploy each mock Worker with the name pattern

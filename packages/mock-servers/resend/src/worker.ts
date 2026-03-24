@@ -1,8 +1,10 @@
 import { parseSafe } from 'remix/data-schema'
 import { resendEmailSchema } from '@kody-internal/shared/resend-email.ts'
+import { createMockResendState } from './mock-messages-do.ts'
 
 type MockResendEnv = {
 	MOCK_API_TOKEN?: string
+	MOCK_RESEND_STATE: DurableObjectNamespace
 }
 
 type DashboardEndpoint = {
@@ -44,19 +46,6 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 		requiresAuth: true,
 	},
 ]
-
-type StoredMockMessage = {
-	id: string
-	token_hash: string
-	received_at: number
-	from_email: string
-	to_json: string
-	subject: string
-	html: string
-	payload_json: string
-}
-
-const messagesByToken = new Map<string, Array<StoredMockMessage>>()
 
 function htmlEscape(value: string) {
 	return value
@@ -138,13 +127,6 @@ function getTokenPartition(env: MockResendEnv) {
 	return expected ? sha256Hex(expected) : Promise.resolve('public')
 }
 
-function getStoredMessages(tokenHash: string) {
-	if (!messagesByToken.has(tokenHash)) {
-		messagesByToken.set(tokenHash, [])
-	}
-	return messagesByToken.get(tokenHash) ?? []
-}
-
 async function readJsonBody(request: Request) {
 	try {
 		return await request.json()
@@ -153,20 +135,9 @@ async function readJsonBody(request: Request) {
 	}
 }
 
-function countMessages(tokenHash: string) {
-	return getStoredMessages(tokenHash).length
-}
-
-function listMessages(tokenHash: string, limit: number) {
-	return getStoredMessages(tokenHash).slice(0, limit)
-}
-
-function getMessage(tokenHash: string, id: string) {
-	return getStoredMessages(tokenHash).find((message) => message.id === id) ?? null
-}
-
-function clearMessages(tokenHash: string) {
-	messagesByToken.set(tokenHash, [])
+function getMockResendState(env: MockResendEnv) {
+	const id = env.MOCK_RESEND_STATE.idFromName('mock-resend-state')
+	return createMockResendState(env.MOCK_RESEND_STATE.get(id))
 }
 
 async function handlePostEmails(
@@ -188,9 +159,9 @@ async function handlePostEmails(
 	const id = `email_${crypto.randomUUID()}`
 	const payloadJson = JSON.stringify(parsed.value)
 
-	getStoredMessages(tokenHash).unshift({
+	const state = getMockResendState(env)
+	await state.addMessage(tokenHash, {
 		id,
-		token_hash: tokenHash,
 		received_at: now,
 		from_email: parsed.value.from,
 		to_json: JSON.stringify(parsed.value.to),
@@ -206,6 +177,7 @@ async function handlePostEmails(
 async function handleGetMeta(request: Request, env: MockResendEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
+	const state = getMockResendState(env)
 
 	return json({
 		service: 'resend',
@@ -213,7 +185,7 @@ async function handleGetMeta(request: Request, env: MockResendEnv, url: URL) {
 		endpoints: dashboardEndpoints,
 		...(tokenHash
 			? {
-					messageCount: countMessages(tokenHash),
+					messageCount: await state.countMessages(tokenHash),
 				}
 			: {}),
 	})
@@ -228,11 +200,12 @@ async function handleGetMessages(
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 	const tokenHash = await getTokenPartition(env)
+	const state = getMockResendState(env)
 	const messageId = url.pathname.startsWith('/__mocks/messages/')
 		? url.pathname.slice('/__mocks/messages/'.length).trim()
 		: ''
 	if (messageId) {
-		const message = getMessage(tokenHash, messageId)
+		const message = await state.getMessage(tokenHash, messageId)
 		if (!message) {
 			return json({ error: 'Not Found' }, { status: 404 })
 		}
@@ -244,7 +217,7 @@ async function handleGetMessages(
 		Math.max(1, Number.parseInt(limitParam || '50', 10)),
 	)
 
-	const messages = listMessages(tokenHash, limit)
+	const messages = await state.listMessages(tokenHash, limit)
 	return json({ count: messages.length, messages })
 }
 
@@ -253,7 +226,8 @@ async function handleClear(request: Request, env: MockResendEnv, url: URL) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 	const tokenHash = await getTokenPartition(env)
-	clearMessages(tokenHash)
+	const state = getMockResendState(env)
+	await state.clearMessages(tokenHash)
 	return json({ ok: true })
 }
 
@@ -463,3 +437,8 @@ export default {
 		return new Response('Not Found', { status: 404 })
 	},
 } satisfies ExportedHandler<MockResendEnv>
+
+export {
+	MockResendMessagesDurableObject,
+	createMockResendState,
+} from './mock-messages-do.ts'

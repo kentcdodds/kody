@@ -2,6 +2,7 @@ import { buildMockAiScenario } from '@kody-internal/shared/mock-ai.ts'
 
 type MockAiEnv = {
 	MOCK_API_TOKEN?: string
+	MOCK_AI_STATE: DurableObjectNamespace
 }
 
 type DashboardEndpoint = {
@@ -43,8 +44,6 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 		requiresAuth: true,
 	},
 ]
-
-const requestsByToken = new Map<string, Array<StoredMockRequest>>()
 
 function json(data: unknown, init: ResponseInit = {}) {
 	const headers = new Headers(init.headers)
@@ -136,11 +135,26 @@ type StoredMockRequest = {
 	response_text: string
 }
 
-function getStoredRequests(tokenHash: string) {
-	if (!requestsByToken.has(tokenHash)) {
-		requestsByToken.set(tokenHash, [])
+type MockAiStateRequest =
+	| { action: 'append'; request: StoredMockRequest }
+	| { action: 'list'; limit: number }
+	| { action: 'count' }
+	| { action: 'clear' }
+
+async function callState<TResponse>(
+	stub: DurableObjectStub,
+	payload: MockAiStateRequest,
+) {
+	const response = await stub.fetch('https://mock-ai-state/', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(payload),
+	})
+	if (!response.ok) {
+		const detail = await response.text()
+		throw new Error(`Mock AI state failed (${response.status}): ${detail}`)
 	}
-	return requestsByToken.get(tokenHash) ?? []
+	return (await response.json()) as TResponse
 }
 
 function getLastUserMessageText(
@@ -191,15 +205,19 @@ async function handleChat(request: Request, env: MockAiEnv, url: URL) {
 	})
 
 	const tokenHash = await getTokenPartition(env)
-	getStoredRequests(tokenHash).unshift({
-		id: `mock_ai_${crypto.randomUUID()}`,
-		token_hash: tokenHash,
-		received_at: Date.now(),
-		scenario,
-		last_user_message: lastUserMessage,
-		tool_names_json: JSON.stringify(toolNames),
-		request_json: JSON.stringify(body ?? null),
-		response_text: JSON.stringify(response),
+	const state = getMockAiState(env, tokenHash)
+	await callState(state, {
+		action: 'append',
+		request: {
+			id: `mock_ai_${crypto.randomUUID()}`,
+			token_hash: tokenHash,
+			received_at: Date.now(),
+			scenario,
+			last_user_message: lastUserMessage,
+			tool_names_json: JSON.stringify(toolNames),
+			request_json: JSON.stringify(body ?? null),
+			response_text: JSON.stringify(response),
+		},
 	})
 
 	return json(response)
@@ -209,7 +227,9 @@ async function handleMeta(request: Request, env: MockAiEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
 	const requestCount = tokenHash
-		? getStoredRequests(tokenHash).length
+		? (await callState<{ count: number }>(getMockAiState(env, tokenHash), {
+				action: 'count',
+			})).count
 		: undefined
 
 	return json({
@@ -226,7 +246,15 @@ async function handleGetRequests(request: Request, env: MockAiEnv, url: URL) {
 	}
 
 	const tokenHash = await getTokenPartition(env)
-	const requests = getStoredRequests(tokenHash).slice(0, 100)
+	const requests = (
+		await callState<{ requests: Array<StoredMockRequest> }>(
+			getMockAiState(env, tokenHash),
+			{
+				action: 'list',
+				limit: 100,
+			},
+		)
+	).requests
 	return json({ count: requests.length, requests })
 }
 
@@ -236,8 +264,13 @@ async function handleClear(request: Request, env: MockAiEnv, url: URL) {
 	}
 
 	const tokenHash = await getTokenPartition(env)
-	requestsByToken.set(tokenHash, [])
+	await callState(getMockAiState(env, tokenHash), { action: 'clear' })
 	return json({ ok: true })
+}
+
+function getMockAiState(env: MockAiEnv, tokenHash: string) {
+	const stateId = env.MOCK_AI_STATE.idFromName(tokenHash)
+	return env.MOCK_AI_STATE.get(stateId)
 }
 
 async function handleDashboard(request: Request, env: MockAiEnv, url: URL) {
@@ -355,3 +388,5 @@ export default {
 		return new Response('Not Found', { status: 404 })
 	},
 } satisfies ExportedHandler<MockAiEnv>
+
+export { MockAiState } from './mock-requests-do.ts'
