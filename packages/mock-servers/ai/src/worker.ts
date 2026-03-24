@@ -1,9 +1,9 @@
-import { createDb, mockAiRequestsTable } from '@kody/worker/db.ts'
+import type { MockAiStateMessage, StoredMockRequest } from './mock-requests-do.ts'
 import { buildMockAiScenario } from '@kody-internal/shared/mock-ai.ts'
 
 type MockAiEnv = {
-	APP_DB: D1Database
 	MOCK_API_TOKEN?: string
+	MOCK_AI_STATE: DurableObjectNamespace
 }
 
 type DashboardEndpoint = {
@@ -45,8 +45,6 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 		requiresAuth: true,
 	},
 ]
-
-const schemaReadyByDb = new WeakMap<D1Database, Promise<void>>()
 
 function json(data: unknown, init: ResponseInit = {}) {
 	const headers = new Headers(init.headers)
@@ -127,41 +125,20 @@ function withTokenQueryParam(baseUrl: URL, href: string, token: string | null) {
 	return `${next.pathname}${next.search}${next.hash}`
 }
 
-async function ensureSchema(
-	db: ReturnType<typeof createDb>,
-	rawDb: D1Database,
+async function callState<TResponse>(
+	stub: DurableObjectStub,
+	payload: MockAiStateMessage,
 ) {
-	const existing = schemaReadyByDb.get(rawDb)
-	if (existing) {
-		await existing
-		return
+	const response = await stub.fetch('https://mock-ai-state/', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(payload),
+	})
+	if (!response.ok) {
+		const detail = await response.text()
+		throw new Error(`Mock AI state failed (${response.status}): ${detail}`)
 	}
-
-	const schemaReady = db
-		.exec(
-			`CREATE TABLE IF NOT EXISTS mock_ai_requests (
-				id TEXT PRIMARY KEY,
-				token_hash TEXT NOT NULL,
-				received_at INTEGER NOT NULL,
-				scenario TEXT NOT NULL,
-				last_user_message TEXT NOT NULL,
-				tool_names_json TEXT NOT NULL,
-				request_json TEXT NOT NULL,
-				response_text TEXT NOT NULL
-			)`,
-		)
-		.then(() =>
-			db.exec(`CREATE INDEX IF NOT EXISTS idx_mock_ai_requests_token_received_at
-					ON mock_ai_requests(token_hash, received_at DESC)`),
-		)
-		.then(() => undefined)
-		.catch((error) => {
-			schemaReadyByDb.delete(rawDb)
-			throw error
-		})
-
-	schemaReadyByDb.set(rawDb, schemaReady)
-	await schemaReady
+	return (await response.json()) as TResponse
 }
 
 function getLastUserMessageText(
@@ -211,18 +188,20 @@ async function handleChat(request: Request, env: MockAiEnv, url: URL) {
 		toolNames,
 	})
 
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
-	await db.create(mockAiRequestsTable, {
-		id: `mock_ai_${crypto.randomUUID()}`,
-		token_hash: tokenHash,
-		received_at: Date.now(),
-		scenario,
-		last_user_message: lastUserMessage,
-		tool_names_json: JSON.stringify(toolNames),
-		request_json: JSON.stringify(body ?? null),
-		response_text: JSON.stringify(response),
+	const state = getMockAiState(env, tokenHash)
+	await callState(state, {
+		action: 'append',
+		request: {
+			id: `mock_ai_${crypto.randomUUID()}`,
+			token_hash: tokenHash,
+			received_at: Date.now(),
+			scenario,
+			last_user_message: lastUserMessage,
+			tool_names_json: JSON.stringify(toolNames),
+			request_json: JSON.stringify(body ?? null),
+			response_text: JSON.stringify(response),
+		},
 	})
 
 	return json(response)
@@ -230,13 +209,13 @@ async function handleChat(request: Request, env: MockAiEnv, url: URL) {
 
 async function handleMeta(request: Request, env: MockAiEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
 	const requestCount = tokenHash
-		? await db.count(mockAiRequestsTable, {
-				where: { token_hash: tokenHash },
-			})
+		? (
+				await callState<{ count: number }>(getMockAiState(env, tokenHash), {
+					action: 'count',
+				})
+			).count
 		: undefined
 
 	return json({
@@ -252,14 +231,16 @@ async function handleGetRequests(request: Request, env: MockAiEnv, url: URL) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
-	const requests = await db.findMany(mockAiRequestsTable, {
-		where: { token_hash: tokenHash },
-		orderBy: ['received_at', 'desc'],
-		limit: 100,
-	})
+	const requests = (
+		await callState<{ requests: Array<StoredMockRequest> }>(
+			getMockAiState(env, tokenHash),
+			{
+				action: 'list',
+				limit: 100,
+			},
+		)
+	).requests
 	return json({ count: requests.length, requests })
 }
 
@@ -268,13 +249,14 @@ async function handleClear(request: Request, env: MockAiEnv, url: URL) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 
-	const db = createDb(env.APP_DB)
-	await ensureSchema(db, env.APP_DB)
 	const tokenHash = await getTokenPartition(env)
-	await db.deleteMany(mockAiRequestsTable, {
-		where: { token_hash: tokenHash },
-	})
+	await callState(getMockAiState(env, tokenHash), { action: 'clear' })
 	return json({ ok: true })
+}
+
+function getMockAiState(env: MockAiEnv, tokenHash: string) {
+	const stateId = env.MOCK_AI_STATE.idFromName(tokenHash)
+	return env.MOCK_AI_STATE.get(stateId)
 }
 
 async function handleDashboard(request: Request, env: MockAiEnv, url: URL) {
@@ -392,3 +374,5 @@ export default {
 		return new Response('Not Found', { status: 404 })
 	},
 } satisfies ExportedHandler<MockAiEnv>
+
+export { MockAiState } from './mock-requests-do.ts'

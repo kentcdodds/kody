@@ -27,21 +27,6 @@ export const passwordResetsTable = createTable({
 	primaryKey: 'id',
 })
 
-export const mockResendMessagesTable = createTable({
-	name: 'mock_resend_messages',
-	columns: {
-		id: string(),
-		token_hash: string(),
-		received_at: number(),
-		from_email: string(),
-		to_json: string(),
-		subject: string(),
-		html: string(),
-		payload_json: string(),
-	},
-	primaryKey: 'id',
-})
-
 export const chatThreadsTable = createTable({
 	name: 'chat_threads',
 	columns: {
@@ -59,21 +44,6 @@ export const chatThreadsTable = createTable({
 		createdAt: 'created_at',
 		updatedAt: 'updated_at',
 	},
-})
-
-export const mockAiRequestsTable = createTable({
-	name: 'mock_ai_requests',
-	columns: {
-		id: string(),
-		token_hash: string(),
-		received_at: number(),
-		scenario: string(),
-		last_user_message: string(),
-		tool_names_json: string(),
-		request_json: string(),
-		response_text: string(),
-	},
-	primaryKey: 'id',
 })
 
 export function createDb(db: D1Database) {

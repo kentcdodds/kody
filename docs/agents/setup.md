@@ -107,7 +107,7 @@ Use this script to ensure a known test login exists in any deployed environment:
 For a full local reset before seeding:
 
 1. Drop app tables:
-   - `bun ./wrangler-env.ts d1 execute APP_DB --local --command "PRAGMA foreign_keys=OFF; DROP TABLE IF EXISTS password_resets; DROP TABLE IF EXISTS mock_resend_messages; DROP TABLE IF EXISTS users; PRAGMA foreign_keys=ON;"`
+   - `bun ./wrangler-env.ts d1 execute APP_DB --local --command "PRAGMA foreign_keys=OFF; DROP TABLE IF EXISTS password_resets; DROP TABLE IF EXISTS users; PRAGMA foreign_keys=ON;"`
 2. Re-apply migrations:
    - `bun run migrate:local`
 3. Seed test account:

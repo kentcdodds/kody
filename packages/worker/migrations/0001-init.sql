@@ -35,3 +35,4 @@ CREATE TABLE IF NOT EXISTS mock_resend_messages (
 
 CREATE INDEX IF NOT EXISTS mock_resend_messages_token_received_at
 	ON mock_resend_messages(token_hash, received_at DESC);
+
