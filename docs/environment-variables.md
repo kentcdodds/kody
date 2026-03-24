@@ -133,6 +133,14 @@ Optional Worker secret/var (see `types/env-schema.ts` and
   `packages/home-connector` service when it opens the outbound WebSocket session
   to the worker. When unset, the worker rejects home connector registration and
   the internal home MCP bridge cannot route `home` capabilities.
+- `HOME_CONNECTOR_*` — when you start the full local stack with `bun run dev`,
+  any `HOME_CONNECTOR_`-prefixed variable is forwarded to the child connector
+  process with the prefix removed. For example, `HOME_CONNECTOR_MOCKS=false`
+  sets `MOCKS=false` for `packages/home-connector`, and
+  `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`.
+- `ROKU_DISCOVERY_URL` — optional connector env var. Defaults to
+  `http://roku.mock.local/discovery` when `MOCKS=true`, and
+  `ssdp://239.255.255.250:1900` when `MOCKS=false`.
 
 ## Why Zod?
 

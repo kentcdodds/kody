@@ -183,6 +183,31 @@ const styles = `
 		color: var(--color-primary-hover);
 	}
 
+	button {
+		appearance: none;
+		border: 1px solid var(--color-primary);
+		border-radius: var(--radius-md);
+		background: var(--color-primary);
+		color: var(--color-on-primary);
+		padding: 0.625rem 1rem;
+		font: inherit;
+		font-weight: var(--font-weight-semibold);
+		cursor: pointer;
+		transition:
+			background-color var(--transition-fast),
+			border-color var(--transition-fast);
+	}
+
+	button:hover {
+		background: var(--color-primary-hover);
+		border-color: var(--color-primary-hover);
+	}
+
+	button:active {
+		background: var(--color-primary-active);
+		border-color: var(--color-primary-active);
+	}
+
 	code,
 	pre {
 		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -216,6 +241,14 @@ const styles = `
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-md);
+	}
+
+	.card-success {
+		border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+	}
+
+	.card-error {
+		border-color: var(--color-danger);
 	}
 
 	.status-grid {

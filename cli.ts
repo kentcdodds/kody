@@ -5,6 +5,7 @@ import readline from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import getPort, { clearLockedPorts } from 'get-port'
 import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
+import { getForwardedHomeConnectorEnv } from './tools/home-connector-env.ts'
 
 const defaultWorkerPort = 3742
 const defaultMockPort = 8788
@@ -266,6 +267,7 @@ async function restartDev(
 	)
 	const homeConnectorPort = await getPort({ port: homeConnectorPortRange })
 	homeConnectorOrigin = `http://localhost:${homeConnectorPort}`
+	const forwardedHomeConnectorEnv = getForwardedHomeConnectorEnv(process.env)
 	const client = runBunScript(
 		'dev:client',
 		[],
@@ -299,6 +301,7 @@ async function restartDev(
 		)
 	}
 	const homeConnector = runBunScript('dev:home-connector', [], {
+		...forwardedHomeConnectorEnv,
 		PORT: String(homeConnectorPort),
 		HOME_CONNECTOR_ID: homeConnectorId,
 		HOME_CONNECTOR_SHARED_SECRET: homeConnectorSharedSecret,

@@ -4,6 +4,9 @@ import { render } from './render.ts'
 import { RootLayout } from './root.tsx'
 import type { routes } from './routes.ts'
 import { type HomeConnectorState } from '../src/state.ts'
+import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
+import { scanRokuDevices } from '../src/adapters/roku/index.ts'
+import { type HomeConnectorConfig } from '../src/config.ts'
 
 function renderQuickLinks(state: HomeConnectorState) {
 	const workerSnapshotUrl = state.connection.connectorId
@@ -160,6 +163,103 @@ function renderDeviceList(
 	</ul>`
 }
 
+function formatJson(value: unknown) {
+	return JSON.stringify(value, null, 2)
+}
+
+function renderCodeBlock(value: string) {
+	return html`<pre><code>${value}</code></pre>`
+}
+
+function renderRokuDiscoveryDiagnostics(
+	diagnostics: RokuDiscoveryDiagnostics | null,
+) {
+	if (!diagnostics) {
+		return html`<p class="muted">No Roku scan diagnostics captured yet.</p>`
+	}
+
+	return html`
+		<section class="card">
+			<h2>Discovery diagnostics</h2>
+			${renderInfoRows([
+				{ label: 'Protocol', value: diagnostics.protocol },
+				{
+					label: 'Discovery URL',
+					value: html`<code>${diagnostics.discoveryUrl}</code>`,
+				},
+				{ label: 'Last scan', value: diagnostics.scannedAt },
+				{ label: 'SSDP hits', value: String(diagnostics.ssdpHits.length) },
+				{
+					label: 'Device-info lookups',
+					value: String(diagnostics.deviceInfoLookups.length),
+				},
+			])}
+		</section>
+		${diagnostics.jsonResponse
+			? html`<section class="card">
+					<h2>Raw discovery payload</h2>
+					${renderCodeBlock(formatJson(diagnostics.jsonResponse))}
+				</section>`
+			: ''}
+		<section class="card">
+			<h2>Raw SSDP hits</h2>
+			${diagnostics.ssdpHits.length === 0
+				? html`<p class="muted">
+						No SSDP hits were captured for the last scan.
+					</p>`
+				: html`<ul class="list">
+						${diagnostics.ssdpHits.map(
+							(hit) =>
+								html`<li class="card">
+									<div>
+										From:
+										<code>${hit.remoteAddress}:${String(hit.remotePort)}</code>
+									</div>
+									<div>Received: ${hit.receivedAt}</div>
+									<div>Location: <code>${hit.location ?? 'missing'}</code></div>
+									<div>USN: <code>${hit.usn ?? 'missing'}</code></div>
+									<div>Server: <code>${hit.server ?? 'missing'}</code></div>
+									${renderCodeBlock(hit.raw)}
+								</li>`,
+						)}
+					</ul>`}
+		</section>
+		<section class="card">
+			<h2>Device-info payloads</h2>
+			${diagnostics.deviceInfoLookups.length === 0
+				? html`<p class="muted">
+						No device-info payloads were captured for the last scan.
+					</p>`
+				: html`<ul class="list">
+						${diagnostics.deviceInfoLookups.map(
+							(lookup) =>
+								html`<li class="card">
+									<div>Location: <code>${lookup.location}</code></div>
+									<div>Request URL: <code>${lookup.deviceInfoUrl}</code></div>
+									<div>Error: ${lookup.error ?? 'none'}</div>
+									${lookup.parsed
+										? html`<div>
+												Parsed: <code>${formatJson(lookup.parsed)}</code>
+											</div>`
+										: ''}
+									${lookup.raw
+										? renderCodeBlock(lookup.raw)
+										: html`<p class="muted">No raw payload captured.</p>`}
+								</li>`,
+						)}
+					</ul>`}
+		</section>
+	`
+}
+
+function renderBanner(input: { tone: 'success' | 'error'; message: string }) {
+	return html`<section
+		class="card ${input.tone === 'error' ? 'card-error' : 'card-success'}"
+	>
+		<p>${input.message}</p>
+	</section>`
+}
+
 export function createHealthHandler(state: HomeConnectorState) {
 	return {
 		middleware: [],
@@ -183,45 +283,95 @@ export function createHealthHandler(state: HomeConnectorState) {
 	>
 }
 
-export function createRokuStatusHandler(state: HomeConnectorState) {
+function renderRokuStatusPage(input: {
+	state: HomeConnectorState
+	scanMessage?: string | null
+	scanError?: string | null
+}) {
+	const discovered = input.state.devices.filter((device) => !device.adopted)
+	const adopted = input.state.devices.filter((device) => device.adopted)
+
+	return render(
+		RootLayout({
+			title: 'home connector - roku status',
+			body: html`<section class="card">
+					<h1>Roku status</h1>
+					<p class="muted">
+						Current connectivity and discovery state for this connector.
+					</p>
+					<form method="POST">
+						<button type="submit">Scan now</button>
+					</form>
+					<div class="status-grid">
+						<div>
+							<strong>Worker connection</strong>
+							<div>
+								${input.state.connection.connected
+									? 'connected'
+									: 'disconnected'}
+							</div>
+						</div>
+						<div>
+							<strong>Connector ID</strong>
+							<div>${input.state.connection.connectorId}</div>
+						</div>
+						<div>
+							<strong>Last sync</strong>
+							<div>${input.state.connection.lastSyncAt ?? 'never'}</div>
+						</div>
+					</div>
+				</section>
+				${input.scanMessage
+					? renderBanner({
+							tone: 'success',
+							message: input.scanMessage,
+						})
+					: ''}
+				${input.scanError
+					? renderBanner({
+							tone: 'error',
+							message: input.scanError,
+						})
+					: ''}
+				<section class="card">
+					<h2>Adopted devices</h2>
+					${renderDeviceList('adopted', adopted)}
+				</section>
+				<section class="card">
+					<h2>Discovered devices</h2>
+					${renderDeviceList('discovered', discovered)}
+				</section>
+				${renderRokuDiscoveryDiagnostics(input.state.rokuDiscoveryDiagnostics)}`,
+		}),
+	)
+}
+
+export function createRokuStatusHandler(
+	state: HomeConnectorState,
+	config: HomeConnectorConfig,
+) {
 	return {
 		middleware: [],
-		async action() {
-			const discovered = state.devices.filter((device) => !device.adopted)
-			const adopted = state.devices.filter((device) => device.adopted)
+		async action({ request }: { request: Request }) {
+			if (request.method === 'POST') {
+				try {
+					const devices = await scanRokuDevices(state, config)
+					return renderRokuStatusPage({
+						state,
+						scanMessage: `Scan complete. Discovered ${devices.length} Roku device(s).`,
+					})
+				} catch (error) {
+					return renderRokuStatusPage({
+						state,
+						scanError:
+							error instanceof Error
+								? `Scan failed: ${error.message}`
+								: `Scan failed: ${String(error)}`,
+					})
+				}
+			}
 
-			return render(
-				RootLayout({
-					title: 'home connector - roku status',
-					body: html`<section class="card">
-							<h1>Roku status</h1>
-							<div class="status-grid">
-								<div>
-									<strong>Worker connection</strong>
-									<div>
-										${state.connection.connected ? 'connected' : 'disconnected'}
-									</div>
-								</div>
-								<div>
-									<strong>Connector ID</strong>
-									<div>${state.connection.connectorId}</div>
-								</div>
-								<div>
-									<strong>Last sync</strong>
-									<div>${state.connection.lastSyncAt ?? 'never'}</div>
-								</div>
-							</div>
-						</section>
-						<section class="card">
-							<h2>Adopted devices</h2>
-							${renderDeviceList('adopted', adopted)}
-						</section>
-						<section class="card">
-							<h2>Discovered devices</h2>
-							${renderDeviceList('discovered', discovered)}
-						</section>`,
-				}),
-			)
+			return renderRokuStatusPage({ state })
 		},
 	} satisfies BuildAction<
 		typeof routes.rokuStatus.method,

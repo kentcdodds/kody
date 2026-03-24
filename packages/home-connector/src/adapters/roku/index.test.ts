@@ -26,6 +26,7 @@ test('roku scan populates discovered devices', async () => {
 	expect(devices.length).toBeGreaterThan(0)
 	expect(status.discovered.length).toBe(devices.length)
 	expect(status.adopted.length).toBe(0)
+	expect(status.diagnostics).not.toBeNull()
 })
 
 test('adopting a discovered roku moves it into adopted devices', async () => {

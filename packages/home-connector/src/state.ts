@@ -1,4 +1,7 @@
-import { type RokuDeviceRecord } from './adapters/roku/types.ts'
+import {
+	type RokuDeviceRecord,
+	type RokuDiscoveryDiagnostics,
+} from './adapters/roku/types.ts'
 
 export type HomeConnectorConnectionState = {
 	workerUrl: string
@@ -13,6 +16,7 @@ export type HomeConnectorConnectionState = {
 export type HomeConnectorState = {
 	connection: HomeConnectorConnectionState
 	devices: Array<RokuDeviceRecord>
+	rokuDiscoveryDiagnostics: RokuDiscoveryDiagnostics | null
 }
 
 const initialState: HomeConnectorState = {
@@ -26,6 +30,7 @@ const initialState: HomeConnectorState = {
 		mocksEnabled: false,
 	},
 	devices: [],
+	rokuDiscoveryDiagnostics: null,
 }
 
 export function createAppState(): HomeConnectorState {
@@ -49,6 +54,14 @@ export function setRokuDevices(
 ) {
 	state.devices = [...devices]
 	return state.devices
+}
+
+export function setRokuDiscoveryDiagnostics(
+	state: HomeConnectorState,
+	diagnostics: RokuDiscoveryDiagnostics | null,
+) {
+	state.rokuDiscoveryDiagnostics = diagnostics
+	return state.rokuDiscoveryDiagnostics
 }
 
 export function getDiscoveredRokuDevices(state: HomeConnectorState) {

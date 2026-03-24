@@ -5,8 +5,11 @@ import {
 	ignoreRokuDevice,
 	updateDiscoveredRokuDevices,
 } from './devices/repository.ts'
-import { discoverRokuDevices } from './discovery/client.ts'
-import { type HomeConnectorState } from '../../state.ts'
+import { discoverRokuDevicesWithDiagnostics } from './discovery/client.ts'
+import {
+	setRokuDiscoveryDiagnostics,
+	type HomeConnectorState,
+} from '../../state.ts'
 import { type HomeConnectorConfig } from '../../config.ts'
 import { type RokuDeviceRecord, type RokuDiscoveredDevice } from './types.ts'
 
@@ -19,17 +22,18 @@ export async function scanRokuDevices(
 	state: HomeConnectorState,
 	config: HomeConnectorConfig,
 ) {
-	const discovered = await discoverRokuDevices({
+	const result = await discoverRokuDevicesWithDiagnostics({
 		discoveryUrl: config.rokuDiscoveryUrl,
 	})
 	const now = new Date().toISOString()
-	const normalized = discovered.map((device) => ({
+	const normalized = result.devices.map((device) => ({
 		...device,
 		deviceId: createDeviceId(device),
 		lastSeenAt: now,
 		adopted: device.isAdopted,
 	}))
 	updateDiscoveredRokuDevices(state, normalized)
+	setRokuDiscoveryDiagnostics(state, result.diagnostics)
 	return normalized
 }
 
@@ -37,6 +41,7 @@ export function getRokuStatus(state: HomeConnectorState) {
 	return {
 		discovered: getDiscoveredRokuDevices(state),
 		adopted: getAdoptedRokuDevices(state),
+		diagnostics: state.rokuDiscoveryDiagnostics,
 	}
 }
 
@@ -109,12 +114,12 @@ export function createRokuAdapter(input: {
 			return scanRokuDevices(input.state, input.config)
 		},
 		getStatus() {
-			const discovered = getDiscoveredRokuDevices(input.state)
-			const adopted = getAdoptedRokuDevices(input.state)
+			const status = getRokuStatus(input.state)
 			return {
-				discovered,
-				adopted,
-				allDevices: [...adopted, ...discovered],
+				discovered: status.discovered,
+				adopted: status.adopted,
+				diagnostics: status.diagnostics,
+				allDevices: [...status.adopted, ...status.discovered],
 			}
 		},
 		adoptDevice(deviceId: string) {

@@ -51,6 +51,12 @@ Quick notes for getting a local kody environment running.
     when `MOCKS=true`.
   - The dev entry at `packages/home-connector/server/dev-server.ts` enables
     `MOCKS=true` by default for local development.
+  - `bun run dev` forwards `HOME_CONNECTOR_*` environment variables to the
+    underlying connector process with the prefix removed, so
+    `HOME_CONNECTOR_MOCKS=false` becomes `MOCKS=false` and
+    `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` becomes `ROKU_DISCOVERY_URL=...`.
+  - When mocks are disabled and `ROKU_DISCOVERY_URL` is unset, the connector now
+    defaults Roku discovery to SSDP at `ssdp://239.255.255.250:1900`.
   - Local operational routes live at `/health`, `/roku/status`, and
     `/roku/setup`.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
@@ -85,6 +91,19 @@ Quick notes for getting a local kody environment running.
   `packages/worker/.env` from `.env.example` when needed so local and CI runs
   have the minimum required test env.
 - `bun test ./packages/home-connector` runs the connector package tests directly.
+
+## Home Connector Docker publishing
+
+Pushes to `main` that change `packages/home-connector/**`, `package.json`,
+`bun.lock`, `.dockerignore`, or `.github/workflows/home-connector-publish.yml`
+run the dedicated Home Connector publish workflow.
+
+- The workflow reruns `bun test ./packages/home-connector` before publishing.
+- Docker Hub auth comes from GitHub Actions secrets `DOCKERHUB_USERNAME` and
+  `DOCKERHUB_TOKEN`.
+- The Docker Hub repository name comes from the GitHub Actions variable
+  `HOME_CONNECTOR_DOCKER_IMAGE` (for example `kentcdodds/kody-home-connector`).
+- Successful publishes push both `latest` and `sha-<shortsha>` tags.
 
 ## Documentation maintenance
 

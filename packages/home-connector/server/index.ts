@@ -4,7 +4,7 @@ import { createHomeConnectorRouter } from '../app/router.ts'
 import { startHomeConnectorApp } from '../src/index.ts'
 
 const connector = await startHomeConnectorApp()
-const router = createHomeConnectorRouter(connector.state)
+const router = createHomeConnectorRouter(connector.state, connector.config)
 
 const server = http.createServer(
 	createRequestListener((request) => router.fetch(request), {

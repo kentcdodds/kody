@@ -35,6 +35,7 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 	const homeConnectorId = process.env.HOME_CONNECTOR_ID?.trim() || 'default'
 	const workerBaseUrl =
 		process.env.WORKER_BASE_URL?.trim() || 'http://localhost:3742'
+	const mocksEnabled = process.env.MOCKS === 'true'
 	const workerSessionUrl = createWorkerSessionUrl(
 		workerBaseUrl,
 		homeConnectorId,
@@ -46,8 +47,11 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerWebSocketUrl: createWorkerWebSocketUrl(workerSessionUrl),
 		sharedSecret: process.env.HOME_CONNECTOR_SHARED_SECRET?.trim() || null,
 		rokuDiscoveryUrl:
-			process.env.ROKU_DISCOVERY_URL?.trim() || 'http://roku.mock.local',
+			process.env.ROKU_DISCOVERY_URL?.trim() ||
+			(mocksEnabled
+				? 'http://roku.mock.local/discovery'
+				: 'ssdp://239.255.255.250:1900'),
 		port: Number.isFinite(port) ? port : 4040,
-		mocksEnabled: process.env.MOCKS === 'true',
+		mocksEnabled,
 	}
 }
