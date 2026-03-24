@@ -10,6 +10,7 @@
   },
   "imports": {
     "#app/*": "./src/app/*",
+    "#client/*": "./client/*",
     "#worker/*": "./src/*",
     "#mcp/*": "./src/mcp/*"
   }

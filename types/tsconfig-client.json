@@ -10,8 +10,8 @@
 		"jsxImportSource": "remix/component"
 	},
 	"include": [
-		"../client/**/*.ts",
-		"../client/**/*.tsx",
+		"../packages/worker/client/**/*.ts",
+		"../packages/worker/client/**/*.tsx",
 		"../packages/shared/src/**/*.ts"
 	]
 }

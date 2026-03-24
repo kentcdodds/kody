@@ -51,10 +51,10 @@ Related handlers:
 
 ### Client session refresh behavior
 
-The app shell (`client/app.tsx`) refreshes session state after initial load and
-on client-side navigation events. If an in-flight refresh is aborted, the client
-keeps the last known ready session instead of overwriting it with `null`. This
-prevents transient logged-out UI during concurrent re-renders.
+The app shell (`packages/worker/client/app.tsx`) refreshes session state after
+initial load and on client-side navigation events. If an in-flight refresh is
+aborted, the client keeps the last known ready session instead of overwriting it
+with `null`. This prevents transient logged-out UI during concurrent re-renders.
 
 ## Password reset
 

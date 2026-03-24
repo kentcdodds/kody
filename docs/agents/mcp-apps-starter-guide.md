@@ -93,7 +93,7 @@ When a UI should communicate back to the host agent:
   - `ui/open-link` (request external link open)
 - Keep messages concise and deterministic where possible.
 - For inline `rawHtml` widgets in this repo, prefer reusing the shared runtime
-  in `client/mcp-apps/widget-host-bridge.ts` (bundled into
+  in `packages/worker/client/mcp-apps/widget-host-bridge.ts` (bundled into
   `packages/worker/public/mcp-apps/calculator-widget.js`) instead of duplicating
   bridge code.
 

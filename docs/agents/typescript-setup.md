@@ -12,7 +12,7 @@ We have **three** distinct TypeScript environments, each with its own
 ### Client
 
 - **Config**: `types/tsconfig-client.json`
-- **Files**: `client/**/*.ts`, `client/**/*.tsx`
+- **Files**: `packages/worker/client/**/*.ts`, `packages/worker/client/**/*.tsx`
 - **Environment**: browser (`DOM`, `DOM.Iterable`) + JSX (`remix/component`)
 
 ### Tools
@@ -31,7 +31,6 @@ We have **three** distinct TypeScript environments, each with its own
 - **Config**: `types/tsconfig-worker.json`
 - **Files**:
   - `packages/worker/src/**/*.ts`
-  - `server/**/*.ts`
   - `packages/worker/src/mcp/**/*.ts`
   - `types/env.d.ts`, `types/env-schema.ts`
   - generated `types/worker-configuration.d.ts` (via `bun run generate-types`)
