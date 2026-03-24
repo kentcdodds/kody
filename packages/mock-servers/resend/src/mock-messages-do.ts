@@ -1,5 +1,6 @@
 type MockMessageRecord = {
 	id: string
+	token_hash: string
 	received_at: number
 	from_email: string
 	to_json: string
