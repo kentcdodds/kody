@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url))
-const migrationsDir = join(projectRoot, 'migrations')
+const migrationsDir = join(projectRoot, 'packages/worker/migrations')
 const bunBin = process.execPath
 const defaultTimeoutMs = 60_000
 const calculatorUiResourceUri = 'ui://calculator-app/entry-point.html'
@@ -158,7 +158,7 @@ async function applyMigrations(persistDir: string) {
 			'--persist-to',
 			persistDir,
 			'--file',
-			join('migrations', migrationFile),
+			join('packages/worker/migrations', migrationFile),
 		])
 	}
 }
