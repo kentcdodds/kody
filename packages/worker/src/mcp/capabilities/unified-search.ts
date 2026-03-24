@@ -18,6 +18,11 @@ import {
 	parseSkillParameters,
 	type SkillParameterDefinition,
 } from '#mcp/skills/skill-parameters.ts'
+import {
+	type UiArtifactSearchHit,
+	searchUiArtifactsForUser,
+} from '#mcp/ui-artifacts-search.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 
 function parseJsonStringArray(raw: string): Array<string> {
 	try {
@@ -90,7 +95,10 @@ export type CapabilitySearchHitTyped = {
 	type: 'capability'
 } & CapabilitySearchHit
 
-export type UnifiedSearchMatch = CapabilitySearchHitTyped | SkillSearchHit
+export type UnifiedSearchMatch =
+	| CapabilitySearchHitTyped
+	| SkillSearchHit
+	| UiArtifactSearchHit
 
 function rowToSkillHit(
 	row: McpSkillRow,
@@ -262,6 +270,7 @@ export async function searchUnified(input: {
 	specs: Record<string, CapabilitySpec>
 	userId: string | null
 	skillRows: Array<McpSkillRow>
+	uiArtifactRows: Array<UiArtifactRow>
 }): Promise<{ matches: Array<UnifiedSearchMatch>; offline: boolean }> {
 	const builtinFilter: VectorizeVectorMetadataFilter = {
 		kind: { $eq: 'builtin' },
@@ -281,6 +290,11 @@ export async function searchUnified(input: {
 		matches: [],
 		offline: capResult.offline,
 	}
+	let uiArtifactResult: { matches: Array<UiArtifactSearchHit>; offline: boolean } =
+		{
+			matches: [],
+			offline: capResult.offline,
+		}
 	if (input.userId) {
 		skillResult = await searchSkillsForUser({
 			env: input.env,
@@ -291,15 +305,24 @@ export async function searchUnified(input: {
 			userId: input.userId,
 			rows: input.skillRows,
 		})
+		uiArtifactResult = await searchUiArtifactsForUser({
+			env: input.env,
+			query: input.query,
+			limit: input.limit,
+			detail: input.detail,
+			userId: input.userId,
+			rows: input.uiArtifactRows,
+		})
 	}
 
 	const capKeys = capResult.matches.map((m) => `c:${m.name}`)
 	const skillKeys = skillResult.matches.map((m) => `s:${m.skillId}`)
+	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
 	const fusedCross = reciprocalRankFusion(
-		[capKeys, skillKeys],
+		[capKeys, skillKeys, uiArtifactKeys],
 		CAPABILITY_SEARCH_RRF_K,
 	)
-	const allKeys = [...new Set([...capKeys, ...skillKeys])]
+	const allKeys = [...new Set([...capKeys, ...skillKeys, ...uiArtifactKeys])]
 	const sortedKeys = sortIdsByScore(
 		allKeys,
 		(k) => fusedCross.get(k) ?? 0,
@@ -308,6 +331,9 @@ export async function searchUnified(input: {
 	const capByName = new Map(capResult.matches.map((m) => [m.name, m] as const))
 	const skillById = new Map(
 		skillResult.matches.map((m) => [m.skillId, m] as const),
+	)
+	const uiArtifactById = new Map(
+		uiArtifactResult.matches.map((m) => [m.appId, m] as const),
 	)
 
 	const matches: Array<UnifiedSearchMatch> = []
@@ -325,9 +351,16 @@ export async function searchUnified(input: {
 			if (hit) {
 				matches.push({ ...hit, fusedScore: score })
 			}
+		} else if (key.startsWith('a:')) {
+			const id = key.slice(2)
+			const hit = uiArtifactById.get(id)
+			if (hit) {
+				matches.push({ ...hit, fusedScore: score })
+			}
 		}
 	}
 
-	const offline = capResult.offline || skillResult.offline
+	const offline =
+		capResult.offline || skillResult.offline || uiArtifactResult.offline
 	return { matches, offline }
 }

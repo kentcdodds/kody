@@ -4,36 +4,36 @@ import {
 } from '@modelcontextprotocol/ext-apps/server'
 import { createUIResource } from '@mcp-ui/server'
 import {
-	calculatorUiResourceUri,
-	renderCalculatorUiEntryPoint,
-} from '#mcp/apps/calculator-ui-entry-point.ts'
+	generatedUiShellResourceUri,
+	renderGeneratedUiShellEntryPoint,
+} from '#mcp/apps/generated-ui-shell-entry-point.ts'
 import { type MCP } from '#mcp/index.ts'
 
-const calculatorAppResource = {
-	name: 'calculator_app_resource',
-	title: 'Calculator App Resource',
+const generatedUiAppResource = {
+	name: 'generated_ui_app_resource',
+	title: 'Generated UI App Resource',
 	description:
-		'Interactive calculator app entry point rendered by MCP App compatible hosts.',
+		'Generic MCP App shell for rendering generated UI artifacts in MCP App compatible hosts.',
 } as const
 
-export async function registerCalculatorAppResource(agent: MCP) {
+export async function registerGeneratedUiAppResource(agent: MCP) {
 	const baseUrl = agent.requireDomain()
 	const resourceDomain = new URL('/styles.css', baseUrl).origin
 
 	registerAppResource(
 		agent.server,
-		calculatorAppResource.name,
-		calculatorUiResourceUri,
+		generatedUiAppResource.name,
+		generatedUiShellResourceUri,
 		{
-			title: calculatorAppResource.title,
-			description: calculatorAppResource.description,
+			title: generatedUiAppResource.title,
+			description: generatedUiAppResource.description,
 		},
 		async () => {
-			const calculatorUiResource = createUIResource({
-				uri: calculatorUiResourceUri,
+			const uiResource = createUIResource({
+				uri: generatedUiShellResourceUri,
 				content: {
 					type: 'rawHtml',
-					htmlString: renderCalculatorUiEntryPoint(baseUrl),
+					htmlString: renderGeneratedUiShellEntryPoint(baseUrl),
 				},
 				encoding: 'text',
 				adapters: {
@@ -46,7 +46,7 @@ export async function registerCalculatorAppResource(agent: MCP) {
 			return {
 				contents: [
 					{
-						...calculatorUiResource.resource,
+						...uiResource.resource,
 						mimeType: RESOURCE_MIME_TYPE,
 						_meta: {
 							ui: {

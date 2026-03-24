@@ -38,7 +38,7 @@ test('createAiRuntime uses mock backend when AI_MODE=mock', async () => {
 		messages: [],
 		system: 'test',
 		tools: {},
-		toolNames: ['do_math'],
+		toolNames: ['open_generated_ui'],
 	})
 
 	expect(result).toEqual({

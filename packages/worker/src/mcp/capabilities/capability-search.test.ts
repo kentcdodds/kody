@@ -9,11 +9,11 @@ import {
 import { capabilitySpecs } from './registry.ts'
 
 test('buildCapabilityEmbedText includes name domain description keywords fields', () => {
-	const spec = capabilitySpecs.do_math!
+	const spec = capabilitySpecs.ui_save_app!
 	const text = buildCapabilityEmbedText(spec)
-	expect(text).toContain('do_math')
-	expect(text).toContain('math')
-	expect(text).toContain('operator')
+	expect(text).toContain('ui_save_app')
+	expect(text).toContain('apps')
+	expect(text).toContain('source')
 	expect(text.length).toBeGreaterThan(10)
 })
 
@@ -32,7 +32,7 @@ test('lexicalScore prefers overlapping tokens', () => {
 	)
 })
 
-test('fusion ranking returns do_math for arithmetic query (offline)', async () => {
+test('fusion ranking returns ui_save_app for generated ui query (offline)', async () => {
 	const env = {
 		SENTRY_ENVIRONMENT: 'test',
 		AI: {} as Ai,
@@ -40,7 +40,7 @@ test('fusion ranking returns do_math for arithmetic query (offline)', async () =
 
 	const { matches, offline } = await searchCapabilities({
 		env,
-		query: 'calculation add subtract multiply divide finite number arithmetic',
+		query: 'save generated ui app source and reopen by app id',
 		limit: 8,
 		detail: false,
 		specs: capabilitySpecs,
@@ -48,8 +48,8 @@ test('fusion ranking returns do_math for arithmetic query (offline)', async () =
 
 	expect(offline).toBe(true)
 	const names = matches.map((m) => m.name)
-	expect(names).toContain('do_math')
-	const mathRank = names.indexOf('do_math')
-	expect(mathRank).toBeGreaterThanOrEqual(0)
-	expect(mathRank).toBeLessThan(5)
+	expect(names).toContain('ui_save_app')
+	const appRank = names.indexOf('ui_save_app')
+	expect(appRank).toBeGreaterThanOrEqual(0)
+	expect(appRank).toBeLessThan(5)
 })

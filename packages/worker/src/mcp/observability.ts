@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 
-export type McpToolKind = 'search' | 'execute' | 'capability'
+export type McpToolKind = 'search' | 'execute' | 'capability' | 'app'
 
 export type McpFailurePhase = 'parse_input' | 'handler' | 'parse_output'
 

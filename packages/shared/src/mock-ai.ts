@@ -26,7 +26,7 @@ export function buildHelpResponse(toolNames: Array<string>): MockAiResponse {
 		'- help',
 		'- stream',
 		'- error',
-		'- tool:do_math;left=1;right=2;operator=+',
+		'- tool:open_generated_ui;code=<encoded-json-string>',
 	]
 
 	if (sortedToolNames.length > 0) {

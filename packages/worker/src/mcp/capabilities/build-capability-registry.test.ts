@@ -13,7 +13,7 @@ const noopHandler = async (
 ) => ({})
 
 test('defineDomain rejects capability registered under wrong domain id', () => {
-	const capability = defineDomainCapability(capabilityDomainNames.math, {
+	const capability = defineDomainCapability(capabilityDomainNames.apps, {
 		name: 'orphan',
 		description: 'test',
 		inputSchema: z.object({}),
@@ -29,7 +29,7 @@ test('defineDomain rejects capability registered under wrong domain id', () => {
 })
 
 test('buildCapabilityRegistry rejects duplicate capability names across domains', () => {
-	const mathSide = defineDomainCapability(capabilityDomainNames.math, {
+	const appsSide = defineDomainCapability(capabilityDomainNames.apps, {
 		name: 'collision',
 		description: 'a',
 		inputSchema: z.object({}),
@@ -44,9 +44,9 @@ test('buildCapabilityRegistry rejects duplicate capability names across domains'
 	expect(() =>
 		buildCapabilityRegistry([
 			defineDomain({
-				name: capabilityDomainNames.math,
-				description: 'm',
-				capabilities: [mathSide],
+				name: capabilityDomainNames.apps,
+				description: 'a',
+				capabilities: [appsSide],
 			}),
 			defineDomain({
 				name: capabilityDomainNames.coding,
@@ -58,11 +58,11 @@ test('buildCapabilityRegistry rejects duplicate capability names across domains'
 })
 
 test('buildCapabilityRegistry rejects duplicate domain registration', () => {
-	const mathDomain = defineDomain({
-		name: capabilityDomainNames.math,
-		description: 'm',
+	const appsDomain = defineDomain({
+		name: capabilityDomainNames.apps,
+		description: 'a',
 		capabilities: [
-			defineDomainCapability(capabilityDomainNames.math, {
+			defineDomainCapability(capabilityDomainNames.apps, {
 				name: 'only',
 				description: 'o',
 				inputSchema: z.object({}),
@@ -70,19 +70,19 @@ test('buildCapabilityRegistry rejects duplicate domain registration', () => {
 			}),
 		],
 	})
-	expect(() => buildCapabilityRegistry([mathDomain, mathDomain])).toThrow(
+	expect(() => buildCapabilityRegistry([appsDomain, appsDomain])).toThrow(
 		/Duplicate domain registration/,
 	)
 })
 
 test('defineDomain rejects duplicate capability names within one domain', () => {
-	const one = defineDomainCapability(capabilityDomainNames.math, {
+	const one = defineDomainCapability(capabilityDomainNames.apps, {
 		name: 'dup',
 		description: '1',
 		inputSchema: z.object({}),
 		handler: noopHandler,
 	})
-	const two = defineDomainCapability(capabilityDomainNames.math, {
+	const two = defineDomainCapability(capabilityDomainNames.apps, {
 		name: 'dup',
 		description: '2',
 		inputSchema: z.object({}),
@@ -90,8 +90,8 @@ test('defineDomain rejects duplicate capability names within one domain', () => 
 	})
 	expect(() =>
 		defineDomain({
-			name: capabilityDomainNames.math,
-			description: 'm',
+			name: capabilityDomainNames.apps,
+			description: 'a',
 			capabilities: [one, two],
 		}),
 	).toThrow(/Duplicate capability .* in domain/)

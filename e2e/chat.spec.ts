@@ -123,17 +123,23 @@ test('responds to mock tool commands in chat', async ({ page, login }) => {
 
 	await page
 		.getByRole('textbox', { name: 'Message' })
-		.fill('tool:do_math;left=1;right=2;operator=+')
+		.fill(
+			'tool:open_generated_ui;code=<main><h1>Mock App</h1><p>Opened from chat.</p></main>;title=Mock App',
+		)
 	await page.getByRole('button', { name: 'Send message' }).click()
 
 	await expect(page).toHaveURL(/\/chat\/.+/)
 	await expect(
-		messages.getByText('tool:do_math;left=1;right=2;operator=+').last(),
+		messages
+			.getByText(
+				'tool:open_generated_ui;code=<main><h1>Mock App</h1><p>Opened from chat.</p></main>;title=Mock App',
+			)
+			.last(),
 	).toBeVisible()
 	await expect(
-		messages.getByText('## ✅ Result', { exact: false }).last(),
+		messages.getByText('## Generated UI ready', { exact: false }).last(),
 	).toBeVisible()
 	await expect(
-		messages.getByText('**Result**: `3`', { exact: false }).last(),
+		messages.getByText('The generated UI is attached', { exact: false }).last(),
 	).toBeVisible()
 })

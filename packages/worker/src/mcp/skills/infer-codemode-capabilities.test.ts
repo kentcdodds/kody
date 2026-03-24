@@ -7,11 +7,16 @@ import { parse, type Program } from 'acorn'
 
 test('infers static codemode member names', () => {
 	const src = `async () => {
-    return await codemode.do_math({ left: 1, operator: '+', right: 2 })
+    return await codemode.ui_save_app({
+      title: 'Demo',
+      description: 'Demo app',
+      keywords: ['demo'],
+      source: '<main>demo</main>',
+    })
   }`
 	const { staticNames, inferencePartial } = inferCodemodeCapabilities(src)
 	expect(inferencePartial).toBe(false)
-	expect(staticNames).toEqual(['do_math'])
+	expect(staticNames).toEqual(['ui_save_app'])
 })
 
 test('infers bracket string literal access', () => {
@@ -22,7 +27,7 @@ test('infers bracket string literal access', () => {
 
 test('marks partial for computed non-literal codemode access', () => {
 	const program = parse(
-		`async () => { const x = 'do_math'; return await codemode[x]({}) }`,
+		`async () => { const x = 'ui_save_app'; return await codemode[x]({}) }`,
 		{ ecmaVersion: 'latest', sourceType: 'module' },
 	) as Program
 	const { inferencePartial } = inferCodemodeCapabilitiesFromAst(program)

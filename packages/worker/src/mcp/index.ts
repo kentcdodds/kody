@@ -22,15 +22,18 @@ const serverMetadata = {
 		version: '1.0.0',
 	},
 	instructions: `
-This is a two-step system:
-1. Use 'search' to discover builtin capabilities and saved skills (when authenticated).
-2. Use 'execute' to call them via 'codemode[capabilityName](args)', or use meta domain tools to run saved skills.
+This is a three-part system:
+1. Use 'search' to discover builtin capabilities, saved skills, and saved apps (when authenticated).
+2. Use 'execute' to call builtin capabilities via 'codemode[capabilityName](args)', or use meta domain tools to run saved skills.
+3. Use 'open_generated_ui' to open a generic MCP App shell with inline generated code or a saved app by id.
 
 Quick start
-- Call 'search' first to discover what Kody can do (results include type 'capability' or 'skill').
-- Call 'execute' or 'meta_run_skill' next to run code.
+- Call 'search' first to discover what Kody can do (results include type 'capability', 'skill', or 'app').
+- Call 'execute' or 'meta_run_skill' next to run capability code.
+- Call 'open_generated_ui' when you want an interactive UI rendered in an MCP App host.
 - Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
+- Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
 
 Kody source repository
 - Kody (this app and MCP server) is developed at https://github.com/kentcdodds/kody. When you launch a Cursor Cloud Agent to improve Kody itself, use that repository URL (unless the user explicitly points you at another fork or repo).
@@ -44,7 +47,7 @@ How to use search
 - Saved skills appear when the MCP client provides an authenticated user; use 'meta_get_skill' for full skill code.
 - Use domain descriptions above as vocabulary hints in your query text.
 - Use 'detail: true' when you need full JSON schemas and metadata.
-- Example: search({ query: 'calculator or basic arithmetic on two numbers' })
+- Example: search({ query: 'saved dashboard app or generated UI shell' })
 - Example: search({ query: 'GitHub REST API repository or issues', detail: true })
 - Example: search({ query: 'Cursor Cloud agents API' })
 - Example: search({ query: 'Cloudflare API zones dns workers d1', detail: true })
@@ -78,7 +81,9 @@ How to use execute
 - Example: const result = await codemode[capabilityName](args)
 
 MCP App tools
-- Use 'open_calculator_ui' when you want an interactive calculator widget in MCP App compatible hosts.
+- Use 'open_generated_ui' when you want an interactive UI in MCP App compatible hosts.
+- Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
+- The shell supports host messaging, app-triggered tool calls, external links, and display-mode requests when the host allows them.
 	`.trim(),
 } as const
 

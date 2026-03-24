@@ -109,17 +109,96 @@ test('sendUserMessageWithFallback delivers ui/message to latest-protocol host', 
 
 	bridge = createWidgetHostBridge({
 		appInfo: {
-			name: 'calculator-widget',
+			name: 'generated-ui-shell',
 			version: '1.0.0',
 		},
 		requestTimeoutMs: 500,
 	})
 
-	const messageText = 'Calculator result: 7 + 3 = 10'
+	const messageText = 'Generated UI sent a follow-up message.'
 	const sent = await bridge.sendUserMessageWithFallback(messageText)
 	expect(sent).toBe(true)
 	expect(deliveredChatMessages).toEqual([messageText])
 	expect(hostPostedMessages.some((entry) => entry.type === 'prompt')).toBe(
 		false,
 	)
+})
+
+test('callTool proxies tools/call through the host bridge', async () => {
+	const hostPostedMessages: Array<HostRequestMessage> = []
+	let bridge: ReturnType<typeof createWidgetHostBridge>
+
+	const parentWindow = {
+		postMessage(message: unknown) {
+			if (!message || typeof message !== 'object' || Array.isArray(message)) {
+				return
+			}
+
+			const request = message as HostRequestMessage
+			hostPostedMessages.push(request)
+			if (request.method === 'ui/initialize') {
+				bridge.handleHostMessage({
+					jsonrpc: '2.0',
+					id: request.id,
+					result: {
+						protocolVersion: latestProtocolVersion,
+						hostInfo: {
+							name: 'mcp-jam-sim',
+							version: '1.0.0',
+						},
+						hostCapabilities: {
+							message: { text: {} },
+							serverTools: {},
+						},
+						hostContext: {},
+					},
+				})
+				return
+			}
+
+			if (request.method !== 'tools/call') {
+				return
+			}
+
+			bridge.handleHostMessage({
+				jsonrpc: '2.0',
+				id: request.id,
+				result: {
+					structuredContent: {
+						appId: 'app-123',
+						source: '<main>Hello</main>',
+					},
+				},
+			})
+		},
+	}
+
+	globalThis.window = {
+		parent: parentWindow,
+	} as unknown as Window & typeof globalThis
+
+	bridge = createWidgetHostBridge({
+		appInfo: {
+			name: 'generated-ui-shell',
+			version: '1.0.0',
+		},
+		requestTimeoutMs: 500,
+	})
+
+	const result = await bridge.callTool({
+		name: 'ui_load_app_source',
+		arguments: {
+			app_id: 'app-123',
+		},
+	})
+
+	expect(result?.structuredContent).toEqual({
+		appId: 'app-123',
+		source: '<main>Hello</main>',
+	})
+	expect(
+		hostPostedMessages.some(
+			(entry) => entry.method === 'tools/call' && entry.params?.name === 'ui_load_app_source',
+		),
+	).toBe(true)
 })

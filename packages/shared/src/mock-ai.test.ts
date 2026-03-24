@@ -7,13 +7,11 @@ test('parseMockToolCommand returns null for non-tool messages', () => {
 
 test('parseMockToolCommand parses basic scalar values', () => {
 	expect(
-		parseMockToolCommand('tool:do_math;left=1;right=2;operator=+'),
+		parseMockToolCommand('tool:open_generated_ui;code=<main>hello</main>'),
 	).toEqual({
-		toolName: 'do_math',
+		toolName: 'open_generated_ui',
 		input: {
-			left: 1,
-			right: 2,
-			operator: '+',
+			code: '<main>hello</main>',
 		},
 	})
 })

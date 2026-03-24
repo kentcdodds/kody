@@ -1,7 +1,8 @@
 # MCP Apps starter guide
 
 This guide explains how to build MCP Apps in this starter project in a reusable
-way. It is intentionally **not** tied to the calculator example.
+way. The current implementation uses a single generic shell resource that can
+render inline generated code or reopen saved UI artifacts by id.
 
 Use this when replacing starter tools/resources with your own product-specific
 UI and workflows.
@@ -65,6 +66,8 @@ In `packages/worker/src/mcp/tools/<your-tool>.ts`:
 - Set `_meta.ui.resourceUri` to the **same** `ui://` URI as the resource.
 - Include annotations (`readOnlyHint`, `idempotentHint`, etc.).
 - Provide `outputSchema` for machine-usable outputs where relevant.
+- Prefer returning a compact render envelope in `structuredContent` so a single
+  shell can render different app payloads per invocation.
 
 ### 4) Wire registration in server init
 
@@ -91,16 +94,48 @@ When a UI should communicate back to the host agent:
   - `ui/message` (send a user-style message)
   - `tools/call` (call server tools)
   - `ui/open-link` (request external link open)
+- Use app-only tools (`visibility: ["app"]`) for server-side follow-up work that
+  should stay out of the model tool list, such as loading saved app source by id
+  or polling for live widget state.
 - Keep messages concise and deterministic where possible.
 - For inline `rawHtml` widgets in this repo, prefer reusing the shared runtime
   in `packages/worker/client/mcp-apps/widget-host-bridge.ts` (bundled into
-  `packages/worker/public/mcp-apps/calculator-widget.js`) instead of duplicating
+  `packages/worker/public/mcp-apps/generated-ui-shell.js`) instead of duplicating
   bridge code.
 
 You can also send simplified MCP-UI actions via `window.parent.postMessage(...)`
 (`type: 'tool' | 'prompt' | 'notify' | 'link'`) when using the `mcpApps`
 adapter. Those shorthand actions depend on adapter translation and may not be
 available in every host runtime.
+
+### Fullscreen and display modes
+
+- Prefer `ui/request-display-mode` for fullscreen entry/exit instead of trying
+  to manipulate the iframe directly.
+- Treat fullscreen as host-dependent. Always check `availableDisplayModes` from
+  render data / host context before offering the action.
+- Keep fullscreen UI optional and degrade gracefully when unsupported.
+
+### Generic shell render contract
+
+The current repo uses one generic shell resource:
+
+- `ui://generated-ui-shell/entry-point.html`
+
+The public tool should accept exactly one of:
+
+- inline source (ephemeral render)
+- saved `app_id` (server-resolved reopen)
+
+Recommended render envelope fields in tool `structuredContent`:
+
+- render mode (`inline_code` or `saved_app`)
+- saved artifact id when present
+- optional title / description for the current render session
+- inline source only for ephemeral renders
+
+This keeps the shell reusable while avoiding source round-trips through the
+model for saved artifacts.
 
 ## Theme and design-system guidance
 
@@ -148,11 +183,31 @@ token values into widget CSS. If you do this in an MCP App resource, set
 - `bun run format`
 - `bun run test:mcp`
 - `bun run validate`
+- `bun run inspect`
 - Confirm docs in `docs/agents` reflect any new workflow or constraints.
+
+## Inspector and MCP Jam verification
+
+For end-to-end verification beyond local MCP tests:
+
+1. Run `bun run inspect`.
+2. Connect the local MCP server in the inspector / MCP Jam flow.
+3. Call the generic app-opening tool with inline source and confirm the shell
+   renders the generated UI.
+4. Save an app artifact, then reopen it by `app_id` and confirm the shell loads
+   it without resending the saved source through the model.
+5. Verify host interactions that are supported by your widget:
+   - `ui/message`
+   - app-only `tools/call`
+   - `ui/open-link`
+   - `ui/request-display-mode` / fullscreen when the host exposes it
+
+Treat MCP Jam as the highest-signal browser verification path because it
+matches the sandboxed MCP Apps host model more closely than a plain iframe.
 
 ## Replacing starter examples safely
 
-When removing starter examples (for example calculator + math tool):
+When removing starter examples:
 
 1. Delete example modules under `packages/worker/src/mcp/apps`,
    `packages/worker/src/mcp/tools`, and `packages/worker/src/mcp/resources`.

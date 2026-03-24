@@ -1,62 +1,98 @@
 import { expect, test } from '@playwright/test'
 
-test('calculator widget buttons respond in default iframe', async ({
+const inlineCode = [
+	'const root = document.querySelector("[data-generated-ui-root]");',
+	'if (root) {',
+	'  root.innerHTML = `',
+	'    <div>',
+	'      <h1>Inline app</h1>',
+	'      <button type="button" data-send-message>Send message</button>',
+	'      <button type="button" data-open-link>Open docs</button>',
+	'      <button type="button" data-fullscreen>Fullscreen</button>',
+	'    </div>',
+	'  `;',
+	'  const sendButton = root.querySelector("[data-send-message]");',
+	'  const linkButton = root.querySelector("[data-open-link]");',
+	'  const fullscreenButton = root.querySelector("[data-fullscreen]");',
+	'  sendButton?.addEventListener("click", () => {',
+	'    window.kodyWidget.sendMessage("Inline widget says hello");',
+	'  });',
+	'  linkButton?.addEventListener("click", () => {',
+	'    window.kodyWidget.openLink("https://example.com/docs");',
+	'  });',
+	'  fullscreenButton?.addEventListener("click", async () => {',
+	'    const nextMode = await window.kodyWidget.toggleFullscreen();',
+	'    const status = document.createElement("p");',
+	'    status.textContent = `Mode: ${nextMode}`;',
+	'    root.append(status);',
+	'  });',
+	'}',
+].join('\n')
+
+test('generated ui shell renders inline code in default iframe', async ({
 	page,
 }) => {
-	await page.goto('/dev/calculator-widget-test')
+	await page.goto('/dev/generated-ui-shell-test')
 	await expect(
-		page.getByRole('heading', { name: 'Calculator Widget Test' }),
+		page.getByRole('heading', { name: 'Generated UI Shell Test' }),
 	).toBeVisible()
 
-	const iframe = page.frameLocator('#calc-default')
+	const shellFrame = page.frameLocator('#generated-default')
+	const appFrame = shellFrame.locator('[data-generated-ui-frame]')
+	await expect(appFrame).toBeVisible()
 	await expect(
-		iframe.getByRole('heading', { name: 'Calculator' }),
+		appFrame.contentFrame().getByRole('heading', { name: 'Inline app' }),
 	).toBeVisible()
-
-	const resultEl = iframe.locator('[data-result]')
-	await expect(resultEl).toHaveText('0')
-
-	await iframe.getByRole('button', { name: '7' }).click()
-	await iframe.getByRole('button', { name: '+' }).click()
-	await iframe.getByRole('button', { name: '3' }).click()
-	await iframe.getByRole('button', { name: '=' }).click()
-	await expect(resultEl).toHaveText('10')
 })
 
-test('calculator widget buttons respond in sandboxed iframe', async ({
+test('generated ui shell renders inline code in sandboxed iframe', async ({
 	page,
 }) => {
-	await page.goto('/dev/calculator-widget-test')
-	const sandboxedIframe = page.frameLocator('#calc-sandboxed')
+	await page.goto(
+		`/dev/generated-ui-shell-test?code=${encodeURIComponent(inlineCode)}`,
+	)
+	const shellFrame = page.frameLocator('#generated-sandboxed')
+	const sandboxedIframe = shellFrame.locator('[data-generated-ui-frame]')
+	await expect(sandboxedIframe).toBeVisible()
 	await expect(
-		sandboxedIframe.getByRole('heading', { name: 'Calculator' }),
+		sandboxedIframe.contentFrame().getByRole('heading', { name: 'Inline app' }),
 	).toBeVisible()
-
-	const resultEl = sandboxedIframe.locator('[data-result]')
-	await expect(resultEl).toHaveText('0')
-
-	await sandboxedIframe.getByRole('button', { name: '7' }).click()
-	await sandboxedIframe.getByRole('button', { name: '+' }).click()
-	await sandboxedIframe.getByRole('button', { name: '3' }).click()
-	await sandboxedIframe.getByRole('button', { name: '=' }).click()
-	await expect(resultEl).toHaveText('10')
 })
 
-test('sandboxed calculator sends result back to host chat on =', async ({
+test('sandboxed generated ui shell supports host messaging actions', async ({
 	page,
 }) => {
-	await page.goto('/dev/calculator-widget-test')
-	const sandboxedIframe = page.frameLocator('#calc-sandboxed')
+	await page.goto(
+		`/dev/generated-ui-shell-test?code=${encodeURIComponent(inlineCode)}`,
+	)
+	const shellFrame = page.frameLocator('#generated-sandboxed')
+	const sandboxedIframe = shellFrame.locator('[data-generated-ui-frame]')
+	await expect(sandboxedIframe).toBeVisible()
 	await expect(
-		sandboxedIframe.getByRole('heading', { name: 'Calculator' }),
+		sandboxedIframe.contentFrame().getByRole('heading', { name: 'Inline app' }),
 	).toBeVisible()
 
-	await sandboxedIframe.getByRole('button', { name: '7' }).click()
-	await sandboxedIframe.getByRole('button', { name: '+' }).click()
-	await sandboxedIframe.getByRole('button', { name: '3' }).click()
-	await sandboxedIframe.getByRole('button', { name: '=' }).click()
-
+	await sandboxedIframe
+		.contentFrame()
+		.getByRole('button', { name: 'Send message' })
+		.click()
 	await expect(
-		page.locator('[data-host-chat="calc-sandboxed"] [data-chat-message]'),
-	).toContainText('Calculator result: 7 + 3 = 10')
+		page.locator('[data-host-chat="generated-sandboxed"] [data-chat-message]'),
+	).toContainText('Inline widget says hello')
+
+	await sandboxedIframe
+		.contentFrame()
+		.getByRole('button', { name: 'Open docs' })
+		.click()
+	await expect(
+		page.locator('[data-host-links="generated-sandboxed"] [data-open-link]'),
+	).toContainText('https://example.com/docs')
+
+	await sandboxedIframe
+		.contentFrame()
+		.getByRole('button', { name: 'Fullscreen' })
+		.click()
+	await expect(
+		sandboxedIframe.contentFrame().getByText('Mode: fullscreen'),
+	).toBeVisible()
 })
