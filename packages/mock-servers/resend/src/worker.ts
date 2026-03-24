@@ -135,8 +135,8 @@ async function readJsonBody(request: Request) {
 	}
 }
 
-function getMockResendState(env: MockResendEnv) {
-	const id = env.MOCK_RESEND_STATE.idFromName('mock-resend-state')
+function getMockResendState(env: MockResendEnv, tokenHash: string) {
+	const id = env.MOCK_RESEND_STATE.idFromName(tokenHash)
 	return createMockResendState(env.MOCK_RESEND_STATE.get(id))
 }
 
@@ -159,7 +159,7 @@ async function handlePostEmails(
 	const id = `email_${crypto.randomUUID()}`
 	const payloadJson = JSON.stringify(parsed.value)
 
-	const state = getMockResendState(env)
+	const state = getMockResendState(env, tokenHash)
 	await state.addMessage(tokenHash, {
 		id,
 		token_hash: tokenHash,
@@ -178,7 +178,6 @@ async function handlePostEmails(
 async function handleGetMeta(request: Request, env: MockResendEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
-	const state = getMockResendState(env)
 
 	return json({
 		service: 'resend',
@@ -186,7 +185,9 @@ async function handleGetMeta(request: Request, env: MockResendEnv, url: URL) {
 		endpoints: dashboardEndpoints,
 		...(tokenHash
 			? {
-					messageCount: await state.countMessages(tokenHash),
+					messageCount: await getMockResendState(env, tokenHash).countMessages(
+						tokenHash,
+					),
 				}
 			: {}),
 	})
@@ -201,7 +202,7 @@ async function handleGetMessages(
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 	const tokenHash = await getTokenPartition(env)
-	const state = getMockResendState(env)
+	const state = getMockResendState(env, tokenHash)
 	const messageId = url.pathname.startsWith('/__mocks/messages/')
 		? url.pathname.slice('/__mocks/messages/'.length).trim()
 		: ''
@@ -227,7 +228,7 @@ async function handleClear(request: Request, env: MockResendEnv, url: URL) {
 		return json({ error: 'Unauthorized' }, { status: 401 })
 	}
 	const tokenHash = await getTokenPartition(env)
-	const state = getMockResendState(env)
+	const state = getMockResendState(env, tokenHash)
 	await state.clearMessages(tokenHash)
 	return json({ ok: true })
 }

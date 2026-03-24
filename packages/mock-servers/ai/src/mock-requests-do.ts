@@ -15,6 +15,8 @@ type DurableObjectState = {
 
 type DurableObjectEnv = Record<string, never>
 
+const MAX_STORED_REQUESTS = 100
+
 export type MockAiStateMessage =
 	| { action: 'append'; request: StoredMockRequest }
 	| { action: 'list'; limit: number }
@@ -22,7 +24,8 @@ export type MockAiStateMessage =
 	| { action: 'clear' }
 
 type MockAiStateStorage = {
-	requests: Array<StoredMockRequest>
+	totalCount: number
+	recentRequests: Array<StoredMockRequest>
 }
 
 export class MockAiState {
@@ -43,19 +46,23 @@ export class MockAiState {
 		const storage = await this.readStorage()
 		switch (message.action) {
 			case 'append': {
-				storage.requests.unshift(message.request)
+				storage.totalCount += 1
+				storage.recentRequests.unshift(message.request)
+				if (storage.recentRequests.length > MAX_STORED_REQUESTS) {
+					storage.recentRequests.length = MAX_STORED_REQUESTS
+				}
 				await this.writeStorage(storage)
 				return Response.json({ ok: true })
 			}
 			case 'list': {
-				const result = storage.requests.slice(0, message.limit)
+				const result = storage.recentRequests.slice(0, message.limit)
 				return Response.json({ requests: result })
 			}
 			case 'count': {
-				return Response.json({ count: storage.requests.length })
+				return Response.json({ count: storage.totalCount })
 			}
 			case 'clear': {
-				await this.writeStorage({ requests: [] })
+				await this.writeStorage({ totalCount: 0, recentRequests: [] })
 				return Response.json({ ok: true })
 			}
 			default:
@@ -64,8 +71,22 @@ export class MockAiState {
 	}
 
 	private async readStorage(): Promise<MockAiStateStorage> {
-		const storage = await this.state.storage.get<MockAiStateStorage>('state')
-		return storage ?? { requests: [] }
+		const storage = await this.state.storage.get<
+			MockAiStateStorage | { requests?: Array<StoredMockRequest> }
+		>('state')
+		if (!storage) {
+			return { totalCount: 0, recentRequests: [] }
+		}
+		if ('requests' in storage && Array.isArray(storage.requests)) {
+			return {
+				totalCount: storage.requests.length,
+				recentRequests: storage.requests.slice(0, MAX_STORED_REQUESTS),
+			}
+		}
+		return {
+			totalCount: storage.totalCount ?? 0,
+			recentRequests: storage.recentRequests ?? [],
+		}
 	}
 
 	private async writeStorage(storage: MockAiStateStorage) {
