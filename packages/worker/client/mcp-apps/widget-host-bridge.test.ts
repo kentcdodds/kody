@@ -198,7 +198,9 @@ test('callTool proxies tools/call through the host bridge', async () => {
 	})
 	expect(
 		hostPostedMessages.some(
-			(entry) => entry.method === 'tools/call' && entry.params?.name === 'ui_load_app_source',
+			(entry) =>
+				entry.method === 'tools/call' &&
+				entry.params?.name === 'ui_load_app_source',
 		),
 	).toBe(true)
 })

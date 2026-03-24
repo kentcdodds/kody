@@ -2,10 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import {
-	deleteUiArtifact,
-	insertUiArtifact,
-} from '#mcp/ui-artifacts-repo.ts'
+import { deleteUiArtifact, insertUiArtifact } from '#mcp/ui-artifacts-repo.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'

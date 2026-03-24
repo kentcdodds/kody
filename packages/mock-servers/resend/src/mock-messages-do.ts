@@ -99,7 +99,8 @@ export class MockResendMessagesDurableObject {
 
 	private async readStorage(): Promise<MockMessageStorage> {
 		const storage = await this.state.storage.get<
-			MockMessageStorage | { messagesByToken?: Record<string, Array<StoredMockMessage>> }
+			| MockMessageStorage
+			| { messagesByToken?: Record<string, Array<StoredMockMessage>> }
 		>('state')
 		if (!storage) {
 			return { totalCount: 0, recentMessages: [] }

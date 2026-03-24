@@ -553,8 +553,7 @@ test(
 		const result = await mcpClient.client.callTool({
 			name: 'search',
 			arguments: {
-				query:
-					'save reusable generated ui artifact and reopen app by id',
+				query: 'save reusable generated ui artifact and reopen app by id',
 				limit: 8,
 			},
 		})
@@ -880,9 +879,10 @@ test(
 					result?: Record<string, unknown>
 			  }
 			| undefined
-		const savedApp = saveStructured?.result as Record<string, unknown> | undefined
-		const appId =
-			typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+		const savedApp = saveStructured?.result as
+			| Record<string, unknown>
+			| undefined
+		const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
 		expect(appId).not.toBeNull()
 
 		const searchResult = await mcpClient.client.callTool({
@@ -893,7 +893,8 @@ test(
 				detail: true,
 			},
 		})
-		const searchStructured = (searchResult as CallToolResult).structuredContent as
+		const searchStructured = (searchResult as CallToolResult)
+			.structuredContent as
 			| {
 					result?: Record<string, unknown>
 			  }

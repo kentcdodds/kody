@@ -48,7 +48,11 @@ export const uiGetAppCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const row = await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
+			const row = await getUiArtifactById(
+				ctx.env.APP_DB,
+				user.userId,
+				args.app_id,
+			)
 			if (!row) {
 				throw new Error('Saved UI artifact not found for this user.')
 			}

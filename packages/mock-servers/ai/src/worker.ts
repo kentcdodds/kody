@@ -1,4 +1,7 @@
-import type { MockAiStateMessage, StoredMockRequest } from './mock-requests-do.ts'
+import {
+	type MockAiStateMessage,
+	type StoredMockRequest,
+} from './mock-requests-do.ts'
 import { buildMockAiScenario } from '@kody-internal/shared/mock-ai.ts'
 
 type MockAiEnv = {

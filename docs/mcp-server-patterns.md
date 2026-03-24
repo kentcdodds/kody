@@ -311,8 +311,8 @@ export async function registerTools(agent: MCP) {
 
 **Example in this repo:** Server instructions live in
 `packages/worker/src/mcp/index.ts`, and tool metadata is colocated with tool
-registration + schemas in `packages/worker/src/mcp/tools/open-generated-ui.ts` (with
-`packages/worker/src/mcp/register-tools.ts` as the small aggregator).
+registration + schemas in `packages/worker/src/mcp/tools/open-generated-ui.ts`
+(with `packages/worker/src/mcp/register-tools.ts` as the small aggregator).
 
 ---
 

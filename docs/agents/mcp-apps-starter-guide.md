@@ -100,8 +100,8 @@ When a UI should communicate back to the host agent:
 - Keep messages concise and deterministic where possible.
 - For inline `rawHtml` widgets in this repo, prefer reusing the shared runtime
   in `packages/worker/client/mcp-apps/widget-host-bridge.ts` (bundled into
-  `packages/worker/public/mcp-apps/generated-ui-shell.js`) instead of duplicating
-  bridge code.
+  `packages/worker/public/mcp-apps/generated-ui-shell.js`) instead of
+  duplicating bridge code.
 
 You can also send simplified MCP-UI actions via `window.parent.postMessage(...)`
 (`type: 'tool' | 'prompt' | 'notify' | 'link'`) when using the `mcpApps`
@@ -202,8 +202,8 @@ For end-to-end verification beyond local MCP tests:
    - `ui/open-link`
    - `ui/request-display-mode` / fullscreen when the host exposes it
 
-Treat MCP Jam as the highest-signal browser verification path because it
-matches the sandboxed MCP Apps host model more closely than a plain iframe.
+Treat MCP Jam as the highest-signal browser verification path because it matches
+the sandboxed MCP Apps host model more closely than a plain iframe.
 
 ## Replacing starter examples safely
 

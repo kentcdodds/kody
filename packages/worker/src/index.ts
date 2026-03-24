@@ -110,9 +110,8 @@ const appHandler = withCors({
 			url.pathname === '/dev/generated-ui' &&
 			(request.method === 'GET' || request.method === 'HEAD')
 		) {
-			const { renderGeneratedUiShellEntryPoint } = await import(
-				'./mcp/apps/generated-ui-shell-entry-point.ts'
-			)
+			const { renderGeneratedUiShellEntryPoint } =
+				await import('./mcp/apps/generated-ui-shell-entry-point.ts')
 			const baseUrl = new URL('/', url.origin)
 			const html = renderGeneratedUiShellEntryPoint(baseUrl)
 			return new Response(html, {

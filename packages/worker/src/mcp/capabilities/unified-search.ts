@@ -290,11 +290,13 @@ export async function searchUnified(input: {
 		matches: [],
 		offline: capResult.offline,
 	}
-	let uiArtifactResult: { matches: Array<UiArtifactSearchHit>; offline: boolean } =
-		{
-			matches: [],
-			offline: capResult.offline,
-		}
+	let uiArtifactResult: {
+		matches: Array<UiArtifactSearchHit>
+		offline: boolean
+	} = {
+		matches: [],
+		offline: capResult.offline,
+	}
 	if (input.userId) {
 		skillResult = await searchSkillsForUser({
 			env: input.env,

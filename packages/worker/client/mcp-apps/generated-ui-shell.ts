@@ -23,8 +23,6 @@ type HostToolResult = {
 	isError?: boolean
 }
 
-const inlineScriptMimeType = 'text/javascript'
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
@@ -37,7 +35,8 @@ function readTheme(source: Record<string, unknown> | undefined) {
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	if (!isRecord(value)) return null
 	const renderSource = value.renderSource ?? value.mode
-	if (renderSource !== 'inline_code' && renderSource !== 'saved_app') return null
+	if (renderSource !== 'inline_code' && renderSource !== 'saved_app')
+		return null
 	let code: string | undefined
 	const source = isRecord(value.source) ? value.source : null
 	if (typeof value.code === 'string') {
@@ -69,17 +68,21 @@ function initializeGeneratedUiShell() {
 	if (!documentRef || !windowRef) return
 
 	const rootElement = documentRef.documentElement
-	const frameElementMaybe =
-		documentRef.querySelector<HTMLIFrameElement>('[data-generated-ui-frame]')
-	const titleElementMaybe =
-		documentRef.querySelector<HTMLElement>('[data-generated-ui-title]')
+	const frameElementMaybe = documentRef.querySelector<HTMLIFrameElement>(
+		'[data-generated-ui-frame]',
+	)
+	const titleElementMaybe = documentRef.querySelector<HTMLElement>(
+		'[data-generated-ui-title]',
+	)
 	const descriptionElementMaybe = documentRef.querySelector<HTMLElement>(
 		'[data-generated-ui-description]',
 	)
-	const statusElementMaybe =
-		documentRef.querySelector<HTMLElement>('[data-generated-ui-status]')
-	const errorElementMaybe =
-		documentRef.querySelector<HTMLElement>('[data-generated-ui-error]')
+	const statusElementMaybe = documentRef.querySelector<HTMLElement>(
+		'[data-generated-ui-status]',
+	)
+	const errorElementMaybe = documentRef.querySelector<HTMLElement>(
+		'[data-generated-ui-error]',
+	)
 	const fullscreenButton = documentRef.querySelector<HTMLButtonElement>(
 		'[data-action="toggle-fullscreen"]',
 	)
@@ -296,7 +299,9 @@ ${inlineModuleSource}
 
 	async function toggleFullscreen() {
 		const displayMode = latestRenderData?.displayMode
-		const availableDisplayModes = Array.isArray(latestRenderData?.availableDisplayModes)
+		const availableDisplayModes = Array.isArray(
+			latestRenderData?.availableDisplayModes,
+		)
 			? latestRenderData?.availableDisplayModes
 			: []
 		const nextMode = displayMode === 'fullscreen' ? 'inline' : 'fullscreen'

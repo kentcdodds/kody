@@ -90,8 +90,7 @@ export class MockAiState {
 						? storage.totalCount
 						: 0,
 				recentRequests:
-					'recentRequests' in storage &&
-					Array.isArray(storage.recentRequests)
+					'recentRequests' in storage && Array.isArray(storage.recentRequests)
 						? storage.recentRequests
 						: [],
 			}
