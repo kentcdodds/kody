@@ -238,7 +238,7 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           set -euo pipefail
-          ENV_FILE=".env.example"
+          ENV_FILE="packages/worker/.env.example"
           if [ ! -f "$ENV_FILE" ]; then
             echo "Missing $ENV_FILE (required for preview deploy secrets)." >&2
             exit 1

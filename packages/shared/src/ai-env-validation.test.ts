@@ -6,7 +6,7 @@ import {
 
 test('getRemoteAiLocalDevCredentialsError lists missing local Cloudflare credentials', () => {
 	expect(getRemoteAiLocalDevCredentialsError({})).toBe(
-		'CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when AI_MODE is "remote" in local dev. Add them to .env before starting `bun run dev`.',
+		'CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when AI_MODE is "remote" in local dev. Add them to packages/worker/.env before starting `bun run dev`.',
 	)
 })
 
@@ -24,6 +24,6 @@ test('getRemoteAiLocalDevStartupError lists all missing remote AI startup env va
 			AI_MODE: 'remote',
 		}),
 	).toBe(
-		'AI_GATEWAY_ID, CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when AI_MODE is "remote" in local dev. Add them to .env before starting `bun run dev`.',
+		'AI_GATEWAY_ID, CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when AI_MODE is "remote" in local dev. Add them to packages/worker/.env before starting `bun run dev`.',
 	)
 })

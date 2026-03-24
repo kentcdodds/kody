@@ -1,8 +1,9 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const envPath = join(process.cwd(), '.env')
-const examplePath = join(process.cwd(), '.env.example')
+const workerDir = join(process.cwd(), 'packages', 'worker')
+const envPath = join(workerDir, '.env')
+const examplePath = join(workerDir, '.env.example')
 
 function escapeForRegExp(value: string) {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -62,11 +63,13 @@ function setDotenvValue(content: string, key: string, value: string) {
 
 if (!existsSync(envPath)) {
 	if (!existsSync(examplePath)) {
-		console.error('Missing .env.example; cannot prepare E2E environment.')
+		console.error('Missing packages/worker/.env.example; cannot prepare E2E environment.')
 		process.exit(1)
 	}
 	copyFileSync(examplePath, envPath)
-	console.log('Created .env from .env.example for E2E tests.')
+	console.log(
+		'Created packages/worker/.env from packages/worker/.env.example for E2E tests.',
+	)
 }
 
 const envContents = readFileSync(envPath, 'utf8')
@@ -76,7 +79,7 @@ if (existingCookieSecret && existingCookieSecret.length > 0) {
 }
 
 if (!existsSync(examplePath)) {
-	console.error('Missing .env.example; cannot prepare E2E environment.')
+	console.error('Missing packages/worker/.env.example; cannot prepare E2E environment.')
 	process.exit(1)
 }
 
@@ -84,7 +87,7 @@ const exampleContents = readFileSync(examplePath, 'utf8')
 const fallbackCookieSecret = parseDotenvValue(exampleContents, 'COOKIE_SECRET')
 if (!fallbackCookieSecret || fallbackCookieSecret.length === 0) {
 	console.error(
-		'Missing COOKIE_SECRET in .env.example; cannot prepare E2E env.',
+		'Missing COOKIE_SECRET in packages/worker/.env.example; cannot prepare E2E env.',
 	)
 	process.exit(1)
 }
@@ -95,4 +98,4 @@ const nextContents = setDotenvValue(
 	fallbackCookieSecret,
 )
 writeFileSync(envPath, nextContents, 'utf8')
-console.log('Backfilled COOKIE_SECRET in .env for E2E tests.')
+console.log('Backfilled COOKIE_SECRET in packages/worker/.env for E2E tests.')

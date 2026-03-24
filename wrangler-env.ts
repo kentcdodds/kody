@@ -4,7 +4,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
 import getPort from 'get-port'
 import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
-import { syncDotenvForConfig } from '#tools/wrangler-dotenv-sync.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -94,12 +93,6 @@ if (isDevCommand && !hasInspectorPortFlag) {
 	commandArgs.push('--inspector-port', resolvedInspectorPort)
 }
 
-syncDotenvForConfig({
-	workspaceRoot: process.cwd(),
-	configPath: getConfigArg(commandArgs),
-	logger: console,
-})
-
 const processEnv = {
 	...process.env,
 	CLOUDFLARE_ENV: envName,
@@ -156,10 +149,6 @@ process.exit(exitCode)
 
 function getPortArg(argumentList: ReadonlyArray<string>) {
 	return getArgValue(argumentList, '--port')
-}
-
-function getConfigArg(argumentList: ReadonlyArray<string>) {
-	return getArgValue(argumentList, '--config')
 }
 
 function getArgValue(argumentList: ReadonlyArray<string>, flagName: string) {

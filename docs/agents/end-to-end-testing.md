@@ -40,12 +40,13 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - The base URL defaults to `http://localhost:8788` for Playwright to avoid
   colliding with the dev server. Override with `PLAYWRIGHT_BASE_URL` or
   `PLAYWRIGHT_PORT`.
-- Playwright sets `CLOUDFLARE_ENV=test`; Wrangler still loads `.env` values for
-  local secrets.
+- Playwright sets `CLOUDFLARE_ENV=test`; Wrangler still loads
+  `packages/worker/.env` values for local secrets.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.
-- Ensure `.env` includes a `COOKIE_SECRET` var for local sessions.
+- Ensure `packages/worker/.env` includes a `COOKIE_SECRET` var for local
+  sessions.
 - Client routes live in `client/app.tsx` and `client/routes/index.tsx`.
 - API endpoints are defined in `server/routes.ts` and mapped in
   `server/router.ts`.
@@ -76,7 +77,8 @@ Common commands:
 - `bun run test:e2e`
 - `bun run test:e2e e2e/login.spec.ts`
 
-If `.env` is missing, `test:e2e` copies `.env.example` to `.env` before running
+If `packages/worker/.env` is missing, `test:e2e` copies
+`packages/worker/.env.example` to `packages/worker/.env` before running
 Playwright.
 
 These tests are executed by the `validate` gate, which also runs `lint:fix` and

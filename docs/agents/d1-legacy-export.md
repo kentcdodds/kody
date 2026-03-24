@@ -7,7 +7,7 @@ resource IDs.
 ## Export remote D1 → local SQLite
 
 From the repo root, with `CLOUDFLARE_API_TOKEN` (and `CLOUDFLARE_ACCOUNT_ID`)
-set in `.env`:
+set in `packages/worker/.env`:
 
 ```bash
 chmod +x ./tools/export-d1-remote-to-sqlite.sh

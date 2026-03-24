@@ -55,7 +55,8 @@ Use Cloudflare's built-in rate limiting rules instead of custom Worker logic.
 
 ## Environment variables
 
-Local development uses `.env`, which Wrangler loads automatically:
+Local development uses `packages/worker/.env`, which Wrangler loads
+automatically:
 
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
 - `APP_BASE_URL` (optional; defaults to request origin, example
@@ -100,7 +101,7 @@ Local development uses `.env`, which Wrangler loads automatically:
   and all user skills into Vectorize)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
-secrets from `.env`.
+secrets from `packages/worker/.env`.
 
 ## GitHub Actions configuration
 

@@ -31,8 +31,8 @@ Quick notes for getting a local kody environment running.
   file and copy only the tables you need — see
   [`docs/agents/d1-legacy-export.md`](./d1-legacy-export.md) and
   `tools/export-d1-remote-to-sqlite.sh`.
-- Copy `.env.example` to `.env` before starting any work, then update secrets as
-  needed.
+- Copy `packages/worker/.env.example` to `packages/worker/.env` before
+  starting any work, then update secrets as needed.
 - `bun run dev` (starts mock API servers automatically and sets
   `RESEND_API_BASE_URL`, `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and (unless
   `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` + `GITHUB_TOKEN` to the local
@@ -47,10 +47,10 @@ Quick notes for getting a local kody environment running.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
   starting `bun run dev`.
 - When `AI_MODE=remote`, set `AI_GATEWAY_ID`, `CLOUDFLARE_ACCOUNT_ID`, and
-  `CLOUDFLARE_API_TOKEN` in `.env`; remote AI mode now requires requests to flow
-  through a configured Cloudflare AI Gateway using your Cloudflare account
-  credentials. If any are missing, `bun run dev` fails fast with an explanatory
-  startup error.
+  `CLOUDFLARE_API_TOKEN` in `packages/worker/.env`; remote AI mode now requires
+  requests to flow through a configured Cloudflare AI Gateway using your
+  Cloudflare account credentials. If any are missing, `bun run dev` fails fast
+  with an explanatory startup error.
 - Local remote inference does not require `wrangler dev --remote`; the normal
   dev server keeps local Durable Objects/D1 while routing Workers AI calls
   through Cloudflare using the configured account credentials.

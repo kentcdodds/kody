@@ -18,7 +18,6 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { syncDotenvForConfig } from '../../../../tools/wrangler-dotenv-sync.ts'
 
 const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const migrationsDir = join(projectRoot, 'migrations')
@@ -26,6 +25,7 @@ const bunBin = process.execPath
 const defaultTimeoutMs = 60_000
 const calculatorUiResourceUri = 'ui://calculator-app/entry-point.html'
 const workerConfig = 'packages/worker/wrangler.jsonc'
+const workerEnvFile = 'packages/worker/.env'
 const primaryUserEmail = 'me@kentcdodds.com'
 const primaryUserPassword = 'iliketwix'
 
@@ -73,12 +73,17 @@ function escapeSql(value: string) {
 }
 
 async function runWrangler(args: Array<string>) {
-	syncDotenvForConfig({
-		workspaceRoot: projectRoot,
-		configPath: workerConfig,
-	})
 	const proc = Bun.spawn({
-		cmd: [bunBin, 'x', 'wrangler', '--config', workerConfig, ...args],
+		cmd: [
+			bunBin,
+			'--no-env-file',
+			`--env-file=${workerEnvFile}`,
+			'x',
+			'wrangler',
+			'--config',
+			workerConfig,
+			...args,
+		],
 		cwd: projectRoot,
 		stdout: 'pipe',
 		stderr: 'pipe',
@@ -266,10 +271,6 @@ async function stopProcess(proc: ReturnType<typeof Bun.spawn>) {
 }
 
 async function startDevServer(persistDir: string) {
-	syncDotenvForConfig({
-		workspaceRoot: projectRoot,
-		configPath: workerConfig,
-	})
 	const port = await getPort({ host: '127.0.0.1' })
 	const inspectorPortBase =
 		port + 10_000 <= 65_535 ? port + 10_000 : Math.max(1, port - 10_000)
@@ -284,6 +285,8 @@ async function startDevServer(persistDir: string) {
 	const proc = Bun.spawn({
 		cmd: [
 			bunBin,
+			'--no-env-file',
+			`--env-file=${workerEnvFile}`,
 			'x',
 			'wrangler',
 			'--config',

@@ -33,7 +33,8 @@ types, runtime validation, and documentation in sync.
    ```
 
 3. **Add local defaults**
-   - Update `.env.example` (source for new local `.env` files).
+   - Update `packages/worker/.env.example` (source for new local
+     `packages/worker/.env` files).
 
 4. **Update required resources docs**
    - Add the variable to `docs/setup-manifest.md`.

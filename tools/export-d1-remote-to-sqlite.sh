@@ -4,7 +4,7 @@
 # Prerequisites:
 # - bun / wrangler on PATH
 # - sqlite3 (macOS: preinstalled; Linux: apt install sqlite3)
-# - CLOUDFLARE_API_TOKEN (and usually CLOUDFLARE_ACCOUNT_ID) in repo-root .env
+# - CLOUDFLARE_API_TOKEN (and usually CLOUDFLARE_ACCOUNT_ID) in packages/worker/.env
 #
 # Usage:
 #   ./tools/export-d1-remote-to-sqlite.sh <d1-database-name>
@@ -33,10 +33,10 @@ NAME="$1"
 OUT_DIR="${D1_EXPORT_DIR:-"$ROOT/.tmp/d1-exports"}"
 mkdir -p "$OUT_DIR"
 
-if [ -f "$ROOT/.env" ]; then
+if [ -f "$ROOT/packages/worker/.env" ]; then
 	set -a
 	# shellcheck disable=SC1091
-	. "$ROOT/.env"
+	. "$ROOT/packages/worker/.env"
 	set +a
 fi
 

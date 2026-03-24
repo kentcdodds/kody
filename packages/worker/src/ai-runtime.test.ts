@@ -80,6 +80,6 @@ test('createAiRuntime throws a helpful error for missing local remote AI credent
 			toolNames: [],
 		}),
 	).rejects.toThrow(
-		'CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when AI_MODE is "remote" in local dev. Add them to .env before starting `bun run dev`.',
+		'CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required when AI_MODE is "remote" in local dev. Add them to packages/worker/.env before starting `bun run dev`.',
 	)
 })

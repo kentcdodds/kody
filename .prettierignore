@@ -7,7 +7,7 @@ build
 coverage
 *.log
 .env*
-!.env.example
+!packages/worker/.env.example
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
