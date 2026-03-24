@@ -9,6 +9,7 @@ import {
 	reciprocalRankFusion,
 	sortIdsByScore,
 } from '#mcp/capabilities/capability-search.ts'
+import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
 function parseJsonStringArray(raw: string): Array<string> {
@@ -19,29 +20,6 @@ function parseJsonStringArray(raw: string): Array<string> {
 	} catch {
 		return []
 	}
-}
-
-export function uiArtifactVectorId(appId: string): string {
-	return `ui_artifact_${appId}`
-}
-
-export function buildUiArtifactEmbedText(input: {
-	title: string
-	description: string
-	keywords: Array<string>
-	searchText: string | null
-	runtime: string
-}) {
-	return [
-		input.title,
-		input.description,
-		input.keywords.join(' '),
-		input.searchText ?? '',
-		'ui',
-		'app',
-		'artifact',
-		input.runtime,
-	].join('\n')
 }
 
 function rowToEmbedDoc(row: UiArtifactRow) {

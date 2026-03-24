@@ -41,6 +41,8 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	const source = isRecord(value.source) ? value.source : null
 	if (typeof value.code === 'string') {
 		code = value.code
+	} else if (typeof value.sourceCode === 'string') {
+		code = value.sourceCode
 	} else if (source && typeof source.entrypoint === 'string') {
 		code = source.entrypoint
 	}
@@ -173,6 +175,7 @@ ${code}
 	}
 
 	function setFrameSource(code: string) {
+		const previousFrameUrl = currentFrameUrl
 		const inlineModuleSource = buildInlineModuleSource(code)
 		const shellHtml = `
 <!doctype html>
@@ -216,6 +219,9 @@ ${inlineModuleSource}
 		const htmlUrl = URL.createObjectURL(htmlBlob)
 		currentFrameUrl = htmlUrl
 		frameElement.src = htmlUrl
+		if (previousFrameUrl) {
+			URL.revokeObjectURL(previousFrameUrl)
+		}
 	}
 
 	async function resolveSavedAppCode(appId: string) {
