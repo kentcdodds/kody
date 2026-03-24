@@ -39,6 +39,15 @@ Quick notes for getting a local kody environment running.
   GitHub mock Worker for the `github_rest` + `github_graphql` capabilities, and
   (unless `SKIP_CURSOR_MOCK=1`) `CURSOR_API_BASE_URL` + `CURSOR_API_KEY` to the
   local Cursor Cloud mock Worker for the `cursor_cloud_rest` capability).
+- The home automation connector now lives in `packages/home-connector`.
+  - `bun run dev:home-connector` starts the local connector app.
+  - The connector uses the `kentcdodds.com` mock bootstrap shape: only
+    `packages/home-connector/index.ts` imports `packages/home-connector/mocks/`
+    when `MOCKS=true`.
+  - The dev entry at `packages/home-connector/server/dev-server.ts` enables
+    `MOCKS=true` by default for local development.
+  - Local operational routes live at `/health`, `/roku/status`, and
+    `/roku/setup`.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `bun test` or unauthenticated local runs). Production uses
@@ -70,6 +79,7 @@ Quick notes for getting a local kody environment running.
 - `bun run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
   `packages/worker/.env` from `.env.example` when needed so local and CI runs
   have the minimum required test env.
+- `bun test ./packages/home-connector` runs the connector package tests directly.
 
 ## Documentation maintenance
 

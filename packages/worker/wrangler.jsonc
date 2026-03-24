@@ -14,6 +14,10 @@
 			"new_sqlite_classes": ["ChatAgent"],
 			"tag": "v2",
 		},
+		{
+			"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"],
+			"tag": "v3",
+		},
 	],
 
 	"observability": {
@@ -44,6 +48,14 @@
 					{
 						"class_name": "ChatAgent",
 						"name": "ChatAgent",
+					},
+					{
+						"class_name": "HomeConnectorSession",
+						"name": "HOME_CONNECTOR_SESSION",
+					},
+					{
+						"class_name": "HomeMCP",
+						"name": "HOME_MCP_OBJECT",
 					},
 				],
 			},
@@ -96,6 +108,14 @@
 						"class_name": "ChatAgent",
 						"name": "ChatAgent",
 					},
+					{
+						"class_name": "HomeConnectorSession",
+						"name": "HOME_CONNECTOR_SESSION",
+					},
+					{
+						"class_name": "HomeMCP",
+						"name": "HOME_MCP_OBJECT",
+					},
 				],
 			},
 			"d1_databases": [
@@ -146,6 +166,14 @@
 					{
 						"class_name": "ChatAgent",
 						"name": "ChatAgent",
+					},
+					{
+						"class_name": "HomeConnectorSession",
+						"name": "HOME_CONNECTOR_SESSION",
+					},
+					{
+						"class_name": "HomeMCP",
+						"name": "HOME_MCP_OBJECT",
 					},
 				],
 			},

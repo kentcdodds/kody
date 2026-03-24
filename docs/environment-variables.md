@@ -124,6 +124,16 @@ Optional Worker secrets/vars (see `types/env-schema.ts` and
   `https://api.cloudflare.com` when unset. Local `bun run dev` sets this to the
   Cloudflare mock Worker unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.
 
+## Home connector bridge
+
+Optional Worker secret/var (see `types/env-schema.ts` and
+`packages/worker/src/home/session.ts`):
+
+- `HOME_CONNECTOR_SHARED_SECRET` — shared secret used by the locally running
+  `packages/home-connector` service when it opens the outbound WebSocket session
+  to the worker. When unset, the worker rejects home connector registration and
+  the internal home MCP bridge cannot route `home` capabilities.
+
 ## Why Zod?
 
 Zod gives type inference for `Env`-driven values and a single runtime gate that

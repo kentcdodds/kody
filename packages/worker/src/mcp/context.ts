@@ -10,10 +10,12 @@ export type McpServerProps = McpCallerContext
 export function createMcpCallerContext(input: {
 	baseUrl: string
 	user?: McpUserContext | null
+	homeConnectorId?: string | null
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
 		user: input.user ?? null,
+		homeConnectorId: input.homeConnectorId ?? null,
 	}
 }
 

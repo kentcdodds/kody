@@ -1,19 +1,36 @@
-import { buildCapabilityRegistry } from './build-capability-registry.ts'
+import {
+	buildCapabilityRegistry,
+	type BuiltCapabilityRegistry,
+} from './build-capability-registry.ts'
 import { builtinDomains } from './builtin-domains.ts'
+import { synthesizeHomeDomain } from './home/index.ts'
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 
-const registry = buildCapabilityRegistry(builtinDomains)
+const staticRegistry = buildCapabilityRegistry(builtinDomains)
 
-export const capabilityList = registry.capabilityList
+export const capabilityList = staticRegistry.capabilityList
 
-export const capabilityDomains = registry.capabilityDomains
+export const capabilityDomains = staticRegistry.capabilityDomains
 
 export const capabilityDomainDescriptionsByName =
-	registry.capabilityDomainDescriptionsByName
+	staticRegistry.capabilityDomainDescriptionsByName
 
-export const capabilityMap = registry.capabilityMap
+export const capabilityMap = staticRegistry.capabilityMap
 
-export const capabilitySpecs = registry.capabilitySpecs
+export const capabilitySpecs = staticRegistry.capabilitySpecs
 
-export const capabilityToolDescriptors = registry.capabilityToolDescriptors
+export const capabilityToolDescriptors = staticRegistry.capabilityToolDescriptors
 
-export const capabilityHandlers = registry.capabilityHandlers
+export const capabilityHandlers = staticRegistry.capabilityHandlers
+
+export async function getCapabilityRegistryForContext(input: {
+	env: Env
+	callerContext: McpCallerContext
+}): Promise<BuiltCapabilityRegistry> {
+	const homeDomain = await synthesizeHomeDomain(input.env, {
+		connectorId: input.callerContext.homeConnectorId ?? null,
+		baseUrl: input.callerContext.baseUrl,
+	})
+	if (!homeDomain) return staticRegistry
+	return buildCapabilityRegistry([...builtinDomains, homeDomain.domain])
+}

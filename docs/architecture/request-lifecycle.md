@@ -36,12 +36,16 @@ Requests are handled in this order:
    - `/.well-known/oauth-protected-resource/mcp`
 5. MCP endpoint:
    - `/mcp` (requires OAuth bearer token)
-6. Internal chat agent endpoint:
+6. Home connector session endpoint:
+   - `/home/connectors/:connectorId...` (internal-only Worker route that proxies
+     websocket upgrades and JSON-RPC helper requests to the
+     `HomeConnectorSession` Durable Object)
+7. Internal chat agent endpoint:
    - `/chat-agent/:threadId...` (requires the app session cookie and routes to
      the per-thread chat Agent instance)
-7. Static assets:
+8. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
-8. App server routes:
+9. App server routes:
    - Everything else is handled by `packages/worker/src/app/handler.ts`
 
 ## App server flow
@@ -89,6 +93,19 @@ The **MCP** (`MCP` / `MCP_OBJECT`) and **chat** (`ChatAgent`) Durable Objects
 are each wrapped with `Sentry.instrumentDurableObjectWithSentry` (see
 `packages/worker/src/mcp/index.ts` and `packages/worker/src/chat-agent.ts`)
 because they run in separate isolates from the top-level Worker.
+
+The home automation flow adds two more Durable Objects:
+
+- `HomeConnectorSession` / `HOME_CONNECTOR_SESSION` terminates the outbound
+  websocket connection from the local-network `home-connector` process and
+  proxies JSON-RPC/MCP requests over that socket.
+- `HomeMCP` / `HOME_MCP_OBJECT` is an internal-only MCP bridge that the chat
+  agent attaches to via `addMcpServer(...)` so the agent can inspect or call raw
+  home connector tools when needed.
+
+The chat agent still attaches to the main compact MCP server (`kody`), but it
+also attaches to `home` and the runtime capability registry synthesizes a `home`
+domain for `search` / `execute` from the connected home connector tool surface.
 
 Shared options are built in `packages/worker/src/sentry-options.ts`: **release**
 comes from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and

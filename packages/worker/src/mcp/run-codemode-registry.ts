@@ -1,11 +1,15 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
+import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 
 export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
 ) {
-	const { capabilityHandlers } = await import('#mcp/capabilities/registry.ts')
+	const { capabilityHandlers } = await getCapabilityRegistryForContext({
+		env,
+		callerContext,
+	})
 	return Object.fromEntries(
 		Object.entries(capabilityHandlers).map(([name, handler]) => [
 			name,
