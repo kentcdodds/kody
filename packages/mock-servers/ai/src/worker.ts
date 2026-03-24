@@ -211,9 +211,11 @@ async function handleMeta(request: Request, env: MockAiEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
 	const requestCount = tokenHash
-		? (await callState<{ count: number }>(getMockAiState(env, tokenHash), {
-				action: 'count',
-			})).count
+		? (
+				await callState<{ count: number }>(getMockAiState(env, tokenHash), {
+					action: 'count',
+				})
+			).count
 		: undefined
 
 	return json({

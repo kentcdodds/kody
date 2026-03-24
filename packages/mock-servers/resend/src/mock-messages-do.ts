@@ -122,7 +122,11 @@ type StoredMockMessage = {
 }
 
 class MockResendState {
-	constructor(private stub: DurableObjectStub) {}
+	private stub: DurableObjectStub
+
+	constructor(stub: DurableObjectStub) {
+		this.stub = stub
+	}
 
 	async addMessage(tokenHash: string, message: StoredMockMessage) {
 		await this.callState({
