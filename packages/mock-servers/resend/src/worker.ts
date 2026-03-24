@@ -162,7 +162,6 @@ async function handlePostEmails(
 	const state = getMockResendState(env, tokenHash)
 	await state.addMessage(tokenHash, {
 		id,
-		token_hash: tokenHash,
 		received_at: now,
 		from_email: parsed.value.from,
 		to_json: JSON.stringify(parsed.value.to),
@@ -185,9 +184,10 @@ async function handleGetMeta(request: Request, env: MockResendEnv, url: URL) {
 		endpoints: dashboardEndpoints,
 		...(tokenHash
 			? {
-					messageCount: await getMockResendState(env, tokenHash).countMessages(
+					messageCount: await getMockResendState(
+						env,
 						tokenHash,
-					),
+					).countMessages(),
 				}
 			: {}),
 	})
@@ -207,7 +207,7 @@ async function handleGetMessages(
 		? url.pathname.slice('/__mocks/messages/'.length).trim()
 		: ''
 	if (messageId) {
-		const message = await state.getMessage(tokenHash, messageId)
+		const message = await state.getMessage(messageId)
 		if (!message) {
 			return json({ error: 'Not Found' }, { status: 404 })
 		}
@@ -219,7 +219,7 @@ async function handleGetMessages(
 		Math.max(1, Number.parseInt(limitParam || '50', 10)),
 	)
 
-	const messages = await state.listMessages(tokenHash, limit)
+	const messages = await state.listMessages(limit)
 	return json({ count: messages.length, messages })
 }
 
@@ -229,7 +229,7 @@ async function handleClear(request: Request, env: MockResendEnv, url: URL) {
 	}
 	const tokenHash = await getTokenPartition(env)
 	const state = getMockResendState(env, tokenHash)
-	await state.clearMessages(tokenHash)
+	await state.clearMessages()
 	return json({ ok: true })
 }
 

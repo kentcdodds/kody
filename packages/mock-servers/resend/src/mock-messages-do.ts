@@ -1,4 +1,12 @@
-type MockMessageRecord = {
+type DurableObjectState = {
+	storage: DurableObjectStorage
+}
+
+type DurableObjectEnv = Record<string, never>
+
+const MAX_STORED_MESSAGES = 100
+
+type StoredMockMessage = {
 	id: string
 	token_hash: string
 	received_at: number
@@ -9,33 +17,21 @@ type MockMessageRecord = {
 	payload_json: string
 }
 
-type DurableObjectState = {
-	storage: DurableObjectStorage
-}
-
-type DurableObjectEnv = Record<string, never>
-
 type MockMessageStoredPayload = {
-	message: MockMessageRecord
+	message: StoredMockMessage
 }
 
 type MockMessageListPayload = {
-	tokenHash: string
 	limit: number
 }
 
 type MockMessageGetPayload = {
-	tokenHash: string
 	id: string
 }
 
-type MockMessageClearPayload = {
-	tokenHash: string
-}
+type MockMessageClearPayload = Record<string, never>
 
-type MockMessageCountPayload = {
-	tokenHash: string
-}
+type MockMessageCountPayload = Record<string, never>
 
 type MockMessageMessage =
 	| { type: 'store'; payload: MockMessageStoredPayload }
@@ -45,7 +41,8 @@ type MockMessageMessage =
 	| { type: 'count'; payload: MockMessageCountPayload }
 
 type MockMessageStorage = {
-	messagesByToken: Record<string, Array<MockMessageRecord>>
+	totalCount: number
+	recentMessages: Array<StoredMockMessage>
 }
 
 export class MockResendMessagesDurableObject {
@@ -67,33 +64,32 @@ export class MockResendMessagesDurableObject {
 		switch (message.type) {
 			case 'store': {
 				const { message: stored } = message.payload
-				const list = storage.messagesByToken[stored.token_hash] ?? []
-				list.unshift(stored)
-				storage.messagesByToken[stored.token_hash] = list
+				storage.totalCount += 1
+				storage.recentMessages.unshift(stored)
+				if (storage.recentMessages.length > MAX_STORED_MESSAGES) {
+					storage.recentMessages.length = MAX_STORED_MESSAGES
+				}
 				await this.writeStorage(storage)
 				return Response.json({ ok: true })
 			}
 			case 'list': {
-				const { tokenHash, limit } = message.payload
-				const list = storage.messagesByToken[tokenHash] ?? []
-				return Response.json({ messages: list.slice(0, limit) })
+				const { limit } = message.payload
+				return Response.json({
+					messages: storage.recentMessages.slice(0, limit),
+				})
 			}
 			case 'get': {
-				const { tokenHash, id } = message.payload
-				const list = storage.messagesByToken[tokenHash] ?? []
+				const { id } = message.payload
+				const list = storage.recentMessages
 				return Response.json({
 					message: list.find((item) => item.id === id) ?? null,
 				})
 			}
 			case 'count': {
-				const { tokenHash } = message.payload
-				const list = storage.messagesByToken[tokenHash] ?? []
-				return Response.json({ count: list.length })
+				return Response.json({ count: storage.totalCount })
 			}
 			case 'clear': {
-				const { tokenHash } = message.payload
-				storage.messagesByToken[tokenHash] = []
-				await this.writeStorage(storage)
+				await this.writeStorage({ totalCount: 0, recentMessages: [] })
 				return Response.json({ ok: true })
 			}
 			default:
@@ -102,24 +98,37 @@ export class MockResendMessagesDurableObject {
 	}
 
 	private async readStorage(): Promise<MockMessageStorage> {
-		const storage = await this.state.storage.get<MockMessageStorage>('state')
-		return storage ?? { messagesByToken: {} }
+		const storage = await this.state.storage.get<
+			MockMessageStorage | { messagesByToken?: Record<string, Array<StoredMockMessage>> }
+		>('state')
+		if (!storage) {
+			return { totalCount: 0, recentMessages: [] }
+		}
+		if ('messagesByToken' in storage && storage.messagesByToken) {
+			const legacyMessages = Object.values(storage.messagesByToken)[0] ?? []
+			return {
+				totalCount: legacyMessages.length,
+				recentMessages: legacyMessages.slice(0, MAX_STORED_MESSAGES),
+			}
+		}
+		if ('totalCount' in storage || 'recentMessages' in storage) {
+			return {
+				totalCount:
+					'totalCount' in storage && typeof storage.totalCount === 'number'
+						? storage.totalCount
+						: 0,
+				recentMessages:
+					'recentMessages' in storage && Array.isArray(storage.recentMessages)
+						? storage.recentMessages
+						: [],
+			}
+		}
+		return { totalCount: 0, recentMessages: [] }
 	}
 
 	private async writeStorage(storage: MockMessageStorage) {
 		await this.state.storage.put('state', storage)
 	}
-}
-
-type StoredMockMessage = {
-	id: string
-	token_hash: string
-	received_at: number
-	from_email: string
-	to_json: string
-	subject: string
-	html: string
-	payload_json: string
 }
 
 class MockResendState {
@@ -129,7 +138,10 @@ class MockResendState {
 		this.stub = stub
 	}
 
-	async addMessage(tokenHash: string, message: StoredMockMessage) {
+	async addMessage(
+		tokenHash: string,
+		message: Omit<StoredMockMessage, 'token_hash'>,
+	) {
 		await this.callState({
 			type: 'store',
 			payload: {
@@ -141,36 +153,36 @@ class MockResendState {
 		})
 	}
 
-	async countMessages(tokenHash: string) {
+	async countMessages() {
 		const response = await this.callState<{ count: number }>({
 			type: 'count',
-			payload: { tokenHash },
+			payload: {},
 		})
 		return response.count
 	}
 
-	async listMessages(tokenHash: string, limit: number) {
+	async listMessages(limit: number) {
 		const response = await this.callState<{
 			messages: Array<StoredMockMessage>
 		}>({
 			type: 'list',
-			payload: { tokenHash, limit },
+			payload: { limit },
 		})
 		return response.messages
 	}
 
-	async getMessage(tokenHash: string, id: string) {
+	async getMessage(id: string) {
 		const response = await this.callState<{
 			message: StoredMockMessage | null
 		}>({
 			type: 'get',
-			payload: { tokenHash, id },
+			payload: { id },
 		})
 		return response.message
 	}
 
-	async clearMessages(tokenHash: string) {
-		await this.callState({ type: 'clear', payload: { tokenHash } })
+	async clearMessages() {
+		await this.callState({ type: 'clear', payload: {} })
 	}
 
 	private async callState<TResponse>(

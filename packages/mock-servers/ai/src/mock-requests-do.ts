@@ -83,10 +83,20 @@ export class MockAiState {
 				recentRequests: storage.requests.slice(0, MAX_STORED_REQUESTS),
 			}
 		}
-		return {
-			totalCount: storage.totalCount ?? 0,
-			recentRequests: storage.recentRequests ?? [],
+		if ('totalCount' in storage || 'recentRequests' in storage) {
+			return {
+				totalCount:
+					'totalCount' in storage && typeof storage.totalCount === 'number'
+						? storage.totalCount
+						: 0,
+				recentRequests:
+					'recentRequests' in storage &&
+					Array.isArray(storage.recentRequests)
+						? storage.recentRequests
+						: [],
+			}
 		}
+		return { totalCount: 0, recentRequests: [] }
 	}
 
 	private async writeStorage(storage: MockAiStateStorage) {
