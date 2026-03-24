@@ -30,13 +30,6 @@
 					},
 				],
 			},
-			"d1_databases": [
-				{
-					"binding": "APP_DB",
-					"database_name": "kody",
-					"migrations_dir": "../../../packages/worker/migrations",
-				},
-			],
 		},
 		"preview": {
 			"durable_objects": {
@@ -47,13 +40,6 @@
 					},
 				],
 			},
-			"d1_databases": [
-				{
-					"binding": "APP_DB",
-					"database_name": "kody-preview",
-					"migrations_dir": "../../../packages/worker/migrations",
-				},
-			],
 		},
 		"test": {
 			"durable_objects": {
@@ -64,13 +50,6 @@
 					},
 				],
 			},
-			"d1_databases": [
-				{
-					"binding": "APP_DB",
-					"database_name": "kody-preview",
-					"migrations_dir": "../../../packages/worker/migrations",
-				},
-			],
 		},
 	},
 }
