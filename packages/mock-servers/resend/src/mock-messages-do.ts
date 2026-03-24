@@ -49,10 +49,10 @@ type MockMessageStorage = {
 }
 
 export class MockResendMessagesDurableObject {
-	readonly #state: DurableObjectState
+	readonly state: DurableObjectState
 
 	constructor(state: DurableObjectState, _env: DurableObjectEnv) {
-		this.#state = state
+		this.state = state
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -102,17 +102,18 @@ export class MockResendMessagesDurableObject {
 	}
 
 	private async readStorage(): Promise<MockMessageStorage> {
-		const storage = await this.#state.storage.get<MockMessageStorage>('state')
+		const storage = await this.state.storage.get<MockMessageStorage>('state')
 		return storage ?? { messagesByToken: {} }
 	}
 
 	private async writeStorage(storage: MockMessageStorage) {
-		await this.#state.storage.put('state', storage)
+		await this.state.storage.put('state', storage)
 	}
 }
 
 type StoredMockMessage = {
 	id: string
+	token_hash: string
 	received_at: number
 	from_email: string
 	to_json: string

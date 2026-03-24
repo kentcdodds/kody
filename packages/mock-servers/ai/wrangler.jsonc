@@ -6,6 +6,12 @@
 	"main": "./src/worker.ts",
 	"preview_urls": true,
 	"observability": { "enabled": true },
+	"migrations": [
+		{
+			"new_classes": ["MockAiState"],
+			"tag": "v1",
+		},
+	],
 	"durable_objects": {
 		"bindings": [
 			{
@@ -14,12 +20,6 @@
 			},
 		],
 	},
-	"migrations": [
-		{
-			"new_classes": ["MockAiState"],
-			"tag": "v1",
-		},
-	],
 	"env": {
 		"production": {},
 		"preview": {},

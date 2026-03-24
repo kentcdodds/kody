@@ -162,6 +162,7 @@ async function handlePostEmails(
 	const state = getMockResendState(env)
 	await state.addMessage(tokenHash, {
 		id,
+		token_hash: tokenHash,
 		received_at: now,
 		from_email: parsed.value.from,
 		to_json: JSON.stringify(parsed.value.to),

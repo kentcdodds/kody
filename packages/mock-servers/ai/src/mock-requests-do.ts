@@ -26,10 +26,10 @@ type MockAiStateStorage = {
 }
 
 export class MockAiState {
-	readonly #state: DurableObjectState
+	readonly state: DurableObjectState
 
 	constructor(state: DurableObjectState, _env: DurableObjectEnv) {
-		this.#state = state
+		this.state = state
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -64,11 +64,11 @@ export class MockAiState {
 	}
 
 	private async readStorage(): Promise<MockAiStateStorage> {
-		const storage = await this.#state.storage.get<MockAiStateStorage>('state')
+		const storage = await this.state.storage.get<MockAiStateStorage>('state')
 		return storage ?? { requests: [] }
 	}
 
 	private async writeStorage(storage: MockAiStateStorage) {
-		await this.#state.storage.put('state', storage)
+		await this.state.storage.put('state', storage)
 	}
 }
