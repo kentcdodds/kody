@@ -18,6 +18,11 @@ type HomeConnectorToolHandler = (
 	args: Record<string, unknown>,
 ) => Promise<CallToolResult>
 
+export type HomeConnectorToolRegistry = {
+	list(): Array<HomeConnectorToolDescriptor>
+	call(name: string, args?: Record<string, unknown>): Promise<CallToolResult>
+}
+
 export type HomeConnectorMcpServer = {
 	server: McpServer
 	listTools(): Array<HomeConnectorToolDescriptor>
@@ -25,6 +30,7 @@ export type HomeConnectorMcpServer = {
 		name: string,
 		args?: Record<string, unknown>,
 	): Promise<CallToolResult>
+	createToolRegistry(): HomeConnectorToolRegistry
 }
 
 export function createHomeConnectorMcpServer(input: {
@@ -49,7 +55,10 @@ export function createHomeConnectorMcpServer(input: {
 
 	const tools = new Map<
 		string,
-		{ descriptor: HomeConnectorToolDescriptor; handler: HomeConnectorToolHandler }
+		{
+			descriptor: HomeConnectorToolDescriptor
+			handler: HomeConnectorToolHandler
+		}
 	>()
 
 	function registerTool(
@@ -224,6 +233,20 @@ export function createHomeConnectorMcpServer(input: {
 				throw new Error(`Unknown connector tool "${name}".`)
 			}
 			return tool.handler(args)
+		},
+		createToolRegistry() {
+			return {
+				list() {
+					return [...tools.values()].map((entry) => entry.descriptor)
+				},
+				call(name, args = {}) {
+					const tool = tools.get(name)
+					if (!tool) {
+						throw new Error(`Unknown connector tool "${name}".`)
+					}
+					return tool.handler(args)
+				},
+			}
 		},
 	}
 }

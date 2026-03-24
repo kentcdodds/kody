@@ -44,10 +44,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 
 	private pendingRequests = new Map<string, PendingRpcRequest>()
 
-	constructor(
-		state: DurableObjectState,
-		env: Env,
-	) {
+	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
 		void this.restoreState()
 	}
@@ -94,7 +91,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		return new Response('Not found', { status: 404 })
 	}
 
-	webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void | Promise<void> {
+	webSocketMessage(
+		ws: WebSocket,
+		message: string | ArrayBuffer,
+	): void | Promise<void> {
 		void this.handleWebSocketMessage(ws, message)
 	}
 
@@ -118,7 +118,8 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	async getSnapshot(): Promise<HomeConnectorSnapshot | null> {
-		const { connectorId, connectedAt, lastSeenAt } = this.stateSnapshot.persisted
+		const { connectorId, connectedAt, lastSeenAt } =
+			this.stateSnapshot.persisted
 		if (!connectorId || !connectedAt || !lastSeenAt) return null
 		return {
 			connectorId,
@@ -232,7 +233,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			pending.resolve(parsed)
 			return
 		}
-		if ('method' in parsed && parsed.method === 'notifications/tools/list_changed') {
+		if (
+			'method' in parsed &&
+			parsed.method === 'notifications/tools/list_changed'
+		) {
 			await this.refreshToolsSnapshot()
 		}
 	}

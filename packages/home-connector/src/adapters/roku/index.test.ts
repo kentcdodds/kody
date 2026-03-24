@@ -2,11 +2,7 @@ import { expect, test } from 'bun:test'
 import { installHomeConnectorMockServer } from '../../../mocks/test-server.ts'
 import { createAppState } from '../../state.ts'
 import { loadHomeConnectorConfig } from '../../config.ts'
-import {
-	adoptRoku,
-	getRokuStatus,
-	scanRokuDevices,
-} from './index.ts'
+import { adoptRoku, getRokuStatus, scanRokuDevices } from './index.ts'
 
 function createConfig() {
 	process.env.MOCKS = 'true'
@@ -41,7 +37,7 @@ test('adopting a discovered roku moves it into adopted devices', async () => {
 	const status = getRokuStatus(state)
 
 	expect(adopted.adopted).toBe(true)
-	expect(status.adopted.some((device) => device.deviceId === adopted.deviceId)).toBe(
-		true,
-	)
+	expect(
+		status.adopted.some((device) => device.deviceId === adopted.deviceId),
+	).toBe(true)
 })

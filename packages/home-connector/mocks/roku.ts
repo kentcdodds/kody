@@ -25,11 +25,14 @@ export const rokuHandlers = [
 			devices: rokuDevices,
 		})
 	}),
-	http.post('http://roku.mock.local/control/:deviceId/:action', async ({ params }) => {
-		return HttpResponse.json({
-			ok: true,
-			deviceId: params['deviceId'],
-			action: params['action'],
-		})
-	}),
+	http.post(
+		'http://roku.mock.local/control/:deviceId/:action',
+		async ({ params }) => {
+			return HttpResponse.json({
+				ok: true,
+				deviceId: params['deviceId'],
+				action: params['action'],
+			})
+		},
+	),
 ]

@@ -5,6 +5,11 @@ export type RokuDiscoveredDevice = {
 	serialNumber: string | null
 	modelName: string | null
 	isAdopted: boolean
-	lastSeenAt: string
+	lastSeenAt: string | null
 	controlEnabled: boolean
+}
+
+export type RokuDeviceRecord = RokuDiscoveredDevice & {
+	deviceId: string
+	adopted: boolean
 }

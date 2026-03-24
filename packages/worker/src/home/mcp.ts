@@ -89,7 +89,9 @@ async function registerBridgeTools(agent: HomeMcpBridge) {
 				name: z
 					.string()
 					.min(1)
-					.describe('Exact home connector tool name, such as `roku_list_devices`.'),
+					.describe(
+						'Exact home connector tool name, such as `roku_list_devices`.',
+					),
 				arguments: z
 					.record(z.string(), z.unknown())
 					.optional()
@@ -133,7 +135,9 @@ class HomeMCPBase extends McpAgent<Env, HomeMcpState, HomeMcpProps> {
 	async getHomeClient() {
 		const { homeConnectorId } = this.getCallerContext()
 		if (!homeConnectorId) {
-			throw new Error('No home connector is associated with this MCP caller context.')
+			throw new Error(
+				'No home connector is associated with this MCP caller context.',
+			)
 		}
 
 		return createHomeMcpClient(this.env, homeConnectorId)

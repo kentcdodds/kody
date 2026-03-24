@@ -80,9 +80,8 @@ export async function registerExecuteTool(agent: MCP) {
 			const env = agent.getEnv()
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
-			const { getCapabilityRegistryForContext } = await import(
-				'#mcp/capabilities/registry.ts'
-			)
+			const { getCapabilityRegistryForContext } =
+				await import('#mcp/capabilities/registry.ts')
 			const registry = await getCapabilityRegistryForContext({
 				env,
 				callerContext,

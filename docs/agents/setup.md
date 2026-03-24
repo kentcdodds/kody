@@ -33,12 +33,17 @@ Quick notes for getting a local kody environment running.
   `tools/export-d1-remote-to-sqlite.sh`.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed.
-- `bun run dev` (starts mock API servers automatically and sets
-  `RESEND_API_BASE_URL`, `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and (unless
-  `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` + `GITHUB_TOKEN` to the local
-  GitHub mock Worker for the `github_rest` + `github_graphql` capabilities, and
-  (unless `SKIP_CURSOR_MOCK=1`) `CURSOR_API_BASE_URL` + `CURSOR_API_KEY` to the
-  local Cursor Cloud mock Worker for the `cursor_cloud_rest` capability).
+- `bun run dev` (starts mock API servers automatically, the main worker, and the
+  local home connector; it sets `RESEND_API_BASE_URL`, `AI_MODE=mock`,
+  `AI_MOCK_BASE_URL`, and (unless `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` +
+  `GITHUB_TOKEN` to the local GitHub mock Worker for the `github_rest` +
+  `github_graphql` capabilities, and (unless `SKIP_CURSOR_MOCK=1`)
+  `CURSOR_API_BASE_URL` + `CURSOR_API_KEY` to the local Cursor Cloud mock Worker
+  for the `cursor_cloud_rest` capability. The home connector receives the
+  resolved worker origin via `WORKER_BASE_URL`. When
+  `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
+  it to both the worker and the connector so the outbound registration handshake
+  succeeds in local development.)
 - The home automation connector now lives in `packages/home-connector`.
   - `bun run dev:home-connector` starts the local connector app.
   - The connector uses the `kentcdodds.com` mock bootstrap shape: only

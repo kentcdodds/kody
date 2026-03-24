@@ -12,10 +12,7 @@ export type HomeMcpClient = {
 	getSnapshot(): Promise<HomeConnectorSnapshot | null>
 }
 
-function createSessionUrl(
-	connectorId: string,
-	pathname: string,
-): string {
+function createSessionUrl(connectorId: string, pathname: string): string {
 	return `https://home-connectors/${connectorId}${pathname}`
 }
 

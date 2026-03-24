@@ -1,10 +1,10 @@
 import http from 'node:http'
 import { createRequestListener } from '@remix-run/node-fetch-server'
-import { createAppRouter } from '../app/router.ts'
-import { startHomeConnector } from '../src/index.ts'
+import { createHomeConnectorRouter } from '../app/router.ts'
+import { startHomeConnectorApp } from '../src/index.ts'
 
-const connector = await startHomeConnector()
-const router = createAppRouter()
+const connector = await startHomeConnectorApp()
+const router = createHomeConnectorRouter(connector.state)
 
 const server = http.createServer(
 	createRequestListener((request) => router.fetch(request), {

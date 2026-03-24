@@ -20,7 +20,10 @@ function createCapabilityName(toolName: string) {
 	return `home_${toolName.replaceAll(/[^\w]+/g, '_').replaceAll(/_+/g, '_')}`
 }
 
-function buildKeywords(snapshot: HomeConnectorSnapshot, tool: HomeConnectorSnapshot['tools'][number]) {
+function buildKeywords(
+	snapshot: HomeConnectorSnapshot,
+	tool: HomeConnectorSnapshot['tools'][number],
+) {
 	const words = [
 		'home',
 		tool.name,
@@ -78,7 +81,10 @@ function createCapabilityFromTool(
 		async handler(args, ctx) {
 			const client = createHomeMcpClient(ctx.env, snapshot.connectorId)
 			const result = await client.callTool(tool.name, args)
-			if (result.structuredContent && typeof result.structuredContent === 'object') {
+			if (
+				result.structuredContent &&
+				typeof result.structuredContent === 'object'
+			) {
 				return result.structuredContent as Record<string, unknown>
 			}
 			return {

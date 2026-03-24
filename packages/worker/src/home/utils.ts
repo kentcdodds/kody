@@ -31,7 +31,9 @@ export function parseHomeConnectorMessage(
 	raw: string | ArrayBuffer,
 ): HomeConnectorServerMessage {
 	const text =
-		typeof raw === 'string' ? raw : new TextDecoder().decode(new Uint8Array(raw))
+		typeof raw === 'string'
+			? raw
+			: new TextDecoder().decode(new Uint8Array(raw))
 	const value = JSON.parse(text) as unknown
 	if (!value || typeof value !== 'object') {
 		throw new Error('Expected object message.')
@@ -113,4 +115,3 @@ export function createJsonRpcErrorResponse(
 export function parseJsonRpcMessage(message: JSONRPCMessage) {
 	return message
 }
-

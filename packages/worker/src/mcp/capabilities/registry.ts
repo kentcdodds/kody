@@ -19,7 +19,8 @@ export const capabilityMap = staticRegistry.capabilityMap
 
 export const capabilitySpecs = staticRegistry.capabilitySpecs
 
-export const capabilityToolDescriptors = staticRegistry.capabilityToolDescriptors
+export const capabilityToolDescriptors =
+	staticRegistry.capabilityToolDescriptors
 
 export const capabilityHandlers = staticRegistry.capabilityHandlers
 

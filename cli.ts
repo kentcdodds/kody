@@ -10,6 +10,8 @@ const defaultWorkerPort = 3742
 const defaultMockPort = 8788
 const mockReadyTimeoutMs = 10_000
 const mockReadyPollMs = 200
+const workerReadyTimeoutMs = 15_000
+const workerReadyPollMs = 250
 
 const ansiReset = '\x1b[0m'
 const ansiBright = '\x1b[1m'
@@ -41,6 +43,7 @@ const extraArgs = process.argv.slice(2)
 let shutdown: (() => void) | null = null
 let devChildren: Array<ChildProcess> = []
 let workerOrigin = ''
+let homeConnectorOrigin = ''
 let mockResendProcess: ChildProcess | null = null
 let mockAiProcess: ChildProcess | null = null
 let mockGithubProcess: ChildProcess | null = null
@@ -249,6 +252,20 @@ async function restartDev(
 	clearLockedPorts()
 	const workerPort = await getPort({ port: portRange })
 	workerOrigin = resolveWorkerOrigin(workerPort)
+	const homeConnectorId = process.env.HOME_CONNECTOR_ID?.trim() || 'default'
+	const homeConnectorSharedSecret =
+		process.env.HOME_CONNECTOR_SHARED_SECRET?.trim() ||
+		`local-home-connector-${randomUUID()}`
+	const desiredHomeConnectorPort = Number.parseInt(
+		process.env.HOME_CONNECTOR_PORT ?? '4040',
+		10,
+	)
+	const homeConnectorPortRange = Array.from(
+		{ length: 10 },
+		(_, index) => desiredHomeConnectorPort + index,
+	)
+	const homeConnectorPort = await getPort({ port: homeConnectorPortRange })
+	homeConnectorOrigin = `http://localhost:${homeConnectorPort}`
 	const client = runBunScript(
 		'dev:client',
 		[],
@@ -257,21 +274,44 @@ async function restartDev(
 			outputFilter: 'client',
 		},
 	)
-	const workerVarArgs = Object.entries(mockEnv).flatMap(([key, value]) => [
+	const workerVarEnv = {
+		...mockEnv,
+		HOME_CONNECTOR_SHARED_SECRET: homeConnectorSharedSecret,
+	}
+	const workerVarArgs = Object.entries(workerVarEnv).flatMap(([key, value]) => [
 		'--var',
 		`${key}:${value}`,
 	])
 	const worker = runBunScript(
 		'dev:worker',
 		[...extraArgs, ...workerVarArgs],
-		{ PORT: String(workerPort), ...mockEnv },
+		{
+			PORT: String(workerPort),
+			HOME_CONNECTOR_SHARED_SECRET: homeConnectorSharedSecret,
+			...mockEnv,
+		},
 		{ outputFilter: 'worker' },
 	)
-	devChildren = [client, worker]
+	const workerDidStart = await waitForWorkerReady(workerOrigin, worker)
+	if (!workerDidStart) {
+		console.warn(
+			`Main worker did not become ready within ${workerReadyTimeoutMs}ms.`,
+		)
+	}
+	const homeConnector = runBunScript('dev:home-connector', [], {
+		PORT: String(homeConnectorPort),
+		HOME_CONNECTOR_ID: homeConnectorId,
+		HOME_CONNECTOR_SHARED_SECRET: homeConnectorSharedSecret,
+		WORKER_BASE_URL: workerOrigin,
+	})
+	devChildren = [client, worker, homeConnector]
 
 	if (announce) {
 		console.log(dim('\nRestarted dev servers.'))
 		logAppRunning(() => workerOrigin)
+		console.log(
+			`${dim('Home connector running at')} ${bright(homeConnectorOrigin)}`,
+		)
 	}
 }
 
@@ -307,6 +347,30 @@ async function waitForMockReady(baseUrl: string, child: ChildProcess) {
 			return true
 		}
 		await delay(mockReadyPollMs)
+	}
+	return false
+}
+
+async function isWorkerReady(workerOrigin: string) {
+	try {
+		const response = await fetch(`${workerOrigin}/health`)
+		await response.body?.cancel()
+		return response.ok
+	} catch {
+		return false
+	}
+}
+
+async function waitForWorkerReady(workerOrigin: string, child: ChildProcess) {
+	const start = Date.now()
+	while (Date.now() - start < workerReadyTimeoutMs) {
+		if (child.killed || child.exitCode !== null) {
+			return false
+		}
+		if (await isWorkerReady(workerOrigin)) {
+			return true
+		}
+		await delay(workerReadyPollMs)
 	}
 	return false
 }

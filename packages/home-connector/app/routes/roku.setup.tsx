@@ -27,18 +27,28 @@ export const rokuSetup = {
 		return render(
 			RootLayout({
 				title: 'Home Connector - Roku Setup',
-				children: html`<main class="app-shell">
-					<h1>Roku setup</h1>
-					<p>Review connector registration and Roku discovery diagnostics.</p>
-					<ul>
-						${diagnostics.map((line) => html`<li>${line}</li>`)}
-					</ul>
-					<p>
-						V1 remains read-only here. Device adoption and manual add-by-IP will be
-						implemented on top of the connector state and Roku adapter.
-					</p>
-				</main>`,
-				entryScripts: false,
+				body: html`<section class="app-shell">
+					<header class="page-header">
+						<h1>Roku setup</h1>
+						<p class="muted">
+							Review connector registration and Roku discovery diagnostics.
+						</p>
+					</header>
+					<section class="card">
+						<h2>Connector diagnostics</h2>
+						<ul class="list">
+							${diagnostics.map((line) => html`<li>${line}</li>`)}
+						</ul>
+					</section>
+					<section class="card">
+						<h2>Current scope</h2>
+						<p>
+							V1 remains read-only here. Device adoption and manual add-by-IP
+							will be implemented on top of the connector state and Roku
+							adapter.
+						</p>
+					</section>
+				</section>`,
 			}),
 		)
 	},

@@ -2,6 +2,23 @@ import { expect, test } from 'bun:test'
 import { createAppState } from '../src/state.ts'
 import { createHomeConnectorRouter } from './router.ts'
 
+test('home route renders admin dashboard links and connection info', async () => {
+	const state = createAppState()
+	state.connection.connectorId = 'default'
+	state.connection.workerUrl = 'http://localhost:3742'
+	state.connection.connected = true
+	state.connection.sharedSecret = 'secret'
+	const router = createHomeConnectorRouter(state)
+	const response = await router.fetch('http://example.test/')
+	expect(response.status).toBe(200)
+	const html = await response.text()
+	expect(html).toContain('Home connector admin')
+	expect(html).toContain('/roku/status')
+	expect(html).toContain('/roku/setup')
+	expect(html).toContain('/home/connectors/default/snapshot')
+	expect(html).toContain('connected')
+})
+
 test('health route returns ok json', async () => {
 	const router = createHomeConnectorRouter(createAppState())
 	const response = await router.fetch('http://example.test/health')

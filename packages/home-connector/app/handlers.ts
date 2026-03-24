@@ -5,6 +5,131 @@ import { RootLayout } from './root.tsx'
 import type { routes } from './routes.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 
+function renderQuickLinks(state: HomeConnectorState) {
+	const workerSnapshotUrl = state.connection.connectorId
+		? `${state.connection.workerUrl}/home/connectors/${encodeURIComponent(state.connection.connectorId)}/snapshot`
+		: null
+	return html`<ul class="list">
+		<li><a href="/roku/status">Roku status</a></li>
+		<li><a href="/roku/setup">Roku setup</a></li>
+		<li><a href="/health">Health JSON</a></li>
+		${workerSnapshotUrl
+			? html`<li>
+					<a href="${workerSnapshotUrl}">Worker connector snapshot</a>
+				</li>`
+			: ''}
+	</ul>`
+}
+
+function getConnectionStatusSummary(state: HomeConnectorState) {
+	return state.connection.connected ? 'connected' : 'disconnected'
+}
+
+function renderInfoRows(
+	rows: Array<{
+		label: string
+		value: string | ReturnType<typeof html>
+	}>,
+) {
+	return html`<div class="info-list">
+		${rows.map(
+			(row) =>
+				html`<div class="info-row">
+					<div class="info-label">${row.label}</div>
+					<div class="info-value">${row.value}</div>
+				</div>`,
+		)}
+	</div>`
+}
+
+export function createHomeDashboardHandler(state: HomeConnectorState) {
+	return {
+		middleware: [],
+		async action() {
+			const discoveredCount = state.devices.filter(
+				(device) => !device.adopted,
+			).length
+			const adoptedCount = state.devices.filter(
+				(device) => device.adopted,
+			).length
+
+			return render(
+				RootLayout({
+					title: 'home connector - admin',
+					body: html`<div class="app-shell">
+						<section class="card">
+							<h1>Home connector admin</h1>
+							<p class="muted">
+								Local admin dashboard for connection health, device state, and
+								useful development links.
+							</p>
+						</section>
+
+						<section class="status-grid">
+							<div class="card">
+								<h2>Connection</h2>
+								${renderInfoRows([
+									{
+										label: 'Status',
+										value: getConnectionStatusSummary(state),
+									},
+									{
+										label: 'Worker',
+										value: html`<code>${state.connection.workerUrl}</code>`,
+									},
+									{
+										label: 'Connector ID',
+										value: html`<code>${state.connection.connectorId}</code>`,
+									},
+									{
+										label: 'Last sync',
+										value: state.connection.lastSyncAt ?? 'never',
+									},
+									{
+										label: 'Shared secret',
+										value: state.connection.sharedSecret
+											? 'configured'
+											: 'missing',
+									},
+									{
+										label: 'Last error',
+										value: state.connection.lastError ?? 'none',
+									},
+								])}
+							</div>
+
+							<div class="card">
+								<h2>Devices</h2>
+								${renderInfoRows([
+									{
+										label: 'Adopted',
+										value: String(adoptedCount),
+									},
+									{
+										label: 'Discovered',
+										value: String(discoveredCount),
+									},
+									{
+										label: 'Mocks',
+										value: state.connection.mocksEnabled
+											? 'enabled'
+											: 'disabled',
+									},
+								])}
+							</div>
+
+							<div class="card">
+								<h2>Quick links</h2>
+								${renderQuickLinks(state)}
+							</div>
+						</section>
+					</div>`,
+				}),
+			)
+		},
+	} satisfies BuildAction<typeof routes.home.method, typeof routes.home.pattern>
+}
+
 function renderDeviceList(
 	label: string,
 	devices: Array<{
@@ -22,14 +147,15 @@ function renderDeviceList(
 
 	return html`<ul class="list">
 		${devices.map(
-			(device) => html`<li class="card">
-				<strong>${device.name}</strong>
-				<div>ID: <code>${device.deviceId}</code></div>
-				<div>Endpoint: <code>${device.location}</code></div>
-				<div>Adopted: ${device.adopted ? 'yes' : 'no'}</div>
-				<div>Control enabled: ${device.controlEnabled ? 'yes' : 'no'}</div>
-				<div>Last seen: ${device.lastSeenAt ?? 'unknown'}</div>
-			</li>`,
+			(device) =>
+				html`<li class="card">
+					<strong>${device.name}</strong>
+					<div>ID: <code>${device.deviceId}</code></div>
+					<div>Endpoint: <code>${device.location}</code></div>
+					<div>Adopted: ${device.adopted ? 'yes' : 'no'}</div>
+					<div>Control enabled: ${device.controlEnabled ? 'yes' : 'no'}</div>
+					<div>Last seen: ${device.lastSeenAt ?? 'unknown'}</div>
+				</li>`,
 		)}
 	</ul>`
 }
@@ -51,7 +177,10 @@ export function createHealthHandler(state: HomeConnectorState) {
 				},
 			)
 		},
-	} satisfies BuildAction<typeof routes.health.method, typeof routes.health.pattern>
+	} satisfies BuildAction<
+		typeof routes.health.method,
+		typeof routes.health.pattern
+	>
 }
 
 export function createRokuStatusHandler(state: HomeConnectorState) {
@@ -69,7 +198,9 @@ export function createRokuStatusHandler(state: HomeConnectorState) {
 							<div class="status-grid">
 								<div>
 									<strong>Worker connection</strong>
-									<div>${state.connection.connected ? 'connected' : 'disconnected'}</div>
+									<div>
+										${state.connection.connected ? 'connected' : 'disconnected'}
+									</div>
 								</div>
 								<div>
 									<strong>Connector ID</strong>

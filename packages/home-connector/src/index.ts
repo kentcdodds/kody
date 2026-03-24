@@ -1,18 +1,25 @@
 import { createHomeConnectorMcpServer } from './mcp/server.ts'
+import { loadHomeConnectorConfig } from './config.ts'
+import { createAppState, updateConnectionState } from './state.ts'
 import { createWorkerConnector } from './transport/worker-connector.ts'
-import { getHomeConnectorConfig } from './config.ts'
-import { initializeConnectorState } from './state.ts'
 
 export function createHomeConnectorApp() {
-	const config = getHomeConnectorConfig()
-	const state = initializeConnectorState(config)
+	const config = loadHomeConnectorConfig()
+	const state = createAppState()
+	updateConnectionState(state, {
+		workerUrl: config.workerBaseUrl,
+		connectorId: config.homeConnectorId,
+		sharedSecret: config.sharedSecret,
+		mocksEnabled: config.mocksEnabled,
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
 	})
 	const workerConnector = createWorkerConnector({
 		config,
-		mcp,
+		state,
+		toolRegistry: mcp.createToolRegistry(),
 	})
 
 	return {
