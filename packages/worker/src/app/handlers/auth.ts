@@ -16,9 +16,14 @@ type AuthMode = (typeof authModes)[number]
 const primaryUserEmail = 'me@kentcdodds.com'
 
 function isUniqueConstraintError(error: unknown) {
-	return (
-		error instanceof Error && /unique constraint failed/i.test(error.message)
-	)
+	let currentError = error
+	while (currentError instanceof Error) {
+		if (/unique constraint failed/i.test(currentError.message)) {
+			return true
+		}
+		currentError = currentError.cause
+	}
+	return false
 }
 
 const authRequestSchema = object({
