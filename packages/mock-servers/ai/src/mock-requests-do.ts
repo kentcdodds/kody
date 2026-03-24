@@ -1,4 +1,4 @@
-type StoredMockRequest = {
+export type StoredMockRequest = {
 	id: string
 	token_hash: string
 	received_at: number
@@ -15,7 +15,7 @@ type DurableObjectState = {
 
 type DurableObjectEnv = Record<string, never>
 
-type MockAiStateMessage =
+export type MockAiStateMessage =
 	| { action: 'append'; request: StoredMockRequest }
 	| { action: 'list'; limit: number }
 	| { action: 'count' }

@@ -1,3 +1,4 @@
+import type { MockAiStateMessage, StoredMockRequest } from './mock-requests-do.ts'
 import { buildMockAiScenario } from '@kody-internal/shared/mock-ai.ts'
 
 type MockAiEnv = {
@@ -124,26 +125,9 @@ function withTokenQueryParam(baseUrl: URL, href: string, token: string | null) {
 	return `${next.pathname}${next.search}${next.hash}`
 }
 
-type StoredMockRequest = {
-	id: string
-	token_hash: string
-	received_at: number
-	scenario: string
-	last_user_message: string
-	tool_names_json: string
-	request_json: string
-	response_text: string
-}
-
-type MockAiStateRequest =
-	| { action: 'append'; request: StoredMockRequest }
-	| { action: 'list'; limit: number }
-	| { action: 'count' }
-	| { action: 'clear' }
-
 async function callState<TResponse>(
 	stub: DurableObjectStub,
-	payload: MockAiStateRequest,
+	payload: MockAiStateMessage,
 ) {
 	const response = await stub.fetch('https://mock-ai-state/', {
 		method: 'POST',
