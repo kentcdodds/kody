@@ -18,6 +18,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { computeClaudeWidgetDomain } from '#mcp/apps/claude-widget-domain.ts'
 
 const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const migrationsDir = join(projectRoot, 'packages/worker/migrations')
@@ -837,7 +838,11 @@ test(
 		expect(generatedShellSource).toContain('ui/open-link')
 		expect(generatedShellSource).toContain('tools/call')
 
-		expect(generatedResourceMeta?.ui?.domain).toBe(server.origin)
+		expect(generatedResourceMeta?.ui?.domain).toBe(
+			await computeClaudeWidgetDomain(
+				new URL('/mcp', server.origin).toString(),
+			),
+		)
 		expect(generatedResourceMeta?.['openai/widgetDomain']).toBe(server.origin)
 		expect(generatedResourceMeta?.ui?.csp?.resourceDomains).toContain(
 			server.origin,
