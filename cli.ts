@@ -5,6 +5,10 @@ import readline from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import getPort, { clearLockedPorts } from 'get-port'
 import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
+import {
+	spawnInOwnProcessGroup,
+	stopChildProcessTree,
+} from './tools/dev-process-utils.ts'
 import { getForwardedHomeConnectorEnv } from './tools/home-connector-env.ts'
 
 const defaultWorkerPort = 3742
@@ -93,7 +97,7 @@ function runBunScript(
 	options: { outputFilter?: OutputFilterKey } = {},
 ): ChildProcess {
 	const bun = platform() === 'win32' ? 'bun.exe' : 'bun'
-	const child = spawn(bun, ['run', '--silent', script, '--', ...args], {
+	const child = spawnInOwnProcessGroup(bun, ['run', '--silent', script, '--', ...args], {
 		stdio: ['inherit', 'pipe', 'pipe'],
 		env: { ...process.env, ...envOverrides },
 	})
@@ -711,21 +715,7 @@ async function stopChildren(children: Array<ChildProcess>) {
 }
 
 async function stopChild(child: ChildProcess) {
-	if (child.killed) return
-	child.kill('SIGINT')
-	const didExit = await waitForExit(child, 5000)
-	if (didExit) return
-	child.kill('SIGTERM')
-	await waitForExit(child, 2000)
-}
-
-function waitForExit(child: ChildProcess, timeoutMs: number) {
-	return Promise.race([
-		new Promise<boolean>((resolve) => {
-			child.once('exit', () => resolve(true))
-		}),
-		delay(timeoutMs).then(() => false),
-	])
+	await stopChildProcessTree(child)
 }
 
 function logAppRunning(getOrigin: () => string) {

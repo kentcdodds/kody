@@ -1,9 +1,14 @@
+import { type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
 import getPort from 'get-port'
 import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
+import {
+	spawnInOwnProcessGroup,
+	stopChildProcessTree,
+} from './tools/dev-process-utils.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -110,30 +115,31 @@ const wranglerCommand =
 	Bun.which('wrangler') ||
 	'wrangler'
 
-const proc = Bun.spawn([wranglerCommand, ...commandArgs], {
+const proc = spawnInOwnProcessGroup(wranglerCommand, commandArgs, {
 	stdio: ['inherit', 'inherit', 'inherit'],
 	env: processEnv,
 })
+const procExited = createExitPromise(proc)
 
 let isShuttingDown = false
 
 function handleSignal(signal: NodeJS.Signals) {
 	if (isShuttingDown) return
 	isShuttingDown = true
-	proc.kill(signal)
-	setTimeout(() => {
-		if (!proc.killed) proc.kill('SIGKILL')
+	void (async () => {
+		await stopChildProcessTree(proc, {
+			sigintTimeoutMs: signal === 'SIGINT' ? 5000 : 0,
+			sigtermTimeoutMs: 5000,
+			sigkillTimeoutMs: 1000,
+		})
 		process.exit(1)
-	}, 5_000).unref()
+	})()
 }
 
 process.on('SIGINT', () => handleSignal('SIGINT'))
 process.on('SIGTERM', () => handleSignal('SIGTERM'))
-process.on('exit', () => {
-	if (!proc.killed) proc.kill('SIGKILL')
-})
 
-const exitCode = await proc.exited
+const exitCode = await procExited
 if (isDevCommand && resolvedPort) {
 	const didFreePort = await waitForPortFree(
 		Number.parseInt(resolvedPort, 10),
@@ -146,6 +152,13 @@ if (isDevCommand && resolvedPort) {
 	}
 }
 process.exit(exitCode)
+
+function createExitPromise(proc: ChildProcess) {
+	return new Promise<number | null>((resolve, reject) => {
+		proc.once('error', reject)
+		proc.once('exit', (code) => resolve(code))
+	})
+}
 
 function getPortArg(argumentList: ReadonlyArray<string>) {
 	return getArgValue(argumentList, '--port')
