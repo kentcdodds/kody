@@ -86,3 +86,46 @@ test('launching a Roku app succeeds for an adopted device', async () => {
 		mediaType: 'live',
 	})
 })
+
+test('listing Roku apps returns structured app metadata', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const roku = createRokuAdapter({ state, config })
+
+	const devices = await roku.scan()
+	const deviceId = devices[0]!.deviceId
+	roku.adoptDevice(deviceId)
+
+	const result = await roku.listApps(deviceId)
+
+	expect(result.deviceId).toBe(deviceId)
+	expect(result.deviceName).toBe('Living Room Roku')
+	expect(result.apps.length).toBeGreaterThan(0)
+	expect(result.apps[0]).toMatchObject({
+		id: '837',
+		name: 'YouTube',
+		type: 'appl',
+		version: '5.7.0',
+	})
+})
+
+test('getting the active Roku app returns the current app metadata', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const roku = createRokuAdapter({ state, config })
+
+	const devices = await roku.scan()
+	const deviceId = devices[0]!.deviceId
+	roku.adoptDevice(deviceId)
+
+	const result = await roku.getActiveApp(deviceId)
+
+	expect(result.deviceId).toBe(deviceId)
+	expect(result.deviceName).toBe('Living Room Roku')
+	expect(result.app).toMatchObject({
+		id: '13842',
+		name: 'Jellyfin',
+		type: 'appl',
+		version: '2.0.1',
+	})
+})

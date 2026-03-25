@@ -49,3 +49,24 @@ export type RokuDeviceRecord = RokuDiscoveredDevice & {
 	deviceId: string
 	adopted: boolean
 }
+
+export type RokuAppInfo = {
+	id: string
+	name: string
+	type: string
+	version: string
+}
+
+export type RokuAppListResult = {
+	deviceId: string
+	deviceName: string
+	apps: Array<RokuAppInfo>
+	responseText: string
+}
+
+export type RokuActiveAppResult = {
+	deviceId: string
+	deviceName: string
+	app: RokuAppInfo | null
+	responseText: string
+}

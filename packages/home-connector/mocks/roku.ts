@@ -22,6 +22,25 @@ const rokuDevices = [
 function createRokuEcpHandlers(location: string) {
 	const baseUrl = location.replace(/\/$/, '')
 	return [
+		http.get(`${baseUrl}/query/apps`, () => {
+			return HttpResponse.xml(
+				`<?xml version="1.0" encoding="UTF-8"?>
+<apps>
+	<app id="837" type="appl" version="5.7.0">YouTube</app>
+	<app id="13842" type="appl" version="2.0.1">Jellyfin</app>
+</apps>`,
+				{ status: 200 },
+			)
+		}),
+		http.get(`${baseUrl}/query/active-app`, () => {
+			return HttpResponse.xml(
+				`<?xml version="1.0" encoding="UTF-8"?>
+<active-app>
+	<app id="13842" type="appl" version="2.0.1">Jellyfin</app>
+</active-app>`,
+				{ status: 200 },
+			)
+		}),
 		http.post(
 			`${baseUrl}/keypress/:key`,
 			() => new HttpResponse(null, { status: 200 }),

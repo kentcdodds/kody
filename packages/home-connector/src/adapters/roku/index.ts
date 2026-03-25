@@ -11,7 +11,13 @@ import {
 	type HomeConnectorState,
 } from '../../state.ts'
 import { type HomeConnectorConfig } from '../../config.ts'
-import { type RokuDeviceRecord, type RokuDiscoveredDevice } from './types.ts'
+import {
+	type RokuActiveAppResult,
+	type RokuAppInfo,
+	type RokuAppListResult,
+	type RokuDeviceRecord,
+	type RokuDiscoveredDevice,
+} from './types.ts'
 
 function createDeviceId(input: RokuDiscoveredDevice) {
 	const base = input.serialNumber || input.location || input.id || input.name
@@ -84,6 +90,35 @@ function buildDeviceLaunchUrl(
 	return launchUrl.toString()
 }
 
+function parseRokuAppInfoXml(appXml: string): RokuAppInfo {
+	const idMatch = appXml.match(/\bid="([^"]*)"/i)
+	const typeMatch = appXml.match(/\btype="([^"]*)"/i)
+	const versionMatch = appXml.match(/\bversion="([^"]*)"/i)
+	const nameMatch = appXml.match(/>([^<]*)<\/app>/i)
+	return {
+		id: idMatch?.[1]?.trim() || '',
+		name: nameMatch?.[1]?.trim() || '',
+		type: typeMatch?.[1]?.trim() || '',
+		version: versionMatch?.[1]?.trim() || '',
+	}
+}
+
+function parseRokuAppListXml(xml: string): Array<RokuAppInfo> {
+	const appMatches =
+		xml.match(/<app\b[^>]*?(?:\/>|>[\s\S]*?<\/app>)/gi) ?? []
+	return appMatches
+		.map((appXml) => parseRokuAppInfoXml(appXml))
+		.filter((app) => app.id && app.name)
+}
+
+function parseRokuActiveAppXml(xml: string): RokuAppInfo | null {
+	const match = xml.match(/<app\b[^>]*?(?:\/>|>[\s\S]*?<\/app>)/i)
+	if (!match) return null
+	const app = parseRokuAppInfoXml(match[0])
+	if (!app.id || !app.name) return null
+	return app
+}
+
 async function sendRokuKeypress(input: {
 	device: RokuDeviceRecord
 	key: string
@@ -123,6 +158,46 @@ async function launchRokuApp(input: {
 		deviceId: input.device.deviceId,
 		appId: input.appId,
 		params,
+		responseText,
+	}
+}
+
+async function fetchRokuAppList(input: {
+	device: RokuDeviceRecord
+}): Promise<RokuAppListResult> {
+	const targetUrl = `${input.device.location.replace(/\/$/, '')}/query/apps`
+	const response = await fetch(targetUrl, {
+		method: 'GET',
+	})
+	if (!response.ok) {
+		throw new Error(`Roku app list failed with status ${response.status}.`)
+	}
+	const responseText = await response.text()
+	const apps = parseRokuAppListXml(responseText)
+	return {
+		deviceId: input.device.deviceId,
+		deviceName: input.device.name,
+		apps,
+		responseText,
+	}
+}
+
+async function fetchRokuActiveApp(input: {
+	device: RokuDeviceRecord
+}): Promise<RokuActiveAppResult> {
+	const targetUrl = `${input.device.location.replace(/\/$/, '')}/query/active-app`
+	const response = await fetch(targetUrl, {
+		method: 'GET',
+	})
+	if (!response.ok) {
+		throw new Error(`Roku active app query failed with status ${response.status}.`)
+	}
+	const responseText = await response.text()
+	const app = parseRokuActiveAppXml(responseText)
+	return {
+		deviceId: input.device.deviceId,
+		deviceName: input.device.name,
+		app,
 		responseText,
 	}
 }
@@ -180,6 +255,24 @@ export function createRokuAdapter(input: {
 				appId,
 				params,
 			})
+		},
+		async listApps(deviceId: string) {
+			const device = getDeviceOrThrow(input.state, deviceId)
+			if (!device.adopted) {
+				throw new Error(
+					`Roku device "${deviceId}" must be adopted before control.`,
+				)
+			}
+			return fetchRokuAppList({ device })
+		},
+		async getActiveApp(deviceId: string) {
+			const device = getDeviceOrThrow(input.state, deviceId)
+			if (!device.adopted) {
+				throw new Error(
+					`Roku device "${deviceId}" must be adopted before control.`,
+				)
+			}
+			return fetchRokuActiveApp({ device })
 		},
 	}
 }

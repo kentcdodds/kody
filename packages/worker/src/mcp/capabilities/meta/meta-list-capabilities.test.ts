@@ -39,6 +39,78 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 												required: ['deviceId', 'key'],
 											},
 										},
+										{
+											name: 'roku_list_apps',
+											title: 'List Roku Apps',
+											description:
+												'List installed Roku apps on an adopted device using the Roku ECP app query.',
+											inputSchema: {
+												type: 'object',
+												properties: {
+													deviceId: { type: 'string' },
+												},
+												required: ['deviceId'],
+											},
+											outputSchema: {
+												type: 'object',
+												properties: {
+													deviceId: { type: 'string' },
+													deviceName: { type: 'string' },
+													apps: {
+														type: 'array',
+														items: {
+															type: 'object',
+															properties: {
+																id: { type: 'string' },
+																name: { type: 'string' },
+																type: { type: 'string' },
+																version: { type: 'string' },
+															},
+															required: ['id', 'name', 'type', 'version'],
+														},
+													},
+													responseText: { type: 'string' },
+												},
+												required: ['deviceId', 'deviceName', 'apps', 'responseText'],
+											},
+										},
+										{
+											name: 'roku_get_active_app',
+											title: 'Get Active Roku App',
+											description:
+												'Get the currently active Roku app on an adopted device.',
+											inputSchema: {
+												type: 'object',
+												properties: {
+													deviceId: { type: 'string' },
+												},
+												required: ['deviceId'],
+											},
+											outputSchema: {
+												type: 'object',
+												properties: {
+													deviceId: { type: 'string' },
+													deviceName: { type: 'string' },
+													app: {
+														anyOf: [
+															{
+																type: 'object',
+																properties: {
+																	id: { type: 'string' },
+																	name: { type: 'string' },
+																	type: { type: 'string' },
+																	version: { type: 'string' },
+																},
+																required: ['id', 'name', 'type', 'version'],
+															},
+															{ type: 'null' },
+														],
+													},
+													responseText: { type: 'string' },
+												},
+												required: ['deviceId', 'deviceName', 'app', 'responseText'],
+											},
+										},
 									],
 								}),
 							)
@@ -72,10 +144,20 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 	const homeCapability = result.capabilities.find(
 		(capability) => capability.name === 'home_roku_press_key',
 	)
+	const listAppsCapability = result.capabilities.find(
+		(capability) => capability.name === 'home_roku_list_apps',
+	)
+	const activeAppCapability = result.capabilities.find(
+		(capability) => capability.name === 'home_roku_get_active_app',
+	)
 	expect(homeCapability).not.toBeUndefined()
 	expect(homeCapability?.domain).toBe('home')
 	expect(homeCapability?.description).toContain('Roku')
 	expect(homeCapability?.requiredInputFields).toEqual(['deviceId', 'key'])
+	expect(listAppsCapability).not.toBeUndefined()
+	expect(listAppsCapability?.requiredInputFields).toEqual(['deviceId'])
+	expect(activeAppCapability).not.toBeUndefined()
+	expect(activeAppCapability?.requiredInputFields).toEqual(['deviceId'])
 })
 
 test('meta_list_capabilities filters by domain', async () => {
