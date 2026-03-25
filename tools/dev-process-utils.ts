@@ -38,7 +38,10 @@ export async function stopChildProcessTree(
 	await waitForExit(child, sigkillTimeoutMs)
 }
 
-function signalChildProcessTree(child: ChildProcess, signal: NodeJS.Signals) {
+export function signalChildProcessTree(
+	child: ChildProcess,
+	signal: NodeJS.Signals,
+) {
 	if (child.pid == null) return
 
 	try {

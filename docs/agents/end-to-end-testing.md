@@ -37,9 +37,10 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 ## Server and routing
 
 - The test server is started via Playwright `webServer` using Wrangler.
-- The base URL defaults to `http://localhost:3847` for Playwright to avoid
-  colliding with the worker dev server and the root mock API ports. Override
-  with `PLAYWRIGHT_BASE_URL` or `PLAYWRIGHT_PORT`.
+- `bun run test:e2e` and `bun run test:e2e:ui` launch Playwright through a small
+  wrapper that picks a free localhost port via `get-port` and gives Wrangler a
+  fresh per-run persistence directory. This avoids hangs caused by stale
+  listeners or shared local E2E state.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler still loads
   `packages/worker/.env` values for local secrets.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
