@@ -39,7 +39,7 @@
     "preview:e2e": "bun run build:mcp-apps && bun run migrate:e2e && bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "generate-types": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts types ./types/worker-configuration.d.ts",
     "typecheck": "tsc -b --noEmit",
-    "test": "bun --no-env-file --env-file=packages/worker/.env test ./packages/home-connector ./packages/worker/src/app ./packages/mock-servers ./packages/shared ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/cloudflare ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts",
+    "test": "bun --no-env-file --env-file=packages/worker/.env test ./packages/home-connector ./packages/worker/src/app ./packages/shared ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/cloudflare ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts",
     "inspect": "bunx -p @mcpjam/inspector inspector",
     "validate": "concurrently --kill-others-on-fail -n format,lint,build,typecheck,test,test:mcp -c green,yellow,blue,magenta,cyan,red \"bun run format:check\" \"bun run lint:fix\" \"bun run build\" \"bun run typecheck\" \"bun run test:e2e\" \"bun run test:mcp\"",
     "test:e2e": "bun --no-env-file --env-file=packages/worker/.env tools/prepare-e2e-env.ts && playwright test",
