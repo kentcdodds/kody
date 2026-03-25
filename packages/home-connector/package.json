@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.26.0",
+    "dotenv": "^17.3.1",
     "msw": "^2.12.14",
     "remix": "3.0.0-alpha.3",
     "zod": "^4.3.6"
