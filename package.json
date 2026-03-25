@@ -44,7 +44,7 @@
     "test:e2e": "bun --no-env-file --env-file=packages/worker/.env tools/prepare-e2e-env.ts && playwright test",
     "test:e2e:ui": "bun --no-env-file --env-file=packages/worker/.env tools/prepare-e2e-env.ts && playwright test --ui",
     "test:e2e:install": "playwright install chromium --with-deps",
-    "test:mcp": "bun run build:mcp-apps && bun --no-env-file --env-file=packages/worker/.env test packages/worker/src/mcp/mcp-server-e2e.test.ts",
+    "test:mcp": "bun --no-env-file --env-file=packages/worker/.env tools/prepare-e2e-env.ts && bun run build:mcp-apps && bun --no-env-file --env-file=packages/worker/.env test packages/worker/src/mcp/mcp-server-e2e.test.ts",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects"
   },

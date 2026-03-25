@@ -222,7 +222,7 @@ token values into widget CSS. If you do this in an MCP App resource, set
 ## Quality checklist before merge
 
 - `bun run format`
-- `bun run test:mcp`
+- `bun run test:mcp` (auto-prepares `packages/worker/.env` from `.env.example` when needed)
 - `bun run validate`
 - `bun run inspect`
 - Confirm docs in `docs/agents` reflect any new workflow or constraints.

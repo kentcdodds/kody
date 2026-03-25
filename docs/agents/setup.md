@@ -67,7 +67,9 @@ Quick notes for getting a local kody environment running.
 - `bun run format` applies formatting updates.
 - `bun run test:e2e:install` to install Playwright browsers.
 - `bun run test:e2e` to run Playwright specs.
-- `bun run test:mcp` to run MCP server E2E tests.
+- `bun run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
+  `packages/worker/.env` from `.env.example` when needed so local and CI runs
+  have the minimum required test env.
 
 ## Documentation maintenance
 
