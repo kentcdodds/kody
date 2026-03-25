@@ -5,6 +5,18 @@
 		"libsDir": "packages"
 	},
 	"targetDefaults": {
+		"build": {
+			"cache": true
+		},
+		"build-client": {
+			"cache": true
+		},
+		"build-client-web": {
+			"cache": true
+		},
+		"build-mcp-apps": {
+			"cache": true
+		},
 		"dev": {
 			"cache": false
 		},
@@ -21,5 +33,9 @@
 			"cache": false
 		}
 	},
-	"nxCloudId": "69bdec07a8a7925dc42dc205"
+	"tui": {
+		"enabled": false
+	},
+	"neverConnectToCloud": true,
+	"analytics": false
 }

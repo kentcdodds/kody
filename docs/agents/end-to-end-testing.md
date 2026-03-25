@@ -37,10 +37,13 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 ## Server and routing
 
 - The test server is started via Playwright `webServer` using Wrangler.
-- `npm run test:e2e` and `npm run test:e2e:ui` launch Playwright through a small
-  wrapper that picks a free localhost port via `get-port` and gives Wrangler a
-  fresh per-run persistence directory. This avoids hangs caused by stale
-  listeners or shared local E2E state.
+- `playwright.config.ts` is self-sufficient: Playwright starts the E2E server by
+  running `npm run preview:e2e -- --port 3847`.
+- `preview:e2e` prepares `packages/worker/.env`, builds the client bundles,
+  applies local D1 migrations, and starts Wrangler against
+  `.wrangler/state/e2e`.
+- `npm run test:e2e`, `npm run test:e2e:ui`, and plain `npx playwright test` all
+  use the same Playwright-native path.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler still loads
   `packages/worker/.env` values for local secrets.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
@@ -78,10 +81,11 @@ Common commands:
 
 - `npm run test:e2e`
 - `npm run test:e2e -- e2e/login.spec.ts`
+- `npx playwright test`
+- `npx playwright test e2e/login.spec.ts`
 
-If `packages/worker/.env` is missing, `test:e2e` copies
-`packages/worker/.env.example` to `packages/worker/.env` before running
-Playwright.
+If `packages/worker/.env` is missing, the E2E server startup path copies
+`packages/worker/.env.example` to `packages/worker/.env` before Wrangler starts.
 
 These tests are executed by the `validate` gate, which also runs `lint:fix` and
 the MCP E2E suite.

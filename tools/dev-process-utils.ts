@@ -1,17 +1,39 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { platform } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
+
 const supportsProcessGroups = platform() !== 'win32'
+
+type ManagedChildProcess = ChildProcess & {
+	kodyUsesOwnProcessGroup?: boolean
+}
+
+export function spawnChildProcess(
+	command: string,
+	args: Array<string>,
+	options: SpawnOptions,
+) {
+	return markManagedChildProcess(
+		spawn(command, args, {
+			...options,
+			detached: false,
+		}),
+		false,
+	)
+}
 
 export function spawnInOwnProcessGroup(
 	command: string,
 	args: Array<string>,
 	options: SpawnOptions,
 ) {
-	return spawn(command, args, {
-		...options,
-		detached: supportsProcessGroups,
-	})
+	return markManagedChildProcess(
+		spawn(command, args, {
+			...options,
+			detached: supportsProcessGroups,
+		}),
+		supportsProcessGroups,
+	)
 }
 
 export async function stopChildProcessTree(
@@ -45,7 +67,7 @@ export function signalChildProcessTree(
 	if (child.pid == null) return
 
 	try {
-		if (supportsProcessGroups) {
+		if (supportsProcessGroups && usesOwnProcessGroup(child)) {
 			process.kill(-child.pid, signal)
 			return
 		}
@@ -72,4 +94,17 @@ function waitForExit(child: ChildProcess, timeoutMs: number) {
 
 function isNoSuchProcessError(error: unknown) {
 	return error instanceof Error && 'code' in error && error.code === 'ESRCH'
+}
+
+function markManagedChildProcess(
+	child: ChildProcess,
+	kodyUsesOwnProcessGroup: boolean,
+) {
+	;(child as ManagedChildProcess).kodyUsesOwnProcessGroup =
+		kodyUsesOwnProcessGroup
+	return child
+}
+
+function usesOwnProcessGroup(child: ChildProcess) {
+	return Boolean((child as ManagedChildProcess).kodyUsesOwnProcessGroup)
 }

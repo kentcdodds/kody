@@ -1,16 +1,10 @@
 import { defineConfig, devices } from '@playwright/test'
 
 const hasExplicitBaseUrl = Boolean(process.env.PLAYWRIGHT_BASE_URL)
-const resolvedPlaywrightPort = process.env.PLAYWRIGHT_PORT ?? '3847'
+const defaultPlaywrightPort = '3847'
 const baseURL =
-	process.env.PLAYWRIGHT_BASE_URL ??
-	`http://127.0.0.1:${resolvedPlaywrightPort}`
-const playwrightPersistPath =
-	process.env.PLAYWRIGHT_PERSIST_PATH ?? '.wrangler/state/e2e'
-const webServerCommand =
-	`npm run build:client && ` +
-	`node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local --persist-to "${playwrightPersistPath}" && ` +
-	`node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to "${playwrightPersistPath}"`
+	process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${defaultPlaywrightPort}`
+const webServerCommand = `npm run preview:e2e -- --port ${defaultPlaywrightPort}`
 
 export default defineConfig({
 	testDir: './e2e',
@@ -29,7 +23,6 @@ export default defineConfig({
 		reuseExistingServer: hasExplicitBaseUrl,
 		env: {
 			CLOUDFLARE_ENV: 'test',
-			PORT: resolvedPlaywrightPort,
 			WRANGLER_LOG_PATH: './logs.local',
 			WRANGLER_DISABLE_REQUEST_BODY_DRAINING: 'true',
 		},

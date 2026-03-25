@@ -6,7 +6,8 @@ import net from 'node:net'
 import getPort from 'get-port'
 import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
 import {
-	spawnInOwnProcessGroup,
+	signalChildProcessTree,
+	spawnChildProcess,
 	stopChildProcessTree,
 } from './tools/dev-process-utils.ts'
 import { resolveLocalBinary } from './tools/node-runtime.ts'
@@ -115,13 +116,17 @@ const wranglerCommand =
 	(existsSync(localWranglerPath) && localWranglerPath) ||
 	resolveLocalBinary('wrangler')
 
-const proc = spawnInOwnProcessGroup(wranglerCommand, commandArgs, {
+const proc = spawnChildProcess(wranglerCommand, commandArgs, {
 	stdio: ['inherit', 'inherit', 'inherit'],
 	env: processEnv,
 })
 const procExited = createExitPromise(proc)
 
 let isShuttingDown = false
+
+process.once('exit', () => {
+	signalChildProcessTree(proc, 'SIGTERM')
+})
 
 function handleSignal(signal: NodeJS.Signals) {
 	if (isShuttingDown) return
