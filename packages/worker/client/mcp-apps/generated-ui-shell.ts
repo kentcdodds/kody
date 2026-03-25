@@ -558,13 +558,10 @@ html[data-kody-theme="light"] {
 		theme: ThemeName | null,
 		appSession: AppSessionEnvelope | null,
 	) {
-		const baseHref = getBaseHref()
-		const escapedBaseHref = baseHref ? escapeHtmlAttribute(baseHref) : null
 		const bridgeRuntime = escapeInlineScriptSource(
 			buildChildBridgeRuntimeSource(appSession),
 		)
 		return `
-${escapedBaseHref ? `<base href="${escapedBaseHref}" />` : ''}
 <style>
 ${buildShellStyles(theme)}
 </style>
