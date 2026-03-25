@@ -5,7 +5,10 @@ const server = setupServer(...mswHandlers)
 
 server.listen({
 	onUnhandledRequest(request, print) {
-		if (request.url.includes('.sentry.io')) {
+		if (
+			request.url.includes('.sentry.io') ||
+			request.url.includes('/__mocks/')
+		) {
 			return
 		}
 
