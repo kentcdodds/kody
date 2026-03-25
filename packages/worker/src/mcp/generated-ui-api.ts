@@ -100,16 +100,29 @@ export async function handleGeneratedUiApiRequest(
 		if (!body.success) {
 			return jsonResponse({ error: body.error.message }, 400)
 		}
-		const result = await storeDraftSecrets({
-			env,
-			userId: session.user.userId,
-			draftId: body.data.setup_id,
-			fields: body.data.fields,
-		})
-		return jsonResponse({
-			ok: true,
-			...result,
-		})
+		try {
+			const result = await storeDraftSecrets({
+				env,
+				userId: session.user.userId,
+				draftId: body.data.setup_id,
+				fields: body.data.fields,
+			})
+			return jsonResponse({
+				ok: true,
+				...result,
+			})
+		} catch (error) {
+			return jsonResponse(
+				{
+					ok: false,
+					error:
+						error instanceof Error
+							? error.message
+							: 'Secure input failed.',
+				},
+				400,
+			)
+		}
 	}
 
 	return jsonResponse({ error: 'Not found.' }, 404)

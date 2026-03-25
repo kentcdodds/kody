@@ -375,12 +375,16 @@ export async function performProviderHttpRequestWithSpec(input: {
 			url.searchParams.set(key, value)
 		}
 	}
+	const includeJsonContentType =
+		shouldSendJsonBody(input.request.method) &&
+		input.request.body !== undefined
 
 	const response = await fetch(url, {
 		method: input.request.method,
-		headers: buildRequestHeaders(input.spec, input.secretMaterial),
-		...(shouldSendJsonBody(input.request.method) &&
-		input.request.body !== undefined
+		headers: buildRequestHeaders(input.spec, input.secretMaterial, {
+			includeJsonContentType,
+		}),
+		...(includeJsonContentType
 			? { body: JSON.stringify(input.request.body) }
 			: {}),
 	})
@@ -437,11 +441,12 @@ export async function performProviderGraphqlRequestWithSpec(input: {
 function buildRequestHeaders(
 	spec: ConnectionAuthSpec,
 	secretMaterial: ProviderSecretMaterial,
+	options?: { includeJsonContentType?: boolean },
 ) {
 	const headers = new Headers(spec.request.default_headers ?? {})
 	headers.set('accept', headers.get('accept') ?? 'application/json')
 	applyAuthTransport(headers, spec.request, spec, secretMaterial)
-	if (headers.get('content-type') == null) {
+	if (options?.includeJsonContentType && headers.get('content-type') == null) {
 		headers.set('content-type', 'application/json')
 	}
 	return headers
