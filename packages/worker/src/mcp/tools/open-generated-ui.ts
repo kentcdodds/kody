@@ -2,7 +2,7 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { generatedUiShellResourceUri } from '#mcp/apps/generated-ui-shell-entry-point.ts'
-import type { MCP } from '#mcp/index.ts'
+import { type MCP } from '#mcp/index.ts'
 
 const openGeneratedUiTool = {
 	name: 'open_generated_ui',

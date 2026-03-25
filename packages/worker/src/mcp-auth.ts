@@ -1,6 +1,6 @@
-import type {
-	OAuthHelpers,
-	TokenSummary,
+import {
+	type OAuthHelpers,
+	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'

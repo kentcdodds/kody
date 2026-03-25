@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest'
-import type {
-	AuthRequest,
-	ClientInfo,
-	CompleteAuthorizationOptions,
-	OAuthHelpers,
+import {
+	type AuthRequest,
+	type ClientInfo,
+	type CompleteAuthorizationOptions,
+	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'

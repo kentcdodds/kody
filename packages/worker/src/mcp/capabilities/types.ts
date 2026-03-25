@@ -1,4 +1,4 @@
-import type { JsonSchemaToolDescriptor } from '@cloudflare/codemode'
+import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { type ZodType } from 'zod'
 import { type CapabilityDomain } from './domain-metadata.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'

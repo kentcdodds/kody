@@ -9,7 +9,7 @@ import {
 	generatedUiShellResourceUri,
 	renderGeneratedUiShellEntryPoint,
 } from '#mcp/apps/generated-ui-shell-entry-point.ts'
-import type { MCP } from '#mcp/index.ts'
+import { type MCP } from '#mcp/index.ts'
 import { mcpResourcePath } from '../../mcp-auth.ts'
 
 const generatedUiAppResource = {
