@@ -16,7 +16,12 @@ magic.
   JSON".
 - Write tests so they could run offline if necessary: avoid relying on the
   public internet and third-party services; prefer local fakes/fixtures.
-- Prefer fast unit tests for server logic; keep e2e tests focused on journeys.
+- Keep the bar for adding tests high, especially slower integration and E2E
+  tests.
+- Prefer fast unit tests for server logic; keep e2e tests focused on a very
+  small number of important happy-path journeys.
+- Do not add regression tests for bugs that are unlikely to happen again unless
+  the flow is important enough to justify the maintenance cost.
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server-e2e.test.ts`.

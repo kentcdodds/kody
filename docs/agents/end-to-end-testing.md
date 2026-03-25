@@ -8,14 +8,29 @@ on the Epic Web E2E workshop and our existing setup.
 - Validate user-visible journeys end-to-end through the worker and client.
 - Prefer a few high-signal tests over many brittle ones.
 - Keep tests readable and close to how a user describes behavior.
+- Keep the bar for adding an E2E test very high.
 
 ## What to test
 
-- Primary routes and flows (navigation, auth, critical forms).
-- Integration across the worker, client router, and API endpoints.
-- Regressions that are expensive to catch in unit tests.
+- Only the most important happy-path user flows.
+- Primary routes and flows that would make the product feel broken if they
+  stopped working.
+- Integration across the worker, client router, and API endpoints when that
+  journey is central to the product.
 
 Avoid testing implementation details, styling, or pure utility functions.
+Avoid adding E2E coverage for edge cases, low-probability regressions, or bug
+fixes that are unlikely to recur.
+
+## Bar for adding a test
+
+- Default to not adding a new E2E test.
+- Add one only when the flow is both user-critical and hard to cover with
+  faster tests.
+- Prefer a single broad happy-path journey over multiple narrow regression
+  cases.
+- If a bug is unlikely to show up again, do not add an E2E test just to lock in
+  the fix.
 
 ## Structure and style
 
