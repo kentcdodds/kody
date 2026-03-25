@@ -92,7 +92,8 @@ Quick notes for getting a local kody environment running.
 - `bun run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
   `packages/worker/.env` from `.env.example` when needed so local and CI runs
   have the minimum required test env.
-- `bun test ./packages/home-connector` runs the connector package tests directly.
+- `bun test ./packages/home-connector` runs the connector package tests
+  directly.
 
 ## Home Connector Docker publishing
 

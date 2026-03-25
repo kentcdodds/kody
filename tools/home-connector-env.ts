@@ -2,7 +2,7 @@ const homeConnectorEnvPrefix = 'HOME_CONNECTOR_'
 
 type EnvRecord = Record<string, string | undefined>
 
-function hasEnvValue(value: string | undefined) {
+function hasEnvValue(value: string | undefined): value is string {
 	return typeof value === 'string' && value.trim().length > 0
 }
 
@@ -13,6 +13,7 @@ export function getForwardedHomeConnectorEnv(env: EnvRecord) {
 		if (!key.startsWith(homeConnectorEnvPrefix) || !hasEnvValue(value)) {
 			continue
 		}
+		const normalizedValue = value.trim()
 
 		const forwardedKey = key.slice(homeConnectorEnvPrefix.length)
 		if (
@@ -23,7 +24,7 @@ export function getForwardedHomeConnectorEnv(env: EnvRecord) {
 			continue
 		}
 
-		forwardedEnv[forwardedKey] = value.trim()
+		forwardedEnv[forwardedKey] = normalizedValue
 	}
 
 	return forwardedEnv
