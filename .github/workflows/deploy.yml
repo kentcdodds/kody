@@ -6,6 +6,7 @@ on:
       - '✅ Validate'
     types:
       - completed
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,29 +21,49 @@ jobs:
     runs-on: ubuntu-latest
     name: 🧾 Production deploy guard
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.event == 'push'
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.event == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
     outputs:
+      deploy_sha: ${{ steps.sha_guard.outputs.deploy_sha }}
       should_deploy: ${{ steps.sha_guard.outputs.should_deploy }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref:
+            ${{ github.event_name == 'workflow_dispatch' && github.sha ||
+            github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: 🧾 Ensure validated SHA is main HEAD
+      - name: 🧾 Resolve deploy SHA and ensure it is main HEAD
         id: sha_guard
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_DISPATCH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          DEPLOY_SHA="$WORKFLOW_RUN_SHA"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DEPLOY_SHA="$WORKFLOW_DISPATCH_SHA"
+          fi
+
+          if [ -z "$DEPLOY_SHA" ]; then
+            echo "Unable to resolve deploy SHA for event: $EVENT_NAME" >&2
+            exit 1
+          fi
+
           git fetch origin main
           HEAD_SHA="$(git rev-parse origin/main)"
-          if [ "$HEAD_SHA" != "${{ github.event.workflow_run.head_sha }}" ]; then
+          echo "deploy_sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
+          if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping deploy: validated SHA is not current main HEAD."
-            echo "validated=${{ github.event.workflow_run.head_sha }}"
+            echo "Skipping deploy: target SHA is not current main HEAD."
+            echo "target=$DEPLOY_SHA"
             echo "head=$HEAD_SHA"
             exit 0
           fi
@@ -60,7 +81,7 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
           fetch-depth: 0
 
       - name: 🧰 Setup Bun
@@ -118,7 +139,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
-          DEPLOY_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
           set -euo pipefail
@@ -139,7 +160,7 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
-          APP_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          APP_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
           if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
@@ -152,7 +173,7 @@ jobs:
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
-          EXPECTED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
 
