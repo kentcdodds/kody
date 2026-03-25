@@ -47,26 +47,6 @@ test('health route returns ok json', async () => {
 	})
 })
 
-test('sentry test route requires POST and returns success JSON', async () => {
-	const router = createHomeConnectorRouter(createAppState(), createConfig())
-
-	const getResponse = await router.fetch('http://example.test/sentry/test')
-	expect(getResponse.status).toBe(405)
-	expect(getResponse.headers.get('Allow')).toBe('POST')
-
-	const postResponse = await router.fetch(
-		new Request('http://example.test/sentry/test', {
-			method: 'POST',
-		}),
-	)
-	expect(postResponse.status).toBe(200)
-	expect(await postResponse.json()).toEqual({
-		ok: true,
-		test: 'sentry',
-		message: 'Captured and flushed test exception to Sentry.',
-	})
-})
-
 test('roku status route renders connector details', async () => {
 	const state = createAppState()
 	state.connection.connectorId = 'default'

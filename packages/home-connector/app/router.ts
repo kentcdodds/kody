@@ -2,7 +2,6 @@ import { createRouter } from 'remix/fetch-router'
 import {
 	createHomeDashboardHandler,
 	createHealthHandler,
-	createSentryTestHandler,
 	createRokuSetupHandler,
 	createRokuStatusHandler,
 } from './handlers.ts'
@@ -20,7 +19,6 @@ export function createHomeConnectorRouter(
 
 	router.map(routes.home, createHomeDashboardHandler(state))
 	router.map(routes.health, createHealthHandler(state))
-	router.map(routes.sentryTest, createSentryTestHandler())
 	router.map(routes.rokuStatus, createRokuStatusHandler(state, config))
 	router.map(routes.rokuSetup, createRokuSetupHandler(state))
 
