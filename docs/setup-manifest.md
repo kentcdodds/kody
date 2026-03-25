@@ -223,6 +223,17 @@ How to get/set each value:
   - The Home Connector publish workflow pushes both `latest` and
     `sha-<shortsha>` tags to that image whenever `main` changes under
     `packages/home-connector` (or its Docker build inputs).
+- Home connector runtime Sentry env (set these on the deployed container or the
+  service that runs the published Docker image, not in the GitHub Actions
+  workflow itself):
+  - `HOME_CONNECTOR_SENTRY_DSN` (optional; enables Sentry error reporting and
+    tracing for the Bun-based `packages/home-connector` service)
+  - `HOME_CONNECTOR_SENTRY_ENVIRONMENT` (optional; forwarded to the connector as
+    `SENTRY_ENVIRONMENT`, defaults to `production` when the published image runs
+    via the `start` script)
+  - `HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`; forwarded to
+    the connector as `SENTRY_TRACES_SAMPLE_RATE`, defaults to **`1.0`** when
+    unset)
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

@@ -140,10 +140,23 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   any `HOME_CONNECTOR_`-prefixed variable is forwarded to the child connector
   process with the prefix removed. For example, `HOME_CONNECTOR_MOCKS=false`
   sets `MOCKS=false` for `packages/home-connector`, and
-  `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`.
+  `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`. This
+  also applies to `HOME_CONNECTOR_SENTRY_DSN`,
+  `HOME_CONNECTOR_SENTRY_ENVIRONMENT`, and
+  `HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE`.
 - `ROKU_DISCOVERY_URL` — optional connector env var. Defaults to
   `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
   value such as `http://roku.mock.local/discovery`.
+- `SENTRY_DSN` — optional connector env var. When set for
+  `packages/home-connector`, the Bun service initializes `@sentry/bun` and
+  reports startup errors, websocket failures, and handled operational
+  exceptions. Use `HOME_CONNECTOR_SENTRY_DSN` when launching through
+  `bun run dev`.
+- `SENTRY_ENVIRONMENT` — optional connector env var. Defaults to `NODE_ENV` (or
+  `development`) for the home connector.
+- `SENTRY_TRACES_SAMPLE_RATE` — optional connector env var with a `0`–`1` value;
+  defaults to **`1.0`** in code for the home connector, matching the Worker’s
+  low-traffic default.
 
 ## Why Zod?
 

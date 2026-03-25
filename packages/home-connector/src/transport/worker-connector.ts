@@ -13,6 +13,10 @@ import { stringifyHomeConnectorMessage } from '../../../worker/src/home/utils.ts
 import { type HomeConnectorConfig } from '../config.ts'
 import { type HomeConnectorState, updateConnectionState } from '../state.ts'
 import { type HomeConnectorToolRegistry } from '../mcp/server.ts'
+import {
+	captureHomeConnectorException,
+	captureHomeConnectorMessage,
+} from '../sentry.ts'
 
 const heartbeatIntervalMs = 10_000
 const reconnectDelayMs = 2_000
@@ -85,6 +89,16 @@ async function handleJsonRpcRequest(
 				result,
 			} satisfies JSONRPCResponse
 		} catch (error: unknown) {
+			captureHomeConnectorException(error, {
+				tags: {
+					connector_tool_name: name,
+				},
+				contexts: {
+					mcp_request: {
+						method: message.method,
+					},
+				},
+			})
 			return {
 				jsonrpc: '2.0',
 				id: message.id,
@@ -115,6 +129,7 @@ export function createWorkerConnector(input: {
 	let stopped = false
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 	let socket: WebSocket | null = null
+	let hasReportedSocketIssue = false
 
 	const heartbeat = setInterval(() => {
 		if (socket?.readyState === WebSocket.OPEN) {
@@ -169,6 +184,7 @@ export function createWorkerConnector(input: {
 				| HomeConnectorJsonRpcEnvelope
 			switch (value.type) {
 				case 'server.ping':
+					hasReportedSocketIssue = false
 					updateConnectionState(input.state, {
 						lastSyncAt: new Date().toISOString(),
 						lastError: null,
@@ -179,9 +195,16 @@ export function createWorkerConnector(input: {
 						connected: false,
 						lastError: value.message,
 					})
+					captureHomeConnectorMessage(value.message, {
+						level: 'error',
+						tags: {
+							connector_event: 'server.error',
+						},
+					})
 					console.error(`Home connector error: ${value.message}`)
 					return
 				case 'server.ack':
+					hasReportedSocketIssue = false
 					updateConnectionState(input.state, {
 						connected: true,
 						lastSyncAt: new Date().toISOString(),
@@ -233,6 +256,15 @@ export function createWorkerConnector(input: {
 			updateConnectionState(input.state, {
 				connected: false,
 			})
+			if (!hasReportedSocketIssue) {
+				hasReportedSocketIssue = true
+				captureHomeConnectorMessage('Home connector websocket closed.', {
+					level: 'warning',
+					tags: {
+						connector_event: 'websocket.close',
+					},
+				})
+			}
 			console.warn('Home connector websocket closed.')
 			socket = null
 			scheduleReconnect()
@@ -243,6 +275,18 @@ export function createWorkerConnector(input: {
 				connected: false,
 				lastError: 'Home connector websocket error.',
 			})
+			if (!hasReportedSocketIssue) {
+				hasReportedSocketIssue = true
+				captureHomeConnectorMessage('Home connector websocket error.', {
+					level: 'error',
+					tags: {
+						connector_event: 'websocket.error',
+					},
+					extra: {
+						eventType: event.type,
+					},
+				})
+			}
 			console.error('Home connector websocket error', event)
 		})
 	}
