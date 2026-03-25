@@ -6,6 +6,7 @@ import {
 	lexicalScore,
 	searchCapabilities,
 } from './capability-search.ts'
+import { type CapabilitySpec } from './types.ts'
 import { capabilitySpecs } from './registry.ts'
 
 test('buildCapabilityEmbedText includes name domain description keywords fields', () => {
@@ -52,4 +53,94 @@ test('fusion ranking returns ui_save_app for generated ui query (offline)', asyn
 	const appRank = names.indexOf('ui_save_app')
 	expect(appRank).toBeGreaterThanOrEqual(0)
 	expect(appRank).toBeLessThan(5)
+})
+
+test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {
+	const query = 'turn the living room tv on'
+	const specs = {
+		github_enable_issue_notifications: {
+			name: 'github_enable_issue_notifications',
+			domain: 'coding',
+			description: 'Turn on GitHub issue notifications for a repository.',
+			keywords: ['github', 'notifications', 'issues'],
+			readOnly: false,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['owner', 'repo'],
+			requiredInputFields: ['owner', 'repo'],
+			outputFields: [],
+			inputSchema: {
+				type: 'object',
+				properties: {
+					owner: { type: 'string' },
+					repo: { type: 'string' },
+				},
+				required: ['owner', 'repo'],
+			},
+		},
+		home_roku_press_key: {
+			name: 'home_roku_press_key',
+			domain: 'home',
+			description:
+				'Wake a streaming display by sending a remote-control key command.',
+			keywords: ['home', 'roku', 'remote', 'display', 'wake'],
+			readOnly: false,
+			idempotent: false,
+			destructive: false,
+			inputFields: ['deviceId', 'key'],
+			requiredInputFields: ['deviceId', 'key'],
+			outputFields: [],
+			inputSchema: {
+				type: 'object',
+				properties: {
+					deviceId: { type: 'string' },
+					key: { type: 'string' },
+				},
+				required: ['deviceId', 'key'],
+			},
+		},
+	} satisfies Record<string, CapabilitySpec>
+	const env = {
+		AI: {
+			run(_model: string, input: { text: string | Array<string> }) {
+				const texts = Array.isArray(input.text) ? input.text : [input.text]
+				return Promise.resolve({
+					data: texts.map((text) => {
+						if (text === query) return [1, 0]
+						if (text.includes('remote-control key command')) return [1, 0]
+						return [0, 1]
+					}),
+				})
+			},
+		},
+		CAPABILITY_VECTOR_INDEX: {
+			query() {
+				return Promise.resolve({
+					matches: [
+						{
+							id: 'github_enable_issue_notifications',
+							score: 0.8,
+						},
+					],
+					count: 1,
+				})
+			},
+		},
+	} as unknown as Env
+
+	const { matches, offline } = await searchCapabilities({
+		env,
+		query,
+		limit: 5,
+		detail: false,
+		specs,
+		vectorMetadataFilter: {
+			kind: { $eq: 'builtin' },
+		},
+	})
+
+	expect(offline).toBe(false)
+	expect(matches[0]?.name).toBe('home_roku_press_key')
+	expect(matches[0]?.vectorRank).toBe(1)
+	expect(matches[1]?.name).toBe('github_enable_issue_notifications')
 })

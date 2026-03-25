@@ -11,6 +11,7 @@ export const CAPABILITY_EMBEDDING_MODEL = '@cf/baai/bge-small-en-v1.5'
 export const CAPABILITY_EMBEDDING_DIMENSIONS = 384
 
 export const CAPABILITY_SEARCH_RRF_K = 60
+const vectorizeEmbedBatchSize = 16
 
 function fnv1a32(input: string): number {
 	let hash = 2_166_136_261
@@ -162,13 +163,37 @@ export async function embedTextForVectorize(
 	env: Env,
 	text: string,
 ): Promise<Array<number>> {
-	const out = (await env.AI.run(CAPABILITY_EMBEDDING_MODEL, {
-		text,
-		pooling: 'mean',
-	})) as { data?: Array<Array<number>> }
-	const vec = out.data?.[0]
-	if (!vec?.length) throw new Error('Workers AI embedding returned no vector')
-	return vec
+	const rows = await embedTextsForVectorize(env, [text])
+	return rows[0]!
+}
+
+export async function embedTextsForVectorize(
+	env: Env,
+	texts: ReadonlyArray<string>,
+): Promise<Array<Array<number>>> {
+	if (texts.length === 0) return []
+
+	const vectors: Array<Array<number>> = []
+
+	for (
+		let offset = 0;
+		offset < texts.length;
+		offset += vectorizeEmbedBatchSize
+	) {
+		const batch = texts.slice(offset, offset + vectorizeEmbedBatchSize)
+		const textInput = batch.length === 1 ? batch[0]! : batch
+		const out = (await env.AI.run(CAPABILITY_EMBEDDING_MODEL, {
+			text: textInput,
+			pooling: 'mean',
+		})) as { data?: Array<Array<number>> }
+		const rows = out.data
+		if (!rows || rows.length !== batch.length) {
+			throw new Error('Workers AI embedding batch size mismatch')
+		}
+		vectors.push(...rows)
+	}
+
+	return vectors
 }
 
 export async function searchCapabilities(input: {
@@ -186,28 +211,31 @@ export async function searchCapabilities(input: {
 	const docsById = Object.fromEntries(
 		ids.map((id) => [id, buildCapabilityEmbedText(specs[id]!)] as const),
 	)
-
-	const lexicalOrder = sortIdsByScore(ids, (id) =>
-		lexicalScore(q, docsById[id]!),
+	const lexicalScoreById = Object.fromEntries(
+		ids.map((id) => [id, lexicalScore(q, docsById[id]!)] as const),
 	)
 
+	const lexicalOrder = sortIdsByScore(ids, (id) => lexicalScoreById[id]!)
+
 	let vectorOrder: Array<string>
+	let vectorScoreById: Record<string, number>
 
 	const offline = isCapabilitySearchOffline(input.env)
 
 	if (offline) {
 		const qVec = deterministicEmbedding(q)
-		const simById = Object.fromEntries(
+		vectorScoreById = Object.fromEntries(
 			ids.map((id) => {
 				const cVec = deterministicEmbedding(docsById[id]!)
 				return [id, cosineSimilarity(qVec, cVec)] as const
 			}),
 		)
-		vectorOrder = sortIdsByScore(ids, (id) => simById[id]!)
+		vectorOrder = sortIdsByScore(ids, (id) => vectorScoreById[id]!)
 	} else {
 		const index = getCapabilityVectorIndex(input.env)!
 		const qVec = await embedTextForVectorize(input.env, q)
 		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
+		const vectorScoreMap = new Map<string, number>()
 
 		async function queryVectorize(filter?: VectorizeVectorMetadataFilter) {
 			return index.query(qVec, {
@@ -227,6 +255,7 @@ export async function searchCapabilities(input: {
 				if (typeof m.id !== 'string' || !specs[m.id] || seen.has(m.id)) continue
 				seen.add(m.id)
 				fromIndex.push(m.id)
+				vectorScoreMap.set(m.id, m.score)
 			}
 			return { fromIndex, seen }
 		}
@@ -236,7 +265,23 @@ export async function searchCapabilities(input: {
 			vecMatches = await queryVectorize(undefined)
 			;({ fromIndex, seen } = collectFromMatches(vecMatches.matches))
 		}
-		vectorOrder = [...fromIndex, ...ids.filter((id) => !seen.has(id))]
+		const missingIds = ids.filter((id) => !seen.has(id))
+		if (missingIds.length > 0) {
+			const missingVectors = await embedTextsForVectorize(
+				input.env,
+				missingIds.map((id) => docsById[id]!),
+			)
+			for (let index_ = 0; index_ < missingIds.length; index_ += 1) {
+				vectorScoreMap.set(
+					missingIds[index_]!,
+					cosineSimilarity(qVec, missingVectors[index_]!),
+				)
+			}
+		}
+		vectorScoreById = Object.fromEntries(
+			ids.map((id) => [id, vectorScoreMap.get(id) ?? Number.NEGATIVE_INFINITY]),
+		)
+		vectorOrder = sortIdsByScore(ids, (id) => vectorScoreById[id]!)
 	}
 
 	const lexicalRankById = new Map<string, number>()
@@ -252,10 +297,15 @@ export async function searchCapabilities(input: {
 		[lexicalOrder, vectorOrder],
 		CAPABILITY_SEARCH_RRF_K,
 	)
-	const ordered = sortIdsByScore(ids, (id) => fused.get(id) ?? 0).slice(
-		0,
-		Math.max(1, Math.min(input.limit, ids.length)),
-	)
+	const ordered = [...ids]
+		.sort((a, b) => {
+			const fusedDiff = (fused.get(b) ?? 0) - (fused.get(a) ?? 0)
+			if (fusedDiff !== 0) return fusedDiff
+			const vectorDiff = vectorScoreById[b]! - vectorScoreById[a]!
+			if (vectorDiff !== 0) return vectorDiff
+			return lexicalScoreById[b]! - lexicalScoreById[a]!
+		})
+		.slice(0, Math.max(1, Math.min(input.limit, ids.length)))
 
 	const matches: Array<CapabilitySearchHit> = ordered.map((id) => {
 		const spec = specs[id]!
