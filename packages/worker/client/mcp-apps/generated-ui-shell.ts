@@ -746,6 +746,8 @@ ${inlineModuleSource}
 			name: 'generated-ui-shell',
 			version: '1.0.0',
 		},
+		// tools/call (e.g. execute) can take as long as codemode (tens of seconds).
+		requestTimeoutMs: 90_000,
 		onRenderData: (renderData) => {
 			const nextRenderData = isRecord(renderData)
 				? (renderData as RenderDataEnvelope)

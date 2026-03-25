@@ -39,30 +39,23 @@ function getSavedUiApiPath(appId: string) {
 	return `/ui-api/${encodeURIComponent(appId)}`
 }
 
-async function loadSavedUi(appId: string, signal: AbortSignal) {
+async function loadSavedUi(appId: string) {
 	const response = await fetch(getSavedUiApiPath(appId), {
 		credentials: 'include',
 		headers: { Accept: 'application/json' },
-		signal,
 	})
-	const payload = (await response.json().catch(() => null)) as
-		| {
-				ok?: boolean
-				error?: string
-				artifact?: SavedUiArtifact
-		  }
-		| null
+	const payload = (await response.json().catch(() => null)) as {
+		ok?: boolean
+		error?: string
+		artifact?: SavedUiArtifact
+	} | null
 	if (!response.ok || !payload?.ok || !payload.artifact) {
 		throw new Error(payload?.error || 'Unable to load saved UI.')
 	}
 	return payload.artifact
 }
 
-async function executeSavedUiCode(
-	appId: string,
-	code: string,
-	signal?: AbortSignal,
-) {
+async function executeSavedUiCode(appId: string, code: string) {
 	const response = await fetch(`${getSavedUiApiPath(appId)}/execute`, {
 		method: 'POST',
 		credentials: 'include',
@@ -71,15 +64,12 @@ async function executeSavedUiCode(
 			Accept: 'application/json',
 		},
 		body: JSON.stringify({ code }),
-		signal,
 	})
-	const payload = (await response.json().catch(() => null)) as
-		| {
-				ok?: boolean
-				error?: string
-				result?: unknown
-		  }
-		| null
+	const payload = (await response.json().catch(() => null)) as {
+		ok?: boolean
+		error?: string
+		result?: unknown
+	} | null
 	if (!response.ok || !payload?.ok) {
 		throw new Error(payload?.error || 'Code execution failed.')
 	}
@@ -103,6 +93,8 @@ export function SavedUiRoute(handle: Handle) {
 	let shellInitialized = false
 	let latestShellWindow: Window | null = null
 	let activeAppId: string | null = null
+	let loadingAppId: string | null = null
+	let loadRequestId = 0
 
 	function update() {
 		handle.update()
@@ -135,33 +127,41 @@ export function SavedUiRoute(handle: Handle) {
 		)
 	}
 
-	async function refreshArtifact(signal: AbortSignal) {
+	async function refreshArtifact() {
 		const appId = getSavedUiIdFromLocation()
 		if (!appId) {
 			status = 'error'
 			errorMessage = 'Saved UI not found.'
 			artifact = null
+			loadingAppId = null
 			update()
 			return
 		}
 		activeAppId = appId
+		loadingAppId = appId
 		status = 'loading'
 		errorMessage = null
-		update()
+		const requestId = ++loadRequestId
 		try {
-			const nextArtifact = await loadSavedUi(appId, signal)
-			if (signal.aborted) return
+			const nextArtifact = await loadSavedUi(appId)
+			if (requestId !== loadRequestId || getSavedUiIdFromLocation() !== appId) {
+				return
+			}
 			artifact = nextArtifact
 			status = 'ready'
 			errorMessage = null
+			loadingAppId = null
 			update()
 			postRenderDataIfReady()
 		} catch (error) {
-			if (signal.aborted) return
+			if (requestId !== loadRequestId || getSavedUiIdFromLocation() !== appId) {
+				return
+			}
 			status = 'error'
 			errorMessage =
 				error instanceof Error ? error.message : 'Unable to load saved UI.'
 			artifact = null
+			loadingAppId = null
 			update()
 		}
 	}
@@ -271,7 +271,8 @@ export function SavedUiRoute(handle: Handle) {
 			}
 
 			if (
-				(message as { method?: unknown }).method === 'ui/request-display-mode' &&
+				(message as { method?: unknown }).method ===
+					'ui/request-display-mode' &&
 				latestShellWindow
 			) {
 				latestShellWindow.postMessage(
@@ -292,9 +293,7 @@ export function SavedUiRoute(handle: Handle) {
 				return
 			}
 
-			const toolName = (
-				message as { params?: { name?: unknown } }
-			).params?.name
+			const toolName = (message as { params?: { name?: unknown } }).params?.name
 			const respond = (result: Record<string, unknown>) => {
 				latestShellWindow?.postMessage(
 					{
@@ -332,13 +331,14 @@ export function SavedUiRoute(handle: Handle) {
 					})
 					return
 				}
-				void handle.queueTask(async (signal) => {
+				// Respond via microtask/async continuation — not handle.queueTask. Deferring
+				// through the Remix scheduler can land after the widget bridge request timeout
+				// (default 1500ms), so tools/call would fail with a null result in the shell.
+				void (async () => {
 					try {
-						const result = await executeSavedUiCode(activeAppId!, code, signal)
-						if (signal.aborted) return
+						const result = await executeSavedUiCode(activeAppId!, code)
 						respond({ structuredContent: { result } })
 					} catch (error) {
-						if (signal.aborted) return
 						respond({
 							isError: true,
 							structuredContent: {
@@ -351,7 +351,7 @@ export function SavedUiRoute(handle: Handle) {
 							},
 						})
 					}
-				})
+				})()
 				return
 			}
 
@@ -382,14 +382,16 @@ export function SavedUiRoute(handle: Handle) {
 							fontWeight: typography.fontWeight.semibold,
 						}}
 					>
-						{artifact?.title ?? 'Saved UI'}
+						{status === 'ready' ? (artifact?.title ?? 'Saved UI') : 'Saved UI'}
 					</h1>
 					<p css={{ margin: 0, color: colors.textMuted }}>
 						Hosted fallback for a saved generated UI.
 					</p>
 				</header>
 				{status === 'loading' ? (
-					<p css={{ margin: 0, color: colors.textMuted }}>Loading saved UI...</p>
+					<p css={{ margin: 0, color: colors.textMuted }}>
+						Loading saved UI...
+					</p>
 				) : null}
 				{errorMessage ? (
 					<p

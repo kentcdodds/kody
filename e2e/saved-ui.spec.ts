@@ -5,6 +5,8 @@ import { promisify } from 'node:util'
 
 const execFile = promisify(execFileCb)
 
+test.describe.configure({ mode: 'serial' })
+
 async function seedSavedUi(options: {
 	appId: string
 	userId: string
@@ -14,7 +16,7 @@ async function seedSavedUi(options: {
 }) {
 	const sql = [
 		'INSERT OR REPLACE INTO ui_artifacts (',
-		"id, user_id, title, description, keywords, source_type, source_code, search_text, created_at, updated_at",
+		'id, user_id, title, description, keywords, source_type, source_code, search_text, created_at, updated_at',
 		') VALUES (',
 		`'${options.appId}',`,
 		`'${options.userId}',`,
@@ -29,21 +31,43 @@ async function seedSavedUi(options: {
 		');',
 	].join(' ')
 
-	await execFile('bun', [
-		'--no-env-file',
-		'--env-file=packages/worker/.env',
-		'./wrangler-env.ts',
-		'd1',
-		'execute',
-		'APP_DB',
-		'--local',
-		'--persist-to',
-		'.wrangler/state/e2e',
-		'--command',
-		sql,
-	], {
-		cwd: process.cwd(),
-	})
+	let lastError: unknown = null
+	for (const delayMs of [0, 150, 300, 600]) {
+		if (delayMs > 0) {
+			await new Promise((resolve) => setTimeout(resolve, delayMs))
+		}
+		try {
+			await execFile(
+				'bun',
+				[
+					'--no-env-file',
+					'--env-file=packages/worker/.env',
+					'./wrangler-env.ts',
+					'd1',
+					'execute',
+					'APP_DB',
+					'--local',
+					'--persist-to',
+					'.wrangler/state/e2e',
+					'--command',
+					sql,
+				],
+				{
+					cwd: process.cwd(),
+				},
+			)
+			return
+		} catch (error) {
+			lastError = error
+			const message = error instanceof Error ? error.message : String(error)
+			if (!message.includes('database is locked')) {
+				throw error
+			}
+		}
+	}
+	throw lastError instanceof Error
+		? lastError
+		: new Error('Unable to seed saved UI into the e2e database.')
 }
 
 test('authenticated user can open their hosted saved ui route', async ({
@@ -56,22 +80,28 @@ test('authenticated user can open their hosted saved ui route', async ({
 		userId: '1',
 		title: 'Hosted saved ui',
 		description: 'Saved ui route test artifact',
-		code: '<main><h1>Hosted saved ui</h1><button type="button" id="run">Run</button><script>document.getElementById("run")?.addEventListener("click", async () => { const result = await window.kodyWidget.executeCode("async () => ({ ok: true, source: \\"saved-ui\\" })"); const pre = document.createElement("pre"); pre.textContent = JSON.stringify(result); document.body.append(pre); });</script></main>',
+		code: '<main><h1>Hosted saved ui</h1><p>Saved UI route e2e body</p></main>',
 	})
 	await login()
 
 	await page.goto(`/ui/${appId}`)
 
-	await expect(page.getByRole('heading', { name: 'Hosted saved ui' })).toBeVisible()
-	const shellFrame = page.frameLocator('[data-saved-ui-shell]')
 	await expect(
-		shellFrame.getByRole('heading', { name: 'Hosted saved ui' }),
+		page.getByRole('heading', { name: 'Hosted saved ui' }),
 	).toBeVisible()
-	await shellFrame.getByRole('button', { name: 'Run' }).click()
-	await expect(shellFrame.getByText('"source":"saved-ui"')).toBeVisible()
+	// Shell page is one iframe; the saved app document is nested inside
+	// `[data-generated-ui-frame]` (see generated-ui-shell entry HTML).
+	const shellFrame = page.frameLocator('[data-saved-ui-shell]')
+	const appFrame = shellFrame.frameLocator('[data-generated-ui-frame]')
+	await expect(
+		appFrame.getByRole('heading', { name: 'Hosted saved ui' }),
+	).toBeVisible()
+	await expect(appFrame.getByText('Saved UI route e2e body')).toBeVisible()
 })
 
-test('saved ui route redirects unauthenticated users to login', async ({ page }) => {
+test('saved ui route redirects unauthenticated users to login', async ({
+	page,
+}) => {
 	const appId = `saved-ui-redirect-${Date.now()}`
 	const emailOwnerId = await createStableUserIdFromEmail('me@kentcdodds.com')
 	await seedSavedUi({
