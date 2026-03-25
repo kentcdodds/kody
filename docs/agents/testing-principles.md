@@ -18,7 +18,7 @@ magic.
   public internet and third-party services; prefer local fakes/fixtures.
 - Prefer fast unit tests for server logic; keep e2e tests focused on journeys.
 - Run server/unit tests with
-  `bun test ./server ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/cloudflare ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts`
+  `bun test ./packages/home-connector ./packages/worker/src/app ./packages/shared ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/cloudflare ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts`
   (same paths as `bun run test`) to avoid Playwright spec discovery and
   accidental matches like `packages/worker/src/mcp/mcp-server-e2e.test.ts`.
 
