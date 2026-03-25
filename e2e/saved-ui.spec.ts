@@ -1,9 +1,9 @@
 import { expect, test } from './playwright-utils.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { Shell } from 'node:child_process'
+import { execFile as execFileCb } from 'node:child_process'
 import { promisify } from 'node:util'
 
-const execFile = promisify(require('node:child_process').execFile)
+const execFile = promisify(execFileCb)
 
 async function seedSavedUi(options: {
 	appId: string
