@@ -24,11 +24,8 @@ export type GeneratedUiAppSession = {
 	endpoints: GeneratedUiAppSessionEndpoints
 }
 
-export type GeneratedUiAppSessionEnvelope = {
-	sessionId: string
-	expiresAt: string
-	endpoints: GeneratedUiAppSessionEndpoints
-}
+// Alias to keep the client-facing envelope in sync with session fields.
+export type GeneratedUiAppSessionEnvelope = GeneratedUiAppSession
 
 export async function createGeneratedUiAppSession(
 	env: Env,

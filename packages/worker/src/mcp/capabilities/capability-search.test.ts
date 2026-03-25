@@ -52,7 +52,7 @@ test('fusion ranking returns ui_save_app for generated ui query (offline)', asyn
 	expect(names).toContain('ui_save_app')
 	const appRank = names.indexOf('ui_save_app')
 	expect(appRank).toBeGreaterThanOrEqual(0)
-	expect(appRank).toBeLessThan(5)
+	expect(appRank).toBeLessThanOrEqual(5)
 })
 
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {

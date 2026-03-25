@@ -141,6 +141,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				appSession
 					? {
 							sessionId: appSession.sessionId,
+							token: appSession.token,
 							expiresAt: appSession.expiresAt,
 							endpoints: appSession.endpoints,
 						}

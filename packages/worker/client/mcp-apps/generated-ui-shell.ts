@@ -13,6 +13,7 @@ type AppSessionEnvelope = {
 		action: string
 		secureInput: string
 	}
+	token?: string
 }
 
 type RenderEnvelope = {
@@ -59,6 +60,7 @@ function coerceAppSession(value: unknown): AppSessionEnvelope | null {
 		sessionId: value.sessionId,
 		expiresAt: value.expiresAt,
 		endpoints,
+		token: typeof value.token === 'string' ? value.token : undefined,
 	}
 }
 
@@ -108,18 +110,6 @@ function coerceDisplayMode(value: unknown): DisplayMode | null {
 
 function coerceTheme(value: unknown): ThemeName | null {
 	return value === 'light' || value === 'dark' ? value : null
-}
-
-function coerceAppSessionContext(value: unknown) {
-	if (!isRecord(value)) return null
-	if (!isRecord(value.endpoints)) return null
-	const { appSource } = value.endpoints
-	if (typeof appSource !== 'string') return null
-	try {
-		return new URL(appSource).origin
-	} catch {
-		return null
-	}
 }
 
 function injectThemeAttributeIntoHtmlTag(
@@ -917,10 +907,7 @@ ${inlineModuleSource}
 		frameElement.srcdoc = absolutizeHtmlAttributeUrls(htmlSource, getBaseHref())
 	}
 
-	async function resolveSavedAppCode(
-		appId: string,
-		appSession: AppSessionEnvelope | null,
-	) {
+	async function resolveSavedAppCode(appId: string) {
 		const result = (await hostBridge.callTool({
 			name: 'ui_load_app_source',
 			arguments: { app_id: appId },
@@ -969,7 +956,7 @@ ${inlineModuleSource}
 		}
 
 		try {
-			const resolved = await resolveSavedAppCode(envelope.appId, appSession)
+			const resolved = await resolveSavedAppCode(envelope.appId)
 			if (latestEnvelope !== envelope) return
 			setFrameSource(resolved.code, resolved.runtime, appSession)
 		} catch (error) {
@@ -1121,11 +1108,31 @@ ${inlineModuleSource}
 				const requestId =
 					typeof payload.requestId === 'string' ? payload.requestId : null
 				const input = isRecord(payload.input) ? payload.input : null
-				if (requestId && input && event.source) {
+				const sessionToken = latestEnvelope?.appSession?.token ?? null
+				if (requestId && event.source) {
+					if (!input || !sessionToken) {
+						;(event.source as WindowProxy).postMessage(
+							{
+								type: `${childMessagePrefix}invoke-action-result`,
+								payload: {
+									requestId,
+									response: {
+										ok: false,
+										error: 'Generated UI action requires an active session.',
+									},
+								},
+							},
+							'*',
+						)
+						return
+					}
 					void hostBridge
 						.callTool({
 							name: 'generated_ui_invoke_action',
-							arguments: input,
+							arguments: {
+								token: sessionToken,
+								...input,
+							},
 						})
 						.then((result) => {
 							const errorMessage = getHostToolErrorMessage(result)
@@ -1157,11 +1164,40 @@ ${inlineModuleSource}
 				const requestId =
 					typeof payload.requestId === 'string' ? payload.requestId : null
 				const input = isRecord(payload.input) ? payload.input : null
-				if (requestId && input && event.source) {
+				const sessionToken = latestEnvelope?.appSession?.token ?? null
+				if (requestId && event.source) {
+					const setupId =
+						typeof input?.setupId === 'string' && input.setupId.length > 0
+							? input.setupId
+							: typeof input?.setup_id === 'string' && input.setup_id.length > 0
+								? input.setup_id
+								: null
+					const fields = isRecord(input?.fields) ? input.fields : null
+					if (!sessionToken || !setupId || !fields) {
+						;(event.source as WindowProxy).postMessage(
+							{
+								type: `${childMessagePrefix}submit-secure-input-result`,
+								payload: {
+									requestId,
+									response: {
+										ok: false,
+										error:
+											'Secure input requires an active session and valid fields.',
+									},
+								},
+							},
+							'*',
+						)
+						return
+					}
 					void hostBridge
 						.callTool({
 							name: 'generated_ui_submit_secure_input',
-							arguments: input,
+							arguments: {
+								token: sessionToken,
+								setup_id: setupId,
+								fields,
+							},
 						})
 						.then((result) => {
 							const errorMessage = getHostToolErrorMessage(result)

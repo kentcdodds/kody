@@ -29,12 +29,12 @@ export async function handleGeneratedUiApiRequest(
 	const url = new URL(request.url)
 
 	if (url.pathname === '/api/generated-ui/app-source') {
+		if (request.method !== 'GET') {
+			return jsonResponse({ error: 'Method not allowed.' }, 405)
+		}
 		const session = await authenticateGeneratedUiSession(request, env)
 		if (session instanceof Response) {
 			return session
-		}
-		if (request.method !== 'GET') {
-			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
 		const appId = url.searchParams.get('app_id')
 		if (!appId) {
@@ -124,11 +124,11 @@ export async function handleGeneratedUiApiRequest(
 				...result,
 			})
 		} catch (error) {
+			console.error('Generated UI secure input failed.', error)
 			return jsonResponse(
 				{
 					ok: false,
-					error:
-						error instanceof Error ? error.message : 'Secure input failed.',
+					error: 'Secure input failed.',
 				},
 				400,
 			)
