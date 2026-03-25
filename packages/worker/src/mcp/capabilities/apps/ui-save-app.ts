@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -39,6 +40,7 @@ const inputSchema = z.object({
 const outputSchema = z.object({
 	app_id: z.string(),
 	runtime: z.enum(['html', 'javascript']),
+	hosted_url: z.string().url(),
 })
 
 export const uiSaveAppCapability = defineDomainCapability(
@@ -90,6 +92,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 			return {
 				app_id: appId,
 				runtime: args.runtime,
+				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
 			}
 		},
 	},

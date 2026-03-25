@@ -51,6 +51,29 @@ export async function getUiArtifactById(
 	return mapRow(result)
 }
 
+export async function getUiArtifactByOwnerIds(
+	db: D1Database,
+	userIds: Array<string>,
+	artifactId: string,
+): Promise<UiArtifactRow | null> {
+	const ownerIds = userIds.map((userId) => userId.trim()).filter(Boolean)
+	if (ownerIds.length === 0) return null
+
+	const placeholders = ownerIds.map(() => '?').join(', ')
+	const result = await db
+		.prepare(
+			`SELECT id, user_id, title, description, keywords, source_code, source_type,
+				search_text, created_at, updated_at
+			FROM ui_artifacts
+			WHERE id = ? AND user_id IN (${placeholders})
+			LIMIT 1`,
+		)
+		.bind(artifactId, ...ownerIds)
+		.first<Record<string, unknown>>()
+	if (!result) return null
+	return mapRow(result)
+}
+
 export async function deleteUiArtifact(
 	db: D1Database,
 	userId: string,

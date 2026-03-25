@@ -9,6 +9,7 @@ import { type Connection, type ConnectionContext } from 'agents'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createChatThreadsStore } from '#app/chat-threads.ts'
 import { createMcpCallerContext } from './mcp/context.ts'
+import { buildSavedUiUrl } from './ui-artifact-urls.ts'
 import { createAiRuntime, type AiRuntimeResult } from './ai-runtime.ts'
 import { buildSentryOptions } from './sentry-options.ts'
 
@@ -94,6 +95,7 @@ function normalizeMessageHistoryIndex(
 
 function createKnownMockToolResult(
 	result: Extract<AiRuntimeResult, { kind: 'tool-call' }>,
+	baseUrl: string,
 ): MockToolCallResult | null {
 	if (result.toolName === 'open_generated_ui') {
 		const appId =
@@ -103,7 +105,13 @@ function createKnownMockToolResult(
 				'## Generated UI ready',
 				'',
 				'The generated UI is attached to this tool call in MCP-compatible hosts.',
-				...(appId ? ['', `Saved app id: \`${appId}\``] : []),
+				...(appId
+					? [
+							'',
+							`Saved app id: \`${appId}\``,
+							`Hosted fallback URL: ${buildSavedUiUrl(baseUrl, appId)}`,
+					  ]
+					: []),
 			].join('\n'),
 		}
 	}
@@ -302,7 +310,8 @@ class ChatAgentBase extends AIChatAgent<Env> {
 	private async createMockToolCallResponse(
 		result: Extract<AiRuntimeResult, { kind: 'tool-call' }>,
 	) {
-		const knownMockToolResult = createKnownMockToolResult(result)
+		const { baseUrl } = this.getRuntimeContext()
+		const knownMockToolResult = createKnownMockToolResult(result, baseUrl)
 		if (knownMockToolResult) {
 			await this.syncThreadMetadata({
 				assistantText: knownMockToolResult.assistantText,

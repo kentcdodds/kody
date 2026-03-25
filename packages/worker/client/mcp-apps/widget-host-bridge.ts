@@ -29,6 +29,7 @@ type WidgetHostBridge = {
 	callTool(input: {
 		name: string
 		arguments?: Record<string, unknown>
+		timeoutMs?: number
 	}): Promise<ServerToolResult | null>
 	openLink(url: string): Promise<boolean>
 	requestDisplayMode(mode: DisplayMode): Promise<DisplayMode | null>
@@ -205,6 +206,7 @@ export function createWidgetHostBridge(
 	function sendBridgeRequest(
 		method: string,
 		params: Record<string, unknown>,
+		timeoutMs = requestTimeoutMs,
 	): Promise<BridgeResponseMessage> {
 		return new Promise<BridgeResponseMessage>((resolve, reject) => {
 			requestCounter += 1
@@ -212,7 +214,7 @@ export function createWidgetHostBridge(
 			const timeoutId = globalThis.setTimeout(() => {
 				pendingRequests.delete(requestId)
 				reject(new Error('Bridge request timed out'))
-			}, requestTimeoutMs)
+			}, timeoutMs)
 
 			pendingRequests.set(requestId, {
 				resolve,
@@ -305,6 +307,7 @@ export function createWidgetHostBridge(
 	async function callTool(input: {
 		name: string
 		arguments?: Record<string, unknown>
+		timeoutMs?: number
 	}) {
 		const bridgeReady = await initialize()
 		if (!bridgeReady) return null
@@ -313,7 +316,7 @@ export function createWidgetHostBridge(
 			const response = await sendBridgeRequest('tools/call', {
 				name: input.name,
 				...(input.arguments ? { arguments: input.arguments } : {}),
-			})
+			}, input.timeoutMs)
 			const result = response.result
 			if (!result) return null
 			return {

@@ -3,6 +3,7 @@ import {
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 export type AuthenticatedAppUser = {
@@ -11,6 +12,7 @@ export type AuthenticatedAppUser = {
 	email: string
 	displayName: string
 	mcpUser: McpUserContext
+	artifactOwnerIds: Array<string>
 }
 
 function buildDisplayName(email: string) {
@@ -26,11 +28,16 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 	const userId = Number.parseInt(session.id, 10)
 	if (!Number.isFinite(userId)) return null
 
+	const emailBasedUserId = await createStableUserIdFromEmail(session.email)
+
 	return {
 		sessionUserId: session.id,
 		userId,
 		email: session.email,
 		displayName: buildDisplayName(session.email),
+		artifactOwnerIds: Array.from(
+			new Set([session.id, emailBasedUserId].filter(Boolean)),
+		),
 		mcpUser: {
 			userId: session.id,
 			email: session.email,

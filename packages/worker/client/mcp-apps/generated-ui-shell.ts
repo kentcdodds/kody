@@ -675,6 +675,7 @@ ${inlineModuleSource}
 		const result = (await hostBridge.callTool({
 			name: 'ui_load_app_source',
 			arguments: { app_id: appId },
+			timeoutMs: 15_000,
 		})) as HostToolResult | null
 		if (!result || result.isError) {
 			throw new Error('Failed to load saved app source.')
@@ -801,17 +802,36 @@ ${inlineModuleSource}
 					typeof payload.requestId === 'string' ? payload.requestId : null
 				const code = typeof payload.code === 'string' ? payload.code : null
 				if (requestId && code && event.source) {
+					let didTimeout = false
+					const targetWindow = event.source as WindowProxy
+					const timeoutId = window.setTimeout(() => {
+						didTimeout = true
+						targetWindow.postMessage(
+							{
+								type: `${childMessagePrefix}execute-result`,
+								payload: {
+									requestId,
+									result: null,
+									errorMessage: 'Code execution timed out.',
+								},
+							},
+							'*',
+						)
+					}, 90_000)
 					void hostBridge
 						.callTool({
 							name: 'execute',
 							arguments: { code },
+							timeoutMs: 90_000,
 						})
 						.then((result) => {
+							if (didTimeout) return
+							window.clearTimeout(timeoutId)
 							const errorMessage = getHostToolErrorMessage(result)
 							const structuredContent = isRecord(result?.structuredContent)
 								? result.structuredContent
 								: null
-							;(event.source as WindowProxy).postMessage(
+							targetWindow.postMessage(
 								{
 									type: `${childMessagePrefix}execute-result`,
 									payload: {
@@ -821,6 +841,21 @@ ${inlineModuleSource}
 												? null
 												: (structuredContent?.result ?? null),
 										errorMessage,
+									},
+								},
+								'*',
+							)
+						})
+						.catch(() => {
+							if (didTimeout) return
+							window.clearTimeout(timeoutId)
+							targetWindow.postMessage(
+								{
+									type: `${childMessagePrefix}execute-result`,
+									payload: {
+										requestId,
+										result: null,
+										errorMessage: 'Code execution failed.',
 									},
 								},
 								'*',
