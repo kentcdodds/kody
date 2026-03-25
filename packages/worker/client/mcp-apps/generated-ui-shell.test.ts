@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	absolutizeHtmlAttributeUrls,
-	formatRejectedChildResponse,
 	injectIntoHtmlDocument,
 } from './generated-ui-shell.ts'
 
@@ -95,16 +94,3 @@ test('absolutizeHtmlAttributeUrls leaves hash, data, and javascript urls untouch
 	expect(result).toContain('href="javascript:alert(1)"')
 })
 
-test('formatRejectedChildResponse returns default invoke-action error', () => {
-	expect(formatRejectedChildResponse('invoke-action')).toEqual({
-		ok: false,
-		error: 'Generated UI action failed.',
-	})
-})
-
-test('formatRejectedChildResponse returns default secure-input error', () => {
-	expect(formatRejectedChildResponse('submit-secure-input')).toEqual({
-		ok: false,
-		error: 'Secure input failed.',
-	})
-})

@@ -16,8 +16,6 @@ import {
 	createPasswordResetRequestHandler,
 } from '#app/handlers/password-reset.ts'
 import {
-	createSavedUiDataHandler,
-	createSavedUiExecuteHandler,
 	createSavedUiPageHandler,
 } from '#app/handlers/saved-ui.ts'
 import { session } from '#app/handlers/session.ts'
@@ -48,8 +46,6 @@ export function createAppRouter(appEnv: AppEnv) {
 	router.map(routes.signup, signup)
 	router.map(routes.account, account)
 	router.map(routes.savedUi, createSavedUiPageHandler(appEnv as Env))
-	router.map(routes.savedUiData, createSavedUiDataHandler(appEnv as Env))
-	router.map(routes.savedUiExecute, createSavedUiExecuteHandler(appEnv as Env))
 	router.map(routes.auth, createAuthHandler(appEnv))
 	router.map(routes.session, session)
 	router.map(routes.logout, logout)

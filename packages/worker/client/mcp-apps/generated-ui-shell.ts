@@ -86,9 +86,9 @@ function coerceGeneratedUiEndpoints(value: unknown) {
 			return null
 		}
 		if (
-			!appSource.pathname.startsWith('/api/generated-ui/') ||
-			!action.pathname.startsWith('/api/generated-ui/') ||
-			!secureInput.pathname.startsWith('/api/generated-ui/')
+			!appSource.pathname.startsWith('/ui-api/') ||
+			!action.pathname.startsWith('/ui-api/') ||
+			!secureInput.pathname.startsWith('/ui-api/')
 		) {
 			return null
 		}
@@ -309,13 +309,6 @@ function postChildResponse(
 	)
 }
 
-export function buildRejectedToolCallResponse(fallbackError: string) {
-	return {
-		ok: false,
-		error: fallbackError,
-	}
-}
-
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	if (!isRecord(value)) return null
 	const renderSource = value.renderSource ?? value.mode
@@ -364,8 +357,174 @@ function initializeGeneratedUiShell() {
 		}
 	}
 
+	function buildSavedUiEndpoint(
+		uiId: string,
+		endpoint: 'source' | 'execute' | 'secure-input',
+	) {
+		const baseHref = getBaseHref()
+		if (!baseHref) {
+			return null
+		}
+		return new URL(
+			`/ui-api/${encodeURIComponent(uiId)}/${endpoint}`,
+			baseHref,
+		).toString()
+	}
+
+	async function fetchJsonResponse(input: {
+		url: string
+		method?: 'GET' | 'POST'
+		body?: Record<string, unknown>
+		token?: string
+	}) {
+		const headers = new Headers({
+			Accept: 'application/json',
+		})
+		if (input.body) {
+			headers.set('Content-Type', 'application/json')
+		}
+		if (input.token) {
+			headers.set('Authorization', `Bearer ${input.token}`)
+		}
+		const response = await fetch(input.url, {
+			method: input.method ?? 'GET',
+			headers,
+			body: input.body ? JSON.stringify(input.body) : undefined,
+			cache: 'no-store',
+			credentials: input.token ? 'omit' : 'include',
+		})
+		const payload = (await response.json().catch(() => null)) as
+			| Record<string, unknown>
+			| null
+		return { response, payload }
+	}
+
+	function getApiErrorMessage(
+		payload: Record<string, unknown> | null,
+		fallback: string,
+	) {
+		return typeof payload?.error === 'string' ? payload.error : fallback
+	}
+
+	function getCurrentExecuteRequestTarget() {
+		const appSession = latestEnvelope?.appSession ?? null
+		if (appSession) {
+			return appSession.token
+				? {
+						url: appSession.endpoints.action,
+						token: appSession.token,
+					}
+				: null
+		}
+		const appId = latestEnvelope?.appId ?? null
+		if (!appId) {
+			return null
+		}
+		const url = buildSavedUiEndpoint(appId, 'execute')
+		return url ? { url } : null
+	}
+
+	function getCurrentSecureInputRequestTarget() {
+		const appSession = latestEnvelope?.appSession ?? null
+		if (appSession) {
+			return appSession.token
+				? {
+						url: appSession.endpoints.secureInput,
+						token: appSession.token,
+					}
+				: null
+		}
+		const appId = latestEnvelope?.appId ?? null
+		if (!appId) {
+			return null
+		}
+		const url = buildSavedUiEndpoint(appId, 'secure-input')
+		return url ? { url } : null
+	}
+
+	async function executeCodeWithHttp(input: {
+		code: string
+		params?: Record<string, unknown>
+	}) {
+		const target = getCurrentExecuteRequestTarget()
+		if (!target) {
+			return null
+		}
+		const body =
+			input.params === undefined
+				? { code: input.code }
+				: { code: input.code, params: input.params }
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body,
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			throw new Error(getApiErrorMessage(payload, 'Code execution failed.'))
+		}
+		return payload.result ?? null
+	}
+
+	async function submitSecureInputWithHttp(input: {
+		setupId: string
+		fields: Record<string, string>
+	}) {
+		const target = getCurrentSecureInputRequestTarget()
+		if (!target) {
+			return null
+		}
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body: {
+				setup_id: input.setupId,
+				fields: input.fields,
+			},
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			return {
+				ok: false,
+				error: getApiErrorMessage(payload, 'Secure input failed.'),
+			}
+		}
+		return payload
+	}
+
+	async function executeCodeWithHostTool(code: string) {
+		const result = await hostBridge.callTool({
+			name: 'execute',
+			arguments: { code },
+			timeoutMs: 90_000,
+		})
+		const errorMessage = getHostToolErrorMessage(result as HostToolResult | null)
+		if (errorMessage) {
+			throw new Error(errorMessage)
+		}
+		const structuredContent = isRecord(result?.structuredContent)
+			? result.structuredContent
+			: null
+		return structuredContent?.result ?? null
+	}
+
 	function escapeInlineScriptSource(code: string) {
 		return code.replace(/<\/script/gi, '<\\/script')
+	}
+
+	function wrapActionCodeForExecution(
+		code: string,
+		params?: Record<string, unknown>,
+	) {
+		if (params === undefined) {
+			return code
+		}
+		const paramsJson = JSON.stringify(params ?? {})
+		return `async () => {
+  const params = ${paramsJson};
+  const action = (${code});
+  return await action(params);
+}`
 	}
 
 	function buildShellStyles(theme: ThemeName | null) {
@@ -608,13 +767,11 @@ ${bridgeRuntime}
 	}
 
 	function buildChildBridgeRuntimeSource(
-		appSession: AppSessionEnvelope | null,
+		_appSession: AppSessionEnvelope | null,
 	) {
-		const hasAppSession = appSession != null
 		return `
 (() => {
 const shellMessagePrefix = '${childMessagePrefix}';
-const hasAppSession = ${hasAppSession ? 'true' : 'false'};
 let requestCounter = 0;
 function nextRequestId() {
 	requestCounter += 1;
@@ -652,8 +809,8 @@ function postRequestAndWaitForShellMessage(type, payload, responseType, requestI
 	}, '*');
 	return pending;
 }
-async function requestAppSessionAction(type, payload, responseType) {
-	if (!hasAppSession || window.parent === window) return null;
+async function requestAppAction(type, payload, responseType) {
+	if (window.parent === window) return null;
 	const messageType = shellMessagePrefix + type;
 	if (messageType === shellMessagePrefix + 'invoke-action') {
 		const input = payload?.input;
@@ -685,9 +842,8 @@ async function requestAppSessionAction(type, payload, responseType) {
 			: null;
 	return response;
 }
-async function invokeActionWithSession(input) {
-	if (!hasAppSession) return null;
-	const payload = await requestAppSessionAction(
+async function invokeActionViaShell(input) {
+	const payload = await requestAppAction(
 		'invoke-action',
 		{ input },
 		'invoke-action-result',
@@ -700,14 +856,8 @@ async function invokeActionWithSession(input) {
 	}
 	return payload;
 }
-async function submitSecureInputWithSession(input) {
-	if (!hasAppSession) {
-		return {
-			ok: false,
-			error: 'Secure input is unavailable without a generated UI app session.',
-		};
-	}
-	const payload = await requestAppSessionAction(
+async function submitSecureInputViaShell(input) {
+	const payload = await requestAppAction(
 		'submit-secure-input',
 		{ input },
 		'submit-secure-input-result',
@@ -786,7 +936,7 @@ window.kodyWidget = {
 		}
 		const params =
 			input.params && typeof input.params === 'object' ? input.params : undefined;
-		const sessionPayload = await invokeActionWithSession(
+		const sessionPayload = await invokeActionViaShell(
 			params === undefined ? { code } : { code, params },
 		);
 		if (sessionPayload) {
@@ -825,7 +975,7 @@ window.kodyWidget = {
 				error: 'Secure input requires setupId and fields.',
 			};
 		}
-		return await submitSecureInputWithSession({ setupId, fields });
+		return await submitSecureInputViaShell({ setupId, fields });
 	},
 };
 window.addEventListener('error', (event) => {
@@ -932,28 +1082,39 @@ ${inlineModuleSource}
 		frameElement.srcdoc = absolutizeHtmlAttributeUrls(htmlSource, getBaseHref())
 	}
 
-	async function resolveSavedAppCode(appId: string) {
-		const result = (await hostBridge.callTool({
-			name: 'ui_load_app_source',
-			arguments: { app_id: appId },
-			timeoutMs: 15_000,
-		})) as HostToolResult | null
-		if (!result || result.isError) {
+	async function resolveSavedAppCode(
+		appId: string,
+		appSession: AppSessionEnvelope | null,
+	) {
+		const requestUrl = appSession
+			? (() => {
+					if (!appSession.token) {
+						return null
+					}
+					const url = new URL(appSession.endpoints.appSource)
+					url.searchParams.set('app_id', appId)
+					return url.toString()
+				})()
+			: buildSavedUiEndpoint(appId, 'source')
+		if (!requestUrl) {
 			throw new Error('Failed to load saved app source.')
 		}
-		const structuredContent = isRecord(result.structuredContent)
-			? result.structuredContent
-			: null
-		const code =
-			structuredContent && typeof structuredContent.code === 'string'
-				? structuredContent.code
-				: null
+		const { response, payload } = await fetchJsonResponse({
+			url: requestUrl,
+			method: 'GET',
+			token: appSession?.token,
+		})
+		const app = isRecord(payload?.app) ? payload.app : null
+		if (!response.ok || !payload || payload.ok !== true || !app) {
+			throw new Error(getApiErrorMessage(payload, 'Failed to load saved app source.'))
+		}
+		const code = typeof app.code === 'string' ? app.code : null
 		if (!code) {
 			throw new Error('Saved app source is missing code.')
 		}
 		return {
 			code,
-			runtime: coerceRuntime(structuredContent?.runtime) ?? 'html',
+			runtime: coerceRuntime(app.runtime) ?? 'html',
 		}
 	}
 
@@ -981,7 +1142,10 @@ ${inlineModuleSource}
 		}
 
 		try {
-			const resolved = await resolveSavedAppCode(envelope.appId)
+			const resolved = await resolveSavedAppCode(
+				envelope.appId,
+				appSession,
+			)
 			if (latestEnvelope !== envelope) return
 			setFrameSource(resolved.code, resolved.runtime, appSession)
 		} catch (error) {
@@ -1086,35 +1250,25 @@ ${inlineModuleSource}
 							'*',
 						)
 					}, 90_000)
-					void hostBridge
-						.callTool({
-							name: 'execute',
-							arguments: { code },
-							timeoutMs: 90_000,
-						})
-						.then((result) => {
+					void (async () => {
+						try {
+							const result =
+								(await executeCodeWithHttp({ code })) ??
+								(await executeCodeWithHostTool(code))
 							if (didTimeout) return
 							window.clearTimeout(timeoutId)
-							const errorMessage = getHostToolErrorMessage(result)
-							const structuredContent = isRecord(result?.structuredContent)
-								? result.structuredContent
-								: null
 							targetWindow.postMessage(
 								{
 									type: `${childMessagePrefix}execute-result`,
 									payload: {
 										requestId,
-										result:
-											result?.isError === true
-												? null
-												: (structuredContent?.result ?? null),
-										errorMessage,
+										result,
+										errorMessage: null,
 									},
 								},
 								'*',
 							)
-						})
-						.catch(() => {
+						} catch (error) {
 							if (didTimeout) return
 							window.clearTimeout(timeoutId)
 							targetWindow.postMessage(
@@ -1123,12 +1277,16 @@ ${inlineModuleSource}
 									payload: {
 										requestId,
 										result: null,
-										errorMessage: 'Code execution failed.',
+										errorMessage:
+											error instanceof Error
+												? error.message
+												: 'Code execution failed.',
 									},
 								},
 								'*',
 							)
-						})
+						}
+					})()
 				}
 				return
 			}
@@ -1136,54 +1294,61 @@ ${inlineModuleSource}
 				const requestId =
 					typeof payload.requestId === 'string' ? payload.requestId : null
 				const input = isRecord(payload.input) ? payload.input : null
-				const sessionToken = latestEnvelope?.appSession?.token ?? null
 				if (requestId && event.source) {
 					const targetWindow = event.source as WindowProxy
-					if (!input || !sessionToken) {
+					const code =
+						typeof input?.code === 'string' && input.code.length > 0
+							? input.code
+							: null
+					const params = isRecord(input?.params)
+						? (input.params as Record<string, unknown>)
+						: undefined
+					if (!code) {
 						postChildResponse(
 							targetWindow,
 							`${childMessagePrefix}invoke-action-result`,
 							requestId,
 							{
 								ok: false,
-								error: 'Generated UI action requires an active session.',
+								error: 'Action code must be a non-empty string.',
 							},
 						)
 						return
 					}
-					void hostBridge
-						.callTool({
-							name: 'generated_ui_invoke_action',
-							arguments: {
-								token: sessionToken,
-								...input,
-							},
-						})
-						.then((result) => {
-							const errorMessage = getHostToolErrorMessage(result)
-							const structuredContent = isRecord(result?.structuredContent)
-								? result.structuredContent
-								: null
+					void (async () => {
+						try {
+							const result =
+								(await executeCodeWithHttp({
+									code,
+									params,
+								})) ??
+								(await executeCodeWithHostTool(
+									wrapActionCodeForExecution(code, params),
+								))
 							postChildResponse(
 								targetWindow,
 								`${childMessagePrefix}invoke-action-result`,
 								requestId,
-								result?.isError === true
-									? {
-											ok: false,
-											error: errorMessage ?? 'Generated UI action failed.',
-										}
-									: (structuredContent ?? null),
+								{
+									ok: true,
+									result,
+								},
 							)
-						})
-						.catch(() => {
+						} catch (error) {
 							postChildResponse(
 								targetWindow,
 								`${childMessagePrefix}invoke-action-result`,
 								requestId,
-								buildRejectedToolCallResponse('Generated UI action failed.'),
+								{
+									ok: false,
+									error:
+										error instanceof Error
+											? error.message
+											: 'Generated UI action failed.',
+								},
 							)
-						})
+						}
+					})()
 				}
 				return
 			}
@@ -1191,7 +1356,6 @@ ${inlineModuleSource}
 				const requestId =
 					typeof payload.requestId === 'string' ? payload.requestId : null
 				const input = isRecord(payload.input) ? payload.input : null
-				const sessionToken = latestEnvelope?.appSession?.token ?? null
 				if (requestId && event.source) {
 					const targetWindow = event.source as WindowProxy
 					const setupId =
@@ -1201,51 +1365,45 @@ ${inlineModuleSource}
 								? input.setup_id
 								: null
 					const fields = isRecord(input?.fields) ? input.fields : null
-					if (!sessionToken || !setupId || !fields) {
+					if (!setupId || !fields) {
 						postChildResponse(
 							targetWindow,
 							`${childMessagePrefix}submit-secure-input-result`,
 							requestId,
 							{
 								ok: false,
-								error:
-									'Secure input requires an active session and valid fields.',
+								error: 'Secure input requires valid fields.',
 							},
 						)
 						return
 					}
-					void hostBridge
-						.callTool({
-							name: 'generated_ui_submit_secure_input',
-							arguments: {
-								token: sessionToken,
-								setup_id: setupId,
-								fields,
-							},
-						})
+					void submitSecureInputWithHttp({
+						setupId,
+						fields: fields as Record<string, string>,
+					})
 						.then((result) => {
-							const errorMessage = getHostToolErrorMessage(result)
-							const structuredContent = isRecord(result?.structuredContent)
-								? result.structuredContent
-								: null
 							postChildResponse(
 								targetWindow,
 								`${childMessagePrefix}submit-secure-input-result`,
 								requestId,
-								result?.isError === true
-									? {
-											ok: false,
-											error: errorMessage ?? 'Secure input failed.',
-										}
-									: (structuredContent ?? null),
+								result ?? {
+									ok: false,
+									error: 'Secure input failed.',
+								},
 							)
 						})
-						.catch(() => {
+						.catch((error) => {
 							postChildResponse(
 								targetWindow,
 								`${childMessagePrefix}submit-secure-input-result`,
 								requestId,
-								buildRejectedToolCallResponse('Secure input failed.'),
+								{
+									ok: false,
+									error:
+										error instanceof Error
+											? error.message
+											: 'Secure input failed.',
+								},
 							)
 						})
 				}

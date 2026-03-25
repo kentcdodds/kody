@@ -98,9 +98,10 @@ When a UI should communicate back to the host agent:
   - `ui/message` (send a user-style message)
   - `tools/call` (call server tools)
   - `ui/open-link` (request external link open)
-- Use app-only tools (`visibility: ["app"]`) for server-side follow-up work that
-  should stay out of the model tool list, such as loading saved app source by id
-  or polling for live widget state.
+- In this repo, prefer the generated UI shell's built-in helpers for source
+  loading, execution, and secure input rather than app-only MCP tools. The
+  shell uses a unified HTTP contract under `/ui-api/:uiId/*` so the same
+  widget code can run on hosted Kody pages and inside MCP app hosts.
 - Keep messages concise and deterministic where possible.
 - For inline `rawHtml` widgets in this repo, prefer reusing the shared runtime
   in `packages/worker/client/mcp-apps/widget-host-bridge.ts` (bundled into
@@ -114,15 +115,27 @@ The current `generated-ui-shell` exposes a tiny helper on `window.kodyWidget`:
 - `sendMessage(text)`
 - `openLink(url)`
 - `toggleFullscreen()`
+- `invokeAction({ code, params })`
+- `submitSecureInput({ setupId, fields })`
 - `executeCode(code)`
 
 Keep the interface small and literal. Narrow, well-named helpers are easier for
 agents to use reliably than a generic RPC surface.
 
-`executeCode(code)` is not local eval inside the widget. It posts back to the
-host, and the host fulfills that request by calling the Kody MCP server's
-`execute` tool with `{ code }`. Treat it as a narrow convenience wrapper around
-that host-mediated tool call.
+`executeCode(code)` is not local eval inside the widget. It posts to the shell,
+and the shell executes the request server-side through the generated UI
+endpoint contract:
+
+- `GET /ui-api/:uiId/source`
+- `POST /ui-api/:uiId/execute`
+- `POST /ui-api/:uiId/secure-input`
+
+The same UI code should work in both hosted Kody pages and MCP app hosts. The
+server handles the auth difference behind that route family.
+
+Calling `executeCode(code)` on init is allowed when it is intentional, such as
+hydrating initial widget state. Prefer explicit user-triggered actions when the
+work should not happen automatically.
 
 You can also send simplified MCP-UI actions via `window.parent.postMessage(...)`
 (`type: 'tool' | 'prompt' | 'notify' | 'link'`) when using the `mcpApps`

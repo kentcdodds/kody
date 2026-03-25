@@ -888,6 +888,162 @@ test('mcp server saves app, search returns app hit, and open_generated_ui suppor
 	expect(openText).toContain(`${server.origin}/ui/${appId}`)
 })
 
+test('generated ui session endpoints support source, execute, and secure input', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_save_app({
+						title: 'Session Endpoint App',
+						description: 'Saved app for generated UI endpoint tests.',
+						keywords: ['session', 'endpoint', 'ui'],
+						code: '<main><h1>Session Endpoint App</h1></main>',
+						search_text: 'generated ui session endpoint app',
+					})`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const savedApp = saveStructured?.result as Record<string, unknown> | undefined
+	const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+	expect(appId).not.toBeNull()
+
+	const openResult = await mcpClient.client.callTool({
+		name: 'open_generated_ui',
+		arguments: {
+			app_id: appId,
+		},
+	})
+	const openStructured = (openResult as CallToolResult).structuredContent as
+		| {
+				appSession?: {
+					token?: string
+					endpoints?: {
+						appSource?: string
+						action?: string
+						secureInput?: string
+					}
+				}
+		  }
+		| undefined
+	const appSession = openStructured?.appSession
+	const token = appSession?.token ?? null
+	const appSourceUrl = appSession?.endpoints?.appSource ?? null
+	const actionUrl = appSession?.endpoints?.action ?? null
+	const secureInputUrl = appSession?.endpoints?.secureInput ?? null
+	expect(token).not.toBeNull()
+	expect(appSourceUrl).toContain('/ui-api/')
+	expect(actionUrl).toContain('/ui-api/')
+	expect(secureInputUrl).toContain('/ui-api/')
+
+	async function fetchSessionJson(url: string, init?: RequestInit) {
+		const response = await fetch(url, {
+			...init,
+			headers: {
+				Accept: 'application/json',
+				Authorization: `Bearer ${token}`,
+				...(init?.headers ?? {}),
+			},
+		})
+		const payload = (await response.json().catch(() => null)) as
+			| Record<string, unknown>
+			| null
+		return { response, payload }
+	}
+
+	const sourceRequestUrl = new URL(appSourceUrl ?? server.origin)
+	sourceRequestUrl.searchParams.set('app_id', appId ?? '')
+	const { response: sourceResponse, payload: sourcePayload } =
+		await fetchSessionJson(sourceRequestUrl.toString())
+	expect(sourceResponse.ok).toBe(true)
+	expect((sourcePayload?.app as { app_id?: string } | undefined)?.app_id).toBe(
+		appId,
+	)
+	expect((sourcePayload?.app as { code?: string } | undefined)?.code).toContain(
+		'Session Endpoint App',
+	)
+
+	const { response: executeResponse, payload: executePayload } =
+		await fetchSessionJson(actionUrl ?? server.origin, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				code: 'async (params) => ({ greeting: `Hello ${params.name}` })',
+				params: { name: 'Kody' },
+			}),
+		})
+	expect(executeResponse.ok).toBe(true)
+	expect(executePayload?.result).toEqual({ greeting: 'Hello Kody' })
+
+	const setupCode = `async () =>
+		await codemode.connections_begin_setup({
+			provider: {
+				key: 'demo-provider',
+				display_name: 'Demo Provider',
+			},
+			auth: {
+				strategy: 'manual_token',
+				instructions: ['Enter a token'],
+				secret_fields: [
+					{
+						name: 'api_key',
+						label: 'API Key',
+						input_type: 'password',
+					},
+				],
+				request: {
+					base_url: 'https://example.com',
+					auth_transport: {
+						type: 'api_key_header',
+						header_name: 'x-api-key',
+					},
+				},
+			},
+		})`
+	const { response: setupResponse, payload: setupPayload } = await fetchSessionJson(
+		actionUrl ?? server.origin,
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				code: setupCode,
+			}),
+		},
+	)
+	expect(setupResponse.ok).toBe(true)
+	const setupId = (setupPayload?.result as { setup_id?: string } | undefined)
+		?.setup_id
+	expect(setupId).toBeTruthy()
+
+	const { response: secureInputResponse, payload: secureInputPayload } =
+		await fetchSessionJson(secureInputUrl ?? server.origin, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				setup_id: setupId,
+				fields: {
+					api_key: 'demo-secret',
+				},
+			}),
+		})
+	expect(secureInputResponse.ok).toBe(true)
+	expect(secureInputPayload?.stored_secret_names).toEqual(['api_key'])
+	expect(secureInputPayload?.status).toBe('ready_to_finalize')
+})
+
 test('mcp server deletes saved ui app artifacts', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)

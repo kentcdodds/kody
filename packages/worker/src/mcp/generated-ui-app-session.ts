@@ -48,10 +48,10 @@ export async function createGeneratedUiAppSession(
 		token,
 		expiresAt: new Date(expiresAtMs).toISOString(),
 		endpoints: {
-			appSource: new URL('/api/generated-ui/app-source', appBaseUrl).toString(),
-			action: new URL('/api/generated-ui/actions', appBaseUrl).toString(),
+			appSource: new URL(`/ui-api/${sessionId}/source`, appBaseUrl).toString(),
+			action: new URL(`/ui-api/${sessionId}/execute`, appBaseUrl).toString(),
 			secureInput: new URL(
-				'/api/generated-ui/secure-input',
+				`/ui-api/${sessionId}/secure-input`,
 				appBaseUrl,
 			).toString(),
 		},

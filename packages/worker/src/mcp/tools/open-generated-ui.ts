@@ -21,9 +21,11 @@ Behavior:
 - Use \`app_id\` to reopen previously saved UI source without sending that source code back through the model.
 - \`code\` may be a full HTML document or a fragment. Prefer body content when possible, but full-document HTML is supported when you need total control.
 - The shell provides a tiny standard library on \`window.kodyWidget\` plus lightweight default styles for semantic HTML, forms, tables, buttons, and code blocks.
-- \`invokeAction({ code, params })\` sends non-sensitive UI input directly to a worker action endpoint backed by the same codemode runtime as \`execute\`.
-- \`submitSecureInput({ setupId, fields })\` sends sensitive fields like PATs or client secrets directly to a host-owned worker endpoint so those values do not need to pass through model-visible tool arguments.
-- \`executeCode(code)\` remains as a compatibility helper and uses the direct worker action path when a generated UI session is available.
+- \`executeCode(code)\` sends a server request through the generated UI shell. It is not local eval in the widget. When route context is available, the shell calls \`POST /ui-api/:uiId/execute\`.
+- \`invokeAction({ code, params })\` also uses the generated UI execute endpoint and is the preferred helper when you want to pass structured input into server-side code.
+- \`submitSecureInput({ setupId, fields })\` sends sensitive fields like PATs or client secrets to \`POST /ui-api/:uiId/secure-input\` so those values do not need to pass through model-visible tool arguments.
+- The same generated UI code should work both in hosted Kody pages and in MCP app hosts. The server handles the auth difference behind the same \`/ui-api/:uiId/*\` contract.
+- Calling \`executeCode(code)\` on init is allowed when it is intentional, for example to hydrate UI state on first render. Prefer explicit user actions when the work should be user-driven.
 
 Mini standard library:
 \`\`\`ts
@@ -35,7 +37,7 @@ declare global {
       toggleFullscreen(): Promise<'inline' | 'fullscreen' | 'pip' | null>
       invokeAction(input: { code: string; params?: Record<string, unknown> }): Promise<{ ok: boolean; result?: unknown; error?: string; logs?: Array<string> }>
       submitSecureInput(input: { setupId: string; fields: Record<string, string> }): Promise<{ ok: boolean; stored_secret_names?: Array<string>; missing_secret_names?: Array<string>; status?: string }>
-      // Compatibility helper.
+      // Server-side execution helper.
       executeCode(code: string): Promise<unknown>
     }
   }

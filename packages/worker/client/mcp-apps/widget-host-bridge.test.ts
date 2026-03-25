@@ -165,8 +165,9 @@ test('callTool proxies tools/call through the host bridge', async () => {
 				id: request.id,
 				result: {
 					structuredContent: {
-						appId: 'app-123',
-						source: '<main>Hello</main>',
+						result: {
+							greeting: 'Hello',
+						},
 					},
 				},
 			})
@@ -186,21 +187,22 @@ test('callTool proxies tools/call through the host bridge', async () => {
 	})
 
 	const result = await bridge.callTool({
-		name: 'ui_load_app_source',
+		name: 'execute',
 		arguments: {
-			app_id: 'app-123',
+			code: 'async () => ({ greeting: "Hello" })',
 		},
 	})
 
 	expect(result?.structuredContent).toEqual({
-		appId: 'app-123',
-		source: '<main>Hello</main>',
+		result: {
+			greeting: 'Hello',
+		},
 	})
 	expect(
 		hostPostedMessages.some(
 			(entry) =>
 				entry.method === 'tools/call' &&
-				entry.params?.name === 'ui_load_app_source',
+				entry.params?.name === 'execute',
 		),
 	).toBe(true)
 })

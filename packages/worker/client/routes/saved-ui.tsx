@@ -6,11 +6,6 @@ type SavedUiArtifact = {
 	appId: string
 	title: string
 	description: string
-	keywords: Array<string>
-	runtime: 'html' | 'javascript'
-	code: string
-	createdAt: string
-	updatedAt: string
 }
 
 type SavedUiStatus = 'loading' | 'ready' | 'error'
@@ -35,45 +30,32 @@ function getSavedUiIdFromLocation() {
 	}
 }
 
-function getSavedUiApiPath(appId: string) {
+function getSavedUiApiBasePath(appId: string) {
 	return `/ui-api/${encodeURIComponent(appId)}`
 }
 
 async function loadSavedUi(appId: string) {
-	const response = await fetch(getSavedUiApiPath(appId), {
+	const response = await fetch(`${getSavedUiApiBasePath(appId)}/source`, {
 		credentials: 'include',
 		headers: { Accept: 'application/json' },
 	})
 	const payload = (await response.json().catch(() => null)) as {
 		ok?: boolean
 		error?: string
-		artifact?: SavedUiArtifact
+		app?: {
+			app_id?: string
+			title?: string
+			description?: string
+		}
 	} | null
-	if (!response.ok || !payload?.ok || !payload.artifact) {
+	if (!response.ok || !payload?.ok || !payload.app?.app_id) {
 		throw new Error(payload?.error || 'Unable to load saved UI.')
 	}
-	return payload.artifact
-}
-
-async function executeSavedUiCode(appId: string, code: string) {
-	const response = await fetch(`${getSavedUiApiPath(appId)}/execute`, {
-		method: 'POST',
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json',
-			Accept: 'application/json',
-		},
-		body: JSON.stringify({ code }),
-	})
-	const payload = (await response.json().catch(() => null)) as {
-		ok?: boolean
-		error?: string
-		result?: unknown
-	} | null
-	if (!response.ok || !payload?.ok) {
-		throw new Error(payload?.error || 'Code execution failed.')
+	return {
+		appId: payload.app.app_id,
+		title: payload.app.title ?? 'Saved UI',
+		description: payload.app.description ?? '',
 	}
-	return payload.result ?? null
 }
 
 function getTextContent(content: unknown) {
@@ -123,12 +105,10 @@ export function SavedUiRoute(handle: Handle) {
 						toolOutput: {
 							widget: 'generated_ui',
 							resourceUri: generatedUiResourceUri,
-							renderSource: 'inline_code',
+							renderSource: 'saved_app',
 							appId: artifact.appId,
 							title: artifact.title,
 							description: artifact.description,
-							runtime: artifact.runtime,
-							sourceCode: artifact.code,
 						},
 					},
 				},
@@ -305,91 +285,6 @@ export function SavedUiRoute(handle: Handle) {
 				return
 			}
 
-			if (
-				(message as { method?: unknown }).method !== 'tools/call' ||
-				!latestShellWindow
-			) {
-				return
-			}
-
-			const toolName = (message as { params?: { name?: unknown } }).params?.name
-			const respond = (result: Record<string, unknown>) => {
-				latestShellWindow?.postMessage(
-					{
-						jsonrpc: '2.0',
-						id: (message as { id?: unknown }).id,
-						result,
-					},
-					savedUiShellOrigin,
-				)
-			}
-
-			if (toolName === 'ui_load_app_source') {
-				if (status !== 'ready' || !artifact) {
-					respond({
-						isError: true,
-						structuredContent: {
-							error: { message: 'Saved UI is not ready yet.' },
-						},
-					})
-					return
-				}
-				respond({
-					structuredContent: {
-						app_id: artifact.appId,
-						title: artifact.title,
-						description: artifact.description,
-						runtime: artifact.runtime,
-						code: artifact.code,
-					},
-				})
-				return
-			}
-
-			if (toolName === 'execute') {
-				const code = (
-					message as {
-						params?: { arguments?: { code?: unknown } }
-					}
-				).params?.arguments?.code
-				const targetAppId = status === 'ready' ? artifact?.appId : null
-				if (typeof code !== 'string' || !code.trim() || !targetAppId) {
-					respond({
-						isError: true,
-						structuredContent: { error: { message: 'Code is required.' } },
-					})
-					return
-				}
-				// Respond via microtask/async continuation — not handle.queueTask. Deferring
-				// through the Remix scheduler can land after the widget bridge request timeout
-				// (default 1500ms), so tools/call would fail with a null result in the shell.
-				void (async () => {
-					try {
-						const result = await executeSavedUiCode(targetAppId, code)
-						respond({ structuredContent: { result } })
-					} catch (error) {
-						respond({
-							isError: true,
-							structuredContent: {
-								error: {
-									message:
-										error instanceof Error
-											? error.message
-											: 'Tool call failed.',
-								},
-							},
-						})
-					}
-				})()
-				return
-			}
-
-			respond({
-				isError: true,
-				structuredContent: {
-					error: { message: 'Unsupported tool call.' },
-				},
-			})
 		},
 	})
 

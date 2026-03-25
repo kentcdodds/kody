@@ -98,6 +98,93 @@ test('authenticated user can open their hosted saved ui route', async ({
 	await expect(appFrame.getByText('Saved UI route e2e body')).toBeVisible()
 })
 
+test('hosted saved ui can execute on init and submit secure input', async ({
+	page,
+	login,
+}) => {
+	const appId = `saved-ui-actions-${Date.now()}`
+	await seedSavedUi({
+		appId,
+		userId: '1',
+		title: 'Hosted saved ui actions',
+		description: 'Saved ui route action test artifact',
+		code: `
+<main>
+	<h1>Hosted saved ui actions</h1>
+	<pre data-status>Loading...</pre>
+</main>
+<script>
+	const status = document.querySelector('[data-status]');
+	async function run() {
+		if (!status) return;
+		try {
+			const setup = await window.kodyWidget.executeCode(\`async () =>
+				await codemode.connections_begin_setup({
+					provider: {
+						key: 'demo-provider',
+						display_name: 'Demo Provider',
+					},
+					auth: {
+						strategy: 'manual_token',
+						instructions: ['Enter a token'],
+						secret_fields: [
+							{
+								name: 'api_key',
+								label: 'API Key',
+								input_type: 'password',
+							},
+						],
+						request: {
+							base_url: 'https://example.com',
+							auth_transport: {
+								type: 'api_key_header',
+								header_name: 'x-api-key',
+							},
+						},
+					},
+				})\`);
+			const secure = await window.kodyWidget.submitSecureInput({
+				setupId: setup.setup_id,
+				fields: {
+					api_key: 'demo-secret',
+				},
+			});
+			const result = await window.kodyWidget.executeCode(
+				'async () => ({ hydrated: "yes" })',
+			);
+			status.textContent = [
+				secure.status,
+				Array.isArray(secure.stored_secret_names)
+					? secure.stored_secret_names.join(',')
+					: 'missing',
+				result?.hydrated ?? 'missing',
+			].join(':');
+		} catch (error) {
+			status.textContent =
+				error instanceof Error ? error.message : String(error);
+		}
+	}
+	void run();
+</script>
+		`.trim(),
+	})
+	await login()
+
+	await page.goto(`/ui/${appId}`)
+
+	await expect(
+		page.getByRole('heading', { name: 'Hosted saved ui actions' }),
+	).toBeVisible()
+	const shellFrame = page.frameLocator('[data-saved-ui-shell]')
+	const appFrame = shellFrame.frameLocator('[data-generated-ui-frame]')
+	await expect(
+		appFrame.getByRole('heading', { name: 'Hosted saved ui actions' }),
+	).toBeVisible()
+	await expect(appFrame.locator('[data-status]')).toHaveText(
+		'ready_to_finalize:api_key:yes',
+	)
+})
+
 test('saved ui route redirects unauthenticated users to login', async ({
 	page,
 }) => {

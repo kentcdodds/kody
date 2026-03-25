@@ -84,8 +84,9 @@ MCP App tools
 - Use 'open_generated_ui' when you want an interactive UI in MCP App compatible hosts.
 - Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
 - Prefer body-focused HTML fragments when possible, but full HTML documents are also supported.
-- The shell exposes a small standard library on 'window.kodyWidget' for follow-up messages, external links, fullscreen requests, and 'executeCode(code)'.
-- 'executeCode(code)' sends the request back to the host, which calls the MCP tool 'execute' with that same code string.
+- The shell exposes a small standard library on 'window.kodyWidget' for follow-up messages, external links, fullscreen requests, 'executeCode(code)', 'invokeAction({ code, params })', and 'submitSecureInput({ setupId, fields })'.
+- 'executeCode(code)' is not local eval. The shell performs server-side execution through the generated UI '/ui-api/:uiId/*' endpoints when route context is available, and the same generated UI code should work both on hosted Kody pages and inside MCP app hosts.
+- Calling 'executeCode(code)' on init is allowed when that startup request is intentional, such as hydrating initial widget state.
 - The shell also provides lightweight semantic HTML styles plus theme tokens such as '--color-*', '--spacing-*', '--radius-*', '--shadow-*', and '--font-*'.
 	`.trim(),
 } as const
