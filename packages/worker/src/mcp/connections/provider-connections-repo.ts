@@ -157,14 +157,14 @@ export async function updateProviderConnection(
 			WHERE id = ? AND user_id = ?`,
 		)
 		.bind(
-			fields.status ?? existing.status,
-			fields.account_id ?? existing.account_id,
-			fields.account_label ?? existing.account_label,
-			fields.scope_set ?? existing.scope_set,
-			fields.metadata_json ?? existing.metadata_json,
-			fields.is_default ?? existing.is_default,
-			fields.token_expires_at ?? existing.token_expires_at,
-			fields.last_used_at ?? existing.last_used_at,
+			resolveFieldUpdate(fields, 'status', existing.status),
+			resolveFieldUpdate(fields, 'account_id', existing.account_id),
+			resolveFieldUpdate(fields, 'account_label', existing.account_label),
+			resolveFieldUpdate(fields, 'scope_set', existing.scope_set),
+			resolveFieldUpdate(fields, 'metadata_json', existing.metadata_json),
+			resolveFieldUpdate(fields, 'is_default', existing.is_default),
+			resolveFieldUpdate(fields, 'token_expires_at', existing.token_expires_at),
+			resolveFieldUpdate(fields, 'last_used_at', existing.last_used_at),
 			new Date().toISOString(),
 			connectionId,
 			userId,
@@ -263,4 +263,13 @@ function mapProviderConnectionSecretRow(
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	}
+}
+
+function resolveFieldUpdate<
+	TFields extends Record<string, unknown>,
+	TKey extends keyof TFields,
+>(fields: TFields, key: TKey, currentValue: TFields[TKey]) {
+	return Object.hasOwn(fields, key) && fields[key] !== undefined
+		? fields[key]
+		: currentValue
 }

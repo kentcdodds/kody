@@ -511,14 +511,19 @@ export async function refreshResolvedProviderConnection(input: {
 	if (!connection) {
 		throw new Error('Provider connection not found for this handle.')
 	}
+	const verificationPath = parseConnectionAuthSpec(connection.auth_spec_json)
+		.verification?.path
+	if (!verificationPath) {
+		throw new Error(
+			'Provider connection does not define a verification path for refresh.',
+		)
+	}
 	const response = await performProviderHttpRequestForConnection(
 		input.env,
 		connection,
 		{
 			method: 'GET',
-			path:
-				parseConnectionAuthSpec(connection.auth_spec_json).verification?.path ??
-				'/',
+			path: verificationPath,
 		},
 	)
 	return {
