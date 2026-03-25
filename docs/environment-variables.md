@@ -9,6 +9,9 @@ types, runtime validation, and documentation in sync.
    - Update `packages/worker/src/env-schema.ts` so the worker schema and
      `AppEnv` include the new variable.
    - `packages/worker/env.d.ts` extends `Env` from that worker-owned schema.
+   - If the variable is a Worker secret that Wrangler should validate and type,
+     update the matching `env.<name>.secrets.required` entry in
+     `packages/worker/wrangler.jsonc`.
 
 2. **Validate at runtime**
    - Add the variable to the runtime schema in
@@ -38,6 +41,10 @@ types, runtime validation, and documentation in sync.
 3. **Add local defaults**
    - Update `packages/worker/.env.example` (source for new local
      `packages/worker/.env` files).
+   - If the secret should stay available during `wrangler dev`, ensure it is
+     declared in `packages/worker/wrangler.jsonc`. Wrangler only loads keys
+     listed in `secrets.required` from `.env` / `process.env` when that config
+     is present.
 
 4. **Update required resources docs**
    - Add the variable to `docs/setup-manifest.md`.
@@ -47,6 +54,32 @@ types, runtime validation, and documentation in sync.
      to Wrangler as a Worker var or secret, depending on sensitivity:
      - `.github/workflows/deploy.yml` (production deploys)
      - `.github/workflows/preview.yml` (preview deploys)
+   - Re-run `bun run generate-types` so
+     `packages/worker/worker-configuration.d.ts` stays aligned with Wrangler's
+     secret/source-of-truth config.
+
+## Wrangler secret declarations
+
+`packages/worker/wrangler.jsonc` now uses Wrangler's `secrets.required`
+configuration as the source of truth for Worker secrets that must exist in each
+environment:
+
+- `env.production.secrets.required` — `COOKIE_SECRET`, `AI_GATEWAY_ID`
+- `env.preview.secrets.required` — `COOKIE_SECRET`, `AI_GATEWAY_ID`
+- `env.test.secrets.required` — `COOKIE_SECRET`
+
+This gives us three benefits:
+
+- local `wrangler dev` warns when a required secret is missing
+- `wrangler deploy` / `wrangler versions upload` fail fast when a required
+  secret was not synced
+- `bun run generate-types` can generate secret bindings without depending on a
+  checked-out `.env` file
+
+`wrangler-env.ts` forwards the repo's existing optional local-only env values as
+explicit `--var` bindings during `wrangler dev` so mock-driven workflows keep
+working even though Wrangler filters `.env` keys down to `secrets.required`
+entries once that config exists.
 
 ## Sentry
 

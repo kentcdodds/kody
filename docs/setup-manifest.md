@@ -56,9 +56,14 @@ Use Cloudflare's built-in rate limiting rules instead of custom Worker logic.
 ## Environment variables
 
 Local development uses `packages/worker/.env`, which Wrangler loads
-automatically:
+automatically. `packages/worker/wrangler.jsonc` now declares the required Worker
+secrets with `env.<name>.secrets.required`; Wrangler validates those names
+during `dev`, `deploy`, and `types`, while `wrangler-env.ts` passes through the
+repo's other local-only `.env` values with `--var` so existing mock and
+optional-integration workflows keep working:
 
-- `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
+- `COOKIE_SECRET` (generate with `openssl rand -hex 32`; required by Wrangler in
+  `production`, `preview`, and `test`)
  - `APP_BASE_URL` (optional; defaults to request origin, example
   `https://app.example.com`; also sets the canonical public origin used for MCP
   auth metadata, generated UI resources, and email links)
@@ -67,9 +72,10 @@ automatically:
 - `RESEND_API_BASE_URL` (optional, defaults to `https://api.resend.com`)
 - `RESEND_API_KEY` (optional, required to send via Resend)
 - `RESEND_FROM_EMAIL` (optional, required to send via Resend)
-- `AI_GATEWAY_ID` (required when `AI_MODE=remote`; deploy workflows sync a
-  gateway ID from GitHub Actions secrets so remote inference goes through
-  Cloudflare AI Gateway)
+- `AI_GATEWAY_ID` (required by Wrangler in `production` and `preview`, and
+  required when `AI_MODE=remote`; deploy workflows sync a gateway ID from
+  GitHub Actions secrets so remote inference goes through Cloudflare AI
+  Gateway)
 - `CLOUDFLARE_ACCOUNT_ID` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests against the correct account)
 - `CLOUDFLARE_API_TOKEN` (required for local development when `AI_MODE=remote`

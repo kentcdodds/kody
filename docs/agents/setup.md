@@ -33,6 +33,12 @@ Quick notes for getting a local kody environment running.
   `tools/export-d1-remote-to-sqlite.sh`.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed.
+- `packages/worker/wrangler.jsonc` now declares required Worker secrets with
+  Wrangler `secrets.required`. `COOKIE_SECRET` is required in every checked-in
+  environment, and `AI_GATEWAY_ID` is additionally required in `production` and
+  `preview`. Local dev still supports extra optional keys from
+  `packages/worker/.env` because `wrangler-env.ts` forwards them to
+  `wrangler dev` as explicit `--var` overrides.
 - `bun run dev` (starts mock API servers automatically, the main worker, and the
   local home connector; it sets `RESEND_API_BASE_URL`, `AI_MODE=mock`,
   `AI_MOCK_BASE_URL`, and (unless `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` +

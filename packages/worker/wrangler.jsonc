@@ -77,6 +77,9 @@
 					"index_name": "kody-capabilities-prod",
 				},
 			],
+			"secrets": {
+				"required": ["COOKIE_SECRET", "AI_GATEWAY_ID"],
+			},
 			"vars": {
 				"AI_MODE": "remote",
 				"AI_MODEL": "@cf/zai-org/glm-4.7-flash",
@@ -136,6 +139,9 @@
 					"index_name": "kody-capabilities-preview",
 				},
 			],
+			"secrets": {
+				"required": ["COOKIE_SECRET", "AI_GATEWAY_ID"],
+			},
 			"vars": {
 				"AI_MODE": "remote",
 				"AI_MODEL": "@cf/zai-org/glm-4.7-flash",
@@ -189,11 +195,13 @@
 					"binding": "OAUTH_KV",
 				},
 			],
+			"secrets": {
+				"required": ["COOKIE_SECRET"],
+			},
 			"vars": {
 				"AI_MODE": "mock",
 				"AI_MODEL": "@cf/zai-org/glm-4.7-flash",
 				"SENTRY_ENVIRONMENT": "test",
-				"COOKIE_SECRET": "LOCAL_AND_PREVIEW_COOKIE_SECRET_32_CHARS_MINIMUM",
 			},
 		},
 	},

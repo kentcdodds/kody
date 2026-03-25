@@ -4,12 +4,15 @@ import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
 import getPort from 'get-port'
 import { getRemoteAiLocalDevStartupError } from '@kody-internal/shared/ai-env-validation.ts'
+import {
+	buildWranglerLocalDevVars,
+	getCliVarKeys,
+} from './tools/wrangler-local-dev-vars.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
 const args = process.argv.slice(2)
 const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
-
 const hasEnvFlag = args.includes('--env') || args.includes('-e')
 const isDevCommand = args[0] === 'dev'
 const isLocalDevCommand = isDevCommand && args.includes('--local')
@@ -43,6 +46,15 @@ if (!hasEnvFlag) {
 
 if (isDevCommand) {
 	commandArgs.push('--var', 'WRANGLER_IS_LOCAL_DEV:true')
+	// Wrangler's `secrets.required` only loads listed `.env` keys during local dev,
+	// so pass local optional env overrides explicitly to preserve existing workflows.
+	const existingVarKeys = getCliVarKeys(commandArgs)
+	commandArgs.push(
+		...buildWranglerLocalDevVars({
+			env: process.env,
+			existingVarKeys,
+		}),
+	)
 }
 
 let resolvedPort = process.env.PORT
