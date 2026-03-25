@@ -35,7 +35,11 @@ export const uiDeleteAppCapability = defineDomainCapability(
 				args.app_id,
 			)
 			if (removed) {
-				await deleteUiArtifactVector(ctx.env, args.app_id)
+				try {
+					await deleteUiArtifactVector(ctx.env, args.app_id)
+				} catch {
+					// Vector cleanup should not fail the primary delete.
+				}
 			}
 			return { deleted: removed, app_id: args.app_id }
 		},
