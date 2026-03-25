@@ -9,5 +9,6 @@
 		"jsx": "react-jsx",
 		"jsxImportSource": "remix/component"
 	},
-	"include": ["./client/**/*.ts", "./client/**/*.tsx", "../shared/src/**/*.ts"]
+	"include": ["./client/**/*.ts", "./client/**/*.tsx"],
+	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]
 }

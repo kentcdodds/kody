@@ -39,6 +39,7 @@
 	"exclude": [
 		"**/*.test.ts",
 		"**/*.spec.ts",
+		"./src/mcp/test-process.ts",
 		"../**/*.test.ts",
 		"../**/*.spec.ts",
 		"../../**/*.test.ts",
