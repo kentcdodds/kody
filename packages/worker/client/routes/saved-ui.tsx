@@ -26,7 +26,12 @@ function getSavedUiIdFromLocation() {
 	const path = window.location.pathname.slice(prefix.length)
 	const [id] = path.split('/')
 	const trimmed = id?.trim()
-	return trimmed ? decodeURIComponent(trimmed) : null
+	if (!trimmed) return null
+	try {
+		return decodeURIComponent(trimmed)
+	} catch {
+		return null
+	}
 }
 
 function getSavedUiApiPath(appId: string) {
