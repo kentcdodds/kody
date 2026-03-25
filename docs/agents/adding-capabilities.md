@@ -134,9 +134,8 @@ the domain modules.
    `capabilities: [..., yourCapability]`.
 5. If the domain uses `index.ts`, ensure it still exports `domain` /
    `codingCapabilities`-style aliases as needed for local imports.
-6. Update targeted tests for the capability behavior and only touch
-   `packages/worker/src/mcp/mcp-server-e2e.test.ts` when the public MCP wiring
-   or OAuth/tool/resource smoke contract changes.
+6. Add or update tests in `packages/worker/src/mcp/mcp-server-e2e.test.ts` for
+   MCP-visible behavior.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
 
@@ -207,13 +206,12 @@ Use handlers for things like:
 
 Public MCP behavior should be verified through the compact tool surface:
 
-- use targeted capability/tool tests for ranking, execution, and schema details
-- keep MCP E2E focused on smoke coverage for server boot, OAuth, tool listing,
-  and at least one successful tool call/resource read
+- use `search` with a **query** string to confirm the capability surfaces in
+  ranked results
+- use `execute` to confirm the capability runs correctly
 
-Prefer targeted tests for detailed behavior. Keep
-`packages/worker/src/mcp/mcp-server-e2e.test.ts` small because it boots the full
-worker and is part of the CI timeout-sensitive path.
+Prefer E2E tests in `packages/worker/src/mcp/mcp-server-e2e.test.ts` for the
+real MCP contract.
 
 Registry invariants (duplicate capability names, domain/capability mismatches,
 duplicate domain registration) are covered in

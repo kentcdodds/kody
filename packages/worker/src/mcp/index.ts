@@ -2,7 +2,6 @@ import * as Sentry from '@sentry/cloudflare'
 import { invariant } from '@epic-web/invariant'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
-import { __DO_NOT_USE_WILL_BREAK__agentContext } from 'agents'
 import { McpAgent } from 'agents/mcp'
 import { capabilityDomains } from '#mcp/capabilities/registry.ts'
 import { buildSentryOptions } from '../sentry-options.ts'
@@ -91,64 +90,11 @@ MCP App tools
 	`.trim(),
 } as const
 
-const patchedStreamableTransports = new WeakSet<object>()
-
-type StreamableMcpTransport = {
-	send: (message: unknown, options?: unknown) => Promise<void>
-}
-
 class MCPBase extends McpAgent<Env, State, Props> {
 	server = new McpServer(serverMetadata.implementation, {
 		instructions: serverMetadata.instructions,
 		jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 	})
-	/**
-	 * `@modelcontextprotocol/sdk` handles inbound JSON-RPC via `Promise.resolve().then(...)`
-	 * so `transport.send` often runs in a later microtask. By then the `agents` library's
-	 * `AsyncLocalStorage` scope from the WebSocket `onConnect` callback has ended, so
-	 * `getCurrentAgent()` inside `StreamableHTTPServerTransport.send` is empty and
-	 * responses are never written (MCP client hits its 60s request timeout).
-	 *
-	 * Re-enter agent context whenever send runs without an active store so deferred
-	 * replies still resolve `getCurrentAgent()` to this Durable Object instance.
-	 */
-	override async onStart(props?: Props) {
-		await super.onStart(props)
-		const transport = (this as unknown as { _transport?: unknown })._transport
-		if (
-			!transport ||
-			typeof transport !== 'object' ||
-			patchedStreamableTransports.has(transport)
-		) {
-			return
-		}
-		const withSend = transport as StreamableMcpTransport
-		if (typeof withSend.send !== 'function') return
-		patchedStreamableTransports.add(transport)
-		const originalSend = withSend.send.bind(
-			transport,
-		) as StreamableMcpTransport['send']
-		const self = this
-		withSend.send = async (message, options) => {
-			const store = __DO_NOT_USE_WILL_BREAK__agentContext.getStore()
-			// Only trust the active store when it is *this* DO. Any other truthy
-			// `store.agent` (e.g. another agent/async branch) would make
-			// StreamableHTTPServerTransport.send use the wrong `getCurrentAgent()` and
-			// fail to route JSON-RPC replies—clients then hang until MCP timeout.
-			if (store?.agent === self) {
-				return originalSend(message, options)
-			}
-			return __DO_NOT_USE_WILL_BREAK__agentContext.run(
-				{
-					agent: self,
-					connection: undefined,
-					request: undefined,
-					email: undefined,
-				},
-				() => originalSend(message, options),
-			)
-		}
-	}
 	async init() {
 		await registerResources(this)
 		await registerTools(this)

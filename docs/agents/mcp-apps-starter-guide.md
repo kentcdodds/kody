@@ -79,20 +79,15 @@ In `packages/worker/src/mcp/tools/<your-tool>.ts`:
 - Add tool registration to `packages/worker/src/mcp/register-tools.ts`.
 - Ensure `packages/worker/src/mcp/index.ts` calls both in `init()`.
 
-### 5) Keep MCP E2E coverage smoke-sized
+### 5) Add or update MCP E2E coverage
 
-Use `packages/worker/src/mcp/mcp-server-e2e.test.ts` only for one compact
-server-level smoke path:
+At minimum, cover:
 
-- the worker boots
-- OAuth completes
-- core MCP tools/resources are discoverable
-- one representative tool call succeeds
-
-Keep detailed assertions out of this suite. Tool-specific output shape, ranking,
-resource metadata, CSP, and generated shell behavior should live in targeted
-unit/integration tests close to the implementation so CI does not depend on a
-large MCP end-to-end matrix.
+- `listTools` includes your new tool.
+- `listResources` includes your `ui://` resource.
+- `readResource` returns expected MIME type + payload markers.
+- `readResource` metadata includes widget domain + CSP expectations.
+- `callTool` returns expected content/structuredContent.
 
 ## Host messaging patterns
 
@@ -258,9 +253,7 @@ When removing starter examples:
 1. Delete example modules under `packages/worker/src/mcp/apps`,
    `packages/worker/src/mcp/tools`, and `packages/worker/src/mcp/resources`.
 2. Replace entries in registration modules.
-3. Update the MCP smoke test only if the public boot/auth/tool/resource contract
-   changes, and add detailed behavior checks in targeted tests near the changed
-   implementation.
+3. Update MCP E2E tests to your new tool/resource names and behavior.
 4. Update this guide (or adjacent docs) if your project-specific conventions
    differ from defaults.
 
