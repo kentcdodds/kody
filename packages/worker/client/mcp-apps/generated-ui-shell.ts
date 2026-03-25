@@ -7,7 +7,6 @@ type ThemeName = 'light' | 'dark'
 
 type AppSessionEnvelope = {
 	sessionId: string
-	token: string
 	expiresAt: string
 	endpoints: {
 		appSource: string
@@ -48,7 +47,6 @@ function coerceAppSession(value: unknown): AppSessionEnvelope | null {
 	if (!isRecord(value)) return null
 	if (
 		typeof value.sessionId !== 'string' ||
-		typeof value.token !== 'string' ||
 		typeof value.expiresAt !== 'string'
 	) {
 		return null
@@ -64,7 +62,6 @@ function coerceAppSession(value: unknown): AppSessionEnvelope | null {
 	}
 	return {
 		sessionId: value.sessionId,
-		token: value.token,
 		expiresAt: value.expiresAt,
 		endpoints: {
 			appSource: endpoints.appSource,
@@ -315,23 +312,6 @@ function initializeGeneratedUiShell() {
 		return code.replace(/<\/script/gi, '<\\/script')
 	}
 
-	function escapeInlineJsonSource(json: string) {
-		const withEscapedEntities = json.replace(/[<>&]/g, (value) => {
-			switch (value) {
-				case '<':
-					return '\\u003c'
-				case '>':
-					return '\\u003e'
-				case '&':
-					return '\\u0026'
-				default:
-					return value
-			}
-		})
-		return withEscapedEntities
-			.replace(/\u2028/g, '\\u2028')
-			.replace(/\u2029/g, '\\u2029')
-	}
 	function buildShellStyles(theme: ThemeName | null) {
 		const themeSelector = theme ? `html[data-kody-theme="${theme}"]` : ':root'
 		return `
@@ -574,23 +554,15 @@ ${bridgeRuntime}
 	function buildChildBridgeRuntimeSource(
 		appSession: AppSessionEnvelope | null,
 	) {
-		const serializedAppSession = escapeInlineJsonSource(
-			JSON.stringify(appSession),
-		)
+		const hasAppSession = appSession != null
 		return `
+(() => {
 const shellMessagePrefix = '${childMessagePrefix}';
-const appSession = ${serializedAppSession};
+const hasAppSession = ${hasAppSession ? 'true' : 'false'};
 let requestCounter = 0;
 function nextRequestId() {
 	requestCounter += 1;
 	return 'generated-ui-' + requestCounter;
-}
-function getAppSessionHeaders() {
-	if (!appSession) return null;
-	return {
-		accept: 'application/json',
-		authorization: 'Bearer ' + appSession.token,
-	};
 }
 function wrapActionCode(code, params) {
 	if (params === undefined) return code;
@@ -600,52 +572,6 @@ function wrapActionCode(code, params) {
   const action = (\${code});
   return await action(params);
 }\`;
-}
-async function invokeActionWithSession(input) {
-	if (!appSession) return null;
-	const response = await fetch(appSession.endpoints.action, {
-		method: 'POST',
-		headers: {
-			...getAppSessionHeaders(),
-			'content-type': 'application/json',
-		},
-		body: JSON.stringify(input),
-	});
-	const payload = await response.json().catch(() => null);
-	if (!payload || typeof payload !== 'object') {
-		return {
-			ok: false,
-			error: 'Generated UI action endpoint returned an invalid response.',
-		};
-	}
-	return payload;
-}
-async function submitSecureInputWithSession(input) {
-	if (!appSession) {
-		return {
-			ok: false,
-			error: 'Secure input is unavailable without a generated UI app session.',
-		};
-	}
-	const response = await fetch(appSession.endpoints.secureInput, {
-		method: 'POST',
-		headers: {
-			...getAppSessionHeaders(),
-			'content-type': 'application/json',
-		},
-		body: JSON.stringify({
-			setup_id: input.setupId,
-			fields: input.fields,
-		}),
-	});
-	const payload = await response.json().catch(() => null);
-	if (!payload || typeof payload !== 'object') {
-		return {
-			ok: false,
-			error: 'Secure input endpoint returned an invalid response.',
-		};
-	}
-	return payload;
 }
 function waitForShellMessage(type, requestId) {
 	return new Promise((resolve) => {
@@ -669,6 +595,74 @@ function postRequestAndWaitForShellMessage(type, payload, responseType, requestI
 		payload,
 	}, '*');
 	return pending;
+}
+async function requestAppSessionAction(type, payload, responseType) {
+	if (!hasAppSession || window.parent === window) return null;
+	const messageType = shellMessagePrefix + type;
+	if (messageType === shellMessagePrefix + 'invoke-action') {
+		const input = payload?.input;
+		if (
+			!input ||
+			typeof input !== 'object' ||
+			typeof input.code !== 'string' ||
+			input.code.length === 0
+		) {
+			return {
+				ok: false,
+				error: 'Action code must be a non-empty string.',
+			};
+		}
+	}
+	const requestId = nextRequestId();
+	const responsePayload = await postRequestAndWaitForShellMessage(
+		messageType,
+		{
+			requestId,
+			...payload,
+		},
+		shellMessagePrefix + responseType,
+		requestId,
+	);
+	const response =
+		responsePayload && typeof responsePayload === 'object'
+			? responsePayload.response
+			: null;
+	return response;
+}
+async function invokeActionWithSession(input) {
+	if (!hasAppSession) return null;
+	const payload = await requestAppSessionAction(
+		'invoke-action',
+		{ input },
+		'invoke-action-result',
+	);
+	if (!payload || typeof payload !== 'object') {
+		return {
+			ok: false,
+			error: 'Generated UI action endpoint returned an invalid response.',
+		};
+	}
+	return payload;
+}
+async function submitSecureInputWithSession(input) {
+	if (!hasAppSession) {
+		return {
+			ok: false,
+			error: 'Secure input is unavailable without a generated UI app session.',
+		};
+	}
+	const payload = await requestAppSessionAction(
+		'submit-secure-input',
+		{ input },
+		'submit-secure-input-result',
+	);
+	if (!payload || typeof payload !== 'object') {
+		return {
+			ok: false,
+			error: 'Secure input endpoint returned an invalid response.',
+		};
+	}
+	return payload;
 }
 window.kodyWidget = {
 	sendMessage(text) {
@@ -703,19 +697,6 @@ window.kodyWidget = {
 	},
 	async executeCode(code) {
 		if (typeof code !== 'string' || code.length === 0) return null;
-		if (appSession) {
-			const payload = await invokeActionWithSession({ code });
-			if (payload && typeof payload === 'object' && payload.ok === false) {
-				throw new Error(
-					typeof payload.error === 'string'
-						? payload.error
-						: 'Generated UI action failed.',
-				);
-			}
-			return payload && typeof payload === 'object' && 'result' in payload
-				? payload.result ?? null
-				: null;
-		}
 		if (window.parent === window) return null;
 		const requestId = nextRequestId();
 		const payload = await postRequestAndWaitForShellMessage(
@@ -749,10 +730,11 @@ window.kodyWidget = {
 		}
 		const params =
 			input.params && typeof input.params === 'object' ? input.params : undefined;
-		if (appSession) {
-			return await invokeActionWithSession(
-				params === undefined ? { code } : { code, params },
-			);
+		const sessionPayload = await invokeActionWithSession(
+			params === undefined ? { code } : { code, params },
+		);
+		if (sessionPayload) {
+			return sessionPayload;
 		}
 		try {
 			const result = await this.executeCode(wrapActionCode(code, params));
@@ -802,6 +784,7 @@ window.addEventListener('unhandledrejection', (event) => {
 		event.reason?.message ?? event.reason ?? 'Unknown rejection',
 	);
 });
+})();
 		`.trim()
 	}
 
@@ -887,33 +870,6 @@ ${inlineModuleSource}
 	}
 
 	async function resolveSavedAppCode(appId: string) {
-		const appSession = latestEnvelope?.appSession ?? null
-		if (appSession) {
-			const url = new URL(appSession.endpoints.appSource)
-			url.searchParams.set('app_id', appId)
-			const response = await fetch(url.toString(), {
-				headers: {
-					accept: 'application/json',
-					authorization: `Bearer ${appSession.token}`,
-				},
-			})
-			const payload = (await response.json().catch(() => null)) as Record<
-				string,
-				unknown
-			> | null
-			const app = isRecord(payload?.app) ? payload.app : null
-			if (!response.ok || payload?.ok !== true || !app) {
-				throw new Error('Failed to load saved app source.')
-			}
-			const code = typeof app.code === 'string' ? app.code : null
-			if (!code) {
-				throw new Error('Saved app source is missing code.')
-			}
-			return {
-				code,
-				runtime: coerceRuntime(app.runtime) ?? 'html',
-			}
-		}
 		const result = (await hostBridge.callTool({
 			name: 'ui_load_app_source',
 			arguments: { app_id: appId },
@@ -1099,6 +1055,77 @@ ${inlineModuleSource}
 										requestId,
 										result: null,
 										errorMessage: 'Code execution failed.',
+									},
+								},
+								'*',
+							)
+						})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}invoke-action`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const input = isRecord(payload.input) ? payload.input : null
+				if (requestId && input && event.source) {
+					void hostBridge
+						.callTool({
+							name: 'generated_ui_invoke_action',
+							arguments: input,
+						})
+						.then((result) => {
+							const errorMessage = getHostToolErrorMessage(result)
+							const structuredContent = isRecord(result?.structuredContent)
+								? result.structuredContent
+								: null
+							;(event.source as WindowProxy).postMessage(
+								{
+									type: `${childMessagePrefix}invoke-action-result`,
+									payload: {
+										requestId,
+										response:
+											result?.isError === true
+												? {
+														ok: false,
+														error:
+															errorMessage ?? 'Generated UI action failed.',
+													}
+												: (structuredContent ?? null),
+									},
+								},
+								'*',
+							)
+						})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}submit-secure-input`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const input = isRecord(payload.input) ? payload.input : null
+				if (requestId && input && event.source) {
+					void hostBridge
+						.callTool({
+							name: 'generated_ui_submit_secure_input',
+							arguments: input,
+						})
+						.then((result) => {
+							const errorMessage = getHostToolErrorMessage(result)
+							const structuredContent = isRecord(result?.structuredContent)
+								? result.structuredContent
+								: null
+							;(event.source as WindowProxy).postMessage(
+								{
+									type: `${childMessagePrefix}submit-secure-input-result`,
+									payload: {
+										requestId,
+										response:
+											result?.isError === true
+												? {
+														ok: false,
+														error: errorMessage ?? 'Secure input failed.',
+													}
+												: (structuredContent ?? null),
 									},
 								},
 								'*',

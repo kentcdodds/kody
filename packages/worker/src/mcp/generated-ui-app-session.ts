@@ -11,15 +11,24 @@ type GeneratedUiAppSessionPayload = {
 	exp: number
 }
 
+export type GeneratedUiAppSessionEndpoints = {
+	appSource: string
+	action: string
+	secureInput: string
+}
+
 export type GeneratedUiAppSession = {
 	sessionId: string
 	token: string
 	expiresAt: string
-	endpoints: {
-		appSource: string
-		action: string
-		secureInput: string
-	}
+	endpoints: GeneratedUiAppSessionEndpoints
+}
+
+export type GeneratedUiAppSessionEnvelope = {
+	sessionId: string
+	token: string
+	expiresAt: string
+	endpoints: GeneratedUiAppSessionEndpoints
 }
 
 export async function createGeneratedUiAppSession(

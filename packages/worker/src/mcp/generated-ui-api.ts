@@ -23,13 +23,16 @@ export async function handleGeneratedUiApiRequest(
 	request: Request,
 	env: Env,
 ): Promise<Response> {
-	const session = await authenticateGeneratedUiSession(request, env)
-	if (session instanceof Response) {
-		return session
+	if (request.method === 'OPTIONS') {
+		return new Response(null, { status: 204 })
 	}
 	const url = new URL(request.url)
 
 	if (url.pathname === '/api/generated-ui/app-source') {
+		const session = await authenticateGeneratedUiSession(request, env)
+		if (session instanceof Response) {
+			return session
+		}
 		if (request.method !== 'GET') {
 			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
@@ -54,6 +57,10 @@ export async function handleGeneratedUiApiRequest(
 	}
 
 	if (url.pathname === '/api/generated-ui/actions') {
+		const session = await authenticateGeneratedUiSession(request, env)
+		if (session instanceof Response) {
+			return session
+		}
 		if (request.method !== 'POST') {
 			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
@@ -92,6 +99,10 @@ export async function handleGeneratedUiApiRequest(
 	}
 
 	if (url.pathname === '/api/generated-ui/secure-input') {
+		const session = await authenticateGeneratedUiSession(request, env)
+		if (session instanceof Response) {
+			return session
+		}
 		if (request.method !== 'POST') {
 			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}

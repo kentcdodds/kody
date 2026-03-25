@@ -4,7 +4,10 @@ import { z } from 'zod'
 import { generatedUiShellResourceUri } from '#mcp/apps/generated-ui-shell-entry-point.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
-import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
+import {
+	createGeneratedUiAppSession,
+	type GeneratedUiAppSessionEnvelope,
+} from '#mcp/generated-ui-app-session.ts'
 
 const openGeneratedUiTool = {
 	name: 'open_generated_ui',
@@ -134,6 +137,13 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 							callerContext.user,
 						)
 					: null
+			const appSessionEnvelope: GeneratedUiAppSessionEnvelope | null = appSession
+				? {
+						sessionId: appSession.sessionId,
+						expiresAt: appSession.expiresAt,
+						endpoints: appSession.endpoints,
+					}
+				: null
 			const appId = args.app_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
@@ -150,7 +160,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				runtime: 'html' as const,
 				sourceCode: args.code ?? null,
 				hostedUrl,
-				appSession,
+				appSession: appSessionEnvelope,
 			}
 			return {
 				content: [

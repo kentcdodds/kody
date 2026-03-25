@@ -40,7 +40,7 @@ export { ChatAgent, HomeConnectorSession, HomeMCP, MCP }
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
 
 function isAllowedGeneratedUiOrigin(origin: string, requestOrigin: string) {
-	if (origin === requestOrigin || origin === 'null') {
+	if (origin === requestOrigin) {
 		return true
 	}
 	try {
