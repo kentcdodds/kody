@@ -1,4 +1,4 @@
-import { type AppEnv } from './env-schema.ts'
+import { type AppEnv } from '@kody-internal/shared/env-schema.ts'
 
 declare global {
 	interface Env extends AppEnv {}

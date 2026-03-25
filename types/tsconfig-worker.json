@@ -30,7 +30,6 @@
 	},
 	"include": [
 		"./env.d.ts",
-		"./env-schema.ts",
 		"./worker-configuration.d.ts",
 		"../packages/shared/src/**/*.ts",
 		"../packages/mock-servers/**/*.ts",

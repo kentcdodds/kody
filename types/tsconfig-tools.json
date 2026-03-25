@@ -37,5 +37,6 @@
 		"../packages/worker/src/mcp/mcp-server-e2e.test.ts",
 		"../tools/**/*.ts",
 		"../packages/shared/src/**/*.ts"
-	]
+	],
+	"exclude": ["../packages/shared/src/env-schema.ts"]
 }

@@ -9,7 +9,7 @@ import {
 	createPasswordHash,
 	verifyPassword,
 } from '@kody-internal/shared/password-hash.ts'
-import { type AppEnv } from '../../../../../types/env-schema.ts'
+import { type AppEnv } from '@kody-internal/shared/env-schema.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]

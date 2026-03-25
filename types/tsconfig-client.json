@@ -13,5 +13,6 @@
 		"../packages/worker/client/**/*.ts",
 		"../packages/worker/client/**/*.tsx",
 		"../packages/shared/src/**/*.ts"
-	]
+	],
+	"exclude": ["../packages/shared/src/env-schema.ts"]
 }

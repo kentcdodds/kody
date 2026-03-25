@@ -20,7 +20,7 @@ import { signup } from '#app/handlers/signup.ts'
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
 import { routes } from '#app/routes.ts'
-import { type AppEnv } from '../../../../types/env-schema.ts'
+import { type AppEnv } from '@kody-internal/shared/env-schema.ts'
 
 export function createAppRouter(appEnv: AppEnv) {
 	const router = createRouter({
