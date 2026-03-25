@@ -5,15 +5,8 @@ export function isConnectionOAuthRequest(pathname: string) {
 }
 
 export async function handleConnectionOAuthRequest(request: Request, env: Env) {
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
+	if (request.method !== 'GET') {
 		return new Response('Method not allowed.', { status: 405 })
 	}
-	const response = await handleConnectionOAuthCallback(request, env)
-	if (request.method === 'HEAD') {
-		return new Response(null, {
-			status: response.status,
-			headers: response.headers,
-		})
-	}
-	return response
+	return handleConnectionOAuthCallback(request, env)
 }

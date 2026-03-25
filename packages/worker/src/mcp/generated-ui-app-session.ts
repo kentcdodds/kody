@@ -1,4 +1,4 @@
-import { signToken, verifyToken } from '#mcp/connections/crypto.ts'
+import { decryptJson, encryptJson } from '#mcp/connections/crypto.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 const generatedUiSessionPurpose = 'generated-ui-session'
@@ -26,7 +26,6 @@ export type GeneratedUiAppSession = {
 
 export type GeneratedUiAppSessionEnvelope = {
 	sessionId: string
-	token: string
 	expiresAt: string
 	endpoints: GeneratedUiAppSessionEndpoints
 }
@@ -39,7 +38,7 @@ export async function createGeneratedUiAppSession(
 	const now = Date.now()
 	const sessionId = crypto.randomUUID()
 	const expiresAtMs = now + defaultGeneratedUiSessionTtlMs
-	const token = await signToken(env, generatedUiSessionPurpose, {
+	const token = await encryptJson(env, generatedUiSessionPurpose, {
 		session_id: sessionId,
 		user,
 		iat: now,
@@ -63,9 +62,16 @@ export async function createGeneratedUiAppSession(
 }
 
 export async function verifyGeneratedUiAppSession(env: Env, token: string) {
-	return verifyToken<GeneratedUiAppSessionPayload>(
+	const payload = await decryptJson<GeneratedUiAppSessionPayload>(
 		env,
 		generatedUiSessionPurpose,
 		token,
 	)
+	if (!payload?.user || typeof payload.user.userId !== 'string') {
+		throw new Error('Invalid generated UI session payload.')
+	}
+	if (typeof payload.exp === 'number' && Date.now() > payload.exp) {
+		throw new Error('Generated UI session has expired.')
+	}
+	return payload
 }

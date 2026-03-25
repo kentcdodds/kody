@@ -51,23 +51,52 @@ function coerceAppSession(value: unknown): AppSessionEnvelope | null {
 	) {
 		return null
 	}
-	const endpoints = isRecord(value.endpoints) ? value.endpoints : null
-	if (
-		!endpoints ||
-		typeof endpoints.appSource !== 'string' ||
-		typeof endpoints.action !== 'string' ||
-		typeof endpoints.secureInput !== 'string'
-	) {
+	const endpoints = coerceGeneratedUiEndpoints(value.endpoints)
+	if (!endpoints) {
 		return null
 	}
 	return {
 		sessionId: value.sessionId,
 		expiresAt: value.expiresAt,
-		endpoints: {
-			appSource: endpoints.appSource,
-			action: endpoints.action,
-			secureInput: endpoints.secureInput,
-		},
+		endpoints,
+	}
+}
+
+function coerceGeneratedUiEndpoints(value: unknown) {
+	if (!isRecord(value)) return null
+	if (
+		typeof value.appSource !== 'string' ||
+		typeof value.action !== 'string' ||
+		typeof value.secureInput !== 'string'
+	) {
+		return null
+	}
+	try {
+		const appSource = new URL(value.appSource)
+		const action = new URL(value.action)
+		const secureInput = new URL(value.secureInput)
+		const origin = appSource.origin
+		const expectedOrigin = new URL('/', import.meta.url).origin
+		if (origin !== expectedOrigin) {
+			return null
+		}
+		if (action.origin !== origin || secureInput.origin !== origin) {
+			return null
+		}
+		if (
+			!appSource.pathname.startsWith('/api/generated-ui/') ||
+			!action.pathname.startsWith('/api/generated-ui/') ||
+			!secureInput.pathname.startsWith('/api/generated-ui/')
+		) {
+			return null
+		}
+		return {
+			appSource: appSource.toString(),
+			action: action.toString(),
+			secureInput: secureInput.toString(),
+		}
+	} catch {
+		return null
 	}
 }
 
@@ -79,6 +108,18 @@ function coerceDisplayMode(value: unknown): DisplayMode | null {
 
 function coerceTheme(value: unknown): ThemeName | null {
 	return value === 'light' || value === 'dark' ? value : null
+}
+
+function coerceAppSessionContext(value: unknown) {
+	if (!isRecord(value)) return null
+	if (!isRecord(value.endpoints)) return null
+	const { appSource } = value.endpoints
+	if (typeof appSource !== 'string') return null
+	try {
+		return new URL(appSource).origin
+	} catch {
+		return null
+	}
 }
 
 function injectThemeAttributeIntoHtmlTag(
@@ -788,9 +829,11 @@ window.addEventListener('unhandledrejection', (event) => {
 		`.trim()
 	}
 
-	function buildInlineModuleSource(code: string) {
+	function buildInlineModuleSource(
+		code: string,
+		appSession: AppSessionEnvelope | null,
+	) {
 		const safeCode = escapeInlineScriptSource(code)
-		const appSession = latestEnvelope?.appSession ?? null
 		const bridgeRuntime = escapeInlineScriptSource(
 			buildChildBridgeRuntimeSource(appSession),
 		)
@@ -814,9 +857,11 @@ ${safeCode}
 		`.trim()
 	}
 
-	function buildHtmlDocumentFromFragment(code: string) {
+	function buildHtmlDocumentFromFragment(
+		code: string,
+		appSession: AppSessionEnvelope | null,
+	) {
 		const theme = coerceTheme(latestRenderData?.theme)
-		const appSession = latestEnvelope?.appSession ?? null
 		return `
 <!doctype html>
 <html lang="en"${theme ? ` data-kody-theme="${theme}"` : ''}>
@@ -832,9 +877,13 @@ ${code}
 		`.trim()
 	}
 
-	function setFrameSource(code: string, runtime: AppRuntime) {
+	function setFrameSource(
+		code: string,
+		runtime: AppRuntime,
+		appSession: AppSessionEnvelope | null,
+	) {
 		if (runtime === 'javascript') {
-			const inlineModuleSource = buildInlineModuleSource(code)
+			const inlineModuleSource = buildInlineModuleSource(code, appSession)
 			const theme = coerceTheme(latestRenderData?.theme)
 			frameElement.srcdoc = `
 <!doctype html>
@@ -858,18 +907,20 @@ ${inlineModuleSource}
 		}
 
 		const theme = coerceTheme(latestRenderData?.theme)
-		const appSession = latestEnvelope?.appSession ?? null
 		const htmlSource = /<(?:!doctype|html|head|body)\b/i.test(code)
 			? injectIntoHtmlDocument(
 					code,
 					buildHeadInjection(theme, appSession),
 					theme,
 				)
-			: buildHtmlDocumentFromFragment(code)
+			: buildHtmlDocumentFromFragment(code, appSession)
 		frameElement.srcdoc = absolutizeHtmlAttributeUrls(htmlSource, getBaseHref())
 	}
 
-	async function resolveSavedAppCode(appId: string) {
+	async function resolveSavedAppCode(
+		appId: string,
+		appSession: AppSessionEnvelope | null,
+	) {
 		const result = (await hostBridge.callTool({
 			name: 'ui_load_app_source',
 			arguments: { app_id: appId },
@@ -901,12 +952,14 @@ ${inlineModuleSource}
 			return
 		}
 
+		const appSession = envelope.appSession ?? null
+
 		if (envelope.mode === 'inline_code') {
 			if (!envelope.code) {
 				renderErrorDocument('The tool result did not include inline code.')
 				return
 			}
-			setFrameSource(envelope.code, envelope.runtime ?? 'html')
+			setFrameSource(envelope.code, envelope.runtime ?? 'html', appSession)
 			return
 		}
 
@@ -916,8 +969,9 @@ ${inlineModuleSource}
 		}
 
 		try {
-			const resolved = await resolveSavedAppCode(envelope.appId)
-			setFrameSource(resolved.code, resolved.runtime)
+			const resolved = await resolveSavedAppCode(envelope.appId, appSession)
+			if (latestEnvelope !== envelope) return
+			setFrameSource(resolved.code, resolved.runtime, appSession)
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : 'Unknown app loading error.'

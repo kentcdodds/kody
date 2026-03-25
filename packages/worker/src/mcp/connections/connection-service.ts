@@ -664,12 +664,11 @@ async function exchangeOAuthCodeForTokens(input: {
 		params.set('code_verifier', input.codeVerifier)
 	}
 	if (input.spec.token_auth_method === 'client_secret_basic') {
-		headers.set(
-			'authorization',
-			`Basic ${btoa(
-				`${input.secretMaterial['client_id'] ?? ''}:${input.secretMaterial['client_secret'] ?? ''}`,
-			)}`,
-		)
+		const credentials = `${input.secretMaterial['client_id'] ?? ''}:${input.secretMaterial['client_secret'] ?? ''}`
+		const encoded = base64UrlEncode(new TextEncoder().encode(credentials))
+			.replaceAll('-', '+')
+			.replaceAll('_', '/')
+		headers.set('authorization', `Basic ${encoded}`)
 	} else {
 		params.set('client_id', input.secretMaterial['client_id'] ?? '')
 		params.set('client_secret', input.secretMaterial['client_secret'] ?? '')
@@ -818,6 +817,7 @@ function getMissingOAuthClientSecretNames(
 	const requiredNames = ['client_id']
 	if (
 		spec.token_auth_method === 'client_secret_post' ||
+		spec.token_auth_method === 'client_secret_basic' ||
 		spec.strategy === 'oauth2_pre_registered_client'
 	) {
 		requiredNames.push('client_secret')

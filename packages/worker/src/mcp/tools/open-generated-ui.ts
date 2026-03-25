@@ -137,13 +137,14 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 							callerContext.user,
 						)
 					: null
-			const appSessionEnvelope: GeneratedUiAppSessionEnvelope | null = appSession
-				? {
-						sessionId: appSession.sessionId,
-						expiresAt: appSession.expiresAt,
-						endpoints: appSession.endpoints,
-					}
-				: null
+			const appSessionEnvelope: GeneratedUiAppSessionEnvelope | null =
+				appSession
+					? {
+							sessionId: appSession.sessionId,
+							expiresAt: appSession.expiresAt,
+							endpoints: appSession.endpoints,
+						}
+					: null
 			const appId = args.app_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null

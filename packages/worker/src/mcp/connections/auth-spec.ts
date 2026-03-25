@@ -27,20 +27,28 @@ export const providerAuthTransportSchema = z.discriminatedUnion('type', [
 	}),
 ])
 
+const relativePathSchema = z
+	.string()
+	.min(1)
+	.refine((value) => {
+		if (value.startsWith('//')) return false
+		if (value.includes('://')) return false
+		return value.startsWith('/')
+	}, 'Expected a relative path starting with `/`.')
+
 export const providerRequestConfigSchema = z.object({
 	base_url: z.string().url(),
-	path_prefix: z.string().min(1).optional(),
-	graphql_path: z.string().min(1).optional(),
+	path_prefix: relativePathSchema.optional(),
+	graphql_path: relativePathSchema.optional(),
 	default_headers: z.record(z.string(), z.string()).optional(),
 	auth_transport: providerAuthTransportSchema,
 })
 
 export const providerVerificationSchema = z.object({
 	method: providerHttpMethodSchema.default('GET'),
-	path: z
-		.string()
-		.min(1)
-		.describe('Relative provider path used to verify the stored credentials.'),
+	path: relativePathSchema.describe(
+		'Relative provider path used to verify the stored credentials.',
+	),
 	query: z.record(z.string(), z.string()).optional(),
 	body: z.unknown().optional(),
 })
