@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { loadOptionalSearchRows } from './search.ts'
+import {
+	loadDownHomeConnectorStatus,
+	loadOptionalSearchRows,
+} from './search.ts'
 
 test('optional search rows fall back when saved skills lookup fails', async () => {
 	const result = await loadOptionalSearchRows({
@@ -62,4 +65,60 @@ test('optional search rows skip D1 access without a user', async () => {
 		uiArtifactRows: [],
 		warnings: [],
 	})
+})
+
+test('down home connector status is returned when the connector is disconnected', async () => {
+	const status = await loadDownHomeConnectorStatus({
+		env: {
+			HOME_CONNECTOR_SESSION: {
+				idFromName(name: string) {
+					return name
+				},
+				get() {
+					return {
+						fetch() {
+							return Promise.resolve(Response.json(null))
+						},
+					}
+				},
+			},
+		} as unknown as Env,
+		homeConnectorId: 'default',
+	})
+
+	expect(status).toMatchObject({
+		state: 'disconnected',
+		connectorId: 'default',
+		connected: false,
+		toolCount: 0,
+	})
+})
+
+test('down home connector status stays hidden when the connector is up', async () => {
+	const status = await loadDownHomeConnectorStatus({
+		env: {
+			HOME_CONNECTOR_SESSION: {
+				idFromName(name: string) {
+					return name
+				},
+				get() {
+					return {
+						fetch() {
+							return Promise.resolve(
+								Response.json({
+									connectorId: 'default',
+									connectedAt: '2026-03-25T00:00:00.000Z',
+									lastSeenAt: '2026-03-25T00:00:01.000Z',
+									tools: [{ name: 'roku_press_key' }],
+								}),
+							)
+						},
+					}
+				},
+			},
+		} as unknown as Env,
+		homeConnectorId: 'default',
+	})
+
+	expect(status).toBeNull()
 })

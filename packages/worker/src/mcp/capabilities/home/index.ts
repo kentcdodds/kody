@@ -2,6 +2,10 @@ import { defineCapability } from '#mcp/capabilities/define-capability.ts'
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { createHomeMcpClient } from '#worker/home/client.ts'
+import {
+	formatHomeConnectorUnavailableMessage,
+	getHomeConnectorStatus,
+} from '#worker/home/status.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { type HomeConnectorSnapshot } from '#worker/home/types.ts'
 
@@ -80,7 +84,23 @@ function createCapabilityFromTool(
 		...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
 		async handler(args, ctx) {
 			const client = createHomeMcpClient(ctx.env, snapshot.connectorId)
-			const result = await client.callTool(tool.name, args)
+			let result: Awaited<ReturnType<typeof client.callTool>>
+			try {
+				result = await client.callTool(tool.name, args)
+			} catch (error) {
+				const status = await getHomeConnectorStatus(
+					ctx.env,
+					snapshot.connectorId,
+				)
+				if (status.state !== 'connected' || status.toolCount === 0) {
+					throw new Error(formatHomeConnectorUnavailableMessage(status))
+				}
+				const message =
+					error instanceof Error
+						? error.message
+						: 'Unknown home connector error.'
+				throw new Error(`Home capability "${tool.name}" failed: ${message}`)
+			}
 			if (
 				result.structuredContent &&
 				typeof result.structuredContent === 'object'

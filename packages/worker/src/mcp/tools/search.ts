@@ -9,6 +9,10 @@ import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import type { MCP } from '#mcp/index.ts'
 import {
+	getHomeConnectorStatus,
+	type HomeConnectorStatus,
+} from '#worker/home/status.ts'
+import {
 	callerContextFields,
 	errorFields,
 	logMcpEvent,
@@ -39,7 +43,7 @@ Search Kody **builtin capabilities**, your saved **skills** (meta domain), and y
 
 Each match has **type** \`capability\`, \`skill\`, or \`app\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill. Saved apps are reusable UI artifacts and can be reopened without resending their source code through the model.
 
-If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), then use \`execute\` to filter or plan from that list.
+If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
 
 Domains (for context only—put hints in your \`query\` string; there are no filter fields):
 - \`math\`: Simple arithmetic and calculator-style operations over numbers.
@@ -71,6 +75,21 @@ type OptionalSearchRowsResult = {
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
 	warnings: Array<string>
+}
+
+function shouldIncludeHomeConnectorStatus(status: HomeConnectorStatus) {
+	return status.state !== 'connected' || status.toolCount === 0
+}
+
+export async function loadDownHomeConnectorStatus(input: {
+	env: Env
+	homeConnectorId: string | null
+}): Promise<HomeConnectorStatus | null> {
+	const status = await getHomeConnectorStatus(input.env, input.homeConnectorId)
+	if (!shouldIncludeHomeConnectorStatus(status)) {
+		return null
+	}
+	return status
 }
 
 export async function loadOptionalSearchRows(input: {
@@ -142,6 +161,7 @@ export async function registerSearchTool(agent: MCP) {
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
 			let warnings: Array<string> = []
+			let homeConnectorStatus: HomeConnectorStatus | null = null
 
 			const searchSpan = async () => {
 				const registry = await getCapabilityRegistryForContext({
@@ -154,6 +174,10 @@ export async function registerSearchTool(agent: MCP) {
 						listMcpSkillsByUserId(agent.getEnv().APP_DB, userId!),
 					loadUiArtifacts: () =>
 						listUiArtifactsByUserId(agent.getEnv().APP_DB, userId!),
+				})
+				homeConnectorStatus = await loadDownHomeConnectorStatus({
+					env: agent.getEnv(),
+					homeConnectorId: callerContext.homeConnectorId ?? null,
 				})
 				warnings = optionalRows.warnings
 				return searchUnified({
@@ -222,6 +246,11 @@ export async function registerSearchTool(agent: MCP) {
 				matches: result.matches,
 				offline: result.offline,
 				warnings,
+				...(homeConnectorStatus
+					? {
+							homeConnectorStatus,
+						}
+					: {}),
 			}
 
 			return {

@@ -1,11 +1,16 @@
 import * as Sentry from '@sentry/cloudflare'
 import { invariant } from '@epic-web/invariant'
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 import { McpAgent } from 'agents/mcp'
 import { z } from 'zod'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { createHomeMcpClient } from '#worker/home/client.ts'
+import {
+	formatHomeConnectorUnavailableMessage,
+	getHomeConnectorStatus,
+} from '#worker/home/status.ts'
 import { type HomeToolDescriptor } from '#worker/home/types.ts'
 import {
 	parseMcpCallerContext,
@@ -37,6 +42,37 @@ type HomeMcpBridge = {
 	getHomeClient(): Promise<ReturnType<typeof createHomeMcpClient>>
 }
 
+async function createHomeToolErrorResult(
+	agent: HomeMcpBridge,
+	error: unknown,
+): Promise<CallToolResult> {
+	const callerContext = agent.getCallerContext()
+	const status = await getHomeConnectorStatus(
+		agent.getEnv(),
+		callerContext.homeConnectorId ?? null,
+	)
+	const fallbackMessage =
+		error instanceof Error ? error.message : 'Unknown home connector error.'
+	const message =
+		status.state === 'connected'
+			? `Home connector request failed: ${fallbackMessage}`
+			: formatHomeConnectorUnavailableMessage(status)
+
+	return {
+		content: [
+			{
+				type: 'text',
+				text: message,
+			},
+		],
+		structuredContent: {
+			error: message,
+			homeConnectorStatus: status,
+		},
+		isError: true,
+	}
+}
+
 function createHomeToolSummaryText(tools: Array<HomeToolDescriptor>) {
 	if (tools.length === 0) {
 		return 'No home connector tools are currently available.'
@@ -63,18 +99,22 @@ async function registerBridgeTools(agent: HomeMcpBridge) {
 			inputSchema: {},
 		},
 		async () => {
-			const client = await agent.getHomeClient()
-			const tools = await client.listTools()
-			return {
-				content: [
-					{
-						type: 'text',
-						text: createHomeToolSummaryText(tools),
+			try {
+				const client = await agent.getHomeClient()
+				const tools = await client.listTools()
+				return {
+					content: [
+						{
+							type: 'text',
+							text: createHomeToolSummaryText(tools),
+						},
+					],
+					structuredContent: {
+						tools,
 					},
-				],
-				structuredContent: {
-					tools,
-				},
+				}
+			} catch (error) {
+				return createHomeToolErrorResult(agent, error)
 			}
 		},
 	)
@@ -99,8 +139,12 @@ async function registerBridgeTools(agent: HomeMcpBridge) {
 			},
 		},
 		async (args: { name: string; arguments?: Record<string, unknown> }) => {
-			const client = await agent.getHomeClient()
-			return client.callTool(args.name, args.arguments)
+			try {
+				const client = await agent.getHomeClient()
+				return await client.callTool(args.name, args.arguments)
+			} catch (error) {
+				return createHomeToolErrorResult(agent, error)
+			}
 		},
 	)
 }

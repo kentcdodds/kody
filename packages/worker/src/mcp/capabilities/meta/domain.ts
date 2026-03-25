@@ -1,6 +1,7 @@
 import { defineDomain } from '../define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { metaDeleteSkillCapability } from './meta-delete-skill.ts'
+import { metaGetHomeConnectorStatusCapability } from './meta-get-home-connector-status.ts'
 import { metaGetSkillCapability } from './meta-get-skill.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 import { metaRunSkillCapability } from './meta-run-skill.ts'
@@ -14,6 +15,7 @@ export const metaDomain = defineDomain({
 	keywords: ['skill', 'meta', 'save', 'recipe', 'codemode', 'capabilities'],
 	capabilities: [
 		metaListCapabilitiesCapability,
+		metaGetHomeConnectorStatusCapability,
 		metaSaveSkillCapability,
 		metaUpdateSkillCapability,
 		metaDeleteSkillCapability,
