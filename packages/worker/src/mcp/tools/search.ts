@@ -7,7 +7,7 @@ import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
-import type { MCP } from '#mcp/index.ts'
+import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	getHomeConnectorStatus,
 	type HomeConnectorStatus,
@@ -130,7 +130,7 @@ export async function loadOptionalSearchRows(input: {
 	}
 }
 
-export async function registerSearchTool(agent: MCP) {
+export async function registerSearchTool(agent: McpRegistrationAgent) {
 	agent.server.registerTool(
 		searchTool.name,
 		{

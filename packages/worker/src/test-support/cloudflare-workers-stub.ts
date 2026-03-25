@@ -7,3 +7,5 @@ export class DurableObject<TEnv = unknown> {
 		this.env = env
 	}
 }
+
+export class RpcTarget {}
