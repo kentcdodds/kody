@@ -1,6 +1,8 @@
 import { setupServer } from 'msw/node'
 import { mswHandlers } from './msw-handlers.ts'
+import { resetMockSamsungDevices } from '../src/adapters/samsung-tv/mock-driver.ts'
 
+resetMockSamsungDevices()
 const server = setupServer(...mswHandlers)
 
 server.listen({

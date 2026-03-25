@@ -9,7 +9,11 @@ import { startHomeConnectorApp } from '../src/index.ts'
 
 async function main() {
 	const connector = await startHomeConnectorApp()
-	const router = createHomeConnectorRouter(connector.state, connector.config)
+const router = createHomeConnectorRouter(
+	connector.state,
+	connector.config,
+	connector.samsungTv,
+)
 
 	const server = http.createServer(
 		createRequestListener(

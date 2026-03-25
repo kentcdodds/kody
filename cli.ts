@@ -97,10 +97,14 @@ function runBunScript(
 	options: { outputFilter?: OutputFilterKey } = {},
 ): ChildProcess {
 	const bun = platform() === 'win32' ? 'bun.exe' : 'bun'
-	const child = spawnInOwnProcessGroup(bun, ['run', '--silent', script, '--', ...args], {
-		stdio: ['inherit', 'pipe', 'pipe'],
-		env: { ...process.env, ...envOverrides },
-	})
+	const child = spawnInOwnProcessGroup(
+		bun,
+		['run', '--silent', script, '--', ...args],
+		{
+			stdio: ['inherit', 'pipe', 'pipe'],
+			env: { ...process.env, ...envOverrides },
+		},
+	)
 
 	pipeOutput(child, options.outputFilter)
 

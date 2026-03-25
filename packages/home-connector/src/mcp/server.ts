@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
+import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
 import { type HomeConnectorState } from '../state.ts'
 
@@ -36,11 +37,13 @@ export type HomeConnectorMcpServer = {
 export function createHomeConnectorMcpServer(input: {
 	config: HomeConnectorConfig
 	state: HomeConnectorState
+	samsungTv: ReturnType<typeof createSamsungTvAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
 		state: input.state,
 	})
+	const samsungTv = input.samsungTv
 
 	const server = new McpServer(
 		{
@@ -49,7 +52,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools currently focus on Roku discovery and control.',
+				'Home connector MCP server. Tools currently support Roku and Samsung TV discovery, control, and diagnostics.',
 		},
 	)
 
@@ -347,6 +350,410 @@ export function createHomeConnectorMcpServer(input: {
 						text: result.app
 							? `Active app on ${deviceId} is ${result.app.name}.`
 							: `No active Roku app reported for ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_list_devices',
+			title: 'List Samsung TVs',
+			description:
+				'List discovered Samsung TVs, whether they are adopted, and whether a pairing token is stored.',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const devices = samsungTv.getStatus().allDevices
+			return {
+				content: [
+					{
+						type: 'text',
+						text:
+							devices.length === 0
+								? 'No Samsung TVs are currently known.'
+								: devices
+										.map(
+											(device) =>
+												`- ${device.name} (${device.deviceId}) adopted=${String(device.adopted)} paired=${String(Boolean(device.token))}`,
+										)
+										.join('\n'),
+					},
+				],
+				structuredContent: {
+					devices,
+				},
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_scan_devices',
+			title: 'Scan Samsung TVs',
+			description:
+				'Scan the local network for Samsung TVs using the configured discovery mechanism.',
+			inputSchema: {},
+		},
+		async () => {
+			const devices = await samsungTv.scan()
+			return {
+				content: [
+					{
+						type: 'text',
+						text:
+							devices.length === 0
+								? 'No Samsung TVs discovered.'
+								: `Discovered ${devices.length} Samsung TV device(s).`,
+					},
+				],
+				structuredContent: {
+					devices,
+				},
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_adopt_device',
+			title: 'Adopt Samsung TV',
+			description:
+				'Mark a discovered Samsung TV as adopted so it becomes a managed device.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const device = samsungTv.adoptDevice(String(args['deviceId'] ?? ''))
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Adopted Samsung TV ${device.name}.`,
+					},
+				],
+				structuredContent: device,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_get_device_info',
+			title: 'Get Samsung TV Device Info',
+			description:
+				'Read current device metadata from a Samsung TV over its local api/v2 endpoint.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await samsungTv.getDeviceInfo(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Fetched Samsung TV device info for ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_pair_device',
+			title: 'Pair Samsung TV',
+			description:
+				'Establish a tokened remote session with a Samsung TV and persist the token locally.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await samsungTv.pairDevice(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Paired Samsung TV ${result.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_press_key',
+			title: 'Press Samsung TV Key',
+			description: 'Send a remote key to an adopted, paired Samsung TV.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+					key: z.string().min(1),
+					times: z.number().int().min(1).max(20).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const key = String(args['key'] ?? '')
+			const rawTimes = args['times']
+			const times =
+				typeof rawTimes === 'number' && Number.isFinite(rawTimes) ? rawTimes : 1
+			const result = await samsungTv.pressKey(deviceId, key, times)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Sent ${key} to Samsung TV ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_go_home',
+			title: 'Go Home On Samsung TV',
+			description: 'Send the Home key to an adopted, paired Samsung TV.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await samsungTv.goHome(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Sent Home to Samsung TV ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_power_off',
+			title: 'Power Off Samsung TV',
+			description:
+				'Best-effort power off for an adopted, paired Samsung TV using the local remote channel.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				destructiveHint: true,
+			},
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await samsungTv.powerOff(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Sent power off to Samsung TV ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_power_on',
+			title: 'Power On Samsung TV',
+			description:
+				'Best-effort power on for an adopted Samsung TV using Wake-on-LAN and the stored TV MAC address.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await samsungTv.powerOn(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Sent Wake-on-LAN power on to Samsung TV ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_get_known_apps_status',
+			title: 'Get Known Samsung TV Apps Status',
+			description:
+				'Check a curated set of common app IDs to see which apps are installed on a Samsung TV.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await samsungTv.getKnownAppsStatus(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Checked known Samsung TV apps for ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_launch_app',
+			title: 'Launch Samsung TV App',
+			description:
+				'Launch a Samsung TV app by explicit app ID on an adopted device.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+					appId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const appId = String(args['appId'] ?? '')
+			const result = await samsungTv.launchApp(deviceId, appId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Launched Samsung TV app ${appId} on ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_get_art_mode',
+			title: 'Get Samsung TV Art Mode',
+			description:
+				'Get the current Art Mode state for an adopted, paired Samsung Frame TV.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await samsungTv.getArtMode(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Samsung TV ${deviceId} art mode is ${result.mode}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_set_art_mode',
+			title: 'Set Samsung TV Art Mode',
+			description: 'Turn Samsung Frame TV Art Mode on or off.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+					mode: z.enum(['on', 'off']),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const mode = args['mode'] === 'on' ? 'on' : 'off'
+			const result = await samsungTv.setArtMode(deviceId, mode)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Turned Samsung TV ${deviceId} art mode ${mode}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'samsung_get_status',
+			title: 'Get Samsung TV Summary Status',
+			description:
+				'Get a connector-level summary of paired Samsung TVs, diagnostics, and current Art Mode state when available.',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const result = await samsungTv.getSummary()
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Samsung TV summary includes ${result.deviceCount} device(s) with ${result.pairedCount} paired.`,
 					},
 				],
 				structuredContent: result,

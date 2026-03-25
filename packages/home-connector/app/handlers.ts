@@ -3,6 +3,7 @@ import { html } from 'remix/html-template'
 import { render } from './render.ts'
 import { RootLayout } from './root.tsx'
 import { type routes } from './routes.ts'
+import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
 import { scanRokuDevices } from '../src/adapters/roku/index.ts'
@@ -16,6 +17,8 @@ function renderQuickLinks(state: HomeConnectorState) {
 	return html`<ul class="list">
 		<li><a href="/roku/status">Roku status</a></li>
 		<li><a href="/roku/setup">Roku setup</a></li>
+		<li><a href="/samsung-tv/status">Samsung TV status</a></li>
+		<li><a href="/samsung-tv/setup">Samsung TV setup</a></li>
 		<li><a href="/health">Health JSON</a></li>
 		${workerSnapshotUrl
 			? html`<li>
@@ -46,7 +49,10 @@ function renderInfoRows(
 	</div>`
 }
 
-export function createHomeDashboardHandler(state: HomeConnectorState) {
+export function createHomeDashboardHandler(
+	state: HomeConnectorState,
+	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
+) {
 	return {
 		middleware: [],
 		async action() {
@@ -56,6 +62,7 @@ export function createHomeDashboardHandler(state: HomeConnectorState) {
 			const adoptedCount = state.devices.filter(
 				(device) => device.adopted,
 			).length
+			const samsungStatus = samsungTv.getStatus()
 
 			return render(
 				RootLayout({
@@ -106,12 +113,24 @@ export function createHomeDashboardHandler(state: HomeConnectorState) {
 								<h2>Devices</h2>
 								${renderInfoRows([
 									{
-										label: 'Adopted',
+										label: 'Roku adopted',
 										value: String(adoptedCount),
 									},
 									{
-										label: 'Discovered',
+										label: 'Roku discovered',
 										value: String(discoveredCount),
+									},
+									{
+										label: 'Samsung adopted',
+										value: String(samsungStatus.adopted.length),
+									},
+									{
+										label: 'Samsung discovered',
+										value: String(samsungStatus.discovered.length),
+									},
+									{
+										label: 'Samsung paired',
+										value: String(samsungStatus.pairedCount),
 									},
 									{
 										label: 'Mocks',
@@ -432,5 +451,265 @@ export function createRokuSetupHandler(state: HomeConnectorState) {
 	} satisfies BuildAction<
 		typeof routes.rokuSetup.method,
 		typeof routes.rokuSetup.pattern
+	>
+}
+
+function renderSamsungTvDeviceList(
+	label: string,
+	devices: Array<{
+		deviceId: string
+		name: string
+		host: string
+		modelName: string | null
+		powerState: string | null
+		adopted: boolean
+		token: string | null
+		lastSeenAt: string | null
+	}>,
+) {
+	if (devices.length === 0) {
+		return html`<p class="muted">No ${label} Samsung TVs.</p>`
+	}
+
+	return html`<ul class="list">
+		${devices.map(
+			(device) =>
+				html`<li class="card">
+					<strong>${device.name}</strong>
+					<div>ID: <code>${device.deviceId}</code></div>
+					<div>Host: <code>${device.host}</code></div>
+					<div>Model: ${device.modelName ?? 'unknown'}</div>
+					<div>Power state: ${device.powerState ?? 'unknown'}</div>
+					<div>Adopted: ${device.adopted ? 'yes' : 'no'}</div>
+					<div>Paired: ${device.token ? 'yes' : 'no'}</div>
+					<div>Last seen: ${device.lastSeenAt ?? 'unknown'}</div>
+				</li>`,
+		)}
+	</ul>`
+}
+
+function renderSamsungTvDiscoveryDiagnostics(
+	diagnostics: HomeConnectorState['samsungTvDiscoveryDiagnostics'],
+) {
+	if (!diagnostics) {
+		return html`<p class="muted">
+			No Samsung TV scan diagnostics captured yet.
+		</p>`
+	}
+
+	return html`
+		<section class="card">
+			<h2>Discovery diagnostics</h2>
+			${renderInfoRows([
+				{ label: 'Protocol', value: diagnostics.protocol },
+				{
+					label: 'Discovery URL',
+					value: html`<code>${diagnostics.discoveryUrl}</code>`,
+				},
+				{ label: 'Last scan', value: diagnostics.scannedAt },
+				{ label: 'Services', value: String(diagnostics.services.length) },
+				{
+					label: 'Metadata lookups',
+					value: String(diagnostics.metadataLookups.length),
+				},
+			])}
+		</section>
+		${diagnostics.jsonResponse
+			? html`<section class="card">
+					<h2>Raw discovery payload</h2>
+					${renderCodeBlock(formatJson(diagnostics.jsonResponse))}
+				</section>`
+			: ''}
+		<section class="card">
+			<h2>Resolved services</h2>
+			${diagnostics.services.length === 0
+				? html`<p class="muted">No Samsung TV services were captured.</p>`
+				: html`<ul class="list">
+						${diagnostics.services.map(
+							(service) =>
+								html`<li class="card">
+									<div>Instance: <code>${service.instanceName}</code></div>
+									<div>Host: <code>${service.host ?? 'unknown'}</code></div>
+									<div>Port: ${service.port ?? 'unknown'}</div>
+									<div>
+										Service URL: <code>${service.txt['se'] ?? 'missing'}</code>
+									</div>
+									${renderCodeBlock(service.raw)}
+								</li>`,
+						)}
+					</ul>`}
+		</section>
+		<section class="card">
+			<h2>Device-info payloads</h2>
+			${diagnostics.metadataLookups.length === 0
+				? html`<p class="muted">
+						No Samsung TV metadata lookups were captured.
+					</p>`
+				: html`<ul class="list">
+						${diagnostics.metadataLookups.map(
+							(lookup) =>
+								html`<li class="card">
+									<div>Service URL: <code>${lookup.serviceUrl}</code></div>
+									<div>Request URL: <code>${lookup.deviceInfoUrl}</code></div>
+									<div>Error: ${lookup.error ?? 'none'}</div>
+									${lookup.parsed
+										? renderCodeBlock(formatJson(lookup.parsed))
+										: html`<p class="muted">No parsed payload captured.</p>`}
+									${lookup.raw
+										? renderCodeBlock(lookup.raw)
+										: html`<p class="muted">No raw payload captured.</p>`}
+								</li>`,
+						)}
+					</ul>`}
+		</section>
+	`
+}
+
+function renderSamsungTvStatusPage(input: {
+	state: HomeConnectorState
+	status: ReturnType<ReturnType<typeof createSamsungTvAdapter>['getStatus']>
+	scanMessage?: string | null
+	scanError?: string | null
+}) {
+	return render(
+		RootLayout({
+			title: 'home connector - samsung tv status',
+			body: html`<section class="card">
+					<h1>Samsung TV status</h1>
+					<p class="muted">
+						Current connectivity and discovery state for Samsung TVs managed by
+						this connector.
+					</p>
+					<form method="POST">
+						<button type="submit">Scan now</button>
+					</form>
+					<div class="status-grid">
+						<div>
+							<strong>Worker connection</strong>
+							<div>
+								${input.state.connection.connected
+									? 'connected'
+									: 'disconnected'}
+							</div>
+						</div>
+						<div>
+							<strong>Connector ID</strong>
+							<div>${input.state.connection.connectorId}</div>
+						</div>
+						<div>
+							<strong>Paired TVs</strong>
+							<div>${input.status.pairedCount}</div>
+						</div>
+					</div>
+				</section>
+				${input.scanMessage
+					? renderBanner({
+							tone: 'success',
+							message: input.scanMessage,
+						})
+					: ''}
+				${input.scanError
+					? renderBanner({
+							tone: 'error',
+							message: input.scanError,
+						})
+					: ''}
+				<section class="card">
+					<h2>Adopted TVs</h2>
+					${renderSamsungTvDeviceList('adopted', input.status.adopted)}
+				</section>
+				<section class="card">
+					<h2>Discovered TVs</h2>
+					${renderSamsungTvDeviceList('discovered', input.status.discovered)}
+				</section>
+				${renderSamsungTvDiscoveryDiagnostics(
+					input.state.samsungTvDiscoveryDiagnostics,
+				)}`,
+		}),
+	)
+}
+
+export function createSamsungTvStatusHandler(
+	state: HomeConnectorState,
+	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
+) {
+	return {
+		middleware: [],
+		async action({ request }: { request: Request }) {
+			if (request.method === 'POST') {
+				try {
+					const devices = await samsungTv.scan()
+					return renderSamsungTvStatusPage({
+						state,
+						status: samsungTv.getStatus(),
+						scanMessage: `Scan complete. Discovered ${devices.length} Samsung TV device(s).`,
+					})
+				} catch (error) {
+					return renderSamsungTvStatusPage({
+						state,
+						status: samsungTv.getStatus(),
+						scanError:
+							error instanceof Error
+								? `Scan failed: ${error.message}`
+								: `Scan failed: ${String(error)}`,
+					})
+				}
+			}
+
+			return renderSamsungTvStatusPage({
+				state,
+				status: samsungTv.getStatus(),
+			})
+		},
+	} satisfies BuildAction<
+		typeof routes.samsungTvStatus.method,
+		typeof routes.samsungTvStatus.pattern
+	>
+}
+
+export function createSamsungTvSetupHandler(
+	state: HomeConnectorState,
+	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
+) {
+	return {
+		middleware: [],
+		async action() {
+			const status = samsungTv.getStatus()
+			const diagnostics = [
+				`Worker URL: ${state.connection.workerUrl}`,
+				`Connector ID: ${state.connection.connectorId}`,
+				`Samsung discovery URL: ${state.samsungTvDiscoveryDiagnostics?.discoveryUrl ?? 'not scanned yet'}`,
+				`Paired Samsung TVs: ${String(status.pairedCount)}`,
+				state.connection.mocksEnabled
+					? 'Mocks are enabled for this connector instance.'
+					: 'Mocks are disabled for this connector instance.',
+				state.connection.lastError
+					? `Last connector error: ${state.connection.lastError}`
+					: 'No connector error recorded.',
+			]
+
+			return render(
+				RootLayout({
+					title: 'home connector - samsung tv setup',
+					body: html`<section class="card">
+						<h1>Samsung TV setup</h1>
+						<p class="muted">
+							Review connector registration, discovery status, pairing state,
+							and diagnostics for Samsung TVs.
+						</p>
+						<ul class="list">
+							${diagnostics.map((line) => html`<li>${line}</li>`)}
+						</ul>
+						<p class="muted">
+							V1 keeps this page read-only while pairing and diagnostics flow
+							through the connector state and Samsung TV adapter.
+						</p>
+					</section>`,
+				}),
+			)
+		},
+	} satisfies BuildAction<
+		typeof routes.samsungTvSetup.method,
+		typeof routes.samsungTvSetup.pattern
 	>
 }

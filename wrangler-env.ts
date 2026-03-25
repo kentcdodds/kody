@@ -139,7 +139,13 @@ function handleSignal(signal: NodeJS.Signals) {
 process.on('SIGINT', () => handleSignal('SIGINT'))
 process.on('SIGTERM', () => handleSignal('SIGTERM'))
 
-const exitCode = await procExited
+let exitCode: number | null
+try {
+	exitCode = await procExited
+} catch (error) {
+	console.error(error instanceof Error ? error.message : String(error))
+	process.exit(1)
+}
 if (isDevCommand && resolvedPort) {
 	const didFreePort = await waitForPortFree(
 		Number.parseInt(resolvedPort, 10),

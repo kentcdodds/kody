@@ -5,7 +5,9 @@ Quick notes for getting a local kody environment running.
 ## Prerequisites
 
 - Bun (used for installs and scripts).
-- A recent Node runtime for tooling that Bun delegates to.
+- A recent Node runtime. The home connector now runs on Node and uses
+  `node:sqlite`, and Bun still delegates some tooling to Node elsewhere in the
+  repo.
 
 ## Install
 
@@ -45,22 +47,49 @@ Quick notes for getting a local kody environment running.
   it to both the worker and the connector so the outbound registration handshake
   succeeds in local development.)
 - The home automation connector now lives in `packages/home-connector`.
-  - `bun run dev:home-connector` starts the local connector app.
+  - `bun run dev:home-connector` starts the local connector app. The workspace
+    still uses Bun for script entrypoints, but the connector package itself now
+    runs on Node via `tsx`.
   - The connector uses the `kentcdodds.com` mock bootstrap shape: only
     `packages/home-connector/index.ts` imports `packages/home-connector/mocks/`
     when `MOCKS=true`.
   - The dev entry at `packages/home-connector/server/dev-server.ts` enables
     `MOCKS=true` by default for local development and also sets
-    `ROKU_DISCOVERY_URL=http://roku.mock.local/discovery` unless you override
-    it.
+    `ROKU_DISCOVERY_URL=http://roku.mock.local/discovery` and
+    `SAMSUNG_TV_DISCOVERY_URL=http://samsung-tv.mock.local/discovery` unless you
+    override them.
   - `bun run dev` forwards `HOME_CONNECTOR_*` environment variables to the
     underlying connector process with the prefix removed, so
     `HOME_CONNECTOR_MOCKS=false` becomes `MOCKS=false` and
     `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` becomes `ROKU_DISCOVERY_URL=...`.
+    Likewise, `HOME_CONNECTOR_SAMSUNG_TV_DISCOVERY_URL=...` becomes
+    `SAMSUNG_TV_DISCOVERY_URL=...`, `HOME_CONNECTOR_DATA_PATH=...` becomes
+    `HOME_CONNECTOR_DATA_PATH=...`, and `HOME_CONNECTOR_DB_PATH=...` becomes
+    `HOME_CONNECTOR_DB_PATH=...` in the connector process.
   - When `ROKU_DISCOVERY_URL` is unset, the connector defaults Roku discovery to
     SSDP at `ssdp://239.255.255.250:1900`.
-  - Local operational routes live at `/health`, `/roku/status`, and
-    `/roku/setup`.
+  - When `SAMSUNG_TV_DISCOVERY_URL` is unset, the connector defaults Samsung TV
+    discovery to `mdns://_samsungmsf._tcp.local`. The current live discovery
+    implementation shells out to `dns-sd`, so local Samsung scanning is
+    currently aimed at macOS dev hosts unless you provide an explicit discovery
+    URL.
+  - Samsung TV pairing tokens and device metadata are persisted locally in a
+    SQLite database. By default the connector stores that DB at
+    `~/.kody/home-connector/home-connector.sqlite`. Override the directory with
+    `HOME_CONNECTOR_DATA_PATH` or the full file path with
+    `HOME_CONNECTOR_DB_PATH`.
+  - Local operational routes live at `/health`, `/roku/status`, `/roku/setup`,
+    `/samsung-tv/status`, and `/samsung-tv/setup`.
+  - The Samsung TV tool surface intentionally focuses on discovery, pairing,
+    remote keys, known-app probing, explicit app launch by app ID, and Art Mode
+    control.
+  - Samsung power support is now exposed as best-effort `power off` and
+    `power on` actions. Power off uses the local Samsung remote channel and
+    power on uses Wake-on-LAN with the stored TV MAC address. These semantics
+    are still model- and firmware-dependent, especially on Frame TVs where the
+    regular power key may be mapped to Art Mode rather than true standby.
+  - Full installed-app enumeration is still considered model- and
+    firmware-dependent.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `bun test` or unauthenticated local runs). Production uses

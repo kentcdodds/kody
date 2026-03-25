@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run server/dev-server.ts",
-    "start": "NODE_ENV=production bun --preload ./src/sentry-init.ts index.ts",
-    "start:mocks": "MOCKS=true ROKU_DISCOVERY_URL=http://roku.mock.local/discovery NODE_ENV=production bun --preload ./src/sentry-init.ts index.ts",
+    "dev": "node --import tsx server/dev-server.ts",
+    "start": "NODE_ENV=production node --import tsx --import ./src/sentry-init.ts index.ts",
+    "start:mocks": "MOCKS=true ROKU_DISCOVERY_URL=http://roku.mock.local/discovery NODE_ENV=production node --import tsx --import ./src/sentry-init.ts index.ts",
     "test": "vitest run --root ../.. --project node-unit packages/home-connector/src"
   },
   "dependencies": {
@@ -14,6 +14,7 @@
     "dotenv": "^17.3.1",
     "msw": "^2.12.14",
     "remix": "3.0.0-alpha.3",
+    "tsx": "^4.21.0",
     "zod": "^4.3.6"
   }
 }

@@ -24,6 +24,11 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: 🧰 Setup Bun
         uses: oven-sh/setup-bun@v2.2.0
         with:
@@ -34,6 +39,37 @@ jobs:
 
       - name: ✅ Run Home Connector Tests
         run: bun run --cwd packages/home-connector test
+
+      - name: ✅ Smoke-test Home Connector on Node
+        shell: bash
+        env:
+          PORT: 4041
+          HOME_CONNECTOR_SHARED_SECRET: ci-home-connector-secret
+          WORKER_BASE_URL: http://127.0.0.1:65535
+        run: |
+          set -euo pipefail
+
+          node --import tsx packages/home-connector/server/dev-server.ts \
+            > /tmp/home-connector.log 2>&1 &
+          pid=$!
+
+          cleanup() {
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for _ in $(seq 1 30); do
+            if curl --silent --fail "http://127.0.0.1:${PORT}/health"; then
+              echo
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Home connector failed to become healthy under Node." >&2
+          cat /tmp/home-connector.log >&2 || true
+          exit 1
 
   publish:
     runs-on: ubuntu-latest

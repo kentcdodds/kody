@@ -132,6 +132,9 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/home/session.ts`):
 
+- `packages/home-connector` still participates in the Bun-managed workspace, but
+  its package scripts now execute on Node via `tsx`. Local and container runs
+  therefore need a recent Node release with `node:sqlite` support.
 - `HOME_CONNECTOR_SHARED_SECRET` — shared secret used by the locally running
   `packages/home-connector` service when it opens the outbound WebSocket session
   to the worker. When unset, the worker rejects home connector registration and
@@ -148,7 +151,7 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
   value such as `http://roku.mock.local/discovery`.
 - `SENTRY_DSN` — optional connector env var. When set for
-  `packages/home-connector`, the Bun service initializes `@sentry/bun` and
+  `packages/home-connector`, the service initializes `@sentry/bun` and
   reports startup errors, websocket failures, and handled operational
   exceptions. Use `HOME_CONNECTOR_SENTRY_DSN` when launching through
   `bun run dev`.
@@ -162,6 +165,18 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   identifier. The published Docker image bakes this in at build time from the
   Git commit SHA and also exposes the same value via the image’s OCI revision
   label.
+- `SAMSUNG_TV_DISCOVERY_URL` — optional connector env var. Defaults to
+  `mdns://_samsungmsf._tcp.local`. Mocked connector runs should set an explicit
+  value such as `http://samsung-tv.mock.local/discovery`.
+- `HOME_CONNECTOR_DATA_PATH` — optional connector env var. Directory used for
+  connector-owned local data files. When `HOME_CONNECTOR_DB_PATH` is unset, the
+  Samsung TV integration stores its local SQLite database at
+  `<HOME_CONNECTOR_DATA_PATH>/home-connector.sqlite`. Defaults to
+  `~/.kody/home-connector`.
+- `HOME_CONNECTOR_DB_PATH` — optional connector env var. Full path to the local
+  SQLite file used by the home connector to persist Samsung TV device metadata
+  and pairing tokens across restarts. Overrides the derived
+  `HOME_CONNECTOR_DATA_PATH` location.
 
 ## Why Zod?
 

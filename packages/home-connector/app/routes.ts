@@ -5,4 +5,6 @@ export const routes = route({
 	health: '/health',
 	rokuStatus: '/roku/status',
 	rokuSetup: '/roku/setup',
+	samsungTvStatus: '/samsung-tv/status',
+	samsungTvSetup: '/samsung-tv/setup',
 })

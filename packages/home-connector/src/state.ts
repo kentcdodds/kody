@@ -2,6 +2,7 @@ import {
 	type RokuDeviceRecord,
 	type RokuDiscoveryDiagnostics,
 } from './adapters/roku/types.ts'
+import { type SamsungTvDiscoveryDiagnostics } from './adapters/samsung-tv/types.ts'
 
 export type HomeConnectorConnectionState = {
 	workerUrl: string
@@ -17,6 +18,7 @@ export type HomeConnectorState = {
 	connection: HomeConnectorConnectionState
 	devices: Array<RokuDeviceRecord>
 	rokuDiscoveryDiagnostics: RokuDiscoveryDiagnostics | null
+	samsungTvDiscoveryDiagnostics: SamsungTvDiscoveryDiagnostics | null
 }
 
 const initialState: HomeConnectorState = {
@@ -31,6 +33,7 @@ const initialState: HomeConnectorState = {
 	},
 	devices: [],
 	rokuDiscoveryDiagnostics: null,
+	samsungTvDiscoveryDiagnostics: null,
 }
 
 export function createAppState(): HomeConnectorState {
@@ -62,6 +65,14 @@ export function setRokuDiscoveryDiagnostics(
 ) {
 	state.rokuDiscoveryDiagnostics = diagnostics
 	return state.rokuDiscoveryDiagnostics
+}
+
+export function setSamsungTvDiscoveryDiagnostics(
+	state: HomeConnectorState,
+	diagnostics: SamsungTvDiscoveryDiagnostics | null,
+) {
+	state.samsungTvDiscoveryDiagnostics = diagnostics
+	return state.samsungTvDiscoveryDiagnostics
 }
 
 export function getDiscoveredRokuDevices(state: HomeConnectorState) {
