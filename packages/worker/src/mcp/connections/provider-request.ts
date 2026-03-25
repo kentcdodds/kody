@@ -496,7 +496,7 @@ function shouldSendJsonBody(method: string) {
 
 function assertSafeProviderPath(config: ProviderRequestConfig, path: string) {
 	const trimmed = path.trim()
-	if (!trimmed.startsWith('/')) {
+	if (!trimmed.startsWith('/') || trimmed.startsWith('//')) {
 		throw new Error(
 			'path must start with `/` and must not include a host or absolute URL.',
 		)
@@ -539,4 +539,3 @@ async function parseJsonResponse(
 		throw new Error(`Provider returned non-JSON (${response.status}).`)
 	}
 }
-

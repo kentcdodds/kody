@@ -11,7 +11,17 @@ export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
 	'/.well-known/oauth-protected-resource'
 const builtinTemplateSeedCooldownMs = 5 * 60 * 1000
+const builtinTemplateSeedMaxUsers = 1000
 const builtinTemplateSeedByUser = new Map<string, number>()
+
+function recordBuiltinTemplateSeed(userId: string, seededAt: number) {
+	builtinTemplateSeedByUser.set(userId, seededAt)
+	while (builtinTemplateSeedByUser.size > builtinTemplateSeedMaxUsers) {
+		const oldestKey = builtinTemplateSeedByUser.keys().next().value
+		if (!oldestKey) break
+		builtinTemplateSeedByUser.delete(oldestKey)
+	}
+}
 
 type OAuthEnv = Env & {
 	OAUTH_PROVIDER?: OAuthHelpers
@@ -121,10 +131,7 @@ export async function handleMcpRequest({
 	if (props.user?.userId) {
 		const now = Date.now()
 		const lastSeededAt = builtinTemplateSeedByUser.get(props.user.userId)
-		if (
-			lastSeededAt &&
-			now - lastSeededAt < builtinTemplateSeedCooldownMs
-		) {
+		if (lastSeededAt && now - lastSeededAt < builtinTemplateSeedCooldownMs) {
 			context.props = props
 			return fetchMcp(
 				request,
@@ -140,7 +147,7 @@ export async function handleMcpRequest({
 				error: error instanceof Error ? error.message : String(error),
 			})
 		} finally {
-			builtinTemplateSeedByUser.set(props.user.userId, now)
+			recordBuiltinTemplateSeed(props.user.userId, now)
 		}
 	}
 	context.props = props
