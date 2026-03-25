@@ -5,6 +5,9 @@ import { rootDir, sharedProjectConfig } from './vitest-shared.ts'
 export default mergeConfig(
 	sharedProjectConfig,
 	defineProject({
+		ssr: {
+			noExternal: ['@cloudflare/codemode'],
+		},
 		resolve: {
 			alias: [
 				{
