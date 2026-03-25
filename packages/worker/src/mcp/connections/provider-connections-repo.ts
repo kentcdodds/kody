@@ -2,6 +2,7 @@ import {
 	type ProviderConnectionRow,
 	type ProviderConnectionSecretRow,
 } from './provider-connections-types.ts'
+import { resolveFieldUpdate } from './resolve-field-update.ts'
 
 export async function insertProviderConnection(
 	db: D1Database,
@@ -265,11 +266,3 @@ function mapProviderConnectionSecretRow(
 	}
 }
 
-function resolveFieldUpdate<
-	TFields extends Record<string, unknown>,
-	TKey extends keyof TFields,
->(fields: TFields, key: TKey, currentValue: TFields[TKey]) {
-	return Object.hasOwn(fields, key) && fields[key] !== undefined
-		? fields[key]
-		: currentValue
-}

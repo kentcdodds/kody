@@ -2,6 +2,7 @@ import {
 	type ConnectionDraftRow,
 	type ConnectionDraftSecretRow,
 } from './connection-drafts-types.ts'
+import { resolveFieldUpdate } from './resolve-field-update.ts'
 
 export async function insertConnectionDraft(
 	db: D1Database,
@@ -233,15 +234,6 @@ function mapConnectionDraftRow(
 		updated_at: String(row['updated_at']),
 		expires_at: String(row['expires_at']),
 	}
-}
-
-function resolveFieldUpdate<
-	TFields extends Record<string, unknown>,
-	TKey extends keyof TFields,
->(fields: TFields, key: TKey, currentValue: TFields[TKey]) {
-	return Object.hasOwn(fields, key) && fields[key] !== undefined
-		? fields[key]
-		: currentValue
 }
 
 function mapConnectionDraftSecretRow(

@@ -66,6 +66,7 @@ export async function handleGeneratedUiApiRequest(
 		const callerContext = createMcpCallerContext({
 			baseUrl: url.origin,
 			user: session.user,
+			homeConnectorId: 'default',
 		})
 		const execution = await runCodemodeWithRegistry(
 			env,
