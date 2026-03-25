@@ -49,7 +49,7 @@ const appHandler = withCors({
 		}
 		const origin = request.headers.get('Origin')
 		if (!origin) return null
-		const requestOrigin = new URL(request.url).origin
+		const requestOrigin = url.origin
 		if (origin !== requestOrigin) return null
 		return new Headers({
 			'Access-Control-Allow-Origin': origin,
