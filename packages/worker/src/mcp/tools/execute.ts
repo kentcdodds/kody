@@ -3,7 +3,7 @@ import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { formatExecutionOutput } from '#mcp/executor.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { type MCP } from '#mcp/index.ts'
+import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -62,7 +62,7 @@ Examples:
 	} satisfies ToolAnnotations,
 } as const
 
-export async function registerExecuteTool(agent: MCP) {
+export async function registerExecuteTool(agent: McpRegistrationAgent) {
 	agent.server.registerTool(
 		executeTool.name,
 		{

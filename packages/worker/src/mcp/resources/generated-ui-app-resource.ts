@@ -10,7 +10,7 @@ import {
 	generatedUiShellResourceUri,
 	renderGeneratedUiShellEntryPoint,
 } from '#mcp/apps/generated-ui-shell-entry-point.ts'
-import { type MCP } from '#mcp/index.ts'
+import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { mcpResourcePath } from '../../mcp-auth.ts'
 
 const generatedUiAppResource = {
@@ -20,7 +20,9 @@ const generatedUiAppResource = {
 		'Generic MCP App shell for rendering generated UI artifacts in MCP App compatible hosts.',
 } as const
 
-export async function registerGeneratedUiAppResource(agent: MCP) {
+export async function registerGeneratedUiAppResource(
+	agent: McpRegistrationAgent,
+) {
 	const requestBaseUrl = agent.requireDomain()
 	const appEnv = getEnv(agent.getEnv())
 	const appBaseUrl = getAppBaseUrl({

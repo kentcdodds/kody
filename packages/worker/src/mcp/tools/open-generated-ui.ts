@@ -2,7 +2,7 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { generatedUiShellResourceUri } from '#mcp/apps/generated-ui-shell-entry-point.ts'
-import { type MCP } from '#mcp/index.ts'
+import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 
 const openGeneratedUiTool = {
 	name: 'open_generated_ui',
@@ -100,7 +100,7 @@ const inputSchema = z
 		path: ['code'],
 	})
 
-export async function registerOpenGeneratedUiTool(agent: MCP) {
+export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 	void agent
 	registerAppTool(
 		agent.server,
