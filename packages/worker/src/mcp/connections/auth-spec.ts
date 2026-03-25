@@ -74,20 +74,18 @@ const oauthBaseAuthSpecSchema = z.object({
 
 const oauthPreRegisteredAuthSpecSchema = oauthBaseAuthSpecSchema.extend({
 	strategy: z.literal('oauth2_pre_registered_client'),
-	secret_fields: z
-		.array(secretFieldSchema)
-		.default([
-			{
-				name: 'client_id',
-				label: 'Client ID',
-				input_type: 'password',
-			},
-			{
-				name: 'client_secret',
-				label: 'Client Secret',
-				input_type: 'password',
-			},
-		]),
+	secret_fields: z.array(secretFieldSchema).default([
+		{
+			name: 'client_id',
+			label: 'Client ID',
+			input_type: 'password',
+		},
+		{
+			name: 'client_secret',
+			label: 'Client Secret',
+			input_type: 'password',
+		},
+	]),
 })
 
 const oauthDynamicClientAuthSpecSchema = oauthBaseAuthSpecSchema.extend({
@@ -125,7 +123,9 @@ export const connectionSelectionSchema = z.discriminatedUnion('strategy', [
 
 export type ConnectionSelection = z.infer<typeof connectionSelectionSchema>
 
-export function parseConnectionAuthSpec(raw: string | unknown): ConnectionAuthSpec {
+export function parseConnectionAuthSpec(
+	raw: string | unknown,
+): ConnectionAuthSpec {
 	const value = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw
 	return connectionAuthSpecSchema.parse(value)
 }

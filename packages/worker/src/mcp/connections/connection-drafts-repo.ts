@@ -215,7 +215,9 @@ export async function deleteConnectionDraftSecrets(
 		.run()
 }
 
-function mapConnectionDraftRow(row: Record<string, unknown>): ConnectionDraftRow {
+function mapConnectionDraftRow(
+	row: Record<string, unknown>,
+): ConnectionDraftRow {
 	return {
 		id: String(row['id']),
 		user_id: String(row['user_id']),

@@ -132,7 +132,9 @@ function rowToSkillHit(
 		if (uses.length === 0) uses = null
 	}
 	const parameters = parseSkillParameters(row.parameters)
-	const connectionBindings = parseSkillConnectionBindings(row.connection_bindings)
+	const connectionBindings = parseSkillConnectionBindings(
+		row.connection_bindings,
+	)
 	const base: SkillSearchHitSummary = {
 		type: 'skill',
 		skillId: row.id,

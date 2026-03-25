@@ -57,7 +57,9 @@ export async function handleGeneratedUiApiRequest(
 		if (request.method !== 'POST') {
 			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
-		const body = actionRequestSchema.safeParse(await request.json().catch(() => null))
+		const body = actionRequestSchema.safeParse(
+			await request.json().catch(() => null),
+		)
 		if (!body.success) {
 			return jsonResponse({ error: body.error.message }, 400)
 		}

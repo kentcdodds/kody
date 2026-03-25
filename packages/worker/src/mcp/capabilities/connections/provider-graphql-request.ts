@@ -11,13 +11,7 @@ export const providerGraphqlRequestCapability = defineDomainCapability(
 		name: 'provider_graphql_request',
 		description:
 			'Perform an authenticated GraphQL request through an opaque provider connection handle. The host owns token use and refresh outside codemode.',
-		keywords: [
-			'provider',
-			'graphql',
-			'connection handle',
-			'query',
-			'mutation',
-		],
+		keywords: ['provider', 'graphql', 'connection handle', 'query', 'mutation'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,

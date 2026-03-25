@@ -107,9 +107,8 @@ export function injectIntoHtmlDocument(
 ) {
 	if (/<head\b[^>]*>/i.test(code)) {
 		const withTheme = theme
-			? code.replace(
-					/<html\b[^>]*>/i,
-					(match) => injectThemeAttributeIntoHtmlTag(match, theme),
+			? code.replace(/<html\b[^>]*>/i, (match) =>
+					injectThemeAttributeIntoHtmlTag(match, theme),
 				)
 			: code
 
@@ -449,7 +448,9 @@ ${bridgeRuntime}
 		`.trim()
 	}
 
-	function buildChildBridgeRuntimeSource(appSession: AppSessionEnvelope | null) {
+	function buildChildBridgeRuntimeSource(
+		appSession: AppSessionEnvelope | null,
+	) {
 		const serializedAppSession = JSON.stringify(appSession)
 		return `
 const shellMessagePrefix = '${childMessagePrefix}';
@@ -768,9 +769,10 @@ ${inlineModuleSource}
 					authorization: `Bearer ${appSession.token}`,
 				},
 			})
-			const payload = (await response.json().catch(() => null)) as
-				| Record<string, unknown>
-				| null
+			const payload = (await response.json().catch(() => null)) as Record<
+				string,
+				unknown
+			> | null
 			const app = isRecord(payload?.app) ? payload.app : null
 			if (!response.ok || payload?.ok !== true || !app) {
 				throw new Error('Failed to load saved app source.')

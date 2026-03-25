@@ -92,7 +92,9 @@ export async function storeDraftSecrets(input: {
 		input.draftId,
 	)
 	const spec = parseConnectionAuthSpec(draft.auth_spec_json)
-	const allowedFields = new Set(getAuthSpecSecretFields(spec).map((field) => field.name))
+	const allowedFields = new Set(
+		getAuthSpecSecretFields(spec).map((field) => field.name),
+	)
 	for (const [name, value] of Object.entries(input.fields)) {
 		if (!allowedFields.has(name)) {
 			throw new Error(`Secret field "${name}" is not allowed for this draft.`)
@@ -151,7 +153,10 @@ export async function startConnectionOAuth(input: {
 		})
 	}
 
-	const missingSecretNames = getMissingOAuthClientSecretNames(spec, secretMaterial)
+	const missingSecretNames = getMissingOAuthClientSecretNames(
+		spec,
+		secretMaterial,
+	)
 	if (missingSecretNames.length > 0) {
 		throw new Error(
 			`OAuth client secrets are missing for this draft: ${missingSecretNames.join(', ')}`,
@@ -160,7 +165,9 @@ export async function startConnectionOAuth(input: {
 
 	const clientId = secretMaterial['client_id']
 	if (!clientId) {
-		throw new Error('OAuth client_id is required before starting authorization.')
+		throw new Error(
+			'OAuth client_id is required before starting authorization.',
+		)
 	}
 	const callbackUrl = new URL('/api/connections/oauth/callback', input.baseUrl)
 	const stateToken = await signToken(input.env, oauthStatePurpose, {
@@ -455,7 +462,11 @@ export async function performResolvedProviderHttpRequest(input: {
 	if (!connection) {
 		throw new Error('Provider connection not found for this handle.')
 	}
-	return performProviderHttpRequestForConnection(input.env, connection, input.request)
+	return performProviderHttpRequestForConnection(
+		input.env,
+		connection,
+		input.request,
+	)
 }
 
 export async function performResolvedProviderGraphqlRequest(input: {
@@ -500,17 +511,26 @@ export async function refreshResolvedProviderConnection(input: {
 	if (!connection) {
 		throw new Error('Provider connection not found for this handle.')
 	}
-	const response = await performProviderHttpRequestForConnection(input.env, connection, {
-		method: 'GET',
-		path: parseConnectionAuthSpec(connection.auth_spec_json).verification?.path ?? '/',
-	})
+	const response = await performProviderHttpRequestForConnection(
+		input.env,
+		connection,
+		{
+			method: 'GET',
+			path:
+				parseConnectionAuthSpec(connection.auth_spec_json).verification?.path ??
+				'/',
+		},
+	)
 	return {
 		connection_id: connection.id,
 		status: response.status,
 	}
 }
 
-export async function handleConnectionOAuthCallback(request: Request, env: Env) {
+export async function handleConnectionOAuthCallback(
+	request: Request,
+	env: Env,
+) {
 	const url = new URL(request.url)
 	const stateToken = url.searchParams.get('state')
 	if (!stateToken) {
@@ -544,7 +564,10 @@ export async function handleConnectionOAuthCallback(request: Request, env: Env) 
 
 	const code = url.searchParams.get('code')
 	if (!code) {
-		return renderOAuthCallbackResponse(400, 'OAuth callback did not include a code.')
+		return renderOAuthCallbackResponse(
+			400,
+			'OAuth callback did not include a code.',
+		)
 	}
 
 	const spec = parseConnectionAuthSpec(draft.auth_spec_json)
@@ -564,7 +587,9 @@ export async function handleConnectionOAuthCallback(request: Request, env: Env) 
 			? stateJson.redirect_uri
 			: new URL('/api/connections/oauth/callback', url.origin).toString()
 	const codeVerifier =
-		typeof stateJson?.code_verifier === 'string' ? stateJson.code_verifier : null
+		typeof stateJson?.code_verifier === 'string'
+			? stateJson.code_verifier
+			: null
 	const secretMaterial = await loadDraftSecretMaterial(env, draft.id)
 	const tokenResponse = await exchangeOAuthCodeForTokens({
 		env,
@@ -644,7 +669,12 @@ async function exchangeOAuthCodeForTokens(input: {
 		body: params,
 	})
 	const body = (await response.json().catch(() => null)) as unknown
-	if (!response.ok || !body || typeof body !== 'object' || Array.isArray(body)) {
+	if (
+		!response.ok ||
+		!body ||
+		typeof body !== 'object' ||
+		Array.isArray(body)
+	) {
 		throw new Error(
 			`OAuth token exchange failed (${response.status}). ${JSON.stringify(body)}`,
 		)
@@ -694,7 +724,12 @@ async function ensureDynamicClientRegistration(input: {
 		body: JSON.stringify(input.spec.client_metadata),
 	})
 	const body = (await response.json().catch(() => null)) as unknown
-	if (!response.ok || !body || typeof body !== 'object' || Array.isArray(body)) {
+	if (
+		!response.ok ||
+		!body ||
+		typeof body !== 'object' ||
+		Array.isArray(body)
+	) {
 		throw new Error(
 			`Dynamic client registration failed (${response.status}). ${JSON.stringify(body)}`,
 		)
@@ -725,7 +760,10 @@ async function ensureDynamicClientRegistration(input: {
 }
 
 function getInitialDraftStatus(spec: ConnectionAuthSpec) {
-	if (spec.strategy === 'oauth2_dynamic_client' && spec.secret_fields.length === 0) {
+	if (
+		spec.strategy === 'oauth2_dynamic_client' &&
+		spec.secret_fields.length === 0
+	) {
 		return 'ready_to_authorize'
 	}
 	if (spec.secret_fields.length === 0) {
@@ -767,7 +805,10 @@ function getMissingOAuthClientSecretNames(
 	secretMaterial: DraftSecretMaterial,
 ) {
 	const requiredNames = ['client_id']
-	if (spec.token_auth_method === 'client_secret_post' || spec.strategy === 'oauth2_pre_registered_client') {
+	if (
+		spec.token_auth_method === 'client_secret_post' ||
+		spec.strategy === 'oauth2_pre_registered_client'
+	) {
 		requiredNames.push('client_secret')
 	}
 	return requiredNames.filter((name) => !secretMaterial[name])
@@ -810,7 +851,9 @@ async function buildUniqueConnectionLabel(input: {
 		input.userId,
 		input.providerKey,
 	)
-	const existingLabels = new Set(existingConnections.map((connection) => connection.label))
+	const existingLabels = new Set(
+		existingConnections.map((connection) => connection.label),
+	)
 	if (!existingLabels.has(base)) {
 		return base
 	}
@@ -859,7 +902,9 @@ function parseScopeSet(scopeSet: string | null) {
 }
 
 function pickConnection(
-	connections: Array<Awaited<ReturnType<typeof listProviderConnectionsByProvider>>[number]>,
+	connections: Array<
+		Awaited<ReturnType<typeof listProviderConnectionsByProvider>>[number]
+	>,
 	selection: ConnectionSelection,
 ) {
 	if (selection.strategy === 'id') {
@@ -868,15 +913,19 @@ function pickConnection(
 		)
 	}
 	if (selection.strategy === 'label') {
-		return connections.find((connection) => connection.label === selection.label)
+		return connections.find(
+			(connection) => connection.label === selection.label,
+		)
 	}
 	if (connections.length === 1) return connections[0] ?? null
-	return (
-		connections.find((connection) => connection.is_default === 1) ?? null
-	)
+	return connections.find((connection) => connection.is_default === 1) ?? null
 }
 
-async function getRequiredConnectionDraft(env: Env, userId: string, draftId: string) {
+async function getRequiredConnectionDraft(
+	env: Env,
+	userId: string,
+	draftId: string,
+) {
 	const draft = await getConnectionDraftById(env.APP_DB, userId, draftId)
 	if (!draft) {
 		throw new Error('Connection draft not found for this user.')

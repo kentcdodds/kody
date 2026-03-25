@@ -31,5 +31,9 @@ export async function createConnectionHandle(
 }
 
 export async function verifyConnectionHandle(env: Env, handle: string) {
-	return verifyToken<ConnectionHandlePayload>(env, connectionHandlePurpose, handle)
+	return verifyToken<ConnectionHandlePayload>(
+		env,
+		connectionHandlePurpose,
+		handle,
+	)
 }

@@ -34,7 +34,9 @@ export async function buildSkillEmbedTextFromStoredRow(
 	const { capabilitySpecs } = await import('#mcp/capabilities/registry.ts')
 	const keywords = parseJsonStringArray(row.keywords)
 	const parameters = parseSkillParameters(row.parameters)
-	const connectionBindings = parseSkillConnectionBindings(row.connection_bindings)
+	const connectionBindings = parseSkillConnectionBindings(
+		row.connection_bindings,
+	)
 	let inferred: Array<string> = []
 	try {
 		const v = JSON.parse(row.inferred_capabilities) as unknown

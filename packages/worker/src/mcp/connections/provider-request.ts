@@ -72,18 +72,30 @@ export async function performProviderHttpRequestForConnection(
 	connection: ProviderConnectionRow,
 	request: ProviderHttpRequestInput,
 ) {
-	const secretMaterial = await readProviderConnectionSecretMaterial(env, connection.id)
-	const requestState = await prepareConnectionRequestState(env, connection, secretMaterial)
+	const secretMaterial = await readProviderConnectionSecretMaterial(
+		env,
+		connection.id,
+	)
+	const requestState = await prepareConnectionRequestState(
+		env,
+		connection,
+		secretMaterial,
+	)
 	const response = await performProviderHttpRequestWithSpec({
 		spec: requestState.spec,
 		secretMaterial: requestState.secretMaterial,
 		request,
 	})
-	await updateProviderConnection(env.APP_DB, connection.user_id, connection.id, {
-		last_used_at: new Date().toISOString(),
-		token_expires_at: requestState.tokenExpiresAt,
-		scope_set: requestState.scopeSet,
-	})
+	await updateProviderConnection(
+		env.APP_DB,
+		connection.user_id,
+		connection.id,
+		{
+			last_used_at: new Date().toISOString(),
+			token_expires_at: requestState.tokenExpiresAt,
+			scope_set: requestState.scopeSet,
+		},
+	)
 	return response
 }
 
@@ -96,8 +108,15 @@ export async function performProviderGraphqlRequestForConnection(
 		operationName?: string
 	},
 ) {
-	const secretMaterial = await readProviderConnectionSecretMaterial(env, connection.id)
-	const requestState = await prepareConnectionRequestState(env, connection, secretMaterial)
+	const secretMaterial = await readProviderConnectionSecretMaterial(
+		env,
+		connection.id,
+	)
+	const requestState = await prepareConnectionRequestState(
+		env,
+		connection,
+		secretMaterial,
+	)
 	const response = await performProviderGraphqlRequestWithSpec({
 		spec: requestState.spec,
 		secretMaterial: requestState.secretMaterial,
@@ -105,11 +124,16 @@ export async function performProviderGraphqlRequestForConnection(
 		variables: input.variables,
 		operationName: input.operationName,
 	})
-	await updateProviderConnection(env.APP_DB, connection.user_id, connection.id, {
-		last_used_at: new Date().toISOString(),
-		token_expires_at: requestState.tokenExpiresAt,
-		scope_set: requestState.scopeSet,
-	})
+	await updateProviderConnection(
+		env.APP_DB,
+		connection.user_id,
+		connection.id,
+		{
+			last_used_at: new Date().toISOString(),
+			token_expires_at: requestState.tokenExpiresAt,
+			scope_set: requestState.scopeSet,
+		},
+	)
 	return response
 }
 
@@ -265,7 +289,10 @@ async function refreshOAuthToken(input: {
 		}
 	}
 	if (clientId && input.spec.token_auth_method === 'client_secret_basic') {
-		headers.set('authorization', `Basic ${btoa(`${clientId}:${clientSecret ?? ''}`)}`)
+		headers.set(
+			'authorization',
+			`Basic ${btoa(`${clientId}:${clientSecret ?? ''}`)}`,
+		)
 	}
 
 	const response = await fetch(input.spec.token_url, {
@@ -281,7 +308,9 @@ async function refreshOAuthToken(input: {
 	}
 
 	const tokenBody =
-		parsed.body && typeof parsed.body === 'object' && !Array.isArray(parsed.body)
+		parsed.body &&
+		typeof parsed.body === 'object' &&
+		!Array.isArray(parsed.body)
 			? (parsed.body as Record<string, unknown>)
 			: {}
 	const nextSecretMaterial = {
@@ -351,7 +380,8 @@ export async function performProviderHttpRequestWithSpec(input: {
 	const response = await fetch(url, {
 		method: input.request.method,
 		headers: buildRequestHeaders(input.spec, input.secretMaterial),
-		...(shouldSendJsonBody(input.request.method) && input.request.body !== undefined
+		...(shouldSendJsonBody(input.request.method) &&
+		input.request.body !== undefined
 			? { body: JSON.stringify(input.request.body) }
 			: {}),
 	})
@@ -367,7 +397,9 @@ export async function performProviderGraphqlRequestWithSpec(input: {
 }): Promise<ProviderGraphqlResponse> {
 	const graphqlPath = input.spec.request.graphql_path
 	if (!graphqlPath) {
-		throw new Error('This provider connection does not define a GraphQL endpoint.')
+		throw new Error(
+			'This provider connection does not define a GraphQL endpoint.',
+		)
 	}
 	const url = new URL(graphqlPath, input.spec.request.base_url)
 	const headers = buildRequestHeaders(input.spec, input.secretMaterial)
@@ -424,7 +456,8 @@ function applyAuthTransport(
 ) {
 	const transport = request.auth_transport
 	if (transport.type === 'bearer_header') {
-		const secretField = transport.secret_field ?? getPrimarySecretFieldName(spec)
+		const secretField =
+			transport.secret_field ?? getPrimarySecretFieldName(spec)
 		const secret = secretField ? secretMaterial[secretField] : null
 		if (typeof secret !== 'string' || secret.length === 0) {
 			throw new Error(`Missing bearer token secret field "${secretField}".`)
@@ -433,7 +466,8 @@ function applyAuthTransport(
 		return
 	}
 	if (transport.type === 'api_key_header') {
-		const secretField = transport.secret_field ?? getPrimarySecretFieldName(spec)
+		const secretField =
+			transport.secret_field ?? getPrimarySecretFieldName(spec)
 		const secret = secretField ? secretMaterial[secretField] : null
 		if (typeof secret !== 'string' || secret.length === 0) {
 			throw new Error(`Missing API key secret field "${secretField}".`)
@@ -481,7 +515,9 @@ function assertSafeProviderPath(config: ProviderRequestConfig, path: string) {
 	}
 }
 
-async function parseJsonResponse(response: Response): Promise<ProviderHttpResponse> {
+async function parseJsonResponse(
+	response: Response,
+): Promise<ProviderHttpResponse> {
 	const text = await response.text()
 	if (response.status === 204 || !text.trim()) {
 		return {
@@ -503,7 +539,10 @@ export async function getVerifiedProviderConnection(
 	env: Env,
 	connectionId: string,
 ) {
-	const connection = await getProviderConnectionByIdUnsafe(env.APP_DB, connectionId)
+	const connection = await getProviderConnectionByIdUnsafe(
+		env.APP_DB,
+		connectionId,
+	)
 	if (!connection) {
 		throw new Error('Provider connection not found.')
 	}
