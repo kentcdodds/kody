@@ -1,5 +1,6 @@
 import { defineDomain } from '../define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
+import { uiDeleteAppCapability } from './ui-delete-app.ts'
 import { uiGetAppCapability } from './ui-get-app.ts'
 import { uiListAppsCapability } from './ui-list-apps.ts'
 import { uiLoadAppSourceCapability } from './ui-load-app-source.ts'
@@ -15,5 +16,6 @@ export const appsDomain = defineDomain({
 		uiGetAppCapability,
 		uiListAppsCapability,
 		uiLoadAppSourceCapability,
+		uiDeleteAppCapability,
 	],
 })
