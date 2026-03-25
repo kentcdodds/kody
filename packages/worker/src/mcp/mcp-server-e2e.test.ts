@@ -718,7 +718,9 @@ test('mcp server executes ui_save_app via execute tool', async () => {
 		| Record<string, unknown>
 		| undefined
 	expect(typeof executeResult?.app_id).toBe('string')
-	expect(executeResult?.hosted_url).toBe(`${server.origin}/ui/${executeResult?.app_id}`)
+	expect(executeResult?.hosted_url).toBe(
+		`${server.origin}/ui/${executeResult?.app_id}`,
+	)
 
 	const textOutput =
 		(result as CallToolResult).content.find(

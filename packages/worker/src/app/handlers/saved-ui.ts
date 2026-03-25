@@ -64,7 +64,10 @@ export function createSavedUiPageHandler(env: Env) {
 
 			return render(Layout({ title: artifact.title || 'Saved UI' }))
 		},
-	} satisfies BuildAction<typeof routes.savedUi.method, typeof routes.savedUi.pattern>
+	} satisfies BuildAction<
+		typeof routes.savedUi.method,
+		typeof routes.savedUi.pattern
+	>
 }
 
 export function createSavedUiDataHandler(env: Env) {
@@ -163,15 +166,19 @@ export function createSavedUiExecuteHandler(env: Env) {
 			}
 
 			const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
-			const result = await runCodemodeWithRegistry(env, {
-				baseUrl,
-				user: {
-					userId: artifact.user_id,
-					email: user.email,
-					displayName: user.displayName,
+			const result = await runCodemodeWithRegistry(
+				env,
+				{
+					baseUrl,
+					user: {
+						userId: artifact.user_id,
+						email: user.email,
+						displayName: user.displayName,
+					},
+					homeConnectorId: null,
 				},
-				homeConnectorId: null,
-			}, code)
+				code,
+			)
 			if (result.error) {
 				return jsonResponse(
 					{

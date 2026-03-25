@@ -110,7 +110,7 @@ function createKnownMockToolResult(
 							'',
 							`Saved app id: \`${appId}\``,
 							`Hosted fallback URL: ${buildSavedUiUrl(baseUrl, appId)}`,
-					  ]
+						]
 					: []),
 			].join('\n'),
 		}

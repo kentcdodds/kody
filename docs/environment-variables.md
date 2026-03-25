@@ -151,16 +151,15 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
   value such as `http://roku.mock.local/discovery`.
 - `SENTRY_DSN` — optional connector env var. When set for
-  `packages/home-connector`, the service initializes `@sentry/bun` and
-  reports startup errors, websocket failures, and handled operational
-  exceptions. Use `HOME_CONNECTOR_SENTRY_DSN` when launching through
-  `bun run dev`.
+  `packages/home-connector`, the service initializes `@sentry/bun` and reports
+  startup errors, websocket failures, and handled operational exceptions. Use
+  `HOME_CONNECTOR_SENTRY_DSN` when launching through `bun run dev`.
 - `SENTRY_ENVIRONMENT` — optional connector env var. The published Docker image
   defaults this to `production`; otherwise the home connector falls back to
   `NODE_ENV` (or `development`) when unset.
-- `SENTRY_TRACES_SAMPLE_RATE` — optional connector env var with a `0`–`1`
-  value; the published Docker image defaults this to **`1.0`**, matching the
-  Worker’s low-traffic default.
+- `SENTRY_TRACES_SAMPLE_RATE` — optional connector env var with a `0`–`1` value;
+  the published Docker image defaults this to **`1.0`**, matching the Worker’s
+  low-traffic default.
 - `APP_COMMIT_SHA` — optional connector env var used as the Sentry release
   identifier. The published Docker image bakes this in at build time from the
   Git commit SHA and also exposes the same value via the image’s OCI revision

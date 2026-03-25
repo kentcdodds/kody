@@ -313,10 +313,14 @@ export function createWidgetHostBridge(
 		if (!bridgeReady) return null
 
 		try {
-			const response = await sendBridgeRequest('tools/call', {
-				name: input.name,
-				...(input.arguments ? { arguments: input.arguments } : {}),
-			}, input.timeoutMs)
+			const response = await sendBridgeRequest(
+				'tools/call',
+				{
+					name: input.name,
+					...(input.arguments ? { arguments: input.arguments } : {}),
+				},
+				input.timeoutMs,
+			)
 			const result = response.result
 			if (!result) return null
 			return {
