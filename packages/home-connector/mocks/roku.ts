@@ -19,20 +19,25 @@ const rokuDevices = [
 	},
 ] as const
 
+function createRokuEcpHandlers(location: string) {
+	const baseUrl = location.replace(/\/$/, '')
+	return [
+		http.post(
+			`${baseUrl}/keypress/:key`,
+			() => new HttpResponse(null, { status: 200 }),
+		),
+		http.post(
+			`${baseUrl}/launch/:appId`,
+			() => new HttpResponse(null, { status: 200 }),
+		),
+	]
+}
+
 export const rokuHandlers = [
 	http.get('http://roku.mock.local/discovery', () => {
 		return HttpResponse.json({
 			devices: rokuDevices,
 		})
 	}),
-	http.post(
-		'http://roku.mock.local/control/:deviceId/:action',
-		async ({ params }) => {
-			return HttpResponse.json({
-				ok: true,
-				deviceId: params['deviceId'],
-				action: params['action'],
-			})
-		},
-	),
+	...rokuDevices.flatMap((device) => createRokuEcpHandlers(device.location)),
 ]

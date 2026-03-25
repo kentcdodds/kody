@@ -260,6 +260,7 @@ class ChatAgentBase extends AIChatAgent<Env> {
 			props: createMcpCallerContext({
 				baseUrl,
 				user: user.mcpUser,
+				homeConnectorId: this.runtimeContext.homeConnectorId,
 			}),
 		})
 		await this.addMcpServer('home', this.env.HOME_MCP_OBJECT, {

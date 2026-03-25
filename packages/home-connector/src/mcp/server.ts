@@ -222,6 +222,45 @@ export function createHomeConnectorMcpServer(input: {
 		},
 	)
 
+	registerTool(
+		{
+			name: 'roku_launch_app',
+			title: 'Launch Roku App',
+			description:
+				'Launch a Roku app on an adopted device, optionally with deep-link parameters.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+					appId: z.string().min(1),
+					params: z.record(z.string(), z.string()).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const appId = String(args['appId'] ?? '')
+			const rawParams = args['params']
+			const params =
+				rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams)
+					? Object.fromEntries(
+							Object.entries(rawParams as Record<string, unknown>).map(
+								([key, value]) => [key, String(value)],
+							),
+						)
+					: undefined
+			const result = await roku.launchApp(deviceId, appId, params)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Launched app ${appId} on ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
 	return {
 		server,
 		listTools() {

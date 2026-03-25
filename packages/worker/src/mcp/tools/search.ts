@@ -4,7 +4,9 @@ import { z } from 'zod'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { searchUnified } from '#mcp/capabilities/unified-search.ts'
 import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
+import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
@@ -63,6 +65,50 @@ Example arguments:
 
 const defaultSearchLimit = 15
 
+type OptionalSearchRowsResult = {
+	skillRows: Array<McpSkillRow>
+	uiArtifactRows: Array<UiArtifactRow>
+	warnings: Array<string>
+}
+
+export async function loadOptionalSearchRows(input: {
+	userId: string | null
+	loadSkills: () => Promise<Array<McpSkillRow>>
+	loadUiArtifacts: () => Promise<Array<UiArtifactRow>>
+}): Promise<OptionalSearchRowsResult> {
+	if (!input.userId) {
+		return {
+			skillRows: [],
+			uiArtifactRows: [],
+			warnings: [],
+		}
+	}
+
+	const warnings: Array<string> = []
+	let skillRows: Array<McpSkillRow> = []
+	let uiArtifactRows: Array<UiArtifactRow> = []
+
+	try {
+		skillRows = await input.loadSkills()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		warnings.push(`Saved skills are temporarily unavailable: ${message}`)
+	}
+
+	try {
+		uiArtifactRows = await input.loadUiArtifacts()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
+	}
+
+	return {
+		skillRows,
+		uiArtifactRows,
+		warnings,
+	}
+}
+
 export async function registerSearchTool(agent: MCP) {
 	agent.server.registerTool(
 		searchTool.name,
@@ -93,20 +139,21 @@ export async function registerSearchTool(agent: MCP) {
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
+			let warnings: Array<string> = []
 
 			const searchSpan = async () => {
 				const registry = await getCapabilityRegistryForContext({
 					env: agent.getEnv(),
 					callerContext,
 				})
-				const skillRows =
-					userId != null
-						? await listMcpSkillsByUserId(agent.getEnv().APP_DB, userId)
-						: []
-				const uiArtifactRows =
-					userId != null
-						? await listUiArtifactsByUserId(agent.getEnv().APP_DB, userId)
-						: []
+				const optionalRows = await loadOptionalSearchRows({
+					userId,
+					loadSkills: () =>
+						listMcpSkillsByUserId(agent.getEnv().APP_DB, userId!),
+					loadUiArtifacts: () =>
+						listUiArtifactsByUserId(agent.getEnv().APP_DB, userId!),
+				})
+				warnings = optionalRows.warnings
 				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,
@@ -114,8 +161,8 @@ export async function registerSearchTool(agent: MCP) {
 					detail: args.detail === true,
 					specs: registry.capabilitySpecs,
 					userId,
-					skillRows,
-					uiArtifactRows,
+					skillRows: optionalRows.skillRows,
+					uiArtifactRows: optionalRows.uiArtifactRows,
 				})
 			}
 
@@ -172,6 +219,7 @@ export async function registerSearchTool(agent: MCP) {
 			const payload = {
 				matches: result.matches,
 				offline: result.offline,
+				warnings,
 			}
 
 			return {

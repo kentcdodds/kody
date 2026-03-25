@@ -66,30 +66,29 @@ function getDeviceOrThrow(state: HomeConnectorState, deviceId: string) {
 	return device
 }
 
-function buildMockControlUrl(
-	config: HomeConnectorConfig,
-	deviceId: string,
-	key: string,
-) {
-	const discoveryUrl = new URL(config.rokuDiscoveryUrl)
-	discoveryUrl.pathname = `/control/${encodeURIComponent(deviceId)}/${encodeURIComponent(key)}`
-	discoveryUrl.search = ''
-	discoveryUrl.hash = ''
-	return discoveryUrl.toString()
-}
-
 function buildDeviceControlUrl(device: RokuDeviceRecord, key: string) {
 	return `${device.location.replace(/\/$/, '')}/keypress/${encodeURIComponent(key)}`
 }
 
+function buildDeviceLaunchUrl(
+	device: RokuDeviceRecord,
+	appId: string,
+	params: Record<string, string>,
+) {
+	const launchUrl = new URL(
+		`${device.location.replace(/\/$/, '')}/launch/${encodeURIComponent(appId)}`,
+	)
+	for (const [key, value] of Object.entries(params)) {
+		launchUrl.searchParams.set(key, value)
+	}
+	return launchUrl.toString()
+}
+
 async function sendRokuKeypress(input: {
-	config: HomeConnectorConfig
 	device: RokuDeviceRecord
 	key: string
 }) {
-	const targetUrl = input.config.mocksEnabled
-		? buildMockControlUrl(input.config, input.device.deviceId, input.key)
-		: buildDeviceControlUrl(input.device, input.key)
+	const targetUrl = buildDeviceControlUrl(input.device, input.key)
 	const response = await fetch(targetUrl, {
 		method: 'POST',
 	})
@@ -101,6 +100,29 @@ async function sendRokuKeypress(input: {
 		ok: true,
 		deviceId: input.device.deviceId,
 		key: input.key,
+		responseText,
+	}
+}
+
+async function launchRokuApp(input: {
+	device: RokuDeviceRecord
+	appId: string
+	params?: Record<string, string>
+}) {
+	const params = input.params ?? {}
+	const targetUrl = buildDeviceLaunchUrl(input.device, input.appId, params)
+	const response = await fetch(targetUrl, {
+		method: 'POST',
+	})
+	if (!response.ok) {
+		throw new Error(`Roku app launch failed with status ${response.status}.`)
+	}
+	const responseText = await response.text()
+	return {
+		ok: true,
+		deviceId: input.device.deviceId,
+		appId: input.appId,
+		params,
 		responseText,
 	}
 }
@@ -138,9 +160,25 @@ export function createRokuAdapter(input: {
 				)
 			}
 			return sendRokuKeypress({
-				config: input.config,
 				device,
 				key,
+			})
+		},
+		async launchApp(
+			deviceId: string,
+			appId: string,
+			params?: Record<string, string>,
+		) {
+			const device = getDeviceOrThrow(input.state, deviceId)
+			if (!device.adopted) {
+				throw new Error(
+					`Roku device "${deviceId}" must be adopted before control.`,
+				)
+			}
+			return launchRokuApp({
+				device,
+				appId,
+				params,
 			})
 		},
 	}

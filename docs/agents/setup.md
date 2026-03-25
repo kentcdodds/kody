@@ -50,13 +50,15 @@ Quick notes for getting a local kody environment running.
     `packages/home-connector/index.ts` imports `packages/home-connector/mocks/`
     when `MOCKS=true`.
   - The dev entry at `packages/home-connector/server/dev-server.ts` enables
-    `MOCKS=true` by default for local development.
+    `MOCKS=true` by default for local development and also sets
+    `ROKU_DISCOVERY_URL=http://roku.mock.local/discovery` unless you override
+    it.
   - `bun run dev` forwards `HOME_CONNECTOR_*` environment variables to the
     underlying connector process with the prefix removed, so
     `HOME_CONNECTOR_MOCKS=false` becomes `MOCKS=false` and
     `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` becomes `ROKU_DISCOVERY_URL=...`.
-  - When mocks are disabled and `ROKU_DISCOVERY_URL` is unset, the connector now
-    defaults Roku discovery to SSDP at `ssdp://239.255.255.250:1900`.
+  - When `ROKU_DISCOVERY_URL` is unset, the connector defaults Roku discovery to
+    SSDP at `ssdp://239.255.255.250:1900`.
   - Local operational routes live at `/health`, `/roku/status`, and
     `/roku/setup`.
 - MCP **`search`** uses a deterministic offline ranker in tests and when

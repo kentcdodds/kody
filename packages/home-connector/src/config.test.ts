@@ -39,10 +39,10 @@ test('live connector defaults Roku discovery to SSDP', () => {
 	expect(config.rokuDiscoveryUrl).toBe('ssdp://239.255.255.250:1900')
 })
 
-test('mock connector keeps mock Roku discovery endpoint by default', () => {
+test('explicit Roku discovery URL overrides the default in mock mode', () => {
 	using _env = createTemporaryEnv({
 		MOCKS: 'true',
-		ROKU_DISCOVERY_URL: undefined,
+		ROKU_DISCOVERY_URL: 'http://roku.mock.local/discovery',
 		HOME_CONNECTOR_ID: 'default',
 		WORKER_BASE_URL: 'http://localhost:3742',
 	})

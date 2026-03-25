@@ -2,7 +2,12 @@ import { expect, test } from 'bun:test'
 import { installHomeConnectorMockServer } from '../../../mocks/test-server.ts'
 import { createAppState } from '../../state.ts'
 import { loadHomeConnectorConfig } from '../../config.ts'
-import { adoptRoku, getRokuStatus, scanRokuDevices } from './index.ts'
+import {
+	adoptRoku,
+	createRokuAdapter,
+	getRokuStatus,
+	scanRokuDevices,
+} from './index.ts'
 
 function createConfig() {
 	process.env.MOCKS = 'true'
@@ -41,4 +46,43 @@ test('adopting a discovered roku moves it into adopted devices', async () => {
 	expect(
 		status.adopted.some((device) => device.deviceId === adopted.deviceId),
 	).toBe(true)
+})
+
+test('sending a Roku keypress uses the discovered device location', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const roku = createRokuAdapter({ state, config })
+
+	const devices = await roku.scan()
+	const deviceId = devices[0]!.deviceId
+	roku.adoptDevice(deviceId)
+
+	const result = await roku.pressKey(deviceId, 'Home')
+
+	expect(result.ok).toBe(true)
+	expect(result.deviceId).toBe(deviceId)
+	expect(result.key).toBe('Home')
+})
+
+test('launching a Roku app succeeds for an adopted device', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const roku = createRokuAdapter({ state, config })
+
+	const devices = await roku.scan()
+	const deviceId = devices[0]!.deviceId
+	roku.adoptDevice(deviceId)
+
+	const result = await roku.launchApp(deviceId, '837', {
+		contentID: '07RZ_2AyKHQ',
+		mediaType: 'live',
+	})
+
+	expect(result.ok).toBe(true)
+	expect(result.deviceId).toBe(deviceId)
+	expect(result.appId).toBe('837')
+	expect(result.params).toEqual({
+		contentID: '07RZ_2AyKHQ',
+		mediaType: 'live',
+	})
 })

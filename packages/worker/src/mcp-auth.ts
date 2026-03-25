@@ -109,7 +109,17 @@ export async function handleMcpRequest({
 	const props: OAuthContextProps = createMcpCallerContext({
 		baseUrl: url.origin,
 		user: tokenSummary.grant.props ?? null,
+		homeConnectorId: 'default',
 	})
+	console.info(
+		'mcp-home-debug',
+		JSON.stringify({
+			stage: 'mcp-auth',
+			baseUrl: props.baseUrl,
+			hasUser: props.user != null,
+			homeConnectorId: props.homeConnectorId,
+		}),
+	)
 	context.props = props
 
 	return fetchMcp(request, env, context as ExecutionContext<OAuthContextProps>)

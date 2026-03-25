@@ -47,10 +47,7 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerWebSocketUrl: createWorkerWebSocketUrl(workerSessionUrl),
 		sharedSecret: process.env.HOME_CONNECTOR_SHARED_SECRET?.trim() || null,
 		rokuDiscoveryUrl:
-			process.env.ROKU_DISCOVERY_URL?.trim() ||
-			(mocksEnabled
-				? 'http://roku.mock.local/discovery'
-				: 'ssdp://239.255.255.250:1900'),
+			process.env.ROKU_DISCOVERY_URL?.trim() || 'ssdp://239.255.255.250:1900',
 		port: Number.isFinite(port) ? port : 4040,
 		mocksEnabled,
 	}

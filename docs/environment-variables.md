@@ -139,8 +139,8 @@ Optional Worker secret/var (see `types/env-schema.ts` and
   sets `MOCKS=false` for `packages/home-connector`, and
   `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`.
 - `ROKU_DISCOVERY_URL` — optional connector env var. Defaults to
-  `http://roku.mock.local/discovery` when `MOCKS=true`, and
-  `ssdp://239.255.255.250:1900` when `MOCKS=false`.
+  `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
+  value such as `http://roku.mock.local/discovery`.
 
 ## Why Zod?
 
