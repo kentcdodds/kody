@@ -93,4 +93,3 @@ test('absolutizeHtmlAttributeUrls leaves hash, data, and javascript urls untouch
 	expect(result).toContain('src="data:image/png;base64,abc"')
 	expect(result).toContain('href="javascript:alert(1)"')
 })
-

@@ -99,9 +99,9 @@ When a UI should communicate back to the host agent:
   - `tools/call` (call server tools)
   - `ui/open-link` (request external link open)
 - In this repo, prefer the generated UI shell's built-in helpers for source
-  loading, execution, and secure input rather than app-only MCP tools. The
-  shell uses a unified HTTP contract under `/ui-api/:uiId/*` so the same
-  widget code can run on hosted Kody pages and inside MCP app hosts.
+  loading, execution, and secure input rather than app-only MCP tools. The shell
+  uses a unified HTTP contract under `/ui-api/:uiId/*` so the same widget code
+  can run on hosted Kody pages and inside MCP app hosts.
 - Keep messages concise and deterministic where possible.
 - For inline `rawHtml` widgets in this repo, prefer reusing the shared runtime
   in `packages/worker/client/mcp-apps/widget-host-bridge.ts` (bundled into
@@ -123,8 +123,8 @@ Keep the interface small and literal. Narrow, well-named helpers are easier for
 agents to use reliably than a generic RPC surface.
 
 `executeCode(code)` is not local eval inside the widget. It posts to the shell,
-and the shell executes the request server-side through the generated UI
-endpoint contract:
+and the shell executes the request server-side through the generated UI endpoint
+contract:
 
 - `GET /ui-api/:uiId/source`
 - `POST /ui-api/:uiId/execute`

@@ -952,9 +952,10 @@ test('generated ui session endpoints support source, execute, and secure input',
 				...(init?.headers ?? {}),
 			},
 		})
-		const payload = (await response.json().catch(() => null)) as
-			| Record<string, unknown>
-			| null
+		const payload = (await response.json().catch(() => null)) as Record<
+			string,
+			unknown
+		> | null
 		return { response, payload }
 	}
 
@@ -1009,9 +1010,8 @@ test('generated ui session endpoints support source, execute, and secure input',
 				},
 			},
 		})`
-	const { response: setupResponse, payload: setupPayload } = await fetchSessionJson(
-		actionUrl ?? server.origin,
-		{
+	const { response: setupResponse, payload: setupPayload } =
+		await fetchSessionJson(actionUrl ?? server.origin, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -1019,8 +1019,7 @@ test('generated ui session endpoints support source, execute, and secure input',
 			body: JSON.stringify({
 				code: setupCode,
 			}),
-		},
-	)
+		})
 	expect(setupResponse.ok).toBe(true)
 	const setupId = (setupPayload?.result as { setup_id?: string } | undefined)
 		?.setup_id

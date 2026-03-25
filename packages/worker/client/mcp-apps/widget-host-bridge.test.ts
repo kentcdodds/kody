@@ -201,8 +201,7 @@ test('callTool proxies tools/call through the host bridge', async () => {
 	expect(
 		hostPostedMessages.some(
 			(entry) =>
-				entry.method === 'tools/call' &&
-				entry.params?.name === 'execute',
+				entry.method === 'tools/call' && entry.params?.name === 'execute',
 		),
 	).toBe(true)
 })

@@ -15,9 +15,7 @@ import {
 	createPasswordResetConfirmHandler,
 	createPasswordResetRequestHandler,
 } from '#app/handlers/password-reset.ts'
-import {
-	createSavedUiPageHandler,
-} from '#app/handlers/saved-ui.ts'
+import { createSavedUiPageHandler } from '#app/handlers/saved-ui.ts'
 import { session } from '#app/handlers/session.ts'
 import { signup } from '#app/handlers/signup.ts'
 import { Layout } from '#app/layout.ts'

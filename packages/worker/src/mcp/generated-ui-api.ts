@@ -6,7 +6,10 @@ import { storeDraftSecrets } from '#mcp/connections/connection-service.ts'
 import { formatExecutionOutput } from '#mcp/executor.ts'
 import { verifyGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { getUiArtifactById, getUiArtifactByOwnerIds } from '#mcp/ui-artifacts-repo.ts'
+import {
+	getUiArtifactById,
+	getUiArtifactByOwnerIds,
+} from '#mcp/ui-artifacts-repo.ts'
 
 const executeRequestSchema = z.object({
 	code: z.string().min(1),
@@ -139,9 +142,7 @@ type GeneratedUiApiContext =
 	| {
 			type: 'saved-ui'
 			user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-			artifact: NonNullable<
-				Awaited<ReturnType<typeof getUiArtifactByOwnerIds>>
-			>
+			artifact: NonNullable<Awaited<ReturnType<typeof getUiArtifactByOwnerIds>>>
 	  }
 
 type GeneratedUiApiEndpoint = 'source' | 'execute' | 'secure-input'
@@ -233,7 +234,11 @@ async function resolveUiArtifactForSourceRequest(
 	if (!appId) {
 		return jsonResponse({ error: 'Missing app_id query parameter.' }, 400)
 	}
-	const app = await getUiArtifactById(env.APP_DB, context.session.user.userId, appId)
+	const app = await getUiArtifactById(
+		env.APP_DB,
+		context.session.user.userId,
+		appId,
+	)
 	if (!app) {
 		return jsonResponse({ error: 'Saved app not found for this user.' }, 404)
 	}

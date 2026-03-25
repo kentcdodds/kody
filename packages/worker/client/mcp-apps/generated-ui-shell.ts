@@ -393,9 +393,10 @@ function initializeGeneratedUiShell() {
 			cache: 'no-store',
 			credentials: input.token ? 'omit' : 'include',
 		})
-		const payload = (await response.json().catch(() => null)) as
-			| Record<string, unknown>
-			| null
+		const payload = (await response.json().catch(() => null)) as Record<
+			string,
+			unknown
+		> | null
 		return { response, payload }
 	}
 
@@ -498,7 +499,9 @@ function initializeGeneratedUiShell() {
 			arguments: { code },
 			timeoutMs: 90_000,
 		})
-		const errorMessage = getHostToolErrorMessage(result as HostToolResult | null)
+		const errorMessage = getHostToolErrorMessage(
+			result as HostToolResult | null,
+		)
 		if (errorMessage) {
 			throw new Error(errorMessage)
 		}
@@ -1106,7 +1109,9 @@ ${inlineModuleSource}
 		})
 		const app = isRecord(payload?.app) ? payload.app : null
 		if (!response.ok || !payload || payload.ok !== true || !app) {
-			throw new Error(getApiErrorMessage(payload, 'Failed to load saved app source.'))
+			throw new Error(
+				getApiErrorMessage(payload, 'Failed to load saved app source.'),
+			)
 		}
 		const code = typeof app.code === 'string' ? app.code : null
 		if (!code) {
@@ -1142,10 +1147,7 @@ ${inlineModuleSource}
 		}
 
 		try {
-			const resolved = await resolveSavedAppCode(
-				envelope.appId,
-				appSession,
-			)
+			const resolved = await resolveSavedAppCode(envelope.appId, appSession)
 			if (latestEnvelope !== envelope) return
 			setFrameSource(resolved.code, resolved.runtime, appSession)
 		} catch (error) {
