@@ -91,6 +91,8 @@ jobs:
         with:
           context: .
           file: packages/home-connector/Dockerfile
+          build-args: |
+            APP_COMMIT_SHA=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

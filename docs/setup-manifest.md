@@ -229,11 +229,13 @@ How to get/set each value:
   - `HOME_CONNECTOR_SENTRY_DSN` (optional; enables Sentry error reporting and
     tracing for the Bun-based `packages/home-connector` service)
   - `HOME_CONNECTOR_SENTRY_ENVIRONMENT` (optional; forwarded to the connector as
-    `SENTRY_ENVIRONMENT`, defaults to `production` when the published image runs
-    via the `start` script)
+    `SENTRY_ENVIRONMENT`, defaults to `production` in the published Docker
+    image)
   - `HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`; forwarded to
-    the connector as `SENTRY_TRACES_SAMPLE_RATE`, defaults to **`1.0`** when
-    unset)
+    the connector as `SENTRY_TRACES_SAMPLE_RATE`, defaults to **`1.0`** in the
+    published Docker image)
+  - `APP_COMMIT_SHA` is also baked into the published Docker image and used by
+    the connector’s Sentry setup as the release identifier
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock
