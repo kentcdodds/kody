@@ -1,0 +1,17 @@
+{
+  "name": "@kody/home-connector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run server/dev-server.ts",
+    "start": "NODE_ENV=production bun run index.ts",
+    "start:mocks": "MOCKS=true ROKU_DISCOVERY_URL=http://roku.mock.local/discovery NODE_ENV=production bun run index.ts",
+    "test": "bun test ./src"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "msw": "^2.12.14",
+    "remix": "3.0.0-alpha.3",
+    "zod": "^4.3.6"
+  }
+}

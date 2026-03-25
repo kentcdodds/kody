@@ -1,6 +1,8 @@
 import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
 import { ChatAgent } from './chat-agent.ts'
+import { HomeConnectorSession } from './home/session.ts'
+import { HomeMCP } from './home/mcp.ts'
 import { MCP } from './mcp/index.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
@@ -25,7 +27,7 @@ import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleSkillReindexRequest } from './skill-maintenance.ts'
 
-export { ChatAgent, MCP }
+export { ChatAgent, HomeConnectorSession, HomeMCP, MCP }
 
 const appHandler = withCors({
 	getCorsHeaders(request) {
@@ -80,6 +82,18 @@ const appHandler = withCors({
 					binding: 'MCP_OBJECT',
 				}).fetch,
 			})
+		}
+
+		if (url.pathname.startsWith('/home/connectors/')) {
+			const parts = url.pathname.split('/').filter(Boolean)
+			const connectorId = parts[2]?.trim()
+			if (!connectorId) {
+				return new Response('Connector ID is required.', { status: 400 })
+			}
+			const stub = env.HOME_CONNECTOR_SESSION.get(
+				env.HOME_CONNECTOR_SESSION.idFromName(connectorId),
+			)
+			return stub.fetch(request)
 		}
 
 		if (url.pathname.startsWith(`${chatAgentBasePath}/`)) {

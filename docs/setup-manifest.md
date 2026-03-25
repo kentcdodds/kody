@@ -131,6 +131,12 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `bun run sentry:upload-sourcemaps` after deploy)
+- `DOCKERHUB_USERNAME` (required to publish `packages/home-connector` to Docker
+  Hub)
+- `DOCKERHUB_TOKEN` (required Docker Hub access token/password for image
+  publish)
+- `HOME_CONNECTOR_DOCKER_IMAGE` (required GitHub **variable**; Docker Hub image
+  name such as `kentcdodds/kody-home-connector`)
 - **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
   organization and project **slugs** for source map upload — same values as in
   the Sentry wizard’s `--org` / `--project` flags)
@@ -197,6 +203,19 @@ How to get/set each value:
     `/__maintenance/reindex-capabilities` and `/__maintenance/reindex-skills`
     with `Authorization: Bearer …` to refresh capability and user-skill
     embeddings.
+- `DOCKERHUB_USERNAME`
+  - Use your Docker Hub username or organization service account name.
+  - Store it as the repository secret `DOCKERHUB_USERNAME`.
+- `DOCKERHUB_TOKEN`
+  - In Docker Hub, create an access token for image publish access.
+  - Store it as the repository secret `DOCKERHUB_TOKEN`.
+- `HOME_CONNECTOR_DOCKER_IMAGE`
+  - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
+    `HOME_CONNECTOR_DOCKER_IMAGE` with the target Docker Hub image name (for
+    example `kentcdodds/kody-home-connector`).
+  - The Home Connector publish workflow pushes both `latest` and
+    `sha-<shortsha>` tags to that image whenever `main` changes under
+    `packages/home-connector` (or its Docker build inputs).
 
 Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock

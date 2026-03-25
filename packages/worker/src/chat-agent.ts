@@ -117,6 +117,7 @@ class ChatAgentBase extends AIChatAgent<Env> {
 		appUserId: number
 		baseUrl: string
 		user: ReturnType<typeof createMcpCallerContext>['user']
+		homeConnectorId: string | null
 	} | null = null
 
 	private getRuntimeContext() {
@@ -252,12 +253,21 @@ class ChatAgentBase extends AIChatAgent<Env> {
 			appUserId: user.userId,
 			baseUrl,
 			user: user.mcpUser,
+			homeConnectorId: 'default',
 		}
 		this.persistRuntimeContext()
 		await this.addMcpServer('kody', this.env.MCP_OBJECT, {
 			props: createMcpCallerContext({
 				baseUrl,
 				user: user.mcpUser,
+				homeConnectorId: this.runtimeContext.homeConnectorId,
+			}),
+		})
+		await this.addMcpServer('home', this.env.HOME_MCP_OBJECT, {
+			props: createMcpCallerContext({
+				baseUrl,
+				user: user.mcpUser,
+				homeConnectorId: this.runtimeContext.homeConnectorId,
 			}),
 		})
 	}

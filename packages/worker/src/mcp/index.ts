@@ -3,7 +3,7 @@ import { invariant } from '@epic-web/invariant'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 import { McpAgent } from 'agents/mcp'
-import { capabilityDomains } from '#mcp/capabilities/registry.ts'
+import { builtinDomains } from '#mcp/capabilities/builtin-domains.ts'
 import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 import { registerResources } from './register-resources.ts'
@@ -12,7 +12,7 @@ import { registerTools } from './register-tools.ts'
 export type State = {}
 export type Props = McpServerProps
 
-const domainInstructions = capabilityDomains
+const domainInstructions = builtinDomains
 	.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
 	.join('\n')
 

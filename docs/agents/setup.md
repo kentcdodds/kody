@@ -33,12 +33,34 @@ Quick notes for getting a local kody environment running.
   `tools/export-d1-remote-to-sqlite.sh`.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed.
-- `bun run dev` (starts mock API servers automatically and sets
-  `RESEND_API_BASE_URL`, `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and (unless
-  `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` + `GITHUB_TOKEN` to the local
-  GitHub mock Worker for the `github_rest` + `github_graphql` capabilities, and
-  (unless `SKIP_CURSOR_MOCK=1`) `CURSOR_API_BASE_URL` + `CURSOR_API_KEY` to the
-  local Cursor Cloud mock Worker for the `cursor_cloud_rest` capability).
+- `bun run dev` (starts mock API servers automatically, the main worker, and the
+  local home connector; it sets `RESEND_API_BASE_URL`, `AI_MODE=mock`,
+  `AI_MOCK_BASE_URL`, and (unless `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` +
+  `GITHUB_TOKEN` to the local GitHub mock Worker for the `github_rest` +
+  `github_graphql` capabilities, and (unless `SKIP_CURSOR_MOCK=1`)
+  `CURSOR_API_BASE_URL` + `CURSOR_API_KEY` to the local Cursor Cloud mock Worker
+  for the `cursor_cloud_rest` capability. The home connector receives the
+  resolved worker origin via `WORKER_BASE_URL`. When
+  `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
+  it to both the worker and the connector so the outbound registration handshake
+  succeeds in local development.)
+- The home automation connector now lives in `packages/home-connector`.
+  - `bun run dev:home-connector` starts the local connector app.
+  - The connector uses the `kentcdodds.com` mock bootstrap shape: only
+    `packages/home-connector/index.ts` imports `packages/home-connector/mocks/`
+    when `MOCKS=true`.
+  - The dev entry at `packages/home-connector/server/dev-server.ts` enables
+    `MOCKS=true` by default for local development and also sets
+    `ROKU_DISCOVERY_URL=http://roku.mock.local/discovery` unless you override
+    it.
+  - `bun run dev` forwards `HOME_CONNECTOR_*` environment variables to the
+    underlying connector process with the prefix removed, so
+    `HOME_CONNECTOR_MOCKS=false` becomes `MOCKS=false` and
+    `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` becomes `ROKU_DISCOVERY_URL=...`.
+  - When `ROKU_DISCOVERY_URL` is unset, the connector defaults Roku discovery to
+    SSDP at `ssdp://239.255.255.250:1900`.
+  - Local operational routes live at `/health`, `/roku/status`, and
+    `/roku/setup`.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `bun test` or unauthenticated local runs). Production uses
@@ -70,6 +92,21 @@ Quick notes for getting a local kody environment running.
 - `bun run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
   `packages/worker/.env` from `.env.example` when needed so local and CI runs
   have the minimum required test env.
+- `bun test ./packages/home-connector` runs the connector package tests
+  directly.
+
+## Home Connector Docker publishing
+
+Pushes to `main` that change `packages/home-connector/**`, `package.json`,
+`bun.lock`, or `.github/workflows/home-connector-publish.yml` run the dedicated
+Home Connector publish workflow.
+
+- The workflow reruns `bun test ./packages/home-connector` before publishing.
+- Docker Hub auth comes from GitHub Actions secrets `DOCKERHUB_USERNAME` and
+  `DOCKERHUB_TOKEN`.
+- The Docker Hub repository name comes from the GitHub Actions variable
+  `HOME_CONNECTOR_DOCKER_IMAGE` (for example `kentcdodds/kody-home-connector`).
+- Successful publishes push both `latest` and `sha-<shortsha>` tags.
 
 ## Documentation maintenance
 

@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { getMcpSkillById } from '#mcp/skills/mcp-skills-repo.ts'
 import {
 	applySkillParameters,
@@ -67,6 +66,8 @@ export const metaRunSkillCapability = defineDomainCapability(
 				values: args.params,
 			})
 			const shouldPassParams = definitions != null || args.params !== undefined
+			const { runCodemodeWithRegistry } =
+				await import('#mcp/run-codemode-registry.ts')
 			const exec = await runCodemodeWithRegistry(
 				ctx.env,
 				ctx.callerContext,

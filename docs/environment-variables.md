@@ -124,6 +124,24 @@ Optional Worker secrets/vars (see `types/env-schema.ts` and
   `https://api.cloudflare.com` when unset. Local `bun run dev` sets this to the
   Cloudflare mock Worker unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.
 
+## Home connector bridge
+
+Optional Worker secret/var (see `types/env-schema.ts` and
+`packages/worker/src/home/session.ts`):
+
+- `HOME_CONNECTOR_SHARED_SECRET` — shared secret used by the locally running
+  `packages/home-connector` service when it opens the outbound WebSocket session
+  to the worker. When unset, the worker rejects home connector registration and
+  the internal home MCP bridge cannot route `home` capabilities.
+- `HOME_CONNECTOR_*` — when you start the full local stack with `bun run dev`,
+  any `HOME_CONNECTOR_`-prefixed variable is forwarded to the child connector
+  process with the prefix removed. For example, `HOME_CONNECTOR_MOCKS=false`
+  sets `MOCKS=false` for `packages/home-connector`, and
+  `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`.
+- `ROKU_DISCOVERY_URL` — optional connector env var. Defaults to
+  `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
+  value such as `http://roku.mock.local/discovery`.
+
 ## Why Zod?
 
 Zod gives type inference for `Env`-driven values and a single runtime gate that

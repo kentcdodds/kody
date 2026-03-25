@@ -80,9 +80,15 @@ export async function registerExecuteTool(agent: MCP) {
 			const env = agent.getEnv()
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
-			const { capabilityHandlers } =
+			const { getCapabilityRegistryForContext } =
 				await import('#mcp/capabilities/registry.ts')
-			const registeredCapabilityCount = Object.keys(capabilityHandlers).length
+			const registry = await getCapabilityRegistryForContext({
+				env,
+				callerContext,
+			})
+			const registeredCapabilityCount = Object.keys(
+				registry.capabilityHandlers,
+			).length
 			const result = await Sentry.startSpan(
 				{
 					name: 'mcp.tool.execute',

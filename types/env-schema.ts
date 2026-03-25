@@ -129,6 +129,7 @@ export const EnvSchema = object({
 	CURSOR_API_KEY: optionalNonEmptyStringSchema,
 	CURSOR_API_BASE_URL: optionalUrlStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
+	HOME_CONNECTOR_SHARED_SECRET: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

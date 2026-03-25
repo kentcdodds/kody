@@ -1,13 +1,12 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import {
-	capabilityDomains,
-	capabilitySpecs,
-} from '#mcp/capabilities/registry.ts'
+import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { searchUnified } from '#mcp/capabilities/unified-search.ts'
 import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
+import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
@@ -32,10 +31,6 @@ function truncateSearchResult(value: unknown): string {
 	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Lower the limit or ask a shorter query.`
 }
 
-const capabilityDomainSummary = capabilityDomains
-	.map((domain) => `- \`${domain.name}\`: ${domain.description}`)
-	.join('\n')
-
 const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities And Skills',
@@ -45,7 +40,10 @@ Search Kody **builtin capabilities**, your saved **skills** (meta domain), and y
 Each match has **type** \`capability\`, \`skill\`, or \`app\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill. Saved apps are reusable UI artifacts and can be reopened without resending their source code through the model.
 
 Domains (for context only—put hints in your \`query\` string; there are no filter fields):
-${capabilityDomainSummary}
+- \`math\`: Simple arithmetic and calculator-style operations over numbers.
+- \`coding\`: Software work such as GitHub repository actions, issues, pull requests, Cursor Cloud Agents API calls, Cloudflare API calls, and related docs/coding workflows.
+- \`meta\`: Persisted and reusable codemode skills plus skill management.
+- \`home\`: Home automation capabilities discovered from the connected home connector when available.
 
 Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. **Skills** require an authenticated MCP user.
 
@@ -66,6 +64,50 @@ Example arguments:
 } as const
 
 const defaultSearchLimit = 15
+
+type OptionalSearchRowsResult = {
+	skillRows: Array<McpSkillRow>
+	uiArtifactRows: Array<UiArtifactRow>
+	warnings: Array<string>
+}
+
+export async function loadOptionalSearchRows(input: {
+	userId: string | null
+	loadSkills: () => Promise<Array<McpSkillRow>>
+	loadUiArtifacts: () => Promise<Array<UiArtifactRow>>
+}): Promise<OptionalSearchRowsResult> {
+	if (!input.userId) {
+		return {
+			skillRows: [],
+			uiArtifactRows: [],
+			warnings: [],
+		}
+	}
+
+	const warnings: Array<string> = []
+	let skillRows: Array<McpSkillRow> = []
+	let uiArtifactRows: Array<UiArtifactRow> = []
+
+	try {
+		skillRows = await input.loadSkills()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		warnings.push(`Saved skills are temporarily unavailable: ${message}`)
+	}
+
+	try {
+		uiArtifactRows = await input.loadUiArtifacts()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
+	}
+
+	return {
+		skillRows,
+		uiArtifactRows,
+		warnings,
+	}
+}
 
 export async function registerSearchTool(agent: MCP) {
 	agent.server.registerTool(
@@ -97,25 +139,30 @@ export async function registerSearchTool(agent: MCP) {
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
+			let warnings: Array<string> = []
 
 			const searchSpan = async () => {
-				const skillRows =
-					userId != null
-						? await listMcpSkillsByUserId(agent.getEnv().APP_DB, userId)
-						: []
-				const uiArtifactRows =
-					userId != null
-						? await listUiArtifactsByUserId(agent.getEnv().APP_DB, userId)
-						: []
+				const registry = await getCapabilityRegistryForContext({
+					env: agent.getEnv(),
+					callerContext,
+				})
+				const optionalRows = await loadOptionalSearchRows({
+					userId,
+					loadSkills: () =>
+						listMcpSkillsByUserId(agent.getEnv().APP_DB, userId!),
+					loadUiArtifacts: () =>
+						listUiArtifactsByUserId(agent.getEnv().APP_DB, userId!),
+				})
+				warnings = optionalRows.warnings
 				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,
 					limit: args.limit ?? defaultSearchLimit,
 					detail: args.detail === true,
-					specs: capabilitySpecs,
+					specs: registry.capabilitySpecs,
 					userId,
-					skillRows,
-					uiArtifactRows,
+					skillRows: optionalRows.skillRows,
+					uiArtifactRows: optionalRows.uiArtifactRows,
 				})
 			}
 
@@ -172,6 +219,7 @@ export async function registerSearchTool(agent: MCP) {
 			const payload = {
 				matches: result.matches,
 				offline: result.offline,
+				warnings,
 			}
 
 			return {
