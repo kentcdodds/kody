@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"composite": true,
 		"allowImportingTsExtensions": true,
-		"tsBuildInfoFile": "../node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+		"tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.worker.tsbuildinfo",
 		"target": "ES2023",
 		"lib": ["ES2023", "WebWorker", "WebWorker.Iterable"],
 		"baseUrl": ".",
@@ -11,10 +11,10 @@
 		// private type conflicts when multiple copies are present.
 		"paths": {
 			"@modelcontextprotocol/sdk": [
-				"../node_modules/@modelcontextprotocol/sdk"
+				"../../node_modules/@modelcontextprotocol/sdk"
 			],
 			"@modelcontextprotocol/sdk/*": [
-				"../node_modules/@modelcontextprotocol/sdk/*"
+				"../../node_modules/@modelcontextprotocol/sdk/*"
 			]
 		},
 		"module": "ESNext",
@@ -29,17 +29,19 @@
 		"noUncheckedSideEffectImports": true
 	},
 	"include": [
-		"../packages/worker/env.d.ts",
-		"../packages/worker/worker-configuration.d.ts",
-		"../packages/shared/src/**/*.ts",
-		"../packages/mock-servers/**/*.ts",
-		"../sentry/**/*.ts",
-		"../packages/worker/src/**/*.ts"
+		"./env.d.ts",
+		"./worker-configuration.d.ts",
+		"../shared/src/**/*.ts",
+		"../mock-servers/**/*.ts",
+		"../../sentry/**/*.ts",
+		"./src/**/*.ts"
 	],
 	"exclude": [
 		"**/*.test.ts",
 		"**/*.spec.ts",
 		"../**/*.test.ts",
-		"../**/*.spec.ts"
+		"../**/*.spec.ts",
+		"../../**/*.test.ts",
+		"../../**/*.spec.ts"
 	]
 }

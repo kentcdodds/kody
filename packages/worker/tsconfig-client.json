@@ -3,15 +3,11 @@
 	"compilerOptions": {
 		"composite": true,
 		"allowImportingTsExtensions": true,
-		"tsBuildInfoFile": "../node_modules/.tmp/tsconfig.client.tsbuildinfo",
+		"tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.client.tsbuildinfo",
 		"lib": ["DOM", "DOM.Iterable", "ES2022"],
 		"types": [],
 		"jsx": "react-jsx",
 		"jsxImportSource": "remix/component"
 	},
-	"include": [
-		"../packages/worker/client/**/*.ts",
-		"../packages/worker/client/**/*.tsx",
-		"../packages/shared/src/**/*.ts"
-	]
+	"include": ["./client/**/*.ts", "./client/**/*.tsx", "../shared/src/**/*.ts"]
 }

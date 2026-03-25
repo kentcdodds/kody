@@ -11,13 +11,13 @@ We have **three** distinct TypeScript environments, each with its own
 
 ### Client
 
-- **Config**: `types/tsconfig-client.json`
+- **Config**: `packages/worker/tsconfig-client.json`
 - **Files**: `packages/worker/client/**/*.ts`, `packages/worker/client/**/*.tsx`
 - **Environment**: browser (`DOM`, `DOM.Iterable`) + JSX (`remix/component`)
 
 ### Tools
 
-- **Config**: `types/tsconfig-tools.json`
+- **Config**: `tsconfig-tools.json`
 - **Files**:
   - `playwright.config.ts`
   - `wrangler-env.ts`
@@ -28,7 +28,7 @@ We have **three** distinct TypeScript environments, each with its own
 
 ### Worker
 
-- **Config**: `types/tsconfig-worker.json`
+- **Config**: `packages/worker/tsconfig-worker.json`
 - **Files**:
   - `packages/worker/src/**/*.ts`
   - `packages/worker/src/mcp/**/*.ts`

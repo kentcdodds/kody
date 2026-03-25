@@ -10,10 +10,10 @@
 		// private type conflicts when multiple copies are present.
 		"paths": {
 			"@modelcontextprotocol/sdk": [
-				"../node_modules/@modelcontextprotocol/sdk"
+				"./node_modules/@modelcontextprotocol/sdk"
 			],
 			"@modelcontextprotocol/sdk/*": [
-				"../node_modules/@modelcontextprotocol/sdk/*"
+				"./node_modules/@modelcontextprotocol/sdk/*"
 			]
 		},
 		"module": "ESNext",
@@ -26,17 +26,17 @@
 		"erasableSyntaxOnly": true,
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedSideEffectImports": true,
-		"tsBuildInfoFile": "../node_modules/.tmp/tsconfig.tools.tsbuildinfo"
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tools.tsbuildinfo"
 	},
 	"include": [
-		"../playwright.config.ts",
-		"../wrangler-env.ts",
-		"../cli.ts",
-		"../docs/post-download.ts",
-		"../packages/worker/src/mcp/apps/claude-widget-domain.ts",
-		"../packages/worker/src/mcp/mcp-server-e2e.test.ts",
-		"../packages/worker/src/mcp/test-process.ts",
-		"../tools/**/*.ts",
-		"../packages/shared/src/**/*.ts"
+		"./playwright.config.ts",
+		"./wrangler-env.ts",
+		"./cli.ts",
+		"./docs/post-download.ts",
+		"./packages/worker/src/mcp/apps/claude-widget-domain.ts",
+		"./packages/worker/src/mcp/mcp-server-e2e.test.ts",
+		"./packages/worker/src/mcp/test-process.ts",
+		"./tools/**/*.ts",
+		"./packages/shared/src/**/*.ts"
 	]
 }
