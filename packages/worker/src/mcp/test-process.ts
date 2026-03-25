@@ -1,10 +1,11 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import { type Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 import { setTimeout as delay } from 'node:timers/promises'
 
 export const bunBin = process.env.BUN_BINARY?.trim() || 'bun'
 
-export type SpawnedProcess = ChildProcessWithoutNullStreams & {
+export type SpawnedProcess = ChildProcessByStdio<null, Readable, Readable> & {
 	exited: Promise<number | null>
 }
 
@@ -13,13 +14,11 @@ export function spawnProcess(input: {
 	cwd: string
 	env?: NodeJS.ProcessEnv
 }): SpawnedProcess {
-	// stdio pipes guarantee stdout/stderr streams here, but Node's spawn typing
-	// still models stdin as null for this configuration.
 	const proc = spawn(input.cmd[0], input.cmd.slice(1), {
 		cwd: input.cwd,
 		env: input.env,
 		stdio: ['ignore', 'pipe', 'pipe'],
-	}) as unknown as ChildProcessWithoutNullStreams
+	})
 
 	const exited = new Promise<number | null>((resolve, reject) => {
 		proc.once('error', reject)
