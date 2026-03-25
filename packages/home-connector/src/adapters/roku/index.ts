@@ -115,7 +115,7 @@ function parseRokuActiveAppXml(xml: string): RokuAppInfo | null {
 	const match = xml.match(/<app\b[^>]*?(?:\/>|>[\s\S]*?<\/app>)/i)
 	if (!match) return null
 	const app = parseRokuAppInfoXml(match[0])
-	if (!app.id && !app.name) return null
+	if (!app.id || !app.name) return null
 	return app
 }
 

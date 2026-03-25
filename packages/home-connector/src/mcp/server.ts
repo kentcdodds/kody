@@ -275,6 +275,7 @@ export function createHomeConnectorMcpServer(input: {
 			outputSchema: z.toJSONSchema(
 				z.object({
 					deviceId: z.string(),
+					deviceName: z.string(),
 					apps: z.array(
 						z.object({
 							id: z.string(),
@@ -319,6 +320,7 @@ export function createHomeConnectorMcpServer(input: {
 			outputSchema: z.toJSONSchema(
 				z.object({
 					deviceId: z.string(),
+					deviceName: z.string(),
 					app: z
 						.object({
 							id: z.string(),
