@@ -66,6 +66,7 @@ export async function registerGeneratedUiAppResource(
 								prefersBorder: true,
 								domain: claudeWidgetDomain,
 								csp: {
+									connectDomains: [appBaseUrl],
 									resourceDomains: [resourceDomain],
 								},
 							},
