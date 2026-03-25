@@ -91,6 +91,118 @@ export function injectIntoHtmlDocument(
 	return `${injection}\n${code}`
 }
 
+function escapeHtmlAttribute(value: string) {
+	return value
+		.replaceAll('&', '&amp;')
+		.replaceAll('"', '&quot;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+}
+
+function decodeHtmlAttribute(value: string) {
+	return value
+		.replaceAll('&quot;', '"')
+		.replaceAll('&#39;', "'")
+		.replaceAll('&lt;', '<')
+		.replaceAll('&gt;', '>')
+		.replaceAll('&amp;', '&')
+}
+
+function isNonNavigableUrl(value: string) {
+	const normalizedValue = value.trim().toLowerCase()
+	return (
+		normalizedValue === '' ||
+		normalizedValue.startsWith('#') ||
+		normalizedValue.startsWith('//') ||
+		normalizedValue.startsWith('about:') ||
+		normalizedValue.startsWith('blob:') ||
+		normalizedValue.startsWith('data:') ||
+		normalizedValue.startsWith('javascript:') ||
+		normalizedValue.startsWith('mailto:') ||
+		normalizedValue.startsWith('tel:')
+	)
+}
+
+function absolutizeUrl(value: string, baseHref: string | null) {
+	if (!baseHref || isNonNavigableUrl(value)) {
+		return value
+	}
+
+	try {
+		return new URL(value).toString()
+	} catch {}
+
+	try {
+		return new URL(value, baseHref).toString()
+	} catch {
+		return value
+	}
+}
+
+function absolutizeSrcset(value: string, baseHref: string | null) {
+	return value
+		.split(',')
+		.map((candidate) => {
+			const trimmedCandidate = candidate.trim()
+			if (trimmedCandidate.length === 0) {
+				return ''
+			}
+
+			const [url, ...descriptorParts] = trimmedCandidate.split(/\s+/)
+			return [absolutizeUrl(url, baseHref), ...descriptorParts]
+				.filter((part) => part.length > 0)
+				.join(' ')
+		})
+		.join(', ')
+}
+
+export function absolutizeHtmlAttributeUrls(
+	code: string,
+	baseHref: string | null,
+) {
+	if (!baseHref) {
+		return code
+	}
+
+	return code.replace(/<[^>]+>/g, (tag) => {
+		if (
+			tag.startsWith('<!--') ||
+			tag.startsWith('<!') ||
+			tag.startsWith('<?')
+		) {
+			return tag
+		}
+
+		return tag.replace(
+			/\b(href|src|action|formaction|poster|srcset)=("([^"]*)"|'([^']*)')/gi,
+			(
+				match,
+				attributeName,
+				quotedValue,
+				doubleQuotedValue,
+				singleQuotedValue,
+			) => {
+				const rawValue =
+					typeof doubleQuotedValue === 'string'
+						? doubleQuotedValue
+						: singleQuotedValue
+				const decodedValue = decodeHtmlAttribute(rawValue)
+				const nextValue =
+					attributeName.toLowerCase() === 'srcset'
+						? absolutizeSrcset(decodedValue, baseHref)
+						: absolutizeUrl(decodedValue, baseHref)
+
+				if (nextValue === decodedValue) {
+					return match
+				}
+
+				const quote = quotedValue.startsWith('"') ? '"' : "'"
+				return `${attributeName}=${quote}${escapeHtmlAttribute(nextValue)}${quote}`
+			},
+		)
+	})
+}
+
 function getHostToolErrorMessage(result: HostToolResult | null) {
 	if (!result || result.isError !== true) return null
 	const structuredContent = isRecord(result.structuredContent)
@@ -152,118 +264,6 @@ function initializeGeneratedUiShell() {
 
 	function escapeInlineModuleSource(code: string) {
 		return code.replace(/<\/script/gi, '<\\/script')
-	}
-
-	function escapeHtmlAttribute(value: string) {
-		return value
-			.replaceAll('&', '&amp;')
-			.replaceAll('"', '&quot;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-	}
-
-	function decodeHtmlAttribute(value: string) {
-		return value
-			.replaceAll('&quot;', '"')
-			.replaceAll('&#39;', "'")
-			.replaceAll('&lt;', '<')
-			.replaceAll('&gt;', '>')
-			.replaceAll('&amp;', '&')
-	}
-
-	function isNonNavigableUrl(value: string) {
-		const normalizedValue = value.trim().toLowerCase()
-		return (
-			normalizedValue === '' ||
-			normalizedValue.startsWith('#') ||
-			normalizedValue.startsWith('//') ||
-			normalizedValue.startsWith('about:') ||
-			normalizedValue.startsWith('blob:') ||
-			normalizedValue.startsWith('data:') ||
-			normalizedValue.startsWith('javascript:') ||
-			normalizedValue.startsWith('mailto:') ||
-			normalizedValue.startsWith('tel:')
-		)
-	}
-
-	function absolutizeUrl(value: string, baseHref: string | null) {
-		if (!baseHref || isNonNavigableUrl(value)) {
-			return value
-		}
-
-		try {
-			return new URL(value).toString()
-		} catch {}
-
-		try {
-			return new URL(value, baseHref).toString()
-		} catch {
-			return value
-		}
-	}
-
-	function absolutizeSrcset(value: string, baseHref: string | null) {
-		return value
-			.split(',')
-			.map((candidate) => {
-				const trimmedCandidate = candidate.trim()
-				if (trimmedCandidate.length === 0) {
-					return ''
-				}
-
-				const [url, ...descriptorParts] = trimmedCandidate.split(/\s+/)
-				return [absolutizeUrl(url, baseHref), ...descriptorParts]
-					.filter((part) => part.length > 0)
-					.join(' ')
-			})
-			.join(', ')
-	}
-
-	export function absolutizeHtmlAttributeUrls(
-		code: string,
-		baseHref: string | null,
-	) {
-		if (!baseHref) {
-			return code
-		}
-
-		return code.replace(/<[^>]+>/g, (tag) => {
-			if (
-				tag.startsWith('<!--') ||
-				tag.startsWith('<!') ||
-				tag.startsWith('<?')
-			) {
-				return tag
-			}
-
-			return tag.replace(
-				/\b(href|src|action|formaction|poster|srcset)=("([^"]*)"|'([^']*)')/gi,
-				(
-					match,
-					attributeName,
-					quotedValue,
-					doubleQuotedValue,
-					singleQuotedValue,
-				) => {
-					const rawValue =
-						typeof doubleQuotedValue === 'string'
-							? doubleQuotedValue
-							: singleQuotedValue
-					const decodedValue = decodeHtmlAttribute(rawValue)
-					const nextValue =
-						attributeName.toLowerCase() === 'srcset'
-							? absolutizeSrcset(decodedValue, baseHref)
-							: absolutizeUrl(decodedValue, baseHref)
-
-					if (nextValue === decodedValue) {
-						return match
-					}
-
-					const quote = quotedValue.startsWith('"') ? '"' : "'"
-					return `${attributeName}=${quote}${escapeHtmlAttribute(nextValue)}${quote}`
-				},
-			)
-		})
 	}
 
 	function buildShellStyles(theme: ThemeName | null) {
