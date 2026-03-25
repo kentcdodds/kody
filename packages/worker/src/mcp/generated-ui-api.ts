@@ -116,9 +116,7 @@ export async function handleGeneratedUiApiRequest(
 				{
 					ok: false,
 					error:
-						error instanceof Error
-							? error.message
-							: 'Secure input failed.',
+						error instanceof Error ? error.message : 'Secure input failed.',
 				},
 				400,
 			)

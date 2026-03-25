@@ -44,6 +44,37 @@ async function runNextTask(tasks: Array<QueueTask>, aborted: boolean) {
 	await task!(controller.signal)
 }
 
+function collectTextContent(value: unknown): Array<string> {
+	if (typeof value === 'string') {
+		return [value]
+	}
+	if (
+		typeof value === 'number' ||
+		typeof value === 'boolean' ||
+		value == null
+	) {
+		return []
+	}
+	if (Array.isArray(value)) {
+		return value.flatMap((entry) => collectTextContent(entry))
+	}
+	if (typeof value === 'object') {
+		const props =
+			'props' in value &&
+			value.props &&
+			typeof value.props === 'object' &&
+			'children' in value.props
+				? value.props.children
+				: undefined
+		return collectTextContent(props)
+	}
+	return []
+}
+
+function renderToText(value: unknown) {
+	return collectTextContent(value).join(' ')
+}
+
 test('aborted refresh does not erase a ready authenticated session', async () => {
 	navigationListeners.length = 0
 	queuedSessionResponses.length = 0
@@ -69,7 +100,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	await runNextTask(queuedTasks, false)
 	await runNextTask(queuedTasks, false)
 
-	const authenticatedUi = String(render())
+	const authenticatedUi = renderToText(render())
 	expect(authenticatedUi).toContain('signed-in@example.com')
 	expect(authenticatedUi).toContain('Log out')
 
@@ -77,9 +108,9 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	navigationListeners[0]!()
 	await runNextTask(queuedTasks, true)
 
-	const uiAfterAbort = String(render())
+	const uiAfterAbort = renderToText(render())
 	expect(uiAfterAbort).toContain('signed-in@example.com')
 	expect(uiAfterAbort).toContain('Log out')
-	expect(uiAfterAbort).not.toContain('>Login<')
-	expect(uiAfterAbort).not.toContain('>Signup<')
+	expect(uiAfterAbort).not.toContain('Login')
+	expect(uiAfterAbort).not.toContain('Signup')
 })

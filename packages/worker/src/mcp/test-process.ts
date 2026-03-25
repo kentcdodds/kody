@@ -22,6 +22,9 @@ export function spawnProcess(input: {
 		env: input.env,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	})
+	if (!proc.stdout || !proc.stderr) {
+		throw new Error('spawnProcess requires piped stdout and stderr streams.')
+	}
 
 	const exited = new Promise<number | null>((resolve, reject) => {
 		proc.once('error', reject)

@@ -376,8 +376,7 @@ export async function performProviderHttpRequestWithSpec(input: {
 		}
 	}
 	const includeJsonContentType =
-		shouldSendJsonBody(input.request.method) &&
-		input.request.body !== undefined
+		shouldSendJsonBody(input.request.method) && input.request.body !== undefined
 
 	const response = await fetch(url, {
 		method: input.request.method,
