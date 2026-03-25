@@ -8,7 +8,7 @@
   <p>
     <a href="https://github.com/epicweb-dev/epicflare/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/epicweb-dev/epicflare/deploy.yml?branch=main&style=flat-square&logo=github&label=CI" alt="Build Status" /></a>
     <img src="https://img.shields.io/badge/TypeScript-5.9-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/Bun-run-f9f1e1?style=flat-square&logo=bun&logoColor=white" alt="Bun" />
+    <img src="https://img.shields.io/badge/Node-24-5FA04E?style=flat-square&logo=node.js&logoColor=white" alt="Node 24" />
     <img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers" />
     <img src="https://img.shields.io/badge/Remix-3.0_alpha-000000?style=flat-square&logo=remix&logoColor=white" alt="Remix" />
   </p>
@@ -35,7 +35,7 @@ The repo is organized as an Nx monorepo, with shared modules in
 ## Quick Start
 
 ```bash
-bunx create-epicflare
+npx create-epicflare
 ```
 
 This will clone the template, install dependencies, run the guided setup, and
@@ -53,8 +53,8 @@ If you are trying to understand what this repository is for, start with
 | --------------- | --------------------------------------------------------------------- |
 | Runtime         | [Cloudflare Workers](https://workers.cloudflare.com/)                 |
 | UI Framework    | [Remix 3](https://remix.run/) (alpha)                                 |
-| Package Manager | [Bun](https://bun.sh/)                                                |
-| Workspace       | [Nx](https://nx.dev/) + Bun workspaces                                |
+| Package Manager | [npm](https://www.npmjs.com/)                                         |
+| Workspace       | [Nx](https://nx.dev/) + npm workspaces                                |
 | Database        | [Cloudflare D1](https://developers.cloudflare.com/d1/)                |
 | Session/OAuth   | [Cloudflare KV](https://developers.cloudflare.com/kv/)                |
 | MCP State       | [Durable Objects](https://developers.cloudflare.com/durable-objects/) |

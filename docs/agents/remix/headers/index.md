@@ -14,7 +14,7 @@ complexities of parsing specific header formats entirely up to you.
 ## Installation
 
 ```sh
-bun add @remix-run/headers
+npm install @remix-run/headers
 ```
 
 ## Header utilities

@@ -17,56 +17,64 @@ magic.
 - Write tests so they could run offline if necessary: avoid relying on the
   public internet and third-party services; prefer local fakes/fixtures.
 - Prefer fast unit tests for server logic; keep e2e tests focused on journeys.
-- Run server/unit tests with
-  `bun test ./server ./packages/mock-servers ./packages/worker/src/*.test.ts ./packages/worker/src/mcp/github ./packages/worker/src/mcp/cursor ./packages/worker/src/mcp/capabilities ./packages/worker/src/mcp/skills ./packages/worker/src/mcp/context.test.ts ./packages/worker/src/mcp/observability.test.ts`
-  (same paths as `bun run test`) to avoid Playwright spec discovery and
-  accidental matches like `packages/worker/src/mcp/mcp-server-e2e.test.ts`.
+- Run server/unit tests with `npm run test` (plus targeted Vitest paths when
+  needed) to avoid Playwright spec discovery and accidental matches like
+  `packages/worker/src/mcp/mcp-server-e2e.test.ts`.
 
 ## Examples
 
 ### `Symbol.dispose` with `using`
 
 ```ts
-import { test, expect } from 'bun:test'
+import { writeFile, readFile, rm } from 'node:fs/promises'
+import { test, expect } from 'vitest'
 
-const createTempFile = () => {
+const createTempFile = async () => {
 	const path = `/tmp/test-${crypto.randomUUID()}.txt`
-	Bun.write(path, 'hello')
+	await writeFile(path, 'hello')
 
 	return {
 		path,
-		[Symbol.dispose]: () => {
-			try {
-				Bun.file(path).delete()
-			} catch {
+		[Symbol.asyncDispose]: async () => {
+			await rm(path, { force: true }).catch(() => {
 				// Cleanup should never fail the test.
-			}
+			})
 		},
 	}
 }
 
-test('reads a temp file', () => {
-	using tempFile = createTempFile()
-	const contents = Bun.file(tempFile.path).text()
-	return contents.then((text) => expect(text).toBe('hello'))
+test('reads a temp file', async () => {
+	await using tempFile = await createTempFile()
+	const contents = await readFile(tempFile.path, 'utf8')
+	expect(contents).toBe('hello')
 })
 ```
 
 ### `Symbol.asyncDispose` with `await using`
 
 ```ts
-import { test, expect } from 'bun:test'
+import { createServer } from 'node:http'
+import { test, expect } from 'vitest'
 
 const createDisposableServer = async () => {
-	const server = Bun.serve({
-		port: 0,
-		fetch: () => new Response('ok'),
+	const server = createServer((_request, response) => {
+		response.end('ok')
 	})
+	await new Promise<void>((resolve) => server.listen(0, resolve))
+	const address = server.address()
+	if (!address || typeof address === 'string') {
+		throw new Error('Failed to resolve test server port')
+	}
 
 	return {
-		url: `http://localhost:${server.port}`,
+		url: `http://localhost:${address.port}`,
 		[Symbol.asyncDispose]: async () => {
-			await server.stop()
+			await new Promise<void>((resolve, reject) => {
+				server.close((error) => {
+					if (error) reject(error)
+					else resolve()
+				})
+			})
 		},
 	}
 }

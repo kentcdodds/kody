@@ -75,7 +75,7 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts`,
   **`KODY_GITHUB_TOKEN`** and syncs it to this Worker secret (see
   `docs/setup-manifest.md`).
 - `GITHUB_API_BASE_URL` — GitHub API base URL; defaults to
-  `https://api.github.com` when unset. Local `bun run dev` sets this to the
+  `https://api.github.com` when unset. Local `npm run dev` sets this to the
   GitHub mock Worker unless `SKIP_GITHUB_MOCK=1`. GraphQL requests target
   `${GITHUB_API_BASE_URL}/graphql`.
 
@@ -88,7 +88,7 @@ Worker bindings (see `packages/worker/wrangler.jsonc`):
   indexes with **`--dimensions=384 --metric=cosine`** to match
   `@cf/baai/bge-small-en-v1.5` (see
   `packages/worker/src/mcp/capabilities/capability-search.ts`). The **`test`**
-  Wrangler environment omits this binding so `bun test` and e2e use the
+  Wrangler environment omits this binding so `npm run test` and e2e use the
   deterministic offline fusion path (`offline: true` in search results).
 
 Optional Worker secret:
@@ -110,7 +110,7 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   The Cursor Cloud API uses **HTTP Basic** auth (key as username, empty
   password). When unset, `cursor_cloud_rest` fails fast with a setup hint.
 - `CURSOR_API_BASE_URL` — API base URL; defaults to `https://api.cursor.com`
-  when unset. Local `bun run dev` sets this to the Cursor mock Worker unless
+  when unset. Local `npm run dev` sets this to the Cursor mock Worker unless
   `SKIP_CURSOR_MOCK=1`. See `docs/agents/mock-api-servers.md`.
 
 ## Cloudflare API (`cloudflare_rest` capability)
@@ -119,12 +119,12 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/mcp/cloudflare/cloudflare-rest-client.ts`):
 
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the `cloudflare_rest`
-  capability with `Authorization: Bearer ...`. Local `bun run dev` sets this to
+  capability with `Authorization: Bearer ...`. Local `npm run dev` sets this to
   the Cloudflare mock token unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`;
   when unset and no mock is attached, `cloudflare_rest` fails fast with a setup
   hint.
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
-  `https://api.cloudflare.com` when unset. Local `bun run dev` sets this to the
+  `https://api.cloudflare.com` when unset. Local `npm run dev` sets this to the
   Cloudflare mock Worker unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.
 
 ## Home connector bridge
@@ -132,14 +132,14 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/home/session.ts`):
 
-- `packages/home-connector` still participates in the Bun-managed workspace, but
-  its package scripts now execute on Node via `tsx`. Local and container runs
-  therefore need a recent Node release with `node:sqlite` support.
+- `packages/home-connector` participates in the npm workspace and executes
+  directly on Node 24. Local and container runs therefore need a recent Node
+  release with `node:sqlite` support.
 - `HOME_CONNECTOR_SHARED_SECRET` — shared secret used by the locally running
   `packages/home-connector` service when it opens the outbound WebSocket session
   to the worker. When unset, the worker rejects home connector registration and
   the internal home MCP bridge cannot route `home` capabilities.
-- `HOME_CONNECTOR_*` — when you start the full local stack with `bun run dev`,
+- `HOME_CONNECTOR_*` — when you start the full local stack with `npm run dev`,
   any `HOME_CONNECTOR_`-prefixed variable is forwarded to the child connector
   process with the prefix removed. For example, `HOME_CONNECTOR_MOCKS=false`
   sets `MOCKS=false` for `packages/home-connector`, and
@@ -151,9 +151,9 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
   value such as `http://roku.mock.local/discovery`.
 - `SENTRY_DSN` — optional connector env var. When set for
-  `packages/home-connector`, the service initializes `@sentry/bun` and reports
+  `packages/home-connector`, the service initializes `@sentry/node` and reports
   startup errors, websocket failures, and handled operational exceptions. Use
-  `HOME_CONNECTOR_SENTRY_DSN` when launching through `bun run dev`.
+  `HOME_CONNECTOR_SENTRY_DSN` when launching through `npm run dev`.
 - `SENTRY_ENVIRONMENT` — optional connector env var. The published Docker image
   defaults this to `production`; otherwise the home connector falls back to
   `NODE_ENV` (or `development`) when unset.

@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { isExecutedDirectly } from './node-runtime.ts'
 
 type CliOptions = {
 	email: string
@@ -78,7 +79,7 @@ export function parseArgs(argv: Array<string>): CliOptions {
 					fail(
 						[
 							`Unknown flag: ${arg}`,
-							'Usage: bun tools/seed-test-data.ts [--local|--remote] [--env <name>] [--config <path>] [--persist-to <path>] [--email <email>] [--username <username>] [--password <password>]',
+							'Usage: node tools/seed-test-data.ts [--local|--remote] [--env <name>] [--config <path>] [--persist-to <path>] [--email <email>] [--username <username>] [--password <password>]',
 						].join('\n'),
 					)
 				}
@@ -201,6 +202,6 @@ async function main() {
 	)
 }
 
-if (import.meta.main) {
+if (isExecutedDirectly(import.meta.url)) {
 	await main()
 }

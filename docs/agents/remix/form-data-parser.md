@@ -52,7 +52,7 @@ request body stream, allowing you to safely store files and use either a) the
 Install from [npm](https://www.npmjs.com/):
 
 ```sh
-bun add @remix-run/form-data-parser
+npm install @remix-run/form-data-parser
 ```
 
 ## Usage

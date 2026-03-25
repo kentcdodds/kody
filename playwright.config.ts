@@ -8,9 +8,9 @@ const baseURL =
 const playwrightPersistPath =
 	process.env.PLAYWRIGHT_PERSIST_PATH ?? '.wrangler/state/e2e'
 const webServerCommand =
-	`bun run build:client && ` +
-	`bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local --persist-to "${playwrightPersistPath}" && ` +
-	`bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to "${playwrightPersistPath}"`
+	`npm run build:client && ` +
+	`node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local --persist-to "${playwrightPersistPath}" && ` +
+	`node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to "${playwrightPersistPath}"`
 
 export default defineConfig({
 	testDir: './e2e',

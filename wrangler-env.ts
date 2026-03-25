@@ -9,6 +9,7 @@ import {
 	spawnInOwnProcessGroup,
 	stopChildProcessTree,
 } from './tools/dev-process-utils.ts'
+import { resolveLocalBinary } from './tools/node-runtime.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -112,8 +113,7 @@ const localWranglerPath = path.join(
 )
 const wranglerCommand =
 	(existsSync(localWranglerPath) && localWranglerPath) ||
-	Bun.which('wrangler') ||
-	'wrangler'
+	resolveLocalBinary('wrangler')
 
 const proc = spawnInOwnProcessGroup(wranglerCommand, commandArgs, {
 	stdio: ['inherit', 'inherit', 'inherit'],

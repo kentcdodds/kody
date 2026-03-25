@@ -14,7 +14,7 @@ function createMissingEnvMessage(keys: ReadonlyArray<string>) {
 	const missingVariables = formatEnvVarList(keys)
 	const verb = keys.length === 1 ? 'is' : 'are'
 	const pronoun = keys.length === 1 ? 'it' : 'them'
-	return `${missingVariables} ${verb} required when AI_MODE is "remote" in local dev. Add ${pronoun} to packages/worker/.env before starting \`bun run dev\`.`
+	return `${missingVariables} ${verb} required when AI_MODE is "remote" in local dev. Add ${pronoun} to packages/worker/.env before starting \`npm run dev\`.`
 }
 
 export function getRemoteAiLocalDevCredentialsError(

@@ -19,7 +19,7 @@ with a flexible API for different session storage strategies.
 ## Installation
 
 ```sh
-bun add @remix-run/session
+npm install @remix-run/session
 ```
 
 ## Usage

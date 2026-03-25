@@ -1,9 +1,12 @@
+import { existsSync } from 'node:fs'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import path from 'node:path'
 import { type Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 import { setTimeout as delay } from 'node:timers/promises'
 
-export const bunBin = process.env.BUN_BINARY?.trim() || 'bun'
+export const nodeBin = process.execPath
+export const wranglerBin = resolveWranglerBinary()
 
 export type SpawnedProcess = ChildProcessByStdio<null, Readable, Readable> & {
 	exited: Promise<number | null>
@@ -69,4 +72,19 @@ export async function stopProcess(proc: SpawnedProcess) {
 		proc.kill('SIGKILL')
 		await proc.exited.catch(() => null)
 	}
+}
+
+function resolveWranglerBinary() {
+	const configuredBinary = process.env.WRANGLER_BINARY?.trim()
+	if (configuredBinary) {
+		return configuredBinary
+	}
+
+	const localBinary = path.join(
+		process.cwd(),
+		'node_modules',
+		'.bin',
+		process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler',
+	)
+	return existsSync(localBinary) ? localBinary : 'wrangler'
 }

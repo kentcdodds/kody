@@ -20,7 +20,7 @@ Enhanced events and custom interactions for any
 ## Installation
 
 ```sh
-bun add @remix-run/interaction
+npm install @remix-run/interaction
 ```
 
 ## Quick start

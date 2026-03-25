@@ -8,6 +8,7 @@ import {
 	spawnInOwnProcessGroup,
 	stopChildProcessTree,
 } from './dev-process-utils.ts'
+import { resolveLocalBinary } from './node-runtime.ts'
 
 const defaultPlaywrightPort = 3847
 const args = process.argv.slice(2)
@@ -51,7 +52,7 @@ function resolvePlaywrightCommand() {
 		return localBinary
 	}
 
-	return Bun.which('playwright') ?? 'playwright'
+	return resolveLocalBinary('playwright')
 }
 
 async function run() {

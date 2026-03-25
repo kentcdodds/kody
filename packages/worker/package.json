@@ -6,7 +6,7 @@
     "./*": "./src/*"
   },
   "dependencies": {
-    "@kody-internal/shared": "workspace:*"
+    "@kody-internal/shared": "file:../shared"
   },
   "imports": {
     "#app/*": "./src/app/*",

@@ -2,10 +2,10 @@ import { expect, test } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
-	bunBin,
 	captureOutput,
 	spawnProcess,
 	stopProcess,
+	wranglerBin,
 } from '#mcp/test-process.ts'
 import { cloudflareRestCapability } from './cloudflare-rest.ts'
 import { cursorCloudRestCapability } from './cursor-cloud-rest.ts'
@@ -82,9 +82,7 @@ async function startGithubMock(token: string) {
 	const inspectorPort = await getPort({ host: '127.0.0.1' })
 	const proc = spawnProcess({
 		cmd: [
-			bunBin,
-			'x',
-			'wrangler',
+			wranglerBin,
 			'dev',
 			'--local',
 			'--config',
@@ -121,9 +119,7 @@ async function startCloudflareMock(token: string) {
 	const inspectorPort = await getPort({ host: '127.0.0.1' })
 	const proc = spawnProcess({
 		cmd: [
-			bunBin,
-			'x',
-			'wrangler',
+			wranglerBin,
 			'dev',
 			'--local',
 			'--config',
@@ -160,9 +156,7 @@ async function startCursorMock(token: string) {
 	const inspectorPort = await getPort({ host: '127.0.0.1' })
 	const proc = spawnProcess({
 		cmd: [
-			bunBin,
-			'x',
-			'wrangler',
+			wranglerBin,
 			'dev',
 			'--local',
 			'--config',

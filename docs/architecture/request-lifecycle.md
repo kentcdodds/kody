@@ -121,12 +121,12 @@ reported at **warning** severity, while capability handler bugs use **error**.
 
 `packages/worker/wrangler.jsonc` sets
 [`upload_source_maps`](https://developers.cloudflare.com/workers/wrangler/configuration/#source-maps),
-and `bun run deploy` passes
+and `npm run deploy` passes
 `--outdir .wrangler/sentry-bundle --upload-source-maps` so the bundle + maps are
 generated consistently. To symbolicate stack traces in **Sentry** (not only in
 Cloudflare), configure
 [Cloudflare source maps in Sentry](https://docs.sentry.io/platforms/javascript/guides/cloudflare/sourcemaps/):
 add GitHub **repository variables** `SENTRY_ORG` and `SENTRY_PROJECT`, a
 `SENTRY_AUTH_TOKEN` **secret** with release upload scopes, then CI runs
-`bun run sentry:upload-sourcemaps` after deploy using the same **release** as
+`npm run sentry:upload-sourcemaps` after deploy using the same **release** as
 `APP_COMMIT_SHA`.

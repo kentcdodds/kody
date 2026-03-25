@@ -47,7 +47,7 @@ accidentally linting normal production code.
 Create a temporary file containing the sentinel identifier and run:
 
 ```sh
-bun run lint -- ./tmp-oxlint-plugin-rule-test.js
+npm run lint -- ./tmp-oxlint-plugin-rule-test.js
 ```
 
 You should see a lint error from `kody-custom/no-example-identifier`. Delete the

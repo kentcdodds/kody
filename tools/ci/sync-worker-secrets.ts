@@ -1,7 +1,9 @@
+import { spawn } from 'node:child_process'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isExecutedDirectly, resolveLocalBinary } from '../node-runtime.ts'
 
 export type CliOptions = {
 	env?: string
@@ -233,8 +235,8 @@ function toDotenv(secrets: ReadonlyMap<string, string>) {
 }
 
 async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
-	const bunBin = process.execPath
-	const args = [bunBin, 'x', 'wrangler', 'secret', 'bulk']
+	const wranglerBin = resolveLocalBinary('wrangler')
+	const args = [wranglerBin, 'secret', 'bulk']
 	const spawnEnv = buildSpawnEnv(options)
 	const secretsFilePath = join(
 		tmpdir(),
@@ -256,14 +258,21 @@ async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 	}
 
 	try {
-		const proc = Bun.spawn({
-			cmd: args,
-			stdio: ['ignore', 'inherit', 'inherit'],
+		const [command, ...commandArgs] = args
+		if (!command) {
+			fail('Could not resolve wrangler command for secret sync.')
+		}
+
+		const proc = spawn(command, commandArgs, {
+			stdio: 'inherit',
 			env: spawnEnv,
 		})
-		const exitCode = await proc.exited
+		const exitCode = await new Promise<number | null>((resolve, reject) => {
+			proc.once('error', reject)
+			proc.once('exit', (code: number | null) => resolve(code))
+		})
 		if (exitCode !== 0) {
-			process.exit(exitCode)
+			process.exit(exitCode ?? 1)
 		}
 	} finally {
 		await unlink(secretsFilePath).catch(() => {})
@@ -285,6 +294,6 @@ async function main() {
 	)
 }
 
-if (import.meta.main) {
+if (isExecutedDirectly(import.meta.url)) {
 	await main()
 }

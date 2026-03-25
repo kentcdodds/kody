@@ -2,7 +2,7 @@
 # Export a remote Cloudflare D1 database to a local SQL dump and SQLite file.
 #
 # Prerequisites:
-# - bun / wrangler on PATH
+# - npm dependencies installed so local Wrangler is available
 # - sqlite3 (macOS: preinstalled; Linux: apt install sqlite3)
 # - CLOUDFLARE_API_TOKEN (and usually CLOUDFLARE_ACCOUNT_ID) in packages/worker/.env
 #
@@ -44,7 +44,7 @@ SQL_FILE="$OUT_DIR/${NAME}.sql"
 DB_FILE="$OUT_DIR/${NAME}.sqlite"
 
 echo "Exporting remote D1 \"$NAME\" to $SQL_FILE ..."
-bunx wrangler d1 export "$NAME" --remote --output "$SQL_FILE"
+npx wrangler d1 export "$NAME" --remote --output "$SQL_FILE"
 
 echo "Building SQLite file $DB_FILE ..."
 rm -f "$DB_FILE"

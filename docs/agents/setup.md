@@ -4,28 +4,25 @@ Quick notes for getting a local kody environment running.
 
 ## Prerequisites
 
-- Bun (used for installs and scripts).
-- A recent Node runtime. The home connector now runs on Node and uses
-  `node:sqlite`, and Bun still delegates some tooling to Node elsewhere in the
-  repo.
+- Node 24 and npm (used for installs and scripts).
 
 ## Install
 
-- `bun install`
+- `npm install`
 - The repo root hosts the Nx workspace metadata; runtime packages live under
   `packages/`.
 
 ## Local development
 
 - **Cloudflare D1 and KV**: Local development does **not** require creating or
-  linking remote D1 databases or KV namespaces. `bun run dev` runs the worker
+  linking remote D1 databases or KV namespaces. `npm run dev` runs the worker
   with local Wrangler persistence for D1/KV emulation.
 - **Production and preview deploys**: GitHub Actions do not rely on IDs baked
-  into the repo. They run `bun tools/ci/production-resources.ts ensure`
-  (production) or `bun tools/ci/preview-resources.ts ensure` (per-preview worker
-  name), which create or resolve the D1 database and OAuth KV namespace, then
-  write generated Wrangler configs with real `database_id` and KV `id` values:
-  `packages/worker/wrangler-production.generated.json` and
+  into the repo. They run `node tools/ci/production-resources.ts ensure`
+  (production) or `node tools/ci/preview-resources.ts ensure` (per-preview
+  worker name), which create or resolve the D1 database and OAuth KV namespace,
+  then write generated Wrangler configs with real `database_id` and KV `id`
+  values: `packages/worker/wrangler-production.generated.json` and
   `packages/worker/wrangler-preview.generated.json` (gitignored). KV titles
   follow the worker name: production defaults to `<worker-name>-oauth`; preview
   uses `<preview-worker-name>-oauth-kv` (see `tools/ci/preview-resources.ts`).
@@ -35,7 +32,7 @@ Quick notes for getting a local kody environment running.
   `tools/export-d1-remote-to-sqlite.sh`.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed.
-- `bun run dev` (starts mock API servers automatically, the main worker, and the
+- `npm run dev` (starts mock API servers automatically, the main worker, and the
   local home connector; it sets `RESEND_API_BASE_URL`, `AI_MODE=mock`,
   `AI_MOCK_BASE_URL`, and (unless `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` +
   `GITHUB_TOKEN` to the local GitHub mock Worker for the `github_rest` +
@@ -47,9 +44,7 @@ Quick notes for getting a local kody environment running.
   it to both the worker and the connector so the outbound registration handshake
   succeeds in local development.)
 - The home automation connector now lives in `packages/home-connector`.
-  - `bun run dev:home-connector` starts the local connector app. The workspace
-    still uses Bun for script entrypoints, but the connector package itself now
-    runs on Node via `tsx`.
+  - `npm run dev:home-connector` starts the local connector app on Node 24.
   - The connector uses the `kentcdodds.com` mock bootstrap shape: only
     `packages/home-connector/index.ts` imports `packages/home-connector/mocks/`
     when `MOCKS=true`.
@@ -58,7 +53,7 @@ Quick notes for getting a local kody environment running.
     `ROKU_DISCOVERY_URL=http://roku.mock.local/discovery` and
     `SAMSUNG_TV_DISCOVERY_URL=http://samsung-tv.mock.local/discovery` unless you
     override them.
-  - `bun run dev` forwards `HOME_CONNECTOR_*` environment variables to the
+  - `npm run dev` forwards `HOME_CONNECTOR_*` environment variables to the
     underlying connector process with the prefix removed, so
     `HOME_CONNECTOR_MOCKS=false` becomes `MOCKS=false` and
     `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` becomes `ROKU_DISCOVERY_URL=...`.
@@ -92,45 +87,46 @@ Quick notes for getting a local kody environment running.
     firmware-dependent.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
-  required for `bun test` or unauthenticated local runs). Production uses
+  required for `npm run test` or unauthenticated local runs). Production uses
   Vectorize plus Workers AI; see `docs/environment-variables.md`.
 - Add new mock API servers by following `docs/agents/mock-api-servers.md`.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
-  starting `bun run dev`.
+  starting `npm run dev`.
 - When `AI_MODE=remote`, set `AI_GATEWAY_ID`, `CLOUDFLARE_ACCOUNT_ID`, and
   `CLOUDFLARE_API_TOKEN` in `packages/worker/.env`; remote AI mode now requires
   requests to flow through a configured Cloudflare AI Gateway using your
-  Cloudflare account credentials. If any are missing, `bun run dev` fails fast
+  Cloudflare account credentials. If any are missing, `npm run dev` fails fast
   with an explanatory startup error.
 - Local remote inference does not require `wrangler dev --remote`; the normal
   dev server keeps local Durable Objects/D1 while routing Workers AI calls
   through Cloudflare using the configured account credentials.
 - If you only need the client bundle or worker, use:
-  - `bun run dev:client`
-  - `bun run dev:worker`
+  - `npm run dev:client`
+  - `npm run dev:worker`
 - Set `CLOUDFLARE_ENV` to switch Wrangler environments (defaults to
   `production`). Playwright sets this to `test`.
 
 ## Checks
 
-- `bun run validate` runs format check, lint fix, build, typecheck, Playwright
+- `npm run validate` runs format check, lint fix, build, typecheck, Playwright
   tests, and MCP E2E tests.
-- `bun run format` applies formatting updates.
-- `bun run test:e2e:install` to install Playwright browsers.
-- `bun run test:e2e` to run Playwright specs.
-- `bun run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
+- `npm run format` applies formatting updates.
+- `npm run test:e2e:install` to install Playwright browsers.
+- `npm run test:e2e` to run Playwright specs.
+- `npm run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
   `packages/worker/.env` from `.env.example` when needed so local and CI runs
   have the minimum required test env.
-- `bun test ./packages/home-connector` runs the connector package tests
-  directly.
+- `npm --prefix packages/home-connector run test` runs the connector package
+  tests directly.
 
 ## Home Connector Docker publishing
 
 Pushes to `main` that change `packages/home-connector/**`, `package.json`,
-`bun.lock`, or `.github/workflows/home-connector-publish.yml` run the dedicated
-Home Connector publish workflow.
+`package-lock.json`, or `.github/workflows/home-connector-publish.yml` run the
+dedicated Home Connector publish workflow.
 
-- The workflow reruns `bun test ./packages/home-connector` before publishing.
+- The workflow reruns `npm --prefix packages/home-connector run test` before
+  publishing.
 - Docker Hub auth comes from GitHub Actions secrets `DOCKERHUB_USERNAME` and
   `DOCKERHUB_TOKEN`.
 - The Docker Hub repository name comes from the GitHub Actions variable
@@ -153,19 +149,19 @@ Home Connector publish workflow.
 Use this script to ensure a known test login exists in any deployed environment:
 
 - Local D1 (default):
-  - `bun run migrate:local`
-  - `bun tools/seed-test-data.ts --local`
+  - `npm run migrate:local`
+  - `node tools/seed-test-data.ts --local`
 - Local D1 with custom persisted state:
-  - `bun tools/seed-test-data.ts --local --persist-to .wrangler/state/e2e`
+  - `node tools/seed-test-data.ts --local --persist-to .wrangler/state/e2e`
 - Remote D1:
-  - `bun tools/seed-test-data.ts --remote --config <wrangler-config-path>`
+  - `node tools/seed-test-data.ts --remote --config <wrangler-config-path>`
   - Add `--env <name>` when the config uses environment-scoped bindings and the
     environment is not already set via `CLOUDFLARE_ENV`.
 - Default credentials:
   - email: `me@kentcdodds.com`
   - password: `iliketwix`
 - Override credentials when needed:
-  - `bun tools/seed-test-data.ts --email <email> --password <password>`
+  - `node tools/seed-test-data.ts --email <email> --password <password>`
 - When changing DB schema/model definitions or migrations, review
   `tools/seed-test-data.ts` and update it so seeded data still matches the new
   model and remains useful for local and preview verification.
@@ -175,22 +171,22 @@ Use this script to ensure a known test login exists in any deployed environment:
 For a full local reset before seeding:
 
 1. Drop app tables:
-   - `bun ./wrangler-env.ts d1 execute APP_DB --local --command "PRAGMA foreign_keys=OFF; DROP TABLE IF EXISTS password_resets; DROP TABLE IF EXISTS users; PRAGMA foreign_keys=ON;"`
+   - `node ./wrangler-env.ts d1 execute APP_DB --local --command "PRAGMA foreign_keys=OFF; DROP TABLE IF EXISTS password_resets; DROP TABLE IF EXISTS users; PRAGMA foreign_keys=ON;"`
 2. Re-apply migrations:
-   - `bun run migrate:local`
+   - `npm run migrate:local`
 3. Seed test account:
-   - `bun tools/seed-test-data.ts`
+   - `node tools/seed-test-data.ts`
 
 For preview environments, we do a full resource reset:
 
 1. Delete preview resources:
-   - `bun tools/ci/preview-resources.ts cleanup --worker-name <preview-worker-name>`
+   - `node tools/ci/preview-resources.ts cleanup --worker-name <preview-worker-name>`
 2. Recreate preview resources and config:
-   - `bun tools/ci/preview-resources.ts ensure --worker-name <preview-worker-name> --out-config packages/worker/wrangler-preview.generated.json`
+   - `node tools/ci/preview-resources.ts ensure --worker-name <preview-worker-name> --out-config packages/worker/wrangler-preview.generated.json`
 3. Re-apply remote migrations:
-   - `CLOUDFLARE_ENV=preview bun ./wrangler-env.ts d1 migrations apply APP_DB --remote --config packages/worker/wrangler-preview.generated.json`
+   - `CLOUDFLARE_ENV=preview node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config packages/worker/wrangler-preview.generated.json`
 4. Seed test account:
-   - `CLOUDFLARE_ENV=preview bun tools/seed-test-data.ts --remote --config packages/worker/wrangler-preview.generated.json`
+   - `CLOUDFLARE_ENV=preview node tools/seed-test-data.ts --remote --config packages/worker/wrangler-preview.generated.json`
 
 ## PR preview deployments
 
@@ -221,8 +217,8 @@ against `<deploy-url>/health` and fail the job if it does not return
 `{ ok: true, commitSha }` with `commitSha` matching the commit SHA deployed by
 that workflow.
 
-Preview deploys also run `bun tools/seed-test-data.ts` after deploy to create or
-verify the shared test account credentials listed above.
+Preview deploys also run `node tools/seed-test-data.ts` after deploy to create
+or verify the shared test account credentials listed above.
 
 The production deploy workflow can also be started manually from GitHub Actions
 via **Run workflow** on `main`. The manual path still verifies that the selected
@@ -230,9 +226,9 @@ commit is the current `origin/main` HEAD before it deploys.
 
 If you ever need to do the same operations manually, use:
 
-- `bun tools/ci/preview-resources.ts ensure --worker-name <name> --out-config <path>`
-- `bun tools/ci/preview-resources.ts cleanup --worker-name <name>`
-- `bun tools/ci/production-resources.ts ensure --out-config <path>`
+- `node tools/ci/preview-resources.ts ensure --worker-name <name> --out-config <path>`
+- `node tools/ci/preview-resources.ts cleanup --worker-name <name>`
+- `node tools/ci/production-resources.ts ensure --out-config <path>`
 
 ## Remix package docs
 

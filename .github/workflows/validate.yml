@@ -35,16 +35,17 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+          cache: npm
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: 🧹 Lint
-        run: bun run lint
+        run: npm run lint
 
   typecheck:
     runs-on: ubuntu-latest
@@ -57,20 +58,21 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+          cache: npm
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: 🧪 Typecheck
-        run: bun run typecheck
+        run: npm run typecheck
 
   test:
     runs-on: ubuntu-latest
-    name: ✅ Bun Tests
+    name: ✅ Unit Tests
     timeout-minutes: 4
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
@@ -83,16 +85,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version: latest
+          cache: npm
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
-      - name: ✅ Run Bun Tests
+      - name: ✅ Run Unit Tests
         run: npm run test
 
   e2e:
@@ -106,30 +104,31 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+          cache: npm
 
       - name: 🎭 Cache Playwright Browsers
         uses: actions/cache@v5.0.3
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: 🎭 Install Playwright Browsers
-        run: bun run test:e2e:install
+        run: npm run test:e2e:install
 
       - name: 🗄️ Apply D1 Migrations
-        run: bun run migrate:local
+        run: npm run migrate:local
 
       - name: 🧪 Playwright Tests
-        run: bun run test:e2e
+        run: npm run test:e2e
 
   mcp-e2e:
     runs-on: ubuntu-latest
@@ -142,16 +141,17 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+          cache: npm
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: 🗄️ Apply D1 Migrations
-        run: bun run migrate:local
+        run: npm run migrate:local
 
       - name: 🧩 MCP E2E Tests
-        run: bun run test:mcp
+        run: npm run test:mcp

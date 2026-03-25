@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { resolveLocalBinary } from '../node-runtime.ts'
 
 type WranglerEnvName = 'preview' | 'production'
 
@@ -29,8 +30,8 @@ export function runWrangler(
 	args: Array<string>,
 	options?: { input?: string; quiet?: boolean },
 ) {
-	const bunBin = process.execPath
-	const result = spawnSync(bunBin, ['x', 'wrangler', ...args], {
+	const wranglerBin = resolveLocalBinary('wrangler')
+	const result = spawnSync(wranglerBin, args, {
 		encoding: 'utf8',
 		stdio: 'pipe',
 		input: options?.input,
@@ -43,13 +44,13 @@ export function runWrangler(
 
 	if (!options?.quiet) {
 		const rendered = args.map(renderArg).join(' ')
-		console.error(`wrangler: bun x wrangler ${rendered}`)
+		console.error(`wrangler: ${wranglerBin} ${rendered}`)
 	}
 
 	if (status !== 0) {
 		if (options?.quiet) {
 			const rendered = args.map(renderArg).join(' ')
-			console.error(`wrangler (failed): bun x wrangler ${rendered}`)
+			console.error(`wrangler (failed): ${wranglerBin} ${rendered}`)
 		}
 		const output = `${stdout}${stderr}`.trim()
 		if (output) {

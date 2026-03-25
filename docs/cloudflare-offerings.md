@@ -21,7 +21,7 @@ All examples assume you are using the template's
 
 For local, interactive development:
 
-- Log in once with `bunx wrangler login`
+- Log in once with `npx wrangler login`
 - Wrangler uses browser-based OAuth, and commands run as your user
 
 For CI / GitHub Actions / automation:
@@ -50,7 +50,7 @@ Add these permissions when you add the corresponding offering:
   Workers Scripts)
 - AI Gateway (only if you want to manage gateways via API): `AI Gateway:Edit`
 
-If you use `bunx wrangler secret put ...` in CI, your token must also be able to
+If you use `npx wrangler secret put ...` in CI, your token must also be able to
 edit Worker secrets (covered by `Workers Scripts:Edit`).
 
 ## R2 (object storage)
@@ -65,14 +65,14 @@ Use R2 for file uploads, user-generated media, and other blob/object storage.
 
 Create separate buckets for production vs preview/testing:
 
-- `bunx wrangler r2 bucket create <app-name>-uploads`
-- `bunx wrangler r2 bucket create <app-name>-uploads-preview`
-- `bunx wrangler r2 bucket list`
+- `npx wrangler r2 bucket create <app-name>-uploads`
+- `npx wrangler r2 bucket create <app-name>-uploads-preview`
+- `npx wrangler r2 bucket list`
 
 Wrangler can also update `packages/worker/wrangler.jsonc` for you:
 
-- `bunx wrangler r2 bucket create <app-name>-uploads --binding UPLOADS_BUCKET --env production --update-config`
-- `bunx wrangler r2 bucket create <app-name>-uploads-preview --binding UPLOADS_BUCKET --env preview --update-config`
+- `npx wrangler r2 bucket create <app-name>-uploads --binding UPLOADS_BUCKET --env production --update-config`
+- `npx wrangler r2 bucket create <app-name>-uploads-preview --binding UPLOADS_BUCKET --env preview --update-config`
 
 ### Bind the bucket in `packages/worker/wrangler.jsonc`
 
@@ -105,9 +105,9 @@ Example (preview/test):
 
 ### Local dev notes
 
-`bun run dev` runs `wrangler dev --local`, so R2 is emulated locally. To hit
+`npm run dev` runs `wrangler dev --local`, so R2 is emulated locally. To hit
 remote R2 from dev, run Wrangler with `--remote` (for example
-`bun ./wrangler-env.ts dev --remote`).
+`node ./wrangler-env.ts dev --remote`).
 
 ## Workers AI
 
@@ -120,8 +120,8 @@ Workers AI lets your Worker call Cloudflare-hosted AI models.
 
 ### Commands to explore models
 
-- `bunx wrangler ai models`
-- `bunx wrangler ai models --json`
+- `npx wrangler ai models`
+- `npx wrangler ai models --json`
 
 ### Bind Workers AI in `packages/worker/wrangler.jsonc`
 
@@ -133,7 +133,7 @@ Add the AI binding per environment:
 
 If you want the `Ai` helper client, install it:
 
-- `bun add @cloudflare/ai`
+- `npm install @cloudflare/ai`
 
 In your Worker code, you typically construct a client like:
 
@@ -209,8 +209,8 @@ as "owned" by `@cloudflare/workers-oauth-provider`:
 
 Create a dedicated namespace for app data, for example `APP_KV`:
 
-- `bunx wrangler kv namespace create <app-name>-app --binding APP_KV --env production --update-config`
-- `bunx wrangler kv namespace create <app-name>-app-preview --binding APP_KV --env production --preview --update-config`
+- `npx wrangler kv namespace create <app-name>-app --binding APP_KV --env production --update-config`
+- `npx wrangler kv namespace create <app-name>-app-preview --binding APP_KV --env production --preview --update-config`
 
 If you are not using `--update-config`, record the namespace IDs and add them to
 `packages/worker/wrangler.jsonc` manually (see next section).
@@ -263,15 +263,15 @@ for OpenAI/Anthropic/Gemini/Grok/OpenRouter. See:
 
 - https://github.com/cloudflare/ai/tree/main/packages/tanstack-ai
 
-#### Install (Bun)
+#### Install
 
-- `bun add @tanstack/ai @tanstack/ai-client @cloudflare/tanstack-ai`
+- `npm install @tanstack/ai @tanstack/ai-client @cloudflare/tanstack-ai`
 
 If you want to route to third-party providers through AI Gateway, also install
 the TanStack provider packages you use (for example OpenAI or Anthropic):
 
-- `bun add @tanstack/ai-openai`
-- `bun add @tanstack/ai-anthropic`
+- `npm install @tanstack/ai-openai`
+- `npm install @tanstack/ai-anthropic`
 
 #### Bindings (`packages/worker/wrangler.jsonc`)
 

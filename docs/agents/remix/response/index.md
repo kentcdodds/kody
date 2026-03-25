@@ -23,7 +23,7 @@ semantics.
 ## Installation
 
 ```sh
-bun add @remix-run/response
+npm install @remix-run/response
 ```
 
 ## Usage

@@ -98,7 +98,7 @@ export function createCursorCloudClient(
 	const apiKey = env.CURSOR_API_KEY?.trim()
 	if (!apiKey) {
 		throw new Error(
-			'CURSOR_API_KEY is not set. For local dev, run `bun run dev` so the Cursor mock sets a key, or set a Cursor API key from https://cursor.com/settings.',
+			'CURSOR_API_KEY is not set. For local dev, run `npm run dev` so the Cursor mock sets a key, or set a Cursor API key from https://cursor.com/settings.',
 		)
 	}
 	const baseUrl = env.CURSOR_API_BASE_URL?.trim() || defaultBaseUrl

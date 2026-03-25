@@ -226,18 +226,18 @@ asset/navigation URLs to absolute app URLs before assigning the HTML.
 
 ## Quality checklist before merge
 
-- `bun run format`
-- `bun run test:mcp` (auto-prepares `packages/worker/.env` from `.env.example`
+- `npm run format`
+- `npm run test:mcp` (auto-prepares `packages/worker/.env` from `.env.example`
   when needed)
-- `bun run validate`
-- `bun run inspect`
+- `npm run validate`
+- `npm run inspect`
 - Confirm docs in `docs/agents` reflect any new workflow or constraints.
 
 ## Inspector and MCP Jam verification
 
 For end-to-end verification beyond local MCP tests:
 
-1. Run `bun run inspect`.
+1. Run `npm run inspect`.
 2. Connect the local MCP server in the inspector / MCP Jam flow.
 3. Call the generic app-opening tool with inline source and confirm the shell
    renders the generated UI.

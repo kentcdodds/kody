@@ -19,7 +19,7 @@ A minimal component system that leans on JavaScript and DOM primitives.
 ## Installation
 
 ```sh
-bun add @remix-run/component
+npm install @remix-run/component
 ```
 
 ## Getting started

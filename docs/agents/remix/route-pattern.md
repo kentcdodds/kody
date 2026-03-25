@@ -36,7 +36,7 @@ cdn.href({ region: 'us-west', file: 'images/logo', ext: 'png' }) // 'https://us-
 ## Installation
 
 ```sh
-bun add @remix-run/route-pattern
+npm install @remix-run/route-pattern
 ```
 
 ## Intuitive syntax

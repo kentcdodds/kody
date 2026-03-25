@@ -1,6 +1,6 @@
 # kody agent index
 
-Use Bun for installs and scripts (`bun install`, `bun run ...`). Do not use npm.
+Use Node 24 and npm for installs and scripts (`npm install`, `npm run ...`).
 
 This file is intentionally brief. Detailed instructions live in focused docs:
 

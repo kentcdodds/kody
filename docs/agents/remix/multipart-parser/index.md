@@ -24,7 +24,7 @@ covered.
 ## Installation
 
 ```sh
-bun add @remix-run/multipart-parser
+npm install @remix-run/multipart-parser
 ```
 
 ## Usage

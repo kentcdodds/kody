@@ -90,7 +90,7 @@ export function createGitHubGraphqlClient(
 	const token = env.GITHUB_TOKEN?.trim()
 	if (!token) {
 		throw new Error(
-			'GITHUB_TOKEN is not set. For local dev, run `bun run dev` so the GitHub mock sets a token, or configure a fine-grained PAT for the kody-bot account.',
+			'GITHUB_TOKEN is not set. For local dev, run `npm run dev` so the GitHub mock sets a token, or configure a fine-grained PAT for the kody-bot account.',
 		)
 	}
 	return new GitHubGraphqlClient({

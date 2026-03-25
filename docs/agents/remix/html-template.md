@@ -31,7 +31,7 @@ vulnerabilities.
 Install from [npm](https://www.npmjs.com/):
 
 ```sh
-bun add @remix-run/html-template
+npm install @remix-run/html-template
 ```
 
 ## Usage

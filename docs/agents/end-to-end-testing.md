@@ -37,7 +37,7 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 ## Server and routing
 
 - The test server is started via Playwright `webServer` using Wrangler.
-- `bun run test:e2e` and `bun run test:e2e:ui` launch Playwright through a small
+- `npm run test:e2e` and `npm run test:e2e:ui` launch Playwright through a small
   wrapper that picks a free localhost port via `get-port` and gives Wrangler a
   fresh per-run persistence directory. This avoids hangs caused by stale
   listeners or shared local E2E state.
@@ -76,8 +76,8 @@ handled by the static asset fetcher in `packages/worker/src/index.ts`.
 
 Common commands:
 
-- `bun run test:e2e`
-- `bun run test:e2e e2e/login.spec.ts`
+- `npm run test:e2e`
+- `npm run test:e2e -- e2e/login.spec.ts`
 
 If `packages/worker/.env` is missing, `test:e2e` copies
 `packages/worker/.env.example` to `packages/worker/.env` before running

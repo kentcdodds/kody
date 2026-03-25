@@ -42,7 +42,7 @@ message routing, and request/response correlation.
 
 ### Local layer
 
-The local layer would be a Bun-based agent running in Docker on the NAS.
+The local layer would be a Node-based agent running in Docker on the NAS.
 
 Its role would be to:
 

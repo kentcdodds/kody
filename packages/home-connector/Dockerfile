@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.11-alpine AS deps
+FROM node:24-alpine AS deps
 
 WORKDIR /app
 
@@ -6,7 +6,7 @@ ARG APP_COMMIT_SHA=unknown
 
 COPY . .
 
-RUN bun install --frozen-lockfile --production
+RUN npm ci --omit=dev
 
 FROM node:24-alpine
 
@@ -24,4 +24,4 @@ ENV SENTRY_TRACES_SAMPLE_RATE=1.0
 
 EXPOSE 4040
 
-CMD ["node", "--import", "tsx", "index.ts"]
+CMD ["node", "index.ts"]

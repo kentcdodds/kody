@@ -7,7 +7,7 @@
 		"dev": {
 			"executor": "nx:run-commands",
 			"options": {
-				"command": "bun run dev:mock-cursor"
+				"command": "npm run dev:mock-cursor"
 			}
 		}
 	},

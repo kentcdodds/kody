@@ -32,9 +32,11 @@ export default mergeConfig(
 			include: [
 				'packages/home-connector/src/**/*.test.ts',
 				'packages/worker/src/app/**/*.test.ts',
+				'packages/worker/src/mcp/generated-ui-app-base-url.test.ts',
 				'packages/worker/src/mcp/github/**/*.test.ts',
 				'packages/worker/src/mcp/cursor/**/*.test.ts',
 				'packages/worker/src/mcp/cloudflare/**/*.test.ts',
+				'packages/worker/src/mcp/capabilities/meta/**/*.test.ts',
 				'packages/worker/src/mcp/context.test.ts',
 				'packages/worker/src/mcp/tools/search.test.ts',
 				'packages/worker/src/mcp/skills/**/*.test.ts',

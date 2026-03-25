@@ -13,20 +13,20 @@ Worker package so it can also be deployed alongside the main app.
    (for example, `POST /resource`).
 3. Add `packages/mock-servers/acme/wrangler.jsonc` with the Worker config and
    any bindings (D1/KV/etc).
-4. In `cli.ts`, start the mock Worker during `bun run dev` (via `wrangler dev`)
+4. In `cli.ts`, start the mock Worker during `npm run dev` (via `wrangler dev`)
    and set `ACME_API_BASE_URL` to the mock Worker origin.
 
 See `packages/mock-servers/github/` for the GitHub REST + GraphQL subset mock
 package used by the `github_rest` and `github_graphql` capabilities (started by
-`bun run dev` unless `SKIP_GITHUB_MOCK=1`).
+`npm run dev` unless `SKIP_GITHUB_MOCK=1`).
 
 See `packages/mock-servers/cursor/` for a small
 [Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints)
-subset mock used by the `cursor_cloud_rest` capability (started by `bun run dev`
+subset mock used by the `cursor_cloud_rest` capability (started by `npm run dev`
 unless `SKIP_CURSOR_MOCK=1`).
 
 See `packages/mock-servers/cloudflare/` for a small Cloudflare API v4 subset
-mock used by the `cloudflare_rest` capability (started by `bun run dev` unless
+mock used by the `cloudflare_rest` capability (started by `npm run dev` unless
 `SKIP_CLOUDFLARE_MOCK=1`).
 
 ### Tips

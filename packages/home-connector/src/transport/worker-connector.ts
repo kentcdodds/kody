@@ -299,7 +299,7 @@ export function createWorkerConnector(input: {
 				updateConnectionState(input.state, {
 					connected: false,
 					lastError:
-						'Connector registration is disabled because HOME_CONNECTOR_SHARED_SECRET is not set. Start from the repo root with `bun run dev` or provide the secret manually.',
+						'Connector registration is disabled because HOME_CONNECTOR_SHARED_SECRET is not set. Start from the repo root with `npm run dev` or provide the secret manually.',
 				})
 				return
 			}

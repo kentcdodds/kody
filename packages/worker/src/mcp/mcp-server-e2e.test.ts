@@ -20,8 +20,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeClaudeWidgetDomain } from '#mcp/apps/claude-widget-domain.ts'
 import {
-	bunBin,
 	captureOutput,
+	nodeBin,
 	readOutput,
 	spawnProcess,
 	stopProcess,
@@ -86,11 +86,9 @@ function escapeSql(value: string) {
 async function runWrangler(args: Array<string>) {
 	const proc = spawnProcess({
 		cmd: [
-			bunBin,
-			'--no-env-file',
+			nodeBin,
 			`--env-file=${workerEnvFile}`,
-			'x',
-			'wrangler',
+			'./wrangler-env.ts',
 			'--config',
 			workerConfig,
 			...args,
@@ -285,11 +283,9 @@ async function startDevServer(persistDir: string) {
 	const origin = `http://127.0.0.1:${port}`
 	const proc = spawnProcess({
 		cmd: [
-			bunBin,
-			'--no-env-file',
+			nodeBin,
 			`--env-file=${workerEnvFile}`,
-			'x',
-			'wrangler',
+			'./wrangler-env.ts',
 			'--config',
 			workerConfig,
 			'dev',

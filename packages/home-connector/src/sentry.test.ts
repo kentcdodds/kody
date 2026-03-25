@@ -40,7 +40,7 @@ test('buildHomeConnectorSentryOptions returns undefined without a DSN', () => {
 	).toBeUndefined()
 })
 
-test('buildHomeConnectorSentryOptions builds Bun Sentry options from env', () => {
+test('buildHomeConnectorSentryOptions builds Node Sentry options from env', () => {
 	const options = buildHomeConnectorSentryOptions({
 		SENTRY_DSN: 'https://public@example.ingest.sentry.io/1',
 		SENTRY_ENVIRONMENT: 'preview',

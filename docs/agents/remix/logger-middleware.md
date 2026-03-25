@@ -12,7 +12,7 @@ Logs information about HTTP requests and responses with customizable formatting.
 ## Installation
 
 ```sh
-bun add @remix-run/logger-middleware
+npm install @remix-run/logger-middleware
 ```
 
 ## Usage

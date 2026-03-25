@@ -15,7 +15,7 @@
 			]
 		},
 		"module": "ESNext",
-		"types": ["node", "bun"],
+		"types": ["node"],
 		"moduleResolution": "bundler",
 		"verbatimModuleSyntax": true,
 		"moduleDetection": "force",

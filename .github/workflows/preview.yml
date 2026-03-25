@@ -69,13 +69,14 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+          cache: npm
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: 🧾 Resolve preview names
         id: names
@@ -134,7 +135,7 @@ jobs:
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
         run: |
           set -euo pipefail
-          bun tools/ci/preview-resources.ts ensure --worker-name "$APP_WORKER_NAME" --out-config packages/worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
+          node tools/ci/preview-resources.ts ensure --worker-name "$APP_WORKER_NAME" --out-config packages/worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🗄️ Apply D1 Migrations (preview)
         env:
@@ -142,7 +143,7 @@ jobs:
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run:
-          bun ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
+          node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
           "$WRANGLER_CONFIG"
 
       - name: 🧪 Deploy preview mock Workers
@@ -173,9 +174,9 @@ jobs:
             mock_worker_name="${APP_WORKER_NAME}-mock-${service}"
             deploy_log="deploy-mock-${service}.log"
 
-            bun tools/ci/sync-worker-secrets.ts --env "" --name "$mock_worker_name" --config "$dir/wrangler.jsonc" --set "MOCK_API_TOKEN=$MOCK_API_TOKEN"
+            node tools/ci/sync-worker-secrets.ts --env "" --name "$mock_worker_name" --config "$dir/wrangler.jsonc" --set "MOCK_API_TOKEN=$MOCK_API_TOKEN"
 
-            bunx wrangler deploy --env preview --name "$mock_worker_name" --config "$dir/wrangler.jsonc" 2>&1 | tee "$deploy_log"
+            npx wrangler deploy --env preview --name "$mock_worker_name" --config "$dir/wrangler.jsonc" 2>&1 | tee "$deploy_log"
 
             mock_url="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' "$deploy_log" "$mock_worker_name")"
             if [ -z "$mock_url" ]; then
@@ -249,7 +250,7 @@ jobs:
             exit 1
           fi
 
-          bun tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --generate-cookie-secret --include-empty
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --generate-cookie-secret --include-empty
 
       - name: ☁️ Deploy preview app Worker
         id: deploy_preview
@@ -263,12 +264,12 @@ jobs:
           set -euo pipefail
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-          bun run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
+          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
 
           PREVIEW_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy.log "$APP_WORKER_NAME")"
           if [ -n "$PREVIEW_URL" ]; then
             echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
-            bun tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --set "APP_BASE_URL=$PREVIEW_URL"
+            node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --set "APP_BASE_URL=$PREVIEW_URL"
           fi
           PREVIEW_VERSION_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const match = text.match(/(?:Version\s+)?Preview URL:\s*(https:\/\/\S+)/i); process.stdout.write(match?.[1] ?? "")' deploy.log)"
           if [ -n "$PREVIEW_VERSION_URL" ]; then
@@ -287,7 +288,7 @@ jobs:
             echo "Skipping Sentry source map upload (set SENTRY_AUTH_TOKEN secret and SENTRY_ORG / SENTRY_PROJECT repo variables)."
             exit 0
           fi
-          bun run sentry:upload-sourcemaps
+          npm run sentry:upload-sourcemaps
 
       - name: 🌱 Seed preview test data
         shell: bash
@@ -297,7 +298,7 @@ jobs:
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
           set -euo pipefail
-          bun tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" --email me@kentcdodds.com --password iliketwix
+          node tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" --email me@kentcdodds.com --password iliketwix
 
       - name: 🩺 Healthcheck (preview)
         shell: bash
@@ -456,13 +457,14 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+          cache: npm
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: 🧾 Resolve preview names
         id: names
@@ -521,7 +523,7 @@ jobs:
             local name="$1"
             local output=""
             set +e
-            output="$(bunx wrangler delete "$name" --env preview --force 2>&1)"
+            output="$(npx wrangler delete "$name" --env preview --force 2>&1)"
             local exit_code="$?"
             set -e
 
@@ -563,4 +565,4 @@ jobs:
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
         run: |
           set -euo pipefail
-          bun tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"
+          node tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"

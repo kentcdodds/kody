@@ -27,7 +27,7 @@ runtimes.
 ## Installation
 
 ```sh
-bun add @remix-run/node-fetch-server
+npm install @remix-run/node-fetch-server
 ```
 
 ## Navigation

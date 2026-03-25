@@ -38,9 +38,8 @@ async function seedSavedUi(options: {
 		}
 		try {
 			await execFile(
-				'bun',
+				process.execPath,
 				[
-					'--no-env-file',
 					'--env-file=packages/worker/.env',
 					'./wrangler-env.ts',
 					'd1',

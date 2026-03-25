@@ -29,17 +29,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: 🧰 Setup Bun
-        uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version: latest
+          cache: npm
 
       - name: 📥 Install Dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: ✅ Run Home Connector Tests
-        run: bun run --cwd packages/home-connector test
+        run: npm --prefix packages/home-connector run test
 
       - name: ✅ Smoke-test Home Connector on Node
         shell: bash
@@ -50,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          node --import tsx packages/home-connector/server/dev-server.ts \
+          node packages/home-connector/server/dev-server.ts \
             > /tmp/home-connector.log 2>&1 &
           pid=$!
 

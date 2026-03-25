@@ -34,7 +34,7 @@ function parseArgs(argv: Array<string>): {
 	const command = argv[0]
 	if (command !== 'ensure') {
 		fail(
-			'Missing or invalid command. Usage: bun tools/ci/production-resources.ts ensure [--out-config <path>]',
+			'Missing or invalid command. Usage: node tools/ci/production-resources.ts ensure [--out-config <path>]',
 		)
 	}
 

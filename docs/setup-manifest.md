@@ -30,7 +30,7 @@ write resolved IDs into `packages/worker/wrangler-production.generated.json`
 before migrations and deploy. Preview deploys do the same per preview worker via
 `packages/worker/wrangler-preview.generated.json` (see `docs/agents/setup.md`).
 Cloudflare deploys do not auto-create these resources from bindings alone, so
-the deploy workflow runs `bun tools/ci/production-resources.ts ensure` first.
+the deploy workflow runs `node tools/ci/production-resources.ts ensure` first.
 
 ## Optional Cloudflare offerings
 
@@ -86,16 +86,16 @@ automatically:
 - `GITHUB_TOKEN` (optional Worker secret; fine-grained PAT for `kody-bot` used
   by the `github_rest` and `github_graphql` MCP capabilities)
 - `GITHUB_API_BASE_URL` (optional; defaults to `https://api.github.com`. Local
-  `bun run dev` targets the GitHub mock unless `SKIP_GITHUB_MOCK=1`. GraphQL
+  `npm run dev` targets the GitHub mock unless `SKIP_GITHUB_MOCK=1`. GraphQL
   requests hit `${GITHUB_API_BASE_URL}/graphql`.)
 - `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.
-  Local `bun run dev` targets the Cloudflare mock unless
+  Local `npm run dev` targets the Cloudflare mock unless
   `SKIP_CLOUDFLARE_MOCK=1`. The `cloudflare_rest` capability expects API paths
   under `/client/v4/`.)
 - `CURSOR_API_KEY` (optional Worker secret; Cursor Cloud Agents API key for the
   `cursor_cloud_rest` MCP capability)
 - `CURSOR_API_BASE_URL` (optional; defaults to `https://api.cursor.com`. Local
-  `bun run dev` targets the Cursor mock unless `SKIP_CURSOR_MOCK=1`)
+  `npm run dev` targets the Cursor mock unless `SKIP_CURSOR_MOCK=1`)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities` and
   `POST /__maintenance/reindex-skills` to embed and upsert builtin capabilities
@@ -132,7 +132,7 @@ Configure these GitHub Actions secrets and variables for workflows:
   when set; synced like other optional secrets)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
-  `bun run sentry:upload-sourcemaps` after deploy)
+  `npm run sentry:upload-sourcemaps` after deploy)
 - `DOCKERHUB_USERNAME` (required to publish `packages/home-connector` to Docker
   Hub)
 - `DOCKERHUB_TOKEN` (required Docker Hub access token/password for image
@@ -227,7 +227,7 @@ How to get/set each value:
   service that runs the published Docker image, not in the GitHub Actions
   workflow itself):
   - `HOME_CONNECTOR_SENTRY_DSN` (optional; enables Sentry error reporting and
-    tracing for the Bun-based `packages/home-connector` service)
+    tracing for the Node-based `packages/home-connector` service)
   - `HOME_CONNECTOR_SENTRY_ENVIRONMENT` (optional; forwarded to the connector as
     `SENTRY_ENVIRONMENT`, defaults to `production` in the published Docker
     image)

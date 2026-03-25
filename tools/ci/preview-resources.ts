@@ -24,7 +24,7 @@ function parseArgs(argv: Array<string>): {
 	const command = argv[0]
 	if (command !== 'ensure' && command !== 'cleanup') {
 		fail(
-			`Missing or invalid command. Usage: bun tools/ci/preview-resources.ts <ensure|cleanup> --worker-name <name>`,
+			`Missing or invalid command. Usage: node tools/ci/preview-resources.ts <ensure|cleanup> --worker-name <name>`,
 		)
 	}
 

@@ -92,7 +92,7 @@ export function createCloudflareRestClient(
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!apiToken) {
 		throw new Error(
-			'CLOUDFLARE_API_TOKEN is not set. For local dev, run `bun run dev` so the Cloudflare mock sets a token, or configure a Cloudflare API token from the Cloudflare dashboard.',
+			'CLOUDFLARE_API_TOKEN is not set. For local dev, run `npm run dev` so the Cloudflare mock sets a token, or configure a Cloudflare API token from the Cloudflare dashboard.',
 		)
 	}
 	const baseUrl = env.CLOUDFLARE_API_BASE_URL?.trim() || defaultBaseUrl

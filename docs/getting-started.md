@@ -15,23 +15,23 @@ intent is to build a personal assistant with an MCP-first architecture.
 ## Create the project with degit
 
 ```
-bunx degit epicweb-dev/epicflare my-kody-app
+npx degit epicweb-dev/epicflare my-kody-app
 cd my-kody-app
 ```
 
 ## Install dependencies
 
-We use bun for scripts and installs.
+We use npm for installs and scripts, with Node 24 as the runtime.
 
 ```
-bun install
+npm install
 ```
 
 ## Expectations and assumptions
 
 The setup flow assumes:
 
-- Bun is installed (uses `bun`/`bunx`).
+- Node 24 and npm are installed.
 - You run commands from the repo root (needs `nx.json`, `package.json`, and
   `packages/worker/wrangler.jsonc`).
 - **Cloudflare D1 and KV**: The checked-in
@@ -40,7 +40,7 @@ The setup flow assumes:
   IDs (`database_id`, KV `id` / `preview_id`). Production and preview deploys
   run ensure scripts that create or resolve resources and write generated
   Wrangler configs with real IDs (see `docs/agents/setup.md`). **Local
-  development does not require** provisioning remote D1 or KV; `bun run dev`
+  development does not require** provisioning remote D1 or KV; `npm run dev`
   uses local Wrangler persistence.
 - You can write to files in the repository (the script updates config files and
   replaces template `kody` tokens across text files).
@@ -57,7 +57,7 @@ For optional Cloudflare offerings (R2, Workers AI, AI Gateway, extra KV), see
 Run a quick validation of your environment and Wrangler login status:
 
 ```
-bun ./docs/post-download.ts --check
+node ./docs/post-download.ts --check
 ```
 
 ## Quick Start (local only)
@@ -65,13 +65,13 @@ bun ./docs/post-download.ts --check
 1. Run the guided setup script:
 
 ```
-bun ./docs/post-download.ts --guided
+node ./docs/post-download.ts --guided
 ```
 
 2. Start local development:
 
 ```
-bun run dev
+npm run dev
 ```
 
 ## Full Cloudflare setup (deploy)
@@ -79,12 +79,12 @@ bun run dev
 1. Run the guided setup script:
 
 ```
-bun ./docs/post-download.ts --guided
+node ./docs/post-download.ts --guided
 ```
 
 This setup step does not create Cloudflare resources. The checked-in Wrangler
 template omits remote D1/KV IDs on purpose. The production deploy workflow runs
-`bun tools/ci/production-resources.ts ensure`, which creates missing D1/KV
+`node tools/ci/production-resources.ts ensure`, which creates missing D1/KV
 resources when needed and writes
 `packages/worker/wrangler-production.generated.json` with resolved IDs for that
 deploy. Cloudflare deploys do not auto-create those resources from bindings
@@ -101,7 +101,7 @@ alone, so the workflow runs that ensure step before migrations/deploy.
 3. Deploy:
 
 ```
-bun run deploy
+npm run deploy
 ```
 
 ## Agent/CI setup
@@ -111,7 +111,7 @@ and uses defaults based on the current directory name (app/package naming), plus
 a generated cookie secret.
 
 ```
-bun ./docs/post-download.ts --defaults
+node ./docs/post-download.ts --defaults
 ```
 
 To preview changes without writing, add `--dry-run`. To emit a JSON summary, add
@@ -148,8 +148,8 @@ See `docs/agents/setup.md` for local dev commands and verification steps.
 To create a deterministic test login in a running environment:
 
 ```bash
-bun run migrate:local
-bun tools/seed-test-data.ts --local
+npm run migrate:local
+node tools/seed-test-data.ts --local
 ```
 
 Default test credentials:
@@ -162,11 +162,11 @@ Default test credentials:
 Build the project:
 
 ```
-bun run build
+npm run build
 ```
 
 Deploy to Cloudflare:
 
 ```
-bun run deploy
+npm run deploy
 ```

@@ -27,7 +27,7 @@ native [`File`](https://developer.mozilla.org/en-US/docs/Web/API/File) API.
 Install from [npm](https://www.npmjs.com/):
 
 ```sh
-bun add @remix-run/fs
+npm install @remix-run/fs
 ```
 
 ## Usage

@@ -29,8 +29,8 @@ Run this loop for features, fixes, and refactors:
 
 For this repo, the default evaluation step is:
 
-- `bun run validate`
-- `bun run format`
+- `npm run validate`
+- `npm run format`
 
 ## Promote learning into enforcement
 

@@ -1,7 +1,7 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { html } from 'remix/html-template'
 import { render } from './render.ts'
-import { RootLayout } from './root.tsx'
+import { RootLayout } from './root.ts'
 import { type routes } from './routes.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type HomeConnectorState } from '../src/state.ts'

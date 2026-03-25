@@ -1,8 +1,9 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { computeClaudeWidgetDomain } from '#mcp/apps/claude-widget-domain.ts'
 import { renderGeneratedUiShellEntryPoint } from '#mcp/apps/generated-ui-shell-entry-point.ts'
-import { mcpResourcePath } from '../mcp-auth.ts'
+
+const mcpResourcePath = '/mcp'
 
 /**
  * Full MCP E2E cannot assert APP_BASE_URL that differs from the Streamable HTTP

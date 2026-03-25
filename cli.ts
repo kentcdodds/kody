@@ -10,6 +10,7 @@ import {
 	stopChildProcessTree,
 } from './tools/dev-process-utils.ts'
 import { getForwardedHomeConnectorEnv } from './tools/home-connector-env.ts'
+import { resolveNpmCommand } from './tools/node-runtime.ts'
 
 const defaultWorkerPort = 3742
 const defaultMockPort = 8788
@@ -21,10 +22,18 @@ const workerReadyPollMs = 250
 const ansiReset = '\x1b[0m'
 const ansiBright = '\x1b[1m'
 const ansiDim = '\x1b[2m'
+const colorCodes = {
+	cyan: '\x1b[36m',
+	green: '\x1b[32m',
+	cornflowerblue: '\x1b[38;2;100;149;237m',
+	yellow: '\x1b[33m',
+	orange: '\x1b[38;2;255;165;0m',
+	magenta: '\x1b[35m',
+	firebrick: '\x1b[38;2;178;34;34m',
+} as const
 
-function colorize(text: string, color: string) {
-	const bunColor = typeof Bun === 'undefined' ? null : Bun.color
-	const colorCode = bunColor ? bunColor(color, 'ansi-16m') || '' : ''
+function colorize(text: string, color: keyof typeof colorCodes) {
+	const colorCode = colorCodes[color] ?? ''
 	return colorCode ? `${colorCode}${text}${ansiReset}` : text
 }
 
@@ -90,15 +99,14 @@ function resolveWorkerOrigin(port: number) {
 	return `http://localhost:${port}`
 }
 
-function runBunScript(
+function runNpmScript(
 	script: string,
 	args: Array<string> = [],
 	envOverrides: Record<string, string> = {},
 	options: { outputFilter?: OutputFilterKey } = {},
 ): ChildProcess {
-	const bun = platform() === 'win32' ? 'bun.exe' : 'bun'
 	const child = spawnInOwnProcessGroup(
-		bun,
+		resolveNpmCommand(),
 		['run', '--silent', script, '--', ...args],
 		{
 			stdio: ['inherit', 'pipe', 'pipe'],
@@ -276,7 +284,7 @@ async function restartDev(
 	const homeConnectorPort = await getPort({ port: homeConnectorPortRange })
 	homeConnectorOrigin = `http://localhost:${homeConnectorPort}`
 	const forwardedHomeConnectorEnv = getForwardedHomeConnectorEnv(process.env)
-	const client = runBunScript(
+	const client = runNpmScript(
 		'dev:client',
 		[],
 		{},
@@ -292,7 +300,7 @@ async function restartDev(
 		'--var',
 		`${key}:${value}`,
 	])
-	const worker = runBunScript(
+	const worker = runNpmScript(
 		'dev:worker',
 		[...extraArgs, ...workerVarArgs],
 		{
@@ -308,7 +316,7 @@ async function restartDev(
 			`Main worker did not become ready within ${workerReadyTimeoutMs}ms.`,
 		)
 	}
-	const homeConnector = runBunScript('dev:home-connector', [], {
+	const homeConnector = runNpmScript('dev:home-connector', [], {
 		...forwardedHomeConnectorEnv,
 		PORT: String(homeConnectorPort),
 		HOME_CONNECTOR_ID: homeConnectorId,
@@ -408,7 +416,7 @@ async function attachGithubMock(
 	})
 	const baseUrl = `http://127.0.0.1:${githubPort}`
 	const apiToken = `mock-github-${randomUUID()}`
-	const child = runBunScript(
+	const child = runNpmScript(
 		'dev:mock-github',
 		[
 			'--port',
@@ -459,7 +467,7 @@ async function attachCursorMock(
 	})
 	const baseUrl = `http://127.0.0.1:${cursorPort}`
 	const apiToken = `mock-cursor-${randomUUID()}`
-	const child = runBunScript(
+	const child = runNpmScript(
 		'dev:mock-cursor',
 		[
 			'--port',
@@ -514,7 +522,7 @@ async function attachCloudflareMock(
 	})
 	const baseUrl = `http://127.0.0.1:${cloudflarePort}`
 	const apiToken = `mock-cloudflare-${randomUUID()}`
-	const child = runBunScript(
+	const child = runNpmScript(
 		'dev:mock-cloudflare',
 		[
 			'--port',
@@ -619,7 +627,7 @@ async function ensureMockServers() {
 		}
 		const baseUrl = `http://127.0.0.1:${mockPort}`
 		const apiToken = `mock-resend-${randomUUID()}`
-		const child = runBunScript(
+		const child = runNpmScript(
 			'dev:mock-resend',
 			[
 				'--port',
@@ -671,7 +679,7 @@ async function ensureMockServers() {
 		})
 		const aiBaseUrl = `http://127.0.0.1:${aiPort}`
 		const aiApiToken = `mock-ai-${randomUUID()}`
-		const aiChild = runBunScript(
+		const aiChild = runNpmScript(
 			'dev:mock-ai',
 			[
 				'--port',
