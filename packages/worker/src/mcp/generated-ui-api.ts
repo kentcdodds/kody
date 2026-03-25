@@ -57,12 +57,12 @@ export async function handleGeneratedUiApiRequest(
 	}
 
 	if (url.pathname === '/api/generated-ui/actions') {
+		if (request.method !== 'POST') {
+			return jsonResponse({ error: 'Method not allowed.' }, 405)
+		}
 		const session = await authenticateGeneratedUiSession(request, env)
 		if (session instanceof Response) {
 			return session
-		}
-		if (request.method !== 'POST') {
-			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
 		const body = actionRequestSchema.safeParse(
 			await request.json().catch(() => null),
@@ -99,12 +99,12 @@ export async function handleGeneratedUiApiRequest(
 	}
 
 	if (url.pathname === '/api/generated-ui/secure-input') {
+		if (request.method !== 'POST') {
+			return jsonResponse({ error: 'Method not allowed.' }, 405)
+		}
 		const session = await authenticateGeneratedUiSession(request, env)
 		if (session instanceof Response) {
 			return session
-		}
-		if (request.method !== 'POST') {
-			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
 		const body = secureInputRequestSchema.safeParse(
 			await request.json().catch(() => null),
@@ -166,6 +166,7 @@ function jsonResponse(body: Record<string, unknown>, status: number = 200) {
 	return new Response(JSON.stringify(body), {
 		status,
 		headers: {
+			'Cache-Control': 'no-store',
 			'Content-Type': 'application/json; charset=utf-8',
 		},
 	})

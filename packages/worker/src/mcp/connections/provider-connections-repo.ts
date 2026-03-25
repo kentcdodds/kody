@@ -265,4 +265,3 @@ function mapProviderConnectionSecretRow(
 		updated_at: String(row['updated_at']),
 	}
 }
-

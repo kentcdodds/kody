@@ -142,9 +142,9 @@ export async function handleMcpRequest({
 				context as ExecutionContext<OAuthContextProps>,
 			)
 		}
+		recordBuiltinTemplateSeed(props.user.userId, now)
 		try {
 			await ensureBuiltinSkillTemplatesForUser(env, props.user.userId)
-			recordBuiltinTemplateSeed(props.user.userId, now)
 		} catch (error) {
 			console.warn('Failed to ensure builtin MCP skill templates', {
 				error: error instanceof Error ? error.message : String(error),

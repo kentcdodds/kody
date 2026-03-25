@@ -960,6 +960,7 @@ ${inlineModuleSource}
 			if (latestEnvelope !== envelope) return
 			setFrameSource(resolved.code, resolved.runtime, appSession)
 		} catch (error) {
+			if (latestEnvelope !== envelope) return
 			const message =
 				error instanceof Error ? error.message : 'Unknown app loading error.'
 			renderErrorDocument(message)
@@ -997,7 +998,9 @@ ${inlineModuleSource}
 	})
 
 	globalThis.window.addEventListener('message', (event: MessageEvent) => {
+		const childWindow = frameElement.contentWindow
 		if (
+			event.source === childWindow &&
 			isRecord(event.data) &&
 			typeof event.data.type === 'string' &&
 			event.data.type.startsWith(childMessagePrefix)

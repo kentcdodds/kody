@@ -23,6 +23,7 @@ export function spawnProcess(input: {
 		stdio: ['ignore', 'pipe', 'pipe'],
 	})
 	if (!proc.stdout || !proc.stderr) {
+		proc.kill('SIGTERM')
 		throw new Error('spawnProcess requires piped stdout and stderr streams.')
 	}
 
