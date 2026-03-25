@@ -37,14 +37,33 @@ import { handleSkillReindexRequest } from './skill-maintenance.ts'
 
 export { ChatAgent, HomeConnectorSession, HomeMCP, MCP }
 
+const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
+
+function isAllowedGeneratedUiOrigin(origin: string, requestOrigin: string) {
+	if (origin === requestOrigin || origin === 'null') {
+		return true
+	}
+	try {
+		const parsedOrigin = new URL(origin)
+		return parsedOrigin.hostname.endsWith(claudeWidgetDomainSuffix)
+	} catch {
+		return false
+	}
+}
+
 const appHandler = withCors({
 	getCorsHeaders(request) {
 		const url = new URL(request.url)
 		if (isGeneratedUiApiRequest(url.pathname)) {
+			const origin = request.headers.get('Origin')
+			if (!origin || !isAllowedGeneratedUiOrigin(origin, url.origin)) {
+				return null
+			}
 			return new Headers({
-				'Access-Control-Allow-Origin': '*',
+				'Access-Control-Allow-Origin': origin,
 				'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 				'Access-Control-Allow-Headers': 'content-type, authorization',
+				Vary: 'Origin',
 			})
 		}
 		const origin = request.headers.get('Origin')

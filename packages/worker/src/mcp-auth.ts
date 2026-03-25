@@ -14,6 +14,9 @@ const builtinTemplateSeedMaxUsers = 1000
 const builtinTemplateSeedByUser = new Map<string, number>()
 
 function recordBuiltinTemplateSeed(userId: string, seededAt: number) {
+	if (builtinTemplateSeedByUser.has(userId)) {
+		builtinTemplateSeedByUser.delete(userId)
+	}
 	builtinTemplateSeedByUser.set(userId, seededAt)
 	while (builtinTemplateSeedByUser.size > builtinTemplateSeedMaxUsers) {
 		const oldestKey = builtinTemplateSeedByUser.keys().next().value
