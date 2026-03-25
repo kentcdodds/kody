@@ -111,3 +111,60 @@ test('sandboxed generated ui shell supports host messaging actions', async ({
 		sandboxedIframe.contentFrame().getByText('Hello from execute'),
 	).toBeVisible()
 })
+
+test('sandboxed generated ui shell rewrites relative urls without injecting a base tag', async ({
+	page,
+}) => {
+	const consoleMessages: string[] = []
+	page.on('console', (message) => {
+		consoleMessages.push(message.text())
+	})
+
+	const relativeUrlCode = [
+		'<!doctype html>',
+		'<html lang="en">',
+		'  <head>',
+		'    <link rel="stylesheet" href="/styles.css" />',
+		'  </head>',
+		'  <body>',
+		'    <img alt="Logo" src="/logo.png" />',
+		'    <a href="/chat">Chat</a>',
+		'    <form action="/logout" method="post">',
+		'      <button type="submit">Logout</button>',
+		'    </form>',
+		'  </body>',
+		'</html>',
+	].join('\n')
+
+	await page.goto(
+		`/dev/generated-ui-shell-test.html?code=${encodeURIComponent(relativeUrlCode)}`,
+	)
+
+	const shellFrame = page.frameLocator('#generated-sandboxed')
+	const sandboxedIframe = shellFrame.locator('[data-generated-ui-frame]')
+	await expect(sandboxedIframe).toBeVisible()
+
+	const appFrame = sandboxedIframe.contentFrame()
+	await expect(appFrame.getByRole('img', { name: 'Logo' })).toBeVisible()
+	await expect(appFrame.locator('base')).toHaveCount(0)
+	await expect(appFrame.locator('link[rel="stylesheet"]')).toHaveAttribute(
+		'href',
+		`${test.info().project.use.baseURL}/styles.css`,
+	)
+	await expect(appFrame.getByRole('link', { name: 'Chat' })).toHaveAttribute(
+		'href',
+		`${test.info().project.use.baseURL}/chat`,
+	)
+	await expect(appFrame.locator('form')).toHaveAttribute(
+		'action',
+		`${test.info().project.use.baseURL}/logout`,
+	)
+
+	expect(
+		consoleMessages.some((message) =>
+			message.includes(
+				'violates the following Content Security Policy directive: "base-uri \'self\'"',
+			),
+		),
+	).toBe(false)
+})
