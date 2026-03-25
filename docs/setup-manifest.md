@@ -59,7 +59,7 @@ Local development uses `packages/worker/.env`, which Wrangler loads
 automatically:
 
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
- - `APP_BASE_URL` (optional; defaults to request origin, example
+- `APP_BASE_URL` (optional; defaults to request origin, example
   `https://app.example.com`; also sets the canonical public origin used for MCP
   auth metadata, generated UI resources, and email links)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
@@ -112,8 +112,8 @@ Configure these GitHub Actions secrets and variables for workflows:
   account)
 - `COOKIE_SECRET` (same format as local)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
-  deploy as the canonical public app origin and synced into the Worker via the
-  bulk secret upload step)
+  deploy as the canonical public app origin and written into the generated
+  Worker `vars` config before deploy)
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
@@ -156,9 +156,11 @@ How to get/set each value:
 - `APP_BASE_URL` (optional)
   - Use your production app URL (for example `https://app.example.com`).
   - Add only if you want deploy-time health/version checks to use a fixed URL.
-  - Production CI updates the Worker value through `sync-worker-secrets.ts`; do
-    not also pass `APP_BASE_URL` as a deploy-time `--var`, because Wrangler
-    treats that as a conflicting binding name.
+  - Production CI writes this into the generated Wrangler `vars` config before
+    deploy, rather than syncing it as a Worker secret.
+  - Do not also upload `APP_BASE_URL` through `wrangler secret bulk` or pass it
+    as a deploy-time `--var`, because Wrangler treats that as a conflicting
+    binding name.
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
     gateway ID.
