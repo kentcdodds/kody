@@ -33,6 +33,10 @@ export async function handleGeneratedUiApiRequest(
 		if (request.method !== 'GET') {
 			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
+		const token = sessionTokenFromRequest(request)
+		if (!token) {
+			return jsonResponse({ error: 'Missing generated UI bearer token.' }, 401)
+		}
 		const appId = url.searchParams.get('app_id')
 		if (!appId) {
 			return jsonResponse({ error: 'Missing app_id query parameter.' }, 400)
@@ -56,6 +60,9 @@ export async function handleGeneratedUiApiRequest(
 	if (url.pathname === '/api/generated-ui/actions') {
 		if (request.method !== 'POST') {
 			return jsonResponse({ error: 'Method not allowed.' }, 405)
+		}
+		if (!isSameOriginRequest(request, url)) {
+			return jsonResponse({ error: 'Invalid generated UI origin.' }, 403)
 		}
 		const body = actionRequestSchema.safeParse(
 			await request.json().catch(() => null),
@@ -94,6 +101,9 @@ export async function handleGeneratedUiApiRequest(
 		if (request.method !== 'POST') {
 			return jsonResponse({ error: 'Method not allowed.' }, 405)
 		}
+		if (!isSameOriginRequest(request, url)) {
+			return jsonResponse({ error: 'Invalid generated UI origin.' }, 403)
+		}
 		const body = secureInputRequestSchema.safeParse(
 			await request.json().catch(() => null),
 		)
@@ -129,11 +139,7 @@ export async function handleGeneratedUiApiRequest(
 }
 
 async function authenticateGeneratedUiSession(request: Request, env: Env) {
-	const authHeader = request.headers.get('Authorization')
-	if (!authHeader?.startsWith('Bearer ')) {
-		return jsonResponse({ error: 'Missing generated UI bearer token.' }, 401)
-	}
-	const token = authHeader.slice('Bearer '.length).trim()
+	const token = sessionTokenFromRequest(request)
 	if (!token) {
 		return jsonResponse({ error: 'Missing generated UI bearer token.' }, 401)
 	}
@@ -150,6 +156,25 @@ async function authenticateGeneratedUiSession(request: Request, env: Env) {
 			401,
 		)
 	}
+}
+
+function sessionTokenFromRequest(request: Request) {
+	const authHeader = request.headers.get('Authorization')
+	if (authHeader?.startsWith('Bearer ')) {
+		const token = authHeader.slice('Bearer '.length).trim()
+		if (token) return token
+	}
+	const sessionId = request.headers.get('X-Generated-Ui-Session')
+	if (sessionId) return sessionId.trim() || null
+	return null
+}
+
+function isSameOriginRequest(request: Request, url: URL) {
+	const origin = request.headers.get('Origin')
+	const secFetchSite = request.headers.get('Sec-Fetch-Site')
+	if (origin) return origin === url.origin
+	if (secFetchSite) return secFetchSite === 'same-origin'
+	return true
 }
 
 function jsonResponse(body: Record<string, unknown>, status: number = 200) {

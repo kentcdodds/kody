@@ -466,9 +466,7 @@ ${bridgeRuntime}
 		`.trim()
 	}
 
-	function buildChildBridgeRuntimeSource(
-		appSession: AppSessionEnvelope | null,
-	) {
+	function buildChildBridgeRuntimeSource(appSession: AppSessionEnvelope | null) {
 		const serializedAppSession = escapeInlineJsonSource(
 			JSON.stringify(appSession),
 		)
@@ -479,13 +477,6 @@ let requestCounter = 0;
 function nextRequestId() {
 	requestCounter += 1;
 	return 'generated-ui-' + requestCounter;
-}
-function getAppSessionHeaders() {
-	if (!appSession) return null;
-	return {
-		accept: 'application/json',
-		authorization: 'Bearer ' + appSession.token,
-	};
 }
 function wrapActionCode(code, params) {
 	if (params === undefined) return code;
@@ -498,22 +489,28 @@ function wrapActionCode(code, params) {
 }
 async function invokeActionWithSession(input) {
 	if (!appSession) return null;
-	const response = await fetch(appSession.endpoints.action, {
-		method: 'POST',
-		headers: {
-			...getAppSessionHeaders(),
-			'content-type': 'application/json',
-		},
-		body: JSON.stringify(input),
-	});
-	const payload = await response.json().catch(() => null);
-	if (!payload || typeof payload !== 'object') {
+	try {
+		const response = await fetch(appSession.endpoints.action, {
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'content-type': 'application/json',
+				'X-Generated-Ui-Session': appSession.sessionId,
+			},
+			body: JSON.stringify({
+				code: input.code,
+				params: input.params,
+			}),
+		});
+		return (await response.json().catch(() => null)) as
+			| Record<string, unknown>
+			| null;
+	} catch {
 		return {
 			ok: false,
-			error: 'Generated UI action endpoint returned an invalid response.',
+			error: 'Generated UI action failed.',
 		};
 	}
-	return payload;
 }
 async function submitSecureInputWithSession(input) {
 	if (!appSession) {
@@ -522,25 +519,28 @@ async function submitSecureInputWithSession(input) {
 			error: 'Secure input is unavailable without a generated UI app session.',
 		};
 	}
-	const response = await fetch(appSession.endpoints.secureInput, {
-		method: 'POST',
-		headers: {
-			...getAppSessionHeaders(),
-			'content-type': 'application/json',
-		},
-		body: JSON.stringify({
-			setup_id: input.setupId,
-			fields: input.fields,
-		}),
-	});
-	const payload = await response.json().catch(() => null);
-	if (!payload || typeof payload !== 'object') {
+	try {
+		const response = await fetch(appSession.endpoints.secureInput, {
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'content-type': 'application/json',
+				'X-Generated-Ui-Session': appSession.sessionId,
+			},
+			body: JSON.stringify({
+				setup_id: input.setupId,
+				fields: input.fields,
+			}),
+		});
+		return (await response.json().catch(() => null)) as
+			| Record<string, unknown>
+			| null;
+	} catch {
 		return {
 			ok: false,
-			error: 'Secure input endpoint returned an invalid response.',
+			error: 'Secure input failed.',
 		};
 	}
-	return payload;
 }
 function waitForShellMessage(type, requestId) {
 	return new Promise((resolve) => {
@@ -557,13 +557,22 @@ function waitForShellMessage(type, requestId) {
 		window.addEventListener('message', handleMessage);
 	});
 }
-function postRequestAndWaitForShellMessage(type, payload, responseType, requestId) {
-	const pending = waitForShellMessage(responseType, requestId);
-	window.parent.postMessage({
-		type,
-		payload,
-	}, '*');
-	return pending;
+function postRequestAndWaitForShellMessage(
+	type,
+	payload,
+	responseType,
+	requestId,
+) {
+	if (window.parent === window) return Promise.resolve(null)
+	const pending = waitForShellMessage(responseType, requestId)
+	window.parent.postMessage(
+		{
+			type,
+			payload,
+		},
+		'*',
+	)
+	return pending
 }
 window.kodyWidget = {
 	sendMessage(text) {
@@ -726,9 +735,11 @@ ${safeCode}
 		`.trim()
 	}
 
-	function buildHtmlDocumentFromFragment(code: string) {
-		const theme = coerceTheme(latestRenderData?.theme)
-		const appSession = latestEnvelope?.appSession ?? null
+	function buildHtmlDocumentFromFragment(
+		code: string,
+		theme: ThemeName | null,
+		appSession: AppSessionEnvelope | null,
+	) {
 		return `
 <!doctype html>
 <html lang="en"${theme ? ` data-kody-theme="${theme}"` : ''}>
@@ -777,38 +788,11 @@ ${inlineModuleSource}
 					buildHeadInjection(theme, appSession),
 					theme,
 				)
-			: buildHtmlDocumentFromFragment(code)
+			: buildHtmlDocumentFromFragment(code, theme, appSession)
 		frameElement.srcdoc = htmlSource
 	}
 
 	async function resolveSavedAppCode(appId: string) {
-		const appSession = latestEnvelope?.appSession ?? null
-		if (appSession) {
-			const url = new URL(appSession.endpoints.appSource)
-			url.searchParams.set('app_id', appId)
-			const response = await fetch(url.toString(), {
-				headers: {
-					accept: 'application/json',
-					authorization: `Bearer ${appSession.token}`,
-				},
-			})
-			const payload = (await response.json().catch(() => null)) as Record<
-				string,
-				unknown
-			> | null
-			const app = isRecord(payload?.app) ? payload.app : null
-			if (!response.ok || payload?.ok !== true || !app) {
-				throw new Error('Failed to load saved app source.')
-			}
-			const code = typeof app.code === 'string' ? app.code : null
-			if (!code) {
-				throw new Error('Saved app source is missing code.')
-			}
-			return {
-				code,
-				runtime: coerceRuntime(app.runtime) ?? 'html',
-			}
-		}
 		const result = (await hostBridge.callTool({
 			name: 'ui_load_app_source',
 			arguments: { app_id: appId },
@@ -964,6 +948,73 @@ ${inlineModuleSource}
 								'*',
 							)
 						})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}invoke-action`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const code = typeof payload.code === 'string' ? payload.code : null
+				if (requestId && code && event.source) {
+					void hostBridge
+						.callTool({
+							name: 'execute',
+							arguments: {
+								code: wrapActionCode(code, payload.params),
+							},
+						})
+						.then((payloadResult) => {
+							const errorMessage = getHostToolErrorMessage(payloadResult)
+							const structuredContent = isRecord(payloadResult?.structuredContent)
+								? payloadResult.structuredContent
+								: null
+							;(event.source as WindowProxy).postMessage(
+								{
+									type: `${childMessagePrefix}invoke-result`,
+									payload: {
+										requestId,
+										result:
+											payloadResult?.isError === true
+												? null
+												: (structuredContent?.result ?? null),
+										errorMessage,
+									},
+								},
+								'*',
+							)
+						})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}secure-input`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const setupId =
+					typeof payload.setupId === 'string' ? payload.setupId : null
+				const fields =
+					payload.fields && typeof payload.fields === 'object'
+						? payload.fields
+						: null
+				if (requestId && setupId && fields && event.source) {
+					void submitSecureInputWithSession({ setupId, fields }).then(
+						(payloadResult) => {
+							;(event.source as WindowProxy).postMessage(
+								{
+									type: `${childMessagePrefix}secure-input-result`,
+									payload: {
+										requestId,
+										...(isRecord(payloadResult)
+											? payloadResult
+											: {
+													ok: false,
+													error: 'Secure input failed.',
+												}),
+									},
+								},
+								'*',
+							)
+						},
+					)
 				}
 				return
 			}

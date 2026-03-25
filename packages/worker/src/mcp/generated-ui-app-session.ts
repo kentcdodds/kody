@@ -13,7 +13,6 @@ type GeneratedUiAppSessionPayload = {
 
 export type GeneratedUiAppSession = {
 	sessionId: string
-	token: string
 	expiresAt: string
 	endpoints: {
 		appSource: string
@@ -30,7 +29,7 @@ export async function createGeneratedUiAppSession(
 	const now = Date.now()
 	const sessionId = crypto.randomUUID()
 	const expiresAtMs = now + defaultGeneratedUiSessionTtlMs
-	const token = await signToken(env, generatedUiSessionPurpose, {
+	await signToken(env, generatedUiSessionPurpose, {
 		session_id: sessionId,
 		user,
 		iat: now,
@@ -40,7 +39,6 @@ export async function createGeneratedUiAppSession(
 	const appBaseUrl = new URL(baseUrl)
 	return {
 		sessionId,
-		token,
 		expiresAt: new Date(expiresAtMs).toISOString(),
 		endpoints: {
 			appSource: new URL('/api/generated-ui/app-source', appBaseUrl).toString(),

@@ -971,10 +971,11 @@ function parseJsonRecord(raw: string | null) {
 }
 
 function base64UrlString(bytes: Uint8Array) {
-	return btoa(String.fromCharCode(...bytes))
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replace(/=+$/g, '')
+	let binary = ''
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte)
+	}
+	return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '')
 }
 
 async function createPkceCodeChallenge(codeVerifier: string) {

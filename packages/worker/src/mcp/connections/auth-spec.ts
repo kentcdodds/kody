@@ -52,12 +52,19 @@ export const secretFieldSchema = z.object({
 	input_type: z.enum(['text', 'password']).default('password'),
 })
 
-const manualTokenLikeAuthSpecSchema = z.object({
-	strategy: z.enum(['manual_token', 'api_key']),
+const manualTokenBaseAuthSpecSchema = z.object({
 	instructions: z.array(z.string()).default([]),
 	secret_fields: z.array(secretFieldSchema).min(1),
 	request: providerRequestConfigSchema,
 	verification: providerVerificationSchema.optional(),
+})
+
+const manualTokenAuthSpecSchema = manualTokenBaseAuthSpecSchema.extend({
+	strategy: z.literal('manual_token'),
+})
+
+const apiKeyAuthSpecSchema = manualTokenBaseAuthSpecSchema.extend({
+	strategy: z.literal('api_key'),
 })
 
 const oauthBaseAuthSpecSchema = z.object({
@@ -96,7 +103,8 @@ const oauthDynamicClientAuthSpecSchema = oauthBaseAuthSpecSchema.extend({
 })
 
 export const connectionAuthSpecSchema = z.discriminatedUnion('strategy', [
-	manualTokenLikeAuthSpecSchema,
+	manualTokenAuthSpecSchema,
+	apiKeyAuthSpecSchema,
 	oauthPreRegisteredAuthSpecSchema,
 	oauthDynamicClientAuthSpecSchema,
 ])
