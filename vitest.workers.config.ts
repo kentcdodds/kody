@@ -8,6 +8,7 @@ export default mergeConfig(
 	defineProject({
 		plugins: [
 			cloudflareTest({
+				remoteBindings: false,
 				wrangler: {
 					configPath: resolve(rootDir, 'packages/worker/wrangler.jsonc'),
 					environment: 'test',
