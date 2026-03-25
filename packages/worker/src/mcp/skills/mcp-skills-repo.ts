@@ -44,6 +44,47 @@ export async function insertMcpSkill(
 		.run()
 }
 
+export async function insertMcpSkillIfMissingTemplate(
+	db: D1Database,
+	row: Omit<McpSkillRow, 'created_at' | 'updated_at'> & {
+		created_at?: string
+		updated_at?: string
+	},
+): Promise<boolean> {
+	const now = new Date().toISOString()
+	const out = await db
+		.prepare(
+			`INSERT OR IGNORE INTO mcp_skills (
+				id, user_id, title, description, keywords, code, search_text,
+				uses_capabilities, parameters, connection_bindings, template_key,
+				inferred_capabilities, inference_partial, read_only, idempotent,
+				destructive, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			row.id,
+			row.user_id,
+			row.title,
+			row.description,
+			row.keywords,
+			row.code,
+			row.search_text ?? null,
+			row.uses_capabilities ?? null,
+			row.parameters ?? null,
+			row.connection_bindings ?? null,
+			row.template_key ?? null,
+			row.inferred_capabilities,
+			row.inference_partial,
+			row.read_only,
+			row.idempotent,
+			row.destructive,
+			row.created_at ?? now,
+			row.updated_at ?? now,
+		)
+		.run()
+	return (out.meta.changes ?? 0) > 0
+}
+
 export async function getMcpSkillById(
 	db: D1Database,
 	userId: string,

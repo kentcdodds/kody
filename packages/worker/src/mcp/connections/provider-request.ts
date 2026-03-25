@@ -502,10 +502,16 @@ function assertSafeProviderPath(config: ProviderRequestConfig, path: string) {
 			'path must start with `/` and must not include a host or absolute URL.',
 		)
 	}
-	if (trimmed.includes('..')) {
+	let decodedPath: string
+	try {
+		decodedPath = decodeURIComponent(trimmed)
+	} catch {
+		throw new Error('path contains invalid percent-encoding.')
+	}
+	if (decodedPath.includes('..')) {
 		throw new Error('path must not contain `..` segments.')
 	}
-	if (/[\s#]/.test(trimmed)) {
+	if (/[\s#]/.test(decodedPath)) {
 		throw new Error('path contains disallowed characters.')
 	}
 	if (config.path_prefix && !trimmed.startsWith(config.path_prefix)) {

@@ -1,4 +1,7 @@
-import { insertMcpSkill, listMcpSkillsByUserId } from './mcp-skills-repo.ts'
+import {
+	insertMcpSkillIfMissingTemplate,
+	listMcpSkillsByUserId,
+} from './mcp-skills-repo.ts'
 import { prepareSkillPersistence } from './skill-mutation.ts'
 import { upsertSkillVector } from './skill-vectorize.ts'
 
@@ -357,11 +360,14 @@ export async function ensureBuiltinSkillTemplatesForUser(
 			destructive: template.destructive,
 		})
 		const skillId = crypto.randomUUID()
-		await insertMcpSkill(env.APP_DB, {
+		const inserted = await insertMcpSkillIfMissingTemplate(env.APP_DB, {
 			id: skillId,
 			user_id: userId,
 			...prep.rowPayload,
 		})
+		if (!inserted) {
+			continue
+		}
 		await upsertSkillVector(env, {
 			skillId,
 			userId,

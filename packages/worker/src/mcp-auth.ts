@@ -113,7 +113,14 @@ export async function handleMcpRequest({
 		homeConnectorId: 'default',
 	})
 	if (props.user?.userId) {
-		await ensureBuiltinSkillTemplatesForUser(env, props.user.userId)
+		try {
+			await ensureBuiltinSkillTemplatesForUser(env, props.user.userId)
+		} catch (error) {
+			console.warn('Failed to ensure builtin MCP skill templates', {
+				userId: props.user.userId,
+				error: error instanceof Error ? error.message : String(error),
+			})
+		}
 	}
 	context.props = props
 

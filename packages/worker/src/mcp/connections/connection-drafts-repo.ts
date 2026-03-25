@@ -91,10 +91,10 @@ export async function updateConnectionDraft(
 			WHERE id = ? AND user_id = ?`,
 		)
 		.bind(
-			fields.status ?? existing.status,
-			fields.state_json ?? existing.state_json,
-			fields.error_message ?? existing.error_message,
-			fields.expires_at ?? existing.expires_at,
+			resolveFieldUpdate(fields, 'status', existing.status),
+			resolveFieldUpdate(fields, 'state_json', existing.state_json),
+			resolveFieldUpdate(fields, 'error_message', existing.error_message),
+			resolveFieldUpdate(fields, 'expires_at', existing.expires_at),
 			now,
 			draftId,
 			userId,
@@ -123,10 +123,10 @@ export async function updateConnectionDraftUnsafe(
 			WHERE id = ?`,
 		)
 		.bind(
-			fields.status ?? existing.status,
-			fields.state_json ?? existing.state_json,
-			fields.error_message ?? existing.error_message,
-			fields.expires_at ?? existing.expires_at,
+			resolveFieldUpdate(fields, 'status', existing.status),
+			resolveFieldUpdate(fields, 'state_json', existing.state_json),
+			resolveFieldUpdate(fields, 'error_message', existing.error_message),
+			resolveFieldUpdate(fields, 'expires_at', existing.expires_at),
 			now,
 			draftId,
 		)
@@ -233,6 +233,15 @@ function mapConnectionDraftRow(
 		updated_at: String(row['updated_at']),
 		expires_at: String(row['expires_at']),
 	}
+}
+
+function resolveFieldUpdate<
+	TFields extends Record<string, unknown>,
+	TKey extends keyof TFields,
+>(fields: TFields, key: TKey, currentValue: TFields[TKey]) {
+	return Object.hasOwn(fields, key) && fields[key] !== undefined
+		? fields[key]
+		: currentValue
 }
 
 function mapConnectionDraftSecretRow(
