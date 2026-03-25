@@ -144,9 +144,6 @@ jobs:
         run: |
           set -euo pipefail
           DEPLOY_ARGS=(--config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}")
-          if [ -n "${APP_BASE_URL:-}" ]; then
-            DEPLOY_ARGS+=(--var "APP_BASE_URL:${APP_BASE_URL}")
-          fi
           bun run deploy -- "${DEPLOY_ARGS[@]}" 2>&1 | tee deploy.log
 
           DEPLOY_URL="${APP_BASE_URL:-}"
