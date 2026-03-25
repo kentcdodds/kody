@@ -315,6 +315,23 @@ function initializeGeneratedUiShell() {
 		return code.replace(/<\/script/gi, '<\\/script')
 	}
 
+	function escapeInlineJsonSource(json: string) {
+		const withEscapedEntities = json.replace(/[<>&]/g, (value) => {
+			switch (value) {
+				case '<':
+					return '\\u003c'
+				case '>':
+					return '\\u003e'
+				case '&':
+					return '\\u0026'
+				default:
+					return value
+			}
+		})
+		return withEscapedEntities
+			.replace(/\u2028/g, '\\u2028')
+			.replace(/\u2029/g, '\\u2029')
+	}
 	function buildShellStyles(theme: ThemeName | null) {
 		const themeSelector = theme ? `html[data-kody-theme="${theme}"]` : ':root'
 		return `
@@ -560,7 +577,9 @@ ${bridgeRuntime}
 	function buildChildBridgeRuntimeSource(
 		appSession: AppSessionEnvelope | null,
 	) {
-		const serializedAppSession = JSON.stringify(appSession)
+		const serializedAppSession = escapeInlineJsonSource(
+			JSON.stringify(appSession),
+		)
 		return `
 const shellMessagePrefix = '${childMessagePrefix}';
 const appSession = ${serializedAppSession};
