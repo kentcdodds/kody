@@ -13,11 +13,13 @@ export function spawnProcess(input: {
 	cwd: string
 	env?: NodeJS.ProcessEnv
 }): SpawnedProcess {
+	// stdio pipes guarantee stdout/stderr streams here, but Node's spawn typing
+	// still models stdin as null for this configuration.
 	const proc = spawn(input.cmd[0], input.cmd.slice(1), {
 		cwd: input.cwd,
 		env: input.env,
 		stdio: ['ignore', 'pipe', 'pipe'],
-	}) as ChildProcessWithoutNullStreams
+	}) as unknown as ChildProcessWithoutNullStreams
 
 	const exited = new Promise<number | null>((resolve, reject) => {
 		proc.once('error', reject)

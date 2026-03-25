@@ -1,5 +1,5 @@
 import { parseSafe } from 'remix/data-schema'
-import { EnvSchema, type AppEnv } from '../../../../types/env-schema.ts'
+import { EnvSchema, type AppEnv } from '#worker/env-schema.ts'
 
 export function getEnv(env: Env): AppEnv {
 	const result = parseSafe(EnvSchema, env)

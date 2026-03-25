@@ -6,10 +6,13 @@ types, runtime validation, and documentation in sync.
 ## Steps
 
 1. **Add the type**
-   - Update `types/env.d.ts` so `Env` includes the new variable.
+   - Update `packages/worker/src/env-schema.ts` so the worker schema and
+     `AppEnv` include the new variable.
+   - `packages/worker/env.d.ts` extends `Env` from that worker-owned schema.
 
 2. **Validate at runtime**
-   - Add the variable to the Zod schema in `types/env-schema.ts`.
+   - Add the variable to the runtime schema in
+     `packages/worker/src/env-schema.ts`.
    - `packages/worker/src/app/env.ts` uses the schema to fail fast at runtime.
    - The schema is the single source of truth for validation + types.
 
@@ -47,7 +50,7 @@ types, runtime validation, and documentation in sync.
 
 ## Sentry
 
-Optional Worker secret and vars (see `types/env-schema.ts` and
+Optional Worker secret and vars (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/sentry-options.ts`):
 
 - `SENTRY_DSN` — ingest URL from your Sentry project. When unset, the Worker
@@ -60,7 +63,7 @@ Optional Worker secret and vars (see `types/env-schema.ts` and
 
 ## GitHub (`github_rest` + `github_graphql` capabilities)
 
-Optional Worker secrets/vars (see `types/env-schema.ts`,
+Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts`,
 `packages/worker/src/mcp/github/github-rest-client.ts`, and
 `packages/worker/src/mcp/github/github-graphql-client.ts`):
 
@@ -100,7 +103,7 @@ Optional Worker secret:
 
 ## Cursor Cloud Agents (`cursor_cloud_rest` capability)
 
-Optional Worker secrets/vars (see `types/env-schema.ts` and
+Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/mcp/cursor/cursor-cloud-client.ts`):
 
 - `CURSOR_API_KEY` — Cursor API key ([dashboard](https://cursor.com/settings)).
@@ -112,7 +115,7 @@ Optional Worker secrets/vars (see `types/env-schema.ts` and
 
 ## Cloudflare API (`cloudflare_rest` capability)
 
-Optional Worker secrets/vars (see `types/env-schema.ts` and
+Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/mcp/cloudflare/cloudflare-rest-client.ts`):
 
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the `cloudflare_rest`
@@ -126,7 +129,7 @@ Optional Worker secrets/vars (see `types/env-schema.ts` and
 
 ## Home connector bridge
 
-Optional Worker secret/var (see `types/env-schema.ts` and
+Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/home/session.ts`):
 
 - `HOME_CONNECTOR_SHARED_SECRET` — shared secret used by the locally running

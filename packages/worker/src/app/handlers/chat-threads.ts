@@ -2,7 +2,7 @@ import { type BuildAction } from 'remix/fetch-router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type routes } from '#app/routes.ts'
 import { createChatThreadsStore } from '#app/chat-threads.ts'
-import { type AppEnv } from '../../../../../types/env-schema.ts'
+import { type AppEnv } from '#worker/env-schema.ts'
 
 function jsonResponse(data: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(data), {

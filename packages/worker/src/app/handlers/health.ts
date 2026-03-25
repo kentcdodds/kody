@@ -1,6 +1,6 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { type routes } from '#app/routes.ts'
-import { type AppEnv } from '../../../../../types/env-schema.ts'
+import { type AppEnv } from '#worker/env-schema.ts'
 
 type HealthEnv = {
 	APP_COMMIT_SHA: AppEnv['APP_COMMIT_SHA']

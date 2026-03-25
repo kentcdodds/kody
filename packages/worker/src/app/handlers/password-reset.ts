@@ -7,7 +7,7 @@ import { normalizeEmail } from '#app/normalize-email.ts'
 import { type routes } from '#app/routes.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { type AppEnv } from '../../../../../types/env-schema.ts'
+import { type AppEnv } from '#worker/env-schema.ts'
 
 const resetTokenBytes = 32
 const resetTokenExpiryMs = 60 * 60 * 1000
