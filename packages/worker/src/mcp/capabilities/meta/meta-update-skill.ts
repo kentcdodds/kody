@@ -7,6 +7,7 @@ import {
 	buildSkillEmbedTextFromStoredRow,
 	prepareSkillPersistence,
 } from '#mcp/skills/skill-mutation.ts'
+import { skillConnectionBindingSchema } from '#mcp/skills/skill-connections.ts'
 import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
@@ -36,6 +37,10 @@ const inputSchema = z.object({
 		.array(skillParameterSchema)
 		.optional()
 		.describe('Replacement parameter definitions for the skill.'),
+	connection_bindings: z
+		.array(skillConnectionBindingSchema)
+		.optional()
+		.describe('Replacement provider connection metadata for the skill.'),
 	read_only: z.boolean(),
 	idempotent: z.boolean(),
 	destructive: z.boolean(),
@@ -75,7 +80,10 @@ export const metaUpdateSkillCapability = defineDomainCapability(
 			}
 
 			const { skill_id, ...rest } = args
-			const prep = await prepareSkillPersistence(rest)
+			const prep = await prepareSkillPersistence({
+				...rest,
+				template_key: existing.template_key ?? undefined,
+			})
 
 			const updated = await updateMcpSkill(
 				ctx.env.APP_DB,
@@ -102,6 +110,8 @@ export const metaUpdateSkillCapability = defineDomainCapability(
 					search_text: existing.search_text,
 					uses_capabilities: existing.uses_capabilities,
 					parameters: existing.parameters,
+					connection_bindings: existing.connection_bindings,
+					template_key: existing.template_key,
 					inferred_capabilities: existing.inferred_capabilities,
 					inference_partial: existing.inference_partial,
 					read_only: existing.read_only,

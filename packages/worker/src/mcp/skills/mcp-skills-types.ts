@@ -8,6 +8,8 @@ export type McpSkillRow = {
 	search_text: string | null
 	uses_capabilities: string | null
 	parameters: string | null
+	connection_bindings: string | null
+	template_key: string | null
 	inferred_capabilities: string
 	inference_partial: 0 | 1
 	read_only: 0 | 1

@@ -7,6 +7,10 @@ import {
 	parseSkillParameters,
 	skillParameterSchema,
 } from '#mcp/skills/skill-parameters.ts'
+import {
+	parseSkillConnectionBindings,
+	skillConnectionBindingSchema,
+} from '#mcp/skills/skill-connections.ts'
 import { requireMcpUser } from './require-user.ts'
 
 function parseStringArray(raw: string | null): Array<string> | null {
@@ -29,6 +33,7 @@ const outputSchema = z.object({
 	search_text: z.string().nullable(),
 	uses_capabilities: z.array(z.string()).nullable(),
 	parameters: z.array(skillParameterSchema).nullable(),
+	connection_bindings: z.array(skillConnectionBindingSchema).nullable(),
 	inferred_capabilities: z.array(z.string()),
 	inference_partial: z.boolean(),
 	read_only: z.boolean(),
@@ -69,6 +74,9 @@ export const metaGetSkillCapability = defineDomainCapability(
 			const inferred = parseStringArray(row.inferred_capabilities) ?? []
 			const uses = parseStringArray(row.uses_capabilities)
 			const parameters = parseSkillParameters(row.parameters)
+			const connectionBindings = parseSkillConnectionBindings(
+				row.connection_bindings,
+			)
 			return {
 				skill_id: row.id,
 				title: row.title,
@@ -78,6 +86,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 				search_text: row.search_text,
 				uses_capabilities: uses,
 				parameters,
+				connection_bindings: connectionBindings,
 				inferred_capabilities: inferred,
 				inference_partial: row.inference_partial === 1,
 				read_only: row.read_only === 1,

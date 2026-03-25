@@ -4,6 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { insertMcpSkill, deleteMcpSkill } from '#mcp/skills/mcp-skills-repo.ts'
 import { prepareSkillPersistence } from '#mcp/skills/skill-mutation.ts'
+import { skillConnectionBindingSchema } from '#mcp/skills/skill-connections.ts'
 import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
@@ -40,6 +41,12 @@ const inputSchema = z.object({
 		.optional()
 		.describe(
 			'Optional parameter definitions (names/types/defaults) for running this skill with inputs.',
+		),
+	connection_bindings: z
+		.array(skillConnectionBindingSchema)
+		.optional()
+		.describe(
+			'Optional connection metadata describing which provider connections this skill expects or prefers.',
 		),
 	read_only: z
 		.boolean()

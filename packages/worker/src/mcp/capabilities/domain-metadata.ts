@@ -2,6 +2,7 @@
 export const capabilityDomainNames = {
 	apps: 'apps',
 	coding: 'coding',
+	connections: 'connections',
 	home: 'home',
 	math: 'math',
 	meta: 'meta',

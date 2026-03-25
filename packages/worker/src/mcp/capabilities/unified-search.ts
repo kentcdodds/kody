@@ -19,6 +19,10 @@ import {
 	type SkillParameterDefinition,
 } from '#mcp/skills/skill-parameters.ts'
 import {
+	parseSkillConnectionBindings,
+	type SkillConnectionBinding,
+} from '#mcp/skills/skill-connections.ts'
+import {
 	type UiArtifactSearchHit,
 	searchUiArtifactsForUser,
 } from '#mcp/ui-artifacts-search.ts'
@@ -45,6 +49,9 @@ function skillRowEmbedDoc(
 ): string {
 	const keywords = parseJsonStringArray(row.keywords)
 	const parameters = parseSkillParameters(row.parameters)
+	const connectionBindings = parseSkillConnectionBindings(
+		row.connection_bindings,
+	)
 	let inferred: Array<string> = []
 	try {
 		const v = JSON.parse(row.inferred_capabilities) as unknown
@@ -61,6 +68,7 @@ function skillRowEmbedDoc(
 		searchText: row.search_text,
 		inferredCapabilities: inferred,
 		parameters,
+		connectionBindings,
 		specs,
 	})
 }
@@ -87,6 +95,7 @@ export type SkillSearchHitDetail = SkillSearchHitSummary & {
 	usesCapabilities: Array<string> | null
 	searchText: string | null
 	parameters: Array<SkillParameterDefinition> | null
+	connectionBindings: Array<SkillConnectionBinding> | null
 }
 
 export type SkillSearchHit = SkillSearchHitSummary | SkillSearchHitDetail
@@ -123,6 +132,7 @@ function rowToSkillHit(
 		if (uses.length === 0) uses = null
 	}
 	const parameters = parseSkillParameters(row.parameters)
+	const connectionBindings = parseSkillConnectionBindings(row.connection_bindings)
 	const base: SkillSearchHitSummary = {
 		type: 'skill',
 		skillId: row.id,
@@ -146,6 +156,7 @@ function rowToSkillHit(
 			usesCapabilities: uses,
 			searchText: row.search_text,
 			parameters,
+			connectionBindings,
 		}
 		return hit
 	}

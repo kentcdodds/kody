@@ -555,7 +555,7 @@ test(
 			name: 'search',
 			arguments: {
 				query: 'save reusable generated ui artifact and reopen app by id',
-				limit: 8,
+				limit: 15,
 			},
 		})
 

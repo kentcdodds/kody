@@ -23,7 +23,7 @@ const serverMetadata = {
 	},
 	instructions: `
 This is a three-part system:
-1. Use 'search' to discover builtin capabilities, saved skills, and saved apps (when authenticated).
+1. Use 'search' to discover builtin capabilities, seeded skill templates, saved skills, and saved apps (when authenticated).
 2. Use 'execute' to call builtin capabilities via 'codemode[capabilityName](args)', or use meta domain tools to run saved skills.
 3. Use 'open_generated_ui' to open a generic MCP App shell with inline generated code or a saved app by id.
 

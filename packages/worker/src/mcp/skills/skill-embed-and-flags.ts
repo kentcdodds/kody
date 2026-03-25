@@ -1,4 +1,5 @@
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
+import { type SkillConnectionBinding } from './skill-connections.ts'
 import { type SkillParameterDefinition } from './skill-parameters.ts'
 
 const defaultSkillEmbedMaxChars = 8_000
@@ -34,6 +35,7 @@ export function buildSkillEmbedText(
 		searchText: string | null
 		inferredCapabilities: Array<string>
 		parameters?: Array<SkillParameterDefinition> | null
+		connectionBindings?: Array<SkillConnectionBinding> | null
 		specs: Record<string, CapabilitySpec>
 	},
 	maxChars: number = defaultSkillEmbedMaxChars,
@@ -50,6 +52,24 @@ export function buildSkillEmbedText(
 		input.parameters && input.parameters.length > 0
 			? input.parameters.map(
 					(param) => `${param.name}: ${param.description} (${param.type})`,
+				)
+			: []
+	const connectionParts =
+		input.connectionBindings && input.connectionBindings.length > 0
+			? input.connectionBindings.map((binding) =>
+					[
+						`provider:${binding.provider}`,
+						`selection:${binding.selection.strategy}`,
+						binding.selection.strategy === 'label'
+							? `label:${binding.selection.label}`
+							: binding.selection.strategy === 'id'
+								? `connection_id:${binding.selection.connection_id}`
+								: 'default-connection',
+						binding.description ?? '',
+						binding.required ? 'required-connection' : 'optional-connection',
+					]
+						.filter(Boolean)
+						.join(' '),
 				)
 			: []
 	const denorm: Array<string> = []
@@ -70,7 +90,9 @@ export function buildSkillEmbedText(
 			].join('\n'),
 		)
 	}
-	const text = [...baseParts, ...parameterParts, ...denorm].join('\n')
+	const text = [...baseParts, ...parameterParts, ...connectionParts, ...denorm].join(
+		'\n',
+	)
 	return text.slice(0, maxChars)
 }
 

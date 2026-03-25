@@ -35,7 +35,7 @@ const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities And Skills',
 	description: `
-Search Kody **builtin capabilities**, your saved **skills** (meta domain), and your saved **apps** (apps domain) by natural language before calling \`execute\` or opening a UI.
+Search Kody **builtin capabilities**, seeded **skill templates**, your saved **skills** (meta domain), and your saved **apps** (apps domain) by natural language before calling \`execute\` or opening a UI.
 
 Each match has **type** \`capability\`, \`skill\`, or \`app\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill. Saved apps are reusable UI artifacts and can be reopened without resending their source code through the model.
 

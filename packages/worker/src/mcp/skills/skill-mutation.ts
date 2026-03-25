@@ -12,6 +12,11 @@ import {
 	parseSkillParameters,
 	type SkillParameterInput,
 } from './skill-parameters.ts'
+import {
+	normalizeSkillConnectionBindings,
+	parseSkillConnectionBindings,
+	type SkillConnectionBinding,
+} from './skill-connections.ts'
 
 function parseJsonStringArray(raw: string): Array<string> {
 	try {
@@ -29,6 +34,7 @@ export async function buildSkillEmbedTextFromStoredRow(
 	const { capabilitySpecs } = await import('#mcp/capabilities/registry.ts')
 	const keywords = parseJsonStringArray(row.keywords)
 	const parameters = parseSkillParameters(row.parameters)
+	const connectionBindings = parseSkillConnectionBindings(row.connection_bindings)
 	let inferred: Array<string> = []
 	try {
 		const v = JSON.parse(row.inferred_capabilities) as unknown
@@ -45,6 +51,7 @@ export async function buildSkillEmbedTextFromStoredRow(
 		searchText: row.search_text,
 		inferredCapabilities: inferred,
 		parameters,
+		connectionBindings,
 		specs: capabilitySpecs,
 	})
 }
@@ -57,6 +64,8 @@ export type SkillPersistenceArgs = {
 	search_text?: string | undefined
 	uses_capabilities?: Array<string> | undefined
 	parameters?: Array<SkillParameterInput> | undefined
+	connection_bindings?: Array<SkillConnectionBinding> | undefined
+	template_key?: string | undefined
 	read_only: boolean
 	idempotent: boolean
 	destructive: boolean
@@ -76,6 +85,8 @@ export type PreparedSkillPersistence = {
 		search_text: string | null
 		uses_capabilities: string | null
 		parameters: string | null
+		connection_bindings: string | null
+		template_key: string | null
 		inferred_capabilities: string
 		inference_partial: 0 | 1
 		read_only: 0 | 1
@@ -123,6 +134,9 @@ export async function prepareSkillPersistence(
 	}
 
 	const parameters = normalizeSkillParameters(args.parameters)
+	const connectionBindings = normalizeSkillConnectionBindings(
+		args.connection_bindings,
+	)
 	const embedText = buildSkillEmbedText({
 		title: args.title,
 		description: args.description,
@@ -130,6 +144,7 @@ export async function prepareSkillPersistence(
 		searchText: args.search_text ?? null,
 		inferredCapabilities: merged,
 		parameters,
+		connectionBindings,
 		specs: capabilitySpecs,
 	})
 
@@ -143,6 +158,10 @@ export async function prepareSkillPersistence(
 			? JSON.stringify(args.uses_capabilities)
 			: null,
 		parameters: parameters ? JSON.stringify(parameters) : null,
+		connection_bindings: connectionBindings
+			? JSON.stringify(connectionBindings)
+			: null,
+		template_key: args.template_key ?? null,
 		inferred_capabilities: JSON.stringify(merged),
 		inference_partial: (inferencePartial ? 1 : 0) as 0 | 1,
 		read_only: (args.read_only ? 1 : 0) as 0 | 1,
