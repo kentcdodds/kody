@@ -129,6 +129,7 @@ export function createWorkerConnector(input: {
 	let stopped = false
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 	let socket: WebSocket | null = null
+	let hasReportedSocketIssue = false
 
 	const heartbeat = setInterval(() => {
 		if (socket?.readyState === WebSocket.OPEN) {
@@ -183,6 +184,7 @@ export function createWorkerConnector(input: {
 				| HomeConnectorJsonRpcEnvelope
 			switch (value.type) {
 				case 'server.ping':
+					hasReportedSocketIssue = false
 					updateConnectionState(input.state, {
 						lastSyncAt: new Date().toISOString(),
 						lastError: null,
@@ -202,6 +204,7 @@ export function createWorkerConnector(input: {
 					console.error(`Home connector error: ${value.message}`)
 					return
 				case 'server.ack':
+					hasReportedSocketIssue = false
 					updateConnectionState(input.state, {
 						connected: true,
 						lastSyncAt: new Date().toISOString(),
@@ -253,12 +256,15 @@ export function createWorkerConnector(input: {
 			updateConnectionState(input.state, {
 				connected: false,
 			})
-			captureHomeConnectorMessage('Home connector websocket closed.', {
-				level: 'warning',
-				tags: {
-					connector_event: 'websocket.close',
-				},
-			})
+			if (!hasReportedSocketIssue) {
+				hasReportedSocketIssue = true
+				captureHomeConnectorMessage('Home connector websocket closed.', {
+					level: 'warning',
+					tags: {
+						connector_event: 'websocket.close',
+					},
+				})
+			}
 			console.warn('Home connector websocket closed.')
 			socket = null
 			scheduleReconnect()
@@ -269,15 +275,18 @@ export function createWorkerConnector(input: {
 				connected: false,
 				lastError: 'Home connector websocket error.',
 			})
-			captureHomeConnectorMessage('Home connector websocket error.', {
-				level: 'error',
-				tags: {
-					connector_event: 'websocket.error',
-				},
-				extra: {
-					eventType: event.type,
-				},
-			})
+			if (!hasReportedSocketIssue) {
+				hasReportedSocketIssue = true
+				captureHomeConnectorMessage('Home connector websocket error.', {
+					level: 'error',
+					tags: {
+						connector_event: 'websocket.error',
+					},
+					extra: {
+						eventType: event.type,
+					},
+				})
+			}
 			console.error('Home connector websocket error', event)
 		})
 	}
