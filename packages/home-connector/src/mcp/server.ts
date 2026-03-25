@@ -261,6 +261,97 @@ export function createHomeConnectorMcpServer(input: {
 		},
 	)
 
+	registerTool(
+		{
+			name: 'roku_list_apps',
+			title: 'List Roku Apps',
+			description:
+				'List installed Roku apps on an adopted device using the Roku ECP app query.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+			outputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string(),
+					apps: z.array(
+						z.object({
+							id: z.string(),
+							name: z.string(),
+							type: z.string(),
+							version: z.string(),
+						}),
+					),
+					responseText: z.string(),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await roku.listApps(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Fetched ${result.apps.length} app(s) from ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'roku_get_active_app',
+			title: 'Get Active Roku App',
+			description: 'Get the currently active Roku app on an adopted device.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+			outputSchema: z.toJSONSchema(
+				z.object({
+					deviceId: z.string(),
+					app: z
+						.object({
+							id: z.string(),
+							name: z.string(),
+							type: z.string(),
+							version: z.string(),
+						})
+						.nullable(),
+					responseText: z.string(),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const deviceId = String(args['deviceId'] ?? '')
+			const result = await roku.getActiveApp(deviceId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: result.app
+							? `Active app on ${deviceId} is ${result.app.name}.`
+							: `No active Roku app reported for ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
 	return {
 		server,
 		listTools() {
