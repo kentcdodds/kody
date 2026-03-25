@@ -26,6 +26,6 @@ export async function deleteUiArtifactVector(
 	appId: string,
 ): Promise<void> {
 	const index = getCapabilityVectorIndex(env)
-	if (!index) return
+	if (!index || isCapabilitySearchOffline(env)) return
 	await index.deleteByIds([uiArtifactVectorId(appId)])
 }
