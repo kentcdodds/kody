@@ -1,33 +1,39 @@
 import { createSocket } from 'node:dgram'
-import { expect, test } from 'bun:test'
+import { createServer } from 'node:http'
+import { type AddressInfo } from 'node:net'
+import { expect, test } from 'vitest'
 import {
 	discoverRokuDevices,
 	discoverRokuDevicesWithDiagnostics,
 } from './client.ts'
 
 async function createSsdpRokuFixture() {
-	const httpServer = Bun.serve({
-		port: 0,
-		routes: {
-			'/query/device-info': new Response(
-				[
-					'<device-info>',
-					'<user-device-name>Living Room Roku</user-device-name>',
-					'<serial-number>YH00AA123456</serial-number>',
-					'<model-name>Roku Ultra</model-name>',
-					'</device-info>',
-				].join(''),
-				{
-					headers: {
-						'Content-Type': 'application/xml',
-					},
-				},
-			),
-		},
-		fetch() {
-			return new Response('not found', { status: 404 })
-		},
+	const deviceInfoXml = [
+		'<device-info>',
+		'<user-device-name>Living Room Roku</user-device-name>',
+		'<serial-number>YH00AA123456</serial-number>',
+		'<model-name>Roku Ultra</model-name>',
+		'</device-info>',
+	].join('')
+	const httpServer = createServer((request, response) => {
+		if (request.url === '/query/device-info') {
+			response.writeHead(200, {
+				'Content-Type': 'application/xml',
+			})
+			response.end(deviceInfoXml)
+			return
+		}
+
+		response.writeHead(404)
+		response.end('not found')
 	})
+	await new Promise<void>((resolve) => {
+		httpServer.listen(0, '127.0.0.1', () => resolve())
+	})
+	const httpAddress = httpServer.address() as AddressInfo | null
+	if (!httpAddress) {
+		throw new Error('HTTP Roku fixture failed to bind.')
+	}
 
 	const socket = createSocket('udp4')
 	await new Promise<void>((resolve) => {
@@ -42,7 +48,7 @@ async function createSsdpRokuFixture() {
 
 		const response = [
 			'HTTP/1.1 200 OK',
-			`LOCATION: http://127.0.0.1:${httpServer.port}/`,
+			`LOCATION: http://127.0.0.1:${httpAddress.port}/`,
 			'USN: uuid:roku:ecp:YH00AA123456',
 			'ST: roku:ecp',
 			'',
@@ -62,7 +68,15 @@ async function createSsdpRokuFixture() {
 		discoveryUrl: `ssdp://127.0.0.1:${ssdpPort}?timeoutMs=200`,
 		[Symbol.asyncDispose]: async () => {
 			socket.close()
-			await httpServer.stop()
+			await new Promise<void>((resolve, reject) => {
+				httpServer.close((error) => {
+					if (error) {
+						reject(error)
+						return
+					}
+					resolve()
+				})
+			})
 		},
 	}
 }

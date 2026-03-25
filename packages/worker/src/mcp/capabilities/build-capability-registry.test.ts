@@ -1,5 +1,4 @@
-/// <reference types="bun" />
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { z } from 'zod'
 import { buildCapabilityRegistry } from './build-capability-registry.ts'
 import { defineDomain } from './define-domain.ts'

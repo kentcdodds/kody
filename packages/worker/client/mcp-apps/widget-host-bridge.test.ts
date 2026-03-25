@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'vitest'
 import { createWidgetHostBridge } from './widget-host-bridge.ts'
 
 type HostRequestMessage = {

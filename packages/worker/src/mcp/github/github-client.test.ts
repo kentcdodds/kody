@@ -1,35 +1,19 @@
-/// <reference types="bun" />
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
+import {
+	bunBin,
+	captureOutput,
+	spawnProcess,
+	stopProcess,
+} from '#mcp/test-process.ts'
 import {
 	createGitHubRestClient,
 	GitHubRestClient,
 } from './github-rest-client.ts'
 
 const workerConfig = 'packages/mock-servers/github/wrangler.jsonc'
-const bunBin = process.execPath
 const projectRoot = process.cwd()
-const timeoutMs = 60_000
-
-function captureOutput(stream: ReadableStream<Uint8Array> | null) {
-	let output = ''
-	if (!stream) return () => output
-	const reader = stream.getReader()
-	const decoder = new TextDecoder()
-	void (async () => {
-		try {
-			while (true) {
-				const { value, done } = await reader.read()
-				if (done) break
-				if (value) output += decoder.decode(value)
-			}
-		} catch {
-			// ignore
-		}
-	})()
-	return () => output
-}
 
 async function waitForMock(origin: string) {
 	const deadline = Date.now() + 25_000
@@ -52,7 +36,7 @@ async function startGithubMock(token: string) {
 	const port = await getPort({ host: '127.0.0.1' })
 	const origin = `http://127.0.0.1:${port}`
 	const inspectorPort = await getPort({ host: '127.0.0.1' })
-	const proc = Bun.spawn({
+	const proc = spawnProcess({
 		cmd: [
 			bunBin,
 			'x',
@@ -74,8 +58,6 @@ async function startGithubMock(token: string) {
 			'error',
 		],
 		cwd: projectRoot,
-		stdout: 'pipe',
-		stderr: 'pipe',
 	})
 	void captureOutput(proc.stdout)
 	void captureOutput(proc.stderr)
@@ -84,52 +66,41 @@ async function startGithubMock(token: string) {
 		origin,
 		token,
 		async [Symbol.asyncDispose]() {
-			proc.kill('SIGINT')
-			await Promise.race([proc.exited, delay(5000)])
-			if (proc.exitCode === null) proc.kill('SIGKILL')
-			await proc.exited
+			await stopProcess(proc)
 		},
 	}
 }
 
-test(
-	'GitHubRestClient rawRequest reads a pull request from the mock',
-	async () => {
-		const token = 'client-test-token'
-		await using mock = await startGithubMock(token)
-		const client = new GitHubRestClient({
-			token: mock.token,
-			baseUrl: mock.origin,
-		})
-		const response = await client.rawRequest({
-			method: 'GET',
-			path: '/repos/kentcdodds/kody/pulls/42',
-		})
-		expect(response.status).toBe(200)
-		const body = response.body as { number?: number; title?: string }
-		expect(body.number).toBe(42)
-		expect(body.title).toContain('GitHub REST')
-	},
-	{ timeout: timeoutMs },
-)
+test('GitHubRestClient rawRequest reads a pull request from the mock', async () => {
+	const token = 'client-test-token'
+	await using mock = await startGithubMock(token)
+	const client = new GitHubRestClient({
+		token: mock.token,
+		baseUrl: mock.origin,
+	})
+	const response = await client.rawRequest({
+		method: 'GET',
+		path: '/repos/kentcdodds/kody/pulls/42',
+	})
+	expect(response.status).toBe(200)
+	const body = response.body as { number?: number; title?: string }
+	expect(body.number).toBe(42)
+	expect(body.title).toContain('GitHub REST')
+})
 
-test(
-	'createGitHubRestClient uses GITHUB_API_BASE_URL for rawRequest',
-	async () => {
-		const token = 'client-test-token-2'
-		await using mock = await startGithubMock(token)
-		const client = createGitHubRestClient({
-			GITHUB_TOKEN: mock.token,
-			GITHUB_API_BASE_URL: mock.origin,
-		} as Pick<Env, 'GITHUB_TOKEN' | 'GITHUB_API_BASE_URL'>)
-		const response = await client.rawRequest({
-			method: 'GET',
-			path: '/repos/kentcdodds/kody/pulls/42',
-		})
-		expect(response.status).toBe(200)
-	},
-	{ timeout: timeoutMs },
-)
+test('createGitHubRestClient uses GITHUB_API_BASE_URL for rawRequest', async () => {
+	const token = 'client-test-token-2'
+	await using mock = await startGithubMock(token)
+	const client = createGitHubRestClient({
+		GITHUB_TOKEN: mock.token,
+		GITHUB_API_BASE_URL: mock.origin,
+	} as Pick<Env, 'GITHUB_TOKEN' | 'GITHUB_API_BASE_URL'>)
+	const response = await client.rawRequest({
+		method: 'GET',
+		path: '/repos/kentcdodds/kody/pulls/42',
+	})
+	expect(response.status).toBe(200)
+})
 
 test('GitHubRestClient rawRequest sends JSON bodies with DELETE', async () => {
 	const originalFetch = globalThis.fetch

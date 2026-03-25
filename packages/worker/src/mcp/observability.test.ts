@@ -1,5 +1,4 @@
-/// <reference types="bun" />
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { capabilityMap } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { errorFields, logMcpEvent } from '#mcp/observability.ts'

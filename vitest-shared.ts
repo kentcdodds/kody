@@ -1,0 +1,44 @@
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { config as loadDotEnv } from 'dotenv'
+import { type UserConfig } from 'vitest/config'
+
+export const rootDir = fileURLToPath(new URL('.', import.meta.url))
+export const testTimeout = process.env.CI ? 20_000 : 5_000
+
+loadDotEnv({
+	path: resolve(rootDir, 'packages/worker/.env'),
+})
+
+export const sharedProjectConfig = {
+	resolve: {
+		alias: [
+			{
+				find: /^#app\//,
+				replacement: `${resolve(rootDir, 'packages/worker/src/app')}/`,
+			},
+			{
+				find: /^#client\//,
+				replacement: `${resolve(rootDir, 'packages/worker/client')}/`,
+			},
+			{
+				find: /^#worker\//,
+				replacement: `${resolve(rootDir, 'packages/worker/src')}/`,
+			},
+			{
+				find: /^#mcp\//,
+				replacement: `${resolve(rootDir, 'packages/worker/src/mcp')}/`,
+			},
+		],
+	},
+	esbuild: {
+		target: 'es2023',
+		jsx: 'automatic',
+		jsxImportSource: 'remix/component',
+	},
+	test: {
+		testTimeout,
+		hookTimeout: testTimeout,
+		fileParallelism: false,
+	},
+} satisfies UserConfig

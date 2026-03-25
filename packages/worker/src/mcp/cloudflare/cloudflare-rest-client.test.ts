@@ -1,33 +1,19 @@
-/// <reference types="bun" />
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
+import {
+	bunBin,
+	captureOutput,
+	spawnProcess,
+	stopProcess,
+} from '#mcp/test-process.ts'
 import {
 	createCloudflareRestClient,
 	CloudflareRestClient,
 } from './cloudflare-rest-client.ts'
 
 const workerConfig = 'packages/mock-servers/cloudflare/wrangler.jsonc'
-const bunBin = process.execPath
 const projectRoot = process.cwd()
-const timeoutMs = 60_000
-
-function captureOutput(stream: ReadableStream<Uint8Array> | null) {
-	if (!stream) return
-	const reader = stream.getReader()
-	const decoder = new TextDecoder()
-	void (async () => {
-		try {
-			while (true) {
-				const { value, done } = await reader.read()
-				if (done) break
-				void decoder.decode(value)
-			}
-		} catch {
-			// ignore
-		}
-	})()
-}
 
 async function waitForMock(origin: string) {
 	const deadline = Date.now() + 25_000
@@ -50,7 +36,7 @@ async function startCloudflareMock(token: string) {
 	const port = await getPort({ host: '127.0.0.1' })
 	const origin = `http://127.0.0.1:${port}`
 	const inspectorPort = await getPort({ host: '127.0.0.1' })
-	const proc = Bun.spawn({
+	const proc = spawnProcess({
 		cmd: [
 			bunBin,
 			'x',
@@ -72,8 +58,6 @@ async function startCloudflareMock(token: string) {
 			'error',
 		],
 		cwd: projectRoot,
-		stdout: 'pipe',
-		stderr: 'pipe',
 	})
 	captureOutput(proc.stdout)
 	captureOutput(proc.stderr)
@@ -82,57 +66,46 @@ async function startCloudflareMock(token: string) {
 		origin,
 		token,
 		async [Symbol.asyncDispose]() {
-			proc.kill('SIGINT')
-			await Promise.race([proc.exited, delay(5000)])
-			if (proc.exitCode === null) proc.kill('SIGKILL')
-			await proc.exited
+			await stopProcess(proc)
 		},
 	}
 }
 
-test(
-	'CloudflareRestClient rawRequest reads accounts from the mock',
-	async () => {
-		const token = 'cloudflare-client-mock-token'
-		await using mock = await startCloudflareMock(token)
-		const client = new CloudflareRestClient({
-			apiToken: mock.token,
-			baseUrl: mock.origin,
-		})
-		const response = await client.rawRequest({
-			method: 'GET',
-			path: '/client/v4/accounts',
-		})
-		expect(response.status).toBe(200)
-		const body = response.body as {
-			success?: boolean
-			result?: Array<{ id?: string }>
-		}
-		expect(body.success).toBe(true)
-		expect(
-			body.result?.some((account) => account.id === 'cf_account_mock_123'),
-		).toBe(true)
-	},
-	{ timeout: timeoutMs },
-)
+test('CloudflareRestClient rawRequest reads accounts from the mock', async () => {
+	const token = 'cloudflare-client-mock-token'
+	await using mock = await startCloudflareMock(token)
+	const client = new CloudflareRestClient({
+		apiToken: mock.token,
+		baseUrl: mock.origin,
+	})
+	const response = await client.rawRequest({
+		method: 'GET',
+		path: '/client/v4/accounts',
+	})
+	expect(response.status).toBe(200)
+	const body = response.body as {
+		success?: boolean
+		result?: Array<{ id?: string }>
+	}
+	expect(body.success).toBe(true)
+	expect(
+		body.result?.some((account) => account.id === 'cf_account_mock_123'),
+	).toBe(true)
+})
 
-test(
-	'createCloudflareRestClient uses CLOUDFLARE_API_BASE_URL for rawRequest',
-	async () => {
-		const token = 'cloudflare-client-env-token'
-		await using mock = await startCloudflareMock(token)
-		const client = createCloudflareRestClient({
-			CLOUDFLARE_API_TOKEN: mock.token,
-			CLOUDFLARE_API_BASE_URL: mock.origin,
-		} as Pick<Env, 'CLOUDFLARE_API_TOKEN' | 'CLOUDFLARE_API_BASE_URL'>)
-		const response = await client.rawRequest({
-			method: 'GET',
-			path: '/client/v4/user/tokens/verify',
-		})
-		expect(response.status).toBe(200)
-	},
-	{ timeout: timeoutMs },
-)
+test('createCloudflareRestClient uses CLOUDFLARE_API_BASE_URL for rawRequest', async () => {
+	const token = 'cloudflare-client-env-token'
+	await using mock = await startCloudflareMock(token)
+	const client = createCloudflareRestClient({
+		CLOUDFLARE_API_TOKEN: mock.token,
+		CLOUDFLARE_API_BASE_URL: mock.origin,
+	} as Pick<Env, 'CLOUDFLARE_API_TOKEN' | 'CLOUDFLARE_API_BASE_URL'>)
+	const response = await client.rawRequest({
+		method: 'GET',
+		path: '/client/v4/user/tokens/verify',
+	})
+	expect(response.status).toBe(200)
+})
 
 test('CloudflareRestClient sends JSON body on PATCH', async () => {
 	const originalFetch = globalThis.fetch

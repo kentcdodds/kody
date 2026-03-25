@@ -1,4 +1,4 @@
-import { type CloudflareOptions } from '@sentry/cloudflare'
+import type { CloudflareOptions } from '@sentry/cloudflare'
 
 /**
  * Shared Sentry options for the Cloudflare Worker and Durable Objects.

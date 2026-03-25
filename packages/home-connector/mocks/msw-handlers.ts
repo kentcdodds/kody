@@ -1,7 +1,11 @@
 import { http, passthrough, type RequestHandler } from 'msw'
 import { rokuHandlers } from './roku.ts'
 
+const loopbackRequestPattern =
+	/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?\//
+
 const passthroughHandlers: Array<RequestHandler> = [
+	http.all(loopbackRequestPattern, () => passthrough()),
 	http.all('*/__mocks/*', () => passthrough()),
 ]
 

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { searchUnified } from './unified-search.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'

@@ -1,33 +1,19 @@
-/// <reference types="bun" />
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
+import {
+	bunBin,
+	captureOutput,
+	spawnProcess,
+	stopProcess,
+} from '#mcp/test-process.ts'
 import {
 	CursorCloudClient,
 	createCursorCloudClient,
 } from './cursor-cloud-client.ts'
 
 const workerConfig = 'packages/mock-servers/cursor/wrangler.jsonc'
-const bunBin = process.execPath
 const projectRoot = process.cwd()
-const timeoutMs = 60_000
-
-function captureOutput(stream: ReadableStream<Uint8Array> | null) {
-	if (!stream) return
-	const reader = stream.getReader()
-	const decoder = new TextDecoder()
-	void (async () => {
-		try {
-			while (true) {
-				const { value, done } = await reader.read()
-				if (done) break
-				void decoder.decode(value)
-			}
-		} catch {
-			// ignore
-		}
-	})()
-}
 
 async function waitForMock(origin: string) {
 	const deadline = Date.now() + 25_000
@@ -50,7 +36,7 @@ async function startCursorMock(token: string) {
 	const port = await getPort({ host: '127.0.0.1' })
 	const origin = `http://127.0.0.1:${port}`
 	const inspectorPort = await getPort({ host: '127.0.0.1' })
-	const proc = Bun.spawn({
+	const proc = spawnProcess({
 		cmd: [
 			bunBin,
 			'x',
@@ -72,8 +58,6 @@ async function startCursorMock(token: string) {
 			'error',
 		],
 		cwd: projectRoot,
-		stdout: 'pipe',
-		stderr: 'pipe',
 	})
 	captureOutput(proc.stdout)
 	captureOutput(proc.stderr)
@@ -82,52 +66,41 @@ async function startCursorMock(token: string) {
 		origin,
 		token,
 		async [Symbol.asyncDispose]() {
-			proc.kill('SIGINT')
-			await Promise.race([proc.exited, delay(5000)])
-			if (proc.exitCode === null) proc.kill('SIGKILL')
-			await proc.exited
+			await stopProcess(proc)
 		},
 	}
 }
 
-test(
-	'CursorCloudClient rawRequest uses Basic auth and reads agents from mock',
-	async () => {
-		const token = 'cursor-client-mock-token'
-		await using mock = await startCursorMock(token)
-		const client = new CursorCloudClient({
-			apiKey: mock.token,
-			baseUrl: mock.origin,
-		})
-		const response = await client.rawRequest({
-			method: 'GET',
-			path: '/v0/agents',
-		})
-		expect(response.status).toBe(200)
-		const body = response.body as { agents?: Array<{ id?: string }> }
-		expect(Array.isArray(body.agents)).toBe(true)
-		expect(body.agents?.some((a) => a.id === 'bc_mock_42')).toBe(true)
-	},
-	{ timeout: timeoutMs },
-)
+test('CursorCloudClient rawRequest uses Basic auth and reads agents from mock', async () => {
+	const token = 'cursor-client-mock-token'
+	await using mock = await startCursorMock(token)
+	const client = new CursorCloudClient({
+		apiKey: mock.token,
+		baseUrl: mock.origin,
+	})
+	const response = await client.rawRequest({
+		method: 'GET',
+		path: '/v0/agents',
+	})
+	expect(response.status).toBe(200)
+	const body = response.body as { agents?: Array<{ id?: string }> }
+	expect(Array.isArray(body.agents)).toBe(true)
+	expect(body.agents?.some((a) => a.id === 'bc_mock_42')).toBe(true)
+})
 
-test(
-	'createCursorCloudClient uses CURSOR_API_BASE_URL for rawRequest',
-	async () => {
-		const token = 'cursor-client-env-token'
-		await using mock = await startCursorMock(token)
-		const client = createCursorCloudClient({
-			CURSOR_API_KEY: mock.token,
-			CURSOR_API_BASE_URL: mock.origin,
-		} as Pick<Env, 'CURSOR_API_KEY' | 'CURSOR_API_BASE_URL'>)
-		const response = await client.rawRequest({
-			method: 'GET',
-			path: '/v0/me',
-		})
-		expect(response.status).toBe(200)
-	},
-	{ timeout: timeoutMs },
-)
+test('createCursorCloudClient uses CURSOR_API_BASE_URL for rawRequest', async () => {
+	const token = 'cursor-client-env-token'
+	await using mock = await startCursorMock(token)
+	const client = createCursorCloudClient({
+		CURSOR_API_KEY: mock.token,
+		CURSOR_API_BASE_URL: mock.origin,
+	} as Pick<Env, 'CURSOR_API_KEY' | 'CURSOR_API_BASE_URL'>)
+	const response = await client.rawRequest({
+		method: 'GET',
+		path: '/v0/me',
+	})
+	expect(response.status).toBe(200)
+})
 
 test('CursorCloudClient sends JSON body on POST', async () => {
 	const originalFetch = globalThis.fetch

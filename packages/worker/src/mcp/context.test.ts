@@ -1,5 +1,4 @@
-/// <reference types="bun" />
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { createMcpCallerContext, parseMcpCallerContext } from './context.ts'
 
 test('createMcpCallerContext normalizes missing user to null', () => {
@@ -9,6 +8,7 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 		}),
 	).toEqual({
 		baseUrl: 'https://example.com',
+		homeConnectorId: null,
 		user: null,
 	})
 })

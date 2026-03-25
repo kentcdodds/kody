@@ -1,8 +1,7 @@
-/// <reference types="bun" />
-import { expect, test } from 'bun:test'
-import {
-	type OAuthHelpers,
-	type TokenSummary,
+import { expect, test } from 'vitest'
+import type {
+	OAuthHelpers,
+	TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import {
 	buildProtectedResourceMetadata,
@@ -156,6 +155,7 @@ test('mcp request forwards when token is valid', async () => {
 	expect(response.status).toBe(200)
 	expect(receivedProps).toEqual({
 		baseUrl: 'https://example.com',
+		homeConnectorId: 'default',
 		user: { userId: 'user' },
 	})
 })

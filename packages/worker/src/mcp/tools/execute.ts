@@ -3,7 +3,7 @@ import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { formatExecutionOutput } from '#mcp/executor.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { type MCP } from '#mcp/index.ts'
+import type { MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
 	errorFields,

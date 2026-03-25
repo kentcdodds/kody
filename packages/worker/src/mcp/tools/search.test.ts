@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { loadOptionalSearchRows } from './search.ts'
 
 test('optional search rows fall back when saved skills lookup fails', async () => {

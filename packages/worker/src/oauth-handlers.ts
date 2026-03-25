@@ -1,6 +1,6 @@
-import {
-	type AuthRequest,
-	type OAuthHelpers,
+import type {
+	AuthRequest,
+	OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import {

@@ -1,5 +1,4 @@
-/// <reference types="bun" />
-import { beforeAll, expect, test } from 'bun:test'
+import { beforeAll, expect, test } from 'vitest'
 import { RequestContext } from 'remix/fetch-router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'

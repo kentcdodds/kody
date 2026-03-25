@@ -33,7 +33,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: ✅ Run Home Connector Tests
-        run: bun test ./packages/home-connector
+        run: bun run --cwd packages/home-connector test
 
   publish:
     runs-on: ubuntu-latest

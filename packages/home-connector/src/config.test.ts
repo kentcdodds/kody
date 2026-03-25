@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { loadHomeConnectorConfig } from './config.ts'
 
 function createTemporaryEnv(values: Record<string, string | undefined>) {

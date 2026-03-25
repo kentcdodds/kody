@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../mocks/test-server.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { createAppState } from '../src/state.ts'

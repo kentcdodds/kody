@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { getForwardedHomeConnectorEnv } from './home-connector-env.ts'
 
 test('forwards HOME_CONNECTOR_ env vars to connector child names', () => {

@@ -1,16 +1,25 @@
-/// <reference types="bun" />
-import { expect, mock, test } from 'bun:test'
+import { inspect } from 'node:util'
+import { expect, test, vi } from 'vitest'
 import { type Handle } from 'remix/component'
 
 type QueueTask = Parameters<Handle['queueTask']>[0]
 
-const navigationListeners: Array<() => void> = []
-const queuedSessionResponses: Array<{ email: string } | null> = []
-const fetchSessionInfoMock = mock(async () => {
-	return queuedSessionResponses.shift() ?? null
-})
+const { fetchSessionInfoMock, navigationListeners, queuedSessionResponses } =
+	vi.hoisted(() => {
+		const navigationListeners: Array<() => void> = []
+		const queuedSessionResponses: Array<{ email: string } | null> = []
+		const fetchSessionInfoMock = vi.fn(async () => {
+			return queuedSessionResponses.shift() ?? null
+		})
 
-mock.module('./client-router.tsx', () => ({
+		return {
+			fetchSessionInfoMock,
+			navigationListeners,
+			queuedSessionResponses,
+		}
+	})
+
+vi.mock('./client-router.tsx', () => ({
 	routerEvents: new EventTarget(),
 	listenToRouterNavigation: (_handle: Handle, listener: () => void) => {
 		navigationListeners.push(listener)
@@ -22,7 +31,7 @@ mock.module('./client-router.tsx', () => ({
 	Router: () => () => null,
 }))
 
-mock.module('./session.ts', () => ({
+vi.mock('./session.ts', () => ({
 	fetchSessionInfo: fetchSessionInfoMock,
 }))
 
@@ -61,7 +70,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	await runNextTask(queuedTasks, false)
 	await runNextTask(queuedTasks, false)
 
-	const authenticatedUi = Bun.inspect(render())
+	const authenticatedUi = inspect(render())
 	expect(authenticatedUi).toContain('signed-in@example.com')
 	expect(authenticatedUi).toContain('Log out')
 
@@ -69,7 +78,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	navigationListeners[0]!()
 	await runNextTask(queuedTasks, true)
 
-	const uiAfterAbort = Bun.inspect(render())
+	const uiAfterAbort = inspect(render())
 	expect(uiAfterAbort).toContain('signed-in@example.com')
 	expect(uiAfterAbort).toContain('Log out')
 	expect(uiAfterAbort).not.toContain('>Login<')

@@ -1,4 +1,4 @@
-import { test, expect } from 'bun:test'
+import { expect, test } from 'vitest'
 import { buildSpawnEnv } from './sync-worker-secrets'
 
 const baseOptions = {

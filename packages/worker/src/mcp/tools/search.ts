@@ -7,7 +7,7 @@ import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
-import { type MCP } from '#mcp/index.ts'
+import type { MCP } from '#mcp/index.ts'
 import {
 	callerContextFields,
 	errorFields,
