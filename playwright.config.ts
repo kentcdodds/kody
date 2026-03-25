@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const playwrightPort = process.env.PLAYWRIGHT_PORT ?? '8788'
+const playwrightPort = process.env.PLAYWRIGHT_PORT ?? '38888'
 const baseURL =
 	process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${playwrightPort}`
 
