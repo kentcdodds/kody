@@ -3,7 +3,7 @@ import { getEnv } from '#app/env.ts'
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
-function base64UrlEncode(bytes: Uint8Array) {
+export function base64UrlEncode(bytes: Uint8Array) {
 	let binary = ''
 	for (const byte of bytes) {
 		binary += String.fromCharCode(byte)

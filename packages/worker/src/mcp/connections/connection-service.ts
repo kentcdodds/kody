@@ -19,7 +19,13 @@ import {
 	updateConnectionDraftUnsafe,
 	upsertConnectionDraftSecret,
 } from './connection-drafts-repo.ts'
-import { encryptJson, decryptJson, signToken, verifyToken } from './crypto.ts'
+import {
+	base64UrlEncode,
+	decryptJson,
+	encryptJson,
+	signToken,
+	verifyToken,
+} from './crypto.ts'
 import {
 	deleteProviderConnection,
 	getProviderConnectionById,
@@ -177,7 +183,7 @@ export async function startConnectionOAuth(input: {
 	})
 	const codeVerifier =
 		spec.use_pkce === true
-			? base64UrlString(crypto.getRandomValues(new Uint8Array(32)))
+			? base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)))
 			: null
 	const authorizeUrl = new URL(spec.authorize_url)
 	authorizeUrl.searchParams.set('response_type', 'code')
@@ -970,19 +976,12 @@ function parseJsonRecord(raw: string | null) {
 	}
 }
 
-function base64UrlString(bytes: Uint8Array) {
-	return btoa(String.fromCharCode(...bytes))
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replace(/=+$/g, '')
-}
-
 async function createPkceCodeChallenge(codeVerifier: string) {
 	const digest = await crypto.subtle.digest(
 		'SHA-256',
 		new TextEncoder().encode(codeVerifier),
 	)
-	return base64UrlString(new Uint8Array(digest))
+	return base64UrlEncode(new Uint8Array(digest))
 }
 
 function renderOAuthCallbackResponse(status: number, message: string) {
