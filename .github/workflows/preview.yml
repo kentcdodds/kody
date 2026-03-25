@@ -52,6 +52,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🔎 Deploy Preview Resources
+    timeout-minutes: 4
     environment:
       name:
         preview-${{ github.event.pull_request.number || inputs.pr_number ||
@@ -444,6 +445,7 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     name: 🧹 Cleanup Preview Resources
+    timeout-minutes: 4
     if: >-
       (github.event_name == 'pull_request' &&
         github.event.action == 'closed' &&

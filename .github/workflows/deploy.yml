@@ -20,6 +20,7 @@ jobs:
   sha-guard:
     runs-on: ubuntu-latest
     name: 🧾 Production deploy guard
+    timeout-minutes: 4
     if: >-
       (github.event_name == 'workflow_run' &&
         github.event.workflow_run.conclusion == 'success' &&
@@ -72,6 +73,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🚀 Deploy to production
+    timeout-minutes: 4
     needs: sha-guard
     if: needs.sha-guard.outputs.should_deploy == 'true'
     environment:

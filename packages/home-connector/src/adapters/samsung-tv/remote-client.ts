@@ -32,6 +32,8 @@ type SamsungRemoteSession = {
 	token: string | null
 }
 
+const websocketOpenState = 1
+
 const defaultWebSocketFactory = (url: string) =>
 	new WebSocket(url) as unknown as WebSocketLike
 
@@ -104,7 +106,7 @@ export async function openSamsungRemoteSession(
 			)
 		}, timeoutMs)
 		const probeTimer = setTimeout(() => {
-			if (settled || socket.readyState !== WebSocket.OPEN) return
+			if (settled || socket.readyState !== websocketOpenState) return
 			socket.send(createSamsungAuthorizationProbe())
 		}, 300)
 		socket.addEventListener('message', (event) => {

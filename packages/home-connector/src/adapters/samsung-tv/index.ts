@@ -6,7 +6,6 @@ import { scanSamsungTvs } from './discovery.ts'
 import { samsungTvKnownApps } from './known-apps.ts'
 import {
 	adoptSamsungTvDevice,
-	getSamsungTvDevice,
 	listSamsungTvDevices,
 	requireSamsungTvDevice,
 	saveSamsungTvToken,

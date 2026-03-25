@@ -27,6 +27,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     name: 🧹 Lint
+    timeout-minutes: 4
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -48,6 +49,7 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     name: 🧪 Typecheck
+    timeout-minutes: 4
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -69,12 +71,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: ✅ Bun Tests
+    timeout-minutes: 4
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       - name: 🧰 Setup Bun
         uses: oven-sh/setup-bun@v2.2.0
@@ -85,11 +93,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: ✅ Run Bun Tests
-        run: bun run test
+        run: npm run test
 
   e2e:
     runs-on: ubuntu-latest
     name: 🎭 E2E
+    timeout-minutes: 4
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -125,6 +134,7 @@ jobs:
   mcp-e2e:
     runs-on: ubuntu-latest
     name: 🧩 MCP E2E
+    timeout-minutes: 4
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false

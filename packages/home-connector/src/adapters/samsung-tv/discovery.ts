@@ -6,7 +6,6 @@ import {
 } from '../../state.ts'
 import {
 	type SamsungTvDeviceRecord,
-	type SamsungTvDiscoveryDiagnostics,
 	type SamsungTvDiscoveryResult,
 	type SamsungTvMetadataLookupDiagnostic,
 	type SamsungTvDiscoveryServiceDiagnostic,

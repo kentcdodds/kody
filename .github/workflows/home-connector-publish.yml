@@ -20,6 +20,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: ✅ Test Home Connector
+    timeout-minutes: 4
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -74,6 +75,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     name: 🐳 Publish Docker image
+    timeout-minutes: 4
     needs: test
     steps:
       - name: 📦 Checkout
