@@ -105,7 +105,6 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
-          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
@@ -118,13 +117,38 @@ jobs:
         run: >
           bun tools/ci/sync-worker-secrets.ts --env production --config
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET --set-from-env
-          AI_GATEWAY_ID --set-from-env-optional APP_BASE_URL
-          --set-from-env-optional RESEND_API_KEY --set-from-env-optional
-          RESEND_FROM_EMAIL --set-from-env-optional SENTRY_DSN
-          --set-from-env-optional GITHUB_TOKEN --set-from-env-optional
-          CURSOR_API_KEY --set-from-env-optional CLOUDFLARE_API_BASE_URL
-          --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
-          CAPABILITY_REINDEX_SECRET
+          AI_GATEWAY_ID --set-from-env-optional RESEND_API_KEY
+          --set-from-env-optional RESEND_FROM_EMAIL --set-from-env-optional
+          SENTRY_DSN --set-from-env-optional GITHUB_TOKEN
+          --set-from-env-optional CURSOR_API_KEY --set-from-env-optional
+          CLOUDFLARE_API_BASE_URL --set-from-env-optional CLOUDFLARE_API_TOKEN
+          --set-from-env-optional CAPABILITY_REINDEX_SECRET
+
+      - name: 🧹 Remove legacy APP_BASE_URL secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
+        run: |
+          set -euo pipefail
+          output=""
+          set +e
+          output="$(bunx wrangler secret delete APP_BASE_URL --env production --config "$WRANGLER_CONFIG" 2>&1)"
+          exit_code="$?"
+          set -e
+
+          if [ "$exit_code" -eq 0 ]; then
+            echo "$output"
+            exit 0
+          fi
+
+          lower="$(echo "$output" | tr '[:upper:]' '[:lower:]')"
+          if [[ "$lower" == *"not found"* ]] || [[ "$lower" == *"does not exist"* ]]; then
+            echo "Legacy APP_BASE_URL secret not present."
+            exit 0
+          fi
+
+          echo "$output" >&2
+          exit "$exit_code"
 
       - name: 🗄️ Apply D1 Migrations
         env:
