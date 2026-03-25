@@ -1,0 +1,54 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"arrowParens": "always",
+	"bracketSameLine": false,
+	"bracketSpacing": true,
+	"embeddedLanguageFormatting": "auto",
+	"endOfLine": "lf",
+	"htmlWhitespaceSensitivity": "css",
+	"insertPragma": false,
+	"jsxSingleQuote": false,
+	"printWidth": 80,
+	"proseWrap": "always",
+	"quoteProps": "as-needed",
+	"requirePragma": false,
+	"semi": false,
+	"singleAttributePerLine": false,
+	"singleQuote": true,
+	"tabWidth": 2,
+	"trailingComma": "all",
+	"useTabs": true,
+	"sortPackageJson": false,
+	"ignorePatterns": [
+		"node_modules",
+		"dist",
+		"build",
+		".next",
+		".vercel",
+		".netlify",
+		"coverage",
+		"*.log",
+		".env*",
+		"!packages/worker/.env.example",
+		"package-lock.json",
+		"yarn.lock",
+		"pnpm-lock.yaml",
+		"**/worker-configuration.d.ts",
+		"packages/worker/public/client-entry.js"
+	],
+	"overrides": [
+		{
+			"files": ["**/package.json"],
+			"options": {
+				"useTabs": false
+			}
+		},
+		{
+			"files": ["**/*.mdx"],
+			"options": {
+				"proseWrap": "preserve",
+				"htmlWhitespaceSensitivity": "ignore"
+			}
+		}
+	]
+}

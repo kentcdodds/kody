@@ -850,8 +850,7 @@ test('mcp server saves app, search returns app hit, and open_generated_ui suppor
 			detail: true,
 		},
 	})
-	const searchStructured = (searchResult as CallToolResult)
-		.structuredContent as
+	const searchStructured = (searchResult as CallToolResult).structuredContent as
 		| {
 				result?: Record<string, unknown>
 		  }
@@ -922,8 +921,7 @@ test('mcp server deletes saved ui app artifacts', async () => {
 					await codemode.ui_delete_app({ app_id: ${JSON.stringify(appId)} })`,
 		},
 	})
-	const deleteStructured = (deleteResult as CallToolResult)
-		.structuredContent as
+	const deleteStructured = (deleteResult as CallToolResult).structuredContent as
 		| {
 				result?: Record<string, unknown>
 		  }
