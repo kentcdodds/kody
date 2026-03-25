@@ -42,12 +42,9 @@ export function handleProtectedResourceMetadata(request: Request, env?: Env) {
 		env: env ?? {},
 		requestUrl: request.url,
 	})
-	return new Response(
-		JSON.stringify(buildProtectedResourceMetadata(origin)),
-		{
-			headers: { 'Content-Type': 'application/json' },
-		},
-	)
+	return new Response(JSON.stringify(buildProtectedResourceMetadata(origin)), {
+		headers: { 'Content-Type': 'application/json' },
+	})
 }
 
 function buildWwwAuthenticateHeader(origin: string) {

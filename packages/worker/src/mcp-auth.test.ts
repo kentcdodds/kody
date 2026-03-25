@@ -32,10 +32,7 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	}
 }
 
-function createEnv(
-	helpers: OAuthHelpers,
-	overrides: Partial<Env> = {},
-) {
+function createEnv(helpers: OAuthHelpers, overrides: Partial<Env> = {}) {
 	return { OAUTH_PROVIDER: helpers, ...overrides } as unknown as Env
 }
 

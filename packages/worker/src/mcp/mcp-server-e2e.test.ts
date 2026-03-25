@@ -814,17 +814,15 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 	)
 })
 
-test(
-	'mcp server saves app, search returns app hit, and open_generated_ui supports app_id',
-	async () => {
-		await using database = await createTestDatabase()
-		await using server = await startDevServer(database.persistDir)
-		await using mcpClient = await createMcpClient(server.origin, database.user)
+test('mcp server saves app, search returns app hit, and open_generated_ui supports app_id', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
 
-		const saveResult = await mcpClient.client.callTool({
-			name: 'execute',
-			arguments: {
-				code: `async () =>
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
 					await codemode.ui_save_app({
 						title: 'Saved Searchable App',
 						description: 'Saved generated UI artifact for search and reopen.',
@@ -917,7 +915,8 @@ test('mcp server deletes saved ui app artifacts', async () => {
 					await codemode.ui_delete_app({ app_id: ${JSON.stringify(appId)} })`,
 		},
 	})
-	const deleteStructured = (deleteResult as CallToolResult).structuredContent as
+	const deleteStructured = (deleteResult as CallToolResult)
+		.structuredContent as
 		| {
 				result?: Record<string, unknown>
 		  }

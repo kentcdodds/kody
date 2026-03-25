@@ -71,7 +71,12 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 													},
 													responseText: { type: 'string' },
 												},
-												required: ['deviceId', 'deviceName', 'apps', 'responseText'],
+												required: [
+													'deviceId',
+													'deviceName',
+													'apps',
+													'responseText',
+												],
 											},
 										},
 										{
@@ -108,7 +113,12 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 													},
 													responseText: { type: 'string' },
 												},
-												required: ['deviceId', 'deviceName', 'app', 'responseText'],
+												required: [
+													'deviceId',
+													'deviceName',
+													'app',
+													'responseText',
+												],
 											},
 										},
 									],

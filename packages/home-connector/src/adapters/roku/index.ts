@@ -104,8 +104,7 @@ function parseRokuAppInfoXml(appXml: string): RokuAppInfo {
 }
 
 function parseRokuAppListXml(xml: string): Array<RokuAppInfo> {
-	const appMatches =
-		xml.match(/<app\b[^>]*?(?:\/>|>[\s\S]*?<\/app>)/gi) ?? []
+	const appMatches = xml.match(/<app\b[^>]*?(?:\/>|>[\s\S]*?<\/app>)/gi) ?? []
 	return appMatches
 		.map((appXml) => parseRokuAppInfoXml(appXml))
 		.filter((app) => app.id && app.name)
@@ -190,7 +189,9 @@ async function fetchRokuActiveApp(input: {
 		method: 'GET',
 	})
 	if (!response.ok) {
-		throw new Error(`Roku active app query failed with status ${response.status}.`)
+		throw new Error(
+			`Roku active app query failed with status ${response.status}.`,
+		)
 	}
 	const responseText = await response.text()
 	const app = parseRokuActiveAppXml(responseText)

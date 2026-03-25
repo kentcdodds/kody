@@ -212,8 +212,10 @@ const workerHandler = {
 								method: 'GET',
 								headers: request.headers,
 							})
-				const metadataResponse =
-					handleProtectedResourceMetadata(metadataRequest, env)
+				const metadataResponse = handleProtectedResourceMetadata(
+					metadataRequest,
+					env,
+				)
 				if (request.method === 'HEAD') {
 					return addOAuthDiscoveryCorsHeaders(
 						new Response(null, {
