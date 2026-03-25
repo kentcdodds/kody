@@ -95,6 +95,7 @@ function escapeHtmlAttribute(value: string) {
 	return value
 		.replaceAll('&', '&amp;')
 		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;')
 		.replaceAll('<', '&lt;')
 		.replaceAll('>', '&gt;')
 }
@@ -174,9 +175,10 @@ export function absolutizeHtmlAttributeUrls(
 		}
 
 		return tag.replace(
-			/\b(href|src|action|formaction|poster|srcset)=("([^"]*)"|'([^']*)')/gi,
+			/(^|\s)(href|src|action|formaction|poster|srcset)=("([^"]*)"|'([^']*)')/gi,
 			(
 				match,
+				prefix,
 				attributeName,
 				quotedValue,
 				doubleQuotedValue,
@@ -197,7 +199,7 @@ export function absolutizeHtmlAttributeUrls(
 				}
 
 				const quote = quotedValue.startsWith('"') ? '"' : "'"
-				return `${attributeName}=${quote}${escapeHtmlAttribute(nextValue)}${quote}`
+				return `${prefix}${attributeName}=${quote}${escapeHtmlAttribute(nextValue)}${quote}`
 			},
 		)
 	})
