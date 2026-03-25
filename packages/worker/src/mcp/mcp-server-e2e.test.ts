@@ -173,13 +173,14 @@ async function createTestDatabase(): Promise<TestDatabase> {
 
 beforeAll(async () => {
 	baselineDatabase = await createSeededTestDatabase()
-})
+}, 30_000)
 
 afterAll(async () => {
-	if (!baselineDatabase) return
-	await baselineDatabase[Symbol.asyncDispose]()
+	const database = baselineDatabase
 	baselineDatabase = null
-})
+	if (!database) return
+	await rm(database.persistDir, { recursive: true, force: true })
+}, 30_000)
 
 async function applyMigrations(persistDir: string) {
 	const migrationFiles = await listMigrationFiles()
@@ -270,22 +271,6 @@ async function waitForServer(
 	)
 }
 
-<<<<<<< HEAD
-=======
-async function stopProcess(proc: ReturnType<typeof Bun.spawn>) {
-	let exited = false
-	void proc.exited.then(() => {
-		exited = true
-	})
-	proc.kill('SIGINT')
-	await Promise.race([proc.exited, delay(5_000)])
-	if (!exited) {
-		proc.kill('SIGKILL')
-		await proc.exited
-	}
-}
-
->>>>>>> 97d1625 (fix(worker): stabilize MCP E2E env and APP_BASE_URL coverage)
 async function startDevServer(persistDir: string) {
 	const port = await getPort({ host: '127.0.0.1' })
 	const inspectorPortBase =
