@@ -173,13 +173,14 @@ async function createTestDatabase(): Promise<TestDatabase> {
 
 beforeAll(async () => {
 	baselineDatabase = await createSeededTestDatabase()
-})
+}, 30_000)
 
 afterAll(async () => {
-	if (!baselineDatabase) return
-	await baselineDatabase[Symbol.asyncDispose]()
+	const database = baselineDatabase
 	baselineDatabase = null
-})
+	if (!database) return
+	await rm(database.persistDir, { recursive: true, force: true })
+}, 30_000)
 
 async function applyMigrations(persistDir: string) {
 	const migrationFiles = await listMigrationFiles()
@@ -813,15 +814,17 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 	)
 })
 
-test('mcp server saves app, search returns app hit, and open_generated_ui supports app_id', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
+test(
+	'mcp server saves app, search returns app hit, and open_generated_ui supports app_id',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
 
-	const saveResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () =>
+		const saveResult = await mcpClient.client.callTool({
+			name: 'execute',
+			arguments: {
+				code: `async () =>
 					await codemode.ui_save_app({
 						title: 'Saved Searchable App',
 						description: 'Saved generated UI artifact for search and reopen.',

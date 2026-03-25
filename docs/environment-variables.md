@@ -42,9 +42,9 @@ types, runtime validation, and documentation in sync.
 4. **Update required resources docs**
    - Add the variable to `docs/setup-manifest.md`.
 
-5. **Sync deploy secrets**
-   - Add the variable to the relevant GitHub Actions workflows so it is pushed
-     via `wrangler secret put`:
+5. **Sync deploy config**
+   - Add the variable to the relevant GitHub Actions workflows so it is passed
+     to Wrangler as a Worker var or secret, depending on sensitivity:
      - `.github/workflows/deploy.yml` (production deploys)
      - `.github/workflows/preview.yml` (preview deploys)
 

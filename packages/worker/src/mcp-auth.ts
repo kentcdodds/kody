@@ -2,6 +2,7 @@ import {
 	type OAuthHelpers,
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 
@@ -36,10 +37,13 @@ export function isProtectedResourceMetadataRequest(pathname: string) {
 	)
 }
 
-export function handleProtectedResourceMetadata(request: Request) {
-	const url = new URL(request.url)
+export function handleProtectedResourceMetadata(request: Request, env?: Env) {
+	const origin = getAppBaseUrl({
+		env: env ?? {},
+		requestUrl: request.url,
+	})
 	return new Response(
-		JSON.stringify(buildProtectedResourceMetadata(url.origin)),
+		JSON.stringify(buildProtectedResourceMetadata(origin)),
 		{
 			headers: { 'Content-Type': 'application/json' },
 		},
@@ -53,22 +57,21 @@ function buildWwwAuthenticateHeader(origin: string) {
 	return `Bearer resource_metadata="${resourceMetadata}"${scope}`
 }
 
-function createUnauthorizedResponse(requestUrl: URL) {
+function createUnauthorizedResponse(origin: string) {
 	return new Response(null, {
 		status: 401,
 		headers: {
-			'WWW-Authenticate': buildWwwAuthenticateHeader(requestUrl.origin),
+			'WWW-Authenticate': buildWwwAuthenticateHeader(origin),
 		},
 	})
 }
 
 function audienceMatches(
 	audience: string | Array<string> | undefined,
-	requestUrl: URL,
+	origin: string,
 ) {
 	if (!audience) return false
 	const allowed = Array.isArray(audience) ? audience : [audience]
-	const origin = requestUrl.origin
 	const resourcePath = `${origin}${mcpResourcePath}`
 	return allowed.some((value) => value === origin || value === resourcePath)
 }
@@ -85,29 +88,33 @@ export async function handleMcpRequest({
 	fetchMcp: CustomExportedHandler<OAuthContextProps>['fetch']
 }) {
 	const url = new URL(request.url)
+	const origin = getAppBaseUrl({
+		env,
+		requestUrl: url,
+	})
 	const authHeader = request.headers.get('Authorization')
 	if (!authHeader || !authHeader.startsWith('Bearer ')) {
-		return createUnauthorizedResponse(url)
+		return createUnauthorizedResponse(origin)
 	}
 
 	const token = authHeader.slice('Bearer '.length).trim()
 	if (!token) {
-		return createUnauthorizedResponse(url)
+		return createUnauthorizedResponse(origin)
 	}
 
 	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
 	if (!helpers) {
-		return createUnauthorizedResponse(url)
+		return createUnauthorizedResponse(origin)
 	}
 
 	const tokenSummary = await helpers.unwrapToken(token)
-	if (!tokenSummary || !audienceMatches(tokenSummary.audience, url)) {
-		return createUnauthorizedResponse(url)
+	if (!tokenSummary || !audienceMatches(tokenSummary.audience, origin)) {
+		return createUnauthorizedResponse(origin)
 	}
 
 	const context = ctx as OAuthExecutionContext
 	const props: OAuthContextProps = createMcpCallerContext({
-		baseUrl: url.origin,
+		baseUrl: origin,
 		user: tokenSummary.grant.props ?? null,
 		homeConnectorId: 'default',
 	})

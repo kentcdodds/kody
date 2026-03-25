@@ -59,8 +59,9 @@ Local development uses `packages/worker/.env`, which Wrangler loads
 automatically:
 
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
-- `APP_BASE_URL` (optional; defaults to request origin, example
-  `https://app.example.com`)
+ - `APP_BASE_URL` (optional; defaults to request origin, example
+  `https://app.example.com`; also sets the canonical public origin used for MCP
+  auth metadata, generated UI resources, and email links)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
 - `RESEND_API_BASE_URL` (optional, defaults to `https://api.resend.com`)
@@ -111,7 +112,7 @@ Configure these GitHub Actions secrets and variables for workflows:
   account)
 - `COOKIE_SECRET` (same format as local)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
-  deploy)
+  deploy as the canonical public app origin)
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)

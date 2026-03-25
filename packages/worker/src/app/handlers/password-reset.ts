@@ -1,6 +1,7 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { createDb, passwordResetsTable, usersTable } from '#worker/db.ts'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { logAuditEvent, getRequestIp } from '#app/audit-log.ts'
 import { sendResendEmail } from '#app/email/resend.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
@@ -122,7 +123,10 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 			}
 
 			if (userRecord) {
-				const appBaseUrl = appEnv.APP_BASE_URL ?? url.origin
+				const appBaseUrl = getAppBaseUrl({
+					env: appEnv,
+					requestUrl: url,
+				})
 				const resetUrl = new URL('/reset-password', appBaseUrl)
 				resetUrl.searchParams.set('token', token)
 				const email = buildResetEmail(resetUrl.toString())
