@@ -9,9 +9,7 @@
 		// Force MCP SDK to resolve to the hoisted install to avoid duplicate
 		// private type conflicts when multiple copies are present.
 		"paths": {
-			"@modelcontextprotocol/sdk": [
-				"./node_modules/@modelcontextprotocol/sdk"
-			],
+			"@modelcontextprotocol/sdk": ["./node_modules/@modelcontextprotocol/sdk"],
 			"@modelcontextprotocol/sdk/*": [
 				"./node_modules/@modelcontextprotocol/sdk/*"
 			]
