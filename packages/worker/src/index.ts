@@ -23,6 +23,14 @@ import {
 	mcpResourcePath,
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
+import {
+	handleGeneratedUiApiRequest,
+	isGeneratedUiApiRequest,
+} from './mcp/generated-ui-api.ts'
+import {
+	handleConnectionOAuthRequest,
+	isConnectionOAuthRequest,
+} from './mcp/connections/oauth-api.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleSkillReindexRequest } from './skill-maintenance.ts'
@@ -31,16 +39,24 @@ export { ChatAgent, HomeConnectorSession, HomeMCP, MCP }
 
 const appHandler = withCors({
 	getCorsHeaders(request) {
+		const url = new URL(request.url)
+		if (isGeneratedUiApiRequest(url.pathname)) {
+			return new Headers({
+				'Access-Control-Allow-Origin': '*',
+				'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+				'Access-Control-Allow-Headers': 'content-type, authorization',
+			})
+		}
 		const origin = request.headers.get('Origin')
 		if (!origin) return null
 		const requestOrigin = new URL(request.url).origin
 		if (origin !== requestOrigin) return null
-		return {
+		return new Headers({
 			'Access-Control-Allow-Origin': origin,
 			'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 			'Access-Control-Allow-Headers': 'content-type, authorization',
 			Vary: 'Origin',
-		}
+		})
 	},
 	async handler(request, env, ctx) {
 		const url = new URL(request.url)
@@ -65,6 +81,10 @@ const appHandler = withCors({
 			return handleOAuthCallback(request)
 		}
 
+		if (isConnectionOAuthRequest(url.pathname)) {
+			return handleConnectionOAuthRequest(request, env)
+		}
+
 		if (url.pathname === '/.well-known/appspecific/com.chrome.devtools.json') {
 			return new Response(null, { status: 204 })
 		}
@@ -82,6 +102,10 @@ const appHandler = withCors({
 					binding: 'MCP_OBJECT',
 				}).fetch,
 			})
+		}
+
+		if (isGeneratedUiApiRequest(url.pathname)) {
+			return handleGeneratedUiApiRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/home/connectors/')) {

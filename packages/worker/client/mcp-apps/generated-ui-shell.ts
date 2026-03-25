@@ -5,11 +5,23 @@ type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 type ThemeName = 'light' | 'dark'
 
+type AppSessionEnvelope = {
+	sessionId: string
+	token: string
+	expiresAt: string
+	endpoints: {
+		appSource: string
+		action: string
+		secureInput: string
+	}
+}
+
 type RenderEnvelope = {
 	mode: RenderMode
 	code?: string
 	appId?: string
 	runtime?: AppRuntime
+	appSession?: AppSessionEnvelope | null
 }
 
 type RenderDataEnvelope = {
@@ -30,6 +42,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function coerceRuntime(value: unknown): AppRuntime | undefined {
 	return value === 'html' || value === 'javascript' ? value : undefined
+}
+
+function coerceAppSession(value: unknown): AppSessionEnvelope | null {
+	if (!isRecord(value)) return null
+	if (
+		typeof value.sessionId !== 'string' ||
+		typeof value.token !== 'string' ||
+		typeof value.expiresAt !== 'string'
+	) {
+		return null
+	}
+	const endpoints = isRecord(value.endpoints) ? value.endpoints : null
+	if (
+		!endpoints ||
+		typeof endpoints.appSource !== 'string' ||
+		typeof endpoints.action !== 'string' ||
+		typeof endpoints.secureInput !== 'string'
+	) {
+		return null
+	}
+	return {
+		sessionId: value.sessionId,
+		token: value.token,
+		expiresAt: value.expiresAt,
+		endpoints: {
+			appSource: endpoints.appSource,
+			action: endpoints.action,
+			secureInput: endpoints.secureInput,
+		},
+	}
 }
 
 function coerceDisplayMode(value: unknown): DisplayMode | null {
@@ -234,7 +276,8 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 				: undefined
 	const appId = typeof value.appId === 'string' ? value.appId : undefined
 	const runtime = coerceRuntime(value.runtime) ?? (code ? 'html' : undefined)
-	return { mode: renderSource, code, appId, runtime }
+	const appSession = coerceAppSession(value.appSession)
+	return { mode: renderSource, code, appId, runtime, appSession }
 }
 
 function getEnvelopeFromRenderData(renderData: RenderDataEnvelope | undefined) {
@@ -258,6 +301,7 @@ function initializeGeneratedUiShell() {
 	const childMessagePrefix = 'kody-generated-ui:'
 
 	let latestRenderData: RenderDataEnvelope | undefined
+	let latestEnvelope: RenderEnvelope | null = null
 
 	function getBaseHref() {
 		try {
@@ -267,7 +311,7 @@ function initializeGeneratedUiShell() {
 		}
 	}
 
-	function escapeInlineModuleSource(code: string) {
+	function escapeInlineScriptSource(code: string) {
 		return code.replace(/<\/script/gi, '<\\/script')
 	}
 
@@ -493,24 +537,97 @@ html[data-kody-theme="light"] {
 		`.trim()
 	}
 
-	function buildHeadInjection(theme: ThemeName | null) {
+	function buildHeadInjection(
+		theme: ThemeName | null,
+		appSession: AppSessionEnvelope | null,
+	) {
+		const baseHref = getBaseHref()
+		const escapedBaseHref = baseHref ? escapeHtmlAttribute(baseHref) : null
+		const bridgeRuntime = escapeInlineScriptSource(
+			buildChildBridgeRuntimeSource(appSession),
+		)
 		return `
+${escapedBaseHref ? `<base href="${escapedBaseHref}" />` : ''}
 <style>
 ${buildShellStyles(theme)}
 </style>
 <script>
-${buildChildBridgeRuntimeSource()}
+${bridgeRuntime}
 </script>
 		`.trim()
 	}
 
-	function buildChildBridgeRuntimeSource() {
+	function buildChildBridgeRuntimeSource(appSession: AppSessionEnvelope | null) {
+		const serializedAppSession = JSON.stringify(appSession)
 		return `
 const shellMessagePrefix = '${childMessagePrefix}';
+const appSession = ${serializedAppSession};
 let requestCounter = 0;
 function nextRequestId() {
 	requestCounter += 1;
 	return 'generated-ui-' + requestCounter;
+}
+function getAppSessionHeaders() {
+	if (!appSession) return null;
+	return {
+		accept: 'application/json',
+		authorization: 'Bearer ' + appSession.token,
+	};
+}
+function wrapActionCode(code, params) {
+	if (params === undefined) return code;
+	const paramsJson = JSON.stringify(params ?? {});
+	return \`async () => {
+  const params = \${paramsJson};
+  const action = (\${code});
+  return await action(params);
+}\`;
+}
+async function invokeActionWithSession(input) {
+	if (!appSession) return null;
+	const response = await fetch(appSession.endpoints.action, {
+		method: 'POST',
+		headers: {
+			...getAppSessionHeaders(),
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify(input),
+	});
+	const payload = await response.json().catch(() => null);
+	if (!payload || typeof payload !== 'object') {
+		return {
+			ok: false,
+			error: 'Generated UI action endpoint returned an invalid response.',
+		};
+	}
+	return payload;
+}
+async function submitSecureInputWithSession(input) {
+	if (!appSession) {
+		return {
+			ok: false,
+			error: 'Secure input is unavailable without a generated UI app session.',
+		};
+	}
+	const response = await fetch(appSession.endpoints.secureInput, {
+		method: 'POST',
+		headers: {
+			...getAppSessionHeaders(),
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify({
+			setup_id: input.setupId,
+			fields: input.fields,
+		}),
+	});
+	const payload = await response.json().catch(() => null);
+	if (!payload || typeof payload !== 'object') {
+		return {
+			ok: false,
+			error: 'Secure input endpoint returned an invalid response.',
+		};
+	}
+	return payload;
 }
 function waitForShellMessage(type, requestId) {
 	return new Promise((resolve) => {
@@ -568,6 +685,19 @@ window.kodyWidget = {
 	},
 	async executeCode(code) {
 		if (typeof code !== 'string' || code.length === 0) return null;
+		if (appSession) {
+			const payload = await invokeActionWithSession({ code });
+			if (payload && typeof payload === 'object' && payload.ok === false) {
+				throw new Error(
+					typeof payload.error === 'string'
+						? payload.error
+						: 'Generated UI action failed.',
+				);
+			}
+			return payload && typeof payload === 'object' && 'result' in payload
+				? payload.result ?? null
+				: null;
+		}
 		if (window.parent === window) return null;
 		const requestId = nextRequestId();
 		const payload = await postRequestAndWaitForShellMessage(
@@ -583,6 +713,63 @@ window.kodyWidget = {
 			throw new Error(payload.errorMessage);
 		}
 		return 'result' in payload ? payload.result ?? null : null;
+	},
+	async invokeAction(input) {
+		if (!input || typeof input !== 'object') {
+			return {
+				ok: false,
+				error: 'Action input must be an object.',
+			};
+		}
+		const code =
+			typeof input.code === 'string' && input.code.length > 0 ? input.code : null;
+		if (!code) {
+			return {
+				ok: false,
+				error: 'Action code must be a non-empty string.',
+			};
+		}
+		const params =
+			input.params && typeof input.params === 'object' ? input.params : undefined;
+		if (appSession) {
+			return await invokeActionWithSession(
+				params === undefined ? { code } : { code, params },
+			);
+		}
+		try {
+			const result = await this.executeCode(wrapActionCode(code, params));
+			return {
+				ok: true,
+				result,
+			};
+		} catch (error) {
+			return {
+				ok: false,
+				error:
+					error instanceof Error ? error.message : 'Generated UI action failed.',
+			};
+		}
+	},
+	async submitSecureInput(input) {
+		if (!input || typeof input !== 'object') {
+			return {
+				ok: false,
+				error: 'Secure input must be an object.',
+			};
+		}
+		const setupId =
+			typeof input.setupId === 'string' && input.setupId.length > 0
+				? input.setupId
+				: null;
+		const fields =
+			input.fields && typeof input.fields === 'object' ? input.fields : null;
+		if (!setupId || !fields) {
+			return {
+				ok: false,
+				error: 'Secure input requires setupId and fields.',
+			};
+		}
+		return await submitSecureInputWithSession({ setupId, fields });
 	},
 };
 window.addEventListener('error', (event) => {
@@ -601,9 +788,10 @@ window.addEventListener('unhandledrejection', (event) => {
 	}
 
 	function buildInlineModuleSource(code: string) {
-		const safeCode = escapeInlineModuleSource(code)
+		const safeCode = escapeInlineScriptSource(code)
+		const appSession = latestEnvelope?.appSession ?? null
 		return `
-${buildChildBridgeRuntimeSource()}
+${buildChildBridgeRuntimeSource(appSession)}
 ${safeCode}
 		`.trim()
 	}
@@ -624,13 +812,14 @@ ${safeCode}
 
 	function buildHtmlDocumentFromFragment(code: string) {
 		const theme = coerceTheme(latestRenderData?.theme)
+		const appSession = latestEnvelope?.appSession ?? null
 		return `
 <!doctype html>
 <html lang="en"${theme ? ` data-kody-theme="${theme}"` : ''}>
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		${buildHeadInjection(theme)}
+		${buildHeadInjection(theme, appSession)}
 	</head>
 	<body data-kody-runtime="fragment">
 ${code}
@@ -665,13 +854,44 @@ ${inlineModuleSource}
 		}
 
 		const theme = coerceTheme(latestRenderData?.theme)
+		const appSession = latestEnvelope?.appSession ?? null
 		const htmlSource = /<(?:!doctype|html|head|body)\b/i.test(code)
-			? injectIntoHtmlDocument(code, buildHeadInjection(theme), theme)
+			? injectIntoHtmlDocument(
+					code,
+					buildHeadInjection(theme, appSession),
+					theme,
+				)
 			: buildHtmlDocumentFromFragment(code)
 		frameElement.srcdoc = absolutizeHtmlAttributeUrls(htmlSource, getBaseHref())
 	}
 
 	async function resolveSavedAppCode(appId: string) {
+		const appSession = latestEnvelope?.appSession ?? null
+		if (appSession) {
+			const url = new URL(appSession.endpoints.appSource)
+			url.searchParams.set('app_id', appId)
+			const response = await fetch(url.toString(), {
+				headers: {
+					accept: 'application/json',
+					authorization: `Bearer ${appSession.token}`,
+				},
+			})
+			const payload = (await response.json().catch(() => null)) as
+				| Record<string, unknown>
+				| null
+			const app = isRecord(payload?.app) ? payload.app : null
+			if (!response.ok || payload?.ok !== true || !app) {
+				throw new Error('Failed to load saved app source.')
+			}
+			const code = typeof app.code === 'string' ? app.code : null
+			if (!code) {
+				throw new Error('Saved app source is missing code.')
+			}
+			return {
+				code,
+				runtime: coerceRuntime(app.runtime) ?? 'html',
+			}
+		}
 		const result = (await hostBridge.callTool({
 			name: 'ui_load_app_source',
 			arguments: { app_id: appId },
@@ -697,6 +917,7 @@ ${inlineModuleSource}
 	}
 
 	async function renderEnvelope(envelope: RenderEnvelope | null) {
+		latestEnvelope = envelope
 		if (!envelope) {
 			frameElement.srcdoc = ''
 			return

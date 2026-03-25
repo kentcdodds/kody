@@ -16,9 +16,10 @@ export async function insertMcpSkill(
 		.prepare(
 			`INSERT INTO mcp_skills (
 				id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, parameters, inferred_capabilities, inference_partial,
-				read_only, idempotent, destructive, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				uses_capabilities, parameters, connection_bindings, template_key,
+				inferred_capabilities, inference_partial, read_only, idempotent,
+				destructive, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -30,6 +31,8 @@ export async function insertMcpSkill(
 			row.search_text ?? null,
 			row.uses_capabilities ?? null,
 			row.parameters ?? null,
+			row.connection_bindings ?? null,
+			row.template_key ?? null,
 			row.inferred_capabilities,
 			row.inference_partial,
 			row.read_only,
@@ -49,8 +52,9 @@ export async function getMcpSkillById(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, parameters, inferred_capabilities, inference_partial,
-				read_only, idempotent, destructive, created_at, updated_at
+				uses_capabilities, parameters, connection_bindings, template_key,
+				inferred_capabilities, inference_partial, read_only, idempotent,
+				destructive, created_at, updated_at
 			FROM mcp_skills WHERE id = ? AND user_id = ?`,
 		)
 		.bind(skillId, userId)
@@ -71,7 +75,9 @@ export async function updateMcpSkill(
 		search_text: string | null
 		uses_capabilities: string | null
 		parameters: string | null
+			connection_bindings: string | null
 		inferred_capabilities: string
+			template_key: string | null
 		inference_partial: 0 | 1
 		read_only: 0 | 1
 		idempotent: 0 | 1
@@ -83,8 +89,9 @@ export async function updateMcpSkill(
 		.prepare(
 			`UPDATE mcp_skills SET
 				title = ?, description = ?, keywords = ?, code = ?, search_text = ?,
-				uses_capabilities = ?, parameters = ?, inferred_capabilities = ?, inference_partial = ?,
-				read_only = ?, idempotent = ?, destructive = ?, updated_at = ?
+				uses_capabilities = ?, parameters = ?, connection_bindings = ?, template_key = ?,
+				inferred_capabilities = ?, inference_partial = ?, read_only = ?, idempotent = ?,
+				destructive = ?, updated_at = ?
 			WHERE id = ? AND user_id = ?`,
 		)
 		.bind(
@@ -95,6 +102,8 @@ export async function updateMcpSkill(
 			fields.search_text,
 			fields.uses_capabilities,
 			fields.parameters,
+			fields.connection_bindings,
+			fields.template_key,
 			fields.inferred_capabilities,
 			fields.inference_partial,
 			fields.read_only,
@@ -127,8 +136,9 @@ export async function listMcpSkillsByUserId(
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, parameters, inferred_capabilities, inference_partial,
-				read_only, idempotent, destructive, created_at, updated_at
+				uses_capabilities, parameters, connection_bindings, template_key,
+				inferred_capabilities, inference_partial, read_only, idempotent,
+				destructive, created_at, updated_at
 			FROM mcp_skills WHERE user_id = ?`,
 		)
 		.bind(userId)
@@ -143,8 +153,9 @@ export async function listAllMcpSkills(
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, parameters, inferred_capabilities, inference_partial,
-				read_only, idempotent, destructive, created_at, updated_at
+				uses_capabilities, parameters, connection_bindings, template_key,
+				inferred_capabilities, inference_partial, read_only, idempotent,
+				destructive, created_at, updated_at
 			FROM mcp_skills`,
 		)
 		.all<Record<string, unknown>>()
@@ -163,6 +174,11 @@ function mapRow(r: Record<string, unknown>): McpSkillRow {
 		uses_capabilities:
 			r['uses_capabilities'] == null ? null : String(r['uses_capabilities']),
 		parameters: r['parameters'] == null ? null : String(r['parameters']),
+		connection_bindings:
+			r['connection_bindings'] == null
+				? null
+				: String(r['connection_bindings']),
+		template_key: r['template_key'] == null ? null : String(r['template_key']),
 		inferred_capabilities: String(r['inferred_capabilities']),
 		inference_partial: Number(r['inference_partial']) === 1 ? 1 : 0,
 		read_only: Number(r['read_only']) === 1 ? 1 : 0,

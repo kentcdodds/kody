@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { generatedUiShellResourceUri } from '#mcp/apps/generated-ui-shell-entry-point.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
+import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 
 const openGeneratedUiTool = {
 	name: 'open_generated_ui',
@@ -17,7 +18,9 @@ Behavior:
 - Use \`app_id\` to reopen previously saved UI source without sending that source code back through the model.
 - \`code\` may be a full HTML document or a fragment. Prefer body content when possible, but full-document HTML is supported when you need total control.
 - The shell provides a tiny standard library on \`window.kodyWidget\` plus lightweight default styles for semantic HTML, forms, tables, buttons, and code blocks.
-- \`executeCode(code)\` posts a request back to the host, and the host handles it by calling the Kody MCP server tool \`execute\` with that same code string.
+- \`invokeAction({ code, params })\` sends non-sensitive UI input directly to a worker action endpoint backed by the same codemode runtime as \`execute\`.
+- \`submitSecureInput({ setupId, fields })\` sends sensitive fields like PATs or client secrets directly to a host-owned worker endpoint so those values do not need to pass through model-visible tool arguments.
+- \`executeCode(code)\` remains as a compatibility helper and uses the direct worker action path when a generated UI session is available.
 
 Mini standard library:
 \`\`\`ts
@@ -27,7 +30,9 @@ declare global {
       sendMessage(text: string): boolean
       openLink(url: string): boolean
       toggleFullscreen(): Promise<'inline' | 'fullscreen' | 'pip' | null>
-      // Equivalent to calling MCP tool \`execute\` with { code }.
+      invokeAction(input: { code: string; params?: Record<string, unknown> }): Promise<{ ok: boolean; result?: unknown; error?: string; logs?: Array<string> }>
+      submitSecureInput(input: { setupId: string; fields: Record<string, string> }): Promise<{ ok: boolean; stored_secret_names?: Array<string>; missing_secret_names?: Array<string>; status?: string }>
+      // Compatibility helper.
       executeCode(code: string): Promise<unknown>
     }
   }
@@ -49,7 +54,10 @@ Example:
 <script>
   document.querySelector('form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
-    const result = await window.kodyWidget.executeCode(\`async () => { ... }\`)
+    const result = await window.kodyWidget.invokeAction({
+      code: \`async (params) => { ... }\`,
+      params: { ...Object.fromEntries(new FormData(event.currentTarget)) },
+    })
     window.kodyWidget.sendMessage(\`Done: ...\`)
     ...
   })
@@ -102,7 +110,6 @@ const inputSchema = z
 	})
 
 export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
-	void agent
 	registerAppTool(
 		agent.server,
 		openGeneratedUiTool.name,
@@ -118,6 +125,15 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			},
 		},
 		async (args) => {
+			const callerContext = agent.getCallerContext()
+			const appSession =
+				callerContext.user != null
+					? await createGeneratedUiAppSession(
+							agent.getEnv(),
+							callerContext.baseUrl,
+							callerContext.user,
+						)
+					: null
 			const appId = args.app_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
@@ -134,6 +150,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				runtime: 'html' as const,
 				sourceCode: args.code ?? null,
 				hostedUrl,
+				appSession,
 			}
 			return {
 				content: [

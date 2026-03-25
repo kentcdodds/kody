@@ -4,6 +4,7 @@ import {
 } from '@cloudflare/workers-oauth-provider'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
+import { ensureBuiltinSkillTemplatesForUser } from '#mcp/skills/builtin-skill-templates.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 
 export const mcpResourcePath = '/mcp'
@@ -115,6 +116,9 @@ export async function handleMcpRequest({
 		user: tokenSummary.grant.props ?? null,
 		homeConnectorId: 'default',
 	})
+	if (props.user?.userId) {
+		await ensureBuiltinSkillTemplatesForUser(env, props.user.userId)
+	}
 	context.props = props
 
 	return fetchMcp(request, env, context as ExecutionContext<OAuthContextProps>)
