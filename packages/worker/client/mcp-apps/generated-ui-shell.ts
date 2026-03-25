@@ -291,6 +291,31 @@ function getHostToolErrorMessage(result: HostToolResult | null) {
 		: 'Code execution failed.'
 }
 
+function postChildResponse(
+	targetWindow: WindowProxy,
+	type: string,
+	requestId: string,
+	response: unknown,
+) {
+	targetWindow.postMessage(
+		{
+			type,
+			payload: {
+				requestId,
+				response,
+			},
+		},
+		'*',
+	)
+}
+
+export function buildRejectedToolCallResponse(fallbackError: string) {
+	return {
+		ok: false,
+		error: fallbackError,
+	}
+}
+
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	if (!isRecord(value)) return null
 	const renderSource = value.renderSource ?? value.mode
@@ -1113,19 +1138,16 @@ ${inlineModuleSource}
 				const input = isRecord(payload.input) ? payload.input : null
 				const sessionToken = latestEnvelope?.appSession?.token ?? null
 				if (requestId && event.source) {
+					const targetWindow = event.source as WindowProxy
 					if (!input || !sessionToken) {
-						;(event.source as WindowProxy).postMessage(
+						postChildResponse(
+							targetWindow,
+							`${childMessagePrefix}invoke-action-result`,
+							requestId,
 							{
-								type: `${childMessagePrefix}invoke-action-result`,
-								payload: {
-									requestId,
-									response: {
-										ok: false,
-										error: 'Generated UI action requires an active session.',
-									},
-								},
+								ok: false,
+								error: 'Generated UI action requires an active session.',
 							},
-							'*',
 						)
 						return
 					}
@@ -1142,22 +1164,24 @@ ${inlineModuleSource}
 							const structuredContent = isRecord(result?.structuredContent)
 								? result.structuredContent
 								: null
-							;(event.source as WindowProxy).postMessage(
-								{
-									type: `${childMessagePrefix}invoke-action-result`,
-									payload: {
-										requestId,
-										response:
-											result?.isError === true
-												? {
-														ok: false,
-														error:
-															errorMessage ?? 'Generated UI action failed.',
-													}
-												: (structuredContent ?? null),
-									},
-								},
-								'*',
+							postChildResponse(
+								targetWindow,
+								`${childMessagePrefix}invoke-action-result`,
+								requestId,
+								result?.isError === true
+									? {
+											ok: false,
+											error: errorMessage ?? 'Generated UI action failed.',
+										}
+									: (structuredContent ?? null),
+							)
+						})
+						.catch(() => {
+							postChildResponse(
+								targetWindow,
+								`${childMessagePrefix}invoke-action-result`,
+								requestId,
+								buildRejectedToolCallResponse('Generated UI action failed.'),
 							)
 						})
 				}
@@ -1169,6 +1193,7 @@ ${inlineModuleSource}
 				const input = isRecord(payload.input) ? payload.input : null
 				const sessionToken = latestEnvelope?.appSession?.token ?? null
 				if (requestId && event.source) {
+					const targetWindow = event.source as WindowProxy
 					const setupId =
 						typeof input?.setupId === 'string' && input.setupId.length > 0
 							? input.setupId
@@ -1177,19 +1202,15 @@ ${inlineModuleSource}
 								: null
 					const fields = isRecord(input?.fields) ? input.fields : null
 					if (!sessionToken || !setupId || !fields) {
-						;(event.source as WindowProxy).postMessage(
+						postChildResponse(
+							targetWindow,
+							`${childMessagePrefix}submit-secure-input-result`,
+							requestId,
 							{
-								type: `${childMessagePrefix}submit-secure-input-result`,
-								payload: {
-									requestId,
-									response: {
-										ok: false,
-										error:
-											'Secure input requires an active session and valid fields.',
-									},
-								},
+								ok: false,
+								error:
+									'Secure input requires an active session and valid fields.',
 							},
-							'*',
 						)
 						return
 					}
@@ -1207,21 +1228,24 @@ ${inlineModuleSource}
 							const structuredContent = isRecord(result?.structuredContent)
 								? result.structuredContent
 								: null
-							;(event.source as WindowProxy).postMessage(
-								{
-									type: `${childMessagePrefix}submit-secure-input-result`,
-									payload: {
-										requestId,
-										response:
-											result?.isError === true
-												? {
-														ok: false,
-														error: errorMessage ?? 'Secure input failed.',
-													}
-												: (structuredContent ?? null),
-									},
-								},
-								'*',
+							postChildResponse(
+								targetWindow,
+								`${childMessagePrefix}submit-secure-input-result`,
+								requestId,
+								result?.isError === true
+									? {
+											ok: false,
+											error: errorMessage ?? 'Secure input failed.',
+										}
+									: (structuredContent ?? null),
+							)
+						})
+						.catch(() => {
+							postChildResponse(
+								targetWindow,
+								`${childMessagePrefix}submit-secure-input-result`,
+								requestId,
+								buildRejectedToolCallResponse('Secure input failed.'),
 							)
 						})
 				}
