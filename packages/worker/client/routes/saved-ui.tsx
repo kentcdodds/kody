@@ -87,13 +87,16 @@ function getTextContent(content: unknown) {
 }
 
 export function SavedUiRoute(handle: Handle) {
+	const savedUiShellOrigin =
+		typeof window === 'undefined'
+			? null
+			: new URL('/dev/generated-ui', window.location.href).origin
 	let status: SavedUiStatus = 'loading'
 	let errorMessage: string | null = null
 	let artifact: SavedUiArtifact | null = null
 	let shellInitialized = false
 	let latestShellWindow: Window | null = null
 	let activeAppId: string | null = null
-	let loadingAppId: string | null = null
 	let loadRequestId = 0
 
 	function update() {
@@ -101,7 +104,14 @@ export function SavedUiRoute(handle: Handle) {
 	}
 
 	function postRenderDataIfReady() {
-		if (!shellInitialized || !latestShellWindow || !artifact) return
+		if (
+			!shellInitialized ||
+			!latestShellWindow ||
+			!artifact ||
+			!savedUiShellOrigin
+		) {
+			return
+		}
 		latestShellWindow.postMessage(
 			{
 				type: renderDataType,
@@ -123,7 +133,7 @@ export function SavedUiRoute(handle: Handle) {
 					},
 				},
 			},
-			'*',
+			savedUiShellOrigin,
 		)
 	}
 
@@ -133,14 +143,15 @@ export function SavedUiRoute(handle: Handle) {
 			status = 'error'
 			errorMessage = 'Saved UI not found.'
 			artifact = null
-			loadingAppId = null
 			update()
 			return
 		}
 		activeAppId = appId
-		loadingAppId = appId
 		status = 'loading'
 		errorMessage = null
+		artifact = null
+		shellInitialized = false
+		latestShellWindow = null
 		update()
 		const requestId = ++loadRequestId
 		try {
@@ -151,7 +162,6 @@ export function SavedUiRoute(handle: Handle) {
 			artifact = nextArtifact
 			status = 'ready'
 			errorMessage = null
-			loadingAppId = null
 			update()
 			postRenderDataIfReady()
 		} catch (error) {
@@ -162,7 +172,8 @@ export function SavedUiRoute(handle: Handle) {
 			errorMessage =
 				error instanceof Error ? error.message : 'Unable to load saved UI.'
 			artifact = null
-			loadingAppId = null
+			shellInitialized = false
+			latestShellWindow = null
 			update()
 		}
 	}
@@ -184,7 +195,14 @@ export function SavedUiRoute(handle: Handle) {
 			const frameElement = document.querySelector<HTMLIFrameElement>(
 				'[data-saved-ui-shell]',
 			)
-			if (!frameElement || event.source !== frameElement.contentWindow) return
+			if (
+				!frameElement ||
+				!savedUiShellOrigin ||
+				event.source !== frameElement.contentWindow ||
+				event.origin !== savedUiShellOrigin
+			) {
+				return
+			}
 			latestShellWindow = frameElement.contentWindow
 			const message = event.data
 			if (!message || typeof message !== 'object') return
@@ -220,7 +238,7 @@ export function SavedUiRoute(handle: Handle) {
 							},
 						},
 					},
-					'*',
+					savedUiShellOrigin,
 				)
 				latestShellWindow.postMessage(
 					{
@@ -228,7 +246,7 @@ export function SavedUiRoute(handle: Handle) {
 						method: initializedNotificationMethod,
 						params: {},
 					},
-					'*',
+					savedUiShellOrigin,
 				)
 				postRenderDataIfReady()
 				return
@@ -247,7 +265,7 @@ export function SavedUiRoute(handle: Handle) {
 						id: (message as { id?: unknown }).id,
 						result: text ? {} : { isError: true },
 					},
-					'*',
+					savedUiShellOrigin,
 				)
 				return
 			}
@@ -266,7 +284,7 @@ export function SavedUiRoute(handle: Handle) {
 						id: (message as { id?: unknown }).id,
 						result: {},
 					},
-					'*',
+					savedUiShellOrigin,
 				)
 				return
 			}
@@ -282,7 +300,7 @@ export function SavedUiRoute(handle: Handle) {
 						id: (message as { id?: unknown }).id,
 						result: { mode: 'inline' },
 					},
-					'*',
+					savedUiShellOrigin,
 				)
 				return
 			}
@@ -302,18 +320,27 @@ export function SavedUiRoute(handle: Handle) {
 						id: (message as { id?: unknown }).id,
 						result,
 					},
-					'*',
+					savedUiShellOrigin,
 				)
 			}
 
 			if (toolName === 'ui_load_app_source') {
+				if (status !== 'ready' || !artifact) {
+					respond({
+						isError: true,
+						structuredContent: {
+							error: { message: 'Saved UI is not ready yet.' },
+						},
+					})
+					return
+				}
 				respond({
 					structuredContent: {
-						app_id: artifact?.appId ?? activeAppId ?? '',
-						title: artifact?.title ?? 'Saved UI',
-						description: artifact?.description ?? '',
-						runtime: artifact?.runtime ?? 'html',
-						code: artifact?.code ?? '',
+						app_id: artifact.appId,
+						title: artifact.title,
+						description: artifact.description,
+						runtime: artifact.runtime,
+						code: artifact.code,
 					},
 				})
 				return
@@ -325,7 +352,8 @@ export function SavedUiRoute(handle: Handle) {
 						params?: { arguments?: { code?: unknown } }
 					}
 				).params?.arguments?.code
-				if (typeof code !== 'string' || !code.trim() || !activeAppId) {
+				const targetAppId = status === 'ready' ? artifact?.appId : null
+				if (typeof code !== 'string' || !code.trim() || !targetAppId) {
 					respond({
 						isError: true,
 						structuredContent: { error: { message: 'Code is required.' } },
@@ -337,7 +365,7 @@ export function SavedUiRoute(handle: Handle) {
 				// (default 1500ms), so tools/call would fail with a null result in the shell.
 				void (async () => {
 					try {
-						const result = await executeSavedUiCode(activeAppId!, code)
+						const result = await executeSavedUiCode(targetAppId, code)
 						respond({ structuredContent: { result } })
 					} catch (error) {
 						respond({
@@ -409,21 +437,23 @@ export function SavedUiRoute(handle: Handle) {
 						{errorMessage}
 					</p>
 				) : null}
-				<iframe
-					data-saved-ui-shell
-					title="Saved UI"
-					src="/dev/generated-ui"
-					css={{
-						width: '100%',
-						minHeight: '70vh',
-						border: `1px solid ${colors.border}`,
-						borderRadius: '1rem',
-						backgroundColor: 'transparent',
-						[mq.mobile]: {
-							minHeight: '60vh',
-						},
-					}}
-				/>
+				{status === 'ready' ? (
+					<iframe
+						data-saved-ui-shell
+						title="Saved UI"
+						src="/dev/generated-ui"
+						css={{
+							width: '100%',
+							minHeight: '70vh',
+							border: `1px solid ${colors.border}`,
+							borderRadius: '1rem',
+							backgroundColor: 'transparent',
+							[mq.mobile]: {
+								minHeight: '60vh',
+							},
+						}}
+					/>
+				) : null}
 			</section>
 		)
 	}
