@@ -195,6 +195,10 @@ that workflow.
 Preview deploys also run `bun tools/seed-test-data.ts` after deploy to create or
 verify the shared test account credentials listed above.
 
+The production deploy workflow can also be started manually from GitHub Actions
+via **Run workflow** on `main`. The manual path still verifies that the selected
+commit is the current `origin/main` HEAD before it deploys.
+
 If you ever need to do the same operations manually, use:
 
 - `bun tools/ci/preview-resources.ts ensure --worker-name <name> --out-config <path>`
