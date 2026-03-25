@@ -718,6 +718,7 @@ test('mcp server executes ui_save_app via execute tool', async () => {
 		| Record<string, unknown>
 		| undefined
 	expect(typeof executeResult?.app_id).toBe('string')
+	expect(executeResult?.hosted_url).toBe(`${server.origin}/ui/${executeResult?.app_id}`)
 
 	const textOutput =
 		(result as CallToolResult).content.find(
@@ -726,6 +727,7 @@ test('mcp server executes ui_save_app via execute tool', async () => {
 		)?.text ?? ''
 
 	expect(textOutput).toContain('app_id')
+	expect(textOutput).toContain('hosted_url')
 	expect(textOutput).toContain('meta_save_skill')
 })
 
@@ -880,6 +882,13 @@ test('mcp server saves app, search returns app hit, and open_generated_ui suppor
 	expect(openStructured?.renderSource).toBe('saved_app')
 	expect(openStructured?.appId).toBe(appId)
 	expect(openStructured?.resourceUri).toBe(generatedUiResourceUri)
+	expect(openStructured?.hostedUrl).toBe(`${server.origin}/ui/${appId}`)
+	const openText =
+		(openResult as CallToolResult).content.find(
+			(item): item is Extract<ContentBlock, { type: 'text' }> =>
+				item.type === 'text',
+		)?.text ?? ''
+	expect(openText).toContain(`${server.origin}/ui/${appId}`)
 })
 
 test('mcp server deletes saved ui app artifacts', async () => {

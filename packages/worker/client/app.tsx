@@ -88,7 +88,8 @@ export function App(handle: Handle) {
 	}
 
 	return () => {
-		const isChatLayout = currentPathname.startsWith('/chat')
+		const isWideLayout =
+			currentPathname.startsWith('/chat') || currentPathname.startsWith('/ui/')
 		const sessionEmail = session?.email ?? ''
 		const isSessionReady = sessionStatus === 'ready'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
@@ -103,23 +104,23 @@ export function App(handle: Handle) {
 		return (
 			<main
 				css={{
-					maxWidth: isChatLayout ? 'none' : '52rem',
+					maxWidth: isWideLayout ? 'none' : '52rem',
 					width: '100%',
-					margin: isChatLayout ? 0 : '0 auto',
-					padding: isChatLayout
+					margin: isWideLayout ? 0 : '0 auto',
+					padding: isWideLayout
 						? `${spacing.lg} ${spacing.xl} ${spacing.sm}`
 						: spacing['2xl'],
-					minHeight: isChatLayout ? '100vh' : undefined,
+					minHeight: isWideLayout ? '100vh' : undefined,
 					fontFamily: typography.fontFamily,
 					boxSizing: 'border-box',
-					[mq.tablet]: isChatLayout
+					[mq.tablet]: isWideLayout
 						? {
 								padding: `${spacing.sm} ${spacing.sm} 0`,
 							}
 						: {
 								padding: spacing.xl,
 							},
-					[mq.mobile]: isChatLayout
+					[mq.mobile]: isWideLayout
 						? {
 								padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
 							}
@@ -134,8 +135,8 @@ export function App(handle: Handle) {
 						alignItems: 'center',
 						gap: spacing.md,
 						flexWrap: 'wrap',
-						marginBottom: isChatLayout ? spacing.lg : spacing.xl,
-						[mq.tablet]: isChatLayout
+						marginBottom: isWideLayout ? spacing.lg : spacing.xl,
+						[mq.tablet]: isWideLayout
 							? {
 									gap: spacing.sm,
 									marginBottom: spacing.sm,
@@ -143,7 +144,7 @@ export function App(handle: Handle) {
 							: {},
 						[mq.mobile]: {
 							gap: spacing.sm,
-							marginBottom: isChatLayout ? spacing.md : spacing.lg,
+							marginBottom: isWideLayout ? spacing.md : spacing.lg,
 						},
 					}}
 				>

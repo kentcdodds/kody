@@ -9,10 +9,10 @@ import {
 } from '#app/auth-session.ts'
 import { getEnv } from '#app/env.ts'
 import { Layout } from '#app/layout.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { render } from '#app/render.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
-import { toHex } from '@kody-internal/shared/hex.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
 export const oauthPaths = {
@@ -46,13 +46,6 @@ function renderSpaShell(status = 200) {
 
 const dummyPasswordHash =
 	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
-
-async function createUserId(email: string) {
-	const normalized = email.trim().toLowerCase()
-	const data = new TextEncoder().encode(normalized)
-	const hash = await crypto.subtle.digest('SHA-256', data)
-	return toHex(new Uint8Array(hash))
-}
 
 function jsonResponse(data: unknown, init?: ResponseInit) {
 	return new Response(JSON.stringify(data), {
@@ -278,7 +271,7 @@ export async function handleAuthorizeRequest(
 
 	const resolvedScopes = resolveScopes(authRequest.scope)
 	if (Array.isArray(resolvedScopes)) {
-		const userId = await createUserId(approvedEmail)
+		const userId = await createStableUserIdFromEmail(approvedEmail)
 		const displayName = approvedEmail.split('@')[0] || 'user'
 		const { redirectTo } = await helpers.completeAuthorization({
 			request: authRequest,
