@@ -150,6 +150,9 @@ function absolutizeSrcset(value: string, baseHref: string | null) {
 			}
 
 			const [url, ...descriptorParts] = trimmedCandidate.split(/\s+/)
+			if (!url) {
+				return trimmedCandidate
+			}
 			return [absolutizeUrl(url, baseHref), ...descriptorParts]
 				.filter((part) => part.length > 0)
 				.join(' ')
