@@ -1,4 +1,5 @@
 import { type Handle } from 'remix/component'
+import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 
 type SavedUiArtifact = {
@@ -166,6 +167,16 @@ export function SavedUiRoute(handle: Handle) {
 	}
 
 	handle.queueTask(refreshArtifact)
+
+	listenToRouterNavigation(handle, () => {
+		const nextAppId = getSavedUiIdFromLocation()
+		if (!nextAppId) {
+			activeAppId = null
+			return
+		}
+		if (nextAppId === activeAppId) return
+		handle.queueTask(refreshArtifact)
+	})
 
 	handle.on(window, {
 		message: (event: MessageEvent) => {
