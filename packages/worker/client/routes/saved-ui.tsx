@@ -141,6 +141,7 @@ export function SavedUiRoute(handle: Handle) {
 		loadingAppId = appId
 		status = 'loading'
 		errorMessage = null
+		update()
 		const requestId = ++loadRequestId
 		try {
 			const nextArtifact = await loadSavedUi(appId)
