@@ -7,7 +7,10 @@ import { type HomeConnectorState } from '../src/state.ts'
 import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
 import { scanRokuDevices } from '../src/adapters/roku/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
-import { captureHomeConnectorException } from '../src/sentry.ts'
+import {
+	captureHomeConnectorException,
+	flushHomeConnectorSentry,
+} from '../src/sentry.ts'
 
 function renderQuickLinks(state: HomeConnectorState) {
 	const workerSnapshotUrl = state.connection.connectorId
@@ -281,6 +284,53 @@ export function createHealthHandler(state: HomeConnectorState) {
 	} satisfies BuildAction<
 		typeof routes.health.method,
 		typeof routes.health.pattern
+	>
+}
+
+export function createSentryTestHandler() {
+	return {
+		middleware: [],
+		async action({ request }: { request: Request }) {
+			if (request.method !== 'POST') {
+				return new Response('Method Not Allowed', {
+					status: 405,
+					headers: {
+						Allow: 'POST',
+					},
+				})
+			}
+
+			const error = new Error('Home connector Sentry test')
+			captureHomeConnectorException(error, {
+				tags: {
+					route: '/sentry/test',
+					action: 'manual-test',
+				},
+				contexts: {
+					sentryTest: {
+						method: request.method,
+						url: request.url,
+					},
+				},
+			})
+			await flushHomeConnectorSentry()
+
+			return Response.json(
+				{
+					ok: true,
+					test: 'sentry',
+					message: 'Captured and flushed test exception to Sentry.',
+				},
+				{
+					headers: {
+						'Cache-Control': 'no-store',
+					},
+				},
+			)
+		},
+	} satisfies BuildAction<
+		typeof routes.sentryTest.method,
+		typeof routes.sentryTest.pattern
 	>
 }
 
