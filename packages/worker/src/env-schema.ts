@@ -1,3 +1,4 @@
+import { aiModeValues } from '@kody-internal/shared/chat.ts'
 import {
 	createSchema,
 	fail,
@@ -5,7 +6,6 @@ import {
 	string,
 	type InferOutput,
 } from 'remix/data-schema'
-import { aiModeValues } from '@kody-internal/shared/chat.ts'
 
 const d1DatabaseSchema = createSchema<unknown, D1Database>((value, context) => {
 	if (value) {
