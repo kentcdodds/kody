@@ -33,7 +33,9 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+          ref:
+            ${{ github.event_name == 'workflow_dispatch' && github.sha ||
+            github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: 🧾 Resolve deploy SHA and ensure it is main HEAD
