@@ -240,6 +240,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseName,
 	d1DatabaseId,
 	oauthKvId,
+	workerVars,
 }: {
 	baseConfigPath: string
 	outConfigPath: string
@@ -247,6 +248,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseName: string
 	d1DatabaseId: string
 	oauthKvId: string
+	workerVars?: Record<string, string | undefined>
 }) {
 	const baseText = await readFile(baseConfigPath, 'utf8')
 	const config = parseJsonc<Record<string, unknown>>(baseText)
@@ -308,6 +310,28 @@ export async function writeGeneratedWranglerConfig({
 		id: oauthKvId,
 		preview_id: oauthKvId,
 	}
+
+	const existingVars = (targetEnv as Record<string, unknown>).vars
+	if (
+		existingVars !== undefined &&
+		(existingVars === null ||
+			typeof existingVars !== 'object' ||
+			Array.isArray(existingVars))
+	) {
+		fail(
+			`wrangler config "${baseConfigPath}" has invalid "env.${envName}.vars".`,
+		)
+	}
+
+	const resolvedVars = {
+		...((existingVars as Record<string, unknown> | undefined) ?? {}),
+	}
+	for (const [key, value] of Object.entries(workerVars ?? {})) {
+		if (typeof value === 'string' && value.length > 0) {
+			resolvedVars[key] = value
+		}
+	}
+	;(targetEnv as Record<string, unknown>).vars = resolvedVars
 
 	const resolvedOut = path.resolve(outConfigPath)
 	await writeFile(

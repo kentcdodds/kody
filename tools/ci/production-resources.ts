@@ -315,6 +315,9 @@ async function ensureProductionResources(options: CliOptions) {
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		oauthKvId: kv.id,
+		workerVars: {
+			APP_BASE_URL: process.env.APP_BASE_URL,
+		},
 	})
 
 	// Emit GitHub Actions-friendly outputs (stdout only).
