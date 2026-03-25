@@ -7,6 +7,7 @@ import { type HomeConnectorState } from '../src/state.ts'
 import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
 import { scanRokuDevices } from '../src/adapters/roku/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
+import { captureHomeConnectorException } from '../src/sentry.ts'
 
 function renderQuickLinks(state: HomeConnectorState) {
 	const workerSnapshotUrl = state.connection.connectorId
@@ -361,6 +362,18 @@ export function createRokuStatusHandler(
 						scanMessage: `Scan complete. Discovered ${devices.length} Roku device(s).`,
 					})
 				} catch (error) {
+					captureHomeConnectorException(error, {
+						tags: {
+							route: '/roku/status',
+							action: 'scan',
+						},
+						contexts: {
+							roku: {
+								discoveryUrl: config.rokuDiscoveryUrl,
+								connectorId: config.homeConnectorId,
+							},
+						},
+					})
 					return renderRokuStatusPage({
 						state,
 						scanError:

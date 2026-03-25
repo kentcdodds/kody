@@ -13,6 +13,10 @@ import { stringifyHomeConnectorMessage } from '../../../worker/src/home/utils.ts
 import { type HomeConnectorConfig } from '../config.ts'
 import { type HomeConnectorState, updateConnectionState } from '../state.ts'
 import { type HomeConnectorToolRegistry } from '../mcp/server.ts'
+import {
+	captureHomeConnectorException,
+	captureHomeConnectorMessage,
+} from '../sentry.ts'
 
 const heartbeatIntervalMs = 10_000
 const reconnectDelayMs = 2_000
@@ -85,6 +89,16 @@ async function handleJsonRpcRequest(
 				result,
 			} satisfies JSONRPCResponse
 		} catch (error: unknown) {
+			captureHomeConnectorException(error, {
+				tags: {
+					connector_tool_name: name,
+				},
+				contexts: {
+					mcp_request: {
+						method: message.method,
+					},
+				},
+			})
 			return {
 				jsonrpc: '2.0',
 				id: message.id,
@@ -179,6 +193,12 @@ export function createWorkerConnector(input: {
 						connected: false,
 						lastError: value.message,
 					})
+					captureHomeConnectorMessage(value.message, {
+						level: 'error',
+						tags: {
+							connector_event: 'server.error',
+						},
+					})
 					console.error(`Home connector error: ${value.message}`)
 					return
 				case 'server.ack':
@@ -233,6 +253,12 @@ export function createWorkerConnector(input: {
 			updateConnectionState(input.state, {
 				connected: false,
 			})
+			captureHomeConnectorMessage('Home connector websocket closed.', {
+				level: 'warning',
+				tags: {
+					connector_event: 'websocket.close',
+				},
+			})
 			console.warn('Home connector websocket closed.')
 			socket = null
 			scheduleReconnect()
@@ -242,6 +268,15 @@ export function createWorkerConnector(input: {
 			updateConnectionState(input.state, {
 				connected: false,
 				lastError: 'Home connector websocket error.',
+			})
+			captureHomeConnectorMessage('Home connector websocket error.', {
+				level: 'error',
+				tags: {
+					connector_event: 'websocket.error',
+				},
+				extra: {
+					eventType: event.type,
+				},
 			})
 			console.error('Home connector websocket error', event)
 		})

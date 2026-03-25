@@ -5,6 +5,7 @@ import {
 	type RokuDiscoveryResult,
 	type RokuSsdpHitDiagnostic,
 } from '../types.ts'
+import { captureHomeConnectorException } from '../../../sentry.ts'
 
 type RokuDeviceInfoResponse = {
 	id?: string
@@ -312,6 +313,17 @@ async function buildRokuDeviceFromSsdpLocation(input: {
 			},
 		}
 	} catch (error) {
+		captureHomeConnectorException(error, {
+			tags: {
+				operation: 'roku.device_info_lookup',
+			},
+			contexts: {
+				roku: {
+					location,
+					deviceInfoUrl,
+				},
+			},
+		})
 		return {
 			device: {
 				id: input.location.usn?.trim() || `roku-${input.index.toString(10)}`,

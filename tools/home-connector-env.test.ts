@@ -26,3 +26,19 @@ test('ignores blank forwarded values', () => {
 
 	expect(forwarded).toEqual({})
 })
+
+test('forwards connector Sentry env vars', () => {
+	const forwarded = getForwardedHomeConnectorEnv({
+		HOME_CONNECTOR_SENTRY_DSN: 'https://examplePublicKey@o0.ingest.sentry.io/0',
+		HOME_CONNECTOR_SENTRY_ENVIRONMENT: 'preview',
+		HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE: '0.25',
+		HOME_CONNECTOR_APP_COMMIT_SHA: 'abc123',
+	})
+
+	expect(forwarded).toEqual({
+		SENTRY_DSN: 'https://examplePublicKey@o0.ingest.sentry.io/0',
+		SENTRY_ENVIRONMENT: 'preview',
+		SENTRY_TRACES_SAMPLE_RATE: '0.25',
+		APP_COMMIT_SHA: 'abc123',
+	})
+})
