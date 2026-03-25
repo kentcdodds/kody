@@ -90,9 +90,12 @@ export function buildSkillEmbedText(
 			].join('\n'),
 		)
 	}
-	const text = [...baseParts, ...parameterParts, ...connectionParts, ...denorm].join(
-		'\n',
-	)
+	const text = [
+		...baseParts,
+		...parameterParts,
+		...connectionParts,
+		...denorm,
+	].join('\n')
 	return text.slice(0, maxChars)
 }
 

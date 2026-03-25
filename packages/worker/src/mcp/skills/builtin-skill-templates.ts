@@ -33,11 +33,15 @@ const builtinSkillTemplates: Array<BuiltinSkillTemplate> = [
 		templateKey: 'builtin:github-rest-request',
 		title: 'GitHub REST Request',
 		description:
-			'Run a low-level GitHub REST request through the user\'s default GitHub connection. If no connection exists yet, the skill can begin a GitHub token setup flow instead.',
+			"Run a low-level GitHub REST request through the user's default GitHub connection. If no connection exists yet, the skill can begin a GitHub token setup flow instead.",
 		keywords: ['github', 'rest', 'api', 'request', 'raw', 'connection'],
 		searchText:
 			'GitHub REST raw request connection backed default GitHub PAT setup flow',
-		usesCapabilities: ['connections_begin_setup', 'connections_resolve', 'provider_http_request'],
+		usesCapabilities: [
+			'connections_begin_setup',
+			'connections_resolve',
+			'provider_http_request',
+		],
 		connectionBindings: [
 			{
 				provider: 'github',
@@ -145,7 +149,7 @@ const builtinSkillTemplates: Array<BuiltinSkillTemplate> = [
 		templateKey: 'builtin:github-graphql-request',
 		title: 'GitHub GraphQL Request',
 		description:
-			'Run a GitHub GraphQL query or mutation through the user\'s default GitHub connection.',
+			"Run a GitHub GraphQL query or mutation through the user's default GitHub connection.",
 		keywords: ['github', 'graphql', 'query', 'mutation', 'connection'],
 		searchText:
 			'GitHub GraphQL connection backed request default GitHub PAT setup flow',
@@ -197,7 +201,7 @@ const builtinSkillTemplates: Array<BuiltinSkillTemplate> = [
 		templateKey: 'builtin:cloudflare-rest-request',
 		title: 'Cloudflare API Request',
 		description:
-			'Run a low-level Cloudflare API request through the user\'s default Cloudflare connection.',
+			"Run a low-level Cloudflare API request through the user's default Cloudflare connection.",
 		keywords: ['cloudflare', 'api', 'rest', 'request', 'dns', 'workers'],
 		searchText:
 			'Cloudflare API request connection backed default API token worker dns zones',
@@ -259,7 +263,7 @@ const builtinSkillTemplates: Array<BuiltinSkillTemplate> = [
 		templateKey: 'builtin:cursor-cloud-rest-request',
 		title: 'Cursor Cloud Request',
 		description:
-			'Run a low-level Cursor Cloud API request through the user\'s default Cursor connection.',
+			"Run a low-level Cursor Cloud API request through the user's default Cursor connection.",
 		keywords: ['cursor', 'cloud', 'agent', 'api', 'request'],
 		searchText:
 			'Cursor Cloud request connection backed default API key agents launch stop',
@@ -326,7 +330,9 @@ export async function ensureBuiltinSkillTemplatesForUser(
 	const existingTemplateKeys = new Set(
 		skillRows
 			.map((skill) => skill.template_key)
-			.filter((templateKey): templateKey is string => typeof templateKey === 'string'),
+			.filter(
+				(templateKey): templateKey is string => typeof templateKey === 'string',
+			),
 	)
 	const missingTemplates = builtinSkillTemplates.filter(
 		(template) => !existingTemplateKeys.has(template.templateKey),

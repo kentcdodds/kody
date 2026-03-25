@@ -26,7 +26,7 @@ export const connectionsListCapability = defineDomainCapability(
 	{
 		name: 'connections_list',
 		description:
-			'List the signed-in user\'s stored provider connections, including labels, account metadata, scopes, default markers, and timestamps.',
+			"List the signed-in user's stored provider connections, including labels, account metadata, scopes, default markers, and timestamps.",
 		keywords: [
 			'connection',
 			'provider',

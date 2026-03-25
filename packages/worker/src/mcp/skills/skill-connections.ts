@@ -8,7 +8,9 @@ export const skillConnectionBindingSchema = z.object({
 	required: z.boolean().default(true),
 })
 
-export type SkillConnectionBinding = z.infer<typeof skillConnectionBindingSchema>
+export type SkillConnectionBinding = z.infer<
+	typeof skillConnectionBindingSchema
+>
 
 export function parseSkillConnectionBindings(
 	raw: string | null,

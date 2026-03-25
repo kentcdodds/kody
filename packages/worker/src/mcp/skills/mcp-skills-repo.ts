@@ -75,9 +75,9 @@ export async function updateMcpSkill(
 		search_text: string | null
 		uses_capabilities: string | null
 		parameters: string | null
-			connection_bindings: string | null
+		connection_bindings: string | null
 		inferred_capabilities: string
-			template_key: string | null
+		template_key: string | null
 		inference_partial: 0 | 1
 		read_only: 0 | 1
 		idempotent: 0 | 1

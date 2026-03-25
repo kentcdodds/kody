@@ -11,7 +11,14 @@ export const connectionsFinalizeCapability = defineDomainCapability(
 		name: 'connections_finalize',
 		description:
 			'Finalize a connection draft into a durable user-owned provider connection after secure inputs or OAuth credentials have been collected.',
-		keywords: ['connection', 'finalize', 'provider', 'oauth', 'token', 'api key'],
+		keywords: [
+			'connection',
+			'finalize',
+			'provider',
+			'oauth',
+			'token',
+			'api key',
+		],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
