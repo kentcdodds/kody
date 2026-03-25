@@ -935,6 +935,9 @@ async function getRequiredConnectionDraft(
 	if (!draft) {
 		throw new Error('Connection draft not found for this user.')
 	}
+	if (draft.expires_at && Date.parse(draft.expires_at) <= Date.now()) {
+		throw new Error('Connection draft has expired.')
+	}
 	return draft
 }
 
