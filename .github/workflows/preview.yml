@@ -255,6 +255,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ENV: preview
+          APP_BASE_URL: ${{ steps.deploy_preview.outputs.url }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
@@ -262,7 +263,7 @@ jobs:
           set -euo pipefail
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-          bun run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy.log
+          bun run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
 
           PREVIEW_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy.log "$APP_WORKER_NAME")"
           if [ -n "$PREVIEW_URL" ]; then

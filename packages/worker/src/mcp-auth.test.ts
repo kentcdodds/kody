@@ -32,8 +32,11 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	}
 }
 
-function createEnv(helpers: OAuthHelpers) {
-	return { OAUTH_PROVIDER: helpers } as unknown as Env
+function createEnv(
+	helpers: OAuthHelpers,
+	overrides: Partial<Env> = {},
+) {
+	return { OAUTH_PROVIDER: helpers, ...overrides } as unknown as Env
 }
 
 function createContext() {
@@ -55,6 +58,19 @@ test('protected resource metadata describes MCP server', async () => {
 	expect(payload).toEqual(buildProtectedResourceMetadata('https://example.com'))
 })
 
+test('protected resource metadata prefers APP_BASE_URL over request origin', async () => {
+	const request = new Request(
+		`https://kody-production.kentcdodds.workers.dev${protectedResourceMetadataPath}`,
+	)
+	const response = handleProtectedResourceMetadata(request, {
+		APP_BASE_URL: 'https://heykody.dev',
+	} as Env)
+
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload).toEqual(buildProtectedResourceMetadata('https://heykody.dev'))
+})
+
 test('mcp request without token returns 401 with resource metadata', async () => {
 	const request = new Request(`https://example.com${mcpResourcePath}`)
 	const response = await handleMcpRequest({
@@ -72,6 +88,26 @@ test('mcp request without token returns 401 with resource metadata', async () =>
 	if (oauthScopes.length > 0) {
 		expect(header).toContain(`scope="${oauthScopes.join(' ')}"`)
 	}
+})
+
+test('mcp request without token prefers APP_BASE_URL in auth metadata', async () => {
+	const request = new Request(
+		`https://kody-production.kentcdodds.workers.dev${mcpResourcePath}`,
+	)
+	const response = await handleMcpRequest({
+		request,
+		env: createEnv(createHelpers(), {
+			APP_BASE_URL: 'https://heykody.dev',
+		}),
+		ctx: createContext(),
+		fetchMcp: () => new Response('ok'),
+	})
+
+	expect(response.status).toBe(401)
+	const header = response.headers.get('WWW-Authenticate') ?? ''
+	expect(header).toContain(
+		`resource_metadata="https://heykody.dev${protectedResourceMetadataPath}"`,
+	)
 })
 
 test('mcp request rejects invalid tokens', async () => {

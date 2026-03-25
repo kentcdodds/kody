@@ -70,7 +70,7 @@ const appHandler = withCors({
 		}
 
 		if (isProtectedResourceMetadataRequest(url.pathname)) {
-			return handleProtectedResourceMetadata(request)
+			return handleProtectedResourceMetadata(request, env)
 		}
 
 		if (url.pathname === mcpResourcePath) {
@@ -213,7 +213,7 @@ const workerHandler = {
 								headers: request.headers,
 							})
 				const metadataResponse =
-					handleProtectedResourceMetadata(metadataRequest)
+					handleProtectedResourceMetadata(metadataRequest, env)
 				if (request.method === 'HEAD') {
 					return addOAuthDiscoveryCorsHeaders(
 						new Response(null, {

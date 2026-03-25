@@ -3,6 +3,7 @@ import {
 	registerAppResource,
 } from '@modelcontextprotocol/ext-apps/server'
 import { createUIResource } from '@mcp-ui/server'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { getEnv } from '#app/env.ts'
 import { computeClaudeWidgetDomain } from '#mcp/apps/claude-widget-domain.ts'
 import {
@@ -22,7 +23,10 @@ const generatedUiAppResource = {
 export async function registerGeneratedUiAppResource(agent: MCP) {
 	const requestBaseUrl = agent.requireDomain()
 	const appEnv = getEnv(agent.getEnv())
-	const appBaseUrl = appEnv.APP_BASE_URL ?? requestBaseUrl
+	const appBaseUrl = getAppBaseUrl({
+		env: appEnv,
+		requestUrl: requestBaseUrl,
+	})
 	const resourceDomain = new URL('/styles.css', appBaseUrl).origin
 	const mcpServerUrl = new URL(mcpResourcePath, appBaseUrl).toString()
 
