@@ -883,3 +883,65 @@ test(
 	expect(openStructured?.appId).toBe(appId)
 	expect(openStructured?.resourceUri).toBe(generatedUiResourceUri)
 })
+
+test('mcp server deletes saved ui app artifacts', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_save_app({
+						title: 'Delete Me App',
+						description: 'Saved app to delete.',
+						keywords: ['delete', 'ui'],
+						code: '<main><h1>Delete Me</h1></main>',
+					})`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const savedApp = saveStructured?.result as Record<string, unknown> | undefined
+	const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+	expect(appId).not.toBeNull()
+
+	const deleteResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_delete_app({ app_id: ${JSON.stringify(appId)} })`,
+		},
+	})
+	const deleteStructured = (deleteResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const deletePayload = deleteStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	expect(deletePayload?.deleted).toBe(true)
+	expect(deletePayload?.app_id).toBe(appId)
+
+	const listResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => await codemode.ui_list_apps({})`,
+		},
+	})
+	const listStructured = (listResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const listPayload = listStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	const apps = listPayload?.apps as Array<{ app_id?: string }> | undefined
+	expect(apps?.some((app) => app.app_id === appId)).toBe(false)
+})

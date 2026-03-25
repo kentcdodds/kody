@@ -20,3 +20,12 @@ export async function upsertUiArtifactVector(
 		},
 	])
 }
+
+export async function deleteUiArtifactVector(
+	env: Env,
+	appId: string,
+): Promise<void> {
+	const index = getCapabilityVectorIndex(env)
+	if (!index || isCapabilitySearchOffline(env)) return
+	await index.deleteByIds([uiArtifactVectorId(appId)])
+}
