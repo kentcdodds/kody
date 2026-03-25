@@ -9,6 +9,8 @@ import { oauthScopes } from './oauth-handlers.ts'
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
 	'/.well-known/oauth-protected-resource'
+const builtinTemplateSeedCooldownMs = 5 * 60 * 1000
+const builtinTemplateSeedByUser = new Map<string, number>()
 
 type OAuthEnv = Env & {
 	OAUTH_PROVIDER?: OAuthHelpers
@@ -113,6 +115,19 @@ export async function handleMcpRequest({
 		homeConnectorId: 'default',
 	})
 	if (props.user?.userId) {
+		const now = Date.now()
+		const lastSeededAt = builtinTemplateSeedByUser.get(props.user.userId)
+		if (
+			lastSeededAt &&
+			now - lastSeededAt < builtinTemplateSeedCooldownMs
+		) {
+			context.props = props
+			return fetchMcp(
+				request,
+				env,
+				context as ExecutionContext<OAuthContextProps>,
+			)
+		}
 		try {
 			await ensureBuiltinSkillTemplatesForUser(env, props.user.userId)
 		} catch (error) {
@@ -120,6 +135,8 @@ export async function handleMcpRequest({
 				userId: props.user.userId,
 				error: error instanceof Error ? error.message : String(error),
 			})
+		} finally {
+			builtinTemplateSeedByUser.set(props.user.userId, now)
 		}
 	}
 	context.props = props

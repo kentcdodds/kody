@@ -6,7 +6,6 @@ import {
 } from './auth-spec.ts'
 import { decryptJson, encryptJson } from './crypto.ts'
 import {
-	getProviderConnectionByIdUnsafe,
 	getProviderConnectionSecret,
 	updateProviderConnection,
 	upsertProviderConnectionSecret,
@@ -541,16 +540,3 @@ async function parseJsonResponse(
 	}
 }
 
-export async function getVerifiedProviderConnection(
-	env: Env,
-	connectionId: string,
-) {
-	const connection = await getProviderConnectionByIdUnsafe(
-		env.APP_DB,
-		connectionId,
-	)
-	if (!connection) {
-		throw new Error('Provider connection not found.')
-	}
-	return connection
-}

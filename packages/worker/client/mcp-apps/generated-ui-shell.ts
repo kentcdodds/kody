@@ -683,8 +683,11 @@ window.addEventListener('unhandledrejection', (event) => {
 	function buildInlineModuleSource(code: string) {
 		const safeCode = escapeInlineScriptSource(code)
 		const appSession = latestEnvelope?.appSession ?? null
+		const bridgeRuntime = escapeInlineScriptSource(
+			buildChildBridgeRuntimeSource(appSession),
+		)
 		return `
-${buildChildBridgeRuntimeSource(appSession)}
+${bridgeRuntime}
 ${safeCode}
 		`.trim()
 	}
