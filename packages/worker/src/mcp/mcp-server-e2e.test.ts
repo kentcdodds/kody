@@ -270,6 +270,22 @@ async function waitForServer(
 	)
 }
 
+<<<<<<< HEAD
+=======
+async function stopProcess(proc: ReturnType<typeof Bun.spawn>) {
+	let exited = false
+	void proc.exited.then(() => {
+		exited = true
+	})
+	proc.kill('SIGINT')
+	await Promise.race([proc.exited, delay(5_000)])
+	if (!exited) {
+		proc.kill('SIGKILL')
+		await proc.exited
+	}
+}
+
+>>>>>>> 97d1625 (fix(worker): stabilize MCP E2E env and APP_BASE_URL coverage)
 async function startDevServer(persistDir: string) {
 	const port = await getPort({ host: '127.0.0.1' })
 	const inspectorPortBase =
@@ -813,15 +829,17 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 	)
 })
 
-test('mcp server saves app, search returns app hit, and open_generated_ui supports app_id', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
+test(
+	'mcp server saves app, search returns app hit, and open_generated_ui supports app_id',
+	async () => {
+		await using database = await createTestDatabase()
+		await using server = await startDevServer(database.persistDir)
+		await using mcpClient = await createMcpClient(server.origin, database.user)
 
-	const saveResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () =>
+		const saveResult = await mcpClient.client.callTool({
+			name: 'execute',
+			arguments: {
+				code: `async () =>
 					await codemode.ui_save_app({
 						title: 'Saved Searchable App',
 						description: 'Saved generated UI artifact for search and reopen.',
