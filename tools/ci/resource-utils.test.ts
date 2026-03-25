@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, expect, test } from 'vitest'
@@ -9,7 +9,7 @@ const tempDirs: Array<string> = []
 afterEach(async () => {
 	await Promise.all(
 		tempDirs.map(async (dir) => {
-			await Bun.$`rm -rf ${dir}`.quiet()
+			await rm(dir, { recursive: true, force: true })
 		}),
 	)
 	tempDirs.length = 0
