@@ -42,6 +42,56 @@ function coerceTheme(value: unknown): ThemeName | null {
 	return value === 'light' || value === 'dark' ? value : null
 }
 
+function injectThemeAttributeIntoHtmlTag(
+	htmlTag: string,
+	theme: ThemeName | null,
+) {
+	if (!theme || /\bdata-kody-theme\s*=/i.test(htmlTag)) {
+		return htmlTag
+	}
+
+	const closingBracketIndex = htmlTag.lastIndexOf('>')
+	if (closingBracketIndex === -1) {
+		return htmlTag
+	}
+
+	return `${htmlTag.slice(0, closingBracketIndex)} data-kody-theme="${theme}">${htmlTag.slice(closingBracketIndex + 1)}`
+}
+
+export function injectIntoHtmlDocument(
+	code: string,
+	injection: string,
+	theme: ThemeName | null,
+) {
+	if (/<head\b[^>]*>/i.test(code)) {
+		const withTheme = theme
+			? code.replace(
+					/<html\b[^>]*>/i,
+					(match) => injectThemeAttributeIntoHtmlTag(match, theme),
+				)
+			: code
+
+		return withTheme.replace(
+			/<head\b[^>]*>/i,
+			(match) => `${match}\n${injection}\n`,
+		)
+	}
+
+	if (/<html\b[^>]*>/i.test(code)) {
+		return code.replace(
+			/<html\b[^>]*>/i,
+			(match) =>
+				`${injectThemeAttributeIntoHtmlTag(match, theme)}<head>${injection}</head>`,
+		)
+	}
+
+	if (/<\/body>/i.test(code)) {
+		return code.replace(/<\/body>/i, `${injection}\n</body>`)
+	}
+
+	return `${injection}\n${code}`
+}
+
 function getHostToolErrorMessage(result: HostToolResult | null) {
 	if (!result || result.isError !== true) return null
 	const structuredContent = isRecord(result.structuredContent)
@@ -484,29 +534,6 @@ ${code}
 		`.trim()
 	}
 
-	function injectIntoHtmlDocument(code: string) {
-		const theme = coerceTheme(latestRenderData?.theme)
-		const injection = buildHeadInjection(theme)
-		const themeAttribute = theme ? ` data-kody-theme="${theme}"` : ''
-		if (/<head[\s>]/i.test(code)) {
-			return code.replace(/<head([\s>]*)/i, `<head$1>\n${injection}\n`)
-		}
-		if (/<html[\s>]/i.test(code)) {
-			const withTheme =
-				themeAttribute && !/\bdata-kody-theme=/i.test(code)
-					? code.replace(/<html(\s*)/i, `<html${themeAttribute}$1`)
-					: code
-			return withTheme.replace(
-				/<html([\s>])/i,
-				`<html$1><head>${injection}</head>`,
-			)
-		}
-		if (/<\/body>/i.test(code)) {
-			return code.replace(/<\/body>/i, `${injection}\n</body>`)
-		}
-		return `${injection}\n${code}`
-	}
-
 	function setFrameSource(code: string, runtime: AppRuntime) {
 		if (runtime === 'javascript') {
 			const inlineModuleSource = buildInlineModuleSource(code)
@@ -532,8 +559,9 @@ ${inlineModuleSource}
 			return
 		}
 
+		const theme = coerceTheme(latestRenderData?.theme)
 		const htmlSource = /<(?:!doctype|html|head|body)\b/i.test(code)
-			? injectIntoHtmlDocument(code)
+			? injectIntoHtmlDocument(code, buildHeadInjection(theme), theme)
 			: buildHtmlDocumentFromFragment(code)
 		frameElement.srcdoc = htmlSource
 	}
@@ -705,10 +733,12 @@ ${inlineModuleSource}
 	void renderEnvelope(null)
 }
 
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', initializeGeneratedUiShell, {
+const documentRef = globalThis.document
+
+if (documentRef?.readyState === 'loading') {
+	documentRef.addEventListener('DOMContentLoaded', initializeGeneratedUiShell, {
 		once: true,
 	})
-} else {
+} else if (documentRef) {
 	initializeGeneratedUiShell()
 }
