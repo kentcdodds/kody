@@ -8,7 +8,7 @@ types, runtime validation, and documentation in sync.
 1. **Add the type**
    - Update `packages/worker/src/env-schema.ts` so the worker schema and
      `AppEnv` include the new variable.
-   - `types/env.d.ts` extends `Env` from that worker-owned schema.
+   - `packages/worker/env.d.ts` extends `Env` from that worker-owned schema.
 
 2. **Validate at runtime**
    - Add the variable to the runtime schema in

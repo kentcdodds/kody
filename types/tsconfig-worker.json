@@ -29,8 +29,8 @@
 		"noUncheckedSideEffectImports": true
 	},
 	"include": [
-		"./env.d.ts",
-		"./worker-configuration.d.ts",
+		"../packages/worker/env.d.ts",
+		"../packages/worker/worker-configuration.d.ts",
 		"../packages/shared/src/**/*.ts",
 		"../packages/mock-servers/**/*.ts",
 		"../sentry/**/*.ts",

@@ -37,7 +37,7 @@
     "migrate:e2e": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local --persist-to .wrangler/state/e2e",
     "preview": "bun run build:mcp-apps && bun run migrate:local && bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local",
     "preview:e2e": "bun run build:mcp-apps && bun run migrate:e2e && bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
-    "generate-types": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts types ./types/worker-configuration.d.ts",
+    "generate-types": "bun --no-env-file --env-file=packages/worker/.env ./wrangler-env.ts types ./packages/worker/worker-configuration.d.ts",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run --project node-unit --project workers-unit",
     "inspect": "bunx -p @mcpjam/inspector inspector",
