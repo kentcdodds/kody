@@ -205,6 +205,11 @@ canonical stylesheet directly (for example `/styles.css`) instead of copying
 token values into widget CSS. If you do this in an MCP App resource, set
 `_meta.ui.csp.resourceDomains` to allow that stylesheet origin.
 
+For generated HTML rendered through a sandboxed `srcdoc` iframe, avoid injecting
+a cross-origin `<base>` tag to make relative URLs work. Hosts like ChatGPT may
+enforce `base-uri 'self'`, which blocks that pattern. Prefer rewriting relative
+asset/navigation URLs to absolute app URLs before assigning the HTML.
+
 ## Security and metadata checklist
 
 - Keep resources sandbox-friendly (no unnecessary external dependencies).
