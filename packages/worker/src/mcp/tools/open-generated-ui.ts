@@ -140,7 +140,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					{
 						type: 'text',
 						text: appId
-							? `## Generated UI ready\n\nThe generic app shell is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
+							? `## Generated UI ready\n\nThe generic app shell is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}\n\nNote: tool calls do not work in the hosted fallback.`
 							: '## Generated UI ready\n\nThe generic app shell is attached to this tool call and will render the provided inline source inside the widget runtime.',
 					},
 				],
