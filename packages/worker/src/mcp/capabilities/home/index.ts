@@ -105,27 +105,11 @@ export async function synthesizeHomeDomain(
 	},
 ): Promise<SynthesizedHomeDomain | null> {
 	if (!input.connectorId) {
-		console.info(
-			'mcp-home-debug',
-			JSON.stringify({
-				stage: 'home:missing-connector-id',
-				baseUrl: input.baseUrl,
-			}),
-		)
 		return null
 	}
 
 	const client = createHomeMcpClient(env, input.connectorId)
 	const snapshot = await client.getSnapshot()
-	console.info(
-		'mcp-home-debug',
-		JSON.stringify({
-			stage: 'home:snapshot',
-			connectorId: input.connectorId,
-			hasSnapshot: snapshot != null,
-			toolCount: snapshot?.tools.length ?? 0,
-		}),
-	)
 	if (!snapshot || snapshot.tools.length === 0) return null
 
 	const capabilities: Array<Capability> = []

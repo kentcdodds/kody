@@ -28,40 +28,16 @@ export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
 }): Promise<BuiltCapabilityRegistry> {
-	console.info(
-		'mcp-home-debug',
-		JSON.stringify({
-			stage: 'registry:start',
-			baseUrl: input.callerContext.baseUrl,
-			hasUser: input.callerContext.user != null,
-			homeConnectorId: input.callerContext.homeConnectorId ?? null,
-		}),
-	)
 	const homeDomain = await synthesizeHomeDomain(input.env, {
 		connectorId: input.callerContext.homeConnectorId ?? null,
 		baseUrl: input.callerContext.baseUrl,
 	})
 	if (!homeDomain) {
-		console.info(
-			'mcp-home-debug',
-			JSON.stringify({
-				stage: 'registry:static',
-				capabilityCount: Object.keys(staticRegistry.capabilityHandlers).length,
-			}),
-		)
 		return staticRegistry
 	}
 	const registry = buildCapabilityRegistry([
 		...builtinDomains,
 		homeDomain.domain,
 	])
-	console.info(
-		'mcp-home-debug',
-		JSON.stringify({
-			stage: 'registry:dynamic',
-			capabilityCount: Object.keys(registry.capabilityHandlers).length,
-			homeCapabilityNames: Object.keys(homeDomain.bindings),
-		}),
-	)
 	return registry
 }
