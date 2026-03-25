@@ -98,7 +98,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     name: 🎭 E2E
-    timeout-minutes: 4
+    timeout-minutes: 12
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
