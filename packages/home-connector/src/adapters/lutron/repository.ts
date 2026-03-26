@@ -1,3 +1,9 @@
+import {
+	createCipheriv,
+	createDecipheriv,
+	createHash,
+	randomBytes,
+} from 'node:crypto'
 import { type HomeConnectorStorage } from '../../storage/index.ts'
 import {
 	type LutronDiscoveredProcessor,
@@ -30,7 +36,61 @@ type LutronProcessorRow = {
 	last_auth_error: string | null
 }
 
+const PASSWORD_PREFIX = 'enc:v1:'
+const PASSWORD_AUTH_TAG_BYTES = 16
+
+function getPasswordKey(sharedSecret: string) {
+	return createHash('sha256').update(sharedSecret).digest()
+}
+
+function encryptPassword(password: string, sharedSecret: string | null) {
+	if (!sharedSecret) {
+		throw new Error(
+			'Cannot store Lutron credentials without HOME_CONNECTOR_SHARED_SECRET.',
+		)
+	}
+	const iv = randomBytes(12)
+	const key = getPasswordKey(sharedSecret)
+	const cipher = createCipheriv('aes-256-gcm', key, iv)
+	const encrypted = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()])
+	const tag = cipher.getAuthTag()
+	return `${PASSWORD_PREFIX}${iv.toString('base64')}:${tag.toString('base64')}:${encrypted.toString('base64')}`
+}
+
+function decryptPassword(password: string | null, sharedSecret: string | null) {
+	if (!password || !password.startsWith(PASSWORD_PREFIX)) {
+		return password
+	}
+	if (!sharedSecret) {
+		return null
+	}
+	const payload = password.slice(PASSWORD_PREFIX.length)
+	const [ivBase64, tagBase64, encryptedBase64] = payload.split(':')
+	if (!ivBase64 || !tagBase64 || !encryptedBase64) {
+		return null
+	}
+	try {
+		const key = getPasswordKey(sharedSecret)
+		const iv = Buffer.from(ivBase64, 'base64')
+		const tag = Buffer.from(tagBase64, 'base64')
+		const encrypted = Buffer.from(encryptedBase64, 'base64')
+		if (iv.length !== 12 || tag.length !== PASSWORD_AUTH_TAG_BYTES) {
+			return null
+		}
+		const decipher = createDecipheriv('aes-256-gcm', key, iv)
+		decipher.setAuthTag(tag)
+		const decrypted = Buffer.concat([
+			decipher.update(encrypted),
+			decipher.final(),
+		])
+		return decrypted.toString('utf8')
+	} catch {
+		return null
+	}
+}
+
 function mapLutronProcessorRow(
+	storage: HomeConnectorStorage,
 	row: LutronProcessorRow,
 ): LutronPersistedProcessor {
 	return {
@@ -55,7 +115,7 @@ function mapLutronProcessorRow(
 			? (JSON.parse(row.raw_discovery_json) as Record<string, unknown>)
 			: null,
 		username: row.username,
-		password: row.password,
+		password: decryptPassword(row.password, storage.sharedSecret),
 		lastAuthenticatedAt: row.last_authenticated_at,
 		lastAuthError: row.last_auth_error,
 	}
@@ -200,8 +260,8 @@ export function listLutronProcessors(
 	storage: HomeConnectorStorage,
 	connectorId: string,
 ) {
-	return selectLutronProcessorRows(storage, connectorId).map(
-		mapLutronProcessorRow,
+	return selectLutronProcessorRows(storage, connectorId).map((row) =>
+		mapLutronProcessorRow(storage, row),
 	)
 }
 
@@ -275,7 +335,7 @@ export function saveLutronCredentials(input: {
 		input.connectorId,
 		input.processorId,
 		input.username,
-		input.password,
+		encryptPassword(input.password, input.storage.sharedSecret),
 		input.lastAuthenticatedAt ?? null,
 		input.lastAuthError ?? null,
 		now,

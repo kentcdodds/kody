@@ -23,6 +23,8 @@ type LeapResponse = {
 	Body?: Record<string, unknown>
 }
 
+const LEAP_SOCKET_TIMEOUT_MS = 5_000
+
 type LutronCredentials = {
 	username: string
 	password: string
@@ -45,7 +47,7 @@ function createTlsSocket(input: { host: string; port: number }) {
 			host: input.host,
 			port: input.port,
 			rejectUnauthorized: false,
-			timeout: 5_000,
+			timeout: LEAP_SOCKET_TIMEOUT_MS,
 		})
 
 		socket.once('secureConnect', () => {
@@ -96,6 +98,7 @@ function readNextLine(socket: TLSSocket) {
 			socket.off('data', onData)
 			socket.off('error', onError)
 			socket.off('close', onClose)
+			socket.off('timeout', onTimeout)
 		}
 
 		function finish(result: Buffer, remainder?: Buffer) {
@@ -127,9 +130,21 @@ function readNextLine(socket: TLSSocket) {
 			finish(buffer)
 		}
 
+		function onTimeout() {
+			cleanup()
+			socket.destroy()
+			reject(
+				new Error(
+					`Lutron LEAP read timed out after ${LEAP_SOCKET_TIMEOUT_MS}ms.`,
+				),
+			)
+		}
+
+		socket.setTimeout(LEAP_SOCKET_TIMEOUT_MS)
 		socket.on('data', onData)
 		socket.once('error', onError)
 		socket.once('close', onClose)
+		socket.once('timeout', onTimeout)
 	})
 }
 

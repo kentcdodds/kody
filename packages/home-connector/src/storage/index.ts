@@ -19,6 +19,7 @@ type SqliteDatabase = {
 
 export type HomeConnectorStorage = {
 	db: SqliteDatabase
+	sharedSecret: string | null
 	close(): void
 }
 
@@ -139,6 +140,7 @@ export function createHomeConnectorStorage(
 	initializeSchema(db)
 	return {
 		db,
+		sharedSecret: config.sharedSecret,
 		close() {
 			db.close()
 		},
