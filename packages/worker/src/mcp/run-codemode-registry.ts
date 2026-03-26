@@ -1,3 +1,8 @@
+import {
+	resolveProvider,
+	type ResolvedProvider,
+	type ToolProvider,
+} from '@cloudflare/codemode'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
@@ -22,6 +27,25 @@ export async function buildCodemodeFns(
 	)
 }
 
+export async function buildCodemodeProvider(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<ResolvedProvider> {
+	const tools = await buildCodemodeFns(env, callerContext)
+	const provider: ToolProvider = {
+		name: 'codemode',
+		tools: Object.fromEntries(
+			Object.entries(tools).map(([name, execute]) => [
+				name,
+				{
+					execute,
+				},
+			]),
+		),
+	}
+	return resolveProvider(provider)
+}
+
 export async function runCodemodeWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -31,10 +55,10 @@ export async function runCodemodeWithRegistry(
 	const { createExecuteExecutor, wrapExecuteCode } =
 		await import('#mcp/executor.ts')
 	const executor = createExecuteExecutor(env)
-	const fns = await buildCodemodeFns(env, callerContext)
+	const provider = await buildCodemodeProvider(env, callerContext)
 	const wrapped =
 		params !== undefined
 			? await buildParameterizedSkillCode(code, params)
 			: code
-	return executor.execute(wrapExecuteCode(wrapped), fns)
+	return executor.execute(wrapExecuteCode(wrapped), [provider])
 }
