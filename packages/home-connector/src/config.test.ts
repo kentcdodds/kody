@@ -44,6 +44,7 @@ test('explicit Roku discovery URL overrides the default in mock mode', () => {
 		MOCKS: 'true',
 		ROKU_DISCOVERY_URL: 'http://roku.mock.local/discovery',
 		SAMSUNG_TV_DISCOVERY_URL: 'http://samsung-tv.mock.local/discovery',
+		LUTRON_DISCOVERY_URL: 'http://lutron.mock.local/discovery',
 		HOME_CONNECTOR_ID: 'default',
 		WORKER_BASE_URL: 'http://localhost:3742',
 	})
@@ -53,6 +54,7 @@ test('explicit Roku discovery URL overrides the default in mock mode', () => {
 	expect(config.samsungTvDiscoveryUrl).toBe(
 		'http://samsung-tv.mock.local/discovery',
 	)
+	expect(config.lutronDiscoveryUrl).toBe('http://lutron.mock.local/discovery')
 })
 
 test('live connector defaults Samsung TV discovery to mDNS', () => {
@@ -65,6 +67,30 @@ test('live connector defaults Samsung TV discovery to mDNS', () => {
 
 	const config = loadHomeConnectorConfig()
 	expect(config.samsungTvDiscoveryUrl).toBe('mdns://_samsungmsf._tcp.local')
+})
+
+test('live connector defaults Lutron discovery to mDNS', () => {
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		LUTRON_DISCOVERY_URL: undefined,
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.lutronDiscoveryUrl).toBe('mdns://_lutron._tcp.local')
+})
+
+test('live connector defaults Lutron discovery to mDNS', () => {
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		LUTRON_DISCOVERY_URL: undefined,
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.lutronDiscoveryUrl).toBe('mdns://_lutron._tcp.local')
 })
 
 test('db path can be derived from HOME_CONNECTOR_DATA_PATH', () => {

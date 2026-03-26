@@ -5,15 +5,48 @@ Cloudflare Worker and devices that are only reachable on the local network.
 
 ## Current adapters
 
-The connector currently exposes two local-device families:
+The connector currently exposes three local-device families:
 
 - Roku discovery and control over SSDP + ECP HTTP
+- Lutron HomeWorks QSX discovery and control over mDNS + LEAP TLS
 - Samsung TV / Frame discovery and control over mDNS, REST, and local WebSocket
   channels
 
 Both surfaces are registered as MCP tools inside the connector and then exposed
 to the Worker through the existing outbound WebSocket session to
 `HomeConnectorSession`.
+
+## Lutron integration
+
+The Lutron adapter lives under
+`packages/home-connector/src/adapters/lutron/` and supports a generic,
+runtime-discovered subset of HomeWorks QSX capabilities that have been validated
+against a live processor and represented in sanitized mock fixtures:
+
+- discover processors on the local network via `_lutron._tcp`
+- persist discovered processor identity locally
+- associate credentials with a discovered processor
+- authenticate over LEAP on `8081`
+- traverse the live area tree from `/area/rootarea`
+- read associated zones, control stations, keypad buttons, LED state, and
+  virtual buttons when present
+- treat keypad buttons as scene-like controls when `virtualbutton` is empty
+- press keypad buttons
+- set direct zone levels for dimmed/switched loads
+
+The adapter intentionally does not currently promise:
+
+- dealer/programming changes to the Lutron system
+- `8902` support for runtime control
+- static scene catalogs independent of live keypad/button discovery
+
+### Discovery and transport notes
+
+- Discovery defaults to `mdns://_lutron._tcp.local`.
+- Bonjour advertises processor metadata, but runtime LEAP control/auth still
+  uses `8081`.
+- The more privileged QSX endpoint on `8902` is intentionally ignored in this
+  integration because it requires client certificates.
 
 ## Samsung TV integration
 
@@ -51,7 +84,7 @@ between Art Mode and true standby.
 
 Unlike the Worker-side home connector session, which persists its own view of
 the live socket state in Durable Object storage, the local connector now also
-persists Samsung-specific state on disk.
+persists device-family-specific state on disk.
 
 The connector stores a local SQLite database containing:
 
@@ -59,6 +92,9 @@ The connector stores a local SQLite database containing:
 - whether each TV has been adopted
 - the latest pairing token for each TV
 - last token verification / auth error details
+- discovered Lutron processor metadata
+- Lutron credentials associated with each discovered processor
+- last Lutron authentication success/error details
 
 By default the database is stored at
 `~/.kody/home-connector/home-connector.sqlite`. Operators can override the base
@@ -75,8 +111,11 @@ Samsung discovery defaults to `mdns://_samsungmsf._tcp.local`. The current live
 implementation shells out to `dns-sd`, which makes local scanning primarily a
 macOS-focused workflow unless an explicit discovery URL is provided.
 
-In local development with `MOCKS=true`, the connector uses mock Samsung TV
-handlers in the same style as the Roku mocks:
+Lutron discovery also defaults to `dns-sd`-backed mDNS scanning and is aimed at
+macOS dev hosts unless an explicit discovery URL is provided.
+
+In local development with `MOCKS=true`, the connector uses mock Samsung TV and
+Lutron handlers in the same style as the Roku mocks:
 
 - mock discovery endpoint
 - mock device metadata
@@ -85,6 +124,10 @@ handlers in the same style as the Roku mocks:
 - mock remote-key behavior
 - mock power state transitions
 - mock Art Mode state transitions
+- mock Lutron processor discovery
+- mock Lutron credential validation
+- mock Lutron area/zone/button inventory
+- mock Lutron button press and zone-level state transitions
 
 That lets the adapter, MCP surface, and admin routes run in local development
-and tests without needing a physical Samsung TV.
+and tests without needing physical local-network devices.

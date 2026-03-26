@@ -54,31 +54,45 @@ Quick notes for getting a local kody environment running.
     when `MOCKS=true`.
   - The dev entry at `packages/home-connector/server/dev-server.ts` enables
     `MOCKS=true` by default for local development and also sets
-    `ROKU_DISCOVERY_URL=http://roku.mock.local/discovery` and
+    `ROKU_DISCOVERY_URL=http://roku.mock.local/discovery`,
+    `LUTRON_DISCOVERY_URL=http://lutron.mock.local/discovery`, and
     `SAMSUNG_TV_DISCOVERY_URL=http://samsung-tv.mock.local/discovery` unless you
     override them.
   - `npm run dev` forwards `HOME_CONNECTOR_*` environment variables to the
     underlying connector process with the prefix removed, so
     `HOME_CONNECTOR_MOCKS=false` becomes `MOCKS=false` and
     `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` becomes `ROKU_DISCOVERY_URL=...`.
-    Likewise, `HOME_CONNECTOR_SAMSUNG_TV_DISCOVERY_URL=...` becomes
+    Likewise, `HOME_CONNECTOR_LUTRON_DISCOVERY_URL=...` becomes
+    `LUTRON_DISCOVERY_URL=...`,
+    `HOME_CONNECTOR_SAMSUNG_TV_DISCOVERY_URL=...` becomes
     `SAMSUNG_TV_DISCOVERY_URL=...`, `HOME_CONNECTOR_DATA_PATH=...` becomes
     `HOME_CONNECTOR_DATA_PATH=...`, and `HOME_CONNECTOR_DB_PATH=...` becomes
     `HOME_CONNECTOR_DB_PATH=...` in the connector process.
   - When `ROKU_DISCOVERY_URL` is unset, the connector defaults Roku discovery to
     SSDP at `ssdp://239.255.255.250:1900`.
+  - When `LUTRON_DISCOVERY_URL` is unset, the connector defaults Lutron
+    discovery to `mdns://_lutron._tcp.local`. The current live discovery
+    implementation shells out to `dns-sd`, so local Lutron scanning is
+    currently aimed at macOS dev hosts unless you provide an explicit discovery
+    URL.
   - When `SAMSUNG_TV_DISCOVERY_URL` is unset, the connector defaults Samsung TV
     discovery to `mdns://_samsungmsf._tcp.local`. The current live discovery
     implementation shells out to `dns-sd`, so local Samsung scanning is
     currently aimed at macOS dev hosts unless you provide an explicit discovery
     URL.
-  - Samsung TV pairing tokens and device metadata are persisted locally in a
-    SQLite database. By default the connector stores that DB at
+  - Samsung TV pairing tokens/device metadata and Lutron processor
+    credentials/metadata are persisted locally in a SQLite database. By default
+    the connector stores that DB at
     `~/.kody/home-connector/home-connector.sqlite`. Override the directory with
     `HOME_CONNECTOR_DATA_PATH` or the full file path with
     `HOME_CONNECTOR_DB_PATH`.
   - Local operational routes live at `/health`, `/roku/status`, `/roku/setup`,
-    `/samsung-tv/status`, and `/samsung-tv/setup`.
+    `/lutron/status`, `/lutron/setup`, `/samsung-tv/status`, and
+    `/samsung-tv/setup`.
+  - The Lutron tool surface intentionally focuses on dynamic processor
+    discovery, persisted credentials, LEAP inventory reads over `8081`, keypad
+    button presses, and direct zone level changes. It does not use the more
+    privileged `8902` QSX channel.
   - The Samsung TV tool surface intentionally focuses on discovery, pairing,
     remote keys, known-app probing, explicit app launch by app ID, and Art Mode
     control.

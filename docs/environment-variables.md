@@ -144,7 +144,8 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   process with the prefix removed. For example, `HOME_CONNECTOR_MOCKS=false`
   sets `MOCKS=false` for `packages/home-connector`, and
   `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`. This
-  also applies to `HOME_CONNECTOR_SENTRY_DSN`,
+  also applies to `HOME_CONNECTOR_LUTRON_DISCOVERY_URL=...`,
+  `HOME_CONNECTOR_SENTRY_DSN`,
   `HOME_CONNECTOR_SENTRY_ENVIRONMENT`, and
   `HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE`.
 - `ROKU_DISCOVERY_URL` — optional connector env var. Defaults to
@@ -167,14 +168,18 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
 - `SAMSUNG_TV_DISCOVERY_URL` — optional connector env var. Defaults to
   `mdns://_samsungmsf._tcp.local`. Mocked connector runs should set an explicit
   value such as `http://samsung-tv.mock.local/discovery`.
+- `LUTRON_DISCOVERY_URL` — optional connector env var. Defaults to
+  `mdns://_lutron._tcp.local`. Mocked connector runs should set an explicit
+  value such as `http://lutron.mock.local/discovery`.
 - `HOME_CONNECTOR_DATA_PATH` — optional connector env var. Directory used for
   connector-owned local data files. When `HOME_CONNECTOR_DB_PATH` is unset, the
-  Samsung TV integration stores its local SQLite database at
+  Samsung TV and Lutron integrations store their local SQLite database at
   `<HOME_CONNECTOR_DATA_PATH>/home-connector.sqlite`. Defaults to
   `~/.kody/home-connector`.
 - `HOME_CONNECTOR_DB_PATH` — optional connector env var. Full path to the local
-  SQLite file used by the home connector to persist Samsung TV device metadata
-  and pairing tokens across restarts. Overrides the derived
+  SQLite file used by the home connector to persist Samsung TV device metadata,
+  Samsung pairing tokens, and Lutron discovered processor + credential state
+  across restarts. Overrides the derived
   `HOME_CONNECTOR_DATA_PATH` location.
 
 ## Why Zod?
