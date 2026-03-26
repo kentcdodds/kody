@@ -107,12 +107,17 @@ storage.
 
 ## Discovery and mocks
 
-Samsung discovery defaults to `mdns://_samsungmsf._tcp.local`. The current live
-implementation shells out to `dns-sd`, which makes local scanning primarily a
-macOS-focused workflow unless an explicit discovery URL is provided.
+Samsung discovery defaults to `mdns://_samsungmsf._tcp.local`.
 
-Lutron discovery also defaults to `dns-sd`-backed mDNS scanning and is aimed at
-macOS dev hosts unless an explicit discovery URL is provided.
+Lutron discovery defaults to `mdns://_lutron._tcp.local`.
+
+The connector now prefers:
+
+- `dns-sd` when present (typical on macOS)
+- `avahi-browse` as a Linux/container fallback
+
+That makes live mDNS discovery work in the published home-connector container,
+provided the container has multicast visibility on the local network.
 
 In local development with `MOCKS=true`, the connector uses mock Samsung TV and
 Lutron handlers in the same style as the Roku mocks:

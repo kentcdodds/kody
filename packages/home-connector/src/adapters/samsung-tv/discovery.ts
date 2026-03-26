@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process'
 import { type HomeConnectorConfig } from '../../config.ts'
+import { discoverMdnsServices } from '../../mdns.ts'
 import {
 	setSamsungTvDiscoveryDiagnostics,
 	type HomeConnectorState,
@@ -45,76 +45,27 @@ function parseSamsungTxtLine(line: string) {
 	return values
 }
 
-function parseSamsungBrowseOutput(output: string) {
-	const services = new Set<string>()
-	for (const line of output.split('\n')) {
-		if (!line.includes('_samsungmsf._tcp.')) continue
-		const match = line.match(/_samsungmsf\._tcp\.\s+(.*)$/)
-		if (match?.[1]) {
-			services.add(match[1].trim())
-		}
-	}
-	return [...services]
-}
-
 function parseSamsungLookupOutput(
 	instanceName: string,
-	output: string,
+	output: {
+		host: string | null
+		port: number | null
+		txtLine: string
+		raw: string
+	},
 ): DiscoveredSamsungService {
-	let host: string | null = null
-	let port: number | null = null
 	let txt: Record<string, string> = {}
-	for (const line of output.split('\n')) {
-		if (line.includes('can be reached at')) {
-			const match = line.match(/can be reached at\s+(\S+):(\d+)/)
-			if (match) {
-				host = match[1].replace(/\.$/, '')
-				port = Number.parseInt(match[2], 10)
-			}
-			continue
-		}
-		if (line.includes(' id=')) {
-			txt = parseSamsungTxtLine(line)
-		}
+	if (output.txtLine) {
+		txt = parseSamsungTxtLine(output.txtLine)
 	}
 	return {
 		instanceName,
-		host,
-		port,
+		host: output.host,
+		port: output.port,
 		txt,
 		serviceUrl: txt['se'] ?? null,
-		raw: output,
+		raw: output.raw,
 	}
-}
-
-async function runDnsSd(args: Array<string>, timeoutMs: number) {
-	return await new Promise<string>((resolve, reject) => {
-		const child = spawn('dns-sd', args, {
-			stdio: ['ignore', 'pipe', 'pipe'],
-		})
-		let stdout = ''
-		let stderr = ''
-		const timer = setTimeout(() => {
-			child.kill('SIGINT')
-		}, timeoutMs)
-		child.stdout.on('data', (chunk) => {
-			stdout += String(chunk)
-		})
-		child.stderr.on('data', (chunk) => {
-			stderr += String(chunk)
-		})
-		child.on('error', (error) => {
-			clearTimeout(timer)
-			reject(error)
-		})
-		child.on('close', () => {
-			clearTimeout(timer)
-			if (stderr.trim()) {
-				stdout += `\n${stderr}`
-			}
-			resolve(stdout)
-		})
-	})
 }
 
 async function fetchSamsungDeviceInfo(input: {
@@ -239,19 +190,12 @@ async function discoverSamsungTvsFromJson(
 async function discoverSamsungTvsFromMdns(
 	discoveryUrl: string,
 ): Promise<SamsungTvDiscoveryResult> {
-	const browseOutput = await runDnsSd(
-		['-B', '_samsungmsf._tcp', 'local.'],
-		4_000,
-	)
-	const serviceNames = parseSamsungBrowseOutput(browseOutput)
-	const services: Array<DiscoveredSamsungService> = []
-	for (const serviceName of serviceNames) {
-		const lookupOutput = await runDnsSd(
-			['-L', serviceName, '_samsungmsf._tcp', 'local.'],
-			4_000,
-		)
-		services.push(parseSamsungLookupOutput(serviceName, lookupOutput))
-	}
+	const services = (
+		await discoverMdnsServices({
+			serviceType: '_samsungmsf._tcp',
+			timeoutMs: 4_000,
+		})
+	).map((service) => parseSamsungLookupOutput(service.instanceName, service))
 	const metadataLookups: Array<SamsungTvMetadataLookupDiagnostic> = []
 	const devices: Array<SamsungTvDeviceRecord> = []
 	for (const service of services) {

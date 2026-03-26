@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
 import { type HomeConnectorConfig } from '../../config.ts'
+import { discoverMdnsServices } from '../../mdns.ts'
 import {
 	setLutronDiscoveryDiagnostics,
 	type HomeConnectorState,
@@ -47,18 +47,6 @@ function parseTxtLine(line: string) {
 	return values
 }
 
-function parseBrowseOutput(output: string) {
-	const services = new Set<string>()
-	for (const line of output.split('\n')) {
-		if (!line.includes('_lutron._tcp.')) continue
-		const match = line.match(/_lutron\._tcp\.\s+(.*)$/)
-		if (match?.[1]) {
-			services.add(match[1].trim())
-		}
-	}
-	return [...services]
-}
-
 async function resolveAddress(host: string | null) {
 	if (!host) return null
 	try {
@@ -71,67 +59,19 @@ async function resolveAddress(host: string | null) {
 	}
 }
 
-async function parseLookupOutput(
-	instanceName: string,
-	output: string,
+async function parseResolvedService(
+	service: Awaited<ReturnType<typeof discoverMdnsServices>>[number],
 ): Promise<DiscoveredLutronService> {
-	let host: string | null = null
-	let port: number | null = null
-	let txt: Record<string, string> = {}
-
-	for (const line of output.split('\n')) {
-		if (line.includes('can be reached at')) {
-			const match = line.match(/can be reached at\s+(\S+):(\d+)/)
-			if (match) {
-				host = match[1]?.replace(/\.$/, '') ?? null
-				port = Number.parseInt(match[2] ?? '', 10)
-			}
-			continue
-		}
-
-		if (line.includes(' MACADDR=')) {
-			txt = parseTxtLine(line)
-		}
-	}
-
+	const host = service.host?.replace(/\.$/, '') ?? null
+	const txt = parseTxtLine(service.txtLine)
 	return {
-		instanceName,
+		instanceName: service.instanceName,
 		host,
-		port,
-		address: await resolveAddress(host),
+		port: service.port,
+		address: service.address ?? (await resolveAddress(host)),
 		txt,
-		raw: output,
+		raw: service.raw,
 	}
-}
-
-async function runDnsSd(args: Array<string>, timeoutMs: number) {
-	return await new Promise<string>((resolve, reject) => {
-		const child = spawn('dns-sd', args, {
-			stdio: ['ignore', 'pipe', 'pipe'],
-		})
-		let stdout = ''
-		let stderr = ''
-		const timer = setTimeout(() => {
-			child.kill('SIGINT')
-		}, timeoutMs)
-		child.stdout.on('data', (chunk) => {
-			stdout += String(chunk)
-		})
-		child.stderr.on('data', (chunk) => {
-			stderr += String(chunk)
-		})
-		child.on('error', (error) => {
-			clearTimeout(timer)
-			reject(error)
-		})
-		child.on('close', () => {
-			clearTimeout(timer)
-			if (stderr.trim()) {
-				stdout += `\n${stderr}`
-			}
-			resolve(stdout)
-		})
-	})
 }
 
 function mapDiscoveredServiceToProcessor(
@@ -209,29 +149,17 @@ async function discoverFromMdns(
 	discoveryUrl: string,
 ): Promise<LutronDiscoveryResult> {
 	const errors: Array<string> = []
-	let browseOutput = ''
+	let services: Array<DiscoveredLutronService> = []
 	try {
-		browseOutput = await runDnsSd(['-B', '_lutron._tcp', 'local.'], 4_000)
+		const resolvedServices = await discoverMdnsServices({
+			serviceType: '_lutron._tcp',
+			timeoutMs: 4_000,
+		})
+		services = await Promise.all(
+			resolvedServices.map((service) => parseResolvedService(service)),
+		)
 	} catch (error) {
 		errors.push(error instanceof Error ? error.message : String(error))
-	}
-
-	const serviceNames = parseBrowseOutput(browseOutput)
-	const services: Array<DiscoveredLutronService> = []
-	for (const serviceName of serviceNames) {
-		try {
-			const lookupOutput = await runDnsSd(
-				['-L', serviceName, '_lutron._tcp', 'local.'],
-				4_000,
-			)
-			services.push(await parseLookupOutput(serviceName, lookupOutput))
-		} catch (error) {
-			errors.push(
-				`Failed to resolve ${serviceName}: ${
-					error instanceof Error ? error.message : String(error)
-				}`,
-			)
-		}
 	}
 
 	return {

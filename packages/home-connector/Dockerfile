@@ -12,6 +12,8 @@ FROM node:24-alpine
 
 WORKDIR /app
 
+RUN apk add --no-cache avahi-tools
+
 COPY --from=deps /app /app
 
 WORKDIR /app/packages/home-connector
