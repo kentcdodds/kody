@@ -143,10 +143,7 @@ function runNpmScript(
 	return child
 }
 
-function pipeOutput(
-	child: ChildProcess,
-	options: Required<ChildOutputConfig>,
-) {
+function pipeOutput(child: ChildProcess, options: Required<ChildOutputConfig>) {
 	const controller = createProcessOutputController({
 		label: options.label,
 		mode: options.mode,
