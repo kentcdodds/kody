@@ -167,14 +167,14 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   label.
 - `SAMSUNG_TV_DISCOVERY_URL` — optional connector env var. Defaults to
   `mdns://_samsungmsf._tcp.local`. Mocked connector runs should set an explicit
-  value such as `http://samsung-tv.mock.local/discovery`. Live mDNS discovery
-  now prefers `dns-sd` when available and falls back to `avahi-browse` in
-  Linux/container environments.
+  value such as `http://samsung-tv.mock.local/discovery`. Live discovery now
+  uses a single pure-JS mDNS path that works across macOS and Linux/container
+  environments.
 - `LUTRON_DISCOVERY_URL` — optional connector env var. Defaults to
   `mdns://_lutron._tcp.local`. Mocked connector runs should set an explicit
-  value such as `http://lutron.mock.local/discovery`. Live mDNS discovery now
-  prefers `dns-sd` when available and falls back to `avahi-browse` in
-  Linux/container environments.
+  value such as `http://lutron.mock.local/discovery`. Live discovery now uses a
+  single pure-JS mDNS path that works across macOS and Linux/container
+  environments.
 - `HOME_CONNECTOR_DATA_PATH` — optional connector env var. Directory used for
   connector-owned local data files. When `HOME_CONNECTOR_DB_PATH` is unset, the
   Samsung TV and Lutron integrations store their local SQLite database at
