@@ -7,7 +7,7 @@ import {
 	runWrangler,
 	truncateWithSuffix,
 	writeGeneratedWranglerConfig,
-} from './resource-utils'
+} from './resource-utils.ts'
 
 type Command = 'ensure'
 
