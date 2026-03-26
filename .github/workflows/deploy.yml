@@ -95,6 +95,9 @@ jobs:
       - name: 📥 Install Dependencies
         run: npm ci
 
+      - name: 📝 Prepare worker env
+        run: cp packages/worker/.env.example packages/worker/.env
+
       - name: 🧱 Ensure production resources (D1 + KV)
         id: resources
         env:
