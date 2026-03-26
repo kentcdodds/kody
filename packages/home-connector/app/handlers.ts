@@ -272,7 +272,7 @@ function renderLutronProcessorList(
 		discoveryPort: number | null
 		systemType: string | null
 		codeVersion: string | null
-		username: string | null
+		hasStoredCredentials: boolean
 		lastSeenAt: string | null
 		lastAuthenticatedAt: string | null
 		lastAuthError: string | null
@@ -293,7 +293,10 @@ function renderLutronProcessorList(
 					<div>Discovery port: ${processor.discoveryPort ?? 'unknown'}</div>
 					<div>System type: ${processor.systemType ?? 'unknown'}</div>
 					<div>Code version: ${processor.codeVersion ?? 'unknown'}</div>
-					<div>Credentials: ${processor.username ? 'stored' : 'missing'}</div>
+					<div>
+						Credentials:
+						${processor.hasStoredCredentials ? 'stored' : 'missing'}
+					</div>
 					<div>Last seen: ${processor.lastSeenAt ?? 'unknown'}</div>
 					<div>
 						Last auth:
@@ -313,10 +316,10 @@ function renderLutronStatusPage(input: {
 	scanError?: string | null
 }) {
 	const withCredentials = input.status.processors.filter(
-		(processor) => processor.username && processor.password,
+		(processor) => processor.hasStoredCredentials,
 	)
 	const withoutCredentials = input.status.processors.filter(
-		(processor) => !processor.username || !processor.password,
+		(processor) => !processor.hasStoredCredentials,
 	)
 
 	return render(

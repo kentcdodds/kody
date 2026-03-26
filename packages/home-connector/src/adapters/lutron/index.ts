@@ -27,9 +27,10 @@ import {
 	setLutronZoneWhiteTuning,
 } from './leap-client.ts'
 import {
-	listLutronProcessors,
+	listLutronPublicProcessors,
 	requireLutronProcessor,
 	saveLutronCredentials,
+	toLutronPublicProcessor,
 	updateLutronAuthStatus,
 	upsertDiscoveredLutronProcessors,
 } from './repository.ts'
@@ -61,7 +62,10 @@ export function createLutronAdapter(input: {
 	storage: HomeConnectorStorage
 }) {
 	function listProcessors() {
-		return listLutronProcessors(input.storage, input.config.homeConnectorId)
+		return listLutronPublicProcessors(
+			input.storage,
+			input.config.homeConnectorId,
+		)
 	}
 
 	function buildMockInventory(processorId: string) {
@@ -103,11 +107,12 @@ export function createLutronAdapter(input: {
 	return {
 		async scan() {
 			const result = await scanLutronProcessors(input.state, input.config)
-			return upsertDiscoveredLutronProcessors(
+			upsertDiscoveredLutronProcessors(
 				input.storage,
 				input.config.homeConnectorId,
 				result.processors,
 			)
+			return listProcessors()
 		},
 		getStatus() {
 			const processors = listProcessors()
@@ -115,7 +120,7 @@ export function createLutronAdapter(input: {
 				processors,
 				diagnostics: input.state.lutronDiscoveryDiagnostics,
 				configuredCredentialsCount: processors.filter(
-					(processor) => processor.username && processor.password,
+					(processor) => processor.hasStoredCredentials,
 				).length,
 			}
 		},
@@ -132,10 +137,12 @@ export function createLutronAdapter(input: {
 				username,
 				password,
 			})
-			return requireLutronProcessor(
-				input.storage,
-				input.config.homeConnectorId,
-				processorId,
+			return toLutronPublicProcessor(
+				requireLutronProcessor(
+					input.storage,
+					input.config.homeConnectorId,
+					processorId,
+				),
 			)
 		},
 		async authenticate(processorId: string) {
@@ -181,10 +188,12 @@ export function createLutronAdapter(input: {
 				})
 				throw error
 			}
-			return requireLutronProcessor(
-				input.storage,
-				input.config.homeConnectorId,
-				processorId,
+			return toLutronPublicProcessor(
+				requireLutronProcessor(
+					input.storage,
+					input.config.homeConnectorId,
+					processorId,
+				),
 			)
 		},
 		async getInventory(processorId: string) {
@@ -197,7 +206,10 @@ export function createLutronAdapter(input: {
 			try {
 				const inventory =
 					input.config.mocksEnabled && isMockLutronHost(processor.host)
-						? buildMockInventory(processorId)
+						? {
+								...buildMockInventory(processorId),
+								processor: toLutronPublicProcessor(processor),
+							}
 						: await loadLutronInventory({
 								processor,
 								credentials,

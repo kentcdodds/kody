@@ -11,6 +11,7 @@ import {
 	type LutronArea,
 	type LutronButton,
 	type LutronControlStation,
+	type LutronDiscoveredProcessor,
 	type LutronPersistedProcessor,
 	type LutronVirtualButton,
 	type LutronZone,
@@ -153,7 +154,7 @@ function applyMockSceneButton(buttonId: string) {
 			setZoneStatus('595', createDimmedStatus(100))
 			setZoneStatus('611', createDimmedStatus(0))
 			setZoneStatus('755', createSwitchedStatus(false))
-			return
+			return true
 		case '333':
 			setButtonLedState('329', 'Off')
 			setButtonLedState('333', 'On')
@@ -180,10 +181,15 @@ function applyMockSceneButton(buttonId: string) {
 			setZoneStatus('595', createDimmedStatus(0))
 			setZoneStatus('611', createDimmedStatus(100))
 			setZoneStatus('755', createSwitchedStatus(true))
-			return
+			return true
+		case '337':
+			setButtonLedState('337', 'On')
+			requireMockZone('858').status = createDimmedStatus(0)
+			return true
 		case '369':
 			setButtonLedState('329', 'Off')
 			setButtonLedState('333', 'Off')
+			setButtonLedState('337', 'Off')
 			setZoneStatus(
 				'495',
 				createSpectrumStatus({
@@ -207,9 +213,9 @@ function applyMockSceneButton(buttonId: string) {
 			setZoneStatus('595', createDimmedStatus(0))
 			setZoneStatus('611', createDimmedStatus(0))
 			setZoneStatus('755', createSwitchedStatus(false))
-			return
+			return true
 		default:
-			return
+			return false
 	}
 }
 
@@ -224,8 +230,29 @@ export function resetMockLutronSystem() {
 	}
 }
 
+function toMockDiscoveredProcessor(
+	processor: LutronPersistedProcessor,
+): LutronDiscoveredProcessor {
+	const {
+		username: _username,
+		password: _password,
+		lastAuthenticatedAt: _lastAuthenticatedAt,
+		lastAuthError: _lastAuthError,
+		...discovered
+	} = processor
+	return discovered
+}
+
 export function listMockLutronProcessors() {
 	return structuredClone(mockLutronSystem.processors)
+}
+
+export function listMockDiscoveredLutronProcessors() {
+	return structuredClone(
+		mockLutronSystem.processors.map((processor) =>
+			toMockDiscoveredProcessor(processor),
+		),
+	)
 }
 
 export function validateMockLutronCredentials(
@@ -284,7 +311,9 @@ export function listMockLutronVirtualButtons(processorId: string) {
 
 export function pressMockLutronButton(buttonId: string) {
 	requireMockButton(buttonId)
-	applyMockSceneButton(buttonId)
+	if (!applyMockSceneButton(buttonId)) {
+		throw new Error(`Mock Lutron button "${buttonId}" is not implemented.`)
+	}
 	return {
 		ok: true,
 		buttonId,
@@ -350,8 +379,7 @@ export function setMockLutronZoneWhiteTuning(input: {
 	level?: number
 }) {
 	const zone = requireMockZone(input.zoneId)
-	const currentStatus =
-		zone.status ?? createDimmedStatus(input.level ?? 100)
+	const currentStatus = zone.status ?? createDimmedStatus(input.level ?? 100)
 	const level = input.level ?? currentStatus.level ?? 100
 	zone.status = {
 		...currentStatus,

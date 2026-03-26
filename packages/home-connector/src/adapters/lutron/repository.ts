@@ -7,6 +7,7 @@ import {
 import { type HomeConnectorStorage } from '../../storage/index.ts'
 import {
 	type LutronDiscoveredProcessor,
+	type LutronPublicProcessor,
 	type LutronPersistedProcessor,
 } from './types.ts'
 
@@ -52,7 +53,10 @@ function encryptPassword(password: string, sharedSecret: string | null) {
 	const iv = randomBytes(12)
 	const key = getPasswordKey(sharedSecret)
 	const cipher = createCipheriv('aes-256-gcm', key, iv)
-	const encrypted = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()])
+	const encrypted = Buffer.concat([
+		cipher.update(password, 'utf8'),
+		cipher.final(),
+	])
 	const tag = cipher.getAuthTag()
 	return `${PASSWORD_PREFIX}${iv.toString('base64')}:${tag.toString('base64')}:${encrypted.toString('base64')}`
 }
@@ -118,6 +122,24 @@ function mapLutronProcessorRow(
 		password: decryptPassword(row.password, storage.sharedSecret),
 		lastAuthenticatedAt: row.last_authenticated_at,
 		lastAuthError: row.last_auth_error,
+	}
+}
+
+function toPublicLutronProcessor(
+	processor: LutronPersistedProcessor,
+): LutronPublicProcessor {
+	const {
+		username,
+		password: _password,
+		lastAuthenticatedAt,
+		lastAuthError,
+		...rest
+	} = processor
+	return {
+		...rest,
+		hasStoredCredentials: Boolean(username),
+		lastAuthenticatedAt,
+		lastAuthError,
 	}
 }
 
@@ -263,6 +285,19 @@ export function listLutronProcessors(
 	return selectLutronProcessorRows(storage, connectorId).map((row) =>
 		mapLutronProcessorRow(storage, row),
 	)
+}
+
+export function listLutronPublicProcessors(
+	storage: HomeConnectorStorage,
+	connectorId: string,
+) {
+	return listLutronProcessors(storage, connectorId).map(toPublicLutronProcessor)
+}
+
+export function toLutronPublicProcessor(
+	processor: LutronPersistedProcessor,
+): LutronPublicProcessor {
+	return toPublicLutronProcessor(processor)
 }
 
 export function getLutronProcessor(

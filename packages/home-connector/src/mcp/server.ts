@@ -384,7 +384,7 @@ export function createHomeConnectorMcpServer(input: {
 								: processors
 										.map(
 											(processor) =>
-												`- ${processor.name} (${processor.processorId}) host=${processor.host} credentials=${String(Boolean(processor.username && processor.password))}`,
+												`- ${processor.name} (${processor.processorId}) host=${processor.host} credentials=${String(processor.hasStoredCredentials)}`,
 										)
 										.join('\n'),
 					},

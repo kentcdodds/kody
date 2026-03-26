@@ -7,7 +7,6 @@ import {
 } from '../../state.ts'
 import {
 	type LutronDiscoveredProcessor,
-	type LutronDiscoveryDiagnostics,
 	type LutronDiscoveryResult,
 	type LutronDiscoveryServiceDiagnostic,
 } from './types.ts'

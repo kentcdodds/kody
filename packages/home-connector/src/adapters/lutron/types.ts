@@ -51,6 +51,12 @@ export type LutronPersistedProcessor = LutronProcessorRecord & {
 	lastAuthError: string | null
 }
 
+export type LutronPublicProcessor = LutronProcessorRecord & {
+	hasStoredCredentials: boolean
+	lastAuthenticatedAt: string | null
+	lastAuthError: string | null
+}
+
 export type LutronArea = {
 	processorId: string
 	areaId: string
@@ -148,7 +154,7 @@ export type LutronSceneButton =
 	  } & LutronVirtualButton)
 
 export type LutronInventory = {
-	processor: LutronPersistedProcessor
+	processor: LutronPublicProcessor
 	areas: Array<LutronArea>
 	zones: Array<LutronZone>
 	controlStations: Array<LutronControlStation>
