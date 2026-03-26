@@ -264,3 +264,63 @@ test('tool-result notification updates render data with structured content', asy
 		},
 	})
 })
+
+test('sendSizeChanged posts the standard MCP Apps notification', async () => {
+	const hostPostedMessages: Array<HostRequestMessage> = []
+	let bridge: ReturnType<typeof createWidgetHostBridge>
+
+	const parentWindow = {
+		postMessage(message: unknown) {
+			if (!message || typeof message !== 'object' || Array.isArray(message)) {
+				return
+			}
+
+			const request = message as HostRequestMessage
+			hostPostedMessages.push(request)
+			if (request.method !== 'ui/initialize') {
+				return
+			}
+
+			bridge.handleHostMessage({
+				jsonrpc: '2.0',
+				id: request.id,
+				result: {
+					protocolVersion: latestProtocolVersion,
+					hostInfo: {
+						name: 'mcp-jam-sim',
+						version: '1.0.0',
+					},
+					hostCapabilities: {},
+					hostContext: {},
+				},
+			})
+		},
+	}
+
+	globalThis.window = {
+		parent: parentWindow,
+	} as unknown as Window & typeof globalThis
+
+	bridge = createWidgetHostBridge({
+		appInfo: {
+			name: 'generated-ui-shell',
+			version: '1.0.0',
+		},
+		requestTimeoutMs: 500,
+	})
+
+	const sent = await bridge.sendSizeChanged({
+		height: 321.4,
+		width: 654.1,
+	})
+
+	expect(sent).toBe(true)
+	expect(hostPostedMessages).toContainEqual({
+		jsonrpc: '2.0',
+		method: 'ui/notifications/size-changed',
+		params: {
+			height: 321,
+			width: 654,
+		},
+	})
+})

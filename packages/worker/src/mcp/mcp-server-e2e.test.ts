@@ -800,6 +800,7 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 	expect(generatedShellSource).toContain('createWidgetHostBridge')
 	expect(generatedShellSource).toContain('ui/initialize')
 	expect(generatedShellSource).toContain('ui/message')
+	expect(generatedShellSource).toContain('ui/notifications/size-changed')
 	expect(generatedShellSource).toContain('ui/request-display-mode')
 	expect(generatedShellSource).toContain('ui/open-link')
 	expect(generatedShellSource).toContain('executeCode')

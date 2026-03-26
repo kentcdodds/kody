@@ -12,6 +12,10 @@ type WidgetHostBridgeOptions = {
 }
 
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
+type SizeChangedInput = {
+	height?: number
+	width?: number
+}
 
 type ServerToolResult = {
 	content?: Array<unknown>
@@ -25,6 +29,7 @@ type WidgetHostBridge = {
 	initialize(): Promise<boolean>
 	sendUserMessage(text: string): Promise<boolean>
 	sendUserMessageWithFallback(text: string): Promise<boolean>
+	sendSizeChanged(input: SizeChangedInput): Promise<boolean>
 	requestRenderData(): boolean
 	callTool(input: {
 		name: string
@@ -65,6 +70,13 @@ function getBridgeErrorMessage(error: unknown) {
 		return error.message
 	}
 	return 'Bridge request failed'
+}
+
+function normalizeDimensionValue(value: unknown) {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+		return undefined
+	}
+	return Math.round(value)
 }
 
 export function createWidgetHostBridge(
@@ -304,6 +316,31 @@ export function createWidgetHostBridge(
 		}
 	}
 
+	async function sendSizeChanged(input: SizeChangedInput) {
+		const bridgeReady = await initialize()
+		if (!bridgeReady) return false
+
+		const height = normalizeDimensionValue(input.height)
+		const width = normalizeDimensionValue(input.width)
+		if (height == null && width == null) {
+			return false
+		}
+
+		try {
+			postMessageToHost({
+				jsonrpc: '2.0',
+				method: 'ui/notifications/size-changed',
+				params: {
+					...(height == null ? {} : { height }),
+					...(width == null ? {} : { width }),
+				},
+			})
+			return true
+		} catch {
+			return false
+		}
+	}
+
 	async function callTool(input: {
 		name: string
 		arguments?: Record<string, unknown>
@@ -402,6 +439,7 @@ export function createWidgetHostBridge(
 		initialize,
 		sendUserMessage,
 		sendUserMessageWithFallback,
+		sendSizeChanged,
 		requestRenderData,
 		callTool,
 		openLink,

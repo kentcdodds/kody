@@ -115,6 +115,7 @@ The current `generated-ui-shell` exposes a tiny helper on `window.kodyWidget`:
 - `openLink(url)`
 - `toggleFullscreen()`
 - `executeCode(code)`
+- automatically reports rendered widget size via `ui/notifications/size-changed`
 
 Keep the interface small and literal. Narrow, well-named helpers are easier for
 agents to use reliably than a generic RPC surface.
