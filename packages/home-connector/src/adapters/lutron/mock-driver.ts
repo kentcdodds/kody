@@ -284,14 +284,6 @@ export function listMockLutronVirtualButtons(processorId: string) {
 	)
 }
 
-export function getMockLutronButton(buttonId: string) {
-	return structuredClone(requireMockButton(buttonId))
-}
-
-export function getMockLutronZone(zoneId: string) {
-	return structuredClone(requireMockZone(zoneId))
-}
-
 export function pressMockLutronButton(buttonId: string) {
 	requireMockButton(buttonId)
 	applyMockSceneButton(buttonId)
@@ -317,5 +309,91 @@ export function setMockLutronZoneLevel(zoneId: string, level: number) {
 		ok: true,
 		zoneId,
 		level,
+	}
+}
+
+export function setMockLutronZoneColor(input: {
+	zoneId: string
+	hue: number
+	saturation: number
+	level?: number
+	vibrancy?: number
+}) {
+	const zone = requireMockZone(input.zoneId)
+	const currentStatus =
+		zone.status ??
+		createSpectrumStatus({
+			level: 100,
+			vibrancy: 50,
+			hue: input.hue,
+			saturation: input.saturation,
+			kelvin: 4000,
+		})
+	zone.status = {
+		...currentStatus,
+		level: input.level ?? currentStatus.level ?? 100,
+		vibrancy: input.vibrancy ?? currentStatus.vibrancy ?? 50,
+		hue: input.hue,
+		saturation: input.saturation,
+	}
+	return {
+		ok: true,
+		zoneId: input.zoneId,
+		hue: input.hue,
+		saturation: input.saturation,
+		level: input.level ?? null,
+		vibrancy: input.vibrancy ?? null,
+	}
+}
+
+export function setMockLutronZoneWhiteTuning(input: {
+	zoneId: string
+	kelvin: number
+	level?: number
+}) {
+	const zone = requireMockZone(input.zoneId)
+	const currentStatus =
+		zone.status ?? createDimmedStatus(input.level ?? 100)
+	const level = input.level ?? currentStatus.level ?? 100
+	zone.status = {
+		...currentStatus,
+		level,
+		switchedLevel: null,
+		vibrancy: null,
+		whiteTuningKelvin: input.kelvin,
+		hue: null,
+		saturation: null,
+	}
+	return {
+		ok: true,
+		zoneId: input.zoneId,
+		kelvin: input.kelvin,
+		level: input.level ?? null,
+	}
+}
+
+export function setMockLutronZoneSwitchedLevel(input: {
+	zoneId: string
+	state: 'On' | 'Off'
+}) {
+	requireMockZone(input.zoneId).status = createSwitchedStatus(
+		input.state === 'On',
+	)
+	return {
+		ok: true,
+		zoneId: input.zoneId,
+		state: input.state,
+	}
+}
+
+export function setMockLutronShadeLevel(input: {
+	zoneId: string
+	level: number
+}) {
+	requireMockZone(input.zoneId).status = createDimmedStatus(input.level)
+	return {
+		ok: true,
+		zoneId: input.zoneId,
+		level: input.level,
 	}
 }

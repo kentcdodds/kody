@@ -19,13 +19,6 @@ import {
 // observed against a real QSX processor, but the names and scene layout are
 // sanitized for portable mocking and tests.
 
-export const lutronFixtureReferenceUrls = {
-	leapOverview:
-		'https://support.lutron.com/us/en/product/homeworks/article/networking/Lutron-s-LEAP-API-Integration-Protocol',
-	qsxSecureComms:
-		'https://support.lutron.com/us/en/product/homeworks/article/networking/Why-upgrading-Lutron-Designer-is-required-for-enhanced-communications-to-the-processor',
-} as const
-
 export const mockLutronCredentials = {
 	username: 'mock-lutron-user',
 	password: 'mock-lutron-pass',
@@ -400,52 +393,6 @@ const initialMockButtons: Array<LutronButton> = [
 ]
 
 const initialMockVirtualButtons: Array<LutronVirtualButton> = []
-
-export const lutronExampleResponses = {
-	login: {
-		CommuniqueType: 'UpdateResponse',
-		Header: {
-			MessageBodyType: 'OneLoginDefinition',
-			StatusCode: '200 OK',
-			Url: '/login',
-		},
-		Body: {
-			Login: {
-				href: '/login',
-				ContextType: 'Application',
-				LoginId: mockLutronCredentials.username,
-			},
-		},
-	},
-	ping: {
-		CommuniqueType: 'ReadResponse',
-		Header: {
-			MessageBodyType: 'OnePingResponse',
-			StatusCode: '200 OK',
-			Url: '/server/status/ping',
-		},
-		Body: {
-			PingResponse: {
-				LEAPVersion: 3.247,
-			},
-		},
-	},
-	rootArea: {
-		CommuniqueType: 'ReadResponse',
-		Header: {
-			MessageBodyType: 'OneAreaDefinition',
-			StatusCode: '200 OK',
-			Url: '/area/rootarea',
-		},
-		Body: {
-			Area: {
-				href: '/area/3',
-				Name: 'House',
-				IsLeaf: false,
-			},
-		},
-	},
-} as const
 
 export function cloneMockProcessors() {
 	return structuredClone(mockLutronProcessors)
