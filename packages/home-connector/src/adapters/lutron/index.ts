@@ -2,12 +2,9 @@ import { type HomeConnectorConfig } from '../../config.ts'
 import { type HomeConnectorState } from '../../state.ts'
 import { type HomeConnectorStorage } from '../../storage/index.ts'
 import {
-	getMockLutronButton,
-	getMockLutronZone,
 	listMockLutronAreas,
 	listMockLutronButtonsForDevice,
 	listMockLutronControlStations,
-	listMockLutronProcessors,
 	listMockLutronVirtualButtons,
 	listMockLutronZones,
 	pressMockLutronButton,

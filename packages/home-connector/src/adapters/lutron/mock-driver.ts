@@ -262,15 +262,6 @@ export function getMockLutronZone(zoneId: string) {
 	return structuredClone(requireMockZone(zoneId))
 }
 
-export function getMockLutronLedState(ledId: string) {
-	const button =
-		mockLutronSystem.buttons.find((candidate) => candidate.ledId === ledId) ?? null
-	if (!button) {
-		throw new Error(`Unknown mock Lutron LED "${ledId}".`)
-	}
-	return button.ledState ?? 'Unknown'
-}
-
 export function pressMockLutronButton(buttonId: string) {
 	requireMockButton(buttonId)
 	applyMockSceneButton(buttonId)

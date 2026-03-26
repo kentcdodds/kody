@@ -149,11 +149,17 @@ function getUpsertLutronProcessorStatement(storage: HomeConnectorStorage) {
 
 function getDeleteMissingLutronProcessorsStatement(storage: HomeConnectorStorage) {
 	return storage.db.query(`
-		DELETE FROM lutron_processors
-		WHERE connector_id = ?
-			AND processor_id NOT IN (
+		DELETE FROM lutron_processors AS processor
+		WHERE processor.connector_id = ?
+			AND processor.processor_id NOT IN (
 				SELECT value
 				FROM json_each(?)
+			)
+			AND NOT EXISTS (
+				SELECT 1
+				FROM lutron_credentials AS credentials
+				WHERE credentials.connector_id = processor.connector_id
+					AND credentials.processor_id = processor.processor_id
 			)
 	`)
 }
