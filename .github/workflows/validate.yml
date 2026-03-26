@@ -121,6 +121,9 @@ jobs:
       - name: 📥 Install Dependencies
         run: npm ci
 
+      - name: 📝 Prepare worker env
+        run: cp packages/worker/.env.example packages/worker/.env
+
       - name: 🎭 Install Playwright Browsers
         run: npm run test:e2e:install
 
@@ -149,6 +152,9 @@ jobs:
 
       - name: 📥 Install Dependencies
         run: npm ci
+
+      - name: 📝 Prepare worker env
+        run: cp packages/worker/.env.example packages/worker/.env
 
       - name: 🗄️ Apply D1 Migrations
         run: npm run migrate:local
