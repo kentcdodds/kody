@@ -42,7 +42,9 @@ Quick notes for getting a local kody environment running.
   resolved worker origin via `WORKER_BASE_URL`. When
   `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
   it to both the worker and the connector so the outbound registration handshake
-  succeeds in local development.)
+  succeeds in local development. The main worker and home connector stream logs
+  live; the client bundle and background mock workers now buffer their logs and
+  only print them if that child process exits with an error.)
 - The home automation connector now lives in `packages/home-connector`.
   - `npm run dev:home-connector` starts the local connector app on Node 24 with
     `node --watch`, so connector code changes automatically restart the local

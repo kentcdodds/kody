@@ -9,6 +9,10 @@ import {
 	spawnInOwnProcessGroup,
 	stopChildProcessTree,
 } from './tools/dev-process-utils.ts'
+import {
+	createProcessOutputController,
+	type ProcessOutputMode,
+} from './tools/dev-process-output.ts'
 import { getForwardedHomeConnectorEnv } from './tools/home-connector-env.ts'
 import { resolveNpmCommand } from './tools/node-runtime.ts'
 
@@ -46,6 +50,12 @@ function dim(text: string) {
 }
 
 type OutputFilterKey = 'client' | 'worker' | 'default'
+
+type ChildOutputConfig = {
+	filterKey?: OutputFilterKey
+	label?: string
+	mode?: ProcessOutputMode
+}
 
 const outputFilters: Record<OutputFilterKey, Array<RegExp>> = {
 	client: [],
@@ -103,8 +113,13 @@ function runNpmScript(
 	script: string,
 	args: Array<string> = [],
 	envOverrides: Record<string, string> = {},
-	options: { outputFilter?: OutputFilterKey } = {},
+	options: ChildOutputConfig = {},
 ): ChildProcess {
+	const outputConfig = {
+		filterKey: options.filterKey ?? 'default',
+		label: options.label ?? script,
+		mode: options.mode ?? 'live',
+	} satisfies Required<ChildOutputConfig>
 	const child = spawnInOwnProcessGroup(
 		resolveNpmCommand(),
 		['run', '--silent', script, '--', ...args],
@@ -114,7 +129,9 @@ function runNpmScript(
 		},
 	)
 
-	pipeOutput(child, options.outputFilter)
+	pipeOutput(child, {
+		...outputConfig,
+	})
 
 	child.on('exit', (code, signal) => {
 		if (signal) return
@@ -128,28 +145,34 @@ function runNpmScript(
 
 function pipeOutput(
 	child: ChildProcess,
-	filterKey: OutputFilterKey = 'default',
+	options: Required<ChildOutputConfig>,
 ) {
-	const filters = outputFilters[filterKey]
+	const controller = createProcessOutputController({
+		label: options.label,
+		mode: options.mode,
+		filters: outputFilters[options.filterKey],
+	})
+
 	if (child.stdout) {
-		pipeStream(child.stdout, process.stdout, filters)
+		pipeStream(child.stdout, 'stdout', controller.writeLine)
 	}
 	if (child.stderr) {
-		pipeStream(child.stderr, process.stderr, filters)
+		pipeStream(child.stderr, 'stderr', controller.writeLine)
 	}
+
+	child.on('close', (code, signal) => {
+		controller.handleExit({ code, signal })
+	})
 }
 
 function pipeStream(
 	source: NodeJS.ReadableStream,
-	target: NodeJS.WritableStream,
-	filters: Array<RegExp>,
+	target: 'stdout' | 'stderr',
+	writeLine: (target: 'stdout' | 'stderr', line: string) => void,
 ) {
 	const rl = readline.createInterface({ input: source })
 	rl.on('line', (line) => {
-		if (filters.some((filter) => filter.test(line))) {
-			return
-		}
-		target.write(`${line}\n`)
+		writeLine(target, line)
 	})
 }
 
@@ -289,7 +312,9 @@ async function restartDev(
 		[],
 		{},
 		{
-			outputFilter: 'client',
+			filterKey: 'client',
+			label: 'dev:client',
+			mode: 'buffer-on-error',
 		},
 	)
 	const workerVarEnv = {
@@ -308,7 +333,11 @@ async function restartDev(
 			HOME_CONNECTOR_SHARED_SECRET: homeConnectorSharedSecret,
 			...mockEnv,
 		},
-		{ outputFilter: 'worker' },
+		{
+			filterKey: 'worker',
+			label: 'dev:worker',
+			mode: 'live',
+		},
 	)
 	const workerDidStart = await waitForWorkerReady(workerOrigin, worker)
 	if (!workerDidStart) {
@@ -316,13 +345,21 @@ async function restartDev(
 			`Main worker did not become ready within ${workerReadyTimeoutMs}ms.`,
 		)
 	}
-	const homeConnector = runNpmScript('dev:home-connector', [], {
-		...forwardedHomeConnectorEnv,
-		PORT: String(homeConnectorPort),
-		HOME_CONNECTOR_ID: homeConnectorId,
-		HOME_CONNECTOR_SHARED_SECRET: homeConnectorSharedSecret,
-		WORKER_BASE_URL: workerOrigin,
-	})
+	const homeConnector = runNpmScript(
+		'dev:home-connector',
+		[],
+		{
+			...forwardedHomeConnectorEnv,
+			PORT: String(homeConnectorPort),
+			HOME_CONNECTOR_ID: homeConnectorId,
+			HOME_CONNECTOR_SHARED_SECRET: homeConnectorSharedSecret,
+			WORKER_BASE_URL: workerOrigin,
+		},
+		{
+			label: 'dev:home-connector',
+			mode: 'live',
+		},
+	)
 	devChildren = [client, worker, homeConnector]
 
 	if (announce) {
@@ -427,6 +464,10 @@ async function attachGithubMock(
 			`MOCK_API_TOKEN:${apiToken}`,
 		],
 		{},
+		{
+			label: 'dev:mock-github',
+			mode: 'buffer-on-error',
+		},
 	)
 	mockGithubProcess = child
 	child.once('exit', () => {
@@ -478,6 +519,10 @@ async function attachCursorMock(
 			`MOCK_API_TOKEN:${apiToken}`,
 		],
 		{},
+		{
+			label: 'dev:mock-cursor',
+			mode: 'buffer-on-error',
+		},
 	)
 	mockCursorProcess = child
 	child.once('exit', () => {
@@ -533,6 +578,10 @@ async function attachCloudflareMock(
 			`MOCK_API_TOKEN:${apiToken}`,
 		],
 		{},
+		{
+			label: 'dev:mock-cloudflare',
+			mode: 'buffer-on-error',
+		},
 	)
 	mockCloudflareProcess = child
 	child.once('exit', () => {
@@ -638,6 +687,10 @@ async function ensureMockServers() {
 				`MOCK_API_TOKEN:${apiToken}`,
 			],
 			{},
+			{
+				label: 'dev:mock-resend',
+				mode: 'buffer-on-error',
+			},
 		)
 		mockResendProcess = child
 		child.once('exit', () => {
@@ -690,6 +743,10 @@ async function ensureMockServers() {
 				`MOCK_API_TOKEN:${aiApiToken}`,
 			],
 			{},
+			{
+				label: 'dev:mock-ai',
+				mode: 'buffer-on-error',
+			},
 		)
 		mockAiProcess = aiChild
 		aiChild.once('exit', () => {
