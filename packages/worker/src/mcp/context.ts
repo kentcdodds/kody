@@ -2,6 +2,7 @@ import { parseSafe } from 'remix/data-schema'
 import {
 	mcpCallerContextSchema,
 	type McpCallerContext,
+	type McpSecretContext,
 	type McpUserContext,
 } from '@kody-internal/shared/chat.ts'
 
@@ -11,11 +12,13 @@ export function createMcpCallerContext(input: {
 	baseUrl: string
 	user?: McpUserContext | null
 	homeConnectorId?: string | null
+	secretContext?: McpSecretContext | null
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
 		user: input.user ?? null,
 		homeConnectorId: input.homeConnectorId ?? null,
+		secretContext: input.secretContext ?? null,
 	}
 }
 

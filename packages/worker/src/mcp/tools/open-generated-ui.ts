@@ -2,6 +2,7 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { generatedUiShellResourceUri } from '#mcp/apps/generated-ui-shell-entry-point.ts'
+import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 
@@ -17,7 +18,10 @@ Behavior:
 - Use \`app_id\` to reopen previously saved UI source without sending that source code back through the model.
 - \`code\` may be a full HTML document or a fragment. Prefer body content when possible, but full-document HTML is supported when you need total control.
 - The shell provides a tiny standard library on \`window.kodyWidget\` plus lightweight default styles for semantic HTML, forms, tables, buttons, and code blocks.
-- \`executeCode(code)\` posts a request back to the host, and the host handles it by calling the Kody MCP server tool \`execute\` with that same code string.
+- After rendering, the shell automatically reports the rendered widget size to the host via the standard MCP Apps \`ui/notifications/size-changed\` notification.
+- \`executeCode(code)\` runs server-side code through the generated UI session when available, keeping secret resolution on the server.
+- \`saveSecret({ name, value, description?, scope? })\`, \`listSecrets({ scope? })\`, and \`deleteSecret({ name, scope? })\` let the UI manage secret references without embedding raw values in generated code.
+- Secret metadata returned by the UI helpers includes \`created_at\`, \`updated_at\`, and \`ttl_ms\` when available so the UI can explain lifecycle and expiry.
 
 Mini standard library:
 \`\`\`ts
@@ -27,8 +31,10 @@ declare global {
       sendMessage(text: string): boolean
       openLink(url: string): boolean
       toggleFullscreen(): Promise<'inline' | 'fullscreen' | 'pip' | null>
-      // Equivalent to calling MCP tool \`execute\` with { code }.
       executeCode(code: string): Promise<unknown>
+      saveSecret(input: { name: string; value: string; description?: string; scope?: 'session' | 'app' | 'user' }): Promise<{ ok: boolean; secret?: { name: string; scope: 'session' | 'app' | 'user'; description: string; app_id: string | null; created_at: string; updated_at: string; ttl_ms: number | null }; error?: string }>
+      listSecrets(input?: { scope?: 'session' | 'app' | 'user' }): Promise<Array<{ name: string; scope: 'session' | 'app' | 'user'; description: string; app_id: string | null; created_at: string; updated_at: string; ttl_ms: number | null }>>
+      deleteSecret(input: { name: string; scope?: 'session' | 'app' | 'user' }): Promise<{ ok: boolean; deleted?: boolean; error?: string }>
     }
   }
 }
@@ -49,6 +55,12 @@ Example:
 <script>
   document.querySelector('form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
+    await window.kodyWidget.saveSecret({
+      name: 'cloudflareToken',
+      value: '...',
+      description: 'Cloudflare API token for this app',
+      scope: 'app',
+    })
     const result = await window.kodyWidget.executeCode(\`async () => { ... }\`)
     window.kodyWidget.sendMessage(\`Done: ...\`)
     ...
@@ -102,7 +114,6 @@ const inputSchema = z
 	})
 
 export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
-	void agent
 	registerAppTool(
 		agent.server,
 		openGeneratedUiTool.name,
@@ -118,12 +129,23 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			},
 		},
 		async (args) => {
+			const callerContext = agent.getCallerContext()
 			const appId = args.app_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
 			const hostedUrl = appId
 				? buildSavedUiUrl(agent.requireDomain(), appId)
 				: null
+			const appSession =
+				callerContext.user != null
+					? await createGeneratedUiAppSession({
+							env: agent.getEnv(),
+							baseUrl: callerContext.baseUrl,
+							user: callerContext.user,
+							appId,
+							homeConnectorId: callerContext.homeConnectorId ?? null,
+						})
+					: null
 			const structuredContent = {
 				widget: 'generated_ui' as const,
 				resourceUri: generatedUiShellResourceUri,
@@ -134,13 +156,14 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				runtime: 'html' as const,
 				sourceCode: args.code ?? null,
 				hostedUrl,
+				appSession,
 			}
 			return {
 				content: [
 					{
 						type: 'text',
 						text: appId
-							? `## Generated UI ready\n\nThe generic app shell is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}\n\nNote: tool calls do not work in the hosted fallback.`
+							? `## Generated UI ready\n\nThe generic app shell is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
 							: '## Generated UI ready\n\nThe generic app shell is attached to this tool call and will render the provided inline source inside the widget runtime.',
 					},
 				],

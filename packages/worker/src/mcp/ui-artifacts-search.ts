@@ -9,6 +9,7 @@ import {
 	reciprocalRankFusion,
 	sortIdsByScore,
 } from '#mcp/capabilities/capability-search.ts'
+import { type SecretMetadata } from '#mcp/secrets/types.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
@@ -22,14 +23,20 @@ function parseJsonStringArray(raw: string): Array<string> {
 	}
 }
 
-function rowToEmbedDoc(row: UiArtifactRow) {
-	return buildUiArtifactEmbedText({
+function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
+	const secretText =
+		appSecrets.length > 0
+			? `\nAvailable app secrets:\n${appSecrets
+					.map((secret) => `${secret.name}: ${secret.description}`)
+					.join('\n')}`
+			: ''
+	return `${buildUiArtifactEmbedText({
 		title: row.title,
 		description: row.description,
 		keywords: parseJsonStringArray(row.keywords),
 		searchText: row.search_text,
 		runtime: row.runtime,
-	})
+	})}${secretText}`
 }
 
 function buildUsage(appId: string) {
@@ -45,6 +52,10 @@ export type UiArtifactSearchHitSummary = {
 	keywords: Array<string>
 	runtime: string
 	usage: string
+	availableSecrets: Array<{
+		name: string
+		description: string
+	}>
 	fusedScore: number
 	lexicalRank?: number
 	vectorRank?: number
@@ -66,6 +77,7 @@ function rowToUiArtifactHit(
 	fusedScore: number,
 	lexicalRank?: number,
 	vectorRank?: number,
+	appSecrets: Array<SecretMetadata> = [],
 ): UiArtifactSearchHit {
 	const base: UiArtifactSearchHitSummary = {
 		type: 'app',
@@ -76,6 +88,10 @@ function rowToUiArtifactHit(
 		keywords: parseJsonStringArray(row.keywords),
 		runtime: row.runtime,
 		usage: buildUsage(row.id),
+		availableSecrets: appSecrets.map((secret) => ({
+			name: secret.name,
+			description: secret.description,
+		})),
 		fusedScore,
 		lexicalRank,
 		vectorRank,
@@ -98,6 +114,7 @@ export async function searchUiArtifactsForUser(input: {
 	detail: boolean
 	userId: string
 	rows: Array<UiArtifactRow>
+	appSecretsByAppId?: Map<string, Array<SecretMetadata>>
 }): Promise<{ matches: Array<UiArtifactSearchHit>; offline: boolean }> {
 	const query = input.query.trim()
 	const rowById = new Map(input.rows.map((row) => [row.id, row] as const))
@@ -109,7 +126,13 @@ export async function searchUiArtifactsForUser(input: {
 	}
 
 	const docsById = Object.fromEntries(
-		input.rows.map((row) => [row.id, rowToEmbedDoc(row)] as const),
+		input.rows.map(
+			(row) =>
+				[
+					row.id,
+					rowToEmbedDoc(row, input.appSecretsByAppId?.get(row.id) ?? []),
+				] as const,
+		),
 	)
 	const lexicalOrder = sortIdsByScore(ids, (id) =>
 		lexicalScore(query, docsById[id]!),
@@ -189,6 +212,7 @@ export async function searchUiArtifactsForUser(input: {
 				fused.get(id) ?? 0,
 				lexicalRankById.get(id),
 				vectorRankById.get(id),
+				input.appSecretsByAppId?.get(id) ?? [],
 			),
 		),
 		offline,

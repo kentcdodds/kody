@@ -11,6 +11,17 @@ type SavedUiArtifact = {
 	code: string
 	createdAt: string
 	updatedAt: string
+	appSession: {
+		sessionId: string
+		expiresAt: string
+		endpoints: {
+			source: string
+			execute: string
+			secrets: string
+			deleteSecret: string
+		}
+		token: string
+	} | null
 }
 
 type SavedUiStatus = 'loading' | 'ready' | 'error'
@@ -40,19 +51,38 @@ function getSavedUiApiPath(appId: string) {
 }
 
 async function loadSavedUi(appId: string) {
-	const response = await fetch(getSavedUiApiPath(appId), {
+	const response = await fetch(`${getSavedUiApiPath(appId)}/source`, {
 		credentials: 'include',
 		headers: { Accept: 'application/json' },
 	})
 	const payload = (await response.json().catch(() => null)) as {
 		ok?: boolean
 		error?: string
-		artifact?: SavedUiArtifact
+		app?: {
+			app_id?: string
+			title?: string
+			description?: string
+			runtime?: 'html' | 'javascript'
+			code?: string
+			created_at?: string
+			updated_at?: string
+		}
+		appSession?: SavedUiArtifact['appSession']
 	} | null
-	if (!response.ok || !payload?.ok || !payload.artifact) {
+	if (!response.ok || !payload?.ok || !payload.app?.app_id) {
 		throw new Error(payload?.error || 'Unable to load saved UI.')
 	}
-	return payload.artifact
+	return {
+		appId: payload.app.app_id,
+		title: payload.app.title ?? 'Saved UI',
+		description: payload.app.description ?? '',
+		keywords: [],
+		runtime: payload.app.runtime ?? 'html',
+		code: payload.app.code ?? '',
+		createdAt: payload.app.created_at ?? '',
+		updatedAt: payload.app.updated_at ?? '',
+		appSession: payload.appSession ?? null,
+	} satisfies SavedUiArtifact
 }
 
 async function executeSavedUiCode(appId: string, code: string) {
@@ -123,12 +153,11 @@ export function SavedUiRoute(handle: Handle) {
 						toolOutput: {
 							widget: 'generated_ui',
 							resourceUri: generatedUiResourceUri,
-							renderSource: 'inline_code',
+							renderSource: 'saved_app',
 							appId: artifact.appId,
 							title: artifact.title,
 							description: artifact.description,
-							runtime: artifact.runtime,
-							sourceCode: artifact.code,
+							appSession: artifact.appSession,
 						},
 					},
 				},

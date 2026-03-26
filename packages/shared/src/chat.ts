@@ -16,13 +16,20 @@ export const mcpUserContextSchema = object({
 	displayName: string(),
 })
 
+export const mcpSecretContextSchema = object({
+	sessionId: optional(nullable(string())),
+	appId: optional(nullable(string())),
+})
+
 export const mcpCallerContextSchema = object({
 	baseUrl: string(),
 	user: optional(nullable(mcpUserContextSchema)),
 	homeConnectorId: optional(nullable(string())),
+	secretContext: optional(nullable(mcpSecretContextSchema)),
 })
 
 export type McpUserContext = InferOutput<typeof mcpUserContextSchema>
+export type McpSecretContext = InferOutput<typeof mcpSecretContextSchema>
 export type McpCallerContext = InferOutput<typeof mcpCallerContextSchema>
 
 export const chatAgentPropsSchema = object({

@@ -16,7 +16,40 @@ export function createExecuteExecutor(env: Env) {
 }
 
 export function wrapExecuteCode(code: string) {
-	return normalizeCode(code)
+	const normalized = normalizeCode(code)
+	return normalizeCode(`async () => {
+  const listSecrets = async (options = {}) => {
+    const result = await codemode.secret_list(options);
+    return Array.isArray(result?.secrets) ? result.secrets : [];
+  };
+  const getSecret = async (name, options = {}) => {
+    const result = await codemode.secret_get({
+      name,
+      ...(options && typeof options === 'object' ? options : {}),
+    });
+    if (!result || result.found !== true || typeof result.value !== 'string') {
+      return null;
+    }
+    if (typeof result.scope === 'string') {
+      console.log(\`Secret used: \${result.scope}:\${name}\`);
+    }
+    return result.value;
+  };
+  const requireSecret = async (name, options = {}) => {
+    const value = await getSecret(name, options);
+    if (value === null) {
+      throw new Error(\`Secret not found: \${name}\`);
+    }
+    return value;
+  };
+  const secrets = {
+    list: listSecrets,
+    get: getSecret,
+    require: requireSecret,
+  };
+  const userCode = (${normalized});
+  return await userCode();
+}`)
 }
 
 export function formatExecutionOutput(result: ExecuteResult) {

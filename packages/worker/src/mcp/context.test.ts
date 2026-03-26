@@ -9,6 +9,7 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 	).toEqual({
 		baseUrl: 'https://example.com',
 		homeConnectorId: null,
+		secretContext: null,
 		user: null,
 	})
 })
@@ -22,6 +23,10 @@ test('parseMcpCallerContext validates caller context shape', () => {
 				email: 'user@example.com',
 				displayName: 'user',
 			},
+			secretContext: {
+				sessionId: 'session-123',
+				appId: 'app-123',
+			},
 		}),
 	).toEqual({
 		baseUrl: 'https://example.com',
@@ -29,6 +34,10 @@ test('parseMcpCallerContext validates caller context shape', () => {
 			userId: '123',
 			email: 'user@example.com',
 			displayName: 'user',
+		},
+		secretContext: {
+			sessionId: 'session-123',
+			appId: 'app-123',
 		},
 	})
 })

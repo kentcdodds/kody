@@ -23,17 +23,48 @@ import {
 	mcpResourcePath,
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
+import {
+	handleGeneratedUiApiRequest,
+	isGeneratedUiApiRequest,
+} from './mcp/generated-ui-api.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleSkillReindexRequest } from './skill-maintenance.ts'
 
 export { ChatAgent, HomeConnectorSession, HomeMCP, MCP }
 
+const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
+
+function isAllowedGeneratedUiOrigin(origin: string, requestOrigin: string) {
+	if (origin === requestOrigin) {
+		return true
+	}
+	try {
+		const parsedOrigin = new URL(origin)
+		return parsedOrigin.hostname.endsWith(claudeWidgetDomainSuffix)
+	} catch {
+		return false
+	}
+}
+
 const appHandler = withCors({
 	getCorsHeaders(request) {
+		const url = new URL(request.url)
+		if (isGeneratedUiApiRequest(url.pathname)) {
+			const origin = request.headers.get('Origin')
+			if (!origin || !isAllowedGeneratedUiOrigin(origin, url.origin)) {
+				return null
+			}
+			return {
+				'Access-Control-Allow-Origin': origin,
+				'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+				'Access-Control-Allow-Headers': 'content-type, authorization',
+				Vary: 'Origin',
+			}
+		}
 		const origin = request.headers.get('Origin')
 		if (!origin) return null
-		const requestOrigin = new URL(request.url).origin
+		const requestOrigin = url.origin
 		if (origin !== requestOrigin) return null
 		return {
 			'Access-Control-Allow-Origin': origin,
@@ -82,6 +113,10 @@ const appHandler = withCors({
 					binding: 'MCP_OBJECT',
 				}).fetch,
 			})
+		}
+
+		if (isGeneratedUiApiRequest(url.pathname)) {
+			return handleGeneratedUiApiRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/home/connectors/')) {

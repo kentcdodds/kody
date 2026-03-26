@@ -23,17 +23,18 @@ const serverMetadata = {
 	},
 	instructions: `
 This is a three-part system:
-1. Use 'search' to discover builtin capabilities, saved skills, and saved apps (when authenticated).
+1. Use 'search' to discover builtin capabilities, saved skills, saved apps, and reusable user secret references.
 2. Use 'execute' to call builtin capabilities via 'codemode[capabilityName](args)', or use meta domain tools to run saved skills.
 3. Use 'open_generated_ui' to open a generic MCP App shell with inline generated code or a saved app by id.
 
 Quick start
-- Call 'search' first to discover what Kody can do (results include type 'capability', 'skill', or 'app').
+- Call 'search' first to discover what Kody can do (results include type 'capability', 'skill', 'app', or 'secret').
 - Call 'execute' or 'meta_run_skill' next to run capability code.
 - Call 'open_generated_ui' when you want an interactive UI rendered in an MCP App host.
 - Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
 - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
+- Use the injected 'secrets' helper during execute-time code to list metadata or resolve user/app/session secret references without placing secret values in prompts or saved app source.
 
 Kody source repository
 - Kody (this app and MCP server) is developed at https://github.com/kentcdodds/kody. When you launch a Cursor Cloud Agent to improve Kody itself, use that repository URL (unless the user explicitly points you at another fork or repo).
@@ -77,6 +78,8 @@ How to use execute
 - Each capability call returns that capability's raw structured result value.
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
+- The sandbox also injects a read-oriented 'secrets' helper for metadata/lookup: \`await secrets.list()\`, \`await secrets.list({ scope: 'app' })\`, \`await secrets.get('name')\`, \`await secrets.require('cloudflareToken', { scope: 'user' })\`.
+- Mutating secret operations stay on \`codemode\`: for example \`await codemode.secret_update({ name: 'cloudflareToken', scope: 'app', value: '...' })\` or \`await codemode.secret_delete({ name: 'cloudflareToken', scope: 'app' })\`.
 - Your code must be an async arrow function that returns the result.
 - Example: const result = await codemode[capabilityName](args)
 
@@ -84,8 +87,8 @@ MCP App tools
 - Use 'open_generated_ui' when you want an interactive UI in MCP App compatible hosts.
 - Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
 - Prefer body-focused HTML fragments when possible, but full HTML documents are also supported.
-- The shell exposes a small standard library on 'window.kodyWidget' for follow-up messages, external links, fullscreen requests, and 'executeCode(code)'.
-- 'executeCode(code)' sends the request back to the host, which calls the MCP tool 'execute' with that same code string.
+- The shell exposes a small standard library on 'window.kodyWidget' for follow-up messages, external links, fullscreen requests, 'executeCode(code)', and secret management helpers such as 'saveSecret', 'listSecrets', and 'deleteSecret'.
+- 'executeCode(code)' runs server-side code for the generated UI session so execute-time secrets can be resolved without embedding their raw values in app source.
 - The shell also provides lightweight semantic HTML styles plus theme tokens such as '--color-*', '--spacing-*', '--radius-*', '--shadow-*', and '--font-*'.
 	`.trim(),
 } as const

@@ -19,6 +19,10 @@ import {
 	type SkillParameterDefinition,
 } from '#mcp/skills/skill-parameters.ts'
 import {
+	type SecretMetadata,
+	type SecretSearchRow,
+} from '#mcp/secrets/types.ts'
+import {
 	type UiArtifactSearchHit,
 	searchUiArtifactsForUser,
 } from '#mcp/ui-artifacts-search.ts'
@@ -95,10 +99,60 @@ export type CapabilitySearchHitTyped = {
 	type: 'capability'
 } & CapabilitySearchHit
 
+export type SecretSearchHitSummary = {
+	type: 'secret'
+	scope: 'user'
+	name: string
+	description: string
+	usage: string
+	fusedScore: number
+	lexicalRank?: number
+	vectorRank?: number
+}
+
+export type SecretSearchHitDetail = SecretSearchHitSummary & {
+	updatedAt: string
+}
+
+export type SecretSearchHit = SecretSearchHitSummary | SecretSearchHitDetail
+
 export type UnifiedSearchMatch =
 	| CapabilitySearchHitTyped
 	| SkillSearchHit
+	| SecretSearchHit
 	| UiArtifactSearchHit
+
+function buildSecretUsage(name: string) {
+	return `Resolve during execute with secrets.require(${JSON.stringify(
+		name,
+	)}, { scope: "user" }).`
+}
+
+function rowToSecretHit(
+	row: SecretSearchRow,
+	detail: boolean,
+	fusedScore: number,
+	lexicalRank?: number,
+	vectorRank?: number,
+): SecretSearchHit {
+	const base: SecretSearchHitSummary = {
+		type: 'secret',
+		scope: 'user',
+		name: row.name,
+		description: row.description,
+		usage: buildSecretUsage(row.name),
+		fusedScore,
+		lexicalRank,
+		vectorRank,
+	}
+	if (detail) {
+		return {
+			...base,
+			updatedAt: row.updatedAt,
+		}
+	}
+	return base
+}
 
 function rowToSkillHit(
 	row: McpSkillRow,
@@ -262,6 +316,67 @@ async function searchSkillsForUser(input: {
 	return { matches, offline }
 }
 
+async function searchSecretsForUser(input: {
+	query: string
+	limit: number
+	detail: boolean
+	rows: Array<SecretSearchRow>
+}): Promise<{ matches: Array<SecretSearchHit>; offline: boolean }> {
+	const rowsByName = new Map(input.rows.map((row) => [row.name, row] as const))
+	const names = [...rowsByName.keys()]
+	if (names.length === 0) {
+		return { matches: [], offline: false }
+	}
+
+	const docsByName = Object.fromEntries(
+		input.rows.map(
+			(row) =>
+				[
+					row.name,
+					`${row.name}\n${row.description}\nsecret scope: user`,
+				] as const,
+		),
+	)
+	const lexicalOrder = sortIdsByScore(names, (name) =>
+		lexicalScore(input.query, docsByName[name]!),
+	)
+	const queryVector = deterministicEmbedding(input.query)
+	const vectorOrder = sortIdsByScore(names, (name) =>
+		cosineSimilarity(queryVector, deterministicEmbedding(docsByName[name]!)),
+	)
+
+	const lexicalRankByName = new Map<string, number>()
+	for (let index = 0; index < lexicalOrder.length; index += 1) {
+		lexicalRankByName.set(lexicalOrder[index]!, index + 1)
+	}
+	const vectorRankByName = new Map<string, number>()
+	for (let index = 0; index < vectorOrder.length; index += 1) {
+		vectorRankByName.set(vectorOrder[index]!, index + 1)
+	}
+
+	const fused = reciprocalRankFusion(
+		[lexicalOrder, vectorOrder],
+		CAPABILITY_SEARCH_RRF_K,
+	)
+	const ordered = sortIdsByScore(names, (name) => fused.get(name) ?? 0).slice(
+		0,
+		Math.max(1, Math.min(input.limit, names.length)),
+	)
+
+	return {
+		matches: ordered.map((name) =>
+			rowToSecretHit(
+				rowsByName.get(name)!,
+				input.detail,
+				fused.get(name) ?? 0,
+				lexicalRankByName.get(name),
+				vectorRankByName.get(name),
+			),
+		),
+		offline: false,
+	}
+}
+
 export async function searchUnified(input: {
 	env: Env
 	query: string
@@ -271,6 +386,8 @@ export async function searchUnified(input: {
 	userId: string | null
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
+	userSecretRows: Array<SecretSearchRow>
+	appSecretsByAppId: Map<string, Array<SecretMetadata>>
 }): Promise<{ matches: Array<UnifiedSearchMatch>; offline: boolean }> {
 	const builtinFilter: VectorizeVectorMetadataFilter = {
 		kind: { $eq: 'builtin' },
@@ -297,7 +414,20 @@ export async function searchUnified(input: {
 		matches: [],
 		offline: capResult.offline,
 	}
+	let secretResult: {
+		matches: Array<SecretSearchHit>
+		offline: boolean
+	} = {
+		matches: [],
+		offline: false,
+	}
 	if (input.userId) {
+		secretResult = await searchSecretsForUser({
+			query: input.query,
+			limit: input.limit,
+			detail: input.detail,
+			rows: input.userSecretRows,
+		})
 		skillResult = await searchSkillsForUser({
 			env: input.env,
 			query: input.query,
@@ -314,17 +444,21 @@ export async function searchUnified(input: {
 			detail: input.detail,
 			userId: input.userId,
 			rows: input.uiArtifactRows,
+			appSecretsByAppId: input.appSecretsByAppId,
 		})
 	}
 
 	const capKeys = capResult.matches.map((m) => `c:${m.name}`)
 	const skillKeys = skillResult.matches.map((m) => `s:${m.skillId}`)
+	const secretKeys = secretResult.matches.map((m) => `u:${m.name}`)
 	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
 	const fusedCross = reciprocalRankFusion(
-		[capKeys, skillKeys, uiArtifactKeys],
+		[capKeys, skillKeys, secretKeys, uiArtifactKeys],
 		CAPABILITY_SEARCH_RRF_K,
 	)
-	const allKeys = [...new Set([...capKeys, ...skillKeys, ...uiArtifactKeys])]
+	const allKeys = [
+		...new Set([...capKeys, ...skillKeys, ...secretKeys, ...uiArtifactKeys]),
+	]
 	const sortedKeys = sortIdsByScore(
 		allKeys,
 		(k) => fusedCross.get(k) ?? 0,
@@ -333,6 +467,9 @@ export async function searchUnified(input: {
 	const capByName = new Map(capResult.matches.map((m) => [m.name, m] as const))
 	const skillById = new Map(
 		skillResult.matches.map((m) => [m.skillId, m] as const),
+	)
+	const secretByName = new Map(
+		secretResult.matches.map((m) => [m.name, m] as const),
 	)
 	const uiArtifactById = new Map(
 		uiArtifactResult.matches.map((m) => [m.appId, m] as const),
@@ -353,6 +490,12 @@ export async function searchUnified(input: {
 			if (hit) {
 				matches.push({ ...hit, fusedScore: score })
 			}
+		} else if (key.startsWith('u:')) {
+			const name = key.slice(2)
+			const hit = secretByName.get(name)
+			if (hit) {
+				matches.push({ ...hit, fusedScore: score })
+			}
 		} else if (key.startsWith('a:')) {
 			const id = key.slice(2)
 			const hit = uiArtifactById.get(id)
@@ -363,6 +506,9 @@ export async function searchUnified(input: {
 	}
 
 	const offline =
-		capResult.offline || skillResult.offline || uiArtifactResult.offline
+		capResult.offline ||
+		skillResult.offline ||
+		secretResult.offline ||
+		uiArtifactResult.offline
 	return { matches, offline }
 }

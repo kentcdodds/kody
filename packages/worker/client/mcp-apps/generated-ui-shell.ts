@@ -4,12 +4,36 @@ type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 type ThemeName = 'light' | 'dark'
+type SecretScope = 'session' | 'app' | 'user'
+
+type SecretMetadata = {
+	name: string
+	scope: SecretScope
+	description: string
+	app_id: string | null
+	created_at: string
+	updated_at: string
+	ttl_ms: number | null
+}
+
+type AppSessionEnvelope = {
+	sessionId: string
+	expiresAt: string
+	endpoints: {
+		source: string
+		execute: string
+		secrets: string
+		deleteSecret: string
+	}
+	token?: string
+}
 
 type RenderEnvelope = {
 	mode: RenderMode
 	code?: string
 	appId?: string
 	runtime?: AppRuntime
+	appSession?: AppSessionEnvelope | null
 }
 
 type RenderDataEnvelope = {
@@ -17,6 +41,27 @@ type RenderDataEnvelope = {
 	theme?: string
 	displayMode?: string
 	availableDisplayModes?: Array<string>
+}
+
+type MeasuredFrameSize = {
+	height: number
+	width: number
+}
+
+type SizeMeasurementElement = {
+	scrollHeight?: number
+	scrollWidth?: number
+	offsetHeight?: number
+	offsetWidth?: number
+	getBoundingClientRect?: () => {
+		height?: number
+		width?: number
+	}
+}
+
+type SizeMeasurementDocument = {
+	body?: SizeMeasurementElement | null
+	documentElement?: SizeMeasurementElement | null
 }
 
 type HostToolResult = {
@@ -28,8 +73,121 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
 
+function normalizeMeasuredValue(value: unknown) {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+		return 0
+	}
+	return Math.ceil(value)
+}
+
+function measureElementDimensions(
+	element: SizeMeasurementElement | null | undefined,
+) {
+	if (!element) return { height: 0, width: 0 }
+	const rect = element.getBoundingClientRect?.()
+	return {
+		height: Math.max(
+			normalizeMeasuredValue(element.scrollHeight),
+			normalizeMeasuredValue(element.offsetHeight),
+			normalizeMeasuredValue(rect?.height),
+		),
+		width: Math.max(
+			normalizeMeasuredValue(element.scrollWidth),
+			normalizeMeasuredValue(element.offsetWidth),
+			normalizeMeasuredValue(rect?.width),
+		),
+	}
+}
+
+export function measureRenderedFrameSize(
+	documentRef: SizeMeasurementDocument | null | undefined,
+): MeasuredFrameSize | null {
+	if (!documentRef) return null
+	const documentElementSize = measureElementDimensions(
+		documentRef.documentElement,
+	)
+	const bodySize = measureElementDimensions(documentRef.body)
+	const nextSize = {
+		height: Math.max(documentElementSize.height, bodySize.height),
+		width: Math.max(documentElementSize.width, bodySize.width),
+	}
+	return nextSize.height > 0 || nextSize.width > 0 ? nextSize : null
+}
+
 function coerceRuntime(value: unknown): AppRuntime | undefined {
 	return value === 'html' || value === 'javascript' ? value : undefined
+}
+
+function coerceSecretScope(value: unknown): SecretScope | null {
+	return value === 'session' || value === 'app' || value === 'user'
+		? value
+		: null
+}
+
+function coerceAppSession(value: unknown): AppSessionEnvelope | null {
+	if (!isRecord(value)) return null
+	if (
+		typeof value.sessionId !== 'string' ||
+		typeof value.expiresAt !== 'string'
+	) {
+		return null
+	}
+	const endpoints = coerceGeneratedUiEndpoints(value.endpoints)
+	if (!endpoints) {
+		return null
+	}
+	return {
+		sessionId: value.sessionId,
+		expiresAt: value.expiresAt,
+		endpoints,
+		token: typeof value.token === 'string' ? value.token : undefined,
+	}
+}
+
+function coerceGeneratedUiEndpoints(value: unknown) {
+	if (!isRecord(value)) return null
+	if (
+		typeof value.source !== 'string' ||
+		typeof value.execute !== 'string' ||
+		typeof value.secrets !== 'string' ||
+		typeof value.deleteSecret !== 'string'
+	) {
+		return null
+	}
+	try {
+		const source = new URL(value.source)
+		const execute = new URL(value.execute)
+		const secrets = new URL(value.secrets)
+		const deleteSecret = new URL(value.deleteSecret)
+		const origin = source.origin
+		const expectedOrigin = new URL('/', import.meta.url).origin
+		if (origin !== expectedOrigin) {
+			return null
+		}
+		if (
+			execute.origin !== origin ||
+			secrets.origin !== origin ||
+			deleteSecret.origin !== origin
+		) {
+			return null
+		}
+		if (
+			!source.pathname.startsWith('/ui-api/') ||
+			!execute.pathname.startsWith('/ui-api/') ||
+			!secrets.pathname.startsWith('/ui-api/') ||
+			!deleteSecret.pathname.startsWith('/ui-api/')
+		) {
+			return null
+		}
+		return {
+			source: source.toString(),
+			execute: execute.toString(),
+			secrets: secrets.toString(),
+			deleteSecret: deleteSecret.toString(),
+		}
+	} catch {
+		return null
+	}
 }
 
 function coerceDisplayMode(value: unknown): DisplayMode | null {
@@ -221,6 +379,43 @@ function getHostToolErrorMessage(result: HostToolResult | null) {
 		: 'Code execution failed.'
 }
 
+async function executeCodeWithHostTool(
+	hostBridge: ReturnType<typeof createWidgetHostBridge>,
+	code: string,
+) {
+	const result = (await hostBridge.callTool({
+		name: 'execute',
+		arguments: { code },
+		timeoutMs: 90_000,
+	})) as HostToolResult | null
+	const errorMessage = getHostToolErrorMessage(result)
+	if (errorMessage) {
+		throw new Error(errorMessage)
+	}
+	const structuredContent = isRecord(result?.structuredContent)
+		? result.structuredContent
+		: null
+	return structuredContent?.result ?? null
+}
+
+function postChildResponse(
+	targetWindow: WindowProxy,
+	type: string,
+	requestId: string,
+	response: unknown,
+) {
+	targetWindow.postMessage(
+		{
+			type,
+			payload: {
+				requestId,
+				response,
+			},
+		},
+		'*',
+	)
+}
+
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	if (!isRecord(value)) return null
 	const renderSource = value.renderSource ?? value.mode
@@ -234,7 +429,8 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 				: undefined
 	const appId = typeof value.appId === 'string' ? value.appId : undefined
 	const runtime = coerceRuntime(value.runtime) ?? (code ? 'html' : undefined)
-	return { mode: renderSource, code, appId, runtime }
+	const appSession = coerceAppSession(value.appSession)
+	return { mode: renderSource, code, appId, runtime, appSession }
 }
 
 function getEnvelopeFromRenderData(renderData: RenderDataEnvelope | undefined) {
@@ -258,12 +454,225 @@ function initializeGeneratedUiShell() {
 	const childMessagePrefix = 'kody-generated-ui:'
 
 	let latestRenderData: RenderDataEnvelope | undefined
+	let latestEnvelope: RenderEnvelope | null = null
+	let frameResizeObserver: ResizeObserver | null = null
+	let sizeMeasurementScheduled = false
+	let lastMeasuredFrameSize: MeasuredFrameSize | null = null
 
 	function getBaseHref() {
 		try {
 			return new URL('/', import.meta.url).toString()
 		} catch {
 			return null
+		}
+	}
+
+	function buildSavedUiEndpoint(
+		uiId: string,
+		endpoint: 'source' | 'execute' | 'secrets' | 'delete-secret',
+	) {
+		const baseHref = getBaseHref()
+		if (!baseHref) {
+			return null
+		}
+		const path =
+			endpoint === 'delete-secret'
+				? `/ui-api/${encodeURIComponent(uiId)}/secrets/delete`
+				: `/ui-api/${encodeURIComponent(uiId)}/${endpoint}`
+		return new URL(path, baseHref).toString()
+	}
+
+	async function fetchJsonResponse(input: {
+		url: string
+		method?: 'GET' | 'POST'
+		body?: Record<string, unknown>
+		token?: string
+	}) {
+		const headers = new Headers({
+			Accept: 'application/json',
+		})
+		if (input.body) {
+			headers.set('Content-Type', 'application/json')
+		}
+		if (input.token) {
+			headers.set('Authorization', `Bearer ${input.token}`)
+		}
+		const response = await fetch(input.url, {
+			method: input.method ?? 'GET',
+			headers,
+			body: input.body ? JSON.stringify(input.body) : undefined,
+			cache: 'no-store',
+			credentials: input.token ? 'omit' : 'include',
+		})
+		const payload = (await response.json().catch(() => null)) as Record<
+			string,
+			unknown
+		> | null
+		return { response, payload }
+	}
+
+	function getApiErrorMessage(
+		payload: Record<string, unknown> | null,
+		fallback: string,
+	) {
+		return typeof payload?.error === 'string' ? payload.error : fallback
+	}
+
+	function getAppSourceRequestTarget(appId: string) {
+		const appSession = latestEnvelope?.appSession ?? null
+		if (appSession?.token) {
+			const url = new URL(appSession.endpoints.source)
+			if (!url.searchParams.has('app_id')) {
+				url.searchParams.set('app_id', appId)
+			}
+			return {
+				url: url.toString(),
+				token: appSession.token,
+			}
+		}
+		const url = buildSavedUiEndpoint(appId, 'source')
+		return url ? { url } : null
+	}
+
+	function getSessionRequestTarget(
+		type: 'execute' | 'secrets' | 'delete-secret',
+	) {
+		const appSession = latestEnvelope?.appSession ?? null
+		if (!appSession?.token) {
+			return null
+		}
+		const url =
+			type === 'execute'
+				? appSession.endpoints.execute
+				: type === 'secrets'
+					? appSession.endpoints.secrets
+					: appSession.endpoints.deleteSecret
+		return {
+			url,
+			token: appSession.token,
+		}
+	}
+
+	async function executeCodeWithHttp(code: string) {
+		const target = getSessionRequestTarget('execute')
+		if (!target) {
+			return {
+				handled: false,
+				result: null,
+			}
+		}
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body: { code },
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			throw new Error(getApiErrorMessage(payload, 'Code execution failed.'))
+		}
+		return {
+			handled: true,
+			result: payload.result ?? null,
+		}
+	}
+
+	async function saveSecretWithHttp(input: {
+		name: string
+		value: string
+		description?: string
+		scope?: SecretScope
+	}) {
+		const target = getSessionRequestTarget('secrets')
+		if (!target) {
+			return {
+				ok: false,
+				error: 'Secret storage is unavailable in this context.',
+			}
+		}
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body: {
+				name: input.name,
+				value: input.value,
+				description: input.description ?? '',
+				...(input.scope ? { scope: input.scope } : {}),
+			},
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			return {
+				ok: false,
+				error: getApiErrorMessage(payload, 'Unable to save secret.'),
+			}
+		}
+		return {
+			ok: true,
+			secret: isRecord(payload.secret) ? payload.secret : undefined,
+		}
+	}
+
+	async function listSecretsWithHttp(scope?: SecretScope) {
+		const target = getSessionRequestTarget('secrets')
+		if (!target) return []
+		const url = new URL(target.url)
+		if (scope) {
+			url.searchParams.set('scope', scope)
+		}
+		const { response, payload } = await fetchJsonResponse({
+			url: url.toString(),
+			method: 'GET',
+			token: target.token,
+		})
+		if (!response.ok || !Array.isArray(payload?.secrets)) {
+			throw new Error(getApiErrorMessage(payload, 'Unable to list secrets.'))
+		}
+		return payload.secrets.filter((secret): secret is SecretMetadata => {
+			return (
+				isRecord(secret) &&
+				typeof secret.name === 'string' &&
+				coerceSecretScope(secret.scope) != null &&
+				typeof secret.description === 'string' &&
+				(secret.app_id == null || typeof secret.app_id === 'string') &&
+				typeof secret.created_at === 'string' &&
+				typeof secret.updated_at === 'string' &&
+				(secret.ttl_ms == null ||
+					(typeof secret.ttl_ms === 'number' &&
+						Number.isFinite(secret.ttl_ms) &&
+						secret.ttl_ms >= 0))
+			)
+		})
+	}
+
+	async function deleteSecretWithHttp(input: {
+		name: string
+		scope?: SecretScope
+	}) {
+		const target = getSessionRequestTarget('delete-secret')
+		if (!target) {
+			return {
+				ok: false,
+				error: 'Secret storage is unavailable in this context.',
+			}
+		}
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body: {
+				name: input.name,
+				...(input.scope ? { scope: input.scope } : {}),
+			},
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			return {
+				ok: false,
+				error: getApiErrorMessage(payload, 'Unable to delete secret.'),
+			}
+		}
+		return {
+			ok: true,
+			deleted: payload.deleted === true,
 		}
 	}
 
@@ -535,6 +944,20 @@ function postRequestAndWaitForShellMessage(type, payload, responseType, requestI
 	}, '*');
 	return pending;
 }
+async function requestSecretAction(type, input, responseType) {
+	if (window.parent === window) return null;
+	const requestId = nextRequestId();
+	const payload = await postRequestAndWaitForShellMessage(
+		shellMessagePrefix + type,
+		{
+			requestId,
+			input,
+		},
+		shellMessagePrefix + responseType,
+		requestId,
+	);
+	return payload && typeof payload === 'object' ? payload.response : null;
+}
 window.kodyWidget = {
 	sendMessage(text) {
 		if (window.parent === window) return false;
@@ -584,6 +1007,49 @@ window.kodyWidget = {
 		}
 		return 'result' in payload ? payload.result ?? null : null;
 	},
+	async saveSecret(input) {
+		if (!input || typeof input !== 'object') {
+			return { ok: false, error: 'Secret input must be an object.' };
+		}
+		if (typeof input.name !== 'string' || input.name.length === 0) {
+			return { ok: false, error: 'Secret name is required.' };
+		}
+		if (typeof input.value !== 'string' || input.value.length === 0) {
+			return { ok: false, error: 'Secret value is required.' };
+		}
+		const response = await requestSecretAction(
+			'save-secret',
+			input,
+			'save-secret-result',
+		);
+		return response && typeof response === 'object'
+			? response
+			: { ok: false, error: 'Unable to save secret.' };
+	},
+	async listSecrets(input) {
+		const response = await requestSecretAction(
+			'list-secrets',
+			input ?? {},
+			'list-secrets-result',
+		);
+		return Array.isArray(response) ? response : [];
+	},
+	async deleteSecret(input) {
+		if (!input || typeof input !== 'object') {
+			return { ok: false, error: 'Secret input must be an object.' };
+		}
+		if (typeof input.name !== 'string' || input.name.length === 0) {
+			return { ok: false, error: 'Secret name is required.' };
+		}
+		const response = await requestSecretAction(
+			'delete-secret',
+			input,
+			'delete-secret-result',
+		);
+		return response && typeof response === 'object'
+			? response
+			: { ok: false, error: 'Unable to delete secret.' };
+	},
 };
 window.addEventListener('error', (event) => {
 	console.error(
@@ -622,6 +1088,62 @@ ${safeCode}
 		`.trim()
 	}
 
+	function resetFrameSizeTracking() {
+		frameResizeObserver?.disconnect()
+		frameResizeObserver = null
+		lastMeasuredFrameSize = null
+		sizeMeasurementScheduled = false
+	}
+
+	async function notifyMeasuredFrameSize() {
+		const nextSize = measureRenderedFrameSize(frameElement.contentDocument)
+		if (
+			!nextSize ||
+			(lastMeasuredFrameSize?.height === nextSize.height &&
+				lastMeasuredFrameSize?.width === nextSize.width)
+		) {
+			return
+		}
+		lastMeasuredFrameSize = nextSize
+		await hostBridge.sendSizeChanged(nextSize)
+	}
+
+	function scheduleMeasuredFrameSizeNotification() {
+		if (sizeMeasurementScheduled) return
+		sizeMeasurementScheduled = true
+		globalThis.requestAnimationFrame(() => {
+			sizeMeasurementScheduled = false
+			void notifyMeasuredFrameSize()
+		})
+	}
+
+	function observeRenderedFrameSize() {
+		resetFrameSizeTracking()
+		const childDocument = frameElement.contentDocument
+		if (!childDocument || typeof ResizeObserver !== 'function') {
+			void notifyMeasuredFrameSize()
+			return
+		}
+		const observedElements = [
+			childDocument.documentElement,
+			childDocument.body,
+		].filter((element): element is HTMLElement => element != null)
+		if (observedElements.length === 0) {
+			void notifyMeasuredFrameSize()
+			return
+		}
+		frameResizeObserver = new ResizeObserver(() => {
+			scheduleMeasuredFrameSizeNotification()
+		})
+		for (const element of observedElements) {
+			frameResizeObserver.observe(element)
+		}
+		scheduleMeasuredFrameSizeNotification()
+		globalThis.setTimeout(() => {
+			scheduleMeasuredFrameSizeNotification()
+		}, 0)
+	}
+
 	function buildHtmlDocumentFromFragment(code: string) {
 		const theme = coerceTheme(latestRenderData?.theme)
 		return `
@@ -640,6 +1162,7 @@ ${code}
 	}
 
 	function setFrameSource(code: string, runtime: AppRuntime) {
+		resetFrameSizeTracking()
 		if (runtime === 'javascript') {
 			const inlineModuleSource = buildInlineModuleSource(code)
 			const theme = coerceTheme(latestRenderData?.theme)
@@ -672,32 +1195,35 @@ ${inlineModuleSource}
 	}
 
 	async function resolveSavedAppCode(appId: string) {
-		const result = (await hostBridge.callTool({
-			name: 'ui_load_app_source',
-			arguments: { app_id: appId },
-			timeoutMs: 15_000,
-		})) as HostToolResult | null
-		if (!result || result.isError) {
+		const target = getAppSourceRequestTarget(appId)
+		if (!target) {
 			throw new Error('Failed to load saved app source.')
 		}
-		const structuredContent = isRecord(result.structuredContent)
-			? result.structuredContent
-			: null
-		const code =
-			structuredContent && typeof structuredContent.code === 'string'
-				? structuredContent.code
-				: null
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'GET',
+			token: target.token,
+		})
+		const app = isRecord(payload?.app) ? payload.app : null
+		if (!response.ok || !payload || payload.ok !== true || !app) {
+			throw new Error(
+				getApiErrorMessage(payload, 'Failed to load saved app source.'),
+			)
+		}
+		const code = typeof app.code === 'string' ? app.code : null
 		if (!code) {
 			throw new Error('Saved app source is missing code.')
 		}
 		return {
 			code,
-			runtime: coerceRuntime(structuredContent?.runtime) ?? 'html',
+			runtime: coerceRuntime(app.runtime) ?? 'html',
 		}
 	}
 
 	async function renderEnvelope(envelope: RenderEnvelope | null) {
+		latestEnvelope = envelope
 		if (!envelope) {
+			resetFrameSizeTracking()
 			frameElement.srcdoc = ''
 			return
 		}
@@ -718,8 +1244,10 @@ ${inlineModuleSource}
 
 		try {
 			const resolved = await resolveSavedAppCode(envelope.appId)
+			if (latestEnvelope !== envelope) return
 			setFrameSource(resolved.code, resolved.runtime)
 		} catch (error) {
+			if (latestEnvelope !== envelope) return
 			const message =
 				error instanceof Error ? error.message : 'Unknown app loading error.'
 			renderErrorDocument(message)
@@ -756,8 +1284,14 @@ ${inlineModuleSource}
 		},
 	})
 
+	frameElement.addEventListener('load', () => {
+		observeRenderedFrameSize()
+	})
+
 	globalThis.window.addEventListener('message', (event: MessageEvent) => {
+		const childWindow = frameElement.contentWindow
 		if (
+			event.source === childWindow &&
 			isRecord(event.data) &&
 			typeof event.data.type === 'string' &&
 			event.data.type.startsWith(childMessagePrefix)
@@ -818,35 +1352,28 @@ ${inlineModuleSource}
 							'*',
 						)
 					}, 90_000)
-					void hostBridge
-						.callTool({
-							name: 'execute',
-							arguments: { code },
-							timeoutMs: 90_000,
-						})
+					void executeCodeWithHttp(code)
+						.then((response) =>
+							response.handled
+								? response.result
+								: executeCodeWithHostTool(hostBridge, code),
+						)
 						.then((result) => {
 							if (didTimeout) return
 							window.clearTimeout(timeoutId)
-							const errorMessage = getHostToolErrorMessage(result)
-							const structuredContent = isRecord(result?.structuredContent)
-								? result.structuredContent
-								: null
 							targetWindow.postMessage(
 								{
 									type: `${childMessagePrefix}execute-result`,
 									payload: {
 										requestId,
-										result:
-											result?.isError === true
-												? null
-												: (structuredContent?.result ?? null),
-										errorMessage,
+										result,
+										errorMessage: null,
 									},
 								},
 								'*',
 							)
 						})
-						.catch(() => {
+						.catch((error) => {
 							if (didTimeout) return
 							window.clearTimeout(timeoutId)
 							targetWindow.postMessage(
@@ -855,12 +1382,85 @@ ${inlineModuleSource}
 									payload: {
 										requestId,
 										result: null,
-										errorMessage: 'Code execution failed.',
+										errorMessage:
+											error instanceof Error
+												? error.message
+												: 'Code execution failed.',
 									},
 								},
 								'*',
 							)
 						})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}save-secret`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const input = isRecord(payload.input) ? payload.input : null
+				if (requestId && input && event.source) {
+					void saveSecretWithHttp({
+						name: typeof input.name === 'string' ? input.name : '',
+						value: typeof input.value === 'string' ? input.value : '',
+						description:
+							typeof input.description === 'string' ? input.description : '',
+						scope: coerceSecretScope(input.scope) ?? undefined,
+					}).then((response) => {
+						postChildResponse(
+							event.source as WindowProxy,
+							`${childMessagePrefix}save-secret-result`,
+							requestId,
+							response,
+						)
+					})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}list-secrets`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const input = isRecord(payload.input) ? payload.input : null
+				if (requestId && event.source) {
+					void listSecretsWithHttp(coerceSecretScope(input?.scope) ?? undefined)
+						.then((response) => {
+							postChildResponse(
+								event.source as WindowProxy,
+								`${childMessagePrefix}list-secrets-result`,
+								requestId,
+								response,
+							)
+						})
+						.catch((error) => {
+							postChildResponse(
+								event.source as WindowProxy,
+								`${childMessagePrefix}list-secrets-result`,
+								requestId,
+								[],
+							)
+							console.error(
+								'Generated UI list secrets failed:',
+								error instanceof Error ? error.message : error,
+							)
+						})
+				}
+				return
+			}
+			if (event.data.type === `${childMessagePrefix}delete-secret`) {
+				const requestId =
+					typeof payload.requestId === 'string' ? payload.requestId : null
+				const input = isRecord(payload.input) ? payload.input : null
+				if (requestId && input && event.source) {
+					void deleteSecretWithHttp({
+						name: typeof input.name === 'string' ? input.name : '',
+						scope: coerceSecretScope(input.scope) ?? undefined,
+					}).then((response) => {
+						postChildResponse(
+							event.source as WindowProxy,
+							`${childMessagePrefix}delete-secret-result`,
+							requestId,
+							response,
+						)
+					})
 				}
 				return
 			}

@@ -1,6 +1,7 @@
 import { appsDomain } from './apps/domain.ts'
 import { codingDomain } from './coding/domain.ts'
 import { metaDomain } from './meta/domain.ts'
+import { secretsDomain } from './secrets/domain.ts'
 
 /**
  * Builtin domains merged by `buildCapabilityRegistry` in `registry.ts`.
@@ -10,4 +11,9 @@ import { metaDomain } from './meta/domain.ts'
  * extra domain is a real `DomainSpec` with bundled `Capability` handlers
  * (Workers typically snapshot capabilities at deploy time).
  */
-export const builtinDomains = [appsDomain, codingDomain, metaDomain] as const
+export const builtinDomains = [
+	appsDomain,
+	codingDomain,
+	metaDomain,
+	secretsDomain,
+] as const

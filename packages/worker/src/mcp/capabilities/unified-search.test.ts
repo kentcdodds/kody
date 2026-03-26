@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { searchUnified } from './unified-search.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 
 function createSkillRow(skillId: string): McpSkillRow {
 	return {
@@ -24,6 +25,21 @@ function createSkillRow(skillId: string): McpSkillRow {
 	}
 }
 
+function createUiArtifactRow(appId: string): UiArtifactRow {
+	return {
+		id: appId,
+		user_id: 'user-123',
+		title: 'Cloudflare deploy app',
+		description: 'Saved UI for deploying a Worker',
+		keywords: JSON.stringify(['cloudflare', 'deploy']),
+		code: '<main>Deploy</main>',
+		runtime: 'html',
+		search_text: 'deploy worker ui',
+		created_at: '2026-03-20T00:00:00.000Z',
+		updated_at: '2026-03-20T00:00:00.000Z',
+	}
+}
+
 test('skill search hits include usage hints', async () => {
 	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
 	const skillRow = createSkillRow('skill-usage-hint')
@@ -38,6 +54,8 @@ test('skill search hits include usage hints', async () => {
 		userId: 'user-123',
 		skillRows: [skillRow],
 		uiArtifactRows: [],
+		userSecretRows: [],
+		appSecretsByAppId: new Map(),
 	})
 
 	const skill = result.matches.find((match) => match.type === 'skill')
@@ -64,6 +82,8 @@ test('skill detail hits include usage hints', async () => {
 		userId: 'user-123',
 		skillRows: [skillRow],
 		uiArtifactRows: [],
+		userSecretRows: [],
+		appSecretsByAppId: new Map(),
 	})
 
 	const skill = result.matches.find((match) => match.type === 'skill')
@@ -74,4 +94,63 @@ test('skill detail hits include usage hints', async () => {
 	expect(skill.usage).toContain('meta_get_skill')
 	expect(skill.usage).toContain(skillRow.id)
 	expect(skill.usage).toContain('"params"')
+})
+
+test('search can return standalone user secrets and nest app secrets on apps', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {} as Record<string, CapabilitySpec>
+	const appRow = createUiArtifactRow('app-123')
+
+	const result = await searchUnified({
+		env,
+		query: 'cloudflare deploy token',
+		limit: 5,
+		detail: true,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [appRow],
+		userSecretRows: [
+			{
+				name: 'cloudflareToken',
+				scope: 'user',
+				description: 'Reusable Cloudflare API token',
+				appId: null,
+				updatedAt: '2026-03-20T00:00:00.000Z',
+			},
+		],
+		appSecretsByAppId: new Map([
+			[
+				appRow.id,
+				[
+					{
+						name: 'deploySecret',
+						scope: 'app',
+						description: 'Worker secret for this app',
+						appId: appRow.id,
+						updatedAt: '2026-03-20T00:00:00.000Z',
+					},
+				],
+			],
+		]),
+	})
+
+	const secret = result.matches.find((match) => match.type === 'secret')
+	if (!secret || secret.type !== 'secret') {
+		throw new Error('Expected a standalone user secret result.')
+	}
+	expect(secret.scope).toBe('user')
+	expect(secret.name).toBe('cloudflareToken')
+	expect(secret.usage).toContain('secrets.require')
+
+	const app = result.matches.find((match) => match.type === 'app')
+	if (!app || app.type !== 'app') {
+		throw new Error('Expected an app result.')
+	}
+	expect(app.availableSecrets).toEqual([
+		{
+			name: 'deploySecret',
+			description: 'Worker secret for this app',
+		},
+	])
 })

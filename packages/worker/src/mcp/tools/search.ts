@@ -3,6 +3,11 @@ import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { searchUnified } from '#mcp/capabilities/unified-search.ts'
+import {
+	listAppSecretsByAppIds,
+	listUserSecretsForSearch,
+} from '#mcp/secrets/service.ts'
+import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
@@ -39,14 +44,13 @@ const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities And Skills',
 	description: `
-Search Kody **builtin capabilities**, your saved **skills** (meta domain), and your saved **apps** (apps domain) by natural language before calling \`execute\` or opening a UI.
+Search Kody **builtin capabilities**, your saved **skills** (meta domain), your saved **apps** (apps domain), and your reusable **user secret references** by natural language before calling \`execute\` or opening a UI.
 
-Each match has **type** \`capability\`, \`skill\`, or \`app\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\`. Saved skills should be **reasonably repeatable** workflows; one-off work belongs in \`execute\`, not persisted as a skill. Saved apps are reusable UI artifacts and can be reopened without resending their source code through the model.
+Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\`. User-scoped secret references never include raw secret values and can be resolved during execution via the \`secrets\` helper. App-bound secrets are attached to their corresponding app results rather than returned as standalone secret hits.
 
 If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
 
 Domains (for context only—put hints in your \`query\` string; there are no filter fields):
-- \`math\`: Simple arithmetic and calculator-style operations over numbers.
 - \`coding\`: Software work such as GitHub repository actions, issues, pull requests, Cursor Cloud Agents API calls, Cloudflare API calls, and related docs/coding workflows.
 - \`meta\`: Persisted and reusable codemode skills plus skill management.
 - \`home\`: Home automation capabilities discovered from the connected home connector when available.
@@ -74,6 +78,7 @@ const defaultSearchLimit = 15
 type OptionalSearchRowsResult = {
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
+	userSecretRows: Array<SecretSearchRow>
 	warnings: Array<string>
 }
 
@@ -96,11 +101,13 @@ export async function loadOptionalSearchRows(input: {
 	userId: string | null
 	loadSkills: () => Promise<Array<McpSkillRow>>
 	loadUiArtifacts: () => Promise<Array<UiArtifactRow>>
+	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
 }): Promise<OptionalSearchRowsResult> {
 	if (!input.userId) {
 		return {
 			skillRows: [],
 			uiArtifactRows: [],
+			userSecretRows: [],
 			warnings: [],
 		}
 	}
@@ -108,6 +115,7 @@ export async function loadOptionalSearchRows(input: {
 	const warnings: Array<string> = []
 	let skillRows: Array<McpSkillRow> = []
 	let uiArtifactRows: Array<UiArtifactRow> = []
+	let userSecretRows: Array<SecretSearchRow> = []
 
 	try {
 		skillRows = await input.loadSkills()
@@ -123,9 +131,17 @@ export async function loadOptionalSearchRows(input: {
 		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
 	}
 
+	try {
+		userSecretRows = await input.loadUserSecrets()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		warnings.push(`User secrets are temporarily unavailable: ${message}`)
+	}
+
 	return {
 		skillRows,
 		uiArtifactRows,
+		userSecretRows,
 		warnings,
 	}
 }
@@ -174,12 +190,24 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						listMcpSkillsByUserId(agent.getEnv().APP_DB, userId!),
 					loadUiArtifacts: () =>
 						listUiArtifactsByUserId(agent.getEnv().APP_DB, userId!),
+					loadUserSecrets: () =>
+						listUserSecretsForSearch({
+							env: agent.getEnv(),
+							userId: userId!,
+						}),
 				})
 				homeConnectorStatus = await loadDownHomeConnectorStatus({
 					env: agent.getEnv(),
 					homeConnectorId: callerContext.homeConnectorId ?? null,
 				})
 				warnings = optionalRows.warnings
+				const appSecretsByAppId = userId
+					? await listAppSecretsByAppIds({
+							env: agent.getEnv(),
+							userId,
+							appIds: optionalRows.uiArtifactRows.map((row) => row.id),
+						})
+					: new Map()
 				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,
@@ -189,6 +217,8 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					userId,
 					skillRows: optionalRows.skillRows,
 					uiArtifactRows: optionalRows.uiArtifactRows,
+					userSecretRows: optionalRows.userSecretRows,
+					appSecretsByAppId,
 				})
 			}
 

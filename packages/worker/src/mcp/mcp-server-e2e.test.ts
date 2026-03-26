@@ -889,6 +889,395 @@ test('mcp server saves app, search returns app hit, and open_generated_ui suppor
 	expect(openText).toContain(`${server.origin}/ui/${appId}`)
 })
 
+test('generated ui sessions support secret storage, execute-time resolution, and scoped search visibility', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_save_app({
+						title: 'Secrets App',
+						description: 'Generated UI for secret-backed deployments.',
+						keywords: ['secret', 'deploy'],
+						code: '<main><h1>Secrets App</h1></main>',
+						search_text: 'cloudflare deploy secret app',
+					})`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const savedApp = saveStructured?.result as Record<string, unknown> | undefined
+	const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+	expect(appId).not.toBeNull()
+
+	const openResult = await mcpClient.client.callTool({
+		name: 'open_generated_ui',
+		arguments: {
+			app_id: appId,
+		},
+	})
+	const openStructured = (openResult as CallToolResult).structuredContent as
+		| {
+				appSession?: {
+					token?: string
+					endpoints?: {
+						source?: string
+						execute?: string
+						secrets?: string
+						deleteSecret?: string
+					}
+				}
+		  }
+		| undefined
+	const appSession = openStructured?.appSession
+	const token = typeof appSession?.token === 'string' ? appSession.token : null
+	const sourceUrl =
+		typeof appSession?.endpoints?.source === 'string'
+			? appSession.endpoints.source
+			: null
+	const executeUrl =
+		typeof appSession?.endpoints?.execute === 'string'
+			? appSession.endpoints.execute
+			: null
+	const secretsUrl =
+		typeof appSession?.endpoints?.secrets === 'string'
+			? appSession.endpoints.secrets
+			: null
+	const deleteSecretUrl =
+		typeof appSession?.endpoints?.deleteSecret === 'string'
+			? appSession.endpoints.deleteSecret
+			: null
+	expect(token).not.toBeNull()
+	expect(sourceUrl).toContain('/ui-api/')
+	expect(executeUrl).toContain('/ui-api/')
+	expect(secretsUrl).toContain('/ui-api/')
+	expect(deleteSecretUrl).toContain('/ui-api/')
+
+	const sourceResponse = await fetch(sourceUrl!, {
+		headers: {
+			Authorization: `Bearer ${token}`,
+			Accept: 'application/json',
+		},
+	})
+	expect(sourceResponse.ok).toBe(true)
+	const sourcePayload = (await sourceResponse.json()) as {
+		ok?: boolean
+		app?: {
+			app_id?: string
+			code?: string
+		}
+	}
+	expect(sourcePayload.ok).toBe(true)
+	expect(sourcePayload.app?.app_id).toBe(appId)
+	expect(sourcePayload.app?.code).toContain('Secrets App')
+
+	const saveAppSecretResponse = await fetch(secretsUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			name: 'cloudflareToken',
+			value: 'secret-app-token',
+			description: 'App-scoped Cloudflare deployment token',
+			scope: 'app',
+		}),
+	})
+	expect(saveAppSecretResponse.ok).toBe(true)
+
+	const saveUserSecretResponse = await fetch(secretsUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			name: 'globalApiKey',
+			value: 'secret-user-token',
+			description: 'Reusable cross-app API key',
+			scope: 'user',
+		}),
+	})
+	expect(saveUserSecretResponse.ok).toBe(true)
+
+	const saveSessionSecretResponse = await fetch(secretsUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			name: 'ephemeralCode',
+			value: '123456',
+			description: 'Session-only verification code',
+			scope: 'session',
+		}),
+	})
+	expect(saveSessionSecretResponse.ok).toBe(true)
+
+	const executeResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				const appSecret = await secrets.require('cloudflareToken')
+				const userSecret = await secrets.require('globalApiKey', { scope: 'user' })
+				const sessionSecret = await secrets.require('ephemeralCode', { scope: 'session' })
+				return {
+					appSecretLength: appSecret.length,
+					userSecretLength: userSecret.length,
+					sessionSecretLength: sessionSecret.length,
+				}
+			}`,
+		}),
+	})
+	expect(executeResponse.ok).toBe(true)
+	const executePayload = (await executeResponse.json()) as {
+		ok?: boolean
+		result?: {
+			appSecretLength?: number
+			userSecretLength?: number
+			sessionSecretLength?: number
+		}
+		logs?: Array<string>
+	}
+	expect(executePayload.ok).toBe(true)
+	expect(executePayload.result).toEqual({
+		appSecretLength: 'secret-app-token'.length,
+		userSecretLength: 'secret-user-token'.length,
+		sessionSecretLength: '123456'.length,
+	})
+	expect(executePayload.logs?.join('\n')).toContain(
+		'Secret used: app:cloudflareToken',
+	)
+	expect(executePayload.logs?.join('\n')).toContain(
+		'Secret used: user:globalApiKey',
+	)
+	expect(executePayload.logs?.join('\n')).toContain(
+		'Secret used: session:ephemeralCode',
+	)
+
+	const sessionListExecuteResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				return await secrets.list({ scope: 'session' })
+			}`,
+		}),
+	})
+	expect(sessionListExecuteResponse.ok).toBe(true)
+	const sessionListExecutePayload =
+		(await sessionListExecuteResponse.json()) as {
+			ok?: boolean
+			result?: Array<Record<string, unknown>>
+		}
+	expect(sessionListExecutePayload.ok).toBe(true)
+	expect(sessionListExecutePayload.result).toEqual([
+		{
+			name: 'ephemeralCode',
+			scope: 'session',
+			description: 'Session-only verification code',
+			app_id: null,
+			created_at: expect.any(String),
+			updated_at: expect.any(String),
+			ttl_ms: expect.any(Number),
+		},
+	])
+
+	const listSecretsResponse = await fetch(`${secretsUrl!}?scope=app`, {
+		headers: {
+			Authorization: `Bearer ${token}`,
+			Accept: 'application/json',
+		},
+	})
+	expect(listSecretsResponse.ok).toBe(true)
+	const listSecretsPayload = (await listSecretsResponse.json()) as {
+		ok?: boolean
+		secrets?: Array<{ name?: string; scope?: string }>
+	}
+	expect(listSecretsPayload.ok).toBe(true)
+	expect(listSecretsPayload.secrets).toEqual([
+		{
+			name: 'cloudflareToken',
+			scope: 'app',
+			description: 'App-scoped Cloudflare deployment token',
+			app_id: appId,
+			created_at: expect.any(String),
+			updated_at: expect.any(String),
+			ttl_ms: null,
+		},
+	])
+
+	const updateSecretExecuteResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				return await codemode.secret_update({
+					name: 'cloudflareToken',
+					scope: 'app',
+					value: 'rotated-app-token',
+					description: 'Rotated Cloudflare deployment token',
+				})
+			}`,
+		}),
+	})
+	expect(updateSecretExecuteResponse.ok).toBe(true)
+	const updateSecretExecutePayload =
+		(await updateSecretExecuteResponse.json()) as {
+			ok?: boolean
+			result?: {
+				secret?: Record<string, unknown>
+			}
+		}
+	expect(updateSecretExecutePayload.ok).toBe(true)
+	expect(updateSecretExecutePayload.result?.secret).toEqual({
+		name: 'cloudflareToken',
+		scope: 'app',
+		description: 'Rotated Cloudflare deployment token',
+		app_id: appId,
+		created_at: expect.any(String),
+		updated_at: expect.any(String),
+		ttl_ms: null,
+	})
+
+	const updatedValueExecuteResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				const rotated = await secrets.require('cloudflareToken', { scope: 'app' })
+				return { rotatedLength: rotated.length }
+			}`,
+		}),
+	})
+	expect(updatedValueExecuteResponse.ok).toBe(true)
+	const updatedValueExecutePayload =
+		(await updatedValueExecuteResponse.json()) as {
+			ok?: boolean
+			result?: {
+				rotatedLength?: number
+			}
+		}
+	expect(updatedValueExecutePayload.result?.rotatedLength).toBe(
+		'rotated-app-token'.length,
+	)
+
+	const searchResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'cloudflare deploy token',
+			limit: 10,
+			detail: true,
+		},
+	})
+	const searchStructured = (searchResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					matches?: Array<Record<string, unknown>>
+				}
+		  }
+		| undefined
+	const matches = searchStructured?.result?.matches ?? []
+	const userSecretMatch = matches.find(
+		(match) => match.type === 'secret' && match.name === 'globalApiKey',
+	)
+	expect(userSecretMatch?.description).toBe('Reusable cross-app API key')
+	const sessionSecretMatch = matches.find(
+		(match) => match.type === 'secret' && match.name === 'ephemeralCode',
+	)
+	expect(sessionSecretMatch).toBeUndefined()
+	const appMatch = matches.find(
+		(match) => match.type === 'app' && match.appId === appId,
+	)
+	expect(appMatch?.availableSecrets).toEqual([
+		{
+			name: 'cloudflareToken',
+			description: 'Rotated Cloudflare deployment token',
+		},
+	])
+
+	const deleteSecretExecuteResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				return await codemode.secret_delete({
+					name: 'ephemeralCode',
+					scope: 'session',
+				})
+			}`,
+		}),
+	})
+	expect(deleteSecretExecuteResponse.ok).toBe(true)
+	const deleteSecretExecutePayload =
+		(await deleteSecretExecuteResponse.json()) as {
+			ok?: boolean
+			result?: {
+				deleted?: boolean
+			}
+		}
+	expect(deleteSecretExecutePayload).toMatchObject({
+		ok: true,
+		result: {
+			deleted: true,
+		},
+	})
+
+	const deleteSecretResponse = await fetch(deleteSecretUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			name: 'cloudflareToken',
+			scope: 'app',
+		}),
+	})
+	expect(deleteSecretResponse.ok).toBe(true)
+	const deleteSecretPayload = (await deleteSecretResponse.json()) as {
+		ok?: boolean
+		deleted?: boolean
+	}
+	expect(deleteSecretPayload).toEqual({
+		ok: true,
+		deleted: true,
+	})
+})
+
 test('mcp server deletes saved ui app artifacts', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
