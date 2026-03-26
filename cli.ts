@@ -160,7 +160,7 @@ function pipeOutput(
 		pipeStream(child.stderr, 'stderr', controller.writeLine)
 	}
 
-	child.on('exit', (code, signal) => {
+	child.on('close', (code, signal) => {
 		controller.handleExit({ code, signal })
 	})
 }
