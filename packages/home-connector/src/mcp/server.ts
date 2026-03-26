@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
+import { type createLutronAdapter } from '../adapters/lutron/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
 import { type HomeConnectorState } from '../state.ts'
@@ -38,12 +39,14 @@ export function createHomeConnectorMcpServer(input: {
 	config: HomeConnectorConfig
 	state: HomeConnectorState
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>
+	lutron: ReturnType<typeof createLutronAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
 		state: input.state,
 	})
 	const samsungTv = input.samsungTv
+	const lutron = input.lutron
 
 	const server = new McpServer(
 		{
@@ -52,7 +55,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools currently support Roku and Samsung TV discovery, control, and diagnostics.',
+				'Home connector MCP server. Tools currently support Roku, Samsung TV, and Lutron discovery, control, and diagnostics.',
 		},
 	)
 
@@ -350,6 +353,361 @@ export function createHomeConnectorMcpServer(input: {
 						text: result.app
 							? `Active app on ${deviceId} is ${result.app.name}.`
 							: `No active Roku app reported for ${deviceId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_list_processors',
+			title: 'List Lutron Processors',
+			description:
+				'List discovered Lutron processors, whether credentials are stored, and the latest auth status.',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const processors = lutron.getStatus().processors
+			return {
+				content: [
+					{
+						type: 'text',
+						text:
+							processors.length === 0
+								? 'No Lutron processors are currently known.'
+								: processors
+										.map(
+											(processor) =>
+												`- ${processor.name} (${processor.processorId}) host=${processor.host} credentials=${String(processor.hasStoredCredentials)}`,
+										)
+										.join('\n'),
+					},
+				],
+				structuredContent: {
+					processors,
+				},
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_scan_processors',
+			title: 'Scan Lutron Processors',
+			description:
+				'Scan the local network for Lutron processors using the configured discovery mechanism.',
+			inputSchema: {},
+		},
+		async () => {
+			const processors = await lutron.scan()
+			return {
+				content: [
+					{
+						type: 'text',
+						text:
+							processors.length === 0
+								? 'No Lutron processors discovered.'
+								: `Discovered ${processors.length} Lutron processor(s).`,
+					},
+				],
+				structuredContent: {
+					processors,
+				},
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_credentials',
+			title: 'Set Lutron Credentials',
+			description:
+				'Associate a stored username/password with a discovered Lutron processor for LEAP login on port 8081.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					username: z.string().min(1),
+					password: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const username = String(args['username'] ?? '')
+			const password = String(args['password'] ?? '')
+			const result = lutron.setCredentials(processorId, username, password)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Stored Lutron credentials for ${result.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_authenticate_processor',
+			title: 'Authenticate Lutron Processor',
+			description:
+				'Attempt a LEAP login against a discovered Lutron processor using stored credentials.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const result = await lutron.authenticate(processorId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Authenticated Lutron processor ${result.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_get_inventory',
+			title: 'Get Lutron Inventory',
+			description:
+				'Read the live area, zone, control-station, and scene-button inventory from a Lutron processor.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const result = await lutron.getInventory(processorId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Fetched Lutron inventory with ${result.zones.length} zone(s) and ${result.sceneButtons.length} scene button(s).`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_press_button',
+			title: 'Press Lutron Scene Button',
+			description:
+				'Press a Lutron keypad button (scene-like control) using LEAP PressAndRelease.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					buttonId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const buttonId = String(args['buttonId'] ?? '')
+			const result = await lutron.pressButton(processorId, buttonId)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Pressed Lutron button ${buttonId} on processor ${processorId}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_zone_level',
+			title: 'Set Lutron Zone Level',
+			description: 'Set a Lutron zone level using LEAP GoToLevel.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					level: z.number().min(0).max(100),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const level = Number(args['level'] ?? 0)
+			const result = await lutron.setZoneLevel(processorId, zoneId, level)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron zone ${zoneId} to ${level}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_zone_color',
+			title: 'Set Lutron Zone Color',
+			description:
+				'Set a Lutron SpectrumTune or ColorTune zone using HSV color, optionally overriding level and vibrancy.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					hue: z.number().min(0).max(360),
+					saturation: z.number().min(0).max(100),
+					level: z.number().min(0).max(100).optional(),
+					vibrancy: z.number().min(0).max(100).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const hue = Number(args['hue'] ?? 0)
+			const saturation = Number(args['saturation'] ?? 0)
+			const level = args['level'] == null ? undefined : Number(args['level'])
+			const vibrancy =
+				args['vibrancy'] == null ? undefined : Number(args['vibrancy'])
+			const result = await lutron.setZoneColor(processorId, zoneId, {
+				hue,
+				saturation,
+				level,
+				vibrancy,
+			})
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron zone ${zoneId} to hue ${hue} saturation ${saturation}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_zone_white_tuning',
+			title: 'Set Lutron Zone White Tuning',
+			description:
+				'Set a Lutron WhiteTune or SpectrumTune zone to a Kelvin temperature, optionally overriding level.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					kelvin: z.number().min(1000).max(25000),
+					level: z.number().min(0).max(100).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const kelvin = Number(args['kelvin'] ?? 0)
+			const level = args['level'] == null ? undefined : Number(args['level'])
+			const result = await lutron.setZoneWhiteTuning(processorId, zoneId, {
+				kelvin,
+				level,
+			})
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron zone ${zoneId} white tuning to ${kelvin}K.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_zone_switched_level',
+			title: 'Set Lutron Switched Zone State',
+			description:
+				'Set a Lutron switched, receptacle, or other on-off zone to On or Off.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					state: z.enum(['On', 'Off']),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const state = args['state'] === 'Off' ? 'Off' : 'On'
+			const result = await lutron.setZoneSwitchedLevel(
+				processorId,
+				zoneId,
+				state,
+			)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron switched zone ${zoneId} to ${state}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_shade_level',
+			title: 'Set Lutron Shade Level',
+			description:
+				'Set a Lutron shade zone to a target level between 0 and 100.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					level: z.number().min(0).max(100),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const level = Number(args['level'] ?? 0)
+			const result = await lutron.setShadeLevel(processorId, zoneId, level)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron shade ${zoneId} to ${level}.`,
 					},
 				],
 				structuredContent: result,

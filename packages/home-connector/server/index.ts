@@ -12,6 +12,7 @@ async function main() {
 	const router = createHomeConnectorRouter(
 		connector.state,
 		connector.config,
+		connector.lutron,
 		connector.samsungTv,
 	)
 

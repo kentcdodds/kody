@@ -19,6 +19,7 @@ function createConfig(dbPath: string) {
 		sharedSecret: 'secret',
 		rokuDiscoveryUrl: 'http://roku.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
+		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
 		dataPath: path.dirname(dbPath),
 		dbPath,
 		port: 4040,

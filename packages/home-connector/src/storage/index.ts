@@ -19,6 +19,7 @@ type SqliteDatabase = {
 
 export type HomeConnectorStorage = {
 	db: SqliteDatabase
+	sharedSecret: string | null
 	close(): void
 }
 
@@ -64,6 +65,44 @@ function initializeSchema(db: SqliteDatabase) {
 				REFERENCES samsung_tvs(connector_id, device_id)
 				ON DELETE CASCADE
 		);
+
+		CREATE TABLE IF NOT EXISTS lutron_processors (
+			connector_id TEXT NOT NULL,
+			processor_id TEXT NOT NULL,
+			instance_name TEXT NOT NULL,
+			name TEXT NOT NULL,
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL,
+			discovery_port INTEGER,
+			address TEXT,
+			serial_number TEXT,
+			mac_address TEXT,
+			system_type TEXT,
+			code_version TEXT,
+			device_class TEXT,
+			claim_status TEXT,
+			network_status TEXT,
+			firmware_status TEXT,
+			status TEXT,
+			raw_discovery_json TEXT,
+			last_seen_at TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, processor_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS lutron_credentials (
+			connector_id TEXT NOT NULL,
+			processor_id TEXT NOT NULL,
+			username TEXT NOT NULL,
+			password TEXT NOT NULL,
+			last_authenticated_at TEXT,
+			last_auth_error TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, processor_id),
+			FOREIGN KEY (connector_id, processor_id)
+				REFERENCES lutron_processors(connector_id, processor_id)
+				ON DELETE CASCADE
+		);
 	`)
 }
 
@@ -101,6 +140,7 @@ export function createHomeConnectorStorage(
 	initializeSchema(db)
 	return {
 		db,
+		sharedSecret: config.sharedSecret,
 		close() {
 			db.close()
 		},

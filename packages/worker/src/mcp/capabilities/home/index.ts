@@ -146,7 +146,7 @@ export async function synthesizeHomeDomain(
 			name: capabilityDomainNames.home,
 			description:
 				'Home automation capabilities discovered from the connected home connector.',
-			keywords: ['home', 'roku', 'automation', 'devices'],
+			keywords: ['home', 'roku', 'lutron', 'automation', 'devices'],
 			capabilities,
 		}),
 		bindings,

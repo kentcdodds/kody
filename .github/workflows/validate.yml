@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: 🟢 Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -59,7 +59,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: 🟢 Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -82,7 +82,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: 🟢 Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -105,7 +105,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: 🟢 Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -120,6 +120,9 @@ jobs:
 
       - name: 📥 Install Dependencies
         run: npm ci
+
+      - name: 📝 Prepare worker env
+        run: cp packages/worker/.env.example packages/worker/.env
 
       - name: 🎭 Install Playwright Browsers
         run: npm run test:e2e:install
@@ -142,13 +145,16 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: 🟢 Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
 
       - name: 📥 Install Dependencies
         run: npm ci
+
+      - name: 📝 Prepare worker env
+        run: cp packages/worker/.env.example packages/worker/.env
 
       - name: 🗄️ Apply D1 Migrations
         run: npm run migrate:local

@@ -3,6 +3,8 @@ import { html } from 'remix/html-template'
 import { render } from './render.ts'
 import { RootLayout } from './root.ts'
 import { type routes } from './routes.ts'
+import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
+import { type LutronDiscoveryDiagnostics } from '../src/adapters/lutron/types.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
@@ -17,6 +19,8 @@ function renderQuickLinks(state: HomeConnectorState) {
 	return html`<ul class="list">
 		<li><a href="/roku/status">Roku status</a></li>
 		<li><a href="/roku/setup">Roku setup</a></li>
+		<li><a href="/lutron/status">Lutron status</a></li>
+		<li><a href="/lutron/setup">Lutron setup</a></li>
 		<li><a href="/samsung-tv/status">Samsung TV status</a></li>
 		<li><a href="/samsung-tv/setup">Samsung TV setup</a></li>
 		<li><a href="/health">Health JSON</a></li>
@@ -51,6 +55,7 @@ function renderInfoRows(
 
 export function createHomeDashboardHandler(
 	state: HomeConnectorState,
+	lutron: ReturnType<typeof createLutronAdapter>,
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 ) {
 	return {
@@ -62,6 +67,7 @@ export function createHomeDashboardHandler(
 			const adoptedCount = state.devices.filter(
 				(device) => device.adopted,
 			).length
+			const lutronStatus = lutron.getStatus()
 			const samsungStatus = samsungTv.getStatus()
 
 			return render(
@@ -119,6 +125,14 @@ export function createHomeDashboardHandler(
 									{
 										label: 'Roku discovered',
 										value: String(discoveredCount),
+									},
+									{
+										label: 'Lutron processors',
+										value: String(lutronStatus.processors.length),
+									},
+									{
+										label: 'Lutron credentials',
+										value: String(lutronStatus.configuredCredentialsCount),
 									},
 									{
 										label: 'Samsung adopted',
@@ -189,6 +203,268 @@ function formatJson(value: unknown) {
 
 function renderCodeBlock(value: string) {
 	return html`<pre><code>${value}</code></pre>`
+}
+
+function renderLutronDiscoveryDiagnostics(
+	diagnostics: LutronDiscoveryDiagnostics | null,
+) {
+	if (!diagnostics) {
+		return html`<p class="muted">No Lutron scan diagnostics captured yet.</p>`
+	}
+
+	return html`
+		<section class="card">
+			<h2>Discovery diagnostics</h2>
+			${renderInfoRows([
+				{ label: 'Protocol', value: diagnostics.protocol },
+				{
+					label: 'Discovery URL',
+					value: html`<code>${diagnostics.discoveryUrl}</code>`,
+				},
+				{ label: 'Last scan', value: diagnostics.scannedAt },
+				{ label: 'Services', value: String(diagnostics.services.length) },
+				{ label: 'Errors', value: String(diagnostics.errors.length) },
+			])}
+		</section>
+		${diagnostics.jsonResponse
+			? html`<section class="card">
+					<h2>Raw discovery payload</h2>
+					${renderCodeBlock(formatJson(diagnostics.jsonResponse))}
+				</section>`
+			: ''}
+		<section class="card">
+			<h2>Resolved services</h2>
+			${diagnostics.services.length === 0
+				? html`<p class="muted">No Lutron services were captured.</p>`
+				: html`<ul class="list">
+						${diagnostics.services.map(
+							(service) =>
+								html`<li class="card">
+									<div>Instance: <code>${service.instanceName}</code></div>
+									<div>Host: <code>${service.host ?? 'unknown'}</code></div>
+									<div>Port: ${service.port ?? 'unknown'}</div>
+									<div>
+										Address: <code>${service.address ?? 'unknown'}</code>
+									</div>
+									${renderCodeBlock(service.raw)}
+								</li>`,
+						)}
+					</ul>`}
+		</section>
+		${diagnostics.errors.length === 0
+			? ''
+			: html`<section class="card">
+					<h2>Discovery errors</h2>
+					<ul class="list">
+						${diagnostics.errors.map((error) => html`<li>${error}</li>`)}
+					</ul>
+				</section>`}
+	`
+}
+
+function renderLutronProcessorList(
+	label: string,
+	processors: Array<{
+		processorId: string
+		name: string
+		host: string
+		leapPort: number
+		discoveryPort: number | null
+		systemType: string | null
+		codeVersion: string | null
+		hasStoredCredentials: boolean
+		lastSeenAt: string | null
+		lastAuthenticatedAt: string | null
+		lastAuthError: string | null
+	}>,
+) {
+	if (processors.length === 0) {
+		return html`<p class="muted">No ${label} Lutron processors.</p>`
+	}
+
+	return html`<ul class="list">
+		${processors.map(
+			(processor) =>
+				html`<li class="card">
+					<strong>${processor.name}</strong>
+					<div>ID: <code>${processor.processorId}</code></div>
+					<div>Host: <code>${processor.host}</code></div>
+					<div>LEAP port: ${processor.leapPort}</div>
+					<div>Discovery port: ${processor.discoveryPort ?? 'unknown'}</div>
+					<div>System type: ${processor.systemType ?? 'unknown'}</div>
+					<div>Code version: ${processor.codeVersion ?? 'unknown'}</div>
+					<div>
+						Credentials:
+						${processor.hasStoredCredentials ? 'stored' : 'missing'}
+					</div>
+					<div>Last seen: ${processor.lastSeenAt ?? 'unknown'}</div>
+					<div>
+						Last auth:
+						${processor.lastAuthenticatedAt ??
+						processor.lastAuthError ??
+						'never'}
+					</div>
+				</li>`,
+		)}
+	</ul>`
+}
+
+function renderLutronStatusPage(input: {
+	state: HomeConnectorState
+	status: ReturnType<ReturnType<typeof createLutronAdapter>['getStatus']>
+	scanMessage?: string | null
+	scanError?: string | null
+}) {
+	const withCredentials = input.status.processors.filter(
+		(processor) => processor.hasStoredCredentials,
+	)
+	const withoutCredentials = input.status.processors.filter(
+		(processor) => !processor.hasStoredCredentials,
+	)
+
+	return render(
+		RootLayout({
+			title: 'home connector - lutron status',
+			body: html`<section class="card">
+					<h1>Lutron status</h1>
+					<p class="muted">
+						Current connectivity and discovery state for Lutron processors
+						managed by this connector.
+					</p>
+					<form method="POST">
+						<button type="submit">Scan now</button>
+					</form>
+					<div class="status-grid">
+						<div>
+							<strong>Worker connection</strong>
+							<div>
+								${input.state.connection.connected
+									? 'connected'
+									: 'disconnected'}
+							</div>
+						</div>
+						<div>
+							<strong>Connector ID</strong>
+							<div>${input.state.connection.connectorId}</div>
+						</div>
+						<div>
+							<strong>Stored credentials</strong>
+							<div>${input.status.configuredCredentialsCount}</div>
+						</div>
+					</div>
+				</section>
+				${input.scanMessage
+					? renderBanner({
+							tone: 'success',
+							message: input.scanMessage,
+						})
+					: ''}
+				${input.scanError
+					? renderBanner({
+							tone: 'error',
+							message: input.scanError,
+						})
+					: ''}
+				<section class="card">
+					<h2>Processors with credentials</h2>
+					${renderLutronProcessorList('configured', withCredentials)}
+				</section>
+				<section class="card">
+					<h2>Processors missing credentials</h2>
+					${renderLutronProcessorList('discovered', withoutCredentials)}
+				</section>
+				${renderLutronDiscoveryDiagnostics(
+					input.state.lutronDiscoveryDiagnostics,
+				)}`,
+		}),
+	)
+}
+
+export function createLutronStatusHandler(
+	state: HomeConnectorState,
+	lutron: ReturnType<typeof createLutronAdapter>,
+) {
+	return {
+		middleware: [],
+		async action({ request }: { request: Request }) {
+			if (request.method === 'POST') {
+				try {
+					const processors = await lutron.scan()
+					return renderLutronStatusPage({
+						state,
+						status: lutron.getStatus(),
+						scanMessage: `Scan complete. Discovered ${processors.length} Lutron processor(s).`,
+					})
+				} catch (error) {
+					return renderLutronStatusPage({
+						state,
+						status: lutron.getStatus(),
+						scanError:
+							error instanceof Error
+								? `Scan failed: ${error.message}`
+								: `Scan failed: ${String(error)}`,
+					})
+				}
+			}
+
+			return renderLutronStatusPage({
+				state,
+				status: lutron.getStatus(),
+			})
+		},
+	} satisfies BuildAction<
+		typeof routes.lutronStatus.method,
+		typeof routes.lutronStatus.pattern
+	>
+}
+
+export function createLutronSetupHandler(
+	state: HomeConnectorState,
+	lutron: ReturnType<typeof createLutronAdapter>,
+) {
+	return {
+		middleware: [],
+		async action() {
+			const status = lutron.getStatus()
+			const diagnostics = [
+				`Worker URL: ${state.connection.workerUrl}`,
+				`Connector ID: ${state.connection.connectorId}`,
+				`Lutron discovery URL: ${state.lutronDiscoveryDiagnostics?.discoveryUrl ?? 'not scanned yet'}`,
+				`Discovered processors: ${String(status.processors.length)}`,
+				`Stored credentials: ${String(status.configuredCredentialsCount)}`,
+				state.connection.mocksEnabled
+					? 'Mocks are enabled for this connector instance.'
+					: 'Mocks are disabled for this connector instance.',
+				state.connection.lastError
+					? `Last connector error: ${state.connection.lastError}`
+					: 'No connector error recorded.',
+			]
+
+			return render(
+				RootLayout({
+					title: 'home connector - lutron setup',
+					body: html`<section class="card">
+						<h1>Lutron setup</h1>
+						<p class="muted">
+							Review connector registration, discovery status, and credential
+							state for Lutron processors.
+						</p>
+						<ul class="list">
+							${diagnostics.map((line) => html`<li>${line}</li>`)}
+						</ul>
+						<p class="muted">
+							V1 keeps this page read-only while discovery, credential
+							association, and diagnostics flow through the connector state and
+							Lutron adapter.
+						</p>
+					</section>`,
+				}),
+			)
+		},
+	} satisfies BuildAction<
+		typeof routes.lutronSetup.method,
+		typeof routes.lutronSetup.pattern
+	>
 }
 
 function renderRokuDiscoveryDiagnostics(
