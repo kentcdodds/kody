@@ -37,9 +37,9 @@ function decodeTxtValue(value: string) {
 
 function parseTxtLine(line: string) {
 	const values: Record<string, string> = {}
-	const matches = line.matchAll(/([A-Z0-9_]+)=((?:(?! [A-Z0-9_]+=).)+)/g)
+	const matches = line.matchAll(/([\w-]+)=((?:(?! [\w-]+=).)+)/gi)
 	for (const match of matches) {
-		const key = match[1]?.trim()
+		const key = match[1]?.trim().toUpperCase()
 		const value = match[2]?.trim()
 		if (!key || typeof value !== 'string') continue
 		values[key] = decodeTxtValue(value)

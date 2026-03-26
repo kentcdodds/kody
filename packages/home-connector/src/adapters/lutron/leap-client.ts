@@ -66,9 +66,27 @@ function createTlsSocket(input: { host: string; port: number }) {
 	})
 }
 
+const pendingLeapBuffers = new WeakMap<TLSSocket, Buffer>()
+
+function setPendingBuffer(socket: TLSSocket, buffer: Buffer) {
+	if (buffer.length === 0) {
+		pendingLeapBuffers.delete(socket)
+		return
+	}
+	pendingLeapBuffers.set(socket, buffer)
+}
+
 function readNextLine(socket: TLSSocket) {
 	return new Promise<string>((resolve, reject) => {
-		const chunks: Array<Buffer> = []
+		let buffer = pendingLeapBuffers.get(socket) ?? Buffer.alloc(0)
+		const initialNewlineIndex = buffer.indexOf(0x0a)
+		if (initialNewlineIndex !== -1) {
+			const lineBuffer = buffer.subarray(0, initialNewlineIndex)
+			const remainder = buffer.subarray(initialNewlineIndex + 1)
+			setPendingBuffer(socket, remainder)
+			resolve(lineBuffer.toString('utf8').trim())
+			return
+		}
 
 		function cleanup() {
 			socket.off('data', onData)
@@ -76,15 +94,23 @@ function readNextLine(socket: TLSSocket) {
 			socket.off('close', onClose)
 		}
 
-		function finish() {
+		function finish(result: Buffer, remainder?: Buffer) {
 			cleanup()
-			resolve(Buffer.concat(chunks).toString('utf8').trim())
+			if (remainder) {
+				setPendingBuffer(socket, remainder)
+			} else {
+				setPendingBuffer(socket, Buffer.alloc(0))
+			}
+			resolve(result.toString('utf8').trim())
 		}
 
 		function onData(chunk: Buffer) {
-			chunks.push(chunk)
-			if (chunk.includes(0x0a)) {
-				finish()
+			buffer = buffer.length === 0 ? chunk : Buffer.concat([buffer, chunk])
+			const newlineIndex = buffer.indexOf(0x0a)
+			if (newlineIndex !== -1) {
+				const lineBuffer = buffer.subarray(0, newlineIndex)
+				const remainder = buffer.subarray(newlineIndex + 1)
+				finish(lineBuffer, remainder)
 			}
 		}
 
@@ -94,7 +120,7 @@ function readNextLine(socket: TLSSocket) {
 		}
 
 		function onClose() {
-			finish()
+			finish(buffer)
 		}
 
 		socket.on('data', onData)
