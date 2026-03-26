@@ -33,7 +33,6 @@ export default mergeConfig(
 				'packages/home-connector/src/**/*.test.ts',
 				'packages/worker/src/app/**/*.test.ts',
 				'packages/worker/src/mcp/generated-ui-app-base-url.test.ts',
-				'packages/worker/src/mcp/run-codemode-registry.test.ts',
 				'packages/worker/src/mcp/github/**/*.test.ts',
 				'packages/worker/src/mcp/cursor/**/*.test.ts',
 				'packages/worker/src/mcp/cloudflare/**/*.test.ts',
