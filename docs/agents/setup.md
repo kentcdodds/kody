@@ -44,7 +44,9 @@ Quick notes for getting a local kody environment running.
   it to both the worker and the connector so the outbound registration handshake
   succeeds in local development.)
 - The home automation connector now lives in `packages/home-connector`.
-  - `npm run dev:home-connector` starts the local connector app on Node 24.
+  - `npm run dev:home-connector` starts the local connector app on Node 24 with
+    `node --watch`, so connector code changes automatically restart the local
+    process.
   - The connector uses the `kentcdodds.com` mock bootstrap shape: only
     `packages/home-connector/index.ts` imports `packages/home-connector/mocks/`
     when `MOCKS=true`.
