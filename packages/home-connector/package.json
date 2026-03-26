@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server/dev-server.ts",
+    "dev": "node --watch server/dev-server.ts",
     "start": "NODE_ENV=production node --import ./src/sentry-init.ts index.ts",
     "start:mocks": "MOCKS=true ROKU_DISCOVERY_URL=http://roku.mock.local/discovery NODE_ENV=production node --import ./src/sentry-init.ts index.ts",
     "test": "vitest run --root ../.. --project node-unit packages/home-connector/src"
