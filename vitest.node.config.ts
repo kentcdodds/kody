@@ -30,7 +30,6 @@ export default mergeConfig(
 			name: 'node-unit',
 			environment: 'node',
 			include: [
-				'tools/dev-process-output.test.ts',
 				'packages/home-connector/src/**/*.test.ts',
 				'packages/worker/src/app/**/*.test.ts',
 				'packages/worker/src/mcp/generated-ui-app-base-url.test.ts',
