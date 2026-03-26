@@ -53,11 +53,7 @@ test('lutron inventory and commands work in mock mode with stored credentials', 
 	try {
 		const processors = await lutron.scan()
 		const processorId = processors[0]!.processorId
-		lutron.setCredentials(
-			processorId,
-			'mock-lutron-user',
-			'mock-lutron-pass',
-		)
+		lutron.setCredentials(processorId, 'mock-lutron-user', 'mock-lutron-pass')
 
 		await lutron.authenticate(processorId)
 		const inventory = await lutron.getInventory(processorId)

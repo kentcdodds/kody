@@ -147,7 +147,9 @@ function getUpsertLutronProcessorStatement(storage: HomeConnectorStorage) {
 	`)
 }
 
-function getDeleteMissingLutronProcessorsStatement(storage: HomeConnectorStorage) {
+function getDeleteMissingLutronProcessorsStatement(
+	storage: HomeConnectorStorage,
+) {
 	return storage.db.query(`
 		DELETE FROM lutron_processors AS processor
 		WHERE processor.connector_id = ?
@@ -198,7 +200,9 @@ export function listLutronProcessors(
 	storage: HomeConnectorStorage,
 	connectorId: string,
 ) {
-	return selectLutronProcessorRows(storage, connectorId).map(mapLutronProcessorRow)
+	return selectLutronProcessorRows(storage, connectorId).map(
+		mapLutronProcessorRow,
+	)
 }
 
 export function getLutronProcessor(
@@ -249,7 +253,10 @@ export function upsertDiscoveredLutronProcessors(
 	const processorIds = JSON.stringify(
 		processors.map((processor) => processor.processorId),
 	)
-	getDeleteMissingLutronProcessorsStatement(storage).run(connectorId, processorIds)
+	getDeleteMissingLutronProcessorsStatement(storage).run(
+		connectorId,
+		processorIds,
+	)
 
 	return listLutronProcessors(storage, connectorId)
 }

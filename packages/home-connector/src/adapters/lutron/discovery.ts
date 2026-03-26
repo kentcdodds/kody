@@ -165,7 +165,9 @@ async function discoverFromMdns(
 	return {
 		processors: services
 			.map((service) => mapDiscoveredServiceToProcessor(service))
-			.filter((service): service is LutronDiscoveredProcessor => service !== null),
+			.filter(
+				(service): service is LutronDiscoveredProcessor => service !== null,
+			),
 		diagnostics: {
 			protocol: 'mdns',
 			discoveryUrl,

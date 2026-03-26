@@ -36,7 +36,9 @@ export async function discoverMdnsServices(input: {
 	timeoutMs?: number
 }) {
 	const timeoutMs = input.timeoutMs ?? 4_000
-	const serviceName = input.serviceType.replace(/^_/, '').replace(/\._(tcp|udp)$/, '')
+	const serviceName = input.serviceType
+		.replace(/^_/, '')
+		.replace(/\._(tcp|udp)$/, '')
 	const protocol = input.serviceType.includes('._udp') ? 'udp' : 'tcp'
 	const browser = bonjour()
 
@@ -53,7 +55,11 @@ export async function discoverMdnsServices(input: {
 			} catch {
 				// Ignore cleanup failures.
 			}
-			resolve([...services.values()].sort((left, right) => left.instanceName.localeCompare(right.instanceName)))
+			resolve(
+				[...services.values()].sort((left, right) =>
+					left.instanceName.localeCompare(right.instanceName),
+				),
+			)
 		}
 
 		const timer = setTimeout(finish, timeoutMs)
@@ -64,16 +70,23 @@ export async function discoverMdnsServices(input: {
 					protocol,
 				},
 				(service) => {
-					const key = service.fqdn || `${service.name}.${service.type}.${service.protocol}`
+					const key =
+						service.fqdn ||
+						`${service.name}.${service.type}.${service.protocol}`
 					const txtLine = Object.entries(service.txt ?? {})
-						.map(([txtKey, txtValue]) => `${txtKey}=${normalizeTxtValue(txtValue as BonjourTxt)}`)
+						.map(
+							([txtKey, txtValue]) =>
+								`${txtKey}=${normalizeTxtValue(txtValue as BonjourTxt)}`,
+						)
 						.join(' ')
 					const host = service.host?.replace(/\.$/, '') ?? null
 					const address =
 						Array.isArray(service.addresses) && service.addresses.length > 0
-							? service.addresses.find((entry) => /^\d+\.\d+\.\d+\.\d+$/.test(entry)) ??
+							? (service.addresses.find((entry) =>
+									/^\d+\.\d+\.\d+\.\d+$/.test(entry),
+								) ??
 								service.addresses[0] ??
-								null
+								null)
 							: null
 
 					services.set(key, {

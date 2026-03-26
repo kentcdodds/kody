@@ -18,15 +18,15 @@ on the Epic Web E2E workshop and our existing setup.
 - Integration across the worker, client router, and API endpoints when that
   journey is central to the product.
 
-Avoid testing implementation details, styling, or pure utility functions.
-Avoid adding E2E coverage for edge cases, low-probability regressions, or bug
-fixes that are unlikely to recur.
+Avoid testing implementation details, styling, or pure utility functions. Avoid
+adding E2E coverage for edge cases, low-probability regressions, or bug fixes
+that are unlikely to recur.
 
 ## Bar for adding a test
 
 - Default to not adding a new E2E test.
-- Add one only when the flow is both user-critical and hard to cover with
-  faster tests.
+- Add one only when the flow is both user-critical and hard to cover with faster
+  tests.
 - Prefer a single broad happy-path journey over multiple narrow regression
   cases.
 - If a bug is unlikely to show up again, do not add an E2E test just to lock in

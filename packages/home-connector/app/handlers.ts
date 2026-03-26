@@ -243,7 +243,9 @@ function renderLutronDiscoveryDiagnostics(
 									<div>Instance: <code>${service.instanceName}</code></div>
 									<div>Host: <code>${service.host ?? 'unknown'}</code></div>
 									<div>Port: ${service.port ?? 'unknown'}</div>
-									<div>Address: <code>${service.address ?? 'unknown'}</code></div>
+									<div>
+										Address: <code>${service.address ?? 'unknown'}</code>
+									</div>
 									${renderCodeBlock(service.raw)}
 								</li>`,
 						)}
@@ -295,7 +297,9 @@ function renderLutronProcessorList(
 					<div>Last seen: ${processor.lastSeenAt ?? 'unknown'}</div>
 					<div>
 						Last auth:
-						${processor.lastAuthenticatedAt ?? processor.lastAuthError ?? 'never'}
+						${processor.lastAuthenticatedAt ??
+						processor.lastAuthError ??
+						'never'}
 					</div>
 				</li>`,
 		)}
@@ -366,7 +370,9 @@ function renderLutronStatusPage(input: {
 					<h2>Processors missing credentials</h2>
 					${renderLutronProcessorList('discovered', withoutCredentials)}
 				</section>
-				${renderLutronDiscoveryDiagnostics(input.state.lutronDiscoveryDiagnostics)}`,
+				${renderLutronDiscoveryDiagnostics(
+					input.state.lutronDiscoveryDiagnostics,
+				)}`,
 		}),
 	)
 }

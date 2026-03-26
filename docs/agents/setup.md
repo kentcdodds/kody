@@ -63,23 +63,20 @@ Quick notes for getting a local kody environment running.
     `HOME_CONNECTOR_MOCKS=false` becomes `MOCKS=false` and
     `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` becomes `ROKU_DISCOVERY_URL=...`.
     Likewise, `HOME_CONNECTOR_LUTRON_DISCOVERY_URL=...` becomes
-    `LUTRON_DISCOVERY_URL=...`,
-    `HOME_CONNECTOR_SAMSUNG_TV_DISCOVERY_URL=...` becomes
-    `SAMSUNG_TV_DISCOVERY_URL=...`, `HOME_CONNECTOR_DATA_PATH=...` becomes
-    `HOME_CONNECTOR_DATA_PATH=...`, and `HOME_CONNECTOR_DB_PATH=...` becomes
-    `HOME_CONNECTOR_DB_PATH=...` in the connector process.
+    `LUTRON_DISCOVERY_URL=...`, `HOME_CONNECTOR_SAMSUNG_TV_DISCOVERY_URL=...`
+    becomes `SAMSUNG_TV_DISCOVERY_URL=...`, `HOME_CONNECTOR_DATA_PATH=...`
+    becomes `HOME_CONNECTOR_DATA_PATH=...`, and `HOME_CONNECTOR_DB_PATH=...`
+    becomes `HOME_CONNECTOR_DB_PATH=...` in the connector process.
   - When `ROKU_DISCOVERY_URL` is unset, the connector defaults Roku discovery to
     SSDP at `ssdp://239.255.255.250:1900`.
   - When `LUTRON_DISCOVERY_URL` is unset, the connector defaults Lutron
     discovery to `mdns://_lutron._tcp.local`. Live discovery now uses one
     cross-platform pure-JS mDNS path, so the same code works on macOS and in
-    Linux containers as long as the process has multicast visibility to the
-    LAN.
+    Linux containers as long as the process has multicast visibility to the LAN.
   - When `SAMSUNG_TV_DISCOVERY_URL` is unset, the connector defaults Samsung TV
     discovery to `mdns://_samsungmsf._tcp.local`. Live discovery uses the same
     cross-platform pure-JS mDNS path, so the same code works on macOS and in
-    Linux containers as long as the process has multicast visibility to the
-    LAN.
+    Linux containers as long as the process has multicast visibility to the LAN.
   - Samsung TV pairing tokens/device metadata and Lutron processor
     credentials/metadata are persisted locally in a SQLite database. By default
     the connector stores that DB at

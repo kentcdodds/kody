@@ -16,7 +16,11 @@ import {
 	authenticateLutronProcessor,
 	loadLutronInventory,
 	pressLutronButton,
+	setLutronShadeLevel,
+	setLutronZoneColor,
 	setLutronZoneLevel,
+	setLutronZoneSwitchedLevel,
+	setLutronZoneWhiteTuning,
 } from './leap-client.ts'
 import {
 	listLutronProcessors,
@@ -169,8 +173,7 @@ export function createLutronAdapter(input: {
 					connectorId: input.config.homeConnectorId,
 					processorId,
 					lastAuthenticatedAt: null,
-					lastAuthError:
-						error instanceof Error ? error.message : String(error),
+					lastAuthError: error instanceof Error ? error.message : String(error),
 				})
 				throw error
 			}
@@ -194,7 +197,7 @@ export function createLutronAdapter(input: {
 						: await loadLutronInventory({
 								processor,
 								credentials,
-						  })
+							})
 				updateLutronAuthStatus({
 					storage: input.storage,
 					connectorId: input.config.homeConnectorId,
@@ -209,8 +212,7 @@ export function createLutronAdapter(input: {
 					connectorId: input.config.homeConnectorId,
 					processorId,
 					lastAuthenticatedAt: null,
-					lastAuthError:
-						error instanceof Error ? error.message : String(error),
+					lastAuthError: error instanceof Error ? error.message : String(error),
 				})
 				throw error
 			}
@@ -230,7 +232,7 @@ export function createLutronAdapter(input: {
 								processor,
 								credentials,
 								buttonId,
-						  })
+							})
 				updateLutronAuthStatus({
 					storage: input.storage,
 					connectorId: input.config.homeConnectorId,
@@ -250,8 +252,7 @@ export function createLutronAdapter(input: {
 					connectorId: input.config.homeConnectorId,
 					processorId,
 					lastAuthenticatedAt: null,
-					lastAuthError:
-						error instanceof Error ? error.message : String(error),
+					lastAuthError: error instanceof Error ? error.message : String(error),
 				})
 				throw error
 			}
@@ -272,7 +273,7 @@ export function createLutronAdapter(input: {
 								credentials,
 								zoneId,
 								level,
-						  })
+							})
 				updateLutronAuthStatus({
 					storage: input.storage,
 					connectorId: input.config.homeConnectorId,
@@ -293,8 +294,191 @@ export function createLutronAdapter(input: {
 					connectorId: input.config.homeConnectorId,
 					processorId,
 					lastAuthenticatedAt: null,
-					lastAuthError:
-						error instanceof Error ? error.message : String(error),
+					lastAuthError: error instanceof Error ? error.message : String(error),
+				})
+				throw error
+			}
+		},
+		async setZoneColor(
+			processorId: string,
+			zoneId: string,
+			inputColor: {
+				hue: number
+				saturation: number
+				level?: number
+				vibrancy?: number
+			},
+		) {
+			const processor = requireLutronProcessor(
+				input.storage,
+				input.config.homeConnectorId,
+				processorId,
+			)
+			const credentials = requireLutronCredentials(processor)
+			try {
+				const response = await setLutronZoneColor({
+					processor,
+					credentials,
+					zoneId,
+					hue: inputColor.hue,
+					saturation: inputColor.saturation,
+					level: inputColor.level,
+					vibrancy: inputColor.vibrancy,
+				})
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: new Date().toISOString(),
+					lastAuthError: null,
+				})
+				return {
+					ok: true,
+					processorId,
+					zoneId,
+					hue: inputColor.hue,
+					saturation: inputColor.saturation,
+					level: inputColor.level ?? null,
+					vibrancy: inputColor.vibrancy ?? null,
+					response,
+				}
+			} catch (error) {
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: null,
+					lastAuthError: error instanceof Error ? error.message : String(error),
+				})
+				throw error
+			}
+		},
+		async setZoneWhiteTuning(
+			processorId: string,
+			zoneId: string,
+			inputWhiteTuning: {
+				kelvin: number
+				level?: number
+			},
+		) {
+			const processor = requireLutronProcessor(
+				input.storage,
+				input.config.homeConnectorId,
+				processorId,
+			)
+			const credentials = requireLutronCredentials(processor)
+			try {
+				const response = await setLutronZoneWhiteTuning({
+					processor,
+					credentials,
+					zoneId,
+					kelvin: inputWhiteTuning.kelvin,
+					level: inputWhiteTuning.level,
+				})
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: new Date().toISOString(),
+					lastAuthError: null,
+				})
+				return {
+					ok: true,
+					processorId,
+					zoneId,
+					kelvin: inputWhiteTuning.kelvin,
+					level: inputWhiteTuning.level ?? null,
+					response,
+				}
+			} catch (error) {
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: null,
+					lastAuthError: error instanceof Error ? error.message : String(error),
+				})
+				throw error
+			}
+		},
+		async setZoneSwitchedLevel(
+			processorId: string,
+			zoneId: string,
+			state: 'On' | 'Off',
+		) {
+			const processor = requireLutronProcessor(
+				input.storage,
+				input.config.homeConnectorId,
+				processorId,
+			)
+			const credentials = requireLutronCredentials(processor)
+			try {
+				const response = await setLutronZoneSwitchedLevel({
+					processor,
+					credentials,
+					zoneId,
+					state,
+				})
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: new Date().toISOString(),
+					lastAuthError: null,
+				})
+				return {
+					ok: true,
+					processorId,
+					zoneId,
+					state,
+					response,
+				}
+			} catch (error) {
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: null,
+					lastAuthError: error instanceof Error ? error.message : String(error),
+				})
+				throw error
+			}
+		},
+		async setShadeLevel(processorId: string, zoneId: string, level: number) {
+			const processor = requireLutronProcessor(
+				input.storage,
+				input.config.homeConnectorId,
+				processorId,
+			)
+			const credentials = requireLutronCredentials(processor)
+			try {
+				const response = await setLutronShadeLevel({
+					processor,
+					credentials,
+					zoneId,
+					level,
+				})
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: new Date().toISOString(),
+					lastAuthError: null,
+				})
+				return {
+					ok: true,
+					processorId,
+					zoneId,
+					level,
+					response,
+				}
+			} catch (error) {
+				updateLutronAuthStatus({
+					storage: input.storage,
+					connectorId: input.config.homeConnectorId,
+					processorId,
+					lastAuthenticatedAt: null,
+					lastAuthError: error instanceof Error ? error.message : String(error),
 				})
 				throw error
 			}

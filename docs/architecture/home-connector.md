@@ -18,10 +18,10 @@ to the Worker through the existing outbound WebSocket session to
 
 ## Lutron integration
 
-The Lutron adapter lives under
-`packages/home-connector/src/adapters/lutron/` and supports a generic,
-runtime-discovered subset of HomeWorks QSX capabilities that have been validated
-against a live processor and represented in sanitized mock fixtures:
+The Lutron adapter lives under `packages/home-connector/src/adapters/lutron/`
+and supports a generic, runtime-discovered subset of HomeWorks QSX capabilities
+that have been validated against a live processor and represented in sanitized
+mock fixtures:
 
 - discover processors on the local network via `_lutron._tcp`
 - persist discovered processor identity locally
@@ -112,8 +112,8 @@ Samsung discovery defaults to `mdns://_samsungmsf._tcp.local`.
 Lutron discovery defaults to `mdns://_lutron._tcp.local`.
 
 The connector now uses one shared pure-JavaScript mDNS discovery path for both
-Samsung and Lutron, so discovery behavior is consistent across macOS, Linux,
-and containers. Live discovery still requires the process or container to have
+Samsung and Lutron, so discovery behavior is consistent across macOS, Linux, and
+containers. Live discovery still requires the process or container to have
 multicast visibility on the local network.
 
 In local development with `MOCKS=true`, the connector uses mock Samsung TV and

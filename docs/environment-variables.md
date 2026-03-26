@@ -145,8 +145,7 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   sets `MOCKS=false` for `packages/home-connector`, and
   `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`. This
   also applies to `HOME_CONNECTOR_LUTRON_DISCOVERY_URL=...`,
-  `HOME_CONNECTOR_SENTRY_DSN`,
-  `HOME_CONNECTOR_SENTRY_ENVIRONMENT`, and
+  `HOME_CONNECTOR_SENTRY_DSN`, `HOME_CONNECTOR_SENTRY_ENVIRONMENT`, and
   `HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE`.
 - `ROKU_DISCOVERY_URL` — optional connector env var. Defaults to
   `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
@@ -183,8 +182,7 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
 - `HOME_CONNECTOR_DB_PATH` — optional connector env var. Full path to the local
   SQLite file used by the home connector to persist Samsung TV device metadata,
   Samsung pairing tokens, and Lutron discovered processor + credential state
-  across restarts. Overrides the derived
-  `HOME_CONNECTOR_DATA_PATH` location.
+  across restarts. Overrides the derived `HOME_CONNECTOR_DATA_PATH` location.
 
 ## Why Zod?
 

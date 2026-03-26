@@ -61,7 +61,11 @@ function createTlsSocket(input: { host: string; port: number }) {
 
 		socket.once('timeout', () => {
 			socket.destroy()
-			reject(new Error(`Lutron TLS connection to ${input.host}:${String(input.port)} timed out.`))
+			reject(
+				new Error(
+					`Lutron TLS connection to ${input.host}:${String(input.port)} timed out.`,
+				),
+			)
 		})
 	})
 }
@@ -173,12 +177,18 @@ function isNoContent(response: LeapResponse) {
 
 function assertSuccessfulResponse(response: LeapResponse, action: string) {
 	const statusCode = getStatusCode(response)
-	if (statusCode.startsWith('200') || statusCode.startsWith('204')) {
+	if (
+		statusCode.startsWith('200') ||
+		statusCode.startsWith('201') ||
+		statusCode.startsWith('204')
+	) {
 		return
 	}
 
 	const details = response.Body ? JSON.stringify(response.Body) : statusCode
-	throw new Error(`Lutron ${action} failed with ${statusCode || 'unknown status'}: ${details}`)
+	throw new Error(
+		`Lutron ${action} failed with ${statusCode || 'unknown status'}: ${details}`,
+	)
 }
 
 export async function createLutronLeapClient(
@@ -226,27 +236,39 @@ export async function createLutronLeapClient(
 }
 
 function mapZoneStatus(response: LeapResponse): LutronZoneStatus | null {
-	const zoneStatus = (response.Body?.['ZoneStatus'] as Record<string, unknown> | undefined) ?? null
+	const zoneStatus =
+		(response.Body?.['ZoneStatus'] as Record<string, unknown> | undefined) ??
+		null
 	if (!zoneStatus) return null
 
 	const colorTuningStatus =
-		(zoneStatus['ColorTuningStatus'] as Record<string, unknown> | undefined) ?? {}
+		(zoneStatus['ColorTuningStatus'] as Record<string, unknown> | undefined) ??
+		{}
 	const hsv =
-		(colorTuningStatus['HSVTuningLevel'] as Record<string, unknown> | undefined) ?? {}
+		(colorTuningStatus['HSVTuningLevel'] as
+			| Record<string, unknown>
+			| undefined) ?? {}
 	const white =
-		(colorTuningStatus['WhiteTuningLevel'] as Record<string, unknown> | undefined) ?? {}
+		(colorTuningStatus['WhiteTuningLevel'] as
+			| Record<string, unknown>
+			| undefined) ?? {}
 
 	return {
 		level: typeof zoneStatus['Level'] === 'number' ? zoneStatus['Level'] : null,
 		switchedLevel:
-			zoneStatus['SwitchedLevel'] === 'On' || zoneStatus['SwitchedLevel'] === 'Off'
+			zoneStatus['SwitchedLevel'] === 'On' ||
+			zoneStatus['SwitchedLevel'] === 'Off'
 				? zoneStatus['SwitchedLevel']
 				: null,
-		vibrancy: typeof zoneStatus['Vibrancy'] === 'number' ? zoneStatus['Vibrancy'] : null,
+		vibrancy:
+			typeof zoneStatus['Vibrancy'] === 'number'
+				? zoneStatus['Vibrancy']
+				: null,
 		whiteTuningKelvin:
 			typeof white['Kelvin'] === 'number' ? white['Kelvin'] : null,
 		hue: typeof hsv['Hue'] === 'number' ? hsv['Hue'] : null,
-		saturation: typeof hsv['Saturation'] === 'number' ? hsv['Saturation'] : null,
+		saturation:
+			typeof hsv['Saturation'] === 'number' ? hsv['Saturation'] : null,
 		statusAccuracy:
 			typeof zoneStatus['StatusAccuracy'] === 'string'
 				? zoneStatus['StatusAccuracy']
@@ -259,7 +281,9 @@ function mapZoneStatus(response: LeapResponse): LutronZoneStatus | null {
 }
 
 function mapLedState(response: LeapResponse) {
-	const ledStatus = (response.Body?.['LEDStatus'] as Record<string, unknown> | undefined) ?? null
+	const ledStatus =
+		(response.Body?.['LEDStatus'] as Record<string, unknown> | undefined) ??
+		null
 	if (!ledStatus) return null
 	return ledStatus['State'] === 'On' || ledStatus['State'] === 'Off'
 		? ledStatus['State']
@@ -270,20 +294,25 @@ function mapAssociatedGangedDevices(
 	devices: Array<Record<string, unknown>>,
 ): Array<LutronAssociatedGangedDevice> {
 	return devices.flatMap((entry) => {
-		const device = (entry['Device'] as Record<string, unknown> | undefined) ?? null
+		const device =
+			(entry['Device'] as Record<string, unknown> | undefined) ?? null
 		if (!device || typeof device['href'] !== 'string') return []
 		return [
 			{
 				deviceId: extractResourceId(device['href']),
 				href: device['href'],
 				deviceType:
-					typeof device['DeviceType'] === 'string' ? device['DeviceType'] : 'Unknown',
+					typeof device['DeviceType'] === 'string'
+						? device['DeviceType']
+						: 'Unknown',
 				addressedState:
 					typeof device['AddressedState'] === 'string'
 						? device['AddressedState']
 						: null,
 				gangPosition:
-					typeof entry['GangPosition'] === 'number' ? entry['GangPosition'] : null,
+					typeof entry['GangPosition'] === 'number'
+						? entry['GangPosition']
+						: null,
 			},
 		]
 	})
@@ -304,13 +333,17 @@ async function buildAreaTree(
 	const rootResponse = await client.read('/area/rootarea')
 	assertSuccessfulResponse(rootResponse, 'root area read')
 
-	const rootArea = (rootResponse.Body?.['Area'] as Record<string, unknown> | undefined) ?? null
+	const rootArea =
+		(rootResponse.Body?.['Area'] as Record<string, unknown> | undefined) ?? null
 	if (!rootArea || typeof rootArea['href'] !== 'string') {
-		throw new Error('Lutron root area response did not include an Area payload.')
+		throw new Error(
+			'Lutron root area response did not include an Area payload.',
+		)
 	}
 
 	const rootId = extractResourceId(rootArea['href'])
-	const rootName = typeof rootArea['Name'] === 'string' ? rootArea['Name'] : rootId
+	const rootName =
+		typeof rootArea['Name'] === 'string' ? rootArea['Name'] : rootId
 	const areas = new Map<string, LutronArea>()
 	const queue: Array<LutronInventoryNode> = [
 		{
@@ -333,12 +366,16 @@ async function buildAreaTree(
 		const response = await client.read(`${current.href}/childarea/summary`)
 		if (isNoContent(response)) continue
 		assertSuccessfulResponse(response, `${current.href} child area read`)
-		const summaries = (response.Body?.['AreaSummaries'] as Array<Record<string, unknown>> | undefined) ?? []
+		const summaries =
+			(response.Body?.['AreaSummaries'] as
+				| Array<Record<string, unknown>>
+				| undefined) ?? []
 
 		for (const summary of summaries) {
 			if (typeof summary['href'] !== 'string') continue
 			const childId = extractResourceId(summary['href'])
-			const childName = typeof summary['Name'] === 'string' ? summary['Name'] : childId
+			const childName =
+				typeof summary['Name'] === 'string' ? summary['Name'] : childId
 			const childArea: LutronArea = {
 				processorId,
 				areaId: childId,
@@ -353,7 +390,9 @@ async function buildAreaTree(
 		}
 	}
 
-	return [...areas.values()].sort((left, right) => left.path.join('/').localeCompare(right.path.join('/')))
+	return [...areas.values()].sort((left, right) =>
+		left.path.join('/').localeCompare(right.path.join('/')),
+	)
 }
 
 async function buildZones(
@@ -367,7 +406,10 @@ async function buildZones(
 		const response = await client.read(`${area.href}/associatedzone`)
 		if (isNoContent(response)) continue
 		assertSuccessfulResponse(response, `${area.href} associated zone read`)
-		const entries = (response.Body?.['Zones'] as Array<Record<string, unknown>> | undefined) ?? []
+		const entries =
+			(response.Body?.['Zones'] as
+				| Array<Record<string, unknown>>
+				| undefined) ?? []
 
 		for (const zone of entries) {
 			if (typeof zone['href'] !== 'string') continue
@@ -380,21 +422,32 @@ async function buildZones(
 				areaPath: area.path,
 				zoneId: extractResourceId(zone['href']),
 				href: zone['href'],
-				name: typeof zone['Name'] === 'string' ? zone['Name'] : extractResourceId(zone['href']),
+				name:
+					typeof zone['Name'] === 'string'
+						? zone['Name']
+						: extractResourceId(zone['href']),
 				controlType:
-					typeof zone['ControlType'] === 'string' ? zone['ControlType'] : 'Unknown',
+					typeof zone['ControlType'] === 'string'
+						? zone['ControlType']
+						: 'Unknown',
 				categoryType:
-					typeof (zone['Category'] as Record<string, unknown> | undefined)?.['Type'] ===
-					'string'
+					typeof (zone['Category'] as Record<string, unknown> | undefined)?.[
+						'Type'
+					] === 'string'
 						? ((zone['Category'] as Record<string, unknown>)['Type'] as string)
 						: null,
 				isLight: Boolean(
-					(zone['Category'] as Record<string, unknown> | undefined)?.['IsLight'],
+					(zone['Category'] as Record<string, unknown> | undefined)?.[
+						'IsLight'
+					],
 				),
 				availableControlTypes: Array.isArray(zone['AvailableControlTypes'])
-					? zone['AvailableControlTypes'].filter((entry): entry is string => typeof entry === 'string')
+					? zone['AvailableControlTypes'].filter(
+							(entry): entry is string => typeof entry === 'string',
+						)
 					: [],
-				sortOrder: typeof zone['SortOrder'] === 'number' ? zone['SortOrder'] : null,
+				sortOrder:
+					typeof zone['SortOrder'] === 'number' ? zone['SortOrder'] : null,
 				status: mapZoneStatus(statusResponse),
 			})
 		}
@@ -403,7 +456,8 @@ async function buildZones(
 	return zones.sort(
 		(left, right) =>
 			left.areaPath.join('/').localeCompare(right.areaPath.join('/')) ||
-			(left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
+			(left.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+				(right.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
 			left.name.localeCompare(right.name),
 	)
 }
@@ -418,9 +472,14 @@ async function buildControlStations(
 	for (const area of areas) {
 		const response = await client.read(`${area.href}/associatedcontrolstation`)
 		if (isNoContent(response)) continue
-		assertSuccessfulResponse(response, `${area.href} associated control station read`)
+		assertSuccessfulResponse(
+			response,
+			`${area.href} associated control station read`,
+		)
 		const entries =
-			(response.Body?.['ControlStations'] as Array<Record<string, unknown>> | undefined) ?? []
+			(response.Body?.['ControlStations'] as
+				| Array<Record<string, unknown>>
+				| undefined) ?? []
 
 		for (const station of entries) {
 			if (typeof station['href'] !== 'string') continue
@@ -435,7 +494,10 @@ async function buildControlStations(
 					typeof station['Name'] === 'string'
 						? station['Name']
 						: extractResourceId(station['href']),
-				sortOrder: typeof station['SortOrder'] === 'number' ? station['SortOrder'] : null,
+				sortOrder:
+					typeof station['SortOrder'] === 'number'
+						? station['SortOrder']
+						: null,
 				devices: mapAssociatedGangedDevices(
 					(Array.isArray(station['AssociatedGangedDevices'])
 						? station['AssociatedGangedDevices']
@@ -448,7 +510,8 @@ async function buildControlStations(
 	return stations.sort(
 		(left, right) =>
 			left.areaPath.join('/').localeCompare(right.areaPath.join('/')) ||
-			(left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
+			(left.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+				(right.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
 			left.name.localeCompare(right.name),
 	)
 }
@@ -465,28 +528,37 @@ async function buildButtons(
 			const deviceResponse = await client.read(device.href)
 			assertSuccessfulResponse(deviceResponse, `${device.href} device read`)
 			const deviceBody =
-				(deviceResponse.Body?.['Device'] as Record<string, unknown> | undefined) ?? null
+				(deviceResponse.Body?.['Device'] as
+					| Record<string, unknown>
+					| undefined) ?? null
 			if (!deviceBody) continue
 
-			const buttonGroupResponse = await client.read(`${device.href}/buttongroup/expanded`)
+			const buttonGroupResponse = await client.read(
+				`${device.href}/buttongroup/expanded`,
+			)
 			if (isNoContent(buttonGroupResponse)) continue
 			assertSuccessfulResponse(
 				buttonGroupResponse,
 				`${device.href} button group expanded read`,
 			)
 			const groups =
-				(buttonGroupResponse.Body?.['ButtonGroupsExpanded'] as Array<Record<string, unknown>> | undefined) ??
-				[]
+				(buttonGroupResponse.Body?.['ButtonGroupsExpanded'] as
+					| Array<Record<string, unknown>>
+					| undefined) ?? []
 
 			for (const group of groups) {
 				if (typeof group['href'] !== 'string') continue
-				const entries = (group['Buttons'] as Array<Record<string, unknown>> | undefined) ?? []
+				const entries =
+					(group['Buttons'] as Array<Record<string, unknown>> | undefined) ?? []
 				for (const button of entries) {
 					if (typeof button['href'] !== 'string') continue
 					const ledHref =
-						typeof (button['AssociatedLED'] as Record<string, unknown> | undefined)?.['href'] ===
-						'string'
-							? ((button['AssociatedLED'] as Record<string, unknown>)['href'] as string)
+						typeof (
+							button['AssociatedLED'] as Record<string, unknown> | undefined
+						)?.['href'] === 'string'
+							? ((button['AssociatedLED'] as Record<string, unknown>)[
+									'href'
+								] as string)
 							: null
 					buttons.push({
 						processorId,
@@ -496,7 +568,9 @@ async function buildButtons(
 						keypadDeviceId: device.deviceId,
 						keypadHref: device.href,
 						keypadName:
-							typeof deviceBody['Name'] === 'string' ? deviceBody['Name'] : station.name,
+							typeof deviceBody['Name'] === 'string'
+								? deviceBody['Name']
+								: station.name,
 						keypadModelNumber:
 							typeof deviceBody['ModelNumber'] === 'string'
 								? deviceBody['ModelNumber']
@@ -511,24 +585,36 @@ async function buildButtons(
 						buttonId: extractResourceId(button['href']),
 						href: button['href'],
 						buttonNumber:
-							typeof button['ButtonNumber'] === 'number' ? button['ButtonNumber'] : 0,
+							typeof button['ButtonNumber'] === 'number'
+								? button['ButtonNumber']
+								: 0,
 						name:
 							typeof button['Name'] === 'string'
 								? button['Name']
 								: extractResourceId(button['href']),
 						label:
-							typeof (button['Engraving'] as Record<string, unknown> | undefined)?.['Text'] ===
-							'string'
-								? (((button['Engraving'] as Record<string, unknown>)['Text'] as string)
+							typeof (
+								button['Engraving'] as Record<string, unknown> | undefined
+							)?.['Text'] === 'string'
+								? (
+										(button['Engraving'] as Record<string, unknown>)[
+											'Text'
+										] as string
+									)
 										.replaceAll('\n', ' ')
-										.trim() || (typeof button['Name'] === 'string' ? button['Name'] : extractResourceId(button['href'])))
+										.trim() ||
+									(typeof button['Name'] === 'string'
+										? button['Name']
+										: extractResourceId(button['href']))
 								: typeof button['Name'] === 'string'
 									? button['Name']
 									: extractResourceId(button['href']),
 						programmingModelType:
-							typeof (button['ProgrammingModel'] as Record<string, unknown> | undefined)?.[
-								'ProgrammingModelType'
-							] === 'string'
+							typeof (
+								button['ProgrammingModel'] as
+									| Record<string, unknown>
+									| undefined
+							)?.['ProgrammingModelType'] === 'string'
 								? ((button['ProgrammingModel'] as Record<string, unknown>)[
 										'ProgrammingModelType'
 									] as string)
@@ -558,7 +644,9 @@ async function buildVirtualButtons(
 	if (isNoContent(response)) return []
 	assertSuccessfulResponse(response, 'virtual button read')
 	const entries =
-		(response.Body?.['VirtualButtons'] as Array<Record<string, unknown>> | undefined) ?? []
+		(response.Body?.['VirtualButtons'] as
+			| Array<Record<string, unknown>>
+			| undefined) ?? []
 	return entries
 		.filter((entry) => typeof entry['href'] === 'string')
 		.map((entry) => ({
@@ -587,8 +675,15 @@ export async function loadLutronInventory(input: {
 			input.processor.processorId,
 			areas,
 		)
-		const buttons = await buildButtons(client, input.processor.processorId, controlStations)
-		const virtualButtons = await buildVirtualButtons(client, input.processor.processorId)
+		const buttons = await buildButtons(
+			client,
+			input.processor.processorId,
+			controlStations,
+		)
+		const virtualButtons = await buildVirtualButtons(
+			client,
+			input.processor.processorId,
+		)
 		return {
 			processor: input.processor,
 			areas,
@@ -628,11 +723,14 @@ export async function pressLutronButton(input: {
 	const client = await createLutronLeapClient(input.processor)
 	try {
 		await client.login(input.credentials)
-		const response = await client.create(`/button/${input.buttonId}/commandprocessor`, {
-			Command: {
-				CommandType: 'PressAndRelease',
+		const response = await client.create(
+			`/button/${input.buttonId}/commandprocessor`,
+			{
+				Command: {
+					CommandType: 'PressAndRelease',
+				},
 			},
-		})
+		)
 		assertSuccessfulResponse(response, `button ${input.buttonId} press`)
 		return response
 	} finally {
@@ -649,18 +747,157 @@ export async function setLutronZoneLevel(input: {
 	const client = await createLutronLeapClient(input.processor)
 	try {
 		await client.login(input.credentials)
-		const response = await client.create(`/zone/${input.zoneId}/commandprocessor`, {
-			Command: {
-				CommandType: 'GoToLevel',
-				Parameter: [
-					{
-						Type: 'Level',
-						Value: input.level,
-					},
-				],
+		const response = await client.create(
+			`/zone/${input.zoneId}/commandprocessor`,
+			{
+				Command: {
+					CommandType: 'GoToLevel',
+					Parameter: [
+						{
+							Type: 'Level',
+							Value: input.level,
+						},
+					],
+				},
 			},
-		})
+		)
 		assertSuccessfulResponse(response, `zone ${input.zoneId} level set`)
+		return response
+	} finally {
+		await client.close()
+	}
+}
+
+async function readZoneStatus(
+	client: LeapClient,
+	zoneId: string,
+): Promise<LutronZoneStatus | null> {
+	const response = await client.read(`/zone/${zoneId}/status`)
+	assertSuccessfulResponse(response, `zone ${zoneId} status read`)
+	return mapZoneStatus(response)
+}
+
+export async function setLutronZoneColor(input: {
+	processor: LutronPersistedProcessor
+	credentials: LutronCredentials
+	zoneId: string
+	hue: number
+	saturation: number
+	level?: number
+	vibrancy?: number
+}) {
+	const client = await createLutronLeapClient(input.processor)
+	try {
+		await client.login(input.credentials)
+		const currentStatus = await readZoneStatus(client, input.zoneId)
+		const response = await client.create(
+			`/zone/${input.zoneId}/commandprocessor`,
+			{
+				Command: {
+					CommandType: 'GoToSpectrumTuningLevel',
+					SpectrumTuningLevelParameters: {
+						Level: input.level ?? currentStatus?.level ?? 100,
+						Vibrancy: input.vibrancy ?? currentStatus?.vibrancy ?? 50,
+						ColorTuningStatus: {
+							HSVTuningLevel: {
+								Hue: input.hue,
+								Saturation: input.saturation,
+							},
+						},
+					},
+				},
+			},
+		)
+		assertSuccessfulResponse(response, `zone ${input.zoneId} color set`)
+		return response
+	} finally {
+		await client.close()
+	}
+}
+
+export async function setLutronZoneWhiteTuning(input: {
+	processor: LutronPersistedProcessor
+	credentials: LutronCredentials
+	zoneId: string
+	kelvin: number
+	level?: number
+}) {
+	const client = await createLutronLeapClient(input.processor)
+	try {
+		await client.login(input.credentials)
+		const currentStatus = await readZoneStatus(client, input.zoneId)
+		const response = await client.create(
+			`/zone/${input.zoneId}/commandprocessor`,
+			{
+				Command: {
+					CommandType: 'GoToWhiteTuningLevel',
+					WhiteTuningLevelParameters: {
+						Level: input.level ?? currentStatus?.level ?? 100,
+						WhiteTuningLevel: {
+							Kelvin: input.kelvin,
+						},
+					},
+				},
+			},
+		)
+		assertSuccessfulResponse(response, `zone ${input.zoneId} white tuning set`)
+		return response
+	} finally {
+		await client.close()
+	}
+}
+
+export async function setLutronZoneSwitchedLevel(input: {
+	processor: LutronPersistedProcessor
+	credentials: LutronCredentials
+	zoneId: string
+	state: 'On' | 'Off'
+}) {
+	const client = await createLutronLeapClient(input.processor)
+	try {
+		await client.login(input.credentials)
+		const response = await client.create(
+			`/zone/${input.zoneId}/commandprocessor`,
+			{
+				Command: {
+					CommandType: 'GoToSwitchedLevel',
+					SwitchedLevelParameters: {
+						SwitchedLevel: input.state,
+					},
+				},
+			},
+		)
+		assertSuccessfulResponse(
+			response,
+			`zone ${input.zoneId} switched level set`,
+		)
+		return response
+	} finally {
+		await client.close()
+	}
+}
+
+export async function setLutronShadeLevel(input: {
+	processor: LutronPersistedProcessor
+	credentials: LutronCredentials
+	zoneId: string
+	level: number
+}) {
+	const client = await createLutronLeapClient(input.processor)
+	try {
+		await client.login(input.credentials)
+		const response = await client.create(
+			`/zone/${input.zoneId}/commandprocessor`,
+			{
+				Command: {
+					CommandType: 'GoToShadeLevel',
+					ShadeLevelParameters: {
+						Level: input.level,
+					},
+				},
+			},
+		)
+		assertSuccessfulResponse(response, `zone ${input.zoneId} shade level set`)
 		return response
 	} finally {
 		await client.close()

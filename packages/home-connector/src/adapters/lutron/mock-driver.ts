@@ -37,7 +37,8 @@ let mockLutronSystem: MockLutronSystem = {
 
 function findMockProcessorByHost(host: string) {
 	return (
-		mockLutronSystem.processors.find((processor) => processor.host === host) ?? null
+		mockLutronSystem.processors.find((processor) => processor.host === host) ??
+		null
 	)
 }
 
@@ -51,8 +52,9 @@ function requireMockProcessorByHost(host: string) {
 
 function requireMockButton(buttonId: string) {
 	const button =
-		mockLutronSystem.buttons.find((candidate) => candidate.buttonId === buttonId) ??
-		null
+		mockLutronSystem.buttons.find(
+			(candidate) => candidate.buttonId === buttonId,
+		) ?? null
 	if (!button) {
 		throw new Error(`Unknown mock Lutron button "${buttonId}".`)
 	}
@@ -61,7 +63,8 @@ function requireMockButton(buttonId: string) {
 
 function requireMockZone(zoneId: string) {
 	const zone =
-		mockLutronSystem.zones.find((candidate) => candidate.zoneId === zoneId) ?? null
+		mockLutronSystem.zones.find((candidate) => candidate.zoneId === zoneId) ??
+		null
 	if (!zone) {
 		throw new Error(`Unknown mock Lutron zone "${zoneId}".`)
 	}
@@ -127,20 +130,26 @@ function applyMockSceneButton(buttonId: string) {
 		case '329':
 			setButtonLedState('329', 'On')
 			setButtonLedState('333', 'Off')
-			setZoneStatus('495', createSpectrumStatus({
-				level: 100,
-				vibrancy: 20,
-				hue: 35,
-				saturation: 10,
-				kelvin: 3500,
-			}))
-			setZoneStatus('512', createSpectrumStatus({
-				level: 100,
-				vibrancy: 20,
-				hue: 35,
-				saturation: 10,
-				kelvin: 3500,
-			}))
+			setZoneStatus(
+				'495',
+				createSpectrumStatus({
+					level: 100,
+					vibrancy: 20,
+					hue: 35,
+					saturation: 10,
+					kelvin: 3500,
+				}),
+			)
+			setZoneStatus(
+				'512',
+				createSpectrumStatus({
+					level: 100,
+					vibrancy: 20,
+					hue: 35,
+					saturation: 10,
+					kelvin: 3500,
+				}),
+			)
 			setZoneStatus('595', createDimmedStatus(100))
 			setZoneStatus('611', createDimmedStatus(0))
 			setZoneStatus('755', createSwitchedStatus(false))
@@ -148,20 +157,26 @@ function applyMockSceneButton(buttonId: string) {
 		case '333':
 			setButtonLedState('329', 'Off')
 			setButtonLedState('333', 'On')
-			setZoneStatus('495', createSpectrumStatus({
-				level: 80,
-				vibrancy: 100,
-				hue: 40,
-				saturation: 50,
-				kelvin: 4000,
-			}))
-			setZoneStatus('512', createSpectrumStatus({
-				level: 80,
-				vibrancy: 100,
-				hue: 40,
-				saturation: 50,
-				kelvin: 4000,
-			}))
+			setZoneStatus(
+				'495',
+				createSpectrumStatus({
+					level: 80,
+					vibrancy: 100,
+					hue: 40,
+					saturation: 50,
+					kelvin: 4000,
+				}),
+			)
+			setZoneStatus(
+				'512',
+				createSpectrumStatus({
+					level: 80,
+					vibrancy: 100,
+					hue: 40,
+					saturation: 50,
+					kelvin: 4000,
+				}),
+			)
 			setZoneStatus('595', createDimmedStatus(0))
 			setZoneStatus('611', createDimmedStatus(100))
 			setZoneStatus('755', createSwitchedStatus(true))
@@ -169,20 +184,26 @@ function applyMockSceneButton(buttonId: string) {
 		case '369':
 			setButtonLedState('329', 'Off')
 			setButtonLedState('333', 'Off')
-			setZoneStatus('495', createSpectrumStatus({
-				level: 0,
-				vibrancy: 35,
-				hue: 40,
-				saturation: 16,
-				kelvin: 4000,
-			}))
-			setZoneStatus('512', createSpectrumStatus({
-				level: 0,
-				vibrancy: 35,
-				hue: 40,
-				saturation: 16,
-				kelvin: 4000,
-			}))
+			setZoneStatus(
+				'495',
+				createSpectrumStatus({
+					level: 0,
+					vibrancy: 35,
+					hue: 40,
+					saturation: 16,
+					kelvin: 4000,
+				}),
+			)
+			setZoneStatus(
+				'512',
+				createSpectrumStatus({
+					level: 0,
+					vibrancy: 35,
+					hue: 40,
+					saturation: 16,
+					kelvin: 4000,
+				}),
+			)
 			setZoneStatus('595', createDimmedStatus(0))
 			setZoneStatus('611', createDimmedStatus(0))
 			setZoneStatus('755', createSwitchedStatus(false))
@@ -207,7 +228,11 @@ export function listMockLutronProcessors() {
 	return structuredClone(mockLutronSystem.processors)
 }
 
-export function validateMockLutronCredentials(host: string, username: string, password: string) {
+export function validateMockLutronCredentials(
+	host: string,
+	username: string,
+	password: string,
+) {
 	const processor = requireMockProcessorByHost(host)
 	return (
 		processor.username === username &&
@@ -231,7 +256,10 @@ export function listMockLutronZones(processorId: string, areaId: string) {
 	)
 }
 
-export function listMockLutronControlStations(processorId: string, areaId: string) {
+export function listMockLutronControlStations(
+	processorId: string,
+	areaId: string,
+) {
 	return structuredClone(
 		mockLutronSystem.controlStations.filter(
 			(station) =>
@@ -242,7 +270,9 @@ export function listMockLutronControlStations(processorId: string, areaId: strin
 
 export function listMockLutronButtonsForDevice(deviceId: string) {
 	return structuredClone(
-		mockLutronSystem.buttons.filter((button) => button.keypadDeviceId === deviceId),
+		mockLutronSystem.buttons.filter(
+			(button) => button.keypadDeviceId === deviceId,
+		),
 	)
 }
 

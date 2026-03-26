@@ -544,8 +544,7 @@ export function createHomeConnectorMcpServer(input: {
 		{
 			name: 'lutron_set_zone_level',
 			title: 'Set Lutron Zone Level',
-			description:
-				'Set a Lutron zone level using LEAP GoToLevel.',
+			description: 'Set a Lutron zone level using LEAP GoToLevel.',
 			inputSchema: z.toJSONSchema(
 				z.object({
 					processorId: z.string().min(1),
@@ -564,6 +563,151 @@ export function createHomeConnectorMcpServer(input: {
 					{
 						type: 'text',
 						text: `Set Lutron zone ${zoneId} to ${level}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_zone_color',
+			title: 'Set Lutron Zone Color',
+			description:
+				'Set a Lutron SpectrumTune or ColorTune zone using HSV color, optionally overriding level and vibrancy.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					hue: z.number().min(0).max(360),
+					saturation: z.number().min(0).max(100),
+					level: z.number().min(0).max(100).optional(),
+					vibrancy: z.number().min(0).max(100).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const hue = Number(args['hue'] ?? 0)
+			const saturation = Number(args['saturation'] ?? 0)
+			const level = args['level'] == null ? undefined : Number(args['level'])
+			const vibrancy =
+				args['vibrancy'] == null ? undefined : Number(args['vibrancy'])
+			const result = await lutron.setZoneColor(processorId, zoneId, {
+				hue,
+				saturation,
+				level,
+				vibrancy,
+			})
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron zone ${zoneId} to hue ${hue} saturation ${saturation}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_zone_white_tuning',
+			title: 'Set Lutron Zone White Tuning',
+			description:
+				'Set a Lutron WhiteTune or SpectrumTune zone to a Kelvin temperature, optionally overriding level.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					kelvin: z.number().min(1000).max(25000),
+					level: z.number().min(0).max(100).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const kelvin = Number(args['kelvin'] ?? 0)
+			const level = args['level'] == null ? undefined : Number(args['level'])
+			const result = await lutron.setZoneWhiteTuning(processorId, zoneId, {
+				kelvin,
+				level,
+			})
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron zone ${zoneId} white tuning to ${kelvin}K.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_zone_switched_level',
+			title: 'Set Lutron Switched Zone State',
+			description:
+				'Set a Lutron switched, receptacle, or other on-off zone to On or Off.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					state: z.enum(['On', 'Off']),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const state = args['state'] === 'Off' ? 'Off' : 'On'
+			const result = await lutron.setZoneSwitchedLevel(
+				processorId,
+				zoneId,
+				state,
+			)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron switched zone ${zoneId} to ${state}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'lutron_set_shade_level',
+			title: 'Set Lutron Shade Level',
+			description:
+				'Set a Lutron shade zone to a target level between 0 and 100.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					processorId: z.string().min(1),
+					zoneId: z.string().min(1),
+					level: z.number().min(0).max(100),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const level = Number(args['level'] ?? 0)
+			const result = await lutron.setShadeLevel(processorId, zoneId, level)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Set Lutron shade ${zoneId} to ${level}.`,
 					},
 				],
 				structuredContent: result,
