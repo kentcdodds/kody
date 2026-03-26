@@ -233,10 +233,8 @@ export function validateMockLutronCredentials(
 	username: string,
 	password: string,
 ) {
-	const processor = requireMockProcessorByHost(host)
+	requireMockProcessorByHost(host)
 	return (
-		processor.username === username &&
-		processor.password === password &&
 		username === mockLutronCredentials.username &&
 		password === mockLutronCredentials.password
 	)

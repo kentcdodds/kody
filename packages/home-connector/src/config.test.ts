@@ -81,18 +81,6 @@ test('live connector defaults Lutron discovery to mDNS', () => {
 	expect(config.lutronDiscoveryUrl).toBe('mdns://_lutron._tcp.local')
 })
 
-test('live connector defaults Lutron discovery to mDNS', () => {
-	using _env = createTemporaryEnv({
-		MOCKS: 'false',
-		LUTRON_DISCOVERY_URL: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.lutronDiscoveryUrl).toBe('mdns://_lutron._tcp.local')
-})
-
 test('db path can be derived from HOME_CONNECTOR_DATA_PATH', () => {
 	using _env = createTemporaryEnv({
 		HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
