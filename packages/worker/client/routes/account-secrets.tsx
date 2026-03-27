@@ -1222,7 +1222,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									<div css={{ display: 'grid', gap: spacing.sm }}>
 										{editorState.allowedHosts.map((host, index) => (
 											<div
-												key={`${index}-${host}`}
+												key={index}
 												css={{
 													display: 'grid',
 													gridTemplateColumns: 'minmax(0, 1fr) auto',
@@ -1279,7 +1279,7 @@ export function AccountSecretsRoute(handle: Handle) {
 										{editorState.allowedCapabilities.map(
 											(capabilityName, index) => (
 												<div
-													key={`${index}-${capabilityName}`}
+													key={index}
 													css={{
 														display: 'grid',
 														gridTemplateColumns: 'minmax(0, 1fr) auto',
