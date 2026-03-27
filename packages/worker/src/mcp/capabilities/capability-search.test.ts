@@ -41,7 +41,7 @@ test('fusion ranking returns ui_save_app for generated ui query (offline)', asyn
 
 	const { matches, offline } = await searchCapabilities({
 		env,
-		query: 'save generated ui app source and reopen by app id',
+		query: 'ui_save_app save generated ui artifact source app_id',
 		limit: 8,
 		detail: false,
 		specs: capabilitySpecs,

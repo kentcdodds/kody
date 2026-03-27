@@ -34,6 +34,7 @@ type RenderEnvelope = {
 	code?: string
 	appId?: string
 	runtime?: AppRuntime
+	params?: Record<string, unknown>
 	appSession?: AppSessionEnvelope | null
 }
 
@@ -70,8 +71,19 @@ type HostToolResult = {
 	isError?: boolean
 }
 
+function coerceJsonRecord(value: unknown): Record<string, unknown> | undefined {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return undefined
+	}
+	const out: Record<string, unknown> = Object.create(null)
+	for (const [key, entry] of Object.entries(value)) {
+		out[key] = entry
+	}
+	return out
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeMeasuredValue(value: unknown) {
@@ -268,6 +280,26 @@ function decodeHtmlAttribute(value: string) {
 		.replaceAll('&amp;', '&')
 }
 
+function escapeInlineModuleSource(code: string) {
+	return code.replace(/<\/script/gi, '<\\/script')
+}
+
+export function injectRuntimeStateIntoDocument(
+	code: string,
+	params: Record<string, unknown> | undefined,
+) {
+	const paramsJson = escapeInlineModuleSource(JSON.stringify(params ?? {}))
+	const bootstrap = `
+<script>
+window.kodyWidget = window.kodyWidget ?? {};
+window.kodyWidget.params = ${paramsJson};
+window.params = window.kodyWidget.params;
+window.__kodyAppParams = window.kodyWidget.params;
+</script>
+	`.trim()
+	return injectIntoHtmlDocument(code, bootstrap, null)
+}
+
 function isNonNavigableUrl(value: string) {
 	const normalizedValue = value.trim().toLowerCase()
 	return (
@@ -430,8 +462,9 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 				: undefined
 	const appId = typeof value.appId === 'string' ? value.appId : undefined
 	const runtime = coerceRuntime(value.runtime) ?? (code ? 'html' : undefined)
+	const params = coerceJsonRecord(value.params)
 	const appSession = coerceAppSession(value.appSession)
-	return { mode: renderSource, code, appId, runtime, appSession }
+	return { mode: renderSource, code, appId, runtime, params, appSession }
 }
 
 function getEnvelopeFromRenderData(renderData: RenderDataEnvelope | undefined) {
@@ -679,8 +712,17 @@ function initializeGeneratedUiShell() {
 		}
 	}
 
-	function escapeInlineModuleSource(code: string) {
-		return code.replace(/<\/script/gi, '<\\/script')
+	function buildParamsBootstrapSource(
+		params: Record<string, unknown> | undefined,
+	) {
+		const paramsJson = escapeInlineModuleSource(JSON.stringify(params ?? {}))
+		return `
+const __kodyResolvedParams = ${paramsJson};
+window.__kodyAppParams = __kodyResolvedParams;
+window.kodyWidget = window.kodyWidget ?? {};
+window.kodyWidget.params = __kodyResolvedParams;
+window.params = window.kodyWidget.params;
+		`.trim()
 	}
 
 	function buildShellStyles(theme: ThemeName | null) {
@@ -1168,6 +1210,7 @@ async function requestSecretAction(type, input, responseType) {
 	return payload && typeof payload === 'object' ? payload.response : null;
 }
 window.kodyWidget = {
+	params: window.__kodyAppParams ?? {},
 	sendMessage(text) {
 		if (window.parent === window) return false;
 		window.parent.postMessage({
@@ -1692,6 +1735,7 @@ window.addEventListener('unhandledrejection', (event) => {
 	function buildInlineModuleSource(code: string) {
 		const safeCode = escapeInlineModuleSource(code)
 		return `
+${buildParamsBootstrapSource(latestEnvelope?.params)}
 ${buildChildBridgeRuntimeSource()}
 ${safeCode}
 		`.trim()
@@ -1776,6 +1820,9 @@ ${safeCode}
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		${buildHeadInjection(theme)}
+		<script>
+${buildParamsBootstrapSource(latestEnvelope?.params)}
+		</script>
 	</head>
 	<body data-kody-runtime="fragment">
 ${code}
@@ -1811,8 +1858,14 @@ ${inlineModuleSource}
 		}
 
 		const theme = coerceTheme(latestRenderData?.theme)
+		const headInjection = `
+${buildHeadInjection(theme)}
+<script>
+${buildParamsBootstrapSource(latestEnvelope?.params)}
+</script>
+		`.trim()
 		const htmlSource = /<(?:!doctype|html|head|body)\b/i.test(code)
-			? injectIntoHtmlDocument(code, buildHeadInjection(theme), theme)
+			? injectIntoHtmlDocument(code, headInjection, theme)
 			: buildHtmlDocumentFromFragment(code)
 		frameElement.srcdoc = absolutizeHtmlAttributeUrls(htmlSource, getBaseHref())
 	}

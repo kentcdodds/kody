@@ -26,8 +26,8 @@ export async function insertUiArtifact(
 		.prepare(
 			`INSERT INTO ui_artifacts (
 				id, user_id, title, description, keywords, source_code, source_type,
-				search_text, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				search_text, parameters, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -38,6 +38,7 @@ export async function insertUiArtifact(
 			row.code,
 			row.runtime,
 			row.search_text ?? null,
+			row.parameters ?? null,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
@@ -52,7 +53,7 @@ export async function getUiArtifactById(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, source_code, source_type,
-				search_text, created_at, updated_at
+				search_text, parameters, created_at, updated_at
 			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
 		)
 		.bind(artifactId, userId)
@@ -73,7 +74,7 @@ export async function getUiArtifactByOwnerIds(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, source_code, source_type,
-				search_text, created_at, updated_at
+				search_text, parameters, created_at, updated_at
 			FROM ui_artifacts
 			WHERE id = ? AND user_id IN (${placeholders})
 			LIMIT 1`,
@@ -103,7 +104,13 @@ export async function updateUiArtifact(
 	updates: Partial<
 		Pick<
 			UiArtifactRow,
-			'title' | 'description' | 'keywords' | 'code' | 'runtime' | 'search_text'
+			| 'title'
+			| 'description'
+			| 'keywords'
+			| 'code'
+			| 'runtime'
+			| 'search_text'
+			| 'parameters'
 		>
 	>,
 ): Promise<boolean> {
@@ -132,6 +139,9 @@ export async function updateUiArtifact(
 	if (updates.search_text !== undefined) {
 		addAssignment('search_text', updates.search_text ?? null)
 	}
+	if (updates.parameters !== undefined) {
+		addAssignment('parameters', updates.parameters ?? null)
+	}
 
 	addAssignment('updated_at', new Date().toISOString())
 
@@ -151,7 +161,7 @@ export async function listUiArtifactsByUserId(
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, title, description, keywords, source_code, source_type,
-				search_text, created_at, updated_at
+				search_text, parameters, created_at, updated_at
 			FROM ui_artifacts WHERE user_id = ?`,
 		)
 		.bind(userId)
@@ -169,6 +179,7 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		code: String(row['source_code']),
 		runtime: String(row['source_type']) as UiArtifactRow['runtime'],
 		search_text: row['search_text'] == null ? null : String(row['search_text']),
+		parameters: row['parameters'] == null ? null : String(row['parameters']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	}

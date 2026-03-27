@@ -7,6 +7,7 @@ type SavedUiArtifact = {
 	title: string
 	description: string
 	keywords: Array<string>
+	params: Record<string, unknown>
 	runtime: 'html' | 'javascript'
 	code: string
 	createdAt: string
@@ -50,8 +51,37 @@ function getSavedUiApiPath(appId: string) {
 	return `/ui-api/${encodeURIComponent(appId)}`
 }
 
+function getSavedUiParamsSearchValue() {
+	if (typeof window === 'undefined') return null
+	return new URL(window.location.href).searchParams.get('params')
+}
+
+function readSavedUiParamsFromLocation() {
+	const raw = getSavedUiParamsSearchValue()
+	if (!raw) return null
+	try {
+		const parsed = JSON.parse(raw) as unknown
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			throw new Error(`Invalid saved UI params: ${raw}`)
+		}
+		return parsed as Record<string, unknown>
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : `Invalid saved UI params: ${raw}`
+		throw new Error(message)
+	}
+}
+
 async function loadSavedUi(appId: string) {
-	const response = await fetch(`${getSavedUiApiPath(appId)}/source`, {
+	const url = new URL(
+		`${getSavedUiApiPath(appId)}/source`,
+		window.location.origin,
+	)
+	const params = readSavedUiParamsFromLocation()
+	if (params) {
+		url.searchParams.set('params', JSON.stringify(params))
+	}
+	const response = await fetch(url, {
 		credentials: 'include',
 		headers: { Accept: 'application/json' },
 	})
@@ -62,6 +92,7 @@ async function loadSavedUi(appId: string) {
 			app_id?: string
 			title?: string
 			description?: string
+			params?: Record<string, unknown>
 			runtime?: 'html' | 'javascript'
 			code?: string
 			created_at?: string
@@ -77,6 +108,12 @@ async function loadSavedUi(appId: string) {
 		title: payload.app.title ?? 'Saved UI',
 		description: payload.app.description ?? '',
 		keywords: [],
+		params:
+			payload.app.params &&
+			typeof payload.app.params === 'object' &&
+			!Array.isArray(payload.app.params)
+				? payload.app.params
+				: {},
 		runtime: payload.app.runtime ?? 'html',
 		code: payload.app.code ?? '',
 		createdAt: payload.app.created_at ?? '',
@@ -126,11 +163,17 @@ export function SavedUiRoute(handle: Handle) {
 	let artifact: SavedUiArtifact | null = null
 	let shellInitialized = false
 	let latestShellWindow: Window | null = null
-	let activeAppId: string | null = null
+	let activeRouteKey: string | null = null
 	let loadRequestId = 0
 
 	function update() {
 		handle.update()
+	}
+
+	function getRouteKey() {
+		const appId = getSavedUiIdFromLocation()
+		const paramsKey = getSavedUiParamsSearchValue()
+		return `${appId ?? ''}?${paramsKey ?? ''}`
 	}
 
 	function postRenderDataIfReady() {
@@ -157,6 +200,7 @@ export function SavedUiRoute(handle: Handle) {
 							appId: artifact.appId,
 							title: artifact.title,
 							description: artifact.description,
+							params: artifact.params,
 							appSession: artifact.appSession,
 						},
 					},
@@ -168,6 +212,7 @@ export function SavedUiRoute(handle: Handle) {
 
 	async function refreshArtifact() {
 		const appId = getSavedUiIdFromLocation()
+		const routeKey = getRouteKey()
 		if (!appId) {
 			status = 'error'
 			errorMessage = 'Saved UI not found.'
@@ -175,7 +220,7 @@ export function SavedUiRoute(handle: Handle) {
 			update()
 			return
 		}
-		activeAppId = appId
+		activeRouteKey = routeKey
 		status = 'loading'
 		errorMessage = null
 		artifact = null
@@ -185,7 +230,7 @@ export function SavedUiRoute(handle: Handle) {
 		const requestId = ++loadRequestId
 		try {
 			const nextArtifact = await loadSavedUi(appId)
-			if (requestId !== loadRequestId || getSavedUiIdFromLocation() !== appId) {
+			if (requestId !== loadRequestId || getRouteKey() !== routeKey) {
 				return
 			}
 			artifact = nextArtifact
@@ -194,7 +239,7 @@ export function SavedUiRoute(handle: Handle) {
 			update()
 			postRenderDataIfReady()
 		} catch (error) {
-			if (requestId !== loadRequestId || getSavedUiIdFromLocation() !== appId) {
+			if (requestId !== loadRequestId || getRouteKey() !== routeKey) {
 				return
 			}
 			status = 'error'
@@ -210,12 +255,12 @@ export function SavedUiRoute(handle: Handle) {
 	handle.queueTask(refreshArtifact)
 
 	listenToRouterNavigation(handle, () => {
-		const nextAppId = getSavedUiIdFromLocation()
-		if (!nextAppId) {
-			activeAppId = null
+		const nextRouteKey = getRouteKey()
+		if (!getSavedUiIdFromLocation()) {
+			activeRouteKey = null
 			return
 		}
-		if (nextAppId === activeAppId) return
+		if (nextRouteKey === activeRouteKey) return
 		handle.queueTask(refreshArtifact)
 	})
 
@@ -368,6 +413,7 @@ export function SavedUiRoute(handle: Handle) {
 						app_id: artifact.appId,
 						title: artifact.title,
 						description: artifact.description,
+						params: artifact.params,
 						runtime: artifact.runtime,
 						code: artifact.code,
 					},

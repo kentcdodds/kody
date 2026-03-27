@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	absolutizeHtmlAttributeUrls,
 	injectIntoHtmlDocument,
+	injectRuntimeStateIntoDocument,
 	measureRenderedFrameSize,
 } from './generated-ui-shell.ts'
 
@@ -117,4 +118,16 @@ test('measureRenderedFrameSize uses the largest body and document dimensions', (
 		height: 530,
 		width: 641,
 	})
+})
+
+test('injectRuntimeStateIntoDocument exposes params on window.kodyWidget', () => {
+	const result = injectRuntimeStateIntoDocument('<main>Hello</main>', {
+		owner: 'kody',
+		limit: 3,
+	})
+	expect(result).toContain('window.kodyWidget = window.kodyWidget ?? {}')
+	expect(result).toContain(
+		'window.kodyWidget.params = {"owner":"kody","limit":3};',
+	)
+	expect(result).toContain('window.params = window.kodyWidget.params;')
 })

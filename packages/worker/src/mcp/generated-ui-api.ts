@@ -17,6 +17,10 @@ import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { deleteSecret, listSecrets, saveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import {
+	applyUiArtifactParameters,
+	parseUiArtifactParameters,
+} from '#mcp/ui-artifact-parameters.ts'
+import {
 	getUiArtifactById,
 	getUiArtifactByOwnerIds,
 } from '#mcp/ui-artifacts-repo.ts'
@@ -49,6 +53,7 @@ type GeneratedUiSessionContext = {
 	type: 'session'
 	sessionId: string
 	appId: string | null
+	params: Record<string, unknown>
 	homeConnectorId: string | null
 	expiresAt: string
 	user: {
@@ -135,6 +140,26 @@ function createGeneratedUiSourceHandler(env: Env) {
 			if (!app) {
 				return jsonResponse({ error: 'Saved UI not found.' }, 404)
 			}
+			let resolvedParams: Record<string, unknown>
+			try {
+				resolvedParams =
+					sourceContext.type === 'session'
+						? sourceContext.params
+						: applyUiArtifactParameters({
+								definitions: parseUiArtifactParameters(app.parameters),
+								values: readSavedAppParamsFromUrl(new URL(request.url)),
+							})
+			} catch (error) {
+				return jsonResponse(
+					{
+						error:
+							error instanceof Error
+								? error.message
+								: 'Invalid saved app params.',
+					},
+					400,
+				)
+			}
 			const appSession = await createGeneratedUiAppSession({
 				env,
 				baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
@@ -147,6 +172,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 							}
 						: sourceContext.user,
 				appId: app.id,
+				params: resolvedParams,
 				homeConnectorId:
 					sourceContext.type === 'session'
 						? sourceContext.homeConnectorId
@@ -158,6 +184,8 @@ function createGeneratedUiSourceHandler(env: Env) {
 					app_id: app.id,
 					title: app.title,
 					description: app.description,
+					parameters: parseUiArtifactParameters(app.parameters),
+					params: resolvedParams,
 					runtime: app.runtime,
 					code: app.code,
 					created_at: app.created_at,
@@ -200,7 +228,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					},
 				}),
 				body.data.code,
-				undefined,
+				Object.keys(context.params).length > 0 ? context.params : undefined,
 				workerExports,
 			)
 			if (result.error) {
@@ -440,6 +468,12 @@ async function resolveSessionContext(input: {
 			type: 'session',
 			sessionId: session.session_id,
 			appId: session.app_id,
+			params:
+				session.params &&
+				typeof session.params === 'object' &&
+				!Array.isArray(session.params)
+					? session.params
+					: {},
 			homeConnectorId: session.home_connector_id,
 			expiresAt:
 				typeof session.exp === 'number'
@@ -476,6 +510,21 @@ function parseOptionalScope(value: string | null) {
 	return secretScopeValues.includes(value as (typeof secretScopeValues)[number])
 		? (value as (typeof secretScopeValues)[number])
 		: null
+}
+
+function readSavedAppParamsFromUrl(url: URL) {
+	const raw = url.searchParams.get('params')
+	if (!raw) return undefined
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(raw)
+	} catch {
+		throw new Error('Invalid saved app params query string.')
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new Error('Saved app params must be an object.')
+	}
+	return parsed as Record<string, unknown>
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {

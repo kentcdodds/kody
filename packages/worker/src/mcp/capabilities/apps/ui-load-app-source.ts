@@ -3,6 +3,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
+import {
+	parseUiArtifactParameters,
+	uiArtifactParameterSchema,
+} from '#mcp/ui-artifact-parameters.ts'
 import { requireMcpUser } from '../meta/require-user.ts'
 
 const outputSchema = z.object({
@@ -11,6 +15,7 @@ const outputSchema = z.object({
 	description: z.string(),
 	runtime: z.enum(['html', 'javascript']),
 	code: z.string(),
+	parameters: z.array(uiArtifactParameterSchema).nullable(),
 })
 
 export const uiLoadAppSourceCapability = defineDomainCapability(
@@ -46,6 +51,7 @@ export const uiLoadAppSourceCapability = defineDomainCapability(
 				description: row.description,
 				runtime: row.runtime,
 				code: row.code,
+				parameters: parseUiArtifactParameters(row.parameters),
 			}
 		},
 	},

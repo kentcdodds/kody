@@ -10,6 +10,7 @@ const defaultGeneratedUiSessionTtlMs = 60 * 60 * 1000
 type GeneratedUiAppSessionPayload = {
 	session_id: string
 	app_id: string | null
+	params: Record<string, unknown>
 	home_connector_id: string | null
 	user: McpUserContext
 	iat: number
@@ -35,6 +36,7 @@ export async function createGeneratedUiAppSession(input: {
 	baseUrl: string
 	user: McpUserContext
 	appId?: string | null
+	params?: Record<string, unknown>
 	homeConnectorId?: string | null
 }) {
 	const now = Date.now()
@@ -46,6 +48,7 @@ export async function createGeneratedUiAppSession(input: {
 		JSON.stringify({
 			session_id: sessionId,
 			app_id: input.appId ?? null,
+			params: input.params ?? {},
 			home_connector_id: input.homeConnectorId ?? null,
 			user: input.user,
 			iat: now,
@@ -88,6 +91,13 @@ export async function verifyGeneratedUiAppSession(
 	}
 	if (typeof payload.exp === 'number' && Date.now() > payload.exp) {
 		throw new Error('Generated UI session has expired.')
+	}
+	if (
+		payload.params == null ||
+		typeof payload.params !== 'object' ||
+		Array.isArray(payload.params)
+	) {
+		payload.params = {}
 	}
 	return payload as GeneratedUiAppSessionPayload
 }

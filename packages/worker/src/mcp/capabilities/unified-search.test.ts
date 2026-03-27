@@ -34,6 +34,14 @@ function createUiArtifactRow(appId: string): UiArtifactRow {
 		keywords: JSON.stringify(['cloudflare', 'deploy']),
 		code: '<main>Deploy</main>',
 		runtime: 'html',
+		parameters: JSON.stringify([
+			{
+				name: 'workerName',
+				description: 'Worker name to deploy.',
+				type: 'string',
+				required: true,
+			},
+		]),
 		search_text: 'deploy worker ui',
 		created_at: '2026-03-20T00:00:00.000Z',
 		updated_at: '2026-03-20T00:00:00.000Z',
@@ -153,4 +161,5 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 			description: 'Worker secret for this app',
 		},
 	])
+	expect(app.usage).toContain('"params"')
 })

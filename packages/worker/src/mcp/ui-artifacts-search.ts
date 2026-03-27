@@ -10,6 +10,7 @@ import {
 	sortIdsByScore,
 } from '#mcp/capabilities/capability-search.ts'
 import { type SecretMetadata } from '#mcp/secrets/types.ts'
+import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
@@ -36,11 +37,36 @@ function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 		keywords: parseJsonStringArray(row.keywords),
 		searchText: row.search_text,
 		runtime: row.runtime,
+		parameters: parseUiArtifactParameters(row.parameters),
 	})}${secretText}`
 }
 
-function buildUsage(appId: string) {
-	return `Open with open_generated_ui: ${JSON.stringify({ app_id: appId })}.`
+function buildUsage(row: UiArtifactRow) {
+	const parameters = parseUiArtifactParameters(row.parameters)
+	const usageArgs: Record<string, unknown> = { app_id: row.id }
+	if (parameters && parameters.length > 0) {
+		usageArgs['params'] = Object.fromEntries(
+			parameters.map((parameter) => {
+				if (parameter.default !== undefined) {
+					return [parameter.name, parameter.default] as const
+				}
+				return [
+					parameter.name,
+					buildPlaceholderForParameter(parameter.type),
+				] as const
+			}),
+		)
+	}
+	return `Open with open_generated_ui: ${JSON.stringify(usageArgs)}.`
+}
+
+function buildPlaceholderForParameter(
+	type: 'string' | 'number' | 'boolean' | 'json',
+) {
+	if (type === 'number') return 0
+	if (type === 'boolean') return false
+	if (type === 'json') return {}
+	return ''
 }
 
 export type UiArtifactSearchHitSummary = {
@@ -51,6 +77,13 @@ export type UiArtifactSearchHitSummary = {
 	description: string
 	keywords: Array<string>
 	runtime: string
+	parameters: Array<{
+		name: string
+		description: string
+		type: 'string' | 'number' | 'boolean' | 'json'
+		required: boolean
+		default?: unknown
+	}> | null
 	usage: string
 	availableSecrets: Array<{
 		name: string
@@ -79,6 +112,7 @@ function rowToUiArtifactHit(
 	vectorRank?: number,
 	appSecrets: Array<SecretMetadata> = [],
 ): UiArtifactSearchHit {
+	const parameters = parseUiArtifactParameters(row.parameters)
 	const base: UiArtifactSearchHitSummary = {
 		type: 'app',
 		appId: row.id,
@@ -87,7 +121,8 @@ function rowToUiArtifactHit(
 		description: row.description,
 		keywords: parseJsonStringArray(row.keywords),
 		runtime: row.runtime,
-		usage: buildUsage(row.id),
+		parameters,
+		usage: buildUsage(row),
 		availableSecrets: appSecrets.map((secret) => ({
 			name: secret.name,
 			description: secret.description,
