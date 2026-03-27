@@ -1,6 +1,9 @@
 import { type BuildAction } from 'remix/fetch-router'
+import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
+import { Layout } from '#app/layout.ts'
+import { render } from '#app/render.ts'
 import { verifySecretHostApprovalToken } from '#mcp/secrets/host-approval.ts'
 import {
 	listAppSecretsByAppIds,
@@ -8,7 +11,7 @@ import {
 	setSecretAllowedHosts,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
-import { getUiArtifactByOwnerIds, listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type routes } from '#app/routes.ts'
 
 type AccountSecretListItem = {
@@ -40,24 +43,20 @@ type AccountSecretsPayload = {
 
 type SecretApprovalAction = 'approve' | 'reject'
 
-const approvalPathPrefix = '/account/secrets/approve'
-
-export function createAccountSecretsHandler(env: Env) {
+export function createAccountSecretsHandler(_env: Env) {
 	return {
 		middleware: [],
 		async action({ request }) {
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
+			const { session, setCookie } = await readAuthSessionResult(request)
+			if (!session) {
 				return redirectToLogin(request)
 			}
 
-			const payload = await buildAccountSecretsPayload({
-				request,
-				env,
-				user,
-			})
-
-			return jsonResponse(payload)
+			const response = render(Layout({ title: 'Account' }))
+			if (setCookie) {
+				response.headers.set('Set-Cookie', setCookie)
+			}
+			return response
 		},
 	} satisfies BuildAction<
 		typeof routes.accountSecrets.method,
@@ -112,9 +111,9 @@ export function createAccountSecretsApiHandler(env: Env) {
 				}
 
 				if (action === 'approve') {
-				const current = await listSecrets({
-					env,
-					userId: user.mcpUser.userId,
+					const current = await listSecrets({
+						env,
+						userId: user.mcpUser.userId,
 						scope: approval.scope,
 						secretContext: approval.secretContext,
 					})
@@ -166,9 +165,7 @@ async function buildAccountSecretsPayload(input: {
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 }): Promise<AccountSecretsPayload> {
 	const url = new URL(input.request.url)
-	const approvalToken = url.pathname.startsWith(approvalPathPrefix)
-		? url.searchParams.get('request')
-		: null
+	const approvalToken = url.searchParams.get('request')
 
 	const savedApps = await listSavedAppsForUser({
 		env: input.env,

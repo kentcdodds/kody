@@ -216,6 +216,7 @@ export function AccountRoute(handle: Handle) {
 							<button
 								type="button"
 								disabled={submittingApprovalAction != null}
+								onClick={() => submitApproval('approve')}
 								css={primaryButtonCss}
 							>
 								Approve host
@@ -223,6 +224,7 @@ export function AccountRoute(handle: Handle) {
 							<button
 								type="button"
 								disabled={submittingApprovalAction != null}
+								onClick={() => submitApproval('reject')}
 								css={secondaryButtonCss}
 							>
 								Reject
