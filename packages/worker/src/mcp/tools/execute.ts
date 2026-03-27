@@ -1,7 +1,10 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { formatExecutionOutput } from '#mcp/executor.ts'
+import {
+	formatExecutionOutput,
+	getExecutionErrorDetails,
+} from '#mcp/executor.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
@@ -121,6 +124,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			const durationMs = Math.round(performance.now() - startedAt)
 
 			if (result.error) {
+				const errorDetails = getExecutionErrorDetails(result.error)
 				const { errorName, errorMessage } = errorFields(result.error)
 				logMcpEvent({
 					category: 'mcp',
@@ -145,6 +149,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					],
 					structuredContent: {
 						error: result.error,
+						errorDetails,
 						logs: result.logs ?? [],
 					},
 					isError: true,

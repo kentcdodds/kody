@@ -755,6 +755,56 @@ test('mcp server executes ui_save_app via execute tool', async () => {
 	expect(textOutput).toContain('meta_save_skill')
 })
 
+test('mcp server returns structured guidance for missing secret errors in execute', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const result = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				await fetch('https://example.com/private', {
+					headers: {
+						Authorization: 'Bearer {{secret:missingToken|scope=user}}',
+					},
+				})
+				return { ok: true }
+			}`,
+		},
+	})
+
+	const structuredResult = (result as CallToolResult).structuredContent as
+		| {
+				error?: unknown
+				errorDetails?: Record<string, unknown>
+		  }
+		| undefined
+	const errorDetails = structuredResult?.errorDetails
+	const textOutput =
+		(result as CallToolResult).content.find(
+			(item): item is Extract<ContentBlock, { type: 'text' }> =>
+				item.type === 'text',
+		)?.text ?? ''
+
+	expect((result as CallToolResult).isError).toBe(true)
+	expect(textOutput).toContain('Secret "missingToken" was not found.')
+	expect(textOutput).toContain(
+		'Next step: Open a generated UI so the user can provide and save this secret, then retry the workflow.',
+	)
+	expect(errorDetails).toEqual({
+		kind: 'secret_required',
+		message: 'Secret "missingToken" was not found.',
+		nextStep:
+			'Open a generated UI so the user can provide and save this secret, then retry the workflow.',
+		secretNames: ['missingToken'],
+		suggestedAction: {
+			type: 'open_generated_ui',
+			reason: 'collect_secret',
+		},
+	})
+})
+
 test('mcp server opens generated ui with inline code and serves shell resource', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
@@ -1131,6 +1181,7 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		(await blockedFetchExecuteResponse.json()) as {
 			ok?: boolean
 			error?: string
+			errorDetails?: Record<string, unknown>
 		}
 	expect(blockedFetchExecutePayload.ok).toBe(false)
 	expect(blockedFetchExecutePayload.error).toContain(
@@ -1144,6 +1195,20 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 			/https?:\/\/\S*\/account\/secrets\/[^\s?]+\?[^)\s]*allowed-host=[^&\s)]+[^)\s]*/,
 		) ?? null
 	expect(approvalMatch).not.toBeNull()
+	expect(blockedFetchExecutePayload.errorDetails).toEqual({
+		kind: 'host_approval_required',
+		message: expect.stringContaining(
+			'Secret "cloudflareToken" is not allowed for host "example.com"',
+		),
+		nextStep:
+			'Ask the user whether they want to approve this host in the account web UI, then retry after approval.',
+		approvalUrl: approvalMatch![0],
+		host: 'example.com',
+		secretNames: ['cloudflareToken'],
+		suggestedAction: {
+			type: 'approve_secret_host',
+		},
+	})
 
 	const appCookieHeader = await loginToApp(server.origin, database.user)
 	const approvalResponse = await fetch(approvalMatch![0]!, {

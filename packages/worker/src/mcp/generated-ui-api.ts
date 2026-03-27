@@ -5,7 +5,10 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { formatExecutionOutput } from '#mcp/executor.ts'
+import {
+	formatExecutionOutput,
+	getExecutionErrorDetails,
+} from '#mcp/executor.ts'
 import {
 	createGeneratedUiAppSession,
 	verifyGeneratedUiAppSession,
@@ -201,10 +204,12 @@ function createGeneratedUiExecuteHandler(env: Env) {
 				workerExports,
 			)
 			if (result.error) {
+				const errorDetails = getExecutionErrorDetails(result.error)
 				return jsonResponse(
 					{
 						ok: false,
 						error: formatExecutionOutput(result),
+						errorDetails,
 						logs: result.logs ?? [],
 					},
 					400,
