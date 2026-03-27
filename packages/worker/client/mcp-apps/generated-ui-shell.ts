@@ -79,6 +79,20 @@ type HostToolResult = {
 	isError?: boolean
 }
 
+type SavedAppSourceFromHostToolResult =
+	| {
+			handled: false
+	  }
+	| {
+			handled: true
+			code: string
+			runtime: AppRuntime
+	  }
+	| {
+			handled: true
+			errorMessage: string
+	  }
+
 function coerceJsonRecord(value: unknown): Record<string, unknown> | undefined {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
 		return undefined
@@ -322,6 +336,114 @@ export function absolutizeHtmlAttributeUrls(
 	})
 }
 
+export function buildLocalMessageLogRuntimeSource() {
+	return `
+function ensureLocalMessageLog() {
+	const doc = window.document;
+	if (!doc || typeof doc.createElement !== 'function') return null;
+	const host = doc.body || doc.documentElement;
+	if (!host) return null;
+	const existingRoot = window.__kodyLocalMessageLogRoot;
+	const existingList = window.__kodyLocalMessageLogList;
+	if (existingRoot && existingList && existingRoot.parentNode) {
+		return { root: existingRoot, list: existingList };
+	}
+	const root = doc.createElement('section');
+	root.setAttribute('data-kody-local-message-log', 'true');
+	root.setAttribute('role', 'log');
+	root.setAttribute('aria-live', 'polite');
+	root.style.cssText = [
+		'position:fixed',
+		'left:12px',
+		'right:12px',
+		'bottom:calc(env(safe-area-inset-bottom, 0px) + 12px)',
+		'z-index:2147483647',
+		'display:flex',
+		'flex-direction:column',
+		'gap:8px',
+		'max-height:min(40vh, 320px)',
+		'padding:12px',
+		'overflow:auto',
+		'border-radius:16px',
+		'background:rgba(15, 23, 42, 0.92)',
+		'color:#f8fafc',
+		'box-shadow:0 16px 40px rgba(15, 23, 42, 0.28)',
+		'font:500 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+		'box-sizing:border-box',
+		'backdrop-filter:blur(16px)',
+		'-webkit-backdrop-filter:blur(16px)',
+	].join(';');
+	const title = doc.createElement('div');
+	title.textContent = 'Messages';
+	title.style.cssText = [
+		'font-size:12px',
+		'font-weight:700',
+		'letter-spacing:0.08em',
+		'text-transform:uppercase',
+		'color:rgba(226, 232, 240, 0.8)',
+	].join(';');
+	const list = doc.createElement('div');
+	list.style.cssText = [
+		'display:flex',
+		'flex-direction:column',
+		'gap:8px',
+	].join(';');
+	root.appendChild(title);
+	root.appendChild(list);
+	host.appendChild(root);
+	window.__kodyLocalMessageLogRoot = root;
+	window.__kodyLocalMessageLogList = list;
+	return { root, list };
+}
+function formatLocalMessageTimestamp(date) {
+	try {
+		return new Intl.DateTimeFormat(undefined, {
+			hour: 'numeric',
+			minute: '2-digit',
+		}).format(date);
+	} catch {
+		return date.toLocaleTimeString();
+	}
+}
+function appendLocalMessageLogEntry(text) {
+	const refs = ensureLocalMessageLog();
+	if (!refs) return false;
+	const doc = window.document;
+	const entry = doc.createElement('div');
+	entry.style.cssText = [
+		'padding:10px 12px',
+		'border-radius:12px',
+		'background:rgba(148, 163, 184, 0.18)',
+		'border:1px solid rgba(148, 163, 184, 0.2)',
+		'box-shadow:inset 0 1px 0 rgba(255,255,255,0.04)',
+	].join(';');
+	const timestamp = doc.createElement('div');
+	timestamp.textContent = formatLocalMessageTimestamp(new Date());
+	timestamp.style.cssText = [
+		'margin-bottom:4px',
+		'font-size:11px',
+		'font-weight:700',
+		'letter-spacing:0.02em',
+		'color:rgba(226, 232, 240, 0.72)',
+	].join(';');
+	const content = doc.createElement('div');
+	content.textContent = typeof text === 'string' ? text : String(text ?? '');
+	content.style.cssText = [
+		'white-space:pre-wrap',
+		'word-break:break-word',
+	].join(';');
+	entry.appendChild(timestamp);
+	entry.appendChild(content);
+	refs.list.appendChild(entry);
+	while (refs.list.childNodes && refs.list.childNodes.length > 12 && refs.list.firstChild) {
+		refs.list.removeChild(refs.list.firstChild);
+	}
+	refs.root.scrollTop = refs.root.scrollHeight;
+	return true;
+}
+	`.trim()
+}
+
 function getHostToolErrorMessage(result: HostToolResult | null) {
 	if (!result || result.isError !== true) return null
 	const structuredContent = isRecord(result.structuredContent)
@@ -333,6 +455,40 @@ function getHostToolErrorMessage(result: HostToolResult | null) {
 	return typeof error?.message === 'string'
 		? error.message
 		: 'Code execution failed.'
+}
+
+export function readSavedAppSourceFromHostToolResult(
+	result: HostToolResult | null,
+): SavedAppSourceFromHostToolResult {
+	if (!result) {
+		return {
+			handled: false as const,
+		}
+	}
+	const errorMessage = getHostToolErrorMessage(result)
+	if (errorMessage) {
+		return {
+			handled: true as const,
+			errorMessage,
+		}
+	}
+	const structuredContent = isRecord(result.structuredContent)
+		? result.structuredContent
+		: null
+	const code = typeof structuredContent?.code === 'string'
+		? structuredContent.code
+		: null
+	if (!code) {
+		return {
+			handled: true as const,
+			errorMessage: 'Saved app source is missing code.',
+		}
+	}
+	return {
+		handled: true as const,
+		code,
+		runtime: coerceRuntime(structuredContent?.runtime) ?? 'html',
+	}
 }
 
 async function executeCodeWithHostTool(
@@ -910,10 +1066,13 @@ async function requestSecretAction(type, input, responseType) {
 	);
 	return payload && typeof payload === 'object' ? payload.response : null;
 }
+${buildLocalMessageLogRuntimeSource()}
 window.kodyWidget = {
 	params: window.__kodyAppParams ?? {},
 	sendMessage(text) {
-		if (window.parent === window) return false;
+		if (window.parent === window) {
+			return appendLocalMessageLogEntry(text);
+		}
 		window.parent.postMessage({
 			type: shellMessagePrefix + 'send-message',
 			payload: { text },
@@ -1571,29 +1730,57 @@ ${buildParamsBootstrapSource(latestEnvelope?.params)}
 		frameElement.srcdoc = absolutizeHtmlAttributeUrls(htmlSource, getBaseHref())
 	}
 
-	async function resolveSavedAppCode(appId: string) {
+	async function resolveSavedAppCode(
+		appId: string,
+	): Promise<{ code: string; runtime: AppRuntime }> {
+		const hostToolResult = readSavedAppSourceFromHostToolResult(
+			(await hostBridge.callTool({
+				name: 'ui_load_app_source',
+				arguments: {
+					app_id: appId,
+				},
+				timeoutMs: 90_000,
+			})) as HostToolResult | null,
+		)
+		if (hostToolResult.handled && 'code' in hostToolResult) {
+			return {
+				code: hostToolResult.code,
+				runtime: hostToolResult.runtime,
+			}
+		}
 		const target = getAppSourceRequestTarget(appId)
 		if (!target) {
-			throw new Error('Failed to load saved app source.')
-		}
-		const { response, payload } = await fetchJsonResponse({
-			url: target.url,
-			method: 'GET',
-			token: target.token,
-		})
-		const app = isRecord(payload?.app) ? payload.app : null
-		if (!response.ok || !payload || payload.ok !== true || !app) {
 			throw new Error(
-				getApiErrorMessage(payload, 'Failed to load saved app source.'),
+				hostToolResult.handled
+					? hostToolResult.errorMessage
+					: 'Failed to load saved app source.',
 			)
 		}
-		const code = typeof app.code === 'string' ? app.code : null
-		if (!code) {
-			throw new Error('Saved app source is missing code.')
-		}
-		return {
-			code,
-			runtime: coerceRuntime(app.runtime) ?? 'html',
+		try {
+			const { response, payload } = await fetchJsonResponse({
+				url: target.url,
+				method: 'GET',
+				token: target.token,
+			})
+			const app = isRecord(payload?.app) ? payload.app : null
+			if (!response.ok || !payload || payload.ok !== true || !app) {
+				throw new Error(
+					getApiErrorMessage(payload, 'Failed to load saved app source.'),
+				)
+			}
+			const code = typeof app.code === 'string' ? app.code : null
+			if (!code) {
+				throw new Error('Saved app source is missing code.')
+			}
+			return {
+				code,
+				runtime: coerceRuntime(app.runtime) ?? 'html',
+			}
+		} catch (error) {
+			if (hostToolResult.handled) {
+				throw new Error(hostToolResult.errorMessage)
+			}
+			throw error
 		}
 	}
 
