@@ -14,11 +14,7 @@ export const account = {
 			return redirectToLogin(request)
 		}
 
-		const response = render(
-			Layout({
-				title: 'Account',
-			}),
-		)
+		const response = render(Layout({ title: 'Account' }))
 		if (setCookie) {
 			response.headers.set('Set-Cookie', setCookie)
 		}

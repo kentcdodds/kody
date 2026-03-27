@@ -12,7 +12,7 @@ export const secretUpdateCapability = defineDomainCapability(
 	{
 		name: 'secret_update',
 		description:
-			'Update an existing secret value or description for the signed-in user. Use this when rotating a secret or correcting its non-sensitive metadata.',
+			'Update an existing secret value or description for the signed-in user. Use this when rotating a secret or correcting its non-sensitive metadata. This does not change allowed outbound hosts; host approval stays in the app UI.',
 		keywords: ['secret', 'update', 'rotate', 'credential'],
 		readOnly: false,
 		idempotent: false,
@@ -65,6 +65,7 @@ export const secretUpdateCapability = defineDomainCapability(
 					scope: secret.scope,
 					description: secret.description,
 					app_id: secret.appId,
+					allowed_hosts: secret.allowedHosts,
 					created_at: secret.createdAt,
 					updated_at: secret.updatedAt,
 					ttl_ms: secret.ttlMs,

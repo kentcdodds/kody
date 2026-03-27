@@ -3,15 +3,25 @@ import {
 	normalizeCode,
 	type ExecuteResult,
 } from '@cloudflare/codemode'
+import { exports as workerExports } from 'cloudflare:workers'
+type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
+import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
 
-export function createExecuteExecutor(env: Env) {
+export function createExecuteExecutor(input: {
+	env: Env
+	exports?: WorkerLoopbackExports
+	gatewayProps: FetchGatewayProps
+}) {
 	return new DynamicWorkerExecutor({
-		loader: env.LOADER,
+		loader: input.env.LOADER,
 		timeout: 90_000,
+		globalOutbound: (input.exports ?? workerExports)?.CodemodeFetchGateway({
+			props: input.gatewayProps,
+		}),
 	})
 }
 
@@ -22,30 +32,8 @@ export function wrapExecuteCode(code: string) {
     const result = await codemode.secret_list(options);
     return Array.isArray(result?.secrets) ? result.secrets : [];
   };
-  const getSecret = async (name, options = {}) => {
-    const result = await codemode.secret_get({
-      name,
-      ...(options && typeof options === 'object' ? options : {}),
-    });
-    if (!result || result.found !== true || typeof result.value !== 'string') {
-      return null;
-    }
-    if (typeof result.scope === 'string') {
-      console.log(\`Secret used: \${result.scope}:\${name}\`);
-    }
-    return result.value;
-  };
-  const requireSecret = async (name, options = {}) => {
-    const value = await getSecret(name, options);
-    if (value === null) {
-      throw new Error(\`Secret not found: \${name}\`);
-    }
-    return value;
-  };
   const secrets = {
     list: listSecrets,
-    get: getSecret,
-    require: requireSecret,
   };
   const userCode = (${normalized});
   return await userCode();

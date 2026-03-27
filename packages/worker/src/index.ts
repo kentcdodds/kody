@@ -30,8 +30,9 @@ import {
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleSkillReindexRequest } from './skill-maintenance.ts'
+import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
 
-export { ChatAgent, HomeConnectorSession, HomeMCP, MCP }
+export { ChatAgent, CodemodeFetchGateway, HomeConnectorSession, HomeMCP, MCP }
 
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
 

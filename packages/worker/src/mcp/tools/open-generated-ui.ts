@@ -21,7 +21,8 @@ Behavior:
 - After rendering, the shell automatically reports the rendered widget size to the host via the standard MCP Apps \`ui/notifications/size-changed\` notification.
 - \`executeCode(code)\` runs server-side code through the generated UI session when available, keeping secret resolution on the server.
 - \`saveSecret({ name, value, description?, scope? })\`, \`listSecrets({ scope? })\`, and \`deleteSecret({ name, scope? })\` let the UI manage secret references without embedding raw values in generated code.
-- Secret metadata returned by the UI helpers includes \`created_at\`, \`updated_at\`, and \`ttl_ms\` when available so the UI can explain lifecycle and expiry.
+- Saving a secret does not authorize outbound use automatically. If generated code later needs to send that secret to a host, the agent must ask the user to approve that host through the app approval flow.
+- Secret metadata returned by the UI helpers includes \`allowed_hosts\`, \`created_at\`, \`updated_at\`, and \`ttl_ms\` when available so the UI can explain lifecycle, approval state, and expiry.
 
 Mini standard library:
 \`\`\`ts
@@ -32,8 +33,8 @@ declare global {
       openLink(url: string): boolean
       toggleFullscreen(): Promise<'inline' | 'fullscreen' | 'pip' | null>
       executeCode(code: string): Promise<unknown>
-      saveSecret(input: { name: string; value: string; description?: string; scope?: 'session' | 'app' | 'user' }): Promise<{ ok: boolean; secret?: { name: string; scope: 'session' | 'app' | 'user'; description: string; app_id: string | null; created_at: string; updated_at: string; ttl_ms: number | null }; error?: string }>
-      listSecrets(input?: { scope?: 'session' | 'app' | 'user' }): Promise<Array<{ name: string; scope: 'session' | 'app' | 'user'; description: string; app_id: string | null; created_at: string; updated_at: string; ttl_ms: number | null }>>
+      saveSecret(input: { name: string; value: string; description?: string; scope?: 'session' | 'app' | 'user' }): Promise<{ ok: boolean; secret?: { name: string; scope: 'session' | 'app' | 'user'; description: string; app_id: string | null; allowed_hosts: string[]; created_at: string; updated_at: string; ttl_ms: number | null }; error?: string }>
+      listSecrets(input?: { scope?: 'session' | 'app' | 'user' }): Promise<Array<{ name: string; scope: 'session' | 'app' | 'user'; description: string; app_id: string | null; allowed_hosts: string[]; created_at: string; updated_at: string; ttl_ms: number | null }>>
       deleteSecret(input: { name: string; scope?: 'session' | 'app' | 'user' }): Promise<{ ok: boolean; deleted?: boolean; error?: string }>
     }
   }

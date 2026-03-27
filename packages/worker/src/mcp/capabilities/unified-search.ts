@@ -123,9 +123,7 @@ export type UnifiedSearchMatch =
 	| UiArtifactSearchHit
 
 function buildSecretUsage(name: string) {
-	return `Resolve during execute with secrets.require(${JSON.stringify(
-		name,
-	)}, { scope: "user" }).`
+	return `Use in execute-time fetch placeholders like {{secret:${name}|scope=user}} and ask the user to approve each destination host in the app when needed.`
 }
 
 function rowToSecretHit(

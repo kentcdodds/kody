@@ -40,6 +40,18 @@ Each capability call resolves to the raw returned value itself, not an MCP
 wrapper object. When chaining calls, read fields from the previous result using
 the capability's \`outputSchema\` from \`search\` with \`detail: true\`.
 
+Network access:
+- Regular \`fetch(...)\` is available inside the sandbox and is routed through a host-side gateway.
+- To inject a saved secret into a request, use a placeholder string such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body.
+- Secret placeholders only work for hosts that the user has already approved for that secret.
+- If a request is blocked because the host is not approved, do not retry blindly. Ask the user whether they want to approve that host, then provide the approval link from the error message.
+- Saving or updating a secret does not authorize outbound use automatically. Host approval happens separately in the app.
+
+Secrets helper:
+- \`await secrets.list()\` returns secret metadata only. It does not reveal secret values.
+- Use \`secrets.list({ scope: 'app' })\` to inspect available secret names, descriptions, scopes, and allowed hosts before building a request.
+- Do not expect \`secrets.get(...)\` or \`secrets.require(...)\` to be available in execute-time code.
+
 Your code must be an async arrow function that returns the result.
 
 Examples:
@@ -97,7 +109,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						'mcp.tool': 'execute',
 					},
 				},
-				async () => runCodemodeWithRegistry(env, callerContext, code),
+				async () =>
+					runCodemodeWithRegistry(
+						env,
+						callerContext,
+						code,
+						undefined,
+						agent.getLoopbackExports(),
+					),
 			)
 			const durationMs = Math.round(performance.now() - startedAt)
 

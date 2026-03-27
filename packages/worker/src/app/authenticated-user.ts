@@ -39,7 +39,7 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 			new Set([session.id, emailBasedUserId].filter(Boolean)),
 		),
 		mcpUser: {
-			userId: session.id,
+			userId: emailBasedUserId,
 			email: session.email,
 			displayName: buildDisplayName(session.email),
 		},

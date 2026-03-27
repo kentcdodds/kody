@@ -6,4 +6,5 @@ export type McpRegistrationAgent = {
 	getEnv(): Env
 	getCallerContext(): McpCallerContext
 	requireDomain(): string
+	getLoopbackExports(): Cloudflare.Exports
 }

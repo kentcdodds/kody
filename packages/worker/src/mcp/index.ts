@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { exports as workerExports } from 'cloudflare:workers'
 import { invariant } from '@epic-web/invariant'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
@@ -34,7 +35,7 @@ Quick start
 - Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
 - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
-- Use the injected 'secrets' helper during execute-time code to list metadata or resolve user/app/session secret references without placing secret values in prompts or saved app source.
+- Use the injected 'secrets' helper during execute-time code to list secret metadata only; it does not return plaintext values.
 
 Kody source repository
 - Kody (this app and MCP server) is developed at https://github.com/kentcdodds/kody. When you launch a Cursor Cloud Agent to improve Kody itself, use that repository URL (unless the user explicitly points you at another fork or repo).
@@ -78,7 +79,9 @@ How to use execute
 - Each capability call returns that capability's raw structured result value.
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
-- The sandbox also injects a read-oriented 'secrets' helper for metadata/lookup: \`await secrets.list()\`, \`await secrets.list({ scope: 'app' })\`, \`await secrets.get('name')\`, \`await secrets.require('cloudflareToken', { scope: 'user' })\`.
+- The sandbox injects a metadata-only 'secrets' helper: \`await secrets.list()\` or \`await secrets.list({ scope: 'app' })\`.
+- Use normal \`fetch(...)\` for outbound HTTP. To inject a stored secret, place a placeholder such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body; the host resolves it server-side and blocks unapproved destinations.
+- Saving or updating a secret does not authorize sending it anywhere. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
 - Mutating secret operations stay on \`codemode\`: for example \`await codemode.secret_update({ name: 'cloudflareToken', scope: 'app', value: '...' })\` or \`await codemode.secret_delete({ name: 'cloudflareToken', scope: 'app' })\`.
 - Your code must be an async arrow function that returns the result.
 - Example: const result = await codemode[capabilityName](args)
@@ -107,6 +110,9 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	}
 	getEnv() {
 		return this.env
+	}
+	getLoopbackExports() {
+		return this.ctx.exports as typeof workerExports
 	}
 	requireDomain() {
 		const { baseUrl } = this.getCallerContext()

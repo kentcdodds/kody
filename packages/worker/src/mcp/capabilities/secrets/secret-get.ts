@@ -11,7 +11,7 @@ export const secretGetCapability = defineDomainCapability(
 	{
 		name: 'secret_get',
 		description:
-			'Resolve a secret value for server-side execution. Use the injected `secrets.get(name, { scope })` or `secrets.require(name, { scope })` helper from execute-time code instead of calling this directly when possible.',
+			'Resolve a secret value for server-side execution. Prefer placeholder-based network requests (`{{secret:name}}` or `{{secret:name|scope=app}}`) inside execute-time code so outbound host approvals remain enforced outside the sandbox.',
 		keywords: ['secret', 'resolve', 'read', 'credential'],
 		readOnly: true,
 		idempotent: true,

@@ -13,6 +13,7 @@ export const clientRoutes = {
 	'/chat/:threadId': <ChatRoute />,
 	'/ui/:id': <SavedUiRoute />,
 	'/account': <AccountRoute />,
+	'/account/secrets/approve': <AccountRoute />,
 	'/login': <LoginRoute />,
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,
