@@ -2,18 +2,8 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
+import { getUiArtifactById, parseStringArray } from '#mcp/ui-artifacts-repo.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-
-function parseStringArray(raw: string): Array<string> {
-	try {
-		const value = JSON.parse(raw) as unknown
-		if (!Array.isArray(value)) return []
-		return value.filter((entry): entry is string => typeof entry === 'string')
-	} catch {
-		return []
-	}
-}
 
 const outputSchema = z.object({
 	app_id: z.string(),

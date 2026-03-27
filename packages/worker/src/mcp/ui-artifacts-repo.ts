@@ -1,5 +1,15 @@
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
+export function parseStringArray(raw: string): Array<string> {
+	try {
+		const value = JSON.parse(raw) as unknown
+		if (!Array.isArray(value)) return []
+		return value.filter((entry): entry is string => typeof entry === 'string')
+	} catch {
+		return []
+	}
+}
+
 export function uiArtifactVectorId(artifactId: string): string {
 	return `ui_artifact_${artifactId}`
 }
@@ -82,6 +92,54 @@ export async function deleteUiArtifact(
 	const out = await db
 		.prepare(`DELETE FROM ui_artifacts WHERE id = ? AND user_id = ?`)
 		.bind(artifactId, userId)
+		.run()
+	return (out.meta.changes ?? 0) > 0
+}
+
+export async function updateUiArtifact(
+	db: D1Database,
+	userId: string,
+	artifactId: string,
+	updates: Partial<
+		Pick<
+			UiArtifactRow,
+			'title' | 'description' | 'keywords' | 'code' | 'runtime' | 'search_text'
+		>
+	>,
+): Promise<boolean> {
+	const assignments: Array<string> = []
+	const values: Array<unknown> = []
+	const addAssignment = (column: string, value: unknown) => {
+		assignments.push(`${column} = ?`)
+		values.push(value)
+	}
+
+	if (updates.title !== undefined) {
+		addAssignment('title', updates.title)
+	}
+	if (updates.description !== undefined) {
+		addAssignment('description', updates.description)
+	}
+	if (updates.keywords !== undefined) {
+		addAssignment('keywords', updates.keywords)
+	}
+	if (updates.code !== undefined) {
+		addAssignment('source_code', updates.code)
+	}
+	if (updates.runtime !== undefined) {
+		addAssignment('source_type', updates.runtime)
+	}
+	if (updates.search_text !== undefined) {
+		addAssignment('search_text', updates.search_text ?? null)
+	}
+
+	addAssignment('updated_at', new Date().toISOString())
+
+	const out = await db
+		.prepare(
+			`UPDATE ui_artifacts SET ${assignments.join(', ')} WHERE id = ? AND user_id = ?`,
+		)
+		.bind(...values, artifactId, userId)
 		.run()
 	return (out.meta.changes ?? 0) > 0
 }
