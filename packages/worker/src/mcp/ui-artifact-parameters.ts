@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
-const uiArtifactParameterTypes = ['string', 'number', 'boolean', 'json'] as const
+const uiArtifactParameterTypes = [
+	'string',
+	'number',
+	'boolean',
+	'json',
+] as const
 const reservedParameterNames = new Set([
 	'__proto__',
 	'constructor',
@@ -30,7 +35,10 @@ export type UiArtifactParameterDefinition = {
 }
 
 export const uiArtifactParameterSchema = z.object({
-	name: z.string().min(1).describe('Parameter name available on window.kodyWidget.params.'),
+	name: z
+		.string()
+		.min(1)
+		.describe('Parameter name available on window.kodyWidget.params.'),
 	description: z
 		.string()
 		.min(1)

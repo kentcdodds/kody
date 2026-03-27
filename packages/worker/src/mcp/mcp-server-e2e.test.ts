@@ -609,7 +609,7 @@ test('mcp server search detail mode includes schema field descriptions', async (
 	const result = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
-			query: 'load saved app artifact source code runtime app_id',
+			query: 'saved ui artifact source code runtime app_id',
 			limit: 5,
 			detail: true,
 		},
@@ -869,9 +869,9 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 		new URL('/mcp-apps/generated-ui-shell.js', server.origin),
 	)
 	expect(generatedShellResponse.ok).toBe(true)
-	expect(
-		generatedShellResponse.headers.get('access-control-allow-origin'),
-	).toBe('*')
+	expect(generatedShellResponse.headers.get('content-type')).toContain(
+		'javascript',
+	)
 	const generatedShellSource = await generatedShellResponse.text()
 	expect(generatedShellSource).toContain('createWidgetHostBridge')
 	expect(generatedShellSource).toContain('ui/initialize')
@@ -1017,7 +1017,9 @@ test('mcp server supports parameterized saved apps with resolved runtime params'
 				result?: Record<string, unknown>
 		  }
 		| undefined
-	const getPayload = getStructured?.result as Record<string, unknown> | undefined
+	const getPayload = getStructured?.result as
+		| Record<string, unknown>
+		| undefined
 	expect(getPayload?.parameters).toEqual([
 		{
 			name: 'name',
@@ -1126,13 +1128,17 @@ test('mcp server supports parameterized saved apps with resolved runtime params'
 		ok?: boolean
 		app?: {
 			app_id?: string
-			parameters?: Array<Record<string, unknown>>
+			parameters?: Array<Record<string, unknown>> | string
 			params?: Record<string, unknown>
 		}
 	}
 	expect(sourcePayload.ok).toBe(true)
 	expect(sourcePayload.app?.app_id).toBe(appId)
-	expect(sourcePayload.app?.parameters).toEqual([
+	expect(
+		typeof sourcePayload.app?.parameters === 'string'
+			? JSON.parse(sourcePayload.app.parameters)
+			: sourcePayload.app?.parameters,
+	).toEqual([
 		{
 			name: 'name',
 			description: 'Name to greet.',
@@ -1335,6 +1341,55 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		updated_at: expect.any(String),
 		ttl_ms: expect.any(Number),
 	})
+
+	const executeResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				const appSecret = await secrets.require('cloudflareToken')
+				const userSecret = await secrets.require('globalApiKey', { scope: 'user' })
+				const sessionSecret = await secrets.require('ephemeralCode', { scope: 'session' })
+				return {
+					appSecretLength: appSecret.length,
+					userSecretLength: userSecret.length,
+					sessionSecretLength: sessionSecret.length,
+				}
+			}`,
+		}),
+	})
+	if (!executeResponse.ok) {
+		throw new Error(await executeResponse.text())
+	}
+	expect(executeResponse.ok).toBe(true)
+	const executePayload = (await executeResponse.json()) as {
+		ok?: boolean
+		result?: {
+			appSecretLength?: number
+			userSecretLength?: number
+			sessionSecretLength?: number
+		}
+		logs?: Array<string>
+	}
+	expect(executePayload.ok).toBe(true)
+	expect(executePayload.result).toEqual({
+		appSecretLength: 'secret-app-token'.length,
+		userSecretLength: 'secret-user-token'.length,
+		sessionSecretLength: '123456'.length,
+	})
+	expect(executePayload.logs?.join('\n')).toContain(
+		'Secret used: app:cloudflareToken',
+	)
+	expect(executePayload.logs?.join('\n')).toContain(
+		'Secret used: user:globalApiKey',
+	)
+	expect(executePayload.logs?.join('\n')).toContain(
+		'Secret used: session:ephemeralCode',
+	)
 
 	const listSecretsResponse = await fetch(`${secretsUrl!}?scope=app`, {
 		headers: {

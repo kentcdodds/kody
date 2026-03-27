@@ -710,7 +710,9 @@ function initializeGeneratedUiShell() {
 		return code.replace(/<\/script/gi, '<\\/script')
 	}
 
-	function buildParamsBootstrapSource(params: Record<string, unknown> | undefined) {
+	function buildParamsBootstrapSource(
+		params: Record<string, unknown> | undefined,
+	) {
 		const paramsJson = JSON.stringify(params ?? {})
 		return `
 const __kodyResolvedParams = ${paramsJson};
