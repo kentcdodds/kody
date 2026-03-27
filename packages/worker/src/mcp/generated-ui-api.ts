@@ -39,7 +39,6 @@ const generatedUiApiRoutes = route({
 	sourceWithSuffix: '/ui-api/:id/source',
 	execute: post('/ui-api/:id/execute'),
 	listSecrets: '/ui-api/:id/secrets',
-	saveSecret: post('/ui-api/:id/secrets'),
 	deleteSecret: post('/ui-api/:id/secrets/delete'),
 })
 

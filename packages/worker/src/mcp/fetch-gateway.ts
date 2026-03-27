@@ -40,7 +40,6 @@ export async function expandSecretPlaceholders(input: {
 	props: FetchGatewayProps
 	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
 }) {
-	ensureFetchAllowed(input.props)
 	const headers = new Headers(input.request.headers)
 	const requestBody = await readRequestBody(input.request)
 	const replacements = new Map<string, string>()
@@ -49,6 +48,10 @@ export async function expandSecretPlaceholders(input: {
 		...Array.from(headers.values()),
 		requestBody,
 	])
+	const hasReferencedSecrets = referencedSecrets.length > 0
+	if (hasReferencedSecrets) {
+		ensureFetchAllowed(input.props)
+	}
 	for (const referenced of referencedSecrets) {
 		const resolved = await resolveSecretForHost({
 			env: input.env,
@@ -88,11 +91,15 @@ export async function expandSecretPlaceholders(input: {
 		requestBody == null
 			? undefined
 			: replaceSecretPlaceholders(requestBody, replacements)
+	const nextRedirect =
+		hasReferencedSecrets && input.request.redirect === 'follow'
+			? 'manual'
+			: input.request.redirect
 	return new Request(nextUrl, {
 		method: input.request.method,
 		headers,
 		body: shouldSendBody(input.request.method) ? nextBody : undefined,
-		redirect: input.request.redirect,
+		redirect: nextRedirect,
 	})
 }
 
