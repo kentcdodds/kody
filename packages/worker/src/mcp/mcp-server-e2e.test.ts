@@ -1145,8 +1145,6 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 					method: 'POST',
 					headers: {
 						Authorization: 'Bearer {{secret:cloudflareToken|scope=app}}',
-						'X-Global-Key': '{{secret:globalApiKey|scope=user}}',
-						'X-Session-Code': '{{secret:ephemeralCode|scope=session}}',
 					},
 					body: JSON.stringify({ note: 'deploy' }),
 				})
