@@ -717,6 +717,9 @@ function initializeGeneratedUiShell() {
 		return `
 const __kodyResolvedParams = ${paramsJson};
 window.__kodyAppParams = __kodyResolvedParams;
+window.kodyWidget = window.kodyWidget ?? {};
+window.kodyWidget.params = __kodyResolvedParams;
+window.params = window.kodyWidget.params;
 		`.trim()
 	}
 
