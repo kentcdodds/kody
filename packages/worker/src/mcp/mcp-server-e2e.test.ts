@@ -1445,3 +1445,79 @@ test('mcp server deletes saved ui app artifacts', async () => {
 	const apps = listPayload?.apps as Array<{ app_id?: string }> | undefined
 	expect(apps?.some((app) => app.app_id === appId)).toBe(false)
 })
+
+test('mcp server updates saved ui app artifacts', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_save_app({
+						title: 'Original App',
+						description: 'Original app description.',
+						keywords: ['original', 'ui'],
+						code: '<main><h1>Original</h1></main>',
+					})`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const savedApp = saveStructured?.result as Record<string, unknown> | undefined
+	const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+	expect(appId).not.toBeNull()
+
+	const updateResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_update_app({
+						app_id: ${JSON.stringify(appId)},
+						title: 'Updated App',
+						description: 'Updated description.',
+						keywords: ['updated', 'ui'],
+						code: '<main><h1>Updated</h1></main>',
+						runtime: 'javascript',
+						search_text: 'updated searchable text',
+					})`,
+		},
+	})
+	const updateStructured = (updateResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const updatePayload = updateStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	expect(updatePayload?.app_id).toBe(appId)
+	expect(updatePayload?.runtime).toBe('javascript')
+	expect(updatePayload?.hosted_url).toBe(`${server.origin}/ui/${appId}`)
+
+	const getResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_get_app({ app_id: ${JSON.stringify(appId)} })`,
+		},
+	})
+	const getStructured = (getResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const getPayload = getStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	expect(getPayload?.title).toBe('Updated App')
+	expect(getPayload?.description).toBe('Updated description.')
+	expect(getPayload?.keywords).toEqual(['updated', 'ui'])
+	expect(getPayload?.code).toBe('<main><h1>Updated</h1></main>')
+	expect(getPayload?.runtime).toBe('javascript')
+	expect(getPayload?.search_text).toBe('updated searchable text')
+})
