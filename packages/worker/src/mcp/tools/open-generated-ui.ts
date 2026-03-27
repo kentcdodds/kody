@@ -21,6 +21,7 @@ Behavior:
 - After rendering, the shell automatically reports the rendered widget size to the host via the standard MCP Apps \`ui/notifications/size-changed\` notification.
 - \`executeCode(code)\` runs server-side code through the generated UI session when available, keeping secret resolution on the server.
 - \`saveSecret({ name, value, description?, scope? })\`, \`saveSecrets([...])\`, \`listSecrets({ scope? })\`, and \`deleteSecret({ name, scope? })\` let the UI manage secret references without embedding raw values in generated code.
+- Use generated UI whenever the user needs to enter a sensitive value. Do not ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, or other credentials into chat.
 - Saving a secret does not authorize outbound use automatically. If generated code later needs to send that secret to a host, the agent must ask the user to approve that host through the app approval flow.
 - Secret metadata returned by the UI helpers includes \`allowed_hosts\`, \`created_at\`, \`updated_at\`, and \`ttl_ms\` when available so the UI can explain lifecycle, approval state, and expiry.
 - Prefer the higher-level helpers below for OAuth, form persistence, and secret-bearing requests instead of hand-rolling state handling or parsing raw approval-link errors.
