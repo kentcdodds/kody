@@ -1,7 +1,4 @@
-import {
-	DynamicWorkerExecutor,
-	type ExecuteResult,
-} from '@cloudflare/codemode'
+import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
