@@ -278,6 +278,10 @@ function decodeHtmlAttribute(value: string) {
 		.replaceAll('&amp;', '&')
 }
 
+function escapeInlineModuleSource(code: string) {
+	return code.replace(/<\/script/gi, '<\\/script')
+}
+
 export function injectRuntimeStateIntoDocument(
 	code: string,
 	params: Record<string, unknown> | undefined,
@@ -704,10 +708,6 @@ function initializeGeneratedUiShell() {
 			ok: true,
 			deleted: payload.deleted === true,
 		}
-	}
-
-	function escapeInlineModuleSource(code: string) {
-		return code.replace(/<\/script/gi, '<\\/script')
 	}
 
 	function buildParamsBootstrapSource(
@@ -1856,8 +1856,14 @@ ${inlineModuleSource}
 		}
 
 		const theme = coerceTheme(latestRenderData?.theme)
+		const headInjection = `
+${buildHeadInjection(theme)}
+<script>
+${buildParamsBootstrapSource(latestEnvelope?.params)}
+</script>
+		`.trim()
 		const htmlSource = /<(?:!doctype|html|head|body)\b/i.test(code)
-			? injectIntoHtmlDocument(code, buildHeadInjection(theme), theme)
+			? injectIntoHtmlDocument(code, headInjection, theme)
 			: buildHtmlDocumentFromFragment(code)
 		frameElement.srcdoc = absolutizeHtmlAttributeUrls(htmlSource, getBaseHref())
 	}

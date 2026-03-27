@@ -502,15 +502,16 @@ function parseOptionalScope(value: string | null) {
 function readSavedAppParamsFromUrl(url: URL) {
 	const raw = url.searchParams.get('params')
 	if (!raw) return undefined
+	let parsed: unknown
 	try {
-		const parsed = JSON.parse(raw) as unknown
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-			throw new Error('Saved app params must be an object.')
-		}
-		return parsed as Record<string, unknown>
+		parsed = JSON.parse(raw)
 	} catch {
 		throw new Error('Invalid saved app params query string.')
 	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new Error('Saved app params must be an object.')
+	}
+	return parsed as Record<string, unknown>
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
