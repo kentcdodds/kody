@@ -515,7 +515,7 @@ export async function setSecretAllowedCapabilities(input: {
 	name: string
 	scope: SecretScope
 	allowedCapabilities: Array<string>
-	secretContext?: SecretContext | null
+	storageContext?: StorageContext | null
 }) {
 	const name = input.name.trim()
 	if (!name) {
@@ -525,7 +525,7 @@ export async function setSecretAllowedCapabilities(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		scope: input.scope,
-		secretContext: input.secretContext ?? null,
+		storageContext: input.storageContext ?? null,
 	})
 	if (!bucket) {
 		throw new Error('Secret not found for this scope.')

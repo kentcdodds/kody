@@ -537,7 +537,7 @@ async function handleSaveAction(input: {
 			name,
 			scope,
 			allowedCapabilities,
-			secretContext: getSecretContextForAccountSecret({
+			storageContext: getSecretContextForAccountSecret({
 				scope,
 				appId,
 			}),
