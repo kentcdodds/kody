@@ -1326,9 +1326,10 @@ export function AccountSecretsRoute(handle: Handle) {
 									<div css={{ display: 'grid', gap: spacing.xs }}>
 										<span css={fieldLabelCss}>Allowed capabilities</span>
 										<p css={{ margin: 0, color: colors.textMuted }}>
-											Leave this empty to allow any capability with an
+											Only capabilities listed here can resolve this secret
+											when used with an
 											<code> x-kody-secret </code>
-											input to resolve this secret.
+											input.
 										</p>
 									</div>
 									<div

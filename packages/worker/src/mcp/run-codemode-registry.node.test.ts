@@ -73,10 +73,12 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 		env,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
+			user: { userId: 'user-123' },
 			homeConnectorId: 'default',
 		}),
 		{
-			resolveSecretValue: async (secret) => `${secret.name}-resolved`,
+			resolveSecretValue: async (secret, capabilityName) =>
+				`${secret.name}-${capabilityName}-resolved`,
 		},
 	)
 
@@ -88,8 +90,8 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 
 	expect(toolArguments).toEqual({
 		processorId: 'lutron-192-168-0-41',
-		username: 'lutronUsername-resolved',
-		password: 'lutronPassword-resolved',
+		username: 'lutronUsername-home_lutron_set_credentials-resolved',
+		password: 'lutronPassword-home_lutron_set_credentials-resolved',
 	})
 })
 

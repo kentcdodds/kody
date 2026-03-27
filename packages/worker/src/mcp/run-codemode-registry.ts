@@ -100,11 +100,7 @@ function createCapabilityInputSecretResolver(
 		if (!resolved.found || typeof resolved.value !== 'string') {
 			throw new Error(createMissingSecretMessage(secret.name))
 		}
-		const isRestricted = resolved.allowedCapabilities.length > 0
-		if (
-			isRestricted &&
-			!resolved.allowedCapabilities.includes(capabilityName)
-		) {
+		if (!resolved.allowedCapabilities.includes(capabilityName)) {
 			throw new Error(
 				createCapabilitySecretAccessDeniedMessage(secret.name, capabilityName),
 			)
