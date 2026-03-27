@@ -282,7 +282,7 @@ export function injectRuntimeStateIntoDocument(
 	code: string,
 	params: Record<string, unknown> | undefined,
 ) {
-	const paramsJson = JSON.stringify(params ?? {})
+	const paramsJson = escapeInlineModuleSource(JSON.stringify(params ?? {}))
 	const bootstrap = `
 <script>
 window.kodyWidget = window.kodyWidget ?? {};
@@ -713,7 +713,7 @@ function initializeGeneratedUiShell() {
 	function buildParamsBootstrapSource(
 		params: Record<string, unknown> | undefined,
 	) {
-		const paramsJson = JSON.stringify(params ?? {})
+		const paramsJson = escapeInlineModuleSource(JSON.stringify(params ?? {}))
 		return `
 const __kodyResolvedParams = ${paramsJson};
 window.__kodyAppParams = __kodyResolvedParams;
