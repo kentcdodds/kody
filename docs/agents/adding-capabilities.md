@@ -106,8 +106,8 @@ user.
 
 When a secret has an `allowed_capabilities` policy, Kody also checks that the
 current capability name is explicitly listed before resolving the placeholder.
-An empty `allowed_capabilities` list means the secret is unrestricted for
-capability-input use.
+An empty `allowed_capabilities` list means no capability is allowed to resolve
+the secret until entries are added.
 
 Use this for capabilities that need to accept a secret value as an argument but
 are not themselves the host-approval boundary. Good fits include:
