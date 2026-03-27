@@ -31,6 +31,7 @@ Behavior:
 - Saving a secret does not authorize outbound use automatically. If generated code later needs to send that secret to a host, the agent must ask the user to approve that host through the app approval flow.
 - Secret metadata returned by the UI helpers includes \`allowed_hosts\`, \`created_at\`, \`updated_at\`, and \`ttl_ms\` when available so the UI can explain lifecycle, approval state, and expiry.
 - Prefer the higher-level helpers below for OAuth, form persistence, and secret-bearing requests instead of hand-rolling state handling or parsing raw approval-link errors.
+- Before generating or revising any browser-based OAuth flow in a generated UI, first execute the \`generated_ui_oauth_guide\` capability to load Kody-specific instructions for hosted callbacks, provider registration values, helper usage, token exchange, and host approval handling. Do not improvise those details from memory.
 - If an OAuth flow needs a callback URL, do not rely on an ephemeral inline render. Persist the UI with \`ui_save_app\`, reopen it as a hosted saved app, and use that hosted URL as the provider callback/redirect target so the generated UI can receive and handle the callback on reload.
 - When the OAuth provider does not support dynamic client registration, the agent should tell the user the exact registration values to enter in the provider's app settings instead of vaguely saying "set up OAuth." At minimum, provide the exact callback/redirect URL, and include any other required values such as homepage URL, origin, or logout URL when that provider requires them.
 
@@ -226,6 +227,7 @@ How to use the helpers:
 - Use \`createOAuthState(...)\`, \`readOAuthCallback(...)\`, and \`validateOAuthCallbackState(...)\` for hosted OAuth pages instead of hand-rolling state storage and callback parsing.
 - If the OAuth flow requires a browser callback, save the UI first and use the hosted saved-app URL as the callback target. Inline ephemeral UIs are not sufficient for provider callbacks that must return to a stable URL.
 - Use \`exchangeOAuthCode(...)\` for OAuth token exchanges that should run through server-side \`execute\` with secret placeholders.
+- For hosted OAuth callbacks, if \`exchangeOAuthCode(...)\` returns \`kind: 'host_approval_required'\`, show the approval link and retry after approval; call \`saveOAuthTokens(...)\` only after a successful exchange.
 - Use \`saveOAuthTokens(...)\` right after a successful token exchange to persist \`access_token\` and optional \`refresh_token\` under explicit secret names.
 - Use \`fetchWithSecrets(...)\` when the UI needs to make a secret-bearing outbound request and handle approval-required failures in a structured way. If it returns \`kind: 'host_approval_required'\`, show the approval link and retry only after the user approves it in the account admin UI.
 

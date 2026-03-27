@@ -55,6 +55,29 @@ test('fusion ranking returns ui_save_app for generated ui query (offline)', asyn
 	expect(appRank).toBeLessThan(5)
 })
 
+test('fusion ranking returns generated_ui_oauth_guide for oauth ui query (offline)', async () => {
+	const env = {
+		SENTRY_ENVIRONMENT: 'test',
+		AI: {} as Ai,
+	} as Env
+
+	const { matches, offline } = await searchCapabilities({
+		env,
+		query:
+			'generated ui oauth callback redirect uri host approval provider registration',
+		limit: 8,
+		detail: false,
+		specs: capabilitySpecs,
+	})
+
+	expect(offline).toBe(true)
+	const names = matches.map((m) => m.name)
+	expect(names).toContain('generated_ui_oauth_guide')
+	const guideRank = names.indexOf('generated_ui_oauth_guide')
+	expect(guideRank).toBeGreaterThanOrEqual(0)
+	expect(guideRank).toBeLessThan(5)
+})
+
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {
 	const query = 'turn the living room tv on'
 	const specs = {
