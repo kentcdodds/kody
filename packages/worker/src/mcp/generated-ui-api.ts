@@ -140,13 +140,26 @@ function createGeneratedUiSourceHandler(env: Env) {
 			if (!app) {
 				return jsonResponse({ error: 'Saved UI not found.' }, 404)
 			}
-			const resolvedParams =
-				sourceContext.type === 'session'
-					? sourceContext.params
-					: applyUiArtifactParameters({
-							definitions: parseUiArtifactParameters(app.parameters),
-							values: readSavedAppParamsFromUrl(new URL(request.url)),
-						})
+			let resolvedParams: Record<string, unknown>
+			try {
+				resolvedParams =
+					sourceContext.type === 'session'
+						? sourceContext.params
+						: applyUiArtifactParameters({
+								definitions: parseUiArtifactParameters(app.parameters),
+								values: readSavedAppParamsFromUrl(new URL(request.url)),
+							})
+			} catch (error) {
+				return jsonResponse(
+					{
+						error:
+							error instanceof Error
+								? error.message
+								: 'Invalid saved app params.',
+					},
+					400,
+				)
+			}
 			const appSession = await createGeneratedUiAppSession({
 				env,
 				baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
@@ -171,7 +184,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 					app_id: app.id,
 					title: app.title,
 					description: app.description,
-					parameters: app.parameters,
+					parameters: parseUiArtifactParameters(app.parameters),
 					params: resolvedParams,
 					runtime: app.runtime,
 					code: app.code,

@@ -46,13 +46,27 @@ function buildUsage(row: UiArtifactRow) {
 	const usageArgs: Record<string, unknown> = { app_id: row.id }
 	if (parameters && parameters.length > 0) {
 		usageArgs['params'] = Object.fromEntries(
-			parameters.map((parameter) => [
-				parameter.name,
-				parameter.default ?? `<${parameter.type}>`,
-			]),
+			parameters.map((parameter) => {
+				if (parameter.default !== undefined) {
+					return [parameter.name, parameter.default] as const
+				}
+				return [
+					parameter.name,
+					buildPlaceholderForParameter(parameter.type),
+				] as const
+			}),
 		)
 	}
 	return `Open with open_generated_ui: ${JSON.stringify(usageArgs)}.`
+}
+
+function buildPlaceholderForParameter(
+	type: 'string' | 'number' | 'boolean' | 'json',
+) {
+	if (type === 'number') return 0
+	if (type === 'boolean') return false
+	if (type === 'json') return {}
+	return ''
 }
 
 export type UiArtifactSearchHitSummary = {

@@ -331,6 +331,10 @@ const inputSchema = z
 		message: 'Provide exactly one of `code` or `app_id`.',
 		path: ['code'],
 	})
+	.refine((value) => !(value.code && value.params), {
+		message: '`params` is only supported with `app_id`.',
+		path: ['params'],
+	})
 
 export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 	registerAppTool(
@@ -352,7 +356,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			const appId = args.app_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
-			let resolvedParams: Record<string, unknown> | null = null
+			let resolvedParams: Record<string, unknown> | undefined
 			if (appId && callerContext.user) {
 				const app = await getUiArtifactById(
 					agent.getEnv().APP_DB,

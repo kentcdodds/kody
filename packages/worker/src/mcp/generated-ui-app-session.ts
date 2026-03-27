@@ -92,5 +92,12 @@ export async function verifyGeneratedUiAppSession(
 	if (typeof payload.exp === 'number' && Date.now() > payload.exp) {
 		throw new Error('Generated UI session has expired.')
 	}
+	if (
+		payload.params == null ||
+		typeof payload.params !== 'object' ||
+		Array.isArray(payload.params)
+	) {
+		payload.params = {}
+	}
 	return payload as GeneratedUiAppSessionPayload
 }
