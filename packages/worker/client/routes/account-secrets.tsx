@@ -42,6 +42,7 @@ type SecretListItem = {
 	appId: string | null
 	appTitle: string | null
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -68,6 +69,7 @@ type EditorState = {
 	description: string
 	value: string
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 }
 
 type SelectionState = {
@@ -108,10 +110,56 @@ function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
 		description: '',
 		value: '',
 		allowedHosts: [''],
+		allowedCapabilities: [''],
 	}
 }
 
+function coerceStringRows(list: Array<unknown>): Array<string> {
+	return list.filter((item): item is string => typeof item === 'string')
+}
+
+/** Matches server `normalizeAllowedHosts` in `#mcp/secrets/allowed-hosts.ts`. */
+function clientNormalizeAllowedHosts(hosts: Array<string>): Array<string> {
+	return Array.from(
+		new Set(
+			hosts
+				.map((host) => host.trim().toLowerCase())
+				.filter((host) => host.length > 0),
+		),
+	).sort()
+}
+
+/** Matches server `normalizeAllowedCapabilities` in `#mcp/secrets/allowed-capabilities.ts`. */
+function clientNormalizeAllowedCapabilities(
+	capabilities: Array<string>,
+): Array<string> {
+	return Array.from(
+		new Set(
+			capabilities
+				.map((value) => value.trim())
+				.filter((value) => value.length > 0),
+		),
+	).sort((left, right) => left.localeCompare(right))
+}
+
+function collectRepeatedTextRows(
+	form: HTMLFormElement,
+	listName: 'allowed-hosts' | 'allowed-capabilities',
+): Array<string> {
+	const root = form.querySelector(`[data-repeat-list="${listName}"]`)
+	if (!root) return []
+	const out: Array<string> = []
+	for (const row of root.children) {
+		if (!(row instanceof HTMLElement)) continue
+		const input = row.querySelector('input[type="text"]')
+		if (input instanceof HTMLInputElement) out.push(input.value)
+	}
+	return out
+}
+
 function createEditorStateFromSecret(secret: SecretDetail): EditorState {
+	const allowedHosts = coerceStringRows(secret.allowedHosts)
+	const allowedCapabilities = coerceStringRows(secret.allowedCapabilities)
 	return {
 		currentId: secret.id,
 		name: secret.name,
@@ -119,7 +167,9 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		appId: secret.appId ?? '',
 		description: secret.description,
 		value: secret.value,
-		allowedHosts: secret.allowedHosts.length > 0 ? secret.allowedHosts : [''],
+		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
+		allowedCapabilities:
+			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
 	}
 }
 
@@ -255,6 +305,7 @@ function filterSecrets(
 			secret.appTitle ?? '',
 			secret.scope,
 			...secret.allowedHosts,
+			...secret.allowedCapabilities,
 		]
 			.join(' ')
 			.toLowerCase()
@@ -435,11 +486,19 @@ export function AccountSecretsRoute(handle: Handle) {
 		event.preventDefault()
 		if (saveState !== 'idle') return
 
+		const form = event.currentTarget as HTMLFormElement
+
 		saveState = 'saving'
 		message = null
 		handle.update()
 
 		try {
+			const allowedHosts = clientNormalizeAllowedHosts(
+				collectRepeatedTextRows(form, 'allowed-hosts'),
+			)
+			const allowedCapabilities = clientNormalizeAllowedCapabilities(
+				collectRepeatedTextRows(form, 'allowed-capabilities'),
+			)
 			const response = await fetch(accountSecretsApiPath, {
 				method: 'POST',
 				headers: {
@@ -455,7 +514,8 @@ export function AccountSecretsRoute(handle: Handle) {
 					appId: editorState.scope === 'app' ? editorState.appId : null,
 					description: editorState.description,
 					value: editorState.value,
-					allowedHosts: editorState.allowedHosts,
+					allowedHosts,
+					allowedCapabilities,
 				}),
 			})
 			if (response.status === 401) {
@@ -565,6 +625,37 @@ export function AccountSecretsRoute(handle: Handle) {
 		editorState = {
 			...editorState,
 			allowedHosts: nextHosts.length > 0 ? nextHosts : [''],
+		}
+		handle.update()
+	}
+
+	function updateAllowedCapability(index: number, value: string) {
+		editorState = {
+			...editorState,
+			allowedCapabilities: editorState.allowedCapabilities.map(
+				(capabilityName, capabilityIndex) =>
+					capabilityIndex === index ? value : capabilityName,
+			),
+		}
+		handle.update()
+	}
+
+	function addAllowedCapability() {
+		editorState = {
+			...editorState,
+			allowedCapabilities: [...editorState.allowedCapabilities, ''],
+		}
+		handle.update()
+	}
+
+	function removeAllowedCapability(index: number) {
+		const nextCapabilities = editorState.allowedCapabilities.filter(
+			(_capabilityName, capabilityIndex) => capabilityIndex !== index,
+		)
+		editorState = {
+			...editorState,
+			allowedCapabilities:
+				nextCapabilities.length > 0 ? nextCapabilities : [''],
 		}
 		handle.update()
 	}
@@ -1181,10 +1272,13 @@ export function AccountSecretsRoute(handle: Handle) {
 											a secret can be used.
 										</p>
 									</div>
-									<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div
+										css={{ display: 'grid', gap: spacing.sm }}
+										data-repeat-list="allowed-hosts"
+									>
 										{editorState.allowedHosts.map((host, index) => (
 											<div
-												key={`${index}-${host}`}
+												key={index}
 												css={{
 													display: 'grid',
 													gridTemplateColumns: 'minmax(0, 1fr) auto',
@@ -1195,9 +1289,9 @@ export function AccountSecretsRoute(handle: Handle) {
 												}}
 											>
 												<input
-													type="text"
-													value={host}
-													placeholder="api.example.com"
+														type="text"
+														value={typeof host === 'string' ? host : ''}
+														placeholder="api.example.com"
 													on={{
 														input: (event) =>
 															updateAllowedHost(
@@ -1224,6 +1318,72 @@ export function AccountSecretsRoute(handle: Handle) {
 											css={secondaryButtonCss}
 										>
 											Add host
+										</button>
+									</div>
+								</div>
+
+								<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div css={{ display: 'grid', gap: spacing.xs }}>
+										<span css={fieldLabelCss}>Allowed capabilities</span>
+										<p css={{ margin: 0, color: colors.textMuted }}>
+											Only capabilities listed here can resolve this secret
+											when used with an
+											<code> x-kody-secret </code>
+											input.
+										</p>
+									</div>
+									<div
+										css={{ display: 'grid', gap: spacing.sm }}
+										data-repeat-list="allowed-capabilities"
+									>
+										{editorState.allowedCapabilities.map(
+											(capabilityName, index) => (
+												<div
+													key={index}
+													css={{
+														display: 'grid',
+														gridTemplateColumns: 'minmax(0, 1fr) auto',
+														gap: spacing.sm,
+														[mq.mobile]: {
+															gridTemplateColumns: '1fr',
+														},
+													}}
+												>
+													<input
+														type="text"
+														value={
+															typeof capabilityName === 'string'
+																? capabilityName
+																: ''
+														}
+														placeholder="home_lutron_set_credentials"
+														on={{
+															input: (event) =>
+																updateAllowedCapability(
+																	index,
+																	event.currentTarget.value,
+																),
+														}}
+														css={inputCss}
+													/>
+													<button
+														type="button"
+														on={{ click: () => removeAllowedCapability(index) }}
+														css={secondaryButtonCss}
+													>
+														Remove
+													</button>
+												</div>
+											),
+										)}
+									</div>
+									<div>
+										<button
+											type="button"
+											on={{ click: addAllowedCapability }}
+											css={secondaryButtonCss}
+										>
+											Add capability
 										</button>
 									</div>
 								</div>

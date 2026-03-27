@@ -8,6 +8,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { resolveCapabilityInputSecrets } from '#mcp/secrets/capability-inputs.ts'
 import {
 	capabilityInputSecretAuthRequiredMessage,
+	createCapabilitySecretAccessDeniedMessage,
 	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
@@ -19,24 +20,32 @@ export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
-		resolveSecretValue?: (secret: ReferencedSecret) => Promise<string>
+		resolveSecretValue?: (
+			secret: ReferencedSecret,
+			capabilityName: string,
+		) => Promise<string>
 	},
 ) {
 	const { capabilityMap } = await getCapabilityRegistryForContext({
 		env,
 		callerContext,
 	})
-	const resolveSecretValue =
-		options?.resolveSecretValue ??
-		createCapabilityInputSecretResolver(env, callerContext)
 	return Object.fromEntries(
 		Object.values(capabilityMap).map((capability) => [
 			capability.name,
 			async (args: unknown) => {
+				const resolveSecretValue =
+					options?.resolveSecretValue ??
+					createCapabilityInputSecretResolver(
+						env,
+						callerContext,
+						capability.name,
+					)
 				const resolvedArgs = await resolveCapabilityInputSecrets({
 					schema: capability.inputSchema,
 					value: (args ?? {}) as Record<string, unknown>,
-					resolveSecretValue,
+					resolveSecretValue: (secret) =>
+						resolveSecretValue(secret, capability.name),
 				})
 				return capability.handler(resolvedArgs as Record<string, unknown>, {
 					env,
@@ -69,8 +78,9 @@ export async function buildCodemodeProvider(
 function createCapabilityInputSecretResolver(
 	env: Env,
 	callerContext: McpCallerContext,
+	capabilityName: string,
 ) {
-	return async (secret: ReferencedSecret) => {
+	return async (secret: ReferencedSecret, _currentCapabilityName: string) => {
 		const userId = callerContext.user?.userId ?? null
 		if (!userId) {
 			throw new Error(capabilityInputSecretAuthRequiredMessage)
@@ -89,6 +99,11 @@ function createCapabilityInputSecretResolver(
 		})
 		if (!resolved.found || typeof resolved.value !== 'string') {
 			throw new Error(createMissingSecretMessage(secret.name))
+		}
+		if (!resolved.allowedCapabilities.includes(capabilityName)) {
+			throw new Error(
+				createCapabilitySecretAccessDeniedMessage(secret.name, capabilityName),
+			)
 		}
 		return resolved.value
 	}

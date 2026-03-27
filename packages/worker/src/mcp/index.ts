@@ -80,10 +80,10 @@ How to use execute
 - Each capability call returns that capability's raw structured result value.
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
-- Use \`await codemode.secret_list({})\` or \`await codemode.secret_list({ scope: 'app' })\` when you need secret metadata such as names, descriptions, scopes, and allowed hosts from the sandbox.
+- Use \`await codemode.secret_list({})\` or \`await codemode.secret_list({ scope: 'app' })\` when you need secret metadata such as names, descriptions, scopes, allowed hosts, and allowed capabilities from the sandbox.
 - Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to store and read back later.
 - Use normal \`fetch(...)\` for outbound HTTP. To inject a stored secret, place a placeholder such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body; the host resolves it server-side and blocks unapproved destinations.
-- Some capability input fields also accept secret placeholders. When an input schema marks a string field with \`x-kody-secret: true\`, you may pass \`{{secret:name}}\` or \`{{secret:name|scope=user}}\` there instead of a raw value.
+- Some capability input fields also accept secret placeholders. When an input schema marks a string field with \`x-kody-secret: true\`, you may pass \`{{secret:name}}\` or \`{{secret:name|scope=user}}\` there instead of a raw value. If that secret has an allowed-capabilities policy, the current capability name must be on the allowlist.
 - Secret placeholders are not general-purpose string interpolation. Do not use \`execute\` to build a string or object that merely returns \`{{secret:...}}\`; those placeholders only resolve in secret-aware fetch paths or capability inputs that explicitly opt into \`x-kody-secret\`.
 - Saving or updating a secret does not authorize sending it anywhere. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
 - Secrets are intentionally not readable or updatable through \`codemode\`. Never ask the user to paste a secret into chat; use generated UI flows such as \`saveSecret(...)\` when the user needs to provide or rotate a value, and use \`codemode.secret_delete(...)\` only when removing a stored secret reference.

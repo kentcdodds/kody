@@ -1,6 +1,7 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildCodemodeFns } from './run-codemode-registry.ts'
+import * as secretService from '#mcp/secrets/service.ts'
 
 test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
 	let toolArguments: Record<string, unknown> | null = null
@@ -72,10 +73,12 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 		env,
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
+			user: { userId: 'user-123' },
 			homeConnectorId: 'default',
 		}),
 		{
-			resolveSecretValue: async (secret) => `${secret.name}-resolved`,
+			resolveSecretValue: async (secret, capabilityName) =>
+				`${secret.name}-${capabilityName}-resolved`,
 		},
 	)
 
@@ -87,7 +90,93 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 
 	expect(toolArguments).toEqual({
 		processorId: 'lutron-192-168-0-41',
-		username: 'lutronUsername-resolved',
-		password: 'lutronPassword-resolved',
+		username: 'lutronUsername-home_lutron_set_credentials-resolved',
+		password: 'lutronPassword-home_lutron_set_credentials-resolved',
 	})
+})
+
+test('buildCodemodeFns denies capability secret placeholders for disallowed capabilities', async () => {
+	const resolveSecretSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'lutronUsername-resolved',
+			scope: 'user',
+			allowedHosts: [],
+			allowedCapabilities: ['some_other_capability'],
+		})
+	const env = {
+		HOME_CONNECTOR_SESSION: {
+			idFromName(name: string) {
+				return name
+			},
+			get() {
+				return {
+					async fetch(input: string | URL | Request) {
+						const url = new URL(
+							typeof input === 'string'
+								? input
+								: input instanceof URL
+									? input.toString()
+									: input.url,
+						)
+						if (url.pathname.endsWith('/snapshot')) {
+							return Response.json({
+								connectorId: 'default',
+								connectedAt: '2026-03-27T00:00:00.000Z',
+								lastSeenAt: '2026-03-27T00:00:01.000Z',
+								tools: [
+									{
+										name: 'lutron_set_credentials',
+										title: 'Set Lutron Credentials',
+										description: 'Store Lutron credentials.',
+										inputSchema: {
+											type: 'object',
+											properties: {
+												username: {
+													type: 'string',
+													'x-kody-secret': true,
+												},
+											},
+											required: ['username'],
+										},
+									},
+								],
+							})
+						}
+
+						throw new Error(`Unexpected fetch to ${url.pathname}`)
+					},
+				}
+			},
+		},
+	} as unknown as Env
+
+	const codemode = await buildCodemodeFns(
+		env,
+		createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: { userId: 'user-123' },
+			homeConnectorId: 'default',
+		}),
+	)
+
+	try {
+		await expect(
+			codemode.home_lutron_set_credentials({
+				username: '{{secret:lutronUsername|scope=user}}',
+			}),
+		).rejects.toThrow(
+			'Secret "lutronUsername" is not allowed for capability "home_lutron_set_credentials"',
+		)
+		expect(resolveSecretSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: 'lutronUsername',
+				scope: 'user',
+				userId: 'user-123',
+			}),
+		)
+	} finally {
+		resolveSecretSpy.mockRestore()
+	}
 })

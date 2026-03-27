@@ -4,6 +4,7 @@ type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
 import {
 	isSecretAuthRequiredMessage,
+	parseCapabilityAccessRequiredMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
@@ -45,6 +46,17 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'secret_capability_access_required'
+			message: string
+			nextStep: string
+			secretNames: Array<string>
+			capabilityName: string
+			suggestedAction: {
+				type: 'edit_secret_policy'
+				policyField: 'allowed_capabilities'
+			}
+	  }
+	| {
 			kind: 'secret_required'
 			message: string
 			nextStep: string
@@ -80,6 +92,22 @@ export function getExecutionErrorDetails(
 			secretNames: [hostApprovalDetails.secretName],
 			suggestedAction: {
 				type: 'approve_secret_host',
+			},
+		}
+	}
+
+	const capabilityAccessDetails = parseCapabilityAccessRequiredMessage(message)
+	if (capabilityAccessDetails) {
+		return {
+			kind: 'secret_capability_access_required',
+			message,
+			nextStep:
+				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
+			secretNames: [capabilityAccessDetails.secretName],
+			capabilityName: capabilityAccessDetails.capabilityName,
+			suggestedAction: {
+				type: 'edit_secret_policy',
+				policyField: 'allowed_capabilities',
 			},
 		}
 	}

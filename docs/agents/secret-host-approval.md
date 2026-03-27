@@ -5,18 +5,19 @@ secrets.
 
 ## Rule
 
-Allowed outbound hosts for a secret are privileged policy, not normal secret
+Allowed outbound hosts for a secret and allowed capabilities for direct
+capability-input secret resolution are privileged policy, not normal secret
 metadata.
 
-That policy must not be created, widened, or modified by:
+Those policies must not be created, widened, or modified by:
 
 - MCP tools
 - execute-time sandboxed code
 - generated UI code
 - capability handlers that serve agent-driven secret creation or update flows
 
-Allowed outbound hosts may only be changed through the authenticated account
-admin UI approval flow.
+Allowed outbound hosts and allowed capabilities may only be changed through the
+authenticated account admin UI.
 
 In this repo, that means the user must approve host access through the account
 secrets experience, such as `/account/secrets` and the focused approval route at
@@ -29,7 +30,7 @@ allowlist unless the user has already approved one or more hosts in the admin
 UI.
 
 Saving or updating a secret value does not authorize sending that secret to any
-host.
+host or passing it into any capability.
 
 If an outbound request uses a placeholder such as `{{secret:name}}` and the
 target host is not already approved for that secret, the correct behavior is:
@@ -42,16 +43,22 @@ target host is not already approved for that secret, the correct behavior is:
 ## What agents must not do
 
 Do not design or document any MCP capability, generated UI helper, or client
-library that allows agent-controlled writes to a secret's allowed hosts.
+library that allows agent-controlled writes to a secret's allowed hosts or
+allowed capabilities.
 
 Specifically, do not:
 
 - add `allowed_hosts` or equivalent fields to MCP-facing secret create/update
   inputs
+- add `allowed_capabilities` or equivalent fields to MCP-facing secret
+  create/update inputs
 - imply that a generated UI can self-authorize a host just because it can save a
   secret
+- imply that execute-time capability calls can widen which capabilities may
+  consume a secret
 - imply that execute-time code can widen egress permissions
-- treat host approval as ordinary secret metadata editing
+- treat host approval or capability allowlists as ordinary secret metadata
+  editing
 
 If a workflow would be smoother by auto-approving a host, the fix should be
 better guidance, helper APIs, or UX around the approval flow, not a new write
@@ -62,7 +69,10 @@ path that bypasses the admin UI.
 When writing capability descriptions or agent-facing docs:
 
 - say explicitly that secret save/update does not grant outbound use
+- say explicitly that secret save/update does not grant capability access
 - say explicitly that only the authenticated account admin UI can approve hosts
+- say explicitly that only the authenticated account admin UI can restrict which
+  capabilities may consume a secret directly
 - tell agents to inspect secret metadata before making a secret-bearing request
 - tell agents to surface the approval link and stop on deny
 
@@ -83,6 +93,9 @@ fields with `x-kody-secret: true` in the JSON Schema.
 That feature is for cases where the capability needs the secret value itself,
 for example to store credentials on a local connector or pass them into a
 device-local action.
+
+If a secret has an allowed-capabilities policy, Kody enforces that allowlist by
+capability name before resolving the placeholder for the handler.
 
 Use it narrowly:
 
@@ -105,11 +118,13 @@ Generated UIs may:
 - save those values as secrets
 - save and read back non-secret values for public configuration
 - inspect secret metadata, including current allowed hosts
+- inspect secret metadata, including current allowed capabilities
 - present approval links returned from blocked requests
 
 Generated UIs may not:
 
 - set allowed hosts directly
+- set allowed capabilities directly
 - bypass the admin approval route
 - silently retry secret-bearing requests after a deny
 - use `executeCode(...)` as a general string interpolation mechanism for

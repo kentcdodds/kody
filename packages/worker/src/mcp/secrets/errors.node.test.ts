@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest'
 import {
 	capabilityInputSecretAuthRequiredMessage,
+	createCapabilitySecretAccessDeniedMessage,
 	createMissingSecretMessage,
 	fetchSecretAuthRequiredMessage,
 	isSecretAuthRequiredMessage,
+	parseCapabilityAccessRequiredMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
 } from './errors.ts'
@@ -34,4 +36,18 @@ test('parseHostApprovalRequiredMessage extracts secret name and host', () => {
 		host: 'api.cloudflare.com',
 	})
 	expect(parseHostApprovalRequiredMessage('Host approval failed')).toBeNull()
+})
+
+test('parseCapabilitySecretAccessDeniedMessage extracts secret and capability', () => {
+	const message = createCapabilitySecretAccessDeniedMessage(
+		'cloudflareToken',
+		'cloudflare_rest',
+	)
+	expect(parseCapabilityAccessRequiredMessage(message)).toEqual({
+		secretName: 'cloudflareToken',
+		capabilityName: 'cloudflare_rest',
+	})
+	expect(
+		parseCapabilityAccessRequiredMessage('Capability approval failed'),
+	).toBeNull()
 })

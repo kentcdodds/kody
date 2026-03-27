@@ -1,4 +1,9 @@
 import {
+	normalizeAllowedCapabilities,
+	parseAllowedCapabilities,
+	stringifyAllowedCapabilities,
+} from './allowed-capabilities.ts'
+import {
 	normalizeAllowedHosts,
 	normalizeHost,
 	parseAllowedHosts,
@@ -66,6 +71,7 @@ export type ResolvedSecret = {
 	value: string | null
 	scope: SecretScope | null
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 }
 
 export async function saveSecret(
@@ -101,6 +107,7 @@ export async function saveSecret(
 			description,
 			encrypted_value: await encryptSecretValue(input.env, value),
 			allowed_hosts: existingEntry?.allowed_hosts ?? '[]',
+			allowed_capabilities: existingEntry?.allowed_capabilities ?? '[]',
 			created_at: existingEntry?.created_at ?? now,
 			updated_at: now,
 		},
@@ -112,6 +119,9 @@ export async function saveSecret(
 		appId: input.scope === 'app' ? bucket.binding_key : null,
 		allowedHosts: existingEntry
 			? parseAllowedHosts(existingEntry.allowed_hosts)
+			: [],
+		allowedCapabilities: existingEntry
+			? parseAllowedCapabilities(existingEntry.allowed_capabilities)
 			: [],
 		createdAt: existingEntry?.created_at ?? now,
 		updatedAt: now,
@@ -143,6 +153,7 @@ export async function listSecrets(
 			description: row.description,
 			appId: row.scope === 'app' ? row.binding_key : null,
 			allowedHosts: parseAllowedHosts(row.allowed_hosts),
+			allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
 			expiresAt: row.expires_at,
@@ -175,6 +186,7 @@ export async function resolveSecret(
 			value: await decryptSecretValue(input.env, entry.encrypted_value),
 			scope,
 			allowedHosts: parseAllowedHosts(entry.allowed_hosts),
+			allowedCapabilities: parseAllowedCapabilities(entry.allowed_capabilities),
 		}
 	}
 	return {
@@ -182,6 +194,7 @@ export async function resolveSecret(
 		value: null,
 		scope: null,
 		allowedHosts: [],
+		allowedCapabilities: [],
 	}
 }
 
@@ -247,6 +260,7 @@ export async function updateSecret(
 				? await encryptSecretValue(input.env, nextValue!)
 				: existingEntry.encrypted_value,
 			allowed_hosts: existingEntry.allowed_hosts,
+			allowed_capabilities: existingEntry.allowed_capabilities,
 			created_at: existingEntry.created_at,
 			updated_at: now,
 		},
@@ -257,6 +271,9 @@ export async function updateSecret(
 		description: nextDescription,
 		appId: input.scope === 'app' ? bucket.binding_key : null,
 		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
+		allowedCapabilities: parseAllowedCapabilities(
+			existingEntry.allowed_capabilities,
+		),
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,
@@ -301,6 +318,7 @@ export async function listAppSecretsByAppIds(input: {
 				description: row.description,
 				appId,
 				allowedHosts: parseAllowedHosts(row.allowed_hosts),
+				allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 				expiresAt: row.expires_at,
@@ -415,6 +433,7 @@ function toSecretMetadata(input: {
 	description: string
 	appId: string | null
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 	createdAt: string
 	updatedAt: string
 	expiresAt: string | null
@@ -425,6 +444,9 @@ function toSecretMetadata(input: {
 		description: input.description,
 		appId: input.appId,
 		allowedHosts: normalizeAllowedHosts(input.allowedHosts),
+		allowedCapabilities: normalizeAllowedCapabilities(
+			input.allowedCapabilities,
+		),
 		createdAt: input.createdAt,
 		updatedAt: input.updatedAt,
 		ttlMs:
@@ -478,6 +500,62 @@ export async function setSecretAllowedHosts(input: {
 		description: existingEntry.description,
 		appId: input.scope === 'app' ? bucket.binding_key : null,
 		allowedHosts: input.allowedHosts,
+		allowedCapabilities: parseAllowedCapabilities(
+			existingEntry.allowed_capabilities,
+		),
+		createdAt: existingEntry.created_at,
+		updatedAt: now,
+		expiresAt: bucket.expires_at,
+	})
+}
+
+export async function setSecretAllowedCapabilities(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	scope: SecretScope
+	allowedCapabilities: Array<string>
+	storageContext?: StorageContext | null
+}) {
+	const name = input.name.trim()
+	if (!name) {
+		throw new Error('Secret name is required.')
+	}
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: input.scope,
+		storageContext: input.storageContext ?? null,
+	})
+	if (!bucket) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const existingEntry = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name,
+	})
+	if (!existingEntry) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const now = new Date().toISOString()
+	await upsertSecretEntry({
+		db: input.env.APP_DB,
+		row: {
+			...existingEntry,
+			allowed_capabilities: stringifyAllowedCapabilities(
+				input.allowedCapabilities,
+			),
+			updated_at: now,
+		},
+	})
+	return toSecretMetadata({
+		name,
+		scope: input.scope,
+		description: existingEntry.description,
+		appId: input.scope === 'app' ? bucket.binding_key : null,
+		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
+		allowedCapabilities: input.allowedCapabilities,
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,
