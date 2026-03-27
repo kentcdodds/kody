@@ -1,6 +1,4 @@
-import { type SecretScope } from '#mcp/secrets/types.ts'
-
-type AccountSecretRouteScope = SecretScope
+type AccountSecretRouteScope = 'app' | 'session' | 'user'
 const accountSecretsBasePath = '/account/secrets'
 
 export type AccountSecretRouteIdInput = {

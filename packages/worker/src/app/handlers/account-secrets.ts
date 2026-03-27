@@ -2,7 +2,7 @@ import { type BuildAction } from 'remix/fetch-router'
 import {
 	buildAccountSecretId,
 	parseAccountSecretId,
-} from '#app/account-secret-id.ts'
+} from '@kody-internal/shared/account-secret-route.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'

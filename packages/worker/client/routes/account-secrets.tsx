@@ -3,7 +3,7 @@ import {
 	buildAccountSecretPath,
 	parseAccountSecretId,
 	parseAccountSecretPath,
-} from '#client/account-secret-path.ts'
+} from '@kody-internal/shared/account-secret-route.ts'
 import { navigate, routerEvents } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { TypeaheadCombobox } from '#client/typeahead-combobox.tsx'

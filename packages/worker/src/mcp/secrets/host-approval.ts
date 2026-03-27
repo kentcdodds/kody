@@ -1,4 +1,4 @@
-import { buildAccountSecretPath } from '#app/account-secret-id.ts'
+import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
 import { decryptStringWithPurpose, encryptStringWithPurpose } from './crypto.ts'
 import { normalizeHost } from './allowed-hosts.ts'
 import { type SecretContext, type SecretScope } from './types.ts'
