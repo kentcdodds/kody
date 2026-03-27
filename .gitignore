@@ -26,6 +26,7 @@ bun.lock
 .wrangler
 .nx
 .tmp
+.husky/_/
 .env
 mock-data
 playwright-report

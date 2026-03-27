@@ -4,6 +4,10 @@ Use Node 24 and npm for installs and scripts (`npm install`, `npm run ...`).
 
 This file is intentionally brief. Detailed instructions live in focused docs:
 
+- Commit-time formatting, linting, and typechecking are enforced by Husky +
+  lint-staged; see `docs/agents/setup.md` for the workflow details and what
+  still needs explicit validation.
+
 - Project intent and scope:
   - [docs/project-intent.md](./docs/project-intent.md)
 - Setup, checks, docs maintenance, preview deploys, and seeding:
