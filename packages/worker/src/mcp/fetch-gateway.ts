@@ -100,6 +100,12 @@ export async function expandSecretPlaceholders(input: {
 		headers,
 		body: shouldSendBody(input.request.method) ? nextBody : undefined,
 		redirect: nextRedirect,
+		credentials: input.request.credentials,
+		mode: input.request.mode,
+		cache: input.request.cache,
+		integrity: input.request.integrity,
+		keepalive: input.request.keepalive,
+		signal: input.request.signal,
 	})
 }
 

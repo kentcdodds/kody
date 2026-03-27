@@ -16,10 +16,16 @@ export function createExecuteExecutor(input: {
 	exports?: WorkerLoopbackExports
 	gatewayProps: FetchGatewayProps
 }) {
+	const loopbackExports = input.exports ?? workerExports
+	if (!loopbackExports?.CodemodeFetchGateway) {
+		throw new Error(
+			'CodemodeFetchGateway export is required for execute-time fetch.',
+		)
+	}
 	return new DynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout: 90_000,
-		globalOutbound: (input.exports ?? workerExports)?.CodemodeFetchGateway({
+		globalOutbound: loopbackExports.CodemodeFetchGateway({
 			props: input.gatewayProps,
 		}),
 	})

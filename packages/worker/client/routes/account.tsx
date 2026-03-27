@@ -1,5 +1,4 @@
 import { type Handle } from 'remix/component'
-import { navigate } from '#client/client-router.tsx'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 
 type AccountStatus = 'loading' | 'ready' | 'error'
@@ -138,7 +137,11 @@ export function AccountRoute(handle: Handle) {
 				action === 'approve'
 					? 'Approved requested host.'
 					: 'Rejected host approval request.'
-			navigate('/account')
+			handle.update()
+			if (typeof window !== 'undefined' && window.location.search) {
+				window.history.replaceState(null, '', '/account')
+				lastLoadedHref = window.location.href
+			}
 		} catch (error) {
 			submittingApprovalAction = null
 			message =
@@ -216,7 +219,7 @@ export function AccountRoute(handle: Handle) {
 							<button
 								type="button"
 								disabled={submittingApprovalAction != null}
-								onClick={() => submitApproval('approve')}
+								onClick={() => void submitApproval('approve')}
 								css={primaryButtonCss}
 							>
 								Approve host
@@ -224,7 +227,7 @@ export function AccountRoute(handle: Handle) {
 							<button
 								type="button"
 								disabled={submittingApprovalAction != null}
-								onClick={() => submitApproval('reject')}
+								onClick={() => void submitApproval('reject')}
 								css={secondaryButtonCss}
 							>
 								Reject
