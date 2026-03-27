@@ -1,9 +1,17 @@
 import { createWidgetHostBridge } from './widget-host-bridge.js'
+import {
+	absolutizeSrcset,
+	absolutizeUrl,
+	buildShellStyles,
+	decodeHtmlAttribute,
+	escapeHtmlAttribute,
+	injectThemeAttributeIntoHtmlTag,
+	type ThemeName,
+} from '@kody-internal/shared/generated-ui-utils.ts'
 
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
-type ThemeName = 'light' | 'dark'
 type SecretScope = 'session' | 'app' | 'user'
 
 type SecretMetadata = {
@@ -213,22 +221,6 @@ function coerceTheme(value: unknown): ThemeName | null {
 	return value === 'light' || value === 'dark' ? value : null
 }
 
-function injectThemeAttributeIntoHtmlTag(
-	htmlTag: string,
-	theme: ThemeName | null,
-) {
-	if (!theme || /\bdata-kody-theme\s*=/i.test(htmlTag)) {
-		return htmlTag
-	}
-
-	const closingBracketIndex = htmlTag.lastIndexOf('>')
-	if (closingBracketIndex === -1) {
-		return htmlTag
-	}
-
-	return `${htmlTag.slice(0, closingBracketIndex)} data-kody-theme="${theme}">${htmlTag.slice(closingBracketIndex + 1)}`
-}
-
 export function injectIntoHtmlDocument(
 	code: string,
 	injection: string,
@@ -262,24 +254,6 @@ export function injectIntoHtmlDocument(
 	return `${injection}\n${code}`
 }
 
-function escapeHtmlAttribute(value: string) {
-	return value
-		.replaceAll('&', '&amp;')
-		.replaceAll('"', '&quot;')
-		.replaceAll("'", '&#39;')
-		.replaceAll('<', '&lt;')
-		.replaceAll('>', '&gt;')
-}
-
-function decodeHtmlAttribute(value: string) {
-	return value
-		.replaceAll('&quot;', '"')
-		.replaceAll('&#39;', "'")
-		.replaceAll('&lt;', '<')
-		.replaceAll('&gt;', '>')
-		.replaceAll('&amp;', '&')
-}
-
 function escapeInlineModuleSource(code: string) {
 	return code.replace(/<\/script/gi, '<\\/script')
 }
@@ -298,57 +272,6 @@ window.__kodyAppParams = window.kodyWidget.params;
 </script>
 	`.trim()
 	return injectIntoHtmlDocument(code, bootstrap, null)
-}
-
-function isNonNavigableUrl(value: string) {
-	const normalizedValue = value.trim().toLowerCase()
-	return (
-		normalizedValue === '' ||
-		normalizedValue.startsWith('#') ||
-		normalizedValue.startsWith('//') ||
-		normalizedValue.startsWith('about:') ||
-		normalizedValue.startsWith('blob:') ||
-		normalizedValue.startsWith('data:') ||
-		normalizedValue.startsWith('javascript:') ||
-		normalizedValue.startsWith('mailto:') ||
-		normalizedValue.startsWith('tel:')
-	)
-}
-
-function absolutizeUrl(value: string, baseHref: string | null) {
-	if (!baseHref || isNonNavigableUrl(value)) {
-		return value
-	}
-
-	try {
-		return new URL(value).toString()
-	} catch {}
-
-	try {
-		return new URL(value, baseHref).toString()
-	} catch {
-		return value
-	}
-}
-
-function absolutizeSrcset(value: string, baseHref: string | null) {
-	return value
-		.split(',')
-		.map((candidate) => {
-			const trimmedCandidate = candidate.trim()
-			if (trimmedCandidate.length === 0) {
-				return ''
-			}
-
-			const [url, ...descriptorParts] = trimmedCandidate.split(/\s+/)
-			if (!url) {
-				return trimmedCandidate
-			}
-			return [absolutizeUrl(url, baseHref), ...descriptorParts]
-				.filter((part) => part.length > 0)
-				.join(' ')
-		})
-		.join(', ')
 }
 
 export function absolutizeHtmlAttributeUrls(
@@ -722,228 +645,6 @@ window.__kodyAppParams = __kodyResolvedParams;
 window.kodyWidget = window.kodyWidget ?? {};
 window.kodyWidget.params = __kodyResolvedParams;
 window.params = window.kodyWidget.params;
-		`.trim()
-	}
-
-	function buildShellStyles(theme: ThemeName | null) {
-		const themeSelector = theme ? `html[data-kody-theme="${theme}"]` : ':root'
-		return `
-:root {
-	color-scheme: light dark;
-	--font-body: ui-sans-serif, system-ui, sans-serif;
-	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-	--spacing-1: 0.25rem;
-	--spacing-2: 0.5rem;
-	--spacing-3: 0.75rem;
-	--spacing-4: 1rem;
-	--spacing-6: 1.5rem;
-	--radius-2: 0.5rem;
-	--radius-3: 0.75rem;
-	--shadow-1: 0 1px 2px rgb(15 23 42 / 0.08);
-}
-
-${themeSelector} {
-	--color-bg: #ffffff;
-	--color-surface: #f8fafc;
-	--color-fg: #0f172a;
-	--color-muted: #475569;
-	--color-border: #dbe2ea;
-	--color-accent: #2563eb;
-	--color-accent-contrast: #ffffff;
-	--color-code-bg: rgb(15 23 42 / 0.06);
-}
-
-@media (prefers-color-scheme: dark) {
-	:root:not([data-kody-theme="light"]) {
-		--color-bg: #0f172a;
-		--color-surface: #162033;
-		--color-fg: #e5eef8;
-		--color-muted: #a5b4c7;
-		--color-border: #2a3950;
-		--color-accent: #60a5fa;
-		--color-accent-contrast: #0f172a;
-		--color-code-bg: rgb(148 163 184 / 0.16);
-	}
-}
-
-html[data-kody-theme="dark"] {
-	color-scheme: dark;
-	--color-bg: #0f172a;
-	--color-surface: #162033;
-	--color-fg: #e5eef8;
-	--color-muted: #a5b4c7;
-	--color-border: #2a3950;
-	--color-accent: #60a5fa;
-	--color-accent-contrast: #0f172a;
-	--color-code-bg: rgb(148 163 184 / 0.16);
-}
-
-html[data-kody-theme="light"] {
-	color-scheme: light;
-}
-
-:where(html) {
-	min-height: 100%;
-	background: var(--color-bg);
-	color: var(--color-fg);
-}
-
-:where(body) {
-	min-height: 100%;
-	margin: 0;
-	padding: var(--spacing-4);
-	background: var(--color-bg);
-	color: var(--color-fg);
-	font: 400 14px/1.5 var(--font-body);
-}
-
-:where(body[data-kody-runtime="javascript"]) {
-	padding: 0;
-}
-
-:where(*, *::before, *::after) {
-	box-sizing: border-box;
-}
-
-:where(a) {
-	color: var(--color-accent);
-}
-
-:where(p, ul, ol, dl, pre, table, blockquote, fieldset) {
-	margin: 0 0 var(--spacing-4);
-}
-
-:where(h1, h2, h3, h4, h5, h6) {
-	margin: 0 0 var(--spacing-3);
-	line-height: 1.2;
-}
-
-:where(h1) {
-	font-size: 1.875rem;
-}
-
-:where(h2) {
-	font-size: 1.5rem;
-}
-
-:where(h3) {
-	font-size: 1.25rem;
-}
-
-:where(ul, ol) {
-	padding-left: 1.5rem;
-}
-
-:where(hr) {
-	border: 0;
-	border-top: 1px solid var(--color-border);
-	margin: var(--spacing-6) 0;
-}
-
-:where(code, kbd, samp) {
-	font-family: var(--font-mono);
-	font-size: 0.95em;
-}
-
-:where(code) {
-	background: var(--color-code-bg);
-	border-radius: 0.375rem;
-	padding: 0.1rem 0.35rem;
-}
-
-:where(pre) {
-	overflow-x: auto;
-	padding: var(--spacing-3);
-	background: var(--color-code-bg);
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-2);
-}
-
-:where(pre code) {
-	background: transparent;
-	padding: 0;
-}
-
-:where(form) {
-	display: grid;
-	gap: var(--spacing-4);
-}
-
-:where(label) {
-	display: grid;
-	gap: var(--spacing-2);
-	font-weight: 600;
-}
-
-:where(input, button, textarea, select) {
-	font: inherit;
-}
-
-:where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
-	width: 100%;
-	padding: var(--spacing-2) var(--spacing-3);
-	background: var(--color-surface);
-	color: var(--color-fg);
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-2);
-	box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.04);
-}
-
-:where(textarea) {
-	min-height: 7rem;
-	resize: vertical;
-}
-
-:where(input[type="checkbox"], input[type="radio"]) {
-	accent-color: var(--color-accent);
-}
-
-:where(button) {
-	width: fit-content;
-	padding: var(--spacing-2) var(--spacing-4);
-	background: var(--color-accent);
-	color: var(--color-accent-contrast);
-	border: 1px solid transparent;
-	border-radius: var(--radius-2);
-	box-shadow: var(--shadow-1);
-	cursor: pointer;
-}
-
-:where(button:disabled, input:disabled, textarea:disabled, select:disabled) {
-	opacity: 0.7;
-	cursor: not-allowed;
-}
-
-:where(button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible) {
-	outline: 2px solid var(--color-accent);
-	outline-offset: 2px;
-}
-
-:where(table) {
-	width: 100%;
-	border-collapse: collapse;
-}
-
-:where(th, td) {
-	padding: var(--spacing-2) var(--spacing-3);
-	border: 1px solid var(--color-border);
-	text-align: left;
-}
-
-:where(th) {
-	background: var(--color-surface);
-}
-
-:where(blockquote) {
-	margin-left: 0;
-	padding-left: var(--spacing-4);
-	border-left: 3px solid var(--color-border);
-	color: var(--color-muted);
-}
-
-:where([data-generated-ui-root]) {
-	min-height: 100%;
-}
 		`.trim()
 	}
 
