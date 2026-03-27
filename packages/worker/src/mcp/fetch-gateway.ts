@@ -3,7 +3,8 @@ import {
 	buildSecretHostApprovalUrl,
 	createSecretHostApprovalToken,
 } from '#mcp/secrets/host-approval.ts'
-import { resolveSecretForHost } from '#mcp/secrets/service.ts'
+import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
+import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretContext, type SecretScope } from '#mcp/secrets/types.ts'
 
 const secretPlaceholderRegex =
@@ -26,10 +27,8 @@ export class CodemodeFetchGateway extends WorkerEntrypoint<
 	FetchGatewayProps
 > {
 	async fetch(request: Request) {
-		const targetUrl = new URL(request.url)
 		const transformed = await expandSecretPlaceholders({
 			request,
-			targetHost: targetUrl.hostname,
 			props: this.ctx.props,
 			env: this.env,
 		})
@@ -39,13 +38,16 @@ export class CodemodeFetchGateway extends WorkerEntrypoint<
 
 export async function expandSecretPlaceholders(input: {
 	request: Request
-	targetHost: string
 	props: FetchGatewayProps
 	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
 }) {
 	const headers = new Headers(input.request.headers)
 	const requestBody = await readRequestBody(input.request)
 	const replacements = new Map<string, string>()
+	const resolvedSecrets: Array<{
+		referenced: ReferencedSecret
+		resolved: ResolvedSecret
+	}> = []
 	const referencedSecrets = collectReferencedSecrets([
 		input.request.url,
 		...Array.from(headers.values()),
@@ -56,23 +58,39 @@ export async function expandSecretPlaceholders(input: {
 		ensureFetchAllowed(input.props)
 	}
 	for (const referenced of referencedSecrets) {
-		const resolved = await resolveSecretForHost({
+		const resolved = await resolveSecret({
 			env: input.env,
 			userId: input.props.userId!,
 			name: referenced.name,
 			scope: referenced.scope,
 			secretContext: input.props.secretContext,
-			host: input.targetHost,
 		})
 		if (!resolved.found || typeof resolved.value !== 'string') {
 			throw new Error(`Secret "${referenced.name}" was not found.`)
 		}
-		if ('allowedForHost' in resolved && resolved.allowedForHost !== true) {
+		const placeholder = buildSecretPlaceholder(referenced)
+		replacements.set(placeholder, resolved.value)
+		resolvedSecrets.push({ referenced, resolved })
+	}
+	const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
+	let requestedHost = ''
+	if (hasReferencedSecrets) {
+		try {
+			requestedHost = new URL(nextUrl).hostname
+		} catch {
+			throw new Error(
+				'Unable to resolve the request host after secret expansion.',
+			)
+		}
+		const normalizedHost = normalizeHost(requestedHost)
+		for (const { referenced, resolved } of resolvedSecrets) {
+			const allowedForHost = resolved.allowedHosts.includes(normalizedHost)
+			if (allowedForHost) continue
 			const approvalToken = await createSecretHostApprovalToken(input.env, {
 				userId: input.props.userId!,
 				name: referenced.name,
 				scope: resolved.scope ?? referenced.scope ?? 'user',
-				requestedHost: input.targetHost,
+				requestedHost,
 				secretContext: input.props.secretContext,
 			})
 			const approvalUrl = buildSecretHostApprovalUrl({
@@ -80,17 +98,14 @@ export async function expandSecretPlaceholders(input: {
 				token: approvalToken,
 				name: referenced.name,
 				scope: resolved.scope ?? referenced.scope ?? 'user',
-				requestedHost: input.targetHost,
+				requestedHost,
 				secretContext: input.props.secretContext,
 			})
 			throw new Error(
-				`Secret "${referenced.name}" is not allowed for host "${input.targetHost}". If this request is expected, ask the user whether this host should be added to the secret's allowed hosts: ${approvalUrl}`,
+				`Secret "${referenced.name}" is not allowed for host "${requestedHost}". If this request is expected, ask the user whether this host should be added to the secret's allowed hosts: ${approvalUrl}`,
 			)
 		}
-		const placeholder = buildSecretPlaceholder(referenced)
-		replacements.set(placeholder, resolved.value)
 	}
-	const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
 	for (const [key, value] of Array.from(headers.entries())) {
 		headers.set(key, replaceSecretPlaceholders(value, replacements))
 	}

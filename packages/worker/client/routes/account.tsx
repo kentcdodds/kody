@@ -1,34 +1,18 @@
 import { type Handle } from 'remix/component'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
-
-type AccountStatus = 'loading' | 'ready' | 'error'
-type ApprovalAction = 'approve' | 'reject'
-type SecretScope = 'session' | 'app' | 'user'
-
-type ApprovalView = {
-	token: string
-	name: string
-	scope: SecretScope
-	requestedHost: string
-	currentAllowedHosts: Array<string>
-}
+import {
+	type AccountStatus,
+	type ApprovalAction,
+	type ApprovalView,
+	accountSecretsApiPath,
+	readJson,
+	submitApprovalRequest,
+} from '#client/routes/account-approval-shared.ts'
 
 type AccountSecretsPayload = {
 	ok: true
 	email: string
 	approval: ApprovalView | null
-}
-
-const accountSecretsApiPath = '/account/secrets.json'
-
-function getScopeLabel(scope: SecretScope) {
-	if (scope === 'app') return 'App'
-	if (scope === 'session') return 'Session'
-	return 'User'
-}
-
-async function readJson<T>(response: Response) {
-	return (await response.json().catch(() => null)) as T | null
 }
 
 export function AccountRoute(handle: Handle) {
@@ -82,28 +66,10 @@ export function AccountRoute(handle: Handle) {
 		message = null
 		handle.update()
 		try {
-			const response = await fetch(accountSecretsApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					action,
-					requestToken: approval.token,
-				}),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
+			const payload = await submitApprovalRequest<
 				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to process approval.')
-			}
+			>(action, approval.token)
+			if (!payload) return
 			email = payload.email
 			approval = payload.approval
 			submittingApprovalAction = null

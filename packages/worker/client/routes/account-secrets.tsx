@@ -6,6 +6,15 @@ import {
 } from '@kody-internal/shared/account-secret-route.ts'
 import { navigate, routerEvents } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
+import {
+	type AccountStatus,
+	type ApprovalAction,
+	type ApprovalView,
+	accountSecretsApiPath,
+	getScopeLabel,
+	readJson,
+	submitApprovalRequest,
+} from '#client/routes/account-approval-shared.ts'
 import { TypeaheadCombobox } from '#client/typeahead-combobox.tsx'
 import {
 	colors,
@@ -17,8 +26,6 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 
-type AccountStatus = 'loading' | 'ready' | 'error'
-type ApprovalAction = 'approve' | 'reject'
 type SecretScope = 'app' | 'user'
 
 type SavedAppOption = {
@@ -42,14 +49,6 @@ type SecretListItem = {
 
 type SecretDetail = SecretListItem & {
 	value: string
-}
-
-type ApprovalView = {
-	token: string
-	name: string
-	scope: 'session' | 'app' | 'user'
-	requestedHost: string
-	currentAllowedHosts: Array<string>
 }
 
 type AccountSecretsPayload = {
@@ -84,14 +83,7 @@ type SecretFilterState = {
 	appId: string
 }
 
-const accountSecretsApiPath = '/account/secrets.json'
 const secretsBasePath = '/account/secrets'
-
-function getScopeLabel(scope: ApprovalView['scope'] | SecretScope) {
-	if (scope === 'app') return 'App'
-	if (scope === 'session') return 'Session'
-	return 'User'
-}
 
 function formatRelativeTtl(ttlMs: number | null) {
 	if (ttlMs == null) return 'No expiry'
@@ -107,9 +99,6 @@ function formatTimestamp(value: string) {
 	return new Date(value).toLocaleString()
 }
 
-async function readJson<T>(response: Response) {
-	return (await response.json().catch(() => null)) as T | null
-}
 
 function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
 	return {
@@ -401,29 +390,10 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			const response = await fetch(accountSecretsApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					action,
-					requestToken: approval.token,
-				}),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-
-			const payload = await readJson<
+			const payload = await submitApprovalRequest<
 				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to process approval.')
-			}
+			>(action, approval.token)
+			if (!payload) return
 
 			const selection = getSelectionState(getCurrentHref())
 			applyPayload(
