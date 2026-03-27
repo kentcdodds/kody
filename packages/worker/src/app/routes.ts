@@ -8,6 +8,7 @@ export const routes = route({
 	accountSecrets: '/account/secrets',
 	accountSecretsApprove: '/account/secrets/approve',
 	accountSecretsApi: '/account/secrets.json',
+	accountSecretsApiPost: post('/account/secrets.json'),
 	chatThreads: '/chat-threads',
 	chatThreadsCreate: post('/chat-threads'),
 	chatThreadsUpdate: post('/chat-threads/update'),

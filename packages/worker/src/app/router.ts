@@ -50,6 +50,10 @@ export function createAppRouter(appEnv: AppEnv) {
 	router.map(routes.accountSecrets, createAccountSecretsHandler(appEnv as Env))
 	router.map(routes.accountSecretsApprove, createAccountSecretsHandler(appEnv as Env))
 	router.map(routes.accountSecretsApi, createAccountSecretsApiHandler(appEnv as Env))
+	router.map(
+		routes.accountSecretsApiPost,
+		createAccountSecretsApiHandler(appEnv as Env),
+	)
 	router.map(routes.savedUi, createSavedUiPageHandler(appEnv as Env))
 	router.map(routes.auth, createAuthHandler(appEnv))
 	router.map(routes.session, session)
