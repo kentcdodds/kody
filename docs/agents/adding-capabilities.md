@@ -104,6 +104,11 @@ runs. Missing secrets still fail with the same "secret not found" guidance used
 elsewhere, and secret-bearing capability inputs still require an authenticated
 user.
 
+When a secret has an `allowed_capabilities` policy, Kody also checks that the
+current capability name is explicitly listed before resolving the placeholder.
+An empty `allowed_capabilities` list means the secret is unrestricted for
+capability-input use.
+
 Use this for capabilities that need to accept a secret value as an argument but
 are not themselves the host-approval boundary. Good fits include:
 
@@ -284,6 +289,8 @@ scope narrow:
 
 - annotate only the exact credential fields, not the whole object
 - prefer this for local persistence or device-side credential flows
+- tell users which capability names should be added to a secret's
+  `allowed_capabilities` policy when a workflow depends on restricted secrets
 - avoid using it for generic remote API wrappers where fetch-time host approval
   should remain the enforcement point
 
@@ -295,8 +302,8 @@ Public MCP behavior should be verified through the compact tool surface:
   ranked results
 - use `execute` to confirm the capability runs correctly
 
-Prefer E2E tests in `packages/worker/src/mcp/*.mcp-e2e.test.ts` for the real
-MCP contract.
+Prefer E2E tests in `packages/worker/src/mcp/*.mcp-e2e.test.ts` for the real MCP
+contract.
 
 Registry invariants (duplicate capability names, domain/capability mismatches,
 duplicate domain registration) are covered in

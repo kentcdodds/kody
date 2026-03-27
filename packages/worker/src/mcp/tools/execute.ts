@@ -48,12 +48,13 @@ Network access:
 - To inject a saved secret into a request, use a placeholder string such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body.
 - Secret placeholders only work for hosts that the user has already approved for that secret.
 - Some capability input fields also accept secret placeholders. When a capability's input schema marks a string field with \`x-kody-secret: true\`, you may pass \`{{secret:name}}\` there instead of a raw credential.
+- Capability-input secret placeholders also respect any per-secret allowed capability names. If a secret has a non-empty allowed-capabilities list, only those exact capability names may resolve it.
 - If a request is blocked because the host is not approved, do not retry blindly. Ask the user whether they want to approve that host, then provide the approval link from the error message.
 - Saving or updating a secret does not authorize outbound use automatically. Host approval happens separately in the app.
 
 Secrets:
 - Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, client secrets, or other credentials into chat. If a workflow needs a secret value that is not already stored, use generated UI to collect and save it instead.
-- Use \`await codemode.secret_list({})\` to inspect available secret metadata before building a request. The result is metadata only and does not reveal secret values.
+- Use \`await codemode.secret_list({})\` to inspect available secret metadata before building a request. The result is metadata only and does not reveal secret values; it includes allowed hosts and allowed capability names.
 - Pass \`scope\` to narrow results, for example \`await codemode.secret_list({ scope: 'app' })\`.
 - Do not expect \`codemode.secret_get(...)\`, \`codemode.secret_require(...)\`, or any injected \`secrets\` helper to be available in execute-time code.
 

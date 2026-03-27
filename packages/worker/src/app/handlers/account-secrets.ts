@@ -16,11 +16,13 @@ import {
 	listSecrets,
 	resolveSecret,
 	saveSecret,
+	setSecretAllowedCapabilities,
 	setSecretAllowedHosts,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type routes } from '#app/routes.ts'
+import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
@@ -39,6 +41,7 @@ type AccountSecretListItem = {
 	appId: string | null
 	appTitle: string | null
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -335,6 +338,7 @@ function toAccountSecretListItem(
 		description: string
 		appId: string | null
 		allowedHosts: Array<string>
+		allowedCapabilities: Array<string>
 		createdAt: string
 		updatedAt: string
 		ttlMs: number | null
@@ -358,6 +362,7 @@ function toAccountSecretListItem(
 		appId: secret.appId,
 		appTitle: secret.appId ? (appTitles.get(secret.appId) ?? null) : null,
 		allowedHosts: secret.allowedHosts,
+		allowedCapabilities: secret.allowedCapabilities,
 		createdAt: secret.createdAt,
 		updatedAt: secret.updatedAt,
 		ttlMs: secret.ttlMs,
@@ -446,6 +451,9 @@ async function handleSaveAction(input: {
 	const allowedHosts = normalizeAllowedHosts(
 		readStringArray(input.body, 'allowedHosts'),
 	)
+	const allowedCapabilities = normalizeAllowedCapabilities(
+		readStringArray(input.body, 'allowedCapabilities'),
+	)
 
 	if (!name) {
 		return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)
@@ -519,6 +527,17 @@ async function handleSaveAction(input: {
 			scope,
 			allowedHosts,
 			storageContext: getSecretContextForAccountSecret({
+				scope,
+				appId,
+			}),
+		})
+		await setSecretAllowedCapabilities({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name,
+			scope,
+			allowedCapabilities,
+			secretContext: getSecretContextForAccountSecret({
 				scope,
 				appId,
 			}),

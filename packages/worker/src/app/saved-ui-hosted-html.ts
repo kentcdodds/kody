@@ -469,6 +469,10 @@ async function listSecretsWithHttp(scope) {
 			(secret.app_id == null || typeof secret.app_id === 'string') &&
 			Array.isArray(secret.allowed_hosts) &&
 			secret.allowed_hosts.every((host) => typeof host === 'string') &&
+			Array.isArray(secret.allowed_capabilities) &&
+			secret.allowed_capabilities.every(
+				(capability) => typeof capability === 'string',
+			) &&
 			typeof secret.created_at === 'string' &&
 			typeof secret.updated_at === 'string' &&
 			(secret.ttl_ms == null ||

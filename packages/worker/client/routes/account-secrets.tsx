@@ -42,6 +42,7 @@ type SecretListItem = {
 	appId: string | null
 	appTitle: string | null
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -68,6 +69,7 @@ type EditorState = {
 	description: string
 	value: string
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 }
 
 type SelectionState = {
@@ -108,6 +110,7 @@ function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
 		description: '',
 		value: '',
 		allowedHosts: [''],
+		allowedCapabilities: [''],
 	}
 }
 
@@ -120,6 +123,8 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		description: secret.description,
 		value: secret.value,
 		allowedHosts: secret.allowedHosts.length > 0 ? secret.allowedHosts : [''],
+		allowedCapabilities:
+			secret.allowedCapabilities.length > 0 ? secret.allowedCapabilities : [''],
 	}
 }
 
@@ -255,6 +260,7 @@ function filterSecrets(
 			secret.appTitle ?? '',
 			secret.scope,
 			...secret.allowedHosts,
+			...secret.allowedCapabilities,
 		]
 			.join(' ')
 			.toLowerCase()
@@ -456,6 +462,7 @@ export function AccountSecretsRoute(handle: Handle) {
 					description: editorState.description,
 					value: editorState.value,
 					allowedHosts: editorState.allowedHosts,
+					allowedCapabilities: editorState.allowedCapabilities,
 				}),
 			})
 			if (response.status === 401) {
@@ -565,6 +572,37 @@ export function AccountSecretsRoute(handle: Handle) {
 		editorState = {
 			...editorState,
 			allowedHosts: nextHosts.length > 0 ? nextHosts : [''],
+		}
+		handle.update()
+	}
+
+	function updateAllowedCapability(index: number, value: string) {
+		editorState = {
+			...editorState,
+			allowedCapabilities: editorState.allowedCapabilities.map(
+				(capabilityName, capabilityIndex) =>
+					capabilityIndex === index ? value : capabilityName,
+			),
+		}
+		handle.update()
+	}
+
+	function addAllowedCapability() {
+		editorState = {
+			...editorState,
+			allowedCapabilities: [...editorState.allowedCapabilities, ''],
+		}
+		handle.update()
+	}
+
+	function removeAllowedCapability(index: number) {
+		const nextCapabilities = editorState.allowedCapabilities.filter(
+			(_capabilityName, capabilityIndex) => capabilityIndex !== index,
+		)
+		editorState = {
+			...editorState,
+			allowedCapabilities:
+				nextCapabilities.length > 0 ? nextCapabilities : [''],
 		}
 		handle.update()
 	}
@@ -1224,6 +1262,64 @@ export function AccountSecretsRoute(handle: Handle) {
 											css={secondaryButtonCss}
 										>
 											Add host
+										</button>
+									</div>
+								</div>
+
+								<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div css={{ display: 'grid', gap: spacing.xs }}>
+										<span css={fieldLabelCss}>Allowed capabilities</span>
+										<p css={{ margin: 0, color: colors.textMuted }}>
+											Leave this empty to allow any capability with an
+											<code> x-kody-secret </code>
+											input to resolve this secret.
+										</p>
+									</div>
+									<div css={{ display: 'grid', gap: spacing.sm }}>
+										{editorState.allowedCapabilities.map(
+											(capabilityName, index) => (
+												<div
+													key={`${index}-${capabilityName}`}
+													css={{
+														display: 'grid',
+														gridTemplateColumns: 'minmax(0, 1fr) auto',
+														gap: spacing.sm,
+														[mq.mobile]: {
+															gridTemplateColumns: '1fr',
+														},
+													}}
+												>
+													<input
+														type="text"
+														value={capabilityName}
+														placeholder="home_lutron_set_credentials"
+														on={{
+															input: (event) =>
+																updateAllowedCapability(
+																	index,
+																	event.currentTarget.value,
+																),
+														}}
+														css={inputCss}
+													/>
+													<button
+														type="button"
+														on={{ click: () => removeAllowedCapability(index) }}
+														css={secondaryButtonCss}
+													>
+														Remove
+													</button>
+												</div>
+											),
+										)}
+									</div>
+									<div>
+										<button
+											type="button"
+											on={{ click: addAllowedCapability }}
+											css={secondaryButtonCss}
+										>
+											Add capability
 										</button>
 									</div>
 								</div>

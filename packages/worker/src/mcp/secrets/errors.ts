@@ -1,5 +1,7 @@
 const hostApprovalRequiredRegex =
 	/^Secret "([^"]+)" is not allowed for host "([^"]+)"/
+const capabilityAccessRequiredRegex =
+	/^Secret "([^"]+)" is not allowed for capability "([^"]+)"\.$/
 const missingSecretRegex = /^Secret "([^"]+)" was not found\.$/
 
 export const fetchSecretAuthRequiredMessage =
@@ -17,6 +19,13 @@ export function createMissingSecretMessage(secretName: string) {
 	return `Secret "${secretName}" was not found.`
 }
 
+export function createCapabilitySecretAccessDeniedMessage(
+	secretName: string,
+	capabilityName: string,
+) {
+	return `Secret "${secretName}" is not allowed for capability "${capabilityName}".`
+}
+
 export function parseMissingSecretMessage(message: string) {
 	const match = message.match(missingSecretRegex)
 	if (!match?.[1]) return null
@@ -31,6 +40,15 @@ export function parseHostApprovalRequiredMessage(message: string) {
 	return {
 		secretName: match[1],
 		host: match[2],
+	}
+}
+
+export function parseCapabilityAccessRequiredMessage(message: string) {
+	const match = message.match(capabilityAccessRequiredRegex)
+	if (!match?.[1] || !match?.[2]) return null
+	return {
+		secretName: match[1],
+		capabilityName: match[2],
 	}
 }
 

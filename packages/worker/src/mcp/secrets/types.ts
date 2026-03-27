@@ -24,6 +24,7 @@ export type SecretEntryRow = {
 	description: string
 	encrypted_value: string
 	allowed_hosts: string
+	allowed_capabilities: string
 	created_at: string
 	updated_at: string
 }
@@ -34,6 +35,7 @@ export type SecretMetadata = {
 	description: string
 	appId: string | null
 	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null

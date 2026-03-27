@@ -22,6 +22,7 @@ type SecretMetadata = {
 	description: string
 	app_id: string | null
 	allowed_hosts: Array<string>
+	allowed_capabilities: Array<string>
 	created_at: string
 	updated_at: string
 	ttl_ms: number | null
@@ -496,12 +497,11 @@ export function readSavedAppSourceFromHostToolResult(
 			errorMessage,
 		}
 	}
-	const code = typeof structuredContent?.code === 'string'
-		? structuredContent.code
-		: null
 	const structuredContent = isRecord(result.structuredContent)
 		? result.structuredContent
 		: null
+	const code =
+		typeof structuredContent?.code === 'string' ? structuredContent.code : null
 	if (!code) {
 		return {
 			handled: true as const,
@@ -773,6 +773,10 @@ function initializeGeneratedUiShell() {
 				(secret.app_id == null || typeof secret.app_id === 'string') &&
 				Array.isArray(secret.allowed_hosts) &&
 				secret.allowed_hosts.every((host) => typeof host === 'string') &&
+				Array.isArray(secret.allowed_capabilities) &&
+				secret.allowed_capabilities.every(
+					(capability) => typeof capability === 'string',
+				) &&
 				typeof secret.created_at === 'string' &&
 				typeof secret.updated_at === 'string' &&
 				(secret.ttl_ms == null ||
