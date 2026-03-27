@@ -767,6 +767,7 @@ window.kodyWidget = {
 		const scope = coerceSecretScope(input.scope);
 		const scopeSuffix = scope ? '|scope=' + scope : '';
 		const params = new URLSearchParams();
+		params.set('grant_type', 'authorization_code');
 		params.set('client_id', '{{secret:' + input.clientIdSecretName + scopeSuffix + '}}');
 		params.set('client_secret', '{{secret:' + input.clientSecretSecretName + scopeSuffix + '}}');
 		params.set('code', input.code);
@@ -1224,7 +1225,24 @@ function injectIntoHtmlDocument(
 		)
 	}
 
+	if (/<body\b[^>]*>/i.test(code)) {
+		return code.replace(
+			/<body\b[^>]*>/i,
+			(match) => `${match}\n${injection}\n`,
+		)
+	}
+
 	if (/<\/body>/i.test(code)) {
+		const bodyMatch = code.match(/<body\b[^>]*>[\s\S]*?<\/body>/i)
+		if (bodyMatch?.index != null) {
+			const bodyStartIndex = bodyMatch.index
+			const bodySection = bodyMatch[0]
+			const scriptMatch = bodySection.match(/<script\b[^>]*>/i)
+			if (scriptMatch?.index != null) {
+				const insertAt = bodyStartIndex + scriptMatch.index
+				return `${code.slice(0, insertAt)}${injection}\n${code.slice(insertAt)}`
+			}
+		}
 		return code.replace(/<\/body>/i, `${injection}\n</body>`)
 	}
 
