@@ -32,7 +32,7 @@
 		"./cli.ts",
 		"./docs/post-download.ts",
 		"./packages/worker/src/mcp/apps/claude-widget-domain.ts",
-		"./packages/worker/src/mcp/mcp-server-e2e.test.ts",
+		"./packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts",
 		"./packages/worker/src/mcp/test-process.ts",
 		"./tools/**/*.ts",
 		"./packages/shared/src/**/*.ts"

@@ -9,7 +9,7 @@ export default mergeConfig(
 		test: {
 			name: 'mcp-e2e',
 			environment: 'node',
-			include: ['packages/worker/src/mcp/mcp-server-e2e.test.ts'],
+			include: ['**/*.mcp-e2e.test.ts'],
 			testTimeout: mcpE2eTimeout,
 			hookTimeout: mcpE2eTimeout,
 		},
