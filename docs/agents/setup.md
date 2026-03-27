@@ -123,6 +123,14 @@ Quick notes for getting a local kody environment running.
 
 ## Checks
 
+- `git commit` runs the Husky `pre-commit` hook, which formats staged
+  JavaScript/TypeScript/JSON/Markdown/CSS files with `oxfmt`, applies
+  `oxlint --fix` to staged JavaScript/TypeScript files, and then runs
+  `npm run typecheck` for the repo before the commit is created.
+- Because the commit hook already enforces formatting, lint fixes, and
+  typechecking, agents do not need to run those checks separately before every
+  commit unless they want earlier feedback or are validating a larger change set
+  before opening a PR.
 - `npm run validate` runs format check, lint fix, build, typecheck, Playwright
   tests, and MCP E2E tests.
 - `npm run format` applies formatting updates.
