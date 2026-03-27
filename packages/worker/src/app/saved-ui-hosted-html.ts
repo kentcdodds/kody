@@ -1305,7 +1305,25 @@ function absolutizeHtmlAttributeUrls(code: string, baseHref: string | null) {
 		return code
 	}
 
-	return code.replace(/<[^>]+>/g, (tag) => {
+	const tagPattern = /<[^>]+>/g
+	let insideScript = false
+	let insideStyle = false
+
+	return code.replace(tagPattern, (tag) => {
+		if (insideScript) {
+			if (/^<\/\s*script\b/i.test(tag)) {
+				insideScript = false
+			}
+			return tag
+		}
+
+		if (insideStyle) {
+			if (/^<\/\s*style\b/i.test(tag)) {
+				insideStyle = false
+			}
+			return tag
+		}
+
 		if (
 			tag.startsWith('<!--') ||
 			tag.startsWith('<!') ||
@@ -1314,7 +1332,7 @@ function absolutizeHtmlAttributeUrls(code: string, baseHref: string | null) {
 			return tag
 		}
 
-		return tag.replace(
+		const nextTag = tag.replace(
 			/(^|\s)(href|src|action|formaction|poster|srcset)=("([^"]*)"|'([^']*)')/gi,
 			(
 				match,
@@ -1342,5 +1360,13 @@ function absolutizeHtmlAttributeUrls(code: string, baseHref: string | null) {
 				return `${prefix}${attributeName}=${quote}${escapeHtmlAttribute(nextValue)}${quote}`
 			},
 		)
+
+		if (/^<\s*script\b/i.test(tag) && !/\/\s*>$/.test(tag)) {
+			insideScript = true
+		} else if (/^<\s*style\b/i.test(tag) && !/\/\s*>$/.test(tag)) {
+			insideStyle = true
+		}
+
+		return nextTag
 	})
 }
