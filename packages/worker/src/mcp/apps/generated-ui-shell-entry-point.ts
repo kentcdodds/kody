@@ -1,11 +1,27 @@
+import {
+	generatedUiShellScriptPath,
+	generatedUiRuntimeStylesheetPath,
+	resolveGeneratedUiAssetUrl,
+} from '@kody-internal/shared/generated-ui-asset-paths.ts'
+import { escapeInlineScriptSource } from '@kody-internal/shared/generated-ui-documents.ts'
+import { type GeneratedUiRuntimeBootstrap } from '@kody-internal/shared/generated-ui-runtime-types.ts'
+
 export const generatedUiShellResourceUri =
 	'ui://generated-ui-shell/entry-point.html' as const
 
 export function renderGeneratedUiShellEntryPoint(baseUrl: string | URL) {
-	const widgetScriptHref = new URL(
-		'/mcp-apps/generated-ui-shell.js',
+	const shellScriptHref = resolveGeneratedUiAssetUrl(
+		generatedUiShellScriptPath,
 		baseUrl,
-	).toString()
+	)
+	const stylesheetHref = resolveGeneratedUiAssetUrl(
+		generatedUiRuntimeStylesheetPath,
+		baseUrl,
+	)
+	const bootstrap: GeneratedUiRuntimeBootstrap = {
+		mode: 'shell',
+	}
+	const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap))
 
 	return `
 <!doctype html>
@@ -14,30 +30,14 @@ export function renderGeneratedUiShellEntryPoint(baseUrl: string | URL) {
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Generated UI Shell</title>
-		<style>
-			html,
-			body {
-				margin: 0;
-				height: 100%;
-				background: transparent;
-			}
-
-			body {
-				overflow: hidden;
-			}
-
-			iframe {
-				display: block;
-				width: 100%;
-				height: 100%;
-				border: 0;
-				background: transparent;
-			}
-		</style>
+		<link rel="stylesheet" href="${stylesheetHref}" />
+		<script>
+window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
+		</script>
 	</head>
-	<body>
-		<iframe data-generated-ui-frame title="Generated UI"></iframe>
-		<script type="module" src="${widgetScriptHref}" crossorigin="anonymous"></script>
+	<body data-kody-runtime="fragment">
+		<div id="app" data-generated-ui-root></div>
+		<script type="module" src="${shellScriptHref}" crossorigin="anonymous"></script>
 	</body>
 </html>
 `.trim()

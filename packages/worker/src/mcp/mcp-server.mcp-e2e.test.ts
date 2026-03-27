@@ -859,7 +859,9 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 
 	expect(generatedResource).toBeDefined()
 	expect(generatedResource?.mimeType).toBe('text/html;profile=mcp-app')
-	expect(generatedResource?.text).toContain('data-generated-ui-frame')
+	expect(generatedResource?.text).not.toContain('data-generated-ui-frame')
+	expect(generatedResource?.text).toContain('data-generated-ui-root')
+	expect(generatedResource?.text).toContain('"mode":"shell"')
 	expect(generatedResource?.text).not.toContain('Toggle fullscreen')
 	expect(generatedResource?.text).not.toContain('Open saved app link')
 	expect(generatedResource?.text).toContain('type="module"')
@@ -881,6 +883,21 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 	expect(generatedShellSource).toContain('ui/open-link')
 	expect(generatedShellSource).toContain('executeCode')
 	expect(generatedShellSource).toContain('tools/call')
+
+	expect(generatedShellSource).toContain('__kodyGeneratedUiBootstrap')
+	expect(generatedShellSource).toContain('kodyWindow.kodyWidget = kodyWidget')
+	expect(generatedShellSource).toContain('__kodyGeneratedUiRuntimeHooks')
+
+	const generatedRuntimeStylesResponse = await fetch(
+		new URL('/mcp-apps/generated-ui-runtime.css', server.origin),
+	)
+	expect(generatedRuntimeStylesResponse.ok).toBe(true)
+	expect(generatedRuntimeStylesResponse.headers.get('content-type')).toContain(
+		'text/css',
+	)
+	const generatedRuntimeStyles = await generatedRuntimeStylesResponse.text()
+	expect(generatedRuntimeStyles).toContain('[data-generated-ui-root]')
+	expect(generatedRuntimeStyles).toContain('--color-bg')
 
 	expect(generatedResourceMeta?.ui?.domain).toBe(
 		await computeClaudeWidgetDomain(new URL('/mcp', server.origin).toString()),
