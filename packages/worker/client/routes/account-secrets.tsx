@@ -99,7 +99,6 @@ function formatTimestamp(value: string) {
 	return new Date(value).toLocaleString()
 }
 
-
 function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
 	return {
 		currentId: null,
