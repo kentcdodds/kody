@@ -17,14 +17,19 @@ type HostedSavedUiInput = {
 }
 
 export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
-	const runtime = input.artifact.runtime === 'javascript' ? 'javascript' : 'html'
+	const runtime =
+		input.artifact.runtime === 'javascript' ? 'javascript' : 'html'
 	if (runtime === 'javascript') {
 		const injection = buildHeadInjection({
 			appSession: input.appSession,
 			includeRuntime: false,
 		})
 		const runtimeSource = buildHostedWidgetRuntimeSource(input.appSession)
-		return buildJavascriptDocument(input.artifact.code, injection, runtimeSource)
+		return buildJavascriptDocument(
+			input.artifact.code,
+			injection,
+			runtimeSource,
+		)
 	}
 
 	const injection = buildHeadInjection({
@@ -995,10 +1000,7 @@ function injectIntoHtmlDocument(
 	}
 
 	if (/<body\b[^>]*>/i.test(code)) {
-		return code.replace(
-			/<body\b[^>]*>/i,
-			(match) => `${match}\n${injection}\n`,
-		)
+		return code.replace(/<body\b[^>]*>/i, (match) => `${match}\n${injection}\n`)
 	}
 
 	if (/<\/body>/i.test(code)) {
