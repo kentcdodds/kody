@@ -5,18 +5,12 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
-import { getUiArtifactById, updateUiArtifact } from '#mcp/ui-artifacts-repo.ts'
+import {
+	getUiArtifactById,
+	parseStringArray,
+	updateUiArtifact,
+} from '#mcp/ui-artifacts-repo.ts'
 import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
-
-function parseStringArray(raw: string): Array<string> {
-	try {
-		const value = JSON.parse(raw) as unknown
-		if (!Array.isArray(value)) return []
-		return value.filter((entry): entry is string => typeof entry === 'string')
-	} catch {
-		return []
-	}
-}
 
 const inputSchema = z
 	.object({
@@ -131,17 +125,21 @@ export const uiUpdateAppCapability = defineDomainCapability(
 				throw new Error('Saved UI artifact not found after update.')
 			}
 
-			await upsertUiArtifactVector(ctx.env, {
-				appId: refreshed.id,
-				userId: user.userId,
-				embedText: buildUiArtifactEmbedText({
-					title: refreshed.title,
-					description: refreshed.description,
-					keywords: parseStringArray(refreshed.keywords),
-					searchText: refreshed.search_text,
-					runtime: refreshed.runtime,
-				}),
-			})
+			try {
+				await upsertUiArtifactVector(ctx.env, {
+					appId: refreshed.id,
+					userId: user.userId,
+					embedText: buildUiArtifactEmbedText({
+						title: refreshed.title,
+						description: refreshed.description,
+						keywords: parseStringArray(refreshed.keywords),
+						searchText: refreshed.search_text,
+						runtime: refreshed.runtime,
+					}),
+				})
+			} catch {
+				// Vector refresh should not fail the primary update.
+			}
 
 			return {
 				app_id: refreshed.id,

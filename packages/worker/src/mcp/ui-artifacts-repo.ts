@@ -1,5 +1,15 @@
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
+export function parseStringArray(raw: string): Array<string> {
+	try {
+		const value = JSON.parse(raw) as unknown
+		if (!Array.isArray(value)) return []
+		return value.filter((entry): entry is string => typeof entry === 'string')
+	} catch {
+		return []
+	}
+}
+
 export function uiArtifactVectorId(artifactId: string): string {
 	return `ui_artifact_${artifactId}`
 }
