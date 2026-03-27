@@ -386,7 +386,10 @@ async function authorizeWithPassword(
 	return code
 }
 
-async function loginToApp(origin: string, user: { email: string; password: string }) {
+async function loginToApp(
+	origin: string,
+	user: { email: string; password: string },
+) {
 	const response = await fetch(new URL('/auth', origin), {
 		method: 'POST',
 		headers: {
@@ -1094,44 +1097,6 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		},
 	])
 
-	const updateSecretExecuteResponse = await fetch(executeUrl!, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json',
-			Accept: 'application/json',
-		},
-		body: JSON.stringify({
-			code: `async () => {
-				return await codemode.secret_update({
-					name: 'cloudflareToken',
-					scope: 'app',
-					value: 'rotated-app-token',
-					description: 'Rotated Cloudflare deployment token',
-				})
-			}`,
-		}),
-	})
-	expect(updateSecretExecuteResponse.ok).toBe(true)
-	const updateSecretExecutePayload =
-		(await updateSecretExecuteResponse.json()) as {
-			ok?: boolean
-			result?: {
-				secret?: Record<string, unknown>
-			}
-		}
-	expect(updateSecretExecutePayload.ok).toBe(true)
-	expect(updateSecretExecutePayload.result?.secret).toEqual({
-		name: 'cloudflareToken',
-		scope: 'app',
-		description: 'Rotated Cloudflare deployment token',
-		app_id: appId,
-		allowed_hosts: [],
-		created_at: expect.any(String),
-		updated_at: expect.any(String),
-		ttl_ms: null,
-	})
-
 	const approvedFetchReference = crypto
 		.randomUUID()
 		.replace(/-/g, '')
@@ -1172,11 +1137,11 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		'Secret "cloudflareToken" is not allowed for host "example.com"',
 	)
 	expect(blockedFetchExecutePayload.error).toContain(
-		'ask the user whether this host should be added to the secret\'s allowed hosts',
+		"ask the user whether this host should be added to the secret's allowed hosts",
 	)
 	const approvalMatch =
 		blockedFetchExecutePayload.error?.match(
-			/https?:\/\/\S*\/account\/secrets\/approve\?request=[^\s)]+/,
+			/https?:\/\/\S*\/account\/secrets\/[^\s?]+\?[^)\s]*allowed-host=[^&\s)]+[^)\s]*/,
 		) ?? null
 	expect(approvalMatch).not.toBeNull()
 
@@ -1296,7 +1261,7 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 	expect(appMatch?.availableSecrets).toEqual([
 		{
 			name: 'cloudflareToken',
-			description: 'Rotated Cloudflare deployment token',
+			description: 'App-scoped Cloudflare deployment token',
 		},
 	])
 

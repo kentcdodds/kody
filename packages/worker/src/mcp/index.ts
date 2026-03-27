@@ -82,7 +82,7 @@ How to use execute
 - The sandbox injects a metadata-only 'secrets' helper: \`await secrets.list()\` or \`await secrets.list({ scope: 'app' })\`.
 - Use normal \`fetch(...)\` for outbound HTTP. To inject a stored secret, place a placeholder such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body; the host resolves it server-side and blocks unapproved destinations.
 - Saving or updating a secret does not authorize sending it anywhere. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
-- Mutating secret operations stay on \`codemode\`: for example \`await codemode.secret_update({ name: 'cloudflareToken', scope: 'app', value: '...' })\` or \`await codemode.secret_delete({ name: 'cloudflareToken', scope: 'app' })\`.
+- Secrets are intentionally not readable or updatable through \`codemode\`. Use generated UI flows such as \`saveSecret(...)\` when the user needs to provide or rotate a value, and use \`codemode.secret_delete(...)\` only when removing a stored secret reference.
 - Your code must be an async arrow function that returns the result.
 - Example: const result = await codemode[capabilityName](args)
 
