@@ -207,10 +207,12 @@ function assertSuccessfulResponse(response: LeapResponse, action: string) {
 }
 
 export async function createLutronLeapClient(
-	processor: Pick<LutronPersistedProcessor, 'host' | 'leapPort'>,
+	processor: Pick<LutronPersistedProcessor, 'host' | 'address' | 'leapPort'>,
 ): Promise<LeapClient> {
+	// Prefer the raw IP to avoid .local mDNS lookups in worker runtimes.
+	const connectionHost = processor.address ?? processor.host
 	const socket = await createTlsSocket({
-		host: processor.host,
+		host: connectionHost,
 		port: processor.leapPort,
 	})
 
