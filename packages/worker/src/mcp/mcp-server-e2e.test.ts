@@ -790,13 +790,13 @@ test('mcp server returns structured guidance for missing secret errors in execut
 	expect((result as CallToolResult).isError).toBe(true)
 	expect(textOutput).toContain('Secret "missingToken" was not found.')
 	expect(textOutput).toContain(
-		'Next step: Open a generated UI so the user can provide and save this secret, then retry the workflow.',
+		'Next step: Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
 	)
 	expect(errorDetails).toEqual({
 		kind: 'secret_required',
 		message: 'Secret "missingToken" was not found.',
 		nextStep:
-			'Open a generated UI so the user can provide and save this secret, then retry the workflow.',
+			'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
 		secretNames: ['missingToken'],
 		suggestedAction: {
 			type: 'open_generated_ui',

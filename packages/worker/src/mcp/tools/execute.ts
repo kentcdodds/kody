@@ -51,6 +51,7 @@ Network access:
 - Saving or updating a secret does not authorize outbound use automatically. Host approval happens separately in the app.
 
 Secrets:
+- Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, client secrets, or other credentials into chat. If a workflow needs a secret value that is not already stored, use generated UI to collect and save it instead.
 - Use \`await codemode.secret_list({})\` to inspect available secret metadata before building a request. The result is metadata only and does not reveal secret values.
 - Pass \`scope\` to narrow results, for example \`await codemode.secret_list({ scope: 'app' })\`.
 - Do not expect \`codemode.secret_get(...)\`, \`codemode.secret_require(...)\`, or any injected \`secrets\` helper to be available in execute-time code.

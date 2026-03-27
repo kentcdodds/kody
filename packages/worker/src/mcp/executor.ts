@@ -87,7 +87,7 @@ export function getExecutionErrorDetails(
 			kind: 'secret_required',
 			message,
 			nextStep:
-				'Open a generated UI so the user can provide and save this secret, then retry the workflow.',
+				'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
 			secretNames: [missingSecretMatch[1] ?? ''].filter(Boolean),
 			suggestedAction: {
 				type: 'open_generated_ui',
