@@ -153,7 +153,9 @@ export function AccountRoute(handle: Handle) {
 	return () => {
 		const currentHref =
 			typeof window === 'undefined' ? '/account' : window.location.href
-		if (status === 'loading' || currentHref !== lastLoadedHref) {
+		const isRefreshingForLocationChange =
+			status !== 'loading' && currentHref !== lastLoadedHref
+		if (status === 'loading' || isRefreshingForLocationChange) {
 			handle.queueTask(loadAccountSecrets)
 		}
 
@@ -182,7 +184,7 @@ export function AccountRoute(handle: Handle) {
 					</p>
 				</header>
 
-				{approval ? (
+				{approval && !isRefreshingForLocationChange ? (
 					<section
 						css={{
 							display: 'grid',
@@ -218,16 +220,22 @@ export function AccountRoute(handle: Handle) {
 						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
 							<button
 								type="button"
-								disabled={submittingApprovalAction != null}
-								onClick={() => void submitApproval('approve')}
+								disabled={
+									submittingApprovalAction != null ||
+									isRefreshingForLocationChange
+								}
+								on={{ click: () => void submitApproval('approve') }}
 								css={primaryButtonCss}
 							>
 								Approve host
 							</button>
 							<button
 								type="button"
-								disabled={submittingApprovalAction != null}
-								onClick={() => void submitApproval('reject')}
+								disabled={
+									submittingApprovalAction != null ||
+									isRefreshingForLocationChange
+								}
+								on={{ click: () => void submitApproval('reject') }}
 								css={secondaryButtonCss}
 							>
 								Reject
