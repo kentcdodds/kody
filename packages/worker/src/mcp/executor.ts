@@ -53,6 +53,7 @@ export type ExecutionErrorDetails =
 			capabilityName: string
 			suggestedAction: {
 				type: 'edit_secret_policy'
+				policyField: 'allowed_capabilities'
 			}
 	  }
 	| {
@@ -101,11 +102,12 @@ export function getExecutionErrorDetails(
 			kind: 'secret_capability_access_required',
 			message,
 			nextStep:
-				'Ask the user whether this capability should be allowed to use the secret, then update the secret policy in the account secrets UI before retrying.',
+				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
 			secretNames: [capabilityAccessDetails.secretName],
 			capabilityName: capabilityAccessDetails.capabilityName,
 			suggestedAction: {
 				type: 'edit_secret_policy',
+				policyField: 'allowed_capabilities',
 			},
 		}
 	}

@@ -1,7 +1,7 @@
 const hostApprovalRequiredRegex =
 	/^Secret "([^"]+)" is not allowed for host "([^"]+)"/
 const capabilityAccessRequiredRegex =
-	/^Secret "([^"]+)" is not allowed for capability "([^"]+)"\.$/
+	/^Secret "([^"]+)" is not allowed for capability "([^"]+)"/
 const missingSecretRegex = /^Secret "([^"]+)" was not found\.$/
 
 export const fetchSecretAuthRequiredMessage =
@@ -23,7 +23,7 @@ export function createCapabilitySecretAccessDeniedMessage(
 	secretName: string,
 	capabilityName: string,
 ) {
-	return `Secret "${secretName}" is not allowed for capability "${capabilityName}".`
+	return `Secret "${secretName}" is not allowed for capability "${capabilityName}". If this capability should be able to use the secret, ask the user whether to add "${capabilityName}" to the secret's allowed capabilities in the account secrets UI, then retry after they approve that policy change.`
 }
 
 export function parseMissingSecretMessage(message: string) {
