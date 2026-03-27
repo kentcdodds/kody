@@ -54,8 +54,7 @@ export async function runCodemodeWithRegistry(
 	params?: Record<string, unknown>,
 	executorExports?: typeof workerExports,
 ) {
-	const { createExecuteExecutor, wrapExecuteCode } =
-		await import('#mcp/executor.ts')
+	const { createExecuteExecutor } = await import('#mcp/executor.ts')
 	const executor = createExecuteExecutor({
 		env,
 		exports: executorExports ?? workerExports,
@@ -73,5 +72,5 @@ export async function runCodemodeWithRegistry(
 		params !== undefined
 			? await buildParameterizedSkillCode(code, params)
 			: code
-	return executor.execute(wrapExecuteCode(wrapped), [provider])
+	return executor.execute(wrapped, [provider])
 }

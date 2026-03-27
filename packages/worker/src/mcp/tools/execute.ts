@@ -50,10 +50,10 @@ Network access:
 - If a request is blocked because the host is not approved, do not retry blindly. Ask the user whether they want to approve that host, then provide the approval link from the error message.
 - Saving or updating a secret does not authorize outbound use automatically. Host approval happens separately in the app.
 
-Secrets helper:
-- \`await secrets.list()\` returns secret metadata only. It does not reveal secret values.
-- Use \`secrets.list({ scope: 'app' })\` to inspect available secret names, descriptions, scopes, and allowed hosts before building a request.
-- Do not expect \`secrets.get(...)\` or \`secrets.require(...)\` to be available in execute-time code.
+Secrets:
+- Use \`await codemode.secret_list({})\` to inspect available secret metadata before building a request. The result is metadata only and does not reveal secret values.
+- Pass \`scope\` to narrow results, for example \`await codemode.secret_list({ scope: 'app' })\`.
+- Do not expect \`codemode.secret_get(...)\`, \`codemode.secret_require(...)\`, or any injected \`secrets\` helper to be available in execute-time code.
 
 Your code must be an async arrow function that returns the result.
 

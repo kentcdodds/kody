@@ -12,7 +12,7 @@ export const secretListCapability = defineDomainCapability(
 	{
 		name: 'secret_list',
 		description:
-			'List available secret references for the signed-in user without revealing secret values. When scope is omitted, results include every accessible scope in precedence order. Use the injected `secrets.list({ scope })` helper inside execute-time code when you want the same metadata, including allowed hosts, from the sandbox.',
+			'List available secret references for the signed-in user without revealing secret values. When scope is omitted, results include every accessible scope in precedence order. Use `codemode.secret_list({ scope })` inside execute-time code when you want the same metadata, including allowed hosts, from the sandbox.',
 		keywords: ['secret', 'list', 'discovery', 'metadata', 'credentials'],
 		readOnly: true,
 		idempotent: true,

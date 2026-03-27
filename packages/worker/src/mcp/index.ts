@@ -35,7 +35,7 @@ Quick start
 - Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
 - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
-- Use the injected 'secrets' helper during execute-time code to list secret metadata only; it does not return plaintext values.
+- Use \`codemode.secret_list(args)\` during execute-time code to list secret metadata only; it does not return plaintext values.
 
 Kody source repository
 - Kody (this app and MCP server) is developed at https://github.com/kentcdodds/kody. When you launch a Cursor Cloud Agent to improve Kody itself, use that repository URL (unless the user explicitly points you at another fork or repo).
@@ -79,7 +79,7 @@ How to use execute
 - Each capability call returns that capability's raw structured result value.
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
-- The sandbox injects a metadata-only 'secrets' helper: \`await secrets.list()\` or \`await secrets.list({ scope: 'app' })\`.
+- Use \`await codemode.secret_list({})\` or \`await codemode.secret_list({ scope: 'app' })\` when you need secret metadata such as names, descriptions, scopes, and allowed hosts from the sandbox.
 - Use normal \`fetch(...)\` for outbound HTTP. To inject a stored secret, place a placeholder such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body; the host resolves it server-side and blocks unapproved destinations.
 - Saving or updating a secret does not authorize sending it anywhere. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
 - Secrets are intentionally not readable or updatable through \`codemode\`. Use generated UI flows such as \`saveSecret(...)\` when the user needs to provide or rotate a value, and use \`codemode.secret_delete(...)\` only when removing a stored secret reference.

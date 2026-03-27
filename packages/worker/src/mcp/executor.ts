@@ -1,6 +1,5 @@
 import {
 	DynamicWorkerExecutor,
-	normalizeCode,
 	type ExecuteResult,
 } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
@@ -29,21 +28,6 @@ export function createExecuteExecutor(input: {
 			props: input.gatewayProps,
 		}),
 	})
-}
-
-export function wrapExecuteCode(code: string) {
-	const normalized = normalizeCode(code)
-	return normalizeCode(`async () => {
-  const listSecrets = async (options = {}) => {
-    const result = await codemode.secret_list(options);
-    return Array.isArray(result?.secrets) ? result.secrets : [];
-  };
-  const secrets = {
-    list: listSecrets,
-  };
-  const userCode = (${normalized});
-  return await userCode();
-}`)
 }
 
 export type ExecutionErrorDetails =
