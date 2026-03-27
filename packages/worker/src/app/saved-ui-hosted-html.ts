@@ -11,19 +11,35 @@ type HostedSavedUiInput = {
 
 export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
 	const runtime = input.artifact.runtime === 'javascript' ? 'javascript' : 'html'
-	const injection = buildHeadInjection(input.appSession)
 	if (runtime === 'javascript') {
-		return buildJavascriptDocument(input.artifact.code, injection)
+		const injection = buildHeadInjection({
+			appSession: input.appSession,
+			includeRuntime: false,
+		})
+		const runtimeSource = buildHostedWidgetRuntimeSource(input.appSession)
+		return buildJavascriptDocument(input.artifact.code, injection, runtimeSource)
 	}
 
+	const injection = buildHeadInjection({
+		appSession: input.appSession,
+		includeRuntime: true,
+	})
 	const htmlSource = /<(?:!doctype|html|head|body)\b/i.test(input.artifact.code)
 		? injectIntoHtmlDocument(input.artifact.code, injection, null)
 		: buildHtmlDocumentFromFragment(input.artifact.code, injection, null)
 	return absolutizeHtmlAttributeUrls(htmlSource, input.appBaseUrl)
 }
 
-function buildJavascriptDocument(code: string, injection: string) {
+function buildJavascriptDocument(
+	code: string,
+	injection: string,
+	runtimeSource: string,
+) {
 	const safeCode = escapeInlineScriptSource(code)
+	const moduleSource = `
+${runtimeSource}
+${safeCode}
+	`.trim()
 	return `
 <!doctype html>
 <html lang="en">
@@ -35,7 +51,7 @@ function buildJavascriptDocument(code: string, injection: string) {
 	<body data-kody-runtime="javascript">
 		<div id="app" data-generated-ui-root></div>
 		<script type="module">
-${safeCode}
+${moduleSource}
 		</script>
 	</body>
 </html>
@@ -62,13 +78,22 @@ ${code}
 	`.trim()
 }
 
-function buildHeadInjection(appSession: GeneratedUiAppSession) {
-	return `
+function buildHeadInjection(input: {
+	appSession: GeneratedUiAppSession
+	includeRuntime: boolean
+}) {
+	const styles = `
 <style>
 ${buildShellStyles(null)}
 </style>
+	`.trim()
+	if (!input.includeRuntime) {
+		return styles
+	}
+	return `
+${styles}
 <script>
-${buildHostedWidgetRuntimeSource(appSession)}
+${buildHostedWidgetRuntimeSource(input.appSession)}
 </script>
 	`.trim()
 }
