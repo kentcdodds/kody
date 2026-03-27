@@ -1,5 +1,6 @@
-import { expect, test, vi } from 'vitest'
 import { type Handle } from 'remix/component'
+import { renderToString } from 'remix/component/server'
+import { expect, test, vi } from 'vitest'
 
 type QueueTask = Parameters<Handle['queueTask']>[0]
 
@@ -69,7 +70,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	await runNextTask(queuedTasks, false)
 	await runNextTask(queuedTasks, false)
 
-	const authenticatedUi = String(render())
+	const authenticatedUi = await renderToString(render())
 	expect(authenticatedUi).toContain('signed-in@example.com')
 	expect(authenticatedUi).toContain('Log out')
 
@@ -77,7 +78,7 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	navigationListeners[0]!()
 	await runNextTask(queuedTasks, true)
 
-	const uiAfterAbort = String(render())
+	const uiAfterAbort = await renderToString(render())
 	expect(uiAfterAbort).toContain('signed-in@example.com')
 	expect(uiAfterAbort).toContain('Log out')
 	expect(uiAfterAbort).not.toContain('>Login<')
