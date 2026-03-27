@@ -114,7 +114,52 @@ function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
 	}
 }
 
+function coerceStringRows(list: Array<unknown>): Array<string> {
+	return list.filter((item): item is string => typeof item === 'string')
+}
+
+/** Matches server `normalizeAllowedHosts` in `#mcp/secrets/allowed-hosts.ts`. */
+function clientNormalizeAllowedHosts(hosts: Array<string>): Array<string> {
+	return Array.from(
+		new Set(
+			hosts
+				.map((host) => host.trim().toLowerCase())
+				.filter((host) => host.length > 0),
+		),
+	).sort()
+}
+
+/** Matches server `normalizeAllowedCapabilities` in `#mcp/secrets/allowed-capabilities.ts`. */
+function clientNormalizeAllowedCapabilities(
+	capabilities: Array<string>,
+): Array<string> {
+	return Array.from(
+		new Set(
+			capabilities
+				.map((value) => value.trim())
+				.filter((value) => value.length > 0),
+		),
+	).sort((left, right) => left.localeCompare(right))
+}
+
+function collectRepeatedTextRows(
+	form: HTMLFormElement,
+	listName: 'allowed-hosts' | 'allowed-capabilities',
+): Array<string> {
+	const root = form.querySelector(`[data-repeat-list="${listName}"]`)
+	if (!root) return []
+	const out: Array<string> = []
+	for (const row of root.children) {
+		if (!(row instanceof HTMLElement)) continue
+		const input = row.querySelector('input[type="text"]')
+		if (input instanceof HTMLInputElement) out.push(input.value)
+	}
+	return out
+}
+
 function createEditorStateFromSecret(secret: SecretDetail): EditorState {
+	const allowedHosts = coerceStringRows(secret.allowedHosts)
+	const allowedCapabilities = coerceStringRows(secret.allowedCapabilities)
 	return {
 		currentId: secret.id,
 		name: secret.name,
@@ -122,9 +167,9 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		appId: secret.appId ?? '',
 		description: secret.description,
 		value: secret.value,
-		allowedHosts: secret.allowedHosts.length > 0 ? secret.allowedHosts : [''],
+		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
-			secret.allowedCapabilities.length > 0 ? secret.allowedCapabilities : [''],
+			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
 	}
 }
 
@@ -441,11 +486,19 @@ export function AccountSecretsRoute(handle: Handle) {
 		event.preventDefault()
 		if (saveState !== 'idle') return
 
+		const form = event.currentTarget as HTMLFormElement
+
 		saveState = 'saving'
 		message = null
 		handle.update()
 
 		try {
+			const allowedHosts = clientNormalizeAllowedHosts(
+				collectRepeatedTextRows(form, 'allowed-hosts'),
+			)
+			const allowedCapabilities = clientNormalizeAllowedCapabilities(
+				collectRepeatedTextRows(form, 'allowed-capabilities'),
+			)
 			const response = await fetch(accountSecretsApiPath, {
 				method: 'POST',
 				headers: {
@@ -461,8 +514,8 @@ export function AccountSecretsRoute(handle: Handle) {
 					appId: editorState.scope === 'app' ? editorState.appId : null,
 					description: editorState.description,
 					value: editorState.value,
-					allowedHosts: editorState.allowedHosts,
-					allowedCapabilities: editorState.allowedCapabilities,
+					allowedHosts,
+					allowedCapabilities,
 				}),
 			})
 			if (response.status === 401) {
@@ -1219,7 +1272,10 @@ export function AccountSecretsRoute(handle: Handle) {
 											a secret can be used.
 										</p>
 									</div>
-									<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div
+										css={{ display: 'grid', gap: spacing.sm }}
+										data-repeat-list="allowed-hosts"
+									>
 										{editorState.allowedHosts.map((host, index) => (
 											<div
 												key={index}
@@ -1233,9 +1289,9 @@ export function AccountSecretsRoute(handle: Handle) {
 												}}
 											>
 												<input
-													type="text"
-													value={host}
-													placeholder="api.example.com"
+														type="text"
+														value={typeof host === 'string' ? host : ''}
+														placeholder="api.example.com"
 													on={{
 														input: (event) =>
 															updateAllowedHost(
@@ -1275,7 +1331,10 @@ export function AccountSecretsRoute(handle: Handle) {
 											input to resolve this secret.
 										</p>
 									</div>
-									<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div
+										css={{ display: 'grid', gap: spacing.sm }}
+										data-repeat-list="allowed-capabilities"
+									>
 										{editorState.allowedCapabilities.map(
 											(capabilityName, index) => (
 												<div
@@ -1291,7 +1350,11 @@ export function AccountSecretsRoute(handle: Handle) {
 												>
 													<input
 														type="text"
-														value={capabilityName}
+														value={
+															typeof capabilityName === 'string'
+																? capabilityName
+																: ''
+														}
 														placeholder="home_lutron_set_credentials"
 														on={{
 															input: (event) =>
