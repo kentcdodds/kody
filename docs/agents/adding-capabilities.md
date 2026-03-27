@@ -90,6 +90,67 @@ Use raw JSON Schema only when you need an escape hatch that Zod does not model
 cleanly. The registry and Code Mode layer still consume normalized JSON Schema
 after normalization runs.
 
+## Secret-capable input fields
+
+Some capability input fields may accept secret placeholders such as
+`{{secret:lutronUsername}}` or `{{secret:lutronPassword|scope=user}}` instead of
+raw strings.
+
+This is an explicit opt-in. A field only participates when its JSON Schema marks
+that string property with `x-kody-secret: true`.
+
+At execute time, Kody resolves those placeholders before the capability handler
+runs. Missing secrets still fail with the same "secret not found" guidance used
+elsewhere, and secret-bearing capability inputs still require an authenticated
+user.
+
+Use this for capabilities that need to accept a secret value as an argument but
+are not themselves the host-approval boundary. Good fits include:
+
+- storing or updating credentials on a local connector or device
+- writing a secret into local persistence owned by the capability
+- passing a credential to a host-side action that does not itself perform
+  agent-directed outbound egress
+
+Do not use this as a shortcut for arbitrary remote API calls. If the capability
+is making outbound requests with a user secret, prefer execute-time `fetch(...)`
+placeholders so host approval still happens through the normal policy path.
+
+Use the shared helper from `@kody-internal/shared/secret-input-schema.ts` rather
+than mutating schema properties by hand.
+
+How to annotate:
+
+1. Start with a JSON Schema object for the capability input.
+2. Call `markSecretInputFields(schema, [...])` with only the sensitive string
+   field names.
+3. Leave non-secret fields unannotated.
+4. Document the intended use in the capability description when it may not be
+   obvious.
+
+Example:
+
+```ts
+import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
+
+const inputSchema = markSecretInputFields(
+	{
+		type: 'object',
+		properties: {
+			processorId: { type: 'string' },
+			username: { type: 'string' },
+			password: { type: 'string' },
+		},
+		required: ['processorId', 'username', 'password'],
+	},
+	['username', 'password'],
+)
+```
+
+If you are starting from Zod, call `markSecretInputFields(...)` after
+`z.toJSONSchema(...)` produces the schema object. That is what the home
+connector does for `lutron_set_credentials`.
+
 ## Directory layout
 
 Organize capabilities by domain. Each domain folder should include a
@@ -217,6 +278,14 @@ the description explicit about the approval model:
 - secret save/update does not authorize outbound use
 - a blocked host must be approved through the account admin UI
 - the agent should stop and surface the approval link instead of retrying
+
+If a capability marks any input fields with `x-kody-secret: true`, keep the
+scope narrow:
+
+- annotate only the exact credential fields, not the whole object
+- prefer this for local persistence or device-side credential flows
+- avoid using it for generic remote API wrappers where fetch-time host approval
+  should remain the enforcement point
 
 ## Testing
 

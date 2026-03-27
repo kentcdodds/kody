@@ -40,6 +40,8 @@ export default mergeConfig(
 				'packages/worker/src/mcp/cloudflare/**/*.test.ts',
 				'packages/worker/src/mcp/capabilities/meta/**/*.test.ts',
 				'packages/worker/src/mcp/context.test.ts',
+				'packages/worker/src/mcp/run-codemode-registry.test.ts',
+				'packages/worker/src/mcp/secrets/**/*.test.ts',
 				'packages/worker/src/mcp/tools/search.test.ts',
 				'packages/worker/src/mcp/skills/**/*.test.ts',
 				'packages/worker/src/mcp/capabilities/coding/coding-capabilities.test.ts',

@@ -5,25 +5,44 @@ import {
 } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { resolveCapabilityInputSecrets } from '#mcp/secrets/capability-inputs.ts'
+import {
+	capabilityInputSecretAuthRequiredMessage,
+	createMissingSecretMessage,
+} from '#mcp/secrets/errors.ts'
+import { resolveSecret } from '#mcp/secrets/service.ts'
+import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 
 export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
+	options?: {
+		resolveSecretValue?: (secret: ReferencedSecret) => Promise<string>
+	},
 ) {
-	const { capabilityHandlers } = await getCapabilityRegistryForContext({
+	const { capabilityMap } = await getCapabilityRegistryForContext({
 		env,
 		callerContext,
 	})
+	const resolveSecretValue =
+		options?.resolveSecretValue ??
+		createCapabilityInputSecretResolver(env, callerContext)
 	return Object.fromEntries(
-		Object.entries(capabilityHandlers).map(([name, handler]) => [
-			name,
-			(args: unknown) =>
-				handler((args ?? {}) as Record<string, unknown>, {
+		Object.values(capabilityMap).map((capability) => [
+			capability.name,
+			async (args: unknown) => {
+				const resolvedArgs = await resolveCapabilityInputSecrets({
+					schema: capability.inputSchema,
+					value: (args ?? {}) as Record<string, unknown>,
+					resolveSecretValue,
+				})
+				return capability.handler(resolvedArgs as Record<string, unknown>, {
 					env,
 					callerContext,
-				}),
+				})
+			},
 		]),
 	)
 }
@@ -45,6 +64,34 @@ export async function buildCodemodeProvider(
 		),
 	}
 	return resolveProvider(provider)
+}
+
+function createCapabilityInputSecretResolver(
+	env: Env,
+	callerContext: McpCallerContext,
+) {
+	return async (secret: ReferencedSecret) => {
+		const userId = callerContext.user?.userId ?? null
+		if (!userId) {
+			throw new Error(capabilityInputSecretAuthRequiredMessage)
+		}
+		const resolved = await resolveSecret({
+			env,
+			userId,
+			name: secret.name,
+			scope: secret.scope,
+			secretContext: callerContext.secretContext
+				? {
+						sessionId: callerContext.secretContext.sessionId ?? null,
+						appId: callerContext.secretContext.appId ?? null,
+					}
+				: null,
+		})
+		if (!resolved.found || typeof resolved.value !== 'string') {
+			throw new Error(createMissingSecretMessage(secret.name))
+		}
+		return resolved.value
+	}
 }
 
 export async function runCodemodeWithRegistry(

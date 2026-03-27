@@ -47,6 +47,7 @@ Network access:
 - Regular \`fetch(...)\` is available inside the sandbox and is routed through a host-side gateway.
 - To inject a saved secret into a request, use a placeholder string such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body.
 - Secret placeholders only work for hosts that the user has already approved for that secret.
+- Some capability input fields also accept secret placeholders. When a capability's input schema marks a string field with \`x-kody-secret: true\`, you may pass \`{{secret:name}}\` there instead of a raw credential.
 - If a request is blocked because the host is not approved, do not retry blindly. Ask the user whether they want to approve that host, then provide the approval link from the error message.
 - Saving or updating a secret does not authorize outbound use automatically. Host approval happens separately in the app.
 

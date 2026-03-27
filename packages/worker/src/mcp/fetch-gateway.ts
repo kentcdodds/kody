@@ -3,12 +3,19 @@ import {
 	buildSecretHostApprovalUrl,
 	createSecretHostApprovalToken,
 } from '#mcp/secrets/host-approval.ts'
+import {
+	buildSecretPlaceholder,
+	parseSecretPlaceholders,
+	replaceSecretPlaceholders,
+	type ReferencedSecret,
+} from '#mcp/secrets/placeholders.ts'
+import {
+	createMissingSecretMessage,
+	fetchSecretAuthRequiredMessage,
+} from '#mcp/secrets/errors.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
-import { type SecretContext, type SecretScope } from '#mcp/secrets/types.ts'
-
-const secretPlaceholderRegex =
-	/\{\{secret:([a-zA-Z0-9._-]+)(?:\|scope=(session|app|user))?\}\}/g
+import { type SecretContext } from '#mcp/secrets/types.ts'
 
 type FetchGatewayProps = {
 	baseUrl: string
@@ -16,11 +23,6 @@ type FetchGatewayProps = {
 	secretContext: SecretContext | null
 }
 export type { FetchGatewayProps }
-
-type ReferencedSecret = {
-	name: string
-	scope: SecretScope | null
-}
 
 export class CodemodeFetchGateway extends WorkerEntrypoint<
 	Env,
@@ -66,7 +68,7 @@ export async function expandSecretPlaceholders(input: {
 			secretContext: input.props.secretContext,
 		})
 		if (!resolved.found || typeof resolved.value !== 'string') {
-			throw new Error(`Secret "${referenced.name}" was not found.`)
+			throw new Error(createMissingSecretMessage(referenced.name))
 		}
 		const placeholder = buildSecretPlaceholder(referenced)
 		replacements.set(placeholder, resolved.value)
@@ -133,9 +135,7 @@ export async function expandSecretPlaceholders(input: {
 
 function ensureFetchAllowed(props: FetchGatewayProps) {
 	if (!props.userId) {
-		throw new Error(
-			'Network requests that use secret placeholders require an authenticated user.',
-		)
+		throw new Error(fetchSecretAuthRequiredMessage)
 	}
 }
 
@@ -148,40 +148,6 @@ function collectReferencedSecrets(values: Array<string | null | undefined>) {
 		}
 	}
 	return Array.from(deduped.values())
-}
-
-function parseSecretPlaceholders(value: string) {
-	const secrets: Array<ReferencedSecret> = []
-	for (const match of value.matchAll(secretPlaceholderRegex)) {
-		const name = match[1]?.trim()
-		if (!name) continue
-		const scope = match[2]
-		secrets.push({
-			name,
-			scope:
-				scope === 'app' || scope === 'session' || scope === 'user'
-					? scope
-					: null,
-		})
-	}
-	return secrets
-}
-
-function buildSecretPlaceholder(secret: ReferencedSecret) {
-	return secret.scope
-		? `{{secret:${secret.name}|scope=${secret.scope}}}`
-		: `{{secret:${secret.name}}}`
-}
-
-function replaceSecretPlaceholders(
-	value: string,
-	replacements: ReadonlyMap<string, string>,
-) {
-	let nextValue = value
-	for (const [placeholder, secretValue] of replacements.entries()) {
-		nextValue = nextValue.replaceAll(placeholder, secretValue)
-	}
-	return nextValue
 }
 
 async function readRequestBody(request: Request) {

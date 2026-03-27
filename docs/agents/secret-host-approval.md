@@ -69,9 +69,33 @@ When writing capability descriptions or agent-facing docs:
 This policy is especially important in:
 
 - secret create/update/list capabilities
+- capability input fields annotated with `x-kody-secret: true`
 - execute-time fetch documentation
 - generated UI shell documentation
 - OAuth and other hosted callback examples
+
+## Capability input placeholders
+
+Some capabilities may explicitly opt specific string input fields into secret
+placeholder resolution by using `markSecretInputFields(...)`, which marks those
+fields with `x-kody-secret: true` in the JSON Schema.
+
+That feature is for cases where the capability needs the secret value itself,
+for example to store credentials on a local connector or pass them into a
+device-local action.
+
+Use it narrowly:
+
+- mark only the exact sensitive fields
+- prefer it for local persistence or device-side credential handoff
+- require an authenticated user, just like fetch-time secret placeholders
+
+Do not treat `x-kody-secret` as a generic replacement for execute-time
+`fetch(...)` placeholders.
+
+If a workflow's real security boundary is outbound network use, keep that flow
+on the fetch placeholder path so host approval still applies before the request
+is sent.
 
 ## Guidance for generated UI flows
 

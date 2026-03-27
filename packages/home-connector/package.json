@@ -9,6 +9,7 @@
     "test": "vitest run --root ../.. --project node-unit packages/home-connector/src"
   },
   "dependencies": {
+    "@kody-internal/shared": "file:../shared",
     "@modelcontextprotocol/sdk": "1.26.0",
     "@sentry/node": "^10.45.0",
     "bonjour": "^3.5.0",

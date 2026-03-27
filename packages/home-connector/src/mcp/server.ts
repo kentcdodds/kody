@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
@@ -429,12 +430,15 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Set Lutron Credentials',
 			description:
 				'Associate a stored username/password with a discovered Lutron processor for LEAP login on port 8081.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-					username: z.string().min(1),
-					password: z.string().min(1),
-				}),
+			inputSchema: markSecretInputFields(
+				z.toJSONSchema(
+					z.object({
+						processorId: z.string().min(1),
+						username: z.string().min(1),
+						password: z.string().min(1),
+					}),
+				) as Record<string, unknown>,
+				['username', 'password'],
 			) as Record<string, unknown>,
 		},
 		async (args) => {

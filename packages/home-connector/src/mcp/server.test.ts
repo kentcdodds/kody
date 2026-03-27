@@ -61,6 +61,17 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'lutron_get_inventory')).toBe(
 			true,
 		)
+		const lutronCredentialsTool = tools.find(
+			(tool) => tool.name === 'lutron_set_credentials',
+		)
+		expect(lutronCredentialsTool).toBeDefined()
+		const lutronCredentialProperties = (
+			lutronCredentialsTool?.inputSchema as {
+				properties?: Record<string, Record<string, unknown>>
+			}
+		).properties
+		expect(lutronCredentialProperties?.username?.['x-kody-secret']).toBe(true)
+		expect(lutronCredentialProperties?.password?.['x-kody-secret']).toBe(true)
 
 		const result = await mcp.callTool('samsung_list_devices')
 		expect(result.structuredContent).toMatchObject({

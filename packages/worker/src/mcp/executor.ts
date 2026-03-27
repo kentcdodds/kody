@@ -2,6 +2,11 @@ import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
+import {
+	isSecretAuthRequiredMessage,
+	parseHostApprovalRequiredMessage,
+	parseMissingSecretMessage,
+} from '#mcp/secrets/errors.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
@@ -63,32 +68,30 @@ export function getExecutionErrorDetails(
 ): ExecutionErrorDetails | null {
 	const message = stringifyExecutionError(error)
 
-	const hostApprovalMatch = message.match(
-		/^Secret "([^"]+)" is not allowed for host "([^"]+)"/,
-	)
-	if (hostApprovalMatch) {
+	const hostApprovalDetails = parseHostApprovalRequiredMessage(message)
+	if (hostApprovalDetails) {
 		return {
 			kind: 'host_approval_required',
 			message,
 			nextStep:
 				'Ask the user whether they want to approve this host in the account web UI, then retry after approval.',
 			approvalUrl: extractFirstUrl(message),
-			host: hostApprovalMatch[2] ?? null,
-			secretNames: [hostApprovalMatch[1] ?? ''].filter(Boolean),
+			host: hostApprovalDetails.host,
+			secretNames: [hostApprovalDetails.secretName],
 			suggestedAction: {
 				type: 'approve_secret_host',
 			},
 		}
 	}
 
-	const missingSecretMatch = message.match(/^Secret "([^"]+)" was not found\./)
-	if (missingSecretMatch) {
+	const missingSecretDetails = parseMissingSecretMessage(message)
+	if (missingSecretDetails) {
 		return {
 			kind: 'secret_required',
 			message,
 			nextStep:
 				'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
-			secretNames: [missingSecretMatch[1] ?? ''].filter(Boolean),
+			secretNames: [missingSecretDetails.secretName],
 			suggestedAction: {
 				type: 'open_generated_ui',
 				reason: 'collect_secret',
@@ -96,10 +99,7 @@ export function getExecutionErrorDetails(
 		}
 	}
 
-	if (
-		message ===
-		'Network requests that use secret placeholders require an authenticated user.'
-	) {
+	if (isSecretAuthRequiredMessage(message)) {
 		return {
 			kind: 'auth_required',
 			message,
