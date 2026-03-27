@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	absolutizeHtmlAttributeUrls,
+	buildCodemodeCapabilityExecuteCode,
 	buildLocalMessageLogRuntimeSource,
 	injectIntoHtmlDocument,
 	injectRuntimeStateIntoDocument,
@@ -244,12 +245,12 @@ test('buildLocalMessageLogRuntimeSource logs sendMessage locally outside hosted 
 			].join('\n'),
 		)()
 
-		expect(globalThis.window.kodyWidget.sendMessage('First mobile message')).toBe(
-			true,
-		)
-		expect(globalThis.window.kodyWidget.sendMessage('Second mobile message')).toBe(
-			true,
-		)
+		expect(
+			globalThis.window.kodyWidget.sendMessage('First mobile message'),
+		).toBe(true)
+		expect(
+			globalThis.window.kodyWidget.sendMessage('Second mobile message'),
+		).toBe(true)
 
 		expect(fakeDocument.body.childNodes).toHaveLength(1)
 		const logRoot = fakeDocument.body.childNodes[0]
@@ -274,4 +275,17 @@ test('buildLocalMessageLogRuntimeSource logs sendMessage locally outside hosted 
 			Reflect.deleteProperty(globalThis, 'document')
 		}
 	}
+})
+
+test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', () => {
+	const code = buildCodemodeCapabilityExecuteCode('value_set', {
+		name: 'workspaceSlug',
+		value: 'kody',
+		scope: 'app',
+	})
+
+	expect(code).toContain('async () => {')
+	expect(code).toContain('codemode["value_set"]')
+	expect(code).toContain('"name":"workspaceSlug"')
+	expect(code).toContain('"scope":"app"')
 })

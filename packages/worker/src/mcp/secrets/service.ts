@@ -6,6 +6,11 @@ import {
 } from './allowed-hosts.ts'
 import { decryptSecretValue, encryptSecretValue } from './crypto.ts'
 import {
+	getStorageBindingKey,
+	resolveStorageScopeOrder,
+} from '#mcp/storage-bindings.ts'
+import { type StorageContext } from '#mcp/storage.ts'
+import {
 	deleteSecretEntry,
 	getSecretBucket,
 	getSecretEntry,
@@ -15,15 +20,11 @@ import {
 	upsertSecretBucket,
 	upsertSecretEntry,
 } from './repo.ts'
-import {
-	type SecretContext,
-	type SecretMetadata,
-	type SecretScope,
-} from './types.ts'
+import { type SecretMetadata, type SecretScope } from './types.ts'
 
 type SecretOwnerContext = {
 	userId: string
-	secretContext?: SecretContext | null
+	storageContext?: StorageContext | null
 }
 
 type SaveSecretInput = SecretOwnerContext & {
@@ -60,8 +61,6 @@ type DeleteSecretInput = SecretOwnerContext & {
 	scope: SecretScope
 }
 
-const defaultLookupOrder: Array<SecretScope> = ['session', 'app', 'user']
-
 export type ResolvedSecret = {
 	found: boolean
 	value: string | null
@@ -85,7 +84,7 @@ export async function saveSecret(
 		db: input.env.APP_DB,
 		userId: input.userId,
 		scope: input.scope,
-		secretContext: input.secretContext ?? null,
+		storageContext: input.storageContext ?? null,
 		sessionExpiresAt: input.sessionExpiresAt ?? null,
 	})
 	const existingEntry = await getSecretEntry({
@@ -127,7 +126,7 @@ export async function listSecrets(
 		db: input.env.APP_DB,
 		userId: input.userId,
 		scope: input.scope ?? null,
-		secretContext: input.secretContext ?? null,
+		storageContext: input.storageContext ?? null,
 	})
 	const results = await Promise.all(
 		buckets.map((bucket) =>
@@ -156,13 +155,13 @@ export async function resolveSecret(
 ): Promise<ResolvedSecret> {
 	const scopes = input.scope
 		? [input.scope]
-		: resolveScopeOrder(input.secretContext ?? null)
+		: resolveStorageScopeOrder(input.storageContext ?? null)
 	for (const scope of scopes) {
 		const bucket = await getExistingBucketForScope({
 			db: input.env.APP_DB,
 			userId: input.userId,
 			scope,
-			secretContext: input.secretContext ?? null,
+			storageContext: input.storageContext ?? null,
 		})
 		if (!bucket) continue
 		const entry = await getSecretEntry({
@@ -191,7 +190,7 @@ export async function deleteSecret(input: DeleteSecretInput) {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		scope: input.scope,
-		secretContext: input.secretContext ?? null,
+		storageContext: input.storageContext ?? null,
 	})
 	if (!bucket) return false
 	return deleteSecretEntry({
@@ -212,7 +211,7 @@ export async function updateSecret(
 		db: input.env.APP_DB,
 		userId: input.userId,
 		scope: input.scope,
-		secretContext: input.secretContext ?? null,
+		storageContext: input.storageContext ?? null,
 	})
 	if (!bucket) {
 		throw new Error('Secret not found for this scope.')
@@ -316,18 +315,18 @@ async function getAccessibleBuckets(input: {
 	db: D1Database
 	userId: string
 	scope: SecretScope | null
-	secretContext: SecretContext | null
+	storageContext: StorageContext | null
 }) {
 	const scopes = input.scope
 		? [input.scope]
-		: resolveScopeOrder(input.secretContext)
+		: resolveStorageScopeOrder(input.storageContext)
 	const buckets = await Promise.all(
 		scopes.map((scope) =>
 			getExistingBucketForScope({
 				db: input.db,
 				userId: input.userId,
 				scope,
-				secretContext: input.secretContext,
+				storageContext: input.storageContext,
 			}),
 		),
 	)
@@ -340,9 +339,9 @@ async function getExistingBucketForScope(input: {
 	db: D1Database
 	userId: string
 	scope: SecretScope
-	secretContext: SecretContext | null
+	storageContext: StorageContext | null
 }) {
-	const bindingKey = getBindingKey(input.scope, input.secretContext)
+	const bindingKey = getStorageBindingKey(input.scope, input.storageContext)
 	if (bindingKey == null) return null
 	return getSecretBucket({
 		db: input.db,
@@ -356,10 +355,10 @@ async function getOrCreateSecretBucket(input: {
 	db: D1Database
 	userId: string
 	scope: SecretScope
-	secretContext: SecretContext | null
+	storageContext: StorageContext | null
 	sessionExpiresAt: string | null
 }) {
-	const bindingKey = getBindingKey(input.scope, input.secretContext)
+	const bindingKey = getStorageBindingKey(input.scope, input.storageContext)
 	if (bindingKey == null) {
 		throw new Error(
 			`Secret scope "${input.scope}" is unavailable in this context.`,
@@ -410,26 +409,6 @@ async function getOrCreateSecretBucket(input: {
 	return created
 }
 
-function resolveScopeOrder(secretContext: SecretContext | null) {
-	return defaultLookupOrder.filter(
-		(scope) => getBindingKey(scope, secretContext) != null,
-	)
-}
-
-function getBindingKey(
-	scope: SecretScope,
-	secretContext: SecretContext | null,
-) {
-	if (scope === 'user') return ''
-	if (scope === 'app') {
-		return secretContext?.appId?.trim() ? secretContext.appId : null
-	}
-	if (scope === 'session') {
-		return secretContext?.sessionId?.trim() ? secretContext.sessionId : null
-	}
-	return null
-}
-
 function toSecretMetadata(input: {
 	name: string
 	scope: SecretScope
@@ -461,7 +440,7 @@ export async function setSecretAllowedHosts(input: {
 	name: string
 	scope: SecretScope
 	allowedHosts: Array<string>
-	secretContext?: SecretContext | null
+	storageContext?: StorageContext | null
 }) {
 	const name = input.name.trim()
 	if (!name) {
@@ -471,7 +450,7 @@ export async function setSecretAllowedHosts(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		scope: input.scope,
-		secretContext: input.secretContext ?? null,
+		storageContext: input.storageContext ?? null,
 	})
 	if (!bucket) {
 		throw new Error('Secret not found for this scope.')

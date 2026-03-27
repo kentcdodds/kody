@@ -8,6 +8,7 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
+import { type StorageContext } from '#mcp/storage.ts'
 import { verifySecretHostApprovalToken } from '#mcp/secrets/host-approval.ts'
 import {
 	deleteSecret,
@@ -17,7 +18,7 @@ import {
 	saveSecret,
 	setSecretAllowedHosts,
 } from '#mcp/secrets/service.ts'
-import { type SecretContext, type SecretScope } from '#mcp/secrets/types.ts'
+import { type SecretScope } from '#mcp/secrets/types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type routes } from '#app/routes.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
@@ -283,7 +284,7 @@ async function resolveSecretApprovalView(input: {
 		env: input.env,
 		userId: input.userId,
 		scope: approval.scope,
-		secretContext: approval.secretContext,
+		storageContext: approval.storageContext,
 	})
 	const secret = secrets.find(
 		(item) => item.name === approval.name && item.scope === approval.scope,
@@ -317,7 +318,7 @@ async function resolveAccountSecretDetail(input: {
 		userId: input.userId,
 		name: parsed.name,
 		scope: parsed.scope,
-		secretContext: getSecretContextForAccountSecret(parsed),
+		storageContext: getSecretContextForAccountSecret(parsed),
 	})
 	if (!resolved.found || resolved.value == null) return null
 
@@ -392,7 +393,7 @@ async function handleApprovalAction(input: {
 				env: input.env,
 				userId: input.user.mcpUser.userId,
 				scope: approval.scope,
-				secretContext: approval.secretContext,
+				storageContext: approval.storageContext,
 			})
 			const secret = current.find(
 				(item) => item.name === approval.name && item.scope === approval.scope,
@@ -406,7 +407,7 @@ async function handleApprovalAction(input: {
 				name: approval.name,
 				scope: approval.scope,
 				allowedHosts: [...secret.allowedHosts, approval.requestedHost],
-				secretContext: approval.secretContext,
+				storageContext: approval.storageContext,
 			})
 		}
 
@@ -506,7 +507,7 @@ async function handleSaveAction(input: {
 			value,
 			scope,
 			description,
-			secretContext: getSecretContextForAccountSecret({
+			storageContext: getSecretContextForAccountSecret({
 				scope,
 				appId,
 			}),
@@ -517,7 +518,7 @@ async function handleSaveAction(input: {
 			name,
 			scope,
 			allowedHosts,
-			secretContext: getSecretContextForAccountSecret({
+			storageContext: getSecretContextForAccountSecret({
 				scope,
 				appId,
 			}),
@@ -529,7 +530,7 @@ async function handleSaveAction(input: {
 				userId: input.user.mcpUser.userId,
 				name: currentSecret.name,
 				scope: currentSecret.scope,
-				secretContext: getSecretContextForAccountSecret(currentSecret),
+				storageContext: getSecretContextForAccountSecret(currentSecret),
 			})
 		}
 
@@ -574,7 +575,7 @@ async function handleDeleteAction(input: {
 		userId: input.user.mcpUser.userId,
 		name: secret.name,
 		scope: secret.scope,
-		secretContext: getSecretContextForAccountSecret(secret),
+		storageContext: getSecretContextForAccountSecret(secret),
 	})
 	if (!deleted) {
 		return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
@@ -596,7 +597,7 @@ function getSecretContextForAccountSecret(input: {
 	scope: SecretScope
 	appId: string | null
 	sessionId?: string | null
-}): SecretContext {
+}): StorageContext {
 	return {
 		sessionId: input.scope === 'session' ? (input.sessionId ?? null) : null,
 		appId: input.scope === 'app' ? input.appId : null,

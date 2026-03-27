@@ -1407,6 +1407,127 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		},
 	])
 
+	const valuesExecuteResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				await codemode.value_set({
+					name: 'workspaceSlug',
+					value: 'session-workspace',
+					description: 'Session workspace slug',
+					scope: 'session',
+				})
+				await codemode.value_set({
+					name: 'workspaceSlug',
+					value: 'app-workspace',
+					description: 'App workspace slug',
+					scope: 'app',
+				})
+				await codemode.value_set({
+					name: 'accountSlug',
+					value: 'kent',
+					description: 'User account slug',
+					scope: 'user',
+				})
+				const current = await codemode.value_get({
+					name: 'workspaceSlug',
+				})
+				const appOnly = await codemode.value_get({
+					name: 'workspaceSlug',
+					scope: 'app',
+				})
+				const listed = await codemode.value_list({})
+				const deleted = await codemode.value_delete({
+					name: 'accountSlug',
+					scope: 'user',
+				})
+				const remaining = await codemode.value_list({})
+				return {
+					current: current.value,
+					appOnly: appOnly.value,
+					listedNames: listed.values.map((value) => value.name + ':' + value.scope + ':' + value.value),
+					deleted: deleted.deleted,
+					remainingNames: remaining.values.map((value) => value.name + ':' + value.scope),
+				}
+			}`,
+		}),
+	})
+	if (!valuesExecuteResponse.ok) {
+		throw new Error(await valuesExecuteResponse.text())
+	}
+	const valuesExecutePayload = (await valuesExecuteResponse.json()) as {
+		ok?: boolean
+		result?: {
+			current?: Record<string, unknown>
+			appOnly?: Record<string, unknown>
+			listedNames?: Array<string>
+			deleted?: boolean
+			remainingNames?: Array<string>
+		}
+	}
+	expect(valuesExecutePayload.ok).toBe(true)
+	expect(valuesExecutePayload.result?.current).toEqual({
+		name: 'workspaceSlug',
+		scope: 'session',
+		value: 'session-workspace',
+		description: 'Session workspace slug',
+		app_id: null,
+		created_at: expect.any(String),
+		updated_at: expect.any(String),
+		ttl_ms: expect.any(Number),
+	})
+	expect(valuesExecutePayload.result?.appOnly).toEqual({
+		name: 'workspaceSlug',
+		scope: 'app',
+		value: 'app-workspace',
+		description: 'App workspace slug',
+		app_id: appId,
+		created_at: expect.any(String),
+		updated_at: expect.any(String),
+		ttl_ms: null,
+	})
+	expect(valuesExecutePayload.result?.listedNames).toEqual([
+		'workspaceSlug:session:session-workspace',
+		'workspaceSlug:app:app-workspace',
+		'accountSlug:user:kent',
+	])
+	expect(valuesExecutePayload.result?.deleted).toBe(true)
+	expect(valuesExecutePayload.result?.remainingNames).toEqual([
+		'workspaceSlug:session',
+		'workspaceSlug:app',
+	])
+
+	const returnedPlaceholderResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				return {
+					interpolatedSecret: '{{secret:cloudflareToken|scope=app}}',
+				}
+			}`,
+		}),
+	})
+	expect(returnedPlaceholderResponse.status).toBe(400)
+	const returnedPlaceholderPayload =
+		(await returnedPlaceholderResponse.json()) as {
+			ok?: boolean
+			error?: string
+		}
+	expect(returnedPlaceholderPayload.ok).toBe(false)
+	expect(returnedPlaceholderPayload.error).toContain(
+		'executeCode may not return unresolved `{{secret:...}}` placeholders',
+	)
+
 	const approvedFetchReference = crypto
 		.randomUUID()
 		.replace(/-/g, '')

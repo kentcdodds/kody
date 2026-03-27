@@ -15,12 +15,12 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
-import { type SecretContext } from '#mcp/secrets/types.ts'
+import { type StorageContext } from '#mcp/storage.ts'
 
 type FetchGatewayProps = {
 	baseUrl: string
 	userId: string | null
-	secretContext: SecretContext | null
+	storageContext: StorageContext | null
 }
 export type { FetchGatewayProps }
 
@@ -65,7 +65,7 @@ export async function expandSecretPlaceholders(input: {
 			userId: input.props.userId!,
 			name: referenced.name,
 			scope: referenced.scope,
-			secretContext: input.props.secretContext,
+			storageContext: input.props.storageContext,
 		})
 		if (!resolved.found || typeof resolved.value !== 'string') {
 			throw new Error(createMissingSecretMessage(referenced.name))
@@ -93,7 +93,7 @@ export async function expandSecretPlaceholders(input: {
 				name: referenced.name,
 				scope: resolved.scope ?? referenced.scope ?? 'user',
 				requestedHost,
-				secretContext: input.props.secretContext,
+				storageContext: input.props.storageContext,
 			})
 			const approvalUrl = buildSecretHostApprovalUrl({
 				baseUrl: input.props.baseUrl,
@@ -101,7 +101,7 @@ export async function expandSecretPlaceholders(input: {
 				name: referenced.name,
 				scope: resolved.scope ?? referenced.scope ?? 'user',
 				requestedHost,
-				secretContext: input.props.secretContext,
+				storageContext: input.props.storageContext,
 			})
 			throw new Error(
 				`Secret "${referenced.name}" is not allowed for host "${requestedHost}". If this request is expected, ask the user whether this host should be added to the secret's allowed hosts: ${approvalUrl}`,

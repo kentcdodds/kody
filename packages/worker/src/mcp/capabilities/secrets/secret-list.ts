@@ -34,9 +34,9 @@ export const secretListCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				scope: args.scope ?? null,
-				secretContext: {
-					sessionId: ctx.callerContext.secretContext?.sessionId ?? null,
-					appId: ctx.callerContext.secretContext?.appId ?? null,
+				storageContext: {
+					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
+					appId: ctx.callerContext.storageContext?.appId ?? null,
 				},
 			})
 			return {

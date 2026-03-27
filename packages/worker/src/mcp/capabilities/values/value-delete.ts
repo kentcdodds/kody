@@ -1,26 +1,26 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { deleteSecret } from '#mcp/secrets/service.ts'
-import { secretScopeValues } from '#mcp/secrets/types.ts'
+import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { deleteValue } from '#mcp/values/service.ts'
+import { valueScopeValues } from '#mcp/values/types.ts'
 
-export const secretDeleteCapability = defineDomainCapability(
-	capabilityDomainNames.secrets,
+export const valueDeleteCapability = defineDomainCapability(
+	capabilityDomainNames.values,
 	{
-		name: 'secret_delete',
+		name: 'value_delete',
 		description:
-			'Delete an existing secret reference for the signed-in user. Use this when a secret should no longer be available to execute-time code.',
-		keywords: ['secret', 'delete', 'remove', 'revoke', 'credential'],
+			'Delete an existing readable persisted value for the signed-in user.',
+		keywords: ['value', 'config', 'delete', 'remove', 'non-secret'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
 		inputSchema: z.object({
-			name: z.string().min(1).describe('Secret name to delete.'),
+			name: z.string().min(1).describe('Persisted value name to delete.'),
 			scope: z
-				.enum(secretScopeValues)
-				.describe('Scope that owns the secret being deleted.'),
+				.enum(valueScopeValues)
+				.describe('Scope that owns the persisted value being deleted.'),
 		}),
 		outputSchema: z.object({
 			deleted: z.boolean(),
@@ -28,7 +28,7 @@ export const secretDeleteCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			return {
-				deleted: await deleteSecret({
+				deleted: await deleteValue({
 					env: ctx.env,
 					userId: user.userId,
 					name: args.name,

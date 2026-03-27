@@ -57,6 +57,10 @@ Secrets:
 - Pass \`scope\` to narrow results, for example \`await codemode.secret_list({ scope: 'app' })\`.
 - Do not expect \`codemode.secret_get(...)\`, \`codemode.secret_require(...)\`, or any injected \`secrets\` helper to be available in execute-time code.
 
+Values:
+- Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to save and read back later.
+- Do not store readable public identifiers as secrets just to make them persistent; use value capabilities or the generated UI value helpers instead.
+
 Your code must be an async arrow function that returns the result.
 
 Examples:

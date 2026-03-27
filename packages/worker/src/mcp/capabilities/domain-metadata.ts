@@ -6,6 +6,7 @@ export const capabilityDomainNames = {
 	math: 'math',
 	meta: 'meta',
 	secrets: 'secrets',
+	values: 'values',
 } as const
 
 export type CapabilityDomain =

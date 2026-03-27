@@ -222,7 +222,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
 					user: context.user,
 					homeConnectorId: context.homeConnectorId,
-					secretContext: {
+					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
 					},
@@ -238,6 +238,17 @@ function createGeneratedUiExecuteHandler(env: Env) {
 						ok: false,
 						error: formatExecutionOutput(result),
 						errorDetails,
+						logs: result.logs ?? [],
+					},
+					400,
+				)
+			}
+			if (containsReturnedSecretPlaceholder(result.result)) {
+				return jsonResponse(
+					{
+						ok: false,
+						error:
+							'Generated UI executeCode may not return unresolved `{{secret:...}}` placeholders. Secret placeholders only resolve inside secret-aware fetch requests or capability inputs that explicitly opt into `x-kody-secret`. Use persisted values for non-secret configuration, and call `window.kodyWidget.sendMessage(...)` when the user needs to intervene.',
 						logs: result.logs ?? [],
 					},
 					400,
@@ -275,7 +286,7 @@ function createGeneratedUiSecretsHandler(env: Env) {
 					env,
 					userId: context.user.userId,
 					scope,
-					secretContext: {
+					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
 					},
@@ -313,7 +324,7 @@ function createGeneratedUiSecretsHandler(env: Env) {
 					name: body.data.name,
 					value: body.data.value,
 					description: body.data.description ?? '',
-					secretContext: {
+					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
 					},
@@ -371,7 +382,7 @@ function createGeneratedUiDeleteSecretHandler(env: Env) {
 					userId: context.user.userId,
 					name: body.data.name,
 					scope: body.data.scope ?? 'session',
-					secretContext: {
+					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
 					},
@@ -535,4 +546,19 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 			'Content-Type': 'application/json; charset=utf-8',
 		},
 	})
+}
+
+function containsReturnedSecretPlaceholder(value: unknown): boolean {
+	if (typeof value === 'string') {
+		return /\{\{secret:[a-zA-Z0-9._-]+/.test(value)
+	}
+	if (Array.isArray(value)) {
+		return value.some((entry) => containsReturnedSecretPlaceholder(entry))
+	}
+	if (value && typeof value === 'object') {
+		return Object.values(value).some((entry) =>
+			containsReturnedSecretPlaceholder(entry),
+		)
+	}
+	return false
 }

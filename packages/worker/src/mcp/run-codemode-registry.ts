@@ -80,10 +80,10 @@ function createCapabilityInputSecretResolver(
 			userId,
 			name: secret.name,
 			scope: secret.scope,
-			secretContext: callerContext.secretContext
+			storageContext: callerContext.storageContext
 				? {
-						sessionId: callerContext.secretContext.sessionId ?? null,
-						appId: callerContext.secretContext.appId ?? null,
+						sessionId: callerContext.storageContext.sessionId ?? null,
+						appId: callerContext.storageContext.appId ?? null,
 					}
 				: null,
 		})
@@ -108,9 +108,9 @@ export async function runCodemodeWithRegistry(
 		gatewayProps: {
 			baseUrl: callerContext.baseUrl,
 			userId: callerContext.user?.userId ?? null,
-			secretContext: {
-				sessionId: callerContext.secretContext?.sessionId ?? null,
-				appId: callerContext.secretContext?.appId ?? null,
+			storageContext: {
+				sessionId: callerContext.storageContext?.sessionId ?? null,
+				appId: callerContext.storageContext?.appId ?? null,
 			},
 		},
 	})

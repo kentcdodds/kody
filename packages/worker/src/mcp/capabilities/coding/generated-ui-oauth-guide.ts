@@ -30,7 +30,7 @@ Use it when the UI needs to:
 
 - connect a third-party account with OAuth
 - receive a provider callback with \`code\` and \`state\`
-- exchange an authorization code for tokens with saved secrets
+- exchange an authorization code for tokens with saved values and secrets
 - tell the user what callback or redirect URL to register with the provider
 
 ## Core rules
@@ -56,10 +56,13 @@ storage, token exchange, or token persistence.
 
 Use these helpers instead of hand-rolling the flow:
 
+- \`saveValue({ name, value, description?, scope? })\`
+- \`getValue({ name, scope? })\`
 - \`createOAuthState(key)\`
 - \`readOAuthCallback({ expectedStateKey })\`
 - \`validateOAuthCallbackState({ key, returnedState })\`
 - \`exchangeOAuthCode({ tokenUrl, code, redirectUri, clientIdSecretName, clientSecretSecretName, scope?, extraParams? })\`
+- \`fetchWithSecrets({ url, method?, headers?, body? })\`
 - \`saveOAuthTokens({ payload, accessTokenSecretName, refreshTokenSecretName?, scope?, accessTokenDescription?, refreshTokenDescription? })\`
 
 ## Recommended app structure
@@ -81,7 +84,9 @@ For most provider-connection flows, structure the generated UI like this:
 1. Read the callback with \`readOAuthCallback(...)\`.
 2. If the provider returned an OAuth error, show that error to the user.
 3. Validate the returned state with \`validateOAuthCallbackState(...)\`.
-4. Call \`exchangeOAuthCode(...)\`.
+4. Call \`exchangeOAuthCode(...)\` when both client credentials are secret-backed,
+   or use \`fetchWithSecrets(...)\` when the client ID is stored as a readable
+   value.
 5. If the exchange succeeds, call \`saveOAuthTokens(...)\`.
 6. Continue with whatever post-connect behavior the app needs.
 
@@ -99,10 +104,11 @@ At minimum, include:
 
 Do not tell the user only to "set up OAuth" without giving the concrete values.
 
-## Example: saving client credentials
+## Example: saving client configuration
 
-If the user needs to provide a client ID and client secret, save them as
-secrets before starting the authorization flow.
+If the user needs to provide a client ID and client secret, save the client ID
+as a readable value and the client secret as a secret before starting the
+authorization flow.
 
 \`\`\`html
 <form id="oauth-client-form">
@@ -126,27 +132,27 @@ secrets before starting the authorization flow.
 
     if (typeof clientId !== 'string' || typeof clientSecret !== 'string') return
 
-    const result = await window.kodyWidget.saveSecrets([
-      {
+    const [clientIdResult, clientSecretResult] = await Promise.all([
+      window.kodyWidget.saveValue({
         name: 'muffin-club-oauth-client-id',
         value: clientId,
         description: 'Muffin Club OAuth client ID',
         scope: 'user',
-      },
-      {
+      }),
+      window.kodyWidget.saveSecret({
         name: 'muffin-club-oauth-client-secret',
         value: clientSecret,
         description: 'Muffin Club OAuth client secret',
         scope: 'user',
-      },
+      }),
     ])
 
-    if (!result.ok) {
-      document.body.insertAdjacentHTML('beforeend', '<p>Unable to save credentials.</p>')
+    if (!clientIdResult.ok || !clientSecretResult.ok) {
+      document.body.insertAdjacentHTML('beforeend', '<p>Unable to save configuration.</p>')
       return
     }
 
-    document.body.insertAdjacentHTML('beforeend', '<p>Credentials saved.</p>')
+    document.body.insertAdjacentHTML('beforeend', '<p>Configuration saved.</p>')
   })
 </script>
 \`\`\`
@@ -158,11 +164,19 @@ Create and persist the OAuth state before redirecting the browser.
 \`\`\`html
 <button id="connect-muffin-club">Connect Muffin Club</button>
 <script>
-  document.querySelector('#connect-muffin-club')?.addEventListener('click', () => {
+  document.querySelector('#connect-muffin-club')?.addEventListener('click', async () => {
+    const clientIdRecord = await window.kodyWidget.getValue({
+      name: 'muffin-club-oauth-client-id',
+      scope: 'user',
+    })
+    if (!clientIdRecord) {
+      window.kodyWidget.sendMessage('Missing OAuth client ID value. Ask the user to save the client configuration and retry.')
+      return
+    }
     const state = window.kodyWidget.createOAuthState('muffin-club-oauth')
     const redirectUri = window.location.origin + window.location.pathname
     const authUrl = new URL('https://auth.muffinclub.example/oauth/authorize')
-    authUrl.searchParams.set('client_id', 'REPLACE_WITH_REGISTERED_CLIENT_ID_IF_NEEDED')
+    authUrl.searchParams.set('client_id', clientIdRecord.value)
     authUrl.searchParams.set('redirect_uri', redirectUri)
     authUrl.searchParams.set('scope', 'menu.read profile')
     authUrl.searchParams.set('state', state)
@@ -171,9 +185,8 @@ Create and persist the OAuth state before redirecting the browser.
 </script>
 \`\`\`
 
-When the provider client ID is also stored as a secret and should not be
-embedded in the UI source, prefer rendering the authorization URL from server
-data or another safe source rather than hardcoding it.
+Reading the client ID from \`getValue(...)\` keeps it out of the UI source while
+still treating it as readable configuration rather than a secret.
 
 ## Example: handling the callback
 
@@ -199,13 +212,31 @@ branching result, not a generic success or failure.
       return
     }
 
-    const tokenResult = await window.kodyWidget.exchangeOAuthCode({
-      tokenUrl: 'https://auth.muffinclub.example/oauth/token',
-      code,
-      redirectUri: window.location.origin + window.location.pathname,
-      clientIdSecretName: 'muffin-club-oauth-client-id',
-      clientSecretSecretName: 'muffin-club-oauth-client-secret',
+    const clientIdRecord = await window.kodyWidget.getValue({
+      name: 'muffin-club-oauth-client-id',
       scope: 'user',
+    })
+    if (!clientIdRecord) {
+      root.innerHTML = '<p>Missing client ID. Save the OAuth configuration and retry.</p>'
+      window.kodyWidget.sendMessage('Missing OAuth client ID value. Ask the user to save the client configuration and retry.')
+      return
+    }
+
+    const params = new URLSearchParams()
+    params.set('grant_type', 'authorization_code')
+    params.set('client_id', clientIdRecord.value)
+    params.set('client_secret', '{{secret:muffin-club-oauth-client-secret|scope=user}}')
+    params.set('code', code)
+    params.set('redirect_uri', window.location.origin + window.location.pathname)
+
+    const tokenResult = await window.kodyWidget.fetchWithSecrets({
+      url: 'https://auth.muffinclub.example/oauth/token',
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
     })
 
     if (tokenResult.ok) {
@@ -256,8 +287,8 @@ branching result, not a generic success or failure.
 
 Secret save and secret use are separate steps.
 
-Saving the client ID or client secret does not authorize sending those secrets
-to the provider host. If \`exchangeOAuthCode(...)\` returns
+Saving the client secret does not authorize sending that secret to the provider
+host. If \`exchangeOAuthCode(...)\` or \`fetchWithSecrets(...)\` returns
 \`kind: 'host_approval_required'\`, the generated UI should:
 
 1. show the approval link when available
@@ -295,12 +326,14 @@ Before you consider the flow complete, verify that the generated UI:
 
 - Prefer hosted saved apps for OAuth callbacks.
 - Prefer the built-in OAuth helpers over manual URL parsing and state storage.
-- Treat \`exchangeOAuthCode(...)\` as a branching result, not just success or
-  generic failure.
+- Treat \`exchangeOAuthCode(...)\` or \`fetchWithSecrets(...)\` as a branching
+  result, not just success or generic failure.
 - Call \`saveOAuthTokens(...)\` only after a successful exchange.
 - Surface approval-required results as part of the intended UX.
 - If the generated UI needs secrets, collect them in the UI and save them with
   \`saveSecret(...)\` or \`saveSecrets(...)\`.
+- If the generated UI needs readable, non-sensitive configuration such as a
+  client ID, save it with \`saveValue(...)\` and read it with \`getValue(...)\`.
 - If the provider flow depends on user-entered values that should survive a
   refresh, consider \`persistForm(...)\` and \`restoreForm(...)\`.
 `.trim()

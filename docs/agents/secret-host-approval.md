@@ -103,6 +103,7 @@ Generated UIs may:
 
 - collect secret values from the user
 - save those values as secrets
+- save and read back non-secret values for public configuration
 - inspect secret metadata, including current allowed hosts
 - present approval links returned from blocked requests
 
@@ -111,6 +112,15 @@ Generated UIs may not:
 - set allowed hosts directly
 - bypass the admin approval route
 - silently retry secret-bearing requests after a deny
+- use `executeCode(...)` as a general string interpolation mechanism for
+  `{{secret:...}}` placeholders
+
+When a generated UI hits a recoverable runtime problem, it should:
+
+1. Show the problem in the UI.
+2. Call `sendMessage(...)` when available so the parent chat can help the user.
+3. Include the next action the user should take, such as approving a host,
+   providing a missing non-secret value, or retrying after a fix.
 
 For OAuth and similar flows, prefer this sequence:
 

@@ -25,11 +25,14 @@ Behavior:
 - \`code\` may be a full HTML document or a fragment. Prefer body content when possible, but full-document HTML is supported when you need total control.
 - The shell provides a tiny standard library on \`window.kodyWidget\` plus lightweight default styles for semantic HTML, forms, tables, buttons, and code blocks.
 - After rendering, the shell automatically reports the rendered widget size to the host via the standard MCP Apps \`ui/notifications/size-changed\` notification.
-- \`executeCode(code)\` runs server-side code through the generated UI session when available, keeping secret resolution on the server.
+- \`executeCode(code)\` runs server-side code through the generated UI session when available, keeping server-side capability calls and secret-aware fetches off the client. Treat it as a low-level transport, not the preferred abstraction for routine generated UI workflows.
 - \`saveSecret({ name, value, description?, scope? })\`, \`saveSecrets([...])\`, \`listSecrets({ scope? })\`, and \`deleteSecret({ name, scope? })\` let the UI manage secret references without embedding raw values in generated code.
+- \`saveValue({ name, value, description?, scope? })\`, \`saveValues([...])\`, \`getValue({ name, scope? })\`, \`listValues({ scope? })\`, and \`deleteValue({ name, scope })\` let the UI manage readable non-secret values for public configuration such as ids, slugs, and other generated UI settings that must be read back later.
 - Use generated UI whenever the user needs to enter a sensitive value. Do not ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, or other credentials into chat.
 - Saving a secret does not authorize outbound use automatically. If generated code later needs to send that secret to a host, the agent must ask the user to approve that host through the app approval flow.
 - Secret metadata returned by the UI helpers includes \`allowed_hosts\`, \`created_at\`, \`updated_at\`, and \`ttl_ms\` when available so the UI can explain lifecycle, approval state, and expiry.
+- Secret placeholders such as \`{{secret:name}}\` are not general-purpose string interpolation. They only resolve inside secret-aware fetch paths or capability inputs that explicitly opt into \`x-kody-secret\`.
+- If generated UI code hits a recoverable runtime problem, show it in the UI and also call \`sendMessage(...)\` with the concise next action so the parent chat can help when available.
 - Prefer the higher-level helpers below for OAuth, form persistence, and secret-bearing requests instead of hand-rolling state handling or parsing raw approval-link errors.
 - Before generating or revising any browser-based OAuth flow in a generated UI, first execute the \`generated_ui_oauth_guide\` capability to load Kody-specific instructions for hosted callbacks, provider registration values, helper usage, token exchange, and host approval handling. Do not improvise those details from memory.
 - If an OAuth flow needs a callback URL, do not rely on an ephemeral inline render. Persist the UI with \`ui_save_app\`, reopen it as a hosted saved app, and use that hosted URL as the provider callback/redirect target so the generated UI can receive and handle the callback on reload.
@@ -69,6 +72,40 @@ type SaveSecretsResult = {
     name: string
     ok: boolean
     secret?: SecretMetadata
+    error?: string
+  }>
+}
+
+type ValueMetadata = {
+  name: string
+  scope: SecretScope
+  value: string
+  description: string
+  app_id: string | null
+  created_at: string
+  updated_at: string
+  ttl_ms: number | null
+}
+
+type SaveValueInput = {
+  name: string
+  value: string
+  description?: string
+  scope?: SecretScope
+}
+
+type SaveValueResult = {
+  ok: boolean
+  value?: ValueMetadata
+  error?: string
+}
+
+type SaveValuesResult = {
+  ok: boolean
+  results: Array<{
+    name: string
+    ok: boolean
+    value?: ValueMetadata
     error?: string
   }>
 }
@@ -144,6 +181,11 @@ declare global {
       executeCode(code: string): Promise<unknown>
       saveSecret(input: SaveSecretInput): Promise<SaveSecretResult>
       saveSecrets(input: SaveSecretInput[]): Promise<SaveSecretsResult>
+      saveValue(input: SaveValueInput): Promise<SaveValueResult>
+      saveValues(input: SaveValueInput[]): Promise<SaveValuesResult>
+      getValue(input: { name: string; scope?: SecretScope }): Promise<ValueMetadata | null>
+      listValues(input?: { scope?: SecretScope }): Promise<ValueMetadata[]>
+      deleteValue(input: { name: string; scope: SecretScope }): Promise<{ ok: boolean; deleted?: boolean; error?: string }>
       listSecrets(input?: { scope?: SecretScope }): Promise<SecretMetadata[]>
       deleteSecret(input: { name: string; scope?: SecretScope }): Promise<{ ok: boolean; deleted?: boolean; error?: string }>
 
@@ -222,8 +264,11 @@ declare global {
 
 How to use the helpers:
 - Use \`saveSecrets([...])\` when a form collects multiple credentials such as client ID + client secret.
+- Use \`saveValue(...)\` or \`saveValues([...])\` for public, non-sensitive configuration that generated UI code should be able to read back later.
+- Use \`getValue(...)\` or \`listValues(...)\` instead of trying to read secrets back through \`executeCode()\`.
 - Use \`buildSecretForm(...)\` when a normal HTML form should save one or more fields as secrets on submit.
 - \`formToObject(...)\` returns one value per field name by default. If the same field name appears multiple times, it returns an array from \`FormData.getAll(...)\` for that key instead of dropping repeated values.
+- If a recoverable runtime problem needs user intervention, call \`sendMessage(...)\` in addition to showing the error locally so the parent chat can continue the workflow.
 - Use \`createOAuthState(...)\`, \`readOAuthCallback(...)\`, and \`validateOAuthCallbackState(...)\` for hosted OAuth pages instead of hand-rolling state storage and callback parsing.
 - If the OAuth flow requires a browser callback, save the UI first and use the hosted saved-app URL as the callback target. Inline ephemeral UIs are not sufficient for provider callbacks that must return to a stable URL.
 - Use \`exchangeOAuthCode(...)\` for OAuth token exchanges that should run through server-side \`execute\` with secret placeholders.

@@ -12,7 +12,9 @@ import {
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
-type SecretScope = 'session' | 'app' | 'user'
+type StorageScope = 'session' | 'app' | 'user'
+type SecretScope = StorageScope
+type ValueScope = StorageScope
 
 type SecretMetadata = {
 	name: string
@@ -20,6 +22,17 @@ type SecretMetadata = {
 	description: string
 	app_id: string | null
 	allowed_hosts: Array<string>
+	created_at: string
+	updated_at: string
+	ttl_ms: number | null
+}
+
+type ValueMetadata = {
+	name: string
+	scope: ValueScope
+	value: string
+	description: string
+	app_id: string | null
 	created_at: string
 	updated_at: string
 	ttl_ms: number | null
@@ -153,7 +166,7 @@ function coerceRuntime(value: unknown): AppRuntime | undefined {
 	return value === 'html' || value === 'javascript' ? value : undefined
 }
 
-function coerceSecretScope(value: unknown): SecretScope | null {
+function coerceStorageScope(value: unknown): StorageScope | null {
 	return value === 'session' || value === 'app' || value === 'user'
 		? value
 		: null
@@ -444,6 +457,17 @@ function appendLocalMessageLogEntry(text) {
 	`.trim()
 }
 
+export function buildCodemodeCapabilityExecuteCode(
+	name: string,
+	args: Record<string, unknown> = {},
+) {
+	return [
+		'async () => {',
+		`  return await codemode[${JSON.stringify(name)}](${JSON.stringify(args)});`,
+		'}',
+	].join('\n')
+}
+
 function getHostToolErrorMessage(result: HostToolResult | null) {
 	if (!result || result.isError !== true) return null
 	const structuredContent = isRecord(result.structuredContent)
@@ -475,9 +499,8 @@ export function readSavedAppSourceFromHostToolResult(
 	const structuredContent = isRecord(result.structuredContent)
 		? result.structuredContent
 		: null
-	const code = typeof structuredContent?.code === 'string'
-		? structuredContent.code
-		: null
+	const code =
+		typeof structuredContent?.code === 'string' ? structuredContent.code : null
 	if (!code) {
 		return {
 			handled: true as const,
@@ -744,7 +767,7 @@ function initializeGeneratedUiShell() {
 			return (
 				isRecord(secret) &&
 				typeof secret.name === 'string' &&
-				coerceSecretScope(secret.scope) != null &&
+				coerceStorageScope(secret.scope) != null &&
 				typeof secret.description === 'string' &&
 				(secret.app_id == null || typeof secret.app_id === 'string') &&
 				Array.isArray(secret.allowed_hosts) &&
@@ -826,8 +849,44 @@ function nextRequestId() {
 function isRecord(value) {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-function coerceSecretScope(value) {
+function coerceStorageScope(value) {
 	return value === 'session' || value === 'app' || value === 'user' ? value : null;
+}
+function coerceValueMetadata(value) {
+	if (!isRecord(value)) return null;
+	const scope = coerceStorageScope(value.scope);
+	if (
+		typeof value.name !== 'string' ||
+		typeof value.value !== 'string' ||
+		typeof value.description !== 'string' ||
+		scope == null ||
+		(value.app_id != null && typeof value.app_id !== 'string') ||
+		typeof value.created_at !== 'string' ||
+		typeof value.updated_at !== 'string' ||
+		(value.ttl_ms != null &&
+			(typeof value.ttl_ms !== 'number' ||
+				!Number.isFinite(value.ttl_ms) ||
+				value.ttl_ms < 0))
+	) {
+		return null;
+	}
+	return {
+		name: value.name,
+		scope,
+		value: value.value,
+		description: value.description,
+		app_id: value.app_id ?? null,
+		created_at: value.created_at,
+		updated_at: value.updated_at,
+		ttl_ms: value.ttl_ms ?? null,
+	};
+}
+function buildCodemodeCapabilityExecuteCode(name, args) {
+	return [
+		'async () => {',
+		'  return await codemode[' + JSON.stringify(name) + '](' + JSON.stringify(args ?? {}) + ');',
+		'}',
+	].join('\\n');
 }
 function normalizeSecretNameList(values) {
 	return Array.from(new Set(values.filter((value) => typeof value === 'string' && value.length > 0)));
@@ -1174,6 +1233,132 @@ window.kodyWidget = {
 			results,
 		};
 	},
+	async saveValue(input) {
+		if (!input || typeof input !== 'object') {
+			return { ok: false, error: 'Value input must be an object.' };
+		}
+		if (typeof input.name !== 'string' || input.name.length === 0) {
+			return { ok: false, error: 'Value name is required.' };
+		}
+		if (typeof input.value !== 'string' || input.value.length === 0) {
+			return { ok: false, error: 'Value is required.' };
+		}
+		try {
+			const result = await this.executeCode(
+				buildCodemodeCapabilityExecuteCode('value_set', {
+					name: input.name,
+					value: input.value,
+					description: typeof input.description === 'string' ? input.description : '',
+					...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
+				}),
+			);
+			const saved = coerceValueMetadata(isRecord(result) ? result.value : null);
+			if (!saved) {
+				return { ok: false, error: 'Unable to save value.' };
+			}
+			return {
+				ok: true,
+				value: saved,
+			};
+		} catch (error) {
+			return {
+				ok: false,
+				error: error instanceof Error ? error.message : 'Unable to save value.',
+			};
+		}
+	},
+	async saveValues(input) {
+		if (!Array.isArray(input)) {
+			return {
+				ok: false,
+				results: [
+					{
+						name: '',
+						ok: false,
+						error: 'Value inputs must be an array.',
+					},
+				],
+			};
+		}
+		const results = [];
+		for (const item of input) {
+			if (!item || typeof item !== 'object') {
+				results.push({
+					name: '',
+					ok: false,
+					error: 'Each value input must be an object.',
+				});
+				continue;
+			}
+			const response = await this.saveValue(item);
+			results.push({
+				name: typeof item.name === 'string' ? item.name : '',
+				ok: response.ok === true,
+				...(response.value ? { value: response.value } : {}),
+				...(response.ok === true ? {} : { error: response.error || 'Unable to save value.' }),
+			});
+		}
+		return {
+			ok: results.every((result) => result.ok === true),
+			results,
+		};
+	},
+	async getValue(input) {
+		if (!input || typeof input !== 'object') {
+			throw new Error('Value input must be an object.');
+		}
+		if (typeof input.name !== 'string' || input.name.length === 0) {
+			throw new Error('Value name is required.');
+		}
+		const result = await this.executeCode(
+			buildCodemodeCapabilityExecuteCode('value_get', {
+				name: input.name,
+				...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
+			}),
+		);
+		return coerceValueMetadata(isRecord(result) ? result.value : null);
+	},
+	async listValues(input) {
+		const scope = coerceStorageScope(isRecord(input) ? input.scope : undefined);
+		const result = await this.executeCode(
+			buildCodemodeCapabilityExecuteCode('value_list', {
+				...(scope ? { scope } : {}),
+			}),
+		);
+		if (!isRecord(result) || !Array.isArray(result.values)) return [];
+		return result.values
+			.map((value) => coerceValueMetadata(value))
+			.filter((value) => value != null);
+	},
+	async deleteValue(input) {
+		if (!input || typeof input !== 'object') {
+			return { ok: false, error: 'Value input must be an object.' };
+		}
+		if (typeof input.name !== 'string' || input.name.length === 0) {
+			return { ok: false, error: 'Value name is required.' };
+		}
+		const scope = coerceStorageScope(input.scope);
+		if (!scope) {
+			return { ok: false, error: 'Value scope is required.' };
+		}
+		try {
+			const result = await this.executeCode(
+				buildCodemodeCapabilityExecuteCode('value_delete', {
+					name: input.name,
+					scope,
+				}),
+			);
+			return {
+				ok: true,
+				deleted: isRecord(result) ? result.deleted === true : false,
+			};
+		} catch (error) {
+			return {
+				ok: false,
+				error: error instanceof Error ? error.message : 'Unable to delete value.',
+			};
+		}
+	},
 	async listSecrets(input) {
 		const response = await requestSecretAction(
 			'list-secrets',
@@ -1397,7 +1582,7 @@ window.kodyWidget = {
 				message: 'exchangeOAuthCode requires tokenUrl, code, redirectUri, clientIdSecretName, and clientSecretSecretName.',
 			};
 		}
-		const scope = coerceSecretScope(input.scope);
+		const scope = coerceStorageScope(input.scope);
 		const scopeSuffix = scope ? '|scope=' + scope : '';
 		const params = new URLSearchParams();
 		params.set('client_id', '{{secret:' + input.clientIdSecretName + scopeSuffix + '}}');
@@ -1458,7 +1643,7 @@ window.kodyWidget = {
 					typeof input.accessTokenDescription === 'string'
 						? input.accessTokenDescription
 						: 'OAuth access token',
-				scope: coerceSecretScope(input.scope) ?? undefined,
+				scope: coerceStorageScope(input.scope) ?? undefined,
 			},
 		];
 		if (refreshToken && typeof input.refreshTokenSecretName === 'string' && input.refreshTokenSecretName.length > 0) {
@@ -1469,7 +1654,7 @@ window.kodyWidget = {
 					typeof input.refreshTokenDescription === 'string'
 						? input.refreshTokenDescription
 						: 'OAuth refresh token',
-				scope: coerceSecretScope(input.scope) ?? undefined,
+				scope: coerceStorageScope(input.scope) ?? undefined,
 			});
 		}
 		const saved = await this.saveSecrets(secrets);
@@ -1515,7 +1700,7 @@ window.kodyWidget = {
 						value: rawValue,
 						description:
 							typeof field.description === 'string' ? field.description : '',
-						scope: coerceSecretScope(field.scope) ?? undefined,
+						scope: coerceStorageScope(field.scope) ?? undefined,
 					};
 				});
 				const result = await window.kodyWidget.saveSecrets(secrets);
@@ -1968,7 +2153,7 @@ ${buildParamsBootstrapSource(latestEnvelope?.params)}
 						value: typeof input.value === 'string' ? input.value : '',
 						description:
 							typeof input.description === 'string' ? input.description : '',
-						scope: coerceSecretScope(input.scope) ?? undefined,
+						scope: coerceStorageScope(input.scope) ?? undefined,
 					}).then((response) => {
 						postChildResponse(
 							event.source as WindowProxy,
@@ -1985,7 +2170,9 @@ ${buildParamsBootstrapSource(latestEnvelope?.params)}
 					typeof payload.requestId === 'string' ? payload.requestId : null
 				const input = isRecord(payload.input) ? payload.input : null
 				if (requestId && event.source) {
-					void listSecretsWithHttp(coerceSecretScope(input?.scope) ?? undefined)
+					void listSecretsWithHttp(
+						coerceStorageScope(input?.scope) ?? undefined,
+					)
 						.then((response) => {
 							postChildResponse(
 								event.source as WindowProxy,
@@ -2016,7 +2203,7 @@ ${buildParamsBootstrapSource(latestEnvelope?.params)}
 				if (requestId && input && event.source) {
 					void deleteSecretWithHttp({
 						name: typeof input.name === 'string' ? input.name : '',
-						scope: coerceSecretScope(input.scope) ?? undefined,
+						scope: coerceStorageScope(input.scope) ?? undefined,
 					}).then((response) => {
 						postChildResponse(
 							event.source as WindowProxy,

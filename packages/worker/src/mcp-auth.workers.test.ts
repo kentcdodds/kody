@@ -189,7 +189,7 @@ test('mcp request forwards when token is valid', async () => {
 	expect(receivedProps).toEqual({
 		baseUrl: 'https://example.com',
 		homeConnectorId: 'default',
-		secretContext: null,
+		storageContext: null,
 		user: { userId: 'user' },
 	})
 })

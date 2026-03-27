@@ -1,6 +1,12 @@
-export const secretScopeValues = ['session', 'app', 'user'] as const
+import {
+	storageScopeValues,
+	type StorageContext,
+	type StorageScope,
+} from '#mcp/storage.ts'
 
-export type SecretScope = (typeof secretScopeValues)[number]
+export const secretScopeValues = storageScopeValues
+
+export type SecretScope = StorageScope
 
 export type SecretBucketRow = {
 	id: string
@@ -38,7 +44,4 @@ export type SecretSearchRow = Pick<
 	'name' | 'scope' | 'description' | 'appId' | 'updatedAt'
 >
 
-export type SecretContext = {
-	sessionId: string | null
-	appId: string | null
-}
+export type { StorageContext }

@@ -1,7 +1,8 @@
 import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
+import { type StorageContext } from '#mcp/storage.ts'
 import { decryptStringWithPurpose, encryptStringWithPurpose } from './crypto.ts'
 import { normalizeHost } from './allowed-hosts.ts'
-import { type SecretContext, type SecretScope } from './types.ts'
+import { type SecretScope } from './types.ts'
 
 const secretHostApprovalPurpose = 'secret-host-approval'
 const defaultSecretHostApprovalTtlMs = 1000 * 60 * 60 * 24
@@ -11,7 +12,7 @@ export type SecretHostApprovalRequest = {
 	name: string
 	scope: SecretScope
 	requestedHost: string
-	secretContext: SecretContext | null
+	storageContext: StorageContext | null
 	iat: number
 	exp: number
 }
@@ -23,7 +24,7 @@ export async function createSecretHostApprovalToken(
 		name: string
 		scope: SecretScope
 		requestedHost: string
-		secretContext: SecretContext | null
+		storageContext: StorageContext | null
 		ttlMs?: number
 	},
 ) {
@@ -37,7 +38,7 @@ export async function createSecretHostApprovalToken(
 			name: input.name.trim(),
 			scope: input.scope,
 			requestedHost: normalizeHost(input.requestedHost),
-			secretContext: input.secretContext ?? null,
+			storageContext: input.storageContext ?? null,
 			iat: now,
 			exp: now + ttlMs,
 		} satisfies SecretHostApprovalRequest),
@@ -70,7 +71,7 @@ export async function verifySecretHostApprovalToken(
 		name: parsed.name.trim(),
 		scope: parsed.scope as SecretScope,
 		requestedHost: normalizeHost(parsed.requestedHost),
-		secretContext: parsed.secretContext ?? null,
+		storageContext: parsed.storageContext ?? null,
 		iat: typeof parsed.iat === 'number' ? parsed.iat : Date.now(),
 		exp: typeof parsed.exp === 'number' ? parsed.exp : Date.now(),
 	} satisfies SecretHostApprovalRequest
@@ -82,13 +83,13 @@ export function buildSecretHostApprovalUrl(input: {
 	name: string
 	scope: SecretScope
 	requestedHost: string
-	secretContext: SecretContext | null
+	storageContext: StorageContext | null
 }) {
 	const secretPath = buildAccountSecretPath({
 		name: input.name,
 		scope: input.scope,
-		appId: input.secretContext?.appId ?? null,
-		sessionId: input.secretContext?.sessionId ?? null,
+		appId: input.storageContext?.appId ?? null,
+		sessionId: input.storageContext?.sessionId ?? null,
 	})
 	const url = new URL(secretPath, input.baseUrl)
 	url.searchParams.set('allowed-host', normalizeHost(input.requestedHost))
