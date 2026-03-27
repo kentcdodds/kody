@@ -20,4 +20,8 @@ export class WorkerEntrypoint<TEnv = unknown, TProps = unknown> {
 
 export class RpcTarget {}
 
-export const exports = {}
+export const exports = {
+	CodemodeFetchGateway() {
+		return async (request: Request) => fetch(request)
+	},
+} satisfies Record<string, unknown>

@@ -84,7 +84,7 @@ export async function expandSecretPlaceholders(input: {
 		replacements.set(placeholder, resolved.value)
 	}
 	const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
-	for (const [key, value] of headers.entries()) {
+	for (const [key, value] of Array.from(headers.entries())) {
 		headers.set(key, replaceSecretPlaceholders(value, replacements))
 	}
 	const nextBody =

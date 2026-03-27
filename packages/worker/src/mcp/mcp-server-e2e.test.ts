@@ -1132,6 +1132,10 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		ttl_ms: null,
 	})
 
+	const approvedFetchReference = crypto
+		.randomUUID()
+		.replace(/-/g, '')
+		.slice(0, 24)
 	const blockedFetchExecuteResponse = await fetch(executeUrl!, {
 		method: 'POST',
 		headers: {
@@ -1141,13 +1145,16 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		},
 		body: JSON.stringify({
 			code: `async () => {
-				const response = await fetch('https://api.example.com/deploy', {
-					method: 'POST',
-					headers: {
-						Authorization: 'Bearer {{secret:cloudflareToken|scope=app}}',
+				const response = await fetch(
+					'https://example.com/deploy?reference=${approvedFetchReference}',
+					{
+						method: 'POST',
+						headers: {
+							Authorization: 'Bearer {{secret:cloudflareToken|scope=app}}',
+						},
+						body: JSON.stringify({ note: 'deploy' }),
 					},
-					body: JSON.stringify({ note: 'deploy' }),
-				})
+				)
 				return {
 					status: response.status,
 				}
@@ -1162,7 +1169,7 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		}
 	expect(blockedFetchExecutePayload.ok).toBe(false)
 	expect(blockedFetchExecutePayload.error).toContain(
-		'Secret "cloudflareToken" is not allowed for host "api.example.com"',
+		'Secret "cloudflareToken" is not allowed for host "example.com"',
 	)
 	expect(blockedFetchExecutePayload.error).toContain(
 		'ask the user whether this host should be added to the secret\'s allowed hosts',
@@ -1208,7 +1215,7 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 			expect.objectContaining({
 				name: 'cloudflareToken',
 				scope: 'app',
-				allowedHosts: ['api.example.com'],
+				allowedHosts: ['example.com'],
 			}),
 		]),
 	)
@@ -1222,13 +1229,16 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		},
 		body: JSON.stringify({
 			code: `async () => {
-				const response = await fetch('https://api.example.com/deploy', {
-					method: 'POST',
-					headers: {
-						Authorization: 'Bearer {{secret:cloudflareToken|scope=app}}',
+				const response = await fetch(
+					'https://example.com/deploy?reference=${approvedFetchReference}',
+					{
+						method: 'POST',
+						headers: {
+							Authorization: 'Bearer {{secret:cloudflareToken|scope=app}}',
+						},
+						body: JSON.stringify({ note: 'deploy' }),
 					},
-					body: JSON.stringify({ note: 'deploy' }),
-				})
+				)
 				return {
 					ok: response.ok,
 					status: response.status,
@@ -1236,7 +1246,12 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 			}`,
 		}),
 	})
-	expect(approvedFetchExecuteResponse.ok).toBe(true)
+	if (!approvedFetchExecuteResponse.ok) {
+		const raw = await approvedFetchExecuteResponse.text().catch(() => '')
+		throw new Error(
+			`Approved fetch failed (${approvedFetchExecuteResponse.status}): ${raw}. reference=${approvedFetchReference}`,
+		)
+	}
 	const approvedFetchExecutePayload =
 		(await approvedFetchExecuteResponse.json()) as {
 			ok?: boolean
@@ -1248,7 +1263,7 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 	expect(approvedFetchExecutePayload.ok).toBe(true)
 	expect(approvedFetchExecutePayload.result).toEqual({
 		ok: false,
-		status: 404,
+		status: 405,
 	})
 
 	const searchResult = await mcpClient.client.callTool({
