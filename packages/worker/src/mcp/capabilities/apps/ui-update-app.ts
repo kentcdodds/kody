@@ -11,6 +11,11 @@ import {
 	updateUiArtifact,
 } from '#mcp/ui-artifacts-repo.ts'
 import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
+import {
+	normalizeUiArtifactParameters,
+	parseUiArtifactParameters,
+	uiArtifactParameterSchema,
+} from '#mcp/ui-artifact-parameters.ts'
 
 const inputSchema = z
 	.object({
@@ -51,6 +56,12 @@ const inputSchema = z
 			.describe(
 				'Optional retrieval-only text that improves search recall without being part of the visible app description.',
 			),
+		parameters: z
+			.array(uiArtifactParameterSchema)
+			.optional()
+			.describe(
+				'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on window.kodyWidget.params.',
+			),
 	})
 	.refine(
 		(value) =>
@@ -59,7 +70,8 @@ const inputSchema = z
 			value.keywords !== undefined ||
 			value.code !== undefined ||
 			value.runtime !== undefined ||
-			value.search_text !== undefined,
+			value.search_text !== undefined ||
+			value.parameters !== undefined,
 		{
 			message: 'Provide at least one field to update.',
 		},
@@ -69,6 +81,7 @@ const outputSchema = z.object({
 	app_id: z.string(),
 	runtime: z.enum(['html', 'javascript']),
 	hosted_url: z.string().url(),
+	parameters: z.array(uiArtifactParameterSchema).nullable(),
 })
 
 export const uiUpdateAppCapability = defineDomainCapability(
@@ -105,6 +118,10 @@ export const uiUpdateAppCapability = defineDomainCapability(
 			if (args.search_text !== undefined) {
 				updates.search_text = args.search_text
 			}
+			if (args.parameters !== undefined) {
+				const parameters = normalizeUiArtifactParameters(args.parameters)
+				updates.parameters = parameters ? JSON.stringify(parameters) : null
+			}
 
 			const updated = await updateUiArtifact(
 				ctx.env.APP_DB,
@@ -135,6 +152,7 @@ export const uiUpdateAppCapability = defineDomainCapability(
 						keywords: parseStringArray(refreshed.keywords),
 						searchText: refreshed.search_text,
 						runtime: refreshed.runtime,
+						parameters: parseUiArtifactParameters(refreshed.parameters),
 					}),
 				})
 			} catch {
@@ -145,6 +163,7 @@ export const uiUpdateAppCapability = defineDomainCapability(
 				app_id: refreshed.id,
 				runtime: refreshed.runtime,
 				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, refreshed.id),
+				parameters: parseUiArtifactParameters(refreshed.parameters),
 			}
 		},
 	},

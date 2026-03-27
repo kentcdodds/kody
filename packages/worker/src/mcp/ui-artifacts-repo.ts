@@ -104,7 +104,13 @@ export async function updateUiArtifact(
 	updates: Partial<
 		Pick<
 			UiArtifactRow,
-			'title' | 'description' | 'keywords' | 'code' | 'runtime' | 'search_text'
+			| 'title'
+			| 'description'
+			| 'keywords'
+			| 'code'
+			| 'runtime'
+			| 'search_text'
+			| 'parameters'
 		>
 	>,
 ): Promise<boolean> {
@@ -132,6 +138,9 @@ export async function updateUiArtifact(
 	}
 	if (updates.search_text !== undefined) {
 		addAssignment('search_text', updates.search_text ?? null)
+	}
+	if (updates.parameters !== undefined) {
+		addAssignment('parameters', updates.parameters ?? null)
 	}
 
 	addAssignment('updated_at', new Date().toISOString())

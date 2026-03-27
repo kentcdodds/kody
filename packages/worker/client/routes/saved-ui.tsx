@@ -170,6 +170,12 @@ export function SavedUiRoute(handle: Handle) {
 		handle.update()
 	}
 
+	function getRouteKey() {
+		const appId = getSavedUiIdFromLocation()
+		const paramsKey = getSavedUiParamsSearchValue()
+		return `${appId ?? ''}?${paramsKey ?? ''}`
+	}
+
 	function postRenderDataIfReady() {
 		if (
 			!shellInitialized ||
@@ -206,8 +212,7 @@ export function SavedUiRoute(handle: Handle) {
 
 	async function refreshArtifact() {
 		const appId = getSavedUiIdFromLocation()
-		const paramsKey = getSavedUiParamsSearchValue()
-		const routeKey = `${appId ?? ''}?${paramsKey ?? ''}`
+		const routeKey = getRouteKey()
 		if (!appId) {
 			status = 'error'
 			errorMessage = 'Saved UI not found.'
@@ -225,11 +230,7 @@ export function SavedUiRoute(handle: Handle) {
 		const requestId = ++loadRequestId
 		try {
 			const nextArtifact = await loadSavedUi(appId)
-			if (
-				requestId !== loadRequestId ||
-				`${getSavedUiIdFromLocation() ?? ''}?${getSavedUiParamsSearchValue() ?? ''}` !==
-					routeKey
-			) {
+			if (requestId !== loadRequestId || getRouteKey() !== routeKey) {
 				return
 			}
 			artifact = nextArtifact
@@ -238,11 +239,7 @@ export function SavedUiRoute(handle: Handle) {
 			update()
 			postRenderDataIfReady()
 		} catch (error) {
-			if (
-				requestId !== loadRequestId ||
-				`${getSavedUiIdFromLocation() ?? ''}?${getSavedUiParamsSearchValue() ?? ''}` !==
-					routeKey
-			) {
+			if (requestId !== loadRequestId || getRouteKey() !== routeKey) {
 				return
 			}
 			status = 'error'
@@ -258,7 +255,7 @@ export function SavedUiRoute(handle: Handle) {
 	handle.queueTask(refreshArtifact)
 
 	listenToRouterNavigation(handle, () => {
-		const nextRouteKey = `${getSavedUiIdFromLocation() ?? ''}?${getSavedUiParamsSearchValue() ?? ''}`
+		const nextRouteKey = getRouteKey()
 		if (!getSavedUiIdFromLocation()) {
 			activeRouteKey = null
 			return

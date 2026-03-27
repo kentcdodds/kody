@@ -71,17 +71,19 @@ type HostToolResult = {
 	isError?: boolean
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null
-}
-
 function coerceJsonRecord(value: unknown): Record<string, unknown> | undefined {
-	if (!isRecord(value)) return undefined
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return undefined
+	}
 	const out: Record<string, unknown> = Object.create(null)
 	for (const [key, entry] of Object.entries(value)) {
 		out[key] = entry
 	}
 	return out
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeMeasuredValue(value: unknown) {
@@ -1891,7 +1893,6 @@ ${buildParamsBootstrapSource(latestEnvelope?.params)}
 		return {
 			code,
 			runtime: coerceRuntime(app.runtime) ?? 'html',
-			params: coerceJsonRecord(app.params),
 		}
 	}
 
@@ -1920,9 +1921,6 @@ ${buildParamsBootstrapSource(latestEnvelope?.params)}
 		try {
 			const resolved = await resolveSavedAppCode(envelope.appId)
 			if (latestEnvelope !== envelope) return
-			if (resolved.params) {
-				envelope.params = resolved.params
-			}
 			setFrameSource(resolved.code, resolved.runtime)
 		} catch (error) {
 			if (latestEnvelope !== envelope) return

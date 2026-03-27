@@ -6,7 +6,10 @@ import {
 	parseUiArtifactParameters,
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
-import { listUiArtifactsByUserId, parseStringArray } from '#mcp/ui-artifacts-repo.ts'
+import {
+	listUiArtifactsByUserId,
+	parseStringArray,
+} from '#mcp/ui-artifacts-repo.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 
 const outputSchema = z.object({

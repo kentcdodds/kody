@@ -357,7 +357,12 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			const title = args.title ?? null
 			const description = args.description ?? null
 			let resolvedParams: Record<string, unknown> | undefined
-			if (appId && callerContext.user) {
+			if (appId) {
+				if (!callerContext.user) {
+					throw new Error(
+						'Authentication required to access saved UI artifacts.',
+					)
+				}
 				const app = await getUiArtifactById(
 					agent.getEnv().APP_DB,
 					callerContext.user.userId,
