@@ -89,7 +89,9 @@ export function App(handle: Handle) {
 
 	return () => {
 		const isWideLayout =
-			currentPathname.startsWith('/chat') || currentPathname.startsWith('/ui/')
+			currentPathname.startsWith('/chat') ||
+			currentPathname.startsWith('/ui/') ||
+			currentPathname.startsWith('/account/secrets')
 		const sessionEmail = session?.email ?? ''
 		const isSessionReady = sessionStatus === 'ready'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
@@ -176,7 +178,7 @@ export function App(handle: Handle) {
 							<a href="/chat" css={navLinkCss}>
 								Chat
 							</a>
-							<a href="/account" css={navLinkCss}>
+							<a href="/account/secrets" css={navLinkCss}>
 								{sessionEmail}
 							</a>
 							<form method="post" action="/logout" css={{ margin: 0 }}>

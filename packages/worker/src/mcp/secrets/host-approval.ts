@@ -1,3 +1,4 @@
+import { buildAccountSecretPath } from '#app/account-secret-id.ts'
 import { decryptStringWithPurpose, encryptStringWithPurpose } from './crypto.ts'
 import { normalizeHost } from './allowed-hosts.ts'
 import { type SecretContext, type SecretScope } from './types.ts'
@@ -75,8 +76,22 @@ export async function verifySecretHostApprovalToken(
 	} satisfies SecretHostApprovalRequest
 }
 
-export function buildSecretHostApprovalUrl(baseUrl: string, token: string) {
-	const url = new URL('/account/secrets/approve', baseUrl)
-	url.searchParams.set('request', token)
+export function buildSecretHostApprovalUrl(input: {
+	baseUrl: string
+	token: string
+	name: string
+	scope: SecretScope
+	requestedHost: string
+	secretContext: SecretContext | null
+}) {
+	const secretPath = buildAccountSecretPath({
+		name: input.name,
+		scope: input.scope,
+		appId: input.secretContext?.appId ?? null,
+		sessionId: input.secretContext?.sessionId ?? null,
+	})
+	const url = new URL(secretPath, input.baseUrl)
+	url.searchParams.set('allowed-host', normalizeHost(input.requestedHost))
+	url.searchParams.set('request', input.token)
 	return url.toString()
 }

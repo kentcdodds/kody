@@ -1,0 +1,1442 @@
+import { type Handle } from 'remix/component'
+import {
+	buildAccountSecretPath,
+	parseAccountSecretId,
+	parseAccountSecretPath,
+} from '#client/account-secret-path.ts'
+import { navigate, routerEvents } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
+import { TypeaheadCombobox } from '#client/typeahead-combobox.tsx'
+import {
+	colors,
+	mq,
+	radius,
+	shadows,
+	spacing,
+	transitions,
+	typography,
+} from '#client/styles/tokens.ts'
+
+type AccountStatus = 'loading' | 'ready' | 'error'
+type ApprovalAction = 'approve' | 'reject'
+type SecretScope = 'app' | 'user'
+
+type SavedAppOption = {
+	id: string
+	title: string
+	updatedAt: string
+}
+
+type SecretListItem = {
+	id: string
+	name: string
+	scope: SecretScope
+	description: string
+	appId: string | null
+	appTitle: string | null
+	allowedHosts: Array<string>
+	createdAt: string
+	updatedAt: string
+	ttlMs: number | null
+}
+
+type SecretDetail = SecretListItem & {
+	value: string
+}
+
+type ApprovalView = {
+	token: string
+	name: string
+	scope: 'session' | 'app' | 'user'
+	requestedHost: string
+	currentAllowedHosts: Array<string>
+}
+
+type AccountSecretsPayload = {
+	ok: true
+	email: string
+	apps: Array<SavedAppOption>
+	secrets: Array<SecretListItem>
+	selectedSecret: SecretDetail | null
+	approval: ApprovalView | null
+}
+
+type EditorState = {
+	currentId: string | null
+	name: string
+	scope: SecretScope
+	appId: string
+	description: string
+	value: string
+	allowedHosts: Array<string>
+}
+
+type SelectionState = {
+	selectedSecretId: string | null
+	isCreating: boolean
+}
+
+type SecretFilterScope = 'all' | 'user' | 'app'
+
+type SecretFilterState = {
+	search: string
+	scope: SecretFilterScope
+	appId: string
+}
+
+const accountSecretsApiPath = '/account/secrets.json'
+const secretsBasePath = '/account/secrets'
+
+function getScopeLabel(scope: ApprovalView['scope'] | SecretScope) {
+	if (scope === 'app') return 'App'
+	if (scope === 'session') return 'Session'
+	return 'User'
+}
+
+function formatRelativeTtl(ttlMs: number | null) {
+	if (ttlMs == null) return 'No expiry'
+	const totalMinutes = Math.max(1, Math.round(ttlMs / 60_000))
+	if (totalMinutes < 60) return `Expires in ${totalMinutes} min`
+	const totalHours = Math.round(totalMinutes / 60)
+	if (totalHours < 48) return `Expires in ${totalHours} hr`
+	const totalDays = Math.round(totalHours / 24)
+	return `Expires in ${totalDays} day${totalDays === 1 ? '' : 's'}`
+}
+
+function formatTimestamp(value: string) {
+	return new Date(value).toLocaleString()
+}
+
+async function readJson<T>(response: Response) {
+	return (await response.json().catch(() => null)) as T | null
+}
+
+function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
+	return {
+		currentId: null,
+		name: '',
+		scope: 'user',
+		appId: apps[0]?.id ?? '',
+		description: '',
+		value: '',
+		allowedHosts: [''],
+	}
+}
+
+function createEditorStateFromSecret(secret: SecretDetail): EditorState {
+	return {
+		currentId: secret.id,
+		name: secret.name,
+		scope: secret.scope,
+		appId: secret.appId ?? '',
+		description: secret.description,
+		value: secret.value,
+		allowedHosts: secret.allowedHosts.length > 0 ? secret.allowedHosts : [''],
+	}
+}
+
+function getSelectionState(href: string): SelectionState {
+	const url = new URL(href, 'http://localhost')
+	if (url.pathname === `${secretsBasePath}/new`) {
+		return {
+			selectedSecretId: null,
+			isCreating: true,
+		}
+	}
+	if (url.pathname === `${secretsBasePath}/approve`) {
+		return {
+			selectedSecretId: null,
+			isCreating: false,
+		}
+	}
+	const parsedPath = parseAccountSecretPath(url.pathname)
+	if (parsedPath) {
+		return {
+			selectedSecretId: parsedPath.id,
+			isCreating: false,
+		}
+	}
+	if (url.pathname.startsWith(`${secretsBasePath}/`)) {
+		const legacySecretId = url.pathname.slice(`${secretsBasePath}/`.length)
+		const parsedLegacyId = parseAccountSecretId(legacySecretId)
+		return {
+			selectedSecretId: parsedLegacyId
+				? legacySecretId
+				: url.pathname.slice(`${secretsBasePath}/`.length),
+			isCreating: false,
+		}
+	}
+	return {
+		selectedSecretId: null,
+		isCreating: false,
+	}
+}
+
+function getCurrentHref() {
+	return typeof window === 'undefined' ? secretsBasePath : window.location.href
+}
+
+function getCurrentSearch() {
+	return typeof window === 'undefined' ? '' : window.location.search
+}
+
+function buildSecretsHref(pathname: string, search = getCurrentSearch()) {
+	return `${pathname}${search}`
+}
+
+function buildSecretHref(secret: {
+	name: string
+	scope: SecretScope
+	appId: string | null
+}) {
+	return buildSecretsHref(
+		buildAccountSecretPath({
+			name: secret.name,
+			scope: secret.scope,
+			appId: secret.appId,
+		}),
+	)
+}
+
+function buildNewSecretHref() {
+	return buildSecretsHref(`${secretsBasePath}/new`)
+}
+
+function buildBaseSecretsHref() {
+	return buildSecretsHref(secretsBasePath)
+}
+
+function replaceSecretsLocation(to: string) {
+	if (typeof window === 'undefined') return
+	const destination = new URL(to, window.location.href)
+	const nextPath = `${destination.pathname}${destination.search}${destination.hash}`
+	const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+	if (nextPath === currentPath) return
+	window.history.replaceState({}, '', nextPath)
+	routerEvents.dispatchEvent(new Event('navigate'))
+}
+
+function getDataRefreshKey(href: string) {
+	const url = new URL(href, 'http://localhost')
+	const request = url.searchParams.get('request') ?? ''
+	const requestedHost = url.searchParams.get('allowed-host') ?? ''
+	return `${url.pathname}?request=${request}&allowed-host=${requestedHost}`
+}
+
+function readFilterState(
+	href: string,
+	apps: Array<SavedAppOption>,
+): SecretFilterState {
+	const url = new URL(href, 'http://localhost')
+	const search = url.searchParams.get('q')?.trim() ?? ''
+	const rawScope = url.searchParams.get('scope')
+	const scope =
+		rawScope === 'user' || rawScope === 'app' ? rawScope : ('all' as const)
+	const rawAppId = url.searchParams.get('app')?.trim() ?? ''
+	const appId =
+		scope === 'user'
+			? ''
+			: apps.some((app) => app.id === rawAppId)
+				? rawAppId
+				: ''
+	return {
+		search,
+		scope,
+		appId,
+	}
+}
+
+function filterSecrets(
+	secrets: Array<SecretListItem>,
+	filters: SecretFilterState,
+) {
+	const search = filters.search.trim().toLowerCase()
+	return secrets.filter((secret) => {
+		if (filters.scope !== 'all' && secret.scope !== filters.scope) return false
+		if (
+			filters.scope !== 'user' &&
+			filters.appId &&
+			secret.appId !== filters.appId
+		)
+			return false
+		if (!search) return true
+
+		const haystack = [
+			secret.name,
+			secret.description,
+			secret.appTitle ?? '',
+			secret.scope,
+			...secret.allowedHosts,
+		]
+			.join(' ')
+			.toLowerCase()
+		return haystack.includes(search)
+	})
+}
+
+function buildAppOptionDescription(updatedAt: string) {
+	return `Updated ${new Date(updatedAt).toLocaleDateString()}`
+}
+
+export function AccountSecretsRoute(handle: Handle) {
+	let status: AccountStatus = 'loading'
+	let email = ''
+	let apps: Array<SavedAppOption> = []
+	let secrets: Array<SecretListItem> = []
+	let selectedSecret: SecretDetail | null = null
+	let approval: ApprovalView | null = null
+	let editorState = createEmptyEditorState([])
+	let message: string | null = null
+	let submittingApprovalAction: ApprovalAction | null = null
+	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
+	let lastLoadedDataKey = ''
+	let showSecretValue = false
+	const deleteSecretCheck = createDoubleCheck(handle)
+	const filterAppCombobox = TypeaheadCombobox(handle)
+	const editorAppCombobox = TypeaheadCombobox(handle)
+
+	function buildHrefWithUpdatedFilters(
+		nextFilters: Partial<SecretFilterState>,
+		options?: { pathname?: string },
+	) {
+		const currentUrl = new URL(getCurrentHref(), 'http://localhost')
+		const filters = {
+			...readFilterState(currentUrl.toString(), apps),
+			...nextFilters,
+		}
+		const nextUrl = new URL(currentUrl.toString())
+		if (options?.pathname) {
+			nextUrl.pathname = options.pathname
+		}
+		if (filters.search) nextUrl.searchParams.set('q', filters.search)
+		else nextUrl.searchParams.delete('q')
+		if (filters.scope === 'all') nextUrl.searchParams.delete('scope')
+		else nextUrl.searchParams.set('scope', filters.scope)
+		if (filters.appId) nextUrl.searchParams.set('app', filters.appId)
+		else nextUrl.searchParams.delete('app')
+		return `${nextUrl.pathname}${nextUrl.search}`
+	}
+
+	function syncEditorState(selection: SelectionState) {
+		deleteSecretCheck.reset()
+		showSecretValue = false
+		if (selection.isCreating) {
+			editorState = createEmptyEditorState(apps)
+			return
+		}
+		if (selectedSecret) {
+			editorState = createEditorStateFromSecret(selectedSecret)
+			return
+		}
+		editorState = createEmptyEditorState(apps)
+	}
+
+	function applyPayload(
+		payload: AccountSecretsPayload,
+		selection: SelectionState,
+		nextMessage: string | null,
+	) {
+		email = payload.email
+		apps = payload.apps
+		secrets = payload.secrets
+		selectedSecret = payload.selectedSecret
+		approval = payload.approval
+		syncEditorState(selection)
+		message =
+			nextMessage ??
+			(selection.selectedSecretId &&
+			!payload.selectedSecret &&
+			!payload.approval
+				? 'Secret not found.'
+				: null)
+		status = 'ready'
+		submittingApprovalAction = null
+		saveState = 'idle'
+	}
+
+	async function loadAccountSecrets(signal: AbortSignal) {
+		try {
+			const href = getCurrentHref()
+			const selection = getSelectionState(href)
+			lastLoadedDataKey = getDataRefreshKey(href)
+			const requestUrl = new URL(accountSecretsApiPath, href)
+			requestUrl.search = new URL(href).search
+			if (selection.selectedSecretId) {
+				requestUrl.searchParams.set('selected', selection.selectedSecretId)
+			} else {
+				requestUrl.searchParams.delete('selected')
+			}
+
+			const response = await fetch(requestUrl.toString(), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (signal.aborted) return
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+
+			const payload = await readJson<AccountSecretsPayload>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load your secrets.')
+			}
+
+			applyPayload(payload, selection, null)
+			handle.update()
+		} catch (error) {
+			if (signal.aborted) return
+			status = 'error'
+			message =
+				error instanceof Error ? error.message : 'Unable to load your secrets.'
+			handle.update()
+		}
+	}
+
+	async function submitApproval(action: ApprovalAction) {
+		if (!approval || submittingApprovalAction != null) return
+		submittingApprovalAction = action
+		message = null
+		handle.update()
+
+		try {
+			const response = await fetch(accountSecretsApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action,
+					requestToken: approval.token,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+
+			const payload = await readJson<
+				AccountSecretsPayload & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to process approval.')
+			}
+
+			const selection = getSelectionState(getCurrentHref())
+			applyPayload(
+				payload,
+				selection,
+				action === 'approve'
+					? 'Approved requested host.'
+					: 'Rejected host approval request.',
+			)
+			handle.update()
+
+			if (typeof window !== 'undefined' && window.location.search) {
+				const nextHref = selectedSecret
+					? buildHrefWithUpdatedFilters(
+							{},
+							{
+								pathname: buildAccountSecretPath({
+									name: selectedSecret.name,
+									scope: selectedSecret.scope,
+									appId: selectedSecret.appId,
+								}),
+							},
+						)
+					: buildHrefWithUpdatedFilters({}, { pathname: secretsBasePath })
+				const nextUrl = new URL(nextHref, window.location.href)
+				nextUrl.searchParams.delete('request')
+				nextUrl.searchParams.delete('allowed-host')
+				navigate(`${nextUrl.pathname}${nextUrl.search}`)
+				lastLoadedDataKey = getDataRefreshKey(nextUrl.toString())
+			}
+		} catch (error) {
+			submittingApprovalAction = null
+			message =
+				error instanceof Error ? error.message : 'Unable to process approval.'
+			handle.update()
+		}
+	}
+
+	async function saveSecretChanges(event: SubmitEvent) {
+		event.preventDefault()
+		if (saveState !== 'idle') return
+
+		saveState = 'saving'
+		message = null
+		handle.update()
+
+		try {
+			const response = await fetch(accountSecretsApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'save',
+					currentId: editorState.currentId,
+					name: editorState.name,
+					scope: editorState.scope,
+					appId: editorState.scope === 'app' ? editorState.appId : null,
+					description: editorState.description,
+					value: editorState.value,
+					allowedHosts: editorState.allowedHosts,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+
+			const payload = await readJson<
+				AccountSecretsPayload & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to save secret.')
+			}
+
+			const nextSelection: SelectionState = {
+				selectedSecretId: payload.selectedSecret?.id ?? null,
+				isCreating: false,
+			}
+			applyPayload(
+				payload,
+				nextSelection,
+				editorState.currentId ? 'Saved secret.' : 'Created secret.',
+			)
+			handle.update()
+
+			if (payload.selectedSecret) {
+				navigate(buildSecretHref(payload.selectedSecret))
+			}
+		} catch (error) {
+			saveState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to save secret.'
+			handle.update()
+		}
+	}
+
+	async function deleteSelectedSecret() {
+		if (!editorState.currentId || saveState !== 'idle') return
+
+		saveState = 'deleting'
+		message = null
+		handle.update()
+
+		try {
+			const response = await fetch(accountSecretsApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'delete',
+					currentId: editorState.currentId,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+
+			const payload = await readJson<
+				AccountSecretsPayload & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to delete secret.')
+			}
+
+			applyPayload(
+				payload,
+				{ selectedSecretId: null, isCreating: false },
+				'Deleted secret.',
+			)
+			deleteSecretCheck.reset()
+			handle.update()
+			navigate(buildBaseSecretsHref())
+		} catch (error) {
+			saveState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to delete secret.'
+			handle.update()
+		}
+	}
+
+	function updateAllowedHost(index: number, value: string) {
+		editorState = {
+			...editorState,
+			allowedHosts: editorState.allowedHosts.map((host, hostIndex) =>
+				hostIndex === index ? value : host,
+			),
+		}
+		handle.update()
+	}
+
+	function addAllowedHost() {
+		editorState = {
+			...editorState,
+			allowedHosts: [...editorState.allowedHosts, ''],
+		}
+		handle.update()
+	}
+
+	function removeAllowedHost(index: number) {
+		const nextHosts = editorState.allowedHosts.filter(
+			(_host, hostIndex) => hostIndex !== index,
+		)
+		editorState = {
+			...editorState,
+			allowedHosts: nextHosts.length > 0 ? nextHosts : [''],
+		}
+		handle.update()
+	}
+
+	return () => {
+		const currentHref = getCurrentHref()
+		const selection = getSelectionState(currentHref)
+		const filters = readFilterState(currentHref, apps)
+		const filteredSecrets = filterSecrets(secrets, filters)
+		const appOptions = apps.map((app) => ({
+			id: app.id,
+			label: app.title,
+			description: buildAppOptionDescription(app.updatedAt),
+		}))
+		const filterAppOptions = [
+			{
+				id: '',
+				label: 'All apps',
+				description: 'Show secrets across every app',
+			},
+			...appOptions,
+		]
+		const isRefreshingForLocationChange =
+			status !== 'loading' &&
+			getDataRefreshKey(currentHref) !== lastLoadedDataKey
+		if (status === 'loading' || isRefreshingForLocationChange) {
+			handle.queueTask(loadAccountSecrets)
+		}
+
+		const activeSecretId =
+			selection.selectedSecretId ?? selectedSecret?.id ?? null
+		const isMutating = saveState !== 'idle' || submittingApprovalAction != null
+		const canCreateAppSecrets = apps.length > 0
+		const showEditor = selection.isCreating || selectedSecret != null
+
+		return (
+			<section
+				css={{
+					maxWidth: '96rem',
+					margin: '0 auto',
+					display: 'grid',
+					gap: spacing.xl,
+				}}
+			>
+				<header
+					css={{
+						display: 'flex',
+						justifyContent: 'space-between',
+						alignItems: 'flex-start',
+						gap: spacing.md,
+						flexWrap: 'wrap',
+					}}
+				>
+					<div css={{ display: 'grid', gap: spacing.xs }}>
+						<h1
+							css={{
+								fontSize: typography.fontSize.xl,
+								fontWeight: typography.fontWeight.semibold,
+								color: colors.text,
+								margin: 0,
+							}}
+						>
+							{email ? `${email} secrets` : 'Secrets'}
+						</h1>
+						<p css={{ color: colors.textMuted, margin: 0 }}>
+							Create, update, and delete the secrets available to your account
+							and saved apps.
+						</p>
+					</div>
+					<button
+						type="button"
+						on={{ click: () => navigate(buildNewSecretHref()) }}
+						css={primaryButtonCss}
+					>
+						New secret
+					</button>
+				</header>
+
+				{approval && !isRefreshingForLocationChange ? (
+					<section
+						css={{
+							display: 'grid',
+							gap: spacing.md,
+							padding: spacing.lg,
+							borderRadius: radius.lg,
+							border: `1px solid ${colors.primary}`,
+							backgroundColor: colors.primarySoftest,
+						}}
+					>
+						<div css={{ display: 'grid', gap: spacing.xs }}>
+							<h2
+								css={{
+									margin: 0,
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								}}
+							>
+								Approve host access
+							</h2>
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								Allow <code>{approval.requestedHost}</code> to receive secret{' '}
+								<code>{approval.name}</code> from the{' '}
+								{getScopeLabel(approval.scope)} scope.
+							</p>
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								Current allowed hosts:{' '}
+								{approval.currentAllowedHosts.length > 0
+									? approval.currentAllowedHosts.join(', ')
+									: 'none'}
+							</p>
+						</div>
+						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+							<button
+								type="button"
+								disabled={isMutating || isRefreshingForLocationChange}
+								on={{ click: () => void submitApproval('approve') }}
+								css={primaryButtonCss}
+							>
+								Approve host
+							</button>
+							<button
+								type="button"
+								disabled={isMutating || isRefreshingForLocationChange}
+								on={{ click: () => void submitApproval('reject') }}
+								css={secondaryButtonCss}
+							>
+								Reject
+							</button>
+						</div>
+					</section>
+				) : null}
+
+				{status === 'loading' ? (
+					<p css={{ color: colors.textMuted, margin: 0 }}>Loading secrets…</p>
+				) : null}
+				{message ? (
+					<p
+						css={{
+							color: status === 'error' ? colors.error : colors.text,
+							margin: 0,
+						}}
+						role="alert"
+					>
+						{message}
+					</p>
+				) : null}
+
+				<section
+					css={{
+						display: 'grid',
+						gridTemplateColumns: 'minmax(18rem, 22rem) minmax(0, 1fr)',
+						gap: spacing.lg,
+						alignItems: 'start',
+						[mq.mobile]: {
+							gridTemplateColumns: '1fr',
+						},
+					}}
+				>
+					<aside
+						css={{
+							display: 'grid',
+							gap: spacing.md,
+							padding: spacing.lg,
+							borderRadius: radius.lg,
+							border: `1px solid ${colors.border}`,
+							backgroundColor: colors.surface,
+							boxShadow: shadows.sm,
+							alignSelf: 'start',
+						}}
+					>
+						<div css={{ display: 'grid', gap: spacing.xs }}>
+							<h2
+								css={{
+									margin: 0,
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								}}
+							>
+								Saved secrets
+							</h2>
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								Select a secret to edit its metadata, value, and allowed hosts.
+							</p>
+						</div>
+						<div
+							css={{
+								display: 'grid',
+								gap: spacing.sm,
+							}}
+						>
+							<label css={fieldCss}>
+								<span css={fieldLabelCss}>Search</span>
+								<input
+									type="search"
+									value={filters.search}
+									placeholder="Search secrets"
+									aria-label="Search secrets"
+									on={{
+										input: (event) => {
+											replaceSecretsLocation(
+												buildHrefWithUpdatedFilters({
+													search: event.currentTarget.value,
+												}),
+											)
+										},
+									}}
+									css={inputCss}
+								/>
+							</label>
+							<label css={fieldCss}>
+								<span css={fieldLabelCss}>Scope</span>
+								<select
+									value={filters.scope}
+									aria-label="Filter secrets by scope"
+									on={{
+										change: (event) => {
+											const nextScope = event.currentTarget
+												.value as SecretFilterScope
+											replaceSecretsLocation(
+												buildHrefWithUpdatedFilters({
+													scope: nextScope,
+													appId: nextScope === 'user' ? '' : filters.appId,
+												}),
+											)
+										},
+									}}
+									css={inputCss}
+								>
+									<option value="all">All scopes</option>
+									<option value="user">User</option>
+									<option value="app">App</option>
+								</select>
+								</label>
+							{apps.length > 0
+								? filterAppCombobox({
+										id: 'secret-app-filter',
+										label: 'App filter',
+										placeholder: 'Filter by app',
+										value: filters.scope === 'user' ? '' : filters.appId,
+										disabled: filters.scope === 'user',
+										options: filterAppOptions,
+										onChange: (appId) => {
+											replaceSecretsLocation(
+												buildHrefWithUpdatedFilters({
+													appId,
+												}),
+											)
+										},
+										inputCss,
+										listCss: comboboxListCss,
+										optionCss: comboboxOptionCss,
+									})
+								: null}
+						</div>
+						{status === 'ready' && secrets.length === 0 ? (
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								No secrets yet. Create one to get started.
+							</p>
+						) : status === 'ready' && filteredSecrets.length === 0 ? (
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								No secrets match the current filters.
+							</p>
+						) : (
+							<div
+								css={{
+									maxHeight: 'min(65vh, 48rem)',
+									overflowY: 'auto',
+									paddingRight: spacing.xs,
+								}}
+							>
+								<ul
+									css={{
+										listStyle: 'none',
+										padding: 0,
+										margin: 0,
+										display: 'grid',
+										gap: spacing.sm,
+									}}
+								>
+									{filteredSecrets.map((secret) => {
+										const isActive = activeSecretId === secret.id
+										return (
+											<li key={secret.id}>
+												<button
+													type="button"
+													on={{
+														click: () => navigate(buildSecretHref(secret)),
+													}}
+													css={{
+														width: '100%',
+														textAlign: 'left',
+														display: 'grid',
+														gap: spacing.xs,
+														padding: spacing.md,
+														borderRadius: radius.md,
+														border: `1px solid ${
+															isActive ? colors.primary : colors.border
+														}`,
+														backgroundColor: isActive
+															? colors.primarySoftest
+															: colors.background,
+														color: colors.text,
+														cursor: 'pointer',
+														transition: `background-color ${transitions.normal}, border-color ${transitions.normal}`,
+													}}
+												>
+													<div
+														css={{
+															display: 'flex',
+															justifyContent: 'space-between',
+															gap: spacing.sm,
+															alignItems: 'baseline',
+														}}
+													>
+														<strong>{secret.name}</strong>
+														<span
+															css={{
+																fontSize: typography.fontSize.xs,
+																color: colors.textMuted,
+															}}
+														>
+															{formatRelativeTtl(secret.ttlMs)}
+														</span>
+													</div>
+													<span
+														css={{
+															fontSize: typography.fontSize.sm,
+															color: colors.textMuted,
+														}}
+													>
+														{getScopeLabel(secret.scope)}
+														{secret.appTitle ? ` - ${secret.appTitle}` : ''}
+													</span>
+													{secret.description ? (
+														<span
+															css={{
+																fontSize: typography.fontSize.sm,
+																color: colors.textMuted,
+															}}
+														>
+															{secret.description}
+														</span>
+													) : null}
+												</button>
+											</li>
+										)
+									})}
+								</ul>
+							</div>
+						)}
+					</aside>
+
+					<div
+						css={{
+							display: 'grid',
+							gap: spacing.lg,
+							padding: spacing.lg,
+							borderRadius: radius.lg,
+							border: `1px solid ${colors.border}`,
+							backgroundColor: colors.surface,
+							boxShadow: shadows.sm,
+						}}
+					>
+						{showEditor ? (
+							<form
+								css={{ display: 'grid', gap: spacing.lg }}
+								on={{ submit: saveSecretChanges }}
+							>
+								<div css={{ display: 'grid', gap: spacing.xs }}>
+									<h2
+										css={{
+											margin: 0,
+											fontSize: typography.fontSize.lg,
+											fontWeight: typography.fontWeight.semibold,
+											color: colors.text,
+										}}
+									>
+										{selection.isCreating ? 'New secret' : selectedSecret?.name}
+									</h2>
+									<p css={{ margin: 0, color: colors.textMuted }}>
+										{selection.isCreating
+											? 'Create a new user or app secret.'
+											: 'Update the secret value and metadata for this entry.'}
+									</p>
+								</div>
+
+								<div
+									css={{
+										display: 'grid',
+										gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+										gap: spacing.md,
+										[mq.mobile]: {
+											gridTemplateColumns: '1fr',
+										},
+									}}
+								>
+									<label css={fieldCss}>
+										<span css={fieldLabelCss}>Name</span>
+										<input
+											type="text"
+											required
+											value={editorState.name}
+											placeholder="api-token"
+											on={{
+												input: (event) => {
+													editorState = {
+														...editorState,
+														name: event.currentTarget.value,
+													}
+													handle.update()
+												},
+											}}
+											css={inputCss}
+										/>
+									</label>
+
+									<label css={fieldCss}>
+										<span css={fieldLabelCss}>Scope</span>
+										<select
+											value={editorState.scope}
+											on={{
+												change: (event) => {
+													const scope = event.currentTarget.value as SecretScope
+													editorState = {
+														...editorState,
+														scope,
+														appId:
+															scope === 'app'
+																? editorState.appId || apps[0]?.id || ''
+																: '',
+													}
+													handle.update()
+												},
+											}}
+											css={inputCss}
+										>
+											<option value="user">User</option>
+											{canCreateAppSecrets ? (
+												<option value="app">App</option>
+											) : null}
+										</select>
+									</label>
+								</div>
+
+								{editorState.scope === 'app'
+									? editorAppCombobox({
+											id: 'secret-editor-app',
+											label: 'App',
+											placeholder: 'Choose an app',
+											value: editorState.appId,
+											options: appOptions,
+											onChange: (appId) => {
+												editorState = {
+													...editorState,
+													appId,
+												}
+												handle.update()
+											},
+											inputCss,
+											listCss: comboboxListCss,
+											optionCss: comboboxOptionCss,
+										})
+									: null}
+
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Description</span>
+									<textarea
+										value={editorState.description}
+										rows={3}
+										placeholder="What this secret is used for"
+										on={{
+											input: (event) => {
+												editorState = {
+													...editorState,
+													description: event.currentTarget.value,
+												}
+												handle.update()
+											},
+										}}
+										css={textareaCss}
+									/>
+								</label>
+
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Secret value</span>
+									<div css={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+										{showSecretValue ? (
+											<input
+												type="text"
+												required
+												autoComplete="new-password"
+												value={editorState.value}
+												placeholder="Enter the secret value"
+												on={{
+													input: (event) => {
+														editorState = {
+															...editorState,
+															value: event.currentTarget.value,
+														}
+														handle.update()
+													},
+												}}
+												css={{
+													...inputCss,
+													paddingRight: '3rem',
+												}}
+											/>
+										) : (
+											<input
+												type="password"
+												required
+												autoComplete="new-password"
+												value={editorState.value}
+												placeholder="Enter the secret value"
+												on={{
+													input: (event) => {
+														editorState = {
+															...editorState,
+															value: event.currentTarget.value,
+														}
+														handle.update()
+													},
+												}}
+												css={{
+													...inputCss,
+													paddingRight: '3rem',
+												}}
+											/>
+										)}
+										<button
+											type="button"
+											aria-label={showSecretValue ? "Hide secret value" : "Show secret value"}
+											title={showSecretValue ? "Hide secret value" : "Show secret value"}
+											on={{
+												click: () => {
+													showSecretValue = !showSecretValue
+													handle.update()
+												}
+											}}
+											css={{
+												position: 'absolute',
+												right: spacing.sm,
+												background: 'none',
+												border: 'none',
+												padding: 0,
+												color: colors.textMuted,
+												cursor: 'pointer',
+												display: 'flex',
+												alignItems: 'center',
+												justifyContent: 'center',
+												'&:hover': {
+													color: colors.text,
+												}
+											}}
+										>
+											{showSecretValue ? (
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="20"
+													height="20"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												>
+													<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+													<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+													<path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+													<line x1="2" x2="22" y1="2" y2="22" />
+												</svg>
+											) : (
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													width="20"
+													height="20"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												>
+													<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+													<circle cx="12" cy="12" r="3" />
+												</svg>
+											)}
+										</button>
+									</div>
+								</label>
+
+								<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div css={{ display: 'grid', gap: spacing.xs }}>
+										<span css={fieldLabelCss}>Allowed hosts</span>
+										<p css={{ margin: 0, color: colors.textMuted }}>
+											Leave this empty to require explicit host approval before
+											a secret can be used.
+										</p>
+									</div>
+									<div css={{ display: 'grid', gap: spacing.sm }}>
+										{editorState.allowedHosts.map((host, index) => (
+											<div
+												key={`${index}-${host}`}
+												css={{
+													display: 'grid',
+													gridTemplateColumns: 'minmax(0, 1fr) auto',
+													gap: spacing.sm,
+													[mq.mobile]: {
+														gridTemplateColumns: '1fr',
+													},
+												}}
+											>
+												<input
+													type="text"
+													value={host}
+													placeholder="api.example.com"
+													on={{
+														input: (event) =>
+															updateAllowedHost(
+																index,
+																event.currentTarget.value,
+															),
+													}}
+													css={inputCss}
+												/>
+												<button
+													type="button"
+													on={{ click: () => removeAllowedHost(index) }}
+													css={secondaryButtonCss}
+												>
+													Remove
+												</button>
+											</div>
+										))}
+									</div>
+									<div>
+										<button
+											type="button"
+											on={{ click: addAllowedHost }}
+											css={secondaryButtonCss}
+										>
+											Add host
+										</button>
+									</div>
+								</div>
+
+								{selectedSecret ? (
+									<div
+										css={{
+											display: 'grid',
+											gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+											gap: spacing.md,
+											padding: spacing.md,
+											borderRadius: radius.md,
+											backgroundColor: colors.background,
+											border: `1px solid ${colors.border}`,
+											[mq.mobile]: {
+												gridTemplateColumns: '1fr',
+											},
+										}}
+									>
+										<div css={{ display: 'grid', gap: spacing.xs }}>
+											<span css={fieldLabelCss}>Created</span>
+											<span css={{ color: colors.textMuted }}>
+												{formatTimestamp(selectedSecret.createdAt)}
+											</span>
+										</div>
+										<div css={{ display: 'grid', gap: spacing.xs }}>
+											<span css={fieldLabelCss}>Updated</span>
+											<span css={{ color: colors.textMuted }}>
+												{formatTimestamp(selectedSecret.updatedAt)}
+											</span>
+										</div>
+										<div css={{ display: 'grid', gap: spacing.xs }}>
+											<span css={fieldLabelCss}>Expiry</span>
+											<span css={{ color: colors.textMuted }}>
+												{formatRelativeTtl(selectedSecret.ttlMs)}
+											</span>
+										</div>
+									</div>
+								) : null}
+
+								<div
+									css={{
+										display: 'flex',
+										gap: spacing.sm,
+										flexWrap: 'wrap',
+									}}
+								>
+									<button
+										type="submit"
+										disabled={
+											isMutating ||
+											(editorState.scope === 'app' && !editorState.appId)
+										}
+										css={primaryButtonCss}
+									>
+										{saveState === 'saving' ? 'Saving...' : 'Save'}
+									</button>
+									{editorState.currentId ? (
+										<button
+											type="button"
+											disabled={isMutating}
+											{...deleteSecretCheck.getButtonProps({
+												on: {
+													click: () => void deleteSelectedSecret(),
+												},
+											})}
+											aria-label={
+												deleteSecretCheck.doubleCheck
+													? `Confirm delete secret "${editorState.name}"`
+													: `Delete secret "${editorState.name}"`
+											}
+											title={
+												deleteSecretCheck.doubleCheck
+													? `Click again to delete "${editorState.name}"`
+													: `Delete secret "${editorState.name}"`
+											}
+											css={dangerButtonCss}
+										>
+											{saveState === 'deleting'
+												? 'Deleting...'
+												: deleteSecretCheck.doubleCheck
+													? 'Confirm delete'
+													: 'Delete'}
+										</button>
+									) : null}
+								</div>
+							</form>
+						) : (
+							<div css={{ display: 'grid', gap: spacing.sm }}>
+								<h2
+									css={{
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
+									}}
+								>
+									Select a secret
+								</h2>
+								<p css={{ margin: 0, color: colors.textMuted }}>
+									Pick a secret from the list to edit it, or create a new one.
+								</p>
+							</div>
+						)}
+					</div>
+				</section>
+			</section>
+		)
+	}
+}
+
+const fieldCss = {
+	display: 'grid',
+	gap: spacing.xs,
+}
+
+const fieldLabelCss = {
+	color: colors.text,
+	fontWeight: typography.fontWeight.medium,
+	fontSize: typography.fontSize.sm,
+}
+
+const inputCss = {
+	width: '100%',
+	padding: spacing.sm,
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.background,
+	color: colors.text,
+	fontSize: typography.fontSize.base,
+	fontFamily: typography.fontFamily,
+	boxSizing: 'border-box' as const,
+}
+
+const textareaCss = {
+	...inputCss,
+	resize: 'vertical' as const,
+	minHeight: '7rem',
+}
+
+const comboboxListCss = {
+	position: 'absolute' as const,
+	top: '100%',
+	left: 0,
+	right: 0,
+	zIndex: 10,
+	marginTop: spacing.xs,
+	maxHeight: '18rem',
+	overflowY: 'auto' as const,
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+	boxShadow: shadows.md,
+	padding: spacing.xs,
+	display: 'grid',
+	gap: spacing.xs,
+}
+
+const comboboxOptionCss = {
+	display: 'grid',
+	gap: spacing.xs,
+	width: '100%',
+	textAlign: 'left' as const,
+	padding: spacing.sm,
+	borderRadius: radius.md,
+	border: 'none',
+	backgroundColor: 'transparent',
+	color: colors.text,
+	cursor: 'pointer',
+	'&[data-active="true"]': {
+		backgroundColor: colors.primarySoftest,
+	},
+	'&:hover': {
+		backgroundColor: colors.primarySoftest,
+	},
+}
+
+const primaryButtonCss = {
+	padding: `${spacing.sm} ${spacing.md}`,
+	borderRadius: radius.full,
+	border: 'none',
+	backgroundColor: colors.primary,
+	color: colors.onPrimary,
+	fontWeight: typography.fontWeight.medium,
+	cursor: 'pointer',
+}
+
+const secondaryButtonCss = {
+	...primaryButtonCss,
+	backgroundColor: 'transparent',
+	color: colors.text,
+	border: `1px solid ${colors.border}`,
+}
+
+const dangerButtonCss = {
+	...primaryButtonCss,
+	backgroundColor: colors.danger,
+	color: colors.onDanger,
+}

@@ -5,18 +5,6 @@ type AccountStatus = 'loading' | 'ready' | 'error'
 type ApprovalAction = 'approve' | 'reject'
 type SecretScope = 'session' | 'app' | 'user'
 
-type SecretListItem = {
-	name: string
-	scope: SecretScope
-	description: string
-	appId: string | null
-	appTitle: string | null
-	allowedHosts: Array<string>
-	createdAt: string
-	updatedAt: string
-	ttlMs: number | null
-}
-
 type ApprovalView = {
 	token: string
 	name: string
@@ -28,7 +16,6 @@ type ApprovalView = {
 type AccountSecretsPayload = {
 	ok: true
 	email: string
-	secrets: Array<SecretListItem>
 	approval: ApprovalView | null
 }
 
@@ -40,16 +27,6 @@ function getScopeLabel(scope: SecretScope) {
 	return 'User'
 }
 
-function formatRelativeTtl(ttlMs: number | null) {
-	if (ttlMs == null) return 'No expiry'
-	const totalMinutes = Math.max(1, Math.round(ttlMs / 60_000))
-	if (totalMinutes < 60) return `Expires in ${totalMinutes} min`
-	const totalHours = Math.round(totalMinutes / 60)
-	if (totalHours < 48) return `Expires in ${totalHours} hr`
-	const totalDays = Math.round(totalHours / 24)
-	return `Expires in ${totalDays} day${totalDays === 1 ? '' : 's'}`
-}
-
 async function readJson<T>(response: Response) {
 	return (await response.json().catch(() => null)) as T | null
 }
@@ -57,7 +34,6 @@ async function readJson<T>(response: Response) {
 export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
-	let secrets: Array<SecretListItem> = []
 	let approval: ApprovalView | null = null
 	let message: string | null = null
 	let submittingApprovalAction: ApprovalAction | null = null
@@ -86,7 +62,6 @@ export function AccountRoute(handle: Handle) {
 				throw new Error('Unable to load your account secrets.')
 			}
 			email = payload.email
-			secrets = payload.secrets
 			approval = payload.approval
 			status = 'ready'
 			message = null
@@ -130,7 +105,6 @@ export function AccountRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to process approval.')
 			}
 			email = payload.email
-			secrets = payload.secrets
 			approval = payload.approval
 			submittingApprovalAction = null
 			message =
@@ -177,10 +151,10 @@ export function AccountRoute(handle: Handle) {
 							margin: 0,
 						}}
 					>
-						{email ? `${email} secret approvals` : 'Secret approvals'}
+						{email ? `${email} account` : 'Account'}
 					</h1>
 					<p css={{ color: colors.textMuted, margin: 0 }}>
-						Manage which hosts may receive stored secrets.
+						Review approval requests and manage your stored secrets.
 					</p>
 				</header>
 
@@ -259,7 +233,16 @@ export function AccountRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<section css={{ display: 'grid', gap: spacing.md }}>
+					<section
+						css={{
+							display: 'grid',
+							gap: spacing.md,
+							padding: spacing.lg,
+							border: `1px solid ${colors.border}`,
+							borderRadius: '1rem',
+							backgroundColor: colors.surface,
+						}}
+					>
 						<h2
 							css={{
 								margin: 0,
@@ -268,93 +251,26 @@ export function AccountRoute(handle: Handle) {
 								color: colors.text,
 							}}
 						>
-							Saved secrets
+							Secret management
 						</h2>
-						{secrets.length === 0 ? (
-							<p css={{ margin: 0, color: colors.textMuted }}>
-								No user or app secrets are currently stored.
-							</p>
-						) : (
-							<ul
+						<p css={{ margin: 0, color: colors.textMuted }}>
+							Create, edit, and delete secrets from the dedicated management page.
+						</p>
+						<div>
+							<a
+								href="/account/secrets"
 								css={{
-									listStyle: 'none',
-									padding: 0,
-									margin: 0,
-									display: 'grid',
-									gap: spacing.md,
+									color: colors.primaryText,
+									textDecoration: 'none',
+									fontWeight: typography.fontWeight.medium,
+									'&:hover': {
+										textDecoration: 'underline',
+									},
 								}}
 							>
-								{secrets.map((secret) => (
-									<li
-										key={`${secret.scope}:${secret.appId ?? 'global'}:${secret.name}`}
-										css={{
-											display: 'grid',
-											gap: spacing.sm,
-											padding: spacing.lg,
-											border: `1px solid ${colors.border}`,
-											borderRadius: '1rem',
-											backgroundColor: colors.surface,
-										}}
-									>
-										<div
-											css={{
-												display: 'flex',
-												alignItems: 'baseline',
-												justifyContent: 'space-between',
-												gap: spacing.sm,
-												flexWrap: 'wrap',
-											}}
-										>
-											<div css={{ display: 'grid', gap: spacing.xs }}>
-												<strong css={{ color: colors.text }}>{secret.name}</strong>
-												<span css={{ color: colors.textMuted }}>
-													{getScopeLabel(secret.scope)}
-													{secret.appTitle ? ` - ${secret.appTitle}` : ''}
-												</span>
-											</div>
-											<span css={{ color: colors.textMuted }}>
-												{formatRelativeTtl(secret.ttlMs)}
-											</span>
-										</div>
-										{secret.description ? (
-											<p css={{ margin: 0, color: colors.textMuted }}>
-												{secret.description}
-											</p>
-										) : null}
-										<div css={{ display: 'grid', gap: spacing.xs }}>
-											<span css={{ color: colors.textMuted }}>Allowed hosts</span>
-											{secret.allowedHosts.length > 0 ? (
-												<div
-													css={{
-														display: 'flex',
-														flexWrap: 'wrap',
-														gap: spacing.xs,
-													}}
-												>
-													{secret.allowedHosts.map((host) => (
-														<code
-															key={host}
-															css={{
-																padding: `${spacing.xs} ${spacing.sm}`,
-																borderRadius: '999px',
-																backgroundColor: colors.primarySoftSubtle,
-																color: colors.text,
-															}}
-														>
-															{host}
-														</code>
-													))}
-												</div>
-											) : (
-												<p css={{ margin: 0, color: colors.textMuted }}>
-													No hosts approved yet.
-												</p>
-											)}
-										</div>
-									</li>
-								))}
-							</ul>
-						)}
+								Manage secrets
+							</a>
+						</div>
 					</section>
 				) : null}
 			</section>

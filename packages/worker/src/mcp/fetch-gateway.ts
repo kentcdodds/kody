@@ -21,7 +21,10 @@ type ReferencedSecret = {
 	scope: SecretScope | null
 }
 
-export class CodemodeFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
+export class CodemodeFetchGateway extends WorkerEntrypoint<
+	Env,
+	FetchGatewayProps
+> {
 	async fetch(request: Request) {
 		const targetUrl = new URL(request.url)
 		const transformed = await expandSecretPlaceholders({
@@ -72,10 +75,14 @@ export async function expandSecretPlaceholders(input: {
 				requestedHost: input.targetHost,
 				secretContext: input.props.secretContext,
 			})
-			const approvalUrl = buildSecretHostApprovalUrl(
-				input.props.baseUrl,
-				approvalToken,
-			)
+			const approvalUrl = buildSecretHostApprovalUrl({
+				baseUrl: input.props.baseUrl,
+				token: approvalToken,
+				name: referenced.name,
+				scope: resolved.scope ?? referenced.scope ?? 'user',
+				requestedHost: input.targetHost,
+				secretContext: input.props.secretContext,
+			})
 			throw new Error(
 				`Secret "${referenced.name}" is not allowed for host "${input.targetHost}". If this request is expected, ask the user whether this host should be added to the secret's allowed hosts: ${approvalUrl}`,
 			)
