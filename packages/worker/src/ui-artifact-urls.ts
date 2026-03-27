@@ -6,12 +6,17 @@ export function getHostedUiUrl(input: {
 	env: {
 		APP_BASE_URL?: string | null
 	}
+	params?: Record<string, unknown> | null
 }) {
 	const appBaseUrl = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.requestUrl,
 	})
-	return new URL(`/ui/${input.appId}`, appBaseUrl).toString()
+	const url = new URL(`/ui/${input.appId}`, appBaseUrl)
+	if (input.params && Object.keys(input.params).length > 0) {
+		url.searchParams.set('params', JSON.stringify(input.params))
+	}
+	return url.toString()
 }
 
 export function buildSavedUiUrl(
@@ -19,11 +24,13 @@ export function buildSavedUiUrl(
 	appId: string,
 	input?: {
 		APP_BASE_URL?: string | null
+		params?: Record<string, unknown> | null
 	},
 ) {
 	return getHostedUiUrl({
 		appId,
 		requestUrl,
 		env: input ?? {},
+		params: input?.params ?? null,
 	})
 }

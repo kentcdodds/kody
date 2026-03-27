@@ -368,7 +368,9 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				})
 			}
 			const hostedUrl = appId
-				? buildSavedUiUrl(agent.requireDomain(), appId)
+				? buildSavedUiUrl(agent.requireDomain(), appId, {
+						params: resolvedParams,
+					})
 				: null
 			const appSession =
 				callerContext.user != null

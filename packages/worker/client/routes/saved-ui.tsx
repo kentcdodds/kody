@@ -51,8 +51,30 @@ function getSavedUiApiPath(appId: string) {
 	return `/ui-api/${encodeURIComponent(appId)}`
 }
 
+function readSavedUiParamsFromLocation() {
+	if (typeof window === 'undefined') return null
+	const raw = new URL(window.location.href).searchParams.get('params')
+	if (!raw) return null
+	try {
+		const parsed = JSON.parse(raw) as unknown
+		return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: null
+	} catch {
+		return null
+	}
+}
+
 async function loadSavedUi(appId: string) {
-	const response = await fetch(`${getSavedUiApiPath(appId)}/source`, {
+	const url = new URL(
+		`${getSavedUiApiPath(appId)}/source`,
+		window.location.origin,
+	)
+	const params = readSavedUiParamsFromLocation()
+	if (params) {
+		url.searchParams.set('params', JSON.stringify(params))
+	}
+	const response = await fetch(url, {
 		credentials: 'include',
 		headers: { Accept: 'application/json' },
 	})
