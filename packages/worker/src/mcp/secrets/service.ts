@@ -505,9 +505,11 @@ export async function setSecretAllowedHosts(input: {
 	})
 }
 
-export async function resolveSecretForHost(input: ResolveSecretInput & {
-	host: string
-}) {
+export async function resolveSecretForHost(
+	input: ResolveSecretInput & {
+		host: string
+	},
+) {
 	const normalizedHost = normalizeHost(input.host)
 	const resolved = await resolveSecret(input)
 	if (!resolved.found) return resolved
@@ -516,4 +518,3 @@ export async function resolveSecretForHost(input: ResolveSecretInput & {
 		allowedForHost: resolved.allowedHosts.includes(normalizedHost),
 	}
 }
-

@@ -193,8 +193,8 @@ Keep handlers focused on host-side work. The sandboxed model code should only
 orchestrate capability calls; it should not hold credentials or perform raw
 network access.
 
-For secret-aware outbound requests, treat host approval as admin-only policy.
-Do not add MCP-side or execute-time mutation paths for a secret's allowed hosts.
+For secret-aware outbound requests, treat host approval as admin-only policy. Do
+not add MCP-side or execute-time mutation paths for a secret's allowed hosts.
 Only the authenticated account admin UI may widen that policy.
 
 `CapabilityContext` provides:

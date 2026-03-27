@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
-import { exports as workerExports } from 'cloudflare:workers'
+import { type exports as workerExports } from 'cloudflare:workers'
 import { invariant } from '@epic-web/invariant'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'

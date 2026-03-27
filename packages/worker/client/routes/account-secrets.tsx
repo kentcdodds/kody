@@ -830,7 +830,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									<option value="user">User</option>
 									<option value="app">App</option>
 								</select>
-								</label>
+							</label>
 							{apps.length > 0
 								? filterAppCombobox({
 										id: 'secret-app-filter',
@@ -1083,7 +1083,13 @@ export function AccountSecretsRoute(handle: Handle) {
 
 								<label css={fieldCss}>
 									<span css={fieldLabelCss}>Secret value</span>
-									<div css={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+									<div
+										css={{
+											position: 'relative',
+											display: 'flex',
+											alignItems: 'center',
+										}}
+									>
 										{showSecretValue ? (
 											<input
 												type="text"
@@ -1129,13 +1135,21 @@ export function AccountSecretsRoute(handle: Handle) {
 										)}
 										<button
 											type="button"
-											aria-label={showSecretValue ? "Hide secret value" : "Show secret value"}
-											title={showSecretValue ? "Hide secret value" : "Show secret value"}
+											aria-label={
+												showSecretValue
+													? 'Hide secret value'
+													: 'Show secret value'
+											}
+											title={
+												showSecretValue
+													? 'Hide secret value'
+													: 'Show secret value'
+											}
 											on={{
 												click: () => {
 													showSecretValue = !showSecretValue
 													handle.update()
-												}
+												},
 											}}
 											css={{
 												position: 'absolute',
@@ -1150,7 +1164,7 @@ export function AccountSecretsRoute(handle: Handle) {
 												justifyContent: 'center',
 												'&:hover': {
 													color: colors.text,
-												}
+												},
 											}}
 										>
 											{showSecretValue ? (

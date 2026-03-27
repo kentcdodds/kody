@@ -254,7 +254,8 @@ export function AccountRoute(handle: Handle) {
 							Secret management
 						</h2>
 						<p css={{ margin: 0, color: colors.textMuted }}>
-							Create, edit, and delete secrets from the dedicated management page.
+							Create, edit, and delete secrets from the dedicated management
+							page.
 						</p>
 						<div>
 							<a

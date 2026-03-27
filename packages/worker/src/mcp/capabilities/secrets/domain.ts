@@ -8,8 +8,5 @@ export const secretsDomain = defineDomain({
 	description:
 		'Server-side secret references that can be discovered by name, listed with allowed-host metadata, and deleted without placing raw secret values into prompts or saved app source.',
 	keywords: ['secret', 'credentials', 'reference', 'secure input'],
-	capabilities: [
-		secretListCapability,
-		secretDeleteCapability,
-	],
+	capabilities: [secretListCapability, secretDeleteCapability],
 })
