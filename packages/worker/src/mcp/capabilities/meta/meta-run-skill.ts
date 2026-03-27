@@ -1,3 +1,4 @@
+import { exports as workerExports } from 'cloudflare:workers'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -73,6 +74,7 @@ export const metaRunSkillCapability = defineDomainCapability(
 				ctx.callerContext,
 				row.code,
 				shouldPassParams ? params : undefined,
+				workerExports,
 			)
 			if (exec.error) {
 				return {

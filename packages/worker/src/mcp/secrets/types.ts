@@ -17,6 +17,7 @@ export type SecretEntryRow = {
 	name: string
 	description: string
 	encrypted_value: string
+	allowed_hosts: string
 	created_at: string
 	updated_at: string
 }
@@ -26,6 +27,7 @@ export type SecretMetadata = {
 	scope: SecretScope
 	description: string
 	appId: string | null
+	allowedHosts: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null

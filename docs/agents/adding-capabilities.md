@@ -3,6 +3,11 @@
 User-persisted codemode skills (`meta` domain) are documented in
 [`mcp-skills.md`](./mcp-skills.md).
 
+Secret-bearing outbound requests are governed by
+[`secret-host-approval.md`](./secret-host-approval.md). Read that doc before
+adding any capability or workflow that saves secrets, uses placeholder-based
+`fetch`, or discusses host approval.
+
 Kody exposes a compact MCP surface (`search` and `execute`) and keeps the real
 capability graph behind that surface. To add a new capability, register it
 through a **domain** and the **builtin registry**—do not add a new public MCP
@@ -188,6 +193,10 @@ Keep handlers focused on host-side work. The sandboxed model code should only
 orchestrate capability calls; it should not hold credentials or perform raw
 network access.
 
+For secret-aware outbound requests, treat host approval as admin-only policy. Do
+not add MCP-side or execute-time mutation paths for a secret's allowed hosts.
+Only the authenticated account admin UI may widen that policy.
+
 `CapabilityContext` provides:
 
 - `env`: access to Cloudflare bindings such as D1, KV, R2, AI, and Worker
@@ -201,6 +210,13 @@ Use handlers for things like:
 - third-party API calls with secrets from env
 - Cloudflare product APIs
 - containers or sandbox orchestration
+
+If a capability surfaces secret metadata or secret-using network behavior, make
+the description explicit about the approval model:
+
+- secret save/update does not authorize outbound use
+- a blocked host must be approved through the account admin UI
+- the agent should stop and surface the approval link instead of retrying
 
 ## Testing
 

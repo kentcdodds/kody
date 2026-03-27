@@ -1,10 +1,14 @@
 import { createRouter, type BuildAction } from 'remix/fetch-router'
 import { post, route } from 'remix/fetch-router/routes'
 import { z } from 'zod'
+import { exports as workerExports } from 'cloudflare:workers'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { formatExecutionOutput } from '#mcp/executor.ts'
+import {
+	formatExecutionOutput,
+	getExecutionErrorDetails,
+} from '#mcp/executor.ts'
 import {
 	createGeneratedUiAppSession,
 	verifyGeneratedUiAppSession,
@@ -38,7 +42,6 @@ const generatedUiApiRoutes = route({
 	sourceWithSuffix: '/ui-api/:id/source',
 	execute: post('/ui-api/:id/execute'),
 	listSecrets: '/ui-api/:id/secrets',
-	saveSecret: post('/ui-api/:id/secrets'),
 	deleteSecret: post('/ui-api/:id/secrets/delete'),
 })
 
@@ -94,11 +97,7 @@ function createGeneratedUiApiRouter(env: Env) {
 	router.map(generatedUiApiRoutes.execute, createGeneratedUiExecuteHandler(env))
 	router.map(
 		generatedUiApiRoutes.listSecrets,
-		createGeneratedUiListSecretsHandler(env),
-	)
-	router.map(
-		generatedUiApiRoutes.saveSecret,
-		createGeneratedUiSaveSecretHandler(env),
+		createGeneratedUiSecretsHandler(env),
 	)
 	router.map(
 		generatedUiApiRoutes.deleteSecret,
@@ -201,12 +200,16 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					},
 				}),
 				body.data.code,
+				undefined,
+				workerExports,
 			)
 			if (result.error) {
+				const errorDetails = getExecutionErrorDetails(result.error)
 				return jsonResponse(
 					{
 						ok: false,
 						error: formatExecutionOutput(result),
+						errorDetails,
 						logs: result.logs ?? [],
 					},
 					400,
@@ -224,7 +227,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 	>
 }
 
-function createGeneratedUiListSecretsHandler(env: Env) {
+function createGeneratedUiSecretsHandler(env: Env) {
 	return {
 		middleware: [],
 		async action({ request, params }) {
@@ -234,49 +237,40 @@ function createGeneratedUiListSecretsHandler(env: Env) {
 				routeId: getGeneratedUiRouteId(params),
 			})
 			if (context instanceof Response) return context
-			const url = new URL(request.url)
-			const scope = parseOptionalScope(url.searchParams.get('scope'))
-			if (url.searchParams.has('scope') && scope == null) {
-				return jsonResponse({ error: 'Invalid secret scope.' }, 400)
+			if (request.method === 'GET') {
+				const url = new URL(request.url)
+				const scope = parseOptionalScope(url.searchParams.get('scope'))
+				if (url.searchParams.has('scope') && scope == null) {
+					return jsonResponse({ error: 'Invalid secret scope.' }, 400)
+				}
+				const secrets = await listSecrets({
+					env,
+					userId: context.user.userId,
+					scope,
+					secretContext: {
+						sessionId: context.sessionId,
+						appId: context.appId,
+					},
+				})
+				return jsonResponse({
+					ok: true,
+					secrets: secrets.map((secret) => ({
+						name: secret.name,
+						scope: secret.scope,
+						description: secret.description,
+						app_id: secret.appId,
+						allowed_hosts: secret.allowedHosts,
+						created_at: secret.createdAt,
+						updated_at: secret.updatedAt,
+						ttl_ms: secret.ttlMs,
+					})),
+				})
 			}
-			const secrets = await listSecrets({
-				env,
-				userId: context.user.userId,
-				scope,
-				secretContext: {
-					sessionId: context.sessionId,
-					appId: context.appId,
-				},
-			})
-			return jsonResponse({
-				ok: true,
-				secrets: secrets.map((secret) => ({
-					name: secret.name,
-					scope: secret.scope,
-					description: secret.description,
-					app_id: secret.appId,
-					created_at: secret.createdAt,
-					updated_at: secret.updatedAt,
-					ttl_ms: secret.ttlMs,
-				})),
-			})
-		},
-	} satisfies BuildAction<
-		typeof generatedUiApiRoutes.listSecrets.method,
-		typeof generatedUiApiRoutes.listSecrets.pattern
-	>
-}
 
-function createGeneratedUiSaveSecretHandler(env: Env) {
-	return {
-		middleware: [],
-		async action({ request, params }) {
-			const context = await requireGeneratedUiSessionContext({
-				request,
-				env,
-				routeId: getGeneratedUiRouteId(params),
-			})
-			if (context instanceof Response) return context
+			if (request.method !== 'POST') {
+				return jsonResponse({ error: 'Method not allowed.' }, 405)
+			}
+
 			const body = secretMutationSchema.safeParse(
 				await request.json().catch(() => null),
 			)
@@ -304,6 +298,7 @@ function createGeneratedUiSaveSecretHandler(env: Env) {
 						scope: saved.scope,
 						description: saved.description,
 						app_id: saved.appId,
+						allowed_hosts: saved.allowedHosts,
 						created_at: saved.createdAt,
 						updated_at: saved.updatedAt,
 						ttl_ms: saved.ttlMs,
@@ -321,8 +316,8 @@ function createGeneratedUiSaveSecretHandler(env: Env) {
 			}
 		},
 	} satisfies BuildAction<
-		typeof generatedUiApiRoutes.saveSecret.method,
-		typeof generatedUiApiRoutes.saveSecret.pattern
+		typeof generatedUiApiRoutes.listSecrets.method,
+		typeof generatedUiApiRoutes.listSecrets.pattern
 	>
 }
 

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { type exports as workerExports } from 'cloudflare:workers'
 import { invariant } from '@epic-web/invariant'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
@@ -31,10 +32,11 @@ Quick start
 - Call 'search' first to discover what Kody can do (results include type 'capability', 'skill', 'app', or 'secret').
 - Call 'execute' or 'meta_run_skill' next to run capability code.
 - Call 'open_generated_ui' when you want an interactive UI rendered in an MCP App host.
+- Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, or client secrets into chat. Use saved secrets when available, or use 'open_generated_ui' to collect and save sensitive values instead.
 - Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
 - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
-- Use the injected 'secrets' helper during execute-time code to list metadata or resolve user/app/session secret references without placing secret values in prompts or saved app source.
+- Use \`codemode.secret_list(args)\` during execute-time code to list secret metadata only; it does not return plaintext values.
 
 Kody source repository
 - Kody (this app and MCP server) is developed at https://github.com/kentcdodds/kody. When you launch a Cursor Cloud Agent to improve Kody itself, use that repository URL (unless the user explicitly points you at another fork or repo).
@@ -78,8 +80,10 @@ How to use execute
 - Each capability call returns that capability's raw structured result value.
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
-- The sandbox also injects a read-oriented 'secrets' helper for metadata/lookup: \`await secrets.list()\`, \`await secrets.list({ scope: 'app' })\`, \`await secrets.get('name')\`, \`await secrets.require('cloudflareToken', { scope: 'user' })\`.
-- Mutating secret operations stay on \`codemode\`: for example \`await codemode.secret_update({ name: 'cloudflareToken', scope: 'app', value: '...' })\` or \`await codemode.secret_delete({ name: 'cloudflareToken', scope: 'app' })\`.
+- Use \`await codemode.secret_list({})\` or \`await codemode.secret_list({ scope: 'app' })\` when you need secret metadata such as names, descriptions, scopes, and allowed hosts from the sandbox.
+- Use normal \`fetch(...)\` for outbound HTTP. To inject a stored secret, place a placeholder such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body; the host resolves it server-side and blocks unapproved destinations.
+- Saving or updating a secret does not authorize sending it anywhere. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
+- Secrets are intentionally not readable or updatable through \`codemode\`. Never ask the user to paste a secret into chat; use generated UI flows such as \`saveSecret(...)\` when the user needs to provide or rotate a value, and use \`codemode.secret_delete(...)\` only when removing a stored secret reference.
 - Your code must be an async arrow function that returns the result.
 - Example: const result = await codemode[capabilityName](args)
 
@@ -87,6 +91,7 @@ MCP App tools
 - Use 'open_generated_ui' when you want an interactive UI in MCP App compatible hosts.
 - Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
 - Prefer body-focused HTML fragments when possible, but full HTML documents are also supported.
+- Use generated UI whenever the user needs to enter a sensitive value. Do not ask the user to paste secrets or credentials into chat.
 - The shell exposes a small standard library on 'window.kodyWidget' for follow-up messages, external links, fullscreen requests, 'executeCode(code)', and secret management helpers such as 'saveSecret', 'listSecrets', and 'deleteSecret'.
 - 'executeCode(code)' runs server-side code for the generated UI session so execute-time secrets can be resolved without embedding their raw values in app source.
 - The shell also provides lightweight semantic HTML styles plus theme tokens such as '--color-*', '--spacing-*', '--radius-*', '--shadow-*', and '--font-*'.
@@ -107,6 +112,9 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	}
 	getEnv() {
 		return this.env
+	}
+	getLoopbackExports() {
+		return this.ctx.exports as typeof workerExports
 	}
 	requireDomain() {
 		const { baseUrl } = this.getCallerContext()

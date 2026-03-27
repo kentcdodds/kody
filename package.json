@@ -23,7 +23,7 @@
     "dev:mock-github": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/github/wrangler.jsonc",
     "dev:mock-cursor": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/cursor/wrangler.jsonc",
     "dev:mock-cloudflare": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/cloudflare/wrangler.jsonc",
-    "deploy": "npm run build && node --env-file=packages/worker/.env ./wrangler-env.ts deploy --outdir .wrangler/sentry-bundle --upload-source-maps",
+    "deploy": "node --input-type=module -e \"if (['preview','test'].includes(process.env.CLOUDFLARE_ENV ?? '')) { await import('./tools/prepare-e2e-env.ts'); }\" && npm run build && node --env-file=packages/worker/.env ./wrangler-env.ts deploy --outdir .wrangler/sentry-bundle --upload-source-maps",
     "sentry:upload-sourcemaps": "node tools/sentry-upload-sourcemaps.ts",
     "build:mcp-apps": "esbuild packages/worker/client/mcp-apps/generated-ui-shell.ts --bundle --format=esm --target=es2022 --outdir=packages/worker/public/mcp-apps --platform=browser",
     "build:client:web": "esbuild packages/worker/client/entry.tsx --bundle --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/component",
@@ -45,7 +45,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium --with-deps",
-    "test:mcp": "node --env-file=packages/worker/.env tools/prepare-e2e-env.ts && npm run build:mcp-apps && vitest run --project mcp-e2e",
+    "test:mcp": "node tools/prepare-e2e-env.ts && npm run build:mcp-apps && vitest run --project mcp-e2e",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects"
   },

@@ -9,6 +9,7 @@ type SecretMetadataRow = {
 	binding_key: string
 	name: string
 	description: string
+	allowed_hosts: string
 	created_at: string
 	updated_at: string
 	expires_at: string | null
@@ -72,7 +73,7 @@ export async function getSecretEntry(input: {
 }): Promise<SecretEntryRow | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT bucket_id, name, description, encrypted_value, created_at, updated_at
+			`SELECT bucket_id, name, description, encrypted_value, allowed_hosts, created_at, updated_at
 			FROM secret_entries
 			WHERE bucket_id = ? AND name = ?
 			LIMIT 1`,
@@ -93,12 +94,13 @@ export async function upsertSecretEntry(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO secret_entries (
-				bucket_id, name, description, encrypted_value, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?)
+				bucket_id, name, description, encrypted_value, allowed_hosts, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(bucket_id, name)
 			DO UPDATE SET
 				description = excluded.description,
 				encrypted_value = excluded.encrypted_value,
+				allowed_hosts = excluded.allowed_hosts,
 				updated_at = excluded.updated_at`,
 		)
 		.bind(
@@ -106,6 +108,7 @@ export async function upsertSecretEntry(input: {
 			input.row.name,
 			input.row.description,
 			input.row.encrypted_value,
+			input.row.allowed_hosts,
 			input.row.created_at ?? now,
 			input.row.updated_at ?? now,
 		)
@@ -130,7 +133,7 @@ export async function listSecretMetadataForBucket(input: {
 }): Promise<Array<SecretMetadataRow>> {
 	const { results } = await input.db
 		.prepare(
-			`SELECT ? AS scope, ? AS binding_key, name, description, created_at, updated_at, ? AS expires_at
+			`SELECT ? AS scope, ? AS binding_key, name, description, allowed_hosts, created_at, updated_at, ? AS expires_at
 			FROM secret_entries
 			WHERE bucket_id = ?
 			ORDER BY name ASC`,
@@ -153,7 +156,7 @@ export async function listUserScopeSecretMetadata(input: {
 	const now = input.now ?? new Date().toISOString()
 	const { results } = await input.db
 		.prepare(
-			`SELECT b.scope, b.binding_key, e.name, e.description, e.created_at, e.updated_at, b.expires_at
+			`SELECT b.scope, b.binding_key, e.name, e.description, e.allowed_hosts, e.created_at, e.updated_at, b.expires_at
 			FROM secret_buckets b
 			JOIN secret_entries e ON e.bucket_id = b.id
 			WHERE b.user_id = ? AND b.scope = 'user'
@@ -176,7 +179,7 @@ export async function listAppScopeSecretMetadata(input: {
 	const placeholders = input.appIds.map(() => '?').join(', ')
 	const { results } = await input.db
 		.prepare(
-			`SELECT b.scope, b.binding_key, e.name, e.description, e.created_at, e.updated_at, b.expires_at
+			`SELECT b.scope, b.binding_key, e.name, e.description, e.allowed_hosts, e.created_at, e.updated_at, b.expires_at
 			FROM secret_buckets b
 			JOIN secret_entries e ON e.bucket_id = b.id
 			WHERE b.user_id = ? AND b.scope = 'app'
@@ -207,6 +210,7 @@ function mapSecretEntryRow(row: Record<string, unknown>): SecretEntryRow {
 		name: String(row['name']),
 		description: String(row['description']),
 		encrypted_value: String(row['encrypted_value']),
+		allowed_hosts: String(row['allowed_hosts']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	}
@@ -218,6 +222,7 @@ function mapSecretMetadataRow(row: Record<string, unknown>): SecretMetadataRow {
 		binding_key: String(row['binding_key']),
 		name: String(row['name']),
 		description: String(row['description']),
+		allowed_hosts: String(row['allowed_hosts']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 		expires_at: row['expires_at'] == null ? null : String(row['expires_at']),

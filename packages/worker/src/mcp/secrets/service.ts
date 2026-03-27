@@ -1,3 +1,9 @@
+import {
+	normalizeAllowedHosts,
+	normalizeHost,
+	parseAllowedHosts,
+	stringifyAllowedHosts,
+} from './allowed-hosts.ts'
 import { decryptSecretValue, encryptSecretValue } from './crypto.ts'
 import {
 	deleteSecretEntry,
@@ -60,6 +66,7 @@ export type ResolvedSecret = {
 	found: boolean
 	value: string | null
 	scope: SecretScope | null
+	allowedHosts: Array<string>
 }
 
 export async function saveSecret(
@@ -94,6 +101,7 @@ export async function saveSecret(
 			name,
 			description,
 			encrypted_value: await encryptSecretValue(input.env, value),
+			allowed_hosts: existingEntry?.allowed_hosts ?? '[]',
 			created_at: existingEntry?.created_at ?? now,
 			updated_at: now,
 		},
@@ -103,6 +111,9 @@ export async function saveSecret(
 		scope: input.scope,
 		description,
 		appId: input.scope === 'app' ? bucket.binding_key : null,
+		allowedHosts: existingEntry
+			? parseAllowedHosts(existingEntry.allowed_hosts)
+			: [],
 		createdAt: existingEntry?.created_at ?? now,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,
@@ -132,6 +143,7 @@ export async function listSecrets(
 			scope: row.scope,
 			description: row.description,
 			appId: row.scope === 'app' ? row.binding_key : null,
+			allowedHosts: parseAllowedHosts(row.allowed_hosts),
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
 			expiresAt: row.expires_at,
@@ -163,12 +175,14 @@ export async function resolveSecret(
 			found: true,
 			value: await decryptSecretValue(input.env, entry.encrypted_value),
 			scope,
+			allowedHosts: parseAllowedHosts(entry.allowed_hosts),
 		}
 	}
 	return {
 		found: false,
 		value: null,
 		scope: null,
+		allowedHosts: [],
 	}
 }
 
@@ -233,6 +247,7 @@ export async function updateSecret(
 			encrypted_value: hasValueUpdate
 				? await encryptSecretValue(input.env, nextValue!)
 				: existingEntry.encrypted_value,
+			allowed_hosts: existingEntry.allowed_hosts,
 			created_at: existingEntry.created_at,
 			updated_at: now,
 		},
@@ -242,6 +257,7 @@ export async function updateSecret(
 		scope: input.scope,
 		description: nextDescription,
 		appId: input.scope === 'app' ? bucket.binding_key : null,
+		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,
@@ -285,6 +301,7 @@ export async function listAppSecretsByAppIds(input: {
 				scope: row.scope,
 				description: row.description,
 				appId,
+				allowedHosts: parseAllowedHosts(row.allowed_hosts),
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 				expiresAt: row.expires_at,
@@ -418,6 +435,7 @@ function toSecretMetadata(input: {
 	scope: SecretScope
 	description: string
 	appId: string | null
+	allowedHosts: Array<string>
 	createdAt: string
 	updatedAt: string
 	expiresAt: string | null
@@ -427,11 +445,76 @@ function toSecretMetadata(input: {
 		scope: input.scope,
 		description: input.description,
 		appId: input.appId,
+		allowedHosts: normalizeAllowedHosts(input.allowedHosts),
 		createdAt: input.createdAt,
 		updatedAt: input.updatedAt,
 		ttlMs:
 			input.expiresAt == null
 				? null
 				: Math.max(0, new Date(input.expiresAt).getTime() - Date.now()),
+	}
+}
+
+export async function setSecretAllowedHosts(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	scope: SecretScope
+	allowedHosts: Array<string>
+	secretContext?: SecretContext | null
+}) {
+	const name = input.name.trim()
+	if (!name) {
+		throw new Error('Secret name is required.')
+	}
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: input.scope,
+		secretContext: input.secretContext ?? null,
+	})
+	if (!bucket) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const existingEntry = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name,
+	})
+	if (!existingEntry) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const now = new Date().toISOString()
+	await upsertSecretEntry({
+		db: input.env.APP_DB,
+		row: {
+			...existingEntry,
+			allowed_hosts: stringifyAllowedHosts(input.allowedHosts),
+			updated_at: now,
+		},
+	})
+	return toSecretMetadata({
+		name,
+		scope: input.scope,
+		description: existingEntry.description,
+		appId: input.scope === 'app' ? bucket.binding_key : null,
+		allowedHosts: input.allowedHosts,
+		createdAt: existingEntry.created_at,
+		updatedAt: now,
+		expiresAt: bucket.expires_at,
+	})
+}
+
+export async function resolveSecretForHost(
+	input: ResolveSecretInput & {
+		host: string
+	},
+) {
+	const normalizedHost = normalizeHost(input.host)
+	const resolved = await resolveSecret(input)
+	if (!resolved.found) return resolved
+	return {
+		...resolved,
+		allowedForHost: resolved.allowedHosts.includes(normalizedHost),
 	}
 }

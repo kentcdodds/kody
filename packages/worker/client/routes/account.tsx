@@ -1,56 +1,111 @@
 import { type Handle } from 'remix/component'
-import { colors, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	type AccountStatus,
+	type ApprovalAction,
+	type ApprovalView,
+	accountSecretsApiPath,
+	readJson,
+	submitApprovalRequest,
+} from '#client/routes/account-approval-shared.ts'
 
-type AccountStatus = 'idle' | 'loading' | 'ready' | 'error'
+type AccountSecretsPayload = {
+	ok: true
+	email: string
+	approval: ApprovalView | null
+}
 
 export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
+	let approval: ApprovalView | null = null
 	let message: string | null = null
+	let submittingApprovalAction: ApprovalAction | null = null
+	let lastLoadedHref = ''
 
-	async function loadAccount(signal: AbortSignal) {
+	async function loadAccountSecrets(signal: AbortSignal) {
 		try {
-			const response = await fetch('/session', {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
+			const href =
+				typeof window === 'undefined' ? '/account' : window.location.href
+			lastLoadedHref = href
+			const response = await fetch(
+				`${accountSecretsApiPath}${new URL(href).search}`,
+				{
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+					signal,
+				},
+			)
 			if (signal.aborted) return
-			const payload = await response.json().catch(() => null)
-			const sessionEmail =
-				response.ok &&
-				payload?.ok &&
-				typeof payload?.session?.email === 'string'
-					? payload.session.email.trim()
-					: ''
-			if (!sessionEmail) {
+			if (response.status === 401) {
 				window.location.assign('/login')
 				return
 			}
-			email = sessionEmail
+			const payload = await readJson<AccountSecretsPayload>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load your account secrets.')
+			}
+			email = payload.email
+			approval = payload.approval
 			status = 'ready'
 			message = null
+			submittingApprovalAction = null
 			handle.update()
-		} catch {
+		} catch (error) {
 			if (signal.aborted) return
 			status = 'error'
-			message = 'Unable to load your account.'
+			message =
+				error instanceof Error ? error.message : 'Unable to load your account.'
+			handle.update()
+		}
+	}
+
+	async function submitApproval(action: ApprovalAction) {
+		if (!approval || submittingApprovalAction != null) return
+		submittingApprovalAction = action
+		message = null
+		handle.update()
+		try {
+			const payload = await submitApprovalRequest<
+				AccountSecretsPayload & { error?: string; ok?: boolean }
+			>(action, approval.token)
+			if (!payload) return
+			email = payload.email
+			approval = payload.approval
+			submittingApprovalAction = null
+			message =
+				action === 'approve'
+					? 'Approved requested host.'
+					: 'Rejected host approval request.'
+			handle.update()
+			if (typeof window !== 'undefined' && window.location.search) {
+				window.history.replaceState(null, '', '/account')
+				lastLoadedHref = window.location.href
+			}
+		} catch (error) {
+			submittingApprovalAction = null
+			message =
+				error instanceof Error ? error.message : 'Unable to process approval.'
 			handle.update()
 		}
 	}
 
 	return () => {
-		if (status === 'loading') {
-			handle.queueTask(loadAccount)
+		const currentHref =
+			typeof window === 'undefined' ? '/account' : window.location.href
+		const isRefreshingForLocationChange =
+			status !== 'loading' && currentHref !== lastLoadedHref
+		if (status === 'loading' || isRefreshingForLocationChange) {
+			handle.queueTask(loadAccountSecrets)
 		}
 
 		return (
 			<section
 				css={{
-					maxWidth: '28rem',
+					maxWidth: '64rem',
 					margin: '0 auto',
 					display: 'grid',
-					gap: spacing.lg,
+					gap: spacing.xl,
 				}}
 			>
 				<header css={{ display: 'grid', gap: spacing.xs }}>
@@ -62,19 +117,150 @@ export function AccountRoute(handle: Handle) {
 							margin: 0,
 						}}
 					>
-						{email ? `Welcome, ${email}` : 'Welcome'}
+						{email ? `${email} account` : 'Account'}
 					</h1>
-					<p css={{ color: colors.textMuted }}>You are signed in to kody.</p>
+					<p css={{ color: colors.textMuted, margin: 0 }}>
+						Review approval requests and manage your stored secrets.
+					</p>
 				</header>
+
+				{approval && !isRefreshingForLocationChange ? (
+					<section
+						css={{
+							display: 'grid',
+							gap: spacing.md,
+							padding: spacing.lg,
+							borderRadius: '1rem',
+							border: `1px solid ${colors.primary}`,
+							backgroundColor: colors.primarySoftest,
+						}}
+					>
+						<div css={{ display: 'grid', gap: spacing.xs }}>
+							<h2
+								css={{
+									margin: 0,
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								}}
+							>
+								Approve host access
+							</h2>
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								Allow <code>{approval.requestedHost}</code> to receive secret{' '}
+								<code>{approval.name}</code> from the {approval.scope} scope.
+							</p>
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								Current allowed hosts:{' '}
+								{approval.currentAllowedHosts.length > 0
+									? approval.currentAllowedHosts.join(', ')
+									: 'none'}
+							</p>
+						</div>
+						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+							<button
+								type="button"
+								disabled={
+									submittingApprovalAction != null ||
+									isRefreshingForLocationChange
+								}
+								on={{ click: () => void submitApproval('approve') }}
+								css={primaryButtonCss}
+							>
+								Approve host
+							</button>
+							<button
+								type="button"
+								disabled={
+									submittingApprovalAction != null ||
+									isRefreshingForLocationChange
+								}
+								on={{ click: () => void submitApproval('reject') }}
+								css={secondaryButtonCss}
+							>
+								Reject
+							</button>
+						</div>
+					</section>
+				) : null}
+
 				{status === 'loading' ? (
-					<p css={{ color: colors.textMuted }}>Loading your account…</p>
+					<p css={{ color: colors.textMuted, margin: 0 }}>
+						Loading secret approvals…
+					</p>
 				) : null}
 				{message ? (
-					<p css={{ color: colors.error }} role="alert">
+					<p
+						css={{ color: status === 'error' ? colors.error : colors.text }}
+						role="alert"
+					>
 						{message}
 					</p>
+				) : null}
+
+				{status === 'ready' ? (
+					<section
+						css={{
+							display: 'grid',
+							gap: spacing.md,
+							padding: spacing.lg,
+							border: `1px solid ${colors.border}`,
+							borderRadius: '1rem',
+							backgroundColor: colors.surface,
+						}}
+					>
+						<h2
+							css={{
+								margin: 0,
+								fontSize: typography.fontSize.lg,
+								fontWeight: typography.fontWeight.semibold,
+								color: colors.text,
+							}}
+						>
+							Secret management
+						</h2>
+						<p css={{ margin: 0, color: colors.textMuted }}>
+							Create, edit, and delete secrets from the dedicated management
+							page.
+						</p>
+						<div>
+							<a
+								href="/account/secrets"
+								css={{
+									color: colors.primaryText,
+									textDecoration: 'none',
+									fontWeight: typography.fontWeight.medium,
+									'&:hover': {
+										textDecoration: 'underline',
+									},
+								}}
+							>
+								Manage secrets
+							</a>
+						</div>
+					</section>
 				) : null}
 			</section>
 		)
 	}
+}
+
+const primaryButtonCss = {
+	padding: `${spacing.sm} ${spacing.md}`,
+	borderRadius: '999px',
+	border: 'none',
+	backgroundColor: colors.primary,
+	color: 'white',
+	fontWeight: typography.fontWeight.medium,
+	cursor: 'pointer',
+	[mq.mobile]: {
+		width: '100%',
+	},
+}
+
+const secondaryButtonCss = {
+	...primaryButtonCss,
+	backgroundColor: 'transparent',
+	color: colors.text,
+	border: `1px solid ${colors.border}`,
 }
