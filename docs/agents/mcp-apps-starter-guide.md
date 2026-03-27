@@ -9,6 +9,12 @@ bridges host actions back to the MCP App host.
 Use this when replacing starter tools/resources with your own product-specific
 UI and workflows.
 
+For any generated UI that saves secrets or makes secret-bearing outbound
+requests, also read [`secret-host-approval.md`](./secret-host-approval.md). In
+this repo, allowed outbound hosts are privileged policy that may only be changed
+through the authenticated account admin UI, never by MCP tools or generated UI
+code.
+
 ## Goals
 
 - Build MCP tools that can open interactive UI widgets in MCP App-compatible
@@ -125,6 +131,12 @@ host, and the host fulfills that request by calling the Kody MCP server's
 `execute` tool with `{ code }`. Treat it as a narrow convenience wrapper around
 that host-mediated tool call.
 
+If `executeCode(...)` eventually performs a request that injects a secret
+placeholder, the widget must not assume it can authorize the destination host on
+its own. Host approval belongs only to the account admin UI. A generated UI may
+collect secrets, save them, inspect metadata, and surface approval links, but it
+must not try to set or widen allowed hosts directly.
+
 You can also send simplified MCP-UI actions via `window.parent.postMessage(...)`
 (`type: 'tool' | 'prompt' | 'notify' | 'link'`) when using the `mcpApps`
 adapter. Those shorthand actions depend on adapter translation and may not be
@@ -224,6 +236,11 @@ asset/navigation URLs to absolute app URLs before assigning the HTML.
   dedicated widget origin.
 - Request only required permissions in `_meta.ui.permissions`.
 - Avoid embedding secrets or private tokens in UI payloads.
+- Do not add any generated-UI path that mutates a secret's allowed hosts.
+- If a secret-bearing request is blocked on host approval, send the user to the
+  admin approval UI and retry only after they approve it.
+- Saving a secret and approving a host are separate actions. Keep them separate
+  in both code and docs.
 
 ## Quality checklist before merge
 
