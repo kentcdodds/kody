@@ -215,7 +215,6 @@ test('readSavedAppSourceFromHostToolResult preserves host tool errors', () => {
 		errorMessage: 'Saved app not found for this user.',
 	})
 })
-
 test('buildLocalMessageLogRuntimeSource logs sendMessage locally outside hosted contexts', () => {
 	const originalWindow = globalThis.window
 	const originalDocument = globalThis.document

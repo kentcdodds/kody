@@ -496,11 +496,12 @@ export function readSavedAppSourceFromHostToolResult(
 			errorMessage,
 		}
 	}
+	const code = typeof structuredContent?.code === 'string'
+		? structuredContent.code
+		: null
 	const structuredContent = isRecord(result.structuredContent)
 		? result.structuredContent
 		: null
-	const code =
-		typeof structuredContent?.code === 'string' ? structuredContent.code : null
 	if (!code) {
 		return {
 			handled: true as const,
