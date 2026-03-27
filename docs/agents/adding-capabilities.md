@@ -200,7 +200,7 @@ the domain modules.
    `capabilities: [..., yourCapability]`.
 5. If the domain uses `index.ts`, ensure it still exports `domain` /
    `codingCapabilities`-style aliases as needed for local imports.
-6. Add or update tests in `packages/worker/src/mcp/mcp-server-e2e.test.ts` for
+6. Add or update tests in `packages/worker/src/mcp/*.mcp-e2e.test.ts` for
    MCP-visible behavior.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
@@ -295,12 +295,18 @@ Public MCP behavior should be verified through the compact tool surface:
   ranked results
 - use `execute` to confirm the capability runs correctly
 
-Prefer E2E tests in `packages/worker/src/mcp/mcp-server-e2e.test.ts` for the
-real MCP contract.
+Prefer E2E tests in `packages/worker/src/mcp/*.mcp-e2e.test.ts` for the real
+MCP contract.
 
 Registry invariants (duplicate capability names, domain/capability mismatches,
 duplicate domain registration) are covered in
-`packages/worker/src/mcp/capabilities/build-capability-registry.test.ts`.
+`packages/worker/src/mcp/capabilities/build-capability-registry.workers.test.ts`.
+
+Use filename suffixes to choose the Vitest project:
+
+- `*.node.test.ts`: runs in the Node unit project
+- `*.workers.test.ts`: runs in the Cloudflare Workers unit project
+- `*.mcp-e2e.test.ts`: runs in the dedicated MCP E2E project
 
 ## Naming
 

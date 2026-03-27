@@ -24,7 +24,7 @@ magic.
   the flow is important enough to justify the maintenance cost.
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
-  `packages/worker/src/mcp/mcp-server-e2e.test.ts`.
+  `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
 
 ## Examples
 

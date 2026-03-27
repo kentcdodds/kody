@@ -17,14 +17,7 @@ export default mergeConfig(
 		],
 		test: {
 			name: 'workers-unit',
-			include: [
-				'packages/worker/src/mcp-auth.test.ts',
-				'packages/worker/src/oauth-handlers.test.ts',
-				'packages/worker/src/mcp/observability.test.ts',
-				'packages/worker/src/mcp/capabilities/build-capability-registry.test.ts',
-				'packages/worker/src/mcp/capabilities/capability-search.test.ts',
-				'packages/worker/src/mcp/capabilities/unified-search.test.ts',
-			],
+			include: ['**/*.workers.test.ts'],
 		},
 	}),
 )
