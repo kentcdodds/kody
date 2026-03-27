@@ -7,6 +7,7 @@ type SavedUiArtifact = {
 	title: string
 	description: string
 	keywords: Array<string>
+	params: Record<string, unknown>
 	runtime: 'html' | 'javascript'
 	code: string
 	createdAt: string
@@ -62,6 +63,7 @@ async function loadSavedUi(appId: string) {
 			app_id?: string
 			title?: string
 			description?: string
+			params?: Record<string, unknown>
 			runtime?: 'html' | 'javascript'
 			code?: string
 			created_at?: string
@@ -77,6 +79,12 @@ async function loadSavedUi(appId: string) {
 		title: payload.app.title ?? 'Saved UI',
 		description: payload.app.description ?? '',
 		keywords: [],
+		params:
+			payload.app.params &&
+			typeof payload.app.params === 'object' &&
+			!Array.isArray(payload.app.params)
+				? payload.app.params
+				: {},
 		runtime: payload.app.runtime ?? 'html',
 		code: payload.app.code ?? '',
 		createdAt: payload.app.created_at ?? '',
@@ -157,6 +165,7 @@ export function SavedUiRoute(handle: Handle) {
 							appId: artifact.appId,
 							title: artifact.title,
 							description: artifact.description,
+							params: artifact.params,
 							appSession: artifact.appSession,
 						},
 					},
@@ -368,6 +377,7 @@ export function SavedUiRoute(handle: Handle) {
 						app_id: artifact.appId,
 						title: artifact.title,
 						description: artifact.description,
+						params: artifact.params,
 						runtime: artifact.runtime,
 						code: artifact.code,
 					},

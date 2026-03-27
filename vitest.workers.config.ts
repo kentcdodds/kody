@@ -24,6 +24,7 @@ export default mergeConfig(
 				'packages/worker/src/mcp/capabilities/build-capability-registry.test.ts',
 				'packages/worker/src/mcp/capabilities/capability-search.test.ts',
 				'packages/worker/src/mcp/capabilities/unified-search.test.ts',
+				'packages/worker/client/mcp-apps/**/*.test.ts',
 			],
 		},
 	}),

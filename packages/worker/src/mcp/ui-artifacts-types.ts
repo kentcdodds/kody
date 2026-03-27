@@ -8,6 +8,7 @@ export type UiArtifactRow = {
 	keywords: string
 	code: string
 	runtime: UiArtifactRuntime
+	parameters: string | null
 	search_text: string | null
 	created_at: string
 	updated_at: string

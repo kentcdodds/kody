@@ -4,12 +4,17 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getUiArtifactById, parseStringArray } from '#mcp/ui-artifacts-repo.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	parseUiArtifactParameters,
+	uiArtifactParameterSchema,
+} from '#mcp/ui-artifact-parameters.ts'
 
 const outputSchema = z.object({
 	app_id: z.string(),
 	title: z.string(),
 	description: z.string(),
 	keywords: z.array(z.string()),
+	parameters: z.array(uiArtifactParameterSchema).nullable(),
 	code: z
 		.string()
 		.describe('Generated UI source code to render inside the generic shell.'),
@@ -51,6 +56,7 @@ export const uiGetAppCapability = defineDomainCapability(
 				title: row.title,
 				description: row.description,
 				keywords: parseStringArray(row.keywords),
+				parameters: parseUiArtifactParameters(row.parameters),
 				code: row.code,
 				runtime: row.runtime,
 				search_text: row.search_text,

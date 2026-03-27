@@ -7,6 +7,10 @@ import { deleteUiArtifact, insertUiArtifact } from '#mcp/ui-artifacts-repo.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	normalizeUiArtifactParameters,
+	uiArtifactParameterSchema,
+} from '#mcp/ui-artifact-parameters.ts'
 
 const inputSchema = z.object({
 	title: z.string().min(1).describe('Short title for the saved UI artifact.'),
@@ -35,12 +39,19 @@ const inputSchema = z.object({
 		.describe(
 			'Optional retrieval-only text that improves search recall without being part of the visible app description.',
 		),
+	parameters: z
+		.array(uiArtifactParameterSchema)
+		.optional()
+		.describe(
+			'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on window.kodyWidget.params.',
+		),
 })
 
 const outputSchema = z.object({
 	app_id: z.string(),
 	runtime: z.enum(['html', 'javascript']),
 	hosted_url: z.string().url(),
+	parameters: z.array(uiArtifactParameterSchema).nullable(),
 })
 
 export const uiSaveAppCapability = defineDomainCapability(
@@ -59,6 +70,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const appId = crypto.randomUUID()
 			const now = new Date().toISOString()
+			const parameters = normalizeUiArtifactParameters(args.parameters)
 			await insertUiArtifact(ctx.env.APP_DB, {
 				id: appId,
 				user_id: user.userId,
@@ -68,6 +80,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				code: args.code,
 				runtime: args.runtime,
 				search_text: args.search_text ?? null,
+				parameters: parameters ? JSON.stringify(parameters) : null,
 				created_at: now,
 				updated_at: now,
 			})
@@ -82,6 +95,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						keywords: args.keywords,
 						searchText: args.search_text ?? null,
 						runtime: args.runtime,
+						parameters,
 					}),
 				})
 			} catch (cause) {
@@ -93,6 +107,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				app_id: appId,
 				runtime: args.runtime,
 				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
+				parameters,
 			}
 		},
 	},

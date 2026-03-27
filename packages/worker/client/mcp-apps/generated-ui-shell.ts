@@ -34,6 +34,7 @@ type RenderEnvelope = {
 	code?: string
 	appId?: string
 	runtime?: AppRuntime
+	params?: Record<string, unknown>
 	appSession?: AppSessionEnvelope | null
 }
 
@@ -72,6 +73,15 @@ type HostToolResult = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
+}
+
+function coerceJsonRecord(value: unknown): Record<string, unknown> | undefined {
+	if (!isRecord(value)) return undefined
+	const out: Record<string, unknown> = Object.create(null)
+	for (const [key, entry] of Object.entries(value)) {
+		out[key] = entry
+	}
+	return out
 }
 
 function normalizeMeasuredValue(value: unknown) {
@@ -268,6 +278,22 @@ function decodeHtmlAttribute(value: string) {
 		.replaceAll('&amp;', '&')
 }
 
+export function injectRuntimeStateIntoDocument(
+	code: string,
+	params: Record<string, unknown> | undefined,
+) {
+	const paramsJson = JSON.stringify(params ?? {})
+	const bootstrap = `
+<script>
+window.kodyWidget = window.kodyWidget ?? {};
+window.kodyWidget.params = ${paramsJson};
+window.params = window.kodyWidget.params;
+window.__kodyAppParams = window.kodyWidget.params;
+</script>
+	`.trim()
+	return injectIntoHtmlDocument(code, bootstrap, null)
+}
+
 function isNonNavigableUrl(value: string) {
 	const normalizedValue = value.trim().toLowerCase()
 	return (
@@ -430,8 +456,9 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 				: undefined
 	const appId = typeof value.appId === 'string' ? value.appId : undefined
 	const runtime = coerceRuntime(value.runtime) ?? (code ? 'html' : undefined)
+	const params = coerceJsonRecord(value.params)
 	const appSession = coerceAppSession(value.appSession)
-	return { mode: renderSource, code, appId, runtime, appSession }
+	return { mode: renderSource, code, appId, runtime, params, appSession }
 }
 
 function getEnvelopeFromRenderData(renderData: RenderDataEnvelope | undefined) {
@@ -681,6 +708,14 @@ function initializeGeneratedUiShell() {
 
 	function escapeInlineModuleSource(code: string) {
 		return code.replace(/<\/script/gi, '<\\/script')
+	}
+
+	function buildParamsBootstrapSource(params: Record<string, unknown> | undefined) {
+		const paramsJson = JSON.stringify(params ?? {})
+		return `
+const __kodyResolvedParams = ${paramsJson};
+window.__kodyAppParams = __kodyResolvedParams;
+		`.trim()
 	}
 
 	function buildShellStyles(theme: ThemeName | null) {
@@ -1168,6 +1203,7 @@ async function requestSecretAction(type, input, responseType) {
 	return payload && typeof payload === 'object' ? payload.response : null;
 }
 window.kodyWidget = {
+	params: window.__kodyAppParams ?? {},
 	sendMessage(text) {
 		if (window.parent === window) return false;
 		window.parent.postMessage({
@@ -1692,6 +1728,7 @@ window.addEventListener('unhandledrejection', (event) => {
 	function buildInlineModuleSource(code: string) {
 		const safeCode = escapeInlineModuleSource(code)
 		return `
+${buildParamsBootstrapSource(latestEnvelope?.params)}
 ${buildChildBridgeRuntimeSource()}
 ${safeCode}
 		`.trim()
@@ -1776,6 +1813,9 @@ ${safeCode}
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		${buildHeadInjection(theme)}
+		<script>
+${buildParamsBootstrapSource(latestEnvelope?.params)}
+		</script>
 	</head>
 	<body data-kody-runtime="fragment">
 ${code}
@@ -1840,6 +1880,7 @@ ${inlineModuleSource}
 		return {
 			code,
 			runtime: coerceRuntime(app.runtime) ?? 'html',
+			params: coerceJsonRecord(app.params),
 		}
 	}
 
@@ -1868,6 +1909,9 @@ ${inlineModuleSource}
 		try {
 			const resolved = await resolveSavedAppCode(envelope.appId)
 			if (latestEnvelope !== envelope) return
+			if (resolved.params) {
+				envelope.params = resolved.params
+			}
 			setFrameSource(resolved.code, resolved.runtime)
 		} catch (error) {
 			if (latestEnvelope !== envelope) return

@@ -965,6 +965,221 @@ test('mcp server saves app, search returns app hit, and open_generated_ui suppor
 	expect(openText).toContain(`${server.origin}/ui/${appId}`)
 })
 
+test('mcp server supports parameterized saved apps with resolved runtime params', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_save_app({
+						title: 'Parameterized Greeting App',
+						description: 'Reusable greeting UI with runtime params.',
+						keywords: ['greeting', 'parameterized', 'ui'],
+						parameters: [
+							{
+								name: 'name',
+								description: 'Name to greet.',
+								type: 'string',
+								required: true,
+							},
+							{
+								name: 'showConfetti',
+								description: 'Whether to celebrate.',
+								type: 'boolean',
+								default: false,
+							},
+						],
+						code: '<main><h1>Greeting App</h1></main>',
+						search_text: 'parameterized greeting ui app',
+					})`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const savedApp = saveStructured?.result as Record<string, unknown> | undefined
+	const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+	expect(appId).not.toBeNull()
+
+	const getResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => await codemode.ui_get_app({ app_id: ${JSON.stringify(appId)} })`,
+		},
+	})
+	const getStructured = (getResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const getPayload = getStructured?.result as Record<string, unknown> | undefined
+	expect(getPayload?.parameters).toEqual([
+		{
+			name: 'name',
+			description: 'Name to greet.',
+			type: 'string',
+			required: true,
+		},
+		{
+			name: 'showConfetti',
+			description: 'Whether to celebrate.',
+			type: 'boolean',
+			required: false,
+			default: false,
+		},
+	])
+
+	const searchResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'parameterized greeting ui app',
+			limit: 10,
+			detail: true,
+		},
+	})
+	const searchStructured = (searchResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const searchPayload = searchStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	const matches = searchPayload?.matches as
+		| Array<Record<string, unknown>>
+		| undefined
+	const appMatch = matches?.find(
+		(match) => match.type === 'app' && match.appId === appId,
+	)
+	expect(appMatch?.parameters).toEqual([
+		{
+			name: 'name',
+			description: 'Name to greet.',
+			type: 'string',
+			required: true,
+		},
+		{
+			name: 'showConfetti',
+			description: 'Whether to celebrate.',
+			type: 'boolean',
+			required: false,
+			default: false,
+		},
+	])
+	expect(appMatch?.usage).toContain('"params"')
+
+	const openResult = await mcpClient.client.callTool({
+		name: 'open_generated_ui',
+		arguments: {
+			app_id: appId,
+			params: {
+				name: 'Kent',
+				showConfetti: true,
+			},
+		},
+	})
+	const openStructured = (openResult as CallToolResult).structuredContent as
+		| {
+				params?: Record<string, unknown>
+				appSession?: {
+					token?: string
+					endpoints?: {
+						source?: string
+						execute?: string
+					}
+				}
+		  }
+		| undefined
+	expect(openStructured?.params).toEqual({
+		name: 'Kent',
+		showConfetti: true,
+	})
+	const token =
+		typeof openStructured?.appSession?.token === 'string'
+			? openStructured.appSession.token
+			: null
+	const sourceUrl =
+		typeof openStructured?.appSession?.endpoints?.source === 'string'
+			? openStructured.appSession.endpoints.source
+			: null
+	const executeUrl =
+		typeof openStructured?.appSession?.endpoints?.execute === 'string'
+			? openStructured.appSession.endpoints.execute
+			: null
+	expect(token).not.toBeNull()
+	expect(sourceUrl).toContain('/ui-api/')
+	expect(executeUrl).toContain('/ui-api/')
+
+	const sourceResponse = await fetch(sourceUrl!, {
+		headers: {
+			Authorization: `Bearer ${token}`,
+			Accept: 'application/json',
+		},
+	})
+	expect(sourceResponse.ok).toBe(true)
+	const sourcePayload = (await sourceResponse.json()) as {
+		ok?: boolean
+		app?: {
+			app_id?: string
+			parameters?: Array<Record<string, unknown>>
+			params?: Record<string, unknown>
+		}
+	}
+	expect(sourcePayload.ok).toBe(true)
+	expect(sourcePayload.app?.app_id).toBe(appId)
+	expect(sourcePayload.app?.parameters).toEqual([
+		{
+			name: 'name',
+			description: 'Name to greet.',
+			type: 'string',
+			required: true,
+		},
+		{
+			name: 'showConfetti',
+			description: 'Whether to celebrate.',
+			type: 'boolean',
+			required: false,
+			default: false,
+		},
+	])
+	expect(sourcePayload.app?.params).toEqual({
+		name: 'Kent',
+		showConfetti: true,
+	})
+
+	const executeResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async (params) => ({
+				name: params.name,
+				showConfetti: params.showConfetti,
+			})`,
+		}),
+	})
+	expect(executeResponse.ok).toBe(true)
+	const executePayload = (await executeResponse.json()) as {
+		ok?: boolean
+		result?: Record<string, unknown>
+	}
+	expect(executePayload).toMatchObject({
+		ok: true,
+		result: {
+			name: 'Kent',
+			showConfetti: true,
+		},
+	})
+})
+
 test('generated ui sessions support secret storage, execute-time resolution, and scoped search visibility', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
