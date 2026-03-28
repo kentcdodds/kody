@@ -602,9 +602,6 @@ async function handleSave(params) {
 
 async function updateSecretPolicies(params) {
   if (!params.connector) return
-  if (params.scope !== 'app') {
-    throw new Error('Connector secrets must use the app scope.')
-  }
   const sessionToken =
     window.__kodyGeneratedUiBootstrap?.appSession?.token ?? null
   if (!sessionToken) {
