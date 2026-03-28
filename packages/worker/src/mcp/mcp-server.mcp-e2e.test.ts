@@ -30,7 +30,7 @@ import {
 
 const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const migrationsDir = join(projectRoot, 'packages/worker/migrations')
-const generatedUiResourceUri = 'ui://generated-ui-shell/entry-point.html'
+const generatedUiResourceUri = 'ui://generated-ui-runtime/entry-point.html'
 const workerConfig = 'packages/worker/wrangler.jsonc'
 const workerEnvFile = 'packages/worker/.env'
 const primaryUserEmail = 'me@kentcdodds.com'
@@ -805,7 +805,7 @@ test('mcp server returns structured guidance for missing secret errors in execut
 	})
 })
 
-test('mcp server opens generated ui with inline code and serves shell resource', async () => {
+test('mcp server opens generated ui with inline code and serves runtime resource', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -861,14 +861,14 @@ test('mcp server opens generated ui with inline code and serves shell resource',
 	expect(generatedResource?.mimeType).toBe('text/html;profile=mcp-app')
 	expect(generatedResource?.text).not.toContain('data-generated-ui-frame')
 	expect(generatedResource?.text).toContain('data-generated-ui-root')
-	expect(generatedResource?.text).toContain('"mode":"shell"')
+	expect(generatedResource?.text).toContain('"mode":"entry"')
 	expect(generatedResource?.text).not.toContain('Toggle fullscreen')
 	expect(generatedResource?.text).not.toContain('Open saved app link')
 	expect(generatedResource?.text).toContain('type="module"')
-	expect(generatedResource?.text).toContain('/mcp-apps/generated-ui-shell.js')
+	expect(generatedResource?.text).toContain('/mcp-apps/generated-ui-runtime.js')
 
 	const generatedShellResponse = await fetch(
-		new URL('/mcp-apps/generated-ui-shell.js', server.origin),
+		new URL('/mcp-apps/generated-ui-runtime.js', server.origin),
 	)
 	expect(generatedShellResponse.ok).toBe(true)
 	expect(generatedShellResponse.headers.get('content-type')).toContain(

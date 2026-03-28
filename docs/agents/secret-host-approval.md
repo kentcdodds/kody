@@ -81,7 +81,7 @@ This policy is especially important in:
 - secret create/update/list capabilities
 - capability input fields annotated with `x-kody-secret: true`
 - execute-time fetch documentation
-- generated UI shell documentation
+- generated UI runtime documentation
 - OAuth and other hosted callback examples
 
 ## Capability input placeholders

@@ -109,7 +109,7 @@ test('sendUserMessageWithFallback delivers ui/message to latest-protocol host', 
 
 	bridge = createWidgetHostBridge({
 		appInfo: {
-			name: 'generated-ui-shell',
+			name: 'generated-ui-runtime',
 			version: '1.0.0',
 		},
 		requestTimeoutMs: 500,
@@ -179,7 +179,7 @@ test('callTool proxies tools/call through the host bridge', async () => {
 
 	bridge = createWidgetHostBridge({
 		appInfo: {
-			name: 'generated-ui-shell',
+			name: 'generated-ui-runtime',
 			version: '1.0.0',
 		},
 		requestTimeoutMs: 500,
@@ -218,7 +218,7 @@ test('tool-result notification updates render data with structured content', asy
 
 	const bridge = createWidgetHostBridge({
 		appInfo: {
-			name: 'generated-ui-shell',
+			name: 'generated-ui-runtime',
 			version: '1.0.0',
 		},
 		onRenderData(renderData) {
@@ -303,7 +303,7 @@ test('sendSizeChanged posts the standard MCP Apps notification', async () => {
 
 	bridge = createWidgetHostBridge({
 		appInfo: {
-			name: 'generated-ui-shell',
+			name: 'generated-ui-runtime',
 			version: '1.0.0',
 		},
 		requestTimeoutMs: 500,

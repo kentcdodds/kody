@@ -155,15 +155,16 @@ const appHandler = withCors({
 			}
 		}
 
-		// Dev route: serve generated UI shell for iframe testing (simulates ChatGPT/MCP Jam)
+		// Dev route: serve generated UI runtime HTML entry for iframe testing.
 		if (
 			url.pathname === '/dev/generated-ui' &&
 			(request.method === 'GET' || request.method === 'HEAD')
 		) {
-			const { renderGeneratedUiShellEntryPoint } =
-				await import('./mcp/apps/generated-ui-shell-entry-point.ts')
+			const { renderGeneratedUiRuntimeHtmlEntry } = await import(
+				'./mcp/apps/generated-ui-runtime-html-entry.ts'
+			)
 			const baseUrl = new URL('/', url.origin)
-			const html = renderGeneratedUiShellEntryPoint(baseUrl)
+			const html = renderGeneratedUiRuntimeHtmlEntry(baseUrl)
 			return new Response(html, {
 				headers: {
 					'Content-Type': 'text/html; charset=utf-8',

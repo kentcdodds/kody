@@ -7,9 +7,9 @@ import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { getEnv } from '#app/env.ts'
 import { computeClaudeWidgetDomain } from '#mcp/apps/claude-widget-domain.ts'
 import {
-	generatedUiShellResourceUri,
-	renderGeneratedUiShellEntryPoint,
-} from '#mcp/apps/generated-ui-shell-entry-point.ts'
+	generatedUiRuntimeResourceUri,
+	renderGeneratedUiRuntimeHtmlEntry,
+} from '#mcp/apps/generated-ui-runtime-html-entry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { mcpResourcePath } from '../../mcp-auth.ts'
 
@@ -17,7 +17,7 @@ const generatedUiAppResource = {
 	name: 'generated_ui_app_resource',
 	title: 'Generated UI App Resource',
 	description:
-		'Generic MCP App shell for rendering generated UI artifacts in MCP App compatible hosts.',
+		'Generic MCP App runtime entry for rendering generated UI artifacts in MCP App compatible hosts.',
 } as const
 
 export async function registerGeneratedUiAppResource(
@@ -35,7 +35,7 @@ export async function registerGeneratedUiAppResource(
 	registerAppResource(
 		agent.server,
 		generatedUiAppResource.name,
-		generatedUiShellResourceUri,
+		generatedUiRuntimeResourceUri,
 		{
 			title: generatedUiAppResource.title,
 			description: generatedUiAppResource.description,
@@ -43,10 +43,10 @@ export async function registerGeneratedUiAppResource(
 		async () => {
 			const claudeWidgetDomain = await computeClaudeWidgetDomain(mcpServerUrl)
 			const uiResource = createUIResource({
-				uri: generatedUiShellResourceUri,
+				uri: generatedUiRuntimeResourceUri,
 				content: {
 					type: 'rawHtml',
-					htmlString: renderGeneratedUiShellEntryPoint(appBaseUrl),
+					htmlString: renderGeneratedUiRuntimeHtmlEntry(appBaseUrl),
 				},
 				encoding: 'text',
 				adapters: {

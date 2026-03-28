@@ -1,17 +1,17 @@
 import {
-	generatedUiShellScriptPath,
+	generatedUiRuntimeScriptPath,
 	generatedUiRuntimeStylesheetPath,
 	resolveGeneratedUiAssetUrl,
 } from '@kody-internal/shared/generated-ui-asset-paths.ts'
 import { escapeInlineScriptSource } from '@kody-internal/shared/generated-ui-documents.ts'
-import { type GeneratedUiRuntimeBootstrap } from '@kody-internal/shared/generated-ui-runtime-types.ts'
+import { type GeneratedUiRuntimeBootstrap } from '#client/mcp-apps/generated-ui-runtime-controller.ts'
 
-export const generatedUiShellResourceUri =
-	'ui://generated-ui-shell/entry-point.html' as const
+export const generatedUiRuntimeResourceUri =
+	'ui://generated-ui-runtime/entry-point.html' as const
 
-export function renderGeneratedUiShellEntryPoint(baseUrl: string | URL) {
-	const shellScriptHref = resolveGeneratedUiAssetUrl(
-		generatedUiShellScriptPath,
+export function renderGeneratedUiRuntimeHtmlEntry(baseUrl: string | URL) {
+	const runtimeScriptHref = resolveGeneratedUiAssetUrl(
+		generatedUiRuntimeScriptPath,
 		baseUrl,
 	)
 	const stylesheetHref = resolveGeneratedUiAssetUrl(
@@ -19,7 +19,7 @@ export function renderGeneratedUiShellEntryPoint(baseUrl: string | URL) {
 		baseUrl,
 	)
 	const bootstrap: GeneratedUiRuntimeBootstrap = {
-		mode: 'shell',
+		mode: 'entry',
 	}
 	const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap))
 
@@ -29,7 +29,7 @@ export function renderGeneratedUiShellEntryPoint(baseUrl: string | URL) {
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Generated UI Shell</title>
+		<title>Generated UI Runtime</title>
 		<link rel="stylesheet" href="${stylesheetHref}" />
 		<script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
@@ -37,7 +37,7 @@ window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 	</head>
 	<body data-kody-runtime="fragment">
 		<div id="app" data-generated-ui-root></div>
-		<script type="module" src="${shellScriptHref}" crossorigin="anonymous"></script>
+		<script type="module" src="${runtimeScriptHref}" crossorigin="anonymous"></script>
 	</body>
 </html>
 `.trim()

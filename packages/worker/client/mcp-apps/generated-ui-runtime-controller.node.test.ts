@@ -6,7 +6,7 @@ import {
 	injectRuntimeStateIntoDocument,
 	measureRenderedFrameSize,
 	readSavedAppSourceFromHostToolResult,
-} from './generated-ui-shell.ts'
+} from './generated-ui-runtime-controller.ts'
 
 test('injectIntoHtmlDocument inserts into an existing head without adding an extra bracket', () => {
 	const result = injectIntoHtmlDocument(

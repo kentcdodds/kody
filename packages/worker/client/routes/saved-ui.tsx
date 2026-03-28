@@ -30,7 +30,7 @@ type SavedUiStatus = 'loading' | 'ready' | 'error'
 const latestProtocolVersion = '2026-01-26'
 const initializedNotificationMethod = 'ui/notifications/initialized'
 const renderDataType = 'ui-lifecycle-iframe-render-data'
-const generatedUiResourceUri = 'ui://generated-ui-shell/entry-point.html'
+const generatedUiResourceUri = 'ui://generated-ui-runtime/entry-point.html'
 
 function getSavedUiIdFromLocation() {
 	if (typeof window === 'undefined') return null

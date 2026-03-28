@@ -1,4 +1,4 @@
-export const generatedUiShellScriptPath = '/mcp-apps/generated-ui-shell.js'
+export const generatedUiRuntimeScriptPath = '/mcp-apps/generated-ui-runtime.js'
 export const generatedUiRuntimeStylesheetPath = '/mcp-apps/generated-ui-runtime.css'
 
 export function resolveGeneratedUiAssetUrl(

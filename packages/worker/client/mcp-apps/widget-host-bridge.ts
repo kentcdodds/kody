@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 type WidgetHostBridgeOptions = {
 	protocolVersion?: string
 	requestTimeoutMs?: number

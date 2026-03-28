@@ -1,10 +1,10 @@
 import { renderGeneratedUiDocument } from '@kody-internal/shared/generated-ui-documents.ts'
 import {
-	generatedUiShellScriptPath,
+	generatedUiRuntimeScriptPath,
 	generatedUiRuntimeStylesheetPath,
 	resolveGeneratedUiAssetUrl,
 } from '@kody-internal/shared/generated-ui-asset-paths.ts'
-import { type GeneratedUiRuntimeBootstrap } from '@kody-internal/shared/generated-ui-runtime-types.ts'
+import { type GeneratedUiRuntimeBootstrap } from '#client/mcp-apps/generated-ui-runtime-controller.ts'
 import { type GeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 
@@ -40,8 +40,8 @@ function buildHeadInjection(
 		generatedUiRuntimeStylesheetPath,
 		appBaseUrl,
 	)
-	const shellScriptSrc = resolveGeneratedUiAssetUrl(
-		generatedUiShellScriptPath,
+	const runtimeScriptSrc = resolveGeneratedUiAssetUrl(
+		generatedUiRuntimeScriptPath,
 		appBaseUrl,
 	)
 	const bootstrapJson = JSON.stringify(bootstrap).replace(
@@ -53,6 +53,6 @@ function buildHeadInjection(
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 </script>
-<script type="module" src="${shellScriptSrc}"></script>
+<script type="module" src="${runtimeScriptSrc}"></script>
 	`.trim()
 }

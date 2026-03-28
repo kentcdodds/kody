@@ -14,7 +14,7 @@ const outputSchema = z.object({
 	body: z
 		.string()
 		.describe(
-			'Markdown guidance for implementing OAuth in generated UI apps, including hosted callbacks, helper usage, host approval handling, and code examples.',
+			'Markdown guidance for implementing OAuth in generated UI apps, including hosted callbacks, PKCE versus server-side helper usage, token persistence, and code examples.',
 		),
 })
 
@@ -39,8 +39,28 @@ For browser-based OAuth callbacks, do not rely on an ephemeral inline render.
 Save the UI first with \`ui_save_app\`, then use the hosted saved-app URL as the
 provider callback or redirect target.
 
+Do not try to complete the OAuth flow inside the conversation iframe. OAuth
+callbacks must return to the hosted saved-app URL in a normal browser tab or
+window, so the agent should give the user that hosted URL and tell them to open
+it in their browser.
+
+\`executeCode(...)\` and secret-aware helper execution happen server-side. Do
+not use that server-side path to exchange an authorization code for tokens
+during the browser callback. For browser-based OAuth, exchange the code in the
+hosted browser page with \`exchangePkceOAuthCode(...)\` when the provider
+supports PKCE, then save the returned access token or refresh token as secrets.
+
+For hosted browser callback pages, prefer \`exchangePkceOAuthCode(...)\` when
+the provider supports PKCE and browser token exchanges. Treat
+\`exchangeOAuthCodeWithSecrets(...)\` as a separate server-side utility for
+confidential-client flows, not the default callback path in this guide.
+
 Use the generated UI OAuth helpers instead of hand-rolling URL parsing, state
 storage, token exchange, or token persistence.
+
+When the flow needs readable, non-sensitive configuration such as a client ID,
+save it with \`saveValue(...)\` and read it back with \`getValue(...)\` instead
+of treating it like a secret.
 
 ## Recommended capability and tool sequence
 
@@ -48,9 +68,11 @@ storage, token exchange, or token persistence.
 2. Save it with \`ui_save_app\` if the provider must redirect back to the app.
 3. Tell the user the exact hosted callback URL and any other provider
    registration values they need.
-4. Reopen or render the UI with \`open_generated_ui\`.
-5. In the generated UI, use the OAuth helpers on \`window.kodyWidget\` to read
-   the callback, validate state, exchange the code, and save tokens.
+4. Give the user the hosted saved-app URL and tell them to open it in their
+   browser instead of trying to complete the flow in the conversation iframe.
+5. In the hosted generated UI, use the OAuth helpers on \`window.kodyWidget\`
+   to read the callback, validate state, exchange the code in the browser, and
+   save tokens.
 
 ## Generated UI helpers to use
 
@@ -58,12 +80,54 @@ Use these helpers instead of hand-rolling the flow:
 
 - \`saveValue({ name, value, description?, scope? })\`
 - \`getValue({ name, scope? })\`
+- \`saveSecret({ name, value, description?, scope? })\`
 - \`createOAuthState(key)\`
 - \`readOAuthCallback({ expectedStateKey })\`
 - \`validateOAuthCallbackState({ key, returnedState })\`
-- \`exchangeOAuthCode({ tokenUrl, code, redirectUri, clientIdSecretName, clientSecretSecretName, scope?, extraParams? })\`
-- \`fetchWithSecrets({ url, method?, headers?, body? })\`
+- \`exchangePkceOAuthCode({ tokenUrl, code, redirectUri, clientId, codeVerifier, extraParams? })\`
+- \`exchangeOAuthCodeWithSecrets({ tokenUrl, code, redirectUri, clientId, clientSecretSecretName, scope?, extraParams? })\`
 - \`saveOAuthTokens({ payload, accessTokenSecretName, refreshTokenSecretName?, scope?, accessTokenDescription?, refreshTokenDescription? })\`
+
+## Choosing the exchange helper
+
+For hosted browser callback pages in a saved app:
+
+- prefer \`exchangePkceOAuthCode(...)\` when the provider supports PKCE and the
+  token endpoint is browser-safe
+- use \`exchangeOAuthCodeWithSecrets(...)\` only for an intentional server-side
+  confidential-client exchange, not as the default browser callback flow
+
+## Example: loading a saved client ID
+
+When the client ID is public configuration, read it with \`getValue(...)\`
+before building the authorization URL or token request.
+
+\`\`\`html
+<p id="status"></p>
+<script>
+  async function requireClientId() {
+    const clientIdRecord = await window.kodyWidget.getValue({
+      name: 'muffin-club-oauth-client-id',
+      scope: 'user',
+    })
+
+    if (!clientIdRecord) {
+      const message =
+        'Missing OAuth client ID. Ask the user to save the client configuration and retry.'
+      const status = document.querySelector('#status')
+      if (status) status.textContent = message
+      window.kodyWidget.sendMessage(message)
+      return null
+    }
+
+    return clientIdRecord.value
+  }
+</script>
+\`\`\`
+
+Use the returned value for \`client_id\` in the provider authorization URL or
+in \`exchangePkceOAuthCode(...)\` or \`exchangeOAuthCodeWithSecrets(...)\` when
+the provider treats the client ID as readable, non-secret configuration.
 
 ## Recommended app structure
 
@@ -76,18 +140,17 @@ For most provider-connection flows, structure the generated UI like this:
 3. A callback handler that runs when the provider redirects back with
    \`code\` and \`state\`.
 4. A success view that confirms the account is connected.
-5. An approval-required view when the token exchange is blocked by secret host
-   approval.
+5. An error view that explains what failed and what the user should do next.
 
 ## Recommended callback flow
 
 1. Read the callback with \`readOAuthCallback(...)\`.
 2. If the provider returned an OAuth error, show that error to the user.
 3. Validate the returned state with \`validateOAuthCallbackState(...)\`.
-4. Call \`exchangeOAuthCode(...)\` when both client credentials are secret-backed,
-   or use \`fetchWithSecrets(...)\` when the client ID is stored as a readable
-   value.
-5. If the exchange succeeds, call \`saveOAuthTokens(...)\`.
+4. For hosted browser callback pages, prefer \`exchangePkceOAuthCode(...)\`
+   when the provider supports PKCE and browser token exchanges.
+5. If the exchange succeeds, save the returned access token or refresh token
+   with \`saveOAuthTokens(...)\` or \`saveSecret(...)\`.
 6. Continue with whatever post-connect behavior the app needs.
 
 ## Registration values to give the user
@@ -157,6 +220,15 @@ authorization flow.
 </script>
 \`\`\`
 
+Saved secrets are not readable back into browser code. If the hosted callback
+page needs to exchange the authorization code in the browser, keep the browser
+exchange focused on values the page can access directly, such as the saved
+client ID and any provider-specific browser-safe parameters.
+
+If the provider requires a confidential-client secret for the token exchange,
+that is a different flow from the browser callback path described in this guide.
+Do not assume the hosted callback page can read the secret back out.
+
 ## Example: starting the authorization redirect
 
 Create and persist the OAuth state before redirecting the browser.
@@ -188,10 +260,15 @@ Create and persist the OAuth state before redirecting the browser.
 Reading the client ID from \`getValue(...)\` keeps it out of the UI source while
 still treating it as readable configuration rather than a secret.
 
+For PKCE flows, also create and store a code verifier before redirecting,
+include the derived \`code_challenge\` in the authorization URL, and pass the
+stored verifier to \`exchangePkceOAuthCode(...)\` on callback.
+
 ## Example: handling the callback
 
-This is the most important part of the flow. Treat the token exchange as a
-branching result, not a generic success or failure.
+This is the most important part of the flow. Exchange the code in the hosted
+browser page, then save the returned tokens only after the browser request
+succeeds.
 
 \`\`\`html
 <div id="app"></div>
@@ -222,24 +299,21 @@ branching result, not a generic success or failure.
       return
     }
 
-    const params = new URLSearchParams()
-    params.set('grant_type', 'authorization_code')
-    params.set('client_id', clientIdRecord.value)
-    params.set('client_secret', '{{secret:muffin-club-oauth-client-secret|scope=user}}')
-    params.set('code', code)
-    params.set('redirect_uri', window.location.origin + window.location.pathname)
+    const codeVerifier = sessionStorage.getItem('muffin-club-oauth-code-verifier')
+    if (!codeVerifier) {
+      root.innerHTML = '<p>Missing PKCE code verifier. Restart the connection flow.</p>'
+      return
+    }
 
-    const tokenResult = await window.kodyWidget.fetchWithSecrets({
-      url: 'https://auth.muffinclub.example/oauth/token',
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
+    const tokenResult = await window.kodyWidget.exchangePkceOAuthCode({
+      tokenUrl: 'https://auth.muffinclub.example/oauth/token',
+      code,
+      redirectUri: window.location.origin + window.location.pathname,
+      clientId: clientIdRecord.value,
+      codeVerifier,
     })
 
-    if (tokenResult.ok) {
+    if (tokenResult.ok && tokenResult.data && typeof tokenResult.data === 'object') {
       const saved = await window.kodyWidget.saveOAuthTokens({
         payload: tokenResult.data,
         accessTokenSecretName: 'muffin-club-access-token',
@@ -255,21 +329,9 @@ branching result, not a generic success or failure.
       return
     }
 
-    if (tokenResult.kind === 'host_approval_required') {
-      const approvalLink = tokenResult.approvalUrl
-        ? '<p><a href="' + tokenResult.approvalUrl + '" target="_blank" rel="noreferrer">Approve host access</a></p>'
-        : ''
-      root.innerHTML =
-        '<p>Kody needs approval to use your saved OAuth secret with ' +
-        (tokenResult.host || 'this provider host') +
-        '.</p>' +
-        approvalLink +
-        '<p>After approval, retry the connection flow.</p>'
-      return
-    }
-
-    const message =
-      tokenResult.kind === 'http_error'
+    const message = tokenResult.ok
+      ? 'Token exchange failed: invalid JSON response from the provider.'
+      : tokenResult.kind === 'http_error'
         ? 'Token exchange failed with HTTP status ' + tokenResult.status + '.'
         : 'Token exchange failed: ' + tokenResult.message
     root.innerHTML = '<p>' + message + '</p>'
@@ -283,41 +345,40 @@ branching result, not a generic success or failure.
 </script>
 \`\`\`
 
-## Host approval behavior
+## Server-side execution note
 
-Secret save and secret use are separate steps.
+\`executeCode(...)\`, \`fetchWithSecrets(...)\`, and
+\`exchangeOAuthCodeWithSecrets(...)\` run server-side. That is useful for some
+generated UI workflows, but it is not the default path for the hosted browser
+callback step of an OAuth authorization-code flow.
 
-Saving the client secret does not authorize sending that secret to the provider
-host. If \`exchangeOAuthCode(...)\` or \`fetchWithSecrets(...)\` returns
-\`kind: 'host_approval_required'\`, the generated UI should:
+For the hosted browser callback step in this guide:
 
-1. show the approval link when available
-2. explain which host needs approval when available
-3. stop and wait for approval
-4. retry only after the user approves that host in the account UI
+1. read \`code\` and \`state\` in the hosted browser page
+2. validate state in that browser page
+3. prefer \`exchangePkceOAuthCode(...)\` when the provider supports PKCE and a
+   browser token exchange
+4. save the returned token payload with \`saveOAuthTokens(...)\` or
+   \`saveSecret(...)\`
 
-Do not work around this by hardcoding secret values, switching to raw fetch, or
-trying to bypass the approval flow.
-
-## Recommended approval-required copy
-
-Keep the approval-required UI direct and concrete. A good message usually says:
-
-- Kody needs one-time permission to use the saved OAuth secret with the provider
-  host
-- which host needs approval when available
-- where to click to approve it
-- that the user should return and retry after approval
+Use \`exchangeOAuthCodeWithSecrets(...)\` only when you intentionally need a
+server-side confidential-client exchange and understand that it is not running
+in the browser callback page.
 
 ## Implementation checklist for generated UI code
 
 Before you consider the flow complete, verify that the generated UI:
 
 - uses a hosted saved app for browser callbacks
+- tells the user to open the hosted saved-app URL in a browser instead of
+  relying on the conversation iframe
 - creates OAuth state before redirecting
 - validates the returned state on callback
 - handles provider callback errors
-- handles \`host_approval_required\` explicitly
+- uses \`exchangePkceOAuthCode(...)\` for hosted browser callback pages when the
+  provider supports PKCE
+- does not default to \`exchangeOAuthCodeWithSecrets(...)\` for the hosted
+  browser callback path in this guide
 - saves OAuth tokens only after a successful exchange
 - tells the user the exact provider registration values they need
 - avoids asking the user to paste secrets into chat
@@ -326,10 +387,12 @@ Before you consider the flow complete, verify that the generated UI:
 
 - Prefer hosted saved apps for OAuth callbacks.
 - Prefer the built-in OAuth helpers over manual URL parsing and state storage.
-- Treat \`exchangeOAuthCode(...)\` or \`fetchWithSecrets(...)\` as a branching
-  result, not just success or generic failure.
+- Remember that \`executeCode(...)\` runs server-side.
+- For hosted browser callback pages, prefer \`exchangePkceOAuthCode(...)\` when
+  the provider supports PKCE.
+- Treat \`exchangeOAuthCodeWithSecrets(...)\` as a separate server-side helper,
+  not the default hosted callback path for this guide.
 - Call \`saveOAuthTokens(...)\` only after a successful exchange.
-- Surface approval-required results as part of the intended UX.
 - If the generated UI needs secrets, collect them in the UI and save them with
   \`saveSecret(...)\` or \`saveSecrets(...)\`.
 - If the generated UI needs readable, non-sensitive configuration such as a
@@ -343,14 +406,14 @@ export const generatedUiOAuthGuideCapability = defineDomainCapability(
 	{
 		name: 'generated_ui_oauth_guide',
 		description:
-			'Read the Kody-specific guide for implementing OAuth flows in generated UI apps. Call this before building a hosted OAuth callback flow, provider registration instructions, or secret-backed token exchange UI.',
+			'Read the Kody-specific guide for implementing OAuth flows in generated UI apps. Call this before building a hosted OAuth callback flow, provider registration instructions, browser PKCE exchange UI, or server-side OAuth exchange UI.',
 		keywords: [
 			'oauth',
+			'pkce',
 			'generated ui',
 			'hosted callback',
 			'redirect uri',
 			'provider registration',
-			'host approval',
 			'ui_save_app',
 			'open_generated_ui',
 			'window.kodyWidget',

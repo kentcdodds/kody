@@ -26,7 +26,7 @@ const serverMetadata = {
 This is a three-part system:
 1. Use 'search' to discover builtin capabilities, saved skills, saved apps, and reusable user secret references.
 2. Use 'execute' to call builtin capabilities via 'codemode[capabilityName](args)', or use meta domain tools to run saved skills.
-3. Use 'open_generated_ui' to open a generic MCP App shell with inline generated code or a saved app by id.
+3. Use 'open_generated_ui' to open a generic MCP App runtime with inline generated code or a saved app by id.
 
 Quick start
 - Call 'search' first to discover what Kody can do (results include type 'capability', 'skill', 'app', or 'secret').
@@ -50,7 +50,7 @@ How to use search
 - Saved skills appear when the MCP client provides an authenticated user; use 'meta_get_skill' for full skill code.
 - Use domain descriptions above as vocabulary hints in your query text.
 - Use 'detail: true' when you need full JSON schemas and metadata.
-- Example: search({ query: 'saved dashboard app or generated UI shell' })
+- Example: search({ query: 'saved dashboard app or generated UI runtime' })
 - Example: search({ query: 'GitHub REST API repository or issues', detail: true })
 - Example: search({ query: 'Cursor Cloud agents API' })
 - Example: search({ query: 'Cloudflare API zones dns workers d1', detail: true })
