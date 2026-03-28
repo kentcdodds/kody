@@ -154,6 +154,15 @@ async function readSessionToken() {
 	return payload.appSession
 }
 
+function isSessionRefreshError(error: unknown) {
+	return (
+		error instanceof Error &&
+		(error.message.includes('Generated UI session has expired.') ||
+			error.message.includes('Invalid session token.') ||
+			error.message.includes('User mismatch.'))
+	)
+}
+
 async function listExistingSecret(
 	params: ConnectSecretParams,
 	session: ConnectSecretSession,
@@ -167,12 +176,13 @@ async function listExistingSecret(
 		},
 		credentials: 'omit',
 	})
-	if (!response.ok) {
-		throw new Error('Unable to load existing secrets.')
-	}
 	const payload = (await response.json().catch(() => null)) as {
 		ok?: boolean
 		secrets?: Array<SecretMetadata>
+		error?: string
+	}
+	if (!response.ok) {
+		throw new Error(payload?.error || 'Unable to load existing secrets.')
 	}
 	if (!payload?.ok || !Array.isArray(payload.secrets)) {
 		return null
@@ -315,6 +325,10 @@ export function ConnectSecretRoute(handle: Handle) {
 			setState({ step: 'input' })
 		} catch (error) {
 			if (version !== initVersion) return
+			if (isSessionRefreshError(error)) {
+				startInitialization()
+				return
+			}
 			setState({
 				step: 'error',
 				error: error instanceof Error ? error.message : 'Unable to load secrets.',
@@ -343,6 +357,10 @@ export function ConnectSecretRoute(handle: Handle) {
 		try {
 			await saveSecretValue(params, session, state.secretValue)
 		} catch (error) {
+			if (isSessionRefreshError(error)) {
+				startInitialization()
+				return
+			}
 			setState({
 				step: 'error',
 				error: error instanceof Error ? error.message : 'Unable to save secret.',
@@ -353,7 +371,8 @@ export function ConnectSecretRoute(handle: Handle) {
 			await updateConnectorConfig(params, session)
 			setState({ step: 'success' })
 		} catch (error) {
-			if (params.connector) {
+			const secretWasNewlyCreated = state.existingSecret == null
+			if (params.connector && secretWasNewlyCreated) {
 				try {
 					await rollbackSecretValue(params, session)
 				} catch (rollbackError) {
@@ -375,14 +394,17 @@ export function ConnectSecretRoute(handle: Handle) {
 			setState({
 				step: 'error',
 				error: formatConnectorConfigFailureMessage(error, {
-					secretRolledBack: Boolean(params.connector),
+					secretRolledBack: Boolean(params.connector && secretWasNewlyCreated),
+					updatedSecretRetained: Boolean(
+						params.connector && !secretWasNewlyCreated
+					),
 				}),
 			})
 		}
 	}
 
 	function handleErrorBack() {
-		if (!session) {
+		if (!session || state.error.includes('session')) {
 			startInitialization()
 			return
 		}

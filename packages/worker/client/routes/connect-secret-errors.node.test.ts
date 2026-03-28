@@ -22,3 +22,14 @@ test('does not claim rollback when no connector rollback ran', () => {
 		'Connector configuration failed after the secret was saved. Config update exploded.',
 	)
 })
+
+test('reports updated secret retained when connector config fails on existing secret', () => {
+	const message = formatConnectorConfigFailureMessage(
+		new Error('Config update exploded.'),
+		{ secretRolledBack: false, updatedSecretRetained: true },
+	)
+
+	expect(message).toBe(
+		'Connector configuration failed after the secret was updated. Config update exploded.',
+	)
+})

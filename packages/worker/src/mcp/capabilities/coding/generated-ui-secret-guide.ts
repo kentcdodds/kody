@@ -56,6 +56,7 @@ https://heykody.dev/connect/secret?
 | \`allowedHosts\` | no | Comma-separated hosts to review for approval. |
 | \`allowedCapabilities\` | no | Comma-separated capability names to review. Use only real Kody capability names (discoverable via search or meta_list_capabilities). |
 | \`scope\` | no | \`user\` (default), \`session\`, or \`app\`. |
+| \`appId\` | no | Required when \`scope=app\`. Use the saved UI app's real \`app_id\`. |
 | \`dashboardUrl\` | no | Provider settings link for creating the key. |
 | \`instructions\` | no | Step-by-step instructions shown on the page. |
 | \`connector\` | no | Writes \`_connector:{connector}\` config on save. |
@@ -70,6 +71,8 @@ https://heykody.dev/connect/secret?
 ## Agent instructions
 
 1. Generate the URL with the required \`name\` and any optional params.
+   - When using \`scope=app\`, you must also include the saved app's real
+     \`appId\`.
    - Only include \`allowedCapabilities\` when you have confirmed the capability
      names exist in Kody (use \`search\` or \`meta_list_capabilities\`).
 2. Ask the user to open the URL in their browser.

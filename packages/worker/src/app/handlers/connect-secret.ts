@@ -15,6 +15,7 @@ import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues, type SecretScope } from '#mcp/secrets/types.ts'
 import { saveValue } from '#mcp/values/service.ts'
+import { getUiArtifactByOwnerIds } from '#mcp/ui-artifacts-repo.ts'
 
 export function createConnectSecretHandler(_env: Env) {
 	return {
@@ -48,7 +49,31 @@ export function createConnectSecretApiHandler(env: Env) {
 			if (request.method === 'GET') {
 				const url = new URL(request.url)
 				const scope = readSecretScope(url)
-				const appId = scope === 'app' ? user.sessionUserId : null
+				if (!scope) {
+					return jsonResponse({ ok: false, error: 'Invalid secret scope.' }, 400)
+				}
+				const requestedAppId = readOptionalStringParam(url, 'appId')
+				if (scope === 'app' && !requestedAppId) {
+					return jsonResponse(
+						{
+							ok: false,
+							error: 'App scope requires an appId query parameter.',
+						},
+						400,
+					)
+				}
+				const appArtifact =
+					scope === 'app' && requestedAppId
+						? await getUiArtifactByOwnerIds(
+								env.APP_DB,
+								user.artifactOwnerIds,
+								requestedAppId,
+							)
+						: null
+				if (scope === 'app' && !appArtifact) {
+					return jsonResponse({ ok: false, error: 'Saved app not found.' }, 404)
+				}
+				const appId = scope === 'app' ? (appArtifact?.id ?? null) : null
 				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 				const appSession = await createGeneratedUiAppSession({
 					env,
@@ -127,6 +152,16 @@ export function createConnectSecretApiHandler(env: Env) {
 			if (session.user.userId !== user.mcpUser.userId) {
 				return jsonResponse({ ok: false, error: 'User mismatch.' }, 403)
 			}
+			const scopeCompatibilityError = validateConnectSecretSessionScope({
+				requestedScope: scope,
+				sessionAppId: session.app_id ?? null,
+			})
+			if (scopeCompatibilityError) {
+				return jsonResponse(
+					{ ok: false, error: scopeCompatibilityError },
+					400,
+				)
+			}
 
 			const storageContext = {
 				sessionId: session.session_id,
@@ -187,11 +222,26 @@ export function createConnectSecretApiHandler(env: Env) {
 	>
 }
 
-function readSecretScope(url: URL): SecretScope {
+function readSecretScope(url: URL): SecretScope | null {
 	const raw = readOptionalStringParam(url, 'scope')
-	return raw && secretScopeValues.includes(raw as SecretScope)
+	if (raw == null) return 'user'
+	return secretScopeValues.includes(raw as SecretScope)
 		? (raw as SecretScope)
-		: 'user'
+		: null
+}
+
+function validateConnectSecretSessionScope(input: {
+	requestedScope: SecretScope
+	sessionAppId: string | null
+}) {
+	if (input.requestedScope === 'app') {
+		return input.sessionAppId
+			? null
+			: 'App scope requires an app-scoped session.'
+	}
+	return input.sessionAppId
+		? 'This connect secret session only supports app-scoped secrets.'
+		: null
 }
 
 function readOptionalStringParam(url: URL, key: string) {
