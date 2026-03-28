@@ -374,6 +374,49 @@ function extractApprovalDetails(
 	fallbackSecretNames: Array<unknown> = [],
 ): ApprovalDetails {
 	const text = typeof message === 'string' ? message : String(message ?? '')
+	const hostBatchPrefix = 'Secrets require host approval:'
+	if (text.startsWith(hostBatchPrefix)) {
+		const raw = text.slice(hostBatchPrefix.length).trim()
+		try {
+			const parsed = JSON.parse(raw)
+			if (Array.isArray(parsed)) {
+				const secretNames = normalizeSecretNameList([
+					...parsed
+						.map((entry) =>
+							entry && typeof entry.secretName === 'string'
+								? entry.secretName
+								: null,
+						)
+						.filter((entry): entry is string => Boolean(entry)),
+					...fallbackSecretNames,
+				])
+				const first = parsed.find(
+					(entry) =>
+						entry &&
+						typeof entry.approvalUrl === 'string' &&
+						typeof entry.host === 'string',
+				)
+				if (first) {
+					return {
+						message: text,
+						approvalUrl: first.approvalUrl,
+						host: first.host,
+						secretNames,
+					}
+				}
+				if (secretNames.length > 0) {
+					return {
+						message: text,
+						approvalUrl: null,
+						host: null,
+						secretNames,
+					}
+				}
+			}
+		} catch {
+			// Fall through to legacy parsing.
+		}
+	}
 	const secretNames = normalizeSecretNameList([
 		...Array.from(text.matchAll(/Secret "([^"]+)"/g))
 			.map((match) => match[1])
@@ -1493,7 +1536,10 @@ export function initializeGeneratedUiRuntime() {
 				return normalizeFetchWithSecretsResult(result)
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
-				if (message.includes('not allowed for host')) {
+				if (
+					message.includes('not allowed for host') ||
+					message.includes('Secrets require host approval:')
+				) {
 					const approval = extractApprovalDetails(message, fallbackSecretNames)
 					return {
 						ok: false,

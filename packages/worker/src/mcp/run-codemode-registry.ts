@@ -108,7 +108,7 @@ function createCapabilityInputSecretResolver(
 				name: secret.name,
 				scope: resolved.scope ?? secret.scope ?? 'user',
 				capabilityName,
-				storageContext: callerContext.storageContext ?? null,
+				storageContext: callerContext.storageContext,
 			})
 			throw new Error(
 				createCapabilitySecretAccessDeniedMessage(
@@ -137,10 +137,12 @@ export async function runCodemodeWithRegistry(
 		gatewayProps: {
 			baseUrl: callerContext.baseUrl,
 			userId: callerContext.user?.userId ?? null,
-			storageContext: {
-				sessionId: callerContext.storageContext?.sessionId ?? null,
-				appId: callerContext.storageContext?.appId ?? null,
-			},
+			storageContext: callerContext.storageContext
+				? {
+						sessionId: callerContext.storageContext.sessionId ?? null,
+						appId: callerContext.storageContext.appId ?? null,
+					}
+				: null,
 		},
 	})
 	const provider = await buildCodemodeProvider(env, callerContext)
@@ -150,13 +152,13 @@ export async function runCodemodeWithRegistry(
 			: code
 	const result = await executor.execute(wrapped, [provider])
 	if (!result.error) return result
-	const batchError = await rewriteCapabilitySecretError({
+	const batchMessage = await rewriteCapabilitySecretError({
 		error: result.error,
 		code: wrapped,
 		env,
 		callerContext,
 	})
-	return batchError ? { ...result, error: batchError } : result
+	return batchMessage ? { ...result, error: batchMessage } : result
 }
 
 async function rewriteCapabilitySecretError(input: {
@@ -173,11 +175,9 @@ async function rewriteCapabilitySecretError(input: {
 	if (!capabilityMatch?.[1] || !capabilityMatch?.[2]) return null
 	const capabilityName = capabilityMatch[2]
 	const userId = input.callerContext.user?.userId ?? null
-	if (!userId) return input.error instanceof Error ? input.error : new Error(message)
+	if (!userId) return null
 	const secretNames = collectSecretNamesFromCode(input.error, input.code)
-	if (secretNames.length === 0) {
-		return input.error instanceof Error ? input.error : new Error(message)
-	}
+	if (secretNames.length === 0) return null
 	const missing = await findMissingCapabilityApprovals({
 		env: input.env,
 		userId,
@@ -186,10 +186,8 @@ async function rewriteCapabilitySecretError(input: {
 		storageContext: input.callerContext.storageContext ?? null,
 		baseUrl: input.callerContext.baseUrl,
 	})
-	if (missing.length === 0) {
-		return input.error instanceof Error ? input.error : new Error(message)
-	}
-	return new Error(createCapabilitySecretAccessDeniedBatchMessage(missing))
+	if (missing.length === 0) return null
+	return createCapabilitySecretAccessDeniedBatchMessage(missing)
 }
 
 function collectSecretNamesFromCode(
@@ -240,7 +238,12 @@ async function findMissingCapabilityApprovals(input: {
 				name,
 				scope: resolved.scope ?? 'user',
 				capabilityName: input.capabilityName,
-				storageContext: input.storageContext,
+				storageContext: input.storageContext
+					? {
+							sessionId: input.storageContext.sessionId ?? null,
+							appId: input.storageContext.appId ?? null,
+						}
+					: null,
 			})
 			return {
 				secretName: name,

@@ -155,7 +155,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						},
 					],
 					structuredContent: {
-						error: result.error,
+						error: errorMessage,
 						errorDetails,
 						logs: result.logs ?? [],
 					},
