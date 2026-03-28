@@ -2,6 +2,12 @@
 import { createWidgetHostBridge } from './widget-host-bridge.js'
 import { initializeGeneratedUiRuntime } from './generated-ui-widget-runtime.ts'
 import {
+	buildGeneratedUiRuntimeImportMap,
+	type GeneratedUiAppSessionBootstrap,
+	type GeneratedUiRuntimeBootstrap,
+	generatedUiRuntimeModuleSpecifier,
+} from './generated-ui-runtime-contract.ts'
+import {
 	escapeInlineScriptSource,
 	injectIntoHtmlDocument,
 	renderGeneratedUiDocument,
@@ -18,57 +24,18 @@ export {
 	injectIntoHtmlDocument,
 } from '@kody-internal/shared/generated-ui-documents.ts'
 export {
+	buildGeneratedUiRuntimeImportMap,
+	type GeneratedUiAppSessionBootstrap,
+	type GeneratedUiRuntimeBootstrap,
+	generatedUiRuntimeModuleSpecifier,
+} from './generated-ui-runtime-contract.ts'
+export {
 	getOrCreateKodyWidgetReadyStateForTest,
 	getKodyWidget,
 	kodyWidget,
 	whenKodyWidgetReady,
 	type KodyWidgetPublicApi,
 } from './generated-ui-widget-runtime.ts'
-
-export type GeneratedUiStorageScope = 'session' | 'app' | 'user'
-
-export type GeneratedUiSecretMetadata = {
-	name: string
-	scope: GeneratedUiStorageScope
-	description: string
-	app_id: string | null
-	allowed_hosts: Array<string>
-	created_at: string
-	updated_at: string
-	ttl_ms: number | null
-}
-
-export type GeneratedUiValueMetadata = {
-	name: string
-	scope: GeneratedUiStorageScope
-	value: string
-	description: string
-	app_id: string | null
-	created_at: string
-	updated_at: string
-	ttl_ms: number | null
-}
-
-export type GeneratedUiSessionEndpoints = {
-	source: string
-	execute: string
-	secrets: string
-	deleteSecret: string
-}
-
-export type GeneratedUiAppSessionBootstrap = {
-	token?: string
-	endpoints: GeneratedUiSessionEndpoints
-}
-
-export type GeneratedUiRuntimeBootstrap = {
-	mode: 'entry' | 'hosted' | 'mcp'
-	params?: Record<string, unknown>
-	appSession?: GeneratedUiAppSessionBootstrap | null
-}
-
-export const generatedUiRuntimeModuleSpecifier =
-	'@kody/generated-ui-runtime' as const
 
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
@@ -593,19 +560,6 @@ function writeDocument(html: string) {
 	documentRef.open()
 	documentRef.write(html)
 	documentRef.close()
-}
-
-export function buildGeneratedUiRuntimeImportMap(
-	runtimeScriptHref: string,
-) {
-	const importMapJson = escapeInlineScriptSource(
-		JSON.stringify({
-			imports: {
-				[generatedUiRuntimeModuleSpecifier]: runtimeScriptHref,
-			},
-		}),
-	)
-	return `<script type="importmap">${importMapJson}</script>`
 }
 
 function buildHeadInjection(input: {

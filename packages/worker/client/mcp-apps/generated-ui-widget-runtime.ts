@@ -5,7 +5,7 @@ import {
 	type GeneratedUiSecretMetadata,
 	type GeneratedUiStorageScope,
 	type GeneratedUiValueMetadata,
-} from './generated-ui-runtime-controller.ts'
+} from './generated-ui-runtime-contract.ts'
 
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 type JsonRecord = Record<string, any>
@@ -193,7 +193,7 @@ export function getKodyWidget(): KodyWidgetPublicApi {
 		return widget
 	}
 	throw new Error(
-		'kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `/mcp-apps/generated-ui-runtime.js` and await it before using the runtime helpers.',
+		'kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/generated-ui-runtime` and await it before using the runtime helpers.',
 	)
 }
 

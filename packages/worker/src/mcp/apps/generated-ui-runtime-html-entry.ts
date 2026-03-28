@@ -7,7 +7,7 @@ import { escapeInlineScriptSource } from '@kody-internal/shared/generated-ui-doc
 import {
 	buildGeneratedUiRuntimeImportMap,
 	type GeneratedUiRuntimeBootstrap,
-} from '#client/mcp-apps/generated-ui-runtime-controller.ts'
+} from '#client/mcp-apps/generated-ui-runtime-contract.ts'
 
 export const generatedUiRuntimeResourceUri =
 	'ui://generated-ui-runtime/entry-point.html' as const

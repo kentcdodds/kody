@@ -352,7 +352,7 @@ function getKodyWidget() {
     return widget;
   }
   throw new Error(
-    "kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `/mcp-apps/generated-ui-runtime.js` and await it before using the runtime helpers."
+    "kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/generated-ui-runtime` and await it before using the runtime helpers."
   );
 }
 function whenKodyWidgetReady() {
@@ -1793,6 +1793,19 @@ function renderGeneratedUiErrorDocument(message) {
 	`.trim();
 }
 
+// packages/worker/client/mcp-apps/generated-ui-runtime-contract.ts
+var generatedUiRuntimeModuleSpecifier = "@kody/generated-ui-runtime";
+function buildGeneratedUiRuntimeImportMap(runtimeScriptHref) {
+  const importMapJson = escapeInlineScriptSource(
+    JSON.stringify({
+      imports: {
+        [generatedUiRuntimeModuleSpecifier]: runtimeScriptHref
+      }
+    })
+  );
+  return `<script type="importmap">${importMapJson}<\/script>`;
+}
+
 // packages/shared/src/generated-ui-asset-paths.ts
 var generatedUiRuntimeScriptPath = "/mcp-apps/generated-ui-runtime.js";
 var generatedUiRuntimeStylesheetPath = "/mcp-apps/generated-ui-runtime.css";
@@ -1808,7 +1821,6 @@ function resolveGeneratedUiAssetUrl(assetPath, baseUrl) {
 }
 
 // packages/worker/client/mcp-apps/generated-ui-runtime-controller.ts
-var generatedUiRuntimeModuleSpecifier = "@kody/generated-ui-runtime";
 function coerceJsonRecord(value) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return void 0;
@@ -2126,16 +2138,6 @@ function writeDocument(html) {
   documentRef2.open();
   documentRef2.write(html);
   documentRef2.close();
-}
-function buildGeneratedUiRuntimeImportMap(runtimeScriptHref) {
-  const importMapJson = escapeInlineScriptSource(
-    JSON.stringify({
-      imports: {
-        [generatedUiRuntimeModuleSpecifier]: runtimeScriptHref
-      }
-    })
-  );
-  return `<script type="importmap">${importMapJson}<\/script>`;
 }
 function buildHeadInjection(input) {
   const stylesheetHref = resolveGeneratedUiAssetUrl(
