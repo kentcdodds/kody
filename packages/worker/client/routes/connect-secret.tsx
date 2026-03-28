@@ -309,6 +309,15 @@ export function ConnectSecretRoute(handle: Handle) {
 		}
 	}
 
+	function handleErrorBack() {
+		if (!session) {
+			setState({ step: 'loading', error: '' })
+			handle.queueTask(() => initialize())
+			return
+		}
+		setState({ step: 'input', error: '' })
+	}
+
 	return () => {
 		const currentSearch = typeof window === 'undefined' ? '' : window.location.search
 		if (currentSearch !== lastSearch) {
@@ -444,7 +453,7 @@ export function ConnectSecretRoute(handle: Handle) {
 						<button
 							type="button"
 							css={secondaryButtonCss}
-							on={{ click: () => setState({ step: 'input', error: '' }) }}
+							on={{ click: () => handleErrorBack() }}
 						>
 							Back
 						</button>

@@ -6,7 +6,6 @@ import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
-import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
 import {
 	createGeneratedUiAppSession,
 	verifyGeneratedUiAppSession,
