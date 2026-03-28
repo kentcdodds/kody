@@ -5,6 +5,7 @@ import { cloudflareRestCapability } from './cloudflare-rest.ts'
 import { cursorCloudAgentDocsCapability } from './cursor-cloud-agent-docs.ts'
 import { cursorCloudRestCapability } from './cursor-cloud-rest.ts'
 import { generatedUiOAuthGuideCapability } from './generated-ui-oauth-guide.ts'
+import { generatedUiSecretGuideCapability } from './generated-ui-secret-guide.ts'
 import { githubGraphqlApiDocsCapability } from './github-graphql-api-docs.ts'
 import { githubGraphqlCapability } from './github-graphql.ts'
 import { githubRestApiDocsCapability } from './github-rest-api-docs.ts'
@@ -20,6 +21,7 @@ export const codingDomain = defineDomain({
 		githubGraphqlCapability,
 		githubGraphqlApiDocsCapability,
 		generatedUiOAuthGuideCapability,
+		generatedUiSecretGuideCapability,
 		cursorCloudRestCapability,
 		cursorCloudAgentDocsCapability,
 		cloudflareRestCapability,

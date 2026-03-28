@@ -4,10 +4,6 @@ import {
 	createAccountSecretsApiHandler,
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
-import {
-	createConnectSecretApiHandler,
-	createConnectSecretHandler,
-} from '#app/handlers/connect-secret.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { chat } from '#app/handlers/chat.ts'
 import {
@@ -23,6 +19,10 @@ import {
 	createPasswordResetConfirmHandler,
 	createPasswordResetRequestHandler,
 } from '#app/handlers/password-reset.ts'
+import {
+	createConnectSecretApiHandler,
+	createConnectSecretHandler,
+} from '#app/handlers/connect-secret.ts'
 import { createSavedUiPageHandler } from '#app/handlers/saved-ui.ts'
 import { session } from '#app/handlers/session.ts'
 import { signup } from '#app/handlers/signup.ts'
@@ -85,10 +85,7 @@ export function createAppRouter(appEnv: AppEnv) {
 		createAccountSecretsApiHandler(appEnv as Env),
 	)
 	router.map(routes.connectSecret, createConnectSecretHandler(appEnv as Env))
-	router.map(
-		routes.connectSecretApi,
-		createConnectSecretApiHandler(appEnv as Env),
-	)
+	router.map(routes.connectSecretApi, createConnectSecretApiHandler(appEnv as Env))
 	router.map(routes.savedUi, createSavedUiPageHandler(appEnv as Env))
 	router.map(routes.auth, createAuthHandler(appEnv))
 	router.map(routes.session, session)
