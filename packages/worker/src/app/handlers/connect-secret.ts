@@ -10,6 +10,7 @@ import {
 	createGeneratedUiAppSession,
 	verifyGeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
+import { capabilityMap } from '#mcp/capabilities/registry.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues, type SecretScope } from '#mcp/secrets/types.ts'
@@ -47,7 +48,7 @@ export function createConnectSecretApiHandler(env: Env) {
 			if (request.method === 'GET') {
 				const url = new URL(request.url)
 				const scope = readSecretScope(url)
-				const appId = scope === 'app' ? session.sessionId : null
+				const appId = scope === 'app' ? user.sessionUserId : null
 				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 				const appSession = await createGeneratedUiAppSession({
 					env,
@@ -83,6 +84,18 @@ export function createConnectSecretApiHandler(env: Env) {
 				readOptionalStringArray(body, 'allowedHosts') ?? []
 			const requestedAllowedCapabilities =
 				readOptionalStringArray(body, 'allowedCapabilities') ?? []
+			const unknownCapabilities = requestedAllowedCapabilities.filter(
+				(capability) => !capabilityMap[capability],
+			)
+			if (unknownCapabilities.length > 0) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: `Unknown capabilities: ${unknownCapabilities.join(', ')}`,
+					},
+					400,
+				)
+			}
 			if (!name) {
 				return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)
 			}

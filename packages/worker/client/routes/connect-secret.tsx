@@ -213,6 +213,30 @@ async function saveSecretValue(
 	}
 }
 
+async function deleteSecretValue(
+	params: ConnectSecretParams,
+	session: ConnectSecretSession,
+) {
+	const response = await fetch(session.endpoints.deleteSecret, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${session.token}`,
+		},
+		credentials: 'omit',
+		body: JSON.stringify({
+			name: params.name,
+			scope: params.scope,
+		}),
+	})
+	const payload = (await response.json().catch(() => null)) as {
+		ok?: boolean
+		deleted?: boolean
+	}
+	return Boolean(response.ok && payload?.ok && payload.deleted)
+}
+
 async function updateConnectorConfig(
 	params: ConnectSecretParams,
 	session: ConnectSecretSession,
@@ -243,19 +267,81 @@ async function updateConnectorConfig(
 	}
 }
 
+async function rollbackSecretValue(
+	params: ConnectSecretParams,
+	session: ConnectSecretSession,
+) {
+	const response = await fetch(session.endpoints.deleteSecret, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${session.token}`,
+		},
+		credentials: 'omit',
+		body: JSON.stringify({
+			name: params.name,
+			scope: params.scope,
+		}),
+	})
+	const payload = (await response.json().catch(() => null)) as {
+		ok?: boolean
+		error?: string
+	}
+	if (!response.ok || !payload?.ok) {
+		throw new Error(payload?.error || 'Unable to rollback secret.')
+	}
+}
+
+async function rollbackSecretValue(
+	params: ConnectSecretParams,
+	session: ConnectSecretSession,
+) {
+	const response = await fetch(session.endpoints.deleteSecret, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${session.token}`,
+		},
+		credentials: 'omit',
+		body: JSON.stringify({
+			name: params.name,
+			scope: params.scope,
+		}),
+	})
+	const payload = (await response.json().catch(() => null)) as {
+		ok?: boolean
+		error?: string
+	}
+	if (!response.ok || !payload?.ok) {
+		throw new Error(payload?.error || 'Unable to rollback secret.')
+	}
+}
+
 export function ConnectSecretRoute(handle: Handle) {
 	let state = { ...defaultState }
 	let session: ConnectSecretSession | null = null
 	let lastSearch: string | null = null
+	let initVersion = 0
 
 	function setState(next: Partial<ConnectSecretState>) {
 		state = { ...state, ...next }
 		handle.update()
 	}
 
-	async function initialize() {
+	function startInitialization() {
+		session = null
+		initVersion += 1
+		const version = initVersion
+		setState({ ...defaultState, step: 'loading' })
+		handle.queueTask(() => initialize(version))
+	}
+
+	async function initialize(version: number) {
 		const params = parseConnectSecretParams()
 		if (!params.name) {
+			if (version !== initVersion) return
 			setState({
 				step: 'error',
 				error: 'Provide a name query parameter to continue.',
@@ -263,9 +349,11 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		try {
-			session = await readSessionToken()
-			if (!session) return
-			const existing = await listExistingSecret(params, session)
+			const nextSession = await readSessionToken()
+			if (version !== initVersion || !nextSession) return
+			session = nextSession
+			const existing = await listExistingSecret(params, nextSession)
+			if (version !== initVersion) return
 			if (existing) {
 				setState({
 					step: 'update-confirm',
@@ -275,6 +363,7 @@ export function ConnectSecretRoute(handle: Handle) {
 			}
 			setState({ step: 'input' })
 		} catch (error) {
+			if (version !== initVersion) return
 			setState({
 				step: 'error',
 				error: error instanceof Error ? error.message : 'Unable to load secrets.',
@@ -283,6 +372,7 @@ export function ConnectSecretRoute(handle: Handle) {
 	}
 
 	async function handleSave() {
+		if (state.step === 'saving') return
 		if (!session) {
 			setState({
 				step: 'error',
@@ -301,20 +391,50 @@ export function ConnectSecretRoute(handle: Handle) {
 		setState({ step: 'saving', error: '' })
 		try {
 			await saveSecretValue(params, session, state.secretValue)
-			await updateConnectorConfig(params, session)
-			setState({ step: 'success' })
 		} catch (error) {
 			setState({
 				step: 'error',
 				error: error instanceof Error ? error.message : 'Unable to save secret.',
+			})
+			return
+		}
+		try {
+			await updateConnectorConfig(params, session)
+			setState({ step: 'success' })
+		} catch (error) {
+			if (params.connector) {
+				try {
+					await rollbackSecretValue(params, session)
+				} catch (rollbackError) {
+					const rollbackMessage =
+						rollbackError instanceof Error
+							? rollbackError.message
+							: 'Unable to rollback secret.'
+					const originalMessage =
+						error instanceof Error
+							? error.message
+							: 'Unable to update connector config.'
+					setState({
+						step: 'error',
+						error: `Connector configuration failed and rollback did not complete. ${originalMessage} ${rollbackMessage}`,
+					})
+					return
+				}
+			}
+			const message =
+				error instanceof Error
+					? error.message
+					: 'Unable to update connector config.'
+			setState({
+				step: 'error',
+				error: `Connector configuration failed and the secret was rolled back. ${message}`,
 			})
 		}
 	}
 
 	function handleErrorBack() {
 		if (!session) {
-			setState({ step: 'loading', error: '' })
-			handle.queueTask(() => initialize())
+			startInitialization()
 			return
 		}
 		setState({ step: 'input', error: '' })
@@ -324,7 +444,7 @@ export function ConnectSecretRoute(handle: Handle) {
 		const currentSearch = typeof window === 'undefined' ? '' : window.location.search
 		if (currentSearch !== lastSearch) {
 			lastSearch = currentSearch
-			handle.queueTask(() => initialize())
+			startInitialization()
 		}
 
 		const params = parseConnectSecretParams()
@@ -605,6 +725,7 @@ export function ConnectSecretRoute(handle: Handle) {
 									<button
 										type="button"
 										css={secondaryButtonCss}
+										disabled={state.step === 'saving'}
 										on={{ click: () => setState({ step: 'input', confirmedReview: false }) }}
 									>
 										Back
@@ -612,7 +733,7 @@ export function ConnectSecretRoute(handle: Handle) {
 									<button
 										type="button"
 										css={primaryButtonCss}
-										disabled={!state.confirmedReview}
+										disabled={state.step === 'saving' || !state.confirmedReview}
 										on={{ click: () => void handleSave() }}
 									>
 										Save secret
