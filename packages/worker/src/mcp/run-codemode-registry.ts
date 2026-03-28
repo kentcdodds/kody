@@ -127,7 +127,6 @@ function createCapabilityInputSecretResolver(
 	}
 }
 
-
 export async function runCodemodeWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -195,10 +194,7 @@ async function rewriteCapabilitySecretError(input: {
 	return createCapabilitySecretAccessDeniedBatchMessage(missing)
 }
 
-function collectSecretNamesFromCode(
-	error: unknown,
-	code: string | null,
-) {
+function collectSecretNamesFromCode(error: unknown, code: string | null) {
 	const fromError =
 		error instanceof Error ? parseSecretNamesFromMessage(error.message) : []
 	const fromCode = code ? parseSecretNamesFromMessage(code) : []
@@ -257,5 +253,7 @@ async function findMissingCapabilityApprovals(input: {
 			}
 		}),
 	)
-	return entries.filter((entry): entry is NonNullable<typeof entry> => entry != null)
+	return entries.filter(
+		(entry): entry is NonNullable<typeof entry> => entry != null,
+	)
 }

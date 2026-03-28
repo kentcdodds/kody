@@ -231,7 +231,10 @@ export const kodyWidget = new Proxy(Object.create(null), {
 		return Reflect.ownKeys(getKodyWidget())
 	},
 	getOwnPropertyDescriptor(_target, property) {
-		const descriptor = Reflect.getOwnPropertyDescriptor(getKodyWidget(), property)
+		const descriptor = Reflect.getOwnPropertyDescriptor(
+			getKodyWidget(),
+			property,
+		)
 		if (!descriptor) {
 			return undefined
 		}

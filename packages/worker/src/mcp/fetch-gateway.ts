@@ -94,7 +94,9 @@ export async function expandSecretPlaceholders(input: {
 			resolvedSecrets,
 		})
 		if (missingApprovals.length > 0) {
-			throw new Error(createHostSecretAccessDeniedBatchMessage(missingApprovals))
+			throw new Error(
+				createHostSecretAccessDeniedBatchMessage(missingApprovals),
+			)
 		}
 	}
 	for (const [key, value] of Array.from(headers.entries())) {
@@ -134,7 +136,9 @@ async function collectHostApprovalEntries(input: {
 }) {
 	const entries = await Promise.all(
 		input.resolvedSecrets.map(async ({ referenced, resolved }) => {
-			const allowedForHost = resolved.allowedHosts.includes(input.normalizedHost)
+			const allowedForHost = resolved.allowedHosts.includes(
+				input.normalizedHost,
+			)
 			if (allowedForHost) return null
 			const approvalToken = await createSecretHostApprovalToken(input.env, {
 				userId: input.props.userId!,
@@ -158,7 +162,9 @@ async function collectHostApprovalEntries(input: {
 			}
 		}),
 	)
-	return entries.filter((entry): entry is NonNullable<typeof entry> => entry != null)
+	return entries.filter(
+		(entry): entry is NonNullable<typeof entry> => entry != null,
+	)
 }
 
 function ensureFetchAllowed(props: FetchGatewayProps) {

@@ -26,9 +26,7 @@ export function createCapabilitySecretAccessDeniedMessage(
 	capabilityName: string,
 	approvalUrl?: string | null,
 ) {
-	const approvalSuffix = approvalUrl
-		? ` Approval link: ${approvalUrl}`
-		: ''
+	const approvalSuffix = approvalUrl ? ` Approval link: ${approvalUrl}` : ''
 	return `Secret "${secretName}" is not allowed for capability "${capabilityName}". If this capability should be able to use the secret, ask the user whether to add "${capabilityName}" to the secret's allowed capabilities in the account secrets UI, then retry after they approve that policy change.${approvalSuffix}`
 }
 

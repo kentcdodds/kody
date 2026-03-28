@@ -59,7 +59,9 @@ test('parseHostApprovalRequiredBatchMessage returns approval entries', () => {
 	]
 	const message = createHostSecretAccessDeniedBatchMessage(entries)
 	expect(parseHostApprovalRequiredBatchMessage(message)).toEqual(entries)
-	expect(parseHostApprovalRequiredBatchMessage('Host approval failed')).toBeNull()
+	expect(
+		parseHostApprovalRequiredBatchMessage('Host approval failed'),
+	).toBeNull()
 })
 
 test('parseCapabilitySecretAccessDeniedMessage extracts secret and capability', () => {
@@ -126,5 +128,7 @@ test('parseHostApprovalRequiredBatchMessage returns approval entries', () => {
 			createHostSecretAccessDeniedBatchMessage([]),
 		),
 	).toBeNull()
-	expect(parseHostApprovalRequiredBatchMessage('Host approval failed')).toBeNull()
+	expect(
+		parseHostApprovalRequiredBatchMessage('Host approval failed'),
+	).toBeNull()
 })

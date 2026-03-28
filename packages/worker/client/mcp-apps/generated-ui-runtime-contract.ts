@@ -45,9 +45,7 @@ export type GeneratedUiRuntimeBootstrap = {
 
 export const generatedUiRuntimeModuleSpecifier = '@kody/utils' as const
 
-export function buildGeneratedUiRuntimeImportMap(
-	runtimeScriptHref: string,
-) {
+export function buildGeneratedUiRuntimeImportMap(runtimeScriptHref: string) {
 	const importMapJson = escapeInlineScriptSource(
 		JSON.stringify({
 			imports: {
@@ -70,4 +68,3 @@ window.params = window.__kodyAppParams;
 </script>
 	`.trim()
 }
-

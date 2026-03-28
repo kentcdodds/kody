@@ -140,7 +140,8 @@ export function getExecutionErrorDetails(
 		}
 	}
 
-	const capabilityAccessBatch = parseCapabilityAccessRequiredBatchMessage(message)
+	const capabilityAccessBatch =
+		parseCapabilityAccessRequiredBatchMessage(message)
 	if (capabilityAccessBatch) {
 		return {
 			kind: 'secret_capability_access_required_batch',
