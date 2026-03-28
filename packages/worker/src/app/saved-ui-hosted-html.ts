@@ -53,6 +53,6 @@ function buildHeadInjection(
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 </script>
-<script type="module" src="${runtimeScriptSrc}"></script>
+<script src="${runtimeScriptSrc}"></script>
 	`.trim()
 }

@@ -106,7 +106,7 @@ function buildJavascriptDocument(code: string, headInjection: string) {
 	</head>
 	<body data-kody-runtime="javascript">
 		<div id="app" data-generated-ui-root></div>
-		<script type="module">
+		<script>
 ${safeCode}
 		</script>
 	</body>

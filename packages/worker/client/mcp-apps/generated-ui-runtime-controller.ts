@@ -233,8 +233,8 @@ function coerceGeneratedUiEndpoints(value: unknown) {
 		const secrets = new URL(value.secrets)
 		const deleteSecret = new URL(value.deleteSecret)
 		const origin = source.origin
-		const expectedOrigin = new URL('/', import.meta.url).origin
-		if (origin !== expectedOrigin) {
+		const expectedOrigin = globalThis.window?.location?.origin ?? null
+		if (expectedOrigin && origin !== expectedOrigin) {
 			return null
 		}
 		if (
@@ -403,11 +403,9 @@ type GeneratedUiWindow = Window &
 	}
 
 function getBaseHref() {
-	try {
-		return new URL('/', import.meta.url).toString()
-	} catch {
-		return null
-	}
+	const href = globalThis.location?.href
+	if (!href) return null
+	return new URL('/', href).toString()
 }
 
 function readGeneratedUiBootstrap(): GeneratedUiRuntimeBootstrap {
@@ -610,7 +608,7 @@ function buildHeadInjection(input: {
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 </script>
-<script type="module" src="${runtimeScriptHref}"></script>
+<script src="${runtimeScriptHref}"></script>
 	`.trim()
 }
 
@@ -843,14 +841,4 @@ async function initializeGeneratedUiRuntimeEntry() {
 
 const documentRef = globalThis.document
 
-if (documentRef?.readyState === 'loading') {
-	documentRef.addEventListener(
-		'DOMContentLoaded',
-		() => {
-			void initializeGeneratedUiRuntimeEntry()
-		},
-		{ once: true },
-	)
-} else if (documentRef) {
-	void initializeGeneratedUiRuntimeEntry()
-}
+void initializeGeneratedUiRuntimeEntry()

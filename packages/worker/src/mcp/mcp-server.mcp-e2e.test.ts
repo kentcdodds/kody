@@ -861,10 +861,10 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 	expect(generatedResource?.mimeType).toBe('text/html;profile=mcp-app')
 	expect(generatedResource?.text).not.toContain('data-generated-ui-frame')
 	expect(generatedResource?.text).toContain('data-generated-ui-root')
-	expect(generatedResource?.text).toContain('"mode":"entry"')
+	expect(generatedResource?.text).toContain('"mode":"hosted"')
 	expect(generatedResource?.text).not.toContain('Toggle fullscreen')
 	expect(generatedResource?.text).not.toContain('Open saved app link')
-	expect(generatedResource?.text).toContain('type="module"')
+	expect(generatedResource?.text).not.toContain('type="module"')
 	expect(generatedResource?.text).toContain('/mcp-apps/generated-ui-runtime.js')
 
 	const generatedShellResponse = await fetch(

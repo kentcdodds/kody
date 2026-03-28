@@ -19,7 +19,7 @@ export function renderGeneratedUiRuntimeHtmlEntry(baseUrl: string | URL) {
 		baseUrl,
 	)
 	const bootstrap: GeneratedUiRuntimeBootstrap = {
-		mode: 'entry',
+		mode: 'hosted',
 	}
 	const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap))
 
@@ -37,7 +37,7 @@ window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 	</head>
 	<body data-kody-runtime="fragment">
 		<div id="app" data-generated-ui-root></div>
-		<script type="module" src="${runtimeScriptHref}" crossorigin="anonymous"></script>
+		<script src="${runtimeScriptHref}" crossorigin="anonymous"></script>
 	</body>
 </html>
 `.trim()

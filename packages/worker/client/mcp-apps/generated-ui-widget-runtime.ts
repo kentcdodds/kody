@@ -725,6 +725,7 @@ export function initializeGeneratedUiRuntime() {
 	}
 	const bootstrap = getBootstrap()
 	if (bootstrap.mode === 'entry') {
+		// Entry mode uses the shell runtime; do not initialize the widget globals.
 		return
 	}
 	kodyWindow.__kodyGeneratedUiRuntimeInitialized = true
