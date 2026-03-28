@@ -1585,33 +1585,36 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		}
 	expect(blockedFetchExecutePayload.ok).toBe(false)
 	expect(blockedFetchExecutePayload.error).toContain(
-		'Secret "cloudflareToken" is not allowed for host "example.com"',
+		'Secrets require host approval:',
 	)
-	expect(blockedFetchExecutePayload.error).toContain(
-		"ask the user whether this host should be added to the secret's allowed hosts",
+	const approvalUrl = (
+		blockedFetchExecutePayload.errorDetails as
+			| {
+					missingApprovals?: Array<{ approvalUrl?: string }>
+			  }
+			| undefined
+	)?.missingApprovals?.[0]?.approvalUrl
+	expect(approvalUrl).toMatch(
+		/https?:\/\/\S*\/account\/secrets\/[^\s?]+\?[^)\s]*allowed-host=[^&\s)]+[^)\s]*/,
 	)
-	const approvalMatch =
-		blockedFetchExecutePayload.error?.match(
-			/https?:\/\/\S*\/account\/secrets\/[^\s?]+\?[^)\s]*allowed-host=[^&\s)]+[^)\s]*/,
-		) ?? null
-	expect(approvalMatch).not.toBeNull()
 	expect(blockedFetchExecutePayload.errorDetails).toEqual({
-		kind: 'host_approval_required',
-		message: expect.stringContaining(
-			'Secret "cloudflareToken" is not allowed for host "example.com"',
-		),
+		kind: 'host_approval_required_batch',
+		message: expect.stringContaining('Secrets require host approval:'),
 		nextStep:
-			'Ask the user whether they want to approve this host in the account web UI, then retry after approval.',
-		approvalUrl: approvalMatch![0],
-		host: 'example.com',
-		secretNames: ['cloudflareToken'],
+			'Ask the user whether they want to approve these hosts for the listed secrets in the account web UI, then retry after approval.',
+		missingApprovals: [
+			expect.objectContaining({
+				secretName: 'cloudflareToken',
+				host: 'example.com',
+			}),
+		],
 		suggestedAction: {
 			type: 'approve_secret_host',
 		},
 	})
 
 	const appCookieHeader = await loginToApp(server.origin, database.user)
-	const approvalResponse = await fetch(approvalMatch![0]!, {
+	const approvalResponse = await fetch(approvalUrl!, {
 		headers: {
 			Cookie: appCookieHeader,
 		},
@@ -1629,7 +1632,7 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 			},
 			body: JSON.stringify({
 				action: 'approve',
-				requestToken: new URL(approvalMatch![0]!).searchParams.get('request'),
+				requestToken: new URL(approvalUrl!).searchParams.get('request'),
 			}),
 		},
 	)

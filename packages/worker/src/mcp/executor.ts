@@ -4,7 +4,9 @@ type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
 import {
 	isSecretAuthRequiredMessage,
+	parseCapabilityAccessRequiredBatchMessage,
 	parseCapabilityAccessRequiredMessage,
+	parseHostApprovalRequiredBatchMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
@@ -46,11 +48,39 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'host_approval_required_batch'
+			message: string
+			nextStep: string
+			missingApprovals: Array<{
+				secretName: string
+				host: string
+				approvalUrl: string
+			}>
+			suggestedAction: {
+				type: 'approve_secret_host'
+			}
+	  }
+	| {
 			kind: 'secret_capability_access_required'
 			message: string
 			nextStep: string
 			secretNames: Array<string>
 			capabilityName: string
+			approvalUrl: string | null
+			suggestedAction: {
+				type: 'edit_secret_policy'
+				policyField: 'allowed_capabilities'
+			}
+	  }
+	| {
+			kind: 'secret_capability_access_required_batch'
+			message: string
+			nextStep: string
+			missingApprovals: Array<{
+				secretName: string
+				capabilityName: string
+				approvalUrl: string
+			}>
 			suggestedAction: {
 				type: 'edit_secret_policy'
 				policyField: 'allowed_capabilities'
@@ -96,6 +126,36 @@ export function getExecutionErrorDetails(
 		}
 	}
 
+	const hostApprovalBatch = parseHostApprovalRequiredBatchMessage(message)
+	if (hostApprovalBatch) {
+		return {
+			kind: 'host_approval_required_batch',
+			message,
+			nextStep:
+				'Ask the user whether they want to approve these hosts for the listed secrets in the account web UI, then retry after approval.',
+			missingApprovals: hostApprovalBatch,
+			suggestedAction: {
+				type: 'approve_secret_host',
+			},
+		}
+	}
+
+	const capabilityAccessBatch =
+		parseCapabilityAccessRequiredBatchMessage(message)
+	if (capabilityAccessBatch) {
+		return {
+			kind: 'secret_capability_access_required_batch',
+			message,
+			nextStep:
+				'Ask the user whether they want to approve these capabilities for the listed secrets in the account secrets UI, then retry after approval.',
+			missingApprovals: capabilityAccessBatch,
+			suggestedAction: {
+				type: 'edit_secret_policy',
+				policyField: 'allowed_capabilities',
+			},
+		}
+	}
+
 	const capabilityAccessDetails = parseCapabilityAccessRequiredMessage(message)
 	if (capabilityAccessDetails) {
 		return {
@@ -105,6 +165,7 @@ export function getExecutionErrorDetails(
 				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
 			secretNames: [capabilityAccessDetails.secretName],
 			capabilityName: capabilityAccessDetails.capabilityName,
+			approvalUrl: extractFirstUrl(message),
 			suggestedAction: {
 				type: 'edit_secret_policy',
 				policyField: 'allowed_capabilities',

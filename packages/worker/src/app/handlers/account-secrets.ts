@@ -56,6 +56,7 @@ type SecretApprovalView = {
 	name: string
 	scope: SecretScope
 	requestedHost: string
+	requestedCapability: string | null
 	currentAllowedHosts: Array<string>
 }
 
@@ -164,6 +165,7 @@ async function buildAccountSecretsPayload(input: {
 	const url = new URL(input.request.url)
 	const approvalToken = url.searchParams.get('request')
 	const requestedApprovalHost = readApprovalHost(url)
+	const requestedCapability = readRequestedCapability(url)
 
 	const savedApps =
 		input.savedApps ??
@@ -191,6 +193,7 @@ async function buildAccountSecretsPayload(input: {
 				userId: input.user.mcpUser.userId,
 				token: approvalToken,
 				requestedHost: requestedApprovalHost,
+				requestedCapability,
 			}).catch(() => null)
 		: null
 
@@ -272,6 +275,7 @@ async function resolveSecretApprovalView(input: {
 	userId: string
 	token: string
 	requestedHost: string | null
+	requestedCapability: string | null
 }) {
 	const approval = await verifySecretHostApprovalToken(input.env, input.token)
 	if (approval.userId !== input.userId) {
@@ -300,6 +304,7 @@ async function resolveSecretApprovalView(input: {
 		name: approval.name,
 		scope: approval.scope,
 		requestedHost: approval.requestedHost,
+		requestedCapability: input.requestedCapability,
 		currentAllowedHosts: secret.allowedHosts,
 	} satisfies SecretApprovalView
 }
@@ -629,6 +634,11 @@ function readSelectedSecretId(request: Request) {
 
 function readApprovalHost(url: URL) {
 	const value = url.searchParams.get('allowed-host')
+	return value?.trim() ? value.trim() : null
+}
+
+function readRequestedCapability(url: URL) {
+	const value = url.searchParams.get('capability')
 	return value?.trim() ? value.trim() : null
 }
 
