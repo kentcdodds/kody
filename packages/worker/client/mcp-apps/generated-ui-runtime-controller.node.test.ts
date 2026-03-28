@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	absolutizeHtmlAttributeUrls,
 	buildCodemodeCapabilityExecuteCode,
+	getOrCreateKodyWidgetReadyStateForTest,
 	getKodyWidget,
 	injectIntoHtmlDocument,
 	injectRuntimeStateIntoDocument,
@@ -179,12 +180,8 @@ test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', ()
 })
 
 test('getKodyWidget throws until the runtime is ready', () => {
-	const runtimeGlobal = globalThis as typeof globalThis & {
-		kodyWidget?: unknown
-		__kodyWidgetReadyState?: { resolve: (widget: any) => void }
-	}
-	delete runtimeGlobal.kodyWidget
-	delete runtimeGlobal.__kodyWidgetReadyState
+	const readyState = getOrCreateKodyWidgetReadyStateForTest()
+	readyState.reset()
 
 	expect(() => getKodyWidget()).toThrow(
 		/kodyWidget is not ready yet.*whenKodyWidgetReady/,
@@ -192,12 +189,8 @@ test('getKodyWidget throws until the runtime is ready', () => {
 })
 
 test('whenKodyWidgetReady resolves once the runtime publishes the widget', async () => {
-	const runtimeGlobal = globalThis as typeof globalThis & {
-		kodyWidget?: unknown
-		__kodyWidgetReadyState?: { resolve: (widget: any) => void }
-	}
-	delete runtimeGlobal.kodyWidget
-	delete runtimeGlobal.__kodyWidgetReadyState
+	const readyState = getOrCreateKodyWidgetReadyStateForTest()
+	readyState.reset()
 
 	const fakeWidget = {
 		params: { owner: 'kody' },
@@ -207,19 +200,15 @@ test('whenKodyWidgetReady resolves once the runtime publishes the widget', async
 	}
 
 	const pendingWidget = whenKodyWidgetReady()
-	runtimeGlobal.kodyWidget = fakeWidget
-	runtimeGlobal.__kodyWidgetReadyState?.resolve(fakeWidget)
+	readyState.resolve(fakeWidget)
 
 	await expect(pendingWidget).resolves.toBe(fakeWidget)
 	await expect(whenKodyWidgetReady()).resolves.toBe(fakeWidget)
 })
 
 test('imported kodyWidget proxy exposes resolved runtime properties', () => {
-	const runtimeGlobal = globalThis as typeof globalThis & {
-		kodyWidget?: unknown
-		__kodyWidgetReadyState?: { resolve: (widget: any) => void }
-	}
-	delete runtimeGlobal.__kodyWidgetReadyState
+	const readyState = getOrCreateKodyWidgetReadyStateForTest()
+	readyState.reset()
 	const fakeWidget = {
 		params: {},
 		value: 41,
@@ -227,7 +216,7 @@ test('imported kodyWidget proxy exposes resolved runtime properties', () => {
 		params: Record<string, never>
 		value: number
 	}
-	runtimeGlobal.kodyWidget = fakeWidget
+	readyState.resolve(fakeWidget)
 
 	expect(kodyWidget.value).toBe(41)
 	expect(kodyWidget.params).toEqual({})

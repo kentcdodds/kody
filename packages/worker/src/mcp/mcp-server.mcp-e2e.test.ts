@@ -886,7 +886,6 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 	expect(generatedShellSource).toContain('tools/call')
 
 	expect(generatedShellSource).toContain('__kodyGeneratedUiBootstrap')
-	expect(generatedShellSource).toContain('kodyWindow.kodyWidget = kodyWidget')
 	expect(generatedShellSource).toContain('__kodyGeneratedUiRuntimeHooks')
 
 	const generatedRuntimeStylesResponse = await fetch(

@@ -18,6 +18,7 @@ export {
 	injectIntoHtmlDocument,
 } from '@kody-internal/shared/generated-ui-documents.ts'
 export {
+	getOrCreateKodyWidgetReadyStateForTest,
 	getKodyWidget,
 	kodyWidget,
 	whenKodyWidgetReady,

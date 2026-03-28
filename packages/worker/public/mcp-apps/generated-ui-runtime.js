@@ -321,11 +321,13 @@ function createWidgetHostBridge(options = {}) {
 
 // packages/worker/client/mcp-apps/generated-ui-widget-runtime.ts
 var kodyWindow = typeof window === "object" && window ? window : globalThis;
+var currentKodyWidget = null;
+var kodyWidgetReadyState = null;
 function readKodyWidget() {
-  return isRecord2(kodyWindow.kodyWidget) ? kodyWindow.kodyWidget : null;
+  return currentKodyWidget;
 }
 function getOrCreateKodyWidgetReadyState() {
-  const existingState = kodyWindow.__kodyWidgetReadyState;
+  const existingState = kodyWidgetReadyState;
   if (existingState) {
     return existingState;
   }
@@ -338,7 +340,7 @@ function getOrCreateKodyWidgetReadyState() {
       resolvePromise?.(widget);
     }
   };
-  kodyWindow.__kodyWidgetReadyState = state;
+  kodyWidgetReadyState = state;
   return state;
 }
 function resolveKodyWidgetReady(widget) {
@@ -359,6 +361,18 @@ function whenKodyWidgetReady() {
     return Promise.resolve(widget);
   }
   return getOrCreateKodyWidgetReadyState().promise;
+}
+function getOrCreateKodyWidgetReadyStateForTest() {
+  return {
+    resolve(widget) {
+      currentKodyWidget = widget;
+      resolveKodyWidgetReady(widget);
+    },
+    reset() {
+      currentKodyWidget = null;
+      kodyWidgetReadyState = null;
+    }
+  };
 }
 var kodyWidget = new Proxy(/* @__PURE__ */ Object.create(null), {
   get(_target, property) {
@@ -1625,7 +1639,7 @@ function initializeGeneratedUiRuntime() {
     }
   };
   kodyWindow.__kodyAppParams = runtimeParams;
-  kodyWindow.kodyWidget = kodyWidget2;
+  currentKodyWidget = kodyWidget2;
   kodyWindow.params = runtimeParams;
   resolveKodyWidgetReady(kodyWidget2);
   window.addEventListener("error", (event) => {
@@ -2359,6 +2373,7 @@ export {
   buildGeneratedUiRuntimeImportMap,
   generatedUiRuntimeModuleSpecifier,
   getKodyWidget,
+  getOrCreateKodyWidgetReadyStateForTest,
   injectIntoHtmlDocument,
   injectRuntimeStateIntoDocument,
   kodyWidget,

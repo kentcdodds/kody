@@ -158,14 +158,15 @@ const kodyWindow = (
 	typeof window === 'object' && window ? window : globalThis
 ) as KodyWindow
 
+let currentKodyWidget: KodyWidgetPublicApi | null = null
+let kodyWidgetReadyState: KodyWidgetReadyState | null = null
+
 function readKodyWidget() {
-	return isRecord(kodyWindow.kodyWidget)
-		? (kodyWindow.kodyWidget as KodyWidgetPublicApi)
-		: null
+	return currentKodyWidget
 }
 
 function getOrCreateKodyWidgetReadyState(): KodyWidgetReadyState {
-	const existingState = kodyWindow.__kodyWidgetReadyState
+	const existingState = kodyWidgetReadyState
 	if (existingState) {
 		return existingState
 	}
@@ -178,7 +179,7 @@ function getOrCreateKodyWidgetReadyState(): KodyWidgetReadyState {
 			resolvePromise?.(widget)
 		},
 	}
-	kodyWindow.__kodyWidgetReadyState = state
+	kodyWidgetReadyState = state
 	return state
 }
 
@@ -202,6 +203,19 @@ export function whenKodyWidgetReady(): Promise<KodyWidgetPublicApi> {
 		return Promise.resolve(widget)
 	}
 	return getOrCreateKodyWidgetReadyState().promise
+}
+
+export function getOrCreateKodyWidgetReadyStateForTest() {
+	return {
+		resolve(widget: KodyWidgetPublicApi) {
+			currentKodyWidget = widget
+			resolveKodyWidgetReady(widget)
+		},
+		reset() {
+			currentKodyWidget = null
+			kodyWidgetReadyState = null
+		},
+	}
 }
 
 export const kodyWidget = new Proxy(Object.create(null), {
@@ -1793,7 +1807,7 @@ export function initializeGeneratedUiRuntime() {
 	}
 
 	kodyWindow.__kodyAppParams = runtimeParams
-	kodyWindow.kodyWidget = kodyWidget
+	currentKodyWidget = kodyWidget
 	kodyWindow.params = runtimeParams
 	resolveKodyWidgetReady(kodyWidget)
 
