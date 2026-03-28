@@ -197,6 +197,7 @@ async function saveSecretValue(
 		},
 		credentials: 'omit',
 		body: JSON.stringify({
+			action: 'save',
 			name: params.name,
 			value,
 			description: params.description,

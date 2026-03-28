@@ -47,12 +47,7 @@ export function createConnectSecretApiHandler(env: Env) {
 			if (request.method === 'GET') {
 				const url = new URL(request.url)
 				const scope = readSecretScope(url)
-				const connector = readOptionalStringParam(url, 'connector')
-				const name = readOptionalStringParam(url, 'name')
-				const appId =
-					scope === 'app'
-						? buildConnectSecretAppId({ connector, name })
-						: null
+				const appId = scope === 'app' ? session.sessionId : null
 				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 				const appSession = await createGeneratedUiAppSession({
 					env,
