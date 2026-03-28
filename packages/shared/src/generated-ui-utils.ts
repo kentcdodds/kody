@@ -66,4 +66,3 @@ export function absolutizeSrcset(value: string, baseHref: string | null) {
 		})
 		.join(', ')
 }
-

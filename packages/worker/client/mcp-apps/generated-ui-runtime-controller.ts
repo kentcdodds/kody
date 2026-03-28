@@ -390,7 +390,9 @@ type GeneratedUiRuntimeMode = 'entry' | 'hosted' | 'mcp'
 type GeneratedUiRuntimeHooks = {
 	sendMessage?: (text: string) => boolean | Promise<boolean>
 	openLink?: (url: string) => boolean | Promise<boolean>
-	requestDisplayMode?: (mode: DisplayMode) => DisplayMode | null | Promise<DisplayMode | null>
+	requestDisplayMode?: (
+		mode: DisplayMode,
+	) => DisplayMode | null | Promise<DisplayMode | null>
 	executeCode?: (code: string) => unknown | Promise<unknown>
 }
 
@@ -613,7 +615,8 @@ window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 }
 
 function installGeneratedUiRuntimeHooks(hooks: GeneratedUiRuntimeHooks) {
-	;(globalThis.window as GeneratedUiWindow).__kodyGeneratedUiRuntimeHooks = hooks
+	;(globalThis.window as GeneratedUiWindow).__kodyGeneratedUiRuntimeHooks =
+		hooks
 }
 
 async function initializeRenderedMcpDocument(
@@ -841,9 +844,13 @@ async function initializeGeneratedUiRuntimeEntry() {
 const documentRef = globalThis.document
 
 if (documentRef?.readyState === 'loading') {
-	documentRef.addEventListener('DOMContentLoaded', () => {
-		void initializeGeneratedUiRuntimeEntry()
-	}, { once: true })
+	documentRef.addEventListener(
+		'DOMContentLoaded',
+		() => {
+			void initializeGeneratedUiRuntimeEntry()
+		},
+		{ once: true },
+	)
 } else if (documentRef) {
 	void initializeGeneratedUiRuntimeEntry()
 }

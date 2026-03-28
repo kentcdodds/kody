@@ -1289,9 +1289,9 @@ export function AccountSecretsRoute(handle: Handle) {
 												}}
 											>
 												<input
-														type="text"
-														value={typeof host === 'string' ? host : ''}
-														placeholder="api.example.com"
+													type="text"
+													value={typeof host === 'string' ? host : ''}
+													placeholder="api.example.com"
 													on={{
 														input: (event) =>
 															updateAllowedHost(
@@ -1326,8 +1326,8 @@ export function AccountSecretsRoute(handle: Handle) {
 									<div css={{ display: 'grid', gap: spacing.xs }}>
 										<span css={fieldLabelCss}>Allowed capabilities</span>
 										<p css={{ margin: 0, color: colors.textMuted }}>
-											Only capabilities listed here can resolve this secret
-											when used with an
+											Only capabilities listed here can resolve this secret when
+											used with an
 											<code> x-kody-secret </code>
 											input.
 										</p>

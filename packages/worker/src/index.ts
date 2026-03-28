@@ -160,9 +160,8 @@ const appHandler = withCors({
 			url.pathname === '/dev/generated-ui' &&
 			(request.method === 'GET' || request.method === 'HEAD')
 		) {
-			const { renderGeneratedUiRuntimeHtmlEntry } = await import(
-				'./mcp/apps/generated-ui-runtime-html-entry.ts'
-			)
+			const { renderGeneratedUiRuntimeHtmlEntry } =
+				await import('./mcp/apps/generated-ui-runtime-html-entry.ts')
 			const baseUrl = new URL('/', url.origin)
 			const html = renderGeneratedUiRuntimeHtmlEntry(baseUrl)
 			return new Response(html, {

@@ -2,13 +2,16 @@ import { expect, test } from 'vitest'
 import { generatedUiOAuthGuideCapability } from './generated-ui-oauth-guide.ts'
 
 test('generated_ui_oauth_guide distinguishes PKCE and server-side exchange helpers', async () => {
-	const result = await generatedUiOAuthGuideCapability.handler({}, {
-		env: {} as Env,
-		callerContext: {
-			baseUrl: 'https://kody.example',
-			user: null,
+	const result = await generatedUiOAuthGuideCapability.handler(
+		{},
+		{
+			env: {} as Env,
+			callerContext: {
+				baseUrl: 'https://kody.example',
+				user: null,
+			},
 		},
-	})
+	)
 
 	expect(result.title).toBe('Generated UI OAuth guide')
 	expect(result.body).toContain(

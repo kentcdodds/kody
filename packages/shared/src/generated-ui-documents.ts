@@ -13,10 +13,7 @@ export function escapeInlineScriptSource(code: string) {
 
 export function injectIntoHtmlDocument(code: string, injection: string) {
 	if (/<head\b[^>]*>/i.test(code)) {
-		return code.replace(
-			/<head\b[^>]*>/i,
-			(match) => `${match}\n${injection}\n`,
-		)
+		return code.replace(/<head\b[^>]*>/i, (match) => `${match}\n${injection}\n`)
 	}
 
 	if (/<html\b[^>]*>/i.test(code)) {

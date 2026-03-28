@@ -190,7 +190,9 @@ function coerceValueMetadata(value: unknown): GeneratedUiValueMetadata | null {
 	}
 }
 
-function coerceSecretMetadata(value: unknown): GeneratedUiSecretMetadata | null {
+function coerceSecretMetadata(
+	value: unknown,
+): GeneratedUiSecretMetadata | null {
 	if (!isRecord(value)) return null
 	const record = value
 	const scope = coerceStorageScope(record.scope)
@@ -229,14 +231,20 @@ function buildCodemodeCapabilityExecuteCode(
 ) {
 	return [
 		'async () => {',
-		'  return await codemode[' + JSON.stringify(name) + '](' + JSON.stringify(args ?? {}) + ');',
+		'  return await codemode[' +
+			JSON.stringify(name) +
+			'](' +
+			JSON.stringify(args ?? {}) +
+			');',
 		'}',
 	].join('\n')
 }
 
 function normalizeSecretNameList(values: Array<unknown>): Array<string> {
 	return Array.from(
-		new Set(values.filter((value) => typeof value === 'string' && value.length > 0)),
+		new Set(
+			values.filter((value) => typeof value === 'string' && value.length > 0),
+		),
 	) as Array<string>
 }
 
@@ -357,7 +365,8 @@ function setControlValues(
 	for (const control of controls) {
 		if (control instanceof HTMLInputElement) {
 			if (control.type !== 'checkbox' && control.type !== 'radio') {
-				control.value = values.length > 0 ? (values[values.length - 1] ?? '') : ''
+				control.value =
+					values.length > 0 ? (values[values.length - 1] ?? '') : ''
 				continue
 			}
 			const controlValue =
@@ -489,7 +498,9 @@ function normalizeFetchWithSecretsResult(
 	}
 	const headers = isRecord(result.headers)
 		? Object.fromEntries(
-				Object.entries(result.headers).filter((entry) => typeof entry[1] === 'string'),
+				Object.entries(result.headers).filter(
+					(entry) => typeof entry[1] === 'string',
+				),
 			)
 		: {}
 	const status = typeof result.status === 'number' ? result.status : 0
@@ -515,10 +526,7 @@ function normalizeFetchWithSecretsResult(
 	}
 }
 
-function appendOAuthExtraParams(
-	params: URLSearchParams,
-	extraParams: unknown,
-) {
+function appendOAuthExtraParams(params: URLSearchParams, extraParams: unknown) {
 	if (!isRecord(extraParams)) return
 	for (const [key, value] of Object.entries(extraParams)) {
 		if (value == null) continue
@@ -526,10 +534,13 @@ function appendOAuthExtraParams(
 	}
 }
 
-async function readOAuthFetchResult(response: Response): Promise<OAuthFetchResult> {
-	const headers = Object.fromEntries(
-		response.headers.entries(),
-	) as Record<string, string>
+async function readOAuthFetchResult(
+	response: Response,
+): Promise<OAuthFetchResult> {
+	const headers = Object.fromEntries(response.headers.entries()) as Record<
+		string,
+		string
+	>
 	const contentType = response.headers.get('content-type') || ''
 	const text = await response.text()
 	let data = null
@@ -592,7 +603,11 @@ function ensureLocalMessageLog(): MessageLogRefs | null {
 		'color:rgba(226, 232, 240, 0.8)',
 	].join(';')
 	const list = doc.createElement('div')
-	list.style.cssText = ['display:flex', 'flex-direction:column', 'gap:8px'].join(';')
+	list.style.cssText = [
+		'display:flex',
+		'flex-direction:column',
+		'gap:8px',
+	].join(';')
 	root.appendChild(title)
 	root.appendChild(list)
 	host.appendChild(root)
@@ -635,7 +650,9 @@ function appendLocalMessageLogEntry(text: unknown) {
 	].join(';')
 	const body = doc.createElement('div')
 	body.textContent = typeof text === 'string' ? text : String(text ?? '')
-	body.style.cssText = ['white-space:pre-wrap', 'word-break:break-word'].join(';')
+	body.style.cssText = ['white-space:pre-wrap', 'word-break:break-word'].join(
+		';',
+	)
 	entry.appendChild(timestamp)
 	entry.appendChild(body)
 	refs.list.appendChild(entry)
@@ -675,7 +692,8 @@ function getBootstrap(): WidgetRuntimeBootstrap {
 	const appSession = isRecord(kodyWindow.__kodyGeneratedUiBootstrap.appSession)
 		? {
 				token:
-					typeof kodyWindow.__kodyGeneratedUiBootstrap.appSession.token === 'string'
+					typeof kodyWindow.__kodyGeneratedUiBootstrap.appSession.token ===
+					'string'
 						? kodyWindow.__kodyGeneratedUiBootstrap.appSession.token
 						: undefined,
 				endpoints: coerceSessionEndpoints(
@@ -719,973 +737,996 @@ export function initializeGeneratedUiRuntime() {
 			: null
 	const sessionEndpoints = bootstrap.appSession?.endpoints ?? null
 
-function getApiErrorMessage(payload: JsonRecord | null, fallback: string) {
-	return typeof payload?.error === 'string' ? payload.error : fallback
-}
+	function getApiErrorMessage(payload: JsonRecord | null, fallback: string) {
+		return typeof payload?.error === 'string' ? payload.error : fallback
+	}
 
-function getRuntimeHooks(): NonNullable<KodyWindow['__kodyGeneratedUiRuntimeHooks']> {
-	return isRecord(kodyWindow.__kodyGeneratedUiRuntimeHooks)
-		? kodyWindow.__kodyGeneratedUiRuntimeHooks
-		: {}
-}
+	function getRuntimeHooks(): NonNullable<
+		KodyWindow['__kodyGeneratedUiRuntimeHooks']
+	> {
+		return isRecord(kodyWindow.__kodyGeneratedUiRuntimeHooks)
+			? kodyWindow.__kodyGeneratedUiRuntimeHooks
+			: {}
+	}
 
-function getSessionRequestTarget(type: 'execute' | 'secrets' | 'delete-secret') {
-	if (!sessionToken || !sessionEndpoints) {
-		return null
-	}
-	const url =
-		type === 'execute'
-			? sessionEndpoints.execute
-			: type === 'secrets'
-				? sessionEndpoints.secrets
-				: sessionEndpoints.deleteSecret
-	if (typeof url !== 'string' || url.length === 0) {
-		return null
-	}
-	return { url, token: sessionToken }
-}
-
-async function fetchJsonResponse(input: {
-	url: string
-	method?: 'GET' | 'POST'
-	body?: JsonRecord
-	token?: string
-}): Promise<{ response: Response; payload: JsonRecord | null }> {
-	const headers = new Headers({
-		Accept: 'application/json',
-	})
-	if (input.body) {
-		headers.set('Content-Type', 'application/json')
-	}
-	if (input.token) {
-		headers.set('Authorization', 'Bearer ' + input.token)
-	}
-	const response = await fetch(input.url, {
-		method: input.method ?? 'GET',
-		headers,
-		body: input.body ? JSON.stringify(input.body) : undefined,
-		cache: 'no-store',
-		credentials: input.token ? 'omit' : 'include',
-	})
-	const payload = (await response.json().catch(() => null)) as JsonRecord | null
-	return { response, payload }
-}
-
-async function executeCodeWithHttp(code: string) {
-	const target = getSessionRequestTarget('execute')
-	if (!target) {
-		throw new Error('Code execution is unavailable in this context.')
-	}
-	const { response, payload } = await fetchJsonResponse({
-		url: target.url,
-		method: 'POST',
-		body: { code },
-		token: target.token,
-	})
-	if (!response.ok || !payload || payload.ok !== true) {
-		throw new Error(getApiErrorMessage(payload, 'Code execution failed.'))
-	}
-	return payload.result ?? null
-}
-
-async function saveSecretWithHttp(input: SaveSecretInput): Promise<SaveSecretResult> {
-	const target = getSessionRequestTarget('secrets')
-	if (!target) {
-		return {
-			ok: false,
-			error: 'Secret storage is unavailable in this context.',
+	function getSessionRequestTarget(
+		type: 'execute' | 'secrets' | 'delete-secret',
+	) {
+		if (!sessionToken || !sessionEndpoints) {
+			return null
 		}
-	}
-	const { response, payload } = await fetchJsonResponse({
-		url: target.url,
-		method: 'POST',
-		body: {
-			name: input.name,
-			value: input.value,
-			description: input.description ?? '',
-			...(input.scope ? { scope: input.scope } : {}),
-		},
-		token: target.token,
-	})
-	if (!response.ok || !payload || payload.ok !== true) {
-		return {
-			ok: false,
-			error: getApiErrorMessage(payload, 'Unable to save secret.'),
+		const url =
+			type === 'execute'
+				? sessionEndpoints.execute
+				: type === 'secrets'
+					? sessionEndpoints.secrets
+					: sessionEndpoints.deleteSecret
+		if (typeof url !== 'string' || url.length === 0) {
+			return null
 		}
+		return { url, token: sessionToken }
 	}
-	return {
-		ok: true,
-		secret: coerceSecretMetadata(payload.secret) ?? undefined,
-	}
-}
 
-async function listSecretsWithHttp(
-	scope?: GeneratedUiStorageScope,
-): Promise<Array<GeneratedUiSecretMetadata>> {
-	const target = getSessionRequestTarget('secrets')
-	if (!target) return []
-	const url = new URL(target.url)
-	if (scope) {
-		url.searchParams.set('scope', scope)
+	async function fetchJsonResponse(input: {
+		url: string
+		method?: 'GET' | 'POST'
+		body?: JsonRecord
+		token?: string
+	}): Promise<{ response: Response; payload: JsonRecord | null }> {
+		const headers = new Headers({
+			Accept: 'application/json',
+		})
+		if (input.body) {
+			headers.set('Content-Type', 'application/json')
+		}
+		if (input.token) {
+			headers.set('Authorization', 'Bearer ' + input.token)
+		}
+		const response = await fetch(input.url, {
+			method: input.method ?? 'GET',
+			headers,
+			body: input.body ? JSON.stringify(input.body) : undefined,
+			cache: 'no-store',
+			credentials: input.token ? 'omit' : 'include',
+		})
+		const payload = (await response
+			.json()
+			.catch(() => null)) as JsonRecord | null
+		return { response, payload }
 	}
-	const { response, payload } = await fetchJsonResponse({
-		url: url.toString(),
-		method: 'GET',
-		token: target.token,
-	})
-	if (!response.ok || !Array.isArray(payload?.secrets)) {
-		throw new Error(getApiErrorMessage(payload, 'Unable to list secrets.'))
-	}
-	return payload.secrets
-		.map((secret: unknown) => coerceSecretMetadata(secret))
-		.filter((secret: GeneratedUiSecretMetadata | null) => secret != null)
-}
 
-async function deleteSecretWithHttp(
-	input: DeleteSecretInput,
-): Promise<DeleteSecretResult> {
-	const target = getSessionRequestTarget('delete-secret')
-	if (!target) {
-		return {
-			ok: false,
-			error: 'Secret storage is unavailable in this context.',
+	async function executeCodeWithHttp(code: string) {
+		const target = getSessionRequestTarget('execute')
+		if (!target) {
+			throw new Error('Code execution is unavailable in this context.')
 		}
-	}
-	const { response, payload } = await fetchJsonResponse({
-		url: target.url,
-		method: 'POST',
-		body: {
-			name: input.name,
-			...(input.scope ? { scope: input.scope } : {}),
-		},
-		token: target.token,
-	})
-	if (!response.ok || !payload || payload.ok !== true) {
-		return {
-			ok: false,
-			error: getApiErrorMessage(payload, 'Unable to delete secret.'),
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body: { code },
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			throw new Error(getApiErrorMessage(payload, 'Code execution failed.'))
 		}
+		return payload.result ?? null
 	}
-	return {
-		ok: true,
-		deleted: payload.deleted === true,
-	}
-}
 
-function getOAuthStorage(): Storage {
-	try {
-		return window.localStorage
-	} catch {
-		return window.sessionStorage
-	}
-}
-
-async function requestDisplayMode(mode: DisplayMode): Promise<DisplayMode | null> {
-	if (runtimeMode === 'mcp') {
-		const hook = getRuntimeHooks().requestDisplayMode
-		return typeof hook === 'function' ? await hook(mode) : null
-	}
-	return null
-}
-
-async function executeCodeInCurrentContext(code: string) {
-	if (runtimeMode === 'hosted') {
-		return await executeCodeWithHttp(code)
-	}
-	if (runtimeMode === 'mcp') {
-		const hook = getRuntimeHooks().executeCode
-		if (typeof hook === 'function') {
-			return await hook(code)
-		}
-		return await executeCodeWithHttp(code)
-	}
-	return null
-}
-
-async function saveSecretInCurrentContext(
-	input: SaveSecretInput,
-): Promise<SaveSecretResult> {
-	return await saveSecretWithHttp(input)
-}
-
-async function listSecretsInCurrentContext(
-	scope?: GeneratedUiStorageScope,
-): Promise<Array<GeneratedUiSecretMetadata>> {
-	try {
-		const response = await listSecretsWithHttp(scope ?? undefined)
-		return Array.isArray(response) ? response : []
-	} catch {
-		return []
-	}
-}
-
-async function deleteSecretInCurrentContext(
-	input: DeleteSecretInput,
-): Promise<DeleteSecretResult> {
-	return await deleteSecretWithHttp(input)
-}
-
-const kodyWidget = {
-	params: runtimeParams,
-	sendMessage(text: unknown) {
-		if (runtimeMode === 'hosted') {
-			if (typeof text === 'string' && text.length > 0) {
-				console.info('[kodyWidget] message:', text)
-			}
-			return false
-		}
-		if (runtimeMode === 'mcp') {
-			const hook = getRuntimeHooks().sendMessage
-			return typeof hook === 'function' ? hook(String(text ?? '')) : false
-		}
-		return appendLocalMessageLogEntry(text)
-	},
-	openLink(url: string) {
-		if (runtimeMode === 'hosted') {
-			if (typeof url !== 'string' || url.length === 0) return false
-			window.open(url, '_blank', 'noopener,noreferrer')
-			return true
-		}
-		if (runtimeMode === 'mcp') {
-			const hook = getRuntimeHooks().openLink
-			return typeof hook === 'function' ? hook(url) : false
-		}
-		return false
-	},
-	async requestDisplayMode(mode: DisplayMode) {
-		return await requestDisplayMode(mode)
-	},
-	async toggleFullscreen() {
-		if (runtimeMode === 'hosted') {
-			return 'inline'
-		}
-		return await requestDisplayMode('fullscreen')
-	},
-	async executeCode(code: string) {
-		if (typeof code !== 'string' || code.length === 0) return null
-		return await executeCodeInCurrentContext(code)
-	},
-	async saveSecret(input: any): Promise<SaveSecretResult> {
-		if (!input || typeof input !== 'object') {
-			return { ok: false, error: 'Secret input must be an object.' }
-		}
-		if (typeof input.name !== 'string' || input.name.length === 0) {
-			return { ok: false, error: 'Secret name is required.' }
-		}
-		if (typeof input.value !== 'string' || input.value.length === 0) {
-			return { ok: false, error: 'Secret value is required.' }
-		}
-		return await saveSecretInCurrentContext(input)
-	},
-	async saveSecrets(input: any): Promise<SaveSecretsResult> {
-		if (!Array.isArray(input)) {
+	async function saveSecretWithHttp(
+		input: SaveSecretInput,
+	): Promise<SaveSecretResult> {
+		const target = getSessionRequestTarget('secrets')
+		if (!target) {
 			return {
 				ok: false,
-				results: [
-					{
-						name: '',
-						ok: false,
-						error: 'Secret inputs must be an array.',
-					},
-				],
+				error: 'Secret storage is unavailable in this context.',
 			}
 		}
-		const results: SaveSecretsResult['results'] = []
-		for (const item of input) {
-			if (!item || typeof item !== 'object') {
-				results.push({
-					name: '',
-					ok: false,
-					error: 'Each secret input must be an object.',
-				})
-				continue
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body: {
+				name: input.name,
+				value: input.value,
+				description: input.description ?? '',
+				...(input.scope ? { scope: input.scope } : {}),
+			},
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			return {
+				ok: false,
+				error: getApiErrorMessage(payload, 'Unable to save secret.'),
 			}
-			const response = await kodyWidget.saveSecret(item)
-			results.push({
-				name: typeof item.name === 'string' ? item.name : '',
-				ok: response.ok === true,
-				...(response.ok === true && response.secret
-					? { secret: response.secret }
-					: {}),
-				...(response.ok === true
-					? {}
-					: { error: response.error || 'Unable to save secret.' }),
-			})
 		}
 		return {
-			ok: results.every((result) => result.ok === true),
-			results,
+			ok: true,
+			secret: coerceSecretMetadata(payload.secret) ?? undefined,
 		}
-	},
-	async saveValue(input: SaveValueInput | any): Promise<SaveValueResult> {
-		if (!input || typeof input !== 'object') {
-			return { ok: false, error: 'Value input must be an object.' }
+	}
+
+	async function listSecretsWithHttp(
+		scope?: GeneratedUiStorageScope,
+	): Promise<Array<GeneratedUiSecretMetadata>> {
+		const target = getSessionRequestTarget('secrets')
+		if (!target) return []
+		const url = new URL(target.url)
+		if (scope) {
+			url.searchParams.set('scope', scope)
 		}
-		if (typeof input.name !== 'string' || input.name.length === 0) {
-			return { ok: false, error: 'Value name is required.' }
+		const { response, payload } = await fetchJsonResponse({
+			url: url.toString(),
+			method: 'GET',
+			token: target.token,
+		})
+		if (!response.ok || !Array.isArray(payload?.secrets)) {
+			throw new Error(getApiErrorMessage(payload, 'Unable to list secrets.'))
 		}
-		if (typeof input.value !== 'string' || input.value.length === 0) {
-			return { ok: false, error: 'Value is required.' }
+		return payload.secrets
+			.map((secret: unknown) => coerceSecretMetadata(secret))
+			.filter((secret: GeneratedUiSecretMetadata | null) => secret != null)
+	}
+
+	async function deleteSecretWithHttp(
+		input: DeleteSecretInput,
+	): Promise<DeleteSecretResult> {
+		const target = getSessionRequestTarget('delete-secret')
+		if (!target) {
+			return {
+				ok: false,
+				error: 'Secret storage is unavailable in this context.',
+			}
 		}
+		const { response, payload } = await fetchJsonResponse({
+			url: target.url,
+			method: 'POST',
+			body: {
+				name: input.name,
+				...(input.scope ? { scope: input.scope } : {}),
+			},
+			token: target.token,
+		})
+		if (!response.ok || !payload || payload.ok !== true) {
+			return {
+				ok: false,
+				error: getApiErrorMessage(payload, 'Unable to delete secret.'),
+			}
+		}
+		return {
+			ok: true,
+			deleted: payload.deleted === true,
+		}
+	}
+
+	function getOAuthStorage(): Storage {
 		try {
+			return window.localStorage
+		} catch {
+			return window.sessionStorage
+		}
+	}
+
+	async function requestDisplayMode(
+		mode: DisplayMode,
+	): Promise<DisplayMode | null> {
+		if (runtimeMode === 'mcp') {
+			const hook = getRuntimeHooks().requestDisplayMode
+			return typeof hook === 'function' ? await hook(mode) : null
+		}
+		return null
+	}
+
+	async function executeCodeInCurrentContext(code: string) {
+		if (runtimeMode === 'hosted') {
+			return await executeCodeWithHttp(code)
+		}
+		if (runtimeMode === 'mcp') {
+			const hook = getRuntimeHooks().executeCode
+			if (typeof hook === 'function') {
+				return await hook(code)
+			}
+			return await executeCodeWithHttp(code)
+		}
+		return null
+	}
+
+	async function saveSecretInCurrentContext(
+		input: SaveSecretInput,
+	): Promise<SaveSecretResult> {
+		return await saveSecretWithHttp(input)
+	}
+
+	async function listSecretsInCurrentContext(
+		scope?: GeneratedUiStorageScope,
+	): Promise<Array<GeneratedUiSecretMetadata>> {
+		try {
+			const response = await listSecretsWithHttp(scope ?? undefined)
+			return Array.isArray(response) ? response : []
+		} catch {
+			return []
+		}
+	}
+
+	async function deleteSecretInCurrentContext(
+		input: DeleteSecretInput,
+	): Promise<DeleteSecretResult> {
+		return await deleteSecretWithHttp(input)
+	}
+
+	const kodyWidget = {
+		params: runtimeParams,
+		sendMessage(text: unknown) {
+			if (runtimeMode === 'hosted') {
+				if (typeof text === 'string' && text.length > 0) {
+					console.info('[kodyWidget] message:', text)
+				}
+				return false
+			}
+			if (runtimeMode === 'mcp') {
+				const hook = getRuntimeHooks().sendMessage
+				return typeof hook === 'function' ? hook(String(text ?? '')) : false
+			}
+			return appendLocalMessageLogEntry(text)
+		},
+		openLink(url: string) {
+			if (runtimeMode === 'hosted') {
+				if (typeof url !== 'string' || url.length === 0) return false
+				window.open(url, '_blank', 'noopener,noreferrer')
+				return true
+			}
+			if (runtimeMode === 'mcp') {
+				const hook = getRuntimeHooks().openLink
+				return typeof hook === 'function' ? hook(url) : false
+			}
+			return false
+		},
+		async requestDisplayMode(mode: DisplayMode) {
+			return await requestDisplayMode(mode)
+		},
+		async toggleFullscreen() {
+			if (runtimeMode === 'hosted') {
+				return 'inline'
+			}
+			return await requestDisplayMode('fullscreen')
+		},
+		async executeCode(code: string) {
+			if (typeof code !== 'string' || code.length === 0) return null
+			return await executeCodeInCurrentContext(code)
+		},
+		async saveSecret(input: any): Promise<SaveSecretResult> {
+			if (!input || typeof input !== 'object') {
+				return { ok: false, error: 'Secret input must be an object.' }
+			}
+			if (typeof input.name !== 'string' || input.name.length === 0) {
+				return { ok: false, error: 'Secret name is required.' }
+			}
+			if (typeof input.value !== 'string' || input.value.length === 0) {
+				return { ok: false, error: 'Secret value is required.' }
+			}
+			return await saveSecretInCurrentContext(input)
+		},
+		async saveSecrets(input: any): Promise<SaveSecretsResult> {
+			if (!Array.isArray(input)) {
+				return {
+					ok: false,
+					results: [
+						{
+							name: '',
+							ok: false,
+							error: 'Secret inputs must be an array.',
+						},
+					],
+				}
+			}
+			const results: SaveSecretsResult['results'] = []
+			for (const item of input) {
+				if (!item || typeof item !== 'object') {
+					results.push({
+						name: '',
+						ok: false,
+						error: 'Each secret input must be an object.',
+					})
+					continue
+				}
+				const response = await kodyWidget.saveSecret(item)
+				results.push({
+					name: typeof item.name === 'string' ? item.name : '',
+					ok: response.ok === true,
+					...(response.ok === true && response.secret
+						? { secret: response.secret }
+						: {}),
+					...(response.ok === true
+						? {}
+						: { error: response.error || 'Unable to save secret.' }),
+				})
+			}
+			return {
+				ok: results.every((result) => result.ok === true),
+				results,
+			}
+		},
+		async saveValue(input: SaveValueInput | any): Promise<SaveValueResult> {
+			if (!input || typeof input !== 'object') {
+				return { ok: false, error: 'Value input must be an object.' }
+			}
+			if (typeof input.name !== 'string' || input.name.length === 0) {
+				return { ok: false, error: 'Value name is required.' }
+			}
+			if (typeof input.value !== 'string' || input.value.length === 0) {
+				return { ok: false, error: 'Value is required.' }
+			}
+			try {
+				const result = await kodyWidget.executeCode(
+					buildCodemodeCapabilityExecuteCode('value_set', {
+						name: input.name,
+						value: input.value,
+						description:
+							typeof input.description === 'string' ? input.description : '',
+						...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
+					}),
+				)
+				const saved = coerceValueMetadata(
+					isRecord(result) ? result.value : null,
+				)
+				if (!saved) {
+					return { ok: false, error: 'Unable to save value.' }
+				}
+				return {
+					ok: true,
+					value: saved,
+				}
+			} catch (error) {
+				return {
+					ok: false,
+					error:
+						error instanceof Error ? error.message : 'Unable to save value.',
+				}
+			}
+		},
+		async saveValues(input: any): Promise<SaveValuesResult> {
+			if (!Array.isArray(input)) {
+				return {
+					ok: false,
+					results: [
+						{
+							name: '',
+							ok: false,
+							error: 'Value inputs must be an array.',
+						},
+					],
+				}
+			}
+			const results: SaveValuesResult['results'] = []
+			for (const item of input) {
+				if (!item || typeof item !== 'object') {
+					results.push({
+						name: '',
+						ok: false,
+						error: 'Each value input must be an object.',
+					})
+					continue
+				}
+				const response = await kodyWidget.saveValue(item)
+				results.push({
+					name: typeof item.name === 'string' ? item.name : '',
+					ok: response.ok === true,
+					...(response.ok === true && response.value
+						? { value: response.value }
+						: {}),
+					...(response.ok === true
+						? {}
+						: { error: response.error || 'Unable to save value.' }),
+				})
+			}
+			return {
+				ok: results.every((result) => result.ok === true),
+				results,
+			}
+		},
+		async getValue(input: any) {
+			if (!input || typeof input !== 'object') {
+				throw new Error('Value input must be an object.')
+			}
+			if (typeof input.name !== 'string' || input.name.length === 0) {
+				throw new Error('Value name is required.')
+			}
 			const result = await kodyWidget.executeCode(
-				buildCodemodeCapabilityExecuteCode('value_set', {
+				buildCodemodeCapabilityExecuteCode('value_get', {
 					name: input.name,
-					value: input.value,
-					description:
-						typeof input.description === 'string' ? input.description : '',
 					...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
 				}),
 			)
-			const saved = coerceValueMetadata(isRecord(result) ? result.value : null)
-			if (!saved) {
-				return { ok: false, error: 'Unable to save value.' }
-			}
-			return {
-				ok: true,
-				value: saved,
-			}
-		} catch (error) {
-			return {
-				ok: false,
-				error:
-					error instanceof Error ? error.message : 'Unable to save value.',
-			}
-		}
-	},
-	async saveValues(input: any): Promise<SaveValuesResult> {
-		if (!Array.isArray(input)) {
-			return {
-				ok: false,
-				results: [
-					{
-						name: '',
-						ok: false,
-						error: 'Value inputs must be an array.',
-					},
-				],
-			}
-		}
-		const results: SaveValuesResult['results'] = []
-		for (const item of input) {
-			if (!item || typeof item !== 'object') {
-				results.push({
-					name: '',
-					ok: false,
-					error: 'Each value input must be an object.',
-				})
-				continue
-			}
-			const response = await kodyWidget.saveValue(item)
-			results.push({
-				name: typeof item.name === 'string' ? item.name : '',
-				ok: response.ok === true,
-				...(response.ok === true && response.value
-					? { value: response.value }
-					: {}),
-				...(response.ok === true
-					? {}
-					: { error: response.error || 'Unable to save value.' }),
-			})
-		}
-		return {
-			ok: results.every((result) => result.ok === true),
-			results,
-		}
-	},
-	async getValue(input: any) {
-		if (!input || typeof input !== 'object') {
-			throw new Error('Value input must be an object.')
-		}
-		if (typeof input.name !== 'string' || input.name.length === 0) {
-			throw new Error('Value name is required.')
-		}
-		const result = await kodyWidget.executeCode(
-			buildCodemodeCapabilityExecuteCode('value_get', {
-				name: input.name,
-				...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
-			}),
-		)
-		return coerceValueMetadata(isRecord(result) ? result.value : null)
-	},
-	async listValues(input: any) {
-		const scope = coerceStorageScope(isRecord(input) ? input.scope : undefined)
-		const result = await kodyWidget.executeCode(
-			buildCodemodeCapabilityExecuteCode('value_list', {
-				...(scope ? { scope } : {}),
-			}),
-		)
-		if (!isRecord(result) || !Array.isArray(result.values)) return []
-		return result.values
-			.map((value: unknown) => coerceValueMetadata(value))
-			.filter((value: GeneratedUiValueMetadata | null) => value != null)
-	},
-	async deleteValue(input: any) {
-		if (!input || typeof input !== 'object') {
-			return { ok: false, error: 'Value input must be an object.' }
-		}
-		if (typeof input.name !== 'string' || input.name.length === 0) {
-			return { ok: false, error: 'Value name is required.' }
-		}
-		const scope = coerceStorageScope(input.scope)
-		if (!scope) {
-			return { ok: false, error: 'Value scope is required.' }
-		}
-		try {
+			return coerceValueMetadata(isRecord(result) ? result.value : null)
+		},
+		async listValues(input: any) {
+			const scope = coerceStorageScope(
+				isRecord(input) ? input.scope : undefined,
+			)
 			const result = await kodyWidget.executeCode(
-				buildCodemodeCapabilityExecuteCode('value_delete', {
-					name: input.name,
-					scope,
+				buildCodemodeCapabilityExecuteCode('value_list', {
+					...(scope ? { scope } : {}),
 				}),
 			)
-			return {
-				ok: true,
-				deleted: isRecord(result) ? result.deleted === true : false,
+			if (!isRecord(result) || !Array.isArray(result.values)) return []
+			return result.values
+				.map((value: unknown) => coerceValueMetadata(value))
+				.filter((value: GeneratedUiValueMetadata | null) => value != null)
+		},
+		async deleteValue(input: any) {
+			if (!input || typeof input !== 'object') {
+				return { ok: false, error: 'Value input must be an object.' }
 			}
-		} catch (error) {
-			return {
-				ok: false,
-				error:
-					error instanceof Error ? error.message : 'Unable to delete value.',
+			if (typeof input.name !== 'string' || input.name.length === 0) {
+				return { ok: false, error: 'Value name is required.' }
 			}
-		}
-	},
-	async listSecrets(input: any) {
-		const scope = coerceStorageScope(isRecord(input) ? input.scope : undefined)
-		return await listSecretsInCurrentContext(scope ?? undefined)
-	},
-	formToObject(form: FormReference) {
-		const resolvedForm = resolveFormReference(form)
-		if (!(resolvedForm instanceof HTMLFormElement)) {
-			throw new Error(
-				'formToObject requires an HTMLFormElement or a selector that resolves to one.',
-			)
-		}
-		return formDataToObject(new FormData(resolvedForm))
-	},
-	fillFromSearchParams(form: FormReference, mapping: any) {
-		const resolvedForm = resolveFormReference(form)
-		if (!(resolvedForm instanceof HTMLFormElement)) {
-			throw new Error(
-				'fillFromSearchParams requires an HTMLFormElement or a selector that resolves to one.',
-			)
-		}
-		const url = getTopLocationUrl()
-		const mappingRecord = isRecord(mapping) ? mapping : null
-		const fieldNames = new Set(
-			Array.from(resolvedForm.elements)
-				.map((element) => ('name' in element ? element.name : ''))
-				.filter((name) => typeof name === 'string' && name.length > 0),
-		)
-		for (const name of fieldNames) {
-			const fieldName = String(name)
-			const mappedValue = mappingRecord?.[fieldName]
-			const paramName =
-				typeof mappedValue === 'string' && mappedValue.length > 0
-					? mappedValue
-					: fieldName
-			const values = url.searchParams.getAll(paramName)
-			if (values.length === 0) continue
-			setControlValues(resolvedForm, fieldName, values)
-		}
-		return kodyWidget.formToObject(resolvedForm)
-	},
-	persistForm(form: FormReference, options: PersistFormOptions | any) {
-		const resolvedForm = resolveFormReference(form)
-		if (!(resolvedForm instanceof HTMLFormElement)) {
-			throw new Error(
-				'persistForm requires an HTMLFormElement or a selector that resolves to one.',
-			)
-		}
-		if (
-			!isRecord(options) ||
-			typeof options.storageKey !== 'string' ||
-			options.storageKey.length === 0
-		) {
-			throw new Error('persistForm requires a storageKey option.')
-		}
-		const values = kodyWidget.formToObject(resolvedForm)
-		const fieldNames = Array.isArray(options.fields)
-			? options.fields.filter(
-					(field) => typeof field === 'string' && field.length > 0,
+			const scope = coerceStorageScope(input.scope)
+			if (!scope) {
+				return { ok: false, error: 'Value scope is required.' }
+			}
+			try {
+				const result = await kodyWidget.executeCode(
+					buildCodemodeCapabilityExecuteCode('value_delete', {
+						name: input.name,
+						scope,
+					}),
 				)
-			: Object.keys(values)
-		const persisted: JsonRecord = {}
-		for (const name of fieldNames) {
-			if (!(name in values)) continue
-			const value = values[name]
-			const normalized = Array.isArray(value)
-				? value.filter((entry) => typeof entry === 'string').map((entry) => entry)
-				: typeof value === 'string'
-					? value
-					: null
-			if (normalized != null) {
-				persisted[name] = normalized
-			}
-		}
-		localStorage.setItem(options.storageKey, JSON.stringify(persisted))
-		return persisted
-	},
-	restoreForm(form: FormReference, options: PersistFormOptions | any) {
-		const resolvedForm = resolveFormReference(form)
-		if (!(resolvedForm instanceof HTMLFormElement)) {
-			throw new Error(
-				'restoreForm requires an HTMLFormElement or a selector that resolves to one.',
-			)
-		}
-		if (
-			!isRecord(options) ||
-			typeof options.storageKey !== 'string' ||
-			options.storageKey.length === 0
-		) {
-			throw new Error('restoreForm requires a storageKey option.')
-		}
-		const raw = localStorage.getItem(options.storageKey)
-		if (!raw) return null
-		let parsed = null
-		try {
-			parsed = JSON.parse(raw)
-		} catch {
-			return null
-		}
-		if (!isRecord(parsed)) return null
-		for (const [name, value] of Object.entries(parsed)) {
-			setControlValues(resolvedForm, name, toStringArray(value))
-		}
-		return kodyWidget.formToObject(resolvedForm)
-	},
-	createOAuthState(key: string) {
-		if (typeof key !== 'string' || key.length === 0) {
-			throw new Error('createOAuthState requires a storage key.')
-		}
-		const state =
-			globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
-				? globalThis.crypto.randomUUID()
-				: Math.random().toString(36).slice(2) +
-					Math.random().toString(36).slice(2)
-		const storage = getOAuthStorage()
-		storage.setItem(key, state)
-		return state
-	},
-	getOAuthState(key: string) {
-		if (typeof key !== 'string' || key.length === 0) return null
-		const storage = getOAuthStorage()
-		return storage.getItem(key)
-	},
-	clearOAuthState(key: string) {
-		if (typeof key !== 'string' || key.length === 0) return
-		const storage = getOAuthStorage()
-		storage.removeItem(key)
-	},
-	validateOAuthCallbackState(input: any) {
-		if (
-			!isRecord(input) ||
-			typeof input.key !== 'string' ||
-			input.key.length === 0
-		) {
-			throw new Error('validateOAuthCallbackState requires a key.')
-		}
-		const storage = getOAuthStorage()
-		const expectedState = storage.getItem(input.key)
-		const returnedState =
-			typeof input.returnedState === 'string' && input.returnedState.length > 0
-				? input.returnedState
-				: null
-		return {
-			valid:
-				typeof expectedState === 'string' &&
-				expectedState.length > 0 &&
-				returnedState != null &&
-				expectedState === returnedState,
-			expectedState,
-			returnedState,
-		}
-	},
-	readOAuthCallback(input: any) {
-		const url = getTopLocationUrl(
-			isRecord(input) && typeof input.url === 'string' ? input.url : undefined,
-		)
-		const error = url.searchParams.get('error')
-		const errorDescription = url.searchParams.get('error_description')
-		if (error) {
-			return {
-				kind: 'error',
-				error,
-				errorDescription,
-				callbackUrl: url.toString(),
-			}
-		}
-		const code = url.searchParams.get('code')
-		if (!code) {
-			return { kind: 'none' }
-		}
-		const storage = getOAuthStorage()
-		const state = url.searchParams.get('state')
-		const expectedState =
-			isRecord(input) && typeof input.expectedStateKey === 'string'
-				? storage.getItem(input.expectedStateKey)
-				: null
-		return {
-			kind: 'success',
-			code,
-			state,
-			callbackUrl: url.toString(),
-			expectedState,
-			stateMatches:
-				expectedState != null && state != null ? expectedState === state : null,
-		}
-	},
-	async fetchWithSecrets(input: unknown) {
-		const normalized = normalizeFetchWithSecretsInput(input)
-		if (!normalized.ok) {
-			return {
-				ok: false,
-				kind: 'execution_error',
-				message: normalized.error,
-			}
-		}
-		const fallbackSecretNames = normalizeSecretNameList(
-			extractSecretNamesFromValue([
-				normalized.value.url,
-				Object.values(normalized.value.headers),
-				normalized.value.body,
-			]),
-		)
-		try {
-			const result = await kodyWidget.executeCode(
-				buildFetchWithSecretsExecuteCode(normalized.value),
-			)
-			return normalizeFetchWithSecretsResult(result)
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
-			if (message.includes('not allowed for host')) {
-				const approval = extractApprovalDetails(message, fallbackSecretNames)
+				return {
+					ok: true,
+					deleted: isRecord(result) ? result.deleted === true : false,
+				}
+			} catch (error) {
 				return {
 					ok: false,
-					kind: 'host_approval_required',
-					approvalUrl: approval.approvalUrl,
-					message: approval.message,
-					host: approval.host,
-					secretNames: approval.secretNames,
+					error:
+						error instanceof Error ? error.message : 'Unable to delete value.',
 				}
 			}
-			return {
-				ok: false,
-				kind: 'execution_error',
-				message,
+		},
+		async listSecrets(input: any) {
+			const scope = coerceStorageScope(
+				isRecord(input) ? input.scope : undefined,
+			)
+			return await listSecretsInCurrentContext(scope ?? undefined)
+		},
+		formToObject(form: FormReference) {
+			const resolvedForm = resolveFormReference(form)
+			if (!(resolvedForm instanceof HTMLFormElement)) {
+				throw new Error(
+					'formToObject requires an HTMLFormElement or a selector that resolves to one.',
+				)
 			}
-		}
-	},
-	async exchangePkceOAuthCode(input: any) {
-		if (!isRecord(input)) {
-			return {
-				ok: false,
-				kind: 'execution_error',
-				message: 'exchangePkceOAuthCode input must be an object.',
+			return formDataToObject(new FormData(resolvedForm))
+		},
+		fillFromSearchParams(form: FormReference, mapping: any) {
+			const resolvedForm = resolveFormReference(form)
+			if (!(resolvedForm instanceof HTMLFormElement)) {
+				throw new Error(
+					'fillFromSearchParams requires an HTMLFormElement or a selector that resolves to one.',
+				)
 			}
-		}
-		if (
-			typeof input.tokenUrl !== 'string' ||
-			typeof input.code !== 'string' ||
-			typeof input.redirectUri !== 'string' ||
-			typeof input.clientId !== 'string' ||
-			typeof input.codeVerifier !== 'string' ||
-			input.tokenUrl.length === 0 ||
-			input.code.length === 0 ||
-			input.redirectUri.length === 0 ||
-			input.clientId.length === 0 ||
-			input.codeVerifier.length === 0
-		) {
-			return {
-				ok: false,
-				kind: 'execution_error',
-				message:
-					'exchangePkceOAuthCode requires tokenUrl, code, redirectUri, clientId, and codeVerifier.',
+			const url = getTopLocationUrl()
+			const mappingRecord = isRecord(mapping) ? mapping : null
+			const fieldNames = new Set(
+				Array.from(resolvedForm.elements)
+					.map((element) => ('name' in element ? element.name : ''))
+					.filter((name) => typeof name === 'string' && name.length > 0),
+			)
+			for (const name of fieldNames) {
+				const fieldName = String(name)
+				const mappedValue = mappingRecord?.[fieldName]
+				const paramName =
+					typeof mappedValue === 'string' && mappedValue.length > 0
+						? mappedValue
+						: fieldName
+				const values = url.searchParams.getAll(paramName)
+				if (values.length === 0) continue
+				setControlValues(resolvedForm, fieldName, values)
 			}
-		}
-		const params = new URLSearchParams()
-		params.set('grant_type', 'authorization_code')
-		params.set('client_id', input.clientId)
-		params.set('code_verifier', input.codeVerifier)
-		params.set('code', input.code)
-		params.set('redirect_uri', input.redirectUri)
-		appendOAuthExtraParams(params, input.extraParams)
-		try {
-			const response = await fetch(input.tokenUrl, {
+			return kodyWidget.formToObject(resolvedForm)
+		},
+		persistForm(form: FormReference, options: PersistFormOptions | any) {
+			const resolvedForm = resolveFormReference(form)
+			if (!(resolvedForm instanceof HTMLFormElement)) {
+				throw new Error(
+					'persistForm requires an HTMLFormElement or a selector that resolves to one.',
+				)
+			}
+			if (
+				!isRecord(options) ||
+				typeof options.storageKey !== 'string' ||
+				options.storageKey.length === 0
+			) {
+				throw new Error('persistForm requires a storageKey option.')
+			}
+			const values = kodyWidget.formToObject(resolvedForm)
+			const fieldNames = Array.isArray(options.fields)
+				? options.fields.filter(
+						(field) => typeof field === 'string' && field.length > 0,
+					)
+				: Object.keys(values)
+			const persisted: JsonRecord = {}
+			for (const name of fieldNames) {
+				if (!(name in values)) continue
+				const value = values[name]
+				const normalized = Array.isArray(value)
+					? value
+							.filter((entry) => typeof entry === 'string')
+							.map((entry) => entry)
+					: typeof value === 'string'
+						? value
+						: null
+				if (normalized != null) {
+					persisted[name] = normalized
+				}
+			}
+			localStorage.setItem(options.storageKey, JSON.stringify(persisted))
+			return persisted
+		},
+		restoreForm(form: FormReference, options: PersistFormOptions | any) {
+			const resolvedForm = resolveFormReference(form)
+			if (!(resolvedForm instanceof HTMLFormElement)) {
+				throw new Error(
+					'restoreForm requires an HTMLFormElement or a selector that resolves to one.',
+				)
+			}
+			if (
+				!isRecord(options) ||
+				typeof options.storageKey !== 'string' ||
+				options.storageKey.length === 0
+			) {
+				throw new Error('restoreForm requires a storageKey option.')
+			}
+			const raw = localStorage.getItem(options.storageKey)
+			if (!raw) return null
+			let parsed = null
+			try {
+				parsed = JSON.parse(raw)
+			} catch {
+				return null
+			}
+			if (!isRecord(parsed)) return null
+			for (const [name, value] of Object.entries(parsed)) {
+				setControlValues(resolvedForm, name, toStringArray(value))
+			}
+			return kodyWidget.formToObject(resolvedForm)
+		},
+		createOAuthState(key: string) {
+			if (typeof key !== 'string' || key.length === 0) {
+				throw new Error('createOAuthState requires a storage key.')
+			}
+			const state =
+				globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
+					? globalThis.crypto.randomUUID()
+					: Math.random().toString(36).slice(2) +
+						Math.random().toString(36).slice(2)
+			const storage = getOAuthStorage()
+			storage.setItem(key, state)
+			return state
+		},
+		getOAuthState(key: string) {
+			if (typeof key !== 'string' || key.length === 0) return null
+			const storage = getOAuthStorage()
+			return storage.getItem(key)
+		},
+		clearOAuthState(key: string) {
+			if (typeof key !== 'string' || key.length === 0) return
+			const storage = getOAuthStorage()
+			storage.removeItem(key)
+		},
+		validateOAuthCallbackState(input: any) {
+			if (
+				!isRecord(input) ||
+				typeof input.key !== 'string' ||
+				input.key.length === 0
+			) {
+				throw new Error('validateOAuthCallbackState requires a key.')
+			}
+			const storage = getOAuthStorage()
+			const expectedState = storage.getItem(input.key)
+			const returnedState =
+				typeof input.returnedState === 'string' &&
+				input.returnedState.length > 0
+					? input.returnedState
+					: null
+			return {
+				valid:
+					typeof expectedState === 'string' &&
+					expectedState.length > 0 &&
+					returnedState != null &&
+					expectedState === returnedState,
+				expectedState,
+				returnedState,
+			}
+		},
+		readOAuthCallback(input: any) {
+			const url = getTopLocationUrl(
+				isRecord(input) && typeof input.url === 'string'
+					? input.url
+					: undefined,
+			)
+			const error = url.searchParams.get('error')
+			const errorDescription = url.searchParams.get('error_description')
+			if (error) {
+				return {
+					kind: 'error',
+					error,
+					errorDescription,
+					callbackUrl: url.toString(),
+				}
+			}
+			const code = url.searchParams.get('code')
+			if (!code) {
+				return { kind: 'none' }
+			}
+			const storage = getOAuthStorage()
+			const state = url.searchParams.get('state')
+			const expectedState =
+				isRecord(input) && typeof input.expectedStateKey === 'string'
+					? storage.getItem(input.expectedStateKey)
+					: null
+			return {
+				kind: 'success',
+				code,
+				state,
+				callbackUrl: url.toString(),
+				expectedState,
+				stateMatches:
+					expectedState != null && state != null
+						? expectedState === state
+						: null,
+			}
+		},
+		async fetchWithSecrets(input: unknown) {
+			const normalized = normalizeFetchWithSecretsInput(input)
+			if (!normalized.ok) {
+				return {
+					ok: false,
+					kind: 'execution_error',
+					message: normalized.error,
+				}
+			}
+			const fallbackSecretNames = normalizeSecretNameList(
+				extractSecretNamesFromValue([
+					normalized.value.url,
+					Object.values(normalized.value.headers),
+					normalized.value.body,
+				]),
+			)
+			try {
+				const result = await kodyWidget.executeCode(
+					buildFetchWithSecretsExecuteCode(normalized.value),
+				)
+				return normalizeFetchWithSecretsResult(result)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				if (message.includes('not allowed for host')) {
+					const approval = extractApprovalDetails(message, fallbackSecretNames)
+					return {
+						ok: false,
+						kind: 'host_approval_required',
+						approvalUrl: approval.approvalUrl,
+						message: approval.message,
+						host: approval.host,
+						secretNames: approval.secretNames,
+					}
+				}
+				return {
+					ok: false,
+					kind: 'execution_error',
+					message,
+				}
+			}
+		},
+		async exchangePkceOAuthCode(input: any) {
+			if (!isRecord(input)) {
+				return {
+					ok: false,
+					kind: 'execution_error',
+					message: 'exchangePkceOAuthCode input must be an object.',
+				}
+			}
+			if (
+				typeof input.tokenUrl !== 'string' ||
+				typeof input.code !== 'string' ||
+				typeof input.redirectUri !== 'string' ||
+				typeof input.clientId !== 'string' ||
+				typeof input.codeVerifier !== 'string' ||
+				input.tokenUrl.length === 0 ||
+				input.code.length === 0 ||
+				input.redirectUri.length === 0 ||
+				input.clientId.length === 0 ||
+				input.codeVerifier.length === 0
+			) {
+				return {
+					ok: false,
+					kind: 'execution_error',
+					message:
+						'exchangePkceOAuthCode requires tokenUrl, code, redirectUri, clientId, and codeVerifier.',
+				}
+			}
+			const params = new URLSearchParams()
+			params.set('grant_type', 'authorization_code')
+			params.set('client_id', input.clientId)
+			params.set('code_verifier', input.codeVerifier)
+			params.set('code', input.code)
+			params.set('redirect_uri', input.redirectUri)
+			appendOAuthExtraParams(params, input.extraParams)
+			try {
+				const response = await fetch(input.tokenUrl, {
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/x-www-form-urlencoded',
+					},
+					body: params.toString(),
+					cache: 'no-store',
+					credentials: 'omit',
+				})
+				return normalizeFetchWithSecretsResult(
+					await readOAuthFetchResult(response),
+				)
+			} catch (error) {
+				return {
+					ok: false,
+					kind: 'execution_error',
+					message:
+						error instanceof Error
+							? error.message
+							: 'PKCE token exchange failed.',
+				}
+			}
+		},
+		async exchangeOAuthCodeWithSecrets(input: any) {
+			if (!isRecord(input)) {
+				return {
+					ok: false,
+					kind: 'execution_error',
+					message: 'exchangeOAuthCodeWithSecrets input must be an object.',
+				}
+			}
+			if (
+				typeof input.tokenUrl !== 'string' ||
+				typeof input.code !== 'string' ||
+				typeof input.redirectUri !== 'string' ||
+				typeof input.clientId !== 'string' ||
+				typeof input.clientSecretSecretName !== 'string' ||
+				input.tokenUrl.length === 0 ||
+				input.code.length === 0 ||
+				input.redirectUri.length === 0 ||
+				input.clientId.length === 0 ||
+				input.clientSecretSecretName.length === 0
+			) {
+				return {
+					ok: false,
+					kind: 'execution_error',
+					message:
+						'exchangeOAuthCodeWithSecrets requires tokenUrl, code, redirectUri, clientId, and clientSecretSecretName.',
+				}
+			}
+			const scope = coerceStorageScope(input.scope)
+			const scopeSuffix = scope ? '|scope=' + scope : ''
+			const params = new URLSearchParams()
+			params.set('grant_type', 'authorization_code')
+			params.set('client_id', input.clientId)
+			params.set(
+				'client_secret',
+				'{{secret:' + input.clientSecretSecretName + scopeSuffix + '}}',
+			)
+			params.set('code', input.code)
+			params.set('redirect_uri', input.redirectUri)
+			appendOAuthExtraParams(params, input.extraParams)
+			return await kodyWidget.fetchWithSecrets({
+				url: input.tokenUrl,
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
 					'Content-Type': 'application/x-www-form-urlencoded',
 				},
 				body: params.toString(),
-				cache: 'no-store',
-				credentials: 'omit',
 			})
-			return normalizeFetchWithSecretsResult(
-				await readOAuthFetchResult(response),
-			)
-		} catch (error) {
-			return {
-				ok: false,
-				kind: 'execution_error',
-				message:
-					error instanceof Error ? error.message : 'PKCE token exchange failed.',
+		},
+		async saveOAuthTokens(input: any) {
+			if (!isRecord(input) || !isRecord(input.payload)) {
+				return {
+					ok: false,
+					accessTokenSaved: false,
+					refreshTokenSaved: false,
+					error: 'saveOAuthTokens requires a payload object.',
+					results: [],
+				}
 			}
-		}
-	},
-	async exchangeOAuthCodeWithSecrets(input: any) {
-		if (!isRecord(input)) {
-			return {
-				ok: false,
-				kind: 'execution_error',
-				message: 'exchangeOAuthCodeWithSecrets input must be an object.',
+			if (
+				typeof input.accessTokenSecretName !== 'string' ||
+				input.accessTokenSecretName.length === 0
+			) {
+				return {
+					ok: false,
+					accessTokenSaved: false,
+					refreshTokenSaved: false,
+					error: 'saveOAuthTokens requires an accessTokenSecretName.',
+					results: [],
+				}
 			}
-		}
-		if (
-			typeof input.tokenUrl !== 'string' ||
-			typeof input.code !== 'string' ||
-			typeof input.redirectUri !== 'string' ||
-			typeof input.clientId !== 'string' ||
-			typeof input.clientSecretSecretName !== 'string' ||
-			input.tokenUrl.length === 0 ||
-			input.code.length === 0 ||
-			input.redirectUri.length === 0 ||
-			input.clientId.length === 0 ||
-			input.clientSecretSecretName.length === 0
-		) {
-			return {
-				ok: false,
-				kind: 'execution_error',
-				message:
-					'exchangeOAuthCodeWithSecrets requires tokenUrl, code, redirectUri, clientId, and clientSecretSecretName.',
+			const accessToken =
+				typeof input.payload.access_token === 'string'
+					? input.payload.access_token
+					: ''
+			const refreshToken =
+				typeof input.payload.refresh_token === 'string'
+					? input.payload.refresh_token
+					: ''
+			if (!accessToken) {
+				return {
+					ok: false,
+					accessTokenSaved: false,
+					refreshTokenSaved: false,
+					error: 'OAuth payload did not include an access_token.',
+					results: [],
+				}
 			}
-		}
-		const scope = coerceStorageScope(input.scope)
-		const scopeSuffix = scope ? '|scope=' + scope : ''
-		const params = new URLSearchParams()
-		params.set('grant_type', 'authorization_code')
-		params.set('client_id', input.clientId)
-		params.set(
-			'client_secret',
-			'{{secret:' + input.clientSecretSecretName + scopeSuffix + '}}',
-		)
-		params.set('code', input.code)
-		params.set('redirect_uri', input.redirectUri)
-		appendOAuthExtraParams(params, input.extraParams)
-		return await kodyWidget.fetchWithSecrets({
-			url: input.tokenUrl,
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: params.toString(),
-		})
-	},
-	async saveOAuthTokens(input: any) {
-		if (!isRecord(input) || !isRecord(input.payload)) {
-			return {
-				ok: false,
-				accessTokenSaved: false,
-				refreshTokenSaved: false,
-				error: 'saveOAuthTokens requires a payload object.',
-				results: [],
-			}
-		}
-		if (
-			typeof input.accessTokenSecretName !== 'string' ||
-			input.accessTokenSecretName.length === 0
-		) {
-			return {
-				ok: false,
-				accessTokenSaved: false,
-				refreshTokenSaved: false,
-				error: 'saveOAuthTokens requires an accessTokenSecretName.',
-				results: [],
-			}
-		}
-		const accessToken =
-			typeof input.payload.access_token === 'string'
-				? input.payload.access_token
-				: ''
-		const refreshToken =
-			typeof input.payload.refresh_token === 'string'
-				? input.payload.refresh_token
-				: ''
-		if (!accessToken) {
-			return {
-				ok: false,
-				accessTokenSaved: false,
-				refreshTokenSaved: false,
-				error: 'OAuth payload did not include an access_token.',
-				results: [],
-			}
-		}
-		const secrets = [
-			{
-				name: input.accessTokenSecretName,
-				value: accessToken,
-				description:
-					typeof input.accessTokenDescription === 'string'
-						? input.accessTokenDescription
-						: 'OAuth access token',
-				scope: coerceStorageScope(input.scope) ?? undefined,
-			},
-		]
-		if (
-			refreshToken &&
-			typeof input.refreshTokenSecretName === 'string' &&
-			input.refreshTokenSecretName.length > 0
-		) {
-			secrets.push({
-				name: input.refreshTokenSecretName,
-				value: refreshToken,
-				description:
-					typeof input.refreshTokenDescription === 'string'
-						? input.refreshTokenDescription
-						: 'OAuth refresh token',
-				scope: coerceStorageScope(input.scope) ?? undefined,
-			})
-		}
-		const saved = await kodyWidget.saveSecrets(secrets)
-		return {
-			ok: saved.ok,
-			accessTokenSaved: saved.results.some(
-				(result) =>
-					result.name === input.accessTokenSecretName && result.ok === true,
-			),
-			refreshTokenSaved:
+			const secrets = [
+				{
+					name: input.accessTokenSecretName,
+					value: accessToken,
+					description:
+						typeof input.accessTokenDescription === 'string'
+							? input.accessTokenDescription
+							: 'OAuth access token',
+					scope: coerceStorageScope(input.scope) ?? undefined,
+				},
+			]
+			if (
+				refreshToken &&
 				typeof input.refreshTokenSecretName === 'string' &&
 				input.refreshTokenSecretName.length > 0
-					? saved.results.some(
-							(result) =>
-								result.name === input.refreshTokenSecretName &&
-								result.ok === true,
-						)
-					: false,
-			error: saved.ok
-				? undefined
-				: saved.results.find((result) => result.ok !== true)?.error ||
-					'Unable to save OAuth tokens.',
-			results: saved.results,
-		}
-	},
-	buildSecretForm(input: BuildSecretFormInput | any) {
-		if (!isRecord(input) || !Array.isArray(input.fields)) {
-			throw new Error('buildSecretForm requires a form config object with fields.')
-		}
-		const form = resolveFormReference(input.form)
-		if (!(form instanceof HTMLFormElement)) {
-			throw new Error(
-				'buildSecretForm requires an HTMLFormElement or a selector that resolves to one.',
-			)
-		}
-		const controller = {
-			form,
-			save: async () => {
-				const values = kodyWidget.formToObject(form)
-				const secrets = input.fields.map((field: any) => {
-					if (!field || typeof field !== 'object') {
-						throw new Error('Each secret field config must be an object.')
-					}
-					if (
-						typeof field.inputName !== 'string' ||
-						field.inputName.length === 0
-					) {
-						throw new Error(
-							'Each secret field config requires inputName.',
-						)
-					}
-					if (
-						typeof field.secretName !== 'string' ||
-						field.secretName.length === 0
-					) {
-						throw new Error(
-							'Each secret field config requires secretName.',
-						)
-					}
-					const rawValue = pickLastFormValue(values[field.inputName])
-					if (typeof rawValue !== 'string' || rawValue.length === 0) {
-						throw new Error(
-							'Form field "' + field.inputName + '" is required.',
-						)
-					}
-					return {
-						name: field.secretName,
-						value: rawValue,
-						description:
-							typeof field.description === 'string' ? field.description : '',
-						scope: coerceStorageScope(field.scope) ?? undefined,
-					}
+			) {
+				secrets.push({
+					name: input.refreshTokenSecretName,
+					value: refreshToken,
+					description:
+						typeof input.refreshTokenDescription === 'string'
+							? input.refreshTokenDescription
+							: 'OAuth refresh token',
+					scope: coerceStorageScope(input.scope) ?? undefined,
 				})
-				const result = await kodyWidget.saveSecrets(secrets)
-				if (result.ok) {
-					if (typeof input.onSuccess === 'function') {
-						await input.onSuccess(result, values)
-					}
-				} else if (typeof input.onError === 'function') {
-					await input.onError(result, values)
-				}
-				return result
-			},
-			destroy: () => {
-				form.removeEventListener('submit', handleSubmit)
-			},
-		}
-		async function handleSubmit(event: SubmitEvent) {
-			event.preventDefault()
-			try {
-				await controller.save()
-			} catch (error) {
-				if (typeof input.onError === 'function') {
-					await input.onError(
-						{
-							ok: false,
-							results: [
-								{
-									name: '',
-									ok: false,
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							],
-						},
-						kodyWidget.formToObject(form as HTMLFormElement),
-					)
-					return
-				}
-				throw error
 			}
-		}
-		form.addEventListener('submit', handleSubmit)
-		return controller
-	},
-	async deleteSecret(input: any) {
-		if (!input || typeof input !== 'object') {
-			return { ok: false, error: 'Secret input must be an object.' }
-		}
-		if (typeof input.name !== 'string' || input.name.length === 0) {
-			return { ok: false, error: 'Secret name is required.' }
-		}
-		return await deleteSecretInCurrentContext(input)
-	},
-}
+			const saved = await kodyWidget.saveSecrets(secrets)
+			return {
+				ok: saved.ok,
+				accessTokenSaved: saved.results.some(
+					(result) =>
+						result.name === input.accessTokenSecretName && result.ok === true,
+				),
+				refreshTokenSaved:
+					typeof input.refreshTokenSecretName === 'string' &&
+					input.refreshTokenSecretName.length > 0
+						? saved.results.some(
+								(result) =>
+									result.name === input.refreshTokenSecretName &&
+									result.ok === true,
+							)
+						: false,
+				error: saved.ok
+					? undefined
+					: saved.results.find((result) => result.ok !== true)?.error ||
+						'Unable to save OAuth tokens.',
+				results: saved.results,
+			}
+		},
+		buildSecretForm(input: BuildSecretFormInput | any) {
+			if (!isRecord(input) || !Array.isArray(input.fields)) {
+				throw new Error(
+					'buildSecretForm requires a form config object with fields.',
+				)
+			}
+			const form = resolveFormReference(input.form)
+			if (!(form instanceof HTMLFormElement)) {
+				throw new Error(
+					'buildSecretForm requires an HTMLFormElement or a selector that resolves to one.',
+				)
+			}
+			const controller = {
+				form,
+				save: async () => {
+					const values = kodyWidget.formToObject(form)
+					const secrets = input.fields.map((field: any) => {
+						if (!field || typeof field !== 'object') {
+							throw new Error('Each secret field config must be an object.')
+						}
+						if (
+							typeof field.inputName !== 'string' ||
+							field.inputName.length === 0
+						) {
+							throw new Error('Each secret field config requires inputName.')
+						}
+						if (
+							typeof field.secretName !== 'string' ||
+							field.secretName.length === 0
+						) {
+							throw new Error('Each secret field config requires secretName.')
+						}
+						const rawValue = pickLastFormValue(values[field.inputName])
+						if (typeof rawValue !== 'string' || rawValue.length === 0) {
+							throw new Error(
+								'Form field "' + field.inputName + '" is required.',
+							)
+						}
+						return {
+							name: field.secretName,
+							value: rawValue,
+							description:
+								typeof field.description === 'string' ? field.description : '',
+							scope: coerceStorageScope(field.scope) ?? undefined,
+						}
+					})
+					const result = await kodyWidget.saveSecrets(secrets)
+					if (result.ok) {
+						if (typeof input.onSuccess === 'function') {
+							await input.onSuccess(result, values)
+						}
+					} else if (typeof input.onError === 'function') {
+						await input.onError(result, values)
+					}
+					return result
+				},
+				destroy: () => {
+					form.removeEventListener('submit', handleSubmit)
+				},
+			}
+			async function handleSubmit(event: SubmitEvent) {
+				event.preventDefault()
+				try {
+					await controller.save()
+				} catch (error) {
+					if (typeof input.onError === 'function') {
+						await input.onError(
+							{
+								ok: false,
+								results: [
+									{
+										name: '',
+										ok: false,
+										error:
+											error instanceof Error ? error.message : String(error),
+									},
+								],
+							},
+							kodyWidget.formToObject(form as HTMLFormElement),
+						)
+						return
+					}
+					throw error
+				}
+			}
+			form.addEventListener('submit', handleSubmit)
+			return controller
+		},
+		async deleteSecret(input: any) {
+			if (!input || typeof input !== 'object') {
+				return { ok: false, error: 'Secret input must be an object.' }
+			}
+			if (typeof input.name !== 'string' || input.name.length === 0) {
+				return { ok: false, error: 'Secret name is required.' }
+			}
+			return await deleteSecretInCurrentContext(input)
+		},
+	}
 
-kodyWindow.__kodyAppParams = runtimeParams
-kodyWindow.kodyWidget = kodyWidget
-kodyWindow.params = runtimeParams
+	kodyWindow.__kodyAppParams = runtimeParams
+	kodyWindow.kodyWidget = kodyWidget
+	kodyWindow.params = runtimeParams
 
-window.addEventListener('error', (event) => {
-	console.error(
-		'Generated UI app error:',
-		event.error?.message ?? event.message ?? event.error ?? 'Unknown error',
-	)
-})
+	window.addEventListener('error', (event) => {
+		console.error(
+			'Generated UI app error:',
+			event.error?.message ?? event.message ?? event.error ?? 'Unknown error',
+		)
+	})
 
-window.addEventListener('unhandledrejection', (event) => {
-	console.error(
-		'Generated UI app rejection:',
-		event.reason?.message ?? event.reason ?? 'Unknown rejection',
-	)
-})
+	window.addEventListener('unhandledrejection', (event) => {
+		console.error(
+			'Generated UI app rejection:',
+			event.reason?.message ?? event.reason ?? 'Unknown rejection',
+		)
+	})
 }

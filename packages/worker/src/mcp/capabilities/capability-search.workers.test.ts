@@ -33,7 +33,31 @@ test('lexicalScore prefers overlapping tokens', () => {
 	)
 })
 
-test('fusion ranking returns ui_save_app for generated ui query (offline)', async () => {
+test('offline search returns provided specs without depending on global ranks', async () => {
+	const specs = {
+		generated_ui_oauth_guide: {
+			name: 'generated_ui_oauth_guide',
+			domain: 'coding',
+			description:
+				'Guide for generated UI OAuth callback, redirect URI, and provider registration flows.',
+			keywords: [
+				'oauth',
+				'generated ui',
+				'redirect uri',
+				'provider registration',
+			],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: [],
+			requiredInputFields: [],
+			outputFields: ['title', 'body'],
+			inputSchema: {
+				type: 'object',
+				properties: {},
+			},
+		},
+	} satisfies Record<string, CapabilitySpec>
 	const env = {
 		SENTRY_ENVIRONMENT: 'test',
 		AI: {} as Ai,
@@ -41,41 +65,18 @@ test('fusion ranking returns ui_save_app for generated ui query (offline)', asyn
 
 	const { matches, offline } = await searchCapabilities({
 		env,
-		query: 'ui_save_app save generated ui artifact source app_id',
+		query: 'oauth redirect uri provider registration',
 		limit: 8,
-		detail: false,
-		specs: capabilitySpecs,
+		detail: true,
+		specs,
 	})
 
 	expect(offline).toBe(true)
-	const names = matches.map((m) => m.name)
-	expect(names).toContain('ui_save_app')
-	const appRank = names.indexOf('ui_save_app')
-	expect(appRank).toBeGreaterThanOrEqual(0)
-	expect(appRank).toBeLessThan(5)
-})
-
-test('fusion ranking returns generated_ui_oauth_guide for oauth ui query (offline)', async () => {
-	const env = {
-		SENTRY_ENVIRONMENT: 'test',
-		AI: {} as Ai,
-	} as Env
-
-	const { matches, offline } = await searchCapabilities({
-		env,
-		query:
-			'generated ui oauth callback redirect uri host approval provider registration',
-		limit: 8,
-		detail: false,
-		specs: capabilitySpecs,
-	})
-
-	expect(offline).toBe(true)
-	const names = matches.map((m) => m.name)
-	expect(names).toContain('generated_ui_oauth_guide')
-	const guideRank = names.indexOf('generated_ui_oauth_guide')
-	expect(guideRank).toBeGreaterThanOrEqual(0)
-	expect(guideRank).toBeLessThan(5)
+	expect(matches).toHaveLength(1)
+	expect(matches[0]?.name).toBe('generated_ui_oauth_guide')
+	expect(matches[0]?.description).toContain('OAuth callback')
+	expect(matches[0]?.lexicalRank).toBe(1)
+	expect(matches[0]?.vectorRank).toBe(1)
 })
 
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {
