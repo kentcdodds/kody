@@ -69,7 +69,9 @@ test('switching secrets updates detail view without a full reload', async ({
 	await expect(page.getByLabel('Description')).toHaveValue(
 		secondSecret.description,
 	)
-	await expect(page.getByLabel('Secret value')).toHaveValue(secondSecret.value)
+	await expect(
+		page.getByPlaceholder('Enter the secret value').first(),
+	).toHaveValue(secondSecret.value)
 	await expect(
 		page.evaluate(
 			() =>
