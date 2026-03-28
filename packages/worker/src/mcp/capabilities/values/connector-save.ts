@@ -7,43 +7,12 @@ import { saveValue } from '#mcp/values/service.ts'
 import {
 	buildConnectorValueName,
 	connectorConfigSchema,
-	connectorFlowValues,
 	normalizeConnectorConfig,
 	parseConnectorConfig,
 	parseConnectorJson,
 } from './connector-shared.ts'
 
-const inputSchema = z.object({
-	name: z.string().min(1).describe('Connector name to save.'),
-	tokenUrl: z.string().url().describe('OAuth token endpoint for the provider.'),
-	flow: z
-		.enum(connectorFlowValues)
-		.describe('OAuth flow type for the provider.'),
-	clientIdValueName: z
-		.string()
-		.min(1)
-		.describe('Value name that stores the OAuth client ID.'),
-	clientSecretSecretName: z
-		.string()
-		.min(1)
-		.optional()
-		.nullable()
-		.describe('Secret name that stores the OAuth client secret.'),
-	accessTokenSecretName: z
-		.string()
-		.min(1)
-		.describe('Secret name that stores the OAuth access token.'),
-	refreshTokenSecretName: z
-		.string()
-		.min(1)
-		.optional()
-		.nullable()
-		.describe('Secret name that stores the OAuth refresh token.'),
-	requiredHosts: z
-		.array(z.string())
-		.optional()
-		.describe('Hosts that must be approved for outbound secret usage.'),
-})
+const inputSchema = connectorConfigSchema
 
 const outputSchema = z.object({
 	connector: connectorConfigSchema,
@@ -63,9 +32,7 @@ export const connectorSaveCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const connector = normalizeConnectorConfig(
-				connectorConfigSchema.parse(args),
-			)
+			const connector = normalizeConnectorConfig(args)
 			const value = await saveValue({
 				env: ctx.env,
 				userId: user.userId,

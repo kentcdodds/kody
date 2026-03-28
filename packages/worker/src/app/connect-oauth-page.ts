@@ -311,7 +311,6 @@ async function exchangeCode(code, returnedState) {
       redirectUri,
       clientId,
       codeVerifier: verifier,
-      extraParams: params.extraAuthorizeParams,
     })
   } else {
     if (!params.clientSecretSecretName) {
@@ -326,7 +325,6 @@ async function exchangeCode(code, returnedState) {
       clientId,
       clientSecretSecretName: params.clientSecretSecretName,
       scope: 'user',
-      extraParams: params.extraAuthorizeParams,
     })
   }
 
@@ -334,6 +332,7 @@ async function exchangeCode(code, returnedState) {
     if (result?.kind === 'host_approval_required') {
       updateStatus('Token exchange requires host approval. Approve the host and retry.', 'error')
       renderApprovalDetails(result)
+      await saveConnectorConfig()
       showStep('success')
       return
     }
