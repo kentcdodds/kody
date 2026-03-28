@@ -182,12 +182,18 @@ async function rewriteCapabilitySecretError(input: {
 	if (!userId) return null
 	const secretNames = collectSecretNamesFromCode(input.error, input.code)
 	if (secretNames.length === 0) return null
-	const missing = await findMissingCapabilityApprovals({
+const normalizedStorageContext = callerContext.storageContext
+	? {
+			sessionId: callerContext.storageContext.sessionId ?? null,
+			appId: callerContext.storageContext.appId ?? null,
+		}
+	: null
+const missing = await findMissingCapabilityApprovals({
 		env: input.env,
 		userId,
 		secretNames,
 		capabilityName,
-		storageContext: input.callerContext.storageContext ?? null,
+	storageContext: normalizedStorageContext,
 		baseUrl: input.callerContext.baseUrl,
 	})
 	if (missing.length === 0) return null
