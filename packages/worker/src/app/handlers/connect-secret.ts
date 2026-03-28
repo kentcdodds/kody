@@ -192,7 +192,7 @@ function readString(body: object, key: string) {
 
 function readOptionalString(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
-	return typeof value === 'string' && value.trim() ? value.trim() : null
+	return typeof value === 'string' ? value.trim() : null
 }
 
 function readOptionalStringArray(body: object, key: string) {

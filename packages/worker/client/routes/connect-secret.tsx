@@ -244,7 +244,7 @@ async function updateConnectorConfig(
 export function ConnectSecretRoute(handle: Handle) {
 	let state = { ...defaultState }
 	let session: ConnectSecretSession | null = null
-	let lastSearch = ''
+	let lastSearch: string | null = null
 
 	function setState(next: Partial<ConnectSecretState>) {
 		state = { ...state, ...next }
