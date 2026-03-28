@@ -54,7 +54,7 @@ https://heykody.dev/connect/secret?
 | \`name\` | yes | Secret name (e.g. \`linearApiKey\`). |
 | \`description\` | no | Human-readable description shown in the UI. |
 | \`allowedHosts\` | no | Comma-separated hosts to review for approval. |
-| \`allowedCapabilities\` | no | Comma-separated capability names to review. |
+| \`allowedCapabilities\` | no | Comma-separated capability names to review. Use only real Kody capability names (discoverable via search or meta_list_capabilities). |
 | \`scope\` | no | \`user\` (default), \`session\`, or \`app\`. |
 | \`dashboardUrl\` | no | Provider settings link for creating the key. |
 | \`instructions\` | no | Step-by-step instructions shown on the page. |
@@ -70,6 +70,8 @@ https://heykody.dev/connect/secret?
 ## Agent instructions
 
 1. Generate the URL with the required \`name\` and any optional params.
+   - Only include \`allowedCapabilities\` when you have confirmed the capability
+     names exist in Kody (use \`search\` or \`meta_list_capabilities\`).
 2. Ask the user to open the URL in their browser.
 3. Wait until they confirm the secret is saved.
 4. Proceed using \`{{secret:name}}\` placeholders or the relevant capability.
