@@ -359,8 +359,11 @@ async function exchangeCode(code, returnedState) {
     return
   }
 
-  await saveConnectorConfig()
+  const connectorSaved = await saveConnectorConfig()
   showStep('success')
+  if (!connectorSaved) {
+    return
+  }
   updateStatus('OAuth tokens saved.', 'success')
   kodyWidget.sendMessage('OAuth tokens saved. Review required host approvals.')
 }
@@ -382,6 +385,7 @@ async function saveConnectorConfig() {
     if (result && typeof result === 'object' && result.connector) {
       setText('[data-connector-name]', result.connector.name)
     }
+    return true
   } catch (error) {
     updateStatus(
       error instanceof Error ? error.message : 'Unable to save connector config.',
@@ -390,6 +394,7 @@ async function saveConnectorConfig() {
     kodyWidget.sendMessage(
       error instanceof Error ? error.message : 'Unable to save connector config.',
     )
+    return false
   }
 }
 
