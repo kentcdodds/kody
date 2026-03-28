@@ -21,11 +21,11 @@ Behavior:
 - Accepts exactly one of \`code\` or \`app_id\`.
 - Use \`code\` to render a new UI artifact immediately without saving it first.
 - Use \`app_id\` to reopen previously saved UI source without sending that source code back through the model.
-- Saved apps can declare reusable parameters; pass runtime values via \`params\` and read them from \`kodyWidget.params\` after importing from \`@kody/generated-ui-runtime\` or awaiting \`whenKodyWidgetReady()\`.
+- Saved apps can declare reusable parameters; pass runtime values via \`params\` and read them from \`kodyWidget.params\` after importing \`kodyWidget\` from \`@kody/generated-ui-runtime\`.
 - \`code\` may be a full HTML document or a fragment.
 
 Generated UI basics:
-- The runtime exposes module helpers from the \`@kody/generated-ui-runtime\` import-map alias; prefer \`import { kodyWidget, whenKodyWidgetReady } from '@kody/generated-ui-runtime'\` instead of reaching through \`window\`.
+- The runtime exposes module helpers from the \`@kody/generated-ui-runtime\` import-map alias; prefer \`import { kodyWidget } from '@kody/generated-ui-runtime'\` for normal generated app code.
 - Use generated UI whenever the user needs to enter sensitive values. Do not ask the user to paste credentials into chat.
 - If generated UI code hits a recoverable runtime problem, show it in the UI and also call \`sendMessage(...)\` with the next action.
 - For browser-based OAuth flows, call the \`generated_ui_oauth_guide\` capability first and follow that guide for callback URLs, registration values, \`getValue(...)\`, token exchange, and host approval handling.

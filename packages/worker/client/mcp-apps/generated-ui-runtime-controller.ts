@@ -644,6 +644,17 @@ function installGeneratedUiRuntimeHooks(hooks: GeneratedUiRuntimeHooks) {
 		hooks
 }
 
+export function shouldInitializeGeneratedUiRuntimeImmediately(input: {
+	documentReadyState: Document['readyState']
+	bootstrapMode: GeneratedUiRuntimeBootstrap['mode']
+}) {
+	return (
+		input.documentReadyState !== 'loading' ||
+		input.bootstrapMode === 'hosted' ||
+		input.bootstrapMode === 'mcp'
+	)
+}
+
 async function initializeRenderedMcpDocument(
 	bootstrap: GeneratedUiRuntimeBootstrap,
 ) {
@@ -868,14 +879,22 @@ async function initializeGeneratedUiRuntimeEntry() {
 
 const documentRef = globalThis.document
 
-if (documentRef?.readyState === 'loading') {
-	documentRef.addEventListener(
-		'DOMContentLoaded',
-		() => {
-			void initializeGeneratedUiRuntimeEntry()
-		},
-		{ once: true },
-	)
-} else if (documentRef) {
-	void initializeGeneratedUiRuntimeEntry()
+if (documentRef) {
+	const bootstrap = readGeneratedUiBootstrap()
+	if (
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: documentRef.readyState,
+			bootstrapMode: bootstrap.mode,
+		})
+	) {
+		void initializeGeneratedUiRuntimeEntry()
+	} else {
+		documentRef.addEventListener(
+			'DOMContentLoaded',
+			() => {
+				void initializeGeneratedUiRuntimeEntry()
+			},
+			{ once: true },
+		)
+	}
 }

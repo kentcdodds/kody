@@ -9,6 +9,7 @@ import {
 	kodyWidget,
 	measureRenderedFrameSize,
 	readSavedAppSourceFromHostToolResult,
+	shouldInitializeGeneratedUiRuntimeImmediately,
 	whenKodyWidgetReady,
 } from './generated-ui-runtime-controller.ts'
 
@@ -220,4 +221,31 @@ test('imported kodyWidget proxy exposes resolved runtime properties', () => {
 
 	expect(kodyWidget.value).toBe(41)
 	expect(kodyWidget.params).toEqual({})
+})
+
+test('hosted and mcp runtimes initialize immediately on import', () => {
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'hosted',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'mcp',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(false)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'interactive',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
 })

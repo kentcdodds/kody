@@ -70,11 +70,11 @@ of treating it like a secret.
    registration values they need.
 4. Give the user the hosted saved-app URL and tell them to open it in their
    browser instead of trying to complete the flow in the conversation iframe.
-5. In the hosted generated UI, import the runtime helpers from
-   \`@kody/generated-ui-runtime\`, await
-   \`whenKodyWidgetReady()\`, and use the returned \`kodyWidget\` object
-   to read the callback, validate state, exchange the code in the browser,
-   and save tokens.
+5. In the hosted generated UI, import \`kodyWidget\` from
+   \`@kody/generated-ui-runtime\` and use it directly to read the callback,
+   validate state, exchange the code in the browser, and save tokens. Import
+   \`whenKodyWidgetReady()\` only if you intentionally need to wait for the
+   runtime in a non-standard embedding.
 
 ## Generated UI helpers to use
 
@@ -107,12 +107,9 @@ before building the authorization URL or token request.
 \`\`\`html
 <p id="status"></p>
 <script>
-  import {
-    whenKodyWidgetReady,
-  } from '@kody/generated-ui-runtime'
+  import { kodyWidget } from '@kody/generated-ui-runtime'
 
   async function requireClientId() {
-    const kodyWidget = await whenKodyWidgetReady()
     const clientIdRecord = await kodyWidget.getValue({
       name: 'muffin-club-oauth-client-id',
       scope: 'user',
@@ -193,13 +190,10 @@ authorization flow.
   <button type="submit">Save and continue</button>
 </form>
 <script>
-  import {
-    whenKodyWidgetReady,
-  } from '@kody/generated-ui-runtime'
+  import { kodyWidget } from '@kody/generated-ui-runtime'
 
   document.querySelector('#oauth-client-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
-    const kodyWidget = await whenKodyWidgetReady()
     const form = event.currentTarget
     const values = kodyWidget.formToObject(form)
     const clientId = values.clientId
@@ -248,9 +242,9 @@ Create and persist the OAuth state before redirecting the browser.
 \`\`\`html
 <button id="connect-muffin-club">Connect Muffin Club</button>
 <script>
+  import { kodyWidget } from '@kody/generated-ui-runtime'
+
   document.querySelector('#connect-muffin-club')?.addEventListener('click', async () => {
-    const { whenKodyWidgetReady } = await import('@kody/generated-ui-runtime')
-    const kodyWidget = await whenKodyWidgetReady()
     const clientIdRecord = await kodyWidget.getValue({
       name: 'muffin-club-oauth-client-id',
       scope: 'user',
@@ -348,9 +342,9 @@ succeeds.
     root.innerHTML = '<p>' + message + '</p>'
   }
 
+  import { kodyWidget } from '@kody/generated-ui-runtime'
+
   void (async () => {
-    const { whenKodyWidgetReady } = await import('@kody/generated-ui-runtime')
-    const kodyWidget = await whenKodyWidgetReady()
     const callback = kodyWidget.readOAuthCallback({
       expectedStateKey: 'muffin-club-oauth',
     })

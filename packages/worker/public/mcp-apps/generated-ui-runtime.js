@@ -2166,6 +2166,9 @@ function installGeneratedUiRuntimeHooks(hooks) {
   ;
   globalThis.window.__kodyGeneratedUiRuntimeHooks = hooks;
 }
+function shouldInitializeGeneratedUiRuntimeImmediately(input) {
+  return input.documentReadyState !== "loading" || input.bootstrapMode === "hosted" || input.bootstrapMode === "mcp";
+}
 async function initializeRenderedMcpDocument(bootstrap) {
   let latestRenderData;
   const hostBridge = createWidgetHostBridge({
@@ -2356,16 +2359,22 @@ async function initializeGeneratedUiRuntimeEntry() {
   initializeGeneratedUiRuntime();
 }
 var documentRef = globalThis.document;
-if (documentRef?.readyState === "loading") {
-  documentRef.addEventListener(
-    "DOMContentLoaded",
-    () => {
-      void initializeGeneratedUiRuntimeEntry();
-    },
-    { once: true }
-  );
-} else if (documentRef) {
-  void initializeGeneratedUiRuntimeEntry();
+if (documentRef) {
+  const bootstrap = readGeneratedUiBootstrap();
+  if (shouldInitializeGeneratedUiRuntimeImmediately({
+    documentReadyState: documentRef.readyState,
+    bootstrapMode: bootstrap.mode
+  })) {
+    void initializeGeneratedUiRuntimeEntry();
+  } else {
+    documentRef.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        void initializeGeneratedUiRuntimeEntry();
+      },
+      { once: true }
+    );
+  }
 }
 export {
   absolutizeHtmlAttributeUrls,
@@ -2379,5 +2388,6 @@ export {
   kodyWidget,
   measureRenderedFrameSize,
   readSavedAppSourceFromHostToolResult,
+  shouldInitializeGeneratedUiRuntimeImmediately,
   whenKodyWidgetReady
 };

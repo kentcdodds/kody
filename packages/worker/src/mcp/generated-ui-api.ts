@@ -248,7 +248,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					{
 						ok: false,
 						error:
-							'Generated UI executeCode may not return unresolved `{{secret:...}}` placeholders. Secret placeholders only resolve inside secret-aware fetch requests or capability inputs that explicitly opt into `x-kody-secret`. Use persisted values for non-secret configuration, and call `kodyWidget.sendMessage(...)` (for example after `import { kodyWidget, whenKodyWidgetReady } from "@kody/generated-ui-runtime"; await whenKodyWidgetReady()`) when the user needs to intervene.',
+							'Generated UI executeCode may not return unresolved `{{secret:...}}` placeholders. Secret placeholders only resolve inside secret-aware fetch requests or capability inputs that explicitly opt into `x-kody-secret`. Use persisted values for non-secret configuration, and call `kodyWidget.sendMessage(...)` (for example after `import { kodyWidget } from "@kody/generated-ui-runtime"`) when the user needs to intervene.',
 						logs: result.logs ?? [],
 					},
 					400,
