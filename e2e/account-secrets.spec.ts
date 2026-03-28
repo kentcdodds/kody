@@ -1,14 +1,12 @@
 import { expect, test } from './playwright-utils.ts'
 
 async function saveSecret(
-	page: Parameters<
-		Parameters<typeof test>[1]
-	>[0]['page'],
+	page: Parameters<Parameters<typeof test>[1]>[0]['page'],
 	input: {
 		name: string
 		description: string
 		value: string
-	}
+	},
 ) {
 	const response = await page.request.post('/account/secrets.json', {
 		data: {
@@ -51,11 +49,14 @@ test('switching secrets updates detail view without a full reload', async ({
 	await expect(
 		page.getByRole('heading', { level: 2, name: firstSecret.name }),
 	).toBeVisible()
-	await expect(page.getByLabel('Description')).toHaveValue(firstSecret.description)
+	await expect(page.getByLabel('Description')).toHaveValue(
+		firstSecret.description,
+	)
 
 	await page.evaluate(() => {
-		;(window as typeof window & { __secretRouteMarker?: string }).__secretRouteMarker =
-			'still-here'
+		;(
+			window as typeof window & { __secretRouteMarker?: string }
+		).__secretRouteMarker = 'still-here'
 	})
 
 	await page.getByRole('button', { name: secondSecret.name }).click()

@@ -483,7 +483,10 @@ export function ConnectOauthRoute(handle: Handle) {
 			window.history.replaceState(null, '', getRedirectUri())
 		}
 		if (callback.kind === 'error') {
-			setStatus(callback.description || `OAuth error: ${callback.error}`, 'error')
+			setStatus(
+				callback.description || `OAuth error: ${callback.error}`,
+				'error',
+			)
 			setStep('connect')
 			return
 		}
@@ -693,8 +696,7 @@ export function ConnectOauthRoute(handle: Handle) {
 					<p css={{ margin: 0 }}>
 						Scope: {config.scopes.length ? config.scopes.join(' ') : 'None'}
 					</p>
-					{config.dashboardUrl &&
-					isSafeExternalUrl(config.dashboardUrl) ? (
+					{config.dashboardUrl && isSafeExternalUrl(config.dashboardUrl) ? (
 						<a
 							href={config.dashboardUrl}
 							target="_blank"

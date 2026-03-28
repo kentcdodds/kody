@@ -82,7 +82,10 @@ function parseScope(value: string | null): StorageScope {
 		: 'user'
 }
 
-function parseCommaList(value: string | null, normalizer?: (item: string) => string) {
+function parseCommaList(
+	value: string | null,
+	normalizer?: (item: string) => string,
+) {
 	if (!value) return []
 	const output = value
 		.split(',')
@@ -102,8 +105,9 @@ function parseConnectSecretParams(): ConnectSecretParams {
 	const allowedHosts = parseCommaList(params.get('allowedHosts'), (value) =>
 		value.toLowerCase(),
 	).sort()
-	const allowedCapabilities = parseCommaList(params.get('allowedCapabilities'))
-		.sort((left, right) => left.localeCompare(right))
+	const allowedCapabilities = parseCommaList(
+		params.get('allowedCapabilities'),
+	).sort((left, right) => left.localeCompare(right))
 	return {
 		name,
 		description,
@@ -140,7 +144,9 @@ async function readSessionToken() {
 		credentials: 'include',
 	})
 	if (response.status === 401) {
-		navigate(`/login?redirectTo=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+		navigate(
+			`/login?redirectTo=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+		)
 		return null
 	}
 	const payload = (await response.json().catch(() => null)) as {
@@ -331,7 +337,8 @@ export function ConnectSecretRoute(handle: Handle) {
 			}
 			setState({
 				step: 'error',
-				error: error instanceof Error ? error.message : 'Unable to load secrets.',
+				error:
+					error instanceof Error ? error.message : 'Unable to load secrets.',
 			})
 		}
 	}
@@ -363,7 +370,8 @@ export function ConnectSecretRoute(handle: Handle) {
 			}
 			setState({
 				step: 'error',
-				error: error instanceof Error ? error.message : 'Unable to save secret.',
+				error:
+					error instanceof Error ? error.message : 'Unable to save secret.',
 			})
 			return
 		}
@@ -396,7 +404,7 @@ export function ConnectSecretRoute(handle: Handle) {
 				error: formatConnectorConfigFailureMessage(error, {
 					secretRolledBack: Boolean(params.connector && secretWasNewlyCreated),
 					updatedSecretRetained: Boolean(
-						params.connector && !secretWasNewlyCreated
+						params.connector && !secretWasNewlyCreated,
 					),
 				}),
 			})
@@ -412,7 +420,8 @@ export function ConnectSecretRoute(handle: Handle) {
 	}
 
 	return () => {
-		const currentSearch = typeof window === 'undefined' ? '' : window.location.search
+		const currentSearch =
+			typeof window === 'undefined' ? '' : window.location.search
 		if (currentSearch !== lastSearch) {
 			lastSearch = currentSearch
 			startInitialization()
@@ -466,9 +475,9 @@ export function ConnectSecretRoute(handle: Handle) {
 					<section css={cardCss}>
 						<h2 css={cardTitleCss}>Secret already exists</h2>
 						<p css={{ margin: 0, color: colors.textMuted }}>
-							A secret named <strong>{state.existingSecret.name}</strong> already
-							exists in the {state.existingSecret.scope} scope. Updating will
-							replace the stored value.
+							A secret named <strong>{state.existingSecret.name}</strong>{' '}
+							already exists in the {state.existingSecret.scope} scope. Updating
+							will replace the stored value.
 						</p>
 						<div
 							css={{
@@ -506,7 +515,10 @@ export function ConnectSecretRoute(handle: Handle) {
 							<button
 								type="button"
 								css={primaryButtonCss}
-								on={{ click: () => setState({ step: 'input', updateConfirmed: true }) }}
+								on={{
+									click: () =>
+										setState({ step: 'input', updateConfirmed: true }),
+								}}
 							>
 								Update secret
 							</button>
@@ -565,7 +577,11 @@ export function ConnectSecretRoute(handle: Handle) {
 										</p>
 									) : null}
 									{params.dashboardUrl && isSafeUrl(params.dashboardUrl) ? (
-										<a href={params.dashboardUrl} target="_blank" rel="noreferrer">
+										<a
+											href={params.dashboardUrl}
+											target="_blank"
+											rel="noreferrer"
+										>
 											Open provider settings
 										</a>
 									) : null}
@@ -679,7 +695,9 @@ export function ConnectSecretRoute(handle: Handle) {
 									checked={state.confirmedReview}
 									on={{
 										change: (event) =>
-											setState({ confirmedReview: event.currentTarget.checked }),
+											setState({
+												confirmedReview: event.currentTarget.checked,
+											}),
 									}}
 								/>
 								I confirm these details are correct.
@@ -697,7 +715,10 @@ export function ConnectSecretRoute(handle: Handle) {
 										type="button"
 										css={secondaryButtonCss}
 										disabled={state.step === 'saving'}
-										on={{ click: () => setState({ step: 'input', confirmedReview: false }) }}
+										on={{
+											click: () =>
+												setState({ step: 'input', confirmedReview: false }),
+										}}
 									>
 										Back
 									</button>

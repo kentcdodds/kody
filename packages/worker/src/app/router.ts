@@ -86,7 +86,10 @@ export function createAppRouter(appEnv: AppEnv) {
 		createAccountSecretsApiHandler(appEnv as Env),
 	)
 	router.map(routes.connectSecret, createConnectSecretHandler(appEnv as Env))
-	router.map(routes.connectSecretApi, createConnectSecretApiHandler(appEnv as Env))
+	router.map(
+		routes.connectSecretApi,
+		createConnectSecretApiHandler(appEnv as Env),
+	)
 	router.map(
 		routes.connectSecretApiPost,
 		createConnectSecretApiHandler(appEnv as Env),

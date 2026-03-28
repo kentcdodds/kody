@@ -16,9 +16,7 @@ const mockModule = vi.hoisted(() => ({
 		}
 	},
 	getAppBaseUrl: () => 'https://example.com',
-	createGeneratedUiAppSession: async (input: {
-		appId?: string | null
-	}) => ({
+	createGeneratedUiAppSession: async (input: { appId?: string | null }) => ({
 		token: 'generated-token',
 		sessionId: 'session-1',
 		endpoints: {
@@ -137,7 +135,9 @@ test('connect secret GET rejects app scope without appId', async () => {
 test('connect secret GET rejects unknown scope values', async () => {
 	const handler = createConnectSecretApiHandler(createEnv())
 	const response = await handler.action({
-		request: new Request('https://example.com/connect/secret.json?scope=sessions'),
+		request: new Request(
+			'https://example.com/connect/secret.json?scope=sessions',
+		),
 		params: {},
 	} as never)
 

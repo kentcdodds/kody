@@ -50,7 +50,10 @@ export function createConnectSecretApiHandler(env: Env) {
 				const url = new URL(request.url)
 				const scope = readSecretScope(url)
 				if (!scope) {
-					return jsonResponse({ ok: false, error: 'Invalid secret scope.' }, 400)
+					return jsonResponse(
+						{ ok: false, error: 'Invalid secret scope.' },
+						400,
+					)
 				}
 				const requestedAppId = readOptionalStringParam(url, 'appId')
 				if (scope === 'app' && !requestedAppId) {
@@ -122,10 +125,16 @@ export function createConnectSecretApiHandler(env: Env) {
 				)
 			}
 			if (!name) {
-				return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)
+				return jsonResponse(
+					{ ok: false, error: 'Secret name is required.' },
+					400,
+				)
 			}
 			if (!scope) {
-				return jsonResponse({ ok: false, error: 'Secret scope is required.' }, 400)
+				return jsonResponse(
+					{ ok: false, error: 'Secret scope is required.' },
+					400,
+				)
 			}
 			if (!sessionToken) {
 				return jsonResponse(
@@ -142,9 +151,7 @@ export function createConnectSecretApiHandler(env: Env) {
 					{
 						ok: false,
 						error:
-							error instanceof Error
-								? error.message
-								: 'Invalid session token.',
+							error instanceof Error ? error.message : 'Invalid session token.',
 					},
 					401,
 				)
@@ -157,10 +164,7 @@ export function createConnectSecretApiHandler(env: Env) {
 				sessionAppId: session.app_id ?? null,
 			})
 			if (scopeCompatibilityError) {
-				return jsonResponse(
-					{ ok: false, error: scopeCompatibilityError },
-					400,
-				)
+				return jsonResponse({ ok: false, error: scopeCompatibilityError }, 400)
 			}
 
 			const storageContext = {

@@ -415,10 +415,7 @@ async function handleOAuthExchangeAction(input: {
 			storageContext: { sessionId: null, appId: null },
 		})
 		if (!resolved.found || !resolved.value) {
-			return jsonResponse(
-				{ ok: false, error: 'Client secret not found.' },
-				400,
-			)
+			return jsonResponse({ ok: false, error: 'Client secret not found.' }, 400)
 		}
 		params.set('client_secret', resolved.value)
 	}
@@ -444,7 +441,7 @@ async function handleOAuthExchangeAction(input: {
 			response.status,
 		)
 	}
-	return jsonResponse(payload, response.status)
+	return jsonResponse(payload as Record<string, unknown>, response.status)
 }
 
 async function saveConnectorConfig(input: {

@@ -79,10 +79,7 @@ export async function expandSecretPlaceholders(input: {
 	}
 	let requestedHost = ''
 	if (hasReferencedSecrets) {
-		const nextUrl = replaceSecretPlaceholders(
-			input.request.url,
-			replacements,
-		)
+		const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
 		requestedHost = readRequestedHost(nextUrl)
 		if (!requestedHost) {
 			throw new Error(
