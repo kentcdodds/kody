@@ -25,7 +25,7 @@ Behavior:
 - \`code\` may be a full HTML document or a fragment.
 
 Generated UI basics:
-- The runtime exposes module helpers from the \`@kody/utils\` import-map alias; prefer \`import { kodyWidget } from '@kody/utils'\`. The module now waits for its own bootstrap at import time, so generated app code normally does not need a separate readiness step.
+- The runtime exposes module helpers from the \`@kody/utils\` import-map alias; prefer \`import { kodyWidget } from '@kody/utils'\`.
 - Use generated UI whenever the user needs to enter sensitive values. Do not ask the user to paste credentials into chat.
 - If generated UI code hits a recoverable runtime problem, show it in the UI and also call \`sendMessage(...)\` with the next action.
 - For browser-based OAuth flows, call the \`generated_ui_oauth_guide\` capability first and follow that guide for callback URLs, registration values, \`getValue(...)\`, token exchange, and host approval handling.
