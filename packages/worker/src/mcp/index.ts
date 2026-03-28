@@ -95,7 +95,7 @@ MCP App tools
 - Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
 - Prefer body-focused HTML fragments when possible, but full HTML documents are also supported.
 - Use generated UI whenever the user needs to enter a sensitive value. Do not ask the user to paste secrets or credentials into chat.
-- Generated UI code can import `{ kodyWidget, whenKodyWidgetReady }` from `/mcp-apps/generated-ui-runtime.js` and await `whenKodyWidgetReady()` before using helpers for follow-up messages, external links, fullscreen requests, `executeCode(code)`, secret management, values, forms, OAuth, and secret-aware fetches. The legacy `window.kodyWidget` global still exists for backwards compatibility.
+- Generated UI code can import \`{ kodyWidget, whenKodyWidgetReady }\` from \`/mcp-apps/generated-ui-runtime.js\` and await \`whenKodyWidgetReady()\` before using helpers for follow-up messages, external links, fullscreen requests, \`executeCode(code)\`, secret management, values, forms, OAuth, and secret-aware fetches. The legacy \`window.kodyWidget\` global still exists for backwards compatibility.
 - 'executeCode(code)' is the low-level transport for server-side generated UI work. Prefer the higher-level secret and value helpers when they fit the task.
 - If a generated UI encounters a recoverable runtime issue, have it show the problem locally and also call 'sendMessage(...)' with the next action the user should take so the parent chat can continue the workflow.
 - The shell also provides lightweight semantic HTML styles plus theme tokens such as '--color-*', '--spacing-*', '--radius-*', '--shadow-*', and '--font-*'.

@@ -214,19 +214,21 @@ test('whenKodyWidgetReady resolves once the runtime publishes the widget', async
 	await expect(whenKodyWidgetReady()).resolves.toBe(fakeWidget)
 })
 
-test('imported kodyWidget proxy binds methods to the resolved runtime object', () => {
+test('imported kodyWidget proxy exposes resolved runtime properties', () => {
 	const runtimeGlobal = globalThis as typeof globalThis & {
 		kodyWidget?: unknown
 		__kodyWidgetReadyState?: { resolve: (widget: any) => void }
 	}
+	delete runtimeGlobal.__kodyWidgetReadyState
 	const fakeWidget = {
 		params: {},
 		value: 41,
-		readValue() {
-			return this.value
-		},
+	} as {
+		params: Record<string, never>
+		value: number
 	}
 	runtimeGlobal.kodyWidget = fakeWidget
 
-	expect(kodyWidget.readValue()).toBe(41)
+	expect(kodyWidget.value).toBe(41)
+	expect(kodyWidget.params).toEqual({})
 })

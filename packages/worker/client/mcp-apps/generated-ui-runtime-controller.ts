@@ -19,6 +19,7 @@ export {
 } from '@kody-internal/shared/generated-ui-documents.ts'
 export {
 	getKodyWidget,
+	kodyWidget,
 	whenKodyWidgetReady,
 	type KodyWidgetPublicApi,
 } from './generated-ui-widget-runtime.ts'
