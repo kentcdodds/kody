@@ -165,6 +165,13 @@ export function createAccountSecretsApiHandler(env: Env) {
 					body,
 				})
 			}
+			if (action === 'oauth_exchange') {
+				return handleOAuthExchangeAction({
+					env,
+					user,
+					body,
+				})
+			}
 
 			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 		},
@@ -341,6 +348,8 @@ async function handleConnectOauthAction(input: {
 		flow: flow === 'confidential' ? 'confidential' : 'pkce',
 		clientIdValueName,
 		clientSecretSecretName,
+		accessTokenSecretName,
+		refreshTokenSecretName,
 		tokenPayload: tokenRecord,
 		allowedHosts,
 	})
@@ -354,6 +363,90 @@ async function handleConnectOauthAction(input: {
 	})
 }
 
+async function handleOAuthExchangeAction(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: object
+}) {
+	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
+	const paramsRaw = readOptionalString(input.body, 'params')
+	const flow = readOptionalString(input.body, 'flow') ?? 'pkce'
+	const clientSecretSecretName = readOptionalString(
+		input.body,
+		'clientSecretSecretName',
+	)
+	const allowedHosts = normalizeAllowedHosts(
+		readStringArray(input.body, 'allowedHosts'),
+	)
+
+	if (!tokenUrl) {
+		return jsonResponse({ ok: false, error: 'Token URL is required.' }, 400)
+	}
+	if (!paramsRaw) {
+		return jsonResponse({ ok: false, error: 'Token params are required.' }, 400)
+	}
+	if (flow !== 'pkce' && flow !== 'confidential') {
+		return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
+	}
+	const tokenHost = safeParseHost(tokenUrl)
+	if (!tokenHost) {
+		return jsonResponse({ ok: false, error: 'Token URL is invalid.' }, 400)
+	}
+	if (allowedHosts.length > 0 && !allowedHosts.includes(tokenHost)) {
+		return jsonResponse(
+			{ ok: false, error: 'Token host is not in allowed hosts.' },
+			400,
+		)
+	}
+
+	const params = new URLSearchParams(paramsRaw)
+	if (flow === 'confidential') {
+		if (!clientSecretSecretName) {
+			return jsonResponse(
+				{ ok: false, error: 'Client secret name is required.' },
+				400,
+			)
+		}
+		const resolved = await resolveSecret({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name: clientSecretSecretName,
+			scope: 'user',
+			storageContext: { sessionId: null, appId: null },
+		})
+		if (!resolved.found || !resolved.value) {
+			return jsonResponse(
+				{ ok: false, error: 'Client secret not found.' },
+				400,
+			)
+		}
+		params.set('client_secret', resolved.value)
+	}
+
+	const response = await fetch(tokenUrl, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/x-www-form-urlencoded',
+		},
+		body: params.toString(),
+	})
+	const text = await response.text()
+	let payload: unknown = null
+	try {
+		payload = JSON.parse(text)
+	} catch {
+		payload = null
+	}
+	if (!payload || typeof payload !== 'object') {
+		return jsonResponse(
+			{ ok: false, error: 'Token exchange failed.' },
+			response.status,
+		)
+	}
+	return jsonResponse(payload, response.status)
+}
+
 async function saveConnectorConfig(input: {
 	env: Env
 	userId: string
@@ -362,6 +455,8 @@ async function saveConnectorConfig(input: {
 	flow: 'pkce' | 'confidential'
 	clientIdValueName: string
 	clientSecretSecretName: string | null
+	accessTokenSecretName: string
+	refreshTokenSecretName: string | null
 	tokenPayload: Record<string, unknown>
 	allowedHosts: Array<string>
 }) {
@@ -378,9 +473,9 @@ async function saveConnectorConfig(input: {
 			input.flow === 'confidential'
 				? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
 				: null,
-		accessTokenSecretName: `${providerKey}AccessToken`,
+		accessTokenSecretName: input.accessTokenSecretName,
 		refreshTokenSecretName: readTokenField(input.tokenPayload, 'refresh_token')
-			? `${providerKey}RefreshToken`
+			? input.refreshTokenSecretName
 			: null,
 		requiredHosts: input.allowedHosts,
 	})
@@ -908,7 +1003,7 @@ function readOptionalString(body: object, key: string) {
 
 function safeParseHost(raw: string) {
 	try {
-		return new URL(raw).host
+		return new URL(raw).hostname
 	} catch {
 		return null
 	}
