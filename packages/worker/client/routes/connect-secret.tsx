@@ -213,30 +213,6 @@ async function saveSecretValue(
 	}
 }
 
-async function deleteSecretValue(
-	params: ConnectSecretParams,
-	session: ConnectSecretSession,
-) {
-	const response = await fetch(session.endpoints.deleteSecret, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${session.token}`,
-		},
-		credentials: 'omit',
-		body: JSON.stringify({
-			name: params.name,
-			scope: params.scope,
-		}),
-	})
-	const payload = (await response.json().catch(() => null)) as {
-		ok?: boolean
-		deleted?: boolean
-	}
-	return Boolean(response.ok && payload?.ok && payload.deleted)
-}
-
 async function updateConnectorConfig(
 	params: ConnectSecretParams,
 	session: ConnectSecretSession,
@@ -264,32 +240,6 @@ async function updateConnectorConfig(
 	}
 	if (!response.ok || !payload?.ok) {
 		throw new Error(payload?.error || 'Unable to update connector config.')
-	}
-}
-
-async function rollbackSecretValue(
-	params: ConnectSecretParams,
-	session: ConnectSecretSession,
-) {
-	const response = await fetch(session.endpoints.deleteSecret, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${session.token}`,
-		},
-		credentials: 'omit',
-		body: JSON.stringify({
-			name: params.name,
-			scope: params.scope,
-		}),
-	})
-	const payload = (await response.json().catch(() => null)) as {
-		ok?: boolean
-		error?: string
-	}
-	if (!response.ok || !payload?.ok) {
-		throw new Error(payload?.error || 'Unable to rollback secret.')
 	}
 }
 
