@@ -306,7 +306,9 @@ function renderList(items, emptyLabel) {
   }
   return (
     '<ul class="list">' +
-    items.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') +
+    items
+      .map((item) => '<li><code>' + escapeHtml(item) + '</code></li>')
+      .join('') +
     '</ul>'
   )
 }
@@ -374,13 +376,14 @@ function renderReview(params) {
         '</div></div>'
       : '') +
     '<div class="grid-two">' +
-    '<div><span class="label">Approved hosts</span>' +
+    '<div><span class="label">Hosts to approve</span>' +
     renderList(params.allowedHosts, 'None (approval required later).') +
     '</div>' +
-    '<div><span class="label">Approved capabilities</span>' +
+    '<div><span class="label">Capabilities to allow</span>' +
     renderList(params.allowedCapabilities, 'No restrictions requested.') +
     '</div>' +
     '</div>' +
+    '<p class="muted">Host and capability approvals are managed in account settings.</p>' +
     '<p class="muted">The secret value stays hidden and cannot be viewed later.</p>' +
     '</div>'
   )
