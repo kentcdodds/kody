@@ -841,14 +841,17 @@ if (documentRef) {
 			bootstrapMode: bootstrap.mode,
 		})
 	) {
-		void initializeGeneratedUiRuntimeEntry()
+		await initializeGeneratedUiRuntimeEntry()
 	} else {
-		documentRef.addEventListener(
-			'DOMContentLoaded',
-			() => {
-				void initializeGeneratedUiRuntimeEntry()
-			},
-			{ once: true },
-		)
+		await new Promise<void>((resolve) => {
+			documentRef.addEventListener(
+				'DOMContentLoaded',
+				() => {
+					resolve()
+				},
+				{ once: true },
+			)
+		})
+		await initializeGeneratedUiRuntimeEntry()
 	}
 }

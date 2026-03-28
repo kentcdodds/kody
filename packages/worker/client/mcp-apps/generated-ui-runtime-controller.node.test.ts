@@ -248,4 +248,10 @@ test('hosted and mcp runtimes initialize immediately on import', () => {
 			bootstrapMode: 'entry',
 		}),
 	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'complete',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
 })

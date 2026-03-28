@@ -71,10 +71,10 @@ of treating it like a secret.
 4. Give the user the hosted saved-app URL and tell them to open it in their
    browser instead of trying to complete the flow in the conversation iframe.
 5. In the hosted generated UI, import \`kodyWidget\` from
-   \`@kody/utils\` and use it directly to read the callback,
-   validate state, exchange the code in the browser, and save tokens. Import
-   \`whenKodyWidgetReady()\` only if you intentionally need to wait for the
-   runtime in a non-standard embedding.
+   \`@kody/utils\` and use it directly to read the callback, validate state,
+   exchange the code in the browser, and save tokens. The runtime module now
+   completes its own bootstrap before the import resolves, so normal generated
+   app code does not need a separate ready step.
 
 ## Generated UI helpers to use
 
