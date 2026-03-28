@@ -87,17 +87,15 @@ function createCapabilityInputSecretResolver(
 		if (!userId) {
 			throw new Error(capabilityInputSecretAuthRequiredMessage)
 		}
+		const normalizedStorageContext = normalizeStorageContext(
+			callerContext.storageContext ?? null,
+		)
 		const resolved = await resolveSecret({
 			env,
 			userId,
 			name: secret.name,
 			scope: secret.scope,
-			storageContext: callerContext.storageContext
-				? {
-						sessionId: callerContext.storageContext.sessionId ?? null,
-						appId: callerContext.storageContext.appId ?? null,
-					}
-				: null,
+			storageContext: normalizedStorageContext,
 		})
 		if (!resolved.found || typeof resolved.value !== 'string') {
 			throw new Error(createMissingSecretMessage(secret.name))
@@ -108,12 +106,7 @@ function createCapabilityInputSecretResolver(
 				name: secret.name,
 				scope: resolved.scope ?? secret.scope ?? 'user',
 				capabilityName,
-				storageContext: callerContext.storageContext
-					? {
-							sessionId: callerContext.storageContext.sessionId ?? null,
-							appId: callerContext.storageContext.appId ?? null,
-						}
-					: null,
+				storageContext: normalizedStorageContext,
 			})
 			throw new Error(
 				createCapabilitySecretAccessDeniedMessage(
@@ -135,18 +128,16 @@ export async function runCodemodeWithRegistry(
 	executorExports?: typeof workerExports,
 ) {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
+	const normalizedStorageContext = normalizeStorageContext(
+		callerContext.storageContext ?? null,
+	)
 	const executor = createExecuteExecutor({
 		env,
 		exports: executorExports ?? workerExports,
 		gatewayProps: {
 			baseUrl: callerContext.baseUrl,
 			userId: callerContext.user?.userId ?? null,
-			storageContext: callerContext.storageContext
-				? {
-						sessionId: callerContext.storageContext.sessionId ?? null,
-						appId: callerContext.storageContext.appId ?? null,
-					}
-				: null,
+			storageContext: normalizedStorageContext,
 		},
 	})
 	const provider = await buildCodemodeProvider(env, callerContext)
@@ -182,12 +173,9 @@ async function rewriteCapabilitySecretError(input: {
 	if (!userId) return null
 	const secretNames = collectSecretNamesFromCode(input.error, input.code)
 	if (secretNames.length === 0) return null
-	const normalizedStorageContext = callerContext.storageContext
-		? {
-				sessionId: callerContext.storageContext.sessionId ?? null,
-				appId: callerContext.storageContext.appId ?? null,
-			}
-		: null
+	const normalizedStorageContext = normalizeStorageContext(
+		input.callerContext.storageContext,
+	)
 	const missing = await findMissingCapabilityApprovals({
 		env: input.env,
 		userId,
@@ -220,6 +208,16 @@ function normalizeSecretNameList(names: Array<string>) {
 	).sort((left, right) => left.localeCompare(right))
 }
 
+function normalizeStorageContext(
+	storageContext: McpCallerContext['storageContext'] | null,
+) {
+	if (!storageContext) return null
+	return {
+		sessionId: storageContext.sessionId ?? null,
+		appId: storageContext.appId ?? null,
+	}
+}
+
 async function findMissingCapabilityApprovals(input: {
 	env: Env
 	userId: string
@@ -228,13 +226,14 @@ async function findMissingCapabilityApprovals(input: {
 	storageContext: McpCallerContext['storageContext'] | null
 	baseUrl: string
 }) {
+	const normalizedStorageContext = normalizeStorageContext(input.storageContext)
 	const entries = await Promise.all(
 		input.secretNames.map(async (name) => {
 			const resolved = await resolveSecret({
 				env: input.env,
 				userId: input.userId,
 				name,
-				storageContext: input.storageContext,
+				storageContext: normalizedStorageContext,
 			})
 			if (!resolved.found) return null
 			if (resolved.allowedCapabilities.includes(input.capabilityName)) {
@@ -245,12 +244,7 @@ async function findMissingCapabilityApprovals(input: {
 				name,
 				scope: resolved.scope ?? 'user',
 				capabilityName: input.capabilityName,
-				storageContext: input.storageContext
-					? {
-							sessionId: input.storageContext.sessionId ?? null,
-							appId: input.storageContext.appId ?? null,
-						}
-					: null,
+				storageContext: normalizedStorageContext,
 			})
 			return {
 				secretName: name,
