@@ -5,7 +5,7 @@ import {
 } from '@kody-internal/shared/generated-ui-asset-paths.ts'
 import { escapeInlineScriptSource } from '@kody-internal/shared/generated-ui-documents.ts'
 import {
-	renderGeneratedUiRuntimeImportMap,
+	buildGeneratedUiRuntimeImportMap,
 	type GeneratedUiRuntimeBootstrap,
 } from '#client/mcp-apps/generated-ui-runtime-controller.ts'
 
@@ -37,7 +37,7 @@ export function renderGeneratedUiRuntimeHtmlEntry(baseUrl: string | URL) {
 		<script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 		</script>
-		${renderGeneratedUiRuntimeImportMap(runtimeScriptHref)}
+		${buildGeneratedUiRuntimeImportMap(runtimeScriptHref)}
 	</head>
 	<body data-kody-runtime="fragment">
 		<div id="app" data-generated-ui-root></div>

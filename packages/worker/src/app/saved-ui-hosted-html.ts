@@ -4,7 +4,10 @@ import {
 	generatedUiRuntimeStylesheetPath,
 	resolveGeneratedUiAssetUrl,
 } from '@kody-internal/shared/generated-ui-asset-paths.ts'
-import { type GeneratedUiRuntimeBootstrap } from '#client/mcp-apps/generated-ui-runtime-controller.ts'
+import {
+	buildGeneratedUiRuntimeImportMap,
+	type GeneratedUiRuntimeBootstrap,
+} from '#client/mcp-apps/generated-ui-runtime-controller.ts'
 import { type GeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 
@@ -12,10 +15,6 @@ type HostedSavedUiInput = {
 	artifact: UiArtifactRow
 	appSession: GeneratedUiAppSession
 	appBaseUrl: string
-}
-
-function renderGeneratedUiRuntimeImportMap(runtimeScriptSrc: string) {
-	return `<script type="importmap">{"imports":{"kody-generated-ui-runtime":${JSON.stringify(runtimeScriptSrc)}}}</script>`
 }
 
 export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
@@ -57,7 +56,7 @@ function buildHeadInjection(
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 </script>
-${renderGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
+${buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
 <script type="module" src="${runtimeScriptSrc}"></script>
 	`.trim()
 }

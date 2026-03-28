@@ -1794,6 +1794,7 @@ function resolveGeneratedUiAssetUrl(assetPath, baseUrl) {
 }
 
 // packages/worker/client/mcp-apps/generated-ui-runtime-controller.ts
+var generatedUiRuntimeModuleSpecifier = "@kody/generated-ui-runtime";
 function coerceJsonRecord(value) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return void 0;
@@ -2112,6 +2113,16 @@ function writeDocument(html) {
   documentRef2.write(html);
   documentRef2.close();
 }
+function buildGeneratedUiRuntimeImportMap(runtimeScriptHref) {
+  const importMapJson = escapeInlineScriptSource(
+    JSON.stringify({
+      imports: {
+        [generatedUiRuntimeModuleSpecifier]: runtimeScriptHref
+      }
+    })
+  );
+  return `<script type="importmap">${importMapJson}<\/script>`;
+}
 function buildHeadInjection(input) {
   const stylesheetHref = resolveGeneratedUiAssetUrl(
     generatedUiRuntimeStylesheetPath,
@@ -2127,8 +2138,10 @@ function buildHeadInjection(input) {
     ...input.appSession ? { appSession: input.appSession } : {}
   };
   const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap));
+  const runtimeImportMap = buildGeneratedUiRuntimeImportMap(runtimeScriptHref);
   return `
 <link rel="stylesheet" href="${stylesheetHref}" />
+${runtimeImportMap}
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 <\/script>
@@ -2343,6 +2356,8 @@ if (documentRef?.readyState === "loading") {
 export {
   absolutizeHtmlAttributeUrls,
   buildCodemodeCapabilityExecuteCode2 as buildCodemodeCapabilityExecuteCode,
+  buildGeneratedUiRuntimeImportMap,
+  generatedUiRuntimeModuleSpecifier,
   getKodyWidget,
   injectIntoHtmlDocument,
   injectRuntimeStateIntoDocument,
