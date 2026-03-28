@@ -38,7 +38,9 @@ export const uiArtifactParameterSchema = z.object({
 	name: z
 		.string()
 		.min(1)
-		.describe('Parameter name available on window.kodyWidget.params.'),
+		.describe(
+			'Parameter name available on the imported `kodyWidget.params` runtime object.',
+		),
 	description: z
 		.string()
 		.min(1)

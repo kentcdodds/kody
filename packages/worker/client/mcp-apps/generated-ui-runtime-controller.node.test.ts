@@ -2,10 +2,13 @@ import { expect, test } from 'vitest'
 import {
 	absolutizeHtmlAttributeUrls,
 	buildCodemodeCapabilityExecuteCode,
+	getKodyWidget,
 	injectIntoHtmlDocument,
 	injectRuntimeStateIntoDocument,
+	kodyWidget,
 	measureRenderedFrameSize,
 	readSavedAppSourceFromHostToolResult,
+	whenKodyWidgetReady,
 } from './generated-ui-runtime-controller.ts'
 
 test('injectIntoHtmlDocument inserts into an existing head without adding an extra bracket', () => {
@@ -173,4 +176,57 @@ test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', ()
 	expect(code).toContain('codemode["value_set"]')
 	expect(code).toContain('"name":"workspaceSlug"')
 	expect(code).toContain('"scope":"app"')
+})
+
+test('getKodyWidget throws until the runtime is ready', () => {
+	const runtimeGlobal = globalThis as typeof globalThis & {
+		kodyWidget?: unknown
+		__kodyWidgetReadyState?: { resolve: (widget: any) => void }
+	}
+	delete runtimeGlobal.kodyWidget
+	delete runtimeGlobal.__kodyWidgetReadyState
+
+	expect(() => getKodyWidget()).toThrow(
+		/kodyWidget is not ready yet.*whenKodyWidgetReady/,
+	)
+})
+
+test('whenKodyWidgetReady resolves once the runtime publishes the widget', async () => {
+	const runtimeGlobal = globalThis as typeof globalThis & {
+		kodyWidget?: unknown
+		__kodyWidgetReadyState?: { resolve: (widget: any) => void }
+	}
+	delete runtimeGlobal.kodyWidget
+	delete runtimeGlobal.__kodyWidgetReadyState
+
+	const fakeWidget = {
+		params: { owner: 'kody' },
+		sendMessage() {
+			return true
+		},
+	}
+
+	const pendingWidget = whenKodyWidgetReady()
+	runtimeGlobal.kodyWidget = fakeWidget
+	runtimeGlobal.__kodyWidgetReadyState?.resolve(fakeWidget)
+
+	await expect(pendingWidget).resolves.toBe(fakeWidget)
+	await expect(whenKodyWidgetReady()).resolves.toBe(fakeWidget)
+})
+
+test('imported kodyWidget proxy binds methods to the resolved runtime object', () => {
+	const runtimeGlobal = globalThis as typeof globalThis & {
+		kodyWidget?: unknown
+		__kodyWidgetReadyState?: { resolve: (widget: any) => void }
+	}
+	const fakeWidget = {
+		params: {},
+		value: 41,
+		readValue() {
+			return this.value
+		},
+	}
+	runtimeGlobal.kodyWidget = fakeWidget
+
+	expect(kodyWidget.readValue()).toBe(41)
 })

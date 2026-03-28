@@ -17,6 +17,11 @@ export {
 	absolutizeHtmlAttributeUrls,
 	injectIntoHtmlDocument,
 } from '@kody-internal/shared/generated-ui-documents.ts'
+export {
+	getKodyWidget,
+	whenKodyWidgetReady,
+	type KodyWidgetPublicApi,
+} from './generated-ui-widget-runtime.ts'
 
 export type GeneratedUiStorageScope = 'session' | 'app' | 'user'
 

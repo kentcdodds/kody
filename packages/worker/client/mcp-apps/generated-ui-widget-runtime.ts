@@ -125,6 +125,15 @@ type MessageLogRefs = {
 	list: HTMLElement
 }
 
+export type KodyWidgetPublicApi = Record<string, unknown> & {
+	params: JsonRecord
+}
+
+type KodyWidgetReadyState = {
+	promise: Promise<KodyWidgetPublicApi>
+	resolve: (widget: KodyWidgetPublicApi) => void
+}
+
 type KodyWindow = Window &
 	typeof globalThis & {
 		__kodyGeneratedUiBootstrap?: GeneratedUiRuntimeBootstrap
@@ -140,13 +149,84 @@ type KodyWindow = Window &
 		}
 		__kodyLocalMessageLogRoot?: HTMLElement | null
 		__kodyLocalMessageLogList?: HTMLElement | null
-		kodyWidget?: Record<string, unknown>
+		__kodyWidgetReadyState?: KodyWidgetReadyState
+		kodyWidget?: KodyWidgetPublicApi
 		params?: Record<string, unknown>
 	}
 
 const kodyWindow = (
 	typeof window === 'object' && window ? window : globalThis
 ) as KodyWindow
+
+function readKodyWidget() {
+	return isRecord(kodyWindow.kodyWidget)
+		? (kodyWindow.kodyWidget as KodyWidgetPublicApi)
+		: null
+}
+
+function getOrCreateKodyWidgetReadyState(): KodyWidgetReadyState {
+	const existingState = kodyWindow.__kodyWidgetReadyState
+	if (existingState) {
+		return existingState
+	}
+	let resolvePromise: ((widget: KodyWidgetPublicApi) => void) | null = null
+	const state: KodyWidgetReadyState = {
+		promise: new Promise<KodyWidgetPublicApi>((resolve) => {
+			resolvePromise = resolve
+		}),
+		resolve(widget) {
+			resolvePromise?.(widget)
+		},
+	}
+	kodyWindow.__kodyWidgetReadyState = state
+	return state
+}
+
+function resolveKodyWidgetReady(widget: KodyWidgetPublicApi) {
+	getOrCreateKodyWidgetReadyState().resolve(widget)
+}
+
+export function getKodyWidget(): KodyWidgetPublicApi {
+	const widget = readKodyWidget()
+	if (widget) {
+		return widget
+	}
+	throw new Error(
+		'kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `/mcp-apps/generated-ui-runtime.js` and await it before using the runtime helpers.',
+	)
+}
+
+export function whenKodyWidgetReady(): Promise<KodyWidgetPublicApi> {
+	const widget = readKodyWidget()
+	if (widget) {
+		return Promise.resolve(widget)
+	}
+	return getOrCreateKodyWidgetReadyState().promise
+}
+
+export const kodyWidget = new Proxy(Object.create(null), {
+	get(_target, property) {
+		const widget = getKodyWidget()
+		const value = Reflect.get(widget, property)
+		return typeof value === 'function' ? value.bind(widget) : value
+	},
+	has(_target, property) {
+		return property in getKodyWidget()
+	},
+	ownKeys() {
+		return Reflect.ownKeys(getKodyWidget())
+	},
+	getOwnPropertyDescriptor(_target, property) {
+		const descriptor = Reflect.getOwnPropertyDescriptor(getKodyWidget(), property)
+		if (!descriptor) {
+			return undefined
+		}
+		return {
+			...descriptor,
+			configurable: true,
+		}
+	},
+}) as KodyWidgetPublicApi
 
 function isRecord(value: unknown): value is JsonRecord {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -1715,6 +1795,7 @@ export function initializeGeneratedUiRuntime() {
 	kodyWindow.__kodyAppParams = runtimeParams
 	kodyWindow.kodyWidget = kodyWidget
 	kodyWindow.params = runtimeParams
+	resolveKodyWidgetReady(kodyWidget)
 
 	window.addEventListener('error', (event) => {
 		console.error(
