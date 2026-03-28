@@ -4,7 +4,10 @@ import {
 	parseAccountSecretId,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
-import { navigate, routerEvents } from '#client/client-router.tsx'
+import {
+	navigate,
+	routerEvents,
+} from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -352,6 +355,10 @@ export function AccountSecretsRoute(handle: Handle) {
 	let submittingApprovalAction: ApprovalAction | null = null
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
 	let lastLoadedDataKey = ''
+	let lastFailedDataKey: string | null = null
+	let loadingDataKey: string | null = null
+	let loadRequestId = 0
+	let retryTimeout: ReturnType<typeof setTimeout> | null = null
 	let showSecretValue = false
 	const deleteSecretCheck = createDoubleCheck(handle)
 	const filterAppCombobox = TypeaheadCombobox(handle)
@@ -426,11 +433,13 @@ export function AccountSecretsRoute(handle: Handle) {
 		saveState = 'idle'
 	}
 
-	async function loadAccountSecrets(signal: AbortSignal) {
+	async function loadAccountSecrets() {
+		const href = getCurrentHref()
+		const selection = getSelectionState(href)
+		const dataKey = getDataRefreshKey(href)
+		const requestId = ++loadRequestId
+		loadingDataKey = dataKey
 		try {
-			const href = getCurrentHref()
-			const selection = getSelectionState(href)
-			lastLoadedDataKey = getDataRefreshKey(href)
 			const requestUrl = new URL(accountSecretsApiPath, href)
 			requestUrl.search = new URL(href).search
 			if (selection.selectedSecretId) {
@@ -442,9 +451,12 @@ export function AccountSecretsRoute(handle: Handle) {
 			const response = await fetch(requestUrl.toString(), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
-				signal,
 			})
-			if (signal.aborted) return
+			if (
+				requestId !== loadRequestId ||
+				getDataRefreshKey(getCurrentHref()) !== dataKey
+			)
+				return
 			if (response.status === 401) {
 				window.location.assign('/login')
 				return
@@ -455,14 +467,42 @@ export function AccountSecretsRoute(handle: Handle) {
 				throw new Error('Unable to load your secrets.')
 			}
 
+			lastLoadedDataKey = dataKey
+			lastFailedDataKey = null
+			if (retryTimeout) {
+				clearTimeout(retryTimeout)
+				retryTimeout = null
+			}
 			applyPayload(payload, selection, null)
 			handle.update()
 		} catch (error) {
-			if (signal.aborted) return
+			if (
+				requestId !== loadRequestId ||
+				getDataRefreshKey(getCurrentHref()) !== dataKey
+			)
+				return
+			lastFailedDataKey = dataKey
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load your secrets.'
 			handle.update()
+			if (typeof window !== 'undefined') {
+				if (retryTimeout) {
+					clearTimeout(retryTimeout)
+					retryTimeout = null
+				}
+				retryTimeout = window.setTimeout(() => {
+					retryTimeout = null
+					if (lastFailedDataKey !== dataKey) return
+					if (getDataRefreshKey(getCurrentHref()) !== dataKey) return
+					lastFailedDataKey = null
+					handle.update()
+				}, 3000)
+			}
+		} finally {
+			if (requestId === loadRequestId && loadingDataKey === dataKey) {
+				loadingDataKey = null
+			}
 		}
 	}
 
@@ -712,10 +752,16 @@ export function AccountSecretsRoute(handle: Handle) {
 			},
 			...appOptions,
 		]
+		const currentDataKey = getDataRefreshKey(currentHref)
 		const isRefreshingForLocationChange =
 			status !== 'loading' &&
-			getDataRefreshKey(currentHref) !== lastLoadedDataKey
-		if (status === 'loading' || isRefreshingForLocationChange) {
+			currentDataKey !== lastLoadedDataKey &&
+			currentDataKey !== lastFailedDataKey
+		const isLoadingCurrentLocation = loadingDataKey === currentDataKey
+		if (
+			(status === 'loading' || isRefreshingForLocationChange) &&
+			!isLoadingCurrentLocation
+		) {
 			handle.queueTask(loadAccountSecrets)
 		}
 
