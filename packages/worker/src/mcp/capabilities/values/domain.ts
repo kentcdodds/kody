@@ -1,5 +1,9 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { connectorDeleteCapability } from './connector-delete.ts'
+import { connectorGetCapability } from './connector-get.ts'
+import { connectorListCapability } from './connector-list.ts'
+import { connectorSaveCapability } from './connector-save.ts'
 import { valueDeleteCapability } from './value-delete.ts'
 import { valueGetCapability } from './value-get.ts'
 import { valueListCapability } from './value-list.ts'
@@ -15,5 +19,9 @@ export const valuesDomain = defineDomain({
 		valueGetCapability,
 		valueListCapability,
 		valueDeleteCapability,
+		connectorSaveCapability,
+		connectorGetCapability,
+		connectorListCapability,
+		connectorDeleteCapability,
 	],
 })
