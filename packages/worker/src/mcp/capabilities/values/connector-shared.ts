@@ -48,9 +48,7 @@ export function parseConnectorConfig(
 	fallbackName: string | null,
 ) {
 	const record =
-		value && typeof value === 'object' && !Array.isArray(value)
-			? value
-			: null
+		value && typeof value === 'object' && !Array.isArray(value) ? value : null
 	const configCandidate =
 		record && typeof (record as Record<string, unknown>).name === 'string'
 			? record

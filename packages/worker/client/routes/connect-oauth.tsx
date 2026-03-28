@@ -481,17 +481,25 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 		if (callback.kind === 'error') {
 			setStatus(callback.description || `OAuth error: ${callback.error}`)
+			setStep('connect')
 			return
 		}
 		if (callback.kind !== 'success') return
 		const valid = validateState(getStateKey(config.providerKey), callback.state)
 		if (!valid) {
 			setStatus('State mismatch. Restart the OAuth flow.')
+			setStep('connect')
 			return
 		}
 		const exchange = await exchangeOAuthCode(config, callback.code)
 		if (!exchange.ok) {
 			setStatus(exchange.error)
+			setStep(
+				exchange.error.includes('client ID') ||
+					exchange.error.includes('client secret')
+					? 'setup'
+					: 'connect',
+			)
 			return
 		}
 		const callbackUrl = window.location.href
@@ -519,6 +527,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		const payload = await response.json().catch(() => null)
 		if (!response.ok || payload?.ok !== true) {
 			setStatus(payload?.error || 'Unable to save OAuth tokens.')
+			setStep('connect')
 			return
 		}
 		accessTokenSaved = payload.accessTokenSaved === true
