@@ -108,7 +108,12 @@ function createCapabilityInputSecretResolver(
 				name: secret.name,
 				scope: resolved.scope ?? secret.scope ?? 'user',
 				capabilityName,
-				storageContext: callerContext.storageContext,
+			storageContext: callerContext.storageContext
+				? {
+						sessionId: callerContext.storageContext.sessionId ?? null,
+						appId: callerContext.storageContext.appId ?? null,
+					}
+				: null,
 			})
 			throw new Error(
 				createCapabilitySecretAccessDeniedMessage(
@@ -139,8 +144,8 @@ export async function runCodemodeWithRegistry(
 			userId: callerContext.user?.userId ?? null,
 			storageContext: callerContext.storageContext
 				? {
-						sessionId: callerContext.storageContext.sessionId ?? null,
-						appId: callerContext.storageContext.appId ?? null,
+				sessionId: callerContext.storageContext.sessionId ?? null,
+				appId: callerContext.storageContext.appId ?? null,
 					}
 				: null,
 		},
