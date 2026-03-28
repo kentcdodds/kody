@@ -27,6 +27,12 @@ type OAuthExchangeResult =
 	| { ok: true; data: Record<string, unknown>; status: number }
 	| { ok: false; status: number; error: string }
 
+type SaveValueResult =
+	| { ok: true; value: { value: string } }
+	| { ok: false; error: string }
+
+type SaveSecretResult = { ok: true } | { ok: false; error: string }
+
 type OAuthCallback =
 	| { kind: 'none' }
 	| { kind: 'error'; error: string; description: string | null }
@@ -63,10 +69,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		update()
 	}
 
-	const setApprovalDetails = (
-		host: string,
-		secrets: Array<string>,
-	): void => {
+	const setApprovalDetails = (host: string, secrets: Array<string>): void => {
 		approvalDetails = { host, secrets }
 		update()
 	}
@@ -88,14 +91,14 @@ export function ConnectOauthRoute(handle: Handle) {
 		const tokenUrl = readRequired('tokenUrl')
 		if (!provider || !authorizeUrl || !tokenUrl) {
 			hasConfigError = true
-			setStatus('Missing required OAuth configuration parameters.', 'error')
+			setStatus('Missing required OAuth configuration parameters.')
 			return null
 		}
 		const authorizeHost = safeParseHost(authorizeUrl)
 		const tokenHost = safeParseHost(tokenUrl)
 		if (!authorizeHost || !tokenHost) {
 			hasConfigError = true
-			setStatus('Authorize and token URLs must be valid.', 'error')
+			setStatus('Authorize and token URLs must be valid.')
 			return null
 		}
 		let flow = (readOptional('flow') ?? 'pkce').toLowerCase()
@@ -109,7 +112,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		const providerKey = normalizeProviderKey(provider)
 		if (!providerKey) {
 			hasConfigError = true
-			setStatus('Provider must contain letters or numbers.', 'error')
+			setStatus('Provider must contain letters or numbers.')
 			return null
 		}
 		const providerSetupInstructions = parseProviderSetupInstructions(
@@ -121,7 +124,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		])
 		if (allowedHosts.length === 0) {
 			hasConfigError = true
-			setStatus('Allowed hosts are required to continue.', 'error')
+			setStatus('Allowed hosts are required to continue.')
 			return null
 		}
 		return {
@@ -164,11 +167,53 @@ export function ConnectOauthRoute(handle: Handle) {
 		return `${window.location.origin}${window.location.pathname}`
 	}
 
-	const getStateKey = (providerKey: string) =>
-		`connect-oauth:${providerKey}`
+	const getStateKey = (providerKey: string) => `connect-oauth:${providerKey}`
 
 	const getPkceKey = (providerKey: string) =>
 		`connect-oauth:${providerKey}:pkce`
+
+	const configStorageKey = 'connect-oauth:config'
+
+	const isConnectOauthConfig = (
+		value: unknown,
+	): value is ConnectOauthConfig => {
+		if (!value || typeof value !== 'object') return false
+		const record = value as Record<string, unknown>
+		return (
+			typeof record.provider === 'string' &&
+			typeof record.providerKey === 'string' &&
+			typeof record.authorizeUrl === 'string' &&
+			typeof record.tokenUrl === 'string' &&
+			typeof record.authorizeHost === 'string' &&
+			typeof record.tokenHost === 'string' &&
+			typeof record.flow === 'string' &&
+			typeof record.scopeSeparator === 'string' &&
+			typeof record.clientIdValueName === 'string' &&
+			typeof record.accessTokenSecretName === 'string' &&
+			Array.isArray(record.scopes) &&
+			Array.isArray(record.allowedHosts) &&
+			record.scopes.every((value) => typeof value === 'string') &&
+			record.allowedHosts.every((value) => typeof value === 'string')
+		)
+	}
+
+	const persistConfig = (nextConfig: ConnectOauthConfig) => {
+		try {
+			sessionStorage.setItem(configStorageKey, JSON.stringify(nextConfig))
+		} catch {}
+	}
+
+	const readStoredConfig = (): ConnectOauthConfig | null => {
+		if (typeof window === 'undefined') return null
+		const raw = sessionStorage.getItem(configStorageKey)
+		if (!raw) return null
+		try {
+			const parsed = JSON.parse(raw)
+			return isConnectOauthConfig(parsed) ? parsed : null
+		} catch {
+			return null
+		}
+	}
 
 	const createState = (key: string) => {
 		const value = crypto.randomUUID()
@@ -181,10 +226,21 @@ export function ConnectOauthRoute(handle: Handle) {
 		return Boolean(expected && returned && expected === returned)
 	}
 
+	const reservedAuthorizeParams = new Set([
+		'client_id',
+		'code_challenge',
+		'code_challenge_method',
+		'redirect_uri',
+		'response_type',
+		'scope',
+		'state',
+	])
+
 	const buildAuthorizeUrl = async (nextConfig: ConnectOauthConfig) => {
 		if (hasConfigError) {
 			throw new Error('Unable to start OAuth with invalid configuration.')
 		}
+		persistConfig(nextConfig)
 		const url = new URL(nextConfig.authorizeUrl)
 		url.searchParams.set('response_type', 'code')
 		const clientId = await readValue(nextConfig.clientIdValueName)
@@ -202,7 +258,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		const state = createState(getStateKey(nextConfig.providerKey))
 		url.searchParams.set('state', state)
 		if (nextConfig.flow === 'pkce') {
-			const verifier = crypto.randomUUID()
+			const verifier = createCodeVerifier()
 			sessionStorage.setItem(getPkceKey(nextConfig.providerKey), verifier)
 			const challenge = await createCodeChallenge(verifier)
 			url.searchParams.set('code_challenge_method', 'S256')
@@ -212,6 +268,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			nextConfig.extraAuthorizeParams,
 		)) {
 			if (!key) continue
+			if (reservedAuthorizeParams.has(key.toLowerCase())) continue
 			url.searchParams.set(key, value)
 		}
 		return url.toString()
@@ -302,7 +359,9 @@ export function ConnectOauthRoute(handle: Handle) {
 		params.set('code', code)
 		params.set('redirect_uri', getRedirectUri())
 		if (nextConfig.flow === 'pkce') {
-			const verifier = sessionStorage.getItem(getPkceKey(nextConfig.providerKey))
+			const verifier = sessionStorage.getItem(
+				getPkceKey(nextConfig.providerKey),
+			)
 			if (!verifier) {
 				return { ok: false, status: 0, error: 'Missing PKCE verifier.' }
 			}
@@ -315,11 +374,6 @@ export function ConnectOauthRoute(handle: Handle) {
 				return { ok: false, status: 0, error: 'Missing client secret.' }
 			}
 			params.set('client_secret', secret)
-		}
-		for (const [key, value] of Object.entries(
-			nextConfig.extraAuthorizeParams,
-		)) {
-			params.set(key, value)
 		}
 		const response = await fetch(nextConfig.tokenUrl, {
 			method: 'POST',
@@ -340,13 +394,17 @@ export function ConnectOauthRoute(handle: Handle) {
 			return {
 				ok: false,
 				status: response.status,
-				error: data?.error_description || data?.error || 'Token exchange failed.',
+				error:
+					(typeof data?.error_description === 'string' &&
+						data.error_description) ||
+					(typeof data?.error === 'string' && data.error) ||
+					'Token exchange failed.',
 			}
 		}
 		return { ok: true, data, status: response.status }
 	}
 
-	const handleSetupSubmit = async (event: SubmitEvent) => {
+	const handleSetupSubmit = async (event: Event) => {
 		event.preventDefault()
 		if (!config || submitting) return
 		submitting = true
@@ -357,21 +415,12 @@ export function ConnectOauthRoute(handle: Handle) {
 			const clientId = String(formData.get('clientId') ?? '').trim()
 			const clientSecret = String(formData.get('clientSecret') ?? '').trim()
 			if (!clientId) {
-				setStatus('Client ID is required.', 'error')
-				return
-			}
-			const clientIdResult = await saveValue(
-				config.clientIdValueName,
-				clientId,
-				`${config.provider} OAuth client ID`,
-			)
-			if (!clientIdResult.ok) {
-				setStatus(clientIdResult.error, 'error')
+				setStatus('Client ID is required.')
 				return
 			}
 			if (config.flow === 'confidential') {
 				if (!clientSecret) {
-					setStatus('Client secret is required for confidential flow.', 'error')
+					setStatus('Client secret is required for confidential flow.')
 					return
 				}
 				const secretResult = await saveSecret(
@@ -381,7 +430,7 @@ export function ConnectOauthRoute(handle: Handle) {
 					config.allowedHosts,
 				)
 				if (!secretResult.ok) {
-					setStatus(secretResult.error, 'error')
+					setStatus(secretResult.error)
 					return
 				}
 				sessionStorage.setItem(
@@ -389,7 +438,16 @@ export function ConnectOauthRoute(handle: Handle) {
 					clientSecret,
 				)
 			}
-			setStatus('Saved OAuth client configuration.', 'success')
+			const clientIdResult = await saveValue(
+				config.clientIdValueName,
+				clientId,
+				`${config.provider} OAuth client ID`,
+			)
+			if (!clientIdResult.ok) {
+				setStatus(clientIdResult.error)
+				return
+			}
+			setStatus('Saved OAuth client configuration.')
 			setStep('connect')
 		} finally {
 			submitting = false
@@ -407,7 +465,6 @@ export function ConnectOauthRoute(handle: Handle) {
 		} catch (error) {
 			setStatus(
 				error instanceof Error ? error.message : 'Unable to start OAuth.',
-				'error',
 			)
 		} finally {
 			submitting = false
@@ -419,22 +476,22 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (!config) return
 		setStep('callback')
 		const callback = readCallback()
+		if (callback.kind !== 'none') {
+			window.history.replaceState(null, '', getRedirectUri())
+		}
 		if (callback.kind === 'error') {
-			setStatus(
-				callback.description || `OAuth error: ${callback.error}`,
-				'error',
-			)
+			setStatus(callback.description || `OAuth error: ${callback.error}`)
 			return
 		}
 		if (callback.kind !== 'success') return
 		const valid = validateState(getStateKey(config.providerKey), callback.state)
 		if (!valid) {
-			setStatus('State mismatch. Restart the OAuth flow.', 'error')
+			setStatus('State mismatch. Restart the OAuth flow.')
 			return
 		}
 		const exchange = await exchangeOAuthCode(config, callback.code)
 		if (!exchange.ok) {
-			setStatus(exchange.error, 'error')
+			setStatus(exchange.error)
 			return
 		}
 		const callbackUrl = window.location.href
@@ -461,7 +518,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		})
 		const payload = await response.json().catch(() => null)
 		if (!response.ok || payload?.ok !== true) {
-			setStatus(payload?.error || 'Unable to save OAuth tokens.', 'error')
+			setStatus(payload?.error || 'Unable to save OAuth tokens.')
 			return
 		}
 		accessTokenSaved = payload.accessTokenSaved === true
@@ -472,10 +529,12 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (approvalHosts.length > 0) {
 			setApprovalDetails(approvalHosts[0] ?? 'unknown host', [
 				config.accessTokenSecretName,
-				...(config.refreshTokenSecretName ? [config.refreshTokenSecretName] : []),
+				...(config.refreshTokenSecretName
+					? [config.refreshTokenSecretName]
+					: []),
 			])
 		}
-		setStatus('OAuth tokens saved.', 'success')
+		setStatus('OAuth tokens saved.')
 		setStep('success')
 		return
 	}
@@ -534,21 +593,28 @@ export function ConnectOauthRoute(handle: Handle) {
 	}
 
 	handle.queueTask(async () => {
-		const nextConfig = readQueryConfig()
-		if (!nextConfig) {
-			setStatus('Missing required OAuth configuration parameters.', 'error')
-			return
-		}
-		config = nextConfig
 		const callback = readCallback()
 		if (callback.kind === 'success' || callback.kind === 'error') {
+			const storedConfig = readStoredConfig()
+			const nextConfig = storedConfig ?? readQueryConfig()
+			if (!nextConfig) {
+				setStatus('Missing required OAuth configuration parameters.')
+				return
+			}
+			config = nextConfig
 			if (!connectOauthHandled) {
 				connectOauthHandled = true
 				await handleCallback()
 			}
-		} else {
-			setStep('setup')
+			return
 		}
+		const nextConfig = readQueryConfig()
+		if (!nextConfig) {
+			setStatus('Missing required OAuth configuration parameters.')
+			return
+		}
+		config = nextConfig
+		setStep('setup')
 	})
 
 	return () => {
@@ -631,7 +697,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						{renderProviderInstructions()}
 						{renderAllowedHosts()}
 						<form
-							onSubmit={handleSetupSubmit}
+							on={{ submit: handleSetupSubmit }}
 							css={{ display: 'grid', gap: spacing.md }}
 						>
 							<label>
@@ -665,7 +731,11 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p css={{ margin: 0 }}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
-						<button onClick={handleConnect} disabled={submitting}>
+						<button
+							type="button"
+							on={{ click: () => void handleConnect() }}
+							disabled={submitting}
+						>
 							Connect {config.provider}
 						</button>
 					</section>
@@ -765,7 +835,7 @@ function parseOptionalUrl(raw: string | null) {
 
 function safeParseHost(raw: string) {
 	try {
-		return new URL(raw).host
+		return new URL(raw).hostname
 	} catch {
 		return null
 	}
@@ -818,11 +888,17 @@ async function createCodeChallenge(verifier: string) {
 	return base64UrlEncode(digest)
 }
 
-function base64UrlEncode(buffer: ArrayBuffer) {
-	const bytes = new Uint8Array(buffer)
+function base64UrlEncode(input: ArrayBuffer | Uint8Array) {
+	const bytes = input instanceof Uint8Array ? input : new Uint8Array(input)
 	let text = ''
 	for (const byte of bytes) {
 		text += String.fromCharCode(byte)
 	}
 	return btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function createCodeVerifier() {
+	const bytes = new Uint8Array(64)
+	crypto.getRandomValues(bytes)
+	return base64UrlEncode(bytes)
 }

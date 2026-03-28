@@ -283,8 +283,9 @@ async function handleConnectOauthAction(input: {
 	if (!tokenPayload || typeof tokenPayload !== 'object') {
 		return jsonResponse({ ok: false, error: 'Token payload is required.' }, 400)
 	}
-	const accessToken = readTokenField(tokenPayload, 'access_token')
-	const refreshToken = readTokenField(tokenPayload, 'refresh_token')
+	const tokenRecord = tokenPayload as Record<string, unknown>
+	const accessToken = readTokenField(tokenRecord, 'access_token')
+	const refreshToken = readTokenField(tokenRecord, 'refresh_token')
 	if (!accessToken) {
 		return jsonResponse(
 			{ ok: false, error: 'Token payload did not include an access_token.' },
@@ -340,7 +341,7 @@ async function handleConnectOauthAction(input: {
 		flow: flow === 'confidential' ? 'confidential' : 'pkce',
 		clientIdValueName,
 		clientSecretSecretName,
-		tokenPayload,
+		tokenPayload: tokenRecord,
 		allowedHosts,
 	})
 
@@ -364,7 +365,10 @@ async function saveConnectorConfig(input: {
 	tokenPayload: Record<string, unknown>
 	allowedHosts: Array<string>
 }) {
-	const providerKey = input.provider.trim().toLowerCase()
+	const providerKey = normalizeProviderKey(input.provider)
+	if (!providerKey) {
+		throw new Error('Provider must contain letters or numbers.')
+	}
 	const connector = normalizeConnectorConfig({
 		name: input.provider,
 		tokenUrl: input.tokenUrl,
@@ -372,11 +376,9 @@ async function saveConnectorConfig(input: {
 		clientIdValueName: input.clientIdValueName,
 		clientSecretSecretName:
 			input.flow === 'confidential'
-				? input.clientSecretSecretName ?? `${providerKey}ClientSecret`
+				? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
 				: null,
-		accessTokenSecretName: readTokenField(input.tokenPayload, 'access_token')
-			? `${providerKey}AccessToken`
-			: `${providerKey}AccessToken`,
+		accessTokenSecretName: `${providerKey}AccessToken`,
 		refreshTokenSecretName: readTokenField(input.tokenPayload, 'refresh_token')
 			? `${providerKey}RefreshToken`
 			: null,
@@ -400,6 +402,11 @@ function readTokenField(
 ): string | null {
 	const value = payload[field]
 	return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function normalizeProviderKey(value: string) {
+	const normalized = value.trim().toLowerCase()
+	return normalized.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 async function buildAccountSecretsPayload(input: {
@@ -901,7 +908,7 @@ function readOptionalString(body: object, key: string) {
 
 function safeParseHost(raw: string) {
 	try {
-		return new URL(raw).hostname
+		return new URL(raw).host
 	} catch {
 		return null
 	}
