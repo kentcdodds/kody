@@ -61,7 +61,9 @@ function renderConnectOauthError(message: string) {
 	})
 }
 
-function parseConnectOauthConfig(url: URL) {
+function parseConnectOauthConfig(
+	url: URL,
+): { ok: false; error: string } | { ok: true; config: ConnectOauthConfig } {
 	const provider = readRequiredParam(url, 'provider')
 	if (!provider) {
 		return { ok: false, error: 'Missing provider query parameter.' }
