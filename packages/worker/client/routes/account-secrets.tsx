@@ -453,7 +453,11 @@ export function AccountSecretsRoute(handle: Handle) {
 			message =
 				error instanceof Error ? error.message : 'Unable to load your secrets.'
 			handle.update()
-			if (!retryTimeout && typeof window !== 'undefined') {
+			if (typeof window !== 'undefined') {
+				if (retryTimeout) {
+					clearTimeout(retryTimeout)
+					retryTimeout = null
+				}
 				retryTimeout = window.setTimeout(() => {
 					retryTimeout = null
 					if (lastFailedDataKey !== dataKey) return
