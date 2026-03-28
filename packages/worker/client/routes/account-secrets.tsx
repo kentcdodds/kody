@@ -332,8 +332,10 @@ export function AccountSecretsRoute(handle: Handle) {
 	let submittingApprovalAction: ApprovalAction | null = null
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
 	let lastLoadedDataKey = ''
+	let lastFailedDataKey: string | null = null
 	let loadingDataKey: string | null = null
 	let loadRequestId = 0
+	let retryTimeout: ReturnType<typeof setTimeout> | null = null
 	let showSecretValue = false
 	const deleteSecretCheck = createDoubleCheck(handle)
 	const filterAppCombobox = TypeaheadCombobox(handle)
@@ -433,6 +435,11 @@ export function AccountSecretsRoute(handle: Handle) {
 			}
 
 			lastLoadedDataKey = dataKey
+			lastFailedDataKey = null
+			if (retryTimeout) {
+				clearTimeout(retryTimeout)
+				retryTimeout = null
+			}
 			applyPayload(payload, selection, null)
 			handle.update()
 		} catch (error) {
@@ -441,11 +448,20 @@ export function AccountSecretsRoute(handle: Handle) {
 				getDataRefreshKey(getCurrentHref()) !== dataKey
 			)
 				return
-			lastLoadedDataKey = dataKey
+			lastFailedDataKey = dataKey
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load your secrets.'
 			handle.update()
+			if (!retryTimeout && typeof window !== 'undefined') {
+				retryTimeout = window.setTimeout(() => {
+					retryTimeout = null
+					if (lastFailedDataKey !== dataKey) return
+					if (getDataRefreshKey(getCurrentHref()) !== dataKey) return
+					lastFailedDataKey = null
+					handle.update()
+				}, 3000)
+			}
 		} finally {
 			if (requestId === loadRequestId && loadingDataKey === dataKey) {
 				loadingDataKey = null
@@ -700,7 +716,9 @@ export function AccountSecretsRoute(handle: Handle) {
 		]
 		const currentDataKey = getDataRefreshKey(currentHref)
 		const isRefreshingForLocationChange =
-			status !== 'loading' && currentDataKey !== lastLoadedDataKey
+			status !== 'loading' &&
+			currentDataKey !== lastLoadedDataKey &&
+			currentDataKey !== lastFailedDataKey
 		const isLoadingCurrentLocation = loadingDataKey === currentDataKey
 		if (
 			(status === 'loading' || isRefreshingForLocationChange) &&
