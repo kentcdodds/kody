@@ -24,6 +24,11 @@ import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type routes } from '#app/routes.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
+import { getValue, saveValue } from '#mcp/values/service.ts'
+import {
+	buildConnectorValueName,
+	normalizeConnectorConfig,
+} from '#mcp/capabilities/values/connector-shared.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
 
@@ -138,8 +143,22 @@ export function createAccountSecretsApiHandler(env: Env) {
 					body,
 				})
 			}
+			if (action === 'value_get') {
+				return handleValueGetAction({ env, user, body })
+			}
+			if (action === 'value_set') {
+				return handleValueSetAction({ env, user, body })
+			}
 			if (action === 'delete') {
 				return handleDeleteAction({
+					request,
+					env,
+					user,
+					body,
+				})
+			}
+			if (action === 'connect_oauth') {
+				return handleConnectOauthAction({
 					request,
 					env,
 					user,
@@ -153,6 +172,234 @@ export function createAccountSecretsApiHandler(env: Env) {
 		typeof routes.accountSecretsApi.method,
 		typeof routes.accountSecretsApi.pattern
 	>
+}
+
+async function handleValueGetAction(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: object
+}) {
+	const name = readString(input.body, 'name')
+	if (!name) {
+		return jsonResponse({ ok: false, error: 'Value name is required.' }, 400)
+	}
+	const value = await getValue({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name,
+		scope: 'user',
+		storageContext: { sessionId: null, appId: null },
+	})
+	return jsonResponse({
+		ok: true,
+		value: value ? { value: value.value } : null,
+	})
+}
+
+async function handleValueSetAction(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: object
+}) {
+	const name = readString(input.body, 'name')
+	const value = readString(input.body, 'value')
+	if (!name || !value) {
+		return jsonResponse(
+			{ ok: false, error: 'Value name and value are required.' },
+			400,
+		)
+	}
+	const description = readOptionalString(input.body, 'description') ?? ''
+	const saved = await saveValue({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name,
+		value,
+		scope: 'user',
+		description,
+		storageContext: { sessionId: null, appId: null },
+	})
+	return jsonResponse({ ok: true, value: { value: saved.value } })
+}
+
+async function handleConnectOauthAction(input: {
+	request: Request
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: object
+}) {
+	const provider = readString(input.body, 'provider')
+	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
+	const flow = readOptionalString(input.body, 'flow')
+	const clientIdValueName = readOptionalString(input.body, 'clientIdValueName')
+	const clientSecretSecretName = readOptionalString(
+		input.body,
+		'clientSecretSecretName',
+	)
+	const accessTokenSecretName = readString(input.body, 'accessTokenSecretName')
+	const refreshTokenSecretName = readOptionalString(
+		input.body,
+		'refreshTokenSecretName',
+	)
+	const allowedHosts = normalizeAllowedHosts(
+		readStringArray(input.body, 'allowedHosts'),
+	)
+	const tokenPayload =
+		(input.body as Record<string, unknown>)['tokenPayload'] ?? null
+
+	if (!provider) {
+		return jsonResponse({ ok: false, error: 'Provider is required.' }, 400)
+	}
+	if (!tokenUrl) {
+		return jsonResponse({ ok: false, error: 'Token URL is required.' }, 400)
+	}
+	const tokenHost = safeParseHost(tokenUrl)
+	const normalizedHosts = normalizeAllowedHosts([
+		...allowedHosts,
+		...(tokenHost ? [tokenHost] : []),
+	])
+	allowedHosts.splice(0, allowedHosts.length, ...normalizedHosts)
+	if (!allowedHosts.length) {
+		return jsonResponse(
+			{ ok: false, error: 'Allowed hosts are required.' },
+			400,
+		)
+	}
+	if (flow && flow !== 'pkce' && flow !== 'confidential') {
+		return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
+	}
+	if (!clientIdValueName) {
+		return jsonResponse(
+			{ ok: false, error: 'Client ID value name is required.' },
+			400,
+		)
+	}
+	if (!accessTokenSecretName) {
+		return jsonResponse(
+			{ ok: false, error: 'Access token secret name is required.' },
+			400,
+		)
+	}
+	if (!tokenPayload || typeof tokenPayload !== 'object') {
+		return jsonResponse({ ok: false, error: 'Token payload is required.' }, 400)
+	}
+	const accessToken = readTokenField(tokenPayload, 'access_token')
+	const refreshToken = readTokenField(tokenPayload, 'refresh_token')
+	if (!accessToken) {
+		return jsonResponse(
+			{ ok: false, error: 'Token payload did not include an access_token.' },
+			400,
+		)
+	}
+
+	const accessSaved = await saveSecret({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name: accessTokenSecretName,
+		value: accessToken,
+		scope: 'user',
+		description: `${provider} OAuth access token`,
+		storageContext: { sessionId: null, appId: null },
+	})
+	await setSecretAllowedHosts({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name: accessTokenSecretName,
+		scope: 'user',
+		allowedHosts,
+		storageContext: { sessionId: null, appId: null },
+	})
+
+	let refreshSaved = false
+	if (refreshToken && refreshTokenSecretName) {
+		await saveSecret({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name: refreshTokenSecretName,
+			value: refreshToken,
+			scope: 'user',
+			description: `${provider} OAuth refresh token`,
+			storageContext: { sessionId: null, appId: null },
+		})
+		await setSecretAllowedHosts({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name: refreshTokenSecretName,
+			scope: 'user',
+			allowedHosts,
+			storageContext: { sessionId: null, appId: null },
+		})
+		refreshSaved = true
+	}
+
+	const connectorName = await saveConnectorConfig({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		provider,
+		tokenUrl,
+		flow: flow === 'confidential' ? 'confidential' : 'pkce',
+		clientIdValueName,
+		clientSecretSecretName,
+		tokenPayload,
+		allowedHosts,
+	})
+
+	return jsonResponse({
+		ok: true,
+		accessTokenSaved: Boolean(accessSaved),
+		refreshTokenSaved: refreshSaved,
+		allowedHosts,
+		connectorName,
+	})
+}
+
+async function saveConnectorConfig(input: {
+	env: Env
+	userId: string
+	provider: string
+	tokenUrl: string
+	flow: 'pkce' | 'confidential'
+	clientIdValueName: string
+	clientSecretSecretName: string | null
+	tokenPayload: Record<string, unknown>
+	allowedHosts: Array<string>
+}) {
+	const providerKey = input.provider.trim().toLowerCase()
+	const connector = normalizeConnectorConfig({
+		name: input.provider,
+		tokenUrl: input.tokenUrl,
+		flow: input.flow,
+		clientIdValueName: input.clientIdValueName,
+		clientSecretSecretName:
+			input.flow === 'confidential'
+				? input.clientSecretSecretName ?? `${providerKey}ClientSecret`
+				: null,
+		accessTokenSecretName: readTokenField(input.tokenPayload, 'access_token')
+			? `${providerKey}AccessToken`
+			: `${providerKey}AccessToken`,
+		refreshTokenSecretName: readTokenField(input.tokenPayload, 'refresh_token')
+			? `${providerKey}RefreshToken`
+			: null,
+		requiredHosts: input.allowedHosts,
+	})
+	await saveValue({
+		env: input.env,
+		userId: input.userId,
+		name: buildConnectorValueName(connector.name),
+		value: JSON.stringify(connector),
+		scope: 'user',
+		description: `OAuth connector config for ${connector.name}`,
+		storageContext: { sessionId: null, appId: null },
+	})
+	return connector.name
+}
+
+function readTokenField(
+	payload: Record<string, unknown>,
+	field: string,
+): string | null {
+	const value = payload[field]
+	return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
 async function buildAccountSecretsPayload(input: {
@@ -650,6 +897,14 @@ function readString(body: object, key: string) {
 function readOptionalString(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'string' ? value.trim() : null
+}
+
+function safeParseHost(raw: string) {
+	try {
+		return new URL(raw).hostname
+	} catch {
+		return null
+	}
 }
 
 function readStringArray(body: object, key: string) {

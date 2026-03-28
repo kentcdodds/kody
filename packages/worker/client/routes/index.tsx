@@ -2,6 +2,7 @@ import { AccountRoute } from './account.tsx'
 import { AccountSecretsRoute } from './account-secrets.tsx'
 import { ChatRoute } from './chat.tsx'
 import { ConnectSecretRoute } from './connect-secret.tsx'
+import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute } from './home.tsx'
 import { LoginRoute } from './login.tsx'
 import { OAuthAuthorizeRoute } from './oauth-authorize.tsx'
@@ -26,6 +27,7 @@ export const clientRoutes = {
 	'/login': <LoginRoute />,
 	'/signup': <LoginRoute />,
 	'/reset-password': <ResetPasswordRoute />,
+	'/connect/oauth': <ConnectOauthRoute />,
 	'/oauth/authorize': <OAuthAuthorizeRoute />,
 	'/oauth/callback': <OAuthCallbackRoute />,
 }
