@@ -222,6 +222,28 @@ function buildSecretsHref(pathname: string, search = getCurrentSearch()) {
 	return `${pathname}${search}`
 }
 
+function readCapabilityPrefill(href: string) {
+	const url = new URL(href, 'http://localhost')
+	const value = url.searchParams.get('capability')
+	return value?.trim() ? value.trim() : null
+}
+
+function applyCapabilityPrefill(state: EditorState, capability: string | null) {
+	if (!capability) return state
+	if (state.allowedCapabilities.some((entry) => entry.trim() === capability)) {
+		return state
+	}
+	const nextAllowedCapabilities =
+		state.allowedCapabilities.length === 1 &&
+		state.allowedCapabilities[0]?.trim() === ''
+			? [capability]
+			: [...state.allowedCapabilities, capability]
+	return {
+		...state,
+		allowedCapabilities: nextAllowedCapabilities,
+	}
+}
+
 function buildSecretHref(secret: {
 	name: string
 	scope: SecretScope
@@ -258,7 +280,8 @@ function getDataRefreshKey(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const request = url.searchParams.get('request') ?? ''
 	const requestedHost = url.searchParams.get('allowed-host') ?? ''
-	return `${url.pathname}?request=${request}&allowed-host=${requestedHost}`
+	const requestedCapability = url.searchParams.get('capability') ?? ''
+	return `${url.pathname}?request=${request}&allowed-host=${requestedHost}&capability=${requestedCapability}`
 }
 
 function readFilterState(
@@ -359,15 +382,25 @@ export function AccountSecretsRoute(handle: Handle) {
 	function syncEditorState(selection: SelectionState) {
 		deleteSecretCheck.reset()
 		showSecretValue = false
+		const capabilityPrefill = readCapabilityPrefill(getCurrentHref())
 		if (selection.isCreating) {
-			editorState = createEmptyEditorState(apps)
+			editorState = applyCapabilityPrefill(
+				createEmptyEditorState(apps),
+				capabilityPrefill,
+			)
 			return
 		}
 		if (selectedSecret) {
-			editorState = createEditorStateFromSecret(selectedSecret)
+			editorState = applyCapabilityPrefill(
+				createEditorStateFromSecret(selectedSecret),
+				capabilityPrefill,
+			)
 			return
 		}
-		editorState = createEmptyEditorState(apps)
+		editorState = applyCapabilityPrefill(
+			createEmptyEditorState(apps),
+			capabilityPrefill,
+		)
 	}
 
 	function applyPayload(
@@ -471,6 +504,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				const nextUrl = new URL(nextHref, window.location.href)
 				nextUrl.searchParams.delete('request')
 				nextUrl.searchParams.delete('allowed-host')
+				nextUrl.searchParams.delete('capability')
 				navigate(`${nextUrl.pathname}${nextUrl.search}`)
 				lastLoadedDataKey = getDataRefreshKey(nextUrl.toString())
 			}
@@ -761,6 +795,12 @@ export function AccountSecretsRoute(handle: Handle) {
 								<code>{approval.name}</code> from the{' '}
 								{getScopeLabel(approval.scope)} scope.
 							</p>
+							{approval.requestedCapability ? (
+								<p css={{ margin: 0, color: colors.textMuted }}>
+									Requested capability:{' '}
+									<code>{approval.requestedCapability}</code>
+								</p>
+							) : null}
 							<p css={{ margin: 0, color: colors.textMuted }}>
 								Current allowed hosts:{' '}
 								{approval.currentAllowedHosts.length > 0

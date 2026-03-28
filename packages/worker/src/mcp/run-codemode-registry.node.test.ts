@@ -167,7 +167,7 @@ test('buildCodemodeFns denies capability secret placeholders for disallowed capa
 				username: '{{secret:lutronUsername|scope=user}}',
 			}),
 		).rejects.toThrow(
-			'Secret "lutronUsername" is not allowed for capability "home_lutron_set_credentials"',
+			'Secret "lutronUsername" is not allowed for capability "home_lutron_set_credentials". If this capability should be able to use the secret, ask the user whether to add "home_lutron_set_credentials" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://heykody.dev/account/secrets/user/lutronUsername?capability=home_lutron_set_credentials',
 		)
 		expect(resolveSecretSpy).toHaveBeenCalledWith(
 			expect.objectContaining({

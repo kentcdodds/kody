@@ -10,6 +10,7 @@ import {
 	type ReferencedSecret,
 } from '#mcp/secrets/placeholders.ts'
 import {
+	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 	fetchSecretAuthRequiredMessage,
 } from '#mcp/secrets/errors.ts'
@@ -85,27 +86,15 @@ export async function expandSecretPlaceholders(input: {
 			)
 		}
 		const normalizedHost = normalizeHost(requestedHost)
-		for (const { referenced, resolved } of resolvedSecrets) {
-			const allowedForHost = resolved.allowedHosts.includes(normalizedHost)
-			if (allowedForHost) continue
-			const approvalToken = await createSecretHostApprovalToken(input.env, {
-				userId: input.props.userId!,
-				name: referenced.name,
-				scope: resolved.scope ?? referenced.scope ?? 'user',
-				requestedHost,
-				storageContext: input.props.storageContext,
-			})
-			const approvalUrl = buildSecretHostApprovalUrl({
-				baseUrl: input.props.baseUrl,
-				token: approvalToken,
-				name: referenced.name,
-				scope: resolved.scope ?? referenced.scope ?? 'user',
-				requestedHost,
-				storageContext: input.props.storageContext,
-			})
-			throw new Error(
-				`Secret "${referenced.name}" is not allowed for host "${requestedHost}". If this request is expected, ask the user whether this host should be added to the secret's allowed hosts: ${approvalUrl}`,
-			)
+		const missingApprovals = await collectHostApprovalEntries({
+			env: input.env,
+			props: input.props,
+			requestedHost,
+			normalizedHost,
+			resolvedSecrets,
+		})
+		if (missingApprovals.length > 0) {
+			throw new Error(createHostSecretAccessDeniedBatchMessage(missingApprovals))
 		}
 	}
 	for (const [key, value] of Array.from(headers.entries())) {
@@ -131,6 +120,45 @@ export async function expandSecretPlaceholders(input: {
 		keepalive: input.request.keepalive,
 		signal: input.request.signal,
 	})
+}
+
+async function collectHostApprovalEntries(input: {
+	env: Pick<Env, 'COOKIE_SECRET'>
+	props: FetchGatewayProps
+	requestedHost: string
+	normalizedHost: string
+	resolvedSecrets: Array<{
+		referenced: ReferencedSecret
+		resolved: ResolvedSecret
+	}>
+}) {
+	const entries = await Promise.all(
+		input.resolvedSecrets.map(async ({ referenced, resolved }) => {
+			const allowedForHost = resolved.allowedHosts.includes(input.normalizedHost)
+			if (allowedForHost) return null
+			const approvalToken = await createSecretHostApprovalToken(input.env, {
+				userId: input.props.userId!,
+				name: referenced.name,
+				scope: resolved.scope ?? referenced.scope ?? 'user',
+				requestedHost: input.requestedHost,
+				storageContext: input.props.storageContext,
+			})
+			const approvalUrl = buildSecretHostApprovalUrl({
+				baseUrl: input.props.baseUrl,
+				token: approvalToken,
+				name: referenced.name,
+				scope: resolved.scope ?? referenced.scope ?? 'user',
+				requestedHost: input.requestedHost,
+				storageContext: input.props.storageContext,
+			})
+			return {
+				secretName: referenced.name,
+				host: input.requestedHost,
+				approvalUrl,
+			}
+		}),
+	)
+	return entries.filter((entry): entry is NonNullable<typeof entry> => entry != null)
 }
 
 function ensureFetchAllowed(props: FetchGatewayProps) {
