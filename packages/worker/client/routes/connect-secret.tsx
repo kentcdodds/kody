@@ -7,6 +7,7 @@ import {
 	spacing,
 	typography,
 } from '#client/styles/tokens.ts'
+import { formatConnectorConfigFailureMessage } from './connect-secret-errors.ts'
 
 type StorageScope = 'app' | 'session' | 'user'
 type ViewStep =
@@ -371,13 +372,11 @@ export function ConnectSecretRoute(handle: Handle) {
 					return
 				}
 			}
-			const message =
-				error instanceof Error
-					? error.message
-					: 'Unable to update connector config.'
 			setState({
 				step: 'error',
-				error: `Connector configuration failed and the secret was rolled back. ${message}`,
+				error: formatConnectorConfigFailureMessage(error, {
+					secretRolledBack: Boolean(params.connector),
+				}),
 			})
 		}
 	}
