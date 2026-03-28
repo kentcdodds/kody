@@ -3,9 +3,7 @@ import { createWidgetHostBridge } from './widget-host-bridge.js'
 import { initializeGeneratedUiRuntime } from './generated-ui-widget-runtime.ts'
 import {
 	buildGeneratedUiRuntimeImportMap,
-	type GeneratedUiAppSessionBootstrap,
 	type GeneratedUiRuntimeBootstrap,
-	generatedUiRuntimeModuleSpecifier,
 } from './generated-ui-runtime-contract.ts'
 import {
 	escapeInlineScriptSource,
