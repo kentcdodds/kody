@@ -1,6 +1,7 @@
 import { AccountRoute } from './account.tsx'
 import { AccountSecretsRoute } from './account-secrets.tsx'
 import { ChatRoute } from './chat.tsx'
+import { ConnectSecretRoute } from './connect-secret.tsx'
 import { HomeRoute } from './home.tsx'
 import { LoginRoute } from './login.tsx'
 import { OAuthAuthorizeRoute } from './oauth-authorize.tsx'
@@ -13,6 +14,7 @@ export const clientRoutes = {
 	'/chat': <ChatRoute />,
 	'/chat/:threadId': <ChatRoute />,
 	'/ui/:id': <SavedUiRoute />,
+	'/connect/secret': <ConnectSecretRoute />,
 	'/account': <AccountRoute />,
 	'/account/secrets': <AccountSecretsRoute />,
 	'/account/secrets/new': <AccountSecretsRoute />,
