@@ -441,7 +441,6 @@ export function AccountSecretsRoute(handle: Handle) {
 				getDataRefreshKey(getCurrentHref()) !== dataKey
 			)
 				return
-			lastLoadedDataKey = dataKey
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load your secrets.'
