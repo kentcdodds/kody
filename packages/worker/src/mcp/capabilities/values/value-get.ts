@@ -26,9 +26,7 @@ export const valueGetCapability = defineDomainCapability(
 					'Optional scope filter. When omitted, look up the value in accessible scopes in precedence order.',
 				),
 		}),
-		outputSchema: z.object({
-			value: valueMetadataSchema.nullable(),
-		}),
+		outputSchema: valueMetadataSchema.nullable(),
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const value = await getValue({
@@ -41,20 +39,18 @@ export const valueGetCapability = defineDomainCapability(
 					appId: ctx.callerContext.storageContext?.appId ?? null,
 				},
 			})
-			return {
-				value: value
-					? {
-							name: value.name,
-							scope: value.scope,
-							value: value.value,
-							description: value.description,
-							app_id: value.appId,
-							created_at: value.createdAt,
-							updated_at: value.updatedAt,
-							ttl_ms: value.ttlMs,
-						}
-					: null,
-			}
+			return value
+				? {
+						name: value.name,
+						scope: value.scope,
+						value: value.value,
+						description: value.description,
+						app_id: value.appId,
+						created_at: value.createdAt,
+						updated_at: value.updatedAt,
+						ttl_ms: value.ttlMs,
+					}
+				: null
 		},
 	},
 )

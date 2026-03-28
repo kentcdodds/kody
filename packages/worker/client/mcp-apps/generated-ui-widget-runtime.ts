@@ -1205,9 +1205,7 @@ export function initializeGeneratedUiRuntime() {
 						...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
 					}),
 				)
-				const saved = coerceValueMetadata(
-					isRecord(result) ? result.value : null,
-				)
+				const saved = coerceValueMetadata(result)
 				if (!saved) {
 					return { ok: false, error: 'Unable to save value.' }
 				}
@@ -1276,7 +1274,7 @@ export function initializeGeneratedUiRuntime() {
 					...(coerceStorageScope(input.scope) ? { scope: input.scope } : {}),
 				}),
 			)
-			return coerceValueMetadata(isRecord(result) ? result.value : null)
+			return coerceValueMetadata(result)
 		},
 		async listValues(input: any) {
 			const scope = coerceStorageScope(

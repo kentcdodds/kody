@@ -1467,8 +1467,8 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 				})
 				const remaining = await codemode.value_list({})
 				return {
-					current: current.value,
-					appOnly: appOnly.value,
+					current,
+					appOnly,
 					listedNames: listed.values.map((value) => value.name + ':' + value.scope + ':' + value.value),
 					deleted: deleted.deleted,
 					remainingNames: remaining.values.map((value) => value.name + ':' + value.scope),
