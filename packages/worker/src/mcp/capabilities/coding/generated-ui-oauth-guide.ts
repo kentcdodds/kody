@@ -106,7 +106,7 @@ before building the authorization URL or token request.
 
 \`\`\`html
 <p id="status"></p>
-<script>
+<script type="module">
   import { kodyWidget } from '@kody/utils'
 
   async function requireClientId() {
@@ -189,7 +189,7 @@ authorization flow.
   </label>
   <button type="submit">Save and continue</button>
 </form>
-<script>
+<script type="module">
   import { kodyWidget } from '@kody/utils'
 
   document.querySelector('#oauth-client-form')?.addEventListener('submit', async (event) => {
@@ -241,7 +241,7 @@ Create and persist the OAuth state before redirecting the browser.
 
 \`\`\`html
 <button id="connect-muffin-club">Connect Muffin Club</button>
-<script>
+<script type="module">
   import { kodyWidget } from '@kody/utils'
 
   document.querySelector('#connect-muffin-club')?.addEventListener('click', async () => {
@@ -280,7 +280,7 @@ succeeds.
 
 \`\`\`html
 <div id="app"></div>
-<script>
+<script type="module">
   const root = document.querySelector('#app')
 
   async function handleCallback(kodyWidget, code, returnedState) {
