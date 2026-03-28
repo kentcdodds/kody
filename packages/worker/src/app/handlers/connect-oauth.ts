@@ -79,22 +79,22 @@ function parseConnectOauthConfig(url: URL) {
 	if (!authorizeHost || !tokenHost) {
 		return { ok: false, error: 'authorizeUrl and tokenUrl must be valid URLs.' }
 	}
-	const flow = (readOptionalParam(url, 'flow') ?? 'pkce').toLowerCase()
+	const flow = (readParam(url, 'flow') ?? 'pkce').toLowerCase()
 	if (!flowValues.has(flow as 'pkce' | 'confidential')) {
 		return {
 			ok: false,
 			error: 'Invalid flow. Expected "pkce" or "confidential".',
 		}
 	}
-	const scopes = parseScopes(readOptionalParam(url, 'scopes'))
-	const scopeSeparator = readOptionalParam(url, 'scopeSeparator') ?? ' '
+	const scopes = parseScopes(readParam(url, 'scopes'))
+	const scopeSeparator = readParam(url, 'scopeSeparator') ?? ' '
 	const extraAuthorizeParams = parseExtraParams(
-		readOptionalParam(url, 'extraAuthorizeParams'),
+		readParam(url, 'extraAuthorizeParams'),
 	)
 	if (extraAuthorizeParams instanceof Error) {
 		return { ok: false, error: extraAuthorizeParams.message }
 	}
-	const dashboardUrl = parseOptionalUrl(readOptionalParam(url, 'dashboardUrl'))
+	const dashboardUrl = parseOptionalUrl(readParam(url, 'dashboardUrl'))
 	if (dashboardUrl instanceof Error) {
 		return { ok: false, error: dashboardUrl.message }
 	}
@@ -127,14 +127,13 @@ function normalizeProviderKey(value: string) {
 	return normalized.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
-function readRequiredParam(url: URL, key: string) {
+function readParam(url: URL, key: string) {
 	const value = url.searchParams.get(key)
 	return value && value.trim() ? value.trim() : null
 }
 
-function readOptionalParam(url: URL, key: string) {
-	const value = url.searchParams.get(key)
-	return value && value.trim() ? value.trim() : null
+function readRequiredParam(url: URL, key: string) {
+	return readParam(url, key)
 }
 
 function parseOptionalUrl(raw: string | null) {

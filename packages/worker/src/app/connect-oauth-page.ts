@@ -48,7 +48,7 @@ export function renderConnectOauthPage(input: {
 		},
 	})
 	const importMap = buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)
-const providerHtml = escapeHtmlAttribute(input.config.provider)
+	const providerHtml = escapeHtmlAttribute(input.config.provider)
 	const paramsJson = escapeInlineScriptSource(
 		JSON.stringify({
 			authorizeUrl: input.config.authorizeUrl,
@@ -98,7 +98,12 @@ function updateStatus(text, tone = 'info') {
 }
 
 function getRedirectUri() {
-  return window.location.origin + window.location.pathname
+  const url = new URL(window.location.href)
+  url.searchParams.delete('code')
+  url.searchParams.delete('state')
+  url.searchParams.delete('error')
+  url.searchParams.delete('error_description')
+  return url.origin + url.pathname + url.search
 }
 
 function hasCallback() {
@@ -108,17 +113,6 @@ function hasCallback() {
 
 function isValidParamName(value) {
   return typeof value === 'string' && value.trim().length > 0
-}
-
-function coerceStringArray(value) {
-  if (Array.isArray(value)) {
-    return value.map((entry) => String(entry))
-  }
-  if (!value) return []
-  return String(value)
-    .split(/[\\s,]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
 }
 
 function renderExtraParams(paramsObj) {
