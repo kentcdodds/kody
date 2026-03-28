@@ -230,6 +230,7 @@ async function updateConnectorConfig(
 			sessionToken: session.token,
 			connector: params.connector,
 			allowedHosts: params.allowedHosts,
+			allowedCapabilities: params.allowedCapabilities,
 		}),
 	})
 	const payload = (await response.json().catch(() => null)) as {
@@ -327,7 +328,7 @@ export function ConnectSecretRoute(handle: Handle) {
 
 		const params = parseConnectSecretParams()
 		const hasInstructions = Boolean(params.instructions || params.dashboardUrl)
-		const showReview = state.step === 'review'
+		const showReview = state.step === 'review' || state.step === 'saving'
 
 		return (
 			<section

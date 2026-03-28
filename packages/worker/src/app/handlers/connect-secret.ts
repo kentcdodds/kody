@@ -86,6 +86,8 @@ export function createConnectSecretApiHandler(env: Env) {
 			const connector = readOptionalString(body, 'connector')
 			const requestedAllowedHosts =
 				readOptionalStringArray(body, 'allowedHosts') ?? []
+			const requestedAllowedCapabilities =
+				readOptionalStringArray(body, 'allowedCapabilities') ?? []
 			if (!name) {
 				return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)
 			}
@@ -139,6 +141,10 @@ export function createConnectSecretApiHandler(env: Env) {
 						requestedAllowedHosts.length > 0
 							? normalizeAllowedHosts(requestedAllowedHosts)
 							: resolved.allowedHosts
+					const allowedCapabilities =
+						requestedAllowedCapabilities.length > 0
+							? requestedAllowedCapabilities
+							: resolved.allowedCapabilities
 					await saveValue({
 						env,
 						userId: user.mcpUser.userId,
@@ -146,6 +152,7 @@ export function createConnectSecretApiHandler(env: Env) {
 						value: JSON.stringify({
 							secretName: name,
 							allowedHosts,
+							allowedCapabilities,
 						}),
 						description: `Connector secret config for ${connector}`,
 						scope,
