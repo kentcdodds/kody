@@ -352,7 +352,7 @@ function getKodyWidget() {
     return widget;
   }
   throw new Error(
-    "kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/generated-ui-runtime` and await it before using the runtime helpers."
+    "kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/utils` and await it before using the runtime helpers."
   );
 }
 function whenKodyWidgetReady() {
@@ -1794,7 +1794,7 @@ function renderGeneratedUiErrorDocument(message) {
 }
 
 // packages/worker/client/mcp-apps/generated-ui-runtime-contract.ts
-var generatedUiRuntimeModuleSpecifier = "@kody/generated-ui-runtime";
+var generatedUiRuntimeModuleSpecifier = "@kody/utils";
 function buildGeneratedUiRuntimeImportMap(runtimeScriptHref) {
   const importMapJson = escapeInlineScriptSource(
     JSON.stringify({

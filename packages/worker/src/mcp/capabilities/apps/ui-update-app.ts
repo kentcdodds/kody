@@ -60,7 +60,7 @@ const inputSchema = z
 			.array(uiArtifactParameterSchema)
 			.optional()
 			.describe(
-				'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` API from `@kody/generated-ui-runtime`.',
+				'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` API from `@kody/utils`.',
 			),
 	})
 	.refine(

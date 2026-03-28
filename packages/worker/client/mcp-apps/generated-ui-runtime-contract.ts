@@ -43,8 +43,7 @@ export type GeneratedUiRuntimeBootstrap = {
 	appSession?: GeneratedUiAppSessionBootstrap | null
 }
 
-export const generatedUiRuntimeModuleSpecifier =
-	'@kody/generated-ui-runtime' as const
+export const generatedUiRuntimeModuleSpecifier = '@kody/utils' as const
 
 export function buildGeneratedUiRuntimeImportMap(
 	runtimeScriptHref: string,
