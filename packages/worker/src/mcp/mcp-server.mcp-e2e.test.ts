@@ -864,6 +864,7 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 	expect(generatedResource?.text).toContain('"mode":"entry"')
 	expect(generatedResource?.text).not.toContain('Toggle fullscreen')
 	expect(generatedResource?.text).not.toContain('Open saved app link')
+	expect(generatedResource?.text).toContain('"generated-ui-runtime"')
 	expect(generatedResource?.text).toContain('type="module"')
 	expect(generatedResource?.text).toContain('/mcp-apps/generated-ui-runtime.js')
 

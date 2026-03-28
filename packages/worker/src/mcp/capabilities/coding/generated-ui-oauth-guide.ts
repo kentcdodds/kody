@@ -71,7 +71,7 @@ of treating it like a secret.
 4. Give the user the hosted saved-app URL and tell them to open it in their
    browser instead of trying to complete the flow in the conversation iframe.
 5. In the hosted generated UI, import the runtime helpers from
-   \`/mcp-apps/generated-ui-runtime.js\`, await
+   \`kody-generated-ui-runtime\`, await
    \`whenKodyWidgetReady()\`, and use the returned \`kodyWidget\` object
    to read the callback, validate state, exchange the code in the browser,
    and save tokens.
@@ -109,7 +109,7 @@ before building the authorization URL or token request.
 <script>
   import {
     whenKodyWidgetReady,
-  } from '/mcp-apps/generated-ui-runtime.js'
+  } from 'kody-generated-ui-runtime'
 
   async function requireClientId() {
     const kodyWidget = await whenKodyWidgetReady()
@@ -195,7 +195,7 @@ authorization flow.
 <script>
   import {
     whenKodyWidgetReady,
-  } from '/mcp-apps/generated-ui-runtime.js'
+  } from 'kody-generated-ui-runtime'
 
   document.querySelector('#oauth-client-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
@@ -249,7 +249,7 @@ Create and persist the OAuth state before redirecting the browser.
 <button id="connect-muffin-club">Connect Muffin Club</button>
 <script>
   document.querySelector('#connect-muffin-club')?.addEventListener('click', async () => {
-    const { whenKodyWidgetReady } = await import('/mcp-apps/generated-ui-runtime.js')
+    const { whenKodyWidgetReady } = await import('kody-generated-ui-runtime')
     const kodyWidget = await whenKodyWidgetReady()
     const clientIdRecord = await kodyWidget.getValue({
       name: 'muffin-club-oauth-client-id',
@@ -349,7 +349,7 @@ succeeds.
   }
 
   void (async () => {
-    const { whenKodyWidgetReady } = await import('/mcp-apps/generated-ui-runtime.js')
+    const { whenKodyWidgetReady } = await import('kody-generated-ui-runtime')
     const kodyWidget = await whenKodyWidgetReady()
     const callback = kodyWidget.readOAuthCallback({
       expectedStateKey: 'muffin-club-oauth',
@@ -435,7 +435,7 @@ export const generatedUiOAuthGuideCapability = defineDomainCapability(
 			'provider registration',
 			'ui_save_app',
 			'open_generated_ui',
-			'/mcp-apps/generated-ui-runtime.js',
+			'kody-generated-ui-runtime',
 		],
 		readOnly: true,
 		idempotent: true,

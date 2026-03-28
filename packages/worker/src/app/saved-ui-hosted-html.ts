@@ -14,6 +14,10 @@ type HostedSavedUiInput = {
 	appBaseUrl: string
 }
 
+function renderGeneratedUiRuntimeImportMap(runtimeScriptSrc: string) {
+	return `<script type="importmap">{"imports":{"kody-generated-ui-runtime":${JSON.stringify(runtimeScriptSrc)}}}</script>`
+}
+
 export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
 	const runtime =
 		input.artifact.runtime === 'javascript' ? 'javascript' : 'html'
@@ -53,6 +57,7 @@ function buildHeadInjection(
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 </script>
+${renderGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
 <script type="module" src="${runtimeScriptSrc}"></script>
 	`.trim()
 }

@@ -66,6 +66,9 @@ export type GeneratedUiRuntimeBootstrap = {
 	appSession?: GeneratedUiAppSessionBootstrap | null
 }
 
+export const generatedUiRuntimeModuleSpecifier =
+	'@kody/generated-ui-runtime' as const
+
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
@@ -591,6 +594,19 @@ function writeDocument(html: string) {
 	documentRef.close()
 }
 
+export function buildGeneratedUiRuntimeImportMap(
+	runtimeScriptHref: string,
+) {
+	const importMapJson = escapeInlineScriptSource(
+		JSON.stringify({
+			imports: {
+				[generatedUiRuntimeModuleSpecifier]: runtimeScriptHref,
+			},
+		}),
+	)
+	return `<script type="importmap">${importMapJson}</script>`
+}
+
 function buildHeadInjection(input: {
 	mode: Extract<GeneratedUiRuntimeMode, 'hosted' | 'mcp'>
 	params?: Record<string, unknown>
@@ -611,8 +627,10 @@ function buildHeadInjection(input: {
 		...(input.appSession ? { appSession: input.appSession } : {}),
 	}
 	const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap))
+	const runtimeImportMap = buildGeneratedUiRuntimeImportMap(runtimeScriptHref)
 	return `
 <link rel="stylesheet" href="${stylesheetHref}" />
+${runtimeImportMap}
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 </script>
