@@ -46,11 +46,11 @@ export async function expandSecretPlaceholders(input: {
 }) {
 	const headers = new Headers(input.request.headers)
 	const requestBody = await readRequestBody(input.request)
-	const replacements = new Map<string, string>()
 	const resolvedSecrets: Array<{
 		referenced: ReferencedSecret
 		resolved: ResolvedSecret
 	}> = []
+	const replacements = new Map<string, string>()
 	const referencedSecrets = collectReferencedSecrets([
 		input.request.url,
 		...Array.from(headers.values()),
@@ -72,15 +72,19 @@ export async function expandSecretPlaceholders(input: {
 			throw new Error(createMissingSecretMessage(referenced.name))
 		}
 		const placeholder = buildSecretPlaceholder(referenced)
-		replacements.set(placeholder, resolved.value)
+		if (!replacements.has(placeholder)) {
+			replacements.set(placeholder, resolved.value)
+		}
 		resolvedSecrets.push({ referenced, resolved })
 	}
-	const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
 	let requestedHost = ''
 	if (hasReferencedSecrets) {
-		try {
-			requestedHost = new URL(nextUrl).hostname
-		} catch {
+		const nextUrl = replaceSecretPlaceholders(
+			input.request.url,
+			replacements,
+		)
+		requestedHost = readRequestedHost(nextUrl)
+		if (!requestedHost) {
 			throw new Error(
 				'Unable to resolve the request host after secret expansion.',
 			)
@@ -99,6 +103,7 @@ export async function expandSecretPlaceholders(input: {
 			)
 		}
 	}
+	const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
 	for (const [key, value] of Array.from(headers.entries())) {
 		headers.set(key, replaceSecretPlaceholders(value, replacements))
 	}
@@ -136,9 +141,9 @@ async function collectHostApprovalEntries(input: {
 }) {
 	const entries = await Promise.all(
 		input.resolvedSecrets.map(async ({ referenced, resolved }) => {
-			const allowedForHost = resolved.allowedHosts.includes(
-				input.normalizedHost,
-			)
+			const allowedForHost =
+				resolved.allowedHosts.length > 0 &&
+				resolved.allowedHosts.includes(input.normalizedHost)
 			if (allowedForHost) return null
 			const approvalToken = await createSecretHostApprovalToken(input.env, {
 				userId: input.props.userId!,
@@ -165,6 +170,14 @@ async function collectHostApprovalEntries(input: {
 	return entries.filter(
 		(entry): entry is NonNullable<typeof entry> => entry != null,
 	)
+}
+
+function readRequestedHost(url: string) {
+	try {
+		return new URL(url).hostname
+	} catch {
+		return ''
+	}
 }
 
 function ensureFetchAllowed(props: FetchGatewayProps) {
