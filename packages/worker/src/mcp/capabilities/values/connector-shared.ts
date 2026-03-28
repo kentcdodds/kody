@@ -60,3 +60,11 @@ export function parseConnectorConfig(
 	const parsed = connectorConfigSchema.safeParse(configCandidate)
 	return parsed.success ? normalizeConnectorConfig(parsed.data) : null
 }
+
+export function parseConnectorJson(raw: string) {
+	try {
+		return JSON.parse(raw)
+	} catch {
+		return null
+	}
+}

@@ -1,4 +1,5 @@
 import { escapeInlineScriptSource } from '@kody-internal/shared/generated-ui-documents.ts'
+import { escapeHtmlAttribute } from '@kody-internal/shared/generated-ui-utils.ts'
 import {
 	buildGeneratedUiRuntimeImportMap,
 	injectGeneratedUiBootstrapScript,
@@ -47,6 +48,7 @@ export function renderConnectOauthPage(input: {
 		},
 	})
 	const importMap = buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)
+const providerHtml = escapeHtmlAttribute(input.config.provider)
 	const paramsJson = escapeInlineScriptSource(
 		JSON.stringify({
 			authorizeUrl: input.config.authorizeUrl,
@@ -97,6 +99,11 @@ function updateStatus(text, tone = 'info') {
 
 function getRedirectUri() {
   return window.location.origin + window.location.pathname
+}
+
+function hasCallback() {
+  const url = new URL(window.location.href)
+  return url.searchParams.has('code') || url.searchParams.has('error')
 }
 
 function isValidParamName(value) {
@@ -240,6 +247,12 @@ async function createCodeChallenge(verifier) {
   return base64UrlEncode(digest)
 }
 
+function createCodeVerifier() {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return base64UrlEncode(bytes)
+}
+
 async function startConnect() {
   const clientId = await readExistingClientId()
   if (!clientId) {
@@ -259,7 +272,7 @@ async function startConnect() {
   const state = kodyWidget.createOAuthState(stateKey)
   url.searchParams.set('state', state)
   if (params.flow === 'pkce') {
-    const verifier = crypto.randomUUID()
+    const verifier = createCodeVerifier()
     storage.setItem(pkceVerifierKey, verifier)
     const challenge = await createCodeChallenge(verifier)
     url.searchParams.set('code_challenge_method', 'S256')
@@ -499,7 +512,7 @@ init()
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Connect ${input.config.provider}</title>
+    <title>Connect ${providerHtml}</title>
     <link rel="stylesheet" href="${stylesheetHref}" />
     ${bootstrapScript}
     ${importMap}
@@ -659,7 +672,7 @@ init()
       <section class="card" data-step="connect" style="display:none;">
         <h2>2. Connect</h2>
         <p>Start the OAuth flow. You will be redirected to the provider.</p>
-        <button id="connect-button">Connect ${input.config.provider}</button>
+        <button id="connect-button">Connect ${providerHtml}</button>
       </section>
 
       <section class="card" data-step="callback" style="display:none;">
@@ -670,7 +683,7 @@ init()
       <section class="card" data-step="success" style="display:none;">
         <h2>4. Success</h2>
         <div class="grid">
-          <p>Saved connector: <strong data-connector-name>${input.config.provider}</strong></p>
+          <p>Saved connector: <strong data-connector-name>${providerHtml}</strong></p>
           <div class="grid">
             <span>Access token secret</span>
             <code data-access-token-name></code>

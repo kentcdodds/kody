@@ -8,6 +8,7 @@ import {
 	buildConnectorValueName,
 	connectorConfigSchema,
 	parseConnectorConfig,
+	parseConnectorJson,
 } from './connector-shared.ts'
 
 const inputSchema = z.object({
@@ -54,11 +55,3 @@ export const connectorGetCapability = defineDomainCapability(
 		},
 	},
 )
-
-function parseConnectorJson(raw: string) {
-	try {
-		return JSON.parse(raw)
-	} catch {
-		return null
-	}
-}
