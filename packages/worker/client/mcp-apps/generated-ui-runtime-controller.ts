@@ -2,6 +2,10 @@
 import { createWidgetHostBridge } from './widget-host-bridge.js'
 import { initializeGeneratedUiRuntime } from './generated-ui-widget-runtime.ts'
 import {
+	buildGeneratedUiRuntimeImportMap,
+	type GeneratedUiRuntimeBootstrap,
+} from './generated-ui-runtime-contract.ts'
+import {
 	escapeInlineScriptSource,
 	injectIntoHtmlDocument,
 	renderGeneratedUiDocument,
@@ -17,48 +21,19 @@ export {
 	absolutizeHtmlAttributeUrls,
 	injectIntoHtmlDocument,
 } from '@kody-internal/shared/generated-ui-documents.ts'
-
-export type GeneratedUiStorageScope = 'session' | 'app' | 'user'
-
-export type GeneratedUiSecretMetadata = {
-	name: string
-	scope: GeneratedUiStorageScope
-	description: string
-	app_id: string | null
-	allowed_hosts: Array<string>
-	created_at: string
-	updated_at: string
-	ttl_ms: number | null
-}
-
-export type GeneratedUiValueMetadata = {
-	name: string
-	scope: GeneratedUiStorageScope
-	value: string
-	description: string
-	app_id: string | null
-	created_at: string
-	updated_at: string
-	ttl_ms: number | null
-}
-
-export type GeneratedUiSessionEndpoints = {
-	source: string
-	execute: string
-	secrets: string
-	deleteSecret: string
-}
-
-export type GeneratedUiAppSessionBootstrap = {
-	token?: string
-	endpoints: GeneratedUiSessionEndpoints
-}
-
-export type GeneratedUiRuntimeBootstrap = {
-	mode: 'entry' | 'hosted' | 'mcp'
-	params?: Record<string, unknown>
-	appSession?: GeneratedUiAppSessionBootstrap | null
-}
+export {
+	buildGeneratedUiRuntimeImportMap,
+	type GeneratedUiAppSessionBootstrap,
+	type GeneratedUiRuntimeBootstrap,
+	generatedUiRuntimeModuleSpecifier,
+} from './generated-ui-runtime-contract.ts'
+export {
+	getOrCreateKodyWidgetReadyStateForTest,
+	getKodyWidget,
+	kodyWidget,
+	whenKodyWidgetReady,
+	type KodyWidgetPublicApi,
+} from './generated-ui-widget-runtime.ts'
 
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
@@ -605,8 +580,10 @@ function buildHeadInjection(input: {
 		...(input.appSession ? { appSession: input.appSession } : {}),
 	}
 	const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap))
+	const runtimeImportMap = buildGeneratedUiRuntimeImportMap(runtimeScriptHref)
 	return `
 <link rel="stylesheet" href="${stylesheetHref}" />
+${runtimeImportMap}
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 </script>
@@ -617,6 +594,17 @@ window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 function installGeneratedUiRuntimeHooks(hooks: GeneratedUiRuntimeHooks) {
 	;(globalThis.window as GeneratedUiWindow).__kodyGeneratedUiRuntimeHooks =
 		hooks
+}
+
+export function shouldInitializeGeneratedUiRuntimeImmediately(input: {
+	documentReadyState: Document['readyState']
+	bootstrapMode: GeneratedUiRuntimeBootstrap['mode']
+}) {
+	return (
+		input.documentReadyState !== 'loading' ||
+		input.bootstrapMode === 'hosted' ||
+		input.bootstrapMode === 'mcp'
+	)
 }
 
 async function initializeRenderedMcpDocument(
@@ -843,14 +831,25 @@ async function initializeGeneratedUiRuntimeEntry() {
 
 const documentRef = globalThis.document
 
-if (documentRef?.readyState === 'loading') {
-	documentRef.addEventListener(
-		'DOMContentLoaded',
-		() => {
-			void initializeGeneratedUiRuntimeEntry()
-		},
-		{ once: true },
-	)
-} else if (documentRef) {
-	void initializeGeneratedUiRuntimeEntry()
+if (documentRef) {
+	const bootstrap = readGeneratedUiBootstrap()
+	if (
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: documentRef.readyState,
+			bootstrapMode: bootstrap.mode,
+		})
+	) {
+		await initializeGeneratedUiRuntimeEntry()
+	} else {
+		await new Promise<void>((resolve) => {
+			documentRef.addEventListener(
+				'DOMContentLoaded',
+				() => {
+					resolve()
+				},
+				{ once: true },
+			)
+		})
+		await initializeGeneratedUiRuntimeEntry()
+	}
 }

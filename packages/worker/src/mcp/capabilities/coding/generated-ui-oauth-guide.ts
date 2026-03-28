@@ -70,9 +70,9 @@ of treating it like a secret.
    registration values they need.
 4. Give the user the hosted saved-app URL and tell them to open it in their
    browser instead of trying to complete the flow in the conversation iframe.
-5. In the hosted generated UI, use the OAuth helpers on \`window.kodyWidget\`
-   to read the callback, validate state, exchange the code in the browser, and
-   save tokens.
+5. In the hosted generated UI, import \`kodyWidget\` from
+   \`@kody/utils\` and use it directly to read the callback, validate state,
+   exchange the code in the browser, and save tokens.
 
 ## Generated UI helpers to use
 
@@ -104,9 +104,11 @@ before building the authorization URL or token request.
 
 \`\`\`html
 <p id="status"></p>
-<script>
+<script type="module">
+  import { kodyWidget } from '@kody/utils'
+
   async function requireClientId() {
-    const clientIdRecord = await window.kodyWidget.getValue({
+    const clientIdRecord = await kodyWidget.getValue({
       name: 'muffin-club-oauth-client-id',
       scope: 'user',
     })
@@ -116,7 +118,7 @@ before building the authorization URL or token request.
         'Missing OAuth client ID. Ask the user to save the client configuration and retry.'
       const status = document.querySelector('#status')
       if (status) status.textContent = message
-      window.kodyWidget.sendMessage(message)
+      kodyWidget.sendMessage(message)
       return null
     }
 
@@ -185,24 +187,26 @@ authorization flow.
   </label>
   <button type="submit">Save and continue</button>
 </form>
-<script>
+<script type="module">
+  import { kodyWidget } from '@kody/utils'
+
   document.querySelector('#oauth-client-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
     const form = event.currentTarget
-    const values = window.kodyWidget.formToObject(form)
+    const values = kodyWidget.formToObject(form)
     const clientId = values.clientId
     const clientSecret = values.clientSecret
 
     if (typeof clientId !== 'string' || typeof clientSecret !== 'string') return
 
     const [clientIdResult, clientSecretResult] = await Promise.all([
-      window.kodyWidget.saveValue({
+      kodyWidget.saveValue({
         name: 'muffin-club-oauth-client-id',
         value: clientId,
         description: 'Muffin Club OAuth client ID',
         scope: 'user',
       }),
-      window.kodyWidget.saveSecret({
+      kodyWidget.saveSecret({
         name: 'muffin-club-oauth-client-secret',
         value: clientSecret,
         description: 'Muffin Club OAuth client secret',
@@ -235,17 +239,19 @@ Create and persist the OAuth state before redirecting the browser.
 
 \`\`\`html
 <button id="connect-muffin-club">Connect Muffin Club</button>
-<script>
+<script type="module">
+  import { kodyWidget } from '@kody/utils'
+
   document.querySelector('#connect-muffin-club')?.addEventListener('click', async () => {
-    const clientIdRecord = await window.kodyWidget.getValue({
+    const clientIdRecord = await kodyWidget.getValue({
       name: 'muffin-club-oauth-client-id',
       scope: 'user',
     })
     if (!clientIdRecord) {
-      window.kodyWidget.sendMessage('Missing OAuth client ID value. Ask the user to save the client configuration and retry.')
+      kodyWidget.sendMessage('Missing OAuth client ID value. Ask the user to save the client configuration and retry.')
       return
     }
-    const state = window.kodyWidget.createOAuthState('muffin-club-oauth')
+    const state = kodyWidget.createOAuthState('muffin-club-oauth')
     const redirectUri = window.location.origin + window.location.pathname
     const authUrl = new URL('https://auth.muffinclub.example/oauth/authorize')
     authUrl.searchParams.set('client_id', clientIdRecord.value)
@@ -272,14 +278,11 @@ succeeds.
 
 \`\`\`html
 <div id="app"></div>
-<script>
+<script type="module">
   const root = document.querySelector('#app')
-  const callback = window.kodyWidget.readOAuthCallback({
-    expectedStateKey: 'muffin-club-oauth',
-  })
 
-  async function handleCallback(code, returnedState) {
-    const validation = window.kodyWidget.validateOAuthCallbackState({
+  async function handleCallback(kodyWidget, code, returnedState) {
+    const validation = kodyWidget.validateOAuthCallbackState({
       key: 'muffin-club-oauth',
       returnedState,
     })
@@ -289,13 +292,13 @@ succeeds.
       return
     }
 
-    const clientIdRecord = await window.kodyWidget.getValue({
+    const clientIdRecord = await kodyWidget.getValue({
       name: 'muffin-club-oauth-client-id',
       scope: 'user',
     })
     if (!clientIdRecord) {
       root.innerHTML = '<p>Missing client ID. Save the OAuth configuration and retry.</p>'
-      window.kodyWidget.sendMessage('Missing OAuth client ID value. Ask the user to save the client configuration and retry.')
+      kodyWidget.sendMessage('Missing OAuth client ID value. Ask the user to save the client configuration and retry.')
       return
     }
 
@@ -305,7 +308,7 @@ succeeds.
       return
     }
 
-    const tokenResult = await window.kodyWidget.exchangePkceOAuthCode({
+    const tokenResult = await kodyWidget.exchangePkceOAuthCode({
       tokenUrl: 'https://auth.muffinclub.example/oauth/token',
       code,
       redirectUri: window.location.origin + window.location.pathname,
@@ -314,7 +317,7 @@ succeeds.
     })
 
     if (tokenResult.ok && tokenResult.data && typeof tokenResult.data === 'object') {
-      const saved = await window.kodyWidget.saveOAuthTokens({
+      const saved = await kodyWidget.saveOAuthTokens({
         payload: tokenResult.data,
         accessTokenSecretName: 'muffin-club-access-token',
         refreshTokenSecretName: 'muffin-club-refresh-token',
@@ -337,11 +340,19 @@ succeeds.
     root.innerHTML = '<p>' + message + '</p>'
   }
 
-  if (callback.kind === 'error') {
-    root.innerHTML = '<p>OAuth error: ' + callback.error + '</p>'
-  } else if (callback.kind === 'success') {
-    void handleCallback(callback.code, callback.state)
-  }
+  import { kodyWidget } from '@kody/utils'
+
+  void (async () => {
+    const callback = kodyWidget.readOAuthCallback({
+      expectedStateKey: 'muffin-club-oauth',
+    })
+
+    if (callback.kind === 'error') {
+      root.innerHTML = '<p>OAuth error: ' + callback.error + '</p>'
+    } else if (callback.kind === 'success') {
+      await handleCallback(kodyWidget, callback.code, callback.state)
+    }
+  })()
 </script>
 \`\`\`
 
@@ -416,7 +427,7 @@ export const generatedUiOAuthGuideCapability = defineDomainCapability(
 			'provider registration',
 			'ui_save_app',
 			'open_generated_ui',
-			'window.kodyWidget',
+			'@kody/utils',
 		],
 		readOnly: true,
 		idempotent: true,

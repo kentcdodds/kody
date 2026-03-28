@@ -864,6 +864,7 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 	expect(generatedResource?.text).toContain('"mode":"entry"')
 	expect(generatedResource?.text).not.toContain('Toggle fullscreen')
 	expect(generatedResource?.text).not.toContain('Open saved app link')
+	expect(generatedResource?.text).toContain('"@kody/utils"')
 	expect(generatedResource?.text).toContain('type="module"')
 	expect(generatedResource?.text).toContain('/mcp-apps/generated-ui-runtime.js')
 
@@ -885,7 +886,6 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 	expect(generatedShellSource).toContain('tools/call')
 
 	expect(generatedShellSource).toContain('__kodyGeneratedUiBootstrap')
-	expect(generatedShellSource).toContain('kodyWindow.kodyWidget = kodyWidget')
 	expect(generatedShellSource).toContain('__kodyGeneratedUiRuntimeHooks')
 
 	const generatedRuntimeStylesResponse = await fetch(

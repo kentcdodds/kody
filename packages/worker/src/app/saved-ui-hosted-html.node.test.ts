@@ -39,6 +39,9 @@ test('renderHostedSavedUiHtml emits shared runtime assets for html apps', () => 
 		'<script type="module" src="https://kody.example/mcp-apps/generated-ui-runtime.js"></script>',
 	)
 	expect(result).toContain(
+		'<script type="importmap">{"imports":{"@kody/utils":"https://kody.example/mcp-apps/generated-ui-runtime.js"}}</script>',
+	)
+	expect(result).toContain(
 		'window.__kodyGeneratedUiBootstrap = {"mode":"hosted","appSession":{"token":"token-123","endpoints":{"source":"https://kody.example/ui-api/session-123/source","execute":"https://kody.example/ui-api/session-123/execute","secrets":"https://kody.example/ui-api/session-123/secrets","deleteSecret":"https://kody.example/ui-api/session-123/secrets/delete"}}};',
 	)
 })
@@ -64,6 +67,9 @@ test('renderHostedSavedUiHtml keeps user javascript separate from runtime bootst
 
 	expect(result).toContain(
 		'<script type="module" src="https://kody.example/mcp-apps/generated-ui-runtime.js"></script>',
+	)
+	expect(result).toContain(
+		'<script type="importmap">{"imports":{"@kody/utils":"https://kody.example/mcp-apps/generated-ui-runtime.js"}}</script>',
 	)
 	expect(result).toContain(
 		'<script type="module">\ndocument.querySelector("[data-generated-ui-root]")?.append("hello")',

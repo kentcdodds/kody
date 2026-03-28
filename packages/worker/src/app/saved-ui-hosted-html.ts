@@ -4,7 +4,11 @@ import {
 	generatedUiRuntimeStylesheetPath,
 	resolveGeneratedUiAssetUrl,
 } from '@kody-internal/shared/generated-ui-asset-paths.ts'
-import { type GeneratedUiRuntimeBootstrap } from '#client/mcp-apps/generated-ui-runtime-controller.ts'
+import {
+	buildGeneratedUiRuntimeImportMap,
+	injectGeneratedUiBootstrapScript,
+	type GeneratedUiRuntimeBootstrap,
+} from '#client/mcp-apps/generated-ui-runtime-contract.ts'
 import { type GeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 
@@ -44,15 +48,10 @@ function buildHeadInjection(
 		generatedUiRuntimeScriptPath,
 		appBaseUrl,
 	)
-	const bootstrapJson = JSON.stringify(bootstrap).replace(
-		/<\/script/gi,
-		'<\\/script',
-	)
 	return `
 <link rel="stylesheet" href="${stylesheetHref}" />
-<script>
-window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
-</script>
+${injectGeneratedUiBootstrapScript(bootstrap)}
+${buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
 <script type="module" src="${runtimeScriptSrc}"></script>
 	`.trim()
 }

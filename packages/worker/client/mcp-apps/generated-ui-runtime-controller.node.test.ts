@@ -2,10 +2,15 @@ import { expect, test } from 'vitest'
 import {
 	absolutizeHtmlAttributeUrls,
 	buildCodemodeCapabilityExecuteCode,
+	getOrCreateKodyWidgetReadyStateForTest,
+	getKodyWidget,
 	injectIntoHtmlDocument,
 	injectRuntimeStateIntoDocument,
+	kodyWidget,
 	measureRenderedFrameSize,
 	readSavedAppSourceFromHostToolResult,
+	shouldInitializeGeneratedUiRuntimeImmediately,
+	whenKodyWidgetReady,
 } from './generated-ui-runtime-controller.ts'
 
 test('injectIntoHtmlDocument inserts into an existing head without adding an extra bracket', () => {
@@ -173,4 +178,80 @@ test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', ()
 	expect(code).toContain('codemode["value_set"]')
 	expect(code).toContain('"name":"workspaceSlug"')
 	expect(code).toContain('"scope":"app"')
+})
+
+test('getKodyWidget throws until the runtime is ready', () => {
+	const readyState = getOrCreateKodyWidgetReadyStateForTest()
+	readyState.reset()
+
+	expect(() => getKodyWidget()).toThrow(
+		/kodyWidget is not ready yet.*whenKodyWidgetReady/,
+	)
+})
+
+test('whenKodyWidgetReady resolves once the runtime publishes the widget', async () => {
+	const readyState = getOrCreateKodyWidgetReadyStateForTest()
+	readyState.reset()
+
+	const fakeWidget = {
+		params: { owner: 'kody' },
+		sendMessage() {
+			return true
+		},
+	}
+
+	const pendingWidget = whenKodyWidgetReady()
+	readyState.resolve(fakeWidget)
+
+	await expect(pendingWidget).resolves.toBe(fakeWidget)
+	await expect(whenKodyWidgetReady()).resolves.toBe(fakeWidget)
+})
+
+test('imported kodyWidget proxy exposes resolved runtime properties', () => {
+	const readyState = getOrCreateKodyWidgetReadyStateForTest()
+	readyState.reset()
+	const fakeWidget = {
+		params: {},
+		value: 41,
+	} as {
+		params: Record<string, never>
+		value: number
+	}
+	readyState.resolve(fakeWidget)
+
+	expect(kodyWidget.value).toBe(41)
+	expect(kodyWidget.params).toEqual({})
+})
+
+test('hosted and mcp runtimes initialize immediately on import', () => {
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'hosted',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'mcp',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'loading',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(false)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'interactive',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
+	expect(
+		shouldInitializeGeneratedUiRuntimeImmediately({
+			documentReadyState: 'complete',
+			bootstrapMode: 'entry',
+		}),
+	).toBe(true)
 })
