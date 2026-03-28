@@ -32,9 +32,7 @@ export const valueSetCapability = defineDomainCapability(
 				.default('session')
 				.describe('Storage scope for the value.'),
 		}),
-		outputSchema: z.object({
-			value: valueMetadataSchema,
-		}),
+		outputSchema: valueMetadataSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const value = await saveValue({
@@ -50,16 +48,14 @@ export const valueSetCapability = defineDomainCapability(
 				},
 			})
 			return {
-				value: {
-					name: value.name,
-					scope: value.scope,
-					value: value.value,
-					description: value.description,
-					app_id: value.appId,
-					created_at: value.createdAt,
-					updated_at: value.updatedAt,
-					ttl_ms: value.ttlMs,
-				},
+				name: value.name,
+				scope: value.scope,
+				value: value.value,
+				description: value.description,
+				app_id: value.appId,
+				created_at: value.createdAt,
+				updated_at: value.updatedAt,
+				ttl_ms: value.ttlMs,
 			}
 		},
 	},
