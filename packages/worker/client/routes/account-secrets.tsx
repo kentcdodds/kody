@@ -4,7 +4,11 @@ import {
 	parseAccountSecretId,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
-import { navigate, routerEvents } from '#client/client-router.tsx'
+import {
+	listenToRouterNavigation,
+	navigate,
+	routerEvents,
+} from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -333,6 +337,10 @@ export function AccountSecretsRoute(handle: Handle) {
 	const deleteSecretCheck = createDoubleCheck(handle)
 	const filterAppCombobox = TypeaheadCombobox(handle)
 	const editorAppCombobox = TypeaheadCombobox(handle)
+
+	listenToRouterNavigation(handle, () => {
+		handle.update()
+	})
 
 	function buildHrefWithUpdatedFilters(
 		nextFilters: Partial<SecretFilterState>,
