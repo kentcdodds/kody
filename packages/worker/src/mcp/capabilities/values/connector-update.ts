@@ -42,6 +42,7 @@ export const connectorUpdateCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const normalizedName = args.name.trim()
 			const storageContext = {
 				sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
 				appId: ctx.callerContext.storageContext?.appId ?? null,
@@ -49,19 +50,21 @@ export const connectorUpdateCapability = defineDomainCapability(
 			const existing = await getValue({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildConnectorValueName(args.name),
+				name: buildConnectorValueName(normalizedName),
 				scope: 'user',
 				storageContext,
 			})
 			if (!existing) {
-				throw new Error(`Connector "${args.name}" was not found.`)
+				throw new Error(`Connector "${normalizedName}" was not found.`)
 			}
 			const current = parseConnectorConfig(
 				parseConnectorJson(existing.value),
-				args.name,
+				normalizedName,
 			)
 			if (!current) {
-				throw new Error(`Connector "${args.name}" is stored with invalid JSON.`)
+				throw new Error(
+					`Connector "${normalizedName}" is stored with invalid JSON.`,
+				)
 			}
 			const connector = mergeConnectorConfig(current, args)
 			const value = await saveValue({
