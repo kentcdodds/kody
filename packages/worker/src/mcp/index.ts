@@ -87,7 +87,7 @@ How to use execute
 - Secret placeholders are not general-purpose string interpolation. Do not use \`execute\` to build a string or object that merely returns \`{{secret:...}}\`; those placeholders only resolve in secret-aware fetch paths or capability inputs that explicitly opt into \`x-kody-secret\`.
 - Saving or updating a secret does not authorize sending it anywhere. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
 - Secrets are intentionally not readable or updatable through \`codemode\`. Never ask the user to paste a secret into chat; use generated UI flows such as \`saveSecret(...)\` when the user needs to provide or rotate a value, and use \`codemode.secret_delete(...)\` only when removing a stored secret reference.
-- Your code must be an async arrow function that returns the result.
+- Your code should either be an async arrow function that returns the result, or a module that default-exports an async function when using imports.
 - Example: const result = await codemode[capabilityName](args)
 
 MCP App tools
@@ -95,7 +95,7 @@ MCP App tools
 - Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
 - Prefer body-focused HTML fragments when possible, but full HTML documents are also supported.
 - Use generated UI whenever the user needs to enter a sensitive value. Do not ask the user to paste secrets or credentials into chat.
-- Generated UI code can import \`{ kodyWidget }\` from \`@kody/utils\` and use helpers for follow-up messages, external links, fullscreen requests, \`executeCode(code)\`, secret management, values, forms, OAuth, and secret-aware fetches.
+- Generated UI code can import \`{ kodyWidget }\` from \`@kody/ui-utils\` and use helpers for follow-up messages, external links, fullscreen requests, \`executeCode(code)\`, secret management, values, forms, OAuth, and secret-aware fetches.
 - 'executeCode(code)' is the low-level transport for server-side generated UI work. Prefer the higher-level secret and value helpers when they fit the task.
 - If a generated UI encounters a recoverable runtime issue, have it show the problem locally and also call 'sendMessage(...)' with the next action the user should take so the parent chat can continue the workflow.
 - The shell also provides lightweight semantic HTML styles plus theme tokens such as '--color-*', '--spacing-*', '--radius-*', '--shadow-*', and '--font-*'.

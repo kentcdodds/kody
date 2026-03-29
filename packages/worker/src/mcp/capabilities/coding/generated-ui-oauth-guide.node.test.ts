@@ -25,5 +25,7 @@ test('generated_ui_oauth_guide distinguishes PKCE and server-side exchange helpe
 	)
 	expect(result.body).toContain('`exchangeOAuthCodeWithSecrets(...)`')
 	expect(result.body).toContain('run server-side')
+	expect(result.body).toContain("import { kodyWidget } from '@kody/ui-utils'")
+	expect(result.body).not.toContain('@kody/utils')
 	expect(result.body).not.toContain('exchangeOAuthCode({ tokenUrl')
 })

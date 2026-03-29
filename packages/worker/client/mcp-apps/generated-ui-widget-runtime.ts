@@ -193,7 +193,7 @@ export function getKodyWidget(): KodyWidgetPublicApi {
 		return widget
 	}
 	throw new Error(
-		'kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/utils` and await it before using the runtime helpers.',
+		'kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/ui-utils` and await it before using the runtime helpers.',
 	)
 }
 

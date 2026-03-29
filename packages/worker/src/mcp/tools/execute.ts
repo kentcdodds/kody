@@ -24,7 +24,7 @@ To run a saved skill by id, prefer \`meta_run_skill\` with \`skill_id\` and
 optional \`params\`. If you need the saved code, call \`meta_get_skill\` and
 pass the returned code into this tool.
 
-This tool accepts a single argument: \`{ "code": "async () => { ... }" }\`.
+This tool accepts a single argument: \`{ "code": "..." }\`.
 
 Available in your code:
 
@@ -62,7 +62,9 @@ Values:
 - Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to save and read back later.
 - Do not store readable public identifiers as secrets just to make them persistent; use value capabilities or the generated UI value helpers instead.
 
-Your code must be an async arrow function that returns the result.
+Your code may be either:
+- an async arrow function that returns the result, or
+- a module that uses imports/exports and default-exports an async function.
 
 Examples:
 
@@ -74,6 +76,13 @@ Examples:
     status: docs.status,
     preview: docs.body.slice(0, 120),
   };
+}\`
+
+\`import { refreshAccessToken } from '@kody/codemode-utils'
+
+export default async () => {
+  const token = await refreshAccessToken('spotify')
+  return { tokenPreview: token.slice(0, 8) }
 }\`
 	`.trim(),
 	annotations: {
@@ -93,7 +102,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			inputSchema: {
 				code: z
 					.string()
-					.describe('JavaScript async arrow function to execute capabilities.'),
+					.describe(
+						'JavaScript execute code. Use an async arrow function, or default-export an async function when using imports.',
+					),
 			},
 			annotations: executeTool.annotations,
 		},

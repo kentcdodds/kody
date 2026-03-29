@@ -1,4 +1,10 @@
-import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
+import {
+	type ExecuteResult,
+	type ResolvedProvider,
+	ToolDispatcher,
+	normalizeCode,
+	sanitizeToolName,
+} from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
@@ -10,6 +16,10 @@ import {
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
+import {
+	buildCodemodeUtilsModuleSource,
+	codemodeUtilsModuleSpecifier,
+} from '#mcp/tools/codemode-utils.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
@@ -26,13 +36,180 @@ export function createExecuteExecutor(input: {
 			'CodemodeFetchGateway export is required for execute-time fetch.',
 		)
 	}
-	return new DynamicWorkerExecutor({
-		loader: input.env.LOADER,
-		timeout: 90_000,
-		globalOutbound: loopbackExports.CodemodeFetchGateway({
-			props: input.gatewayProps,
-		}),
-	})
+	return {
+		execute(code: string, providersOrFns: Array<ResolvedProvider>) {
+			return executeWithWorkerLoader({
+				loader: input.env.LOADER,
+				timeoutMs: 90_000,
+				code,
+				providers: providersOrFns,
+				globalOutbound: loopbackExports.CodemodeFetchGateway({
+					props: input.gatewayProps,
+				}),
+			})
+		},
+	}
+}
+
+function buildProviderProxySource(provider: ResolvedProvider) {
+	if (provider.positionalArgs) {
+		return `new Proxy({}, {
+      get: (_, toolName) => async (...args) => {
+        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));
+        const data = JSON.parse(resJson);
+        if (data.error) throw new Error(data.error);
+        return data.result;
+      }
+    })`
+	}
+	return `new Proxy({}, {
+      get: (_, toolName) => async (args) => {
+        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));
+        const data = JSON.parse(resJson);
+        if (data.error) throw new Error(data.error);
+        return data.result;
+      }
+    })`
+}
+
+function buildUserEntryModuleSource(code: string) {
+	const trimmed = code.trim()
+	const looksLikeModule =
+		/^\s*import\s/m.test(trimmed) || /^\s*export\s/m.test(trimmed)
+	if (looksLikeModule) {
+		return trimmed
+	}
+	return `export default ${normalizeCode(code)};`
+}
+
+function buildUserCodeRunnerModuleSource(code: string) {
+	const trimmed = code.trim()
+	const looksLikeModule =
+		/^\s*import\s/m.test(trimmed) || /^\s*export\s/m.test(trimmed)
+	return [
+		'import * as __kodyUserModule from "user-entry.js";',
+		'',
+		'export async function __kodyRunUserCode() {',
+		looksLikeModule
+			? [
+					'  const __kodyModuleRunner = __kodyUserModule.default;',
+					'  if (typeof __kodyModuleRunner !== "function") {',
+					'    throw new Error("Execute code with imports must default export an async function.");',
+					'  }',
+					'  return await __kodyModuleRunner();',
+				].join('\n')
+			: [
+					'  const __kodyInlineExecuteFunction = __kodyUserModule.default;',
+					'  if (typeof __kodyInlineExecuteFunction !== "function") {',
+					'    throw new Error("Execute code must evaluate to an async function.");',
+					'  }',
+					'  return await __kodyInlineExecuteFunction();',
+				].join('\n'),
+		'}',
+	].join('\n')
+}
+
+async function executeWithWorkerLoader(input: {
+	loader: WorkerLoader
+	timeoutMs: number
+	code: string
+	providers: Array<ResolvedProvider>
+	globalOutbound: Fetcher
+}): Promise<ExecuteResult> {
+	const reservedNames = new Set(['__dispatchers', '__logs', '__providers'])
+	const validIdentifier = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
+	const seenNames = new Set<string>()
+	for (const provider of input.providers) {
+		if (reservedNames.has(provider.name)) {
+			return {
+				result: undefined,
+				error: `Provider name "${provider.name}" is reserved`,
+			}
+		}
+		if (!validIdentifier.test(provider.name)) {
+			return {
+				result: undefined,
+				error: `Provider name "${provider.name}" is not a valid JavaScript identifier`,
+			}
+		}
+		if (seenNames.has(provider.name)) {
+			return {
+				result: undefined,
+				error: `Duplicate provider name "${provider.name}"`,
+			}
+		}
+		seenNames.add(provider.name)
+	}
+
+	const executorModuleSource = [
+		'import { WorkerEntrypoint } from "cloudflare:workers";',
+		'import { __kodyRunUserCode } from "user-code.js";',
+		'',
+		'export default class CodeExecutor extends WorkerEntrypoint {',
+		'  async evaluate(__dispatchers = {}) {',
+		'    const __logs = [];',
+		'    console.log = (...a) => { __logs.push(a.map(String).join(" ")); };',
+		'    console.warn = (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); };',
+		'    console.error = (...a) => { __logs.push("[error] " + a.map(String).join(" ")); };',
+		'    const __providers = {};',
+		...input.providers.flatMap((provider) => [
+			`    const ${provider.name} = ${buildProviderProxySource(provider)};`,
+			`    __providers.${provider.name} = ${provider.name};`,
+		]),
+		'    globalThis.__kodyProviders = __providers;',
+		'    try {',
+		'      const result = await Promise.race([',
+		'        __kodyRunUserCode(),',
+		`        new Promise((_, reject) => setTimeout(() => reject(new Error("Execution timed out")), ${input.timeoutMs}))`,
+		'      ]);',
+		'      return { result, logs: __logs };',
+		'    } catch (err) {',
+		'      return { result: undefined, error: err instanceof Error ? err.message : String(err), logs: __logs };',
+		'    } finally {',
+		'      delete globalThis.__kodyProviders;',
+		'    }',
+		'  }',
+		'}',
+	].join('\n')
+
+	const dispatchers = Object.create(null) as Record<string, ToolDispatcher>
+	for (const provider of input.providers) {
+		const sanitizedFns = Object.fromEntries(
+			Object.entries(provider.fns).map(([name, fn]) => [sanitizeToolName(name), fn]),
+		)
+		dispatchers[provider.name] = new ToolDispatcher(
+			sanitizedFns,
+			provider.positionalArgs,
+		)
+	}
+
+	const entrypoint = input.loader
+		.get(`codemode-${crypto.randomUUID()}`, () => ({
+			compatibilityDate: '2025-06-01',
+			compatibilityFlags: ['nodejs_compat'],
+			mainModule: 'executor.js',
+			modules: {
+				[`${codemodeUtilsModuleSpecifier}`]: buildCodemodeUtilsModuleSource(),
+				'user-entry.js': buildUserEntryModuleSource(input.code),
+				'user-code.js': buildUserCodeRunnerModuleSource(input.code),
+				'executor.js': executorModuleSource,
+			},
+			globalOutbound: input.globalOutbound,
+		}))
+		.getEntrypoint()
+
+	const response = (await entrypoint.evaluate(dispatchers)) as ExecuteResult
+	if (response.error) {
+		return {
+			result: undefined,
+			error: response.error,
+			logs: response.logs,
+		}
+	}
+	return {
+		result: response.result,
+		logs: response.logs,
+	}
 }
 
 export type ExecutionErrorDetails =
