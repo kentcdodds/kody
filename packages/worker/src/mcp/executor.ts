@@ -1,13 +1,12 @@
 import {
+	DynamicWorkerExecutor,
 	type ExecuteResult,
 	type ResolvedProvider,
 	ToolDispatcher,
 	normalizeCode,
 	sanitizeToolName,
 } from '@cloudflare/codemode'
-import * as acorn from 'acorn'
 import { exports as workerExports } from 'cloudflare:workers'
-type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
 import {
 	isSecretAuthRequiredMessage,
@@ -21,6 +20,8 @@ import {
 	buildCodemodeUtilsModuleSource,
 	codemodeUtilsModuleSpecifier,
 } from '#mcp/tools/codemode-utils.ts'
+
+type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
 const charsPerToken = 4
 const maxTokens = 6_000
@@ -37,129 +38,55 @@ export function createExecuteExecutor(input: {
 			'CodemodeFetchGateway export is required for execute-time fetch.',
 		)
 	}
+	const globalOutbound = loopbackExports.CodemodeFetchGateway({
+		props: input.gatewayProps,
+	})
 	return {
 		execute(code: string, providersOrFns: Array<ResolvedProvider>) {
-			return executeWithWorkerLoader({
+			if (codeNeedsModuleRunner(code)) {
+				return Promise.resolve({
+					result: undefined,
+					error:
+						'Top-level import or export is not supported in the execute sandbox. Use an async arrow function body and dynamic import() instead (for example: const m = await import("@kody/codemode-utils")).',
+					logs: [],
+				})
+			}
+			const modules: Record<string, WorkerLoaderModule | string> = {}
+			if (codeReferencesCodemodeUtils(code)) {
+				modules[codemodeUtilsModuleSpecifier] = {
+					js: buildCodemodeUtilsModuleSource(),
+				}
+			}
+			const mergedModules =
+				Object.keys(modules).length > 0 ? modules : undefined
+			if (codeReferencesCodemodeUtils(code)) {
+				return executeDynamicWithKodyUtilsBridge({
+					loader: input.env.LOADER,
+					timeoutMs: 90_000,
+					globalOutbound,
+					modules: mergedModules,
+					code,
+					providers: providersOrFns,
+				})
+			}
+			const executor = new DynamicWorkerExecutor({
 				loader: input.env.LOADER,
-				timeoutMs: 90_000,
-				code,
-				providers: providersOrFns,
-				globalOutbound: loopbackExports.CodemodeFetchGateway({
-					props: input.gatewayProps,
-				}),
+				timeout: 90_000,
+				globalOutbound,
+				modules: mergedModules,
 			})
+			return executor.execute(code, providersOrFns)
 		},
 	}
 }
 
-function buildProviderProxySource(provider: ResolvedProvider) {
-	if (provider.positionalArgs) {
-		return `new Proxy({}, {
-      get: (_, toolName) => async (...args) => {
-        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));
-        const data = JSON.parse(resJson);
-        if (data.error) throw new Error(data.error);
-        return data.result;
-      }
-    })`
-	}
-	return `new Proxy({}, {
-      get: (_, toolName) => async (args) => {
-        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));
-        const data = JSON.parse(resJson);
-        if (data.error) throw new Error(data.error);
-        return data.result;
-      }
-    })`
-}
-
-function buildUserEntryModuleSource(code: string) {
-	const trimmed = code.trim()
-	const looksLikeModule =
-		/^\s*import\s/m.test(trimmed) || /^\s*export\s/m.test(trimmed)
-	if (looksLikeModule) {
-		return wrapImportedExecuteCode(trimmed)
-	}
-	return `export default ${normalizeCode(code)};`
-}
-
-function wrapImportedExecuteCode(source: string) {
-	try {
-		const parsed = acorn.parse(source, {
-			ecmaVersion: 'latest',
-			sourceType: 'module',
-			allowReturnOutsideFunction: true,
-		})
-		if (
-			parsed.body.some((node) => node.type === 'ExportDefaultDeclaration') ||
-			parsed.body.some(
-				(node) =>
-					node.type === 'ExportNamedDeclaration' ||
-					node.type === 'ExportAllDeclaration',
-			)
-		) {
-			return source
-		}
-		const importNodes = parsed.body.filter(
-			(node) => node.type === 'ImportDeclaration',
-		)
-		const bodyNodes = parsed.body.filter(
-			(node) => node.type !== 'ImportDeclaration',
-		)
-		const imports = importNodes
-			.map((node) => source.slice(node.start, node.end))
-			.join('\n')
-		const body = bodyNodes
-			.map((node, index) => {
-				if (
-					index === bodyNodes.length - 1 &&
-					node.type === 'ExpressionStatement' &&
-					!node.directive
-				) {
-					return `return ${source.slice(node.start, node.end)}`
-				}
-				return source.slice(node.start, node.end)
-			})
-			.join('\n')
-		return [
-			imports,
-			imports.length > 0 ? '' : undefined,
-			'export default async () => {',
-			body,
-			'}',
-		]
-			.filter((part) => typeof part === 'string')
-			.join('\n')
-	} catch {
-		return source
-	}
-}
-
-function buildUserCodeRunnerModuleSource() {
-	return [
-		'import * as __kodyUserModule from "user-entry.js";',
-		'',
-		'export async function __kodyRunUserCode() {',
-		'  const __kodyExecuteFunction = __kodyUserModule.default;',
-		'  if (typeof __kodyExecuteFunction !== "function") {',
-		'    throw new Error("Execute code must evaluate to an async function.");',
-		'  }',
-		'  return await __kodyExecuteFunction();',
-		'}',
-	].join('\n')
-}
-
-async function executeWithWorkerLoader(input: {
-	loader: WorkerLoader
-	timeoutMs: number
-	code: string
-	providers: Array<ResolvedProvider>
-	globalOutbound: Fetcher
-}): Promise<ExecuteResult> {
-	const reservedNames = new Set(['__dispatchers', '__logs', '__providers'])
+function validateExecuteProviders(
+	providers: Array<ResolvedProvider>,
+): ExecuteResult | null {
+	const reservedNames = new Set(['__dispatchers', '__logs'])
 	const validIdentifier = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 	const seenNames = new Set<string>()
-	for (const provider of input.providers) {
+	for (const provider of providers) {
 		if (reservedNames.has(provider.name)) {
 			return {
 				result: undefined,
@@ -180,10 +107,54 @@ async function executeWithWorkerLoader(input: {
 		}
 		seenNames.add(provider.name)
 	}
+	return null
+}
 
-	const executorModuleSource = [
+function buildKodyUtilsProviderSetupLines(
+	providers: Array<ResolvedProvider>,
+): Array<string> {
+	const lines: Array<string> = ['    const __kodyProviders = {};']
+	for (const p of providers) {
+		if (p.positionalArgs) {
+			lines.push(`    const ${p.name} = new Proxy({}, {
+      get: (_, toolName) => async (...args) => {
+        const resJson = await __dispatchers.${p.name}.call(String(toolName), JSON.stringify(args));
+        const data = JSON.parse(resJson);
+        if (data.error) throw new Error(data.error);
+        return data.result;
+      }
+    });`)
+		} else {
+			lines.push(`    const ${p.name} = new Proxy({}, {
+      get: (_, toolName) => async (args) => {
+        const resJson = await __dispatchers.${p.name}.call(String(toolName), JSON.stringify(args ?? {}));
+        const data = JSON.parse(resJson);
+        if (data.error) throw new Error(data.error);
+        return data.result;
+      }
+    });`)
+		}
+		lines.push(`    __kodyProviders.${p.name} = ${p.name};`)
+	}
+	lines.push('    globalThis.__kodyProviders = __kodyProviders;')
+	return lines
+}
+
+async function executeDynamicWithKodyUtilsBridge(input: {
+	loader: WorkerLoader
+	timeoutMs: number
+	globalOutbound: Fetcher
+	modules?: Record<string, WorkerLoaderModule | string>
+	code: string
+	providers: Array<ResolvedProvider>
+}): Promise<ExecuteResult> {
+	const validationError = validateExecuteProviders(input.providers)
+	if (validationError) return validationError
+
+	const normalized = normalizeCode(input.code)
+	const timeoutMs = input.timeoutMs
+	const executorModule = [
 		'import { WorkerEntrypoint } from "cloudflare:workers";',
-		'import { __kodyRunUserCode } from "user-code.js";',
 		'',
 		'export default class CodeExecutor extends WorkerEntrypoint {',
 		'  async evaluate(__dispatchers = {}) {',
@@ -191,46 +162,37 @@ async function executeWithWorkerLoader(input: {
 		'    console.log = (...a) => { __logs.push(a.map(String).join(" ")); };',
 		'    console.warn = (...a) => { __logs.push("[warn] " + a.map(String).join(" ")); };',
 		'    console.error = (...a) => { __logs.push("[error] " + a.map(String).join(" ")); };',
-		'    const __providers = {};',
-		...input.providers.flatMap((provider) => [
-			`    const ${provider.name} = ${buildProviderProxySource(provider)};`,
-			`    __providers.${provider.name} = ${provider.name};`,
-		]),
-		'    globalThis.__kodyProviders = __providers;',
-		'    let __timeoutId;',
-		'    const __timeoutPromise = new Promise((_, reject) => {',
-		`      __timeoutId = setTimeout(() => reject(new Error("Execution timed out")), ${input.timeoutMs});`,
-		'    });',
+		...buildKodyUtilsProviderSetupLines(input.providers),
 		'    try {',
 		'      const result = await Promise.race([',
-		'        __kodyRunUserCode(),',
-		'        __timeoutPromise,',
+		'        (',
+		normalized,
+		')(),',
+		`        new Promise((_, reject) => setTimeout(() => reject(new Error("Execution timed out")), ${timeoutMs}))`,
 		'      ]);',
 		'      return { result, logs: __logs };',
 		'    } catch (err) {',
 		'      return { result: undefined, error: err instanceof Error ? err.message : String(err), logs: __logs };',
 		'    } finally {',
-		'      if (__timeoutId !== undefined) {',
-		'        clearTimeout(__timeoutId);',
-		'      }',
 		'      delete globalThis.__kodyProviders;',
 		'    }',
 		'  }',
 		'}',
 	].join('\n')
 
-	const dispatchers = {} as Record<string, ToolDispatcher>
+	const dispatchers = Object.create(null) as Record<string, ToolDispatcher>
 	for (const provider of input.providers) {
 		const sanitizedFns = Object.fromEntries(
-			Object.entries(provider.fns).map(([name, fn]) => [
-				sanitizeToolName(name),
-				fn,
-			]),
+			Object.entries(provider.fns).map(([name, fn]) => [sanitizeToolName(name), fn]),
 		)
 		dispatchers[provider.name] = new ToolDispatcher(
 			sanitizedFns,
 			provider.positionalArgs,
 		)
+	}
+
+	type CodeExecutorEntrypoint = {
+		evaluate(dispatchers: Record<string, ToolDispatcher>): Promise<ExecuteResult>
 	}
 
 	const entrypoint = input.loader
@@ -239,18 +201,14 @@ async function executeWithWorkerLoader(input: {
 			compatibilityFlags: ['nodejs_compat'],
 			mainModule: 'executor.js',
 			modules: {
-				[`${codemodeUtilsModuleSpecifier}`]: {
-					js: buildCodemodeUtilsModuleSource(),
-				},
-				'user-entry.js': buildUserEntryModuleSource(input.code),
-				'user-code.js': buildUserCodeRunnerModuleSource(),
-				'executor.js': executorModuleSource,
+				...(input.modules ?? {}),
+				'executor.js': executorModule,
 			},
 			globalOutbound: input.globalOutbound,
 		}))
-		.getEntrypoint()
+		.getEntrypoint() as unknown as CodeExecutorEntrypoint
 
-	const response = (await entrypoint.evaluate(dispatchers)) as ExecuteResult
+	const response = await entrypoint.evaluate(dispatchers)
 	if (response.error) {
 		return {
 			result: undefined,
@@ -260,8 +218,19 @@ async function executeWithWorkerLoader(input: {
 	}
 	return {
 		result: response.result,
-		logs: response.logs,
+		logs: response.logs ?? [],
 	}
+}
+
+function codeReferencesCodemodeUtils(code: string) {
+	return code.includes(codemodeUtilsModuleSpecifier)
+}
+
+function codeNeedsModuleRunner(code: string) {
+	const trimmed = code.trim()
+	return (
+		/^\s*import\s/m.test(trimmed) || /^\s*export\s/m.test(trimmed)
+	)
 }
 
 export type ExecutionErrorDetails =

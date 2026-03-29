@@ -62,10 +62,9 @@ Values:
 - Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to save and read back later.
 - Do not store readable public identifiers as secrets just to make them persistent; use value capabilities or the generated UI value helpers instead.
 
-Your code may be either:
-- an async arrow function that returns the result, or
-- a module that uses top-level imports and returns from the final expression or
-  explicit \`return\` statements inside the generated wrapper.
+Your code should be an async arrow function that returns the result. Do not use top-level
+\`import\` or \`export\`; load helpers with dynamic \`import()\` inside the function body
+(for example \`await import('@kody/codemode-utils')\`).
 
 Examples:
 
@@ -92,6 +91,14 @@ Examples:
 		openWorldHint: true,
 	} satisfies ToolAnnotations,
 } as const
+
+function toJsonSafeForMcpStructuredContent(value: unknown): unknown {
+	try {
+		return JSON.parse(JSON.stringify(value))
+	} catch {
+		return null
+	}
+}
 
 export async function registerExecuteTool(agent: McpRegistrationAgent) {
 	agent.server.registerTool(
@@ -195,7 +202,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					},
 				],
 				structuredContent: {
-					result: result.result,
+					// WorkerLoader RPC can return plain objects that still fail MCP / workerd
+					// structured serialization; JSON round-trip yields a fully JSON-safe value.
+					result: toJsonSafeForMcpStructuredContent(result.result),
 					logs: result.logs ?? [],
 				},
 			}

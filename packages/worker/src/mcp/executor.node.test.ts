@@ -5,7 +5,194 @@ import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
-import { formatExecutionOutput, getExecutionErrorDetails } from './executor.ts'
+import {
+	createExecuteExecutor,
+	formatExecutionOutput,
+	getExecutionErrorDetails,
+} from './executor.ts'
+
+function createTestLoader(): WorkerLoader {
+	return {
+		get(_name, getCode) {
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate(dispatchers: Record<string, { call: (name: string, argsJson: string) => Promise<string> }>) {
+							const workerCode = await getCode()
+							const modules = Object.fromEntries(
+								Object.entries(workerCode.modules).map(([key, value]) => [
+									key,
+									typeof value === 'string' ? value : (value.js ?? ''),
+								]),
+							)
+							const source = modules['executor.js']
+							if (!source) {
+								throw new Error('Missing executor.js module.')
+							}
+							const moduleCache = new Map<string, Promise<unknown>>()
+							const loadModule = async (specifier: string): Promise<unknown> => {
+								const cached = moduleCache.get(specifier)
+								if (cached) return cached
+								const moduleSource = modules[specifier]
+								if (!moduleSource) {
+									throw new Error(`Unknown module: ${specifier}`)
+								}
+								const modulePromise = (async () => {
+									const exports: Record<string, unknown> = Object.create(null)
+									const exportNames = Array.from(
+										moduleSource.matchAll(
+											/export\s+(?:async\s+function|function|const|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,
+										),
+									).map((match) => match[1]!)
+									const transformed = moduleSource
+										.replace(
+											/import\s+\{\s*([^}]+)\s*\}\s+from\s+["']([^"']+)["'];?/g,
+											(_match, names, importSpecifier) =>
+												`const { ${names.trim()} } = await __importModule(${JSON.stringify(importSpecifier)});`,
+										)
+										.replace(
+											/import\s+\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s+["']([^"']+)["'];?/g,
+											(_match, name, importSpecifier) =>
+												`const ${name} = await __importModule(${JSON.stringify(importSpecifier)});`,
+										)
+										.replace(
+											/export default class\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,
+											'class $1',
+										)
+										.replace(
+											/export default async \(\)\s*=>/g,
+											'exports.default = async () =>',
+										)
+										.replace(
+											/export default /g,
+											'exports.default = ',
+										)
+										.replace(
+											/export async function\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,
+											'exports.$1 = async function $1',
+										)
+										.replace(
+											/export function\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,
+											'exports.$1 = function $1',
+										)
+										.replace(
+											/export const\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,
+											'exports.$1 =',
+										)
+									const evaluator = new Function(
+										'exports',
+										'__importModule',
+										`return (async () => { ${transformed}\n${exportNames
+											.map((name) => `exports.${name} = ${name};`)
+											.join('\n')} })();`,
+									)
+									await evaluator(exports, loadModule)
+									return exports
+								})()
+								moduleCache.set(specifier, modulePromise)
+								return await modulePromise
+							}
+							const cloudflareWorkersExports = {
+								WorkerEntrypoint: class {
+									constructor(
+										readonly ctx: { props?: unknown } = {},
+										readonly env: unknown = {},
+									) {}
+								},
+							}
+							const mainModule = source.replace(
+								/import\s+\{\s*WorkerEntrypoint\s*\}\s+from\s+"cloudflare:workers";?/g,
+								'const { WorkerEntrypoint } = __cloudflareWorkers;',
+							)
+							const transformed = mainModule
+								.replace(
+									/export default class\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,
+									'class $1',
+								)
+								.replace(
+									/import\s+\{\s*([^}]+)\s*\}\s+from\s+"([^"]+)";?/g,
+									(_match, names, importSpecifier) =>
+										`const { ${names.trim()} } = await __importModule(${JSON.stringify(importSpecifier)});`,
+								)
+							const exportsObject: Record<string, unknown> = Object.create(null)
+							const evaluator = new Function(
+								'exports',
+								'__dispatchers',
+								'__importModule',
+								'__cloudflareWorkers',
+								`return (async () => { ${transformed}
+if (typeof CodeExecutor !== 'undefined') exports.default = CodeExecutor;
+return exports.default; })();`,
+							)
+							const EntrypointClass = (await evaluator(
+								exportsObject,
+								dispatchers,
+								loadModule,
+								cloudflareWorkersExports,
+							)) as {
+								new (
+									ctx: { props?: unknown },
+									env: unknown,
+								): { evaluate(dispatchers: Record<string, unknown>): Promise<unknown> }
+							}
+							const instance = new EntrypointClass({}, {})
+							return instance.evaluate(dispatchers)
+						},
+					}
+				},
+			}
+		},
+	}
+}
+
+test('createExecuteExecutor returns results for async arrow execute code', async () => {
+	const executor = createExecuteExecutor({
+		env: {
+			LOADER: createTestLoader(),
+		} as Env,
+		exports: {
+			CodemodeFetchGateway() {
+				return {} as Fetcher
+			},
+		} as typeof import('cloudflare:workers').exports,
+		gatewayProps: {
+			baseUrl: 'https://kody.example',
+			userId: 'user-123',
+			storageContext: null,
+		},
+	})
+
+	const result = await executor.execute(
+		`async () =>
+			await codemode.ui_save_app({
+				title: 'Execute generated app',
+				description: 'Saved through execute.',
+				keywords: ['execute', 'ui'],
+				code: '<main><h1>Execute App</h1></main>',
+			})`,
+		[
+			{
+				name: 'codemode',
+				fns: {
+					async ui_save_app() {
+						return {
+							app_id: 'app-123',
+							hosted_url: 'https://kody.example/ui/app-123',
+						}
+					},
+				},
+			},
+		],
+	)
+
+	expect(result).toEqual({
+		result: {
+			app_id: 'app-123',
+			hosted_url: 'https://kody.example/ui/app-123',
+		},
+		logs: [],
+	})
+})
 
 test('getExecutionErrorDetails returns concrete guidance for capability access denial', () => {
 	const error = new Error(
