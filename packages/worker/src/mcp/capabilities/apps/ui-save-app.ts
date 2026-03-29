@@ -120,7 +120,10 @@ export const uiSaveAppCapability = defineDomainCapability(
 					throw cause
 				}
 
-				const { errorName, errorMessage } = errorFields(cause)
+				const driftError = new Error(
+					'Failed to refresh saved app vector index after in-place update.',
+				)
+				const { errorName, errorMessage } = errorFields(driftError)
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'capability',
@@ -136,11 +139,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 					errorName,
 					errorMessage,
 					cause,
-					context: {
-						userId: user.userId,
-						appId,
-						isUpdate,
-					},
+					userId: user.userId,
+					appId,
+					isUpdate,
 				})
 			}
 
