@@ -6,6 +6,7 @@ import {
 	normalizeCode,
 	sanitizeToolName,
 } from '@cloudflare/codemode'
+import * as acorn from 'acorn'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
 import {
@@ -51,20 +52,29 @@ export function createExecuteExecutor(input: {
 					logs: [],
 				})
 			}
-			const modules: Record<string, WorkerLoaderModule | string> = {}
+			const workerLoaderModules: Record<string, WorkerLoaderModule | string> = {}
+			const dynamicExecutorModules: Record<string, string> = {}
 			if (codeReferencesCodemodeUtils(code)) {
-				modules[codemodeUtilsModuleSpecifier] = {
+				workerLoaderModules[codemodeUtilsModuleSpecifier] = {
 					js: buildCodemodeUtilsModuleSource(),
 				}
+				dynamicExecutorModules[codemodeUtilsModuleSpecifier] =
+					buildCodemodeUtilsModuleSource()
 			}
-			const mergedModules =
-				Object.keys(modules).length > 0 ? modules : undefined
+			const mergedWorkerLoaderModules =
+				Object.keys(workerLoaderModules).length > 0
+					? workerLoaderModules
+					: undefined
+			const mergedDynamicExecutorModules =
+				Object.keys(dynamicExecutorModules).length > 0
+					? dynamicExecutorModules
+					: undefined
 			if (codeReferencesCodemodeUtils(code)) {
 				return executeDynamicWithKodyUtilsBridge({
 					loader: input.env.LOADER,
 					timeoutMs: 90_000,
 					globalOutbound,
-					modules: mergedModules,
+					modules: mergedWorkerLoaderModules,
 					code,
 					providers: providersOrFns,
 				})
@@ -73,7 +83,7 @@ export function createExecuteExecutor(input: {
 				loader: input.env.LOADER,
 				timeout: 90_000,
 				globalOutbound,
-				modules: mergedModules,
+				modules: mergedDynamicExecutorModules,
 			})
 			return executor.execute(code, providersOrFns)
 		},
@@ -228,9 +238,21 @@ function codeReferencesCodemodeUtils(code: string) {
 
 function codeNeedsModuleRunner(code: string) {
 	const trimmed = code.trim()
-	return (
-		/^\s*import\s/m.test(trimmed) || /^\s*export\s/m.test(trimmed)
-	)
+	try {
+		const parsed = acorn.parse(trimmed, {
+			ecmaVersion: 'latest',
+			sourceType: 'module',
+		})
+		return parsed.body.some(
+			(node: acorn.Node) =>
+				node.type === 'ImportDeclaration' ||
+				node.type === 'ExportDefaultDeclaration' ||
+				node.type === 'ExportNamedDeclaration' ||
+				node.type === 'ExportAllDeclaration',
+		)
+	} catch {
+		return false
+	}
 }
 
 export type ExecutionErrorDetails =

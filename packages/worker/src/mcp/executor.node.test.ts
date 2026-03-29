@@ -194,6 +194,42 @@ test('createExecuteExecutor returns results for async arrow execute code', async
 	})
 })
 
+test('createExecuteExecutor rejects top-level import in execute code', async () => {
+	const executor = createExecuteExecutor({
+		env: {
+			LOADER: createTestLoader(),
+		} as Env,
+		exports: {
+			CodemodeFetchGateway() {
+				return {} as Fetcher
+			},
+		} as typeof import('cloudflare:workers').exports,
+		gatewayProps: {
+			baseUrl: 'https://kody.example',
+			userId: 'user-123',
+			storageContext: null,
+		},
+	})
+
+	const result = await executor.execute(
+		`// import should not trigger module mode by itself
+async () => ({ ok: true })`,
+		[
+			{
+				name: 'codemode',
+				fns: {},
+			},
+		],
+	)
+
+	expect(result).toEqual({
+		result: {
+			ok: true,
+		},
+		logs: [],
+	})
+})
+
 test('getExecutionErrorDetails returns concrete guidance for capability access denial', () => {
 	const error = new Error(
 		createCapabilitySecretAccessDeniedMessage(

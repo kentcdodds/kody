@@ -182,6 +182,27 @@ function getTokenRefreshErrorMessage(providerName, response, payload) {
 	)
 }
 
+function assertRequestHostAllowed(connector, requestUrl) {
+	if (!Array.isArray(connector.requiredHosts) || connector.requiredHosts.length === 0) {
+		return
+	}
+	const host = new URL(requestUrl).hostname.toLowerCase()
+	const allowedHosts = connector.requiredHosts.map((entry) =>
+		String(entry).toLowerCase(),
+	)
+	if (!allowedHosts.includes(host)) {
+		throw new Error(
+			'Authenticated fetch for "' +
+				connector.name +
+				'" is not allowed for host "' +
+				host +
+				'". Allowed hosts: ' +
+				allowedHosts.join(', ') +
+				'.',
+		)
+	}
+}
+
 export async function refreshAccessToken(providerName) {
 	const connector = await readConnectorConfig(providerName)
 	if (!connector.refreshTokenSecretName) {
@@ -232,9 +253,11 @@ export async function refreshAccessToken(providerName) {
 }
 
 export async function createAuthenticatedFetch(providerName) {
+	const connector = await readConnectorConfig(providerName)
 	const accessToken = await refreshAccessToken(providerName)
 	return async function authenticatedFetch(input, init) {
 		const request = new Request(input, init)
+		assertRequestHostAllowed(connector, request.url)
 		const headers = new Headers(request.headers)
 		headers.set('Authorization', 'Bearer ' + accessToken)
 		return fetch(new Request(request, { headers }))
