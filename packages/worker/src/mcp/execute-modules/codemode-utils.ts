@@ -34,6 +34,8 @@ type ValueGetResult = {
 	ttl_ms: number | null
 } | null
 
+type ExecuteRequestInput = string | URL | Request
+
 export function createCodemodeUtils(codemode: CodemodeNamespace) {
 	return {
 		createAuthenticatedFetch(providerName: string) {
@@ -112,7 +114,7 @@ export async function createAuthenticatedFetch(
 	const connector = await readConnectorConfig(codemode, providerName)
 	const accessToken = await refreshAccessToken(codemode, providerName)
 
-	return async (input: RequestInfo | URL, init?: RequestInit) => {
+	return async (input: ExecuteRequestInput, init?: RequestInit) => {
 		const request = new Request(resolveRequestUrl(input, connector), init)
 		const headers = new Headers(request.headers)
 		headers.set('Authorization', `Bearer ${accessToken}`)
@@ -129,7 +131,11 @@ async function readConnectorConfig(
 	codemode: CodemodeNamespace,
 	providerName: string,
 ) {
-	const result = (await codemode.connector_get({
+	const connectorGet = codemode.connector_get
+	if (typeof connectorGet !== 'function') {
+		throw new Error('codemode.connector_get is not available in this sandbox.')
+	}
+	const result = (await connectorGet({
 		name: providerName,
 	})) as ConnectorGetResult
 	const connector = result?.connector ?? null
@@ -143,7 +149,11 @@ async function readClientId(
 	codemode: CodemodeNamespace,
 	connector: ConnectorConfig,
 ) {
-	const value = (await codemode.value_get({
+	const valueGet = codemode.value_get
+	if (typeof valueGet !== 'function') {
+		throw new Error('codemode.value_get is not available in this sandbox.')
+	}
+	const value = (await valueGet({
 		name: connector.clientIdValueName,
 	})) as ValueGetResult
 	if (!value?.value) {
@@ -158,7 +168,7 @@ function buildSecretPlaceholder(name: string, scope: 'user' | 'app' | 'session')
 	return `{{secret:${name}|scope=${scope}}}`
 }
 
-function resolveRequestUrl(input: RequestInfo | URL, connector: ConnectorConfig) {
+function resolveRequestUrl(input: ExecuteRequestInput, connector: ConnectorConfig) {
 	if (typeof input === 'string' && input.startsWith('/')) {
 		return resolveRelativeUrl(input, connector)
 	}

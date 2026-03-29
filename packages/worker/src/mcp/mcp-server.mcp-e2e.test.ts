@@ -834,11 +834,6 @@ test('mcp server executes imported @kody/codemode-utils helpers', async () => {
 		},
 	})
 
-	const structuredResult = (result as CallToolResult).structuredContent as
-		| {
-				result?: Record<string, unknown>
-		  }
-		| undefined
 	const textOutput =
 		(result as CallToolResult).content.find(
 			(item): item is Extract<ContentBlock, { type: 'text' }> =>

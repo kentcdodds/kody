@@ -3,5 +3,8 @@ export const codemodeModuleCapabilityManifest = {
 } as const satisfies Record<string, ReadonlyArray<string>>
 
 export function getCodemodeModuleCapabilities(specifier: string) {
-	return codemodeModuleCapabilityManifest[specifier] ?? []
+	if (specifier === '@kody/codemode-utils') {
+		return codemodeModuleCapabilityManifest['@kody/codemode-utils']
+	}
+	return []
 }

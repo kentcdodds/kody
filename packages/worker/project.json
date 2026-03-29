@@ -10,6 +10,15 @@
 				"command": "npm run dev"
 			}
 		},
+		"build-codemode-sandbox-modules": {
+			"executor": "nx:run-commands",
+			"outputs": [
+				"{workspaceRoot}/packages/worker/src/mcp/generated/codemode-sandbox-modules.ts"
+			],
+			"options": {
+				"command": "npm run build:codemode-sandbox-modules"
+			}
+		},
 		"dev-client": {
 			"executor": "nx:run-commands",
 			"options": {
@@ -41,6 +50,7 @@
 		},
 		"build-client": {
 			"executor": "nx:run-commands",
+			"dependsOn": ["build-codemode-sandbox-modules"],
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
 				"{workspaceRoot}/packages/worker/public/assets",
@@ -52,6 +62,7 @@
 		},
 		"build": {
 			"executor": "nx:run-commands",
+			"dependsOn": ["build-codemode-sandbox-modules", "build-client"],
 			"options": {
 				"command": "npm run build"
 			}

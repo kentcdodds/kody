@@ -1,4 +1,8 @@
-import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
+import {
+	DynamicWorkerExecutor,
+	type DynamicWorkerExecutorOptions,
+	type ExecuteResult,
+} from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
@@ -33,7 +37,8 @@ export function createExecuteExecutor(input: {
 		globalOutbound: loopbackExports.CodemodeFetchGateway({
 			props: input.gatewayProps,
 		}),
-		modules: codemodeSandboxModules,
+		modules:
+			codemodeSandboxModules as unknown as DynamicWorkerExecutorOptions['modules'],
 	})
 }
 

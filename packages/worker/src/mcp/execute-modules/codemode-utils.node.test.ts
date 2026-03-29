@@ -5,6 +5,8 @@ import {
 	refreshAccessToken,
 } from './codemode-utils.ts'
 
+type CodemodeUtilsNamespace = Parameters<typeof refreshAccessToken>[0]
+
 type MockCodemode = {
 	connector_get: (args: { name: string }) => Promise<{
 		connector: {
@@ -57,7 +59,7 @@ function createMockCodemode(
 }
 
 test('refreshAccessToken posts refresh-token form payload and returns the token', async () => {
-	const codemode = createMockCodemode()
+	const codemode = createMockCodemode() as unknown as CodemodeUtilsNamespace
 	const requests: Array<Request> = []
 	const originalFetch = globalThis.fetch
 
@@ -104,7 +106,7 @@ test('refreshAccessToken includes client secret placeholder for confidential con
 			refreshTokenSecretName: 'linearRefreshToken',
 			requiredHosts: ['api.linear.app'],
 		},
-	})
+	}) as unknown as CodemodeUtilsNamespace
 	const requests: Array<Request> = []
 	const originalFetch = globalThis.fetch
 
@@ -125,7 +127,7 @@ test('refreshAccessToken includes client secret placeholder for confidential con
 })
 
 test('createAuthenticatedFetch resolves relative URLs against apiBaseUrl and injects bearer token', async () => {
-	const codemode = createMockCodemode()
+	const codemode = createMockCodemode() as unknown as CodemodeUtilsNamespace
 	const requests: Array<Request> = []
 	const originalFetch = globalThis.fetch
 
@@ -154,7 +156,7 @@ test('createAuthenticatedFetch resolves relative URLs against apiBaseUrl and inj
 })
 
 test('createCodemodeUtils binds helper methods to codemode', async () => {
-	const codemode = createMockCodemode()
+	const codemode = createMockCodemode() as unknown as CodemodeUtilsNamespace
 	const requests: Array<Request> = []
 	const originalFetch = globalThis.fetch
 
@@ -174,7 +176,9 @@ test('createCodemodeUtils binds helper methods to codemode', async () => {
 })
 
 test('refreshAccessToken fails clearly when the connector is missing', async () => {
-	const codemode = createMockCodemode({ connector: null })
+	const codemode = createMockCodemode({
+		connector: null,
+	}) as unknown as CodemodeUtilsNamespace
 	await expect(refreshAccessToken(codemode, 'spotify')).rejects.toThrow(
 		'Connector "spotify" was not found.',
 	)
@@ -193,7 +197,7 @@ test('createAuthenticatedFetch rejects relative URLs without apiBaseUrl', async 
 			refreshTokenSecretName: 'spotifyRefreshToken',
 			requiredHosts: ['accounts.spotify.com'],
 		},
-	})
+	}) as unknown as CodemodeUtilsNamespace
 	const originalFetch = globalThis.fetch
 
 	globalThis.fetch = async () => Response.json({ access_token: 'fresh-access-token' })
