@@ -36,14 +36,14 @@ declare const codemode: Record<
   (args: CapabilityArgs) => Promise<CapabilityResult>
 >;
 
-These helper functions are also available directly in your async function:
+These helper functions are available directly in your async function:
 
 \`type ExecuteRequestInput = string | URL | Request;\`
 \`type AuthenticatedFetch = (input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>;\`
 \`declare function refreshAccessToken(providerName: string): Promise<string>;\`
 \`declare function createAuthenticatedFetch(providerName: string): Promise<AuthenticatedFetch>;\`
 
-Use them directly without imports or manual binding:
+Use them directly:
 
 \`async () => {
   const spotifyFetch = await createAuthenticatedFetch('spotify');
