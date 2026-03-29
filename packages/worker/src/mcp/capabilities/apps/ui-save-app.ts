@@ -74,16 +74,23 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
 			const parameters = normalizeUiArtifactParameters(args.parameters)
-			const serializedParameters = parameters ? JSON.stringify(parameters) : null
+			const serializedParameters = parameters
+				? JSON.stringify(parameters)
+				: null
 
 			if (isUpdate) {
-				const updated = await updateUiArtifact(ctx.env.APP_DB, user.userId, appId, {
-					title: args.title,
-					description: args.description,
-					code: args.code,
-					runtime: args.runtime,
-					parameters: serializedParameters,
-				})
+				const updated = await updateUiArtifact(
+					ctx.env.APP_DB,
+					user.userId,
+					appId,
+					{
+						title: args.title,
+						description: args.description,
+						code: args.code,
+						runtime: args.runtime,
+						parameters: serializedParameters,
+					},
+				)
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
@@ -120,10 +127,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					throw cause
 				}
 
-				const driftError = new Error(
-					'Failed to refresh saved app vector index after in-place update.',
-				)
-				const { errorName, errorMessage } = errorFields(driftError)
+				const { errorName, errorMessage } = errorFields(cause)
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'capability',
@@ -139,9 +143,11 @@ export const uiSaveAppCapability = defineDomainCapability(
 					errorName,
 					errorMessage,
 					cause,
-					userId: user.userId,
-					appId,
-					isUpdate,
+					context: {
+						userId: user.userId,
+						appId,
+						isUpdate,
+					},
 				})
 			}
 
