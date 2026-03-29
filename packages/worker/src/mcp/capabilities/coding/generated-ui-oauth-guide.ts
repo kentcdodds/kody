@@ -71,7 +71,7 @@ of treating it like a secret.
 4. Give the user the hosted saved-app URL and tell them to open it in their
    browser instead of trying to complete the flow in the conversation iframe.
 5. In the hosted generated UI, import \`kodyWidget\` from
-   \`@kody/utils\` and use it directly to read the callback, validate state,
+   \`@kody/ui-utils\` and use it directly to read the callback, validate state,
    exchange the code in the browser, and save tokens.
 
 ## Generated UI helpers to use
@@ -105,7 +105,7 @@ before building the authorization URL or token request.
 \`\`\`html
 <p id="status"></p>
 <script type="module">
-  import { kodyWidget } from '@kody/utils'
+  import { kodyWidget } from '@kody/ui-utils'
 
   async function requireClientId() {
     const clientIdRecord = await kodyWidget.getValue({
@@ -188,7 +188,7 @@ authorization flow.
   <button type="submit">Save and continue</button>
 </form>
 <script type="module">
-  import { kodyWidget } from '@kody/utils'
+  import { kodyWidget } from '@kody/ui-utils'
 
   document.querySelector('#oauth-client-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()
@@ -240,7 +240,7 @@ Create and persist the OAuth state before redirecting the browser.
 \`\`\`html
 <button id="connect-muffin-club">Connect Muffin Club</button>
 <script type="module">
-  import { kodyWidget } from '@kody/utils'
+  import { kodyWidget } from '@kody/ui-utils'
 
   document.querySelector('#connect-muffin-club')?.addEventListener('click', async () => {
     const clientIdRecord = await kodyWidget.getValue({
@@ -340,7 +340,7 @@ succeeds.
     root.innerHTML = '<p>' + message + '</p>'
   }
 
-  import { kodyWidget } from '@kody/utils'
+  import { kodyWidget } from '@kody/ui-utils'
 
   void (async () => {
     const callback = kodyWidget.readOAuthCallback({
@@ -427,7 +427,7 @@ export const generatedUiOAuthGuideCapability = defineDomainCapability(
 			'provider registration',
 			'ui_save_app',
 			'open_generated_ui',
-			'@kody/utils',
+			'@kody/ui-utils',
 		],
 		readOnly: true,
 		idempotent: true,

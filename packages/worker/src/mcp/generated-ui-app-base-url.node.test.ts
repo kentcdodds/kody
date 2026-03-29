@@ -19,9 +19,9 @@ test('canonical APP_BASE_URL drives runtime script href and MCP URL for widget d
 	expect(appBase).toBe('https://heykody.dev')
 
 	const html = renderGeneratedUiRuntimeHtmlEntry(appBase)
-	expect(html).toContain('https://heykody.dev/mcp-apps/generated-ui-runtime.js')
+	expect(html).toContain('https://heykody.dev/mcp-apps/kody-ui-utils.js')
 	expect(html).toContain(
-		'"@kody/utils":"https://heykody.dev/mcp-apps/generated-ui-runtime.js"',
+		'"@kody/ui-utils":"https://heykody.dev/mcp-apps/kody-ui-utils.js"',
 	)
 
 	const mcpServerUrl = new URL(mcpResourcePath, appBase).toString()
