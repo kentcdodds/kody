@@ -159,6 +159,20 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 										run: async () => ({
 											meta: { changes: 1 },
 										}),
+										first: async () => ({
+											id: 'app-1',
+											user_id: 'user-1',
+											title: 'Observed app',
+											description: 'Observation test app.',
+											keywords: '["observability"]',
+											source_code:
+												'document.querySelector("#app")!.innerHTML = "<h1>Observed app</h1>"',
+											source_type: 'html',
+											search_text: null,
+											parameters: null,
+											created_at: '2024-01-01T00:00:00.000Z',
+											updated_at: '2024-01-01T00:00:00.000Z',
+										}),
 									}
 								},
 							}

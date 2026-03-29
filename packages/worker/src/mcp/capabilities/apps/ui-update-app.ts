@@ -1,21 +1,17 @@
 import { z } from 'zod'
-import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import {
 	getUiArtifactById,
 	parseStringArray,
-	updateUiArtifact,
 } from '#mcp/ui-artifacts-repo.ts'
-import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 import {
-	normalizeUiArtifactParameters,
 	parseUiArtifactParameters,
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
+import { uiSaveAppCapability } from './ui-save-app.ts'
 
 const inputSchema = z
 	.object({
@@ -98,73 +94,30 @@ export const uiUpdateAppCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const updates: Parameters<typeof updateUiArtifact>[3] = {}
-
-			if (args.title !== undefined) {
-				updates.title = args.title
-			}
-			if (args.description !== undefined) {
-				updates.description = args.description
-			}
-			if (args.keywords !== undefined) {
-				updates.keywords = JSON.stringify(args.keywords)
-			}
-			if (args.code !== undefined) {
-				updates.code = args.code
-			}
-			if (args.runtime !== undefined) {
-				updates.runtime = args.runtime
-			}
-			if (args.search_text !== undefined) {
-				updates.search_text = args.search_text
-			}
-			if (args.parameters !== undefined) {
-				const parameters = normalizeUiArtifactParameters(args.parameters)
-				updates.parameters = parameters ? JSON.stringify(parameters) : null
-			}
-
-			const updated = await updateUiArtifact(
+			const existing = await getUiArtifactById(
 				ctx.env.APP_DB,
 				user.userId,
 				args.app_id,
-				updates,
 			)
-			if (!updated) {
+			if (!existing) {
 				throw new Error('Saved UI artifact not found for this user.')
 			}
 
-			const refreshed = await getUiArtifactById(
-				ctx.env.APP_DB,
-				user.userId,
-				args.app_id,
+			const existingParameters =
+				parseUiArtifactParameters(existing.parameters) ?? undefined
+			return uiSaveAppCapability.handler(
+				{
+					app_id: args.app_id,
+					title: args.title ?? existing.title,
+					description: args.description ?? existing.description,
+					keywords: args.keywords ?? parseStringArray(existing.keywords),
+					code: args.code ?? existing.code,
+					runtime: args.runtime ?? existing.runtime,
+					search_text: args.search_text ?? existing.search_text ?? undefined,
+					parameters: args.parameters ?? existingParameters,
+				},
+				ctx,
 			)
-			if (!refreshed) {
-				throw new Error('Saved UI artifact not found after update.')
-			}
-
-			try {
-				await upsertUiArtifactVector(ctx.env, {
-					appId: refreshed.id,
-					userId: user.userId,
-					embedText: buildUiArtifactEmbedText({
-						title: refreshed.title,
-						description: refreshed.description,
-						keywords: parseStringArray(refreshed.keywords),
-						searchText: refreshed.search_text,
-						runtime: refreshed.runtime,
-						parameters: parseUiArtifactParameters(refreshed.parameters),
-					}),
-				})
-			} catch {
-				// Vector refresh should not fail the primary update.
-			}
-
-			return {
-				app_id: refreshed.id,
-				runtime: refreshed.runtime,
-				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, refreshed.id),
-				parameters: parseUiArtifactParameters(refreshed.parameters),
-			}
 		},
 	},
 )

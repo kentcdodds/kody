@@ -1849,6 +1849,83 @@ test('mcp server deletes saved ui app artifacts', async () => {
 	expect(apps?.some((app) => app.app_id === appId)).toBe(false)
 })
 
+test('mcp server upserts saved ui app artifacts via ui_save_app', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_save_app({
+						title: 'Upsertable App',
+						description: 'Initial app description.',
+						keywords: ['upsert', 'ui'],
+						code: '<main><h1>Upsertable</h1></main>',
+					})`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const savedApp = saveStructured?.result as Record<string, unknown> | undefined
+	const appId = typeof savedApp?.app_id === 'string' ? savedApp.app_id : null
+	expect(appId).not.toBeNull()
+
+	const upsertResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_save_app({
+						app_id: ${JSON.stringify(appId)},
+						title: 'Upserted App',
+						description: 'Updated app description.',
+						keywords: ['upserted', 'ui'],
+						code: '<main><h1>Upserted</h1></main>',
+						runtime: 'javascript',
+						search_text: 'upserted searchable text',
+					})`,
+		},
+	})
+	const upsertStructured = (upsertResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const upsertPayload = upsertStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	expect(upsertPayload?.app_id).toBe(appId)
+	expect(upsertPayload?.runtime).toBe('javascript')
+	expect(upsertPayload?.hosted_url).toBe(`${server.origin}/ui/${appId}`)
+
+	const getResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () =>
+					await codemode.ui_get_app({ app_id: ${JSON.stringify(appId)} })`,
+		},
+	})
+	const getStructured = (getResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const getPayload = getStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	expect(getPayload?.title).toBe('Upserted App')
+	expect(getPayload?.description).toBe('Updated app description.')
+	expect(getPayload?.keywords).toEqual(['upserted', 'ui'])
+	expect(getPayload?.code).toBe('<main><h1>Upserted</h1></main>')
+	expect(getPayload?.runtime).toBe('javascript')
+	expect(getPayload?.search_text).toBe('upserted searchable text')
+})
+
 test('mcp server updates saved ui app artifacts', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)

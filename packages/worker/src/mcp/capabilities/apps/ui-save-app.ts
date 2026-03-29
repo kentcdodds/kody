@@ -3,16 +3,30 @@ import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteUiArtifact, insertUiArtifact } from '#mcp/ui-artifacts-repo.ts'
+import {
+	deleteUiArtifact,
+	getUiArtifactById,
+	insertUiArtifact,
+	parseStringArray,
+	updateUiArtifact,
+} from '#mcp/ui-artifacts-repo.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
+	parseUiArtifactParameters,
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
 
 const inputSchema = z.object({
+	app_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Optional saved UI artifact id. When provided, the existing app is updated in place if it belongs to the user.',
+		),
 	title: z.string().min(1).describe('Short title for the saved UI artifact.'),
 	description: z
 		.string()
@@ -68,46 +82,86 @@ export const uiSaveAppCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const appId = crypto.randomUUID()
-			const now = new Date().toISOString()
 			const parameters = normalizeUiArtifactParameters(args.parameters)
-			await insertUiArtifact(ctx.env.APP_DB, {
-				id: appId,
-				user_id: user.userId,
-				title: args.title,
-				description: args.description,
-				keywords: JSON.stringify(args.keywords),
-				code: args.code,
-				runtime: args.runtime,
-				search_text: args.search_text ?? null,
-				parameters: parameters ? JSON.stringify(parameters) : null,
-				created_at: now,
-				updated_at: now,
+			const existing =
+				args.app_id === undefined
+					? null
+					: await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
+			const appId = existing?.id ?? crypto.randomUUID()
+			const now = new Date().toISOString()
+
+			if (existing) {
+				const updated = await updateUiArtifact(
+					ctx.env.APP_DB,
+					user.userId,
+					appId,
+					{
+						title: args.title,
+						description: args.description,
+						keywords: JSON.stringify(args.keywords),
+						code: args.code,
+						runtime: args.runtime,
+						search_text: args.search_text ?? null,
+						parameters: parameters ? JSON.stringify(parameters) : null,
+					},
+				)
+				if (!updated) {
+					throw new Error('Saved UI artifact not found for this user.')
+				}
+			} else {
+				await insertUiArtifact(ctx.env.APP_DB, {
+					id: appId,
+					user_id: user.userId,
+					title: args.title,
+					description: args.description,
+					keywords: JSON.stringify(args.keywords),
+					code: args.code,
+					runtime: args.runtime,
+					search_text: args.search_text ?? null,
+					parameters: parameters ? JSON.stringify(parameters) : null,
+					created_at: now,
+					updated_at: now,
+				})
+			}
+
+			const refreshed = await getUiArtifactById(
+				ctx.env.APP_DB,
+				user.userId,
+				appId,
+			)
+			if (!refreshed) {
+				throw new Error('Saved UI artifact not found after save.')
+			}
+
+			const parsedParameters = parseUiArtifactParameters(refreshed.parameters)
+			const embedText = buildUiArtifactEmbedText({
+				title: refreshed.title,
+				description: refreshed.description,
+				keywords: parseStringArray(refreshed.keywords),
+				searchText: refreshed.search_text,
+				runtime: refreshed.runtime,
+				parameters: parsedParameters,
 			})
 
 			try {
 				await upsertUiArtifactVector(ctx.env, {
 					appId,
 					userId: user.userId,
-					embedText: buildUiArtifactEmbedText({
-						title: args.title,
-						description: args.description,
-						keywords: args.keywords,
-						searchText: args.search_text ?? null,
-						runtime: args.runtime,
-						parameters,
-					}),
+					embedText,
 				})
 			} catch (cause) {
-				await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
-				throw cause
+				if (!existing) {
+					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
+					throw cause
+				}
+				// Vector refresh should not fail the primary update.
 			}
 
 			return {
 				app_id: appId,
-				runtime: args.runtime,
+				runtime: refreshed.runtime,
 				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
-				parameters,
+				parameters: parsedParameters,
 			}
 		},
 	},
