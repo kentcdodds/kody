@@ -188,20 +188,51 @@ function resolveRequestUrl(input: ExecuteRequestInput, connector: ConnectorConfi
 	}
 	if (input instanceof URL) return input
 	if (typeof input === 'string') return input
-	if (input instanceof Request && input.url.startsWith('/')) {
-		return new Request(resolveRelativeUrl(input.url, connector), input)
+	if (input instanceof Request) {
+		const relativePath = getRelativePathFromRequest(input, connector)
+		if (relativePath) {
+			return new Request(resolveRelativeUrl(relativePath, connector), input)
+		}
 	}
 	return input
 }
 
+function getRelativePathFromRequest(
+	input: Request,
+	connector: ConnectorConfig,
+): string | null {
+	if (input.url.startsWith('/')) return input.url
+
+	const requestUrl = new URL(input.url)
+	const normalizedBase = getNormalizedApiBaseUrl(connector)
+	if (normalizedBase && requestUrl.href.startsWith(normalizedBase)) {
+		return null
+	}
+	const runtimeOrigin = getRuntimeOrigin()
+	if (!runtimeOrigin || requestUrl.origin !== runtimeOrigin) {
+		return null
+	}
+	return `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
+}
+
+function getRuntimeOrigin() {
+	if (typeof location === 'undefined') return null
+	return location.origin || null
+}
+
+function getNormalizedApiBaseUrl(connector: ConnectorConfig) {
+	if (!connector.apiBaseUrl) return null
+	return connector.apiBaseUrl.endsWith('/')
+		? connector.apiBaseUrl.slice(0, -1)
+		: connector.apiBaseUrl
+}
+
 function resolveRelativeUrl(pathname: string, connector: ConnectorConfig) {
-	if (!connector.apiBaseUrl) {
+	const normalizedBase = getNormalizedApiBaseUrl(connector)
+	if (!normalizedBase) {
 		throw new Error(
 			`Connector "${connector.name}" does not define apiBaseUrl for relative requests.`,
 		)
 	}
-	const normalizedBase = connector.apiBaseUrl.endsWith('/')
-		? connector.apiBaseUrl.slice(0, -1)
-		: connector.apiBaseUrl
 	return new URL(`${normalizedBase}${pathname}`)
 }
