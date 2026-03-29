@@ -4,7 +4,6 @@ import { connectorDeleteCapability } from './connector-delete.ts'
 import { connectorGetCapability } from './connector-get.ts'
 import { connectorListCapability } from './connector-list.ts'
 import { connectorSaveCapability } from './connector-save.ts'
-import { connectorUpdateCapability } from './connector-update.ts'
 import { valueDeleteCapability } from './value-delete.ts'
 import { valueGetCapability } from './value-get.ts'
 import { valueListCapability } from './value-list.ts'
@@ -21,7 +20,6 @@ export const valuesDomain = defineDomain({
 		valueListCapability,
 		valueDeleteCapability,
 		connectorSaveCapability,
-		connectorUpdateCapability,
 		connectorGetCapability,
 		connectorListCapability,
 		connectorDeleteCapability,

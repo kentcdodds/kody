@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { connectorUpdateCapability } from './connector-update.ts'
+import { connectorSaveCapability } from './connector-save.ts'
 import {
 	connectorConfigSchema,
 	mergeConnectorConfig,
@@ -116,7 +116,7 @@ test('parseConnectorConfig keeps older rows readable when apiBaseUrl is missing'
 	})
 })
 
-test('connector_update updates an existing connector record', async () => {
+test('connector_save upserts an existing connector record', async () => {
 	const testDb = createValueTestDb()
 	testDb.entries.set(
 		'_connector:spotify',
@@ -133,10 +133,16 @@ test('connector_update updates an existing connector record', async () => {
 		}),
 	)
 
-	const result = await connectorUpdateCapability.handler(
+	const result = await connectorSaveCapability.handler(
 		{
 			name: 'spotify',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
 			apiBaseUrl: 'https://api.spotify.com/v1',
+			flow: 'pkce',
+			clientIdValueName: 'spotify-client-id',
+			clientSecretSecretName: null,
+			accessTokenSecretName: 'spotifyAccessToken',
+			refreshTokenSecretName: 'spotifyRefreshToken',
 			requiredHosts: ['api.spotify.com'],
 		},
 		{
@@ -153,30 +159,10 @@ test('connector_update updates an existing connector record', async () => {
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		requiredHosts: ['api.spotify.com'],
 	})
-	expect(
-		JSON.parse(testDb.entries.get('_connector:spotify') ?? '{}'),
-	).toMatchObject({
-		apiBaseUrl: 'https://api.spotify.com/v1',
-		requiredHosts: ['api.spotify.com'],
-	})
-})
-
-test('connector_update rejects missing connector records', async () => {
-	const testDb = createValueTestDb()
-
-	await expect(
-		connectorUpdateCapability.handler(
-			{
-				name: 'spotify',
-				apiBaseUrl: 'https://api.spotify.com/v1',
-			},
-			{
-				env: { APP_DB: testDb.db } as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-123' },
-				}),
-			},
-		),
-	).rejects.toThrow('Connector "spotify" was not found.')
+	expect(JSON.parse(testDb.entries.get('_connector:spotify') ?? '{}')).toMatchObject(
+		{
+			apiBaseUrl: 'https://api.spotify.com/v1',
+			requiredHosts: ['api.spotify.com'],
+		},
+	)
 })
