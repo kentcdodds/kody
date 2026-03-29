@@ -52,59 +52,7 @@ export async function refreshAccessToken(
 	providerName: string,
 ) {
 	const connector = await readConnectorConfig(codemode, providerName)
-	const clientId = await readClientId(codemode, connector)
-	const refreshTokenSecretName = connector.refreshTokenSecretName?.trim() ?? ''
-	if (!refreshTokenSecretName) {
-		throw new Error(
-			`Connector "${providerName}" does not define a refresh token secret name.`,
-		)
-	}
-
-	const params = new URLSearchParams()
-	params.set('grant_type', 'refresh_token')
-	params.set(
-		'refresh_token',
-		buildSecretPlaceholder(refreshTokenSecretName, 'user'),
-	)
-	params.set('client_id', clientId)
-
-	if (connector.flow === 'confidential') {
-		const clientSecretSecretName = connector.clientSecretSecretName?.trim() ?? ''
-		if (!clientSecretSecretName) {
-			throw new Error(
-				`Connector "${providerName}" uses confidential flow but does not define a client secret secret name.`,
-			)
-		}
-		params.set(
-			'client_secret',
-			buildSecretPlaceholder(clientSecretSecretName, 'user'),
-		)
-	}
-
-	const response = await fetch(connector.tokenUrl, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body: params.toString(),
-	})
-	const payload = (await response.json().catch(() => null)) as
-		| Record<string, unknown>
-		| null
-
-	if (!response.ok) {
-		throw new Error(
-			`Token refresh failed for connector "${providerName}" with HTTP ${response.status}.`,
-		)
-	}
-	if (!payload || typeof payload.access_token !== 'string') {
-		throw new Error(
-			`Token refresh for connector "${providerName}" did not return an access_token.`,
-		)
-	}
-
-	return payload.access_token
+	return refreshAccessTokenWithConnector(codemode, providerName, connector)
 }
 
 export async function createAuthenticatedFetch(
@@ -112,7 +60,11 @@ export async function createAuthenticatedFetch(
 	providerName: string,
 ) {
 	const connector = await readConnectorConfig(codemode, providerName)
-	const accessToken = await refreshAccessToken(codemode, providerName)
+	const accessToken = await refreshAccessTokenWithConnector(
+		codemode,
+		providerName,
+		connector,
+	)
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
 		const request = new Request(resolveRequestUrl(input, connector), init)
@@ -164,6 +116,68 @@ async function readClientId(
 	return value.value
 }
 
+async function refreshAccessTokenWithConnector(
+	codemode: CodemodeNamespace,
+	providerName: string,
+	connector: ConnectorConfig,
+) {
+	const clientId = await readClientId(codemode, connector)
+	const refreshTokenSecretName = connector.refreshTokenSecretName?.trim() ?? ''
+	if (!refreshTokenSecretName) {
+		throw new Error(
+			`Connector "${providerName}" does not define a refresh token secret name.`,
+		)
+	}
+
+	const params = new URLSearchParams()
+	params.set('grant_type', 'refresh_token')
+	params.set(
+		'refresh_token',
+		buildSecretPlaceholder(refreshTokenSecretName, 'user'),
+	)
+	params.set('client_id', clientId)
+
+	if (connector.flow === 'confidential') {
+		const clientSecretSecretName =
+			connector.clientSecretSecretName?.trim() ?? ''
+		if (!clientSecretSecretName) {
+			throw new Error(
+				`Connector "${providerName}" uses confidential flow but does not define a client secret secret name.`,
+			)
+		}
+		params.set(
+			'client_secret',
+			buildSecretPlaceholder(clientSecretSecretName, 'user'),
+		)
+	}
+
+	const response = await fetch(connector.tokenUrl, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/x-www-form-urlencoded',
+		},
+		body: params.toString(),
+	})
+	const payload = (await response.json().catch(() => null)) as Record<
+		string,
+		unknown
+	> | null
+
+	if (!response.ok) {
+		throw new Error(
+			`Token refresh failed for connector "${providerName}" with HTTP ${response.status}.`,
+		)
+	}
+	if (!payload || typeof payload.access_token !== 'string') {
+		throw new Error(
+			`Token refresh for connector "${providerName}" did not return an access_token.`,
+		)
+	}
+
+	return payload.access_token
+}
+
 function buildSecretPlaceholder(name: string, scope: 'user' | 'app' | 'session') {
 	return `{{secret:${name}|scope=${scope}}}`
 }
@@ -175,10 +189,7 @@ function resolveRequestUrl(input: ExecuteRequestInput, connector: ConnectorConfi
 	if (input instanceof URL) return input
 	if (typeof input === 'string') return input
 	if (input instanceof Request && input.url.startsWith('/')) {
-		return new Request(
-			resolveRelativeUrl(input.url, connector),
-			input,
-		)
+		return new Request(resolveRelativeUrl(input.url, connector), input)
 	}
 	return input
 }
