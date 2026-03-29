@@ -1,7 +1,5 @@
 import { parse, type Node, type Program } from 'acorn'
-import {
-	codemodeSandboxModuleManifest,
-} from '#mcp/generated/codemode-sandbox-modules.ts'
+import { getCodemodeModuleCapabilities } from '#mcp/execute-modules/module-manifest.ts'
 
 export type InferCodemodeCapabilitiesResult = {
 	/** Resolved capability names from static member access on `codemode`. */
@@ -108,7 +106,7 @@ export function inferCodemodeCapabilitiesFromAst(
 				(n as { source?: unknown }).source ?? null,
 			)
 			if (source) {
-				for (const capabilityName of codemodeSandboxModuleManifest[source] ?? []) {
+				for (const capabilityName of getCodemodeModuleCapabilities(source)) {
 					moduleSet.add(capabilityName)
 				}
 			}
