@@ -244,16 +244,20 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 
 	expect(payloads.length).toBe(2)
 	const driftEvent = JSON.parse(payloads[0]!) as Record<string, unknown>
+	const driftContext = driftEvent.context as Record<string, unknown> | undefined
 	expect(driftEvent.outcome).toBe('failure')
 	expect(driftEvent.failurePhase).toBe('handler')
 	expect(driftEvent.errorName).toBe('Error')
-	expect(driftEvent.errorMessage).toBe(
+	expect(driftEvent.errorMessage).toBe('vector refresh failed')
+	expect(driftEvent.message).toBe(
 		'Failed to refresh saved app vector index after in-place update.',
 	)
 	expect(driftEvent.capabilityName).toBe('ui_save_app')
-	expect(driftEvent.userId).toBe('user-1')
-	expect(driftEvent.appId).toBe('app-1')
-	expect(driftEvent.isUpdate).toBe(true)
+	expect(driftContext).toEqual({
+		userId: 'user-1',
+		appId: 'app-1',
+		isUpdate: true,
+	})
 
 	const successEvent = JSON.parse(payloads[1]!) as Record<string, unknown>
 	expect(successEvent.outcome).toBe('success')

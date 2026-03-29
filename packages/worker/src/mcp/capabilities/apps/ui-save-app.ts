@@ -131,6 +131,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 					baseUrl: ctx.callerContext.baseUrl,
 					hasUser: true,
 					failurePhase: 'handler',
+					message:
+						'Failed to refresh saved app vector index after in-place update.',
 					errorName,
 					errorMessage,
 					cause,
