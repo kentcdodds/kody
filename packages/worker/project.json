@@ -68,26 +68,28 @@
 		},
 		"build": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-client"],
+			"dependsOn": ["build-codemode-sandbox-modules", "build-client"],
 			"options": {
 				"command": "node --env-file=packages/worker/.env ./wrangler-env.ts build"
 			}
 		},
 		"typecheck": {
 			"executor": "nx:run-commands",
+			"dependsOn": ["build-codemode-sandbox-modules"],
 			"options": {
 				"command": "tsc -b --noEmit"
 			}
 		},
 		"test": {
 			"executor": "nx:run-commands",
+			"dependsOn": ["build-codemode-sandbox-modules"],
 			"options": {
 				"command": "vitest run --project node-unit --project workers-unit"
 			}
 		},
 		"test-mcp": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-mcp-apps"],
+			"dependsOn": ["build-codemode-sandbox-modules", "build-mcp-apps"],
 			"options": {
 				"command": "node tools/prepare-e2e-env.ts && vitest run --project mcp-e2e"
 			}
