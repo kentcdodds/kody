@@ -153,12 +153,12 @@ test('connector_update updates an existing connector record', async () => {
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		requiredHosts: ['api.spotify.com'],
 	})
-	expect(JSON.parse(testDb.entries.get('_connector:spotify') ?? '{}')).toMatchObject(
-		{
-			apiBaseUrl: 'https://api.spotify.com/v1',
-			requiredHosts: ['api.spotify.com'],
-		},
-	)
+	expect(
+		JSON.parse(testDb.entries.get('_connector:spotify') ?? '{}'),
+	).toMatchObject({
+		apiBaseUrl: 'https://api.spotify.com/v1',
+		requiredHosts: ['api.spotify.com'],
+	})
 })
 
 test('connector_update rejects missing connector records', async () => {

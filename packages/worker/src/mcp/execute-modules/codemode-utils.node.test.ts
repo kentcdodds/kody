@@ -21,9 +21,7 @@ type MockCodemode = {
 			requiredHosts?: Array<string>
 		} | null
 	}>
-	value_get: (args: {
-		name: string
-	}) => Promise<{ value: string } | null>
+	value_get: (args: { name: string }) => Promise<{ value: string } | null>
 }
 
 function createMockCodemode(
@@ -200,7 +198,8 @@ test('createAuthenticatedFetch rejects relative URLs without apiBaseUrl', async 
 	}) as unknown as CodemodeUtilsNamespace
 	const originalFetch = globalThis.fetch
 
-	globalThis.fetch = async () => Response.json({ access_token: 'fresh-access-token' })
+	globalThis.fetch = async () =>
+		Response.json({ access_token: 'fresh-access-token' })
 
 	try {
 		const authFetch = await createAuthenticatedFetch(codemode, 'spotify')
