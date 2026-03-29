@@ -37,9 +37,19 @@ declare const codemode: Record<
 >;
 
 You can also dynamically import \`@kody/codemode-utils\` from inside your async
-function for connector OAuth helpers such as
-\`refreshAccessToken(providerName)\` and \`createAuthenticatedFetch(providerName)\`.
-Bind those helpers to the sandbox \`codemode\` object:
+function for connector OAuth helpers. Types (execute-time):
+
+\`type ExecuteRequestInput = string | URL | Request;\`
+\`type AuthenticatedFetch = (input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>;\`
+\`type CodemodeUtils = {\`
+\`  refreshAccessToken(providerName: string): Promise<string>;\`
+\`  createAuthenticatedFetch(providerName: string): Promise<AuthenticatedFetch>;\`
+\`};\`
+\`declare function createCodemodeUtils(codemode: typeof codemode): CodemodeUtils;\`
+\`declare function refreshAccessToken(codemode: typeof codemode, providerName: string): Promise<string>;\`
+\`declare function createAuthenticatedFetch(codemode: typeof codemode, providerName: string): Promise<AuthenticatedFetch>;\`
+
+Bind the helpers to the sandbox \`codemode\` object:
 
 \`async () => {
   const { createCodemodeUtils } = await import('@kody/codemode-utils');
