@@ -132,6 +132,7 @@ export async function runCodemodeWithRegistry(
 	executorExports?: typeof workerExports,
 ) {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
+	const { normalizeCode } = await import('@cloudflare/codemode')
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
 	)
@@ -149,7 +150,12 @@ export async function runCodemodeWithRegistry(
 		params !== undefined
 			? await buildParameterizedSkillCode(code, params)
 			: code
-	const wrapped = `${createExecuteHelperPrelude()}\n\n${wrappedCode}`
+	const normalized = normalizeCode(wrappedCode)
+	const wrapped = `async () => {
+${createExecuteHelperPrelude()}
+  const __kodyUserCode = (${normalized});
+  return await __kodyUserCode();
+}`
 	const result = await executor.execute(wrapped, [provider])
 	if (!result.error) return result
 	const batchMessage = await rewriteCapabilitySecretError({

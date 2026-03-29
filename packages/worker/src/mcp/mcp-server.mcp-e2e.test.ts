@@ -837,7 +837,9 @@ test('mcp server executes directly available codemode helpers', async () => {
 			(item): item is Extract<ContentBlock, { type: 'text' }> =>
 				item.type === 'text',
 		)?.text ?? ''
-	expect(textOutput).toContain('undefined')
+	expect(textOutput).toContain(
+		'Token refresh failed for connector "spotify" with HTTP 400.',
+	)
 })
 
 test('mcp server returns structured guidance for missing secret errors in execute', async () => {
