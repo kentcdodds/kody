@@ -45,8 +45,11 @@ function for connector OAuth helpers. Types (execute-time):
 \`  refreshAccessToken(providerName: string): Promise<string>;\`
 \`  createAuthenticatedFetch(providerName: string): Promise<AuthenticatedFetch>;\`
 \`};\`
+\`declare function setCodemodeUtilsNamespace(codemode: typeof codemode): void;\`
 \`declare function createCodemodeUtils(codemode: typeof codemode): CodemodeUtils;\`
+\`declare function refreshAccessToken(providerName: string): Promise<string>;\`
 \`declare function refreshAccessToken(codemode: typeof codemode, providerName: string): Promise<string>;\`
+\`declare function createAuthenticatedFetch(providerName: string): Promise<AuthenticatedFetch>;\`
 \`declare function createAuthenticatedFetch(codemode: typeof codemode, providerName: string): Promise<AuthenticatedFetch>;\`
 
 Bind the helpers to the sandbox \`codemode\` object:
@@ -57,6 +60,13 @@ Bind the helpers to the sandbox \`codemode\` object:
   const spotifyFetch = await createAuthenticatedFetch('spotify');
   const response = await spotifyFetch('/me/player');
   return await response.json();
+}\`
+
+\`async () => {
+  const { setCodemodeUtilsNamespace, createAuthenticatedFetch } = await import('@kody/codemode-utils');
+  setCodemodeUtilsNamespace(codemode);
+  const spotifyFetch = await createAuthenticatedFetch('spotify');
+  return await (await spotifyFetch('/me/player')).json();
 }\`
 
 Capability names are discovered via \`search\`.
