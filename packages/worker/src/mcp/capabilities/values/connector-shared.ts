@@ -17,7 +17,7 @@ export const connectorConfigSchema = z.object({
 
 export type ConnectorConfig = z.infer<typeof connectorConfigSchema>
 
-export const connectorSaveSchema = z
+export const connectorUpdateSchema = z
 	.object({
 		name: z.string().min(1),
 		tokenUrl: z.string().url().optional(),
@@ -31,7 +31,7 @@ export const connectorSaveSchema = z
 	})
 	.strict()
 
-export type ConnectorSaveInput = z.infer<typeof connectorSaveSchema>
+export type ConnectorUpdate = z.infer<typeof connectorUpdateSchema>
 
 export function normalizeConnectorConfig(
 	value: ConnectorConfig,
@@ -51,12 +51,12 @@ export function normalizeConnectorConfig(
 
 export function mergeConnectorConfig(
 	current: ConnectorConfig,
-	update: ConnectorSaveInput,
+	update: ConnectorUpdate,
 ): ConnectorConfig {
 	return normalizeConnectorConfig({
 		...current,
 		...update,
-		name: update.name,
+		name: update.name.trim(),
 	})
 }
 

@@ -36,16 +36,14 @@ declare const codemode: Record<
   (args: CapabilityArgs) => Promise<CapabilityResult>
 >;
 
-These helper functions are available directly in your async function:
-
-\`type ExecuteRequestInput = string | URL | Request;\`
-\`type AuthenticatedFetch = (input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>;\`
-\`declare function refreshAccessToken(providerName: string): Promise<string>;\`
-\`declare function createAuthenticatedFetch(providerName: string): Promise<AuthenticatedFetch>;\`
-
-Use them directly:
+You can also dynamically import \`@kody/codemode-utils\` from inside your async
+function for connector OAuth helpers such as
+\`refreshAccessToken(providerName)\` and \`createAuthenticatedFetch(providerName)\`.
+Bind those helpers to the sandbox \`codemode\` object:
 
 \`async () => {
+  const { createCodemodeUtils } = await import('@kody/codemode-utils');
+  const { createAuthenticatedFetch } = createCodemodeUtils(codemode);
   const spotifyFetch = await createAuthenticatedFetch('spotify');
   const response = await spotifyFetch('/me/player');
   return await response.json();
@@ -189,21 +187,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				baseUrl,
 				hasUser,
 				registeredCapabilityCount,
+				sandboxError: false,
 			})
-
-			const saveSkillHint =
-				'\n\nIf this codemode represents a reasonably repeatable workflow (not a one-off), you can persist it with `meta_save_skill` (meta domain); use `meta_update_skill` to replace code for an existing saved skill.'
 			return {
 				content: [
 					{
 						type: 'text',
-						text: `${formatExecutionOutput(result)}${saveSkillHint}`,
+						text: formatExecutionOutput(result),
 					},
 				],
 				structuredContent: {
 					result: result.result,
 					logs: result.logs ?? [],
 				},
+				isError: false,
 			}
 		},
 	)

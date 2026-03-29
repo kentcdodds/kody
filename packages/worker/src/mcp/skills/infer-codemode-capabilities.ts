@@ -1,16 +1,13 @@
 import { parse, type Node, type Program } from 'acorn'
-
-const executeHelperCapabilities = ['connector_get', 'value_get'] as const
-const executeHelperNames = new Set([
-	'refreshAccessToken',
-	'createAuthenticatedFetch',
-])
+import {
+	codemodeSandboxModuleManifest,
+} from '#mcp/generated/codemode-sandbox-modules.ts'
 
 export type InferCodemodeCapabilitiesResult = {
 	/** Resolved capability names from static member access on `codemode`. */
 	staticNames: Array<string>
-	/** Resolved capability names from known inline execute-time helpers. */
-	helperNames: Array<string>
+	/** Resolved capability names from known execute-time helper module imports. */
+	moduleNames: Array<string>
 	/**
 	 * True when `codemode[dynamic]` or parsing failed (caller may still merge explicit uses).
 	 */
@@ -58,15 +55,15 @@ function peekMemberPropertyName(
 	return null
 }
 
-function readIdentifierName(node: unknown) {
+function readStaticString(node: unknown) {
 	if (
 		typeof node === 'object' &&
 		node !== null &&
 		'type' in node &&
-		(node as { type: string }).type === 'Identifier'
+		(node as { type: string }).type === 'Literal'
 	) {
-		const name = (node as { name?: unknown }).name
-		return typeof name === 'string' && name.length > 0 ? name : null
+		const value = (node as { value?: unknown }).value
+		return typeof value === 'string' && value.length > 0 ? value : null
 	}
 	return null
 }
@@ -76,7 +73,7 @@ export function inferCodemodeCapabilitiesFromAst(
 	program: Program,
 ): InferCodemodeCapabilitiesResult {
 	const staticSet = new Set<string>()
-	const helperSet = new Set<string>()
+	const moduleSet = new Set<string>()
 	let inferencePartial = false
 	const markPartial = () => {
 		inferencePartial = true
@@ -106,13 +103,13 @@ export function inferCodemodeCapabilitiesFromAst(
 			}
 		}
 
-		if (n.type === 'CallExpression') {
-			const calleeName = readIdentifierName(
-				(n as { callee?: unknown }).callee ?? null,
+		if (n.type === 'ImportExpression') {
+			const source = readStaticString(
+				(n as { source?: unknown }).source ?? null,
 			)
-			if (calleeName && executeHelperNames.has(calleeName)) {
-				for (const capabilityName of executeHelperCapabilities) {
-					helperSet.add(capabilityName)
+			if (source) {
+				for (const capabilityName of codemodeSandboxModuleManifest[source] ?? []) {
+					moduleSet.add(capabilityName)
 				}
 			}
 		}
@@ -138,7 +135,7 @@ export function inferCodemodeCapabilitiesFromAst(
 
 	return {
 		staticNames: [...staticSet].sort(),
-		helperNames: [...helperSet].sort(),
+		moduleNames: [...moduleSet].sort(),
 		inferencePartial,
 	}
 }
@@ -157,6 +154,6 @@ export function inferCodemodeCapabilities(
 		})
 		return inferCodemodeCapabilitiesFromAst(program)
 	} catch {
-		return { staticNames: [], helperNames: [], inferencePartial: true }
+		return { staticNames: [], moduleNames: [], inferencePartial: true }
 	}
 }
