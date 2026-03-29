@@ -42,9 +42,9 @@ const inputSchema = z.object({
 	parameters: z
 		.array(uiArtifactParameterSchema)
 		.optional()
-			.describe(
-				'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` helper from `@kody/ui-utils`.',
-			),
+		.describe(
+			'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` helper from `@kody/ui-utils`.',
+		),
 })
 
 const outputSchema = z.object({
