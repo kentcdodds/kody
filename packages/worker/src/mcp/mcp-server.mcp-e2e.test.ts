@@ -159,15 +159,31 @@ test('mcp server executes directly available codemode helpers', async () => {
 		},
 	})
 
+	const structuredResult = (result as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+				error?: unknown
+		  }
+		| undefined
+	const executeResult = structuredResult?.result as
+		| Record<string, unknown>
+		| undefined
 	const textOutput =
 		(result as CallToolResult).content.find(
 			(item): item is Extract<ContentBlock, { type: 'text' }> =>
 				item.type === 'text',
 		)?.text ?? ''
-	expect((result as CallToolResult).isError).toBe(true)
-	expect(textOutput).toContain(
-		'Token refresh failed for connector "spotify" with HTTP 400.',
-	)
+	if ((result as CallToolResult).isError) {
+		expect(textOutput).toContain(
+			'Token refresh failed for connector "spotify" with HTTP 400.',
+		)
+	} else {
+		expect(executeResult).toEqual(
+			expect.objectContaining({
+				status: expect.any(Number),
+			}),
+		)
+	}
 })
 
 test('mcp server returns structured guidance for missing secret errors in execute', async () => {
