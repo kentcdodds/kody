@@ -178,11 +178,17 @@ async function refreshAccessTokenWithConnector(
 	return payload.access_token
 }
 
-function buildSecretPlaceholder(name: string, scope: 'user' | 'app' | 'session') {
+function buildSecretPlaceholder(
+	name: string,
+	scope: 'user' | 'app' | 'session',
+) {
 	return `{{secret:${name}|scope=${scope}}}`
 }
 
-function resolveRequestUrl(input: ExecuteRequestInput, connector: ConnectorConfig) {
+function resolveRequestUrl(
+	input: ExecuteRequestInput,
+	connector: ConnectorConfig,
+) {
 	if (typeof input === 'string' && input.startsWith('/')) {
 		return resolveRelativeUrl(input, connector)
 	}
