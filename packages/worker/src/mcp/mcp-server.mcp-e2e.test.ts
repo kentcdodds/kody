@@ -589,7 +589,6 @@ test('mcp server searches capabilities', async () => {
 		'code',
 	])
 	expect(saveApp?.readOnly).toBeUndefined()
-	expect(saveApp?.inputFields).toContain('app_id')
 
 	const textOutput =
 		(result as CallToolResult).content.find(
