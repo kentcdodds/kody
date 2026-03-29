@@ -1956,7 +1956,7 @@ test('mcp server updates saved ui app artifacts', async () => {
 		name: 'execute',
 		arguments: {
 			code: `async () =>
-					await codemode.ui_update_app({
+					await codemode.ui_save_app({
 						app_id: ${JSON.stringify(appId)},
 						title: 'Updated App',
 						description: 'Updated description.',
