@@ -104,6 +104,12 @@ runs. Missing secrets still fail with the same "secret not found" guidance used
 elsewhere, and secret-bearing capability inputs still require an authenticated
 user.
 
+Those inputs are also treated as write-only for the rest of that execution:
+once plaintext crosses an `x-kody-secret` capability boundary, Kody redacts that
+plaintext from later execute results and logs before returning them to the
+caller. Capability authors should still avoid returning or logging secret
+material, but the runtime adds this extra defense-in-depth layer.
+
 When a secret has an `allowed_capabilities` policy, Kody also checks that the
 current capability name is explicitly listed before resolving the placeholder.
 An empty `allowed_capabilities` list means no capability is allowed to resolve
@@ -132,6 +138,8 @@ How to annotate:
 3. Leave non-secret fields unannotated.
 4. Document the intended use in the capability description when it may not be
    obvious.
+5. If the capability persists or hands off a secret value, make the description
+   say that the input is write-only and must never be returned to chat.
 
 Example:
 
@@ -289,6 +297,7 @@ scope narrow:
 
 - annotate only the exact credential fields, not the whole object
 - prefer this for local persistence or device-side credential flows
+- treat those inputs as write-only even if the runtime redacts accidental echoes
 - tell users which capability names should be added to a secret's
   `allowed_capabilities` policy when a workflow depends on restricted secrets
 - avoid using it for generic remote API wrappers where fetch-time host approval

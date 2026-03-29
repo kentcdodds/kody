@@ -73,6 +73,8 @@ When writing capability descriptions or agent-facing docs:
 - say explicitly that only the authenticated account admin UI can approve hosts
 - say explicitly that only the authenticated account admin UI can restrict which
   capabilities may consume a secret directly
+- say explicitly that secret-bearing capability inputs are write-only from the
+  model's perspective and must not be echoed in execute results or logs
 - tell agents to inspect secret metadata before making a secret-bearing request
 - tell agents to surface the approval link and stop on deny
 
@@ -102,6 +104,8 @@ Use it narrowly:
 - mark only the exact sensitive fields
 - prefer it for local persistence or device-side credential handoff
 - require an authenticated user, just like fetch-time secret placeholders
+- never return or log the resolved plaintext after it crosses an
+  `x-kody-secret` capability boundary
 
 Do not treat `x-kody-secret` as a generic replacement for execute-time
 `fetch(...)` placeholders.

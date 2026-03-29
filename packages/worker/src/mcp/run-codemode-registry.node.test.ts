@@ -1,6 +1,10 @@
 import { expect, test, vi } from 'vitest'
+import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { buildCodemodeFns } from './run-codemode-registry.ts'
+import {
+	buildCodemodeFns,
+	runCodemodeWithRegistry,
+} from './run-codemode-registry.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 
 test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
@@ -178,5 +182,154 @@ test('buildCodemodeFns denies capability secret placeholders for disallowed capa
 		)
 	} finally {
 		resolveSecretSpy.mockRestore()
+	}
+})
+
+test('runCodemodeWithRegistry redacts values that crossed secret-marked capability inputs', async () => {
+	const env = {
+		LOADER: {},
+	} as unknown as Env
+	const executorExports = {
+		CodemodeFetchGateway() {
+			return {}
+		},
+	} as unknown as typeof import('cloudflare:workers').exports
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+
+	const getRegistrySpy = vi
+		.spyOn(await import('#mcp/capabilities/registry.ts'), 'getCapabilityRegistryForContext')
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [
+				{
+					name: 'secret_set',
+					domain: 'secrets',
+					description: 'Store a secret.',
+					keywords: [],
+					readOnly: false,
+					idempotent: false,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+							value: { type: 'string', 'x-kody-secret': true },
+						},
+						required: ['name', 'value'],
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+						},
+					},
+					async handler(args: Record<string, unknown>) {
+						return {
+							name: args.name,
+						}
+					},
+				},
+			],
+			capabilityMap: {
+				secret_set: {
+					name: 'secret_set',
+					domain: 'secrets',
+					description: 'Store a secret.',
+					keywords: [],
+					readOnly: false,
+					idempotent: false,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+							value: { type: 'string', 'x-kody-secret': true },
+						},
+						required: ['name', 'value'],
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+						},
+					},
+					async handler(args: Record<string, unknown>) {
+						return {
+							name: args.name,
+						}
+					},
+				},
+			},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {
+				secret_set: {
+					description: 'Store a secret.',
+					inputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+							value: { type: 'string', 'x-kody-secret': true },
+						},
+						required: ['name', 'value'],
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+						},
+					},
+				},
+			},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+
+	const executeSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return {
+					result: {
+						saved: true,
+						echoedValue: 'fresh-access-token',
+						nested: {
+							message: 'Bearer fresh-access-token',
+						},
+					},
+					logs: ['saved fresh-access-token'],
+				}
+			},
+		} as Awaited<ReturnType<typeof import('#mcp/executor.ts').createExecuteExecutor>>)
+
+	try {
+		const result = await runCodemodeWithRegistry(
+			env,
+			callerContext,
+			`async () => {
+				await codemode.secret_set({
+					name: 'spotifyAccessToken',
+					value: 'fresh-access-token',
+				})
+				return { ok: true }
+			}`,
+			undefined,
+			executorExports,
+		)
+
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({
+			saved: true,
+			echoedValue: '[REDACTED SECRET]',
+			nested: {
+				message: 'Bearer [REDACTED SECRET]',
+			},
+		})
+		expect(result.logs).toEqual(['saved [REDACTED SECRET]'])
+	} finally {
+		getRegistrySpy.mockRestore()
+		executeSpy.mockRestore()
 	}
 })

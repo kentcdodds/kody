@@ -81,29 +81,33 @@ async function resolveStringPlaceholders(
 	return replaceSecretPlaceholders(value, replacements)
 }
 
-function isSecretInputSchema(schema: unknown) {
+export function isSecretInputSchema(schema: unknown): boolean {
 	if (!isRecord(schema)) return false
 	return schema[secretInputSchemaFlag] === true
 }
 
-function getSchemaProperties(schema: unknown) {
+export function getSchemaProperties(
+	schema: unknown,
+): Record<string, unknown> | null {
 	if (!isRecord(schema)) return null
 	const properties = schema.properties
 	return isRecord(properties) ? properties : null
 }
 
-function getArrayItemSchema(schema: unknown) {
+export function getArrayItemSchema(schema: unknown): unknown | null {
 	if (!isRecord(schema)) return null
 	const items = schema.items
 	return items === undefined || Array.isArray(items) ? null : items
 }
 
-function getAdditionalPropertiesSchema(schema: unknown) {
+export function getAdditionalPropertiesSchema(
+	schema: unknown,
+): Record<string, unknown> | null {
 	if (!isRecord(schema)) return null
 	const additionalProperties = schema.additionalProperties
 	return isRecord(additionalProperties) ? additionalProperties : null
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

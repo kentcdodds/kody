@@ -1494,6 +1494,76 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 	expect(executePayload.result?.userSecretNames).toContain('globalApiKey')
 	expect(executePayload.result?.sessionSecretNames).toContain('ephemeralCode')
 
+	const refreshedAccessToken = `spotify-access-${crypto.randomUUID()}`
+	const refreshedRefreshToken = `spotify-refresh-${crypto.randomUUID()}`
+	const secretSetExecuteResponse = await fetch(executeUrl!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
+				const savedAccessToken = await codemode.secret_set({
+					name: 'spotifyAccessToken',
+					value: ${JSON.stringify(refreshedAccessToken)},
+					description: 'Spotify OAuth access token',
+					scope: 'user',
+				})
+				const savedRefreshToken = await codemode.secret_set({
+					name: 'spotifyRefreshToken',
+					value: ${JSON.stringify(refreshedRefreshToken)},
+					description: 'Spotify OAuth refresh token',
+					scope: 'user',
+				})
+				return {
+					savedAccessToken,
+					savedRefreshToken,
+					leakedValue: ${JSON.stringify(refreshedAccessToken)},
+				}
+			}`,
+		}),
+	})
+	if (!secretSetExecuteResponse.ok) {
+		throw new Error(await secretSetExecuteResponse.text())
+	}
+	const secretSetExecutePayload =
+		(await secretSetExecuteResponse.json()) as {
+			ok?: boolean
+			result?: {
+				savedAccessToken?: Record<string, unknown>
+				savedRefreshToken?: Record<string, unknown>
+				leakedValue?: string
+			}
+			logs?: Array<string>
+		}
+	expect(secretSetExecutePayload.ok).toBe(true)
+	expect(secretSetExecutePayload.result?.savedAccessToken).toEqual({
+		name: 'spotifyAccessToken',
+		scope: 'user',
+		description: 'Spotify OAuth access token',
+		app_id: null,
+		allowed_hosts: [],
+		allowed_capabilities: [],
+		created_at: expect.any(String),
+		updated_at: expect.any(String),
+		ttl_ms: null,
+	})
+	expect(secretSetExecutePayload.result?.savedRefreshToken).toEqual({
+		name: 'spotifyRefreshToken',
+		scope: 'user',
+		description: 'Spotify OAuth refresh token',
+		app_id: null,
+		allowed_hosts: [],
+		allowed_capabilities: [],
+		created_at: expect.any(String),
+		updated_at: expect.any(String),
+		ttl_ms: null,
+	})
+	expect(secretSetExecutePayload.result?.leakedValue).toBe('[REDACTED SECRET]')
+	expect(secretSetExecutePayload.logs ?? []).toEqual([])
+
 	const listSecretsResponse = await fetch(`${secretsUrl!}?scope=app`, {
 		headers: {
 			Authorization: `Bearer ${token}`,
@@ -1814,6 +1884,10 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 		(match) => match.type === 'secret' && match.name === 'globalApiKey',
 	)
 	expect(userSecretMatch?.description).toBe('Reusable cross-app API key')
+	const spotifySecretMatch = matches.find(
+		(match) => match.type === 'secret' && match.name === 'spotifyAccessToken',
+	)
+	expect(spotifySecretMatch?.description).toBe('Spotify OAuth access token')
 	const sessionSecretMatch = matches.find(
 		(match) => match.type === 'secret' && match.name === 'ephemeralCode',
 	)
