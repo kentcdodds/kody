@@ -190,7 +190,6 @@ ${createExecuteHelperPrelude()}
 		error: secretRedactor.redactErrorMessage(batchMessage),
 	}
 }
-
 async function rewriteCapabilitySecretError(input: {
 	error: unknown
 	code: string
