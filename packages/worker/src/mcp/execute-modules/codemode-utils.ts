@@ -201,8 +201,6 @@ function getRelativePathFromRequest(
 	input: Request,
 	connector: ConnectorConfig,
 ): string | null {
-	if (input.url.startsWith('/')) return input.url
-
 	const requestUrl = new URL(input.url)
 	const normalizedBase = getNormalizedApiBaseUrl(connector)
 	if (normalizedBase && requestUrl.href.startsWith(normalizedBase)) {
@@ -216,8 +214,13 @@ function getRelativePathFromRequest(
 }
 
 function getRuntimeOrigin() {
-	if (typeof location === 'undefined') return null
-	return location.origin || null
+	const runtimeLocation = (
+		globalThis as typeof globalThis & {
+			location?: { origin?: string | null }
+		}
+	).location
+	const origin = runtimeLocation?.origin ?? null
+	return typeof origin === 'string' && origin.length > 0 ? origin : null
 }
 
 function getNormalizedApiBaseUrl(connector: ConnectorConfig) {

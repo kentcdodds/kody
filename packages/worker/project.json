@@ -12,6 +12,12 @@
 		},
 		"build-codemode-sandbox-modules": {
 			"executor": "nx:run-commands",
+			"inputs": [
+				"default",
+				"{workspaceRoot}/tools/build-codemode-sandbox-modules.ts",
+				"{workspaceRoot}/package.json",
+				"{workspaceRoot}/package-lock.json"
+			],
 			"outputs": [
 				"{workspaceRoot}/packages/worker/src/mcp/generated/codemode-sandbox-modules.ts"
 			],
@@ -62,7 +68,7 @@
 		},
 		"build": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-sandbox-modules", "build-client"],
+			"dependsOn": ["build-client"],
 			"options": {
 				"command": "node --env-file=packages/worker/.env ./wrangler-env.ts build"
 			}
