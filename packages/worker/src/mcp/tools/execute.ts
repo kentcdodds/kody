@@ -79,10 +79,11 @@ Examples:
   };
 }\`
 
-\`import { refreshAccessToken } from '@kody/codemode-utils'
-
-const token = await refreshAccessToken('spotify')
-return { tokenPreview: token.slice(0, 8) }\`
+\`async () => {
+  const { refreshAccessToken } = await import('@kody/codemode-utils')
+  const token = await refreshAccessToken('spotify')
+  return { tokenPreview: token.slice(0, 8) }
+}\`
 	`.trim(),
 	annotations: {
 		readOnlyHint: false,
