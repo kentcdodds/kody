@@ -1,6 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { env, exports as workerExports } from 'cloudflare:workers'
 import { createExecuteExecutor } from './executor.ts'
+import { saveSecret } from '#mcp/secrets/service.ts'
+import migration0008Sql from '../../migrations/0008-secret-buckets.sql?raw'
+import migration0009Sql from '../../migrations/0009-secret-allowed-hosts.sql?raw'
+import migration0010Sql from '../../migrations/0010-secret-allowed-capabilities.sql?raw'
 
 test('execute sandbox imports @kody/codemode-utils and refreshes a bearer token', async () => {
 	const fetchSpy = vi
@@ -33,6 +37,38 @@ test('execute sandbox imports @kody/codemode-utils and refreshes a bearer token'
 		})
 
 	try {
+		for (const migrationSql of [
+			migration0008Sql,
+			migration0009Sql,
+			migration0010Sql,
+		]) {
+			for (const statement of migrationSql
+				.split(';')
+				.map((entry) => entry.trim())
+				.filter(Boolean)) {
+				await env.APP_DB.prepare(statement).run()
+			}
+		}
+		await saveSecret({
+			env,
+			userId: 'user-123',
+			scope: 'user',
+			name: 'spotify-refresh-token',
+			value: 'spotify-refresh-token',
+			description: 'Spotify refresh token',
+		})
+		await env.APP_DB
+			.prepare(
+				'UPDATE secret_entries SET allowed_hosts = ? WHERE bucket_id = (SELECT id FROM secret_buckets WHERE user_id = ? AND scope = ? AND binding_key = ?) AND name = ?',
+			)
+			.bind(
+				JSON.stringify(['auth.example.com']),
+				'user-123',
+				'user',
+				'',
+				'spotify-refresh-token',
+			)
+			.run()
 		const executor = createExecuteExecutor({
 			env,
 			exports: workerExports,

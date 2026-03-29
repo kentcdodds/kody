@@ -5,6 +5,7 @@ import {
 	normalizeCode,
 	sanitizeToolName,
 } from '@cloudflare/codemode'
+import * as acorn from 'acorn'
 import { exports as workerExports } from 'cloudflare:workers'
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
@@ -77,34 +78,61 @@ function buildUserEntryModuleSource(code: string) {
 	const looksLikeModule =
 		/^\s*import\s/m.test(trimmed) || /^\s*export\s/m.test(trimmed)
 	if (looksLikeModule) {
-		return trimmed
+		return wrapImportedExecuteCode(trimmed)
 	}
 	return `export default ${normalizeCode(code)};`
 }
 
-function buildUserCodeRunnerModuleSource(code: string) {
-	const trimmed = code.trim()
-	const looksLikeModule =
-		/^\s*import\s/m.test(trimmed) || /^\s*export\s/m.test(trimmed)
+function wrapImportedExecuteCode(source: string) {
+	try {
+		const parsed = acorn.parse(source, {
+			ecmaVersion: 'latest',
+			sourceType: 'module',
+		})
+		if (
+			parsed.body.some((node) => node.type === 'ExportDefaultDeclaration') ||
+			parsed.body.some(
+				(node) =>
+					node.type === 'ExportNamedDeclaration' ||
+					node.type === 'ExportAllDeclaration',
+			)
+		) {
+			return source
+		}
+		const importNodes = parsed.body.filter(
+			(node) => node.type === 'ImportDeclaration',
+		)
+		const bodyNodes = parsed.body.filter((node) => node.type !== 'ImportDeclaration')
+		const imports = importNodes
+			.map((node) => source.slice(node.start, node.end))
+			.join('\n')
+		const body = bodyNodes
+			.map((node) => source.slice(node.start, node.end))
+			.join('\n')
+		return [
+			imports,
+			imports.length > 0 ? '' : undefined,
+			'export default async () => {',
+			body,
+			'}',
+		]
+			.filter((part) => typeof part === 'string')
+			.join('\n')
+	} catch {
+		return source
+	}
+}
+
+function buildUserCodeRunnerModuleSource() {
 	return [
 		'import * as __kodyUserModule from "user-entry.js";',
 		'',
 		'export async function __kodyRunUserCode() {',
-		looksLikeModule
-			? [
-					'  const __kodyModuleRunner = __kodyUserModule.default;',
-					'  if (typeof __kodyModuleRunner !== "function") {',
-					'    throw new Error("Execute code with imports must default export an async function.");',
-					'  }',
-					'  return await __kodyModuleRunner();',
-				].join('\n')
-			: [
-					'  const __kodyInlineExecuteFunction = __kodyUserModule.default;',
-					'  if (typeof __kodyInlineExecuteFunction !== "function") {',
-					'    throw new Error("Execute code must evaluate to an async function.");',
-					'  }',
-					'  return await __kodyInlineExecuteFunction();',
-				].join('\n'),
+		'  const __kodyExecuteFunction = __kodyUserModule.default;',
+		'  if (typeof __kodyExecuteFunction !== "function") {',
+		'    throw new Error("Execute code must evaluate to an async function.");',
+		'  }',
+		'  return await __kodyExecuteFunction();',
 		'}',
 	].join('\n')
 }
@@ -172,7 +200,7 @@ async function executeWithWorkerLoader(input: {
 		'}',
 	].join('\n')
 
-	const dispatchers = Object.create(null) as Record<string, ToolDispatcher>
+	const dispatchers = {} as Record<string, ToolDispatcher>
 	for (const provider of input.providers) {
 		const sanitizedFns = Object.fromEntries(
 			Object.entries(provider.fns).map(([name, fn]) => [sanitizeToolName(name), fn]),
@@ -189,9 +217,11 @@ async function executeWithWorkerLoader(input: {
 			compatibilityFlags: ['nodejs_compat'],
 			mainModule: 'executor.js',
 			modules: {
-				[`${codemodeUtilsModuleSpecifier}`]: buildCodemodeUtilsModuleSource(),
+				[`${codemodeUtilsModuleSpecifier}`]: {
+					js: buildCodemodeUtilsModuleSource(),
+				},
 				'user-entry.js': buildUserEntryModuleSource(input.code),
-				'user-code.js': buildUserCodeRunnerModuleSource(input.code),
+				'user-code.js': buildUserCodeRunnerModuleSource(),
 				'executor.js': executorModuleSource,
 			},
 			globalOutbound: input.globalOutbound,

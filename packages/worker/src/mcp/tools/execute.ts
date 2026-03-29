@@ -64,7 +64,8 @@ Values:
 
 Your code may be either:
 - an async arrow function that returns the result, or
-- a module that uses imports/exports and default-exports an async function.
+- a module that uses top-level imports and returns from the final expression or
+  explicit \`return\` statements inside the generated wrapper.
 
 Examples:
 
@@ -80,10 +81,8 @@ Examples:
 
 \`import { refreshAccessToken } from '@kody/codemode-utils'
 
-export default async () => {
-  const token = await refreshAccessToken('spotify')
-  return { tokenPreview: token.slice(0, 8) }
-}\`
+const token = await refreshAccessToken('spotify')
+return { tokenPreview: token.slice(0, 8) }\`
 	`.trim(),
 	annotations: {
 		readOnlyHint: false,
@@ -103,7 +102,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				code: z
 					.string()
 					.describe(
-						'JavaScript execute code. Use an async arrow function, or default-export an async function when using imports.',
+						'JavaScript execute code. Use an async arrow function, or top-level imports with normal statements/returns.',
 					),
 			},
 			annotations: executeTool.annotations,
