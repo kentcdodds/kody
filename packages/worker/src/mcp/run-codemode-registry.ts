@@ -169,12 +169,7 @@ export async function runCodemodeWithRegistry(
 		params !== undefined
 			? await buildParameterizedSkillCode(code, params)
 			: code
-	const normalized = normalizeCode(wrappedCode)
-	const wrapped = `async () => {
-${createExecuteHelperPrelude()}
-  const __kodyUserCode = (${normalized});
-  return await __kodyUserCode();
-}`
+	const wrapped = `${createExecuteHelperPrelude()}\n\n${wrappedCode}`
 	const result = await executor.execute(wrapped, [provider])
 	const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 	if (!result.error) return sanitizedResult

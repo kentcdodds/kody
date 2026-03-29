@@ -8,9 +8,6 @@
 		"build": {
 			"cache": true
 		},
-		"build-codemode-sandbox-modules": {
-			"cache": true
-		},
 		"build-client": {
 			"cache": true
 		},

@@ -95,7 +95,7 @@ export async function prepareSkillPersistence(
 	const normalized = normalizeCode(args.code)
 	const infer = inferCodemodeCapabilities(normalized)
 	const { merged, unknownNames } = mergeInferredCapabilityNames({
-		astStaticNames: [...infer.staticNames, ...infer.moduleNames],
+		astStaticNames: [...infer.staticNames, ...infer.helperNames],
 		usesCapabilities: args.uses_capabilities,
 		specs: capabilitySpecs,
 	})
