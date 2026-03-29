@@ -59,7 +59,7 @@ https://heykody.dev/connect/secret?
 | \`appId\` | no | Required when \`scope=app\`. Use the saved UI app's real \`app_id\`. |
 | \`dashboardUrl\` | no | Provider settings link for creating the key. |
 | \`instructions\` | no | Step-by-step instructions shown on the page. |
-| \`connector\` | no | Writes \`_connector:{connector}\` config on save. |
+| \`connector\` | no | Writes \`_connector-secret:{connector}\` secret-binding metadata on save. |
 
 ## Approval policy reminders
 

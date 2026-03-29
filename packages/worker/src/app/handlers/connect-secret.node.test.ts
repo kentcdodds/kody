@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: async () => {
@@ -32,12 +32,12 @@ const mockModule = vi.hoisted(() => ({
 		app_id: null,
 		user: { userId: 'stable-user-1' },
 	}),
-	resolveSecret: async () => ({
+	resolveSecret: vi.fn(async () => ({
 		found: true,
 		allowedHosts: [],
 		allowedCapabilities: [],
-	}),
-	saveValue: async () => undefined,
+	})),
+	saveValue: vi.fn(async () => undefined),
 	getUiArtifactByOwnerIds: async (
 		_db: D1Database,
 		_owners: Array<string>,
@@ -106,6 +106,11 @@ vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
 }))
 
 const { createConnectSecretApiHandler } = await import('./connect-secret.ts')
+
+beforeEach(() => {
+	mockModule.resolveSecret.mockClear()
+	mockModule.saveValue.mockClear()
+})
 
 function createEnv() {
 	return {
@@ -185,4 +190,48 @@ test('connect secret POST rejects app scope when session is not app-scoped', asy
 		ok: false,
 		error: 'App scope requires an app-scoped session.',
 	})
+})
+
+test('connect secret POST stores connector binding under dedicated prefix', async () => {
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		allowedHosts: ['api.linear.app'],
+		allowedCapabilities: ['linear_issue_list'],
+	})
+
+	const handler = createConnectSecretApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/connect/secret.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				name: 'linearApiKey',
+				scope: 'user',
+				sessionToken: 'generated-token',
+				connector: 'linear',
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(readJson(response)).resolves.toEqual({ ok: true })
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_connector-secret:linear',
+			value: JSON.stringify({
+				secretName: 'linearApiKey',
+				allowedHosts: ['api.linear.app'],
+				allowedCapabilities: ['linear_issue_list'],
+			}),
+			description: 'Connector secret binding for linear',
+			scope: 'user',
+			storageContext: { sessionId: 'session-1', appId: null },
+		}),
+	)
+	expect(mockModule.saveValue).not.toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_connector:linear',
+		}),
+	)
 })

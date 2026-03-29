@@ -17,6 +17,8 @@ import { secretScopeValues, type SecretScope } from '#mcp/secrets/types.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import { getUiArtifactByOwnerIds } from '#mcp/ui-artifacts-repo.ts'
 
+const connectSecretConnectorBindingPrefix = '_connector-secret:'
+
 export function createConnectSecretHandler(_env: Env) {
 	return {
 		middleware: [],
@@ -195,13 +197,13 @@ export function createConnectSecretApiHandler(env: Env) {
 					await saveValue({
 						env,
 						userId: user.mcpUser.userId,
-						name: `_connector:${connector}`,
+						name: buildConnectSecretConnectorBindingValueName(connector),
 						value: JSON.stringify({
 							secretName: name,
 							allowedHosts,
 							allowedCapabilities,
 						}),
-						description: `Connector secret config for ${connector}`,
+						description: `Connector secret binding for ${connector}`,
 						scope,
 						storageContext,
 					})
@@ -275,6 +277,10 @@ function readScope(body: object): SecretScope | null {
 	return raw && secretScopeValues.includes(raw as SecretScope)
 		? (raw as SecretScope)
 		: null
+}
+
+function buildConnectSecretConnectorBindingValueName(connector: string) {
+	return `${connectSecretConnectorBindingPrefix}${connector}`
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
