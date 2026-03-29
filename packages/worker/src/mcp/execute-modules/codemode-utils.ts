@@ -36,7 +36,14 @@ type ValueGetResult = {
 
 type ExecuteRequestInput = string | URL | Request
 
+let boundCodemode: CodemodeNamespace | null = null
+
+export function setCodemodeUtilsNamespace(codemode: CodemodeNamespace) {
+	boundCodemode = codemode
+}
+
 export function createCodemodeUtils(codemode: CodemodeNamespace) {
+	setCodemodeUtilsNamespace(codemode)
 	return {
 		createAuthenticatedFetch(providerName: string) {
 			return createAuthenticatedFetch(codemode, providerName)
@@ -47,22 +54,46 @@ export function createCodemodeUtils(codemode: CodemodeNamespace) {
 	}
 }
 
+export async function refreshAccessToken(providerName: string): Promise<string>
 export async function refreshAccessToken(
 	codemode: CodemodeNamespace,
 	providerName: string,
+): Promise<string>
+export async function refreshAccessToken(
+	codemodeOrProviderName: CodemodeNamespace | string,
+	providerName?: string,
 ) {
-	const connector = await readConnectorConfig(codemode, providerName)
-	return refreshAccessTokenWithConnector(codemode, providerName, connector)
+	const { codemode, resolvedProviderName } = resolveCodemodeArgs(
+		codemodeOrProviderName,
+		providerName,
+	)
+	const connector = await readConnectorConfig(codemode, resolvedProviderName)
+	return refreshAccessTokenWithConnector(
+		codemode,
+		resolvedProviderName,
+		connector,
+	)
 }
 
 export async function createAuthenticatedFetch(
+	providerName: string,
+): Promise<(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>>
+export async function createAuthenticatedFetch(
 	codemode: CodemodeNamespace,
 	providerName: string,
+): Promise<(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>>
+export async function createAuthenticatedFetch(
+	codemodeOrProviderName: CodemodeNamespace | string,
+	providerName?: string,
 ) {
-	const connector = await readConnectorConfig(codemode, providerName)
+	const { codemode, resolvedProviderName } = resolveCodemodeArgs(
+		codemodeOrProviderName,
+		providerName,
+	)
+	const connector = await readConnectorConfig(codemode, resolvedProviderName)
 	const accessToken = await refreshAccessTokenWithConnector(
 		codemode,
-		providerName,
+		resolvedProviderName,
 		connector,
 	)
 
@@ -77,6 +108,48 @@ export async function createAuthenticatedFetch(
 			}),
 		)
 	}
+}
+
+function resolveCodemodeArgs(
+	codemodeOrProviderName: CodemodeNamespace | string,
+	providerName?: string,
+) {
+	const resolvedProviderName =
+		typeof codemodeOrProviderName === 'string'
+			? codemodeOrProviderName
+			: providerName
+	if (!resolvedProviderName) {
+		throw new Error('Provider name is required for codemode helpers.')
+	}
+	if (typeof codemodeOrProviderName === 'string') {
+		return {
+			codemode: readBoundCodemode(),
+			resolvedProviderName,
+		}
+	}
+	return {
+		codemode: codemodeOrProviderName,
+		resolvedProviderName,
+	}
+}
+
+function readBoundCodemode() {
+	if (boundCodemode) return boundCodemode
+	const globalCandidate = (globalThis as { codemode?: CodemodeNamespace })
+		.codemode
+	if (globalCandidate) return globalCandidate
+	throw new Error(
+		'codemode namespace is not available; pass codemode explicitly or call createCodemodeUtils(codemode).',
+	)
+}
+
+export function createAuthenticatedFetchBound(codemode: CodemodeNamespace) {
+	return async (providerName: string) =>
+		createAuthenticatedFetch(codemode, providerName)
+}
+
+export function refreshAccessTokenBound(codemode: CodemodeNamespace) {
+	return async (providerName: string) => refreshAccessToken(codemode, providerName)
 }
 
 async function readConnectorConfig(
