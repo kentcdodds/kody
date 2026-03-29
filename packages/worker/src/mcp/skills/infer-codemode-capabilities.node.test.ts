@@ -34,13 +34,13 @@ test('marks partial for computed non-literal codemode access', () => {
 	expect(inferencePartial).toBe(true)
 })
 
-test('infers capabilities from known execute-time helper module imports', () => {
+test('infers capabilities from execute-time helper names', () => {
 	const src = `async () => {
-    const { createCodemodeUtils } = await import('@kody/codemode-utils')
-    const { refreshAccessToken } = createCodemodeUtils(codemode)
-    return await refreshAccessToken('spotify')
+    const spotifyFetch = await createAuthenticatedFetch('spotify')
+    await refreshAccessToken('spotify')
+    return spotifyFetch
   }`
-	const { moduleNames, inferencePartial } = inferCodemodeCapabilities(src)
+	const { helperNames, inferencePartial } = inferCodemodeCapabilities(src)
 	expect(inferencePartial).toBe(false)
-	expect(moduleNames).toEqual(['connector_get', 'value_get'])
+	expect(helperNames).toEqual(['connector_get', 'value_get'])
 })

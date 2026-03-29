@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	createAuthenticatedFetch,
-	createCodemodeUtils,
 	refreshAccessToken,
 } from './codemode-utils.ts'
 
@@ -148,46 +147,6 @@ test('createAuthenticatedFetch resolves relative URLs against apiBaseUrl and inj
 		expect(apiRequest?.headers.get('Authorization')).toBe(
 			'Bearer fresh-access-token',
 		)
-	} finally {
-		globalThis.fetch = originalFetch
-	}
-})
-
-test('createCodemodeUtils binds helper methods to codemode', async () => {
-	const codemode = createMockCodemode() as unknown as CodemodeUtilsNamespace
-	const requests: Array<Request> = []
-	const originalFetch = globalThis.fetch
-
-	globalThis.fetch = async (input, init) => {
-		requests.push(new Request(input, init))
-		return Response.json({ access_token: 'bound-token' })
-	}
-
-	try {
-		const utils = createCodemodeUtils(codemode)
-		const token = await utils.refreshAccessToken('spotify')
-		expect(token).toBe('bound-token')
-		expect(requests).toHaveLength(1)
-	} finally {
-		globalThis.fetch = originalFetch
-	}
-})
-
-test('helpers can use the bound codemode namespace', async () => {
-	const codemode = createMockCodemode() as unknown as CodemodeUtilsNamespace
-	const requests: Array<Request> = []
-	const originalFetch = globalThis.fetch
-
-	globalThis.fetch = async (input, init) => {
-		requests.push(new Request(input, init))
-		return Response.json({ access_token: 'bound-access-token' })
-	}
-
-	try {
-		createCodemodeUtils(codemode)
-		const token = await refreshAccessToken('spotify')
-		expect(token).toBe('bound-access-token')
-		expect(requests).toHaveLength(1)
 	} finally {
 		globalThis.fetch = originalFetch
 	}

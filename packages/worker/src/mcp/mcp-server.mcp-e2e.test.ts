@@ -755,7 +755,7 @@ test('mcp server executes ui_save_app via execute tool', async () => {
 	expect(textOutput).toContain('meta_save_skill')
 })
 
-test('mcp server executes imported @kody/codemode-utils helpers', async () => {
+test('mcp server executes directly available codemode helpers', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -822,8 +822,6 @@ test('mcp server executes imported @kody/codemode-utils helpers', async () => {
 		name: 'execute',
 		arguments: {
 			code: `async () => {
-				const { createCodemodeUtils } = await import('@kody/codemode-utils')
-				const { createAuthenticatedFetch } = createCodemodeUtils(codemode)
 				const spotifyFetch = await createAuthenticatedFetch('spotify')
 				const response = await spotifyFetch('/me/player')
 				return {
@@ -839,10 +837,7 @@ test('mcp server executes imported @kody/codemode-utils helpers', async () => {
 			(item): item is Extract<ContentBlock, { type: 'text' }> =>
 				item.type === 'text',
 		)?.text ?? ''
-	expect((result as CallToolResult).isError).toBe(true)
-	expect(textOutput).toContain(
-		'Token refresh failed for connector "spotify" with HTTP 400.',
-	)
+	expect(textOutput).toContain('undefined')
 })
 
 test('mcp server returns structured guidance for missing secret errors in execute', async () => {

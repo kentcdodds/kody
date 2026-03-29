@@ -10,21 +10,6 @@
 				"command": "npm run dev"
 			}
 		},
-		"build-codemode-sandbox-modules": {
-			"executor": "nx:run-commands",
-			"inputs": [
-				"default",
-				"{workspaceRoot}/tools/build-codemode-sandbox-modules.ts",
-				"{workspaceRoot}/package.json",
-				"{workspaceRoot}/package-lock.json"
-			],
-			"outputs": [
-				"{workspaceRoot}/packages/worker/src/mcp/generated/codemode-sandbox-modules.ts"
-			],
-			"options": {
-				"command": "npm run build:codemode-sandbox-modules"
-			}
-		},
 		"dev-client": {
 			"executor": "nx:run-commands",
 			"options": {
@@ -56,7 +41,7 @@
 		},
 		"build-client": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-sandbox-modules"],
+			"dependsOn": ["build-codemode-helpers"],
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
 				"{workspaceRoot}/packages/worker/public/assets",
@@ -73,16 +58,35 @@
 				"command": "node --env-file=packages/worker/.env ./wrangler-env.ts build"
 			}
 		},
+		"build-codemode-helpers": {
+			"executor": "nx:run-commands",
+			"inputs": [
+				"default",
+				"{workspaceRoot}/packages/worker/src/mcp/execute-modules/codemode-utils.ts",
+				"{workspaceRoot}/package.json",
+				"{workspaceRoot}/package-lock.json"
+			],
+			"options": {
+				"command": "node -e \"process.exit(0)\""
+			}
+		},
+		"typecheck": {
+			"executor": "nx:run-commands",
+			"dependsOn": ["build-codemode-helpers"],
+			"options": {
+				"command": "tsc -b --noEmit"
+			}
+		},
 		"test": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-sandbox-modules"],
+			"dependsOn": ["build-codemode-helpers"],
 			"options": {
 				"command": "vitest run --project node-unit --project workers-unit"
 			}
 		},
 		"test-mcp": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-sandbox-modules", "build-mcp-apps"],
+			"dependsOn": ["build-codemode-helpers", "build-mcp-apps"],
 			"options": {
 				"command": "node tools/prepare-e2e-env.ts && vitest run --project mcp-e2e"
 			}
