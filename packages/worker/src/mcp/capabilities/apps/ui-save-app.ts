@@ -3,7 +3,11 @@ import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteUiArtifact, insertUiArtifact } from '#mcp/ui-artifacts-repo.ts'
+import {
+	deleteUiArtifact,
+	insertUiArtifact,
+	updateUiArtifact,
+} from '#mcp/ui-artifacts-repo.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -13,6 +17,13 @@ import {
 } from '#mcp/ui-artifact-parameters.ts'
 
 const inputSchema = z.object({
+	app_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Optional saved UI artifact id to update in place. Omit to create a new saved app.',
+		),
 	title: z.string().min(1).describe('Short title for the saved UI artifact.'),
 	description: z
 		.string()
@@ -50,8 +61,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 	{
 		name: 'ui_save_app',
 		description:
-			'Save a generated UI artifact for the signed-in user so it can be reopened later by app_id without sending the source back through the model context.',
-		keywords: ['ui', 'app', 'artifact', 'save', 'persist', 'mcp app'],
+			'Create or replace a saved UI artifact for the signed-in user so it can be reopened later by app_id without sending the source back through the model context.',
+		keywords: ['ui', 'app', 'artifact', 'save', 'persist', 'update', 'mcp app'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -59,20 +70,36 @@ export const uiSaveAppCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const appId = crypto.randomUUID()
-			const now = new Date().toISOString()
+			const isUpdate = args.app_id !== undefined
+			const appId = args.app_id ?? crypto.randomUUID()
 			const parameters = normalizeUiArtifactParameters(args.parameters)
-			await insertUiArtifact(ctx.env.APP_DB, {
-				id: appId,
-				user_id: user.userId,
-				title: args.title,
-				description: args.description,
-				code: args.code,
-				runtime: args.runtime,
-				parameters: parameters ? JSON.stringify(parameters) : null,
-				created_at: now,
-				updated_at: now,
-			})
+			const serializedParameters = parameters ? JSON.stringify(parameters) : null
+
+			if (isUpdate) {
+				const updated = await updateUiArtifact(ctx.env.APP_DB, user.userId, appId, {
+					title: args.title,
+					description: args.description,
+					code: args.code,
+					runtime: args.runtime,
+					parameters: serializedParameters,
+				})
+				if (!updated) {
+					throw new Error('Saved UI artifact not found for this user.')
+				}
+			} else {
+				const now = new Date().toISOString()
+				await insertUiArtifact(ctx.env.APP_DB, {
+					id: appId,
+					user_id: user.userId,
+					title: args.title,
+					description: args.description,
+					code: args.code,
+					runtime: args.runtime,
+					parameters: serializedParameters,
+					created_at: now,
+					updated_at: now,
+				})
+			}
 
 			try {
 				await upsertUiArtifactVector(ctx.env, {
@@ -87,8 +114,12 @@ export const uiSaveAppCapability = defineDomainCapability(
 					}),
 				})
 			} catch (cause) {
-				await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
-				throw cause
+				if (!isUpdate) {
+					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
+					throw cause
+				}
+
+				// A vector refresh should not fail an in-place app update.
 			}
 
 			return {

@@ -589,7 +589,7 @@ test('mcp server searches capabilities', async () => {
 		'code',
 	])
 	expect(saveApp?.readOnly).toBeUndefined()
-	expect(saveApp?.inputFields).toBeUndefined()
+	expect(saveApp?.inputFields).toContain('app_id')
 
 	const textOutput =
 		(result as CallToolResult).content.find(
@@ -1840,7 +1840,7 @@ test('mcp server deletes saved ui app artifacts', async () => {
 	expect(apps?.some((app) => app.app_id === appId)).toBe(false)
 })
 
-test('mcp server updates saved ui app artifacts', async () => {
+test('mcp server upserts saved ui app artifacts through ui_save_app', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -1869,7 +1869,7 @@ test('mcp server updates saved ui app artifacts', async () => {
 		name: 'execute',
 		arguments: {
 			code: `async () =>
-					await codemode.ui_update_app({
+					await codemode.ui_save_app({
 						app_id: ${JSON.stringify(appId)},
 						title: 'Updated App',
 						description: 'Updated description.',
@@ -1909,4 +1909,25 @@ test('mcp server updates saved ui app artifacts', async () => {
 	expect(getPayload?.description).toBe('Updated description.')
 	expect(getPayload?.code).toBe('<main><h1>Updated</h1></main>')
 	expect(getPayload?.runtime).toBe('javascript')
+
+	const listResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => await codemode.ui_list_apps({})`,
+		},
+	})
+	const listStructured = (listResult as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+		  }
+		| undefined
+	const listPayload = listStructured?.result as
+		| Record<string, unknown>
+		| undefined
+	const apps = listPayload?.apps as
+		| Array<{ app_id?: string; title?: string }>
+		| undefined
+	expect(apps).toHaveLength(1)
+	expect(apps?.[0]?.app_id).toBe(appId)
+	expect(apps?.[0]?.title).toBe('Updated App')
 })
