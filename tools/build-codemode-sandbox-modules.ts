@@ -1,9 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { build } from 'esbuild'
-import {
-	codemodeModuleCapabilityManifest,
-} from '../packages/worker/src/mcp/execute-modules/module-manifest.ts'
 
 const projectRoot = resolve(import.meta.dirname, '..')
 const generatedOutputPath = resolve(
@@ -55,12 +52,6 @@ export const codemodeSandboxModules = ${JSON.stringify(
 		null,
 		2,
 	)} as Record<string, { js: string }>
-
-export const codemodeSandboxModuleManifest = ${JSON.stringify(
-		codemodeModuleCapabilityManifest,
-		null,
-		2,
-	)} as Record<string, Array<string>>
 `
 
 	await mkdir(dirname(generatedOutputPath), { recursive: true })

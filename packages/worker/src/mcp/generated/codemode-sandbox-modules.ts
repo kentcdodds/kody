@@ -6,9 +6,3 @@ export const codemodeSandboxModules = {
   }
 } as Record<string, { js: string }>
 
-export const codemodeSandboxModuleManifest = {
-  "@kody/codemode-utils": [
-    "connector_get",
-    "value_get"
-  ]
-} as Record<string, Array<string>>
