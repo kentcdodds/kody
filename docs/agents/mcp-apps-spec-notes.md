@@ -23,5 +23,5 @@ over project-local conventions.
 ## Relevant Code
 
 - `packages/worker/src/mcp/tools/open-generated-ui.ts`
-- `packages/worker/client/mcp-apps/generated-ui-runtime-controller.ts`
+- `packages/worker/client/mcp-apps/kody-ui-utils.ts`
 - `packages/worker/client/routes/saved-ui.tsx`

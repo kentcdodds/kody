@@ -32,6 +32,6 @@ mock-data
 playwright-report
 test-results
 packages/worker/public/client-entry.js
-packages/worker/public/mcp-apps/generated-ui-runtime.js
+packages/worker/public/mcp-apps/kody-ui-utils.js
 packages/worker/wrangler-preview.generated.json
 packages/worker/wrangler-production.generated.json

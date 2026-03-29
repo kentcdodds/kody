@@ -11,7 +11,7 @@ import {
 	readSavedAppSourceFromHostToolResult,
 	shouldInitializeGeneratedUiRuntimeImmediately,
 	whenKodyWidgetReady,
-} from './generated-ui-runtime-controller.ts'
+} from './kody-ui-utils.ts'
 
 test('injectIntoHtmlDocument inserts into an existing head without adding an extra bracket', () => {
 	const result = injectIntoHtmlDocument(

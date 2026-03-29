@@ -8,7 +8,7 @@ import {
 	buildGeneratedUiRuntimeImportMap,
 	injectGeneratedUiBootstrapScript,
 	type GeneratedUiRuntimeBootstrap,
-} from '#client/mcp-apps/generated-ui-runtime-contract.ts'
+} from '#client/mcp-apps/kody-ui-utils-contract.ts'
 import { type GeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 

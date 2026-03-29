@@ -1,6 +1,5 @@
-export const generatedUiRuntimeScriptPath = '/mcp-apps/generated-ui-runtime.js'
-export const generatedUiRuntimeStylesheetPath =
-	'/mcp-apps/generated-ui-runtime.css'
+export const generatedUiRuntimeScriptPath = '/mcp-apps/kody-ui-utils.js'
+export const generatedUiRuntimeStylesheetPath = '/mcp-apps/kody-ui-utils.css'
 
 export function resolveGeneratedUiAssetUrl(
 	assetPath: string,
