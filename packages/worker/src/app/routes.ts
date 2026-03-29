@@ -8,6 +8,7 @@ export const routes = route({
 	connectSecret: '/connect/secret',
 	connectSecretApi: '/connect/secret.json',
 	connectSecretApiPost: post('/connect/secret.json'),
+	connectOauth: '/connect/oauth',
 	accountSecrets: '/account/secrets',
 	accountSecretNew: '/account/secrets/new',
 	accountSecretDetail: '/account/secrets/:secretId',

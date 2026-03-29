@@ -4,10 +4,7 @@ import {
 	parseAccountSecretId,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
-import {
-	navigate,
-	routerEvents,
-} from '#client/client-router.tsx'
+import { navigate, routerEvents } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,

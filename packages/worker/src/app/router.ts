@@ -6,6 +6,7 @@ import {
 } from '#app/handlers/account-secrets.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { chat } from '#app/handlers/chat.ts'
+import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
 import {
 	createChatThreadsHandler,
 	createDeleteChatThreadHandler,
@@ -85,11 +86,15 @@ export function createAppRouter(appEnv: AppEnv) {
 		createAccountSecretsApiHandler(appEnv as Env),
 	)
 	router.map(routes.connectSecret, createConnectSecretHandler(appEnv as Env))
-	router.map(routes.connectSecretApi, createConnectSecretApiHandler(appEnv as Env))
+	router.map(
+		routes.connectSecretApi,
+		createConnectSecretApiHandler(appEnv as Env),
+	)
 	router.map(
 		routes.connectSecretApiPost,
 		createConnectSecretApiHandler(appEnv as Env),
 	)
+	router.map(routes.connectOauth, createConnectOauthHandler(appEnv as Env))
 	router.map(routes.savedUi, createSavedUiPageHandler(appEnv as Env))
 	router.map(routes.auth, createAuthHandler(appEnv))
 	router.map(routes.session, session)

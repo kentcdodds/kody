@@ -60,7 +60,7 @@ export function buildCapabilityEmbedText(spec: CapabilitySpec): string {
 }
 
 function tokenize(s: string): Set<string> {
-	return new Set(s.toLowerCase().match(/[a-z0-9_]+/g) ?? [])
+	return new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? [])
 }
 
 export function lexicalScore(query: string, doc: string): number {

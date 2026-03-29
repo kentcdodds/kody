@@ -1,8 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { expandSecretPlaceholders } from '#mcp/fetch-gateway.ts'
-import {
-	parseHostApprovalRequiredBatchMessage,
-} from '#mcp/secrets/errors.ts'
+import { parseHostApprovalRequiredBatchMessage } from '#mcp/secrets/errors.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 
 const env = {
@@ -85,9 +83,7 @@ test('fetch gateway allows placeholders for approved hosts', async () => {
 			props,
 			env,
 		})
-		expect(transformed.headers.get('Authorization')).toBe(
-			'Bearer secret-value',
-		)
+		expect(transformed.headers.get('Authorization')).toBe('Bearer secret-value')
 		expect(await transformed.text()).toBe(
 			JSON.stringify({ token: 'secret-value' }),
 		)
