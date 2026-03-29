@@ -184,3 +184,78 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 	expect(event.outcome).toBe('success')
 	expect(event.failurePhase).toBeUndefined()
 })
+
+test('ui_save_app logs vector refresh failure for in-place updates and still succeeds', async () => {
+	const originalInfo = console.info
+	const payloads: Array<string> = []
+	console.info = ((tag: unknown, json?: unknown) => {
+		if (tag === 'mcp-event' && typeof json === 'string') {
+			payloads.push(json)
+		}
+	}) as typeof console.info
+	try {
+		const handler = capabilityMap['ui_save_app'].handler
+		const result = await handler(
+			{
+				app_id: 'app-1',
+				title: 'Observed app',
+				description: 'Observation test app.',
+				code: '<main><h1>Observed app</h1></main>',
+			},
+			{
+				env: {
+					APP_DB: {
+						prepare() {
+							return {
+								bind() {
+									return {
+										run: async () => ({
+											meta: { changes: 1 },
+										}),
+									}
+								},
+							}
+						},
+					},
+					CAPABILITY_VECTOR_INDEX: {
+						upsert: async () => {
+							throw new Error('vector refresh failed')
+						},
+					},
+					AI: {
+						run: async () => ({
+							data: [Array.from({ length: 384 }, () => 0)],
+						}),
+					},
+				} as unknown as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+					},
+				}),
+			},
+		)
+		expect((result as { app_id: string }).app_id).toBe('app-1')
+	} finally {
+		console.info = originalInfo
+	}
+
+	expect(payloads.length).toBe(2)
+	const driftEvent = JSON.parse(payloads[0]!) as Record<string, unknown>
+	expect(driftEvent.outcome).toBe('failure')
+	expect(driftEvent.failurePhase).toBe('handler')
+	expect(driftEvent.errorName).toBe('Error')
+	expect(driftEvent.errorMessage).toBe(
+		'Failed to refresh saved app vector index after in-place update.',
+	)
+	expect(driftEvent.capabilityName).toBe('ui_save_app')
+	expect(driftEvent.userId).toBe('user-1')
+	expect(driftEvent.appId).toBe('app-1')
+	expect(driftEvent.isUpdate).toBe(true)
+
+	const successEvent = JSON.parse(payloads[1]!) as Record<string, unknown>
+	expect(successEvent.outcome).toBe('success')
+	expect(successEvent.capabilityName).toBe('ui_save_app')
+})

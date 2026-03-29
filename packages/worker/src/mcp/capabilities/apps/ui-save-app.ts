@@ -3,6 +3,7 @@ import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { errorFields, logMcpEvent } from '#mcp/observability.ts'
 import {
 	deleteUiArtifact,
 	insertUiArtifact,
@@ -119,7 +120,26 @@ export const uiSaveAppCapability = defineDomainCapability(
 					throw cause
 				}
 
-				// A vector refresh should not fail an in-place app update.
+				const { errorName, errorMessage } = errorFields(cause)
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'capability',
+					capabilityName: 'ui_save_app',
+					domain: capabilityDomainNames.apps,
+					outcome: 'failure',
+					durationMs: 0,
+					baseUrl: ctx.callerContext.baseUrl,
+					hasUser: true,
+					failurePhase: 'handler',
+					errorName,
+					errorMessage,
+					cause,
+					context: {
+						userId: user.userId,
+						appId,
+						isUpdate,
+					},
+				})
 			}
 
 			return {
