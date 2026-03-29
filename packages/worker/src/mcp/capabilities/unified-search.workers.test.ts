@@ -31,7 +31,6 @@ function createUiArtifactRow(appId: string): UiArtifactRow {
 		user_id: 'user-123',
 		title: 'Cloudflare deploy app',
 		description: 'Saved UI for deploying a Worker',
-		keywords: JSON.stringify(['cloudflare', 'deploy']),
 		code: '<main>Deploy</main>',
 		runtime: 'html',
 		parameters: JSON.stringify([
@@ -42,7 +41,6 @@ function createUiArtifactRow(appId: string): UiArtifactRow {
 				required: true,
 			},
 		]),
-		search_text: 'deploy worker ui',
 		created_at: '2026-03-20T00:00:00.000Z',
 		updated_at: '2026-03-20T00:00:00.000Z',
 	}

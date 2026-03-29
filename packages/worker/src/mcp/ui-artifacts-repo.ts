@@ -1,15 +1,5 @@
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
-export function parseStringArray(raw: string): Array<string> {
-	try {
-		const value = JSON.parse(raw) as unknown
-		if (!Array.isArray(value)) return []
-		return value.filter((entry): entry is string => typeof entry === 'string')
-	} catch {
-		return []
-	}
-}
-
 export function uiArtifactVectorId(artifactId: string): string {
 	return `ui_artifact_${artifactId}`
 }
@@ -25,19 +15,17 @@ export async function insertUiArtifact(
 	await db
 		.prepare(
 			`INSERT INTO ui_artifacts (
-				id, user_id, title, description, keywords, source_code, source_type,
-				search_text, parameters, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, user_id, title, description, source_code, source_type,
+				parameters, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
 			row.title,
 			row.description,
-			row.keywords,
 			row.code,
 			row.runtime,
-			row.search_text ?? null,
 			row.parameters ?? null,
 			row.created_at ?? now,
 			row.updated_at ?? now,
@@ -52,8 +40,8 @@ export async function getUiArtifactById(
 ): Promise<UiArtifactRow | null> {
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, source_code, source_type,
-				search_text, parameters, created_at, updated_at
+			`SELECT id, user_id, title, description, source_code, source_type,
+				parameters, created_at, updated_at
 			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
 		)
 		.bind(artifactId, userId)
@@ -73,8 +61,8 @@ export async function getUiArtifactByOwnerIds(
 	const placeholders = ownerIds.map(() => '?').join(', ')
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, source_code, source_type,
-				search_text, parameters, created_at, updated_at
+			`SELECT id, user_id, title, description, source_code, source_type,
+				parameters, created_at, updated_at
 			FROM ui_artifacts
 			WHERE id = ? AND user_id IN (${placeholders})
 			LIMIT 1`,
@@ -106,10 +94,8 @@ export async function updateUiArtifact(
 			UiArtifactRow,
 			| 'title'
 			| 'description'
-			| 'keywords'
 			| 'code'
 			| 'runtime'
-			| 'search_text'
 			| 'parameters'
 		>
 	>,
@@ -127,17 +113,11 @@ export async function updateUiArtifact(
 	if (updates.description !== undefined) {
 		addAssignment('description', updates.description)
 	}
-	if (updates.keywords !== undefined) {
-		addAssignment('keywords', updates.keywords)
-	}
 	if (updates.code !== undefined) {
 		addAssignment('source_code', updates.code)
 	}
 	if (updates.runtime !== undefined) {
 		addAssignment('source_type', updates.runtime)
-	}
-	if (updates.search_text !== undefined) {
-		addAssignment('search_text', updates.search_text ?? null)
 	}
 	if (updates.parameters !== undefined) {
 		addAssignment('parameters', updates.parameters ?? null)
@@ -160,8 +140,8 @@ export async function listUiArtifactsByUserId(
 ): Promise<Array<UiArtifactRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, source_code, source_type,
-				search_text, parameters, created_at, updated_at
+			`SELECT id, user_id, title, description, source_code, source_type,
+				parameters, created_at, updated_at
 			FROM ui_artifacts WHERE user_id = ?`,
 		)
 		.bind(userId)
@@ -175,10 +155,8 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		user_id: String(row['user_id']),
 		title: String(row['title']),
 		description: String(row['description']),
-		keywords: String(row['keywords']),
 		code: String(row['source_code']),
 		runtime: String(row['source_type']) as UiArtifactRow['runtime'],
-		search_text: row['search_text'] == null ? null : String(row['search_text']),
 		parameters: row['parameters'] == null ? null : String(row['parameters']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),

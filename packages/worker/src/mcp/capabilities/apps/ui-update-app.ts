@@ -5,11 +5,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
-import {
-	getUiArtifactById,
-	parseStringArray,
-	updateUiArtifact,
-} from '#mcp/ui-artifacts-repo.ts'
+import { getUiArtifactById, updateUiArtifact } from '#mcp/ui-artifacts-repo.ts'
 import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -33,10 +29,6 @@ const inputSchema = z
 			.min(1)
 			.optional()
 			.describe('What the saved app does and when it is useful.'),
-		keywords: z
-			.array(z.string())
-			.optional()
-			.describe('Extra search keywords for discovery in the search tool.'),
 		code: z
 			.string()
 			.min(1)
@@ -50,12 +42,6 @@ const inputSchema = z
 			.describe(
 				'Source format accepted by the generic UI shell. Prefer `html`; `javascript` is kept for legacy saved apps.',
 			),
-		search_text: z
-			.string()
-			.optional()
-			.describe(
-				'Optional retrieval-only text that improves search recall without being part of the visible app description.',
-			),
 		parameters: z
 			.array(uiArtifactParameterSchema)
 			.optional()
@@ -67,10 +53,8 @@ const inputSchema = z
 		(value) =>
 			value.title !== undefined ||
 			value.description !== undefined ||
-			value.keywords !== undefined ||
 			value.code !== undefined ||
 			value.runtime !== undefined ||
-			value.search_text !== undefined ||
 			value.parameters !== undefined,
 		{
 			message: 'Provide at least one field to update.',
@@ -106,17 +90,11 @@ export const uiUpdateAppCapability = defineDomainCapability(
 			if (args.description !== undefined) {
 				updates.description = args.description
 			}
-			if (args.keywords !== undefined) {
-				updates.keywords = JSON.stringify(args.keywords)
-			}
 			if (args.code !== undefined) {
 				updates.code = args.code
 			}
 			if (args.runtime !== undefined) {
 				updates.runtime = args.runtime
-			}
-			if (args.search_text !== undefined) {
-				updates.search_text = args.search_text
 			}
 			if (args.parameters !== undefined) {
 				const parameters = normalizeUiArtifactParameters(args.parameters)
@@ -149,8 +127,7 @@ export const uiUpdateAppCapability = defineDomainCapability(
 					embedText: buildUiArtifactEmbedText({
 						title: refreshed.title,
 						description: refreshed.description,
-						keywords: parseStringArray(refreshed.keywords),
-						searchText: refreshed.search_text,
+						code: refreshed.code,
 						runtime: refreshed.runtime,
 						parameters: parseUiArtifactParameters(refreshed.parameters),
 					}),

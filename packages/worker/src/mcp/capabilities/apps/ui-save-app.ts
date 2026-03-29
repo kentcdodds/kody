@@ -18,9 +18,6 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe('What the saved app does and when it is useful.'),
-	keywords: z
-		.array(z.string())
-		.describe('Extra search keywords for discovery in the search tool.'),
 	code: z
 		.string()
 		.min(1)
@@ -32,12 +29,6 @@ const inputSchema = z.object({
 		.default('html')
 		.describe(
 			'Source format accepted by the generic UI shell. Prefer `html`; `javascript` is kept for legacy saved apps.',
-		),
-	search_text: z
-		.string()
-		.optional()
-		.describe(
-			'Optional retrieval-only text that improves search recall without being part of the visible app description.',
 		),
 	parameters: z
 		.array(uiArtifactParameterSchema)
@@ -76,10 +67,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 				user_id: user.userId,
 				title: args.title,
 				description: args.description,
-				keywords: JSON.stringify(args.keywords),
 				code: args.code,
 				runtime: args.runtime,
-				search_text: args.search_text ?? null,
 				parameters: parameters ? JSON.stringify(parameters) : null,
 				created_at: now,
 				updated_at: now,
@@ -92,8 +81,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					embedText: buildUiArtifactEmbedText({
 						title: args.title,
 						description: args.description,
-						keywords: args.keywords,
-						searchText: args.search_text ?? null,
+						code: args.code,
 						runtime: args.runtime,
 						parameters,
 					}),
