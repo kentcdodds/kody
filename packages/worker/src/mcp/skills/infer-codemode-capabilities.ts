@@ -1,8 +1,13 @@
 import { parse, type Node, type Program } from 'acorn'
+import {
+	codemodeSandboxModuleManifest,
+} from '#mcp/generated/codemode-sandbox-modules.ts'
 
 export type InferCodemodeCapabilitiesResult = {
 	/** Resolved capability names from static member access on `codemode`. */
 	staticNames: Array<string>
+	/** Resolved capability names from known execute-time helper module imports. */
+	moduleNames: Array<string>
 	/**
 	 * True when `codemode[dynamic]` or parsing failed (caller may still merge explicit uses).
 	 */
@@ -50,11 +55,25 @@ function peekMemberPropertyName(
 	return null
 }
 
+function readStaticString(node: unknown) {
+	if (
+		typeof node === 'object' &&
+		node !== null &&
+		'type' in node &&
+		(node as { type: string }).type === 'Literal'
+	) {
+		const value = (node as { value?: unknown }).value
+		return typeof value === 'string' && value.length > 0 ? value : null
+	}
+	return null
+}
+
 /** Walk ESTree-ish nodes produced by acorn; collect codemode.<name> accesses. */
 export function inferCodemodeCapabilitiesFromAst(
 	program: Program,
 ): InferCodemodeCapabilitiesResult {
 	const staticSet = new Set<string>()
+	const moduleSet = new Set<string>()
 	let inferencePartial = false
 	const markPartial = () => {
 		inferencePartial = true
@@ -84,6 +103,17 @@ export function inferCodemodeCapabilitiesFromAst(
 			}
 		}
 
+		if (n.type === 'ImportExpression') {
+			const source = readStaticString(
+				(n as { source?: unknown }).source ?? null,
+			)
+			if (source) {
+				for (const capabilityName of codemodeSandboxModuleManifest[source] ?? []) {
+					moduleSet.add(capabilityName)
+				}
+			}
+		}
+
 		if (n.type === 'ChainExpression') {
 			const expr = (n as unknown as { expression: unknown }).expression
 			visit(expr)
@@ -105,6 +135,7 @@ export function inferCodemodeCapabilitiesFromAst(
 
 	return {
 		staticNames: [...staticSet].sort(),
+		moduleNames: [...moduleSet].sort(),
 		inferencePartial,
 	}
 }
@@ -123,6 +154,6 @@ export function inferCodemodeCapabilities(
 		})
 		return inferCodemodeCapabilitiesFromAst(program)
 	} catch {
-		return { staticNames: [], inferencePartial: true }
+		return { staticNames: [], moduleNames: [], inferencePartial: true }
 	}
 }

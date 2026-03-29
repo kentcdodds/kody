@@ -36,6 +36,19 @@ declare const codemode: Record<
   (args: CapabilityArgs) => Promise<CapabilityResult>
 >;
 
+You can also dynamically import \`@kody/codemode-utils\` from inside your async
+function for connector OAuth helpers such as
+\`refreshAccessToken(providerName)\` and \`createAuthenticatedFetch(providerName)\`.
+Bind those helpers to the sandbox \`codemode\` object:
+
+\`async () => {
+  const { createCodemodeUtils } = await import('@kody/codemode-utils');
+  const { createAuthenticatedFetch } = createCodemodeUtils(codemode);
+  const spotifyFetch = await createAuthenticatedFetch('spotify');
+  const response = await spotifyFetch('/me/player');
+  return await response.json();
+}\`
+
 Capability names are discovered via \`search\`.
 Each method accepts one args object matching that capability's \`inputSchema\`
 and returns structured data described by its \`outputSchema\` when present.

@@ -10,6 +10,7 @@ type ConnectOauthConfig = {
 	tokenHost: string
 	authorizeUrl: string
 	tokenUrl: string
+	apiBaseUrl: string | null
 	scopes: Array<string>
 	flow: OAuthFlow
 	scopeSeparator: string
@@ -93,6 +94,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		const provider = readRequired('provider')
 		const authorizeUrl = readRequired('authorizeUrl')
 		const tokenUrl = readRequired('tokenUrl')
+		const apiBaseUrl = parseOptionalUrl(readOptional('apiBaseUrl'))
 		if (!provider || !authorizeUrl || !tokenUrl) {
 			hasConfigError = true
 			setStatus('Missing required OAuth configuration parameters.', 'error')
@@ -138,6 +140,7 @@ export function ConnectOauthRoute(handle: Handle) {
 			tokenHost,
 			authorizeUrl,
 			tokenUrl,
+			apiBaseUrl,
 			scopes,
 			flow: flow as OAuthFlow,
 			scopeSeparator,
@@ -521,6 +524,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				provider: config.provider,
 				callbackUrl,
 				tokenUrl: config.tokenUrl,
+				apiBaseUrl: config.apiBaseUrl,
 				flow: config.flow,
 				clientIdValueName: config.clientIdValueName,
 				clientSecretSecretName: config.clientSecretSecretName,

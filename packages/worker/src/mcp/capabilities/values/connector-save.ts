@@ -23,7 +23,7 @@ export const connectorSaveCapability = defineDomainCapability(
 	{
 		name: 'connector_save',
 		description:
-			'Save an OAuth connector configuration for the signed-in user. Stored as a user-scoped value with a _connector: prefix.',
+			'Save or replace an OAuth connector configuration for the signed-in user. Stored as a user-scoped value with a _connector: prefix.',
 		keywords: ['connector', 'oauth', 'config', 'registry', 'save', 'value'],
 		readOnly: false,
 		idempotent: false,
