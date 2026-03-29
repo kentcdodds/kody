@@ -158,15 +158,18 @@ async function parseTokenResponse(response) {
 }
 
 function getTokenRefreshErrorMessage(providerName, response, payload) {
-	if (isRecord(payload)) {
+	if (isRecord(payload.data)) {
 		if (
-			typeof payload.error_description === 'string' &&
-			payload.error_description.length > 0
+			typeof payload.data.error_description === 'string' &&
+			payload.data.error_description.length > 0
 		) {
-			return payload.error_description
+			return payload.data.error_description
 		}
-		if (typeof payload.error === 'string' && payload.error.length > 0) {
-			return payload.error
+		if (
+			typeof payload.data.error === 'string' &&
+			payload.data.error.length > 0
+		) {
+			return payload.data.error
 		}
 	}
 	return (

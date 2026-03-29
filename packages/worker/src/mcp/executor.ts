@@ -88,6 +88,7 @@ function wrapImportedExecuteCode(source: string) {
 		const parsed = acorn.parse(source, {
 			ecmaVersion: 'latest',
 			sourceType: 'module',
+			allowReturnOutsideFunction: true,
 		})
 		if (
 			parsed.body.some((node) => node.type === 'ExportDefaultDeclaration') ||
@@ -102,12 +103,23 @@ function wrapImportedExecuteCode(source: string) {
 		const importNodes = parsed.body.filter(
 			(node) => node.type === 'ImportDeclaration',
 		)
-		const bodyNodes = parsed.body.filter((node) => node.type !== 'ImportDeclaration')
+		const bodyNodes = parsed.body.filter(
+			(node) => node.type !== 'ImportDeclaration',
+		)
 		const imports = importNodes
 			.map((node) => source.slice(node.start, node.end))
 			.join('\n')
 		const body = bodyNodes
-			.map((node) => source.slice(node.start, node.end))
+			.map((node, index) => {
+				if (
+					index === bodyNodes.length - 1 &&
+					node.type === 'ExpressionStatement' &&
+					!node.directive
+				) {
+					return `return ${source.slice(node.start, node.end)}`
+				}
+				return source.slice(node.start, node.end)
+			})
 			.join('\n')
 		return [
 			imports,
@@ -203,7 +215,10 @@ async function executeWithWorkerLoader(input: {
 	const dispatchers = {} as Record<string, ToolDispatcher>
 	for (const provider of input.providers) {
 		const sanitizedFns = Object.fromEntries(
-			Object.entries(provider.fns).map(([name, fn]) => [sanitizeToolName(name), fn]),
+			Object.entries(provider.fns).map(([name, fn]) => [
+				sanitizeToolName(name),
+				fn,
+			]),
 		)
 		dispatchers[provider.name] = new ToolDispatcher(
 			sanitizedFns,
