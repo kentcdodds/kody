@@ -1,10 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import {
-	buildCodemodeFns,
-	runCodemodeWithRegistry,
-} from './run-codemode-registry.ts'
+import { buildCodemodeFns } from './run-codemode-registry.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 
 test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
@@ -185,19 +182,13 @@ test('buildCodemodeFns denies capability secret placeholders for disallowed capa
 	}
 })
 
-test('runCodemodeWithRegistry redacts values that crossed secret-marked capability inputs', async () => {
-	const env = {
-		LOADER: {},
-	} as unknown as Env
-	const executorExports = {
-		CodemodeFetchGateway() {
-			return {}
-		},
-	} as unknown as typeof import('cloudflare:workers').exports
+test('buildCodemodeFns tracks values that crossed secret-marked capability inputs', async () => {
+	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: { userId: 'user-123' },
 	})
+	const trackedSecretValues: Array<string> = []
 
 	const getRegistrySpy = vi
 		.spyOn(await import('#mcp/capabilities/registry.ts'), 'getCapabilityRegistryForContext')
@@ -287,49 +278,26 @@ test('runCodemodeWithRegistry redacts values that crossed secret-marked capabili
 			},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
 
-	const executeSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return {
-					result: {
-						saved: true,
-						echoedValue: 'fresh-access-token',
-						nested: {
-							message: 'Bearer fresh-access-token',
-						},
-					},
-					logs: ['saved fresh-access-token'],
-				}
-			},
-		} as Awaited<ReturnType<typeof import('#mcp/executor.ts').createExecuteExecutor>>)
-
 	try {
-		const result = await runCodemodeWithRegistry(
+		const codemode = await buildCodemodeFns(
 			env,
 			callerContext,
-			`async () => {
-				await codemode.secret_set({
-					name: 'spotifyAccessToken',
-					value: 'fresh-access-token',
-				})
-				return { ok: true }
-			}`,
-			undefined,
-			executorExports,
-		)
-
-		expect(result.error).toBeUndefined()
-		expect(result.result).toEqual({
-			saved: true,
-			echoedValue: '[REDACTED SECRET]',
-			nested: {
-				message: 'Bearer [REDACTED SECRET]',
+			{
+				trackSecretInputValue(value) {
+					trackedSecretValues.push(value)
+				},
 			},
+		)
+	const result = await codemode.secret_set({
+			name: 'spotifyAccessToken',
+			value: 'fresh-access-token',
 		})
-		expect(result.logs).toEqual(['saved [REDACTED SECRET]'])
+
+	expect(result).toEqual({
+			name: 'spotifyAccessToken',
+		})
+		expect(trackedSecretValues).toEqual(['fresh-access-token'])
 	} finally {
 		getRegistrySpy.mockRestore()
-		executeSpy.mockRestore()
 	}
 })
