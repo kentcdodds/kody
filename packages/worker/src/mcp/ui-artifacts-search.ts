@@ -14,16 +14,6 @@ import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
-function parseJsonStringArray(raw: string): Array<string> {
-	try {
-		const value = JSON.parse(raw) as unknown
-		if (!Array.isArray(value)) return []
-		return value.filter((item): item is string => typeof item === 'string')
-	} catch {
-		return []
-	}
-}
-
 function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 	const secretText =
 		appSecrets.length > 0
@@ -34,8 +24,7 @@ function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 	return `${buildUiArtifactEmbedText({
 		title: row.title,
 		description: row.description,
-		keywords: parseJsonStringArray(row.keywords),
-		searchText: row.search_text,
+		code: row.code,
 		runtime: row.runtime,
 		parameters: parseUiArtifactParameters(row.parameters),
 	})}${secretText}`
@@ -75,7 +64,6 @@ export type UiArtifactSearchHitSummary = {
 	domain: 'apps'
 	title: string
 	description: string
-	keywords: Array<string>
 	runtime: string
 	parameters: Array<{
 		name: string
@@ -95,7 +83,6 @@ export type UiArtifactSearchHitSummary = {
 }
 
 export type UiArtifactSearchHitDetail = UiArtifactSearchHitSummary & {
-	searchText: string | null
 	createdAt: string
 	updatedAt: string
 }
@@ -119,7 +106,6 @@ function rowToUiArtifactHit(
 		domain: 'apps',
 		title: row.title,
 		description: row.description,
-		keywords: parseJsonStringArray(row.keywords),
 		runtime: row.runtime,
 		parameters,
 		usage: buildUsage(row),
@@ -134,7 +120,6 @@ function rowToUiArtifactHit(
 	if (detail) {
 		return {
 			...base,
-			searchText: row.search_text,
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
 		}

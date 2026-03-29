@@ -10,8 +10,7 @@ test('infers static codemode member names', () => {
     return await codemode.ui_save_app({
       title: 'Demo',
       description: 'Demo app',
-      keywords: ['demo'],
-      source: '<main>demo</main>',
+      code: '<main>demo</main>',
     })
   }`
 	const { staticNames, inferencePartial } = inferCodemodeCapabilities(src)

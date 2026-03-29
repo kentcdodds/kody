@@ -586,7 +586,6 @@ test('mcp server searches capabilities', async () => {
 	expect(saveApp?.requiredInputFields).toEqual([
 		'title',
 		'description',
-		'keywords',
 		'code',
 	])
 	expect(saveApp?.readOnly).toBeUndefined()
@@ -725,7 +724,6 @@ test('mcp server executes ui_save_app via execute tool', async () => {
 					await codemode.ui_save_app({
 						title: 'Execute generated app',
 						description: 'Saved through execute.',
-						keywords: ['execute', 'ui'],
 						code: '<main><h1>Execute App</h1></main>',
 					})`,
 		},
@@ -919,10 +917,8 @@ test('mcp server saves app, search returns app hit, and open_generated_ui suppor
 			code: `async () =>
 					await codemode.ui_save_app({
 						title: 'Saved Searchable App',
-						description: 'Saved generated UI artifact for search and reopen.',
-						keywords: ['saved', 'searchable', 'ui'],
-						code: '<main><h1>Saved Searchable App</h1></main>',
-						search_text: 'searchable saved ui artifact demo',
+						description: 'Saved generated UI artifact demo for search and reopen.',
+						code: '<main><h1>Saved Searchable App Demo</h1></main>',
 					})`,
 		},
 	})
@@ -993,8 +989,7 @@ test('mcp server supports parameterized saved apps with resolved runtime params'
 			code: `async () =>
 					await codemode.ui_save_app({
 						title: 'Parameterized Greeting App',
-						description: 'Reusable greeting UI with runtime params.',
-						keywords: ['greeting', 'parameterized', 'ui'],
+						description: 'Parameterized greeting UI app with runtime params.',
 						parameters: [
 							{
 								name: 'name',
@@ -1010,7 +1005,6 @@ test('mcp server supports parameterized saved apps with resolved runtime params'
 							},
 						],
 						code: '<main><h1>Greeting App</h1></main>',
-						search_text: 'parameterized greeting ui app',
 					})`,
 		},
 	})
@@ -1214,10 +1208,8 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 			code: `async () =>
 					await codemode.ui_save_app({
 						title: 'Secrets App',
-						description: 'Generated UI for secret-backed deployments.',
-						keywords: ['secret', 'deploy'],
-						code: '<main><h1>Secrets App</h1></main>',
-						search_text: 'cloudflare deploy secret app',
+						description: 'Cloudflare deploy secret app for secret-backed deployments.',
+						code: '<main><h1>Secrets App</h1><p>Cloudflare deploy</p></main>',
 					})`,
 		},
 	})
@@ -1799,7 +1791,6 @@ test('mcp server deletes saved ui app artifacts', async () => {
 					await codemode.ui_save_app({
 						title: 'Delete Me App',
 						description: 'Saved app to delete.',
-						keywords: ['delete', 'ui'],
 						code: '<main><h1>Delete Me</h1></main>',
 					})`,
 		},
@@ -1861,7 +1852,6 @@ test('mcp server updates saved ui app artifacts', async () => {
 					await codemode.ui_save_app({
 						title: 'Original App',
 						description: 'Original app description.',
-						keywords: ['original', 'ui'],
 						code: '<main><h1>Original</h1></main>',
 					})`,
 		},
@@ -1883,10 +1873,8 @@ test('mcp server updates saved ui app artifacts', async () => {
 						app_id: ${JSON.stringify(appId)},
 						title: 'Updated App',
 						description: 'Updated description.',
-						keywords: ['updated', 'ui'],
 						code: '<main><h1>Updated</h1></main>',
 						runtime: 'javascript',
-						search_text: 'updated searchable text',
 					})`,
 		},
 	})
@@ -1919,8 +1907,6 @@ test('mcp server updates saved ui app artifacts', async () => {
 		| undefined
 	expect(getPayload?.title).toBe('Updated App')
 	expect(getPayload?.description).toBe('Updated description.')
-	expect(getPayload?.keywords).toEqual(['updated', 'ui'])
 	expect(getPayload?.code).toBe('<main><h1>Updated</h1></main>')
 	expect(getPayload?.runtime).toBe('javascript')
-	expect(getPayload?.search_text).toBe('updated searchable text')
 })

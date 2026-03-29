@@ -4,9 +4,8 @@ export function buildUiArtifactEmbedText(
 	input: {
 		title: string
 		description: string
-		keywords: Array<string>
+		code: string
 		runtime: string
-		searchText: string | null
 		parameters?: Array<{
 			name: string
 			description: string
@@ -39,12 +38,11 @@ export function buildUiArtifactEmbedText(
 	const text = [
 		input.title,
 		input.description,
-		input.keywords.join(' '),
+		input.code,
 		input.runtime,
 		'mcp app',
 		'ui artifact',
 		...(parameterText ? [parameterText] : []),
-		...(input.searchText ? [input.searchText] : []),
 	].join('\n')
 	return text.slice(0, maxChars)
 }
