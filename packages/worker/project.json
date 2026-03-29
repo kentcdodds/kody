@@ -41,7 +41,6 @@
 		},
 		"build-client": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-helpers"],
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
 				"{workspaceRoot}/packages/worker/public/assets",
@@ -58,35 +57,21 @@
 				"command": "node --env-file=packages/worker/.env ./wrangler-env.ts build"
 			}
 		},
-		"build-codemode-helpers": {
-			"executor": "nx:run-commands",
-			"inputs": [
-				"default",
-				"{workspaceRoot}/packages/worker/src/mcp/execute-modules/codemode-utils.ts",
-				"{workspaceRoot}/package.json",
-				"{workspaceRoot}/package-lock.json"
-			],
-			"options": {
-				"command": "node -e \"process.exit(0)\""
-			}
-		},
 		"typecheck": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-helpers"],
 			"options": {
 				"command": "tsc -b --noEmit"
 			}
 		},
 		"test": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-helpers"],
 			"options": {
 				"command": "vitest run --project node-unit --project workers-unit"
 			}
 		},
 		"test-mcp": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-codemode-helpers", "build-mcp-apps"],
+			"dependsOn": ["build-mcp-apps"],
 			"options": {
 				"command": "node tools/prepare-e2e-env.ts && vitest run --project mcp-e2e"
 			}
