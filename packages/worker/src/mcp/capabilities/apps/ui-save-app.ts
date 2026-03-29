@@ -87,6 +87,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 				args.app_id === undefined
 					? null
 					: await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
+			if (args.app_id !== undefined && !existing) {
+				throw new Error('Saved UI artifact not found for this user.')
+			}
 			const appId = existing?.id ?? crypto.randomUUID()
 			const now = new Date().toISOString()
 
