@@ -69,11 +69,29 @@ test('buildSkillEmbedText includes denormalized capability text', () => {
 		parameters,
 		specs: fakeSpecs,
 	})
-	expect(text).toContain('ui_save_app')
-	expect(text).toContain('owner')
-	expect(text).toContain('GitHub automation')
-	expect(text).toContain('github-automation')
-	expect(text.toLowerCase()).toContain('generated ui artifact')
+	const lines = text.split('\n')
+	expect(lines).toEqual(
+		expect.arrayContaining([
+			't',
+			'd',
+			'collection GitHub automation',
+			'github-automation',
+			'k',
+			'meta',
+			'skill',
+			'owner: GitHub repo owner. (string)',
+		]),
+	)
+	const denormalizedLines = lines.slice(lines.indexOf('owner: GitHub repo owner. (string)') + 1)
+	expect(denormalizedLines).toEqual(
+		expect.arrayContaining([
+			'ui_save_app',
+			capabilityDomainNames.apps,
+			'Save a generated UI artifact.',
+			'app ui artifact',
+			'title description keywords source app_id',
+		]),
+	)
 })
 
 test('validateSkillSaveFlags rejects read_only with destructive inferred set', () => {

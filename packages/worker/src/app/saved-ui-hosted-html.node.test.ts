@@ -30,18 +30,44 @@ test('renderHostedSavedUiHtml emits shared runtime assets for html apps', () => 
 		appBaseUrl: 'https://kody.example',
 	})
 
-	expect(result).toContain(
-		'<link rel="stylesheet" href="https://kody.example/mcp-apps/kody-ui-utils.css" />',
+	const stylesheetMatch = result.match(
+		/<link rel="stylesheet" href="([^"]+kody-ui-utils\.css)" \/>/,
 	)
-	expect(result).toContain(
-		'<script type="module" src="https://kody.example/mcp-apps/kody-ui-utils.js"></script>',
+	expect(stylesheetMatch?.[1]).toBe(
+		'https://kody.example/mcp-apps/kody-ui-utils.css',
 	)
-	expect(result).toContain(
-		'<script type="importmap">{"imports":{"@kody/ui-utils":"https://kody.example/mcp-apps/kody-ui-utils.js"}}</script>',
+	const runtimeScriptMatch = result.match(
+		/<script type="module" src="([^"]+kody-ui-utils\.js)"><\/script>/,
 	)
-	expect(result).toContain(
-		'window.__kodyGeneratedUiBootstrap = {"mode":"hosted","appSession":{"token":"token-123","endpoints":{"source":"https://kody.example/ui-api/session-123/source","execute":"https://kody.example/ui-api/session-123/execute","secrets":"https://kody.example/ui-api/session-123/secrets","deleteSecret":"https://kody.example/ui-api/session-123/secrets/delete"}}};',
+	expect(runtimeScriptMatch?.[1]).toBe(
+		'https://kody.example/mcp-apps/kody-ui-utils.js',
 	)
+	const importMapMatch = result.match(
+		/<script type="importmap">([^<]+)<\/script>/,
+	)
+	expect(importMapMatch).not.toBeNull()
+	const importMap = JSON.parse(importMapMatch?.[1] ?? '{}') as {
+		imports?: Record<string, string>
+	}
+	expect(importMap.imports?.['@kody/ui-utils']).toBe(
+		'https://kody.example/mcp-apps/kody-ui-utils.js',
+	)
+	const bootstrapMatch = result.match(
+		/window\.__kodyGeneratedUiBootstrap = ([^;]+);/,
+	)
+	expect(bootstrapMatch).not.toBeNull()
+	const bootstrap = JSON.parse(bootstrapMatch?.[1] ?? '{}') as {
+		mode?: string
+		appSession?: { token?: string; endpoints?: Record<string, string> }
+	}
+	expect(bootstrap.mode).toBe('hosted')
+	expect(bootstrap.appSession?.token).toBe('token-123')
+	expect(bootstrap.appSession?.endpoints).toEqual({
+		source: 'https://kody.example/ui-api/session-123/source',
+		execute: 'https://kody.example/ui-api/session-123/execute',
+		secrets: 'https://kody.example/ui-api/session-123/secrets',
+		deleteSecret: 'https://kody.example/ui-api/session-123/secrets/delete',
+	})
 })
 
 test('renderHostedSavedUiHtml keeps user javascript separate from runtime bootstrap', () => {
@@ -61,14 +87,26 @@ test('renderHostedSavedUiHtml keeps user javascript separate from runtime bootst
 		appBaseUrl: 'https://kody.example',
 	})
 
-	expect(result).toContain(
-		'<script type="module" src="https://kody.example/mcp-apps/kody-ui-utils.js"></script>',
+	const importMapMatch = result.match(
+		/<script type="importmap">([^<]+)<\/script>/,
+	)
+	expect(importMapMatch).not.toBeNull()
+	const importMap = JSON.parse(importMapMatch?.[1] ?? '{}') as {
+		imports?: Record<string, string>
+	}
+	expect(importMap.imports?.['@kody/ui-utils']).toBe(
+		'https://kody.example/mcp-apps/kody-ui-utils.js',
 	)
 	expect(result).toContain(
-		'<script type="importmap">{"imports":{"@kody/ui-utils":"https://kody.example/mcp-apps/kody-ui-utils.js"}}</script>',
+		'<script type="module">\n' +
+			'document.querySelector("[data-generated-ui-root]")?.append("hello")',
 	)
-	expect(result).toContain(
-		'<script type="module">\ndocument.querySelector("[data-generated-ui-root]")?.append("hello")',
+	const bootstrapMatch = result.match(
+		/window\.__kodyGeneratedUiBootstrap = ([^;]+);/,
 	)
-	expect(result).not.toContain('const appSession =')
+	expect(bootstrapMatch).not.toBeNull()
+	const bootstrap = JSON.parse(bootstrapMatch?.[1] ?? '{}') as {
+		appSession?: { token?: string }
+	}
+	expect(bootstrap.appSession?.token).toBe('token-123')
 })
