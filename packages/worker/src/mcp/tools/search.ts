@@ -65,17 +65,29 @@ function applyMaxResponseSize(
 		return { payload, serialized }
 	}
 
-	let matches = payload.matches
-	let trimmedPayload: SearchPayload = { ...payload, matches }
-	let serialized = stringifySearchPayload(trimmedPayload)
+	const total = payload.matches.length
+	let low = 0
+	let high = total
+	let bestPayload: SearchPayload = { ...payload, matches: [] }
+	let bestSerialized = stringifySearchPayload(bestPayload)
 
-	while (serialized.length > maxResponseSize && matches.length > 0) {
-		matches = matches.slice(0, -1)
-		trimmedPayload = { ...payload, matches }
-		serialized = stringifySearchPayload(trimmedPayload)
+	while (low <= high) {
+		const mid = Math.floor((low + high) / 2)
+		const trimmedPayload: SearchPayload = {
+			...payload,
+			matches: payload.matches.slice(0, mid),
+		}
+		const serialized = stringifySearchPayload(trimmedPayload)
+		if (serialized.length <= maxResponseSize) {
+			bestPayload = trimmedPayload
+			bestSerialized = serialized
+			low = mid + 1
+		} else {
+			high = mid - 1
+		}
 	}
 
-	return { payload: trimmedPayload, serialized }
+	return { payload: bestPayload, serialized: bestSerialized }
 }
 
 const searchTool = {

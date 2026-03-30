@@ -14,6 +14,8 @@ const propertyMapKeys = new Set([
 	'$defs',
 	'patternProperties',
 ])
+const compositionArrayKeys = new Set(['allOf', 'anyOf', 'oneOf'])
+const compositionObjectKeys = new Set(['not', 'if', 'then', 'else'])
 
 export function compressSchemaForLlm(
 	schema: unknown,
@@ -91,6 +93,26 @@ function compressSchemaNode(
 					}),
 				]),
 			)
+			continue
+		}
+		if (compositionArrayKeys.has(key)) {
+			result[key] = Array.isArray(value)
+				? value.map((item) =>
+						compressSchemaNode(item, {
+							isRoot: false,
+							propertyName: undefined,
+							stripRootObjectType: false,
+						}),
+					)
+				: value
+			continue
+		}
+		if (compositionObjectKeys.has(key)) {
+			result[key] = compressSchemaNode(value, {
+				isRoot: false,
+				propertyName: undefined,
+				stripRootObjectType: false,
+			})
 			continue
 		}
 		if (key === 'items') {
