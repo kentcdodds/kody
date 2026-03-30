@@ -36,6 +36,21 @@ declare const codemode: Record<
   (args: CapabilityArgs) => Promise<CapabilityResult>
 >;
 
+These helper functions are available directly in your async function:
+
+\`type ExecuteRequestInput = string | URL | Request;\`
+\`type AuthenticatedFetch = (input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>;\`
+\`declare function refreshAccessToken(providerName: string): Promise<string>;\`
+\`declare function createAuthenticatedFetch(providerName: string): Promise<AuthenticatedFetch>;\`
+
+Use them directly:
+
+\`async () => {
+  const spotifyFetch = await createAuthenticatedFetch('spotify');
+  const response = await spotifyFetch('/me/player');
+  return await response.json();
+}\`
+
 Capability names are discovered via \`search\`.
 Each method accepts one args object matching that capability's \`inputSchema\`
 and returns structured data described by its \`outputSchema\` when present.

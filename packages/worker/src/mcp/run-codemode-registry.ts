@@ -17,6 +17,10 @@ import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import {
+	createExecuteHelperPrelude,
+	getExecuteHelperCapabilityNames,
+} from '#mcp/execute-modules/codemode-utils.ts'
 
 export async function buildCodemodeFns(
 	env: Env,
@@ -128,6 +132,7 @@ export async function runCodemodeWithRegistry(
 	executorExports?: typeof workerExports,
 ) {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
+	const { normalizeCode } = await import('@cloudflare/codemode')
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
 	)
@@ -141,10 +146,16 @@ export async function runCodemodeWithRegistry(
 		},
 	})
 	const provider = await buildCodemodeProvider(env, callerContext)
-	const wrapped =
+	const wrappedCode =
 		params !== undefined
 			? await buildParameterizedSkillCode(code, params)
 			: code
+	const normalized = normalizeCode(wrappedCode)
+	const wrapped = `async () => {
+${createExecuteHelperPrelude()}
+  const __kodyUserCode = (${normalized});
+  return await __kodyUserCode();
+}`
 	const result = await executor.execute(wrapped, [provider])
 	if (!result.error) return result
 	const batchMessage = await rewriteCapabilitySecretError({
@@ -154,6 +165,10 @@ export async function runCodemodeWithRegistry(
 		callerContext,
 	})
 	return batchMessage ? { ...result, error: batchMessage } : result
+}
+
+export function getExecuteInjectedCapabilityNames() {
+	return getExecuteHelperCapabilityNames()
 }
 
 async function rewriteCapabilitySecretError(input: {

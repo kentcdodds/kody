@@ -753,6 +753,110 @@ test('mcp server executes ui_save_app via execute tool', async () => {
 	expect(textOutput).toContain('meta_save_skill')
 })
 
+test('mcp server executes directly available codemode helpers', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+	const appCookieHeader = await loginToApp(server.origin, database.user)
+
+	const secretSaveResponse = await fetch(
+		new URL('/account/secrets.json', server.origin),
+		{
+			method: 'POST',
+			headers: {
+				Cookie: appCookieHeader,
+				'Content-Type': 'application/json',
+				Accept: 'application/json',
+			},
+			body: JSON.stringify({
+				action: 'save',
+				name: 'spotifyRefreshToken',
+				value: 'spotify-refresh-token',
+				scope: 'user',
+				description: 'Spotify OAuth refresh token',
+				allowedHosts: ['accounts.spotify.com', 'api.spotify.com'],
+				allowedCapabilities: [],
+			}),
+		},
+	)
+	const secretSaveRaw = await secretSaveResponse.text()
+	expect(secretSaveResponse.ok, secretSaveRaw).toBe(true)
+
+	const setupResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				await codemode.value_set({
+					name: 'spotify-client-id',
+					value: 'spotify-client-id-value',
+					scope: 'user',
+					description: 'Spotify OAuth client id',
+				})
+				await codemode.connector_save({
+					name: 'spotify',
+					tokenUrl: 'https://accounts.spotify.com/api/token',
+					apiBaseUrl: 'https://api.spotify.com/v1',
+					flow: 'pkce',
+					clientIdValueName: 'spotify-client-id',
+					clientSecretSecretName: null,
+					accessTokenSecretName: 'spotifyAccessToken',
+					refreshTokenSecretName: 'spotifyRefreshToken',
+					requiredHosts: ['accounts.spotify.com', 'api.spotify.com'],
+				})
+				return { ok: true }
+			}`,
+		},
+	})
+	if ((setupResult as CallToolResult).isError) {
+		const setupText =
+			(setupResult as CallToolResult).content.find(
+				(item): item is Extract<ContentBlock, { type: 'text' }> =>
+					item.type === 'text',
+			)?.text ?? ''
+		throw new Error(`Helper setup execute failed: ${setupText}`)
+	}
+
+	const result = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				const spotifyFetch = await createAuthenticatedFetch('spotify')
+				const response = await spotifyFetch('/me/player')
+				return {
+					status: response.status,
+					body: await response.json(),
+				}
+			}`,
+		},
+	})
+
+	const structuredResult = (result as CallToolResult).structuredContent as
+		| {
+				result?: Record<string, unknown>
+				error?: unknown
+		  }
+		| undefined
+	const executeResult = structuredResult?.result as
+		| Record<string, unknown>
+		| undefined
+	const textOutput =
+		(result as CallToolResult).content.find(
+			(item): item is Extract<ContentBlock, { type: 'text' }> =>
+				item.type === 'text',
+		)?.text ?? ''
+	if ((result as CallToolResult).isError) {
+		expect(textOutput).toContain(
+			'Token refresh failed for connector "spotify" with HTTP 400.',
+		)
+	} else {
+		expect(executeResult).toEqual(
+			expect.objectContaining({
+				status: expect.any(Number),
+			}),
+		)
+	}
+})
+
 test('mcp server returns structured guidance for missing secret errors in execute', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)

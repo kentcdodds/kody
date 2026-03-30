@@ -32,3 +32,14 @@ test('marks partial for computed non-literal codemode access', () => {
 	const { inferencePartial } = inferCodemodeCapabilitiesFromAst(program)
 	expect(inferencePartial).toBe(true)
 })
+
+test('infers capabilities from execute-time helper names', () => {
+	const src = `async () => {
+    const spotifyFetch = await createAuthenticatedFetch('spotify')
+    await refreshAccessToken('spotify')
+    return spotifyFetch
+  }`
+	const { helperNames, inferencePartial } = inferCodemodeCapabilities(src)
+	expect(inferencePartial).toBe(false)
+	expect(helperNames).toEqual(['connector_get', 'value_get'])
+})

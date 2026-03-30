@@ -17,6 +17,12 @@
 		"build-mcp-apps": {
 			"cache": true
 		},
+		"test": {
+			"cache": true
+		},
+		"test-mcp": {
+			"cache": true
+		},
 		"dev": {
 			"cache": false
 		},

@@ -1,8 +1,16 @@
 import { parse, type Node, type Program } from 'acorn'
 
+const executeHelperCapabilities = ['connector_get', 'value_get'] as const
+const executeHelperNames = new Set([
+	'refreshAccessToken',
+	'createAuthenticatedFetch',
+])
+
 export type InferCodemodeCapabilitiesResult = {
 	/** Resolved capability names from static member access on `codemode`. */
 	staticNames: Array<string>
+	/** Resolved capability names from known inline execute-time helpers. */
+	helperNames: Array<string>
 	/**
 	 * True when `codemode[dynamic]` or parsing failed (caller may still merge explicit uses).
 	 */
@@ -50,11 +58,25 @@ function peekMemberPropertyName(
 	return null
 }
 
+function readIdentifierName(node: unknown) {
+	if (
+		typeof node === 'object' &&
+		node !== null &&
+		'type' in node &&
+		(node as { type: string }).type === 'Identifier'
+	) {
+		const name = (node as { name?: unknown }).name
+		return typeof name === 'string' && name.length > 0 ? name : null
+	}
+	return null
+}
+
 /** Walk ESTree-ish nodes produced by acorn; collect codemode.<name> accesses. */
 export function inferCodemodeCapabilitiesFromAst(
 	program: Program,
 ): InferCodemodeCapabilitiesResult {
 	const staticSet = new Set<string>()
+	const helperSet = new Set<string>()
 	let inferencePartial = false
 	const markPartial = () => {
 		inferencePartial = true
@@ -84,6 +106,17 @@ export function inferCodemodeCapabilitiesFromAst(
 			}
 		}
 
+		if (n.type === 'CallExpression') {
+			const calleeName = readIdentifierName(
+				(n as { callee?: unknown }).callee ?? null,
+			)
+			if (calleeName && executeHelperNames.has(calleeName)) {
+				for (const capabilityName of executeHelperCapabilities) {
+					helperSet.add(capabilityName)
+				}
+			}
+		}
+
 		if (n.type === 'ChainExpression') {
 			const expr = (n as unknown as { expression: unknown }).expression
 			visit(expr)
@@ -105,6 +138,7 @@ export function inferCodemodeCapabilitiesFromAst(
 
 	return {
 		staticNames: [...staticSet].sort(),
+		helperNames: [...helperSet].sort(),
 		inferencePartial,
 	}
 }
@@ -123,6 +157,6 @@ export function inferCodemodeCapabilities(
 		})
 		return inferCodemodeCapabilitiesFromAst(program)
 	} catch {
-		return { staticNames: [], inferencePartial: true }
+		return { staticNames: [], helperNames: [], inferencePartial: true }
 	}
 }

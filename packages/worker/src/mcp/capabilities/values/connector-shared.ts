@@ -6,6 +6,7 @@ export const connectorFlowValues = ['pkce', 'confidential'] as const
 export const connectorConfigSchema = z.object({
 	name: z.string().min(1),
 	tokenUrl: z.string().url(),
+	apiBaseUrl: z.string().url().optional().nullable(),
 	flow: z.enum(connectorFlowValues),
 	clientIdValueName: z.string().min(1),
 	clientSecretSecretName: z.string().min(1).optional().nullable(),
@@ -16,6 +17,22 @@ export const connectorConfigSchema = z.object({
 
 export type ConnectorConfig = z.infer<typeof connectorConfigSchema>
 
+export const connectorSaveSchema = z
+	.object({
+		name: z.string().min(1),
+		tokenUrl: z.string().url().optional(),
+		apiBaseUrl: z.string().url().nullable().optional(),
+		flow: z.enum(connectorFlowValues).optional(),
+		clientIdValueName: z.string().min(1).optional(),
+		clientSecretSecretName: z.string().min(1).nullable().optional(),
+		accessTokenSecretName: z.string().min(1).optional(),
+		refreshTokenSecretName: z.string().min(1).nullable().optional(),
+		requiredHosts: z.array(z.string()).optional(),
+	})
+	.strict()
+
+export type ConnectorSaveInput = z.infer<typeof connectorSaveSchema>
+
 export function normalizeConnectorConfig(
 	value: ConnectorConfig,
 ): ConnectorConfig {
@@ -23,12 +40,24 @@ export function normalizeConnectorConfig(
 		...value,
 		name: value.name.trim(),
 		tokenUrl: value.tokenUrl.trim(),
+		apiBaseUrl: value.apiBaseUrl?.trim() || null,
 		clientIdValueName: value.clientIdValueName.trim(),
 		clientSecretSecretName: value.clientSecretSecretName?.trim() || null,
 		accessTokenSecretName: value.accessTokenSecretName.trim(),
 		refreshTokenSecretName: value.refreshTokenSecretName?.trim() || null,
 		requiredHosts: normalizeAllowedHosts(value.requiredHosts ?? []),
 	}
+}
+
+export function mergeConnectorConfig(
+	current: ConnectorConfig,
+	update: ConnectorSaveInput,
+): ConnectorConfig {
+	return normalizeConnectorConfig({
+		...current,
+		...update,
+		name: update.name,
+	})
 }
 
 const connectorValuePrefix = '_connector:'

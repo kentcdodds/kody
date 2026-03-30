@@ -237,6 +237,7 @@ async function handleConnectOauthAction(input: {
 }) {
 	const provider = readString(input.body, 'provider')
 	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
+	const apiBaseUrl = readOptionalString(input.body, 'apiBaseUrl')
 	const flow = readOptionalString(input.body, 'flow')
 	const clientIdValueName = readOptionalString(input.body, 'clientIdValueName')
 	const clientSecretSecretName = readOptionalString(
@@ -345,6 +346,7 @@ async function handleConnectOauthAction(input: {
 		userId: input.user.mcpUser.userId,
 		provider,
 		tokenUrl,
+		apiBaseUrl,
 		flow: flow === 'confidential' ? 'confidential' : 'pkce',
 		clientIdValueName,
 		clientSecretSecretName,
@@ -449,6 +451,7 @@ async function saveConnectorConfig(input: {
 	userId: string
 	provider: string
 	tokenUrl: string
+	apiBaseUrl: string | null
 	flow: 'pkce' | 'confidential'
 	clientIdValueName: string
 	clientSecretSecretName: string | null
@@ -464,6 +467,7 @@ async function saveConnectorConfig(input: {
 	const connector = normalizeConnectorConfig({
 		name: input.provider,
 		tokenUrl: input.tokenUrl,
+		apiBaseUrl: input.apiBaseUrl,
 		flow: input.flow,
 		clientIdValueName: input.clientIdValueName,
 		clientSecretSecretName:
