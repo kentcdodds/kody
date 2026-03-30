@@ -18,8 +18,9 @@ App access pattern:
   and creates a D1-backed database runtime via
   `packages/worker/src/d1-data-table-adapter.ts`
 - Database row validation and API payload parsing use `remix/data-schema`
-- app handlers perform CRUD/query operations through `remix/data-table`
-  (including `findOne`, `create`, `update`, `deleteMany`, and `count`)
+- app handlers and the mock Resend worker perform CRUD/query operations through
+  `remix/data-table` (including `findOne`, `create`, `update`, `deleteMany`, and
+  `count`)
 
 ## KV (`OAUTH_KV`)
 
