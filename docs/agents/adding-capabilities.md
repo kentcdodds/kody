@@ -104,8 +104,8 @@ runs. Missing secrets still fail with the same "secret not found" guidance used
 elsewhere, and secret-bearing capability inputs still require an authenticated
 user.
 
-Those inputs are also treated as write-only for the rest of that execution:
-once plaintext crosses an `x-kody-secret` capability boundary, Kody redacts that
+Those inputs are also treated as write-only for the rest of that execution: once
+plaintext crosses an `x-kody-secret` capability boundary, Kody redacts that
 plaintext from later execute results and logs before returning them to the
 caller. Capability authors should still avoid returning or logging secret
 material, but the runtime adds this extra defense-in-depth layer.

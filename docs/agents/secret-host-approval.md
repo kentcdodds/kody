@@ -104,8 +104,8 @@ Use it narrowly:
 - mark only the exact sensitive fields
 - prefer it for local persistence or device-side credential handoff
 - require an authenticated user, just like fetch-time secret placeholders
-- never return or log the resolved plaintext after it crosses an
-  `x-kody-secret` capability boundary
+- never return or log the resolved plaintext after it crosses an `x-kody-secret`
+  capability boundary
 
 Do not treat `x-kody-secret` as a generic replacement for execute-time
 `fetch(...)` placeholders.

@@ -191,7 +191,10 @@ test('buildCodemodeFns tracks values that crossed secret-marked capability input
 	const trackedSecretValues: Array<string> = []
 
 	const getRegistrySpy = vi
-		.spyOn(await import('#mcp/capabilities/registry.ts'), 'getCapabilityRegistryForContext')
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
 		.mockResolvedValue({
 			capabilityDomains: [],
 			capabilityDomainDescriptionsByName: {} as Record<string, string>,
@@ -279,21 +282,17 @@ test('buildCodemodeFns tracks values that crossed secret-marked capability input
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
 
 	try {
-		const codemode = await buildCodemodeFns(
-			env,
-			callerContext,
-			{
-				trackSecretInputValue(value) {
-					trackedSecretValues.push(value)
-				},
+		const codemode = await buildCodemodeFns(env, callerContext, {
+			trackSecretInputValue(value) {
+				trackedSecretValues.push(value)
 			},
-		)
-	const result = await codemode.secret_set({
+		})
+		const result = await codemode.secret_set({
 			name: 'spotifyAccessToken',
 			value: 'fresh-access-token',
 		})
 
-	expect(result).toEqual({
+		expect(result).toEqual({
 			name: 'spotifyAccessToken',
 		})
 		expect(trackedSecretValues).toEqual(['fresh-access-token'])

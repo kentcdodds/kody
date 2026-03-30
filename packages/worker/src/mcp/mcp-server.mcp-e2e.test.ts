@@ -583,11 +583,7 @@ test('mcp server searches capabilities', async () => {
 		(m) => m.type === 'capability' && m.name === 'ui_save_app',
 	)
 	expect(saveApp?.domain).toBe('apps')
-	expect(saveApp?.requiredInputFields).toEqual([
-		'title',
-		'description',
-		'code',
-	])
+	expect(saveApp?.requiredInputFields).toEqual(['title', 'description', 'code'])
 	expect(saveApp?.readOnly).toBeUndefined()
 
 	const textOutput =
@@ -1528,16 +1524,15 @@ test('generated ui sessions support secret storage, execute-time resolution, and
 	if (!secretSetExecuteResponse.ok) {
 		throw new Error(await secretSetExecuteResponse.text())
 	}
-	const secretSetExecutePayload =
-		(await secretSetExecuteResponse.json()) as {
-			ok?: boolean
-			result?: {
-				savedAccessToken?: Record<string, unknown>
-				savedRefreshToken?: Record<string, unknown>
-				leakedValue?: string
-			}
-			logs?: Array<string>
+	const secretSetExecutePayload = (await secretSetExecuteResponse.json()) as {
+		ok?: boolean
+		result?: {
+			savedAccessToken?: Record<string, unknown>
+			savedRefreshToken?: Record<string, unknown>
+			leakedValue?: string
 		}
+		logs?: Array<string>
+	}
 	expect(secretSetExecutePayload.ok).toBe(true)
 	expect(secretSetExecutePayload.result?.savedAccessToken).toEqual({
 		name: 'spotifyAccessToken',
