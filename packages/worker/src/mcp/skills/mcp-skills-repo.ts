@@ -146,25 +146,6 @@ export async function listMcpSkillsByUserId(
 	return (results ?? []).map(mapRow)
 }
 
-export async function listMcpSkillsByUserCollection(
-	db: D1Database,
-	userId: string,
-	collectionSlug: string,
-): Promise<Array<McpSkillRow>> {
-	const { results } = await db
-		.prepare(
-			`SELECT id, user_id, title, description, keywords, code, search_text,
-				uses_capabilities, parameters, collection_name, collection_slug,
-				inferred_capabilities, inference_partial, read_only, idempotent,
-				destructive, created_at, updated_at
-			FROM mcp_skills
-			WHERE user_id = ? AND collection_slug = ?`,
-		)
-		.bind(userId, collectionSlug)
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapRow)
-}
-
 export type SkillCollectionSummaryRow = {
 	collection_name: string
 	collection_slug: string
