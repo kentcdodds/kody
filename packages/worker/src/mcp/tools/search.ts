@@ -23,6 +23,11 @@ import {
 	errorFields,
 	logMcpEvent,
 } from '#mcp/observability.ts'
+import {
+	conversationIdInputField,
+	memoryContextInputField,
+	resolveConversationId,
+} from './tool-call-context.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
@@ -59,6 +64,12 @@ If search results seem incomplete, call \`meta_list_capabilities\` to inspect th
 Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. **Skills** require an authenticated MCP user.
 
  Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, collection slug, etc.; for capabilities: JSON schemas where applicable). Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
+
+ Optional **conversationId** groups related calls across the same client
+conversation. Clients should generate and reuse one when possible; Kody returns
+one in \`structuredContent.conversationId\` when omitted. Optional
+\`memory_context\` accepts short, structured task context for future
+memory-aware behavior.
 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
@@ -176,6 +187,8 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.boolean()
 					.optional()
 					.describe('Include full metadata / schemas when true.'),
+				conversationId: conversationIdInputField,
+				memory_context: memoryContextInputField,
 			},
 			annotations: searchTool.annotations,
 		},
@@ -184,8 +197,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			skill_collection?: string
 			limit?: number
 			detail?: boolean
+			conversationId?: string
+			memory_context?: z.infer<typeof memoryContextInputField>
 		}) => {
 			const startedAt = performance.now()
+			const conversationId = resolveConversationId(args.conversationId)
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
@@ -272,6 +288,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				return {
 					content: [{ type: 'text', text: `Error: ${error.message}` }],
 					structuredContent: {
+						conversationId,
 						error: error.message,
 					},
 					isError: true,
@@ -309,6 +326,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					},
 				],
 				structuredContent: {
+					conversationId,
 					result: payload,
 				},
 			}

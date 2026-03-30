@@ -40,6 +40,37 @@ test('mcp server returns built-in instructions and base server metadata', async 
 	).toContain('"matches"')
 })
 
+test('mcp server search echoes provided conversationId and accepts memory_context', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const result = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'generated ui',
+			conversationId: 'searchctx1234',
+			memory_context: {
+				task: 'Find UI-related tools',
+				entities: ['generated ui'],
+				constraints: ['brief'],
+			},
+		},
+	})
+
+	const structuredResult = (result as CallToolResult).structuredContent as
+		| {
+				conversationId?: string
+				result?: {
+					matches?: Array<unknown>
+				}
+		  }
+		| undefined
+
+	expect(structuredResult?.conversationId).toBe('searchctx1234')
+	expect(Array.isArray(structuredResult?.result?.matches)).toBe(true)
+})
+
 test('mcp server saves and browses skill collections', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
@@ -197,6 +228,36 @@ test('mcp server executes user code against codemode', async () => {
 
 	expect(textOutput).toContain('app_id')
 	expect(textOutput).toContain('hosted_url')
+})
+
+test('mcp server execute generates conversationId when omitted and accepts memory_context', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const result = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => ({ ok: true })`,
+			memory_context: {
+				task: 'Return a small payload',
+				constraints: ['no side effects'],
+			},
+		},
+	})
+
+	const structuredResult = (result as CallToolResult).structuredContent as
+		| {
+				conversationId?: string
+				result?: {
+					ok?: boolean
+				}
+		  }
+		| undefined
+
+	expect(typeof structuredResult?.conversationId).toBe('string')
+	expect((structuredResult?.conversationId ?? '').length).toBeGreaterThan(0)
+	expect(structuredResult?.result?.ok).toBe(true)
 })
 
 test('mcp server executes directly available codemode helpers', async () => {
@@ -362,11 +423,17 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 		name: 'open_generated_ui',
 		arguments: {
 			code: '<main><h1>Hello Shell</h1><p>Inline app content.</p></main>',
+			conversationId: 'uictx1234567',
+			memory_context: {
+				task: 'Render inline UI',
+				entities: ['generated ui'],
+			},
 		},
 	})
 
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
+				conversationId?: string
 				appId?: string | null
 				hostedUrl?: string | null
 				renderSource?: string
@@ -381,6 +448,7 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 		)?.text ?? ''
 
 	expect(textOutput).toContain('Generated UI ready')
+	expect(structuredResult?.conversationId).toBe('uictx1234567')
 	expect(structuredResult?.renderSource).toBe('inline_code')
 	expect(appId).toBeNull()
 	expect(hostedUrl).toBeNull()
