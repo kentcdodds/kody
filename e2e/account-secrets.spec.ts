@@ -6,6 +6,8 @@ async function saveSecret(
 		name: string
 		description: string
 		value: string
+		allowedHosts?: Array<string>
+		allowedCapabilities?: Array<string>
 	},
 ) {
 	const response = await page.request.post('/account/secrets.json', {
@@ -16,8 +18,8 @@ async function saveSecret(
 			appId: null,
 			description: input.description,
 			value: input.value,
-			allowedHosts: [],
-			allowedCapabilities: [],
+			allowedHosts: input.allowedHosts ?? [],
+			allowedCapabilities: input.allowedCapabilities ?? [],
 		},
 		headers: { 'Content-Type': 'application/json' },
 	})
@@ -80,4 +82,41 @@ test('switching secrets updates detail view without a full reload', async ({
 					.__secretRouteMarker,
 		),
 	).resolves.toBe('still-here')
+})
+
+test('landing on an approval link shows already added when the host is present', async ({
+	page,
+	login,
+}) => {
+	await login()
+
+	const nonce = Date.now().toString(36)
+	const secret = {
+		name: `cloudflare-token-${nonce}`,
+		description: `Cloudflare token ${nonce}`,
+		value: `token-${nonce}`,
+		allowedHosts: ['api.cloudflare.com'],
+	}
+
+	await saveSecret(page, secret)
+
+	await page.goto(
+		`/account/secrets/user/${secret.name}?allowed-host=api.cloudflare.com&request=stale-token`,
+	)
+
+	await expect(
+		page.getByRole('heading', { level: 2, name: secret.name }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { level: 2, name: 'Already added' }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('status').getByText('This request is already complete for this secret.'),
+	).toBeVisible()
+	await expect(
+		page.getByRole('status').getByText('Host', { exact: false }),
+	).toContainText('api.cloudflare.com')
+	await expect(
+		page.getByRole('heading', { level: 2, name: 'Approve host access' }),
+	).toHaveCount(0)
 })
