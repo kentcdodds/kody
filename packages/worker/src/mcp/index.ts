@@ -32,7 +32,7 @@ Quick start
 - Call 'search' first to discover what Kody can do (results include type 'capability', 'skill', 'app', or 'secret').
 - Call 'execute' or 'meta_run_skill' next to run capability code.
 - Call 'open_generated_ui' when you want an interactive UI rendered in an MCP App host.
-- The public MCP tools accept optional \`conversationId\` and \`memoryContext\` fields. Clients should generate and reuse a short \`conversationId\` across related calls when possible; if omitted, Kody generates one and returns it in \`structuredContent.conversationId\`.
+- The public MCP tools accept optional \`conversationId\` and \`memoryContext\` fields. Clients should generate and reuse a short random \`conversationId\` across related calls when possible, attempting to avoid collisions; if omitted, Kody generates a short random value and returns it in \`structuredContent.conversationId\`.
 - Memory context:
   - Keep \`memoryContext\` short, structured, and task-focused.
   - It is reserved for future memory-aware behavior and is not persisted or used for retrieval yet in this phase.
@@ -51,7 +51,7 @@ ${domainInstructions}
 
 How to use search
 - Call the 'search' tool with a natural-language 'query' describing what you need (optional 'limit', 'detail').
-- Optionally pass \`conversationId\` and reuse it on later related tool calls. If omitted, Kody generates one and returns it in \`structuredContent.conversationId\`.
+- Optionally pass \`conversationId\` and reuse it on later related tool calls. Generate short random values that attempt to avoid collisions. If omitted, Kody generates a short random value and returns it in \`structuredContent.conversationId\`.
 - Narrow results by rephrasing 'query', or use the optional 'skill_collection' filter when you only want saved skills from one collection slug.
 - Saved skills appear when the MCP client provides an authenticated user; use 'meta_get_skill' for full skill code.
 - Use domain descriptions above as vocabulary hints in your query text.
@@ -81,7 +81,7 @@ Destructive Cloudflare access
 
 How to use execute
 - The sandbox provides a 'codemode' object with async methods for each capability.
-- Optionally pass \`conversationId\` and reuse it on later related tool calls. If omitted, Kody generates one and returns it in \`structuredContent.conversationId\`.
+- Optionally pass \`conversationId\` and reuse it on later related tool calls. Generate short random values that attempt to avoid collisions. If omitted, Kody generates a short random value and returns it in \`structuredContent.conversationId\`.
 - Use capability names discovered from search.
 - Pass one args object that matches the capability inputSchema.
 - Each capability call returns that capability's raw structured result value.
@@ -102,7 +102,7 @@ How to use execute
 
 MCP App tools
 - Use 'open_generated_ui' when you want an interactive UI in MCP App compatible hosts.
-- Optionally pass \`conversationId\` and reuse it on later related tool calls. If omitted, Kody generates one and returns it in \`structuredContent.conversationId\`.
+- Optionally pass \`conversationId\` and reuse it on later related tool calls. Generate short random values that attempt to avoid collisions. If omitted, Kody generates a short random value and returns it in \`structuredContent.conversationId\`.
 - Pass either inline source code with 'code' or reopen a saved app with 'app_id' (exactly one is allowed).
 - Prefer body-focused HTML fragments when possible, but full HTML documents are also supported.
 - Use generated UI whenever the user needs to enter a sensitive value. Do not ask the user to paste secrets or credentials into chat.
