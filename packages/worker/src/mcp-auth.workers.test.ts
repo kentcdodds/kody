@@ -12,6 +12,24 @@ import {
 } from './mcp-auth.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 
+function expectAuthenticateHeader(
+	header: string,
+	origin: string,
+	options: {
+		expectScope?: boolean
+	} = {},
+) {
+	expect(header).toContain(
+		`resource_metadata="${origin}${protectedResourceMetadataPath}"`,
+	)
+
+	if (options.expectScope ?? true) {
+		if (oauthScopes.length > 0) {
+			expect(header).toContain(`scope="${oauthScopes.join(' ')}"`)
+		}
+	}
+}
+
 function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	return {
 		async parseAuthRequest() {
@@ -44,66 +62,57 @@ function createContext() {
 	} as unknown as ExecutionContext
 }
 
-test('protected resource metadata describes MCP server', async () => {
-	const request = new Request(
-		`https://example.com${protectedResourceMetadataPath}`,
+test('protected resource metadata and auth challenge resolve origin consistently', async () => {
+	const requestOrigin = 'https://example.com'
+	const appBaseUrl = 'https://heykody.dev'
+
+	const requestOriginMetadataResponse = handleProtectedResourceMetadata(
+		new Request(`${requestOrigin}${protectedResourceMetadataPath}`),
 	)
-	const response = handleProtectedResourceMetadata(request)
-
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toEqual(buildProtectedResourceMetadata('https://example.com'))
-})
-
-test('protected resource metadata prefers APP_BASE_URL over request origin', async () => {
-	const request = new Request(
-		`https://kody-production.kentcdodds.workers.dev${protectedResourceMetadataPath}`,
+	expect(requestOriginMetadataResponse.status).toBe(200)
+	expect(await requestOriginMetadataResponse.json()).toEqual(
+		buildProtectedResourceMetadata(requestOrigin),
 	)
-	const response = handleProtectedResourceMetadata(request, {
-		APP_BASE_URL: 'https://heykody.dev',
-	} as Env)
 
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toEqual(buildProtectedResourceMetadata('https://heykody.dev'))
-})
+	const appBaseUrlMetadataResponse = handleProtectedResourceMetadata(
+		new Request(
+			`https://kody-production.kentcdodds.workers.dev${protectedResourceMetadataPath}`,
+		),
+		{
+			APP_BASE_URL: appBaseUrl,
+		} as Env,
+	)
+	expect(appBaseUrlMetadataResponse.status).toBe(200)
+	expect(await appBaseUrlMetadataResponse.json()).toEqual(
+		buildProtectedResourceMetadata(appBaseUrl),
+	)
 
-test('mcp request without token returns 401 with resource metadata', async () => {
-	const request = new Request(`https://example.com${mcpResourcePath}`)
-	const response = await handleMcpRequest({
-		request,
+	const requestOriginUnauthorizedResponse = await handleMcpRequest({
+		request: new Request(`${requestOrigin}${mcpResourcePath}`),
 		env: createEnv(createHelpers()),
 		ctx: createContext(),
 		fetchMcp: () => new Response('ok'),
 	})
-
-	expect(response.status).toBe(401)
-	const header = response.headers.get('WWW-Authenticate') ?? ''
-	expect(header).toContain(
-		`resource_metadata="https://example.com${protectedResourceMetadataPath}"`,
+	expect(requestOriginUnauthorizedResponse.status).toBe(401)
+	expectAuthenticateHeader(
+		requestOriginUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
+		requestOrigin,
 	)
-	if (oauthScopes.length > 0) {
-		expect(header).toContain(`scope="${oauthScopes.join(' ')}"`)
-	}
-})
 
-test('mcp request without token prefers APP_BASE_URL in auth metadata', async () => {
-	const request = new Request(
-		`https://kody-production.kentcdodds.workers.dev${mcpResourcePath}`,
-	)
-	const response = await handleMcpRequest({
-		request,
+	const appBaseUrlUnauthorizedResponse = await handleMcpRequest({
+		request: new Request(
+			`https://kody-production.kentcdodds.workers.dev${mcpResourcePath}`,
+		),
 		env: createEnv(createHelpers(), {
-			APP_BASE_URL: 'https://heykody.dev',
+			APP_BASE_URL: appBaseUrl,
 		}),
 		ctx: createContext(),
 		fetchMcp: () => new Response('ok'),
 	})
-
-	expect(response.status).toBe(401)
-	const header = response.headers.get('WWW-Authenticate') ?? ''
-	expect(header).toContain(
-		`resource_metadata="https://heykody.dev${protectedResourceMetadataPath}"`,
+	expect(appBaseUrlUnauthorizedResponse.status).toBe(401)
+	expectAuthenticateHeader(
+		appBaseUrlUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
+		appBaseUrl,
 	)
 })
 
