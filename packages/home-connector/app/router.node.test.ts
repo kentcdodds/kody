@@ -63,7 +63,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 		expect(responseWithoutConnector.status).toBe(200)
 		const htmlWithoutConnector = await responseWithoutConnector.text()
 		expect(htmlWithoutConnector).toContain('Home connector admin')
-		expect(htmlWithoutConnector).not.toContain('/home/connectors/default/snapshot')
+		expect(htmlWithoutConnector).not.toContain('Worker connector snapshot')
 	} finally {
 		storage.close()
 	}
