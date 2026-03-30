@@ -1,3 +1,4 @@
+import { type Handle } from 'remix/component'
 import { colors, mq, radius, spacing, typography } from '#client/styles/tokens.ts'
 
 type SecretEditorFieldsProps = {
@@ -20,8 +21,8 @@ type SecretEditorFieldsProps = {
 	allowedCapabilitiesListName?: string
 }
 
-export function SecretEditorFields(props: SecretEditorFieldsProps) {
-	return (
+export function SecretEditorFields(_handle: Handle) {
+	return (props: SecretEditorFieldsProps) => (
 		<>
 			<label css={fieldCss}>
 				<span css={fieldLabelCss}>Description</span>
@@ -47,22 +48,41 @@ export function SecretEditorFields(props: SecretEditorFieldsProps) {
 						alignItems: 'center',
 					}}
 				>
-					<input
-						type={props.showSecretValue ? 'text' : 'password'}
-						required
-						autoComplete="new-password"
-						value={props.value}
-						placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
-						on={{
-							input: (event) => {
-								props.onValueChange(event.currentTarget.value)
-							},
-						}}
-						css={{
-							...inputCss,
-							paddingRight: '3rem',
-						}}
-					/>
+					{props.showSecretValue ? (
+						<input
+							type="text"
+							required
+							autoComplete="new-password"
+							value={props.value}
+							placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
+							on={{
+								input: (event) => {
+									props.onValueChange(event.currentTarget.value)
+								},
+							}}
+							css={{
+								...inputCss,
+								paddingRight: '3rem',
+							}}
+						/>
+					) : (
+						<input
+							type="password"
+							required
+							autoComplete="new-password"
+							value={props.value}
+							placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
+							on={{
+								input: (event) => {
+									props.onValueChange(event.currentTarget.value)
+								},
+							}}
+							css={{
+								...inputCss,
+								paddingRight: '3rem',
+							}}
+						/>
+					)}
 					<button
 						type="button"
 						aria-label={
