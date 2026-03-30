@@ -4,6 +4,7 @@ import { metaDeleteSkillCapability } from './meta-delete-skill.ts'
 import { metaGetHomeConnectorStatusCapability } from './meta-get-home-connector-status.ts'
 import { metaGetSkillCapability } from './meta-get-skill.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
+import { metaListSkillCollectionsCapability } from './meta-list-skill-collections.ts'
 import { metaRunSkillCapability } from './meta-run-skill.ts'
 import { metaSaveSkillCapability } from './meta-save-skill.ts'
 import { metaUpdateSkillCapability } from './meta-update-skill.ts'
@@ -16,6 +17,7 @@ export const metaDomain = defineDomain({
 	capabilities: [
 		metaListCapabilitiesCapability,
 		metaGetHomeConnectorStatusCapability,
+		metaListSkillCollectionsCapability,
 		metaSaveSkillCapability,
 		metaUpdateSkillCapability,
 		metaDeleteSkillCapability,

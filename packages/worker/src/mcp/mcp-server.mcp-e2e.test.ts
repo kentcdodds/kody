@@ -40,6 +40,125 @@ test('mcp server returns built-in instructions and base server metadata', async 
 	).toContain('"matches"')
 })
 
+test('mcp server saves and browses skill collections', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_save_skill({
+					title: 'Summarize agent PRs',
+					description: 'Summarize open pull requests for agents.',
+					collection: 'GitHub Workflows',
+					keywords: ['github', 'pull requests'],
+					code: 'async () => ({ ok: true })',
+					search_text: 'summarize github pull requests',
+					read_only: true,
+					idempotent: true,
+					destructive: false,
+				})
+			}`,
+		},
+	})
+
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					skill_id?: string
+					collection?: string | null
+					collection_slug?: string | null
+				}
+		  }
+		| undefined
+	const savedSkill = saveStructured?.result
+	expect(typeof savedSkill?.skill_id).toBe('string')
+	expect(savedSkill?.collection).toBe('GitHub Workflows')
+	expect(savedSkill?.collection_slug).toBe('github-workflows')
+
+	const listResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_list_skill_collections({})
+			}`,
+		},
+	})
+	const listStructured = (listResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					total?: number
+					collections?: Array<{
+						name?: string
+						slug?: string
+						skill_count?: number
+					}>
+				}
+		  }
+		| undefined
+	expect(listStructured?.result?.total).toBe(1)
+	expect(listStructured?.result?.collections).toEqual([
+		{
+			name: 'GitHub Workflows',
+			slug: 'github-workflows',
+			skill_count: 1,
+		},
+	])
+
+	const getResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_get_skill({
+					skill_id: ${JSON.stringify(savedSkill?.skill_id)},
+				})
+			}`,
+		},
+	})
+	const getStructured = (getResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					collection?: string | null
+					collection_slug?: string | null
+				}
+		  }
+		| undefined
+	expect(getStructured?.result?.collection).toBe('GitHub Workflows')
+	expect(getStructured?.result?.collection_slug).toBe('github-workflows')
+
+	const searchResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'summarize github pull requests',
+			skill_collection: 'GitHub Workflows',
+			detail: true,
+		},
+	})
+	const searchStructured = (searchResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					matches?: Array<{
+						type?: string
+						skillId?: string
+						collection?: string | null
+						collectionSlug?: string | null
+					}>
+				}
+		  }
+		| undefined
+	expect(
+		searchStructured?.result?.matches?.find((match) => match.type === 'skill'),
+	).toEqual(
+		expect.objectContaining({
+			skillId: savedSkill?.skill_id,
+			collection: 'GitHub Workflows',
+			collectionSlug: 'github-workflows',
+		}),
+	)
+})
+
 test('mcp server executes user code against codemode', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)

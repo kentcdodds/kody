@@ -61,6 +61,8 @@ function skillRowEmbedDoc(
 	return buildSkillEmbedText({
 		title: row.title,
 		description: row.description,
+		collectionName: row.collection_name,
+		collectionSlug: row.collection_slug,
 		keywords,
 		searchText: row.search_text,
 		inferredCapabilities: inferred,
@@ -73,6 +75,8 @@ export type SkillSearchHitSummary = {
 	type: 'skill'
 	skillId: string
 	domain: 'meta'
+	collection: string | null
+	collectionSlug: string | null
 	title: string
 	description: string
 	keywords: Array<string>
@@ -179,6 +183,8 @@ function rowToSkillHit(
 		type: 'skill',
 		skillId: row.id,
 		domain: 'meta',
+		collection: row.collection_name,
+		collectionSlug: row.collection_slug,
 		title: row.title,
 		description: row.description,
 		keywords,
@@ -212,9 +218,14 @@ async function searchSkillsForUser(input: {
 	specs: Record<string, CapabilitySpec>
 	userId: string
 	rows: Array<McpSkillRow>
+	collectionSlug?: string | null
 }): Promise<{ matches: Array<SkillSearchHit>; offline: boolean }> {
 	const q = input.query.trim()
-	const idSet = new Map(input.rows.map((r) => [r.id, r] as const))
+	const filteredRows =
+		input.collectionSlug == null
+			? input.rows
+			: input.rows.filter((row) => row.collection_slug === input.collectionSlug)
+	const idSet = new Map(filteredRows.map((r) => [r.id, r] as const))
 	const ids = [...idSet.keys()]
 	const offline = isCapabilitySearchOffline(input.env)
 
@@ -223,7 +234,7 @@ async function searchSkillsForUser(input: {
 	}
 
 	const docsById = Object.fromEntries(
-		input.rows.map(
+		filteredRows.map(
 			(row) => [row.id, skillRowEmbedDoc(row, input.specs)] as const,
 		),
 	)
@@ -274,9 +285,15 @@ async function searchSkillsForUser(input: {
 		let fromIndex = await collectSkillOrder({
 			kind: { $eq: 'skill' },
 			userId: { $eq: input.userId },
+			...(input.collectionSlug
+				? { collectionSlug: { $eq: input.collectionSlug } }
+				: {}),
 		})
 		if (fromIndex.length === 0) {
-			fromIndex = await collectSkillOrder(undefined)
+			fromIndex = await collectSkillOrder({
+				kind: { $eq: 'skill' },
+				userId: { $eq: input.userId },
+			})
 		}
 		const seenSkillIds = new Set(fromIndex)
 		vectorOrder = [...fromIndex, ...ids.filter((id) => !seenSkillIds.has(id))]
@@ -382,6 +399,7 @@ export async function searchUnified(input: {
 	detail: boolean
 	specs: Record<string, CapabilitySpec>
 	userId: string | null
+	skillCollectionSlug?: string | null
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
 	userSecretRows: Array<SecretSearchRow>
@@ -433,6 +451,7 @@ export async function searchUnified(input: {
 			detail: input.detail,
 			specs: input.specs,
 			userId: input.userId,
+			collectionSlug: input.skillCollectionSlug,
 			rows: input.skillRows,
 		})
 		uiArtifactResult = await searchUiArtifactsForUser({

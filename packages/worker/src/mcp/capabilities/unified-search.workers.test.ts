@@ -10,6 +10,8 @@ function createSkillRow(skillId: string): McpSkillRow {
 		user_id: 'user-123',
 		title: 'Cursor agents with open PRs',
 		description: 'Fetch Cursor agents with open GitHub PRs.',
+		collection_name: 'GitHub Workflows',
+		collection_slug: 'github-workflows',
 		keywords: JSON.stringify(['cursor', 'agents', 'github', 'pr']),
 		code: 'async () => ({ ok: true })',
 		search_text: 'cursor agents open pull requests',
@@ -72,6 +74,8 @@ test('skill search hits include usage hints', async () => {
 	expect(skill.usage).toContain('meta_run_skill')
 	expect(skill.usage).toContain(skillRow.id)
 	expect(skill.usage).toContain('"params"')
+	expect(skill.collection).toBe('GitHub Workflows')
+	expect(skill.collectionSlug).toBe('github-workflows')
 })
 
 test('skill detail hits include usage hints', async () => {
@@ -100,6 +104,46 @@ test('skill detail hits include usage hints', async () => {
 	expect(skill.usage).toContain('meta_get_skill')
 	expect(skill.usage).toContain(skillRow.id)
 	expect(skill.usage).toContain('"params"')
+	expect(skill.collection).toBe('GitHub Workflows')
+	expect(skill.collectionSlug).toBe('github-workflows')
+})
+
+test('skill collection filter narrows saved skill matches', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {} as Record<string, CapabilitySpec>
+	const matchingRow = createSkillRow('skill-matching-collection')
+	const otherRow = {
+		...createSkillRow('skill-other-collection'),
+		title: 'Cloudflare deploy helper',
+		description: 'Deploy a Worker to Cloudflare.',
+		collection_name: 'Cloudflare Ops',
+		collection_slug: 'cloudflare-ops',
+		keywords: JSON.stringify(['cloudflare', 'deploy', 'worker']),
+		search_text: 'deploy cloudflare worker',
+	}
+
+	const result = await searchUnified({
+		env,
+		query: 'github pull requests',
+		limit: 5,
+		detail: true,
+		specs,
+		userId: 'user-123',
+		skillCollectionSlug: 'github-workflows',
+		skillRows: [matchingRow, otherRow],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		appSecretsByAppId: new Map(),
+	})
+
+	const matches = result.matches.filter((match) => match.type === 'skill')
+	expect(matches).toHaveLength(1)
+	const skill = matches[0]
+	if (!skill || skill.type !== 'skill') {
+		throw new Error('Expected a skill match in results.')
+	}
+	expect(skill.skillId).toBe(matchingRow.id)
+	expect(skill.collection).toBe('GitHub Workflows')
 })
 
 test('search can return standalone user secrets and nest app secrets on apps', async () => {

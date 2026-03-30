@@ -7,7 +7,12 @@ import { skillVectorId } from './mcp-skills-repo.ts'
 
 export async function upsertSkillVector(
 	env: Env,
-	input: { skillId: string; userId: string; embedText: string },
+	input: {
+		skillId: string
+		userId: string
+		embedText: string
+		collectionSlug?: string | null
+	},
 ): Promise<void> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index || isCapabilitySearchOffline(env)) return
@@ -16,7 +21,13 @@ export async function upsertSkillVector(
 		{
 			id: skillVectorId(input.skillId),
 			values,
-			metadata: { kind: 'skill', userId: input.userId },
+			metadata: {
+				kind: 'skill',
+				userId: input.userId,
+				...(input.collectionSlug
+					? { collectionSlug: input.collectionSlug }
+					: {}),
+			},
 		},
 	])
 }

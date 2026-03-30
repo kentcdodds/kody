@@ -6,6 +6,7 @@ import {
 	mergeInferredCapabilityNames,
 	validateSkillSaveFlags,
 } from './skill-embed-and-flags.ts'
+import { parseSkillCollection } from './skill-collections.ts'
 import { type McpSkillRow } from './mcp-skills-types.ts'
 import {
 	normalizeSkillParameters,
@@ -41,6 +42,8 @@ export async function buildSkillEmbedTextFromStoredRow(
 	return buildSkillEmbedText({
 		title: row.title,
 		description: row.description,
+		collectionName: row.collection_name,
+		collectionSlug: row.collection_slug,
 		keywords,
 		searchText: row.search_text,
 		inferredCapabilities: inferred,
@@ -52,6 +55,7 @@ export async function buildSkillEmbedTextFromStoredRow(
 export type SkillPersistenceArgs = {
 	title: string
 	description: string
+	collection?: string | undefined
 	keywords: Array<string>
 	code: string
 	search_text?: string | undefined
@@ -71,6 +75,8 @@ export type PreparedSkillPersistence = {
 	rowPayload: {
 		title: string
 		description: string
+		collection_name: string | null
+		collection_slug: string | null
 		keywords: string
 		code: string
 		search_text: string | null
@@ -123,9 +129,12 @@ export async function prepareSkillPersistence(
 	}
 
 	const parameters = normalizeSkillParameters(args.parameters)
+	const collection = parseSkillCollection(args.collection)
 	const embedText = buildSkillEmbedText({
 		title: args.title,
 		description: args.description,
+		collectionName: collection?.name ?? null,
+		collectionSlug: collection?.slug ?? null,
 		keywords: args.keywords,
 		searchText: args.search_text ?? null,
 		inferredCapabilities: merged,
@@ -136,6 +145,8 @@ export async function prepareSkillPersistence(
 	const rowPayload = {
 		title: args.title,
 		description: args.description,
+		collection_name: collection?.name ?? null,
+		collection_slug: collection?.slug ?? null,
 		keywords: JSON.stringify(args.keywords),
 		code: args.code,
 		search_text: args.search_text ?? null,

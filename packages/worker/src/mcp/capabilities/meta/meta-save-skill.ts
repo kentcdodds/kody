@@ -14,6 +14,12 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe('What this skill does (shown in search and to users).'),
+	collection: z
+		.string()
+		.optional()
+		.describe(
+			'Optional user-defined collection/domain label for grouping related saved skills.',
+		),
 	keywords: z
 		.array(z.string())
 		.describe('Extra search keywords for this skill.'),
@@ -60,6 +66,8 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	skill_id: z.string(),
+	collection: z.string().nullable(),
+	collection_slug: z.string().nullable(),
 	inferred_capabilities: z.array(z.string()),
 	inference_partial: z.boolean(),
 	destructive_derived: z.boolean(),
@@ -74,7 +82,15 @@ export const metaSaveSkillCapability = defineDomainCapability(
 		name: 'meta_save_skill',
 		description:
 			'Save a reusable codemode skill for the signed-in user when the workflow is reasonably repeatable (a pattern you expect to run again with similar structure or inputs). Do not save one-off tasks or highly bespoke work—use execute for those. To change an existing skill in place, use meta_update_skill instead.',
-		keywords: ['skill', 'save', 'codemode', 'recipe', 'reuse', 'persist'],
+		keywords: [
+			'skill',
+			'save',
+			'codemode',
+			'recipe',
+			'reuse',
+			'persist',
+			'collection',
+		],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -99,6 +115,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					skillId,
 					userId: user.userId,
 					embedText: prep.embedText,
+					collectionSlug: prep.rowPayload.collection_slug,
 				})
 			} catch (cause) {
 				await deleteMcpSkill(ctx.env.APP_DB, user.userId, skillId)
@@ -107,6 +124,8 @@ export const metaSaveSkillCapability = defineDomainCapability(
 
 			return {
 				skill_id: skillId,
+				collection: prep.rowPayload.collection_name,
+				collection_slug: prep.rowPayload.collection_slug,
 				inferred_capabilities: prep.merged,
 				inference_partial: prep.inferencePartial,
 				destructive_derived: prep.derived.destructiveDerived,

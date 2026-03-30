@@ -3,6 +3,8 @@ export type McpSkillRow = {
 	user_id: string
 	title: string
 	description: string
+	collection_name: string | null
+	collection_slug: string | null
 	keywords: string
 	code: string
 	search_text: string | null
