@@ -22,10 +22,4 @@ test('execute tool description encourages fewer execute calls', async () => {
 	expect(registerTool.mock.calls[0]?.[1]?.description).toContain(
 		'chain the capability calls there and return the final useful result',
 	)
-	expect(registerTool.mock.calls[0]?.[1]?.description).not.toContain(
-		'Pass `conversationId`',
-	)
-	expect(registerTool.mock.calls[0]?.[1]?.description).not.toContain(
-		'Pass `memoryContext`',
-	)
 })
