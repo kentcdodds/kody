@@ -16,17 +16,15 @@
 
 ---
 
-`kody` is currently an experiment in building a personal assistant that can work
-across AI agent hosts that support MCP.
-
-Today this repo includes a Remix-powered UI, Cloudflare Worker request routing,
-chat-agent plumbing, and OAuth-protected MCP endpoints. The long-term direction
-is not a huge static tool catalog. It is a compact MCP surface with broader
-capabilities hidden behind a compact `search` tool plus Code Mode `execute`
-flows.
+`kody` is an experimental personal assistant platform built on Cloudflare
+Workers and the Model Context Protocol (MCP). It ships a Remix UI, Worker-based
+request routing, chat-agent plumbing, and OAuth-protected MCP endpoints. The
+current direction favors a compact MCP surface with powerful `search` and
+Code Mode `execute` flows over a large static tool catalog.
 
 This project is intentionally single-user right now and is being built for
-`me@kentcdodds.com`.
+`me@kentcdodds.com`. The repo was generated from the
+[epicflare](https://github.com/epicweb-dev/epicflare) starter.
 
 The repo is organized as an Nx monorepo, with shared modules in
 `packages/shared` (`@kody-internal/shared`), the main app worker under
@@ -42,7 +40,8 @@ This will clone the template, install dependencies, run the guided setup, and
 start the dev server.
 
 See [`docs/getting-started.md`](./docs/getting-started.md) for the full setup
-paths and expectations.
+paths and expectations. Contributors and agents should start with
+[`AGENTS.md`](./AGENTS.md) for repo-specific guidance.
 
 If you are trying to understand what this repository is for, start with
 [`docs/project-intent.md`](./docs/project-intent.md).
