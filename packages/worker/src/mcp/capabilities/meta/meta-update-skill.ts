@@ -65,7 +65,15 @@ export const metaUpdateSkillCapability = defineDomainCapability(
 		name: 'meta_update_skill',
 		description:
 			'Replace fields and codemode for an existing skill (same skill_id). Re-runs inference, validation, D1 update, and Vectorize upsert. Use when meta_run_skill fails due to bad stored code.',
-		keywords: ['skill', 'update', 'edit', 'replace', 'fix', 'codemode'],
+		keywords: [
+			'skill',
+			'update',
+			'edit',
+			'replace',
+			'fix',
+			'codemode',
+			'collection',
+		],
 		readOnly: false,
 		idempotent: true,
 		destructive: false,

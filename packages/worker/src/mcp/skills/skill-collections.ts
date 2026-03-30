@@ -4,7 +4,7 @@ function collapseWhitespace(value: string): string {
 	return value.replace(/\s+/g, ' ').trim()
 }
 
-export function normalizeSkillCollectionName(
+function normalizeSkillCollectionName(
 	value: string | null | undefined,
 ): string | null {
 	if (value == null) return null
