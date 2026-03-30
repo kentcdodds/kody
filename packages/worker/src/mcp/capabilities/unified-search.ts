@@ -290,7 +290,10 @@ async function searchSkillsForUser(input: {
 				: {}),
 		})
 		if (fromIndex.length === 0) {
-			fromIndex = await collectSkillOrder(undefined)
+			fromIndex = await collectSkillOrder({
+				kind: { $eq: 'skill' },
+				userId: { $eq: input.userId },
+			})
 		}
 		const seenSkillIds = new Set(fromIndex)
 		vectorOrder = [...fromIndex, ...ids.filter((id) => !seenSkillIds.has(id))]

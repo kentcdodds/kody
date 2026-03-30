@@ -159,13 +159,13 @@ export async function listMcpSkillCollectionsByUserId(
 	const { results } = await db
 		.prepare(
 			`SELECT
-				collection_name,
+				MAX(collection_name) AS collection_name,
 				collection_slug,
 				COUNT(*) AS skill_count
 			FROM mcp_skills
 			WHERE user_id = ? AND collection_slug IS NOT NULL
-			GROUP BY collection_slug, collection_name
-			ORDER BY collection_name ASC`,
+			GROUP BY collection_slug
+			ORDER BY MAX(collection_name) ASC`,
 		)
 		.bind(userId)
 		.all<Record<string, unknown>>()

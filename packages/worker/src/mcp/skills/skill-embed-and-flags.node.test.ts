@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
+import { slugifySkillCollectionName } from './skill-collections.ts'
 import {
 	buildSkillEmbedText,
 	mergeInferredCapabilityNames,
@@ -87,4 +88,14 @@ test('validateSkillSaveFlags rejects read_only with destructive inferred set', (
 		inferredCount: 1,
 	})
 	expect(v.ok).toBe(false)
+})
+
+test('slugifySkillCollectionName generates deterministic fallback for non-latin names', () => {
+	const first = slugifySkillCollectionName('日本語')
+	const second = slugifySkillCollectionName('日本語')
+	const other = slugifySkillCollectionName('한국어')
+
+	expect(first).toMatch(/^col-[a-z0-9]+$/)
+	expect(first).toBe(second)
+	expect(other).not.toBe(first)
 })

@@ -221,12 +221,14 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							appIds: optionalRows.uiArtifactRows.map((row) => row.id),
 						})
 					: new Map()
+				const skillCollectionSlug =
+					args.skill_collection?.trim()
+						? slugifySkillCollectionName(args.skill_collection)
+						: undefined
 				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,
-					skillCollectionSlug: args.skill_collection
-						? slugifySkillCollectionName(args.skill_collection)
-						: undefined,
+					skillCollectionSlug,
 					limit: args.limit ?? defaultSearchLimit,
 					detail: args.detail === true,
 					specs: registry.capabilitySpecs,

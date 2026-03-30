@@ -48,7 +48,7 @@ Example:
 ## Collections
 
 Skills may include an optional **`collection`** string when saved or updated.
-This is a first-class grouping label for related skills, separate from builtin
+This is a first-class grouping label for related skills, separate from built-in
 capability domains such as `coding`, `meta`, or `home`.
 
 The server stores both:

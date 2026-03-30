@@ -15,7 +15,7 @@ function normalizeSkillCollectionName(
 
 export function slugifySkillCollectionName(value: string): string {
 	const normalized = normalizeSkillCollectionName(value)
-	if (!normalized) return 'general'
+	if (!normalized) return 'col-empty'
 	const ascii = normalized
 		.normalize('NFKD')
 		.replace(/[\u0300-\u036f]/g, '')
@@ -23,7 +23,8 @@ export function slugifySkillCollectionName(value: string): string {
 	const slug = ascii
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-+|-+$/g, '')
-	return slug.length > 0 ? slug : 'general'
+	if (slug.length > 0) return slug
+	return `col-${stableCollectionHash(normalized)}`
 }
 
 export function parseSkillCollection(value: string | null | undefined): {
@@ -36,4 +37,13 @@ export function parseSkillCollection(value: string | null | undefined): {
 		name,
 		slug: slugifySkillCollectionName(name),
 	}
+}
+
+function stableCollectionHash(value: string): string {
+	let hash = 2166136261
+	for (const char of value) {
+		hash ^= char.codePointAt(0) ?? 0
+		hash = Math.imul(hash, 16777619)
+	}
+	return (hash >>> 0).toString(36)
 }
