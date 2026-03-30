@@ -234,7 +234,7 @@ async function searchSkillsForUser(input: {
 	}
 
 	const docsById = Object.fromEntries(
-		input.rows.map(
+		filteredRows.map(
 			(row) => [row.id, skillRowEmbedDoc(row, input.specs)] as const,
 		),
 	)
