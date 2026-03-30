@@ -40,7 +40,7 @@ test('mcp server returns built-in instructions and base server metadata', async 
 	).toContain('"matches"')
 })
 
-test('mcp server search echoes provided conversationId and accepts memory_context', async () => {
+test('mcp server search echoes provided conversationId and accepts memoryContext', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -50,7 +50,7 @@ test('mcp server search echoes provided conversationId and accepts memory_contex
 		arguments: {
 			query: 'generated ui',
 			conversationId: 'searchctx1234',
-			memory_context: {
+			memoryContext: {
 				task: 'Find UI-related tools',
 				entities: ['generated ui'],
 				constraints: ['brief'],
@@ -230,7 +230,7 @@ test('mcp server executes user code against codemode', async () => {
 	expect(textOutput).toContain('hosted_url')
 })
 
-test('mcp server execute generates conversationId when omitted and accepts memory_context', async () => {
+test('mcp server execute generates conversationId when omitted and accepts memoryContext', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -239,7 +239,7 @@ test('mcp server execute generates conversationId when omitted and accepts memor
 		name: 'execute',
 		arguments: {
 			code: `async () => ({ ok: true })`,
-			memory_context: {
+			memoryContext: {
 				task: 'Return a small payload',
 				constraints: ['no side effects'],
 			},
@@ -424,7 +424,7 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 		arguments: {
 			code: '<main><h1>Hello Shell</h1><p>Inline app content.</p></main>',
 			conversationId: 'uictx1234567',
-			memory_context: {
+			memoryContext: {
 				task: 'Render inline UI',
 				entities: ['generated ui'],
 			},

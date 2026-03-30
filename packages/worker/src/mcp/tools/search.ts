@@ -66,9 +66,9 @@ Pass a **query** string describing what you want to do. Results are ranked with 
  Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, collection slug, etc.; for capabilities: JSON schemas where applicable). Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
 
  Optional **conversationId** groups related calls across the same client
-conversation. Clients should generate and reuse one when possible; Kody returns
-one in \`structuredContent.conversationId\` when omitted. Optional
-\`memory_context\` accepts short, structured task context for future
+ conversation. Clients should generate and reuse one when possible; Kody returns
+ one in \`structuredContent.conversationId\` when omitted. Optional
+\`memoryContext\` accepts short, structured task context for future
 memory-aware behavior.
 
 Example arguments:
@@ -188,7 +188,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.optional()
 					.describe('Include full metadata / schemas when true.'),
 				conversationId: conversationIdInputField,
-				memory_context: memoryContextInputField,
+				memoryContext: memoryContextInputField,
 			},
 			annotations: searchTool.annotations,
 		},
@@ -198,7 +198,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			limit?: number
 			detail?: boolean
 			conversationId?: string
-			memory_context?: z.infer<typeof memoryContextInputField>
+			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
 			const startedAt = performance.now()
 			const conversationId = resolveConversationId(args.conversationId)

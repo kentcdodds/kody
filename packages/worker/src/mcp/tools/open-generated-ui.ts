@@ -29,7 +29,7 @@ Behavior:
 - Saved apps can declare reusable parameters; pass runtime values via \`params\` and read them from \`kodyWidget.params\` after importing \`kodyWidget\` from \`@kody/ui-utils\`.
 - \`code\` may be a full HTML document or a fragment.
 - Optional \`conversationId\` groups related MCP calls. Reuse the same value across follow-up tool calls when possible; if omitted, Kody generates one and returns it in \`structuredContent.conversationId\`.
-- Optional \`memory_context\` carries short, structured task context for future memory-aware behavior.
+- Optional \`memoryContext\` carries short, structured task context for future memory-aware behavior.
 
 Generated UI basics:
 - The runtime exposes module helpers from the \`@kody/ui-utils\` import-map alias; prefer \`import { kodyWidget } from '@kody/ui-utils'\`.
@@ -77,7 +77,7 @@ const inputSchema = z
 			.optional()
 			.describe('Optional short description for the current render session.'),
 		conversationId: conversationIdInputField,
-		memory_context: memoryContextInputField,
+		memoryContext: memoryContextInputField,
 		params: z
 			.record(z.string(), z.unknown())
 			.optional()

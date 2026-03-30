@@ -26,6 +26,6 @@ test('execute tool description encourages fewer execute calls', async () => {
 		'Pass `conversationId` to group related calls across the same conversation.',
 	)
 	expect(registerTool.mock.calls[0]?.[1]?.description).toContain(
-		'Pass `memory_context` with short, structured task context',
+		'Pass `memoryContext` with short, structured task context',
 	)
 })

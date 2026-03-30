@@ -30,11 +30,11 @@ optional \`params\`. If you need the saved code, call \`meta_get_skill\` and
 pass the returned code into this tool.
 
 This tool requires \`code\` and also accepts optional tool-call context fields
-such as \`conversationId\` and \`memory_context\`.
+such as \`conversationId\` and \`memoryContext\`.
 
 Optional tool-call context:
 - Pass \`conversationId\` to group related calls across the same conversation. Clients should generate and reuse a short value when possible. If omitted, Kody generates one and returns it in \`structuredContent.conversationId\`.
-- Pass \`memory_context\` with short, structured task context for future memory-aware behavior. Keep it factual and concise rather than hidden reasoning.
+- Pass \`memoryContext\` with short, structured task context for future memory-aware behavior. Keep it factual and concise rather than hidden reasoning.
 
 Available in your code:
 
@@ -129,7 +129,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.string()
 					.describe('JavaScript async arrow function to execute capabilities.'),
 				conversationId: conversationIdInputField,
-				memory_context: memoryContextInputField,
+				memoryContext: memoryContextInputField,
 			},
 			annotations: executeTool.annotations,
 		},
@@ -139,7 +139,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 		}: {
 			code: string
 			conversationId?: string
-			memory_context?: z.infer<typeof memoryContextInputField>
+			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
 			const startedAt = performance.now()
 			const env = agent.getEnv()
