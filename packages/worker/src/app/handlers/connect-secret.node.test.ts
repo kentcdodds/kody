@@ -106,12 +106,6 @@ vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
 }))
 
 const { createConnectSecretApiHandler } = await import('./connect-secret.ts')
-
-function resetMocks() {
-	mockModule.resolveSecret.mockClear()
-	mockModule.saveValue.mockClear()
-}
-
 function createEnv() {
 	return {
 		APP_DB: {} as D1Database,
@@ -124,7 +118,6 @@ async function readJson(response: Response) {
 }
 
 test('connect secret GET rejects app scope without appId', async () => {
-	resetMocks()
 	const handler = createConnectSecretApiHandler(createEnv())
 	const response = await handler.action({
 		request: new Request('https://example.com/connect/secret.json?scope=app'),
@@ -139,7 +132,6 @@ test('connect secret GET rejects app scope without appId', async () => {
 })
 
 test('connect secret GET rejects unknown scope values', async () => {
-	resetMocks()
 	const handler = createConnectSecretApiHandler(createEnv())
 	const response = await handler.action({
 		request: new Request(
@@ -156,7 +148,6 @@ test('connect secret GET rejects unknown scope values', async () => {
 })
 
 test('connect secret GET creates app-scoped session with requested app id', async () => {
-	resetMocks()
 	const handler = createConnectSecretApiHandler(createEnv())
 	const response = await handler.action({
 		request: new Request(
@@ -172,7 +163,6 @@ test('connect secret GET creates app-scoped session with requested app id', asyn
 })
 
 test('connect secret POST rejects app scope when session is not app-scoped', async () => {
-	resetMocks()
 	const handler = createConnectSecretApiHandler(createEnv())
 	const response = await handler.action({
 		request: new Request('https://example.com/connect/secret.json', {
@@ -197,7 +187,6 @@ test('connect secret POST rejects app scope when session is not app-scoped', asy
 })
 
 test('connect secret POST stores connector binding under dedicated prefix', async () => {
-	resetMocks()
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
 		allowedHosts: ['api.linear.app'],
