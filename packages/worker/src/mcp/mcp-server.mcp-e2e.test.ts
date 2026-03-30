@@ -10,6 +10,18 @@ import {
 	startDevServer,
 } from '../../../../tools/mcp-test-support.ts'
 
+function getTextContent(content: CallToolResult['content']) {
+	if (!Array.isArray(content)) return ''
+	const textBlocks = content.filter(
+		(item): item is Extract<ContentBlock, { type: 'text' }> =>
+			item.type === 'text' && typeof item.text === 'string',
+	)
+	const nonMetadata = textBlocks.find(
+		(item) => !item.text.startsWith('conversationId: '),
+	)
+	return nonMetadata?.text ?? textBlocks[0]?.text ?? ''
+}
+
 test('mcp server returns built-in instructions and base server metadata', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
@@ -27,12 +39,24 @@ test('mcp server returns built-in instructions and base server metadata', async 
 		basicSearchResult as CallToolResult
 	).structuredContent as
 		| {
+				conversationId?: string
 				result?: {
 					matches?: Array<unknown>
 				}
 		  }
 		| undefined
 
+	const basicConversationId = basicStructuredResult?.conversationId
+	const basicContent = (basicSearchResult as CallToolResult).content
+	const basicFirstContent = Array.isArray(basicContent)
+		? basicContent[0]
+		: null
+
+	expect(typeof basicConversationId).toBe('string')
+	expect(basicFirstContent).toEqual({
+		type: 'text',
+		text: `conversationId: ${basicConversationId}`,
+	})
 	expect(Array.isArray(basicStructuredResult?.result?.matches)).toBe(true)
 
 	const contextualSearchResult = await mcpClient.client.callTool({
@@ -296,11 +320,9 @@ test('mcp server executes directly available codemode helpers', async () => {
 		},
 	})
 	if ((setupResult as CallToolResult).isError) {
-		const setupText =
-			(setupResult as CallToolResult).content.find(
-				(item): item is Extract<ContentBlock, { type: 'text' }> =>
-					item.type === 'text',
-			)?.text ?? ''
+		const setupText = getTextContent(
+			(setupResult as CallToolResult).content,
+		)
 		throw new Error(`Helper setup execute failed: ${setupText}`)
 	}
 
@@ -327,11 +349,7 @@ test('mcp server executes directly available codemode helpers', async () => {
 	const executeResult = structuredResult?.result as
 		| Record<string, unknown>
 		| undefined
-	const textOutput =
-		(result as CallToolResult).content.find(
-			(item): item is Extract<ContentBlock, { type: 'text' }> =>
-				item.type === 'text',
-		)?.text ?? ''
+	const textOutput = getTextContent((result as CallToolResult).content)
 	if ((result as CallToolResult).isError) {
 		expect(textOutput).toContain(
 			'Token refresh failed for connector "spotify" with HTTP 400.',
@@ -371,11 +389,7 @@ test('mcp server returns structured guidance for missing secret errors in execut
 		  }
 		| undefined
 	const errorDetails = structuredResult?.errorDetails
-	const textOutput =
-		(result as CallToolResult).content.find(
-			(item): item is Extract<ContentBlock, { type: 'text' }> =>
-				item.type === 'text',
-		)?.text ?? ''
+	const textOutput = getTextContent((result as CallToolResult).content)
 
 	expect((result as CallToolResult).isError).toBe(true)
 	expect(textOutput).toContain('Secret "missingToken" was not found.')
@@ -789,11 +803,9 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 		},
 	})
 	if ((setupResult as CallToolResult).isError) {
-		const setupText =
-			(setupResult as CallToolResult).content.find(
-				(item): item is Extract<ContentBlock, { type: 'text' }> =>
-					item.type === 'text',
-			)?.text ?? ''
+		const setupText = getTextContent(
+			(setupResult as CallToolResult).content,
+		)
 		throw new Error(`Helper setup execute failed: ${setupText}`)
 	}
 
@@ -811,11 +823,7 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 				errorDetails?: Record<string, unknown>
 		  }
 		| undefined
-	const textOutput =
-		(result as CallToolResult).content.find(
-			(item): item is Extract<ContentBlock, { type: 'text' }> =>
-				item.type === 'text',
-		)?.text ?? ''
+	const textOutput = getTextContent((result as CallToolResult).content)
 	expect((result as CallToolResult).isError).toBe(true)
 	expect(textOutput).toContain(
 		'Token refresh failed for connector "spotify" with HTTP 400.',

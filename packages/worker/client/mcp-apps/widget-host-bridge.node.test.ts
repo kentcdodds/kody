@@ -74,15 +74,17 @@ test('sendUserMessageWithFallback delivers ui/message to latest-protocol host', 
 				return
 			}
 
-			const firstContent = Array.isArray(request.params?.content)
-				? request.params.content[0]
+			const textBlock = Array.isArray(request.params?.content)
+				? request.params.content.find(
+						(item) => !!item && typeof item === 'object' && 'type' in item,
+					)
 				: null
 			const text =
-				firstContent &&
-				typeof firstContent === 'object' &&
-				(firstContent as { type?: unknown }).type === 'text' &&
-				typeof (firstContent as { text?: unknown }).text === 'string'
-					? (firstContent as { text: string }).text
+				textBlock &&
+				typeof textBlock === 'object' &&
+				(textBlock as { type?: unknown }).type === 'text' &&
+				typeof (textBlock as { text?: unknown }).text === 'string'
+					? (textBlock as { text: string }).text
 					: null
 
 			if (!initialized || request.params?.role !== 'user' || !text) {
