@@ -49,7 +49,9 @@ export async function refreshAccessToken(
 export async function createAuthenticatedFetch(
 	codemode: CodemodeNamespace,
 	providerName: string,
-): Promise<(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>> {
+): Promise<
+	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
+> {
 	const connector = await readConnectorConfig(codemode, providerName)
 	const accessToken = await refreshAccessTokenWithConnector(
 		codemode,

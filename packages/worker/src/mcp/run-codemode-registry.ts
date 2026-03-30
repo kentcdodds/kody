@@ -264,7 +264,7 @@ function createExecutionSecretRedactor() {
 							redactSecretValuesInString(entry, secretValues),
 						)
 					: result.logs,
-				error: redactUnknownSecretValues(result.error, secretValues),
+				error: redactExecuteError(result.error, secretValues),
 			}
 		},
 	}
@@ -355,6 +355,17 @@ function redactUnknownSecretValues(
 		return next
 	}
 	return value
+}
+
+function redactExecuteError(
+	error: ExecuteResult['error'],
+	secretValues: ReadonlySet<string>,
+): ExecuteResult['error'] {
+	if (error === undefined) return undefined
+	const redacted = redactUnknownSecretValues(error, secretValues)
+	if (typeof redacted === 'string') return redacted
+	if (redacted instanceof Error) return redacted.message
+	return String(redacted)
 }
 
 function redactSecretValuesInString(

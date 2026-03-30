@@ -12,10 +12,13 @@ export function HomeRoute(_handle: Handle) {
 	return () => (
 		<section
 			css={{
-				display: 'grid',
+				display: 'flex',
+				flexDirection: 'column',
+				alignItems: 'center',
 				gap: spacing['2xl'],
-				justifyItems: 'center',
 				textAlign: 'center',
+				width: '100%',
+				boxSizing: 'border-box',
 				padding: spacing.md,
 				[mq.mobile]: {
 					padding: spacing.sm,

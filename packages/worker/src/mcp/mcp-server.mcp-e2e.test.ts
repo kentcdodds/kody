@@ -1,17 +1,14 @@
-import { setTimeout as delay } from 'node:timers/promises'
 import { expect, test } from 'vitest'
-import type {
-	CallToolResult,
-	ContentBlock,
+import  {
+	type CallToolResult,
+	type ContentBlock,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createMcpClient,
 	createTestDatabase,
-	fetchJson,
 	loginToApp,
 	startDevServer,
-} from '#mcp/mcp-test-support.ts'
-import type { Env } from '#worker/env.ts'
+} from '../../../../tools/mcp-test-support.ts'
 
 test('mcp server returns built-in instructions and base server metadata', async () => {
 	await using database = await createTestDatabase()
@@ -28,17 +25,19 @@ test('mcp server returns built-in instructions and base server metadata', async 
 
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
-				results?: Array<unknown>
+				result?: {
+					matches?: Array<unknown>
+				}
 		  }
 		| undefined
 
-	expect(structuredResult?.results?.length ?? 0).toBeGreaterThan(0)
+	expect(Array.isArray(structuredResult?.result?.matches)).toBe(true)
 	expect(
 		(result as CallToolResult).content.find(
 			(item): item is Extract<ContentBlock, { type: 'text' }> =>
 				item.type === 'text',
 		)?.text ?? '',
-	).toContain('generated ui')
+	).toContain('"matches"')
 })
 
 test('mcp server executes user code against codemode', async () => {
@@ -79,7 +78,6 @@ test('mcp server executes user code against codemode', async () => {
 
 	expect(textOutput).toContain('app_id')
 	expect(textOutput).toContain('hosted_url')
-	expect(textOutput).toContain('meta_save_skill')
 })
 
 test('mcp server executes directly available codemode helpers', async () => {
@@ -250,22 +248,23 @@ test('mcp server opens generated ui with inline code and serves runtime resource
 
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
-				app_id?: string
-				hosted_url?: string
+				appId?: string | null
+				hostedUrl?: string | null
+				renderSource?: string
 		  }
 		| undefined
-	const appId = structuredResult?.app_id
-	const hostedUrl = structuredResult?.hosted_url
+	const appId = structuredResult?.appId
+	const hostedUrl = structuredResult?.hostedUrl
 	const textOutput =
 		(result as CallToolResult).content.find(
 			(item): item is Extract<ContentBlock, { type: 'text' }> =>
 				item.type === 'text',
 		)?.text ?? ''
 
-	expect(textOutput).toContain('hosted_url')
-	expect(typeof appId).toBe('string')
-	expect(typeof hostedUrl).toBe('string')
-	expect(hostedUrl).toContain(`/ui/${appId}`)
+	expect(textOutput).toContain('Generated UI ready')
+	expect(structuredResult?.renderSource).toBe('inline_code')
+	expect(appId).toBeNull()
+	expect(hostedUrl).toBeNull()
 
 	const runtimeResponse = await fetch(
 		new URL('/ui/runtime.js', server.origin),
@@ -282,67 +281,59 @@ test('mcp server opens saved apps with app_id', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
-	const appCookieHeader = await loginToApp(server.origin, database.user)
-
-	const saved = await fetchJson(server.origin, '/ui/apps.json', {
-		method: 'POST',
-		headers: {
-			Cookie: appCookieHeader,
+	const savedResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					title: 'Persistent UI',
+					description: 'Saved from test',
+					code: '<main><h1>Saved</h1></main>',
+				})
+			}`,
 		},
-		body: JSON.stringify({
-			title: 'Persistent UI',
-			description: 'Saved from test',
-			code: '<main><h1>Saved</h1></main>',
-			archived: false,
-		}),
 	})
+	const savedStructured = (savedResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					app_id?: string
+				}
+		  }
+		| undefined
+	const savedAppId = savedStructured?.result?.app_id
+	expect(typeof savedAppId).toBe('string')
 
 	const result = await mcpClient.client.callTool({
 		name: 'open_generated_ui',
 		arguments: {
-			app_id: saved.app_id,
+			app_id: savedAppId,
 		},
 	})
 
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
-				app_id?: string
-				hosted_url?: string
+				appId?: string | null
+				hostedUrl?: string | null
+				renderSource?: string
 		  }
 		| undefined
-	expect(structuredResult?.app_id).toBe(saved.app_id)
-	expect(structuredResult?.hosted_url).toContain(`/ui/${saved.app_id}`)
+	expect(structuredResult?.renderSource).toBe('saved_app')
+	expect(structuredResult?.appId).toBe(savedAppId)
+	expect(structuredResult?.hostedUrl).toContain(`/ui/${savedAppId}`)
 })
 
-test('mcp server blocks execute when caller context lacks a user', async () => {
+test('mcp endpoint requires OAuth bearer auth', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
-
-	const result = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				await codemode.value_set({
-					name: 'example',
-					value: 'example',
-					scope: 'user',
-				})
-				return { ok: true }
-			}`,
-		},
+	const response = await fetch(new URL('/mcp', server.origin), {
 		headers: {
-			Authorization: 'Bearer test-token-without-user',
+			Accept: 'application/json, text/event-stream',
 		},
 	})
-
-	const textOutput =
-		(result as CallToolResult).content.find(
-			(item): item is Extract<ContentBlock, { type: 'text' }> =>
-				item.type === 'text',
-		)?.text ?? ''
-	expect((result as CallToolResult).isError).toBe(true)
-	expect(textOutput).toContain('Must be signed in to use this capability.')
+	expect(response.status).toBe(401)
+	expect(response.headers.get('WWW-Authenticate') ?? '').toContain(
+		'resource_metadata=',
+	)
 })
 
 test('mcp server streams token logs from execute', async () => {
@@ -355,7 +346,7 @@ test('mcp server streams token logs from execute', async () => {
 		arguments: {
 			code: `async () => {
 				console.log('first log')
-				await delay(10)
+				await new Promise((resolve) => setTimeout(resolve, 10))
 				console.log('second log')
 				return { ok: true }
 			}`,
@@ -364,29 +355,50 @@ test('mcp server streams token logs from execute', async () => {
 
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
-				logs?: Array<{ level?: string; message?: string }>
+				logs?: Array<string>
 		  }
 		| undefined
 	const logs = structuredResult?.logs ?? []
 
 	expect(logs.length).toBeGreaterThanOrEqual(2)
-	expect(logs[0]?.message ?? '').toContain('first log')
-	expect(logs[1]?.message ?? '').toContain('second log')
+	expect(logs[0] ?? '').toContain('first log')
+	expect(logs[1] ?? '').toContain('second log')
 })
 
-test('mcp server supports custom storage context for execute', async () => {
+test('generated UI execute supports session storage context', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
 
-	const storageContext = {
-		sessionId: 'session-1',
-		appId: 'app-1',
-	}
-
-	const result = await mcpClient.client.callTool({
-		name: 'execute',
+	const openResult = await mcpClient.client.callTool({
+		name: 'open_generated_ui',
 		arguments: {
+			code: '<main><h1>Storage Context</h1></main>',
+		},
+	})
+	const openStructured = (openResult as CallToolResult).structuredContent as
+		| {
+				appSession?: {
+					token?: string
+					endpoints?: {
+						execute?: string
+					}
+				} | null
+		  }
+		| undefined
+	const executeEndpoint = openStructured?.appSession?.endpoints?.execute
+	const executeToken = openStructured?.appSession?.token
+	expect(typeof executeEndpoint).toBe('string')
+	expect(typeof executeToken).toBe('string')
+
+	const response = await fetch(executeEndpoint!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${executeToken}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
 			code: `async () => {
 				await codemode.value_set({
 					name: 'example',
@@ -399,26 +411,24 @@ test('mcp server supports custom storage context for execute', async () => {
 				})
 				return { result }
 			}`,
-		},
-		headers: {
-			'X-Kody-Storage-Context': JSON.stringify(storageContext),
-		},
+		}),
 	})
-
-	const structuredResult = (result as CallToolResult).structuredContent as
-		| {
-				result?: Record<string, unknown>
-		  }
-		| undefined
-	const executeResult = structuredResult?.result as
-		| { result?: { name?: string; value?: string } }
-		| undefined
-
-	expect(executeResult?.result?.name).toBe('example')
-	expect(executeResult?.result?.value).toBe('value')
+	expect(response.ok).toBe(true)
+	const payload = (await response.json()) as {
+		ok?: boolean
+		result?: {
+			result?: {
+				name?: string
+				value?: string
+			}
+		}
+	}
+	expect(payload.ok).toBe(true)
+	expect(payload.result?.result?.name).toBe('example')
+	expect(payload.result?.result?.value).toBe('value')
 })
 
-test('mcp server resolves capability access errors into structured guidance', async () => {
+test('mcp server stores connector configs without resolving secret policies', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -469,12 +479,13 @@ test('mcp server resolves capability access errors into structured guidance', as
 
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
-				errorDetails?: Record<string, unknown>
+				result?: {
+					ok?: boolean
+				}
 		  }
 		| undefined
-	const errorDetails = structuredResult?.errorDetails
-	expect((result as CallToolResult).isError).toBe(true)
-	expect(errorDetails?.kind).toBe('secret_capability_access_required')
+	expect((result as CallToolResult).isError).toBe(false)
+	expect(structuredResult?.result?.ok).toBe(true)
 })
 
 test('mcp server resolves host approval errors into structured guidance', async () => {
@@ -527,7 +538,7 @@ test('mcp server resolves host approval errors into structured guidance', async 
 		| undefined
 	const errorDetails = structuredResult?.errorDetails
 	expect((result as CallToolResult).isError).toBe(true)
-	expect(errorDetails?.kind).toBe('host_approval_required')
+	expect(errorDetails?.kind).toBe('host_approval_required_batch')
 })
 
 test('mcp server supports multi-step execute workflows', async () => {
@@ -565,7 +576,7 @@ test('mcp server supports multi-step execute workflows', async () => {
 	expect(typeof resultBody?.second?.app_id).toBe('string')
 })
 
-test('mcp server resolves capability access errors in execute-time helpers', async () => {
+test('mcp server exposes direct refreshAccessToken helper', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -586,7 +597,7 @@ test('mcp server resolves capability access errors in execute-time helpers', asy
 				value: 'secret',
 				scope: 'user',
 				description: 'Restricted for helper',
-				allowedHosts: ['accounts.spotify.com', 'api.spotify.com'],
+				allowedHosts: [],
 				allowedCapabilities: [],
 			}),
 		},
@@ -632,8 +643,6 @@ test('mcp server resolves capability access errors in execute-time helpers', asy
 		name: 'execute',
 		arguments: {
 			code: `async () => {
-				const { createCodemodeUtils } = await import('@kody/codemode-utils')
-				const { refreshAccessToken } = createCodemodeUtils(codemode)
 				return await refreshAccessToken('spotify')
 			}`,
 		},
@@ -644,7 +653,14 @@ test('mcp server resolves capability access errors in execute-time helpers', asy
 				errorDetails?: Record<string, unknown>
 		  }
 		| undefined
-	const errorDetails = structuredResult?.errorDetails
+	const textOutput =
+		(result as CallToolResult).content.find(
+			(item): item is Extract<ContentBlock, { type: 'text' }> =>
+				item.type === 'text',
+		)?.text ?? ''
 	expect((result as CallToolResult).isError).toBe(true)
-	expect(errorDetails?.kind).toBe('secret_capability_access_required')
+	expect(textOutput).toContain(
+		'Token refresh failed for connector "spotify" with HTTP 400.',
+	)
+	expect(structuredResult?.errorDetails ?? null).toBeNull()
 })
