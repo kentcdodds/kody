@@ -82,7 +82,6 @@ How to use execute
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
 - Use \`await codemode.secret_list({})\` or \`await codemode.secret_list({ scope: 'app' })\` when you need secret metadata such as names, descriptions, scopes, allowed hosts, and allowed capabilities from the sandbox.
-- Use \`await codemode.secret_set({ name, value, scope, description? })\` only when a capability or fetch flow has already produced a secret value inside execution and you need to persist it without showing it to the model or returning it to the caller.
 - Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to store and read back later.
  - Execute-time code includes \`refreshAccessToken(providerName)\` and \`createAuthenticatedFetch(providerName)\` helpers for connector OAuth flows.
 - Use normal \`fetch(...)\` for outbound HTTP. To inject a stored secret, place a placeholder such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body; the host resolves it server-side and blocks unapproved destinations.

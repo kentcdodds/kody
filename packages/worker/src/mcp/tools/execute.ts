@@ -189,21 +189,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				baseUrl,
 				hasUser,
 				registeredCapabilityCount,
+				sandboxError: false,
 			})
-
-			const saveSkillHint =
-				'\n\nIf this codemode represents a reasonably repeatable workflow (not a one-off), you can persist it with `meta_save_skill` (meta domain); use `meta_update_skill` to replace code for an existing saved skill.'
 			return {
 				content: [
 					{
 						type: 'text',
-						text: `${formatExecutionOutput(result)}${saveSkillHint}`,
+						text: formatExecutionOutput(result),
 					},
 				],
 				structuredContent: {
 					result: result.result,
 					logs: result.logs ?? [],
 				},
+				isError: false,
 			}
 		},
 	)

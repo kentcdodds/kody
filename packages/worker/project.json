@@ -52,7 +52,7 @@
 		},
 		"build": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-client"],
+			"dependsOn": ["build-codemode-sandbox-modules", "build-client"],
 			"options": {
 				"command": "node --env-file=packages/worker/.env ./wrangler-env.ts build"
 			}

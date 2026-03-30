@@ -264,10 +264,7 @@ function createExecutionSecretRedactor() {
 							redactSecretValuesInString(entry, secretValues),
 						)
 					: result.logs,
-				error:
-					typeof result.error === 'string'
-						? redactSecretValuesInString(result.error, secretValues)
-						: result.error,
+				error: redactUnknownSecretValues(result.error, secretValues),
 			}
 		},
 	}
