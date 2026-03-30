@@ -17,10 +17,7 @@ import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import {
-	createExecuteHelperPrelude,
-	getExecuteHelperCapabilityNames,
-} from '#mcp/execute-modules/codemode-utils.ts'
+import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
 
 export async function buildCodemodeFns(
 	env: Env,
@@ -165,10 +162,6 @@ ${createExecuteHelperPrelude()}
 		callerContext,
 	})
 	return batchMessage ? { ...result, error: batchMessage } : result
-}
-
-export function getExecuteInjectedCapabilityNames() {
-	return getExecuteHelperCapabilityNames()
 }
 
 async function rewriteCapabilitySecretError(input: {
