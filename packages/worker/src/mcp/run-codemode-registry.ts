@@ -313,18 +313,23 @@ function visitSecretInputValue(
 function redactUnknownSecretValues(
 	value: unknown,
 	secretValues: ReadonlySet<string>,
+	seen = new WeakMap<object, unknown>(),
 ): unknown {
 	if (secretValues.size === 0) return value
 	if (typeof value === 'string') {
 		return redactSecretValuesInString(value, secretValues)
 	}
 	if (value instanceof Error) {
+		const existing = seen.get(value)
+		if (existing) return existing
 		const next = new Error(
 			redactSecretValuesInString(value.message, secretValues),
-			value.cause !== undefined
-				? { cause: redactUnknownSecretValues(value.cause, secretValues) }
-				: undefined,
+			value.cause !== undefined ? { cause: undefined } : undefined,
 		)
+		seen.set(value, next)
+		if (value.cause !== undefined) {
+			next.cause = redactUnknownSecretValues(value.cause, secretValues, seen)
+		}
 		next.name = value.name
 		if (value.stack) {
 			next.stack = redactSecretValuesInString(value.stack, secretValues)
@@ -332,15 +337,25 @@ function redactUnknownSecretValues(
 		return next
 	}
 	if (Array.isArray(value)) {
-		return value.map((entry) => redactUnknownSecretValues(entry, secretValues))
+		const existing = seen.get(value)
+		if (existing) return existing
+		const next: Array<unknown> = []
+		seen.set(value, next)
+		for (const entry of value) {
+			next.push(redactUnknownSecretValues(entry, secretValues, seen))
+		}
+		return next
 	}
 	if (isRecord(value)) {
-		return Object.fromEntries(
-			Object.entries(value).map(([key, entry]) => [
-				key,
-				redactUnknownSecretValues(entry, secretValues),
-			]),
-		)
+		const existing = seen.get(value)
+		if (existing) return existing
+		const next: Record<string, unknown> = {}
+		seen.set(value, next)
+		for (const [key, entry] of Object.entries(value)) {
+			const redactedKey = redactSecretValuesInString(key, secretValues)
+			next[redactedKey] = redactUnknownSecretValues(entry, secretValues, seen)
+		}
+		return next
 	}
 	return value
 }

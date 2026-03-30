@@ -1,7 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { buildCodemodeFns } from './run-codemode-registry.ts'
+import {
+	buildCodemodeFns,
+	runCodemodeWithRegistry,
+} from './run-codemode-registry.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 
 test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
@@ -297,6 +300,174 @@ test('buildCodemodeFns tracks values that crossed secret-marked capability input
 		})
 		expect(trackedSecretValues).toEqual(['fresh-access-token'])
 	} finally {
+		getRegistrySpy.mockRestore()
+	}
+})
+
+test('runCodemodeWithRegistry redacts secret keys and survives cyclic results', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [
+				{
+					name: 'secret_set',
+					domain: 'secrets',
+					description: 'Store a secret.',
+					keywords: [],
+					readOnly: false,
+					idempotent: false,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+							value: { type: 'string', 'x-kody-secret': true },
+						},
+						required: ['name', 'value'],
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+						},
+					},
+					async handler(args: Record<string, unknown>) {
+						return {
+							name: args.name,
+						}
+					},
+				},
+			],
+			capabilityMap: {
+				secret_set: {
+					name: 'secret_set',
+					domain: 'secrets',
+					description: 'Store a secret.',
+					keywords: [],
+					readOnly: false,
+					idempotent: false,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+							value: { type: 'string', 'x-kody-secret': true },
+						},
+						required: ['name', 'value'],
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+						},
+					},
+					async handler(args: Record<string, unknown>) {
+						return {
+							name: args.name,
+						}
+					},
+				},
+			},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {
+				secret_set: {
+					description: 'Store a secret.',
+					inputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+							value: { type: 'string', 'x-kody-secret': true },
+						},
+						required: ['name', 'value'],
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {
+							name: { type: 'string' },
+						},
+					},
+				},
+			},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(_wrapped, providers) {
+				const provider = providers[0] as {
+					fns: Record<string, (args: unknown) => Promise<unknown>>
+				}
+				await provider.fns.secret_set({
+					name: 'spotifyAccessToken',
+					value: 'fresh-access-token',
+				})
+
+				const objectResult: Record<string, unknown> = {
+					'fresh-access-token key': 'fresh-access-token value',
+				}
+				objectResult.self = objectResult
+
+				const arrayResult: Array<unknown> = ['fresh-access-token array']
+				arrayResult.push(arrayResult)
+
+				const errorResult = new Error('fresh-access-token error') as Error & {
+					cause?: unknown
+				}
+				errorResult.cause = errorResult
+
+				return {
+					result: {
+						objectResult,
+						arrayResult,
+						errorResult,
+					},
+					logs: ['fresh-access-token log'],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runCodemodeWithRegistry(
+			env,
+			callerContext,
+			`async () => {
+				await codemode.secret_set({
+					name: 'spotifyAccessToken',
+					value: 'fresh-access-token',
+				})
+				return null
+			}`,
+		)
+		const sanitized = result.result as {
+			objectResult: Record<string, unknown>
+			arrayResult: Array<unknown>
+			errorResult: Error & { cause?: unknown }
+		}
+
+		expect(sanitized.objectResult['[REDACTED SECRET] key']).toBe(
+			'[REDACTED SECRET] value',
+		)
+		expect(sanitized.objectResult.self).toBe(sanitized.objectResult)
+
+		expect(sanitized.arrayResult[0]).toBe('[REDACTED SECRET] array')
+		expect(sanitized.arrayResult[1]).toBe(sanitized.arrayResult)
+
+		expect(sanitized.errorResult.message).toBe('[REDACTED SECRET] error')
+		expect(sanitized.errorResult.cause).toBe(sanitized.errorResult)
+
+		expect(result.logs).toEqual(['[REDACTED SECRET] log'])
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
 	}
 })
