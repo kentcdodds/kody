@@ -31,7 +31,7 @@ export const connectorSaveSchema = z
 	})
 	.strict()
 
-export type ConnectorSave = z.infer<typeof connectorSaveSchema>
+export type ConnectorSaveInput = z.infer<typeof connectorSaveSchema>
 
 export function normalizeConnectorConfig(
 	value: ConnectorConfig,
@@ -51,12 +51,12 @@ export function normalizeConnectorConfig(
 
 export function mergeConnectorConfig(
 	current: ConnectorConfig,
-	update: ConnectorSave,
+	update: ConnectorSaveInput,
 ): ConnectorConfig {
 	return normalizeConnectorConfig({
 		...current,
 		...update,
-		name: update.name.trim(),
+		name: update.name,
 	})
 }
 
