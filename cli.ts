@@ -597,6 +597,17 @@ async function attachCloudflareMock(
 	console.log(dim(`Cloudflare mock base URL ${baseUrl}`))
 }
 
+async function attachOptionalMocksInParallel(
+	mockEnv: Record<string, string>,
+	anchorPort: number,
+) {
+	await Promise.all([
+		attachGithubMock(mockEnv, anchorPort),
+		attachCloudflareMock(mockEnv, anchorPort),
+		attachCursorMock(mockEnv, anchorPort),
+	])
+}
+
 async function ensureMockServers() {
 	const previousMockEnvOverrides = { ...mockEnvOverrides }
 	const desiredAiMode = resolveAiMode()
@@ -625,9 +636,7 @@ async function ensureMockServers() {
 			resendForAnchor.port || String(defaultMockPort),
 			10,
 		)
-		await attachGithubMock(mockEnvOverrides, anchorFromReuse)
-		await attachCloudflareMock(mockEnvOverrides, anchorFromReuse)
-		await attachCursorMock(mockEnvOverrides, anchorFromReuse)
+		await attachOptionalMocksInParallel(mockEnvOverrides, anchorFromReuse)
 		return mockEnvOverrides
 	}
 
@@ -703,15 +712,26 @@ async function ensureMockServers() {
 		if (!hasEnvValue(process.env.RESEND_FROM_EMAIL)) {
 			mockEnvOverrides.RESEND_FROM_EMAIL = 'reset@kody.dev'
 		}
-		const didStart = await waitForMockReady(baseUrl, child)
-		if (!didStart) {
-			console.warn(
-				`Mock API worker did not become ready within ${mockReadyTimeoutMs}ms.`,
-			)
-		}
-		console.log(dim(`Mock API worker running at ${baseUrl}`))
-		console.log(dim(`Resend mock base URL ${baseUrl}`))
 	}
+
+	const pendingMockStarts: Array<Promise<void>> = []
+	const resendBaseUrl = mockEnvOverrides.RESEND_API_BASE_URL
+	if (resendBaseUrl && mockResendProcess && !canReuseCachedResendEnv) {
+		pendingMockStarts.push(
+			(async () => {
+				const didStart = await waitForMockReady(resendBaseUrl, mockResendProcess)
+				if (!didStart) {
+					console.warn(
+						`Mock API worker did not become ready within ${mockReadyTimeoutMs}ms.`,
+					)
+				}
+				console.log(dim(`Mock API worker running at ${resendBaseUrl}`))
+				console.log(dim(`Resend mock base URL ${resendBaseUrl}`))
+			})(),
+		)
+	}
+
+	const optionalMocksReady = attachOptionalMocksInParallel(mockEnvOverrides, mockPort)
 
 	if (desiredAiMode === 'mock') {
 		if (canReuseCachedAiEnv) {
@@ -719,47 +739,48 @@ async function ensureMockServers() {
 				previousMockEnvOverrides.AI_MOCK_BASE_URL ?? ''
 			mockEnvOverrides.AI_MOCK_API_KEY =
 				previousMockEnvOverrides.AI_MOCK_API_KEY ?? ''
-			await attachGithubMock(mockEnvOverrides, mockPort)
-			await attachCloudflareMock(mockEnvOverrides, mockPort)
-			await attachCursorMock(mockEnvOverrides, mockPort)
-			return mockEnvOverrides
-		}
-		const aiPort = await getPort({
-			port: Array.from({ length: 10 }, (_, index) => mockPort + 10 + index),
-		})
-		const aiBaseUrl = `http://127.0.0.1:${aiPort}`
-		const aiApiToken = `mock-ai-${randomUUID()}`
-		const aiChild = runNpmScript(
-			'dev:mock-ai',
-			[
-				'--port',
-				String(aiPort),
-				'--ip',
-				'127.0.0.1',
-				'--var',
-				`MOCK_API_TOKEN:${aiApiToken}`,
-			],
-			{},
-			{
-				label: 'dev:mock-ai',
-				mode: 'buffer-on-error',
-			},
-		)
-		mockAiProcess = aiChild
-		aiChild.once('exit', () => {
-			if (mockAiProcess === aiChild) {
-				mockAiProcess = null
-			}
-		})
-		mockEnvOverrides.AI_MOCK_BASE_URL = aiBaseUrl
-		mockEnvOverrides.AI_MOCK_API_KEY = aiApiToken
-		const aiDidStart = await waitForMockReady(aiBaseUrl, aiChild)
-		if (!aiDidStart) {
-			console.warn(
-				`Mock AI worker did not become ready within ${mockReadyTimeoutMs}ms.`,
+		} else {
+			const aiPort = await getPort({
+				port: Array.from({ length: 10 }, (_, index) => mockPort + 10 + index),
+			})
+			const aiBaseUrl = `http://127.0.0.1:${aiPort}`
+			const aiApiToken = `mock-ai-${randomUUID()}`
+			const aiChild = runNpmScript(
+				'dev:mock-ai',
+				[
+					'--port',
+					String(aiPort),
+					'--ip',
+					'127.0.0.1',
+					'--var',
+					`MOCK_API_TOKEN:${aiApiToken}`,
+				],
+				{},
+				{
+					label: 'dev:mock-ai',
+					mode: 'buffer-on-error',
+				},
+			)
+			mockAiProcess = aiChild
+			aiChild.once('exit', () => {
+				if (mockAiProcess === aiChild) {
+					mockAiProcess = null
+				}
+			})
+			mockEnvOverrides.AI_MOCK_BASE_URL = aiBaseUrl
+			mockEnvOverrides.AI_MOCK_API_KEY = aiApiToken
+			pendingMockStarts.push(
+				(async () => {
+					const aiDidStart = await waitForMockReady(aiBaseUrl, aiChild)
+					if (!aiDidStart) {
+						console.warn(
+							`Mock AI worker did not become ready within ${mockReadyTimeoutMs}ms.`,
+						)
+					}
+					console.log(dim(`AI mock base URL ${aiBaseUrl}`))
+				})(),
 			)
 		}
-		console.log(dim(`AI mock base URL ${aiBaseUrl}`))
 	} else {
 		if (mockAiProcess && !mockAiProcess.killed) {
 			await stopChild(mockAiProcess)
@@ -769,9 +790,7 @@ async function ensureMockServers() {
 		mockEnvOverrides.AI_MOCK_API_KEY = ''
 	}
 
-	await attachGithubMock(mockEnvOverrides, mockPort)
-	await attachCloudflareMock(mockEnvOverrides, mockPort)
-	await attachCursorMock(mockEnvOverrides, mockPort)
+	await Promise.all([...pendingMockStarts, optionalMocksReady])
 
 	return mockEnvOverrides
 }
