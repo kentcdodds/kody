@@ -22,6 +22,9 @@ magic.
   small number of important happy-path journeys.
 - Do not add regression tests for bugs that are unlikely to happen again unless
   the flow is important enough to justify the maintenance cost.
+- Avoid tests that only assert a string blob contains a description or other
+  incidental copy. Favor behavior-focused assertions (structured output,
+  user-visible outcomes, or stable public contracts) instead.
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.

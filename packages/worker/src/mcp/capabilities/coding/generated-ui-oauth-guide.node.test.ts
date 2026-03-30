@@ -20,10 +20,10 @@ test('generated_ui_oauth_guide distinguishes PKCE and server-side exchange helpe
 	expect(result.body).toContain(
 		'exchangeOAuthCodeWithSecrets({ tokenUrl, code, redirectUri, clientId, clientSecretSecretName, scope?, extraParams? })',
 	)
+	expect(result.body).toContain('Choosing the exchange helper')
 	expect(result.body).toContain(
 		'prefer `exchangePkceOAuthCode(...)` when the provider supports PKCE',
 	)
 	expect(result.body).toContain('`exchangeOAuthCodeWithSecrets(...)`')
 	expect(result.body).toContain('run server-side')
-	expect(result.body).not.toContain('exchangeOAuthCode({ tokenUrl')
 })

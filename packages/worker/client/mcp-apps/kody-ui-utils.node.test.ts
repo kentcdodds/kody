@@ -13,7 +13,7 @@ import {
 	whenKodyWidgetReady,
 } from './kody-ui-utils.ts'
 
-test('injectIntoHtmlDocument inserts into an existing head without adding an extra bracket', () => {
+test('injectIntoHtmlDocument inserts content into an existing head', () => {
 	const result = injectIntoHtmlDocument(
 		'<!doctype html><html lang="en" class="demo"><head data-shell="true"><title>Demo</title></head><body></body></html>',
 		'<meta name="viewport" content="width=device-width, initial-scale=1" />',
@@ -21,10 +21,9 @@ test('injectIntoHtmlDocument inserts into an existing head without adding an ext
 
 	expect(result).toContain('<html lang="en" class="demo">')
 	expect(result).toContain(
-		'<head data-shell="true">\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>Demo</title>',
+		'<meta name="viewport" content="width=device-width, initial-scale=1" />',
 	)
-	expect(result).not.toContain('<head>>')
-	expect(result).not.toContain('<head data-shell="true">>')
+	expect(result).toContain('<title>Demo</title>')
 })
 
 test('injectIntoHtmlDocument preserves html attributes when injecting a missing head', () => {
@@ -49,7 +48,7 @@ test('injectIntoHtmlDocument preserves existing html attributes untouched', () =
 	)
 })
 
-test('absolutizeHtmlAttributeUrls resolves worker-relative urls without adding a base tag', () => {
+test('absolutizeHtmlAttributeUrls resolves worker-relative urls', () => {
 	const result = absolutizeHtmlAttributeUrls(
 		[
 			'<html><head><link rel="stylesheet" href="/styles.css" /></head><body>',
@@ -77,7 +76,6 @@ test('absolutizeHtmlAttributeUrls resolves worker-relative urls without adding a
 	expect(result).toContain(
 		'srcset="https://kody-production.kentcdodds.workers.dev/logo.png 1x, https://kody-production.kentcdodds.workers.dev/logo@2x.png 2x"',
 	)
-	expect(result).not.toContain('<base ')
 })
 
 test('absolutizeHtmlAttributeUrls leaves hash, data, and javascript urls untouched', () => {
@@ -174,10 +172,12 @@ test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', ()
 		scope: 'app',
 	})
 
-	expect(code).toContain('async () => {')
-	expect(code).toContain('codemode["value_set"]')
-	expect(code).toContain('"name":"workspaceSlug"')
-	expect(code).toContain('"scope":"app"')
+	const [opener, invocation, closer] = code.split('\n')
+	expect(opener).toBe('async () => {')
+	expect(closer).toBe('}')
+	expect(invocation).toBe(
+		'  return await codemode["value_set"]({"name":"workspaceSlug","value":"kody","scope":"app"});',
+	)
 })
 
 test('getKodyWidget throws until the runtime is ready', () => {

@@ -74,7 +74,10 @@ test('offline search returns provided specs without depending on global ranks', 
 	expect(offline).toBe(true)
 	expect(matches).toHaveLength(1)
 	expect(matches[0]?.name).toBe('generated_ui_oauth_guide')
-	expect(matches[0]?.description).toContain('OAuth callback')
+	expect(matches[0]?.keywords).toEqual(
+		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
+	)
+	expect(matches[0]?.outputFields).toEqual(['title', 'body'])
 	expect(matches[0]?.lexicalRank).toBe(1)
 	expect(matches[0]?.vectorRank).toBe(1)
 })
