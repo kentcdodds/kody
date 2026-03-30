@@ -17,6 +17,7 @@ import {
 	memoryContextInputField,
 	resolveConversationId,
 } from './tool-call-context.ts'
+import { prependToolMetadataContent } from './tool-response-content.ts'
 
 const executeTool = {
 	name: 'execute',
@@ -185,12 +186,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					cause: result.error,
 				})
 				return {
-					content: [
+					content: prependToolMetadataContent(resolvedConversationId, [
 						{
 							type: 'text',
 							text: formatExecutionOutput(result),
 						},
-					],
+					]),
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						error: errorMessage,
@@ -213,12 +214,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				sandboxError: false,
 			})
 			return {
-				content: [
+				content: prependToolMetadataContent(resolvedConversationId, [
 					{
 						type: 'text',
 						text: formatExecutionOutput(result),
 					},
-				],
+				]),
 				structuredContent: {
 					conversationId: resolvedConversationId,
 					result: result.result,

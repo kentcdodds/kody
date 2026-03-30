@@ -28,6 +28,7 @@ import {
 	memoryContextInputField,
 	resolveConversationId,
 } from './tool-call-context.ts'
+import { prependToolMetadataContent } from './tool-response-content.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
@@ -280,7 +281,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					cause: error,
 				})
 				return {
-					content: [{ type: 'text', text: `Error: ${error.message}` }],
+					content: prependToolMetadataContent(conversationId, [
+						{ type: 'text', text: `Error: ${error.message}` },
+					]),
 					structuredContent: {
 						conversationId,
 						error: error.message,
@@ -313,12 +316,12 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			}
 
 			return {
-				content: [
+				content: prependToolMetadataContent(conversationId, [
 					{
 						type: 'text',
 						text: truncateSearchResult(payload),
 					},
-				],
+				]),
 				structuredContent: {
 					conversationId,
 					result: payload,
