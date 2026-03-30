@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { registerExecuteTool } from './execute.ts'
 
-test('execute tool description encourages fewer execute calls', async () => {
+test('registers the execute tool contract', async () => {
 	const registerTool = vi.fn()
 
 	await registerExecuteTool({
@@ -15,11 +15,24 @@ test('execute tool description encourages fewer execute calls', async () => {
 	} as never)
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
-	expect(registerTool.mock.calls[0]?.[0]).toBe('execute')
-	expect(registerTool.mock.calls[0]?.[1]?.description).toContain(
-		'Prefer fewer `execute` tool invocations when the workflow is clear.',
-	)
-	expect(registerTool.mock.calls[0]?.[1]?.description).toContain(
-		'chain the capability calls there and return the final useful result',
-	)
+	const [toolName, definition, handler] = registerTool.mock.calls[0] ?? []
+
+	expect(toolName).toBe('execute')
+	expect(definition).toMatchObject({
+		title: 'Execute Capabilities',
+		annotations: {
+			readOnlyHint: false,
+			destructiveHint: false,
+			idempotentHint: false,
+			openWorldHint: true,
+		},
+	})
+	expect(typeof definition?.description).toBe('string')
+	expect((definition?.description ?? '').length).toBeGreaterThan(0)
+	expect(Object.keys(definition?.inputSchema ?? {})).toEqual([
+		'code',
+		'conversationId',
+		'memoryContext',
+	])
+	expect(typeof handler).toBe('function')
 })
