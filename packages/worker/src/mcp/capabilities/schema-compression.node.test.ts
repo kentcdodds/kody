@@ -95,6 +95,7 @@ test('compressSchemaForLlm handles nested object schemas', () => {
 	expect(compressSchemaForLlm(schema)).toEqual({
 		properties: {
 			repo: {
+				type: 'object',
 				properties: {
 					owner: {
 						type: 'string',
@@ -140,6 +141,7 @@ test('compressSchemaForLlm compresses array item schemas', () => {
 			labels: {
 				type: 'array',
 				items: {
+					type: 'object',
 					properties: {
 						name: {
 							type: 'string',
@@ -239,6 +241,7 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 	expect(compressSchemaForLlm(schema)).toEqual({
 		allOf: [
 			{
+				type: 'object',
 				properties: {
 					owner: {
 						type: 'string',
@@ -249,6 +252,7 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 		],
 		anyOf: [
 			{
+				type: 'object',
 				properties: {
 					repo: {
 						type: 'string',
@@ -259,6 +263,7 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 		],
 		oneOf: [
 			{
+				type: 'object',
 				properties: {
 					org: {
 						type: 'string',
@@ -268,6 +273,7 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 			},
 		],
 		not: {
+			type: 'object',
 			properties: {
 				ignored: {
 					type: 'string',
@@ -275,6 +281,7 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 			},
 		},
 		if: {
+			type: 'object',
 			properties: {
 				mode: {
 					type: 'string',
@@ -282,6 +289,7 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 			},
 		},
 		then: {
+			type: 'object',
 			properties: {
 				strategy: {
 					type: 'string',
@@ -290,6 +298,7 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 			},
 		},
 		else: {
+			type: 'object',
 			properties: {
 				reason: {
 					type: 'string',
