@@ -60,6 +60,8 @@ test('buildSkillEmbedText includes denormalized capability text', () => {
 	const text = buildSkillEmbedText({
 		title: 't',
 		description: 'd',
+		collectionName: 'GitHub automation',
+		collectionSlug: 'github-automation',
 		keywords: ['k'],
 		searchText: null,
 		inferredCapabilities: ['ui_save_app'],
@@ -68,6 +70,8 @@ test('buildSkillEmbedText includes denormalized capability text', () => {
 	})
 	expect(text).toContain('ui_save_app')
 	expect(text).toContain('owner')
+	expect(text).toContain('GitHub automation')
+	expect(text).toContain('github-automation')
 	expect(text.toLowerCase()).toContain('generated ui artifact')
 })
 

@@ -9,6 +9,7 @@ import {
 } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
+import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
@@ -50,17 +51,18 @@ Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. To ru
 
 If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
 
-Domains (for context only—put hints in your \`query\` string; there are no filter fields):
+ Domains (for context only—put hints in your \`query\` string, or use the skill collection filter when you already know the saved-skill grouping):
 - \`coding\`: Software work such as GitHub repository actions, issues, pull requests, Cursor Cloud Agents API calls, Cloudflare API calls, and related docs/coding workflows.
 - \`meta\`: Persisted and reusable codemode skills plus skill management.
 - \`home\`: Home automation capabilities discovered from the connected home connector when available.
 
 Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. **Skills** require an authenticated MCP user.
 
-Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, etc.; for capabilities: JSON schemas where applicable).
+ Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, collection slug, etc.; for capabilities: JSON schemas where applicable). Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
+- \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
 - \`{ "query": "call GitHub REST API", "detail": true }\`
 - To run a skill: \`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds" } })\`
 - To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
@@ -157,6 +159,12 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.string()
 					.min(1)
 					.describe('Natural language description of the capability you need.'),
+				skill_collection: z
+					.string()
+					.optional()
+					.describe(
+						'Optional saved-skill collection/domain name or slug to narrow skill matches to one grouping.',
+					),
 				limit: z
 					.number()
 					.int()
@@ -171,7 +179,12 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			},
 			annotations: searchTool.annotations,
 		},
-		async (args: { query: string; limit?: number; detail?: boolean }) => {
+		async (args: {
+			query: string
+			skill_collection?: string
+			limit?: number
+			detail?: boolean
+		}) => {
 			const startedAt = performance.now()
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
@@ -211,6 +224,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,
+					skillCollectionSlug: args.skill_collection
+						? slugifySkillCollectionName(args.skill_collection)
+						: undefined,
 					limit: args.limit ?? defaultSearchLimit,
 					detail: args.detail === true,
 					specs: registry.capabilitySpecs,

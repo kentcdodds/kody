@@ -21,6 +21,12 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe('What this skill does (shown in search and to users).'),
+	collection: z
+		.string()
+		.optional()
+		.describe(
+			'Optional user-defined collection/domain for grouping related saved skills.',
+		),
 	keywords: z
 		.array(z.string())
 		.describe('Extra search keywords for this skill.'),
@@ -43,6 +49,8 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	skill_id: z.string(),
+	collection: z.string().nullable(),
+	collection_slug: z.string().nullable(),
 	inferred_capabilities: z.array(z.string()),
 	inference_partial: z.boolean(),
 	destructive_derived: z.boolean(),
@@ -92,11 +100,14 @@ export const metaUpdateSkillCapability = defineDomainCapability(
 					skillId: skill_id,
 					userId: user.userId,
 					embedText: prep.embedText,
+					collectionSlug: prep.rowPayload.collection_slug,
 				})
 			} catch (cause) {
 				await updateMcpSkill(ctx.env.APP_DB, user.userId, skill_id, {
 					title: existing.title,
 					description: existing.description,
+					collection_name: existing.collection_name,
+					collection_slug: existing.collection_slug,
 					keywords: existing.keywords,
 					code: existing.code,
 					search_text: existing.search_text,
@@ -113,12 +124,15 @@ export const metaUpdateSkillCapability = defineDomainCapability(
 					skillId: skill_id,
 					userId: user.userId,
 					embedText: oldEmbed,
+					collectionSlug: existing.collection_slug,
 				})
 				throw cause
 			}
 
 			return {
 				skill_id,
+				collection: prep.rowPayload.collection_name,
+				collection_slug: prep.rowPayload.collection_slug,
 				inferred_capabilities: prep.merged,
 				inference_partial: prep.inferencePartial,
 				destructive_derived: prep.derived.destructiveDerived,

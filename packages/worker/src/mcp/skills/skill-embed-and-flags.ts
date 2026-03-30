@@ -30,6 +30,8 @@ export function buildSkillEmbedText(
 	input: {
 		title: string
 		description: string
+		collectionName?: string | null
+		collectionSlug?: string | null
 		keywords: Array<string>
 		searchText: string | null
 		inferredCapabilities: Array<string>
@@ -41,6 +43,12 @@ export function buildSkillEmbedText(
 	const baseParts = [
 		input.title,
 		input.description,
+		...(input.collectionName
+			? [
+					`collection ${input.collectionName}`,
+					...(input.collectionSlug ? [input.collectionSlug] : []),
+				]
+			: []),
 		input.keywords.join(' '),
 		...(input.searchText ? [input.searchText] : []),
 		'meta',

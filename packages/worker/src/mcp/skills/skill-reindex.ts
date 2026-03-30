@@ -49,7 +49,13 @@ export async function reindexSkillVectors(env: Env): Promise<{
 		const vectors = batch.map((row, index_) => ({
 			id: skillVectorId(row.id),
 			values: vecRows[index_]!,
-			metadata: { kind: 'skill', userId: row.user_id },
+			metadata: {
+				kind: 'skill',
+				userId: row.user_id,
+				...(row.collection_slug
+					? { collectionSlug: row.collection_slug }
+					: {}),
+			},
 		}))
 
 		await index.upsert(vectors)

@@ -33,7 +33,7 @@ Quick start
 - Call 'execute' or 'meta_run_skill' next to run capability code.
 - Call 'open_generated_ui' when you want an interactive UI rendered in an MCP App host.
 - Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, or client secrets into chat. Use saved secrets when available, or use 'open_generated_ui' to collect and save sensitive values instead.
-- Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use 'meta_update_skill' to replace an existing skill's code in place.
+- Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use the optional 'collection' field to group related saved skills, and use 'meta_update_skill' to replace an existing skill's code in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
 - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
 - Use \`codemode.secret_list(args)\` during execute-time code to list secret metadata only; it does not return plaintext values.
@@ -47,7 +47,7 @@ ${domainInstructions}
 
 How to use search
 - Call the 'search' tool with a natural-language 'query' describing what you need (optional 'limit', 'detail').
-- Narrow results by rephrasing 'query'—there are no structured filter arguments.
+- Narrow results by rephrasing 'query', or use the optional 'skill_collection' filter when you only want saved skills from one collection slug.
 - Saved skills appear when the MCP client provides an authenticated user; use 'meta_get_skill' for full skill code.
 - Use domain descriptions above as vocabulary hints in your query text.
 - Use 'detail: true' when you need full JSON schemas and metadata.
