@@ -20,6 +20,8 @@ export type McpObservabilityPayload = {
 	registeredCapabilityCount?: number
 	errorName?: string
 	errorMessage?: string
+	message?: string
+	context?: Record<string, unknown>
 	timestamp: string
 }
 
