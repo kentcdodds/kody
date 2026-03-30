@@ -33,18 +33,61 @@ import { prependToolMetadataContent } from './tool-response-content.ts'
 const charsPerToken = 4
 const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
+const defaultSearchLimit = 15
+const detailSearchLimit = 5
+const defaultMaxResponseSize = 4_000
 
-function truncateSearchResult(value: unknown): string {
-	const text =
-		typeof value === 'string'
-			? value
-			: (JSON.stringify(value, null, 2) ?? 'undefined')
+type SearchPayload = {
+	matches: Awaited<ReturnType<typeof searchUnified>>['matches']
+	offline: boolean
+	warnings: Array<string>
+	homeConnectorStatus?: HomeConnectorStatus
+}
 
+function stringifySearchPayload(value: unknown): string {
+	return JSON.stringify(value, null, 2) ?? 'undefined'
+}
+
+function truncateSearchText(text: string): string {
 	if (text.length <= maxChars) return text
 
 	return `${text.slice(0, maxChars)}\n\n--- TRUNCATED ---\nResponse was ~${Math.ceil(
 		text.length / charsPerToken,
-	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Lower the limit or ask a shorter query.`
+	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Lower the limit, maxResponseSize, or ask a shorter query.`
+}
+
+function applyMaxResponseSize(
+	payload: SearchPayload,
+	maxResponseSize: number,
+): { payload: SearchPayload; serialized: string } {
+	if (!Number.isFinite(maxResponseSize) || maxResponseSize <= 0) {
+		const serialized = stringifySearchPayload(payload)
+		return { payload, serialized }
+	}
+
+	const total = payload.matches.length
+	let low = 0
+	let high = total
+	let bestPayload: SearchPayload = { ...payload, matches: [] }
+	let bestSerialized = stringifySearchPayload(bestPayload)
+
+	while (low <= high) {
+		const mid = Math.floor((low + high) / 2)
+		const trimmedPayload: SearchPayload = {
+			...payload,
+			matches: payload.matches.slice(0, mid),
+		}
+		const serialized = stringifySearchPayload(trimmedPayload)
+		if (serialized.length <= maxResponseSize) {
+			bestPayload = trimmedPayload
+			bestSerialized = serialized
+			low = mid + 1
+		} else {
+			high = mid - 1
+		}
+	}
+
+	return { payload: bestPayload, serialized: bestSerialized }
 }
 
 const searchTool = {
@@ -64,7 +107,7 @@ If search results seem incomplete, call \`meta_list_capabilities\` to inspect th
 
 Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. **Skills** require an authenticated MCP user.
 
- Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, collection slug, etc.; for capabilities: JSON schemas where applicable). Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
+	Optional **limit** caps how many results are returned (defaults to 5 when **detail** is true, 15 otherwise). **detail: true** includes extra metadata (for skills: inferred capabilities, collection slug, etc.; for capabilities: JSON schemas where applicable). Optional **maxResponseSize** trims low-ranked results to keep responses small. Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
@@ -80,8 +123,6 @@ Example arguments:
 		openWorldHint: false,
 	} satisfies ToolAnnotations,
 } as const
-
-const defaultSearchLimit = 15
 
 type OptionalSearchRowsResult = {
 	skillRows: Array<McpSkillRow>
@@ -177,7 +218,17 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.max(100)
 					.optional()
-					.describe('Max number of results to return (default 15).'),
+					.describe(
+						'Max number of results to return. Defaults to 5 when detail is true, 15 otherwise.',
+					),
+				maxResponseSize: z
+					.number()
+					.int()
+					.min(1)
+					.optional()
+					.describe(
+						'Max response size in characters before trimming low-ranked results. Defaults to 4000.',
+					),
 				detail: z
 					.boolean()
 					.optional()
@@ -191,6 +242,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			query: string
 			skill_collection?: string
 			limit?: number
+			maxResponseSize?: number
 			detail?: boolean
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
@@ -200,6 +252,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
+			const detail = args.detail === true
+			const limit =
+				args.limit ?? (detail ? detailSearchLimit : defaultSearchLimit)
+			const maxResponseSize = args.maxResponseSize ?? defaultMaxResponseSize
 			let warnings: Array<string> = []
 			let homeConnectorStatus: HomeConnectorStatus | null = null
 
@@ -240,8 +296,8 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					env: agent.getEnv(),
 					query: args.query,
 					skillCollectionSlug,
-					limit: args.limit ?? defaultSearchLimit,
-					detail: args.detail === true,
+					limit,
+					detail,
 					specs: registry.capabilitySpecs,
 					userId,
 					skillRows: optionalRows.skillRows,
@@ -304,7 +360,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				hasUser,
 			})
 
-			const payload = {
+			const payload: SearchPayload = {
 				matches: result.matches,
 				offline: result.offline,
 				warnings,
@@ -315,16 +371,21 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					: {}),
 			}
 
+			const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
+				payload,
+				maxResponseSize,
+			)
+
 			return {
 				content: prependToolMetadataContent(conversationId, [
 					{
 						type: 'text',
-						text: truncateSearchResult(payload),
+						text: truncateSearchText(serialized),
 					},
 				]),
 				structuredContent: {
 					conversationId,
-					result: payload,
+					result: trimmedPayload,
 				},
 			}
 		},

@@ -1,3 +1,4 @@
+import { compressSchemaForLlm } from './schema-compression.ts'
 import { type CapabilitySpec } from './types.ts'
 
 type CapabilityVectorizeEnv = { CAPABILITY_VECTOR_INDEX?: VectorizeIndex }
@@ -130,6 +131,13 @@ function toSummary(spec: CapabilitySpec): CapabilitySummaryRow {
 }
 
 function toDetail(spec: CapabilitySpec): CapabilityDetailRow {
+	const inputSchema = compressSchemaForLlm(spec.inputSchema)
+	const outputSchema =
+		'outputSchema' in spec && spec.outputSchema !== undefined
+			? compressSchemaForLlm(spec.outputSchema, {
+					stripRootObjectType: false,
+				})
+			: undefined
 	const row: CapabilityDetailRow = {
 		...toSummary(spec),
 		description: spec.description,
@@ -137,10 +145,8 @@ function toDetail(spec: CapabilitySpec): CapabilityDetailRow {
 		readOnly: spec.readOnly,
 		idempotent: spec.idempotent,
 		destructive: spec.destructive,
-		inputSchema: spec.inputSchema,
-		...('outputSchema' in spec && spec.outputSchema !== undefined
-			? { outputSchema: spec.outputSchema }
-			: {}),
+		inputSchema,
+		...(outputSchema ? { outputSchema } : {}),
 	}
 	if (!spec.inputSchema) {
 		row.inputFields = spec.inputFields
