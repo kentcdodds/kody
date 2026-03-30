@@ -8,6 +8,10 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
+import {
+	normalizeAllowedCapabilities,
+	normalizeAllowedHosts,
+} from './secret-normalization.ts'
 import { formatConnectorConfigFailureMessage } from './connect-secret-errors.ts'
 
 type StorageScope = 'app' | 'session' | 'user'
@@ -130,26 +134,6 @@ function parseConnectSecretParams(): ConnectSecretParams {
 function toEditableRows(values: Array<string> | null | undefined) {
 	if (!Array.isArray(values) || values.length === 0) return ['']
 	return [...values]
-}
-
-function normalizeAllowedHostsInput(hosts: Array<string>) {
-	return Array.from(
-		new Set(
-			hosts
-				.map((host) => host.trim().toLowerCase())
-				.filter((host) => host.length > 0),
-		),
-	).sort()
-}
-
-function normalizeAllowedCapabilitiesInput(capabilities: Array<string>) {
-	return Array.from(
-		new Set(
-			capabilities
-				.map((capability) => capability.trim())
-				.filter((capability) => capability.length > 0),
-		),
-	).sort((left, right) => left.localeCompare(right))
 }
 
 function createInitialConnectSecretState(
@@ -413,8 +397,8 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		const params = parseConnectSecretParams()
-		const normalizedAllowedHosts = normalizeAllowedHostsInput(state.allowedHosts)
-		const normalizedAllowedCapabilities = normalizeAllowedCapabilitiesInput(
+		const normalizedAllowedHosts = normalizeAllowedHosts(state.allowedHosts)
+		const normalizedAllowedCapabilities = normalizeAllowedCapabilities(
 			state.allowedCapabilities,
 		)
 		if (!state.secretValue.trim()) {
@@ -778,8 +762,8 @@ export function ConnectSecretRoute(handle: Handle) {
 									<div>
 										<div css={labelCss}>Hosts to approve</div>
 										<ul css={listCss}>
-											{normalizeAllowedHostsInput(state.allowedHosts).length > 0 ? (
-												normalizeAllowedHostsInput(state.allowedHosts).map((host) => (
+											{normalizeAllowedHosts(state.allowedHosts).length > 0 ? (
+												normalizeAllowedHosts(state.allowedHosts).map((host) => (
 													<li key={host}>{host}</li>
 												))
 											) : (
@@ -790,9 +774,9 @@ export function ConnectSecretRoute(handle: Handle) {
 									<div>
 										<div css={labelCss}>Capabilities to allow</div>
 										<ul css={listCss}>
-											{normalizeAllowedCapabilitiesInput(state.allowedCapabilities)
+											{normalizeAllowedCapabilities(state.allowedCapabilities)
 												.length > 0 ? (
-												normalizeAllowedCapabilitiesInput(
+												normalizeAllowedCapabilities(
 													state.allowedCapabilities,
 												).map((capability) => (
 													<li key={capability}>{capability}</li>

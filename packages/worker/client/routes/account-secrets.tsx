@@ -26,6 +26,10 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
+import {
+	normalizeAllowedCapabilities,
+	normalizeAllowedHosts,
+} from './secret-normalization.ts'
 
 type SecretScope = 'app' | 'user'
 
@@ -117,30 +121,6 @@ function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
 
 function coerceStringRows(list: Array<unknown>): Array<string> {
 	return list.filter((item): item is string => typeof item === 'string')
-}
-
-/** Matches server `normalizeAllowedHosts` in `#mcp/secrets/allowed-hosts.ts`. */
-function clientNormalizeAllowedHosts(hosts: Array<string>): Array<string> {
-	return Array.from(
-		new Set(
-			hosts
-				.map((host) => host.trim().toLowerCase())
-				.filter((host) => host.length > 0),
-		),
-	).sort()
-}
-
-/** Matches server `normalizeAllowedCapabilities` in `#mcp/secrets/allowed-capabilities.ts`. */
-function clientNormalizeAllowedCapabilities(
-	capabilities: Array<string>,
-): Array<string> {
-	return Array.from(
-		new Set(
-			capabilities
-				.map((value) => value.trim())
-				.filter((value) => value.length > 0),
-		),
-	).sort((left, right) => left.localeCompare(right))
 }
 
 function collectRepeatedTextRows(
@@ -565,10 +545,10 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			const allowedHosts = clientNormalizeAllowedHosts(
+			const allowedHosts = normalizeAllowedHosts(
 				collectRepeatedTextRows(form, 'allowed-hosts'),
 			)
-			const allowedCapabilities = clientNormalizeAllowedCapabilities(
+			const allowedCapabilities = normalizeAllowedCapabilities(
 				collectRepeatedTextRows(form, 'allowed-capabilities'),
 			)
 			const response = await fetch(accountSecretsApiPath, {
