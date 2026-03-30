@@ -166,6 +166,8 @@ dedicated Home Connector publish workflow.
 - Keep `AGENTS.md` concise and index-like; put details in focused docs.
 - When failures repeat, promote lessons from docs into tests, lint rules, or
   scripts.
+- Never edit existing migration files. If a schema correction is needed, create
+  a new migration instead.
 
 ## Seed test account
 
