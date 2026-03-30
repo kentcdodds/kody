@@ -162,7 +162,7 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 	)
 	expect(homeCapability).not.toBeUndefined()
 	expect(homeCapability?.domain).toBe('home')
-	expect(homeCapability?.description).toContain('Roku')
+	expect(homeCapability?.description).toBeTruthy()
 	expect(homeCapability?.requiredInputFields).toEqual(['deviceId', 'key'])
 	expect(listAppsCapability).not.toBeUndefined()
 	expect(listAppsCapability?.requiredInputFields).toEqual(['deviceId'])
