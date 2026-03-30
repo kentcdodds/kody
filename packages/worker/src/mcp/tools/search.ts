@@ -23,6 +23,11 @@ import {
 	errorFields,
 	logMcpEvent,
 } from '#mcp/observability.ts'
+import {
+	conversationIdInputField,
+	memoryContextInputField,
+	resolveConversationId,
+} from './tool-call-context.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
@@ -176,6 +181,8 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.boolean()
 					.optional()
 					.describe('Include full metadata / schemas when true.'),
+				conversationId: conversationIdInputField,
+				memoryContext: memoryContextInputField,
 			},
 			annotations: searchTool.annotations,
 		},
@@ -184,8 +191,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			skill_collection?: string
 			limit?: number
 			detail?: boolean
+			conversationId?: string
+			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
 			const startedAt = performance.now()
+			const conversationId = resolveConversationId(args.conversationId)
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
@@ -272,6 +282,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				return {
 					content: [{ type: 'text', text: `Error: ${error.message}` }],
 					structuredContent: {
+						conversationId,
 						error: error.message,
 					},
 					isError: true,
@@ -309,6 +320,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					},
 				],
 				structuredContent: {
+					conversationId,
 					result: payload,
 				},
 			}

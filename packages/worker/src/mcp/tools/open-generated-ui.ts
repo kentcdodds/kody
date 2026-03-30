@@ -5,6 +5,11 @@ import { generatedUiRuntimeResourceUri } from '#mcp/apps/generated-ui-runtime-ht
 import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
+	conversationIdInputField,
+	memoryContextInputField,
+	resolveConversationId,
+} from '#mcp/tools/tool-call-context.ts'
+import {
 	applyUiArtifactParameters,
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
@@ -69,6 +74,8 @@ const inputSchema = z
 			.min(1)
 			.optional()
 			.describe('Optional short description for the current render session.'),
+		conversationId: conversationIdInputField,
+		memoryContext: memoryContextInputField,
 		params: z
 			.record(z.string(), z.unknown())
 			.optional()
@@ -102,6 +109,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 		},
 		async (args) => {
 			const callerContext = agent.getCallerContext()
+			const conversationId = resolveConversationId(args.conversationId)
 			const appId = args.app_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
@@ -142,6 +150,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 						})
 					: null
 			const structuredContent = {
+				conversationId,
 				widget: 'generated_ui' as const,
 				resourceUri: generatedUiRuntimeResourceUri,
 				renderSource: appId ? ('saved_app' as const) : ('inline_code' as const),

@@ -12,6 +12,11 @@ import {
 	errorFields,
 	logMcpEvent,
 } from '#mcp/observability.ts'
+import {
+	conversationIdInputField,
+	memoryContextInputField,
+	resolveConversationId,
+} from './tool-call-context.ts'
 
 const executeTool = {
 	name: 'execute',
@@ -23,8 +28,6 @@ the right capability, then call it through \`codemode\`.
 To run a saved skill by id, prefer \`meta_run_skill\` with \`skill_id\` and
 optional \`params\`. If you need the saved code, call \`meta_get_skill\` and
 pass the returned code into this tool.
-
-This tool accepts a single argument: \`{ "code": "async () => { ... }" }\`.
 
 Available in your code:
 
@@ -118,13 +121,23 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				code: z
 					.string()
 					.describe('JavaScript async arrow function to execute capabilities.'),
+				conversationId: conversationIdInputField,
+				memoryContext: memoryContextInputField,
 			},
 			annotations: executeTool.annotations,
 		},
-		async ({ code }: { code: string }) => {
+		async ({
+			code,
+			conversationId,
+		}: {
+			code: string
+			conversationId?: string
+			memoryContext?: z.infer<typeof memoryContextInputField>
+		}) => {
 			const startedAt = performance.now()
 			const env = agent.getEnv()
 			const callerContext = agent.getCallerContext()
+			const resolvedConversationId = resolveConversationId(conversationId)
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const { getCapabilityRegistryForContext } =
 				await import('#mcp/capabilities/registry.ts')
@@ -179,6 +192,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						},
 					],
 					structuredContent: {
+						conversationId: resolvedConversationId,
 						error: errorMessage,
 						errorDetails,
 						logs: result.logs ?? [],
@@ -206,6 +220,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					},
 				],
 				structuredContent: {
+					conversationId: resolvedConversationId,
 					result: result.result,
 					logs: result.logs ?? [],
 				},
