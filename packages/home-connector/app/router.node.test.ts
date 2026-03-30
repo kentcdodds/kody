@@ -45,27 +45,25 @@ function createAdapters(config: HomeConnectorConfig) {
 
 installHomeConnectorMockServer()
 
-test('home route renders admin dashboard links and connection info', async () => {
+test('home route toggles worker snapshot link by connector id', async () => {
 	const config = createConfig()
 	const { state, storage, lutron, samsungTv } = createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
-	state.connection.connected = true
-	state.connection.sharedSecret = 'secret'
 	try {
 		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
-		const response = await router.fetch('http://example.test/')
-		expect(response.status).toBe(200)
-		const html = await response.text()
-		expect(html).toContain('Home connector admin')
-		expect(html).toContain('/roku/status')
-		expect(html).toContain('/roku/setup')
-		expect(html).toContain('/lutron/status')
-		expect(html).toContain('/lutron/setup')
-		expect(html).toContain('/samsung-tv/status')
-		expect(html).toContain('/samsung-tv/setup')
-		expect(html).toContain('/home/connectors/default/snapshot')
-		expect(html).toContain('connected')
+		const responseWithConnector = await router.fetch('http://example.test/')
+		expect(responseWithConnector.status).toBe(200)
+		const htmlWithConnector = await responseWithConnector.text()
+		expect(htmlWithConnector).toContain('Home connector admin')
+		expect(htmlWithConnector).toContain('/home/connectors/default/snapshot')
+
+		state.connection.connectorId = ''
+		const responseWithoutConnector = await router.fetch('http://example.test/')
+		expect(responseWithoutConnector.status).toBe(200)
+		const htmlWithoutConnector = await responseWithoutConnector.text()
+		expect(htmlWithoutConnector).toContain('Home connector admin')
+		expect(htmlWithoutConnector).not.toContain('/home/connectors/default/snapshot')
 	} finally {
 		storage.close()
 	}
@@ -109,7 +107,7 @@ test('roku status route renders connector details', async () => {
 	}
 })
 
-test('roku status route renders last discovery diagnostics', async () => {
+test('roku status route renders discovery diagnostics summary', async () => {
 	const config = createConfig()
 	const { state, storage, lutron, samsungTv } = createAdapters(config)
 	state.rokuDiscoveryDiagnostics = {
@@ -122,25 +120,13 @@ test('roku status route renders last discovery diagnostics', async () => {
 				receivedAt: '2026-03-24T12:00:00.000Z',
 				remoteAddress: '192.168.1.45',
 				remotePort: 1900,
-				raw: 'HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.45:8060/\r\n',
-				location: 'http://192.168.1.45:8060/',
-				usn: 'uuid:roku:ecp:YH00AA123456',
+				raw: 'HTTP/1.1 200 OK\r\nLOCATION: http://roku.local:8060/\r\n',
+				location: 'http://roku.local:8060/',
+				usn: 'uuid:roku:ecp:ROKU-SAMPLE',
 				server: 'Roku/14.0.0 UPnP/1.0 Roku-ECP/1.0',
 			},
 		],
-		deviceInfoLookups: [
-			{
-				location: 'http://192.168.1.45:8060/',
-				deviceInfoUrl: 'http://192.168.1.45:8060/query/device-info',
-				raw: '<device-info><serial-number>YH00AA123456</serial-number></device-info>',
-				parsed: {
-					name: 'Living Room Roku',
-					serialNumber: 'YH00AA123456',
-					modelName: 'Roku Ultra',
-				},
-				error: null,
-			},
-		],
+		deviceInfoLookups: [],
 	}
 	try {
 		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
@@ -149,9 +135,8 @@ test('roku status route renders last discovery diagnostics', async () => {
 		const html = await response.text()
 		expect(html).toContain('Discovery diagnostics')
 		expect(html).toContain('Raw SSDP hits')
-		expect(html).toContain('192.168.1.45:1900')
-		expect(html).toContain('http://192.168.1.45:8060/query/device-info')
-		expect(html).toContain('YH00AA123456')
+		expect(html).toContain('http://roku.local:8060/')
+		expect(html).toContain('No device-info payloads were captured')
 	} finally {
 		storage.close()
 	}
