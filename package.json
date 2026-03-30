@@ -34,7 +34,7 @@
     "dev:mock-cloudflare": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/cloudflare/wrangler.jsonc",
     "deploy": "node --input-type=module -e \"if (['preview','test'].includes(process.env.CLOUDFLARE_ENV ?? '')) { await import('./tools/prepare-e2e-env.ts'); }\" && npm run build && node --env-file=packages/worker/.env ./wrangler-env.ts deploy --outdir .wrangler/sentry-bundle --upload-source-maps",
     "sentry:upload-sourcemaps": "node tools/sentry-upload-sourcemaps.ts",
-    "build:mcp-apps": "esbuild packages/worker/client/mcp-apps/kody-ui-utils.ts --bundle --format=esm --target=es2022 --outfile=packages/worker/public/mcp-apps/kody-ui-utils.js --platform=browser --banner:js='/* eslint-disable no-undef */'",
+    "build:mcp-apps": "esbuild packages/worker/client/mcp-apps/kody-ui-utils.ts --bundle --format=esm --target=es2022 --outfile=packages/worker/public/mcp-apps/kody-ui-utils.js --platform=browser --banner:js='/* eslint-disable no-undef */' && oxfmt packages/worker/public/mcp-apps/kody-ui-utils.css",
     "build:client:web": "esbuild packages/worker/client/entry.tsx --bundle --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/component",
     "build:client": "npm run build:client:web && npm run build:mcp-apps",
     "build": "nx run worker:build",

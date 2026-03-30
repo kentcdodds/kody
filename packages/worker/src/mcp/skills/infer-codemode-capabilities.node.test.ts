@@ -24,6 +24,21 @@ test('infers bracket string literal access', () => {
 	expect(staticNames).toContain('github_rest')
 })
 
+test('infers secret_set member access', () => {
+	const src = `async () => {
+    const refreshedToken = 'token-from-refresh';
+    await codemode.secret_set({
+      name: 'spotifyAccessToken',
+      value: refreshedToken,
+      scope: 'user',
+      description: 'Spotify OAuth access token',
+    });
+  }`
+	const { staticNames, inferencePartial } = inferCodemodeCapabilities(src)
+	expect(inferencePartial).toBe(false)
+	expect(staticNames).toContain('secret_set')
+})
+
 test('marks partial for computed non-literal codemode access', () => {
 	const program = parse(
 		`async () => { const x = 'ui_save_app'; return await codemode[x]({}) }`,

@@ -70,7 +70,9 @@ Network access:
 Secrets:
 - Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, client secrets, or other credentials into chat. If a workflow needs a secret value that is not already stored, use generated UI to collect and save it instead.
 - Use \`await codemode.secret_list({})\` to inspect available secret metadata before building a request. The result is metadata only and does not reveal secret values; it includes allowed hosts and allowed capability names.
+- Use \`await codemode.secret_set({ name, value, scope, description })\` only to persist a secret value that is already available inside trusted execution, such as a refreshed OAuth token. The \`value\` input is write-only; execute results and logs redact secret-marked capability inputs before they are returned.
 - Pass \`scope\` to narrow results, for example \`await codemode.secret_list({ scope: 'app' })\`.
+- Deleting or saving a secret never grants outbound host approval or capability approval. Those policies are still managed through the authenticated account secrets UI.
 - Do not expect \`codemode.secret_get(...)\`, \`codemode.secret_require(...)\`, or any injected \`secrets\` helper to be available in execute-time code.
 
 Values:

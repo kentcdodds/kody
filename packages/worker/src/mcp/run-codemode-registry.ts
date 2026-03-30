@@ -1,11 +1,19 @@
 import {
 	resolveProvider,
+	type ExecuteResult,
 	type ResolvedProvider,
 	type ToolProvider,
 } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { resolveCapabilityInputSecrets } from '#mcp/secrets/capability-inputs.ts'
+import {
+	getAdditionalPropertiesSchema,
+	getArrayItemSchema,
+	getSchemaProperties,
+	isRecord,
+	isSecretInputSchema,
+	resolveCapabilityInputSecrets,
+} from '#mcp/secrets/capability-inputs.ts'
 import {
 	capabilityInputSecretAuthRequiredMessage,
 	createCapabilitySecretAccessDeniedMessage,
@@ -27,6 +35,7 @@ export async function buildCodemodeFns(
 			secret: ReferencedSecret,
 			capabilityName: string,
 		) => Promise<string>
+		trackSecretInputValue?: (value: string) => void
 	},
 ) {
 	const { capabilityMap } = await getCapabilityRegistryForContext({
@@ -50,6 +59,11 @@ export async function buildCodemodeFns(
 					resolveSecretValue: (secret) =>
 						resolveSecretValue(secret, capability.name),
 				})
+				collectSecretInputValues({
+					schema: capability.inputSchema,
+					value: resolvedArgs,
+					track: options?.trackSecretInputValue,
+				})
 				return capability.handler(resolvedArgs as Record<string, unknown>, {
 					env,
 					callerContext,
@@ -62,8 +76,11 @@ export async function buildCodemodeFns(
 export async function buildCodemodeProvider(
 	env: Env,
 	callerContext: McpCallerContext,
+	options?: {
+		trackSecretInputValue?: (value: string) => void
+	},
 ): Promise<ResolvedProvider> {
-	const tools = await buildCodemodeFns(env, callerContext)
+	const tools = await buildCodemodeFns(env, callerContext, options)
 	const provider: ToolProvider = {
 		name: 'codemode',
 		tools: Object.fromEntries(
@@ -127,9 +144,10 @@ export async function runCodemodeWithRegistry(
 	code: string,
 	params?: Record<string, unknown>,
 	executorExports?: typeof workerExports,
-) {
+): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
 	const { normalizeCode } = await import('@cloudflare/codemode')
+	const secretRedactor = createExecutionSecretRedactor()
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
 	)
@@ -142,7 +160,11 @@ export async function runCodemodeWithRegistry(
 			storageContext: normalizedStorageContext,
 		},
 	})
-	const provider = await buildCodemodeProvider(env, callerContext)
+	const provider = await buildCodemodeProvider(env, callerContext, {
+		trackSecretInputValue: (value) => {
+			secretRedactor.track(value)
+		},
+	})
 	const wrappedCode =
 		params !== undefined
 			? await buildParameterizedSkillCode(code, params)
@@ -154,16 +176,20 @@ ${createExecuteHelperPrelude()}
   return await __kodyUserCode();
 }`
 	const result = await executor.execute(wrapped, [provider])
-	if (!result.error) return result
+	const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
+	if (!result.error) return sanitizedResult
 	const batchMessage = await rewriteCapabilitySecretError({
 		error: result.error,
 		code: wrapped,
 		env,
 		callerContext,
 	})
-	return batchMessage ? { ...result, error: batchMessage } : result
+	if (!batchMessage) return sanitizedResult
+	return {
+		...sanitizedResult,
+		error: secretRedactor.redactErrorMessage(batchMessage),
+	}
 }
-
 async function rewriteCapabilitySecretError(input: {
 	error: unknown
 	code: string
@@ -214,6 +240,138 @@ function normalizeSecretNameList(names: Array<string>) {
 	return Array.from(
 		new Set(names.map((name) => name.trim()).filter((name) => name.length > 0)),
 	).sort((left, right) => left.localeCompare(right))
+}
+
+const redactedSecretText = '[REDACTED SECRET]'
+
+function createExecutionSecretRedactor() {
+	const secretValues = new Set<string>()
+	return {
+		track(value: string) {
+			if (value.length > 0) {
+				secretValues.add(value)
+			}
+		},
+		redactErrorMessage(value: string) {
+			return redactSecretValuesInString(value, secretValues)
+		},
+		sanitizeExecuteResult(result: ExecuteResult): ExecuteResult {
+			return {
+				...result,
+				result: redactUnknownSecretValues(result.result, secretValues),
+				logs: Array.isArray(result.logs)
+					? result.logs.map((entry) =>
+							redactSecretValuesInString(entry, secretValues),
+						)
+					: result.logs,
+				error:
+					typeof result.error === 'string'
+						? redactSecretValuesInString(result.error, secretValues)
+						: result.error,
+			}
+		},
+	}
+}
+
+function collectSecretInputValues(input: {
+	schema: unknown
+	value: unknown
+	track?: (value: string) => void
+}) {
+	if (!input.track) return
+	visitSecretInputValue(input.schema, input.value, input.track)
+}
+
+function visitSecretInputValue(
+	schema: unknown,
+	value: unknown,
+	track: (value: string) => void,
+) {
+	if (typeof value === 'string' && isSecretInputSchema(schema)) {
+		track(value)
+		return
+	}
+	if (Array.isArray(value)) {
+		const itemSchema = getArrayItemSchema(schema)
+		if (!itemSchema) return
+		for (const item of value) {
+			visitSecretInputValue(itemSchema, item, track)
+		}
+		return
+	}
+	if (!isRecord(value)) return
+	const propertySchemas = getSchemaProperties(schema)
+	const additionalProperties = getAdditionalPropertiesSchema(schema)
+	if (!propertySchemas && !additionalProperties) return
+	for (const [key, entryValue] of Object.entries(value)) {
+		const entrySchema = propertySchemas?.[key] ?? additionalProperties
+		if (!entrySchema) continue
+		visitSecretInputValue(entrySchema, entryValue, track)
+	}
+}
+
+function redactUnknownSecretValues(
+	value: unknown,
+	secretValues: ReadonlySet<string>,
+	seen = new WeakMap<object, unknown>(),
+): unknown {
+	if (secretValues.size === 0) return value
+	if (typeof value === 'string') {
+		return redactSecretValuesInString(value, secretValues)
+	}
+	if (value instanceof Error) {
+		const existing = seen.get(value)
+		if (existing) return existing
+		const next = new Error(
+			redactSecretValuesInString(value.message, secretValues),
+			value.cause !== undefined ? { cause: undefined } : undefined,
+		)
+		seen.set(value, next)
+		if (value.cause !== undefined) {
+			next.cause = redactUnknownSecretValues(value.cause, secretValues, seen)
+		}
+		next.name = value.name
+		if (value.stack) {
+			next.stack = redactSecretValuesInString(value.stack, secretValues)
+		}
+		return next
+	}
+	if (Array.isArray(value)) {
+		const existing = seen.get(value)
+		if (existing) return existing
+		const next: Array<unknown> = []
+		seen.set(value, next)
+		for (const entry of value) {
+			next.push(redactUnknownSecretValues(entry, secretValues, seen))
+		}
+		return next
+	}
+	if (isRecord(value)) {
+		const existing = seen.get(value)
+		if (existing) return existing
+		const next: Record<string, unknown> = {}
+		seen.set(value, next)
+		for (const [key, entry] of Object.entries(value)) {
+			const redactedKey = redactSecretValuesInString(key, secretValues)
+			next[redactedKey] = redactUnknownSecretValues(entry, secretValues, seen)
+		}
+		return next
+	}
+	return value
+}
+
+function redactSecretValuesInString(
+	value: string,
+	secretValues: ReadonlySet<string>,
+) {
+	if (secretValues.size === 0 || value.length === 0) return value
+	let nextValue = value
+	for (const secretValue of [...secretValues].sort(
+		(left, right) => right.length - left.length,
+	)) {
+		nextValue = nextValue.replaceAll(secretValue, redactedSecretText)
+	}
+	return nextValue
 }
 
 function normalizeStorageContext(

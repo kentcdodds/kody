@@ -37,6 +37,7 @@ Quick start
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
 - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
 - Use \`codemode.secret_list(args)\` during execute-time code to list secret metadata only; it does not return plaintext values.
+- Use \`codemode.secret_set(args)\` only to persist secret values that are already available inside trusted execution, such as refreshed OAuth tokens. It returns metadata only and never returns plaintext values.
 
 Kody source repository
 - Kody (this app and MCP server) is developed at https://github.com/kentcdodds/kody. When you launch a Cursor Cloud Agent to improve Kody itself, use that repository URL (unless the user explicitly points you at another fork or repo).
@@ -81,13 +82,15 @@ How to use execute
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
 - Use \`await codemode.secret_list({})\` or \`await codemode.secret_list({ scope: 'app' })\` when you need secret metadata such as names, descriptions, scopes, allowed hosts, and allowed capabilities from the sandbox.
+- Use \`await codemode.secret_set({ name, value, scope, description? })\` only when a capability or fetch flow has already produced a secret value inside execution and you need to persist it without showing it to the model or returning it to the caller.
 - Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to store and read back later.
  - Execute-time code includes \`refreshAccessToken(providerName)\` and \`createAuthenticatedFetch(providerName)\` helpers for connector OAuth flows.
 - Use normal \`fetch(...)\` for outbound HTTP. To inject a stored secret, place a placeholder such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body; the host resolves it server-side and blocks unapproved destinations.
 - Some capability input fields also accept secret placeholders. When an input schema marks a string field with \`x-kody-secret: true\`, you may pass \`{{secret:name}}\` or \`{{secret:name|scope=user}}\` there instead of a raw value. If that secret has an allowed-capabilities policy, the current capability name must be on the allowlist.
 - Secret placeholders are not general-purpose string interpolation. Do not use \`execute\` to build a string or object that merely returns \`{{secret:...}}\`; those placeholders only resolve in secret-aware fetch paths or capability inputs that explicitly opt into \`x-kody-secret\`.
-- Saving or updating a secret does not authorize sending it anywhere. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
-- Secrets are intentionally not readable or updatable through \`codemode\`. Never ask the user to paste a secret into chat; use generated UI flows such as \`saveSecret(...)\` when the user needs to provide or rotate a value, and use \`codemode.secret_delete(...)\` only when removing a stored secret reference.
+- Saving or updating a secret does not authorize sending it anywhere or passing it into arbitrary capabilities. If a fetch fails because a host is not approved for that secret, ask the user whether to open the approval link and approve that host in the web app.
+- Never ask the user to paste a secret into chat. Use generated UI flows when the user needs to provide or rotate a value themselves. \`codemode.secret_set(...)\` is for persisting secret values that are already available inside execution, not for collecting them from chat.
+- Secret values that pass through \`x-kody-secret\` capability inputs are treated as write-only: they may be persisted or handed to the host-side capability, but they must never be returned in execute results or logs.
 - Your code must be an async arrow function that returns the result.
 - Example: const result = await codemode[capabilityName](args)
 
