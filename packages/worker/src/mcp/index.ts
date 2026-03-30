@@ -81,6 +81,7 @@ How to use execute
 - Each capability call returns that capability's raw structured result value.
 - When chaining calls, read fields from the previous result using its outputSchema.
 - Chain multiple calls, use conditionals, and return structured results.
+- Prefer fewer \`execute\` calls when the workflow is clear. If you are reasonably confident you can complete the needed sequence in one async function, do that and return the final useful result instead of making separate \`execute\` calls for intermediate steps.
 - Use \`await codemode.secret_list({})\` or \`await codemode.secret_list({ scope: 'app' })\` when you need secret metadata such as names, descriptions, scopes, allowed hosts, and allowed capabilities from the sandbox.
 - Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to store and read back later.
  - Execute-time code includes \`refreshAccessToken(providerName)\` and \`createAuthenticatedFetch(providerName)\` helpers for connector OAuth flows.

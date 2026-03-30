@@ -58,6 +58,13 @@ Each capability call resolves to the raw returned value itself, not an MCP
 wrapper object. When chaining calls, read fields from the previous result using
 the capability's \`outputSchema\` from \`search\` with \`detail: true\`.
 
+Prefer fewer \`execute\` tool invocations when the workflow is clear. If you are
+reasonably confident you can complete the needed sequence in one async
+function, chain the capability calls there and return the final useful result
+instead of making separate \`execute\` calls for intermediate steps. Split work
+across multiple \`execute\` calls only when you need new information, user
+confirmation, or a prior result changes the plan.
+
 Network access:
 - Regular \`fetch(...)\` is available inside the sandbox and is routed through a host-side gateway.
 - To inject a saved secret into a request, use a placeholder string such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body.
