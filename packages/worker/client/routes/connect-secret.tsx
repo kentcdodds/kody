@@ -7,6 +7,7 @@ import {
 	spacing,
 	typography,
 } from '#client/styles/tokens.ts'
+import { SecretEditorFields } from './secret-editor-fields.tsx'
 import { formatConnectorConfigFailureMessage } from './connect-secret-errors.ts'
 
 type StorageScope = 'app' | 'session' | 'user'
@@ -45,9 +46,12 @@ type ConnectSecretParams = {
 type ConnectSecretState = {
 	step: ViewStep
 	error: string
+	description: string
 	secretValue: string
+	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
+	showSecretValue: boolean
 	existingSecret: SecretMetadata | null
-	updateConfirmed: boolean
 	confirmedReview: boolean
 }
 
@@ -64,9 +68,12 @@ type ConnectSecretSession = {
 const defaultState: ConnectSecretState = {
 	step: 'loading',
 	error: '',
+	description: '',
 	secretValue: '',
+	allowedHosts: [''],
+	allowedCapabilities: [''],
+	showSecretValue: false,
 	existingSecret: null,
-	updateConfirmed: false,
 	confirmedReview: false,
 }
 
@@ -117,6 +124,41 @@ function parseConnectSecretParams(): ConnectSecretParams {
 		dashboardUrl,
 		instructions,
 		connector,
+	}
+}
+
+function toEditableRows(values: Array<string>) {
+	return values.length > 0 ? [...values] : ['']
+}
+
+function normalizeAllowedHostsInput(hosts: Array<string>) {
+	return Array.from(
+		new Set(
+			hosts
+				.map((host) => host.trim().toLowerCase())
+				.filter((host) => host.length > 0),
+		),
+	).sort()
+}
+
+function normalizeAllowedCapabilitiesInput(capabilities: Array<string>) {
+	return Array.from(
+		new Set(
+			capabilities
+				.map((capability) => capability.trim())
+				.filter((capability) => capability.length > 0),
+		),
+	).sort((left, right) => left.localeCompare(right))
+}
+
+function createInitialConnectSecretState(
+	params: ConnectSecretParams,
+): ConnectSecretState {
+	return {
+		...defaultState,
+		description: params.description,
+		allowedHosts: toEditableRows(params.allowedHosts),
+		allowedCapabilities: toEditableRows(params.allowedCapabilities),
 	}
 }
 
@@ -203,22 +245,28 @@ async function listExistingSecret(
 async function saveSecretValue(
 	params: ConnectSecretParams,
 	session: ConnectSecretSession,
-	value: string,
+	input: {
+		value: string
+		description: string
+		allowedHosts: Array<string>
+		allowedCapabilities: Array<string>
+	},
 ) {
-	const response = await fetch(session.endpoints.secrets, {
+	const response = await fetch('/connect/secret.json', {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
-			Authorization: `Bearer ${session.token}`,
 		},
-		credentials: 'omit',
+		credentials: 'include',
 		body: JSON.stringify({
-			action: 'save',
 			name: params.name,
-			value,
-			description: params.description,
 			scope: params.scope,
+			sessionToken: session.token,
+			value: input.value,
+			description: input.description,
+			allowedHosts: input.allowedHosts,
+			allowedCapabilities: input.allowedCapabilities,
 		}),
 	})
 	const payload = (await response.json().catch(() => null)) as {
@@ -233,6 +281,10 @@ async function saveSecretValue(
 async function updateConnectorConfig(
 	params: ConnectSecretParams,
 	session: ConnectSecretSession,
+	input: {
+		allowedHosts: Array<string>
+		allowedCapabilities: Array<string>
+	},
 ) {
 	if (!params.connector) return
 	const response = await fetch('/connect/secret.json', {
@@ -247,8 +299,8 @@ async function updateConnectorConfig(
 			scope: params.scope,
 			sessionToken: session.token,
 			connector: params.connector,
-			allowedHosts: params.allowedHosts,
-			allowedCapabilities: params.allowedCapabilities,
+			allowedHosts: input.allowedHosts,
+			allowedCapabilities: input.allowedCapabilities,
 		}),
 	})
 	const payload = (await response.json().catch(() => null)) as {
@@ -323,12 +375,19 @@ export function ConnectSecretRoute(handle: Handle) {
 			if (version !== initVersion) return
 			if (existing) {
 				setState({
+					...createInitialConnectSecretState(params),
 					step: 'update-confirm',
 					existingSecret: existing,
+					description: existing.description,
+					allowedHosts: toEditableRows(existing.allowed_hosts),
+					allowedCapabilities: toEditableRows(existing.allowed_capabilities),
 				})
 				return
 			}
-			setState({ step: 'input' })
+			setState({
+				...createInitialConnectSecretState(params),
+				step: 'input',
+			})
 		} catch (error) {
 			if (version !== initVersion) return
 			if (isSessionRefreshError(error)) {
@@ -353,6 +412,10 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		const params = parseConnectSecretParams()
+		const normalizedAllowedHosts = normalizeAllowedHostsInput(state.allowedHosts)
+		const normalizedAllowedCapabilities = normalizeAllowedCapabilitiesInput(
+			state.allowedCapabilities,
+		)
 		if (!state.secretValue.trim()) {
 			setState({
 				step: 'error',
@@ -362,7 +425,12 @@ export function ConnectSecretRoute(handle: Handle) {
 		}
 		setState({ step: 'saving', error: '' })
 		try {
-			await saveSecretValue(params, session, state.secretValue)
+			await saveSecretValue(params, session, {
+				value: state.secretValue,
+				description: state.description,
+				allowedHosts: normalizedAllowedHosts,
+				allowedCapabilities: normalizedAllowedCapabilities,
+			})
 		} catch (error) {
 			if (isSessionRefreshError(error)) {
 				startInitialization()
@@ -376,7 +444,10 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		try {
-			await updateConnectorConfig(params, session)
+			await updateConnectorConfig(params, session, {
+				allowedHosts: normalizedAllowedHosts,
+				allowedCapabilities: normalizedAllowedCapabilities,
+			})
 			setState({ step: 'success' })
 		} catch (error) {
 			const secretWasNewlyCreated = state.existingSecret == null
@@ -417,6 +488,53 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		setState({ step: 'input', error: '' })
+	}
+
+	function updateAllowedHost(index: number, value: string) {
+		setState({
+			allowedHosts: state.allowedHosts.map((host, hostIndex) =>
+				hostIndex === index ? value : host,
+			),
+		})
+	}
+
+	function addAllowedHost() {
+		setState({
+			allowedHosts: [...state.allowedHosts, ''],
+		})
+	}
+
+	function removeAllowedHost(index: number) {
+		const nextHosts = state.allowedHosts.filter(
+			(_host, hostIndex) => hostIndex !== index,
+		)
+		setState({
+			allowedHosts: nextHosts.length > 0 ? nextHosts : [''],
+		})
+	}
+
+	function updateAllowedCapability(index: number, value: string) {
+		setState({
+			allowedCapabilities: state.allowedCapabilities.map(
+				(capability, capabilityIndex) =>
+					capabilityIndex === index ? value : capability,
+			),
+		})
+	}
+
+	function addAllowedCapability() {
+		setState({
+			allowedCapabilities: [...state.allowedCapabilities, ''],
+		})
+	}
+
+	function removeAllowedCapability(index: number) {
+		const nextCapabilities = state.allowedCapabilities.filter(
+			(_capability, capabilityIndex) => capabilityIndex !== index,
+		)
+		setState({
+			allowedCapabilities: nextCapabilities.length > 0 ? nextCapabilities : [''],
+		})
 	}
 
 	return () => {
@@ -516,8 +634,7 @@ export function ConnectSecretRoute(handle: Handle) {
 								type="button"
 								css={primaryButtonCss}
 								on={{
-									click: () =>
-										setState({ step: 'input', updateConfirmed: true }),
+									click: () => setState({ step: 'input' }),
 								}}
 							>
 								Update secret
@@ -600,20 +717,25 @@ export function ConnectSecretRoute(handle: Handle) {
 
 						<section css={cardCss}>
 							<h2 css={cardTitleCss}>Enter secret</h2>
-							<label css={{ display: 'grid', gap: spacing.xs }}>
-								<span css={labelCss}>Secret value</span>
-								<input
-									type="password"
-									autoComplete="new-password"
-									value={state.secretValue}
-									placeholder="Paste the secret value"
-									on={{
-										input: (event) =>
-											setState({ secretValue: event.currentTarget.value }),
-									}}
-									css={inputCss}
-								/>
-							</label>
+							<SecretEditorFields
+								description={state.description}
+								onDescriptionChange={(description) => setState({ description })}
+								value={state.secretValue}
+								onValueChange={(secretValue) => setState({ secretValue })}
+								showSecretValue={state.showSecretValue}
+								onToggleShowSecretValue={() =>
+									setState({ showSecretValue: !state.showSecretValue })
+								}
+								allowedHosts={state.allowedHosts}
+								onUpdateAllowedHost={updateAllowedHost}
+								onAddAllowedHost={addAllowedHost}
+								onRemoveAllowedHost={removeAllowedHost}
+								allowedCapabilities={state.allowedCapabilities}
+								onUpdateAllowedCapability={updateAllowedCapability}
+								onAddAllowedCapability={addAllowedCapability}
+								onRemoveAllowedCapability={removeAllowedCapability}
+								valuePlaceholder="Paste the secret value"
+							/>
 						</section>
 
 						{showReview ? (
@@ -634,10 +756,10 @@ export function ConnectSecretRoute(handle: Handle) {
 										<div css={labelCss}>Scope</div>
 										<div>{scopeLabel(params.scope)}</div>
 									</div>
-									{params.description ? (
+									{state.description ? (
 										<div css={{ gridColumn: '1 / -1' }}>
 											<div css={labelCss}>Description</div>
-											<div>{params.description}</div>
+											<div>{state.description}</div>
 										</div>
 									) : null}
 								</div>
@@ -651,8 +773,8 @@ export function ConnectSecretRoute(handle: Handle) {
 									<div>
 										<div css={labelCss}>Hosts to approve</div>
 										<ul css={listCss}>
-											{params.allowedHosts.length > 0 ? (
-												params.allowedHosts.map((host) => (
+											{normalizeAllowedHostsInput(state.allowedHosts).length > 0 ? (
+												normalizeAllowedHostsInput(state.allowedHosts).map((host) => (
 													<li key={host}>{host}</li>
 												))
 											) : (
@@ -663,8 +785,11 @@ export function ConnectSecretRoute(handle: Handle) {
 									<div>
 										<div css={labelCss}>Capabilities to allow</div>
 										<ul css={listCss}>
-											{params.allowedCapabilities.length > 0 ? (
-												params.allowedCapabilities.map((capability) => (
+											{normalizeAllowedCapabilitiesInput(state.allowedCapabilities)
+												.length > 0 ? (
+												normalizeAllowedCapabilitiesInput(
+													state.allowedCapabilities,
+												).map((capability) => (
 													<li key={capability}>{capability}</li>
 												))
 											) : (
@@ -788,16 +913,6 @@ const listCss = {
 	display: 'grid',
 	gap: spacing.xs,
 	color: colors.text,
-}
-
-const inputCss = {
-	padding: spacing.sm,
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.background,
-	color: colors.text,
-	fontFamily: typography.fontFamily,
-	fontSize: typography.fontSize.base,
 }
 
 const primaryButtonCss = {
