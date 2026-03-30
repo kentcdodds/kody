@@ -29,13 +29,6 @@ To run a saved skill by id, prefer \`meta_run_skill\` with \`skill_id\` and
 optional \`params\`. If you need the saved code, call \`meta_get_skill\` and
 pass the returned code into this tool.
 
-This tool requires \`code\` and also accepts optional tool-call context fields
-such as \`conversationId\` and \`memoryContext\`.
-
-Optional tool-call context:
-- Pass \`conversationId\` to group related calls across the same conversation. Clients should generate and reuse a short value when possible. If omitted, Kody generates one and returns it in \`structuredContent.conversationId\`.
-- Pass \`memoryContext\` with short, structured task context for future memory-aware behavior. Keep it factual and concise rather than hidden reasoning.
-
 Available in your code:
 
 type CapabilityArgs = Record<string, unknown>;

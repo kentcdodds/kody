@@ -65,12 +65,6 @@ Pass a **query** string describing what you want to do. Results are ranked with 
 
  Optional **limit** (default 15) caps how many results are returned. **detail: true** includes extra metadata (for skills: inferred capabilities, collection slug, etc.; for capabilities: JSON schemas where applicable). Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
 
- Optional **conversationId** groups related calls across the same client
- conversation. Clients should generate and reuse one when possible; Kody returns
- one in \`structuredContent.conversationId\` when omitted. Optional
-\`memoryContext\` accepts short, structured task context for future
-memory-aware behavior.
-
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
 - \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
