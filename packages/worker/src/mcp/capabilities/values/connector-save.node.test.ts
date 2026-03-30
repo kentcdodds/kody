@@ -159,10 +159,10 @@ test('connector_save upserts an existing connector record', async () => {
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		requiredHosts: ['api.spotify.com'],
 	})
-	expect(JSON.parse(testDb.entries.get('_connector:spotify') ?? '{}')).toMatchObject(
-		{
-			apiBaseUrl: 'https://api.spotify.com/v1',
-			requiredHosts: ['api.spotify.com'],
-		},
-	)
+	expect(
+		JSON.parse(testDb.entries.get('_connector:spotify') ?? '{}'),
+	).toMatchObject({
+		apiBaseUrl: 'https://api.spotify.com/v1',
+		requiredHosts: ['api.spotify.com'],
+	})
 })

@@ -65,8 +65,11 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			(tool) => tool.name === 'lutron_set_credentials',
 		)
 		expect(lutronCredentialsTool).toBeDefined()
+		if (!lutronCredentialsTool) {
+			throw new Error('Expected lutron_set_credentials tool to be defined')
+		}
 		const lutronCredentialProperties = (
-			lutronCredentialsTool?.inputSchema as {
+			lutronCredentialsTool.inputSchema as {
 				properties?: Record<string, Record<string, unknown>>
 			}
 		).properties
