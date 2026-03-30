@@ -184,7 +184,6 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 				properties: {
 					repo: {
 						type: 'string',
-						description: 'Repo',
 					},
 				},
 			},
@@ -256,7 +255,6 @@ test('compressSchemaForLlm compresses composed schemas', () => {
 				properties: {
 					repo: {
 						type: 'string',
-						description: 'Repo',
 					},
 				},
 			},
