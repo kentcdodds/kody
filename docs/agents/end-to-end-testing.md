@@ -36,7 +36,11 @@ that are unlikely to recur.
 
 - Keep tests flat: top-level `test(...)` with no `describe` nesting.
 - Inline setup per test; avoid shared `beforeEach` unless required.
-- Prefer one clear assertion per step and a small number of final assertions.
+- Prefer fewer, longer tests when one user journey covers the behavior.
+- Treat each E2E test like a manual tester's script: one setup, then the
+  actions and assertions needed to validate the whole flow.
+- Do not split a single journey into multiple tiny tests just to isolate each
+  assertion.
 - Use Playwright’s `expect` and locator APIs (role/label/placeholder).
 
 ## Locators
@@ -84,6 +88,8 @@ handled by the static asset fetcher in `packages/worker/src/index.ts`.
 
 - Assert user-facing results (success message, redirect, visible element).
 - For async actions, wait on the UI result, not arbitrary timeouts.
+- Assert important intermediate states as part of the same journey that causes
+  them instead of creating isolated loading-state or transition-state tests.
 - For client-router regressions, you may set a `window` marker before clicking a
   link and assert it survives navigation to prove there was no full document
   reload.
