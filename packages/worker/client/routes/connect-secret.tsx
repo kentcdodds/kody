@@ -127,8 +127,9 @@ function parseConnectSecretParams(): ConnectSecretParams {
 	}
 }
 
-function toEditableRows(values: Array<string>) {
-	return values.length > 0 ? [...values] : ['']
+function toEditableRows(values: Array<string> | null | undefined) {
+	if (!Array.isArray(values) || values.length === 0) return ['']
+	return [...values]
 }
 
 function normalizeAllowedHostsInput(hosts: Array<string>) {
@@ -542,7 +543,11 @@ export function ConnectSecretRoute(handle: Handle) {
 			typeof window === 'undefined' ? '' : window.location.search
 		if (currentSearch !== lastSearch) {
 			lastSearch = currentSearch
-			startInitialization()
+			// Defer: startInitialization calls handle.update(), which must not run during
+			// render (Remix component runtime throws "scheduleUpdate not implemented").
+			handle.queueTask(() => {
+				startInitialization()
+			})
 		}
 
 		const params = parseConnectSecretParams()
