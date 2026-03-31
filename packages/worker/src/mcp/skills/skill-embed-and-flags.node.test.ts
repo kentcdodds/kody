@@ -24,17 +24,17 @@ const fakeSpecs: Record<string, CapabilitySpec> = {
 		outputFields: ['app_id'],
 		inputSchema: {},
 	},
-	cloudflare_rest: {
-		name: 'cloudflare_rest',
-		domain: capabilityDomainNames.coding,
-		description: 'Cloudflare REST.',
-		keywords: ['cloudflare'],
+	secret_delete: {
+		name: 'secret_delete',
+		domain: capabilityDomainNames.secrets,
+		description: 'Delete a stored secret.',
+		keywords: ['secret'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
-		inputFields: ['method', 'path'],
-		requiredInputFields: ['method', 'path'],
-		outputFields: ['status', 'body'],
+		inputFields: ['name'],
+		requiredInputFields: ['name'],
+		outputFields: [],
 		inputSchema: {},
 	},
 }
@@ -88,7 +88,7 @@ test('buildSkillEmbedText keeps inferred capability names lightweight', () => {
 })
 
 test('validateSkillSaveFlags rejects read_only with destructive inferred set', () => {
-	const derived = deriveTrustFlags(['cloudflare_rest'], fakeSpecs, false)
+	const derived = deriveTrustFlags(['secret_delete'], fakeSpecs, false)
 	expect(derived.destructiveDerived).toBe(true)
 	const v = validateSkillSaveFlags({
 		agentReadOnly: true,

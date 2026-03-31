@@ -65,13 +65,13 @@ How to use search
 - Example: search({ query: 'saved dashboard app or generated UI runtime' })
 - Example: search({ query: 'repository automation pull requests' })
 - Example: search({ query: 'Cloudflare API zones dns workers d1' })
-- Example: search({ entity: 'cloudflare_rest:capability' })
+- Example: search({ entity: 'page_to_markdown:capability' })
 - Example: search({ entity: 'github-pr-summary:skill' })
 
-Destructive Cloudflare access
-- The cloudflare_rest capability can change or delete Cloudflare resources such as DNS records, Workers settings, routes, or account configuration (POST/PUT/PATCH/DELETE).
+Cloudflare API v4 (skills and fetch)
+- Call the Cloudflare API from **saved skills** or **execute** using normal \`fetch\` to \`https://api.cloudflare.com\` with \`Authorization: Bearer {{secret:yourTokenName}}\` after the user has approved **api.cloudflare.com** for that secret. See \`docs/agents/skill-patterns/cloudflare-api-v4.md\` in the Kody repository.
 - Official API base path and auth: https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/
-- Before execute on a mutating call, confirm the exact path, method, and JSON body with the user unless they already approved that exact operation.
+- Before mutating calls (POST/PUT/PATCH/DELETE), confirm the exact path, method, and JSON body with the user unless they already approved that operation.
 
 How to use execute
 - The sandbox provides a 'codemode' object with async methods for each capability.

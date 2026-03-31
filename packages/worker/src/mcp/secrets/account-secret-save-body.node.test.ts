@@ -17,21 +17,21 @@ describe('account secret save body parsing', () => {
 	it('drops null elements produced from JSON undefined serialization', () => {
 		const body = JSON.parse(
 			JSON.stringify({
-				allowedCapabilities: ['cloudflare_rest', undefined],
+				allowedCapabilities: ['secret_delete', undefined],
 			}),
 		) as Record<string, unknown>
-		expect(body.allowedCapabilities).toEqual(['cloudflare_rest', null])
+		expect(body.allowedCapabilities).toEqual(['secret_delete', null])
 		expect(readStringArray(body, 'allowedCapabilities')).toEqual([
-			'cloudflare_rest',
+			'secret_delete',
 		])
 	})
 
 	it('keeps both capabilities when both are strings', () => {
 		const body = {
-			allowedCapabilities: ['cloudflare_rest', 'home_lutron_set_credentials'],
+			allowedCapabilities: ['secret_delete', 'home_lutron_set_credentials'],
 		}
 		expect(readStringArray(body, 'allowedCapabilities')).toEqual([
-			'cloudflare_rest',
+			'secret_delete',
 			'home_lutron_set_credentials',
 		])
 	})

@@ -36,8 +36,8 @@ Quick notes for getting a local kody environment running.
   local home connector; it sets `RESEND_API_BASE_URL`, `AI_MODE=mock`,
   `AI_MOCK_BASE_URL`, and (unless `SKIP_CLOUDFLARE_MOCK=1` or `AI_MODE=remote`)
   `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` to the local Cloudflare API
-  mock Worker for the `cloudflare_rest` capability. The home connector receives
-  the resolved worker origin via `WORKER_BASE_URL`. When
+  mock Worker for `page_to_markdown` and the internal Cloudflare API client. The
+  home connector receives the resolved worker origin via `WORKER_BASE_URL`. When
   `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
   it to both the worker and the connector so the outbound registration handshake
   succeeds in local development. The main worker and home connector stream logs

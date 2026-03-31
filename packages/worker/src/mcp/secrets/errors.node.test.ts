@@ -67,12 +67,12 @@ test('parseHostApprovalRequiredBatchMessage returns approval entries', () => {
 test('parseCapabilitySecretAccessDeniedMessage extracts secret and capability', () => {
 	const message = createCapabilitySecretAccessDeniedMessage(
 		'cloudflareToken',
-		'cloudflare_rest',
-		'https://example.com/account/secrets/user/cloudflareToken?capability=cloudflare_rest',
+		'secret_set',
+		'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 	)
 	expect(parseCapabilityAccessRequiredMessage(message)).toEqual({
 		secretName: 'cloudflareToken',
-		capabilityName: 'cloudflare_rest',
+		capabilityName: 'secret_set',
 	})
 	expect(
 		parseCapabilityAccessRequiredMessage('Capability approval failed'),

@@ -11,21 +11,21 @@ test('getExecutionErrorDetails returns concrete guidance for capability access d
 	const error = new Error(
 		createCapabilitySecretAccessDeniedMessage(
 			'cloudflareToken',
-			'cloudflare_rest',
-			'https://example.com/account/secrets/user/cloudflareToken?capability=cloudflare_rest',
+			'secret_set',
+			'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 		),
 	)
 
 	expect(getExecutionErrorDetails(error)).toEqual({
 		kind: 'secret_capability_access_required',
 		message:
-			'Secret "cloudflareToken" is not allowed for capability "cloudflare_rest". If this capability should be able to use the secret, ask the user whether to add "cloudflare_rest" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://example.com/account/secrets/user/cloudflareToken?capability=cloudflare_rest',
+			'Secret "cloudflareToken" is not allowed for capability "secret_set". If this capability should be able to use the secret, ask the user whether to add "secret_set" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 		nextStep:
 			"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
 		secretNames: ['cloudflareToken'],
-		capabilityName: 'cloudflare_rest',
+		capabilityName: 'secret_set',
 		approvalUrl:
-			'https://example.com/account/secrets/user/cloudflareToken?capability=cloudflare_rest',
+			'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 		suggestedAction: {
 			type: 'edit_secret_policy',
 			policyField: 'allowed_capabilities',
@@ -38,8 +38,8 @@ test('formatExecutionOutput includes capability access next step', () => {
 		error: new Error(
 			createCapabilitySecretAccessDeniedMessage(
 				'cloudflareToken',
-				'cloudflare_rest',
-				'https://example.com/account/secrets/user/cloudflareToken?capability=cloudflare_rest',
+				'secret_set',
+				'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 			),
 		),
 	} as const

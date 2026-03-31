@@ -1,6 +1,6 @@
 /**
  * Minimal Cloudflare API v4 mock for local dev and tests.
- * Mirrors only the routes used by the `cloudflare_rest` capability and tests.
+ * Mirrors Cloudflare API v4 routes used by tests and `page_to_markdown` / internal client.
  */
 
 type MockCloudflareEnv = {

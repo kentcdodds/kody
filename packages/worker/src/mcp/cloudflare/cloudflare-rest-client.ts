@@ -1,7 +1,34 @@
 /**
- * Minimal Cloudflare API v4 client for the `cloudflare_rest` capability.
+ * Minimal Cloudflare API v4 HTTP client (Bearer token). Used by
+ * `page_to_markdown` Browser Rendering and tests. User-facing Cloudflare API
+ * access is via saved skills and secret-aware `fetch`; see
+ * `docs/agents/skill-patterns/cloudflare-api-v4.md`.
+ *
  * @see https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/
  */
+
+export function assertSafeCloudflareApiV4Path(path: string) {
+	const trimmed = path.trim()
+	if (!trimmed.startsWith('/')) {
+		throw new Error(
+			'path must start with `/` and must not include a host (for example use `/client/v4/accounts`, not a full URL).',
+		)
+	}
+	if (!trimmed.startsWith('/client/v4/')) {
+		throw new Error(
+			'path must start with `/client/v4/` — see https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/',
+		)
+	}
+	if (trimmed.includes('..')) {
+		throw new Error('path must not contain `..` segments.')
+	}
+	if (/[\s#]/.test(trimmed)) {
+		throw new Error('path contains disallowed characters.')
+	}
+	if (trimmed.length > 2048) {
+		throw new Error('path exceeds maximum length.')
+	}
+}
 
 export type CloudflareRestClientOptions = {
 	apiToken: string
@@ -38,6 +65,7 @@ export class CloudflareRestClient {
 		query?: Record<string, string>
 		body?: unknown
 	}): Promise<{ status: number; body: unknown | null }> {
+		assertSafeCloudflareApiV4Path(input.path)
 		const pathPart = input.path.startsWith('/') ? input.path : `/${input.path}`
 		const url = new URL(`${this.baseUrl}${pathPart}`)
 		if (input.query) {

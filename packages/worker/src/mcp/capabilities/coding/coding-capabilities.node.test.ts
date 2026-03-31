@@ -7,7 +7,7 @@ import {
 	stopProcess,
 	wranglerBin,
 } from '#mcp/test-process.ts'
-import { cloudflareRestCapability } from './cloudflare-rest.ts'
+import { createCloudflareRestClient } from '#mcp/cloudflare/cloudflare-rest-client.ts'
 import { pageToMarkdownCapability } from './page-to-markdown.ts'
 
 const cloudflareWorkerConfig = 'packages/mock-servers/cloudflare/wrangler.jsonc'
@@ -82,17 +82,15 @@ function mockCloudflareContext(origin: string, token: string) {
 	}
 }
 
-test('cloudflare_rest returns JSON from mock Cloudflare API', async () => {
+test('createCloudflareRestClient rawRequest returns JSON from mock Cloudflare API', async () => {
 	const token = 'coding-cloudflare-token'
 	await using mock = await startCloudflareMock(token)
 	const ctx = mockCloudflareContext(mock.origin, mock.token)
-	const result = await cloudflareRestCapability.handler(
-		{
-			method: 'GET',
-			path: '/client/v4/accounts',
-		},
-		ctx,
-	)
+	const client = createCloudflareRestClient(ctx.env)
+	const result = await client.rawRequest({
+		method: 'GET',
+		path: '/client/v4/accounts',
+	})
 	expect(result.status).toBe(200)
 	const body = result.body as {
 		success?: boolean
@@ -104,18 +102,16 @@ test('cloudflare_rest returns JSON from mock Cloudflare API', async () => {
 	).toBe(true)
 })
 
-test('cloudflare_rest rejects paths not under /client/v4/', async () => {
+test('createCloudflareRestClient rejects paths not under /client/v4/', async () => {
 	const token = 'coding-cloudflare-reject-token'
 	await using mock = await startCloudflareMock(token)
 	const ctx = mockCloudflareContext(mock.origin, mock.token)
+	const client = createCloudflareRestClient(ctx.env)
 	await expect(
-		cloudflareRestCapability.handler(
-			{
-				method: 'GET',
-				path: '/zones',
-			},
-			ctx,
-		),
+		client.rawRequest({
+			method: 'GET',
+			path: '/zones',
+		}),
 	).rejects.toThrow('path must start with `/client/v4/`')
 })
 

@@ -94,18 +94,18 @@ function applyMaxResponseSize<TPayload>(
 
 const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities And Skills',
+	title: 'Search Capabilities, Skills, Apps, and Secrets',
 	description: `
 Search Kody **builtin capabilities**, your saved **skills** (meta domain), your saved **apps** (apps domain), and your reusable **user secret references** by natural language before calling \`execute\` or opening a UI.
 
-Search returns compact **markdown** plus slim structured results. Use \`query\` for ranked search, or use \`entity\` with an exact reference like \`cloudflare_rest:capability\` or \`github-pr-summary:skill\` to get focused markdown detail for a single result.
+Search returns compact **markdown** plus slim structured results. Use \`query\` for ranked search, or use \`entity\` with an exact reference like \`page_to_markdown:capability\` or \`github-pr-summary:skill\` to get focused markdown detail for a single result.
 
 Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. Saved skills are identified by a unique lower-kebab-case **name**. To run a saved skill, call \`meta_run_skill\` with the \`name\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\` or share its hosted URL with the user. User-scoped secret references never include raw secret values; inspect secret metadata during execution with \`codemode.secret_list(...)\`, and use generated UI when the user needs to provide a missing secret. App-bound secrets are attached to their corresponding app results rather than returned as standalone secret hits.
 
 If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
 
  Domains (for context only—put hints in your \`query\` string, or use the skill collection filter when you already know the saved-skill grouping):
-- \`coding\`: Software work such as Cloudflare API calls, Cloudflare docs fetch, generated UI guides, and related coding workflows.
+- \`coding\`: Billed page-to-markdown fallback, generated UI guides, and related coding workflows (Cloudflare API access is via saved skills; see repo docs).
 - \`meta\`: Persisted and reusable codemode skills plus skill management.
 - \`home\`: Home automation capabilities discovered from the connected home connector when available.
 
@@ -116,7 +116,7 @@ Pass a **query** string describing what you want to do. Results are ranked with 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
 - \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
-- \`{ "entity": "cloudflare_rest:capability" }\`
+- \`{ "entity": "page_to_markdown:capability" }\`
 - To run a skill: \`meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })\`
 - To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
 	`.trim(),

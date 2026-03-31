@@ -87,7 +87,7 @@ automatically:
   `/health` versioning)
 - `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.
   Local `npm run dev` targets the Cloudflare mock unless
-  `SKIP_CLOUDFLARE_MOCK=1`. The `cloudflare_rest` capability expects API paths
+  `SKIP_CLOUDFLARE_MOCK=1`. The internal Cloudflare API client expects paths
   under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities`,
@@ -175,14 +175,13 @@ How to get/set each value:
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
     `npx @sentry/wizard@latest -i sourcemaps`).
-- `CLOUDFLARE_API_TOKEN` (optional for `cloudflare_rest`, required for remote
-  AI, and reused by the `page_to_markdown` capability when it falls back to
-  Cloudflare Browser Rendering `/markdown`)
+- `CLOUDFLARE_API_TOKEN` (required for remote AI; used by the Worker for
+  `page_to_markdown` Browser Rendering; user API calls use account secrets +
+  skills)
   - Create a Cloudflare API token with the account permissions needed for the
     product APIs you want to call. This same secret already powers production
-    deploys and can also be used by the `cloudflare_rest` and `page_to_markdown`
-    MCP capabilities. For Browser Rendering fallback, include the **Browser
-    Rendering - Edit** permission.
+    deploys and the `page_to_markdown` Browser Rendering path. For Browser
+    Rendering fallback, include the **Browser Rendering - Edit** permission.
 - `CAPABILITY_REINDEX_SECRET` (optional)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
