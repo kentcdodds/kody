@@ -828,10 +828,12 @@ export function AccountSecretsRoute(handle: Handle) {
 			selectedSecret,
 			approval,
 		})
-		const showApprovalCard =
+		const approvalCard =
 			approval &&
 			!isRefreshingForLocationChange &&
 			!alreadyAddedNotice?.hostAlreadyAdded
+				? approval
+				: null
 
 		return (
 			<section
@@ -876,7 +878,7 @@ export function AccountSecretsRoute(handle: Handle) {
 					</button>
 				</header>
 
-				{showApprovalCard ? (
+				{approvalCard ? (
 					<section
 						css={{
 							display: 'grid',
@@ -899,20 +901,20 @@ export function AccountSecretsRoute(handle: Handle) {
 								Approve host access
 							</h2>
 							<p css={{ margin: 0, color: colors.textMuted }}>
-								Allow <code>{approval.requestedHost}</code> to receive secret{' '}
-								<code>{approval.name}</code> from the{' '}
-								{getScopeLabel(approval.scope)} scope.
+								Allow <code>{approvalCard.requestedHost}</code> to receive
+								secret <code>{approvalCard.name}</code> from the{' '}
+								{getScopeLabel(approvalCard.scope)} scope.
 							</p>
-							{approval.requestedCapability ? (
+							{approvalCard.requestedCapability ? (
 								<p css={{ margin: 0, color: colors.textMuted }}>
 									Requested capability:{' '}
-									<code>{approval.requestedCapability}</code>
+									<code>{approvalCard.requestedCapability}</code>
 								</p>
 							) : null}
 							<p css={{ margin: 0, color: colors.textMuted }}>
 								Current allowed hosts:{' '}
-								{approval.currentAllowedHosts.length > 0
-									? approval.currentAllowedHosts.join(', ')
+								{approvalCard.currentAllowedHosts.length > 0
+									? approvalCard.currentAllowedHosts.join(', ')
 									: 'none'}
 							</p>
 						</div>
