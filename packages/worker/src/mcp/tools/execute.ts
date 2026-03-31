@@ -26,7 +26,7 @@ const executeTool = {
 Execute JavaScript code against Kody capabilities. First use \`search\` to find
 the right capability, then call it through \`codemode\`.
 
- To run a saved skill by name, prefer \`meta_run_skill\` with \`name\` and
+To run a saved skill by name, prefer \`meta_run_skill\` with \`name\` and
 optional \`params\`. If you need the saved code, call \`meta_get_skill\` and
 pass the returned code into this tool.
 

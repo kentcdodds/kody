@@ -124,12 +124,15 @@ export const metaSaveSkillCapability = defineDomainCapability(
 			const now = new Date().toISOString()
 
 			if (existing) {
-				await updateMcpSkill(
+				const updated = await updateMcpSkill(
 					ctx.env.APP_DB,
 					user.userId,
 					existing.name,
 					prep.rowPayload,
 				)
+				if (!updated) {
+					throw new Error('Skill not found for this user.')
+				}
 			} else {
 				try {
 					await insertMcpSkill(ctx.env.APP_DB, {
