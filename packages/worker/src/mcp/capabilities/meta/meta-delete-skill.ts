@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	deleteMcpSkill,
-	getMcpSkillByName,
+	getMcpSkillByNameInput,
 } from '#mcp/skills/mcp-skills-repo.ts'
 import { deleteSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
@@ -28,7 +28,7 @@ export const metaDeleteSkillCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const existing = await getMcpSkillByName(
+			const existing = await getMcpSkillByNameInput(
 				ctx.env.APP_DB,
 				user.userId,
 				args.name,
@@ -39,7 +39,7 @@ export const metaDeleteSkillCapability = defineDomainCapability(
 			const removed = await deleteMcpSkill(
 				ctx.env.APP_DB,
 				user.userId,
-				args.name,
+				existing.name,
 			)
 			if (removed) {
 				await deleteSkillVector(ctx.env, existing.id)

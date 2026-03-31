@@ -1,7 +1,32 @@
 ALTER TABLE mcp_skills ADD COLUMN name TEXT;
 
+WITH base_names AS (
+	SELECT
+		id,
+		user_id,
+		lower(replace(trim(title), ' ', '-')) AS base_name
+	FROM mcp_skills
+	WHERE name IS NULL
+),
+ranked AS (
+	SELECT
+		id,
+		user_id,
+		base_name,
+		COUNT(*) OVER (PARTITION BY user_id, base_name) AS name_count,
+		ROW_NUMBER() OVER (PARTITION BY user_id, base_name ORDER BY id) AS name_index
+	FROM base_names
+)
 UPDATE mcp_skills
-SET name = lower(replace(trim(title), ' ', '-'))
+SET name = (
+	SELECT
+		CASE
+			WHEN ranked.name_count = 1 OR ranked.name_index = 1 THEN ranked.base_name
+			ELSE ranked.base_name || '-' || ranked.name_index
+		END
+	FROM ranked
+	WHERE ranked.id = mcp_skills.id
+)
 WHERE name IS NULL;
 
 CREATE TABLE IF NOT EXISTS mcp_skills_next (

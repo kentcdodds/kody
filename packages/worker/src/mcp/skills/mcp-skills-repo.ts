@@ -1,5 +1,5 @@
 import { type McpSkillRow } from './mcp-skills-types.ts'
-import { normalizeSkillName } from './skill-names.ts'
+import { getSkillNameCandidates, normalizeSkillName } from './skill-names.ts'
 
 export function skillVectorId(skillId: string): string {
 	return `skill_${skillId}`
@@ -73,6 +73,68 @@ export async function getMcpSkillByName(
 		.first<Record<string, unknown>>()
 	if (!result) return null
 	return mapRow(result)
+}
+
+export async function getMcpSkillByNameCandidates(
+	db: D1Database,
+	userId: string,
+	skillNames: Array<string>,
+): Promise<McpSkillRow | null> {
+	if (skillNames.length === 0) return null
+	const placeholders = skillNames.map(() => '?').join(', ')
+	const result = await db
+		.prepare(
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
+				uses_capabilities, parameters, collection_name, collection_slug,
+				inferred_capabilities, inference_partial, read_only, idempotent,
+				destructive, created_at, updated_at
+			FROM mcp_skills
+			WHERE user_id = ? AND name IN (${placeholders})
+			ORDER BY CASE name
+				${skillNames.map((_, index) => `WHEN ? THEN ${index + 1}`).join(' ')}
+				ELSE ${skillNames.length + 1}
+			END
+			LIMIT 1`,
+		)
+		.bind(userId, ...skillNames, ...skillNames)
+		.first<Record<string, unknown>>()
+	if (!result) return null
+	return mapRow(result)
+}
+
+function matchesNormalizedTitle(
+	row: McpSkillRow,
+	normalizedInput: string,
+): boolean {
+	try {
+		return normalizeSkillName(row.title) === normalizedInput
+	} catch {
+		return false
+	}
+}
+
+export async function getMcpSkillByNameInput(
+	db: D1Database,
+	userId: string,
+	inputName: string,
+): Promise<McpSkillRow | null> {
+	const candidates = getSkillNameCandidates(inputName)
+	const direct = await getMcpSkillByNameCandidates(db, userId, candidates)
+	if (direct) return direct
+	let normalizedInput: string
+	try {
+		normalizedInput = normalizeSkillName(inputName)
+	} catch {
+		return null
+	}
+	const rows = await listMcpSkillsByUserId(db, userId)
+	let match: McpSkillRow | null = null
+	for (const row of rows) {
+		if (!matchesNormalizedTitle(row, normalizedInput)) continue
+		if (match) return null
+		match = row
+	}
+	return match
 }
 
 export async function updateMcpSkill(

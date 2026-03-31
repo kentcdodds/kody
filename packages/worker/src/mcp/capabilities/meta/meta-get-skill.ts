@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getMcpSkillByName } from '#mcp/skills/mcp-skills-repo.ts'
+import { getMcpSkillByNameInput } from '#mcp/skills/mcp-skills-repo.ts'
 import {
 	parseSkillParameters,
 	skillParameterSchema,
@@ -56,7 +56,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const row = await getMcpSkillByName(
+			const row = await getMcpSkillByNameInput(
 				ctx.env.APP_DB,
 				user.userId,
 				args.name,

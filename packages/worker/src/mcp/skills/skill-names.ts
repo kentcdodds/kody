@@ -20,3 +20,29 @@ export function normalizeSkillName(value: string): string {
 	}
 	return sliced
 }
+
+function normalizeLegacySkillName(value: string): string {
+	return value.trim().toLowerCase().replace(/ /g, '-')
+}
+
+export function getSkillNameCandidates(value: string): Array<string> {
+	const trimmed = value.trim()
+	let normalized: string | null = null
+	try {
+		normalized = normalizeSkillName(value)
+	} catch {
+		normalized = null
+	}
+	const legacy = normalizeLegacySkillName(value)
+	const candidates: Array<string> = []
+	const pushCandidate = (candidate: string) => {
+		if (!candidate || candidates.includes(candidate)) return
+		candidates.push(candidate)
+	}
+	pushCandidate(trimmed)
+	if (normalized) {
+		pushCandidate(normalized)
+	}
+	pushCandidate(legacy)
+	return candidates
+}
