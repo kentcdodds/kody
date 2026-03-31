@@ -1,7 +1,9 @@
 import { type Handle } from 'remix/component'
 import { navigate } from '#client/client-router.tsx'
+import { getScopeLabel } from './account-approval-shared.ts'
 import {
 	colors,
+	mq,
 	radius,
 	shadows,
 	spacing,
@@ -50,6 +52,7 @@ type ConnectSecretParams = {
 type ConnectSecretState = {
 	step: ViewStep
 	error: string
+	name: string
 	description: string
 	secretValue: string
 	allowedHosts: Array<string>
@@ -72,6 +75,7 @@ type ConnectSecretSession = {
 const defaultState: ConnectSecretState = {
 	step: 'loading',
 	error: '',
+	name: '',
 	description: '',
 	secretValue: '',
 	allowedHosts: [''],
@@ -152,16 +156,11 @@ function createInitialConnectSecretState(
 ): ConnectSecretState {
 	return {
 		...defaultState,
+		name: params.name,
 		description: params.description,
 		allowedHosts: toEditableRows(params.allowedHosts),
 		allowedCapabilities: toEditableRows(params.allowedCapabilities),
 	}
-}
-
-function scopeLabel(scope: StorageScope) {
-	if (scope === 'session') return 'Session (expires when this session ends)'
-	if (scope === 'app') return 'App'
-	return 'User'
 }
 
 function isSafeUrl(value: string) {
@@ -408,8 +407,16 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		const params = parseConnectSecretParams()
+		const trimmedName = state.name.trim()
 		const { normalizedAllowedHosts, normalizedAllowedCapabilities } =
 			normalizeAllowedForState(state)
+		if (!trimmedName) {
+			setState({
+				step: 'error',
+				error: 'Enter the secret name before continuing.',
+			})
+			return
+		}
 		if (!state.secretValue.trim()) {
 			setState({
 				step: 'error',
@@ -418,8 +425,11 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		setState({ step: 'saving', error: '' })
+		const currentParams = { ...params, name: trimmedName }
+		let targetExistingSecret: SecretMetadata | null = null
 		try {
-			await saveSecretValue(params, session, {
+			targetExistingSecret = await listExistingSecret(currentParams, session)
+			await saveSecretValue(currentParams, session, {
 				value: state.secretValue,
 				description: state.description,
 				allowedHosts: normalizedAllowedHosts,
@@ -438,16 +448,16 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		try {
-			await updateConnectorConfig(params, session, {
+			await updateConnectorConfig(currentParams, session, {
 				allowedHosts: normalizedAllowedHosts,
 				allowedCapabilities: normalizedAllowedCapabilities,
 			})
 			setState({ step: 'success' })
 		} catch (error) {
-			const secretWasNewlyCreated = state.existingSecret == null
-			if (params.connector && secretWasNewlyCreated) {
+			const secretWasNewlyCreated = targetExistingSecret == null
+			if (currentParams.connector && secretWasNewlyCreated) {
 				try {
-					await rollbackSecretValue(params, session)
+					await rollbackSecretValue(currentParams, session)
 				} catch (rollbackError) {
 					const rollbackMessage =
 						rollbackError instanceof Error
@@ -467,9 +477,11 @@ export function ConnectSecretRoute(handle: Handle) {
 			setState({
 				step: 'error',
 				error: formatConnectorConfigFailureMessage(error, {
-					secretRolledBack: Boolean(params.connector && secretWasNewlyCreated),
+					secretRolledBack: Boolean(
+						currentParams.connector && secretWasNewlyCreated,
+					),
 					updatedSecretRetained: Boolean(
-						params.connector && !secretWasNewlyCreated,
+						currentParams.connector && !secretWasNewlyCreated,
 					),
 				}),
 			})
@@ -546,6 +558,7 @@ export function ConnectSecretRoute(handle: Handle) {
 		const params = parseConnectSecretParams()
 		const hasInstructions = Boolean(params.instructions || params.dashboardUrl)
 		const showReview = state.step === 'review' || state.step === 'saving'
+		const trimmedName = state.name.trim()
 		const { normalizedAllowedHosts, normalizedAllowedCapabilities } =
 			normalizeAllowedForState(state)
 
@@ -717,6 +730,39 @@ export function ConnectSecretRoute(handle: Handle) {
 
 						<section css={cardCss}>
 							<h2 css={cardTitleCss}>Enter secret</h2>
+							<div
+								css={{
+									display: 'grid',
+									gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+									gap: spacing.md,
+									[mq.mobile]: {
+										gridTemplateColumns: '1fr',
+									},
+								}}
+							>
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Name</span>
+									<input
+										type="text"
+										required
+										value={state.name}
+										placeholder="api-token"
+										on={{
+											input: (event) => setState({ name: event.currentTarget.value }),
+										}}
+										css={inputCss}
+									/>
+								</label>
+
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Scope</span>
+									<select value={params.scope} disabled css={inputCss}>
+										<option value="user">{getScopeLabel('user')}</option>
+										<option value="app">{getScopeLabel('app')}</option>
+										<option value="session">{getScopeLabel('session')}</option>
+									</select>
+								</label>
+							</div>
 							<SecretEditorFields
 								description={state.description}
 								onDescriptionChange={(description) => setState({ description })}
@@ -750,11 +796,11 @@ export function ConnectSecretRoute(handle: Handle) {
 								>
 									<div>
 										<div css={labelCss}>Secret name</div>
-										<div>{params.name}</div>
+										<div>{trimmedName}</div>
 									</div>
 									<div>
 										<div css={labelCss}>Scope</div>
-										<div>{scopeLabel(params.scope)}</div>
+										<div>{getScopeLabel(params.scope)}</div>
 									</div>
 									{state.description ? (
 										<div css={{ gridColumn: '1 / -1' }}>
@@ -858,7 +904,14 @@ export function ConnectSecretRoute(handle: Handle) {
 									type="button"
 									css={primaryButtonCss}
 									on={{
-										click: () =>
+										click: () => {
+											if (!trimmedName) {
+												setState({
+													step: 'error',
+													error: 'Enter the secret name before continuing.',
+												})
+												return
+											}
 											setState(
 												state.secretValue.trim()
 													? { step: 'review', confirmedReview: false }
@@ -867,7 +920,8 @@ export function ConnectSecretRoute(handle: Handle) {
 															error:
 																'Enter the secret value before continuing.',
 														},
-											),
+											)
+										},
 									}}
 								>
 									Review
@@ -902,6 +956,29 @@ const labelCss = {
 	fontWeight: typography.fontWeight.medium,
 	fontSize: typography.fontSize.sm,
 	color: colors.textMuted,
+}
+
+const fieldCss = {
+	display: 'grid',
+	gap: spacing.xs,
+}
+
+const fieldLabelCss = {
+	color: colors.text,
+	fontWeight: typography.fontWeight.medium,
+	fontSize: typography.fontSize.sm,
+}
+
+const inputCss = {
+	width: '100%',
+	padding: spacing.sm,
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.background,
+	color: colors.text,
+	fontSize: typography.fontSize.base,
+	fontFamily: typography.fontFamily,
+	boxSizing: 'border-box' as const,
 }
 
 const listCss = {
