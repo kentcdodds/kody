@@ -6,7 +6,9 @@ import {
 import {
 	buildSecretPlaceholder,
 	parseSecretPlaceholders,
+	parseSecretPlaceholdersFromFormUrlEncoded,
 	replaceSecretPlaceholders,
+	replaceSecretPlaceholdersInFormUrlEncoded,
 	type ReferencedSecret,
 } from '#mcp/secrets/placeholders.ts'
 import {
@@ -51,10 +53,12 @@ export async function expandSecretPlaceholders(input: {
 		resolved: ResolvedSecret
 	}> = []
 	const replacements = new Map<string, string>()
-	const referencedSecrets = collectReferencedSecrets([
-		input.request.url,
-		...Array.from(headers.values()),
-		requestBody,
+	const referencedSecrets = dedupeReferencedSecrets([
+		...collectReferencedSecrets([
+			input.request.url,
+			...Array.from(headers.values()),
+		]),
+		...collectReferencedSecretsFromRequestBody(headers, requestBody),
 	])
 	const hasReferencedSecrets = referencedSecrets.length > 0
 	if (hasReferencedSecrets) {
@@ -107,7 +111,11 @@ export async function expandSecretPlaceholders(input: {
 	const nextBody =
 		requestBody == null
 			? undefined
-			: replaceSecretPlaceholders(requestBody, replacements)
+			: replaceSecretPlaceholdersInRequestBody(
+					headers,
+					requestBody,
+					replacements,
+				)
 	const nextRedirect =
 		hasReferencedSecrets && input.request.redirect === 'follow'
 			? 'manual'
@@ -184,14 +192,44 @@ function ensureFetchAllowed(props: FetchGatewayProps) {
 }
 
 function collectReferencedSecrets(values: Array<string | null | undefined>) {
+	return dedupeReferencedSecrets(
+		values.flatMap((value) => (value ? parseSecretPlaceholders(value) : [])),
+	)
+}
+
+function collectReferencedSecretsFromRequestBody(
+	headers: Headers,
+	requestBody: string | null,
+) {
+	if (!requestBody) return []
+	return isFormUrlEncodedRequest(headers)
+		? dedupeReferencedSecrets(
+				parseSecretPlaceholdersFromFormUrlEncoded(requestBody),
+			)
+		: collectReferencedSecrets([requestBody])
+}
+
+function dedupeReferencedSecrets(referencedSecrets: Array<ReferencedSecret>) {
 	const deduped = new Map<string, ReferencedSecret>()
-	for (const value of values) {
-		if (!value) continue
-		for (const referenced of parseSecretPlaceholders(value)) {
-			deduped.set(buildSecretPlaceholder(referenced), referenced)
-		}
+	for (const referenced of referencedSecrets) {
+		deduped.set(buildSecretPlaceholder(referenced), referenced)
 	}
 	return Array.from(deduped.values())
+}
+
+function replaceSecretPlaceholdersInRequestBody(
+	headers: Headers,
+	requestBody: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	return isFormUrlEncodedRequest(headers)
+		? replaceSecretPlaceholdersInFormUrlEncoded(requestBody, replacements)
+		: replaceSecretPlaceholders(requestBody, replacements)
+}
+
+function isFormUrlEncodedRequest(headers: Headers) {
+	const contentType = headers.get('Content-Type')?.toLowerCase() ?? ''
+	return contentType.startsWith('application/x-www-form-urlencoded')
 }
 
 async function readRequestBody(request: Request) {

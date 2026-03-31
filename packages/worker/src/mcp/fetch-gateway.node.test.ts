@@ -91,3 +91,42 @@ test('fetch gateway allows placeholders for approved hosts', async () => {
 		resolveSpy.mockRestore()
 	}
 })
+
+test('fetch gateway expands placeholders in form-urlencoded bodies', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'secret value+/&=',
+			scope: 'user',
+			allowedHosts: ['example.com'],
+			allowedCapabilities: [],
+		})
+	const body = new URLSearchParams({
+		grant_type: 'refresh_token',
+		refresh_token: '{{secret:spotifyRefreshToken|scope=user}}',
+	}).toString()
+	const request = new Request('https://example.com/api/token', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded',
+		},
+		body,
+	})
+
+	try {
+		const transformed = await expandSecretPlaceholders({
+			request,
+			props,
+			env,
+		})
+		expect(await transformed.text()).toBe(
+			new URLSearchParams({
+				grant_type: 'refresh_token',
+				refresh_token: 'secret value+/&=',
+			}).toString(),
+		)
+	} finally {
+		resolveSpy.mockRestore()
+	}
+})

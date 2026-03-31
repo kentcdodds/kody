@@ -25,6 +25,15 @@ export function parseSecretPlaceholders(value: string) {
 	return secrets
 }
 
+export function parseSecretPlaceholdersFromFormUrlEncoded(value: string) {
+	const secrets: Array<ReferencedSecret> = []
+	for (const [key, entryValue] of new URLSearchParams(value)) {
+		secrets.push(...parseSecretPlaceholders(key))
+		secrets.push(...parseSecretPlaceholders(entryValue))
+	}
+	return secrets
+}
+
 export function buildSecretPlaceholder(secret: ReferencedSecret) {
 	return secret.scope
 		? `{{secret:${secret.name}|scope=${secret.scope}}}`
@@ -40,4 +49,18 @@ export function replaceSecretPlaceholders(
 		nextValue = nextValue.replaceAll(placeholder, secretValue)
 	}
 	return nextValue
+}
+
+export function replaceSecretPlaceholdersInFormUrlEncoded(
+	value: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	const nextParams = new URLSearchParams()
+	for (const [key, entryValue] of new URLSearchParams(value)) {
+		nextParams.append(
+			replaceSecretPlaceholders(key, replacements),
+			replaceSecretPlaceholders(entryValue, replacements),
+		)
+	}
+	return nextParams.toString()
 }
