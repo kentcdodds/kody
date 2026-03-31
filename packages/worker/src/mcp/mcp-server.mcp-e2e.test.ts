@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import  {
+import {
 	type CallToolResult,
 	type ContentBlock,
 } from '@modelcontextprotocol/sdk/types.js'
@@ -35,9 +35,8 @@ test('mcp server returns built-in instructions and base server metadata', async 
 		},
 	})
 
-	const basicStructuredResult = (
-		basicSearchResult as CallToolResult
-	).structuredContent as
+	const basicStructuredResult = (basicSearchResult as CallToolResult)
+		.structuredContent as
 		| {
 				conversationId?: string
 				result?: {
@@ -48,9 +47,7 @@ test('mcp server returns built-in instructions and base server metadata', async 
 
 	const basicConversationId = basicStructuredResult?.conversationId
 	const basicContent = (basicSearchResult as CallToolResult).content
-	const basicFirstContent = Array.isArray(basicContent)
-		? basicContent[0]
-		: null
+	const basicFirstContent = Array.isArray(basicContent) ? basicContent[0] : null
 
 	expect(typeof basicConversationId).toBe('string')
 	expect(basicFirstContent).toEqual({
@@ -72,9 +69,8 @@ test('mcp server returns built-in instructions and base server metadata', async 
 		},
 	})
 
-	const contextualStructuredResult = (
-		contextualSearchResult as CallToolResult
-	).structuredContent as
+	const contextualStructuredResult = (contextualSearchResult as CallToolResult)
+		.structuredContent as
 		| {
 				conversationId?: string
 				result?: {
@@ -223,9 +219,8 @@ test('mcp server executes user code against codemode and tracks execute context'
 		},
 	})
 
-	const saveAppStructuredResult = (
-		saveAppResult as CallToolResult
-	).structuredContent as
+	const saveAppStructuredResult = (saveAppResult as CallToolResult)
+		.structuredContent as
 		| {
 				result?: Record<string, unknown>
 		  }
@@ -249,9 +244,8 @@ test('mcp server executes user code against codemode and tracks execute context'
 		},
 	})
 
-	const contextStructuredResult = (
-		contextResult as CallToolResult
-	).structuredContent as
+	const contextStructuredResult = (contextResult as CallToolResult)
+		.structuredContent as
 		| {
 				conversationId?: string
 				result?: {
@@ -261,7 +255,9 @@ test('mcp server executes user code against codemode and tracks execute context'
 		| undefined
 
 	expect(typeof contextStructuredResult?.conversationId).toBe('string')
-	expect((contextStructuredResult?.conversationId ?? '').length).toBeGreaterThan(0)
+	expect(
+		(contextStructuredResult?.conversationId ?? '').length,
+	).toBeGreaterThan(0)
 	expect(contextStructuredResult?.result?.ok).toBe(true)
 })
 
@@ -320,9 +316,7 @@ test('mcp server executes directly available codemode helpers', async () => {
 		},
 	})
 	if ((setupResult as CallToolResult).isError) {
-		const setupText = getTextContent(
-			(setupResult as CallToolResult).content,
-		)
+		const setupText = getTextContent((setupResult as CallToolResult).content)
 		throw new Error(`Helper setup execute failed: ${setupText}`)
 	}
 
@@ -426,9 +420,8 @@ test('mcp server opens generated ui from inline and saved app sources', async ()
 		},
 	})
 
-	const inlineStructuredResult = (
-		inlineResult as CallToolResult
-	).structuredContent as
+	const inlineStructuredResult = (inlineResult as CallToolResult)
+		.structuredContent as
 		| {
 				conversationId?: string
 				appId?: string | null
@@ -480,9 +473,8 @@ test('mcp server opens generated ui from inline and saved app sources', async ()
 		},
 	})
 
-	const savedAppOpenStructuredResult = (
-		savedAppOpenResult as CallToolResult
-	).structuredContent as
+	const savedAppOpenStructuredResult = (savedAppOpenResult as CallToolResult)
+		.structuredContent as
 		| {
 				appId?: string | null
 				hostedUrl?: string | null
@@ -803,9 +795,7 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 		},
 	})
 	if ((setupResult as CallToolResult).isError) {
-		const setupText = getTextContent(
-			(setupResult as CallToolResult).content,
-		)
+		const setupText = getTextContent((setupResult as CallToolResult).content)
 		throw new Error(`Helper setup execute failed: ${setupText}`)
 	}
 
@@ -825,8 +815,10 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 		| undefined
 	const textOutput = getTextContent((result as CallToolResult).content)
 	expect((result as CallToolResult).isError).toBe(true)
-	expect(textOutput).toContain(
-		'Token refresh failed for connector "spotify" with HTTP 400.',
+	expect(textOutput).toContain('Secrets require host approval:')
+	expect(textOutput).toContain('restrictedRefreshToken')
+	expect(textOutput).toContain('accounts.spotify.com')
+	expect(structuredResult?.errorDetails?.kind).toBe(
+		'host_approval_required_batch',
 	)
-	expect(structuredResult?.errorDetails ?? null).toBeNull()
 })
