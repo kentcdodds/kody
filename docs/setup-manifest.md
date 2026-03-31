@@ -91,9 +91,9 @@ automatically:
   under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities`,
-  `POST /__maintenance/reindex-skills`, and
-  `POST /__maintenance/reindex-apps` to embed and upsert builtin capabilities,
-  all user skills, and discoverable saved apps into Vectorize)
+  `POST /__maintenance/reindex-skills`, and `POST /__maintenance/reindex-apps`
+  to embed and upsert builtin capabilities, all user skills, and discoverable
+  saved apps into Vectorize)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `packages/worker/.env`.
@@ -180,9 +180,9 @@ How to get/set each value:
   Cloudflare Browser Rendering `/markdown`)
   - Create a Cloudflare API token with the account permissions needed for the
     product APIs you want to call. This same secret already powers production
-    deploys and can also be used by the `cloudflare_rest` and
-    `page_to_markdown` MCP capabilities. For Browser Rendering fallback, include
-    the **Browser Rendering - Edit** permission.
+    deploys and can also be used by the `cloudflare_rest` and `page_to_markdown`
+    MCP capabilities. For Browser Rendering fallback, include the **Browser
+    Rendering - Edit** permission.
 - `CAPABILITY_REINDEX_SECRET` (optional)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy

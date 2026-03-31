@@ -4,7 +4,7 @@ const generatedConversationIdLength = 12
 const conversationIdAlphabet = '0123456789abcdefghjkmnpqrstvwxyz'
 
 const conversationIdDescription =
-	'Optional short conversation identifier. Clients should generate and reuse the same value across related tool calls when possible, and generated values should be short and random enough to avoid collisions. If omitted, Kody generates a short random value and returns it in `structuredContent.conversationId`.'
+	'Optional short conversation identifier. Ties related calls together. On the first call, omit this to receive a server-generated ID, or supply your own. Pass the returned `conversationId` on every subsequent call in the same conversation - this enables optimizations like reduced response size. Generated values should be short and random enough to avoid collisions.'
 
 const memoryContextDescription =
 	'Optional short, structured task context for future memory-aware behavior. Keep it brief and factual rather than hidden reasoning.'

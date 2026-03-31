@@ -36,6 +36,7 @@ type TestCallToolParams = CallToolRequest['params'] & {
 
 type ConnectedTestClient = {
 	callTool(params: TestCallToolParams): ReturnType<Client['callTool']>
+	listTools(): ReturnType<Client['listTools']>
 }
 
 export async function createTestDatabase() {
@@ -144,6 +145,9 @@ export async function createMcpClient(
 	})
 
 	const client: ConnectedTestClient = {
+		listTools() {
+			return defaultConnection.client.listTools()
+		},
 		async callTool(params) {
 			const { headers, ...callToolParams } = params
 			if (!headers || Object.keys(headers).length === 0) {

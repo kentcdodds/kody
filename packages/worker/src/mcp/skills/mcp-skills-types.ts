@@ -1,6 +1,7 @@
 export type McpSkillRow = {
 	id: string
 	user_id: string
+	name: string
 	title: string
 	description: string
 	collection_name: string | null

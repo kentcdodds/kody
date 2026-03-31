@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getMcpSkillById } from '#mcp/skills/mcp-skills-repo.ts'
+import { getMcpSkillByNameInput } from '#mcp/skills/mcp-skills-repo.ts'
 import {
 	parseSkillParameters,
 	skillParameterSchema,
@@ -21,7 +21,7 @@ function parseStringArray(raw: string | null): Array<string> | null {
 }
 
 const outputSchema = z.object({
-	skill_id: z.string(),
+	name: z.string(),
 	title: z.string(),
 	description: z.string(),
 	collection: z.string().nullable(),
@@ -51,18 +51,15 @@ export const metaGetSkillCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
-			skill_id: z
-				.string()
-				.min(1)
-				.describe('Skill id returned by meta_save_skill.'),
+			name: z.string().min(1).describe('Unique saved skill name.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const row = await getMcpSkillById(
+			const row = await getMcpSkillByNameInput(
 				ctx.env.APP_DB,
 				user.userId,
-				args.skill_id,
+				args.name,
 			)
 			if (!row) {
 				throw new Error('Skill not found for this user.')
@@ -72,7 +69,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 			const uses = parseStringArray(row.uses_capabilities)
 			const parameters = parseSkillParameters(row.parameters)
 			return {
-				skill_id: row.id,
+				name: row.name,
 				title: row.title,
 				description: row.description,
 				collection: row.collection_name,

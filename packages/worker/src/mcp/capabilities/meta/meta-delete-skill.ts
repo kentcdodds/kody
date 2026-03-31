@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteMcpSkill } from '#mcp/skills/mcp-skills-repo.ts'
+import {
+	deleteMcpSkill,
+	getMcpSkillByNameInput,
+} from '#mcp/skills/mcp-skills-repo.ts'
 import { deleteSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
 
@@ -20,21 +23,26 @@ export const metaDeleteSkillCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: true,
 		inputSchema: z.object({
-			skill_id: z
-				.string()
-				.min(1)
-				.describe('Skill id returned by meta_save_skill.'),
+			name: z.string().min(1).describe('Unique lower-kebab-case skill name.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const existing = await getMcpSkillByNameInput(
+				ctx.env.APP_DB,
+				user.userId,
+				args.name,
+			)
+			if (!existing) {
+				return { deleted: false }
+			}
 			const removed = await deleteMcpSkill(
 				ctx.env.APP_DB,
 				user.userId,
-				args.skill_id,
+				existing.name,
 			)
 			if (removed) {
-				await deleteSkillVector(ctx.env, args.skill_id)
+				await deleteSkillVector(ctx.env, existing.id)
 			}
 			return { deleted: removed }
 		},

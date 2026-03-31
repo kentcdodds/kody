@@ -284,16 +284,15 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 				{ status: 404 },
 			)
 		}
-		const hasUrl = typeof payload.url === 'string' && payload.url.trim().length > 0
+		const hasUrl =
+			typeof payload.url === 'string' && payload.url.trim().length > 0
 		const hasHtml =
 			typeof payload.html === 'string' && payload.html.trim().length > 0
 		if (!hasUrl && !hasHtml) {
 			return json(
 				{
 					success: false,
-					errors: [
-						{ code: 1003, message: 'Either url or html is required.' },
-					],
+					errors: [{ code: 1003, message: 'Either url or html is required.' }],
 					messages: [],
 					result: null,
 				},

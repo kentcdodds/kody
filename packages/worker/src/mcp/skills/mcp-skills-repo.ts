@@ -1,7 +1,17 @@
 import { type McpSkillRow } from './mcp-skills-types.ts'
+import { getSkillNameCandidates, normalizeSkillName } from './skill-names.ts'
 
 export function skillVectorId(skillId: string): string {
 	return `skill_${skillId}`
+}
+
+export function isDuplicateSkillNameError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		error.message.includes(
+			'UNIQUE constraint failed: mcp_skills.user_id, mcp_skills.name',
+		)
+	)
 }
 
 export async function insertMcpSkill(
@@ -15,15 +25,16 @@ export async function insertMcpSkill(
 	await db
 		.prepare(
 			`INSERT INTO mcp_skills (
-				id, user_id, title, description, keywords, code, search_text,
+				id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
+			row.name,
 			row.title,
 			row.description,
 			row.keywords,
@@ -44,30 +55,95 @@ export async function insertMcpSkill(
 		.run()
 }
 
-export async function getMcpSkillById(
+export async function getMcpSkillByName(
 	db: D1Database,
 	userId: string,
-	skillId: string,
+	skillName: string,
 ): Promise<McpSkillRow | null> {
+	const normalizedSkillName = normalizeSkillName(skillName)
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
-			FROM mcp_skills WHERE id = ? AND user_id = ?`,
+			FROM mcp_skills WHERE name = ? AND user_id = ?`,
 		)
-		.bind(skillId, userId)
+		.bind(normalizedSkillName, userId)
 		.first<Record<string, unknown>>()
 	if (!result) return null
 	return mapRow(result)
 }
 
+export async function getMcpSkillByNameCandidates(
+	db: D1Database,
+	userId: string,
+	skillNames: Array<string>,
+): Promise<McpSkillRow | null> {
+	if (skillNames.length === 0) return null
+	const placeholders = skillNames.map(() => '?').join(', ')
+	const result = await db
+		.prepare(
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
+				uses_capabilities, parameters, collection_name, collection_slug,
+				inferred_capabilities, inference_partial, read_only, idempotent,
+				destructive, created_at, updated_at
+			FROM mcp_skills
+			WHERE user_id = ? AND name IN (${placeholders})
+			ORDER BY CASE name
+				${skillNames.map((_, index) => `WHEN ? THEN ${index + 1}`).join(' ')}
+				ELSE ${skillNames.length + 1}
+			END
+			LIMIT 1`,
+		)
+		.bind(userId, ...skillNames, ...skillNames)
+		.first<Record<string, unknown>>()
+	if (!result) return null
+	return mapRow(result)
+}
+
+function matchesNormalizedTitle(
+	row: McpSkillRow,
+	normalizedInput: string,
+): boolean {
+	try {
+		return normalizeSkillName(row.title) === normalizedInput
+	} catch {
+		return false
+	}
+}
+
+export async function getMcpSkillByNameInput(
+	db: D1Database,
+	userId: string,
+	inputName: string,
+): Promise<McpSkillRow | null> {
+	const candidates = getSkillNameCandidates(inputName)
+	const direct = await getMcpSkillByNameCandidates(db, userId, candidates)
+	if (direct) return direct
+	let normalizedInput: string
+	try {
+		normalizedInput = normalizeSkillName(inputName)
+	} catch {
+		return null
+	}
+	const rows = await listMcpSkillsByUserId(db, userId)
+	let match: McpSkillRow | null = null
+	for (const row of rows) {
+		if (!matchesNormalizedTitle(row, normalizedInput)) continue
+		if (match) return null
+		match = row
+	}
+	return match
+}
+
 export async function updateMcpSkill(
 	db: D1Database,
 	userId: string,
-	skillId: string,
+	skillName: string,
 	fields: {
+		/** Changing this value renames the skill and must remain unique per user. */
+		name: string
 		title: string
 		description: string
 		keywords: string
@@ -85,16 +161,18 @@ export async function updateMcpSkill(
 	},
 ): Promise<boolean> {
 	const now = new Date().toISOString()
+	const normalizedSkillName = normalizeSkillName(skillName)
 	const out = await db
 		.prepare(
 			`UPDATE mcp_skills SET
-				title = ?, description = ?, keywords = ?, code = ?, search_text = ?,
+				name = ?, title = ?, description = ?, keywords = ?, code = ?, search_text = ?,
 				uses_capabilities = ?, parameters = ?, collection_name = ?, collection_slug = ?,
 				inferred_capabilities = ?, inference_partial = ?, read_only = ?, idempotent = ?,
 				destructive = ?, updated_at = ?
-			WHERE id = ? AND user_id = ?`,
+			WHERE name = ? AND user_id = ?`,
 		)
 		.bind(
+			fields.name,
 			fields.title,
 			fields.description,
 			fields.keywords,
@@ -110,7 +188,7 @@ export async function updateMcpSkill(
 			fields.idempotent,
 			fields.destructive,
 			now,
-			skillId,
+			normalizedSkillName,
 			userId,
 		)
 		.run()
@@ -120,11 +198,11 @@ export async function updateMcpSkill(
 export async function deleteMcpSkill(
 	db: D1Database,
 	userId: string,
-	skillId: string,
+	skillName: string,
 ): Promise<boolean> {
 	const out = await db
-		.prepare(`DELETE FROM mcp_skills WHERE id = ? AND user_id = ?`)
-		.bind(skillId, userId)
+		.prepare(`DELETE FROM mcp_skills WHERE name = ? AND user_id = ?`)
+		.bind(skillName, userId)
 		.run()
 	return (out.meta.changes ?? 0) > 0
 }
@@ -135,7 +213,7 @@ export async function listMcpSkillsByUserId(
 ): Promise<Array<McpSkillRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -182,7 +260,7 @@ export async function listAllMcpSkills(
 ): Promise<Array<McpSkillRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -196,6 +274,7 @@ function mapRow(r: Record<string, unknown>): McpSkillRow {
 	return {
 		id: String(r['id']),
 		user_id: String(r['user_id']),
+		name: String(r['name']),
 		title: String(r['title']),
 		description: String(r['description']),
 		keywords: String(r['keywords']),
