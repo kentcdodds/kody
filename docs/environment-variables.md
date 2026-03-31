@@ -99,8 +99,13 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the `cloudflare_rest`
   capability with `Authorization: Bearer ...`. Local `npm run dev` sets this to
   the Cloudflare mock token unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`;
-  when unset and no mock is attached, `cloudflare_rest` fails fast with a setup
-  hint.
+  when unset and no mock is attached, `cloudflare_rest` and the billed
+  `page_to_markdown` Browser Rendering fallback fail fast with a setup hint.
+- `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the
+  `page_to_markdown` capability when it falls back to Browser Rendering
+  `POST /client/v4/accounts/{account_id}/browser-rendering/markdown`. This is a
+  Worker var (not a secret) and should match the account behind
+  `CLOUDFLARE_API_TOKEN`.
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
   `https://api.cloudflare.com` when unset. Local `npm run dev` sets this to the
   Cloudflare mock Worker unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.

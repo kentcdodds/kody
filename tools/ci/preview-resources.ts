@@ -241,6 +241,9 @@ async function ensurePreviewResources(options: CliOptions) {
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		oauthKvId: kv.id,
+		workerVars: {
+			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+		},
 	})
 
 	// Emit GitHub Actions-friendly outputs (stdout only).

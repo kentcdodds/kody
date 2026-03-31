@@ -71,7 +71,9 @@ automatically:
   gateway ID from GitHub Actions secrets so remote inference goes through
   Cloudflare AI Gateway)
 - `CLOUDFLARE_ACCOUNT_ID` (required for local development when `AI_MODE=remote`
-  so Wrangler can authenticate Workers AI requests against the correct account)
+  so Wrangler can authenticate Workers AI requests against the correct account;
+  also required when using the `page_to_markdown` capability's Cloudflare
+  Browser Rendering fallback against the live API)
 - `CLOUDFLARE_API_TOKEN` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests)
 - `SENTRY_DSN` (optional Cloudflare Worker secret; enables error reporting and
@@ -173,10 +175,13 @@ How to get/set each value:
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
     `npx @sentry/wizard@latest -i sourcemaps`).
 - `CLOUDFLARE_API_TOKEN` (optional for `cloudflare_rest`, required for remote
-  AI)
+  AI, and reused by the `page_to_markdown` capability when it falls back to
+  Cloudflare Browser Rendering `/markdown`)
   - Create a Cloudflare API token with the account permissions needed for the
     product APIs you want to call. This same secret already powers production
-    deploys and can also be used by the `cloudflare_rest` MCP capability.
+    deploys and can also be used by the `cloudflare_rest` and
+    `page_to_markdown` MCP capabilities. For Browser Rendering fallback, include
+    the **Browser Rendering - Edit** permission.
 - `CAPABILITY_REINDEX_SECRET` (optional)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
