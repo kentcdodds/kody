@@ -136,6 +136,17 @@ function toEditableRows(values: Array<string> | null | undefined) {
 	return [...values]
 }
 
+function normalizeAllowedForState(input: {
+	allowedHosts: Array<string>
+	allowedCapabilities: Array<string>
+}) {
+	return {
+		normalizedAllowedHosts: normalizeAllowedHosts(input.allowedHosts),
+		normalizedAllowedCapabilities: normalizeAllowedCapabilities(
+			input.allowedCapabilities,
+		),
+	}
+}
 function createInitialConnectSecretState(
 	params: ConnectSecretParams,
 ): ConnectSecretState {
@@ -397,10 +408,8 @@ export function ConnectSecretRoute(handle: Handle) {
 			return
 		}
 		const params = parseConnectSecretParams()
-		const normalizedAllowedHosts = normalizeAllowedHosts(state.allowedHosts)
-		const normalizedAllowedCapabilities = normalizeAllowedCapabilities(
-			state.allowedCapabilities,
-		)
+		const { normalizedAllowedHosts, normalizedAllowedCapabilities } =
+			normalizeAllowedForState(state)
 		if (!state.secretValue.trim()) {
 			setState({
 				step: 'error',
@@ -537,10 +546,8 @@ export function ConnectSecretRoute(handle: Handle) {
 		const params = parseConnectSecretParams()
 		const hasInstructions = Boolean(params.instructions || params.dashboardUrl)
 		const showReview = state.step === 'review' || state.step === 'saving'
-		const normalizedAllowedHosts = normalizeAllowedHosts(state.allowedHosts)
-		const normalizedAllowedCapabilities = normalizeAllowedCapabilities(
-			state.allowedCapabilities,
-		)
+		const { normalizedAllowedHosts, normalizedAllowedCapabilities } =
+			normalizeAllowedForState(state)
 
 		return (
 			<section
