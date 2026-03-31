@@ -317,6 +317,7 @@ async function ensureProductionResources(options: CliOptions) {
 		oauthKvId: kv.id,
 		workerVars: {
 			APP_BASE_URL: process.env.APP_BASE_URL,
+			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
 	})
 

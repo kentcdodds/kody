@@ -7,6 +7,16 @@ type MockCloudflareEnv = {
 	MOCK_API_TOKEN?: string
 }
 
+type BrowserRenderingMarkdownBody = {
+	url?: string
+	html?: string
+	userAgent?: string
+	rejectRequestPattern?: Array<string>
+	gotoOptions?: {
+		waitUntil?: string
+	}
+}
+
 type ZoneRecord = {
 	id: string
 	name: string
@@ -21,6 +31,14 @@ type DnsRecord = {
 	content: string
 	proxied: boolean
 	ttl: number
+}
+
+type BrowserRenderingMarkdownBody = {
+	url?: unknown
+	html?: unknown
+	userAgent?: unknown
+	rejectRequestPattern?: unknown
+	gotoOptions?: unknown
 }
 
 const fixtureAccount = {
@@ -142,6 +160,11 @@ function handleMeta(request: Request, env: MockCloudflareEnv) {
 				path: `/client/v4/zones/${fixtureZone.id}/dns_records`,
 				description: 'Create DNS record',
 			},
+			{
+				method: 'POST',
+				path: `/client/v4/accounts/${fixtureAccount.id}/browser-rendering/markdown`,
+				description: 'Convert a page or HTML snippet to markdown',
+			},
 		],
 	})
 }
@@ -152,6 +175,10 @@ function handleDashboard() {
 		['GET', '/client/v4/zones'],
 		['GET', `/client/v4/zones/${fixtureZone.id}/dns_records`],
 		['POST', `/client/v4/zones/${fixtureZone.id}/dns_records`],
+		[
+			'POST',
+			`/client/v4/accounts/${fixtureAccount.id}/browser-rendering/markdown`,
+		],
 	]
 	const rows = endpoints
 		.map(
@@ -217,6 +244,77 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 			},
 			{ status: 200 },
 		)
+	}
+
+	if (request.method === 'GET' && url.pathname === '/__mocks/markdown') {
+		return new Response('# Mock markdown\n\nServed as markdown.\n', {
+			headers: {
+				'content-type': 'text/markdown; charset=utf-8',
+				'x-markdown-tokens': '8',
+			},
+		})
+	}
+
+	const markdownMatch = url.pathname.match(
+		/^\/client\/v4\/accounts\/([^/]+)\/browser-rendering\/markdown\/?$/,
+	)
+	if (markdownMatch && request.method === 'POST') {
+		const accountId = markdownMatch[1]!
+		const payload = (await readJsonBody(
+			request,
+		)) as BrowserRenderingMarkdownBody | null
+		if (payload === null) {
+			return json(
+				{
+					success: false,
+					errors: [{ code: 1001, message: 'invalid JSON body' }],
+					messages: [],
+					result: null,
+				},
+				{ status: 400 },
+			)
+		}
+		if (accountId !== fixtureAccount.id) {
+			return json(
+				{
+					success: false,
+					errors: [{ code: 1002, message: 'account not found' }],
+					messages: [],
+					result: null,
+				},
+				{ status: 404 },
+			)
+		}
+		const hasUrl = typeof payload.url === 'string' && payload.url.trim().length > 0
+		const hasHtml =
+			typeof payload.html === 'string' && payload.html.trim().length > 0
+		if (!hasUrl && !hasHtml) {
+			return json(
+				{
+					success: false,
+					errors: [
+						{ code: 1003, message: 'Either url or html is required.' },
+					],
+					messages: [],
+					result: null,
+				},
+				{ status: 400 },
+			)
+		}
+		const mode = hasHtml ? 'html' : 'url'
+		const sourceValue = hasHtml
+			? String(payload.html).trim()
+			: String(payload.url).trim()
+		const markdown = [
+			'# Mock Browser Rendering',
+			'',
+			`mode: ${mode}`,
+			`source: ${sourceValue}`,
+			...(typeof payload.userAgent === 'string' && payload.userAgent.length > 0
+				? [`userAgent: ${payload.userAgent}`]
+				: []),
+		].join('\n')
+		return envelope(markdown, { status: 200 })
 	}
 
 	const dnsListMatch = url.pathname.match(
