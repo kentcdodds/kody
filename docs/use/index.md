@@ -10,7 +10,8 @@ Read in order for a full tour, or jump to a topic.
 
 - [First steps — what to ask Kody to do](./first-steps.md)
 - [Search](./search.md)
-- [Execute and workflows](./execute.md)
+- [Execute and workflows](./execute.md) — includes per-user MCP instruction
+  overlays
 - [Secrets, values, and host approval](./secrets-and-values.md)
 - [Skills, saved apps, and generated UI](./skills-and-apps.md)
 - [Mutating actions and confirmations](./mutating-actions.md)

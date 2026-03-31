@@ -27,6 +27,16 @@ To run persisted user code by name, use **`meta_run_skill`** with **`name`** and
 optional **`params`**. To inspect source, use **`meta_get_skill`**. You can also
 inline saved skill code into **execute** when that fits the workflow.
 
+## MCP server instructions
+
+Users can read or replace their own MCP server instruction overlay with
+**`meta_get_mcp_server_instructions`** and
+**`meta_set_mcp_server_instructions`**.
+
+This overlay is appended to Kody's built-in server instructions for that user.
+Pass an empty string to clear it. Changes apply to new MCP sessions, so
+reconnect the MCP client if the host caches server instructions.
+
 ## Network and OAuth helpers
 
 The sandbox exposes **`fetch`**, secret placeholders in approved contexts,

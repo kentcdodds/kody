@@ -1073,3 +1073,70 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 		'host_approval_required_batch',
 	)
 })
+
+test('mcp server persists user MCP server instructions overlay', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const setResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_set_mcp_server_instructions({
+					instructions: 'Prefer short answers.',
+				})
+			}`,
+		},
+	})
+	const setStructured = (setResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					ok?: boolean
+					max_length?: number
+					instructions?: string | null
+				}
+		  }
+		| undefined
+	expect(setStructured?.result?.ok).toBe(true)
+	expect(setStructured?.result?.instructions).toBe('Prefer short answers.')
+	expect(setStructured?.result?.max_length).toBe(4_000)
+
+	const getResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_get_mcp_server_instructions({})
+			}`,
+		},
+	})
+	const getStructured = (getResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					instructions?: string | null
+					max_length?: number
+				}
+		  }
+		| undefined
+	expect(getStructured?.result?.instructions).toBe('Prefer short answers.')
+	expect(getStructured?.result?.max_length).toBe(4_000)
+
+	const clearResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_set_mcp_server_instructions({
+					instructions: '',
+				})
+			}`,
+		},
+	})
+	const clearStructured = (clearResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					instructions?: string | null
+				}
+		  }
+		| undefined
+	expect(clearStructured?.result?.instructions).toBeNull()
+})
