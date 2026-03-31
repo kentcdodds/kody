@@ -30,6 +30,7 @@ import {
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleSkillReindexRequest } from './skill-maintenance.ts'
+import { handleUiArtifactReindexRequest } from './ui-artifact-maintenance.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
 
 export { ChatAgent, CodemodeFetchGateway, HomeConnectorSession, HomeMCP, MCP }
@@ -83,6 +84,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/reindex-skills') {
 			return handleSkillReindexRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/reindex-apps') {
+			return handleUiArtifactReindexRequest(request, env)
 		}
 
 		if (url.pathname === oauthPaths.authorize) {

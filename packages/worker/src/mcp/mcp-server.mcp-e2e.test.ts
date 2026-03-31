@@ -176,30 +176,60 @@ test('mcp server saves and browses skill collections', async () => {
 		arguments: {
 			query: 'summarize github pull requests',
 			skill_collection: 'github-workflows',
-			detail: true,
 			limit: 25,
-			maxResponseSize: 200_000,
+			maxResponseSize: 20_000,
 		},
 	})
+	const searchText = getTextContent((searchResult as CallToolResult).content)
 	const searchStructured = (searchResult as CallToolResult).structuredContent as
 		| {
 				result?: {
 					matches?: Array<{
 						type?: string
-						skillId?: string
+						id?: string
 						collection?: string | null
 						collectionSlug?: string | null
 					}>
 				}
 		  }
 		| undefined
+	expect(searchText).toContain('# Search results')
+	expect(searchText).toContain('## Skill — Summarize agent PRs')
 	expect(
 		searchStructured?.result?.matches?.find((match) => match.type === 'skill'),
 	).toEqual(
 		expect.objectContaining({
-			skillId: savedSkill?.skill_id,
+			id: savedSkill?.skill_id,
 			collection: 'GitHub Workflows',
 			collectionSlug: 'github-workflows',
+		}),
+	)
+
+	const entityResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			entity: `${savedSkill?.skill_id}:skill`,
+		},
+	})
+	const entityText = getTextContent((entityResult as CallToolResult).content)
+	const entityStructured = (entityResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					kind?: string
+					type?: string
+					id?: string
+					collection?: string | null
+				}
+		  }
+		| undefined
+	expect(entityText).toContain('# Skill — Summarize agent PRs')
+	expect(entityText).toContain('## Run this skill')
+	expect(entityStructured?.result).toEqual(
+		expect.objectContaining({
+			kind: 'entity',
+			type: 'skill',
+			id: savedSkill?.skill_id,
+			collection: 'GitHub Workflows',
 		}),
 	)
 })
@@ -240,24 +270,25 @@ test('mcp server executes user code against codemode and tracks execute context'
 		name: 'search',
 		arguments: {
 			query: 'Execute generated app',
-			detail: true,
 		},
 	})
+	const hiddenSearchText = getTextContent((hiddenSearchResult as CallToolResult).content)
 	const hiddenSearchStructured = (hiddenSearchResult as CallToolResult)
 		.structuredContent as
 		| {
 				result?: {
 					matches?: Array<{
 						type?: string
-						appId?: string
+						id?: string
 					}>
 				}
 		  }
 		| undefined
+	expect(hiddenSearchText).toContain('# Search results')
 	expect(
 		hiddenSearchStructured?.result?.matches?.some(
 			(match) =>
-				match.type === 'app' && match.appId === executeResult?.app_id,
+				match.type === 'app' && match.id === executeResult?.app_id,
 		),
 	).toBe(false)
 
@@ -310,31 +341,66 @@ test('mcp server executes user code against codemode and tracks execute context'
 		name: 'search',
 		arguments: {
 			query: 'Execute generated app',
-			detail: true,
 			limit: 20,
 			maxResponseSize: 20_000,
 		},
 	})
+	const visibleSearchText = getTextContent((visibleSearchResult as CallToolResult).content)
 	const visibleSearchStructured = (visibleSearchResult as CallToolResult)
 		.structuredContent as
 		| {
 				result?: {
 					matches?: Array<{
 						type?: string
-						appId?: string
+						id?: string
+						hostedUrl?: string
 					}>
 				}
 		  }
 		| undefined
+	expect(visibleSearchText).toContain('## App — Execute generated app')
+	expect(visibleSearchText).toContain(
+		`**Hosted URL:** \`${server.origin}/ui/${executeResult?.app_id}\``,
+	)
 	expect(
 		visibleSearchStructured?.result?.matches?.find(
 			(match) =>
-				match.type === 'app' && match.appId === executeResult?.app_id,
+				match.type === 'app' && match.id === executeResult?.app_id,
 		),
 	).toEqual(
 		expect.objectContaining({
 			type: 'app',
-			appId: executeResult?.app_id,
+			id: executeResult?.app_id,
+			hostedUrl: `${server.origin}/ui/${executeResult?.app_id}`,
+		}),
+	)
+
+	const appEntityResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			entity: `${executeResult?.app_id}:app`,
+		},
+	})
+	const appEntityText = getTextContent((appEntityResult as CallToolResult).content)
+	const appEntityStructured = (appEntityResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					kind?: string
+					type?: string
+					id?: string
+					hostedUrl?: string
+				}
+		  }
+		| undefined
+	expect(appEntityText).toContain('# App — Execute generated app')
+	expect(appEntityText).toContain('## Open this app')
+	expect(appEntityStructured?.result).toEqual(
+		expect.objectContaining({
+			kind: 'entity',
+			type: 'app',
+			id: executeResult?.app_id,
+			hostedUrl: `${server.origin}/ui/${executeResult?.app_id}`,
 		}),
 	)
 

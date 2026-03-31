@@ -114,11 +114,7 @@ export type SecretSearchHitSummary = {
 	vectorRank?: number
 }
 
-export type SecretSearchHitDetail = SecretSearchHitSummary & {
-	updatedAt: string
-}
-
-export type SecretSearchHit = SecretSearchHitSummary | SecretSearchHitDetail
+export type SecretSearchHit = SecretSearchHitSummary
 
 export type UnifiedSearchMatch =
 	| CapabilitySearchHitTyped
@@ -132,12 +128,11 @@ function buildSecretUsage(name: string) {
 
 function rowToSecretHit(
 	row: SecretSearchRow,
-	detail: boolean,
 	fusedScore: number,
 	lexicalRank?: number,
 	vectorRank?: number,
 ): SecretSearchHit {
-	const base: SecretSearchHitSummary = {
+	return {
 		type: 'secret',
 		scope: 'user',
 		name: row.name,
@@ -147,39 +142,16 @@ function rowToSecretHit(
 		lexicalRank,
 		vectorRank,
 	}
-	if (detail) {
-		return {
-			...base,
-			updatedAt: row.updatedAt,
-		}
-	}
-	return base
 }
 
 function rowToSkillHit(
 	row: McpSkillRow,
-	detail: boolean,
 	fusedScore: number,
 	lexicalRank?: number,
 	vectorRank?: number,
 ): SkillSearchHit {
 	const keywords = parseJsonStringArray(row.keywords)
-	let inferred: Array<string> = []
-	try {
-		const v = JSON.parse(row.inferred_capabilities) as unknown
-		if (Array.isArray(v)) {
-			inferred = v.filter((x): x is string => typeof x === 'string')
-		}
-	} catch {
-		inferred = []
-	}
-	let uses: Array<string> | null = null
-	if (row.uses_capabilities) {
-		uses = parseJsonStringArray(row.uses_capabilities)
-		if (uses.length === 0) uses = null
-	}
-	const parameters = parseSkillParameters(row.parameters)
-	const base: SkillSearchHitSummary = {
+	return {
 		type: 'skill',
 		skillId: row.id,
 		domain: 'meta',
@@ -197,24 +169,12 @@ function rowToSkillHit(
 		lexicalRank,
 		vectorRank,
 	}
-	if (detail) {
-		const hit: SkillSearchHitDetail = {
-			...base,
-			inferredCapabilities: inferred,
-			usesCapabilities: uses,
-			searchText: row.search_text,
-			parameters,
-		}
-		return hit
-	}
-	return base
 }
 
 async function searchSkillsForUser(input: {
 	env: Env
 	query: string
 	limit: number
-	detail: boolean
 	specs: Record<string, CapabilitySpec>
 	userId: string
 	rows: Array<McpSkillRow>
@@ -321,7 +281,6 @@ async function searchSkillsForUser(input: {
 		const row = idSet.get(id)!
 		return rowToSkillHit(
 			row,
-			input.detail,
 			fused.get(id) ?? 0,
 			lexicalRankById.get(id),
 			vectorRankById.get(id),
@@ -334,7 +293,6 @@ async function searchSkillsForUser(input: {
 async function searchSecretsForUser(input: {
 	query: string
 	limit: number
-	detail: boolean
 	rows: Array<SecretSearchRow>
 }): Promise<{ matches: Array<SecretSearchHit>; offline: boolean }> {
 	const rowsByName = new Map(input.rows.map((row) => [row.name, row] as const))
@@ -382,7 +340,6 @@ async function searchSecretsForUser(input: {
 		matches: ordered.map((name) =>
 			rowToSecretHit(
 				rowsByName.get(name)!,
-				input.detail,
 				fused.get(name) ?? 0,
 				lexicalRankByName.get(name),
 				vectorRankByName.get(name),
@@ -396,7 +353,6 @@ export async function searchUnified(input: {
 	env: Env
 	query: string
 	limit: number
-	detail: boolean
 	specs: Record<string, CapabilitySpec>
 	userId: string | null
 	skillCollectionSlug?: string | null
@@ -412,7 +368,7 @@ export async function searchUnified(input: {
 		env: input.env,
 		query: input.query,
 		limit: input.limit,
-		detail: input.detail,
+		detail: false,
 		specs: input.specs,
 		vectorMetadataFilter: isCapabilitySearchOffline(input.env)
 			? undefined
@@ -441,24 +397,22 @@ export async function searchUnified(input: {
 		secretResult = await searchSecretsForUser({
 			query: input.query,
 			limit: input.limit,
-			detail: input.detail,
 			rows: input.userSecretRows,
 		})
 		skillResult = await searchSkillsForUser({
 			env: input.env,
 			query: input.query,
 			limit: input.limit,
-			detail: input.detail,
 			specs: input.specs,
 			userId: input.userId,
 			collectionSlug: input.skillCollectionSlug,
 			rows: input.skillRows,
 		})
 		uiArtifactResult = await searchUiArtifactsForUser({
+			baseUrl: input.env.APP_BASE_URL ?? 'http://localhost',
 			env: input.env,
 			query: input.query,
 			limit: input.limit,
-			detail: input.detail,
 			userId: input.userId,
 			rows: input.uiArtifactRows,
 			appSecretsByAppId: input.appSecretsByAppId,
