@@ -16,8 +16,8 @@ export async function insertUiArtifact(
 		.prepare(
 			`INSERT INTO ui_artifacts (
 				id, user_id, title, description, source_code, source_type,
-				parameters, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				parameters, include_in_search_results, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -27,6 +27,7 @@ export async function insertUiArtifact(
 			row.code,
 			row.runtime,
 			row.parameters ?? null,
+			row.include_in_search_results ? 1 : 0,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
@@ -41,7 +42,7 @@ export async function getUiArtifactById(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, created_at, updated_at
+				parameters, include_in_search_results, created_at, updated_at
 			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
 		)
 		.bind(artifactId, userId)
@@ -62,7 +63,7 @@ export async function getUiArtifactByOwnerIds(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, created_at, updated_at
+				parameters, include_in_search_results, created_at, updated_at
 			FROM ui_artifacts
 			WHERE id = ? AND user_id IN (${placeholders})
 			LIMIT 1`,
@@ -92,7 +93,12 @@ export async function updateUiArtifact(
 	updates: Partial<
 		Pick<
 			UiArtifactRow,
-			'title' | 'description' | 'code' | 'runtime' | 'parameters'
+			| 'title'
+			| 'description'
+			| 'code'
+			| 'runtime'
+			| 'parameters'
+			| 'include_in_search_results'
 		>
 	>,
 ): Promise<boolean> {
@@ -118,6 +124,12 @@ export async function updateUiArtifact(
 	if (updates.parameters !== undefined) {
 		addAssignment('parameters', updates.parameters ?? null)
 	}
+	if (updates.include_in_search_results !== undefined) {
+		addAssignment(
+			'include_in_search_results',
+			updates.include_in_search_results ? 1 : 0,
+		)
+	}
 
 	addAssignment('updated_at', new Date().toISOString())
 
@@ -133,14 +145,23 @@ export async function updateUiArtifact(
 export async function listUiArtifactsByUserId(
 	db: D1Database,
 	userId: string,
+	options?: { includeInSearchResults?: boolean },
 ): Promise<Array<UiArtifactRow>> {
+	const includeInSearchResults = options?.includeInSearchResults
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, created_at, updated_at
-			FROM ui_artifacts WHERE user_id = ?`,
+				parameters, include_in_search_results, created_at, updated_at
+			FROM ui_artifacts
+			WHERE user_id = ?
+				${includeInSearchResults === undefined ? '' : 'AND include_in_search_results = ?'}`,
 		)
-		.bind(userId)
+		.bind(
+			userId,
+			...(includeInSearchResults === undefined
+				? []
+				: [includeInSearchResults ? 1 : 0]),
+		)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }
@@ -154,6 +175,10 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		code: String(row['source_code']),
 		runtime: String(row['source_type']) as UiArtifactRow['runtime'],
 		parameters: row['parameters'] == null ? null : String(row['parameters']),
+		include_in_search_results:
+			row['include_in_search_results'] === 1 ||
+			row['include_in_search_results'] === '1' ||
+			row['include_in_search_results'] === true,
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	}

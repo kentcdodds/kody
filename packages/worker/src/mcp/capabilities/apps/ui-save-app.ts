@@ -10,7 +10,10 @@ import {
 	updateUiArtifact,
 } from '#mcp/ui-artifacts-repo.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
-import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
+import {
+	deleteUiArtifactVector,
+	upsertUiArtifactVector,
+} from '#mcp/ui-artifacts-vectorize.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -48,6 +51,12 @@ const inputSchema = z.object({
 		.describe(
 			'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` helper from `@kody/ui-utils`.',
 		),
+	include_in_search_results: z
+		.boolean()
+		.optional()
+		.describe(
+			'Whether this saved app should appear in search results. Defaults to false so one-off apps stay hidden unless explicitly opted in.',
+		),
 })
 
 const outputSchema = z.object({
@@ -55,6 +64,7 @@ const outputSchema = z.object({
 	runtime: z.enum(['html', 'javascript']),
 	hosted_url: z.string().url(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
+	include_in_search_results: z.boolean(),
 })
 
 export const uiSaveAppCapability = defineDomainCapability(
@@ -74,6 +84,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
 			const parameters = normalizeUiArtifactParameters(args.parameters)
+			const includeInSearchResults = args.include_in_search_results ?? false
 			const serializedParameters = parameters
 				? JSON.stringify(parameters)
 				: null
@@ -89,6 +100,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						code: args.code,
 						runtime: args.runtime,
 						parameters: serializedParameters,
+						include_in_search_results: includeInSearchResults,
 					},
 				)
 				if (!updated) {
@@ -104,23 +116,28 @@ export const uiSaveAppCapability = defineDomainCapability(
 					code: args.code,
 					runtime: args.runtime,
 					parameters: serializedParameters,
+					include_in_search_results: includeInSearchResults,
 					created_at: now,
 					updated_at: now,
 				})
 			}
 
 			try {
-				await upsertUiArtifactVector(ctx.env, {
-					appId,
-					userId: user.userId,
-					embedText: buildUiArtifactEmbedText({
-						title: args.title,
-						description: args.description,
-						code: args.code,
-						runtime: args.runtime,
-						parameters,
-					}),
-				})
+				if (includeInSearchResults) {
+					await upsertUiArtifactVector(ctx.env, {
+						appId,
+						userId: user.userId,
+						embedText: buildUiArtifactEmbedText({
+							title: args.title,
+							description: args.description,
+							code: args.code,
+							runtime: args.runtime,
+							parameters,
+						}),
+					})
+				} else {
+					await deleteUiArtifactVector(ctx.env, appId)
+				}
 			} catch (cause) {
 				if (!isUpdate) {
 					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
@@ -156,6 +173,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				runtime: args.runtime,
 				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
 				parameters,
+				include_in_search_results: includeInSearchResults,
 			}
 		},
 	},

@@ -16,6 +16,7 @@ const outputSchema = z.object({
 	runtime: z.enum(['html', 'javascript']),
 	code: z.string(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
+	include_in_search_results: z.boolean(),
 })
 
 export const uiLoadAppSourceCapability = defineDomainCapability(
@@ -52,6 +53,7 @@ export const uiLoadAppSourceCapability = defineDomainCapability(
 				runtime: row.runtime,
 				code: row.code,
 				parameters: parseUiArtifactParameters(row.parameters),
+				include_in_search_results: row.include_in_search_results,
 			}
 		},
 	},
