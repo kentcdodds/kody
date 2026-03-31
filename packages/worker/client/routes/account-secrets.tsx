@@ -209,6 +209,62 @@ function readCapabilityPrefill(href: string) {
 	return value?.trim() ? value.trim() : null
 }
 
+function readRequestedHost(href: string) {
+	const url = new URL(href, 'http://localhost')
+	const value = url.searchParams.get('allowed-host')
+	return value?.trim() ? value.trim() : null
+}
+
+function normalizeSingleAllowedHost(host: string | null) {
+	if (!host) return null
+	return clientNormalizeAllowedHosts([host])[0] ?? null
+}
+
+function normalizeSingleAllowedCapability(capability: string | null) {
+	if (!capability) return null
+	return clientNormalizeAllowedCapabilities([capability])[0] ?? null
+}
+
+function getAlreadyAddedNotice(input: {
+	href: string
+	selectedSecret: SecretDetail | null
+	approval: ApprovalView | null
+}) {
+	const requestedHost = normalizeSingleAllowedHost(readRequestedHost(input.href))
+	const requestedCapability = normalizeSingleAllowedCapability(
+		readCapabilityPrefill(input.href),
+	)
+	const allowedHosts = input.selectedSecret
+		? clientNormalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
+		: input.approval
+			? clientNormalizeAllowedHosts(input.approval.currentAllowedHosts)
+			: []
+	const allowedCapabilities = input.selectedSecret
+		? clientNormalizeAllowedCapabilities(
+				coerceStringRows(input.selectedSecret.allowedCapabilities),
+			)
+		: []
+	const items: Array<string> = []
+	const hostAlreadyAdded =
+		requestedHost != null && allowedHosts.includes(requestedHost)
+	if (hostAlreadyAdded) {
+		items.push(`Host ${requestedHost} is already in allowed hosts.`)
+	}
+	if (
+		requestedCapability != null &&
+		allowedCapabilities.includes(requestedCapability)
+	) {
+		items.push(
+			`Capability ${requestedCapability} is already in allowed capabilities.`,
+		)
+	}
+	if (items.length === 0) return null
+	return {
+		items,
+		hostAlreadyAdded,
+	}
+}
+
 function applyCapabilityPrefill(state: EditorState, capability: string | null) {
 	if (!capability) return state
 	if (state.allowedCapabilities.some((entry) => entry.trim() === capability)) {
@@ -748,6 +804,17 @@ export function AccountSecretsRoute(handle: Handle) {
 		const isMutating = saveState !== 'idle' || submittingApprovalAction != null
 		const canCreateAppSecrets = apps.length > 0
 		const showEditor = selection.isCreating || selectedSecret != null
+		const alreadyAddedNotice = getAlreadyAddedNotice({
+			href: currentHref,
+			selectedSecret,
+			approval,
+		})
+		const approvalCard =
+			approval &&
+			!isRefreshingForLocationChange &&
+			!alreadyAddedNotice?.hostAlreadyAdded
+				? approval
+				: null
 
 		return (
 			<section
@@ -792,7 +859,7 @@ export function AccountSecretsRoute(handle: Handle) {
 					</button>
 				</header>
 
-				{approval && !isRefreshingForLocationChange ? (
+				{approvalCard ? (
 					<section
 						css={{
 							display: 'grid',
@@ -815,20 +882,20 @@ export function AccountSecretsRoute(handle: Handle) {
 								Approve host access
 							</h2>
 							<p css={{ margin: 0, color: colors.textMuted }}>
-								Allow <code>{approval.requestedHost}</code> to receive secret{' '}
-								<code>{approval.name}</code> from the{' '}
-								{getScopeLabel(approval.scope)} scope.
+								Allow <code>{approvalCard.requestedHost}</code> to receive
+								secret <code>{approvalCard.name}</code> from the{' '}
+								{getScopeLabel(approvalCard.scope)} scope.
 							</p>
-							{approval.requestedCapability ? (
+							{approvalCard.requestedCapability ? (
 								<p css={{ margin: 0, color: colors.textMuted }}>
 									Requested capability:{' '}
-									<code>{approval.requestedCapability}</code>
+									<code>{approvalCard.requestedCapability}</code>
 								</p>
 							) : null}
 							<p css={{ margin: 0, color: colors.textMuted }}>
 								Current allowed hosts:{' '}
-								{approval.currentAllowedHosts.length > 0
-									? approval.currentAllowedHosts.join(', ')
+								{approvalCard.currentAllowedHosts.length > 0
+									? approvalCard.currentAllowedHosts.join(', ')
 									: 'none'}
 							</p>
 						</div>
@@ -850,6 +917,50 @@ export function AccountSecretsRoute(handle: Handle) {
 								Reject
 							</button>
 						</div>
+					</section>
+				) : null}
+				{alreadyAddedNotice ? (
+					<section
+						css={{
+							display: 'grid',
+							gap: spacing.sm,
+							padding: spacing.lg,
+							borderRadius: radius.lg,
+							border: `1px solid ${colors.primary}`,
+							backgroundColor: colors.primarySoftest,
+						}}
+						role="status"
+					>
+						<div css={{ display: 'grid', gap: spacing.xs }}>
+							<h2
+								css={{
+									margin: 0,
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								}}
+							>
+								Already added
+							</h2>
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								This request is already complete for this secret.
+							</p>
+						</div>
+						<ul
+							css={{
+								margin: 0,
+								paddingLeft: spacing.lg,
+								color: colors.textMuted,
+								display: 'grid',
+								gap: spacing.xs,
+							}}
+						>
+							{alreadyAddedNotice.items.map((item) => (
+								<li key={item}>
+									{item}
+								</li>
+							))}
+						</ul>
 					</section>
 				) : null}
 
