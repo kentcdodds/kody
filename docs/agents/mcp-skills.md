@@ -9,6 +9,12 @@ that are **reasonably repeatable**—patterns expected to run again with similar
 structure or inputs. One-off tasks, unique ad-hoc requests, and highly bespoke
 work should use **`execute`** only; do not persist them as skills.
 
+## Official patterns
+
+Reference implementations for repeatable workflows live under
+[`skill-patterns/`](./skill-patterns/index.md) (for example, reading Cloudflare
+Developer Docs without a dedicated builtin capability).
+
 ## Flow
 
 - **`search`** returns unified hits with `type: 'capability'` or `type: 'skill'`

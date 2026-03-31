@@ -17,7 +17,7 @@ const inputSchema = z
 			.string()
 			.optional()
 			.describe(
-				'Page URL to read as markdown. Prefer your existing web-reading tools first (for example normal fetch with `Accept: text/markdown`, browser tools, or host-specific docs capabilities) and use this only as a fallback when they return unhelpful HTML or cannot load the page.',
+				'Page URL to read as markdown. Prefer your existing web-reading tools first (for example normal fetch with `Accept: text/markdown`, browser tools, or a saved docs-fetch skill) and use this only as a fallback when they return unhelpful HTML or cannot load the page.',
 			),
 		html: z
 			.string()
@@ -90,7 +90,7 @@ export const pageToMarkdownCapability = defineDomainCapability(
 	{
 		name: 'page_to_markdown',
 		description:
-			'Generic page-to-markdown helper. Try cheaper web-reading mechanisms first (normal fetch with `Accept: text/markdown`, browser/IDE tools, or host-specific docs capabilities like `github_rest_api_docs`) and use this only as a fallback when they return useless HTML or cannot load a page. This capability first does a normal markdown-preferred fetch; only if that still yields HTML does it call billed Cloudflare Browser Rendering `/markdown`.',
+			'Generic page-to-markdown helper. Try cheaper web-reading mechanisms first (normal fetch with `Accept: text/markdown`, browser/IDE tools, or a saved docs-fetch skill) and use this only as a fallback when they return useless HTML or cannot load a page. This capability first does a normal markdown-preferred fetch; only if that still yields HTML does it call billed Cloudflare Browser Rendering `/markdown`.',
 		keywords: [
 			'markdown',
 			'html to markdown',

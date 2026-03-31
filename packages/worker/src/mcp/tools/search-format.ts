@@ -180,7 +180,7 @@ export function formatSearchMarkdown(input: {
 	const lines: Array<string> = ['# Search results', '']
 	if (input.includePreamble ?? true) {
 		lines.push(
-			'For full detail on one hit, call `search` with `entity: "{id}:{type}"` (example: `cloudflare_api_docs:capability`).',
+			'For full detail on one hit, call `search` with `entity: "{id}:{type}"` (example: `page_to_markdown:capability`).',
 			'',
 			'**How to run matches:**',
 			'',

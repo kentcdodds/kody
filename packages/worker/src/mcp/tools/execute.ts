@@ -95,12 +95,12 @@ Your code must be an async arrow function that returns the result.
 Examples:
 
 \`async () => {
-  const docs = await codemode.cloudflare_api_docs({
-    path: '/api/resources/accounts/',
+  const page = await codemode.page_to_markdown({
+    url: 'https://developers.cloudflare.com/api/resources/accounts/',
   });
   return {
-    status: docs.status,
-    preview: docs.body.slice(0, 120),
+    source: page.source,
+    preview: page.markdown.slice(0, 120),
   };
 }\`
 	`.trim(),
