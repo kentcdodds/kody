@@ -1,6 +1,10 @@
 import { parse, type Node, type Program } from 'acorn'
 
-const executeHelperCapabilities = ['connector_get', 'value_get'] as const
+const executeHelperCapabilities = [
+	'connector_get',
+	'value_get',
+	'secret_set',
+] as const
 const executeHelperNames = new Set([
 	'refreshAccessToken',
 	'createAuthenticatedFetch',
