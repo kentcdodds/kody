@@ -43,6 +43,7 @@ function createUiArtifactRow(appId: string): UiArtifactRow {
 				required: true,
 			},
 		]),
+		hidden: false,
 		created_at: '2026-03-20T00:00:00.000Z',
 		updated_at: '2026-03-20T00:00:00.000Z',
 	}

@@ -42,7 +42,7 @@ Quick start
 - Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, or client secrets into chat. Use saved secrets when available, or use 'open_generated_ui' to collect and save sensitive values instead.
 - Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use the optional 'collection' field to group related saved skills, and use 'meta_update_skill' to replace an existing skill's code in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
-- Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills.
+ - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills. They are hidden from search by default unless you explicitly set \`hidden: false\` for reusable apps.
 - Use \`codemode.secret_list(args)\` during execute-time code to list secret metadata only; it does not return plaintext values.
 - Use \`codemode.secret_set(args)\` only to persist secret values that are already available inside trusted execution, such as refreshed OAuth tokens. It returns metadata only and never returns plaintext values.
 

@@ -6,11 +6,15 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { errorFields, logMcpEvent } from '#mcp/observability.ts'
 import {
 	deleteUiArtifact,
+	getUiArtifactById,
 	insertUiArtifact,
 	updateUiArtifact,
 } from '#mcp/ui-artifacts-repo.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
-import { upsertUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
+import {
+	deleteUiArtifactVector,
+	upsertUiArtifactVector,
+} from '#mcp/ui-artifacts-vectorize.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -48,6 +52,12 @@ const inputSchema = z.object({
 		.describe(
 			'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` helper from `@kody/ui-utils`.',
 		),
+	hidden: z
+		.boolean()
+		.optional()
+		.describe(
+			'Whether this saved app should stay hidden from search results. Defaults to true so one-off apps stay private unless explicitly made discoverable.',
+		),
 })
 
 const outputSchema = z.object({
@@ -55,6 +65,7 @@ const outputSchema = z.object({
 	runtime: z.enum(['html', 'javascript']),
 	hosted_url: z.string().url(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
+	hidden: z.boolean(),
 })
 
 export const uiSaveAppCapability = defineDomainCapability(
@@ -77,6 +88,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const serializedParameters = parameters
 				? JSON.stringify(parameters)
 				: null
+			let hidden: boolean
 
 			if (isUpdate) {
 				const updated = await updateUiArtifact(
@@ -89,12 +101,27 @@ export const uiSaveAppCapability = defineDomainCapability(
 						code: args.code,
 						runtime: args.runtime,
 						parameters: serializedParameters,
+						hidden: args.hidden,
 					},
 				)
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				if (args.hidden === undefined) {
+					const existing = await getUiArtifactById(
+						ctx.env.APP_DB,
+						user.userId,
+						appId,
+					)
+					if (!existing) {
+						throw new Error('Saved UI artifact not found for this user.')
+					}
+					hidden = existing.hidden
+				} else {
+					hidden = args.hidden
+				}
 			} else {
+				hidden = args.hidden ?? true
 				const now = new Date().toISOString()
 				await insertUiArtifact(ctx.env.APP_DB, {
 					id: appId,
@@ -104,23 +131,28 @@ export const uiSaveAppCapability = defineDomainCapability(
 					code: args.code,
 					runtime: args.runtime,
 					parameters: serializedParameters,
+					hidden,
 					created_at: now,
 					updated_at: now,
 				})
 			}
 
 			try {
-				await upsertUiArtifactVector(ctx.env, {
-					appId,
-					userId: user.userId,
-					embedText: buildUiArtifactEmbedText({
-						title: args.title,
-						description: args.description,
-						code: args.code,
-						runtime: args.runtime,
-						parameters,
-					}),
-				})
+				if (!hidden) {
+					await upsertUiArtifactVector(ctx.env, {
+						appId,
+						userId: user.userId,
+						embedText: buildUiArtifactEmbedText({
+							title: args.title,
+							description: args.description,
+							code: args.code,
+							runtime: args.runtime,
+							parameters,
+						}),
+					})
+				} else if (isUpdate) {
+					await deleteUiArtifactVector(ctx.env, appId)
+				}
 			} catch (cause) {
 				if (!isUpdate) {
 					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
@@ -156,6 +188,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				runtime: args.runtime,
 				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
 				parameters,
+				hidden,
 			}
 		},
 	},

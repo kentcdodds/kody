@@ -234,6 +234,109 @@ test('mcp server executes user code against codemode and tracks execute context'
 	expect(executeResult?.hosted_url).toBe(
 		`${server.origin}/ui/${executeResult?.app_id}`,
 	)
+	expect(executeResult?.hidden).toBe(true)
+
+	const hiddenSearchResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'Execute generated app',
+			detail: true,
+		},
+	})
+	const hiddenSearchStructured = (hiddenSearchResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					matches?: Array<{
+						type?: string
+						appId?: string
+					}>
+				}
+		  }
+		| undefined
+	expect(
+		hiddenSearchStructured?.result?.matches?.some(
+			(match) =>
+				match.type === 'app' && match.appId === executeResult?.app_id,
+		),
+	).toBe(false)
+
+	const savedAppMetadata = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_get_app({
+					app_id: ${JSON.stringify(executeResult?.app_id)},
+				})
+			}`,
+		},
+	})
+	const savedAppMetadataStructured = (savedAppMetadata as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					hidden?: boolean
+				}
+		  }
+		| undefined
+	expect(savedAppMetadataStructured?.result?.hidden).toBe(true)
+
+	const searchableUpdateResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					app_id: ${JSON.stringify(executeResult?.app_id)},
+					title: 'Execute generated app',
+					description: 'Saved through execute.',
+					code: '<main><h1>Execute App</h1></main>',
+					hidden: false,
+				})
+			}`,
+		},
+	})
+	const searchableUpdateStructured = (
+		searchableUpdateResult as CallToolResult
+	).structuredContent as
+		| {
+				result?: {
+					hidden?: boolean
+				}
+		  }
+		| undefined
+	expect(searchableUpdateStructured?.result?.hidden).toBe(false)
+
+	const visibleSearchResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'Execute generated app',
+			detail: true,
+			limit: 20,
+			maxResponseSize: 20_000,
+		},
+	})
+	const visibleSearchStructured = (visibleSearchResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					matches?: Array<{
+						type?: string
+						appId?: string
+					}>
+				}
+		  }
+		| undefined
+	expect(
+		visibleSearchStructured?.result?.matches?.find(
+			(match) =>
+				match.type === 'app' && match.appId === executeResult?.app_id,
+		),
+	).toEqual(
+		expect.objectContaining({
+			type: 'app',
+			appId: executeResult?.app_id,
+		}),
+	)
 
 	const contextResult = await mcpClient.client.callTool({
 		name: 'execute',

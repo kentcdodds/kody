@@ -8,6 +8,7 @@ export type UiArtifactRow = {
 	code: string
 	runtime: UiArtifactRuntime
 	parameters: string | null
+	hidden: boolean
 	created_at: string
 	updated_at: string
 }

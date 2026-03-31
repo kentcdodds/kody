@@ -19,6 +19,7 @@ test('optional search rows fall back when saved skills lookup fails', async () =
 				code: '<div />',
 				runtime: 'html',
 				parameters: null,
+				hidden: false,
 				created_at: '2026-03-24T00:00:00.000Z',
 				updated_at: '2026-03-24T00:00:00.000Z',
 			},
