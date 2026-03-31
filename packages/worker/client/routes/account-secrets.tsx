@@ -25,6 +25,11 @@ import {
 	transitions,
 	typography,
 } from '#client/styles/tokens.ts'
+import { SecretEditorFields } from './secret-editor-fields.tsx'
+import {
+	normalizeAllowedCapabilities,
+	normalizeAllowedHosts,
+} from './secret-normalization.ts'
 
 type SecretScope = 'app' | 'user'
 
@@ -116,30 +121,6 @@ function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
 
 function coerceStringRows(list: Array<unknown>): Array<string> {
 	return list.filter((item): item is string => typeof item === 'string')
-}
-
-/** Matches server `normalizeAllowedHosts` in `#mcp/secrets/allowed-hosts.ts`. */
-function clientNormalizeAllowedHosts(hosts: Array<string>): Array<string> {
-	return Array.from(
-		new Set(
-			hosts
-				.map((host) => host.trim().toLowerCase())
-				.filter((host) => host.length > 0),
-		),
-	).sort()
-}
-
-/** Matches server `normalizeAllowedCapabilities` in `#mcp/secrets/allowed-capabilities.ts`. */
-function clientNormalizeAllowedCapabilities(
-	capabilities: Array<string>,
-): Array<string> {
-	return Array.from(
-		new Set(
-			capabilities
-				.map((value) => value.trim())
-				.filter((value) => value.length > 0),
-		),
-	).sort((left, right) => left.localeCompare(right))
 }
 
 function collectRepeatedTextRows(
@@ -236,12 +217,12 @@ function readRequestedHost(href: string) {
 
 function normalizeSingleAllowedHost(host: string | null) {
 	if (!host) return null
-	return clientNormalizeAllowedHosts([host])[0] ?? null
+	return normalizeAllowedHosts([host])[0] ?? null
 }
 
 function normalizeSingleAllowedCapability(capability: string | null) {
 	if (!capability) return null
-	return clientNormalizeAllowedCapabilities([capability])[0] ?? null
+	return normalizeAllowedCapabilities([capability])[0] ?? null
 }
 
 function getAlreadyAddedNotice(input: {
@@ -254,12 +235,12 @@ function getAlreadyAddedNotice(input: {
 		readCapabilityPrefill(input.href),
 	)
 	const allowedHosts = input.selectedSecret
-		? clientNormalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
+		? normalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
 		: input.approval
-			? clientNormalizeAllowedHosts(input.approval.currentAllowedHosts)
+			? normalizeAllowedHosts(input.approval.currentAllowedHosts)
 			: []
 	const allowedCapabilities = input.selectedSecret
-		? clientNormalizeAllowedCapabilities(
+		? normalizeAllowedCapabilities(
 				coerceStringRows(input.selectedSecret.allowedCapabilities),
 			)
 		: []
@@ -620,10 +601,10 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			const allowedHosts = clientNormalizeAllowedHosts(
+			const allowedHosts = normalizeAllowedHosts(
 				collectRepeatedTextRows(form, 'allowed-hosts'),
 			)
-			const allowedCapabilities = clientNormalizeAllowedCapabilities(
+			const allowedCapabilities = normalizeAllowedCapabilities(
 				collectRepeatedTextRows(form, 'allowed-capabilities'),
 			)
 			const response = await fetch(accountSecretsApiPath, {
@@ -1316,271 +1297,39 @@ export function AccountSecretsRoute(handle: Handle) {
 										})
 									: null}
 
-								<label css={fieldCss}>
-									<span css={fieldLabelCss}>Description</span>
-									<textarea
-										value={editorState.description}
-										rows={3}
-										placeholder="What this secret is used for"
-										on={{
-											input: (event) => {
-												editorState = {
-													...editorState,
-													description: event.currentTarget.value,
-												}
-												handle.update()
-											},
-										}}
-										css={textareaCss}
-									/>
-								</label>
-
-								<label css={fieldCss}>
-									<span css={fieldLabelCss}>Secret value</span>
-									<div
-										css={{
-											position: 'relative',
-											display: 'flex',
-											alignItems: 'center',
-										}}
-									>
-										{showSecretValue ? (
-											<input
-												type="text"
-												required
-												autoComplete="new-password"
-												value={editorState.value}
-												placeholder="Enter the secret value"
-												on={{
-													input: (event) => {
-														editorState = {
-															...editorState,
-															value: event.currentTarget.value,
-														}
-														handle.update()
-													},
-												}}
-												css={{
-													...inputCss,
-													paddingRight: '3rem',
-												}}
-											/>
-										) : (
-											<input
-												type="password"
-												required
-												autoComplete="new-password"
-												value={editorState.value}
-												placeholder="Enter the secret value"
-												on={{
-													input: (event) => {
-														editorState = {
-															...editorState,
-															value: event.currentTarget.value,
-														}
-														handle.update()
-													},
-												}}
-												css={{
-													...inputCss,
-													paddingRight: '3rem',
-												}}
-											/>
-										)}
-										<button
-											type="button"
-											aria-label={
-												showSecretValue
-													? 'Hide secret value'
-													: 'Show secret value'
-											}
-											title={
-												showSecretValue
-													? 'Hide secret value'
-													: 'Show secret value'
-											}
-											on={{
-												click: () => {
-													showSecretValue = !showSecretValue
-													handle.update()
-												},
-											}}
-											css={{
-												position: 'absolute',
-												right: spacing.sm,
-												background: 'none',
-												border: 'none',
-												padding: 0,
-												color: colors.textMuted,
-												cursor: 'pointer',
-												display: 'flex',
-												alignItems: 'center',
-												justifyContent: 'center',
-												'&:hover': {
-													color: colors.text,
-												},
-											}}
-										>
-											{showSecretValue ? (
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													width="20"
-													height="20"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-												>
-													<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-													<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-													<path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-													<line x1="2" x2="22" y1="2" y2="22" />
-												</svg>
-											) : (
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													width="20"
-													height="20"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-												>
-													<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-													<circle cx="12" cy="12" r="3" />
-												</svg>
-											)}
-										</button>
-									</div>
-								</label>
-
-								<div css={{ display: 'grid', gap: spacing.sm }}>
-									<div css={{ display: 'grid', gap: spacing.xs }}>
-										<span css={fieldLabelCss}>Allowed hosts</span>
-										<p css={{ margin: 0, color: colors.textMuted }}>
-											Leave this empty to require explicit host approval before
-											a secret can be used.
-										</p>
-									</div>
-									<div
-										css={{ display: 'grid', gap: spacing.sm }}
-										data-repeat-list="allowed-hosts"
-									>
-										{editorState.allowedHosts.map((host, index) => (
-											<div
-												key={index}
-												css={{
-													display: 'grid',
-													gridTemplateColumns: 'minmax(0, 1fr) auto',
-													gap: spacing.sm,
-													[mq.mobile]: {
-														gridTemplateColumns: '1fr',
-													},
-												}}
-											>
-												<input
-													type="text"
-													value={typeof host === 'string' ? host : ''}
-													placeholder="api.example.com"
-													on={{
-														input: (event) =>
-															updateAllowedHost(
-																index,
-																event.currentTarget.value,
-															),
-													}}
-													css={inputCss}
-												/>
-												<button
-													type="button"
-													on={{ click: () => removeAllowedHost(index) }}
-													css={secondaryButtonCss}
-												>
-													Remove
-												</button>
-											</div>
-										))}
-									</div>
-									<div>
-										<button
-											type="button"
-											on={{ click: addAllowedHost }}
-											css={secondaryButtonCss}
-										>
-											Add host
-										</button>
-									</div>
-								</div>
-
-								<div css={{ display: 'grid', gap: spacing.sm }}>
-									<div css={{ display: 'grid', gap: spacing.xs }}>
-										<span css={fieldLabelCss}>Allowed capabilities</span>
-										<p css={{ margin: 0, color: colors.textMuted }}>
-											Only capabilities listed here can resolve this secret when
-											used with an
-											<code> x-kody-secret </code>
-											input.
-										</p>
-									</div>
-									<div
-										css={{ display: 'grid', gap: spacing.sm }}
-										data-repeat-list="allowed-capabilities"
-									>
-										{editorState.allowedCapabilities.map(
-											(capabilityName, index) => (
-												<div
-													key={index}
-													css={{
-														display: 'grid',
-														gridTemplateColumns: 'minmax(0, 1fr) auto',
-														gap: spacing.sm,
-														[mq.mobile]: {
-															gridTemplateColumns: '1fr',
-														},
-													}}
-												>
-													<input
-														type="text"
-														value={
-															typeof capabilityName === 'string'
-																? capabilityName
-																: ''
-														}
-														placeholder="home_lutron_set_credentials"
-														on={{
-															input: (event) =>
-																updateAllowedCapability(
-																	index,
-																	event.currentTarget.value,
-																),
-														}}
-														css={inputCss}
-													/>
-													<button
-														type="button"
-														on={{ click: () => removeAllowedCapability(index) }}
-														css={secondaryButtonCss}
-													>
-														Remove
-													</button>
-												</div>
-											),
-										)}
-									</div>
-									<div>
-										<button
-											type="button"
-											on={{ click: addAllowedCapability }}
-											css={secondaryButtonCss}
-										>
-											Add capability
-										</button>
-									</div>
-								</div>
+								<SecretEditorFields
+									description={editorState.description}
+									onDescriptionChange={(description) => {
+										editorState = {
+											...editorState,
+											description,
+										}
+										handle.update()
+									}}
+									value={editorState.value}
+									onValueChange={(value) => {
+										editorState = {
+											...editorState,
+											value,
+										}
+										handle.update()
+									}}
+									showSecretValue={showSecretValue}
+									onToggleShowSecretValue={() => {
+										showSecretValue = !showSecretValue
+										handle.update()
+									}}
+									allowedHosts={editorState.allowedHosts}
+									onUpdateAllowedHost={updateAllowedHost}
+									onAddAllowedHost={addAllowedHost}
+									onRemoveAllowedHost={removeAllowedHost}
+									allowedCapabilities={editorState.allowedCapabilities}
+									onUpdateAllowedCapability={updateAllowedCapability}
+									onAddAllowedCapability={addAllowedCapability}
+									onRemoveAllowedCapability={removeAllowedCapability}
+									allowedHostsListName="allowed-hosts"
+									allowedCapabilitiesListName="allowed-capabilities"
+								/>
 
 								{selectedSecret ? (
 									<div
@@ -1710,12 +1459,6 @@ const inputCss = {
 	fontSize: typography.fontSize.base,
 	fontFamily: typography.fontFamily,
 	boxSizing: 'border-box' as const,
-}
-
-const textareaCss = {
-	...inputCss,
-	resize: 'vertical' as const,
-	minHeight: '7rem',
 }
 
 const comboboxListCss = {

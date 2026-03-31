@@ -37,6 +37,19 @@ const mockModule = vi.hoisted(() => ({
 		allowedHosts: [],
 		allowedCapabilities: [],
 	})),
+	saveSecret: vi.fn(async () => ({
+		name: 'linearApiKey',
+		scope: 'user',
+		description: '',
+		appId: null,
+		allowedHosts: [],
+		allowedCapabilities: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		ttlMs: null,
+	})),
+	setSecretAllowedHosts: vi.fn(async () => undefined),
+	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	saveValue: vi.fn(async () => undefined),
 	getUiArtifactByOwnerIds: async (
 		_db: D1Database,
@@ -92,8 +105,17 @@ vi.mock('#mcp/secrets/allowed-hosts.ts', () => ({
 	normalizeAllowedHosts: (hosts: Array<string>) => hosts,
 }))
 
+vi.mock('#mcp/secrets/allowed-capabilities.ts', () => ({
+	normalizeAllowedCapabilities: (capabilities: Array<string>) => capabilities,
+}))
+
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
+	saveSecret: (...args: Array<unknown>) => mockModule.saveSecret(...args),
+	setSecretAllowedHosts: (...args: Array<unknown>) =>
+		mockModule.setSecretAllowedHosts(...args),
+	setSecretAllowedCapabilities: (...args: Array<unknown>) =>
+		mockModule.setSecretAllowedCapabilities(...args),
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
@@ -226,6 +248,54 @@ test('connect secret POST stores connector binding under dedicated prefix', asyn
 	expect(mockModule.saveValue).not.toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: '_connector:linear',
+		}),
+	)
+})
+
+test('connect secret POST saves secret metadata from editable defaults', async () => {
+	const handler = createConnectSecretApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/connect/secret.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				name: 'linearApiKey',
+				scope: 'user',
+				sessionToken: 'generated-token',
+				value: 'shh-secret',
+				description: 'Linear API key',
+				allowedHosts: ['API.LINEAR.APP', 'api.linear.app'],
+				allowedCapabilities: ['linear_issue_list'],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(readJson(response)).resolves.toEqual({ ok: true })
+	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'linearApiKey',
+			value: 'shh-secret',
+			scope: 'user',
+			description: 'Linear API key',
+			storageContext: { sessionId: 'session-1', appId: null },
+		}),
+	)
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'linearApiKey',
+			scope: 'user',
+			allowedHosts: ['API.LINEAR.APP', 'api.linear.app'],
+			storageContext: { sessionId: 'session-1', appId: null },
+		}),
+	)
+	expect(mockModule.setSecretAllowedCapabilities).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'linearApiKey',
+			scope: 'user',
+			allowedCapabilities: ['linear_issue_list'],
+			storageContext: { sessionId: 'session-1', appId: null },
 		}),
 	)
 })

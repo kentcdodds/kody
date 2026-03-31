@@ -11,8 +11,14 @@ import {
 	verifyGeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
 import { capabilityMap } from '#mcp/capabilities/registry.ts'
+import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
-import { resolveSecret } from '#mcp/secrets/service.ts'
+import {
+	resolveSecret,
+	saveSecret,
+	setSecretAllowedCapabilities,
+	setSecretAllowedHosts,
+} from '#mcp/secrets/service.ts'
 import { secretScopeValues, type SecretScope } from '#mcp/secrets/types.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import { getUiArtifactByOwnerIds } from '#mcp/ui-artifacts-repo.ts'
@@ -109,12 +115,22 @@ export function createConnectSecretApiHandler(env: Env) {
 			const name = readString(body, 'name')
 			const scope = readScope(body)
 			const sessionToken = readString(body, 'sessionToken')
+			const value = readOptionalString(body, 'value')
+			const description = readOptionalString(body, 'description') ?? ''
 			const connector = readOptionalString(body, 'connector')
 			const requestedAllowedHosts =
 				readOptionalStringArray(body, 'allowedHosts') ?? []
 			const requestedAllowedCapabilities =
 				readOptionalStringArray(body, 'allowedCapabilities') ?? []
-			const unknownCapabilities = requestedAllowedCapabilities.filter(
+			const normalizedAllowedHosts =
+				requestedAllowedHosts.length > 0
+					? normalizeAllowedHosts(requestedAllowedHosts)
+					: []
+			const normalizedAllowedCapabilities =
+				requestedAllowedCapabilities.length > 0
+					? normalizeAllowedCapabilities(requestedAllowedCapabilities)
+					: []
+			const unknownCapabilities = normalizedAllowedCapabilities.filter(
 				(capability) => !capabilityMap[capability],
 			)
 			if (unknownCapabilities.length > 0) {
@@ -175,6 +191,43 @@ export function createConnectSecretApiHandler(env: Env) {
 			}
 
 			try {
+				if (typeof value === 'string') {
+					if (!value.trim()) {
+						return jsonResponse(
+							{ ok: false, error: 'Secret value is required.' },
+							400,
+						)
+					}
+					await saveSecret({
+						env,
+						userId: user.mcpUser.userId,
+						name,
+						value,
+						scope,
+						description,
+						storageContext,
+						sessionExpiresAt:
+							scope === 'session'
+								? new Date(session.exp).toISOString()
+								: null,
+					})
+					await setSecretAllowedHosts({
+						env,
+						userId: user.mcpUser.userId,
+						name,
+						scope,
+						allowedHosts: normalizedAllowedHosts,
+						storageContext,
+					})
+					await setSecretAllowedCapabilities({
+						env,
+						userId: user.mcpUser.userId,
+						name,
+						scope,
+						allowedCapabilities: normalizedAllowedCapabilities,
+						storageContext,
+					})
+				}
 				if (connector) {
 					const resolved = await resolveSecret({
 						env,
@@ -187,12 +240,12 @@ export function createConnectSecretApiHandler(env: Env) {
 						return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
 					}
 					const allowedHosts =
-						requestedAllowedHosts.length > 0
-							? normalizeAllowedHosts(requestedAllowedHosts)
+						normalizedAllowedHosts.length > 0
+							? normalizedAllowedHosts
 							: resolved.allowedHosts
 					const allowedCapabilities =
-						requestedAllowedCapabilities.length > 0
-							? requestedAllowedCapabilities
+						normalizedAllowedCapabilities.length > 0
+							? normalizedAllowedCapabilities
 							: resolved.allowedCapabilities
 					await saveValue({
 						env,
