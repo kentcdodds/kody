@@ -135,7 +135,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							parameters,
 						}),
 					})
-				} else {
+				} else if (isUpdate) {
 					await deleteUiArtifactVector(ctx.env, appId)
 				}
 			} catch (cause) {
