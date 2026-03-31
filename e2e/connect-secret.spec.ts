@@ -24,16 +24,23 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await expect(page.getByLabel('Description')).toHaveValue(description)
 
 	await page.getByLabel('Name').fill(editedName)
-	await page.getByLabel('Secret value').fill(secretValue)
+	await page.getByPlaceholder('Paste the secret value').fill(secretValue)
 	await page.getByRole('button', { name: 'Review' }).click()
+
+	const reviewCard = page
+		.getByRole('heading', {
+			level: 2,
+			name: 'Review before saving',
+		})
+		.locator('xpath=ancestor::section[1]')
 
 	await expect(
 		page.getByRole('heading', { level: 2, name: 'Review before saving' }),
 	).toBeVisible()
-	await expect(page.getByText('Secret name').locator('..')).toContainText(
-		editedName,
-	)
-	await expect(page.getByText('Scope').locator('..')).toContainText('User')
+	await expect(reviewCard).toContainText('Secret name')
+	await expect(reviewCard).toContainText(editedName)
+	await expect(reviewCard).toContainText('Scope')
+	await expect(reviewCard).toContainText('User')
 
 	await page.getByLabel('I confirm these details are correct.').check()
 	await page.getByRole('button', { name: 'Save secret' }).click()
