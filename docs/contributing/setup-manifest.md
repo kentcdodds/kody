@@ -21,9 +21,10 @@ This project uses the following resources:
     (`@cf/baai/bge-small-en-v1.5`).
 
 The checked-in
-[`packages/worker/wrangler.jsonc`](../packages/worker/wrangler.jsonc) declares
-bindings and names but **does not** commit remote D1 `database_id` or KV `id` /
-`preview_id`, so forks do not accidentally bind to another project’s resources.
+[`packages/worker/wrangler.jsonc`](../../packages/worker/wrangler.jsonc)
+declares bindings and names but **does not** commit remote D1 `database_id` or
+KV `id` / `preview_id`, so forks do not accidentally bind to another project’s
+resources.
 
 Production CI deploys ensure these resources exist (create when missing) and
 write resolved IDs into `packages/worker/wrangler-production.generated.json`
@@ -39,7 +40,7 @@ The starter intentionally keeps the default footprint small. If you want to add
 additional Cloudflare offerings (R2, Workers AI, AI Gateway, or a separate KV
 namespace for app data), see:
 
-- `docs/cloudflare-offerings.md`
+- `docs/contributing/cloudflare-offerings.md`
 
 ## Rate limiting (Cloudflare dashboard)
 

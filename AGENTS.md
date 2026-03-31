@@ -15,7 +15,7 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   what still needs explicit validation.
 
 - Project intent and scope:
-  - [docs/project-intent.md](./docs/project-intent.md)
+  - [docs/contributing/project-intent.md](./docs/contributing/project-intent.md)
 - Setup, checks, docs maintenance, preview deploys, and seeding:
   - [docs/contributing/setup.md](./docs/contributing/setup.md)
 - Code style conventions:
@@ -32,9 +32,9 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 - MCP capabilities (search/execute graph, domains, registry):
   - [docs/contributing/adding-capabilities.md](./docs/contributing/adding-capabilities.md)
 - Project setup references:
-  - [docs/getting-started.md](./docs/getting-started.md)
-  - [docs/environment-variables.md](./docs/environment-variables.md)
-  - [docs/setup-manifest.md](./docs/setup-manifest.md)
+  - [docs/contributing/getting-started.md](./docs/contributing/getting-started.md)
+  - [docs/contributing/environment-variables.md](./docs/contributing/environment-variables.md)
+  - [docs/contributing/setup-manifest.md](./docs/contributing/setup-manifest.md)
 - Architecture references:
   - [docs/contributing/architecture/index.md](./docs/contributing/architecture/index.md)
   - [docs/contributing/architecture/request-lifecycle.md](./docs/contributing/architecture/request-lifecycle.md)

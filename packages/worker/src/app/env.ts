@@ -16,7 +16,7 @@ export function getEnv(env: Env): AppEnv {
 			.join(', ')
 
 		throw new Error(
-			`Invalid environment variables: ${message}.\n\n💡 Tip: Check \`docs/environment-variables.md\` for details.`,
+			`Invalid environment variables: ${message}.\n\n💡 Tip: Check \`docs/contributing/environment-variables.md\` for details.`,
 		)
 	}
 

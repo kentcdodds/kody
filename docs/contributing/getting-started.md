@@ -8,9 +8,10 @@ tell the user what else they need to do themselves.
 Use these steps to run `kody` locally and on Cloudflare Workers.
 
 If you are here to understand the purpose of this repository rather than set it
-up, read [`docs/project-intent.md`](./project-intent.md) first. This repo still
-has some template lineage in its docs and structure, but the current project
-intent is to build a personal assistant with an MCP-first architecture.
+up, read [`docs/contributing/project-intent.md`](./project-intent.md) first.
+This repo still has some template lineage in its docs and structure, but the
+current project intent is to build a personal assistant with an MCP-first
+architecture.
 
 ## Create the project with degit
 
@@ -35,22 +36,22 @@ The setup flow assumes:
 - You run commands from the repo root (needs `nx.json`, `package.json`, and
   `packages/worker/wrangler.jsonc`).
 - **Cloudflare D1 and KV**: The checked-in
-  [`packages/worker/wrangler.jsonc`](../packages/worker/wrangler.jsonc) declares
-  bindings and `database_name` values but does **not** commit remote resource
-  IDs (`database_id`, KV `id` / `preview_id`). Production and preview deploys
-  run ensure scripts that create or resolve resources and write generated
-  Wrangler configs with real IDs (see `docs/contributing/setup.md`). **Local
-  development does not require** provisioning remote D1 or KV; `npm run dev`
-  uses local Wrangler persistence.
+  [`packages/worker/wrangler.jsonc`](../../packages/worker/wrangler.jsonc)
+  declares bindings and `database_name` values but does **not** commit remote
+  resource IDs (`database_id`, KV `id` / `preview_id`). Production and preview
+  deploys run ensure scripts that create or resolve resources and write
+  generated Wrangler configs with real IDs (see `docs/contributing/setup.md`).
+  **Local development does not require** provisioning remote D1 or KV;
+  `npm run dev` uses local Wrangler persistence.
 - You can write to files in the repository (the script updates config files and
   replaces template `kody` tokens across text files).
 - Wrangler is optional for post-download setup. It is only needed when you
   choose to create Cloudflare resources directly from the script.
 
-See `docs/setup-manifest.md` for required resources and secrets.
+See `docs/contributing/setup-manifest.md` for required resources and secrets.
 
 For optional Cloudflare offerings (R2, Workers AI, AI Gateway, extra KV), see
-`docs/cloudflare-offerings.md`.
+`docs/contributing/cloudflare-offerings.md`.
 
 ## Preflight checks
 
@@ -95,8 +96,8 @@ alone, so the workflow runs that ensure step before migrations/deploy.
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account)
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32` or similar)
-- See `docs/setup-manifest.md` (`GitHub Actions configuration`) for full
-  optional secrets/variables and where to get each value.
+- See `docs/contributing/setup-manifest.md` (`GitHub Actions configuration`) for
+  full optional secrets/variables and where to get each value.
 
 3. Deploy:
 

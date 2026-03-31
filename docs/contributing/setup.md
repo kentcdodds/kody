@@ -101,7 +101,7 @@ Quick notes for getting a local kody environment running.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
-  Vectorize plus Workers AI; see `docs/environment-variables.md`.
+  Vectorize plus Workers AI; see `docs/contributing/environment-variables.md`.
 - Add new mock API servers by following `docs/contributing/mock-api-servers.md`.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
   starting `npm run dev`.
@@ -164,8 +164,8 @@ dedicated Home Connector publish workflow.
 
 ## Documentation maintenance
 
-- Read `docs/project-intent.md` before making product-level changes or writing
-  docs that describe the project's goals.
+- Read `docs/contributing/project-intent.md` before making product-level changes
+  or writing docs that describe the project's goals.
 - Update `docs/contributing` when behavior, workflows, architecture notes, or
   verification guidance change.
 - Treat docs updates as part of done work.

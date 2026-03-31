@@ -40,7 +40,7 @@ types, runtime validation, and documentation in sync.
      `packages/worker/.env` files).
 
 4. **Update required resources docs**
-   - Add the variable to `docs/setup-manifest.md`.
+   - Add the variable to `docs/contributing/setup-manifest.md`.
 
 5. **Sync deploy config**
    - Add the variable to the relevant GitHub Actions workflows so it is passed

@@ -39,12 +39,13 @@ npx create-epicflare
 This will clone the template, install dependencies, run the guided setup, and
 start the dev server.
 
-See [`docs/getting-started.md`](./docs/getting-started.md) for the full setup
-paths and expectations. Contributors and agents should start with
-[`AGENTS.md`](./AGENTS.md) for repo-specific guidance.
+See
+[`docs/contributing/getting-started.md`](./docs/contributing/getting-started.md)
+for the full setup paths and expectations. Contributors and agents should start
+with [`AGENTS.md`](./AGENTS.md) for repo-specific guidance.
 
 If you are trying to understand what this repository is for, start with
-[`docs/project-intent.md`](./docs/project-intent.md).
+[`docs/contributing/project-intent.md`](./docs/contributing/project-intent.md).
 
 ## Tech Stack
 
@@ -87,15 +88,15 @@ Request → packages/worker/src/index.ts
 
 ## Documentation
 
-| Document                                                           | Description                          |
-| ------------------------------------------------------------------ | ------------------------------------ |
-| [`docs/getting-started.md`](./docs/getting-started.md)             | Setup, environment variables, deploy |
-| [`docs/environment-variables.md`](./docs/environment-variables.md) | Adding new env vars                  |
-| [`docs/cloudflare-offerings.md`](./docs/cloudflare-offerings.md)   | Optional Cloudflare integrations     |
-| [`docs/project-intent.md`](./docs/project-intent.md)               | Scope, goals, and non-goals          |
-| [`docs/contributing/index.md`](./docs/contributing/index.md)       | Developing and extending Kody        |
-| [`docs/use/index.md`](./docs/use/index.md)                         | Using Kody over MCP                  |
-| [`docs/contributing/setup.md`](./docs/contributing/setup.md)       | Local development and verification   |
+| Document                                                                                     | Description                          |
+| -------------------------------------------------------------------------------------------- | ------------------------------------ |
+| [`docs/contributing/getting-started.md`](./docs/contributing/getting-started.md)             | Setup, environment variables, deploy |
+| [`docs/contributing/environment-variables.md`](./docs/contributing/environment-variables.md) | Adding new env vars                  |
+| [`docs/contributing/cloudflare-offerings.md`](./docs/contributing/cloudflare-offerings.md)   | Optional Cloudflare integrations     |
+| [`docs/contributing/project-intent.md`](./docs/contributing/project-intent.md)               | Scope, goals, and non-goals          |
+| [`docs/contributing/index.md`](./docs/contributing/index.md)                                 | Developing and extending Kody        |
+| [`docs/use/index.md`](./docs/use/index.md)                                                   | Using Kody over MCP                  |
+| [`docs/contributing/setup.md`](./docs/contributing/setup.md)                                 | Local development and verification   |
 
 ---
 
