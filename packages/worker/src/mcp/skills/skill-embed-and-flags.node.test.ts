@@ -59,6 +59,7 @@ test('buildSkillEmbedText keeps inferred capability names lightweight', () => {
 		},
 	]
 	const text = buildSkillEmbedText({
+		skillName: 'launch-cursor-cloud-agent',
 		title: 't',
 		description: 'd',
 		collectionName: 'GitHub automation',
@@ -72,6 +73,8 @@ test('buildSkillEmbedText keeps inferred capability names lightweight', () => {
 	const lines = text.split('\n')
 	expect(lines).toEqual(
 		expect.arrayContaining([
+			'name launch-cursor-cloud-agent',
+			'launch cursor cloud agent',
 			't',
 			'd',
 			'collection GitHub automation',

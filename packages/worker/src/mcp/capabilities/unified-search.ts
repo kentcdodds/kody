@@ -40,6 +40,83 @@ function buildSkillUsage(skillName: string): string {
 	return `Run with meta_run_skill: ${runArgs}. Optionally include "params": { ... }. To inspect code, call meta_get_skill then execute.`
 }
 
+function normalizeSearchPhrase(value: string | null | undefined): string {
+	return (value ?? '')
+		.toLowerCase()
+		.replace(/[-_]+/g, ' ')
+		.replace(/[^a-z0-9\s]+/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+}
+
+function scoreSkillPhraseMatch(
+	normalizedQuery: string,
+	value: string | null | undefined,
+): number {
+	const normalizedValue = normalizeSearchPhrase(value)
+	if (!normalizedQuery || !normalizedValue) return 0
+	if (normalizedValue === normalizedQuery) return 1.5
+	if (normalizedValue.includes(normalizedQuery)) return 1
+	return 0
+}
+
+function scoreSkillLexicalMatch(
+	query: string,
+	row: McpSkillRow,
+	doc: string,
+	keywords: ReadonlyArray<string>,
+): number {
+	const normalizedQuery = normalizeSearchPhrase(query)
+	let bonus = 0
+
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.title) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.description) * 1.25
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.search_text) * 1
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.collection_name) * 0.25
+	for (const keyword of keywords) {
+		bonus += scoreSkillPhraseMatch(normalizedQuery, keyword) * 0.5
+	}
+
+	return lexicalScore(query, doc) + bonus
+}
+
+function scoreCapabilityLexicalMatch(
+	query: string,
+	hit: CapabilitySearchHit,
+): number {
+	const normalizedQuery = normalizeSearchPhrase(query)
+	const doc = [hit.name, hit.domain, hit.description].join('\n')
+	let bonus = 0
+	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.name) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.description) * 1
+	return lexicalScore(query, doc) + bonus
+}
+
+function scoreSecretLexicalMatch(query: string, hit: SecretSearchHit): number {
+	const normalizedQuery = normalizeSearchPhrase(query)
+	const doc = [hit.name, hit.description].join('\n')
+	let bonus = 0
+	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.name) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.description) * 1
+	return lexicalScore(query, doc) + bonus
+}
+
+function scoreUiArtifactLexicalMatch(
+	query: string,
+	hit: UiArtifactSearchHit,
+): number {
+	const normalizedQuery = normalizeSearchPhrase(query)
+	const parameterText = (hit.parameters ?? [])
+		.map((parameter) => `${parameter.name} ${parameter.description}`)
+		.join('\n')
+	const doc = [hit.title, hit.description, hit.runtime, parameterText].join('\n')
+	let bonus = 0
+	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.title) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.description) * 1
+	return lexicalScore(query, doc) + bonus
+}
+
 function skillRowEmbedDoc(
 	row: McpSkillRow,
 	specs: Record<string, CapabilitySpec>,
@@ -56,6 +133,7 @@ function skillRowEmbedDoc(
 		inferred = []
 	}
 	return buildSkillEmbedText({
+		skillName: row.name,
 		title: row.title,
 		description: row.description,
 		collectionName: row.collection_name,
@@ -188,9 +266,21 @@ async function searchSkillsForUser(input: {
 			(row) => [row.id, skillRowEmbedDoc(row, input.specs)] as const,
 		),
 	)
+	const keywordsById = Object.fromEntries(
+		filteredRows.map((row) => [row.id, parseJsonStringArray(row.keywords)] as const),
+	)
+	const lexicalScoreById = Object.fromEntries(
+		ids.map((id) => {
+			const row = idSet.get(id)!
+			return [
+				id,
+				scoreSkillLexicalMatch(q, row, docsById[id]!, keywordsById[id] ?? []),
+			] as const
+		}),
+	)
 
 	const lexicalOrder = sortIdsByScore(ids, (id) =>
-		lexicalScore(q, docsById[id]!),
+		lexicalScoreById[id]!,
 	)
 
 	let vectorOrder: Array<string>
@@ -262,10 +352,18 @@ async function searchSkillsForUser(input: {
 		[lexicalOrder, vectorOrder],
 		CAPABILITY_SEARCH_RRF_K,
 	)
-	const ordered = sortIdsByScore(ids, (id) => fused.get(id) ?? 0).slice(
-		0,
-		Math.max(1, Math.min(input.limit, ids.length)),
-	)
+	const ordered = [...ids]
+		.sort((a, b) => {
+			const fusedDiff = (fused.get(b) ?? 0) - (fused.get(a) ?? 0)
+			if (fusedDiff !== 0) return fusedDiff
+			const lexicalDiff = lexicalScoreById[b]! - lexicalScoreById[a]!
+			if (lexicalDiff !== 0) return lexicalDiff
+			return (
+				(vectorRankById.get(a) ?? Number.MAX_SAFE_INTEGER) -
+				(vectorRankById.get(b) ?? Number.MAX_SAFE_INTEGER)
+			)
+		})
+		.slice(0, Math.max(1, Math.min(input.limit, ids.length)))
 
 	const matches = ordered.map((id) => {
 		const row = idSet.get(id)!
@@ -355,10 +453,11 @@ export async function searchUnified(input: {
 	const builtinFilter: VectorizeVectorMetadataFilter = {
 		kind: { $eq: 'builtin' },
 	}
+	const candidateLimit = Math.min(100, Math.max(input.limit * 3, 25))
 	const capResult = await searchCapabilities({
 		env: input.env,
 		query: input.query,
-		limit: input.limit,
+		limit: candidateLimit,
 		detail: false,
 		specs: input.specs,
 		vectorMetadataFilter: isCapabilitySearchOffline(input.env)
@@ -387,13 +486,13 @@ export async function searchUnified(input: {
 	if (input.userId) {
 		secretResult = await searchSecretsForUser({
 			query: input.query,
-			limit: input.limit,
+			limit: candidateLimit,
 			rows: input.userSecretRows,
 		})
 		skillResult = await searchSkillsForUser({
 			env: input.env,
 			query: input.query,
-			limit: input.limit,
+			limit: candidateLimit,
 			specs: input.specs,
 			userId: input.userId,
 			collectionSlug: input.skillCollectionSlug,
@@ -403,28 +502,12 @@ export async function searchUnified(input: {
 			baseUrl: input.baseUrl,
 			env: input.env,
 			query: input.query,
-			limit: input.limit,
+			limit: candidateLimit,
 			userId: input.userId,
 			rows: input.uiArtifactRows,
 			appSecretsByAppId: input.appSecretsByAppId,
 		})
 	}
-
-	const capKeys = capResult.matches.map((m) => `c:${m.name}`)
-	const skillKeys = skillResult.matches.map((m) => `s:${m.skillName}`)
-	const secretKeys = secretResult.matches.map((m) => `u:${m.name}`)
-	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
-	const fusedCross = reciprocalRankFusion(
-		[capKeys, skillKeys, secretKeys, uiArtifactKeys],
-		CAPABILITY_SEARCH_RRF_K,
-	)
-	const allKeys = [
-		...new Set([...capKeys, ...skillKeys, ...secretKeys, ...uiArtifactKeys]),
-	]
-	const sortedKeys = sortIdsByScore(
-		allKeys,
-		(k) => fusedCross.get(k) ?? 0,
-	).slice(0, Math.max(1, input.limit))
 
 	const capByName = new Map(capResult.matches.map((m) => [m.name, m] as const))
 	const skillByName = new Map(
@@ -436,6 +519,80 @@ export async function searchUnified(input: {
 	const uiArtifactById = new Map(
 		uiArtifactResult.matches.map((m) => [m.appId, m] as const),
 	)
+	const capKeys = capResult.matches.map((m) => `c:${m.name}`)
+	const skillKeys = skillResult.matches.map((m) => `s:${m.skillName}`)
+	const secretKeys = secretResult.matches.map((m) => `u:${m.name}`)
+	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
+	const fusedCross = reciprocalRankFusion(
+		[capKeys, skillKeys, secretKeys, uiArtifactKeys],
+		CAPABILITY_SEARCH_RRF_K,
+	)
+	const allKeys = [
+		...new Set([...capKeys, ...skillKeys, ...secretKeys, ...uiArtifactKeys]),
+	]
+	function getEntityScore(key: string): number {
+		if (key.startsWith('c:')) {
+			return capByName.get(key.slice(2))?.fusedScore ?? 0
+		}
+		if (key.startsWith('s:')) {
+			return skillByName.get(key.slice(2))?.fusedScore ?? 0
+		}
+		if (key.startsWith('u:')) {
+			return secretByName.get(key.slice(2))?.fusedScore ?? 0
+		}
+		if (key.startsWith('a:')) {
+			return uiArtifactById.get(key.slice(2))?.fusedScore ?? 0
+		}
+		return 0
+	}
+	function getUnifiedLexicalScore(key: string): number {
+		if (key.startsWith('c:')) {
+			const hit = capByName.get(key.slice(2))
+			return hit ? scoreCapabilityLexicalMatch(input.query, hit) : 0
+		}
+		if (key.startsWith('s:')) {
+			const hit = skillByName.get(key.slice(2))
+			if (!hit) return 0
+			return (
+				lexicalScore(input.query, [
+					hit.skillName,
+					hit.title,
+					hit.description,
+					hit.collection ?? '',
+					hit.keywords.join(' '),
+				].join('\n')) +
+				scoreSkillPhraseMatch(normalizeSearchPhrase(input.query), hit.skillName) *
+					2 +
+				scoreSkillPhraseMatch(normalizeSearchPhrase(input.query), hit.title) *
+					1.5 +
+				scoreSkillPhraseMatch(
+					normalizeSearchPhrase(input.query),
+					hit.description,
+				) *
+					1.25
+			)
+		}
+		if (key.startsWith('u:')) {
+			const hit = secretByName.get(key.slice(2))
+			return hit ? scoreSecretLexicalMatch(input.query, hit) : 0
+		}
+		if (key.startsWith('a:')) {
+			const hit = uiArtifactById.get(key.slice(2))
+			return hit ? scoreUiArtifactLexicalMatch(input.query, hit) : 0
+		}
+		return 0
+	}
+	const sortedKeys = [...allKeys]
+		.sort((a, b) => {
+			const fusedDiff = (fusedCross.get(b) ?? 0) - (fusedCross.get(a) ?? 0)
+			if (fusedDiff !== 0) return fusedDiff
+			const lexicalDiff = getUnifiedLexicalScore(b) - getUnifiedLexicalScore(a)
+			if (lexicalDiff !== 0) return lexicalDiff
+			const entityDiff = getEntityScore(b) - getEntityScore(a)
+			if (entityDiff !== 0) return entityDiff
+			return a.localeCompare(b)
+		})
+		.slice(0, Math.max(1, input.limit))
 
 	const matches: Array<UnifiedSearchMatch> = []
 	for (const key of sortedKeys) {

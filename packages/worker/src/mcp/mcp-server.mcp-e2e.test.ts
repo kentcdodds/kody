@@ -311,6 +311,74 @@ test('mcp server saves and browses skill collections', async () => {
 	)
 })
 
+test('mcp search surfaces strongly matching saved skills without collection filters', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_save_skill({
+					name: 'launch-cursor-cloud-agent',
+					title: 'Launch Cursor Cloud Agent',
+					description: 'Launch a Cursor Cloud Agent for autonomous coding tasks.',
+					collection: 'Cursor',
+					keywords: ['cursor', 'cloud', 'agent', 'launch'],
+					code: 'async () => ({ ok: true })',
+					search_text: 'launch cursor cloud agent autonomous coding task',
+					read_only: true,
+					idempotent: true,
+					destructive: false,
+				})
+			}`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					name?: string
+				}
+		  }
+		| undefined
+	expect(saveStructured?.result?.name).toBe('launch-cursor-cloud-agent')
+
+	for (const query of ['launch Cursor Cloud agent', 'Cursor Cloud agent']) {
+		const searchResult = await mcpClient.client.callTool({
+			name: 'search',
+			arguments: {
+				query,
+				limit: 10,
+				maxResponseSize: 20_000,
+			},
+		})
+		const searchText = getTextContent((searchResult as CallToolResult).content)
+		const searchStructured = (searchResult as CallToolResult)
+			.structuredContent as
+			| {
+					result?: {
+						matches?: Array<{
+							type?: string
+							id?: string
+							name?: string
+							title?: string
+						}>
+					}
+			  }
+			| undefined
+
+		expect(searchText).toContain('Launch Cursor Cloud Agent')
+		expect(searchStructured?.result?.matches?.some((match) => {
+			return (
+				match.type === 'skill' &&
+				match.id === 'launch-cursor-cloud-agent' &&
+				match.name === 'launch-cursor-cloud-agent'
+			)
+		})).toBe(true)
+	}
+})
+
 test('mcp server executes user code against codemode and tracks execute context', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
