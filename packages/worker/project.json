@@ -76,6 +76,23 @@
 				"command": "node tools/prepare-e2e-env.ts && vitest run --project mcp-e2e"
 			}
 		},
+		"test-e2e": {
+			"executor": "nx:run-commands",
+			"dependsOn": ["build-client"],
+			"inputs": [
+				"{workspaceRoot}/e2e/**/*",
+				"{workspaceRoot}/playwright.config.ts",
+				"{workspaceRoot}/packages/worker/.env.example",
+				"default"
+			],
+			"outputs": [
+				"{workspaceRoot}/playwright-report",
+				"{workspaceRoot}/test-results"
+			],
+			"options": {
+				"command": "playwright test"
+			}
+		},
 		"deploy": {
 			"executor": "nx:run-commands",
 			"options": {

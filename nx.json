@@ -23,6 +23,9 @@
 		"test-mcp": {
 			"cache": true
 		},
+		"test-e2e": {
+			"cache": true
+		},
 		"dev": {
 			"cache": false
 		},
