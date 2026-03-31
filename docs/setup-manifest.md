@@ -90,9 +90,10 @@ automatically:
   `SKIP_CLOUDFLARE_MOCK=1`. The `cloudflare_rest` capability expects API paths
   under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
-  `POST /__maintenance/reindex-capabilities` and
-  `POST /__maintenance/reindex-skills` to embed and upsert builtin capabilities
-  and all user skills into Vectorize)
+  `POST /__maintenance/reindex-capabilities`,
+  `POST /__maintenance/reindex-skills`, and
+  `POST /__maintenance/reindex-apps` to embed and upsert builtin capabilities,
+  all user skills, and discoverable saved apps into Vectorize)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `packages/worker/.env`.

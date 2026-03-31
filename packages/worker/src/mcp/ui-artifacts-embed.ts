@@ -4,7 +4,6 @@ export function buildUiArtifactEmbedText(
 	input: {
 		title: string
 		description: string
-		code: string
 		runtime: string
 		parameters?: Array<{
 			name: string
@@ -38,7 +37,6 @@ export function buildUiArtifactEmbedText(
 	const text = [
 		input.title,
 		input.description,
-		input.code,
 		input.runtime,
 		'mcp app',
 		'ui artifact',

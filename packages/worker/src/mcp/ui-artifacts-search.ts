@@ -13,6 +13,7 @@ import { type SecretMetadata } from '#mcp/secrets/types.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
+import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 
 function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 	const secretText =
@@ -24,7 +25,6 @@ function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 	return `${buildUiArtifactEmbedText({
 		title: row.title,
 		description: row.description,
-		code: row.code,
 		runtime: row.runtime,
 		parameters: parseUiArtifactParameters(row.parameters),
 	})}${secretText}`
@@ -64,6 +64,7 @@ export type UiArtifactSearchHitSummary = {
 	domain: 'apps'
 	title: string
 	description: string
+	hostedUrl: string
 	runtime: string
 	parameters: Array<{
 		name: string
@@ -82,18 +83,11 @@ export type UiArtifactSearchHitSummary = {
 	vectorRank?: number
 }
 
-export type UiArtifactSearchHitDetail = UiArtifactSearchHitSummary & {
-	createdAt: string
-	updatedAt: string
-}
-
-export type UiArtifactSearchHit =
-	| UiArtifactSearchHitSummary
-	| UiArtifactSearchHitDetail
+export type UiArtifactSearchHit = UiArtifactSearchHitSummary
 
 function rowToUiArtifactHit(
 	row: UiArtifactRow,
-	detail: boolean,
+	baseUrl: string,
 	fusedScore: number,
 	lexicalRank?: number,
 	vectorRank?: number,
@@ -106,6 +100,7 @@ function rowToUiArtifactHit(
 		domain: 'apps',
 		title: row.title,
 		description: row.description,
+		hostedUrl: buildSavedUiUrl(baseUrl, row.id),
 		runtime: row.runtime,
 		parameters,
 		usage: buildUsage(row),
@@ -117,21 +112,14 @@ function rowToUiArtifactHit(
 		lexicalRank,
 		vectorRank,
 	}
-	if (detail) {
-		return {
-			...base,
-			createdAt: row.created_at,
-			updatedAt: row.updated_at,
-		}
-	}
 	return base
 }
 
 export async function searchUiArtifactsForUser(input: {
+	baseUrl: string
 	env: Env
 	query: string
 	limit: number
-	detail: boolean
 	userId: string
 	rows: Array<UiArtifactRow>
 	appSecretsByAppId?: Map<string, Array<SecretMetadata>>
@@ -228,7 +216,7 @@ export async function searchUiArtifactsForUser(input: {
 		matches: ordered.map((id) =>
 			rowToUiArtifactHit(
 				rowById.get(id)!,
-				input.detail,
+				input.baseUrl,
 				fused.get(id) ?? 0,
 				lexicalRankById.get(id),
 				vectorRankById.get(id),

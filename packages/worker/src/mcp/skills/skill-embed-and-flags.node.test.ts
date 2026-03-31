@@ -49,7 +49,7 @@ test('mergeInferredCapabilityNames splits unknown names', () => {
 	expect(merged).toEqual(['ui_save_app'])
 })
 
-test('buildSkillEmbedText includes denormalized capability text', () => {
+test('buildSkillEmbedText keeps inferred capability names lightweight', () => {
 	const parameters: Array<SkillParameterDefinition> = [
 		{
 			name: 'owner',
@@ -80,20 +80,11 @@ test('buildSkillEmbedText includes denormalized capability text', () => {
 			'meta',
 			'skill',
 			'owner: GitHub repo owner. (string)',
+			'inferred capabilities: ui_save_app',
 		]),
 	)
-	const denormalizedLines = lines.slice(
-		lines.indexOf('owner: GitHub repo owner. (string)') + 1,
-	)
-	expect(denormalizedLines).toEqual(
-		expect.arrayContaining([
-			'ui_save_app',
-			capabilityDomainNames.apps,
-			'Save a generated UI artifact.',
-			'app ui artifact',
-			'title description keywords source app_id',
-		]),
-	)
+	expect(text).not.toContain('Save a generated UI artifact.')
+	expect(text).not.toContain('title description keywords source app_id')
 })
 
 test('validateSkillSaveFlags rejects read_only with destructive inferred set', () => {

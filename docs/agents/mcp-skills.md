@@ -81,6 +81,10 @@ capabilities, via **`CAPABILITY_REINDEX_SECRET`**) re-embeds every row in
 `mcp_skills` and upserts `skill_<uuid>` vectors. Use when D1 and Vectorize are
 out of sync for saved skills (e.g. after a restore or manual D1 edits).
 
+**`POST /__maintenance/reindex-apps`** (same auth secret) re-embeds visible
+saved UI artifacts and upserts `ui_artifact_<uuid>` vectors after app-search
+embed text changes or any D1/Vectorize drift.
+
 For broken skills, prefer **`meta_update_skill`** to fix stored code in place;
 alternatively **`meta_delete_skill`** + **`meta_save_skill`**. There is no
 versioning.

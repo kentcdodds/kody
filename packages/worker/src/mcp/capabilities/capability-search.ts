@@ -99,6 +99,7 @@ export function sortIdsByScore(
 export type CapabilitySummaryRow = {
 	name: string
 	domain: string
+	description: string
 	requiredInputFields: Array<string>
 }
 
@@ -126,6 +127,7 @@ function toSummary(spec: CapabilitySpec): CapabilitySummaryRow {
 	return {
 		name: spec.name,
 		domain: spec.domain,
+		description: spec.description,
 		requiredInputFields: spec.requiredInputFields,
 	}
 }

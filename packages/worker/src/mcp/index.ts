@@ -53,17 +53,18 @@ Domains
 ${domainInstructions}
 
 How to use search
-- Call the 'search' tool with a natural-language 'query' describing what you need (optional 'limit', 'detail').
+- Call the 'search' tool with a natural-language 'query' describing what you need (optional 'limit').
+- Search returns compact markdown plus slim structured results. Order implies rank.
 - ${conversationIdGuidance}
 - Narrow results by rephrasing 'query', or use the optional 'skill_collection' filter when you only want saved skills from one collection slug.
 - Saved skills appear when the MCP client provides an authenticated user; use 'meta_get_skill' for full skill code.
 - Use domain descriptions above as vocabulary hints in your query text.
-- Use 'detail: true' when you need full JSON schemas and metadata.
+- To inspect one result in more depth, call \`search\` again with \`entity: "{id}:{type}"\` where \`type\` is \`capability\`, \`skill\`, \`app\`, or \`secret\`.
 - Example: search({ query: 'saved dashboard app or generated UI runtime' })
-- Example: search({ query: 'repository automation pull requests', detail: true })
-- Example: search({ query: 'Cloudflare API zones dns workers d1', detail: true })
-- Example: search({ query: 'REST API documentation markdown' })
-- Example: search({ query: 'Cloudflare API docs markdown' })
+- Example: search({ query: 'repository automation pull requests' })
+- Example: search({ query: 'Cloudflare API zones dns workers d1' })
+- Example: search({ entity: 'cloudflare_rest:capability' })
+- Example: search({ entity: '70a6a63f-2711-4617-b273-ec95f3be114b:skill' })
 
 Destructive Cloudflare access
 - The cloudflare_rest capability can change or delete Cloudflare resources such as DNS records, Workers settings, routes, or account configuration (POST/PUT/PATCH/DELETE).

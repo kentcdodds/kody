@@ -2,8 +2,6 @@ import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type SkillParameterDefinition } from './skill-parameters.ts'
 
 const defaultSkillEmbedMaxChars = 8_000
-const maxDenormalizedCaps = 12
-
 export function mergeInferredCapabilityNames(input: {
 	astStaticNames: Array<string>
 	usesCapabilities: Array<string> | undefined
@@ -60,25 +58,14 @@ export function buildSkillEmbedText(
 					(param) => `${param.name}: ${param.description} (${param.type})`,
 				)
 			: []
-	const denorm: Array<string> = []
-	let capCount = 0
-	for (const name of input.inferredCapabilities) {
-		if (capCount >= maxDenormalizedCaps) break
-		const spec = input.specs[name]
-		if (!spec) continue
-		capCount += 1
-		const fields = [...spec.inputFields, ...spec.outputFields].join(' ')
-		denorm.push(
-			[
-				name,
-				spec.domain,
-				spec.description,
-				spec.keywords.join(' '),
-				fields,
-			].join('\n'),
-		)
-	}
-	const text = [...baseParts, ...parameterParts, ...denorm].join('\n')
+	const inferredCapabilityNames = input.inferredCapabilities
+		.filter((name) => input.specs[name] != null)
+		.sort()
+	const inferredParts =
+		inferredCapabilityNames.length > 0
+			? [`inferred capabilities: ${inferredCapabilityNames.join(', ')}`]
+			: []
+	const text = [...baseParts, ...parameterParts, ...inferredParts].join('\n')
 	return text.slice(0, maxChars)
 }
 

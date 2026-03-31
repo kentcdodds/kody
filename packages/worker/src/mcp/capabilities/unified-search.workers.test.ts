@@ -56,6 +56,7 @@ test('skill search hits include usage hints', async () => {
 
 	const result = await searchUnified({
 		env,
+		baseUrl: 'http://localhost',
 		query: 'open pull requests for cursor agents',
 		limit: 5,
 		detail: false,
@@ -79,36 +80,6 @@ test('skill search hits include usage hints', async () => {
 	expect(skill.collectionSlug).toBe('github-workflows')
 })
 
-test('skill detail hits include usage hints', async () => {
-	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
-	const skillRow = createSkillRow('skill-usage-detail')
-	const specs = {} as Record<string, CapabilitySpec>
-
-	const result = await searchUnified({
-		env,
-		query: 'cursor agents with open prs',
-		limit: 5,
-		detail: true,
-		specs,
-		userId: 'user-123',
-		skillRows: [skillRow],
-		uiArtifactRows: [],
-		userSecretRows: [],
-		appSecretsByAppId: new Map(),
-	})
-
-	const skill = result.matches.find((match) => match.type === 'skill')
-	if (!skill || skill.type !== 'skill') {
-		throw new Error('Expected a skill match in results.')
-	}
-
-	expect(skill.usage).toContain('meta_get_skill')
-	expect(skill.usage).toContain(skillRow.id)
-	expect(skill.usage).toContain('"params"')
-	expect(skill.collection).toBe('GitHub Workflows')
-	expect(skill.collectionSlug).toBe('github-workflows')
-})
-
 test('skill collection filter narrows saved skill matches', async () => {
 	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
 	const specs = {} as Record<string, CapabilitySpec>
@@ -125,9 +96,9 @@ test('skill collection filter narrows saved skill matches', async () => {
 
 	const result = await searchUnified({
 		env,
+		baseUrl: 'http://localhost',
 		query: 'github pull requests',
 		limit: 5,
-		detail: true,
 		specs,
 		userId: 'user-123',
 		skillCollectionSlug: 'github-workflows',
@@ -154,9 +125,9 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 
 	const result = await searchUnified({
 		env,
+		baseUrl: 'http://localhost',
 		query: 'cloudflare deploy token',
 		limit: 5,
-		detail: true,
 		specs,
 		userId: 'user-123',
 		skillRows: [],
@@ -205,4 +176,5 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 		},
 	])
 	expect(app.usage).toContain('"params"')
+	expect(app.hostedUrl).toBe('http://localhost/ui/app-123')
 })

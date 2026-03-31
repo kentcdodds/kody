@@ -8,16 +8,23 @@ import {
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
+import {
+	getMcpSkillById,
+	listMcpSkillsByUserId,
+} from '#mcp/skills/mcp-skills-repo.ts'
 import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
-import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import {
+	getUiArtifactById,
+	listUiArtifactsByUserId,
+} from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	getHomeConnectorStatus,
 	type HomeConnectorStatus,
 } from '#worker/home/status.ts'
+import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -28,25 +35,20 @@ import {
 	memoryContextInputField,
 	resolveConversationId,
 } from './tool-call-context.ts'
+import {
+	type SearchResultStructuredContent,
+	formatEntityDetailMarkdown,
+	formatSearchMarkdown,
+	parseEntityRef,
+	toSlimStructuredMatches,
+} from './search-format.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 
 const charsPerToken = 4
 const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
 const defaultSearchLimit = 15
-const detailSearchLimit = 5
 const defaultMaxResponseSize = 4_000
-
-type SearchPayload = {
-	matches: Awaited<ReturnType<typeof searchUnified>>['matches']
-	offline: boolean
-	warnings: Array<string>
-	homeConnectorStatus?: HomeConnectorStatus
-}
-
-function stringifySearchPayload(value: unknown): string {
-	return JSON.stringify(value, null, 2) ?? 'undefined'
-}
 
 function truncateSearchText(text: string): string {
 	if (text.length <= maxChars) return text
@@ -56,28 +58,28 @@ function truncateSearchText(text: string): string {
 	).toLocaleString()} tokens (limit: ${maxTokens.toLocaleString()}). Lower the limit, maxResponseSize, or ask a shorter query.`
 }
 
-function applyMaxResponseSize(
-	payload: SearchPayload,
+function applyMaxResponseSize<TPayload>(
+	payload: TPayload,
 	maxResponseSize: number,
-): { payload: SearchPayload; serialized: string } {
+	format: (payload: TPayload) => string,
+	trim: (payload: TPayload, count: number) => TPayload,
+	getCount: (payload: TPayload) => number,
+): { payload: TPayload; serialized: string } {
 	if (!Number.isFinite(maxResponseSize) || maxResponseSize <= 0) {
-		const serialized = stringifySearchPayload(payload)
+		const serialized = format(payload)
 		return { payload, serialized }
 	}
 
-	const total = payload.matches.length
+	const total = getCount(payload)
 	let low = 0
 	let high = total
-	let bestPayload: SearchPayload = { ...payload, matches: [] }
-	let bestSerialized = stringifySearchPayload(bestPayload)
+	let bestPayload = trim(payload, 0)
+	let bestSerialized = format(bestPayload)
 
 	while (low <= high) {
 		const mid = Math.floor((low + high) / 2)
-		const trimmedPayload: SearchPayload = {
-			...payload,
-			matches: payload.matches.slice(0, mid),
-		}
-		const serialized = stringifySearchPayload(trimmedPayload)
+		const trimmedPayload = trim(payload, mid)
+		const serialized = format(trimmedPayload)
 		if (serialized.length <= maxResponseSize) {
 			bestPayload = trimmedPayload
 			bestSerialized = serialized
@@ -96,7 +98,9 @@ const searchTool = {
 	description: `
 Search Kody **builtin capabilities**, your saved **skills** (meta domain), your saved **apps** (apps domain), and your reusable **user secret references** by natural language before calling \`execute\` or opening a UI.
 
-Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\` and then pass its code to \`execute\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\`. User-scoped secret references never include raw secret values; inspect secret metadata during execution with \`codemode.secret_list(...)\`, and use generated UI when the user needs to provide a missing secret. App-bound secrets are attached to their corresponding app results rather than returned as standalone secret hits.
+Search returns compact **markdown** plus slim structured results. Use \`query\` for ranked search, or use \`entity\` with an exact reference like \`cloudflare_rest:capability\` or \`70a6a63f-2711-4617-b273-ec95f3be114b:skill\` to get focused markdown detail for a single result.
+
+Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\` or share its hosted URL with the user. User-scoped secret references never include raw secret values; inspect secret metadata during execution with \`codemode.secret_list(...)\`, and use generated UI when the user needs to provide a missing secret. App-bound secrets are attached to their corresponding app results rather than returned as standalone secret hits.
 
 If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
 
@@ -107,12 +111,12 @@ If search results seem incomplete, call \`meta_list_capabilities\` to inspect th
 
 Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. **Skills** require an authenticated MCP user.
 
-	Optional **limit** caps how many results are returned (defaults to 5 when **detail** is true, 15 otherwise). **detail: true** includes extra metadata (for skills: inferred capabilities, collection slug, etc.; for capabilities: JSON schemas where applicable). Optional **maxResponseSize** trims low-ranked results to keep responses small. Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
+	Optional **limit** caps how many ranked results are returned (defaults to 15). Optional **maxResponseSize** trims low-ranked results to keep responses small. Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
 - \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
-- \`{ "query": "Cloudflare DNS records", "detail": true }\`
+- \`{ "entity": "cloudflare_rest:capability" }\`
 - To run a skill: \`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds" } })\`
 - To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
 	`.trim(),
@@ -131,8 +135,32 @@ type OptionalSearchRowsResult = {
 	warnings: Array<string>
 }
 
+type SearchRowsAndRegistry = OptionalSearchRowsResult & {
+	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	appSecretsByAppId: Awaited<ReturnType<typeof listAppSecretsByAppIds>>
+}
+
 function shouldIncludeHomeConnectorStatus(status: HomeConnectorStatus) {
 	return status.state !== 'connected' || status.toolCount === 0
+}
+
+function serializeHomeConnectorStatus(
+	status: HomeConnectorStatus | null,
+):
+	| {
+			connectorId: string
+			state: string
+			connected: boolean
+			toolCount: number
+	  }
+	| undefined {
+	if (!status) return undefined
+	return {
+		connectorId: status.connectorId ?? 'unknown',
+		state: status.state,
+		connected: status.connected,
+		toolCount: status.toolCount,
+	}
 }
 
 export async function loadDownHomeConnectorStatus(input: {
@@ -195,6 +223,123 @@ export async function loadOptionalSearchRows(input: {
 	}
 }
 
+async function loadSearchRowsAndRegistry(input: {
+	agent: McpRegistrationAgent
+	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
+	userId: string | null
+	skillCollection?: string
+}) {
+	const registry = await getCapabilityRegistryForContext({
+		env: input.agent.getEnv(),
+		callerContext: input.callerContext,
+	})
+	const optionalRows = await loadOptionalSearchRows({
+		userId: input.userId,
+		loadSkills: () => listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
+		loadUiArtifacts: () =>
+			listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
+				hidden: false,
+			}),
+		loadUserSecrets: () =>
+			listUserSecretsForSearch({
+				env: input.agent.getEnv(),
+				userId: input.userId!,
+			}),
+	})
+	const appSecretsByAppId = input.userId
+		? await listAppSecretsByAppIds({
+				env: input.agent.getEnv(),
+				userId: input.userId,
+				appIds: optionalRows.uiArtifactRows.map((row) => row.id),
+			})
+		: new Map()
+	const skillCollectionSlug = input.skillCollection?.trim()
+		? slugifySkillCollectionName(input.skillCollection)
+		: undefined
+	return {
+		registry,
+		skillCollectionSlug,
+		appSecretsByAppId,
+		...optionalRows,
+	}
+}
+
+async function resolveEntityDetail(input: {
+	agent: McpRegistrationAgent
+	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
+	userId: string | null
+	entity: string
+	searchRows: SearchRowsAndRegistry
+}) {
+	const ref = parseEntityRef(input.entity)
+	if (ref.type === 'capability') {
+		const spec = input.searchRows.registry.capabilitySpecs[ref.id]
+		if (!spec) {
+			throw new Error('Capability not found.')
+		}
+		return {
+			type: 'capability' as const,
+			id: ref.id,
+			title: spec.name,
+			description: spec.description,
+			spec,
+		}
+	}
+
+	if (!input.userId) {
+		throw new Error('Authentication required to access saved user entities.')
+	}
+
+	if (ref.type === 'skill') {
+		const row = await getMcpSkillById(
+			input.agent.getEnv().APP_DB,
+			input.userId,
+			ref.id,
+		)
+		if (!row) {
+			throw new Error('Skill not found for this user.')
+		}
+		return {
+			type: 'skill' as const,
+			id: row.id,
+			title: row.title,
+			description: row.description,
+			row,
+		}
+	}
+
+	if (ref.type === 'app') {
+		const row = await getUiArtifactById(
+			input.agent.getEnv().APP_DB,
+			input.userId,
+			ref.id,
+		)
+		if (!row || row.hidden) {
+			throw new Error('Saved app not found for this user.')
+		}
+		return {
+			type: 'app' as const,
+			id: row.id,
+			title: row.title,
+			description: row.description,
+			row,
+			hostedUrl: buildSavedUiUrl(input.callerContext.baseUrl, row.id),
+		}
+	}
+
+	const row = input.searchRows.userSecretRows.find((secret) => secret.name === ref.id)
+	if (!row) {
+		throw new Error('Secret not found for this user.')
+	}
+	return {
+		type: 'secret' as const,
+		id: row.name,
+		title: row.name,
+		description: row.description,
+		row,
+	}
+}
+
 export async function registerSearchTool(agent: McpRegistrationAgent) {
 	agent.server.registerTool(
 		searchTool.name,
@@ -205,7 +350,15 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				query: z
 					.string()
 					.min(1)
+					.optional()
 					.describe('Natural language description of the capability you need.'),
+				entity: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						'Optional exact entity reference in the format "{id}:{type}" where type is capability, skill, app, or secret.',
+					),
 				skill_collection: z
 					.string()
 					.optional()
@@ -218,9 +371,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.max(100)
 					.optional()
-					.describe(
-						'Max number of results to return. Defaults to 5 when detail is true, 15 otherwise.',
-					),
+					.describe('Max number of ranked results to return. Defaults to 15.'),
 				maxResponseSize: z
 					.number()
 					.int()
@@ -229,21 +380,17 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.describe(
 						'Max response size in characters before trimming low-ranked results. Defaults to 4000.',
 					),
-				detail: z
-					.boolean()
-					.optional()
-					.describe('Include full metadata / schemas when true.'),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
 			},
 			annotations: searchTool.annotations,
 		},
 		async (args: {
-			query: string
+			query?: string
+			entity?: string
 			skill_collection?: string
 			limit?: number
 			maxResponseSize?: number
-			detail?: boolean
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
@@ -252,65 +399,88 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
-			const detail = args.detail === true
-			const limit =
-				args.limit ?? (detail ? detailSearchLimit : defaultSearchLimit)
+			if (!args.query && !args.entity) {
+				return {
+					content: prependToolMetadataContent(conversationId, [
+						{
+							type: 'text',
+							text: 'Error: Provide either "query" or "entity".',
+						},
+					]),
+					structuredContent: {
+						conversationId,
+						error: 'Provide either "query" or "entity".',
+					},
+					isError: true,
+				}
+			}
+			const limit = args.limit ?? defaultSearchLimit
 			const maxResponseSize = args.maxResponseSize ?? defaultMaxResponseSize
 			let warnings: Array<string> = []
 			let homeConnectorStatus: HomeConnectorStatus | null = null
 
 			const searchSpan = async () => {
-				const registry = await getCapabilityRegistryForContext({
-					env: agent.getEnv(),
+				const searchRows = await loadSearchRowsAndRegistry({
+					agent,
 					callerContext,
-				})
-				const optionalRows = await loadOptionalSearchRows({
 					userId,
-					loadSkills: () =>
-						listMcpSkillsByUserId(agent.getEnv().APP_DB, userId!),
-					loadUiArtifacts: () =>
-						listUiArtifactsByUserId(agent.getEnv().APP_DB, userId!, {
-							hidden: false,
-						}),
-					loadUserSecrets: () =>
-						listUserSecretsForSearch({
-							env: agent.getEnv(),
-							userId: userId!,
-						}),
+					skillCollection: args.skill_collection,
 				})
 				homeConnectorStatus = await loadDownHomeConnectorStatus({
 					env: agent.getEnv(),
 					homeConnectorId: callerContext.homeConnectorId ?? null,
 				})
-				warnings = optionalRows.warnings
-				const appSecretsByAppId = userId
-					? await listAppSecretsByAppIds({
-							env: agent.getEnv(),
+				warnings = searchRows.warnings
+
+				if (args.entity) {
+					return {
+						mode: 'entity' as const,
+						detail: await resolveEntityDetail({
+							agent,
+							callerContext,
 							userId,
-							appIds: optionalRows.uiArtifactRows.map((row) => row.id),
-						})
-					: new Map()
-				const skillCollectionSlug = args.skill_collection?.trim()
-					? slugifySkillCollectionName(args.skill_collection)
-					: undefined
-				return searchUnified({
-					env: agent.getEnv(),
-					query: args.query,
-					skillCollectionSlug,
-					limit,
-					detail,
-					specs: registry.capabilitySpecs,
-					userId,
-					skillRows: optionalRows.skillRows,
-					uiArtifactRows: optionalRows.uiArtifactRows,
-					userSecretRows: optionalRows.userSecretRows,
-					appSecretsByAppId,
-				})
+							entity: args.entity,
+							searchRows: {
+								registry: searchRows.registry,
+								skillRows: searchRows.skillRows,
+								uiArtifactRows: searchRows.uiArtifactRows,
+								userSecretRows: searchRows.userSecretRows,
+								warnings: searchRows.warnings,
+								appSecretsByAppId: searchRows.appSecretsByAppId,
+							},
+						}),
+					}
+				}
+
+				return {
+					mode: 'list' as const,
+					result: await searchUnified({
+						baseUrl,
+						env: agent.getEnv(),
+						query: args.query!,
+						skillCollectionSlug: searchRows.skillCollectionSlug,
+						limit,
+						specs: searchRows.registry.capabilitySpecs,
+						userId,
+						skillRows: searchRows.skillRows,
+						uiArtifactRows: searchRows.uiArtifactRows,
+						userSecretRows: searchRows.userSecretRows,
+						appSecretsByAppId: searchRows.appSecretsByAppId,
+					}),
+				}
 			}
 
-			let result: Awaited<ReturnType<typeof searchUnified>>
+			let outcome:
+				| {
+						mode: 'list'
+						result: Awaited<ReturnType<typeof searchUnified>>
+				  }
+				| {
+						mode: 'entity'
+						detail: Awaited<ReturnType<typeof resolveEntityDetail>>
+				  }
 			try {
-				result = await Sentry.startSpan(
+				outcome = await Sentry.startSpan(
 					{
 						name: 'mcp.tool.search',
 						op: 'mcp.tool',
@@ -361,21 +531,71 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				hasUser,
 			})
 
-			const payload: SearchPayload = {
-				matches: result.matches,
-				offline: result.offline,
+			if (outcome.mode === 'entity') {
+				const entityResult = formatEntityDetailMarkdown(outcome.detail)
+				return {
+					content: prependToolMetadataContent(conversationId, [
+						{
+							type: 'text',
+							text: truncateSearchText(entityResult.markdown),
+						},
+					]),
+					structuredContent: {
+						conversationId,
+						result: entityResult.structured,
+					},
+				}
+			}
+
+			const normalizedHomeConnectorStatus =
+				serializeHomeConnectorStatus(homeConnectorStatus)
+
+			const payload: {
+				matches: Awaited<ReturnType<typeof searchUnified>>['matches']
+				offline: boolean
+				warnings: Array<string>
+				homeConnectorStatus?: {
+					connectorId: string
+					state: string
+					connected: boolean
+					toolCount: number
+				}
+			} = {
+				matches: outcome.result.matches,
+				offline: outcome.result.offline,
 				warnings,
-				...(homeConnectorStatus
+				...(normalizedHomeConnectorStatus
 					? {
-							homeConnectorStatus,
+							homeConnectorStatus: normalizedHomeConnectorStatus,
 						}
 					: {}),
 			}
-
 			const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
 				payload,
 				maxResponseSize,
+				(value) =>
+					formatSearchMarkdown({
+						matches: value.matches,
+						warnings: value.warnings,
+						baseUrl,
+					}),
+				(value, count) => ({
+					...value,
+					matches: value.matches.slice(0, count),
+				}),
+				(value) => value.matches.length,
 			)
+			const result: SearchResultStructuredContent = {
+				offline: trimmedPayload.offline,
+				warnings: trimmedPayload.warnings,
+				...(trimmedPayload.homeConnectorStatus
+					? { homeConnectorStatus: trimmedPayload.homeConnectorStatus }
+					: {}),
+				matches: toSlimStructuredMatches({
+					matches: trimmedPayload.matches,
+					baseUrl,
+				}),
+			}
 
 			return {
 				content: prependToolMetadataContent(conversationId, [
@@ -386,7 +606,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				]),
 				structuredContent: {
 					conversationId,
-					result: trimmedPayload,
+					result,
 				},
 			}
 		},
