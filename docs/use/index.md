@@ -1,8 +1,25 @@
 # Using Kody
 
-Documentation for connecting to and using Kody over MCP. This section is for
-**consumers** of the assistant, not for contributors working inside this
-repository.
+Documentation for people who already connect their agent to Kody over MCP. Setup
+and repository development live elsewhere
+([contributing docs](../contributing/index.md)).
 
-Contributor documentation (clone, build, extend Kody) lives under
-[`docs/contributing/`](../contributing/).
+Read in order for a full tour, or jump to a topic.
+
+## Guides
+
+- [First steps — what to ask Kody to do](./first-steps.md)
+- [Search](./search.md)
+- [Execute and workflows](./execute.md)
+- [Secrets, values, and host approval](./secrets-and-values.md)
+- [Skills, saved apps, and generated UI](./skills-and-apps.md)
+- [Mutating actions and confirmations](./mutating-actions.md)
+- [Troubleshooting](./troubleshooting.md)
+- [Memory and conversation context](./memory.md)
+
+## Contributing to these docs
+
+Authors and maintainers follow
+[Documentation principles](../contributing/documentation.md). Usage pages stay
+short; the MCP server favors concise tool descriptions and puts detail where it
+belongs after each tool runs.

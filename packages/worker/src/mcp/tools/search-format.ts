@@ -202,7 +202,17 @@ export function formatSearchMarkdown(input: {
 		lines.push('', ...formatMatchBlock(match, input.baseUrl))
 	}
 
-	if (input.matches.every((match) => match.type !== 'secret')) {
+	if (input.matches.length === 0) {
+		lines.push(
+			'',
+			'> **No matches.** Rephrase `query` or call `meta_list_capabilities` for the full capability registry. `entity` looks up a known id — it does not improve an empty ranked list.',
+		)
+	}
+
+	if (
+		input.matches.length > 0 &&
+		input.matches.every((match) => match.type !== 'secret')
+	) {
 		lines.push(
 			'',
 			'> **Note:** This page does not include any matching user secret references. If you need credential metadata, use `codemode.secret_list` inside `execute` or save secrets via generated UI.',

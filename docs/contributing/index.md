@@ -14,4 +14,5 @@ style, tests, MCP capabilities, and runtime architecture.
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)
 
 Documentation for **using** Kody as an MCP server (not building the repo) lives
-under [`docs/use/`](../use/).
+under [`docs/use/`](../use/index.md). How we write and maintain those pages (and
+contributing docs) is covered in [Documentation principles](./documentation.md).

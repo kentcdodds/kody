@@ -96,22 +96,28 @@ const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities, Skills, Apps, and Secrets',
 	description: `
-Search Kody **builtin capabilities**, your saved **skills** (meta domain), your saved **apps** (apps domain), and your reusable **user secret references** by natural language before calling \`execute\` or opening a UI.
+Find **builtin capabilities**, **saved skills**, **saved apps**, and **user secret
+references** (metadata only) before \`execute\` or \`open_generated_ui\`.
 
-Search returns compact **markdown** plus slim structured results. Use \`query\` for ranked search, or use \`entity\` with an exact reference like \`page_to_markdown:capability\` or \`github-pr-summary:skill\` to get focused markdown detail for a single result.
+**query** — ranked markdown + structured matches (order matters). If nothing useful
+returns, rephrase or call \`meta_list_capabilities\`; \`entity\` does not fix an
+empty ranked list.
 
-Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. Saved skills are identified by a unique lower-kebab-case **name**. To run a saved skill, call \`meta_run_skill\` with the \`name\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\` or share its hosted URL with the user. User-scoped secret references never include raw secret values; inspect secret metadata during execution with \`codemode.secret_list(...)\`, and use generated UI when the user needs to provide a missing secret. App-bound secrets are attached to their corresponding app results rather than returned as standalone secret hits.
+**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`skill\` | \`app\`
+| \`secret\`), including schemas for capabilities. Types and fields: see response.
 
-If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
+Skills need a signed-in user. Run a skill: \`meta_run_skill({ name, params })\`;
+source: \`meta_get_skill\`. Apps: \`open_generated_ui({ app_id })\`. Secrets: never
+raw in results; use \`codemode.secret_list\` during execute and UI for missing values.
 
- Domains (for context only—put hints in your \`query\` string, or use the skill collection filter when you already know the saved-skill grouping):
-- \`coding\`: Billed page-to-markdown fallback, generated UI guides, and related coding workflows (Cloudflare API access is via saved skills; see repo docs).
-- \`meta\`: Persisted and reusable codemode skills plus skill management.
-- \`home\`: Home automation capabilities discovered from the connected home connector when available.
+If results look incomplete: \`meta_list_capabilities\` (full registry) or
+\`meta_get_home_connector_status\` (home connector).
 
-Pass a **query** string describing what you want to do. Results are ranked with semantic (Vectorize) and lexical fusion. **Skills** require an authenticated MCP user.
+Domain hints for \`query\` / \`skill_collection\`: \`coding\`, \`meta\`, \`home\`
+(see server instructions).
 
-	Optional **limit** caps how many ranked results are returned (defaults to 15). Optional **maxResponseSize** trims low-ranked results to keep responses small. Optional **skill_collection** narrows saved skill results to one normalized collection/domain slug while still searching builtins, apps, and secrets normally.
+Optional **limit** (default 15), **maxResponseSize**, **skill_collection** (narrow
+skills only).
 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
@@ -119,6 +125,8 @@ Example arguments:
 - \`{ "entity": "page_to_markdown:capability" }\`
 - To run a skill: \`meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })\`
 - To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
+
+https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,

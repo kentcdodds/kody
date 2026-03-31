@@ -16,13 +16,19 @@ server implementations:
 
 ### What Great Servers Do
 
-Provide comprehensive server-level instructions that act as an "onboarding
-guide" for the AI. This is the first thing the AI reads when connecting.
+Provide server-level instructions that act as an onboarding guide for the AI.
+This is the first thing the AI reads when connecting.
 
 **Avoid duplication:** Server instructions should not repeat tool descriptions
 or tool argument docs. Keep tool-specific behavior and defaults in the tool
-description + schemas, and keep server instructions focused on workflows and
-cross-tool conventions.
+description and schemas. Keep server instructions focused on workflows,
+cross-tool conventions, and short examples.
+
+**Instructions vs. tool responses:** Put information the model only needs after
+a tool runs (full result lists, on-demand schemas, approval URLs, error details)
+in the tool response, not in the instruction string. See
+[Documentation principles](./documentation.md) and [usage docs](../use/index.md)
+for end-user depth.
 
 **Suggested format:**
 
@@ -55,9 +61,11 @@ Quick start
 - To modify, use 'update_issues', then verify with 'list_issues'.
 ```
 
-**Example in this repo:** Server-level instructions are intentionally short and
-avoid repeating tool-level docs. Tool-specific behavior/defaults live with the
-tool description + schemas.
+**Example in this repo:** Server-level instructions stay short: workflows,
+examples, and links to [`docs/use/`](../use/index.md). Tool-specific behavior
+lives in each tool description and schemas; detail that only matters after a
+call returns belongs in the tool response (see
+[Documentation principles](./documentation.md)).
 
 ---
 

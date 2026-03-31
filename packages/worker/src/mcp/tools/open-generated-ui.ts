@@ -21,29 +21,18 @@ const openGeneratedUiTool = {
 	name: 'open_generated_ui',
 	title: 'Open Generated UI',
 	description: `
-Open the generic MCP App runtime for a generated UI.
+Open the MCP App runtime. Pass exactly one of \`code\` (inline HTML fragment or
+full document) or \`app_id\` (reopen saved source without resending it). \`params\`
+only with \`app_id\` — validated against the app’s saved parameter definitions;
+read \`kodyWidget.params\` after \`import { kodyWidget } from '@kody/ui-utils'\`.
 
-Behavior:
-- Accepts exactly one of \`code\` or \`app_id\`.
-- Use \`code\` to render a new UI artifact immediately without saving it first.
-- Use \`app_id\` to reopen previously saved UI source without sending that source code back through the model.
-- Saved apps can declare reusable parameters; pass runtime values via \`params\` and read them from \`kodyWidget.params\` after importing \`kodyWidget\` from \`@kody/ui-utils\`.
-- \`code\` may be a full HTML document or a fragment.
+Use for sensitive input (never ask the user to paste credentials in chat).
+Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
+OAuth: run \`generated_ui_oauth_guide\` first for callbacks, tokens, and approval.
 
-Generated UI basics:
-- The runtime exposes module helpers from the \`@kody/ui-utils\` import-map alias; prefer \`import { kodyWidget } from '@kody/ui-utils'\`.
-- Use generated UI whenever the user needs to enter sensitive values. Do not ask the user to paste credentials into chat.
-- If generated UI code hits a recoverable runtime problem, show it in the UI and also call \`sendMessage(...)\` with the next action.
-- For browser-based OAuth flows, call the \`generated_ui_oauth_guide\` capability first and follow that guide for callback URLs, registration values, \`getValue(...)\`, token exchange, and host approval handling.
+Persist with \`ui_save_app\`; discover with \`search\` or \`ui_list_apps\`.
 
-Use this tool when:
-- You have already generated the UI source and want to render it.
-- You found a saved app via \`search\` and want to reopen it by id.
-
-Next:
-- Use \`ui_save_app\` to persist a reusable UI artifact.
-- Use \`ui_get_app\` when you need to inspect a saved artifact's metadata or source.
-- Use \`ui_list_apps\` or \`search\` to discover saved apps.
+https://github.com/kentcdodds/kody/blob/main/docs/use/skills-and-apps.md
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,

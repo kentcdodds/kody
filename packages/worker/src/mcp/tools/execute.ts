@@ -23,86 +23,38 @@ const executeTool = {
 	name: 'execute',
 	title: 'Execute Capabilities',
 	description: `
-Execute JavaScript code against Kody capabilities. First use \`search\` to find
-the right capability, then call it through \`codemode\`.
+Run an async JavaScript arrow function against \`codemode\` (one method per
+builtin capability). Discover names with \`search\`; for one capability’s
+\`inputSchema\` / \`outputSchema\`, call \`search\` with
+\`entity: "{name}:capability"\` or use \`meta_list_capabilities\`.
 
-To run a saved skill by name, prefer \`meta_run_skill\` with \`name\` and
-optional \`params\`. If you need the saved code, call \`meta_get_skill\` and
-pass the returned code into this tool.
+Saved skills: prefer \`meta_run_skill({ name, params })\`, or \`meta_get_skill\`
+then paste code here.
 
-Available in your code:
+Sandbox surface:
+- \`codemode\`: \`(args) => Promise<unknown>\` per capability.
+- \`refreshAccessToken(providerName)\`, \`createAuthenticatedFetch(providerName)\` for OAuth connectors.
+- \`fetch(...)\` through the host gateway; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` in URL, headers, or body on approved hosts only.
+- Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
+- Placeholders are not general string interpolation (they do not resolve in arbitrary return values).
+- \`await codemode.secret_list({ scope? })\` — metadata only. \`secret_set\` — persist values already in trusted execution (e.g. refreshed tokens); write-only.
+- No \`secret_get\` / \`secrets\` helpers in the sandbox.
+- \`value_get\` / \`value_list\` for non-secret persisted config.
 
-type CapabilityArgs = Record<string, unknown>;
-type CapabilityResult = unknown;
+Never ask the user to paste credentials in chat; use generated UI to collect or rotate secrets. If a host is not approved, use the error’s approval path instead of blind retries.
 
-declare const codemode: Record<
-  string,
-  (args: CapabilityArgs) => Promise<CapabilityResult>
->;
+Prefer one \`execute\` when the workflow is clear; split calls when you need new user input or a changed plan.
 
-These helper functions are available directly in your async function:
-
-\`type ExecuteRequestInput = string | URL | Request;\`
-\`type AuthenticatedFetch = (input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>;\`
-\`declare function refreshAccessToken(providerName: string): Promise<string>;\`
-\`declare function createAuthenticatedFetch(providerName: string): Promise<AuthenticatedFetch>;\`
-
-Use them directly:
-
-\`async () => {
-  const spotifyFetch = await createAuthenticatedFetch('spotify');
-  const response = await spotifyFetch('/me/player');
-  return await response.json();
-}\`
-
-Capability names are discovered via \`search\`.
-Each method accepts one args object matching that capability's \`inputSchema\`
-and returns structured data described by its \`outputSchema\` when present.
-Each capability call resolves to the raw returned value itself, not an MCP
-wrapper object. When chaining calls, read fields from the previous result using
-the capability's \`outputSchema\` from \`search\` with \`detail: true\`.
-
-Prefer fewer \`execute\` tool invocations when the workflow is clear. If you are
-reasonably confident you can complete the needed sequence in one async
-function, chain the capability calls there and return the final useful result
-instead of making separate \`execute\` calls for intermediate steps. Split work
-across multiple \`execute\` calls only when you need new information, user
-confirmation, or a prior result changes the plan.
-
-Network access:
-- Regular \`fetch(...)\` is available inside the sandbox and is routed through a host-side gateway.
-- To inject a saved secret into a request, use a placeholder string such as \`{{secret:cloudflareToken}}\` or \`{{secret:cloudflareToken|scope=user}}\` in the URL, headers, or request body.
-- Secret placeholders only work for hosts that the user has already approved for that secret.
-- Some capability input fields also accept secret placeholders. When a capability's input schema marks a string field with \`x-kody-secret: true\`, you may pass \`{{secret:name}}\` there instead of a raw credential.
-- Capability-input secret placeholders also respect any per-secret allowed capability names. If a secret has a non-empty allowed-capabilities list, only those exact capability names may resolve it.
-- If a request is blocked because the host is not approved, do not retry blindly. Ask the user whether they want to approve that host, then provide the approval link from the error message.
-- Saving or updating a secret does not authorize outbound use automatically. Host approval happens separately in the app.
-
-Secrets:
-- Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, client secrets, or other credentials into chat. If a workflow needs a secret value that is not already stored, use generated UI to collect and save it instead.
-- Use \`await codemode.secret_list({})\` to inspect available secret metadata before building a request. The result is metadata only and does not reveal secret values; it includes allowed hosts and allowed capability names.
-- Use \`await codemode.secret_set({ name, value, scope, description })\` only to persist a secret value that is already available inside trusted execution, such as a refreshed OAuth token. The \`value\` input is write-only; execute results and logs redact secret-marked capability inputs before they are returned.
-- Pass \`scope\` to narrow results, for example \`await codemode.secret_list({ scope: 'app' })\`.
-- Deleting or saving a secret never grants outbound host approval or capability approval. Those policies are still managed through the authenticated account secrets UI.
-- Do not expect \`codemode.secret_get(...)\`, \`codemode.secret_require(...)\`, or any injected \`secrets\` helper to be available in execute-time code.
-
-Values:
-- Use \`await codemode.value_get({ name })\` or \`await codemode.value_list({ scope })\` for readable non-secret configuration that generated UI code should be able to save and read back later.
-- Do not store readable public identifiers as secrets just to make them persistent; use value capabilities or the generated UI value helpers instead.
-
-Your code must be an async arrow function that returns the result.
-
-Examples:
+Example:
 
 \`async () => {
   const page = await codemode.page_to_markdown({
     url: 'https://developers.cloudflare.com/api/resources/accounts/',
   });
-  return {
-    source: page.source,
-    preview: page.markdown.slice(0, 120),
-  };
+  return { source: page.source, preview: page.markdown.slice(0, 120) };
 }\`
+
+More context: https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md
 	`.trim(),
 	annotations: {
 		readOnlyHint: false,
