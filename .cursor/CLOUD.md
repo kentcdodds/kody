@@ -13,7 +13,7 @@ A full-stack web application starter built on Cloudflare Workers with Remix 3
 | Format           | `npm run format`    |
 | Type check       | `npm run typecheck` |
 | Build            | `npm run build`     |
-| E2E tests        | `npm run test:e2e`  |
+| E2E tests        | `npm run test:e2e:run` |
 
 ## Services
 

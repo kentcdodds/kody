@@ -23,6 +23,12 @@
 		"test-mcp": {
 			"cache": true
 		},
+		"prepare-e2e-env": {
+			"cache": true
+		},
+		"test-e2e": {
+			"cache": true
+		},
 		"dev": {
 			"cache": false
 		},

@@ -131,7 +131,7 @@ jobs:
         run: npm run migrate:local
 
       - name: 🧪 Playwright Tests
-        run: npm run test:e2e
+        run: npm run test:e2e:run
 
   mcp-e2e:
     runs-on: ubuntu-latest

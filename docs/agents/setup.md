@@ -127,20 +127,28 @@ Quick notes for getting a local kody environment running.
   JavaScript/TypeScript/JSON/Markdown/CSS files with `oxfmt`, applies
   `oxlint --fix` to staged JavaScript/TypeScript files, and then runs
   `npm run typecheck` for the repo before the commit is created.
+- `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
+  so pushes are blocked when the worker Vitest suites or Playwright E2E suite
+  fail.
 - Because the commit hook already enforces formatting, lint fixes, and
   typechecking, agents do not need to run those checks separately before every
   commit unless they want earlier feedback or are validating a larger change set
   before opening a PR.
+- Push-time hooks intentionally stop short of `npm run validate`; MCP E2E, build
+  validation, and repo-wide format checks remain explicit checks because they
+  are heavier than the push gate.
 - `npm run validate` runs format check, lint fix, build, typecheck, Playwright
   tests, and MCP E2E tests.
 - `npm run format` applies formatting updates.
+- `npm run test:push` runs the same worker tests and Playwright E2E suite
+  enforced by the Husky `pre-push` hook.
 - `npm run test:e2e:install` to install Playwright browsers.
-- `npm run test:e2e` to run Playwright specs.
-- `npm run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
-  `packages/worker/.env` from `.env.example` when needed so local and CI runs
-  have the minimum required test env.
-- `npm --prefix packages/home-connector run test` runs the connector package
-  tests directly.
+- `npm run test:e2e:run` runs the Playwright suite through Nx and depends on a
+  cached `worker:prepare-e2e-env` target so local and CI runs can reuse both the
+  env bootstrap and Playwright cache hits.
+- `npm run test:mcp` runs MCP server E2E tests and also depends on the cached
+  `worker:prepare-e2e-env` target, which writes `packages/worker/.env` from
+  `.env.example` when needed and backfills `COOKIE_SECRET` before the test run.
 
 ## Home Connector Docker publishing
 
