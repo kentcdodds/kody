@@ -33,9 +33,11 @@ function readContentTypeMediaType(contentType: string | null) {
 }
 
 function shouldUseNegotiatedContent(input: {
+	status: number
 	contentType: string | null
 	markdownTokenEstimate: string | null
 }) {
+	if (input.status < 200 || input.status >= 300) return false
 	const mediaType = readContentTypeMediaType(input.contentType)
 	if (mediaType === 'text/markdown' || mediaType === 'text/plain') return true
 	return input.markdownTokenEstimate != null

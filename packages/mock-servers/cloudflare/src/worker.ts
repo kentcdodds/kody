@@ -198,6 +198,15 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 			},
 		})
 	}
+	if (request.method === 'GET' && url.pathname === '/__mocks/markdown-error') {
+		return new Response('# Mock markdown error\n\nServer error page.\n', {
+			status: 500,
+			headers: {
+				'content-type': 'text/markdown; charset=utf-8',
+				'x-markdown-tokens': '9',
+			},
+		})
+	}
 
 	if (!isAuthorized(request, env)) {
 		return unauthorized()

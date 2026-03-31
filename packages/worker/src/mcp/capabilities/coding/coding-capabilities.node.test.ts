@@ -135,6 +135,27 @@ test('page_to_markdown returns negotiated markdown without Browser Rendering', a
 	expect(result.markdown).toContain('# Mock markdown')
 })
 
+test('page_to_markdown does not treat markdown error responses as negotiated success', async () => {
+	const token = 'coding-cloudflare-page-error-token'
+	await using mock = await startCloudflareMock(token)
+	const ctx = mockCloudflareContext(mock.origin, mock.token)
+	const result = await pageToMarkdownCapability.handler(
+		{
+			url: `${mock.origin}/__mocks/markdown-error`,
+		},
+		ctx,
+	)
+	expect(result.source).toBe('browser_rendering')
+	expect(result.negotiated?.status).toBe(500)
+	expect(result.negotiated?.contentType).toContain('text/markdown')
+	expect(result.browserRendering).toEqual({
+		apiStatus: 200,
+		mode: 'url',
+	})
+	expect(result.markdown).toContain('# Mock Browser Rendering')
+	expect(result.markdown).toContain(`source: ${mock.origin}/__mocks/markdown-error`)
+})
+
 test('page_to_markdown falls back to Browser Rendering for html pages', async () => {
 	const token = 'coding-cloudflare-page-markdown-token'
 	await using mock = await startCloudflareMock(token)
