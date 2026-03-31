@@ -217,12 +217,12 @@ function readRequestedHost(href: string) {
 
 function normalizeSingleAllowedHost(host: string | null) {
 	if (!host) return null
-	return clientNormalizeAllowedHosts([host])[0] ?? null
+	return normalizeAllowedHosts([host])[0] ?? null
 }
 
 function normalizeSingleAllowedCapability(capability: string | null) {
 	if (!capability) return null
-	return clientNormalizeAllowedCapabilities([capability])[0] ?? null
+	return normalizeAllowedCapabilities([capability])[0] ?? null
 }
 
 function getAlreadyAddedNotice(input: {
@@ -235,12 +235,12 @@ function getAlreadyAddedNotice(input: {
 		readCapabilityPrefill(input.href),
 	)
 	const allowedHosts = input.selectedSecret
-		? clientNormalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
+		? normalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
 		: input.approval
-			? clientNormalizeAllowedHosts(input.approval.currentAllowedHosts)
+			? normalizeAllowedHosts(input.approval.currentAllowedHosts)
 			: []
 	const allowedCapabilities = input.selectedSecret
-		? clientNormalizeAllowedCapabilities(
+		? normalizeAllowedCapabilities(
 				coerceStringRows(input.selectedSecret.allowedCapabilities),
 			)
 		: []
