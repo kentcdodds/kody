@@ -537,6 +537,10 @@ export function ConnectSecretRoute(handle: Handle) {
 		const params = parseConnectSecretParams()
 		const hasInstructions = Boolean(params.instructions || params.dashboardUrl)
 		const showReview = state.step === 'review' || state.step === 'saving'
+		const normalizedAllowedHosts = normalizeAllowedHosts(state.allowedHosts)
+		const normalizedAllowedCapabilities = normalizeAllowedCapabilities(
+			state.allowedCapabilities,
+		)
 
 		return (
 			<section
@@ -762,8 +766,8 @@ export function ConnectSecretRoute(handle: Handle) {
 									<div>
 										<div css={labelCss}>Hosts to approve</div>
 										<ul css={listCss}>
-											{normalizeAllowedHosts(state.allowedHosts).length > 0 ? (
-												normalizeAllowedHosts(state.allowedHosts).map((host) => (
+											{normalizedAllowedHosts.length > 0 ? (
+												normalizedAllowedHosts.map((host) => (
 													<li key={host}>{host}</li>
 												))
 											) : (
@@ -774,11 +778,8 @@ export function ConnectSecretRoute(handle: Handle) {
 									<div>
 										<div css={labelCss}>Capabilities to allow</div>
 										<ul css={listCss}>
-											{normalizeAllowedCapabilities(state.allowedCapabilities)
-												.length > 0 ? (
-												normalizeAllowedCapabilities(
-													state.allowedCapabilities,
-												).map((capability) => (
+											{normalizedAllowedCapabilities.length > 0 ? (
+												normalizedAllowedCapabilities.map((capability) => (
 													<li key={capability}>{capability}</li>
 												))
 											) : (
