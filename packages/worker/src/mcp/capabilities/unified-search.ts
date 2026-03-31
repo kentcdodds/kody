@@ -351,6 +351,7 @@ async function searchSecretsForUser(input: {
 
 export async function searchUnified(input: {
 	env: Env
+	baseUrl: string
 	query: string
 	limit: number
 	specs: Record<string, CapabilitySpec>
@@ -409,7 +410,7 @@ export async function searchUnified(input: {
 			rows: input.skillRows,
 		})
 		uiArtifactResult = await searchUiArtifactsForUser({
-			baseUrl: input.env.APP_BASE_URL ?? 'http://localhost',
+			baseUrl: input.baseUrl,
 			env: input.env,
 			query: input.query,
 			limit: input.limit,

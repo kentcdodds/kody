@@ -436,6 +436,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				return {
 					mode: 'list' as const,
 					result: await searchUnified({
+						baseUrl,
 						env: agent.getEnv(),
 						query: args.query!,
 						skillCollectionSlug: searchRows.skillCollectionSlug,
@@ -448,7 +449,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						userSecretRows: searchRows.userSecretRows,
 						appSecretsByAppId: searchRows.appSecretsByAppId,
 					}),
-				})
+				}
 			}
 
 			let outcome:

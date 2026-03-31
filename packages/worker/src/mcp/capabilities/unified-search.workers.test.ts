@@ -56,6 +56,7 @@ test('skill search hits include usage hints', async () => {
 
 	const result = await searchUnified({
 		env,
+		baseUrl: 'http://localhost',
 		query: 'open pull requests for cursor agents',
 		limit: 5,
 		detail: false,
@@ -95,6 +96,7 @@ test('skill collection filter narrows saved skill matches', async () => {
 
 	const result = await searchUnified({
 		env,
+		baseUrl: 'http://localhost',
 		query: 'github pull requests',
 		limit: 5,
 		specs,
@@ -123,6 +125,7 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 
 	const result = await searchUnified({
 		env,
+		baseUrl: 'http://localhost',
 		query: 'cloudflare deploy token',
 		limit: 5,
 		specs,
