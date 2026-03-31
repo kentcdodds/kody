@@ -7,16 +7,6 @@ type MockCloudflareEnv = {
 	MOCK_API_TOKEN?: string
 }
 
-type BrowserRenderingMarkdownBody = {
-	url?: string
-	html?: string
-	userAgent?: string
-	rejectRequestPattern?: Array<string>
-	gotoOptions?: {
-		waitUntil?: string
-	}
-}
-
 type ZoneRecord = {
 	id: string
 	name: string
@@ -200,6 +190,15 @@ function handleDashboard() {
 }
 
 async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
+	if (request.method === 'GET' && url.pathname === '/__mocks/markdown') {
+		return new Response('# Mock markdown\n\nServed as markdown.\n', {
+			headers: {
+				'content-type': 'text/markdown; charset=utf-8',
+				'x-markdown-tokens': '8',
+			},
+		})
+	}
+
 	if (!isAuthorized(request, env)) {
 		return unauthorized()
 	}
@@ -244,15 +243,6 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 			},
 			{ status: 200 },
 		)
-	}
-
-	if (request.method === 'GET' && url.pathname === '/__mocks/markdown') {
-		return new Response('# Mock markdown\n\nServed as markdown.\n', {
-			headers: {
-				'content-type': 'text/markdown; charset=utf-8',
-				'x-markdown-tokens': '8',
-			},
-		})
 	}
 
 	const markdownMatch = url.pathname.match(

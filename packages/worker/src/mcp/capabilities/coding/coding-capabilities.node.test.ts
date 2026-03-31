@@ -132,7 +132,7 @@ test('page_to_markdown returns negotiated markdown without Browser Rendering', a
 	expect(result.source).toBe('negotiated')
 	expect(result.browserRendering).toBeNull()
 	expect(result.negotiated?.contentType).toContain('text/markdown')
-	expect(result.markdown).toContain('# Mock Negotiated Markdown')
+	expect(result.markdown).toContain('# Mock markdown')
 })
 
 test('page_to_markdown falls back to Browser Rendering for html pages', async () => {
