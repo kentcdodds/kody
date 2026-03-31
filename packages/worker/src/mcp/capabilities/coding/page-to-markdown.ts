@@ -2,11 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '../define-domain-capability.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { type CapabilityContext } from '../types.ts'
-import {
-	assertSafePageToMarkdownHtml,
-	assertSafePageToMarkdownUrl,
-	fetchNegotiatedThenMaybeBrowserRender,
-} from './fetch-page-markdown.ts'
+import { fetchNegotiatedThenMaybeBrowserRender } from './fetch-page-markdown.ts'
 
 const gotoWaitUntilSchema = z.enum([
 	'load',
@@ -110,12 +106,6 @@ export const pageToMarkdownCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			if (args.url) {
-				assertSafePageToMarkdownUrl(args.url)
-			}
-			if (args.html) {
-				assertSafePageToMarkdownHtml(args.html)
-			}
 			return fetchNegotiatedThenMaybeBrowserRender(ctx.env, args)
 		},
 	},

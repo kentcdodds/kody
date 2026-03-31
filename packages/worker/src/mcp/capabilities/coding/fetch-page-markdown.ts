@@ -1,8 +1,5 @@
 import { createCloudflareRestClient } from '#mcp/cloudflare/cloudflare-rest-client.ts'
-import {
-	MARKDOWN_PREFERRED_ACCEPT,
-	fetchMarkdownPreferredDoc,
-} from './fetch-markdown-doc.ts'
+import { fetchMarkdownPreferredDoc } from './fetch-markdown-doc.ts'
 
 const maxInlineHtmlChars = 2_000_000
 
@@ -215,4 +212,3 @@ export async function fetchNegotiatedThenMaybeBrowserRender(
 	}
 }
 
-export { MARKDOWN_PREFERRED_ACCEPT }
