@@ -29,7 +29,7 @@ export type SlimSearchMatch =
 			title: string
 			description: string
 			usage: string
-		}
+	  }
 	| {
 			type: 'skill'
 			id: string
@@ -39,7 +39,7 @@ export type SlimSearchMatch =
 			usage: string
 			collection: string | null
 			collectionSlug: string | null
-		}
+	  }
 	| {
 			type: 'app'
 			id: string
@@ -47,14 +47,14 @@ export type SlimSearchMatch =
 			description: string
 			usage: string
 			hostedUrl: string
-		}
+	  }
 	| {
 			type: 'secret'
 			id: string
 			title: string
 			description: string
 			usage: string
-		}
+	  }
 
 export type SearchEntityDetailStructured =
 	| {
@@ -70,7 +70,7 @@ export type SearchEntityDetailStructured =
 			destructive: boolean
 			inputSchema: unknown
 			outputSchema?: unknown
-		}
+	  }
 	| {
 			kind: 'entity'
 			type: 'skill'
@@ -87,7 +87,7 @@ export type SearchEntityDetailStructured =
 			readOnly: boolean
 			idempotent: boolean
 			destructive: boolean
-		}
+	  }
 	| {
 			kind: 'entity'
 			type: 'app'
@@ -99,7 +99,7 @@ export type SearchEntityDetailStructured =
 			runtime: string
 			parameters: ReturnType<typeof parseUiArtifactParameters>
 			hidden: boolean
-		}
+	  }
 	| {
 			kind: 'entity'
 			type: 'secret'
@@ -109,7 +109,7 @@ export type SearchEntityDetailStructured =
 			usage: string
 			scope: string
 			updatedAt: string
-		}
+	  }
 
 export type SearchEntityDetail =
 	| {
@@ -118,14 +118,14 @@ export type SearchEntityDetail =
 			title: string
 			description: string
 			spec: CapabilitySpec
-		}
+	  }
 	| {
 			type: 'skill'
 			id: string
 			title: string
 			description: string
 			row: McpSkillRow
-		}
+	  }
 	| {
 			type: 'app'
 			id: string
@@ -133,14 +133,14 @@ export type SearchEntityDetail =
 			description: string
 			row: UiArtifactRow
 			hostedUrl: string
-		}
+	  }
 	| {
 			type: 'secret'
 			id: string
 			title: string
 			description: string
 			row: SecretSearchRow
-		}
+	  }
 
 export function parseEntityRef(entity: string): {
 	id: string
@@ -237,11 +237,7 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 			`**Hosted URL:** \`${hostedUrl}\``,
 		]
 	}
-	return [
-		`## Secret — \`${match.name}\``,
-		'',
-		match.description,
-	]
+	return [`## Secret — \`${match.name}\``, '', match.description]
 }
 
 export function toSlimStructuredMatches(input: {
@@ -331,7 +327,12 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			`- \`${JSON.stringify(inputSchema)}\``,
 		]
 		if (outputSchema !== undefined) {
-			lines.push('', '## Output schema', '', `- \`${JSON.stringify(outputSchema)}\``)
+			lines.push(
+				'',
+				'## Output schema',
+				'',
+				`- \`${JSON.stringify(outputSchema)}\``,
+			)
 		}
 		return {
 			markdown: lines.join('\n'),
@@ -387,10 +388,14 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		if (inferredCapabilities.length > 0 || usesCapabilities?.length) {
 			lines.push('', '## Capability hints', '')
 			if (inferredCapabilities.length > 0) {
-				lines.push(`- Inferred capabilities: ${inferredCapabilities.join(', ')}`)
+				lines.push(
+					`- Inferred capabilities: ${inferredCapabilities.join(', ')}`,
+				)
 			}
 			if (usesCapabilities && usesCapabilities.length > 0) {
-				lines.push(`- Declared uses_capabilities: ${usesCapabilities.join(', ')}`)
+				lines.push(
+					`- Declared uses_capabilities: ${usesCapabilities.join(', ')}`,
+				)
 			}
 		}
 		if (detail.row.search_text) {

@@ -749,7 +749,8 @@ export function ConnectSecretRoute(handle: Handle) {
 										value={state.name}
 										placeholder="api-token"
 										on={{
-											input: (event) => setState({ name: event.currentTarget.value }),
+											input: (event) =>
+												setState({ name: event.currentTarget.value }),
 										}}
 										css={inputCss}
 									/>

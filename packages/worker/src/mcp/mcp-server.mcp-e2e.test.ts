@@ -349,7 +349,9 @@ test('mcp server executes user code against codemode and tracks execute context'
 			query: 'Execute generated app',
 		},
 	})
-	const hiddenSearchText = getTextContent((hiddenSearchResult as CallToolResult).content)
+	const hiddenSearchText = getTextContent(
+		(hiddenSearchResult as CallToolResult).content,
+	)
 	const hiddenSearchStructured = (hiddenSearchResult as CallToolResult)
 		.structuredContent as
 		| {
@@ -364,8 +366,7 @@ test('mcp server executes user code against codemode and tracks execute context'
 	expect(hiddenSearchText).toContain('# Search results')
 	expect(
 		hiddenSearchStructured?.result?.matches?.some(
-			(match) =>
-				match.type === 'app' && match.id === executeResult?.app_id,
+			(match) => match.type === 'app' && match.id === executeResult?.app_id,
 		),
 	).toBe(false)
 
@@ -403,9 +404,8 @@ test('mcp server executes user code against codemode and tracks execute context'
 			}`,
 		},
 	})
-	const searchableUpdateStructured = (
-		searchableUpdateResult as CallToolResult
-	).structuredContent as
+	const searchableUpdateStructured = (searchableUpdateResult as CallToolResult)
+		.structuredContent as
 		| {
 				result?: {
 					hidden?: boolean
@@ -422,7 +422,9 @@ test('mcp server executes user code against codemode and tracks execute context'
 			maxResponseSize: 20_000,
 		},
 	})
-	const visibleSearchText = getTextContent((visibleSearchResult as CallToolResult).content)
+	const visibleSearchText = getTextContent(
+		(visibleSearchResult as CallToolResult).content,
+	)
 	const visibleSearchStructured = (visibleSearchResult as CallToolResult)
 		.structuredContent as
 		| {
@@ -441,8 +443,7 @@ test('mcp server executes user code against codemode and tracks execute context'
 	)
 	expect(
 		visibleSearchStructured?.result?.matches?.find(
-			(match) =>
-				match.type === 'app' && match.id === executeResult?.app_id,
+			(match) => match.type === 'app' && match.id === executeResult?.app_id,
 		),
 	).toEqual(
 		expect.objectContaining({
@@ -458,7 +459,9 @@ test('mcp server executes user code against codemode and tracks execute context'
 			entity: `${executeResult?.app_id}:app`,
 		},
 	})
-	const appEntityText = getTextContent((appEntityResult as CallToolResult).content)
+	const appEntityText = getTextContent(
+		(appEntityResult as CallToolResult).content,
+	)
 	const appEntityStructured = (appEntityResult as CallToolResult)
 		.structuredContent as
 		| {

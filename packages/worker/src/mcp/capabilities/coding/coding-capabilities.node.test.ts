@@ -153,7 +153,9 @@ test('page_to_markdown does not treat markdown error responses as negotiated suc
 		mode: 'url',
 	})
 	expect(result.markdown).toContain('# Mock Browser Rendering')
-	expect(result.markdown).toContain(`source: ${mock.origin}/__mocks/markdown-error`)
+	expect(result.markdown).toContain(
+		`source: ${mock.origin}/__mocks/markdown-error`,
+	)
 })
 
 test('page_to_markdown falls back to Browser Rendering for html pages', async () => {

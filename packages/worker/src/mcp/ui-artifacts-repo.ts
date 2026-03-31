@@ -93,12 +93,7 @@ export async function updateUiArtifact(
 	updates: Partial<
 		Pick<
 			UiArtifactRow,
-			| 'title'
-			| 'description'
-			| 'code'
-			| 'runtime'
-			| 'parameters'
-			| 'hidden'
+			'title' | 'description' | 'code' | 'runtime' | 'parameters' | 'hidden'
 		>
 	>,
 ): Promise<boolean> {
@@ -153,10 +148,7 @@ export async function listUiArtifactsByUserId(
 			WHERE user_id = ?
 				${hidden === undefined ? '' : 'AND hidden = ?'}`,
 		)
-		.bind(
-			userId,
-			...(hidden === undefined ? [] : [hidden ? 1 : 0]),
-		)
+		.bind(userId, ...(hidden === undefined ? [] : [hidden ? 1 : 0]))
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }
@@ -171,9 +163,7 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		runtime: String(row['source_type']) as UiArtifactRow['runtime'],
 		parameters: row['parameters'] == null ? null : String(row['parameters']),
 		hidden:
-			row['hidden'] === 1 ||
-			row['hidden'] === '1' ||
-			row['hidden'] === true,
+			row['hidden'] === 1 || row['hidden'] === '1' || row['hidden'] === true,
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	}

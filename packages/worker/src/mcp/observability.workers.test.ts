@@ -201,7 +201,7 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 				title: 'Observed app',
 				description: 'Observation test app.',
 				code: '<main><h1>Observed app</h1></main>',
-					hidden: false,
+				hidden: false,
 			},
 			{
 				env: {

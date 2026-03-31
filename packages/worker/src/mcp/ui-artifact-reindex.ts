@@ -5,7 +5,10 @@ import {
 } from '#mcp/capabilities/capability-search.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
-import { listUiArtifactsByUserId, uiArtifactVectorId } from '#mcp/ui-artifacts-repo.ts'
+import {
+	listUiArtifactsByUserId,
+	uiArtifactVectorId,
+} from '#mcp/ui-artifacts-repo.ts'
 import { listAppSecretsByAppIds } from '#mcp/secrets/service.ts'
 
 const upsertBatchSize = 16
@@ -41,7 +44,10 @@ export async function reindexUiArtifactVectors(env: Env): Promise<{
 		return { upserted: 0 }
 	}
 
-	const appSecretsByAppId = new Map<string, Array<{ name: string; description: string }>>()
+	const appSecretsByAppId = new Map<
+		string,
+		Array<{ name: string; description: string }>
+	>()
 	const rowsByUser = new Map<string, Array<(typeof rows)[number]>>()
 	for (const row of rows) {
 		const current = rowsByUser.get(row.user_id) ?? []

@@ -14,9 +14,7 @@ import {
 import { type CapabilitySpec } from './types.ts'
 import { buildSkillEmbedText } from '#mcp/skills/skill-embed-and-flags.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
-import {
-	parseSkillParameters,
-} from '#mcp/skills/skill-parameters.ts'
+import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import {
 	type SecretMetadata,
 	type SecretSearchRow,

@@ -9,8 +9,10 @@ import {
 	isDuplicateSkillNameError,
 	updateMcpSkill,
 } from '#mcp/skills/mcp-skills-repo.ts'
-import { buildSkillEmbedTextFromStoredRow } from '#mcp/skills/skill-mutation.ts'
-import { prepareSkillPersistence } from '#mcp/skills/skill-mutation.ts'
+import {
+	buildSkillEmbedTextFromStoredRow,
+	prepareSkillPersistence,
+} from '#mcp/skills/skill-mutation.ts'
 import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
@@ -181,7 +183,11 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						collectionSlug: existing.collection_slug,
 					})
 				} else {
-					await deleteMcpSkill(ctx.env.APP_DB, user.userId, prep.rowPayload.name)
+					await deleteMcpSkill(
+						ctx.env.APP_DB,
+						user.userId,
+						prep.rowPayload.name,
+					)
 				}
 				throw cause
 			}

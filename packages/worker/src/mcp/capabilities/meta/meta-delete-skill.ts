@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteMcpSkill } from '#mcp/skills/mcp-skills-repo.ts'
+import {
+	deleteMcpSkill,
+	getMcpSkillByName,
+} from '#mcp/skills/mcp-skills-repo.ts'
 import { deleteSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
 
@@ -20,10 +23,7 @@ export const metaDeleteSkillCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: true,
 		inputSchema: z.object({
-			name: z
-				.string()
-				.min(1)
-				.describe('Unique lower-kebab-case skill name.'),
+			name: z.string().min(1).describe('Unique lower-kebab-case skill name.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {

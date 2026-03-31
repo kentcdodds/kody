@@ -1,4 +1,5 @@
 import { type McpSkillRow } from './mcp-skills-types.ts'
+import { normalizeSkillName } from './skill-names.ts'
 
 export function skillVectorId(skillId: string): string {
 	return `skill_${skillId}`
@@ -7,7 +8,9 @@ export function skillVectorId(skillId: string): string {
 export function isDuplicateSkillNameError(error: unknown): boolean {
 	return (
 		error instanceof Error &&
-		error.message.includes('UNIQUE constraint failed: mcp_skills.user_id, mcp_skills.name')
+		error.message.includes(
+			'UNIQUE constraint failed: mcp_skills.user_id, mcp_skills.name',
+		)
 	)
 }
 
@@ -57,6 +60,7 @@ export async function getMcpSkillByName(
 	userId: string,
 	skillName: string,
 ): Promise<McpSkillRow | null> {
+	const normalizedSkillName = normalizeSkillName(skillName)
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, name, title, description, keywords, code, search_text,
@@ -65,7 +69,7 @@ export async function getMcpSkillByName(
 				destructive, created_at, updated_at
 			FROM mcp_skills WHERE name = ? AND user_id = ?`,
 		)
-		.bind(skillName, userId)
+		.bind(normalizedSkillName, userId)
 		.first<Record<string, unknown>>()
 	if (!result) return null
 	return mapRow(result)
@@ -76,6 +80,7 @@ export async function updateMcpSkill(
 	userId: string,
 	skillName: string,
 	fields: {
+		/** Changing this value renames the skill and must remain unique per user. */
 		name: string
 		title: string
 		description: string
@@ -94,6 +99,7 @@ export async function updateMcpSkill(
 	},
 ): Promise<boolean> {
 	const now = new Date().toISOString()
+	const normalizedSkillName = normalizeSkillName(skillName)
 	const out = await db
 		.prepare(
 			`UPDATE mcp_skills SET
@@ -120,7 +126,7 @@ export async function updateMcpSkill(
 			fields.idempotent,
 			fields.destructive,
 			now,
-			skillName,
+			normalizedSkillName,
 			userId,
 		)
 		.run()
@@ -132,9 +138,10 @@ export async function deleteMcpSkill(
 	userId: string,
 	skillName: string,
 ): Promise<boolean> {
+	const normalizedSkillName = normalizeSkillName(skillName)
 	const out = await db
 		.prepare(`DELETE FROM mcp_skills WHERE name = ? AND user_id = ?`)
-		.bind(skillName, userId)
+		.bind(normalizedSkillName, userId)
 		.run()
 	return (out.meta.changes ?? 0) > 0
 }

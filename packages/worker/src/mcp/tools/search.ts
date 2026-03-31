@@ -144,9 +144,7 @@ function shouldIncludeHomeConnectorStatus(status: HomeConnectorStatus) {
 	return status.state !== 'connected' || status.toolCount === 0
 }
 
-function serializeHomeConnectorStatus(
-	status: HomeConnectorStatus | null,
-):
+function serializeHomeConnectorStatus(status: HomeConnectorStatus | null):
 	| {
 			connectorId: string
 			state: string
@@ -235,7 +233,8 @@ async function loadSearchRowsAndRegistry(input: {
 	})
 	const optionalRows = await loadOptionalSearchRows({
 		userId: input.userId,
-		loadSkills: () => listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
+		loadSkills: () =>
+			listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
 		loadUiArtifacts: () =>
 			listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
 				hidden: false,
@@ -327,7 +326,9 @@ async function resolveEntityDetail(input: {
 		}
 	}
 
-	const row = input.searchRows.userSecretRows.find((secret) => secret.name === ref.id)
+	const row = input.searchRows.userSecretRows.find(
+		(secret) => secret.name === ref.id,
+	)
 	if (!row) {
 		throw new Error('Secret not found for this user.')
 	}
@@ -570,33 +571,25 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						}
 					: {}),
 			}
-			const searchConversationIdsWithPreamble =
-				'state' in agent &&
-				agent.state &&
-				typeof agent.state === 'object' &&
-				Array.isArray(
-					(
-						agent.state as {
-							searchConversationIdsWithPreamble?: Array<string>
-						}
-					).searchConversationIdsWithPreamble,
-				)
-					? (
-							agent.state as {
-								searchConversationIdsWithPreamble?: Array<string>
-							}
-						).searchConversationIdsWithPreamble ?? []
-					: []
+			const statefulAgent = agent as McpRegistrationAgent & {
+				state?: {
+					searchConversationIdsWithPreamble?: Array<string>
+				}
+				setState?: (state: {
+					searchConversationIdsWithPreamble?: Array<string>
+				}) => void
+			}
+			const searchConversationIdsWithPreamble = Array.isArray(
+				statefulAgent.state?.searchConversationIdsWithPreamble,
+			)
+				? (statefulAgent.state?.searchConversationIdsWithPreamble ?? [])
+				: []
 			const includePreamble =
 				!args.conversationId ||
 				!searchConversationIdsWithPreamble.includes(conversationId)
-			if (
-				includePreamble &&
-				'setState' in agent &&
-				typeof agent.setState === 'function'
-			) {
-				agent.setState({
-					...(agent.state as { searchConversationIdsWithPreamble?: Array<string> }),
+			if (includePreamble && typeof statefulAgent.setState === 'function') {
+				statefulAgent.setState({
+					...(statefulAgent.state ?? {}),
 					searchConversationIdsWithPreamble: [
 						...searchConversationIdsWithPreamble,
 						conversationId,

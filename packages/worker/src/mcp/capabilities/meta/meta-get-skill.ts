@@ -51,10 +51,7 @@ export const metaGetSkillCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
-			name: z
-				.string()
-				.min(1)
-				.describe('Unique saved skill name.'),
+			name: z.string().min(1).describe('Unique saved skill name.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
