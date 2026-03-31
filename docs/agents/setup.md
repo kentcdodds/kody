@@ -143,12 +143,12 @@ Quick notes for getting a local kody environment running.
 - `npm run test:push` runs the same worker tests and Playwright E2E suite
   enforced by the Husky `pre-push` hook.
 - `npm run test:e2e:install` to install Playwright browsers.
-- `npm run test:e2e:run` to run Playwright specs through Nx so local and CI runs
-  can reuse cache hits.
-- `npm run test:mcp` to run MCP server E2E tests. Like `test:e2e:run`, it
-  prepares
-  `packages/worker/.env` from `.env.example` when needed so local and CI runs
-  have the minimum required test env.
+- `npm run test:e2e:run` runs the Playwright suite through Nx and depends on a
+  cached `worker:prepare-e2e-env` target so local and CI runs can reuse both the
+  env bootstrap and Playwright cache hits.
+- `npm run test:mcp` runs MCP server E2E tests and also depends on the cached
+  `worker:prepare-e2e-env` target, which writes `packages/worker/.env` from
+  `.env.example` when needed and backfills `COOKIE_SECRET` before the test run.
 
 ## Home Connector Docker publishing
 
