@@ -14,7 +14,7 @@ const outputSchema = z.object({
 	title: z.string(),
 	description: z.string(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
-	include_in_search_results: z.boolean(),
+	hidden: z.boolean(),
 	code: z
 		.string()
 		.describe('Generated UI source code to render inside the generic shell.'),
@@ -55,7 +55,7 @@ export const uiGetAppCapability = defineDomainCapability(
 				title: row.title,
 				description: row.description,
 				parameters: parseUiArtifactParameters(row.parameters),
-				include_in_search_results: row.include_in_search_results,
+				hidden: row.hidden,
 				code: row.code,
 				runtime: row.runtime,
 				created_at: row.created_at,

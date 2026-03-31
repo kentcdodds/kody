@@ -270,7 +270,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						listMcpSkillsByUserId(agent.getEnv().APP_DB, userId!),
 					loadUiArtifacts: () =>
 						listUiArtifactsByUserId(agent.getEnv().APP_DB, userId!, {
-							includeInSearchResults: true,
+							hidden: false,
 						}),
 					loadUserSecrets: () =>
 						listUserSecretsForSearch({

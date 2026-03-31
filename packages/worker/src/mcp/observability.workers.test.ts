@@ -174,10 +174,7 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 			},
 		)
 		expect(typeof (result as { app_id: string }).app_id).toBe('string')
-		expect(
-			(result as { include_in_search_results: boolean })
-				.include_in_search_results,
-		).toBe(false)
+		expect((result as { hidden: boolean }).hidden).toBe(true)
 	} finally {
 		console.info = originalInfo
 	}
@@ -204,7 +201,7 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 				title: 'Observed app',
 				description: 'Observation test app.',
 				code: '<main><h1>Observed app</h1></main>',
-					include_in_search_results: true,
+					hidden: false,
 			},
 			{
 				env: {

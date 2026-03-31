@@ -51,11 +51,11 @@ const inputSchema = z.object({
 		.describe(
 			'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` helper from `@kody/ui-utils`.',
 		),
-	include_in_search_results: z
+	hidden: z
 		.boolean()
 		.optional()
 		.describe(
-			'Whether this saved app should appear in search results. Defaults to false so one-off apps stay hidden unless explicitly opted in.',
+			'Whether this saved app should stay hidden from search results. Defaults to true so one-off apps stay private unless explicitly made discoverable.',
 		),
 })
 
@@ -64,7 +64,7 @@ const outputSchema = z.object({
 	runtime: z.enum(['html', 'javascript']),
 	hosted_url: z.string().url(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
-	include_in_search_results: z.boolean(),
+	hidden: z.boolean(),
 })
 
 export const uiSaveAppCapability = defineDomainCapability(
@@ -84,7 +84,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
 			const parameters = normalizeUiArtifactParameters(args.parameters)
-			const includeInSearchResults = args.include_in_search_results ?? false
+			const hidden = args.hidden ?? true
 			const serializedParameters = parameters
 				? JSON.stringify(parameters)
 				: null
@@ -100,7 +100,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						code: args.code,
 						runtime: args.runtime,
 						parameters: serializedParameters,
-						include_in_search_results: includeInSearchResults,
+						hidden,
 					},
 				)
 				if (!updated) {
@@ -116,14 +116,14 @@ export const uiSaveAppCapability = defineDomainCapability(
 					code: args.code,
 					runtime: args.runtime,
 					parameters: serializedParameters,
-					include_in_search_results: includeInSearchResults,
+					hidden,
 					created_at: now,
 					updated_at: now,
 				})
 			}
 
 			try {
-				if (includeInSearchResults) {
+				if (!hidden) {
 					await upsertUiArtifactVector(ctx.env, {
 						appId,
 						userId: user.userId,
@@ -173,7 +173,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				runtime: args.runtime,
 				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
 				parameters,
-				include_in_search_results: includeInSearchResults,
+				hidden,
 			}
 		},
 	},

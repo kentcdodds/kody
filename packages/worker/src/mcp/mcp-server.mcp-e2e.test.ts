@@ -232,7 +232,7 @@ test('mcp server executes user code against codemode and tracks execute context'
 	expect(executeResult?.hosted_url).toBe(
 		`${server.origin}/ui/${executeResult?.app_id}`,
 	)
-	expect(executeResult?.include_in_search_results).toBe(false)
+	expect(executeResult?.hidden).toBe(true)
 
 	const hiddenSearchResult = await mcpClient.client.callTool({
 		name: 'search',
@@ -273,13 +273,11 @@ test('mcp server executes user code against codemode and tracks execute context'
 		.structuredContent as
 		| {
 				result?: {
-					include_in_search_results?: boolean
+					hidden?: boolean
 				}
 		  }
 		| undefined
-	expect(savedAppMetadataStructured?.result?.include_in_search_results).toBe(
-		false,
-	)
+	expect(savedAppMetadataStructured?.result?.hidden).toBe(true)
 
 	const searchableUpdateResult = await mcpClient.client.callTool({
 		name: 'execute',
@@ -290,7 +288,7 @@ test('mcp server executes user code against codemode and tracks execute context'
 					title: 'Execute generated app',
 					description: 'Saved through execute.',
 					code: '<main><h1>Execute App</h1></main>',
-					include_in_search_results: true,
+					hidden: false,
 				})
 			}`,
 		},
@@ -300,13 +298,11 @@ test('mcp server executes user code against codemode and tracks execute context'
 	).structuredContent as
 		| {
 				result?: {
-					include_in_search_results?: boolean
+					hidden?: boolean
 				}
 		  }
 		| undefined
-	expect(searchableUpdateStructured?.result?.include_in_search_results).toBe(
-		true,
-	)
+	expect(searchableUpdateStructured?.result?.hidden).toBe(false)
 
 	const visibleSearchResult = await mcpClient.client.callTool({
 		name: 'search',

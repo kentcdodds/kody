@@ -16,7 +16,7 @@ export async function insertUiArtifact(
 		.prepare(
 			`INSERT INTO ui_artifacts (
 				id, user_id, title, description, source_code, source_type,
-				parameters, include_in_search_results, created_at, updated_at
+				parameters, hidden, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
@@ -27,7 +27,7 @@ export async function insertUiArtifact(
 			row.code,
 			row.runtime,
 			row.parameters ?? null,
-			row.include_in_search_results ? 1 : 0,
+			row.hidden ? 1 : 0,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
@@ -42,7 +42,7 @@ export async function getUiArtifactById(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, include_in_search_results, created_at, updated_at
+				parameters, hidden, created_at, updated_at
 			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
 		)
 		.bind(artifactId, userId)
@@ -63,7 +63,7 @@ export async function getUiArtifactByOwnerIds(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, include_in_search_results, created_at, updated_at
+				parameters, hidden, created_at, updated_at
 			FROM ui_artifacts
 			WHERE id = ? AND user_id IN (${placeholders})
 			LIMIT 1`,
@@ -98,7 +98,7 @@ export async function updateUiArtifact(
 			| 'code'
 			| 'runtime'
 			| 'parameters'
-			| 'include_in_search_results'
+			| 'hidden'
 		>
 	>,
 ): Promise<boolean> {
@@ -124,11 +124,8 @@ export async function updateUiArtifact(
 	if (updates.parameters !== undefined) {
 		addAssignment('parameters', updates.parameters ?? null)
 	}
-	if (updates.include_in_search_results !== undefined) {
-		addAssignment(
-			'include_in_search_results',
-			updates.include_in_search_results ? 1 : 0,
-		)
+	if (updates.hidden !== undefined) {
+		addAssignment('hidden', updates.hidden ? 1 : 0)
 	}
 
 	addAssignment('updated_at', new Date().toISOString())
@@ -145,22 +142,20 @@ export async function updateUiArtifact(
 export async function listUiArtifactsByUserId(
 	db: D1Database,
 	userId: string,
-	options?: { includeInSearchResults?: boolean },
+	options?: { hidden?: boolean },
 ): Promise<Array<UiArtifactRow>> {
-	const includeInSearchResults = options?.includeInSearchResults
+	const hidden = options?.hidden
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, include_in_search_results, created_at, updated_at
+				parameters, hidden, created_at, updated_at
 			FROM ui_artifacts
 			WHERE user_id = ?
-				${includeInSearchResults === undefined ? '' : 'AND include_in_search_results = ?'}`,
+				${hidden === undefined ? '' : 'AND hidden = ?'}`,
 		)
 		.bind(
 			userId,
-			...(includeInSearchResults === undefined
-				? []
-				: [includeInSearchResults ? 1 : 0]),
+			...(hidden === undefined ? [] : [hidden ? 1 : 0]),
 		)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
@@ -175,10 +170,10 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		code: String(row['source_code']),
 		runtime: String(row['source_type']) as UiArtifactRow['runtime'],
 		parameters: row['parameters'] == null ? null : String(row['parameters']),
-		include_in_search_results:
-			row['include_in_search_results'] === 1 ||
-			row['include_in_search_results'] === '1' ||
-			row['include_in_search_results'] === true,
+		hidden:
+			row['hidden'] === 1 ||
+			row['hidden'] === '1' ||
+			row['hidden'] === true,
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	}
