@@ -28,7 +28,7 @@ Quick notes for getting a local kody environment running.
   uses `<preview-worker-name>-oauth-kv` (see `tools/ci/preview-resources.ts`).
 - **Migrating from a legacy D1**: export a remote database to a local SQLite
   file and copy only the tables you need — see
-  [`docs/agents/d1-legacy-export.md`](./d1-legacy-export.md) and
+  [`docs/contributing/d1-legacy-export.md`](./d1-legacy-export.md) and
   `tools/export-d1-remote-to-sqlite.sh`.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed.
@@ -102,7 +102,7 @@ Quick notes for getting a local kody environment running.
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
   Vectorize plus Workers AI; see `docs/environment-variables.md`.
-- Add new mock API servers by following `docs/agents/mock-api-servers.md`.
+- Add new mock API servers by following `docs/contributing/mock-api-servers.md`.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
   starting `npm run dev`.
 - When `AI_MODE=remote`, set `AI_GATEWAY_ID`, `CLOUDFLARE_ACCOUNT_ID`, and
@@ -166,7 +166,7 @@ dedicated Home Connector publish workflow.
 
 - Read `docs/project-intent.md` before making product-level changes or writing
   docs that describe the project's goals.
-- Update `docs/agents` when behavior, workflows, architecture notes, or
+- Update `docs/contributing` when behavior, workflows, architecture notes, or
   verification guidance change.
 - Treat docs updates as part of done work.
 - Keep `AGENTS.md` concise and index-like; put details in focused docs.
@@ -265,4 +265,4 @@ If you ever need to do the same operations manually, use:
 
 Use the Remix package index for quick navigation:
 
-- `docs/agents/remix/index.md`
+- `docs/contributing/remix/index.md`

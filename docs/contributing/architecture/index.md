@@ -3,13 +3,13 @@
 This folder documents the important runtime architecture for `kody`.
 
 Before making product-level assumptions, read
-[`../project-intent.md`](../project-intent.md). The architecture docs describe
-how the system currently works, while the intent doc explains what the project
-is trying to become.
+[`../../project-intent.md`](../../project-intent.md). The architecture docs
+describe how the system currently works, while the intent doc explains what the
+project is trying to become.
 
 ## Core docs
 
-- [Project Intent](../project-intent.md): current scope, goals, and non-goals
+- [Project Intent](../../project-intent.md): current scope, goals, and non-goals
   for the project.
 - [Request Lifecycle](./request-lifecycle.md): how requests are routed in the
   Worker.
@@ -36,4 +36,4 @@ is trying to become.
   `packages/worker/src/mcp/capabilities/builtin-domains.ts`, built by
   `packages/worker/src/mcp/capabilities/build-capability-registry.ts`,
   re-exported from `packages/worker/src/mcp/capabilities/registry.ts` (see
-  [`../agents/adding-capabilities.md`](../agents/adding-capabilities.md)).
+  [`../adding-capabilities.md`](../adding-capabilities.md)).

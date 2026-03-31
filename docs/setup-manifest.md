@@ -28,9 +28,10 @@ bindings and names but **does not** commit remote D1 `database_id` or KV `id` /
 Production CI deploys ensure these resources exist (create when missing) and
 write resolved IDs into `packages/worker/wrangler-production.generated.json`
 before migrations and deploy. Preview deploys do the same per preview worker via
-`packages/worker/wrangler-preview.generated.json` (see `docs/agents/setup.md`).
-Cloudflare deploys do not auto-create these resources from bindings alone, so
-the deploy workflow runs `node tools/ci/production-resources.ts ensure` first.
+`packages/worker/wrangler-preview.generated.json` (see
+`docs/contributing/setup.md`). Cloudflare deploys do not auto-create these
+resources from bindings alone, so the deploy workflow runs
+`node tools/ci/production-resources.ts ensure` first.
 
 ## Optional Cloudflare offerings
 

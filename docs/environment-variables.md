@@ -99,9 +99,9 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the internal API client
   (`Authorization: Bearer ...`) for `page_to_markdown` Browser Rendering. User
   Cloudflare API calls from codemode use saved secrets and secret-aware `fetch`
-  (see `docs/agents/skill-patterns/cloudflare-api-v4.md`). Local `npm run dev`
-  sets this to the Cloudflare mock token unless `AI_MODE=remote` or
-  `SKIP_CLOUDFLARE_MOCK=1`; when unset and no mock is attached, the billed
+  (see `docs/contributing/skill-patterns/cloudflare-api-v4.md`). Local
+  `npm run dev` sets this to the Cloudflare mock token unless `AI_MODE=remote`
+  or `SKIP_CLOUDFLARE_MOCK=1`; when unset and no mock is attached, the billed
   `page_to_markdown` Browser Rendering fallback fails fast with a setup hint.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the
   `page_to_markdown` capability when it falls back to Browser Rendering

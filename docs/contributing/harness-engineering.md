@@ -13,7 +13,7 @@ turn each change into a durable improvement, not a one-off fix.
 ## Keep `AGENTS.md` small and navigable
 
 - Use `AGENTS.md` as a map, not an encyclopedia.
-- Put detailed guidance in focused docs under `docs/agents`.
+- Put detailed guidance in focused docs under `docs/contributing`.
 - When behavior changes, update the closest source-of-truth doc in the same PR.
 - If knowledge is only in chat threads or memory, assume it will be lost.
 
@@ -36,7 +36,7 @@ For this repo, the default evaluation step is:
 
 When a mistake repeats, move "advice" into a stronger guardrail:
 
-1. **Docs**: clarify the expected pattern in `docs/agents`.
+1. **Docs**: clarify the expected pattern in `docs/contributing`.
 2. **Tests**: add coverage for the failure mode.
 3. **Lint/structure**: add a static rule when possible.
 4. **Scripts/automation**: encode the workflow in commands.
@@ -64,7 +64,7 @@ Prefer signals that are easy to run and interpret locally:
 
 Use a lightweight "doc and quality gardening" pass to prevent drift:
 
-- Remove stale guidance from `docs/agents`.
+- Remove stale guidance from `docs/contributing`.
 - Tighten unclear instructions and add cross-links.
 - Identify recurring defects and propose one new mechanical guardrail.
 - Record follow-up tech debt as explicit, trackable work.

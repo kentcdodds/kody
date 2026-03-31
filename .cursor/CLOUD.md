@@ -32,10 +32,11 @@ A full-stack web application starter built on Cloudflare Workers with Remix 3
 ## Documentation
 
 - [AGENTS.md](../AGENTS.md) - Agent instructions and verification steps
-- [docs/agents/remix/index.md](../docs/agents/remix/index.md) - Remix package
-  docs
-- [docs/agents/setup.md](../docs/agents/setup.md) - Setup documentation
-- [docs/agents/testing-principles.md](../docs/agents/testing-principles.md) -
+- [docs/contributing/remix/index.md](../docs/contributing/remix/index.md) -
+  Remix package docs
+- [docs/contributing/setup.md](../docs/contributing/setup.md) - Setup
+  documentation
+- [docs/contributing/testing-principles.md](../docs/contributing/testing-principles.md) -
   Testing guidelines
-- [docs/agents/end-to-end-testing.md](../docs/agents/end-to-end-testing.md) -
+- [docs/contributing/end-to-end-testing.md](../docs/contributing/end-to-end-testing.md) -
   E2E testing guide

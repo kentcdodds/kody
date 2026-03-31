@@ -16,7 +16,7 @@
 #   .tmp/d1-exports/<name>.sql
 #   .tmp/d1-exports/<name>.sqlite
 #
-# See docs/agents/d1-legacy-export.md for copying rows into a new kody D1.
+# See docs/contributing/d1-legacy-export.md for copying rows into a new kody D1.
 
 set -euo pipefail
 

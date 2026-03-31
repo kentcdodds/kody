@@ -93,7 +93,9 @@ Request → packages/worker/src/index.ts
 | [`docs/environment-variables.md`](./docs/environment-variables.md) | Adding new env vars                  |
 | [`docs/cloudflare-offerings.md`](./docs/cloudflare-offerings.md)   | Optional Cloudflare integrations     |
 | [`docs/project-intent.md`](./docs/project-intent.md)               | Scope, goals, and non-goals          |
-| [`docs/agents/setup.md`](./docs/agents/setup.md)                   | Local development and verification   |
+| [`docs/contributing/index.md`](./docs/contributing/index.md)       | Developing and extending Kody        |
+| [`docs/use/index.md`](./docs/use/index.md)                         | Using Kody over MCP                  |
+| [`docs/contributing/setup.md`](./docs/contributing/setup.md)       | Local development and verification   |
 
 ---
 

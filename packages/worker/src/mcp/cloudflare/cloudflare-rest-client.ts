@@ -2,7 +2,7 @@
  * Minimal Cloudflare API v4 HTTP client (Bearer token). Used by
  * `page_to_markdown` Browser Rendering and tests. User-facing Cloudflare API
  * access is via saved skills and secret-aware `fetch`; see
- * `docs/agents/skill-patterns/cloudflare-api-v4.md`.
+ * `docs/contributing/skill-patterns/cloudflare-api-v4.md`.
  *
  * @see https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/
  */
