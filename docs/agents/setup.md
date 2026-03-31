@@ -128,20 +128,20 @@ Quick notes for getting a local kody environment running.
   `oxlint --fix` to staged JavaScript/TypeScript files, and then runs
   `npm run typecheck` for the repo before the commit is created.
 - `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
-  so pushes are blocked when the worker Vitest suites or
-  `packages/home-connector` Vitest suite fail.
+  so pushes are blocked when the worker Vitest suites,
+  `packages/home-connector` Vitest suite, or Playwright E2E suite fail.
 - Because the commit hook already enforces formatting, lint fixes, and
   typechecking, agents do not need to run those checks separately before every
   commit unless they want earlier feedback or are validating a larger change set
   before opening a PR.
-- Push-time hooks intentionally stop short of `npm run validate`; Playwright E2E,
-  MCP E2E, build validation, and repo-wide format checks remain explicit checks
-  because they are substantially heavier than the unit-style suites.
+- Push-time hooks intentionally stop short of `npm run validate`; MCP E2E, build
+  validation, and repo-wide format checks remain explicit checks because they
+  are heavier than the push gate.
 - `npm run validate` runs format check, lint fix, build, typecheck, Playwright
   tests, and MCP E2E tests.
 - `npm run format` applies formatting updates.
-- `npm run test:push` runs the same worker and home-connector tests enforced by
-  the Husky `pre-push` hook.
+- `npm run test:push` runs the same worker tests, home-connector tests, and
+  Playwright E2E suite enforced by the Husky `pre-push` hook.
 - `npm run test:e2e:install` to install Playwright browsers.
 - `npm run test:e2e` to run Playwright specs.
 - `npm run test:mcp` to run MCP server E2E tests. Like `test:e2e`, it prepares
