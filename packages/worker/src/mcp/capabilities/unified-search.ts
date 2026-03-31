@@ -90,14 +90,7 @@ export type SkillSearchHitSummary = {
 	vectorRank?: number
 }
 
-export type SkillSearchHitDetail = SkillSearchHitSummary & {
-	inferredCapabilities: Array<string>
-	usesCapabilities: Array<string> | null
-	searchText: string | null
-	parameters: Array<SkillParameterDefinition> | null
-}
-
-export type SkillSearchHit = SkillSearchHitSummary | SkillSearchHitDetail
+export type SkillSearchHit = SkillSearchHitSummary
 
 export type CapabilitySearchHitTyped = {
 	type: 'capability'
