@@ -8,6 +8,42 @@ WITH base_names AS (
 	FROM mcp_skills
 	WHERE name IS NULL
 ),
+suffixes AS (
+	SELECT
+		user_id,
+		base_name,
+		rtrim(base_name, '0123456789') AS trimmed_base,
+		CASE
+			WHEN rtrim(base_name, '0123456789') <> base_name
+				AND length(rtrim(base_name, '0123456789')) > 1
+				AND substr(rtrim(base_name, '0123456789'), -1) = '-'
+			THEN substr(
+				rtrim(base_name, '0123456789'),
+				1,
+				length(rtrim(base_name, '0123456789')) - 1
+			)
+			ELSE NULL
+		END AS prefix,
+		CASE
+			WHEN rtrim(base_name, '0123456789') <> base_name
+				AND length(rtrim(base_name, '0123456789')) > 1
+				AND substr(rtrim(base_name, '0123456789'), -1) = '-'
+			THEN CAST(
+				substr(base_name, length(rtrim(base_name, '0123456789')) + 1) AS INTEGER
+			)
+			ELSE NULL
+		END AS suffix_number
+	FROM base_names
+),
+max_suffixes AS (
+	SELECT
+		user_id,
+		prefix AS base_name,
+		MAX(suffix_number) AS max_suffix
+	FROM suffixes
+	WHERE prefix IS NOT NULL AND suffix_number IS NOT NULL
+	GROUP BY user_id, prefix
+),
 ranked AS (
 	SELECT
 		id,
@@ -22,9 +58,12 @@ SET name = (
 	SELECT
 		CASE
 			WHEN ranked.name_count = 1 OR ranked.name_index = 1 THEN ranked.base_name
-			ELSE ranked.base_name || '-' || ranked.name_index
+			ELSE ranked.base_name || '-' || (COALESCE(max_suffixes.max_suffix, 1) + ranked.name_index - 1)
 		END
 	FROM ranked
+	LEFT JOIN max_suffixes
+		ON max_suffixes.user_id = ranked.user_id
+		AND max_suffixes.base_name = ranked.base_name
 	WHERE ranked.id = mcp_skills.id
 )
 WHERE name IS NULL;

@@ -200,10 +200,9 @@ export async function deleteMcpSkill(
 	userId: string,
 	skillName: string,
 ): Promise<boolean> {
-	const normalizedSkillName = normalizeSkillName(skillName)
 	const out = await db
 		.prepare(`DELETE FROM mcp_skills WHERE name = ? AND user_id = ?`)
-		.bind(normalizedSkillName, userId)
+		.bind(skillName, userId)
 		.run()
 	return (out.meta.changes ?? 0) > 0
 }
