@@ -27,6 +27,28 @@ test('mcp server returns built-in instructions and base server metadata', async 
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
 
+	const tools = await mcpClient.client.listTools()
+	const toolDescriptions = new Map(
+		tools.tools.map((tool) => [tool.name, tool.inputSchema] as const),
+	)
+	const conversationIdDescription =
+		'Ties related calls together. On the first call, omit this to receive a server-generated ID, or supply your own. Pass the returned `conversationId` on every subsequent call in the same conversation - this enables optimizations like reduced response size.'
+
+	for (const toolName of ['search', 'execute', 'open_generated_ui']) {
+		const schema = toolDescriptions.get(toolName) as
+			| {
+					properties?: {
+						conversationId?: {
+							description?: string
+						}
+					}
+			  }
+			| undefined
+		expect(schema?.properties?.conversationId?.description).toContain(
+			conversationIdDescription,
+		)
+	}
+
 	const basicSearchResult = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
@@ -93,6 +115,7 @@ test('mcp server saves and browses skill collections', async () => {
 		arguments: {
 			code: `async () => {
 				return await codemode.meta_save_skill({
+					name: 'summarize-agent-prs',
 					title: 'Summarize agent PRs',
 					description: 'Summarize open pull requests for agents.',
 					collection: 'GitHub Workflows',
@@ -110,14 +133,14 @@ test('mcp server saves and browses skill collections', async () => {
 	const saveStructured = (saveResult as CallToolResult).structuredContent as
 		| {
 				result?: {
-					skill_id?: string
+					name?: string
 					collection?: string | null
 					collection_slug?: string | null
 				}
 		  }
 		| undefined
 	const savedSkill = saveStructured?.result
-	expect(typeof savedSkill?.skill_id).toBe('string')
+	expect(savedSkill?.name).toBe('summarize-agent-prs')
 	expect(savedSkill?.collection).toBe('GitHub Workflows')
 	expect(savedSkill?.collection_slug).toBe('github-workflows')
 
@@ -155,7 +178,7 @@ test('mcp server saves and browses skill collections', async () => {
 		arguments: {
 			code: `async () => {
 				return await codemode.meta_get_skill({
-					skill_id: ${JSON.stringify(savedSkill?.skill_id)},
+					name: ${JSON.stringify(savedSkill?.name)},
 				})
 			}`,
 		},
@@ -163,14 +186,17 @@ test('mcp server saves and browses skill collections', async () => {
 	const getStructured = (getResult as CallToolResult).structuredContent as
 		| {
 				result?: {
+					name?: string
 					collection?: string | null
 					collection_slug?: string | null
 				}
 		  }
 		| undefined
+	expect(getStructured?.result?.name).toBe('summarize-agent-prs')
 	expect(getStructured?.result?.collection).toBe('GitHub Workflows')
 	expect(getStructured?.result?.collection_slug).toBe('github-workflows')
 
+	const conversationId = 'skills-search-flow'
 	const searchResult = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
@@ -178,6 +204,7 @@ test('mcp server saves and browses skill collections', async () => {
 			skill_collection: 'github-workflows',
 			limit: 25,
 			maxResponseSize: 20_000,
+			conversationId,
 		},
 	})
 	const searchText = getTextContent((searchResult as CallToolResult).content)
@@ -187,6 +214,7 @@ test('mcp server saves and browses skill collections', async () => {
 					matches?: Array<{
 						type?: string
 						id?: string
+						name?: string
 						collection?: string | null
 						collectionSlug?: string | null
 					}>
@@ -194,21 +222,38 @@ test('mcp server saves and browses skill collections', async () => {
 		  }
 		| undefined
 	expect(searchText).toContain('# Search results')
+	expect(searchText).toContain('**How to run matches:**')
 	expect(searchText).toContain('## Skill — Summarize agent PRs')
+	expect(searchText).toContain('(name: `summarize-agent-prs`)')
 	expect(
 		searchStructured?.result?.matches?.find((match) => match.type === 'skill'),
 	).toEqual(
 		expect.objectContaining({
-			id: savedSkill?.skill_id,
+			id: savedSkill?.name,
+			name: savedSkill?.name,
 			collection: 'GitHub Workflows',
 			collectionSlug: 'github-workflows',
 		}),
 	)
 
+	const followupSearchResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query: 'github pull requests',
+			limit: 10,
+			conversationId,
+		},
+	})
+	const followupSearchText = getTextContent(
+		(followupSearchResult as CallToolResult).content,
+	)
+	expect(followupSearchText).toContain('# Search results')
+	expect(followupSearchText).not.toContain('**How to run matches:**')
+
 	const entityResult = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
-			entity: `${savedSkill?.skill_id}:skill`,
+			entity: `${savedSkill?.name}:skill`,
 		},
 	})
 	const entityText = getTextContent((entityResult as CallToolResult).content)
@@ -218,18 +263,50 @@ test('mcp server saves and browses skill collections', async () => {
 					kind?: string
 					type?: string
 					id?: string
+					name?: string
 					collection?: string | null
 				}
 		  }
 		| undefined
 	expect(entityText).toContain('# Skill — Summarize agent PRs')
 	expect(entityText).toContain('## Run this skill')
+	expect(entityText).toContain('Name: `summarize-agent-prs`')
 	expect(entityStructured?.result).toEqual(
 		expect.objectContaining({
 			kind: 'entity',
 			type: 'skill',
-			id: savedSkill?.skill_id,
+			id: savedSkill?.name,
 			collection: 'GitHub Workflows',
+			collectionSlug: 'github-workflows',
+		}),
+	)
+
+	const runResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_run_skill({
+					name: ${JSON.stringify(savedSkill?.name)},
+				})
+			}`,
+		},
+	})
+	const runStructured = (runResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					ok?: boolean
+					result?: {
+						ok?: boolean
+					}
+				}
+		  }
+		| undefined
+	expect(runStructured?.result).toEqual(
+		expect.objectContaining({
+			ok: true,
+			result: {
+				ok: true,
+			},
 		}),
 	)
 })

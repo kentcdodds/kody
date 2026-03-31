@@ -2,13 +2,26 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { insertMcpSkill, deleteMcpSkill } from '#mcp/skills/mcp-skills-repo.ts'
+import {
+	deleteMcpSkill,
+	getMcpSkillByName,
+	insertMcpSkill,
+	isDuplicateSkillNameError,
+	updateMcpSkill,
+} from '#mcp/skills/mcp-skills-repo.ts'
+import { buildSkillEmbedTextFromStoredRow } from '#mcp/skills/skill-mutation.ts'
 import { prepareSkillPersistence } from '#mcp/skills/skill-mutation.ts'
 import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
 
 const inputSchema = z.object({
+	name: z
+		.string()
+		.min(1)
+		.describe(
+			'Unique lower-kebab-case skill name for this user. This is the public way to refer to the skill in search, get, run, update, and delete flows.',
+		),
 	title: z.string().min(1).describe('Short title for the skill.'),
 	description: z
 		.string()
@@ -65,7 +78,7 @@ const inputSchema = z.object({
 })
 
 const outputSchema = z.object({
-	skill_id: z.string(),
+	name: z.string(),
 	collection: z.string().nullable(),
 	collection_slug: z.string().nullable(),
 	inferred_capabilities: z.array(z.string()),
@@ -81,7 +94,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 	{
 		name: 'meta_save_skill',
 		description:
-			'Save a reusable codemode skill for the signed-in user when the workflow is reasonably repeatable (a pattern you expect to run again with similar structure or inputs). Do not save one-off tasks or highly bespoke work—use execute for those. To change an existing skill in place, use meta_update_skill instead.',
+			'Save or replace a reusable codemode skill for the signed-in user by name when the workflow is reasonably repeatable (a pattern you expect to run again with similar structure or inputs). The lower-kebab-case skill name is the public identifier, so calling this again with the same name replaces the stored skill in place. Do not save one-off tasks or highly bespoke work—use execute for those.',
 		keywords: [
 			'skill',
 			'save',
@@ -99,16 +112,40 @@ export const metaSaveSkillCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const prep = await prepareSkillPersistence(args)
+			const existing = await getMcpSkillByName(
+				ctx.env.APP_DB,
+				user.userId,
+				prep.rowPayload.name,
+			)
 
-			const skillId = crypto.randomUUID()
+			const skillId = existing?.id ?? crypto.randomUUID()
 			const now = new Date().toISOString()
-			await insertMcpSkill(ctx.env.APP_DB, {
-				id: skillId,
-				user_id: user.userId,
-				...prep.rowPayload,
-				created_at: now,
-				updated_at: now,
-			})
+
+			if (existing) {
+				await updateMcpSkill(
+					ctx.env.APP_DB,
+					user.userId,
+					existing.name,
+					prep.rowPayload,
+				)
+			} else {
+				try {
+					await insertMcpSkill(ctx.env.APP_DB, {
+						id: skillId,
+						user_id: user.userId,
+						...prep.rowPayload,
+						created_at: now,
+						updated_at: now,
+					})
+				} catch (error) {
+					if (isDuplicateSkillNameError(error)) {
+						throw new Error(
+							`A saved skill named "${prep.rowPayload.name}" already exists for this user.`,
+						)
+					}
+					throw error
+				}
+			}
 
 			try {
 				await upsertSkillVector(ctx.env, {
@@ -118,12 +155,39 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					collectionSlug: prep.rowPayload.collection_slug,
 				})
 			} catch (cause) {
-				await deleteMcpSkill(ctx.env.APP_DB, user.userId, skillId)
+				if (existing) {
+					await updateMcpSkill(ctx.env.APP_DB, user.userId, existing.name, {
+						name: existing.name,
+						title: existing.title,
+						description: existing.description,
+						collection_name: existing.collection_name,
+						collection_slug: existing.collection_slug,
+						keywords: existing.keywords,
+						code: existing.code,
+						search_text: existing.search_text,
+						uses_capabilities: existing.uses_capabilities,
+						parameters: existing.parameters,
+						inferred_capabilities: existing.inferred_capabilities,
+						inference_partial: existing.inference_partial,
+						read_only: existing.read_only,
+						idempotent: existing.idempotent,
+						destructive: existing.destructive,
+					})
+					const oldEmbed = await buildSkillEmbedTextFromStoredRow(existing)
+					await upsertSkillVector(ctx.env, {
+						skillId: existing.id,
+						userId: user.userId,
+						embedText: oldEmbed,
+						collectionSlug: existing.collection_slug,
+					})
+				} else {
+					await deleteMcpSkill(ctx.env.APP_DB, user.userId, prep.rowPayload.name)
+				}
 				throw cause
 			}
 
 			return {
-				skill_id: skillId,
+				name: prep.rowPayload.name,
 				collection: prep.rowPayload.collection_name,
 				collection_slug: prep.rowPayload.collection_slug,
 				inferred_capabilities: prep.merged,

@@ -33,6 +33,7 @@ export type SlimSearchMatch =
 	| {
 			type: 'skill'
 			id: string
+			name: string
 			title: string
 			description: string
 			usage: string
@@ -174,18 +175,21 @@ export function formatSearchMarkdown(input: {
 	matches: Array<UnifiedSearchMatch>
 	warnings: Array<string>
 	baseUrl: string
+	includePreamble?: boolean
 }) {
 	const lines: Array<string> = ['# Search results', '']
-	lines.push(
-		'For full detail on one hit, call `search` with `entity: "{id}:{type}"` (example: `cloudflare_api_docs:capability`).',
-		'',
-		'**How to run matches:**',
-		'',
-		'- Builtin capabilities — `execute` / `codemode.<name>(args)`',
-		'- Saved skills — `codemode.meta_run_skill({ skill_id, params })`',
-		'- Saved apps — `open_generated_ui({ app_id })`; users can also open the hosted URL for the saved app',
-		'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat)',
-	)
+	if (input.includePreamble ?? true) {
+		lines.push(
+			'For full detail on one hit, call `search` with `entity: "{id}:{type}"` (example: `cloudflare_api_docs:capability`).',
+			'',
+			'**How to run matches:**',
+			'',
+			'- Builtin capabilities — `execute` / `codemode.<name>(args)`',
+			'- Saved skills — `codemode.meta_run_skill({ name, params })`',
+			'- Saved apps — `open_generated_ui({ app_id })`; users can also open the hosted URL for the saved app',
+			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat)',
+		)
+	}
 
 	if (input.warnings.length > 0) {
 		lines.push('', '## Warnings', '')
@@ -217,7 +221,11 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 		]
 	}
 	if (match.type === 'skill') {
-		return [`## Skill — ${match.title}`, '', match.description]
+		return [
+			`## Skill — ${match.title} (name: \`${match.skillName}\`)`,
+			'',
+			match.description,
+		]
 	}
 	if (match.type === 'app') {
 		const hostedUrl = buildSavedUiUrl(baseUrl, match.appId)
@@ -256,10 +264,11 @@ export function toSlimStructuredMatches(input: {
 		if (match.type === 'skill') {
 			return {
 				type: 'skill',
-				id: match.skillId,
+				id: match.skillName,
+				name: match.skillName,
 				title: match.title,
 				description: match.description,
-				usage: `codemode.meta_run_skill({ skill_id: "${match.skillId}", params: { ... } })`,
+				usage: `codemode.meta_run_skill({ name: "${match.skillName}", params: { ... } })`,
 				collection: match.collection,
 				collectionSlug: match.collectionSlug,
 			}
@@ -355,7 +364,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Summary',
 			'',
-			`- Skill ID: \`${detail.row.id}\``,
+			`- Name: \`${detail.row.name}\``,
 			`- Collection: ${detail.row.collection_name ?? 'none'}`,
 			`- Collection slug: ${detail.row.collection_slug ?? 'none'}`,
 			`- Read-only: ${detail.row.read_only === 1 ? 'yes' : 'no'}`,
@@ -364,7 +373,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Run this skill',
 			'',
-			`- \`codemode.meta_run_skill({ skill_id: "${detail.row.id}", params: { ... } })\``,
+			`- \`codemode.meta_run_skill({ name: "${detail.row.name}", params: { ... } })\``,
 			'- Use `meta_get_skill` separately if you need the stored source code.',
 		]
 		if (parameters && parameters.length > 0) {
@@ -392,10 +401,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			structured: {
 				kind: 'entity',
 				type: 'skill',
-				id: detail.id,
+				id: detail.row.name,
 				title: detail.title,
 				description: detail.description,
-				usage: `codemode.meta_run_skill({ skill_id: "${detail.row.id}", params: { ... } })`,
+				usage: `codemode.meta_run_skill({ name: "${detail.row.name}", params: { ... } })`,
 				collection: detail.row.collection_name,
 				collectionSlug: detail.row.collection_slug,
 				parameters,

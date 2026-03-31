@@ -37,8 +37,8 @@ function parseJsonStringArray(raw: string): Array<string> {
 	}
 }
 
-function buildSkillUsage(skillId: string): string {
-	const runArgs = JSON.stringify({ skill_id: skillId })
+function buildSkillUsage(skillName: string): string {
+	const runArgs = JSON.stringify({ name: skillName })
 	return `Run with meta_run_skill: ${runArgs}. Optionally include "params": { ... }. To inspect code, call meta_get_skill then execute.`
 }
 
@@ -72,7 +72,7 @@ function skillRowEmbedDoc(
 
 export type SkillSearchHitSummary = {
 	type: 'skill'
-	skillId: string
+	skillName: string
 	domain: 'meta'
 	collection: string | null
 	collectionSlug: string | null
@@ -145,14 +145,14 @@ function rowToSkillHit(
 	const keywords = parseJsonStringArray(row.keywords)
 	return {
 		type: 'skill',
-		skillId: row.id,
+		skillName: row.name,
 		domain: 'meta',
 		collection: row.collection_name,
 		collectionSlug: row.collection_slug,
 		title: row.title,
 		description: row.description,
 		keywords,
-		usage: buildSkillUsage(row.id),
+		usage: buildSkillUsage(row.name),
 		readOnly: row.read_only === 1,
 		idempotent: row.idempotent === 1,
 		destructive: row.destructive === 1,
@@ -413,7 +413,7 @@ export async function searchUnified(input: {
 	}
 
 	const capKeys = capResult.matches.map((m) => `c:${m.name}`)
-	const skillKeys = skillResult.matches.map((m) => `s:${m.skillId}`)
+	const skillKeys = skillResult.matches.map((m) => `s:${m.skillName}`)
 	const secretKeys = secretResult.matches.map((m) => `u:${m.name}`)
 	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
 	const fusedCross = reciprocalRankFusion(
@@ -429,8 +429,8 @@ export async function searchUnified(input: {
 	).slice(0, Math.max(1, input.limit))
 
 	const capByName = new Map(capResult.matches.map((m) => [m.name, m] as const))
-	const skillById = new Map(
-		skillResult.matches.map((m) => [m.skillId, m] as const),
+	const skillByName = new Map(
+		skillResult.matches.map((m) => [m.skillName, m] as const),
 	)
 	const secretByName = new Map(
 		secretResult.matches.map((m) => [m.name, m] as const),
@@ -449,8 +449,8 @@ export async function searchUnified(input: {
 				matches.push({ type: 'capability', ...hit, fusedScore: score })
 			}
 		} else if (key.startsWith('s:')) {
-			const id = key.slice(2)
-			const hit = skillById.get(id)
+			const name = key.slice(2)
+			const hit = skillByName.get(name)
 			if (hit) {
 				matches.push({ ...hit, fusedScore: score })
 			}

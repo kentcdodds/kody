@@ -8,6 +8,7 @@ import {
 } from './skill-embed-and-flags.ts'
 import { parseSkillCollection } from './skill-collections.ts'
 import { type McpSkillRow } from './mcp-skills-types.ts'
+import { normalizeSkillName } from './skill-names.ts'
 import {
 	normalizeSkillParameters,
 	parseSkillParameters,
@@ -53,6 +54,7 @@ export async function buildSkillEmbedTextFromStoredRow(
 }
 
 export type SkillPersistenceArgs = {
+	name: string
 	title: string
 	description: string
 	collection?: string | undefined
@@ -73,6 +75,7 @@ export type PreparedSkillPersistence = {
 	warnings: Array<string>
 	embedText: string
 	rowPayload: {
+		name: string
 		title: string
 		description: string
 		collection_name: string | null
@@ -130,6 +133,7 @@ export async function prepareSkillPersistence(
 
 	const parameters = normalizeSkillParameters(args.parameters)
 	const collection = parseSkillCollection(args.collection)
+	const skillName = normalizeSkillName(args.name)
 	const embedText = buildSkillEmbedText({
 		title: args.title,
 		description: args.description,
@@ -143,6 +147,7 @@ export async function prepareSkillPersistence(
 	})
 
 	const rowPayload = {
+		name: skillName,
 		title: args.title,
 		description: args.description,
 		collection_name: collection?.name ?? null,

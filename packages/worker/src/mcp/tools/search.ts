@@ -9,7 +9,7 @@ import {
 } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import {
-	getMcpSkillById,
+	getMcpSkillByName,
 	listMcpSkillsByUserId,
 } from '#mcp/skills/mcp-skills-repo.ts'
 import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
@@ -98,9 +98,9 @@ const searchTool = {
 	description: `
 Search Kody **builtin capabilities**, your saved **skills** (meta domain), your saved **apps** (apps domain), and your reusable **user secret references** by natural language before calling \`execute\` or opening a UI.
 
-Search returns compact **markdown** plus slim structured results. Use \`query\` for ranked search, or use \`entity\` with an exact reference like \`cloudflare_rest:capability\` or \`70a6a63f-2711-4617-b273-ec95f3be114b:skill\` to get focused markdown detail for a single result.
+Search returns compact **markdown** plus slim structured results. Use \`query\` for ranked search, or use \`entity\` with an exact reference like \`cloudflare_rest:capability\` or \`github-pr-summary:skill\` to get focused markdown detail for a single result.
 
-Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. To run a saved skill, call \`meta_run_skill\` with the \`skill_id\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\` or share its hosted URL with the user. User-scoped secret references never include raw secret values; inspect secret metadata during execution with \`codemode.secret_list(...)\`, and use generated UI when the user needs to provide a missing secret. App-bound secrets are attached to their corresponding app results rather than returned as standalone secret hits.
+Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. Saved skills are identified by a unique lower-kebab-case **name**. To run a saved skill, call \`meta_run_skill\` with the \`name\` and optional \`params\`. If you need to inspect the code, call \`meta_get_skill\`. To reopen a saved app, call \`open_generated_ui\` with the \`app_id\` or share its hosted URL with the user. User-scoped secret references never include raw secret values; inspect secret metadata during execution with \`codemode.secret_list(...)\`, and use generated UI when the user needs to provide a missing secret. App-bound secrets are attached to their corresponding app results rather than returned as standalone secret hits.
 
 If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
 
@@ -117,7 +117,7 @@ Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
 - \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
 - \`{ "entity": "cloudflare_rest:capability" }\`
-- To run a skill: \`meta_run_skill({ "skill_id": "<id>", "params": { "owner": "kentcdodds" } })\`
+- To run a skill: \`meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })\`
 - To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
 	`.trim(),
 	annotations: {
@@ -291,7 +291,7 @@ async function resolveEntityDetail(input: {
 	}
 
 	if (ref.type === 'skill') {
-		const row = await getMcpSkillById(
+		const row = await getMcpSkillByName(
 			input.agent.getEnv().APP_DB,
 			input.userId,
 			ref.id,
@@ -301,7 +301,7 @@ async function resolveEntityDetail(input: {
 		}
 		return {
 			type: 'skill' as const,
-			id: row.id,
+			id: row.name,
 			title: row.title,
 			description: row.description,
 			row,
@@ -570,6 +570,39 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						}
 					: {}),
 			}
+			const searchConversationIdsWithPreamble =
+				'state' in agent &&
+				agent.state &&
+				typeof agent.state === 'object' &&
+				Array.isArray(
+					(
+						agent.state as {
+							searchConversationIdsWithPreamble?: Array<string>
+						}
+					).searchConversationIdsWithPreamble,
+				)
+					? (
+							agent.state as {
+								searchConversationIdsWithPreamble?: Array<string>
+							}
+						).searchConversationIdsWithPreamble ?? []
+					: []
+			const includePreamble =
+				!args.conversationId ||
+				!searchConversationIdsWithPreamble.includes(conversationId)
+			if (
+				includePreamble &&
+				'setState' in agent &&
+				typeof agent.setState === 'function'
+			) {
+				agent.setState({
+					...(agent.state as { searchConversationIdsWithPreamble?: Array<string> }),
+					searchConversationIdsWithPreamble: [
+						...searchConversationIdsWithPreamble,
+						conversationId,
+					],
+				})
+			}
 			const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
 				payload,
 				maxResponseSize,
@@ -578,6 +611,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						matches: value.matches,
 						warnings: value.warnings,
 						baseUrl,
+						includePreamble,
 					}),
 				(value, count) => ({
 					...value,

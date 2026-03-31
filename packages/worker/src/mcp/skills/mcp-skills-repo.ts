@@ -4,6 +4,13 @@ export function skillVectorId(skillId: string): string {
 	return `skill_${skillId}`
 }
 
+export function isDuplicateSkillNameError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		error.message.includes('UNIQUE constraint failed: mcp_skills.user_id, mcp_skills.name')
+	)
+}
+
 export async function insertMcpSkill(
 	db: D1Database,
 	row: Omit<McpSkillRow, 'created_at' | 'updated_at'> & {
@@ -15,15 +22,16 @@ export async function insertMcpSkill(
 	await db
 		.prepare(
 			`INSERT INTO mcp_skills (
-				id, user_id, title, description, keywords, code, search_text,
+				id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
+			row.name,
 			row.title,
 			row.description,
 			row.keywords,
@@ -44,20 +52,20 @@ export async function insertMcpSkill(
 		.run()
 }
 
-export async function getMcpSkillById(
+export async function getMcpSkillByName(
 	db: D1Database,
 	userId: string,
-	skillId: string,
+	skillName: string,
 ): Promise<McpSkillRow | null> {
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
-			FROM mcp_skills WHERE id = ? AND user_id = ?`,
+			FROM mcp_skills WHERE name = ? AND user_id = ?`,
 		)
-		.bind(skillId, userId)
+		.bind(skillName, userId)
 		.first<Record<string, unknown>>()
 	if (!result) return null
 	return mapRow(result)
@@ -66,8 +74,9 @@ export async function getMcpSkillById(
 export async function updateMcpSkill(
 	db: D1Database,
 	userId: string,
-	skillId: string,
+	skillName: string,
 	fields: {
+		name: string
 		title: string
 		description: string
 		keywords: string
@@ -88,13 +97,14 @@ export async function updateMcpSkill(
 	const out = await db
 		.prepare(
 			`UPDATE mcp_skills SET
-				title = ?, description = ?, keywords = ?, code = ?, search_text = ?,
+				name = ?, title = ?, description = ?, keywords = ?, code = ?, search_text = ?,
 				uses_capabilities = ?, parameters = ?, collection_name = ?, collection_slug = ?,
 				inferred_capabilities = ?, inference_partial = ?, read_only = ?, idempotent = ?,
 				destructive = ?, updated_at = ?
-			WHERE id = ? AND user_id = ?`,
+			WHERE name = ? AND user_id = ?`,
 		)
 		.bind(
+			fields.name,
 			fields.title,
 			fields.description,
 			fields.keywords,
@@ -110,7 +120,7 @@ export async function updateMcpSkill(
 			fields.idempotent,
 			fields.destructive,
 			now,
-			skillId,
+			skillName,
 			userId,
 		)
 		.run()
@@ -120,11 +130,11 @@ export async function updateMcpSkill(
 export async function deleteMcpSkill(
 	db: D1Database,
 	userId: string,
-	skillId: string,
+	skillName: string,
 ): Promise<boolean> {
 	const out = await db
-		.prepare(`DELETE FROM mcp_skills WHERE id = ? AND user_id = ?`)
-		.bind(skillId, userId)
+		.prepare(`DELETE FROM mcp_skills WHERE name = ? AND user_id = ?`)
+		.bind(skillName, userId)
 		.run()
 	return (out.meta.changes ?? 0) > 0
 }
@@ -135,7 +145,7 @@ export async function listMcpSkillsByUserId(
 ): Promise<Array<McpSkillRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -182,7 +192,7 @@ export async function listAllMcpSkills(
 ): Promise<Array<McpSkillRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -196,6 +206,7 @@ function mapRow(r: Record<string, unknown>): McpSkillRow {
 	return {
 		id: String(r['id']),
 		user_id: String(r['user_id']),
+		name: String(r['name']),
 		title: String(r['title']),
 		description: String(r['description']),
 		keywords: String(r['keywords']),

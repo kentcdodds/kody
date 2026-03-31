@@ -20,21 +20,29 @@ export const metaDeleteSkillCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: true,
 		inputSchema: z.object({
-			skill_id: z
+			name: z
 				.string()
 				.min(1)
-				.describe('Skill id returned by meta_save_skill.'),
+				.describe('Unique lower-kebab-case skill name.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const existing = await getMcpSkillByName(
+				ctx.env.APP_DB,
+				user.userId,
+				args.name,
+			)
+			if (!existing) {
+				return { deleted: false }
+			}
 			const removed = await deleteMcpSkill(
 				ctx.env.APP_DB,
 				user.userId,
-				args.skill_id,
+				args.name,
 			)
 			if (removed) {
-				await deleteSkillVector(ctx.env, args.skill_id)
+				await deleteSkillVector(ctx.env, existing.id)
 			}
 			return { deleted: removed }
 		},

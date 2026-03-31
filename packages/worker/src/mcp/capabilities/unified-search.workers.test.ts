@@ -8,6 +8,7 @@ function createSkillRow(skillId: string): McpSkillRow {
 	return {
 		id: skillId,
 		user_id: 'user-123',
+		name: `skill-${skillId}`,
 		title: 'Cursor agents with open PRs',
 		description: 'Fetch Cursor agents with open GitHub PRs.',
 		collection_name: 'GitHub Workflows',
@@ -74,10 +75,11 @@ test('skill search hits include usage hints', async () => {
 	}
 
 	expect(skill.usage).toContain('meta_run_skill')
-	expect(skill.usage).toContain(skillRow.id)
+	expect(skill.usage).toContain(skillRow.name)
 	expect(skill.usage).toContain('"params"')
 	expect(skill.collection).toBe('GitHub Workflows')
 	expect(skill.collectionSlug).toBe('github-workflows')
+	expect(skill.skillName).toBe(skillRow.name)
 })
 
 test('skill collection filter narrows saved skill matches', async () => {
@@ -114,7 +116,7 @@ test('skill collection filter narrows saved skill matches', async () => {
 	if (!skill || skill.type !== 'skill') {
 		throw new Error('Expected a skill match in results.')
 	}
-	expect(skill.skillId).toBe(matchingRow.id)
+	expect(skill.skillName).toBe(matchingRow.name)
 	expect(skill.collection).toBe('GitHub Workflows')
 })
 

@@ -10,7 +10,9 @@ import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 import { registerResources } from './register-resources.ts'
 import { registerTools } from './register-tools.ts'
 
-export type State = {}
+export type State = {
+	searchConversationIdsWithPreamble?: Array<string>
+}
 export type Props = McpServerProps
 
 const domainInstructions = builtinDomains
@@ -18,7 +20,7 @@ const domainInstructions = builtinDomains
 	.join('\n')
 
 export const conversationIdGuidance =
-	'The public MCP tools accept optional `conversationId` and `memoryContext` fields. Clients should generate and reuse a short random `conversationId` across related calls when possible, attempting to avoid collisions; if omitted, Kody generates a short random value and returns it in `structuredContent.conversationId`.'
+	'The public MCP tools accept optional `conversationId` and `memoryContext` fields. `conversationId` ties related calls together. On the first call, omit it to receive a server-generated ID, or supply your own. Pass the returned `conversationId` on every subsequent call in the same conversation - this enables optimizations like reduced response size. Generated values should be short and random enough to avoid collisions.'
 
 const serverMetadata = {
 	implementation: {
@@ -40,7 +42,7 @@ Quick start
   - Keep \`memoryContext\` short, structured, and task-focused.
   - It is reserved for future memory-aware behavior and is not persisted or used for retrieval yet in this phase.
 - Never ask the user to paste secrets, tokens, API keys, passwords, OAuth codes, or client secrets into chat. Use saved secrets when available, or use 'open_generated_ui' to collect and save sensitive values instead.
-- Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use the optional 'collection' field to group related saved skills, and use 'meta_update_skill' to replace an existing skill's code in place.
+- Use 'meta_save_skill' only for workflows that are reasonably repeatable—patterns you expect to run again with similar structure or inputs. Do not save one-off tasks, unique ad-hoc work, or highly bespoke requests as skills; run those with 'execute' instead. Use the optional 'collection' field to group related saved skills, and call 'meta_save_skill' again with the same name to replace an existing skill in place.
 - When a saved skill declares parameters, pass values via meta_run_skill params; the codemode can read them from the params variable.
  - Use 'ui_save_app' to persist reusable UI source for later reopening via 'app_id'. Saved apps are user-scoped UI artifacts, not codemode skills. They are hidden from search by default unless you explicitly set \`hidden: false\` for reusable apps.
 - Use \`codemode.secret_list(args)\` during execute-time code to list secret metadata only; it does not return plaintext values.
@@ -64,7 +66,7 @@ How to use search
 - Example: search({ query: 'repository automation pull requests' })
 - Example: search({ query: 'Cloudflare API zones dns workers d1' })
 - Example: search({ entity: 'cloudflare_rest:capability' })
-- Example: search({ entity: '70a6a63f-2711-4617-b273-ec95f3be114b:skill' })
+- Example: search({ entity: 'github-pr-summary:skill' })
 
 Destructive Cloudflare access
 - The cloudflare_rest capability can change or delete Cloudflare resources such as DNS records, Workers settings, routes, or account configuration (POST/PUT/PATCH/DELETE).
@@ -106,6 +108,9 @@ MCP App tools
 } as const
 
 class MCPBase extends McpAgent<Env, State, Props> {
+	initialState: State = {
+		searchConversationIdsWithPreamble: [],
+	}
 	server = new McpServer(serverMetadata.implementation, {
 		instructions: serverMetadata.instructions,
 		jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
