@@ -190,9 +190,6 @@ jobs:
               AI)
                 secret_env_key="AI_MOCK_API_KEY"
                 ;;
-              GITHUB)
-                secret_env_key="GITHUB_TOKEN"
-                ;;
               CLOUDFLARE)
                 secret_env_key="CLOUDFLARE_API_TOKEN"
                 ;;

@@ -56,9 +56,7 @@ test('compressSchemaForLlm can keep root type when requested', () => {
 		},
 	}
 
-	expect(
-		compressSchemaForLlm(schema, { stripRootObjectType: false }),
-	).toEqual({
+	expect(compressSchemaForLlm(schema, { stripRootObjectType: false })).toEqual({
 		type: 'object',
 		properties: {
 			enabled: {

@@ -123,8 +123,6 @@ export const EnvSchema = object({
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,
 	CLOUDFLARE_API_TOKEN: optionalNonEmptyStringSchema,
-	GITHUB_TOKEN: optionalNonEmptyStringSchema,
-	GITHUB_API_BASE_URL: optionalUrlStringSchema,
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	HOME_CONNECTOR_SHARED_SECRET: optionalNonEmptyStringSchema,

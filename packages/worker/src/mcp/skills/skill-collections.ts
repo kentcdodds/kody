@@ -20,9 +20,7 @@ export function slugifySkillCollectionName(value: string): string {
 		.normalize('NFKD')
 		.replace(/[\u0300-\u036f]/g, '')
 		.toLowerCase()
-	const slug = ascii
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
+	const slug = ascii.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 	if (slug.length > 0) return slug
 	return `col-${stableCollectionHash(normalized)}`
 }

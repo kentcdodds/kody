@@ -5,14 +5,14 @@ A full-stack web application starter built on Cloudflare Workers with Remix 3
 
 ## Quick Reference
 
-| Task             | Command             |
-| ---------------- | ------------------- |
-| Start dev server | `npm run dev`       |
-| Full validation  | `npm run validate`  |
-| Lint             | `npm run lint`      |
-| Format           | `npm run format`    |
-| Type check       | `npm run typecheck` |
-| Build            | `npm run build`     |
+| Task             | Command                |
+| ---------------- | ---------------------- |
+| Start dev server | `npm run dev`          |
+| Full validation  | `npm run validate`     |
+| Lint             | `npm run lint`         |
+| Format           | `npm run format`       |
+| Type check       | `npm run typecheck`    |
+| Build            | `npm run build`        |
 | E2E tests        | `npm run test:e2e:run` |
 
 ## Services

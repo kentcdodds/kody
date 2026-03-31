@@ -95,8 +95,8 @@ Your code must be an async arrow function that returns the result.
 Examples:
 
 \`async () => {
-  const docs = await codemode.github_rest_api_docs({
-    path: '/en/rest/repos/repos',
+  const docs = await codemode.cloudflare_api_docs({
+    path: '/api/resources/accounts/',
   });
   return {
     status: docs.status,

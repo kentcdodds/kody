@@ -19,9 +19,9 @@ test('infers static codemode member names', () => {
 })
 
 test('infers bracket string literal access', () => {
-	const src = `async () => await codemode['github_rest']({ method: 'GET', path: '/rate_limit' })`
+	const src = `async () => await codemode['cloudflare_rest']({ method: 'GET', path: '/client/v4/user/tokens/verify' })`
 	const { staticNames } = inferCodemodeCapabilities(src)
-	expect(staticNames).toContain('github_rest')
+	expect(staticNames).toContain('cloudflare_rest')
 })
 
 test('infers secret_set member access', () => {

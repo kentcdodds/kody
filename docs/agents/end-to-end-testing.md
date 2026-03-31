@@ -37,8 +37,8 @@ that are unlikely to recur.
 - Keep tests flat: top-level `test(...)` with no `describe` nesting.
 - Inline setup per test; avoid shared `beforeEach` unless required.
 - Prefer fewer, longer tests when one user journey covers the behavior.
-- Treat each E2E test like a manual tester's script: one setup, then the
-  actions and assertions needed to validate the whole flow.
+- Treat each E2E test like a manual tester's script: one setup, then the actions
+  and assertions needed to validate the whole flow.
 - Do not split a single journey into multiple tiny tests just to isolate each
   assertion.
 - Use Playwright’s `expect` and locator APIs (role/label/placeholder).
@@ -61,8 +61,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - `preview:e2e` prepares `packages/worker/.env`, builds the client bundles,
   applies local D1 migrations, and starts Wrangler against
   `.wrangler/state/e2e`.
-- `npm run test:e2e:run`, `npm run test:e2e:ui`, and plain
-  `npx playwright test` all use the same Playwright-native path.
+- `npm run test:e2e:run`, `npm run test:e2e:ui`, and plain `npx playwright test`
+  all use the same Playwright-native path.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler still loads
   `packages/worker/.env` values for local secrets.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes

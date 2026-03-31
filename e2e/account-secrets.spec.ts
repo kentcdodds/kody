@@ -111,7 +111,9 @@ test('landing on an approval link shows already added when the host is present',
 		page.getByRole('heading', { level: 2, name: 'Already added' }),
 	).toBeVisible()
 	await expect(
-		page.getByRole('status').getByText('This request is already complete for this secret.'),
+		page
+			.getByRole('status')
+			.getByText('This request is already complete for this secret.'),
 	).toBeVisible()
 	await expect(
 		page.getByRole('status').getByText('Host', { exact: false }),

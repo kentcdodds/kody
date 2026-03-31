@@ -61,23 +61,13 @@ Optional Worker secret and vars (see `packages/worker/src/env-schema.ts` and
 - `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample
   all traces). Set lower (e.g. `0.1`) for higher traffic or Sentry quota.
 
-## GitHub (`github_rest` + `github_graphql` capabilities)
+## MCP `execute` and outbound HTTP
 
-Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts`,
-`packages/worker/src/mcp/github/github-rest-client.ts`, and
-`packages/worker/src/mcp/github/github-graphql-client.ts`):
-
-- `GITHUB_TOKEN` — Bearer token for `api.github.com` (fine-grained PAT
-  recommended) for the `kody-bot` account. GitHub REST and GraphQL calls act as
-  that bot identity rather than as `kentcdodds`. When unset, `github_rest` and
-  `github_graphql` fail fast with a setup hint. In GitHub Actions you cannot
-  create a repository secret named `GITHUB_*`; production deploy reads
-  **`KODY_GITHUB_TOKEN`** and syncs it to this Worker secret (see
-  `docs/setup-manifest.md`).
-- `GITHUB_API_BASE_URL` — GitHub API base URL; defaults to
-  `https://api.github.com` when unset. Local `npm run dev` sets this to the
-  GitHub mock Worker unless `SKIP_GITHUB_MOCK=1`. GraphQL requests target
-  `${GITHUB_API_BASE_URL}/graphql`.
+MCP `execute` runs sandboxed JavaScript with a global `fetch`. Calls to
+third-party APIs can use stored secrets via `{{secret:name}}` placeholders in
+URLs and headers where the MCP runtime supports them. Host allowlists and
+capability policies apply per secret. There are no GitHub-specific Worker
+environment variables.
 
 ## MCP capability search (Vectorize + Workers AI)
 

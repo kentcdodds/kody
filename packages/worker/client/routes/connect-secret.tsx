@@ -527,7 +527,8 @@ export function ConnectSecretRoute(handle: Handle) {
 			(_capability, capabilityIndex) => capabilityIndex !== index,
 		)
 		setState({
-			allowedCapabilities: nextCapabilities.length > 0 ? nextCapabilities : [''],
+			allowedCapabilities:
+				nextCapabilities.length > 0 ? nextCapabilities : [''],
 		})
 	}
 

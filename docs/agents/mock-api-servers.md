@@ -16,10 +16,6 @@ Worker package so it can also be deployed alongside the main app.
 4. In `cli.ts`, start the mock Worker during `npm run dev` (via `wrangler dev`)
    and set `ACME_API_BASE_URL` to the mock Worker origin.
 
-See `packages/mock-servers/github/` for the GitHub REST + GraphQL subset mock
-package used by the `github_rest` and `github_graphql` capabilities (started by
-`npm run dev` unless `SKIP_GITHUB_MOCK=1`).
-
 See `packages/mock-servers/cloudflare/` for a small Cloudflare API v4 subset
 mock used by the `cloudflare_rest` capability (started by `npm run dev` unless
 `SKIP_CLOUDFLARE_MOCK=1`).

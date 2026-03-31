@@ -34,15 +34,15 @@ Quick notes for getting a local kody environment running.
   any work, then update secrets as needed.
 - `npm run dev` (starts mock API servers automatically, the main worker, and the
   local home connector; it sets `RESEND_API_BASE_URL`, `AI_MODE=mock`,
-  `AI_MOCK_BASE_URL`, and (unless `SKIP_GITHUB_MOCK=1`) `GITHUB_API_BASE_URL` +
-  `GITHUB_TOKEN` to the local GitHub mock Worker for the `github_rest` +
-  `github_graphql` capabilities. The home connector receives the resolved worker
-  origin via `WORKER_BASE_URL`. When `HOME_CONNECTOR_SHARED_SECRET` is unset,
-  the launcher generates one and passes it to both the worker and the connector
-  so the outbound registration handshake succeeds in local development. The main
-  worker and home connector stream logs live; the client bundle and background
-  mock workers now buffer their logs and only print them if that child process
-  exits with an error.)
+  `AI_MOCK_BASE_URL`, and (unless `SKIP_CLOUDFLARE_MOCK=1` or `AI_MODE=remote`)
+  `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` to the local Cloudflare API
+  mock Worker for the `cloudflare_rest` capability. The home connector receives
+  the resolved worker origin via `WORKER_BASE_URL`. When
+  `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
+  it to both the worker and the connector so the outbound registration handshake
+  succeeds in local development. The main worker and home connector stream logs
+  live; the client bundle and background mock workers now buffer their logs and
+  only print them if that child process exits with an error.)
 - The home automation connector now lives in `packages/home-connector`.
   - `npm run dev:home-connector` starts the local connector app on Node 24 with
     `node --watch`, so connector code changes automatically restart the local

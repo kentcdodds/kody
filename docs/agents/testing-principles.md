@@ -1,18 +1,17 @@
 # Testing principles
 
-This codebase favors small, readable test suites with explicit setup and
-minimal magic. Individual tests should follow a meaningful workflow end-to-end,
-even when that makes a single test longer and more assertion-heavy.
+This codebase favors small, readable test suites with explicit setup and minimal
+magic. Individual tests should follow a meaningful workflow end-to-end, even
+when that makes a single test longer and more assertion-heavy.
 
 ## Principles
 
 - Prefer the "fewer, longer tests" style from Kent C. Dodds when assertions
   belong to one workflow.
-- Treat each test like a manual tester's script: one setup, then as many
-  actions and assertions as needed to validate the whole journey.
-- Do not split a single flow into many tiny tests just to satisfy "one
-  assertion per test." Multiple related assertions in one test are a feature,
-  not a smell.
+- Treat each test like a manual tester's script: one setup, then as many actions
+  and assertions as needed to validate the whole journey.
+- Do not split a single flow into many tiny tests just to satisfy "one assertion
+  per test." Multiple related assertions in one test are a feature, not a smell.
 - Prefer flat test files: use top-level `test(...)` and avoid `describe`
   nesting.
 - Avoid shared setup like `beforeEach`/`afterEach`; inline setup per test.

@@ -24,11 +24,11 @@ const fakeSpecs: Record<string, CapabilitySpec> = {
 		outputFields: ['app_id'],
 		inputSchema: {},
 	},
-	github_rest: {
-		name: 'github_rest',
+	cloudflare_rest: {
+		name: 'cloudflare_rest',
 		domain: capabilityDomainNames.coding,
-		description: 'GitHub REST.',
-		keywords: ['github'],
+		description: 'Cloudflare REST.',
+		keywords: ['cloudflare'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
@@ -82,7 +82,9 @@ test('buildSkillEmbedText includes denormalized capability text', () => {
 			'owner: GitHub repo owner. (string)',
 		]),
 	)
-	const denormalizedLines = lines.slice(lines.indexOf('owner: GitHub repo owner. (string)') + 1)
+	const denormalizedLines = lines.slice(
+		lines.indexOf('owner: GitHub repo owner. (string)') + 1,
+	)
 	expect(denormalizedLines).toEqual(
 		expect.arrayContaining([
 			'ui_save_app',
@@ -95,7 +97,7 @@ test('buildSkillEmbedText includes denormalized capability text', () => {
 })
 
 test('validateSkillSaveFlags rejects read_only with destructive inferred set', () => {
-	const derived = deriveTrustFlags(['github_rest'], fakeSpecs, false)
+	const derived = deriveTrustFlags(['cloudflare_rest'], fakeSpecs, false)
 	expect(derived.destructiveDerived).toBe(true)
 	const v = validateSkillSaveFlags({
 		agentReadOnly: true,

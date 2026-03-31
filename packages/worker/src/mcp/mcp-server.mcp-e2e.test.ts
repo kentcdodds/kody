@@ -175,8 +175,10 @@ test('mcp server saves and browses skill collections', async () => {
 		name: 'search',
 		arguments: {
 			query: 'summarize github pull requests',
-			skill_collection: 'GitHub Workflows',
+			skill_collection: 'github-workflows',
 			detail: true,
+			limit: 25,
+			maxResponseSize: 200_000,
 		},
 	})
 	const searchStructured = (searchResult as CallToolResult).structuredContent as

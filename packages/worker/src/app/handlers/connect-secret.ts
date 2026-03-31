@@ -207,9 +207,7 @@ export function createConnectSecretApiHandler(env: Env) {
 						description,
 						storageContext,
 						sessionExpiresAt:
-							scope === 'session'
-								? new Date(session.exp).toISOString()
-								: null,
+							scope === 'session' ? new Date(session.exp).toISOString() : null,
 					})
 					await setSecretAllowedHosts({
 						env,

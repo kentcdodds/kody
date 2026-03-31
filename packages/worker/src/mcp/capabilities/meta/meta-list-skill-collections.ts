@@ -22,14 +22,7 @@ export const metaListSkillCollectionsCapability = defineDomainCapability(
 		name: 'meta_list_skill_collections',
 		description:
 			'List the signed-in user’s saved skill collections with normalized slugs and skill counts. Use this to browse or confirm available skill groupings before filtering search or saving a new skill.',
-		keywords: [
-			'skill',
-			'collections',
-			'domains',
-			'groups',
-			'browse',
-			'list',
-		],
+		keywords: ['skill', 'collections', 'domains', 'groups', 'browse', 'list'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,

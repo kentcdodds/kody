@@ -230,7 +230,9 @@ function getAlreadyAddedNotice(input: {
 	selectedSecret: SecretDetail | null
 	approval: ApprovalView | null
 }) {
-	const requestedHost = normalizeSingleAllowedHost(readRequestedHost(input.href))
+	const requestedHost = normalizeSingleAllowedHost(
+		readRequestedHost(input.href),
+	)
 	const requestedCapability = normalizeSingleAllowedCapability(
 		readCapabilityPrefill(input.href),
 	)
@@ -956,9 +958,7 @@ export function AccountSecretsRoute(handle: Handle) {
 							}}
 						>
 							{alreadyAddedNotice.items.map((item) => (
-								<li key={item}>
-									{item}
-								</li>
+								<li key={item}>{item}</li>
 							))}
 						</ul>
 					</section>

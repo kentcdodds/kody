@@ -4,7 +4,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import  { type CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
+import { type CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
 import getPort from 'get-port'
 import {
 	captureOutput,

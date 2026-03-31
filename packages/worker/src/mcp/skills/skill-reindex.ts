@@ -52,9 +52,7 @@ export async function reindexSkillVectors(env: Env): Promise<{
 			metadata: {
 				kind: 'skill',
 				userId: row.user_id,
-				...(row.collection_slug
-					? { collectionSlug: row.collection_slug }
-					: {}),
+				...(row.collection_slug ? { collectionSlug: row.collection_slug } : {}),
 			},
 		}))
 

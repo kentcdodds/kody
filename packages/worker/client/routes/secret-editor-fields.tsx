@@ -1,5 +1,11 @@
 import { type Handle } from 'remix/component'
-import { colors, mq, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	colors,
+	mq,
+	radius,
+	spacing,
+	typography,
+} from '#client/styles/tokens.ts'
 
 type SecretEditorFieldsProps = {
 	description: string
@@ -135,8 +141,8 @@ export function SecretEditorFields(_handle: Handle) {
 				<div css={{ display: 'grid', gap: spacing.xs }}>
 					<span css={fieldLabelCss}>Allowed hosts</span>
 					<p css={{ margin: 0, color: colors.textMuted }}>
-						Leave this empty to require explicit host approval before a secret can
-						be used.
+						Leave this empty to require explicit host approval before a secret
+						can be used.
 					</p>
 				</div>
 				<div

@@ -182,7 +182,7 @@ packages/worker/src/mcp/capabilities/
   types.ts
   coding/
     domain.ts
-    github-rest.ts
+    cloudflare-rest.ts
     index.ts
   math/
     domain.ts

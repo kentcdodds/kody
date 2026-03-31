@@ -70,7 +70,6 @@ let workerOrigin = ''
 let homeConnectorOrigin = ''
 let mockResendProcess: ChildProcess | null = null
 let mockAiProcess: ChildProcess | null = null
-let mockGithubProcess: ChildProcess | null = null
 let mockCloudflareProcess: ChildProcess | null = null
 let mockEnvOverrides: Record<string, string> = {}
 
@@ -92,12 +91,9 @@ async function startDev() {
 	shutdown = setupShutdown(
 		() => devChildren,
 		() =>
-			[
-				mockResendProcess,
-				mockAiProcess,
-				mockGithubProcess,
-				mockCloudflareProcess,
-			].filter(Boolean) as Array<ChildProcess>,
+			[mockResendProcess, mockAiProcess, mockCloudflareProcess].filter(
+				Boolean,
+			) as Array<ChildProcess>,
 	)
 }
 
@@ -426,61 +422,6 @@ async function waitForWorkerReady(workerOrigin: string, child: ChildProcess) {
 	return false
 }
 
-async function attachGithubMock(
-	mockEnv: Record<string, string>,
-	anchorPort: number,
-) {
-	if (process.env.SKIP_GITHUB_MOCK?.trim() === '1') {
-		return
-	}
-	if (
-		hasEnvValue(mockEnv.GITHUB_API_BASE_URL) &&
-		isChildRunning(mockGithubProcess)
-	) {
-		return
-	}
-	if (mockGithubProcess && !mockGithubProcess.killed) {
-		await stopChild(mockGithubProcess)
-		mockGithubProcess = null
-	}
-	const githubPort = await getPort({
-		port: Array.from({ length: 20 }, (_, index) => anchorPort + 40 + index),
-	})
-	const baseUrl = `http://127.0.0.1:${githubPort}`
-	const apiToken = `mock-github-${randomUUID()}`
-	const child = runNpmScript(
-		'dev:mock-github',
-		[
-			'--port',
-			String(githubPort),
-			'--ip',
-			'127.0.0.1',
-			'--var',
-			`MOCK_API_TOKEN:${apiToken}`,
-		],
-		{},
-		{
-			label: 'dev:mock-github',
-			mode: 'buffer-on-error',
-		},
-	)
-	mockGithubProcess = child
-	child.once('exit', () => {
-		if (mockGithubProcess === child) {
-			mockGithubProcess = null
-		}
-	})
-	mockEnv.GITHUB_API_BASE_URL = baseUrl
-	mockEnv.GITHUB_TOKEN = apiToken
-	const didStart = await waitForMockReady(baseUrl, child)
-	if (!didStart) {
-		console.warn(
-			`Mock GitHub worker did not become ready within ${mockReadyTimeoutMs}ms.`,
-		)
-	}
-	console.log(dim(`GitHub mock base URL ${baseUrl}`))
-}
-
 async function attachCloudflareMock(
 	mockEnv: Record<string, string>,
 	anchorPort: number,
@@ -544,10 +485,7 @@ async function attachOptionalMocksInParallel(
 	mockEnv: Record<string, string>,
 	anchorPort: number,
 ) {
-	await Promise.all([
-		attachGithubMock(mockEnv, anchorPort),
-		attachCloudflareMock(mockEnv, anchorPort),
-	])
+	await Promise.all([attachCloudflareMock(mockEnv, anchorPort)])
 }
 
 async function ensureMockServers() {
@@ -610,10 +548,6 @@ async function ensureMockServers() {
 			(_, index) => desiredPort + index,
 		)
 		mockPort = await getPort({ port: portRange })
-		if (mockGithubProcess && !mockGithubProcess.killed) {
-			await stopChild(mockGithubProcess)
-			mockGithubProcess = null
-		}
 		if (mockCloudflareProcess && !mockCloudflareProcess.killed) {
 			await stopChild(mockCloudflareProcess)
 			mockCloudflareProcess = null
