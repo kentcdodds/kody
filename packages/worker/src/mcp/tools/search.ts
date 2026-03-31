@@ -101,7 +101,7 @@ Each match has **type** \`capability\`, \`skill\`, \`app\`, or \`secret\`. To ru
 If search results seem incomplete, call \`meta_list_capabilities\` to inspect the exact current runtime capability registry (including dynamic capabilities such as connected home tools), or call \`meta_get_home_connector_status\` to confirm whether the home connector is connected.
 
  Domains (for context only—put hints in your \`query\` string, or use the skill collection filter when you already know the saved-skill grouping):
-- \`coding\`: Software work such as GitHub repository actions, issues, pull requests, Cursor Cloud Agents API calls, Cloudflare API calls, and related docs/coding workflows.
+- \`coding\`: Software work such as GitHub repository actions, issues, pull requests, Cloudflare API calls, and related docs/coding workflows.
 - \`meta\`: Persisted and reusable codemode skills plus skill management.
 - \`home\`: Home automation capabilities discovered from the connected home connector when available.
 
@@ -288,10 +288,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							appIds: optionalRows.uiArtifactRows.map((row) => row.id),
 						})
 					: new Map()
-				const skillCollectionSlug =
-					args.skill_collection?.trim()
-						? slugifySkillCollectionName(args.skill_collection)
-						: undefined
+				const skillCollectionSlug = args.skill_collection?.trim()
+					? slugifySkillCollectionName(args.skill_collection)
+					: undefined
 				return searchUnified({
 					env: agent.getEnv(),
 					query: args.query,

@@ -8,13 +8,11 @@ import {
 	wranglerBin,
 } from '#mcp/test-process.ts'
 import { cloudflareRestCapability } from './cloudflare-rest.ts'
-import { cursorCloudRestCapability } from './cursor-cloud-rest.ts'
 import { githubGraphqlCapability } from './github-graphql.ts'
 import { githubRestCapability } from './github-rest.ts'
 
 const workerConfig = 'packages/mock-servers/github/wrangler.jsonc'
 const cloudflareWorkerConfig = 'packages/mock-servers/cloudflare/wrangler.jsonc'
-const cursorWorkerConfig = 'packages/mock-servers/cursor/wrangler.jsonc'
 const projectRoot = process.cwd()
 const graphqlQuery = `query RepoPull($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -40,23 +38,6 @@ async function waitForMock(origin: string) {
 		await delay(200)
 	}
 	throw new Error('mock github timeout')
-}
-
-async function waitForCursorMock(origin: string) {
-	const deadline = Date.now() + 25_000
-	while (Date.now() < deadline) {
-		try {
-			const r = await fetch(`${origin}/__mocks/meta`)
-			if (r.ok) {
-				await r.body?.cancel()
-				return
-			}
-		} catch {
-			/* retry */
-		}
-		await delay(200)
-	}
-	throw new Error('mock cursor timeout')
 }
 
 async function waitForCloudflareMock(origin: string) {
@@ -150,61 +131,10 @@ async function startCloudflareMock(token: string) {
 	}
 }
 
-async function startCursorMock(token: string) {
-	const port = await getPort({ host: '127.0.0.1' })
-	const origin = `http://127.0.0.1:${port}`
-	const inspectorPort = await getPort({ host: '127.0.0.1' })
-	const proc = spawnProcess({
-		cmd: [
-			wranglerBin,
-			'dev',
-			'--local',
-			'--config',
-			cursorWorkerConfig,
-			'--var',
-			`MOCK_API_TOKEN:${token}`,
-			'--port',
-			String(port),
-			'--inspector-port',
-			String(inspectorPort),
-			'--ip',
-			'127.0.0.1',
-			'--show-interactive-dev-session=false',
-			'--log-level',
-			'error',
-		],
-		cwd: projectRoot,
-	})
-	captureOutput(proc.stdout)
-	captureOutput(proc.stderr)
-	await waitForCursorMock(origin)
-	return {
-		origin,
-		token,
-		async [Symbol.asyncDispose]() {
-			await stopProcess(proc)
-		},
-	}
-}
-
 function mockContext(origin: string, token: string) {
 	const env = {
 		GITHUB_TOKEN: token,
 		GITHUB_API_BASE_URL: origin,
-	} as Env
-	return {
-		env,
-		callerContext: {
-			baseUrl: 'http://localhost:3742',
-			user: null,
-		},
-	}
-}
-
-function mockCursorContext(origin: string, token: string) {
-	const env = {
-		CURSOR_API_KEY: token,
-		CURSOR_API_BASE_URL: origin,
 	} as Env
 	return {
 		env,
@@ -328,35 +258,4 @@ test('cloudflare_rest rejects paths not under /client/v4/', async () => {
 			ctx,
 		),
 	).rejects.toThrow('path must start with `/client/v4/`')
-})
-
-test('cursor_cloud_rest returns JSON from mock Cursor API', async () => {
-	const token = 'coding-cursor-token'
-	await using mock = await startCursorMock(token)
-	const ctx = mockCursorContext(mock.origin, mock.token)
-	const result = await cursorCloudRestCapability.handler(
-		{
-			method: 'GET',
-			path: '/v0/agents',
-		},
-		ctx,
-	)
-	expect(result.status).toBe(200)
-	const body = result.body as { agents?: Array<{ id?: string }> }
-	expect(body.agents?.some((a) => a.id === 'bc_mock_42')).toBe(true)
-})
-
-test('cursor_cloud_rest rejects paths not under /v0/', async () => {
-	const token = 'coding-cursor-reject-token'
-	await using mock = await startCursorMock(token)
-	const ctx = mockCursorContext(mock.origin, mock.token)
-	await expect(
-		cursorCloudRestCapability.handler(
-			{
-				method: 'GET',
-				path: '/v1/agents',
-			},
-			ctx,
-		),
-	).rejects.toThrow('path must start with `/v0/`')
 })

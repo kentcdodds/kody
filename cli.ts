@@ -72,7 +72,6 @@ let mockResendProcess: ChildProcess | null = null
 let mockAiProcess: ChildProcess | null = null
 let mockGithubProcess: ChildProcess | null = null
 let mockCloudflareProcess: ChildProcess | null = null
-let mockCursorProcess: ChildProcess | null = null
 let mockEnvOverrides: Record<string, string> = {}
 
 void startDev().catch((error) => {
@@ -98,7 +97,6 @@ async function startDev() {
 				mockAiProcess,
 				mockGithubProcess,
 				mockCloudflareProcess,
-				mockCursorProcess,
 			].filter(Boolean) as Array<ChildProcess>,
 	)
 }
@@ -483,61 +481,6 @@ async function attachGithubMock(
 	console.log(dim(`GitHub mock base URL ${baseUrl}`))
 }
 
-async function attachCursorMock(
-	mockEnv: Record<string, string>,
-	anchorPort: number,
-) {
-	if (process.env.SKIP_CURSOR_MOCK?.trim() === '1') {
-		return
-	}
-	if (
-		hasEnvValue(mockEnv.CURSOR_API_BASE_URL) &&
-		isChildRunning(mockCursorProcess)
-	) {
-		return
-	}
-	if (mockCursorProcess && !mockCursorProcess.killed) {
-		await stopChild(mockCursorProcess)
-		mockCursorProcess = null
-	}
-	const cursorPort = await getPort({
-		port: Array.from({ length: 20 }, (_, index) => anchorPort + 140 + index),
-	})
-	const baseUrl = `http://127.0.0.1:${cursorPort}`
-	const apiToken = `mock-cursor-${randomUUID()}`
-	const child = runNpmScript(
-		'dev:mock-cursor',
-		[
-			'--port',
-			String(cursorPort),
-			'--ip',
-			'127.0.0.1',
-			'--var',
-			`MOCK_API_TOKEN:${apiToken}`,
-		],
-		{},
-		{
-			label: 'dev:mock-cursor',
-			mode: 'buffer-on-error',
-		},
-	)
-	mockCursorProcess = child
-	child.once('exit', () => {
-		if (mockCursorProcess === child) {
-			mockCursorProcess = null
-		}
-	})
-	mockEnv.CURSOR_API_BASE_URL = baseUrl
-	mockEnv.CURSOR_API_KEY = apiToken
-	const didStart = await waitForMockReady(baseUrl, child)
-	if (!didStart) {
-		console.warn(
-			`Mock Cursor Cloud worker did not become ready within ${mockReadyTimeoutMs}ms.`,
-		)
-	}
-	console.log(dim(`Cursor Cloud mock base URL ${baseUrl}`))
-}
-
 async function attachCloudflareMock(
 	mockEnv: Record<string, string>,
 	anchorPort: number,
@@ -604,7 +547,6 @@ async function attachOptionalMocksInParallel(
 	await Promise.all([
 		attachGithubMock(mockEnv, anchorPort),
 		attachCloudflareMock(mockEnv, anchorPort),
-		attachCursorMock(mockEnv, anchorPort),
 	])
 }
 
@@ -676,10 +618,6 @@ async function ensureMockServers() {
 			await stopChild(mockCloudflareProcess)
 			mockCloudflareProcess = null
 		}
-		if (mockCursorProcess && !mockCursorProcess.killed) {
-			await stopChild(mockCursorProcess)
-			mockCursorProcess = null
-		}
 		const baseUrl = `http://127.0.0.1:${mockPort}`
 		const apiToken = `mock-resend-${randomUUID()}`
 		const child = runNpmScript(
@@ -719,7 +657,10 @@ async function ensureMockServers() {
 	if (resendBaseUrl && mockResendProcess && !canReuseCachedResendEnv) {
 		pendingMockStarts.push(
 			(async () => {
-				const didStart = await waitForMockReady(resendBaseUrl, mockResendProcess)
+				const didStart = await waitForMockReady(
+					resendBaseUrl,
+					mockResendProcess,
+				)
 				if (!didStart) {
 					console.warn(
 						`Mock API worker did not become ready within ${mockReadyTimeoutMs}ms.`,
@@ -731,7 +672,10 @@ async function ensureMockServers() {
 		)
 	}
 
-	const optionalMocksReady = attachOptionalMocksInParallel(mockEnvOverrides, mockPort)
+	const optionalMocksReady = attachOptionalMocksInParallel(
+		mockEnvOverrides,
+		mockPort,
+	)
 
 	if (desiredAiMode === 'mock') {
 		if (canReuseCachedAiEnv) {

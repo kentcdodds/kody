@@ -30,7 +30,6 @@
     "dev:mock-resend": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/resend/wrangler.jsonc",
     "dev:mock-ai": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/ai/wrangler.jsonc",
     "dev:mock-github": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/github/wrangler.jsonc",
-    "dev:mock-cursor": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/cursor/wrangler.jsonc",
     "dev:mock-cloudflare": "node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --config packages/mock-servers/cloudflare/wrangler.jsonc",
     "deploy": "node --input-type=module -e \"if (['preview','test'].includes(process.env.CLOUDFLARE_ENV ?? '')) { await import('./tools/prepare-e2e-env.ts'); }\" && npm run build && node --env-file=packages/worker/.env ./wrangler-env.ts deploy --outdir .wrangler/sentry-bundle --upload-source-maps",
     "sentry:upload-sourcemaps": "node tools/sentry-upload-sourcemaps.ts",

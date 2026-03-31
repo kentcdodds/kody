@@ -92,10 +92,6 @@ automatically:
   Local `npm run dev` targets the Cloudflare mock unless
   `SKIP_CLOUDFLARE_MOCK=1`. The `cloudflare_rest` capability expects API paths
   under `/client/v4/`.)
-- `CURSOR_API_KEY` (optional Worker secret; Cursor Cloud Agents API key for the
-  `cursor_cloud_rest` MCP capability)
-- `CURSOR_API_BASE_URL` (optional; defaults to `https://api.cursor.com`. Local
-  `npm run dev` targets the Cursor mock unless `SKIP_CURSOR_MOCK=1`)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities` and
   `POST /__maintenance/reindex-skills` to embed and upsert builtin capabilities
@@ -126,8 +122,6 @@ Configure these GitHub Actions secrets and variables for workflows:
   `github_graphql` capabilities — see below; deploy maps this to the Worker
   secret `GITHUB_TOKEN` because GitHub Actions forbids repository secrets named
   `GITHUB_*`)
-- `CURSOR_API_KEY` (optional; Cursor Cloud API key for `cursor_cloud_rest`;
-  syncs to the Worker when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
   when set; synced like other optional secrets)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
@@ -199,10 +193,6 @@ How to get/set each value:
   - Create a Cloudflare API token with the account permissions needed for the
     product APIs you want to call. This same secret already powers production
     deploys and can also be used by the `cloudflare_rest` MCP capability.
-- `CURSOR_API_KEY` (optional)
-  - Create an API key in **Cursor → Settings**, then add it as the repository
-    secret `CURSOR_API_KEY`. The production deploy workflow can sync it to the
-    Worker when present (see `.github/workflows/deploy.yml`).
 - `CAPABILITY_REINDEX_SECRET` (optional)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy

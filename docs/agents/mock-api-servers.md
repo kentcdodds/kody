@@ -20,11 +20,6 @@ See `packages/mock-servers/github/` for the GitHub REST + GraphQL subset mock
 package used by the `github_rest` and `github_graphql` capabilities (started by
 `npm run dev` unless `SKIP_GITHUB_MOCK=1`).
 
-See `packages/mock-servers/cursor/` for a small
-[Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints)
-subset mock used by the `cursor_cloud_rest` capability (started by `npm run dev`
-unless `SKIP_CURSOR_MOCK=1`).
-
 See `packages/mock-servers/cloudflare/` for a small Cloudflare API v4 subset
 mock used by the `cloudflare_rest` capability (started by `npm run dev` unless
 `SKIP_CLOUDFLARE_MOCK=1`).

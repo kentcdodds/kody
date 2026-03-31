@@ -101,18 +101,6 @@ Optional Worker secret:
   dev uses offline search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is
   missing.
 
-## Cursor Cloud Agents (`cursor_cloud_rest` capability)
-
-Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
-`packages/worker/src/mcp/cursor/cursor-cloud-client.ts`):
-
-- `CURSOR_API_KEY` — Cursor API key ([dashboard](https://cursor.com/settings)).
-  The Cursor Cloud API uses **HTTP Basic** auth (key as username, empty
-  password). When unset, `cursor_cloud_rest` fails fast with a setup hint.
-- `CURSOR_API_BASE_URL` — API base URL; defaults to `https://api.cursor.com`
-  when unset. Local `npm run dev` sets this to the Cursor mock Worker unless
-  `SKIP_CURSOR_MOCK=1`. See `docs/agents/mock-api-servers.md`.
-
 ## Cloudflare API (`cloudflare_rest` capability)
 
 Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and

@@ -126,8 +126,6 @@ export const EnvSchema = object({
 	GITHUB_TOKEN: optionalNonEmptyStringSchema,
 	GITHUB_API_BASE_URL: optionalUrlStringSchema,
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
-	CURSOR_API_KEY: optionalNonEmptyStringSchema,
-	CURSOR_API_BASE_URL: optionalUrlStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	HOME_CONNECTOR_SHARED_SECRET: optionalNonEmptyStringSchema,
 })
