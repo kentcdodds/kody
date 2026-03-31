@@ -16,7 +16,6 @@ import { buildSkillEmbedText } from '#mcp/skills/skill-embed-and-flags.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import {
 	parseSkillParameters,
-	type SkillParameterDefinition,
 } from '#mcp/skills/skill-parameters.ts'
 import {
 	type SecretMetadata,
