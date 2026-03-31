@@ -144,6 +144,25 @@ function shouldIncludeHomeConnectorStatus(status: HomeConnectorStatus) {
 	return status.state !== 'connected' || status.toolCount === 0
 }
 
+function serializeHomeConnectorStatus(
+	status: HomeConnectorStatus | null,
+):
+	| {
+			connectorId: string
+			state: string
+			connected: boolean
+			toolCount: number
+	  }
+	| undefined {
+	if (!status) return undefined
+	return {
+		connectorId: status.connectorId ?? 'unknown',
+		state: status.state,
+		connected: status.connected,
+		toolCount: status.toolCount,
+	}
+}
+
 export async function loadDownHomeConnectorStatus(input: {
 	env: Env
 	homeConnectorId: string | null
@@ -441,7 +460,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						query: args.query!,
 						skillCollectionSlug: searchRows.skillCollectionSlug,
 						limit,
-						detail: false,
 						specs: searchRows.registry.capabilitySpecs,
 						userId,
 						skillRows: searchRows.skillRows,
@@ -524,23 +542,31 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId,
-					result: entityResult.structured,
+						result: entityResult.structured,
 					},
 				}
 			}
 
-			const payload: SearchResultStructuredContent = {
+			const normalizedHomeConnectorStatus =
+				serializeHomeConnectorStatus(homeConnectorStatus)
+
+			const payload: {
+				matches: Awaited<ReturnType<typeof searchUnified>>['matches']
+				offline: boolean
+				warnings: Array<string>
+				homeConnectorStatus?: {
+					connectorId: string
+					state: string
+					connected: boolean
+					toolCount: number
+				}
+			} = {
 				matches: outcome.result.matches,
 				offline: outcome.result.offline,
 				warnings,
-				...(homeConnectorStatus
+				...(normalizedHomeConnectorStatus
 					? {
-							homeConnectorStatus: {
-								connectorId: homeConnectorStatus.connectorId,
-								state: homeConnectorStatus.state,
-								connected: homeConnectorStatus.connected,
-								toolCount: homeConnectorStatus.toolCount,
-							},
+							homeConnectorStatus: normalizedHomeConnectorStatus,
 						}
 					: {}),
 			}
@@ -560,7 +586,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				(value) => value.matches.length,
 			)
 			const result: SearchResultStructuredContent = {
-				...trimmedPayload,
+				offline: trimmedPayload.offline,
+				warnings: trimmedPayload.warnings,
+				...(trimmedPayload.homeConnectorStatus
+					? { homeConnectorStatus: trimmedPayload.homeConnectorStatus }
+					: {}),
 				matches: toSlimStructuredMatches({
 					matches: trimmedPayload.matches,
 					baseUrl,

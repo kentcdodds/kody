@@ -1,8 +1,7 @@
-import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { compressSchemaForLlm } from '#mcp/capabilities/schema-compression.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
-import { type SkillSearchHit, type UnifiedSearchMatch } from '#mcp/capabilities/unified-search.ts'
+import { type UnifiedSearchMatch } from '#mcp/capabilities/unified-search.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
@@ -214,7 +213,7 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 		return [
 			`## Capability — \`${match.name}\``,
 			'',
-			match.description,
+			'description' in match ? match.description : '',
 		]
 	}
 	if (match.type === 'skill') {

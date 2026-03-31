@@ -145,7 +145,6 @@ export const uiSaveAppCapability = defineDomainCapability(
 						embedText: buildUiArtifactEmbedText({
 							title: args.title,
 							description: args.description,
-							code: args.code,
 							runtime: args.runtime,
 							parameters,
 						}),
