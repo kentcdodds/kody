@@ -6,6 +6,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { errorFields, logMcpEvent } from '#mcp/observability.ts'
 import {
 	deleteUiArtifact,
+	getUiArtifactById,
 	insertUiArtifact,
 	updateUiArtifact,
 } from '#mcp/ui-artifacts-repo.ts'
@@ -84,10 +85,10 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
 			const parameters = normalizeUiArtifactParameters(args.parameters)
-			const hidden = args.hidden ?? true
 			const serializedParameters = parameters
 				? JSON.stringify(parameters)
 				: null
+			let hidden: boolean
 
 			if (isUpdate) {
 				const updated = await updateUiArtifact(
@@ -100,13 +101,27 @@ export const uiSaveAppCapability = defineDomainCapability(
 						code: args.code,
 						runtime: args.runtime,
 						parameters: serializedParameters,
-						hidden,
+						hidden: args.hidden,
 					},
 				)
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				if (args.hidden === undefined) {
+					const existing = await getUiArtifactById(
+						ctx.env.APP_DB,
+						user.userId,
+						appId,
+					)
+					if (!existing) {
+						throw new Error('Saved UI artifact not found for this user.')
+					}
+					hidden = existing.hidden
+				} else {
+					hidden = args.hidden
+				}
 			} else {
+				hidden = args.hidden ?? true
 				const now = new Date().toISOString()
 				await insertUiArtifact(ctx.env.APP_DB, {
 					id: appId,
