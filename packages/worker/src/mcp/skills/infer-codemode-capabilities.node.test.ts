@@ -56,5 +56,5 @@ test('infers capabilities from execute-time helper names', () => {
   }`
 	const { helperNames, inferencePartial } = inferCodemodeCapabilities(src)
 	expect(inferencePartial).toBe(false)
-	expect(helperNames).toEqual(['connector_get', 'value_get'])
+	expect(helperNames).toEqual(['connector_get', 'secret_set', 'value_get'])
 })

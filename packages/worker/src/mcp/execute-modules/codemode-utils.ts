@@ -1,8 +1,8 @@
 type CapabilityResult = unknown
 
-type CapabilityArgs = Record<string, unknown>
+export type CapabilityArgs = Record<string, unknown>
 
-type CodemodeNamespace = Record<
+export type CodemodeNamespace = Record<
 	string,
 	(args: CapabilityArgs) => Promise<CapabilityResult>
 >
@@ -34,9 +34,13 @@ type ValueGetResult = {
 	ttl_ms: number | null
 } | null
 
-type ExecuteRequestInput = string | URL | Request
+export type ExecuteRequestInput = string | URL | Request
 
-const executeHelperCapabilityNames = ['connector_get', 'value_get'] as const
+export const EXECUTE_HELPER_CAPABILITY_NAMES = [
+	'connector_get',
+	'value_get',
+	'secret_set',
+] as const
 
 export async function refreshAccessToken(
 	codemode: CodemodeNamespace,
@@ -109,6 +113,30 @@ async function readClientId(
 	return value.value
 }
 
+async function persistSecret(
+	codemode: CodemodeNamespace,
+	providerName: string,
+	secretName: string,
+	secretKind: 'access token' | 'refresh token',
+	value: string,
+) {
+	const secretSet = codemode.secret_set
+	if (typeof secretSet !== 'function') {
+		throw new Error('codemode.secret_set is not available in this sandbox.')
+	}
+	const normalizedSecretName = secretName.trim()
+	if (!normalizedSecretName) {
+		throw new Error(
+			`Connector "${providerName}" does not define an ${secretKind} secret name.`,
+		)
+	}
+	await secretSet({
+		name: normalizedSecretName,
+		value,
+		scope: 'user',
+	})
+}
+
 async function refreshAccessTokenWithConnector(
 	codemode: CodemodeNamespace,
 	providerName: string,
@@ -167,6 +195,23 @@ async function refreshAccessTokenWithConnector(
 			`Token refresh for connector "${providerName}" did not return an access_token.`,
 		)
 	}
+
+	if (typeof payload.refresh_token === 'string' && payload.refresh_token.length > 0) {
+		await persistSecret(
+			codemode,
+			providerName,
+			refreshTokenSecretName,
+			'refresh token',
+			payload.refresh_token,
+		)
+	}
+	await persistSecret(
+		codemode,
+		providerName,
+		connector.accessTokenSecretName,
+		'access token',
+		payload.access_token,
+	)
 
 	return payload.access_token
 }
@@ -240,7 +285,7 @@ function resolveRelativeUrl(pathname: string, connector: ConnectorConfig) {
 }
 
 export function getExecuteHelperCapabilityNames() {
-	return [...executeHelperCapabilityNames]
+	return [...EXECUTE_HELPER_CAPABILITY_NAMES]
 }
 
 export function createExecuteHelperPrelude() {
@@ -271,6 +316,28 @@ const __kodyReadClientId = async (connector) => {
     );
   }
   return value.value;
+};
+const __kodyPersistSecret = async (
+  providerName,
+  secretName,
+  secretKind,
+  value,
+) => {
+  const secretSet = codemode.secret_set;
+  if (typeof secretSet !== 'function') {
+    throw new Error('codemode.secret_set is not available in this sandbox.');
+  }
+  const normalizedSecretName = secretName.trim();
+  if (!normalizedSecretName) {
+    throw new Error(
+      \`Connector "\${providerName}" does not define an \${secretKind} secret name.\`,
+    );
+  }
+  await secretSet({
+    name: normalizedSecretName,
+    value,
+    scope: 'user',
+  });
 };
 const __kodyGetNormalizedApiBaseUrl = (connector) => {
   if (!connector.apiBaseUrl) return null;
@@ -364,6 +431,20 @@ const __kodyRefreshAccessToken = async (providerName) => {
       \`Token refresh for connector "\${providerName}" did not return an access_token.\`,
     );
   }
+  if (typeof payload.refresh_token === 'string' && payload.refresh_token.length > 0) {
+    await __kodyPersistSecret(
+      providerName,
+      refreshTokenSecretName,
+      'refresh token',
+      payload.refresh_token,
+    );
+  }
+  await __kodyPersistSecret(
+    providerName,
+    connector.accessTokenSecretName,
+    'access token',
+    payload.access_token,
+  );
   return payload.access_token;
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
