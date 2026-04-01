@@ -582,11 +582,15 @@ export async function searchUnified(input: {
 		}
 		return 0
 	}
+	const lexicalScoreByKey = new Map(
+		allKeys.map((key) => [key, getUnifiedLexicalScore(key)] as const),
+	)
 	const sortedKeys = [...allKeys]
 		.sort((a, b) => {
 			const fusedDiff = (fusedCross.get(b) ?? 0) - (fusedCross.get(a) ?? 0)
 			if (fusedDiff !== 0) return fusedDiff
-			const lexicalDiff = getUnifiedLexicalScore(b) - getUnifiedLexicalScore(a)
+			const lexicalDiff =
+				(lexicalScoreByKey.get(b) ?? 0) - (lexicalScoreByKey.get(a) ?? 0)
 			if (lexicalDiff !== 0) return lexicalDiff
 			const entityDiff = getEntityScore(b) - getEntityScore(a)
 			if (entityDiff !== 0) return entityDiff
