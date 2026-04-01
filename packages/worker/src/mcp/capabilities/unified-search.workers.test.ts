@@ -120,6 +120,80 @@ test('skill collection filter narrows saved skill matches', async () => {
 	expect(skill.collection).toBe('GitHub Workflows')
 })
 
+test('skill name and description matches survive cross-entity ranking', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {
+		launch_agent: {
+			name: 'launch_agent',
+			domain: 'coding',
+			description: 'Launch an agent for generic coding work.',
+			keywords: ['launch', 'agent', 'coding'],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['task'],
+			requiredInputFields: ['task'],
+			outputFields: ['agentId'],
+			inputSchema: {},
+		},
+		cursor_docs: {
+			name: 'cursor_docs',
+			domain: 'coding',
+			description: 'Look up Cursor product documentation.',
+			keywords: ['cursor', 'docs'],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['query'],
+			requiredInputFields: ['query'],
+			outputFields: ['results'],
+			inputSchema: {},
+		},
+		cursor_agent_status: {
+			name: 'cursor_agent_status',
+			domain: 'coding',
+			description: 'Inspect the status of an existing Cursor agent.',
+			keywords: ['cursor', 'agent', 'status'],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['agentId'],
+			requiredInputFields: ['agentId'],
+			outputFields: ['status'],
+			inputSchema: {},
+		},
+	} satisfies Record<string, CapabilitySpec>
+	const skillRow: McpSkillRow = {
+		...createSkillRow('launch-cursor-cloud-agent'),
+		name: 'launch-cursor-cloud-agent',
+		title: 'Launch Cursor Cloud Agent',
+		description: 'Launch a Cursor Cloud Agent for an autonomous coding task.',
+		collection_name: 'Cursor',
+		collection_slug: 'cursor',
+		keywords: JSON.stringify(['cursor', 'cloud', 'agent', 'launch']),
+		search_text: 'launch cursor cloud agent autonomous coding task',
+	}
+
+	const result = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'launch Cursor Cloud agent',
+		limit: 5,
+		specs,
+		userId: 'user-123',
+		skillRows: [skillRow],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		appSecretsByAppId: new Map(),
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'skill',
+		skillName: 'launch-cursor-cloud-agent',
+		title: 'Launch Cursor Cloud Agent',
+	})
+})
+
 test('search can return standalone user secrets and nest app secrets on apps', async () => {
 	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
 	const specs = {} as Record<string, CapabilitySpec>

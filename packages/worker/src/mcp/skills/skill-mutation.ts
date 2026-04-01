@@ -41,6 +41,7 @@ export async function buildSkillEmbedTextFromStoredRow(
 		inferred = []
 	}
 	return buildSkillEmbedText({
+		skillName: row.name,
 		title: row.title,
 		description: row.description,
 		collectionName: row.collection_name,
@@ -135,6 +136,7 @@ export async function prepareSkillPersistence(
 	const collection = parseSkillCollection(args.collection)
 	const skillName = normalizeSkillName(args.name)
 	const embedText = buildSkillEmbedText({
+		skillName,
 		title: args.title,
 		description: args.description,
 		collectionName: collection?.name ?? null,

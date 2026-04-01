@@ -26,6 +26,7 @@ export function mergeInferredCapabilityNames(input: {
 
 export function buildSkillEmbedText(
 	input: {
+		skillName?: string | null
 		title: string
 		description: string
 		collectionName?: string | null
@@ -38,7 +39,15 @@ export function buildSkillEmbedText(
 	},
 	maxChars: number = defaultSkillEmbedMaxChars,
 ): string {
+	const normalizedSkillName = input.skillName?.trim()
+	const humanizedSkillName = normalizedSkillName?.replace(/[-_]+/g, ' ')
 	const baseParts = [
+		...(normalizedSkillName
+			? [
+					`name ${normalizedSkillName}`,
+					...(humanizedSkillName ? [humanizedSkillName] : []),
+				]
+			: []),
 		input.title,
 		input.description,
 		...(input.collectionName
