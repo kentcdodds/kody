@@ -35,26 +35,33 @@ test('lexicalScore prefers overlapping tokens', () => {
 
 test('offline search returns provided specs without depending on global ranks', async () => {
 	const specs = {
-		generated_ui_oauth_guide: {
-			name: 'generated_ui_oauth_guide',
+		kody_official_guide: {
+			name: 'kody_official_guide',
 			domain: 'coding',
 			description:
-				'Guide for generated UI OAuth callback, redirect URI, and provider registration flows.',
+				'Load official Kody guides: oauth (/connect/oauth), generated_ui_oauth (saved app), connect_secret.',
 			keywords: [
 				'oauth',
 				'generated ui',
 				'redirect uri',
 				'provider registration',
+				'secret',
 			],
 			readOnly: true,
 			idempotent: true,
 			destructive: false,
-			inputFields: [],
-			requiredInputFields: [],
+			inputFields: ['guide'],
+			requiredInputFields: ['guide'],
 			outputFields: ['title', 'body'],
 			inputSchema: {
 				type: 'object',
-				properties: {},
+				properties: {
+					guide: {
+						type: 'string',
+						enum: ['oauth', 'generated_ui_oauth', 'connect_secret'],
+					},
+				},
+				required: ['guide'],
 			},
 		},
 	} satisfies Record<string, CapabilitySpec>
@@ -73,7 +80,7 @@ test('offline search returns provided specs without depending on global ranks', 
 
 	expect(offline).toBe(true)
 	expect(matches).toHaveLength(1)
-	expect(matches[0]?.name).toBe('generated_ui_oauth_guide')
+	expect(matches[0]?.name).toBe('kody_official_guide')
 	expect(matches[0]?.keywords).toEqual(
 		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
 	)

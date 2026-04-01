@@ -44,6 +44,7 @@ search
 
 execute
 - Async arrow function; \`codemode\` + OAuth helpers \`refreshAccessToken\` / \`createAuthenticatedFetch\`. Prefer one \`execute\` when the plan is clear. Full rules for \`fetch\`, placeholders, \`secret_list\` / \`value_get\`, and \`x-kody-secret\`: see the \`execute\` tool description.
+- Official how-to guides from the Kody repo: \`kody_official_guide\` with \`guide\` \`oauth\` (standard OAuth, \`/connect/oauth\`) first; \`generated_ui_oauth\` for saved-app OAuth edge cases; \`connect_secret\` for API keys/PATs. If unsure, \`search\` for this capability and load the right guide before implementing.
 
 open_generated_ui
 - Exactly one of \`code\` or \`app_id\`. Sensitive input: use UI; import \`kodyWidget\` from \`@kody/ui-utils\`. Details: \`open_generated_ui\` tool description.

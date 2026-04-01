@@ -28,7 +28,7 @@ read \`kodyWidget.params\` after \`import { kodyWidget } from '@kody/ui-utils'\`
 
 Use for sensitive input (never ask the user to paste credentials in chat).
 Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
-OAuth: run \`generated_ui_oauth_guide\` first for callbacks, tokens, and approval.
+OAuth: standard path is \`/connect/oauth\`—run \`kody_official_guide\` (\`guide: "oauth"\`) first; for OAuth inside a saved app only, use \`guide: "generated_ui_oauth"\`.
 
 Persist with \`ui_save_app\`; discover with \`search\` or \`ui_list_apps\`.
 

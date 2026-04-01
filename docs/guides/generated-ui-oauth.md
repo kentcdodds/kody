@@ -1,37 +1,27 @@
-import { z } from 'zod'
-import { defineDomainCapability } from '../define-domain-capability.ts'
-import { capabilityDomainNames } from '../domain-metadata.ts'
-import { type CapabilityContext } from '../types.ts'
-
-const inputSchema = z
-	.object({})
-	.describe(
-		'No input. Returns the current Kody-specific guidance for building OAuth flows in generated UI apps.',
-	)
-
-const outputSchema = z.object({
-	title: z.string().describe('Guide title.'),
-	body: z
-		.string()
-		.describe(
-			'Markdown guidance for implementing OAuth in generated UI apps, including hosted callbacks, PKCE versus server-side helper usage, token persistence, and code examples.',
-		),
-})
-
-const guideBody = `
 # Generated UI OAuth guide
 
-Use this guide before generating or revising a generated UI that implements a
-browser-based OAuth flow.
+**This is the edge-case guide.** For normal third-party OAuth, load the standard
+guide first: \`kody_official_guide\` with \`guide: "oauth"\`, or read
+[OAuth guide](./oauth.md) (hosted **`/connect/oauth`**—no generated UI
+required).
 
-## When to use this guide
+Use **this** document only when **`/connect/oauth` is not sufficient** and you
+are **building or changing OAuth inside a saved generated UI**
+(\`open_generated_ui\` / \`ui_save_app\`): custom layout, coupling with other
+UI, or callbacks on the **saved app** URL (\`/ui/:id\`) instead of
+\`/connect/oauth\`.
 
-Use it when the UI needs to:
+## When to use this guide (generated UI only)
 
-- connect a third-party account with OAuth
-- receive a provider callback with \`code\` and \`state\`
-- exchange an authorization code for tokens with saved values and secrets
-- tell the user what callback or redirect URL to register with the provider
+- Branded or multi-step UX inside a saved app
+- Tight coupling with other generated UI state, forms, or \`executeCode\`
+  workflows
+- Receiving a provider callback with \`code\` and \`state\` on the **saved app’s
+  hosted URL** (\`/ui/:id\`), not on \`/connect/oauth\`
+- Exchanging an authorization code with \`kodyWidget\` helpers and saving tokens
+  from that page
+- Telling the user exactly what callback or redirect URL to register **for that
+  saved app**
 
 ## Core rules
 
@@ -70,9 +60,9 @@ of treating it like a secret.
    registration values they need.
 4. Give the user the hosted saved-app URL and tell them to open it in their
    browser instead of trying to complete the flow in the conversation iframe.
-5. In the hosted generated UI, import \`kodyWidget\` from
-   \`@kody/ui-utils\` and use it directly to read the callback, validate state,
-   exchange the code in the browser, and save tokens.
+5. In the hosted generated UI, import \`kodyWidget\` from \`@kody/ui-utils\` and
+   use it directly to read the callback, validate state, exchange the code in
+   the browser, and save tokens.
 
 ## Generated UI helpers to use
 
@@ -84,9 +74,12 @@ Use these helpers instead of hand-rolling the flow:
 - \`createOAuthState(key)\`
 - \`readOAuthCallback({ expectedStateKey })\`
 - \`validateOAuthCallbackState({ key, returnedState })\`
-- \`exchangePkceOAuthCode({ tokenUrl, code, redirectUri, clientId, codeVerifier, extraParams? })\`
-- \`exchangeOAuthCodeWithSecrets({ tokenUrl, code, redirectUri, clientId, clientSecretSecretName, scope?, extraParams? })\`
-- \`saveOAuthTokens({ payload, accessTokenSecretName, refreshTokenSecretName?, scope?, accessTokenDescription?, refreshTokenDescription? })\`
+- \`exchangePkceOAuthCode({ tokenUrl, code, redirectUri, clientId, codeVerifier,
+  extraParams? })\`
+- \`exchangeOAuthCodeWithSecrets({ tokenUrl, code, redirectUri, clientId,
+  clientSecretSecretName, scope?, extraParams? })\`
+- \`saveOAuthTokens({ payload, accessTokenSecretName, refreshTokenSecretName?,
+  scope?, accessTokenDescription?, refreshTokenDescription? })\`
 
 ## Choosing the exchange helper
 
@@ -103,15 +96,13 @@ When the client ID is public configuration, read it with \`getValue(...)\`
 before building the authorization URL or token request.
 
 \`\`\`html
+
 <p id="status"></p>
 <script type="module">
   import { kodyWidget } from '@kody/ui-utils'
 
-  async function requireClientId() {
-    const clientIdRecord = await kodyWidget.getValue({
-      name: 'muffin-club-oauth-client-id',
-      scope: 'user',
-    })
+async function requireClientId() { const clientIdRecord = await
+kodyWidget.getValue({ name: 'muffin-club-oauth-client-id', scope: 'user', })
 
     if (!clientIdRecord) {
       const message =
@@ -123,13 +114,12 @@ before building the authorization URL or token request.
     }
 
     return clientIdRecord.value
-  }
-</script>
-\`\`\`
 
-Use the returned value for \`client_id\` in the provider authorization URL or
-in \`exchangePkceOAuthCode(...)\` or \`exchangeOAuthCodeWithSecrets(...)\` when
-the provider treats the client ID as readable, non-secret configuration.
+} </script> \`\`\`
+
+Use the returned value for \`client_id\` in the provider authorization URL or in
+\`exchangePkceOAuthCode(...)\` or \`exchangeOAuthCodeWithSecrets(...)\` when the
+provider treats the client ID as readable, non-secret configuration.
 
 ## Recommended app structure
 
@@ -139,8 +129,8 @@ For most provider-connection flows, structure the generated UI like this:
    credentials with a form.
 2. A connect action that creates OAuth state and sends the browser to the
    provider's authorization URL.
-3. A callback handler that runs when the provider redirects back with
-   \`code\` and \`state\`.
+3. A callback handler that runs when the provider redirects back with \`code\`
+   and \`state\`.
 4. A success view that confirms the account is connected.
 5. An error view that explains what failed and what the user should do next.
 
@@ -149,8 +139,8 @@ For most provider-connection flows, structure the generated UI like this:
 1. Read the callback with \`readOAuthCallback(...)\`.
 2. If the provider returned an OAuth error, show that error to the user.
 3. Validate the returned state with \`validateOAuthCallbackState(...)\`.
-4. For hosted browser callback pages, prefer \`exchangePkceOAuthCode(...)\`
-   when the provider supports PKCE and browser token exchanges.
+4. For hosted browser callback pages, prefer \`exchangePkceOAuthCode(...)\` when
+   the provider supports PKCE and browser token exchanges.
 5. If the exchange succeeds, save the returned access token or refresh token
    with \`saveOAuthTokens(...)\` or \`saveSecret(...)\`.
 6. Continue with whatever post-connect behavior the app needs.
@@ -176,6 +166,7 @@ as a readable value and the client secret as a secret before starting the
 authorization flow.
 
 \`\`\`html
+
 <form id="oauth-client-form">
   <label>
     Client ID
@@ -190,12 +181,10 @@ authorization flow.
 <script type="module">
   import { kodyWidget } from '@kody/ui-utils'
 
-  document.querySelector('#oauth-client-form')?.addEventListener('submit', async (event) => {
-    event.preventDefault()
-    const form = event.currentTarget
-    const values = kodyWidget.formToObject(form)
-    const clientId = values.clientId
-    const clientSecret = values.clientSecret
+document.querySelector('#oauth-client-form')?.addEventListener('submit', async
+(event) => { event.preventDefault() const form = event.currentTarget const
+values = kodyWidget.formToObject(form) const clientId = values.clientId const
+clientSecret = values.clientSecret
 
     if (typeof clientId !== 'string' || typeof clientSecret !== 'string') return
 
@@ -220,9 +209,8 @@ authorization flow.
     }
 
     document.body.insertAdjacentHTML('beforeend', '<p>Configuration saved.</p>')
-  })
-</script>
-\`\`\`
+
+}) </script> \`\`\`
 
 Saved secrets are not readable back into browser code. If the hosted callback
 page needs to exchange the authorization code in the browser, keep the browser
@@ -237,8 +225,8 @@ Do not assume the hosted callback page can read the secret back out.
 
 Create and persist the OAuth state before redirecting the browser.
 
-\`\`\`html
-<button id="connect-muffin-club">Connect Muffin Club</button>
+\`\`\`html <button id="connect-muffin-club">Connect Muffin Club</button>
+
 <script type="module">
   import { kodyWidget } from '@kody/ui-utils'
 
@@ -261,6 +249,7 @@ Create and persist the OAuth state before redirecting the browser.
     window.location.assign(authUrl.toString())
   })
 </script>
+
 \`\`\`
 
 Reading the client ID from \`getValue(...)\` keeps it out of the UI source while
@@ -277,15 +266,16 @@ browser page, then save the returned tokens only after the browser request
 succeeds.
 
 \`\`\`html
+
 <div id="app"></div>
 <script type="module">
-  const root = document.querySelector('#app')
+  import { kodyWidget } from '@kody/ui-utils'
 
-  async function handleCallback(kodyWidget, code, returnedState) {
-    const validation = kodyWidget.validateOAuthCallbackState({
-      key: 'muffin-club-oauth',
-      returnedState,
-    })
+const root = document.querySelector('#app')
+
+async function handleCallback(kodyWidget, code, returnedState) { const
+validation = kodyWidget.validateOAuthCallbackState({ key: 'muffin-club-oauth',
+returnedState, })
 
     if (!validation.valid) {
       root.innerHTML = '<p>State mismatch. Please restart the connection flow.</p>'
@@ -338,23 +328,19 @@ succeeds.
         ? 'Token exchange failed with HTTP status ' + tokenResult.status + '.'
         : 'Token exchange failed: ' + tokenResult.message
     root.innerHTML = '<p>' + message + '</p>'
-  }
 
-  import { kodyWidget } from '@kody/ui-utils'
+}
 
-  void (async () => {
-    const callback = kodyWidget.readOAuthCallback({
-      expectedStateKey: 'muffin-club-oauth',
-    })
+void (async () => { const callback = kodyWidget.readOAuthCallback({
+expectedStateKey: 'muffin-club-oauth', })
 
     if (callback.kind === 'error') {
       root.innerHTML = '<p>OAuth error: ' + callback.error + '</p>'
     } else if (callback.kind === 'success') {
       await handleCallback(kodyWidget, callback.code, callback.state)
     }
-  })()
-</script>
-\`\`\`
+
+})() </script> \`\`\`
 
 ## Server-side execution note
 
@@ -410,35 +396,3 @@ Before you consider the flow complete, verify that the generated UI:
   client ID, save it with \`saveValue(...)\` and read it with \`getValue(...)\`.
 - If the provider flow depends on user-entered values that should survive a
   refresh, consider \`persistForm(...)\` and \`restoreForm(...)\`.
-`.trim()
-
-export const generatedUiOAuthGuideCapability = defineDomainCapability(
-	capabilityDomainNames.coding,
-	{
-		name: 'generated_ui_oauth_guide',
-		description:
-			'Read the Kody-specific guide for implementing OAuth flows in generated UI apps. Call this before building a hosted OAuth callback flow, provider registration instructions, browser PKCE exchange UI, or server-side OAuth exchange UI.',
-		keywords: [
-			'oauth',
-			'pkce',
-			'generated ui',
-			'hosted callback',
-			'redirect uri',
-			'provider registration',
-			'ui_save_app',
-			'open_generated_ui',
-			'@kody/ui-utils',
-		],
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-		inputSchema,
-		outputSchema,
-		async handler(_args, _ctx: CapabilityContext) {
-			return {
-				title: 'Generated UI OAuth guide',
-				body: guideBody,
-			}
-		},
-	},
-)
