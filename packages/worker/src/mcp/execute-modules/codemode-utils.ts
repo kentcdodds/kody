@@ -1,8 +1,8 @@
 type CapabilityResult = unknown
 
-type CapabilityArgs = Record<string, unknown>
+export type CapabilityArgs = Record<string, unknown>
 
-type CodemodeNamespace = Record<
+export type CodemodeNamespace = Record<
 	string,
 	(args: CapabilityArgs) => Promise<CapabilityResult>
 >
@@ -34,9 +34,9 @@ type ValueGetResult = {
 	ttl_ms: number | null
 } | null
 
-type ExecuteRequestInput = string | URL | Request
+export type ExecuteRequestInput = string | URL | Request
 
-const executeHelperCapabilityNames = [
+export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'connector_get',
 	'value_get',
 	'secret_set',
@@ -285,7 +285,7 @@ function resolveRelativeUrl(pathname: string, connector: ConnectorConfig) {
 }
 
 export function getExecuteHelperCapabilityNames() {
-	return [...executeHelperCapabilityNames]
+	return [...EXECUTE_HELPER_CAPABILITY_NAMES]
 }
 
 export function createExecuteHelperPrelude() {

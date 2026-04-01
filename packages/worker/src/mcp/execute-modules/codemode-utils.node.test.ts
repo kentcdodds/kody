@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
 import {
+	type CapabilityArgs,
+	type CodemodeNamespace,
+	type ExecuteRequestInput,
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
 	getExecuteHelperCapabilityNames,
@@ -10,6 +13,13 @@ type SecretSetCall = {
 	name: string
 	value: string
 	scope: string
+}
+
+type SandboxHelpers = {
+	refreshAccessToken: (providerName: string) => Promise<string>
+	createAuthenticatedFetch: (
+		providerName: string,
+	) => Promise<(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>>
 }
 
 const spotifyConnector = {
@@ -27,25 +37,31 @@ const spotifyConnector = {
 function createCodemode(payload: Record<string, unknown>) {
 	const secretSetCalls: Array<SecretSetCall> = []
 	const codemode = {
-		async connector_get({ name }: { name: string }) {
+		async connector_get(args: CapabilityArgs) {
+			const name = args.name
 			expect(name).toBe('spotify')
 			return { connector: spotifyConnector }
 		},
-		async value_get({ name }: { name: string }) {
+		async value_get(args: CapabilityArgs) {
+			const name = args.name
 			expect(name).toBe('spotifyClientId')
 			return { value: 'spotify-client-id' }
 		},
-		async secret_set(args: SecretSetCall) {
-			secretSetCalls.push(args)
+		async secret_set(args: CapabilityArgs) {
+			const call = args as SecretSetCall
+			secretSetCalls.push(call)
 			return {
-				name: args.name,
-				scope: args.scope,
+				name: call.name,
+				scope: call.scope,
 			}
 		},
-	}
+	} satisfies CodemodeNamespace
 
 	const fetchCalls: Array<Request> = []
-	const fetchStub = async (input: RequestInfo | URL, init?: RequestInit) => {
+	const fetchStub: typeof globalThis.fetch = async (
+		input: ExecuteRequestInput,
+		init?: RequestInit,
+	) => {
 		const request = new Request(input, init)
 		fetchCalls.push(request)
 		if (request.url === spotifyConnector.tokenUrl) {
@@ -142,14 +158,7 @@ test('createExecuteHelperPrelude persists rotated refresh token and access token
 	const createSandboxHelpers = new Function(
 		'codemode',
 		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch };`,
-	) as (
-		codemode: typeof codemode,
-	) => {
-		refreshAccessToken: (providerName: string) => Promise<string>
-		createAuthenticatedFetch: (
-			providerName: string,
-		) => Promise<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
-	}
+	) as (codemodeNamespace: CodemodeNamespace) => SandboxHelpers
 
 	const helpers = createSandboxHelpers(codemode)
 	const accessToken = await withPatchedFetch(fetchStub, () =>

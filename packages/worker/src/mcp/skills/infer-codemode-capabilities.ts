@@ -1,10 +1,5 @@
 import { parse, type Node, type Program } from 'acorn'
-
-const executeHelperCapabilities = [
-	'connector_get',
-	'value_get',
-	'secret_set',
-] as const
+import { EXECUTE_HELPER_CAPABILITY_NAMES } from '#mcp/execute-modules/codemode-utils.ts'
 const executeHelperNames = new Set([
 	'refreshAccessToken',
 	'createAuthenticatedFetch',
@@ -115,7 +110,7 @@ export function inferCodemodeCapabilitiesFromAst(
 				(n as { callee?: unknown }).callee ?? null,
 			)
 			if (calleeName && executeHelperNames.has(calleeName)) {
-				for (const capabilityName of executeHelperCapabilities) {
+				for (const capabilityName of EXECUTE_HELPER_CAPABILITY_NAMES) {
 					helperSet.add(capabilityName)
 				}
 			}
