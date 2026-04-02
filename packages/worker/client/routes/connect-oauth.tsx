@@ -3,6 +3,22 @@ import { colors, radius, shadows, spacing } from '#client/styles/tokens.ts'
 
 type OAuthFlow = 'pkce' | 'confidential'
 
+type ConnectOauthQueryConfig = {
+	provider: string
+	providerKey: string
+	authorizeHost: string
+	authorizeUrl: string
+	tokenUrl: string | null
+	apiBaseUrl: string | null
+	scopes: Array<string>
+	flow: OAuthFlow | null
+	scopeSeparator: string
+	extraAuthorizeParams: Record<string, string>
+	providerSetupInstructions: string | null
+	dashboardUrl: string | null
+	allowedHosts: Array<string>
+}
+
 type ConnectOauthConfig = {
 	provider: string
 	providerKey: string
@@ -24,6 +40,18 @@ type ConnectOauthConfig = {
 	allowedHosts: Array<string>
 }
 
+type StoredConnectorConfig = {
+	name: string
+	tokenUrl: string
+	apiBaseUrl: string | null
+	flow: OAuthFlow
+	clientIdValueName: string
+	clientSecretSecretName: string | null
+	accessTokenSecretName: string
+	refreshTokenSecretName: string | null
+	requiredHosts: Array<string>
+}
+
 type OAuthExchangeResult =
 	| { ok: true; data: Record<string, unknown>; status: number }
 	| { ok: false; status: number; error: string }
@@ -34,32 +62,37 @@ type SaveValueResult =
 
 type SaveSecretResult = { ok: true } | { ok: false; error: string }
 
+type AccountSecretsListPayload = {
+	ok: true
+	secrets: Array<{ name: string; scope: string }>
+}
+
 type OAuthCallback =
 	| { kind: 'none' }
 	| { kind: 'error'; error: string; description: string | null }
 	| { kind: 'success'; code: string; state: string | null }
 
 export function ConnectOauthRoute(handle: Handle) {
-	const normalizeHosts = (hosts: Array<string>) =>
-		Array.from(
-			new Set(
-				hosts
-					.map((host) => host.trim().toLowerCase())
-					.filter((host) => host.length > 0),
-			),
-		).sort()
 	type StatusTone = 'info' | 'warn' | 'error'
 
 	let statusMessage = 'Ready to connect.'
 	let statusTone: StatusTone = 'info'
 	let currentStep: 'setup' | 'connect' | 'callback' | 'success' = 'setup'
 	let config: ConnectOauthConfig | null = null
+	let existingConnectorConfig: StoredConnectorConfig | null = null
+	let existingConnectorValueName: string | null = null
 	let accessTokenSaved = false
 	let refreshTokenSaved = false
 	let hasConfigError = false
 	let connectOauthHandled = false
 	let approvalDetails: { host: string; secrets: Array<string> } | null = null
 	let submitting = false
+	let initialLoadStarted = false
+	let clientIdInput = ''
+	let clientSecretInput = ''
+	let hasStoredClientId = false
+	let hasStoredClientSecret = false
+	let revealStoredClientSecretField = false
 
 	const update = () => handle.update()
 
@@ -79,7 +112,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		update()
 	}
 
-	const readQueryConfig = (): ConnectOauthConfig | null => {
+	const readQueryConfig = (): ConnectOauthQueryConfig | null => {
 		hasConfigError = false
 		if (typeof window === 'undefined') return null
 		const url = new URL(window.location.href)
@@ -93,18 +126,23 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 		const provider = readRequired('provider')
 		const authorizeUrl = readRequired('authorizeUrl')
-		const tokenUrl = readRequired('tokenUrl')
+		const tokenUrl = readOptional('tokenUrl')
 		const apiBaseUrl = parseOptionalUrl(readOptional('apiBaseUrl'))
-		if (!provider || !authorizeUrl || !tokenUrl) {
+		if (!provider || !authorizeUrl) {
 			hasConfigError = true
 			setStatus('Missing required OAuth configuration parameters.', 'error')
 			return null
 		}
 		const authorizeHost = safeParseHost(authorizeUrl)
-		const tokenHost = safeParseHost(tokenUrl)
-		if (!authorizeHost || !tokenHost) {
+		if (!authorizeHost) {
 			hasConfigError = true
-			setStatus('Authorize and token URLs must be valid.', 'error')
+			setStatus('Authorize URL must be valid.', 'error')
+			return null
+		}
+		const tokenHost = tokenUrl ? safeParseHost(tokenUrl) : null
+		if (tokenUrl && !tokenHost) {
+			hasConfigError = true
+			setStatus('Token URL must be valid when provided.', 'error')
 			return null
 		}
 		let flow = (readOptional('flow') ?? 'pkce').toLowerCase()
@@ -137,7 +175,6 @@ export function ConnectOauthRoute(handle: Handle) {
 			provider,
 			providerKey,
 			authorizeHost,
-			tokenHost,
 			authorizeUrl,
 			tokenUrl,
 			apiBaseUrl,
@@ -147,11 +184,6 @@ export function ConnectOauthRoute(handle: Handle) {
 			extraAuthorizeParams,
 			providerSetupInstructions,
 			dashboardUrl,
-			clientIdValueName: `${providerKey}-client-id`,
-			clientSecretSecretName:
-				flow === 'confidential' ? `${providerKey}ClientSecret` : null,
-			accessTokenSecretName: `${providerKey}AccessToken`,
-			refreshTokenSecretName: `${providerKey}RefreshToken`,
 			allowedHosts,
 		}
 	}
@@ -296,6 +328,90 @@ export function ConnectOauthRoute(handle: Handle) {
 		return typeof payload.value?.value === 'string' ? payload.value.value : null
 	}
 
+	const listSecrets = async () => {
+		const response = await fetch('/account/secrets.json', {
+			method: 'GET',
+			headers: {
+				Accept: 'application/json',
+			},
+			credentials: 'include',
+		})
+		const payload = (await response
+			.json()
+			.catch(() => null)) as AccountSecretsListPayload | null
+		if (
+			!response.ok ||
+			payload?.ok !== true ||
+			!Array.isArray(payload.secrets)
+		) {
+			return null
+		}
+		return payload.secrets
+	}
+
+	const readExistingConnectorConfig = async (
+		queryConfig: ConnectOauthQueryConfig,
+	) => {
+		for (const valueName of getConnectorValueCandidates(
+			queryConfig.provider,
+			queryConfig.providerKey,
+		)) {
+			const raw = await readValue(valueName)
+			if (!raw) continue
+			const parsed = parseStoredConnectorConfig(raw, queryConfig.provider)
+			if (parsed) {
+				return {
+					valueName,
+					connector: parsed,
+				}
+			}
+		}
+		return {
+			valueName: null,
+			connector: null,
+		}
+	}
+
+	const initializeSetupState = async (nextConfig: ConnectOauthConfig) => {
+		const clientId = await readValue(nextConfig.clientIdValueName)
+		const secrets = nextConfig.clientSecretSecretName
+			? await listSecrets()
+			: null
+		clientIdInput = clientId ?? ''
+		clientSecretInput = ''
+		hasStoredClientId = Boolean(clientId?.trim())
+		hasStoredClientSecret = Boolean(
+			nextConfig.clientSecretSecretName &&
+			secrets?.some(
+				(secret) =>
+					secret.scope === 'user' &&
+					secret.name === nextConfig.clientSecretSecretName,
+			),
+		)
+		revealStoredClientSecretField = false
+		const setupStatus = summarizeStoredSetupState({
+			flow: nextConfig.flow,
+			clientId,
+			hasStoredClientSecret,
+		})
+		if (setupStatus.isReady) {
+			setStatus(
+				existingConnectorConfig
+					? 'Loaded your existing connector config and client credentials. Ready to connect.'
+					: 'Loaded your existing OAuth client configuration. Ready to connect.',
+			)
+			setStep('connect')
+			return
+		}
+		const missingDetails = formatMissingSetupFields(setupStatus.missingFields)
+		setStatus(
+			existingConnectorConfig
+				? `Loaded your existing connector config. ${missingDetails}`
+				: missingDetails,
+		)
+		setStep('setup')
+	}
+
 	const saveValue = async (
 		name: string,
 		value: string,
@@ -419,15 +535,16 @@ export function ConnectOauthRoute(handle: Handle) {
 		submitting = true
 		update()
 		try {
-			const form = event.currentTarget as HTMLFormElement
-			const formData = new FormData(form)
-			const clientId = String(formData.get('clientId') ?? '').trim()
-			const clientSecret = String(formData.get('clientSecret') ?? '').trim()
+			const clientId = clientIdInput.trim()
+			const clientSecret = clientSecretInput.trim()
 			if (!clientId) {
 				setStatus('Client ID is required.', 'error')
 				return
 			}
-			if (config.flow === 'confidential') {
+			if (
+				config.flow === 'confidential' &&
+				(!hasStoredClientSecret || revealStoredClientSecretField)
+			) {
 				if (!clientSecret) {
 					setStatus('Client secret is required for confidential flow.', 'error')
 					return
@@ -442,6 +559,9 @@ export function ConnectOauthRoute(handle: Handle) {
 					setStatus(secretResult.error, 'error')
 					return
 				}
+				hasStoredClientSecret = true
+				revealStoredClientSecretField = false
+				clientSecretInput = ''
 			}
 			const clientIdResult = await saveValue(
 				config.clientIdValueName,
@@ -452,6 +572,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				setStatus(clientIdResult.error, 'error')
 				return
 			}
+			hasStoredClientId = true
 			setStatus('Saved OAuth client configuration.', 'info')
 			setStep('connect')
 		} finally {
@@ -611,11 +732,91 @@ export function ConnectOauthRoute(handle: Handle) {
 		)
 	}
 
+	const renderExistingConnectorConfig = () => {
+		if (!existingConnectorConfig) return null
+		return (
+			<section
+				css={{
+					padding: spacing.md,
+					borderRadius: radius.md,
+					border: `1px solid ${colors.border}`,
+					backgroundColor: colors.surface,
+					display: 'grid',
+					gap: spacing.sm,
+				}}
+			>
+				<h2 css={{ margin: 0 }}>Existing connector config</h2>
+				<p css={{ margin: 0, color: colors.textMuted }}>
+					Loaded from{' '}
+					<code>
+						{existingConnectorValueName ??
+							buildConnectorValueName(config?.provider ?? '')}
+					</code>
+					.
+				</p>
+				<p css={{ margin: 0 }}>
+					Flow: <strong>{existingConnectorConfig.flow}</strong>
+				</p>
+				<p css={{ margin: 0 }}>
+					Token URL: <code>{existingConnectorConfig.tokenUrl}</code>
+				</p>
+				{existingConnectorConfig.apiBaseUrl ? (
+					<p css={{ margin: 0 }}>
+						API base URL: <code>{existingConnectorConfig.apiBaseUrl}</code>
+					</p>
+				) : null}
+				<p css={{ margin: 0 }}>
+					Client ID value:{' '}
+					<code>{existingConnectorConfig.clientIdValueName}</code>
+				</p>
+				<p css={{ margin: 0 }}>
+					Client secret secret:{' '}
+					<code>
+						{existingConnectorConfig.clientSecretSecretName ?? 'Not used'}
+					</code>
+				</p>
+				<p css={{ margin: 0 }}>
+					Access token secret:{' '}
+					<code>{existingConnectorConfig.accessTokenSecretName}</code>
+				</p>
+				<p css={{ margin: 0 }}>
+					Refresh token secret:{' '}
+					<code>
+						{existingConnectorConfig.refreshTokenSecretName ?? 'Not used'}
+					</code>
+				</p>
+				<div css={{ display: 'grid', gap: spacing.xs }}>
+					<strong>Required hosts</strong>
+					{existingConnectorConfig.requiredHosts.length > 0 ? (
+						<ul css={{ margin: 0, paddingLeft: spacing.lg }}>
+							{existingConnectorConfig.requiredHosts.map((host) => (
+								<li key={host}>{host}</li>
+							))}
+						</ul>
+					) : (
+						<p css={{ margin: 0, color: colors.textMuted }}>None configured.</p>
+					)}
+				</div>
+			</section>
+		)
+	}
+
 	handle.queueTask(async () => {
+		if (initialLoadStarted) return
+		initialLoadStarted = true
 		const callback = readCallback()
 		if (callback.kind === 'success' || callback.kind === 'error') {
 			const storedConfig = readStoredConfig()
-			const nextConfig = storedConfig ?? readQueryConfig()
+			const queryConfig = readQueryConfig()
+			const nextConfig =
+				storedConfig ??
+				(queryConfig
+					? mergeConnectOauthConfig({
+							queryConfig,
+							storedConnector: (await readExistingConnectorConfig(queryConfig))
+								.connector,
+						})
+					: null)
 			if (!nextConfig) {
 				setStatus('Missing required OAuth configuration parameters.', 'error')
 				return
@@ -627,13 +828,25 @@ export function ConnectOauthRoute(handle: Handle) {
 			}
 			return
 		}
-		const nextConfig = readQueryConfig()
+		const queryConfig = readQueryConfig()
+		if (!queryConfig) {
+			setStatus('Missing required OAuth configuration parameters.', 'error')
+			return
+		}
+		const existingConnector = await readExistingConnectorConfig(queryConfig)
+		existingConnectorConfig = existingConnector.connector
+		existingConnectorValueName = existingConnector.valueName
+		const nextConfig = mergeConnectOauthConfig({
+			queryConfig,
+			storedConnector: existingConnector.connector,
+		})
 		if (!nextConfig) {
+			hasConfigError = true
 			setStatus('Missing required OAuth configuration parameters.', 'error')
 			return
 		}
 		config = nextConfig
-		setStep('setup')
+		await initializeSetupState(nextConfig)
 	})
 
 	return () => {
@@ -710,6 +923,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						</a>
 					) : null}
 				</section>
+				{renderExistingConnectorConfig()}
 				{currentStep === 'setup' ? (
 					<section
 						css={{
@@ -721,7 +935,10 @@ export function ConnectOauthRoute(handle: Handle) {
 							gap: spacing.md,
 						}}
 					>
-						<h2 css={{ margin: 0 }}>1. Save OAuth client configuration</h2>
+						<h2 css={{ margin: 0 }}>
+							1. {existingConnectorConfig ? 'Review' : 'Save'} OAuth client
+							configuration
+						</h2>
 						{renderProviderInstructions()}
 						{renderAllowedHosts()}
 						<form
@@ -730,13 +947,73 @@ export function ConnectOauthRoute(handle: Handle) {
 						>
 							<label>
 								<span>Client ID</span>
-								<input name="clientId" required />
+								<input
+									name="clientId"
+									required
+									value={clientIdInput}
+									on={{
+										input: (event) => {
+											clientIdInput = event.currentTarget.value
+											update()
+										},
+									}}
+								/>
 							</label>
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								Saved as <code>{config.clientIdValueName}</code>
+								{hasStoredClientId ? '.' : ' after you continue.'}
+							</p>
 							{config.flow === 'confidential' ? (
-								<label>
-									<span>Client Secret</span>
-									<input name="clientSecret" type="password" required />
-								</label>
+								hasStoredClientSecret && !revealStoredClientSecretField ? (
+									<section
+										css={{
+											padding: spacing.md,
+											borderRadius: radius.md,
+											border: `1px solid ${colors.border}`,
+											backgroundColor: colors.surface,
+											display: 'grid',
+											gap: spacing.sm,
+										}}
+									>
+										<p css={{ margin: 0 }}>
+											Using the stored client secret in{' '}
+											<code>
+												{config.clientSecretSecretName ?? 'unknown secret'}
+											</code>
+											.
+										</p>
+										<p css={{ margin: 0, color: colors.textMuted }}>
+											You can continue without re-entering it.
+										</p>
+										<button
+											type="button"
+											on={{
+												click: () => {
+													revealStoredClientSecretField = true
+													update()
+												},
+											}}
+										>
+											Replace stored client secret
+										</button>
+									</section>
+								) : (
+									<label>
+										<span>Client Secret</span>
+										<input
+											name="clientSecret"
+											type="password"
+											required
+											value={clientSecretInput}
+											on={{
+												input: (event) => {
+													clientSecretInput = event.currentTarget.value
+													update()
+												},
+											}}
+										/>
+									</label>
+								)
 							) : null}
 							<button type="submit" disabled={submitting}>
 								Save configuration
@@ -759,6 +1036,14 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p css={{ margin: 0 }}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
+						{existingConnectorConfig ? (
+							<p css={{ margin: 0, color: colors.textMuted }}>
+								Using stored client ID <code>{config.clientIdValueName}</code>
+								{config.flow === 'confidential' && hasStoredClientSecret
+									? ` and stored client secret ${config.clientSecretSecretName ?? ''}.`
+									: '.'}
+							</p>
+						) : null}
 						<button
 							type="button"
 							on={{ click: () => void handleConnect() }}
@@ -829,6 +1114,169 @@ function parseScopes(raw: string | null) {
 		.split(/[\s,]+/)
 		.map((scope) => scope.trim())
 		.filter(Boolean)
+}
+
+export function normalizeHosts(hosts: Array<string>) {
+	return Array.from(
+		new Set(
+			hosts
+				.map((host) => host.trim().toLowerCase())
+				.filter((host) => host.length > 0),
+		),
+	).sort()
+}
+
+export function buildConnectorValueName(provider: string) {
+	return `_connector:${provider}`
+}
+
+export function getConnectorValueCandidates(
+	provider: string,
+	providerKey: string,
+) {
+	return Array.from(
+		new Set(
+			[provider.trim(), providerKey.trim()]
+				.filter((value) => value.length > 0)
+				.map((value) => buildConnectorValueName(value)),
+		),
+	)
+}
+
+export function parseStoredConnectorConfig(
+	raw: string,
+	fallbackProvider: string | null,
+): StoredConnectorConfig | null {
+	try {
+		const parsed = JSON.parse(raw) as Record<string, unknown>
+		const name =
+			typeof parsed.name === 'string' && parsed.name.trim()
+				? parsed.name.trim()
+				: (fallbackProvider?.trim() ?? '')
+		const tokenUrl =
+			typeof parsed.tokenUrl === 'string' ? parsed.tokenUrl.trim() : ''
+		const flow = parsed.flow === 'confidential' ? 'confidential' : 'pkce'
+		const clientIdValueName =
+			typeof parsed.clientIdValueName === 'string'
+				? parsed.clientIdValueName.trim()
+				: ''
+		const accessTokenSecretName =
+			typeof parsed.accessTokenSecretName === 'string'
+				? parsed.accessTokenSecretName.trim()
+				: ''
+		const refreshTokenSecretName =
+			typeof parsed.refreshTokenSecretName === 'string' &&
+			parsed.refreshTokenSecretName.trim()
+				? parsed.refreshTokenSecretName.trim()
+				: null
+		const clientSecretSecretName =
+			typeof parsed.clientSecretSecretName === 'string' &&
+			parsed.clientSecretSecretName.trim()
+				? parsed.clientSecretSecretName.trim()
+				: null
+		const requiredHosts = Array.isArray(parsed.requiredHosts)
+			? parsed.requiredHosts.filter(
+					(value): value is string => typeof value === 'string',
+				)
+			: []
+		if (!name || !tokenUrl || !clientIdValueName || !accessTokenSecretName) {
+			return null
+		}
+		return {
+			name,
+			tokenUrl,
+			apiBaseUrl:
+				typeof parsed.apiBaseUrl === 'string' && parsed.apiBaseUrl.trim()
+					? parsed.apiBaseUrl.trim()
+					: null,
+			flow,
+			clientIdValueName,
+			clientSecretSecretName,
+			accessTokenSecretName,
+			refreshTokenSecretName,
+			requiredHosts: normalizeHosts(requiredHosts),
+		}
+	} catch {
+		return null
+	}
+}
+
+export function mergeConnectOauthConfig(input: {
+	queryConfig: ConnectOauthQueryConfig
+	storedConnector: StoredConnectorConfig | null
+}): ConnectOauthConfig | null {
+	const provider =
+		input.storedConnector?.name.trim() || input.queryConfig.provider.trim()
+	const providerKey = normalizeProviderKey(
+		provider || input.queryConfig.providerKey,
+	)
+	const authorizeHost = safeParseHost(input.queryConfig.authorizeUrl)
+	const tokenUrl = input.storedConnector?.tokenUrl ?? input.queryConfig.tokenUrl
+	const tokenHost = tokenUrl ? safeParseHost(tokenUrl) : null
+	if (!provider || !authorizeHost || !tokenUrl || !tokenHost || !providerKey) {
+		return null
+	}
+	const flow = input.storedConnector?.flow ?? input.queryConfig.flow ?? 'pkce'
+	const allowedHosts = normalizeHosts([
+		tokenHost,
+		...input.queryConfig.allowedHosts,
+		...(input.storedConnector?.requiredHosts ?? []),
+	])
+	if (allowedHosts.length === 0) return null
+	return {
+		provider,
+		providerKey,
+		authorizeHost,
+		tokenHost,
+		authorizeUrl: input.queryConfig.authorizeUrl,
+		tokenUrl,
+		apiBaseUrl:
+			input.storedConnector?.apiBaseUrl ?? input.queryConfig.apiBaseUrl,
+		scopes: input.queryConfig.scopes,
+		flow,
+		scopeSeparator: input.queryConfig.scopeSeparator,
+		extraAuthorizeParams: input.queryConfig.extraAuthorizeParams,
+		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
+		dashboardUrl: input.queryConfig.dashboardUrl,
+		clientIdValueName:
+			input.storedConnector?.clientIdValueName ?? `${providerKey}-client-id`,
+		clientSecretSecretName:
+			flow === 'confidential'
+				? (input.storedConnector?.clientSecretSecretName ??
+					`${providerKey}ClientSecret`)
+				: null,
+		accessTokenSecretName:
+			input.storedConnector?.accessTokenSecretName ??
+			`${providerKey}AccessToken`,
+		refreshTokenSecretName:
+			input.storedConnector?.refreshTokenSecretName ??
+			`${providerKey}RefreshToken`,
+		allowedHosts,
+	}
+}
+
+export function summarizeStoredSetupState(input: {
+	flow: OAuthFlow
+	clientId: string | null
+	hasStoredClientSecret: boolean
+}) {
+	const missingFields: Array<string> = []
+	if (!input.clientId?.trim()) missingFields.push('client ID')
+	if (input.flow === 'confidential' && !input.hasStoredClientSecret) {
+		missingFields.push('client secret')
+	}
+	return {
+		missingFields,
+		isReady: missingFields.length === 0,
+	}
+}
+
+function formatMissingSetupFields(missingFields: Array<string>) {
+	if (missingFields.length === 0) return 'Ready to connect.'
+	if (missingFields.length === 1) {
+		return `Enter your ${missingFields[0]} to continue.`
+	}
+	return `Enter your ${missingFields.slice(0, -1).join(', ')} and ${missingFields.at(-1)} to continue.`
 }
 
 function parseExtraParams(raw: string | null) {
