@@ -128,7 +128,6 @@ function createEnv() {
 }
 
 test('connect oauth returns direct host approval links for saved token secrets', async () => {
-	vi.clearAllMocks()
 	const handler = createAccountSecretsApiHandler(createEnv())
 	const response = await handler.action({
 		request: new Request('https://example.com/account/secrets.json', {
@@ -233,7 +232,6 @@ test('connect oauth returns direct host approval links for saved token secrets',
 })
 
 test('connect oauth omits direct host approval links when hosts are already approved', async () => {
-	vi.clearAllMocks()
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'teslaAccessToken',
