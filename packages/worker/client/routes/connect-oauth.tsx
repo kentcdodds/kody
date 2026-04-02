@@ -1320,9 +1320,7 @@ function parseHostApprovalLinks(
 			typeof (entry as { secretName?: unknown }).secretName === 'string' &&
 			typeof (entry as { host?: unknown }).host === 'string' &&
 			typeof (entry as { approvalUrl?: unknown }).approvalUrl === 'string' &&
-			isSafeExternalUrl(
-				(entry as { approvalUrl?: string }).approvalUrl ?? '',
-			),
+			isSafeExternalUrl((entry as { approvalUrl?: string }).approvalUrl ?? ''),
 	)
 }
 

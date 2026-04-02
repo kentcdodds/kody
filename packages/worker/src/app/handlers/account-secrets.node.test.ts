@@ -34,11 +34,7 @@ const mockModule = vi.hoisted(() => ({
 		},
 	),
 	buildSecretHostApprovalUrl: vi.fn(
-		(input: {
-			name: string
-			requestedHost: string
-			token: string
-		}) =>
+		(input: { name: string; requestedHost: string; token: string }) =>
 			`https://example.com/account/secrets/user/${input.name}?allowed-host=${input.requestedHost}&request=${input.token}`,
 	),
 	listUiArtifactsByUserId: vi.fn(async () => []),
@@ -81,7 +77,9 @@ vi.mock('#app/app-base-url.ts', () => ({
 
 vi.mock('#mcp/secrets/allowed-hosts.ts', () => ({
 	normalizeAllowedHosts: (hosts: Array<string>) =>
-		Array.from(new Set(hosts.map((host) => host.trim().toLowerCase()).filter(Boolean))),
+		Array.from(
+			new Set(hosts.map((host) => host.trim().toLowerCase()).filter(Boolean)),
+		),
 }))
 
 vi.mock('#mcp/secrets/allowed-capabilities.ts', () => ({
