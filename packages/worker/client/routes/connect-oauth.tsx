@@ -166,11 +166,6 @@ export function ConnectOauthRoute(handle: Handle) {
 			...(tokenHost ? [tokenHost] : []),
 			...parseAllowedHosts(readOptional('allowedHosts')),
 		])
-		if (allowedHosts.length === 0) {
-			hasConfigError = true
-			setStatus('Allowed hosts are required to continue.', 'error')
-			return null
-		}
 		return {
 			provider,
 			providerKey,
