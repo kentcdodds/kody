@@ -19,6 +19,8 @@ is trying to become.
   Objects.
 - [Home Connector](./home-connector.md): local device adapters, Samsung token
   persistence, and connector-specific discovery/runtime behavior.
+- [Progressive context disclosure plan](./progressive-context-disclosure-plan.md):
+  proposed design for just-in-time MCP fact emission keyed by `conversationId`.
 - [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
   for securely reaching local-network systems through an outbound agent
   connection.
