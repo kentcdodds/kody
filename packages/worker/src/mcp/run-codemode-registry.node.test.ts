@@ -6,6 +6,10 @@ import {
 	runCodemodeWithRegistry,
 } from './run-codemode-registry.ts'
 import * as secretService from '#mcp/secrets/service.ts'
+import {
+	createCapabilitySecretAccessDeniedBatchMessage,
+	createCapabilitySecretAccessDeniedMessage,
+} from '#mcp/secrets/errors.ts'
 
 test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
 	let toolArguments: Record<string, unknown> | null = null
@@ -469,5 +473,82 @@ test('runCodemodeWithRegistry redacts secret keys and survives cyclic results', 
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
+	}
+})
+
+test('runCodemodeWithRegistry batch capability rewrite ignores Secret "…" text inside user code', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const resolveSecretSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockImplementation(async (input) => {
+			if (input.name === 'cloudflareToken' || input.name === 'extraSecret') {
+				return {
+					found: true,
+					value: 'x',
+					scope: 'user' as const,
+					allowedHosts: [],
+					allowedCapabilities: [],
+				}
+			}
+			return { found: false }
+		})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return {
+					error: createCapabilitySecretAccessDeniedMessage(
+						'cloudflareToken',
+						'secret_set',
+						'https://heykody.dev/account/secrets/user/cloudflareToken?capability=secret_set',
+					),
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runCodemodeWithRegistry(
+			env,
+			callerContext,
+			`async () => {
+				const hint = 'Secret "extraSecret" was not found.';
+				return { hint };
+			}`,
+		)
+
+		expect(result.error).toBe(
+			createCapabilitySecretAccessDeniedBatchMessage([
+				{
+					secretName: 'cloudflareToken',
+					capabilityName: 'secret_set',
+					approvalUrl:
+						'https://heykody.dev/account/secrets/user/cloudflareToken?capability=secret_set',
+				},
+			]),
+		)
+		expect(String(result.error)).not.toContain('extraSecret')
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+		resolveSecretSpy.mockRestore()
 	}
 })

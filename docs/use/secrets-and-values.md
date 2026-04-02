@@ -27,6 +27,12 @@ Placeholders are **not** general-purpose string interpolation. They only work in
 secret-aware **`fetch`** paths and in capability inputs that explicitly allow
 them.
 
+Do **not** place literal placeholder tokens into user-visible or
+third-party-visible content such as issue bodies, comments, prompts, logs, or
+returned strings. If you need to describe a placeholder as text, obfuscate it
+instead of embedding the exact **`{{secret:...}}`** form into content that may
+later be sent over **`fetch`**.
+
 ## Host approval
 
 If a request fails because a host is not approved for that secret, use the

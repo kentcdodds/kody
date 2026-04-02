@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
@@ -82,142 +82,147 @@ function mockCloudflareContext(origin: string, token: string) {
 	}
 }
 
-test('createCloudflareRestClient rawRequest returns JSON from mock Cloudflare API', async () => {
-	const token = 'coding-cloudflare-token'
-	await using mock = await startCloudflareMock(token)
-	const ctx = mockCloudflareContext(mock.origin, mock.token)
-	const client = createCloudflareRestClient(ctx.env)
-	const result = await client.rawRequest({
-		method: 'GET',
-		path: '/client/v4/accounts',
-	})
-	expect(result.status).toBe(200)
-	const body = result.body as {
-		success?: boolean
-		result?: Array<{ id?: string }>
-	}
-	expect(body.success).toBe(true)
-	expect(
-		body.result?.some((account) => account.id === 'cf_account_mock_123'),
-	).toBe(true)
-})
-
-test('createCloudflareRestClient rejects paths not under /client/v4/', async () => {
-	const token = 'coding-cloudflare-reject-token'
-	await using mock = await startCloudflareMock(token)
-	const ctx = mockCloudflareContext(mock.origin, mock.token)
-	const client = createCloudflareRestClient(ctx.env)
-	await expect(
-		client.rawRequest({
+// Each case spawns `wrangler dev` and waits up to 25s for /__mocks/meta. The
+// shared Vitest CI timeout is 20s (vitest-shared.ts), so a slow cold start can
+// exceed the per-test limit and fail only on heavier cases (e.g. HTML fallback).
+describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
+	test('createCloudflareRestClient rawRequest returns JSON from mock Cloudflare API', async () => {
+		const token = 'coding-cloudflare-token'
+		await using mock = await startCloudflareMock(token)
+		const ctx = mockCloudflareContext(mock.origin, mock.token)
+		const client = createCloudflareRestClient(ctx.env)
+		const result = await client.rawRequest({
 			method: 'GET',
-			path: '/zones',
-		}),
-	).rejects.toThrow('path must start with `/client/v4/`')
-})
-
-test('page_to_markdown returns negotiated markdown without Browser Rendering', async () => {
-	const token = 'coding-cloudflare-page-negotiated-token'
-	await using mock = await startCloudflareMock(token)
-	const ctx = mockCloudflareContext(mock.origin, mock.token)
-	const result = await pageToMarkdownCapability.handler(
-		{
-			url: `${mock.origin}/__mocks/markdown`,
-		},
-		ctx,
-	)
-	expect(result.source).toBe('negotiated')
-	expect(result.browserRendering).toBeNull()
-	expect(result.negotiated?.contentType).toContain('text/markdown')
-	expect(result.markdown).toContain('# Mock markdown')
-})
-
-test('page_to_markdown does not treat markdown error responses as negotiated success', async () => {
-	const token = 'coding-cloudflare-page-error-token'
-	await using mock = await startCloudflareMock(token)
-	const ctx = mockCloudflareContext(mock.origin, mock.token)
-	const result = await pageToMarkdownCapability.handler(
-		{
-			url: `${mock.origin}/__mocks/markdown-error`,
-		},
-		ctx,
-	)
-	expect(result.source).toBe('browser_rendering')
-	expect(result.negotiated?.status).toBe(500)
-	expect(result.negotiated?.contentType).toContain('text/markdown')
-	expect(result.browserRendering).toEqual({
-		apiStatus: 200,
-		mode: 'url',
+			path: '/client/v4/accounts',
+		})
+		expect(result.status).toBe(200)
+		const body = result.body as {
+			success?: boolean
+			result?: Array<{ id?: string }>
+		}
+		expect(body.success).toBe(true)
+		expect(
+			body.result?.some((account) => account.id === 'cf_account_mock_123'),
+		).toBe(true)
 	})
-	expect(result.markdown).toContain('# Mock Browser Rendering')
-	expect(result.markdown).toContain(
-		`source: ${mock.origin}/__mocks/markdown-error`,
-	)
-})
 
-test('page_to_markdown falls back to Browser Rendering for html pages', async () => {
-	const token = 'coding-cloudflare-page-markdown-token'
-	await using mock = await startCloudflareMock(token)
-	const ctx = mockCloudflareContext(mock.origin, mock.token)
-	const result = await pageToMarkdownCapability.handler(
-		{
-			url: `${mock.origin}/__mocks`,
-			userAgent: 'kody-test-agent',
-		},
-		ctx,
-	)
-	expect(result.source).toBe('browser_rendering')
-	expect(result.negotiated?.contentType).toContain('text/html')
-	expect(result.browserRendering).toEqual({
-		apiStatus: 200,
-		mode: 'url',
+	test('createCloudflareRestClient rejects paths not under /client/v4/', async () => {
+		const token = 'coding-cloudflare-reject-token'
+		await using mock = await startCloudflareMock(token)
+		const ctx = mockCloudflareContext(mock.origin, mock.token)
+		const client = createCloudflareRestClient(ctx.env)
+		await expect(
+			client.rawRequest({
+				method: 'GET',
+				path: '/zones',
+			}),
+		).rejects.toThrow('path must start with `/client/v4/`')
 	})
-	expect(result.markdown).toContain('# Mock Browser Rendering')
-	expect(result.markdown).toContain(`source: ${mock.origin}/__mocks`)
-	expect(result.markdown).toContain('userAgent: kody-test-agent')
-})
 
-test('page_to_markdown converts inline html with Browser Rendering', async () => {
-	const token = 'coding-cloudflare-page-inline-token'
-	await using mock = await startCloudflareMock(token)
-	const ctx = mockCloudflareContext(mock.origin, mock.token)
-	const result = await pageToMarkdownCapability.handler(
-		{
-			html: '<main><h1>Hello</h1><p>From HTML</p></main>',
-		},
-		ctx,
-	)
-	expect(result.source).toBe('browser_rendering')
-	expect(result.url).toBeNull()
-	expect(result.negotiated).toBeNull()
-	expect(result.browserRendering).toEqual({
-		apiStatus: 200,
-		mode: 'html',
-	})
-	expect(result.markdown).toContain('mode: html')
-	expect(result.markdown).toContain(
-		'source: <main><h1>Hello</h1><p>From HTML</p></main>',
-	)
-})
-
-test('page_to_markdown fails clearly when Browser Rendering account id is missing', async () => {
-	const token = 'coding-cloudflare-page-no-account-token'
-	await using mock = await startCloudflareMock(token)
-	const ctx = {
-		env: {
-			CLOUDFLARE_API_TOKEN: token,
-			CLOUDFLARE_API_BASE_URL: mock.origin,
-		} as Env,
-		callerContext: {
-			baseUrl: 'http://localhost:3742',
-			user: null,
-		},
-	}
-	await expect(
-		pageToMarkdownCapability.handler(
+	test('page_to_markdown returns negotiated markdown without Browser Rendering', async () => {
+		const token = 'coding-cloudflare-page-negotiated-token'
+		await using mock = await startCloudflareMock(token)
+		const ctx = mockCloudflareContext(mock.origin, mock.token)
+		const result = await pageToMarkdownCapability.handler(
 			{
-				url: `${mock.origin}/__mocks`,
+				url: `${mock.origin}/__mocks/markdown`,
 			},
 			ctx,
-		),
-	).rejects.toThrow('CLOUDFLARE_ACCOUNT_ID is not set')
+		)
+		expect(result.source).toBe('negotiated')
+		expect(result.browserRendering).toBeNull()
+		expect(result.negotiated?.contentType).toContain('text/markdown')
+		expect(result.markdown).toContain('# Mock markdown')
+	})
+
+	test('page_to_markdown does not treat markdown error responses as negotiated success', async () => {
+		const token = 'coding-cloudflare-page-error-token'
+		await using mock = await startCloudflareMock(token)
+		const ctx = mockCloudflareContext(mock.origin, mock.token)
+		const result = await pageToMarkdownCapability.handler(
+			{
+				url: `${mock.origin}/__mocks/markdown-error`,
+			},
+			ctx,
+		)
+		expect(result.source).toBe('browser_rendering')
+		expect(result.negotiated?.status).toBe(500)
+		expect(result.negotiated?.contentType).toContain('text/markdown')
+		expect(result.browserRendering).toEqual({
+			apiStatus: 200,
+			mode: 'url',
+		})
+		expect(result.markdown).toContain('# Mock Browser Rendering')
+		expect(result.markdown).toContain(
+			`source: ${mock.origin}/__mocks/markdown-error`,
+		)
+	})
+
+	test('page_to_markdown falls back to Browser Rendering for html pages', async () => {
+		const token = 'coding-cloudflare-page-markdown-token'
+		await using mock = await startCloudflareMock(token)
+		const ctx = mockCloudflareContext(mock.origin, mock.token)
+		const result = await pageToMarkdownCapability.handler(
+			{
+				url: `${mock.origin}/__mocks`,
+				userAgent: 'kody-test-agent',
+			},
+			ctx,
+		)
+		expect(result.source).toBe('browser_rendering')
+		expect(result.negotiated?.contentType).toContain('text/html')
+		expect(result.browserRendering).toEqual({
+			apiStatus: 200,
+			mode: 'url',
+		})
+		expect(result.markdown).toContain('# Mock Browser Rendering')
+		expect(result.markdown).toContain(`source: ${mock.origin}/__mocks`)
+		expect(result.markdown).toContain('userAgent: kody-test-agent')
+	})
+
+	test('page_to_markdown converts inline html with Browser Rendering', async () => {
+		const token = 'coding-cloudflare-page-inline-token'
+		await using mock = await startCloudflareMock(token)
+		const ctx = mockCloudflareContext(mock.origin, mock.token)
+		const result = await pageToMarkdownCapability.handler(
+			{
+				html: '<main><h1>Hello</h1><p>From HTML</p></main>',
+			},
+			ctx,
+		)
+		expect(result.source).toBe('browser_rendering')
+		expect(result.url).toBeNull()
+		expect(result.negotiated).toBeNull()
+		expect(result.browserRendering).toEqual({
+			apiStatus: 200,
+			mode: 'html',
+		})
+		expect(result.markdown).toContain('mode: html')
+		expect(result.markdown).toContain(
+			'source: <main><h1>Hello</h1><p>From HTML</p></main>',
+		)
+	})
+
+	test('page_to_markdown fails clearly when Browser Rendering account id is missing', async () => {
+		const token = 'coding-cloudflare-page-no-account-token'
+		await using mock = await startCloudflareMock(token)
+		const ctx = {
+			env: {
+				CLOUDFLARE_API_TOKEN: token,
+				CLOUDFLARE_API_BASE_URL: mock.origin,
+			} as Env,
+			callerContext: {
+				baseUrl: 'http://localhost:3742',
+				user: null,
+			},
+		}
+		await expect(
+			pageToMarkdownCapability.handler(
+				{
+					url: `${mock.origin}/__mocks`,
+				},
+				ctx,
+			),
+		).rejects.toThrow('CLOUDFLARE_ACCOUNT_ID is not set')
+	})
 })

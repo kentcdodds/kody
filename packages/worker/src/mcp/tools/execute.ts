@@ -37,6 +37,7 @@ Sandbox surface:
 - \`fetch(...)\` through the host gateway; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` in URL, headers, or body on approved hosts only.
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
 - Placeholders are not general string interpolation (they do not resolve in arbitrary return values).
+- Never place placeholder text into user-visible or third-party-visible content such as issue bodies, comments, prompts, logs, or returned strings. If you need to describe a placeholder literally, obfuscate it instead of embedding the exact \`{{secret:...}}\` token into content that may be sent over \`fetch\`.
 - \`await codemode.secret_list({ scope? })\` — metadata only. \`secret_set\` — persist values already in trusted execution (e.g. refreshed tokens); write-only.
 - No \`secret_get\` / \`secrets\` helpers in the sandbox.
 - \`value_get\` / \`value_list\` for non-secret persisted config.

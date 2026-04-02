@@ -110,7 +110,9 @@ function scoreUiArtifactLexicalMatch(
 	const parameterText = (hit.parameters ?? [])
 		.map((parameter) => `${parameter.name} ${parameter.description}`)
 		.join('\n')
-	const doc = [hit.title, hit.description, hit.runtime, parameterText].join('\n')
+	const doc = [hit.title, hit.description, hit.runtime, parameterText].join(
+		'\n',
+	)
 	let bonus = 0
 	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.title) * 1.5
 	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.description) * 1
@@ -191,7 +193,7 @@ export type UnifiedSearchMatch =
 	| UiArtifactSearchHit
 
 function buildSecretUsage(name: string) {
-	return `Use in execute-time fetch placeholders like {{secret:${name}|scope=user}} and ask the user to approve each destination host in the app when needed.`
+	return `Use in execute-time fetch placeholders like {{secret:${name}|scope=user}} and ask the user to approve each destination host in the app when needed. Only place placeholders in fetch URL/header/body fields or x-kody-secret capability inputs; do not copy them into visible content such as prompts, comments, issue bodies, logs, or returned strings.`
 }
 
 function rowToSecretHit(
@@ -267,7 +269,9 @@ async function searchSkillsForUser(input: {
 		),
 	)
 	const keywordsById = Object.fromEntries(
-		filteredRows.map((row) => [row.id, parseJsonStringArray(row.keywords)] as const),
+		filteredRows.map(
+			(row) => [row.id, parseJsonStringArray(row.keywords)] as const,
+		),
 	)
 	const lexicalScoreById = Object.fromEntries(
 		ids.map((id) => {
@@ -279,9 +283,7 @@ async function searchSkillsForUser(input: {
 		}),
 	)
 
-	const lexicalOrder = sortIdsByScore(ids, (id) =>
-		lexicalScoreById[id]!,
-	)
+	const lexicalOrder = sortIdsByScore(ids, (id) => lexicalScoreById[id]!)
 
 	let vectorOrder: Array<string>
 
@@ -554,14 +556,20 @@ export async function searchUnified(input: {
 			const hit = skillByName.get(key.slice(2))
 			if (!hit) return 0
 			return (
-				lexicalScore(input.query, [
+				lexicalScore(
+					input.query,
+					[
+						hit.skillName,
+						hit.title,
+						hit.description,
+						hit.collection ?? '',
+						hit.keywords.join(' '),
+					].join('\n'),
+				) +
+				scoreSkillPhraseMatch(
+					normalizeSearchPhrase(input.query),
 					hit.skillName,
-					hit.title,
-					hit.description,
-					hit.collection ?? '',
-					hit.keywords.join(' '),
-				].join('\n')) +
-				scoreSkillPhraseMatch(normalizeSearchPhrase(input.query), hit.skillName) *
+				) *
 					2 +
 				scoreSkillPhraseMatch(normalizeSearchPhrase(input.query), hit.title) *
 					1.5 +

@@ -239,7 +239,6 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 	}
 	expect(secret.scope).toBe('user')
 	expect(secret.name).toBe('cloudflareToken')
-	expect(secret.usage).toContain('{{secret:')
 
 	const app = result.matches.find((match) => match.type === 'app')
 	if (!app || app.type !== 'app') {

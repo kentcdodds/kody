@@ -180,7 +180,6 @@ ${createExecuteHelperPrelude()}
 	if (!result.error) return sanitizedResult
 	const batchMessage = await rewriteCapabilitySecretError({
 		error: result.error,
-		code: wrapped,
 		env,
 		callerContext,
 	})
@@ -192,7 +191,6 @@ ${createExecuteHelperPrelude()}
 }
 async function rewriteCapabilitySecretError(input: {
 	error: unknown
-	code: string
 	env: Env
 	callerContext: McpCallerContext
 }) {
@@ -205,7 +203,10 @@ async function rewriteCapabilitySecretError(input: {
 	const capabilityName = capabilityMatch[2]
 	const userId = input.callerContext.user?.userId ?? null
 	if (!userId) return null
-	const secretNames = collectSecretNamesFromCode(input.error, input.code)
+	// Only use the structured error message. Scanning the full wrapped execute
+	// bundle (prelude + user code) via /Secret "…"/ false-positives on unrelated
+	// string literals, comments, or prior-step text and inflates approval lists.
+	const secretNames = collectSecretNamesFromCapabilityError(input.error)
 	if (secretNames.length === 0) return null
 	const normalizedStorageContext = normalizeStorageContext(
 		input.callerContext.storageContext,
@@ -222,11 +223,15 @@ async function rewriteCapabilitySecretError(input: {
 	return createCapabilitySecretAccessDeniedBatchMessage(missing)
 }
 
-function collectSecretNamesFromCode(error: unknown, code: string | null) {
-	const fromError =
-		error instanceof Error ? parseSecretNamesFromMessage(error.message) : []
-	const fromCode = code ? parseSecretNamesFromMessage(code) : []
-	return normalizeSecretNameList([...fromError, ...fromCode])
+function collectSecretNamesFromCapabilityError(error: unknown) {
+	const message =
+		error instanceof Error
+			? error.message
+			: typeof error === 'string'
+				? error
+				: ''
+	const fromError = message ? parseSecretNamesFromMessage(message) : []
+	return normalizeSecretNameList(fromError)
 }
 
 function parseSecretNamesFromMessage(message: string) {

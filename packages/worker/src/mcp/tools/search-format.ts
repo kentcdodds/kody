@@ -187,7 +187,7 @@ export function formatSearchMarkdown(input: {
 			'- Builtin capabilities — `execute` / `codemode.<name>(args)`',
 			'- Saved skills — `codemode.meta_run_skill({ name, params })`',
 			'- Saved apps — `open_generated_ui({ app_id })`; users can also open the hosted URL for the saved app',
-			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat)',
+			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
 
@@ -489,6 +489,8 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		'## Usage',
 		'',
 		`- Placeholder: \`{{secret:${detail.row.name}|scope=user}}\``,
+		'- Use placeholders only in execute-time fetch URL/header/body fields or capability inputs that explicitly opt into secret placeholders.',
+		'- Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.',
 		'- List secret metadata with `codemode.secret_list(...)` inside `execute` when needed.',
 	]
 	return {
