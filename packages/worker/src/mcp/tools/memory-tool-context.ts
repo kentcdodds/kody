@@ -103,20 +103,6 @@ export async function surfaceToolMemories(input: {
 	} satisfies MemoryToolSummary
 }
 
-export function appendRelevantMemoriesContent(
-	content: Array<ContentBlock>,
-	memorySummary: MemoryToolSummary | null,
-) {
-	if (!memorySummary || memorySummary.memories.length === 0) return content
-	return [
-		...content,
-		{
-			type: 'text',
-			text: formatRelevantMemoriesMarkdown(memorySummary),
-		},
-	] satisfies Array<ContentBlock>
-}
-
 export function buildMemoryRetrievalQuery(input: {
 	task?: string
 	query?: string
@@ -132,8 +118,6 @@ export function buildMemoryRetrievalQuery(input: {
 	].filter((value) => value.length > 0)
 	return Array.from(new Set(parts)).join('\n')
 }
-
-export const buildMemoryRetrievalQueryFromContext = buildMemoryRetrievalQuery
 
 export function formatSurfacedMemoriesMarkdown(
 	memorySummary: MemoryToolSummary | null,

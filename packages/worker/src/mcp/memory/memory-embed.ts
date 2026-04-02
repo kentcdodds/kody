@@ -10,15 +10,6 @@ function parseJsonStringArray(raw: string): Array<string> {
 	}
 }
 
-export type MemoryVerifyCandidate = {
-	category?: string | null
-	subject: string
-	summary: string
-	details?: string | null
-	tags?: Array<string> | null
-	dedupeKey?: string | null
-}
-
 export function buildMemoryEmbedText(input: {
 	category: string | null
 	subject: string
@@ -40,17 +31,6 @@ export function buildMemoryEmbedText(input: {
 		.slice(0, 8_000)
 }
 
-export function buildStoredMemoryEmbedText(input: {
-	category: string | null
-	subject: string
-	summary: string
-	details: string
-	tags: Array<string>
-	dedupeKey?: string | null
-}) {
-	return buildMemoryEmbedText(input)
-}
-
 export function buildMemoryEmbedTextFromRow(row: McpMemoryRow) {
 	return buildMemoryEmbedText({
 		category: row.category,
@@ -62,13 +42,3 @@ export function buildMemoryEmbedTextFromRow(row: McpMemoryRow) {
 	})
 }
 
-export function buildMemoryVerifyQuery(candidate: MemoryVerifyCandidate) {
-	return buildMemoryEmbedText({
-		category: candidate.category ?? null,
-		subject: candidate.subject,
-		summary: candidate.summary,
-		details: candidate.details ?? '',
-		tags: candidate.tags ?? [],
-		dedupeKey: candidate.dedupeKey ?? null,
-	})
-}

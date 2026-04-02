@@ -109,8 +109,6 @@ export async function searchMemories(input: {
 	}
 }
 
-export const rankMemories = searchMemories
-
 function parseTags(raw: string): Array<string> {
 	try {
 		const parsed = JSON.parse(raw) as unknown

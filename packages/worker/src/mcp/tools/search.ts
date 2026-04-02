@@ -20,10 +20,7 @@ import {
 } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
-import {
-	buildMemoryToolContext,
-	formatSurfacedMemoriesMarkdown,
-} from '#mcp/tools/memory-tool-context.ts'
+import { buildMemoryToolContext } from '#mcp/tools/memory-tool-context.ts'
 import {
 	getHomeConnectorStatus,
 	type HomeConnectorStatus,
@@ -665,14 +662,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				content: prependToolMetadataContent(conversationId, [
 					{
 						type: 'text',
-						text: truncateSearchText(
-							[
-								serialized,
-								formatSurfacedMemoriesMarkdown(memoryToolContext),
-							]
-								.filter(Boolean)
-								.join('\n\n'),
-						),
+						text: truncateSearchText(serialized),
 					},
 				]),
 				structuredContent: {
