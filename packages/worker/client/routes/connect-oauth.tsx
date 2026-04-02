@@ -62,6 +62,12 @@ type SaveValueResult =
 
 type SaveSecretResult = { ok: true } | { ok: false; error: string }
 
+type ConnectOauthHostApprovalLink = {
+	secretName: string
+	host: string
+	approvalUrl: string
+}
+
 type AccountSecretsListPayload = {
 	ok: true
 	secrets: Array<{ name: string; scope: string }>
@@ -85,7 +91,7 @@ export function ConnectOauthRoute(handle: Handle) {
 	let refreshTokenSaved = false
 	let hasConfigError = false
 	let connectOauthHandled = false
-	let approvalDetails: { host: string; secrets: Array<string> } | null = null
+	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
 	let submitting = false
 	let initialLoadStarted = false
 	let clientIdInput = ''
@@ -107,8 +113,10 @@ export function ConnectOauthRoute(handle: Handle) {
 		update()
 	}
 
-	const setApprovalDetails = (host: string, secrets: Array<string>): void => {
-		approvalDetails = { host, secrets }
+	const setHostApprovalLinks = (
+		links: Array<ConnectOauthHostApprovalLink>,
+	): void => {
+		hostApprovalLinks = links
 		update()
 	}
 
@@ -658,17 +666,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		}
 		accessTokenSaved = payload.accessTokenSaved === true
 		refreshTokenSaved = payload.refreshTokenSaved === true
-		const approvalHosts = Array.isArray(payload.allowedHosts)
-			? payload.allowedHosts
-			: config.allowedHosts
-		if (approvalHosts.length > 0) {
-			setApprovalDetails(approvalHosts[0] ?? 'unknown host', [
-				config.accessTokenSecretName,
-				...(config.refreshTokenSecretName
-					? [config.refreshTokenSecretName]
-					: []),
-			])
-		}
+		setHostApprovalLinks(parseHostApprovalLinks(payload.hostApprovalLinks))
 		setStatus('OAuth tokens saved.', 'info')
 		setStep('success')
 		return
@@ -1078,10 +1076,26 @@ export function ConnectOauthRoute(handle: Handle) {
 								<li key={host}>{host}</li>
 							))}
 						</ul>
-						{approvalDetails ? (
-							<p css={{ margin: 0, color: colors.textMuted }}>
-								Secrets pending approval: {approvalDetails.secrets.join(', ')}
-							</p>
+						{hostApprovalLinks.length > 0 ? (
+							<div css={{ display: 'grid', gap: spacing.xs }}>
+								<p css={{ margin: 0, color: colors.textMuted }}>
+									Approve each token host directly:
+								</p>
+								<ul css={{ margin: 0, paddingLeft: spacing.lg }}>
+									{hostApprovalLinks.map((link) => (
+										<li key={`${link.secretName}:${link.host}`}>
+											<a
+												href={link.approvalUrl}
+												target="_blank"
+												rel="noreferrer"
+											>
+												Approve <code>{link.host}</code> for{' '}
+												<code>{link.secretName}</code>
+											</a>
+										</li>
+									))}
+								</ul>
+							</div>
 						) : null}
 						<a href="/account/secrets" target="_blank" rel="noreferrer">
 							Open account secrets
@@ -1293,6 +1307,20 @@ function parseAllowedHosts(raw: string | null) {
 		.split(/[\s,]+/)
 		.map((host) => host.trim())
 		.filter(Boolean)
+}
+
+function parseHostApprovalLinks(
+	raw: unknown,
+): Array<ConnectOauthHostApprovalLink> {
+	if (!Array.isArray(raw)) return []
+	return raw.filter(
+		(entry): entry is ConnectOauthHostApprovalLink =>
+			Boolean(entry) &&
+			typeof entry === 'object' &&
+			typeof (entry as { secretName?: unknown }).secretName === 'string' &&
+			typeof (entry as { host?: unknown }).host === 'string' &&
+			typeof (entry as { approvalUrl?: unknown }).approvalUrl === 'string',
+	)
 }
 
 function parseOptionalUrl(raw: string | null) {

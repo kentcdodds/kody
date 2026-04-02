@@ -1,0 +1,193 @@
+import { expect, test, vi } from 'vitest'
+
+const mockModule = vi.hoisted(() => ({
+	readAuthenticatedAppUser: async () => ({
+		sessionUserId: '42',
+		userId: 42,
+		email: 'user@example.com',
+		displayName: 'user',
+		artifactOwnerIds: [],
+		mcpUser: {
+			userId: 'stable-user-1',
+			email: 'user@example.com',
+			displayName: 'user',
+		},
+	}),
+	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
+	getAppBaseUrl: () => 'https://example.com',
+	saveSecret: vi.fn(async () => ({
+		name: 'githubAccessToken',
+		scope: 'user',
+		description: '',
+		appId: null,
+		allowedHosts: [],
+		allowedCapabilities: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		ttlMs: null,
+	})),
+	setSecretAllowedHosts: vi.fn(async () => undefined),
+	saveValue: vi.fn(async () => undefined),
+	createSecretHostApprovalToken: vi.fn(
+		async (_env: unknown, input: { name: string; requestedHost: string }) => {
+			return `token:${input.name}:${input.requestedHost}`
+		},
+	),
+	buildSecretHostApprovalUrl: vi.fn(
+		(input: {
+			name: string
+			requestedHost: string
+			token: string
+		}) =>
+			`https://example.com/account/secrets/user/${input.name}?allowed-host=${input.requestedHost}&request=${input.token}`,
+	),
+	listUiArtifactsByUserId: vi.fn(async () => []),
+	listSecrets: vi.fn(async () => []),
+	listAppSecretsByAppIds: vi.fn(async () => []),
+	resolveSecret: vi.fn(async () => null),
+	deleteSecret: vi.fn(async () => false),
+	setSecretAllowedCapabilities: vi.fn(async () => undefined),
+	getValue: vi.fn(async () => null),
+	verifySecretHostApprovalToken: vi.fn(async () => {
+		throw new Error('not used')
+	}),
+}))
+
+vi.mock('#app/authenticated-user.ts', () => ({
+	readAuthenticatedAppUser: (...args: Array<unknown>) =>
+		mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#app/auth-session.ts', () => ({
+	readAuthSessionResult: (...args: Array<unknown>) =>
+		mockModule.readAuthSessionResult(...args),
+}))
+
+vi.mock('#app/auth-redirect.ts', () => ({
+	redirectToLogin: () => new Response(null, { status: 302 }),
+}))
+
+vi.mock('#app/layout.ts', () => ({
+	Layout: () => null,
+}))
+
+vi.mock('#app/render.ts', () => ({
+	render: () => new Response('ok'),
+}))
+
+vi.mock('#app/app-base-url.ts', () => ({
+	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
+}))
+
+vi.mock('#mcp/secrets/allowed-hosts.ts', () => ({
+	normalizeAllowedHosts: (hosts: Array<string>) =>
+		Array.from(new Set(hosts.map((host) => host.trim().toLowerCase()).filter(Boolean))),
+}))
+
+vi.mock('#mcp/secrets/allowed-capabilities.ts', () => ({
+	normalizeAllowedCapabilities: (capabilities: Array<string>) => capabilities,
+}))
+
+vi.mock('#mcp/secrets/host-approval.ts', () => ({
+	createSecretHostApprovalToken: (...args: Array<unknown>) =>
+		mockModule.createSecretHostApprovalToken(...args),
+	buildSecretHostApprovalUrl: (...args: Array<unknown>) =>
+		mockModule.buildSecretHostApprovalUrl(...args),
+	verifySecretHostApprovalToken: (...args: Array<unknown>) =>
+		mockModule.verifySecretHostApprovalToken(...args),
+}))
+
+vi.mock('#mcp/secrets/service.ts', () => ({
+	saveSecret: (...args: Array<unknown>) => mockModule.saveSecret(...args),
+	setSecretAllowedHosts: (...args: Array<unknown>) =>
+		mockModule.setSecretAllowedHosts(...args),
+	listSecrets: (...args: Array<unknown>) => mockModule.listSecrets(...args),
+	listAppSecretsByAppIds: (...args: Array<unknown>) =>
+		mockModule.listAppSecretsByAppIds(...args),
+	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
+	deleteSecret: (...args: Array<unknown>) => mockModule.deleteSecret(...args),
+	setSecretAllowedCapabilities: (...args: Array<unknown>) =>
+		mockModule.setSecretAllowedCapabilities(...args),
+}))
+
+vi.mock('#mcp/values/service.ts', () => ({
+	getValue: (...args: Array<unknown>) => mockModule.getValue(...args),
+	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
+}))
+
+vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
+	listUiArtifactsByUserId: (...args: Array<unknown>) =>
+		mockModule.listUiArtifactsByUserId(...args),
+}))
+
+const { createAccountSecretsApiHandler } = await import('./account-secrets.ts')
+
+function createEnv() {
+	return {
+		APP_DB: {} as D1Database,
+		COOKIE_SECRET: 'secret',
+	} as Env
+}
+
+test('connect oauth returns direct host approval links for saved token secrets', async () => {
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'GitHub',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				flow: 'pkce',
+				clientIdValueName: 'github-client-id',
+				accessTokenSecretName: 'githubAccessToken',
+				refreshTokenSecretName: 'githubRefreshToken',
+				allowedHosts: ['api.github.com'],
+				tokenPayload: {
+					access_token: 'access-token',
+					refresh_token: 'refresh-token',
+				},
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		accessTokenSaved: true,
+		refreshTokenSaved: true,
+		allowedHosts: ['api.github.com', 'github.com'],
+		hostApprovalLinks: [
+			{
+				secretName: 'githubAccessToken',
+				host: 'api.github.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=api.github.com&request=token:githubAccessToken:api.github.com',
+			},
+			{
+				secretName: 'githubAccessToken',
+				host: 'github.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=github.com&request=token:githubAccessToken:github.com',
+			},
+			{
+				secretName: 'githubRefreshToken',
+				host: 'api.github.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=api.github.com&request=token:githubRefreshToken:api.github.com',
+			},
+			{
+				secretName: 'githubRefreshToken',
+				host: 'github.com',
+				approvalUrl:
+					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=github.com&request=token:githubRefreshToken:github.com',
+			},
+		],
+		connectorName: 'GitHub',
+	})
+	expect(mockModule.createSecretHostApprovalToken).toHaveBeenCalledTimes(4)
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledTimes(2)
+})
