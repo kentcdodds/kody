@@ -802,7 +802,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		const callback = readCallback()
 		if (callback.kind === 'success' || callback.kind === 'error') {
 			const storedConfig = readStoredConfig()
-			const queryConfig = readQueryConfig()
+			const queryConfig = storedConfig ? null : readQueryConfig()
 			const nextConfig =
 				storedConfig ??
 				(queryConfig
