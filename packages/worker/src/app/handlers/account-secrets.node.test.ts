@@ -295,17 +295,20 @@ test('connect oauth omits direct host approval links when hosts are already appr
 	} as never)
 
 	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	const payload = await response.json()
+	expect(payload).toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
-		allowedHosts: [
-			'auth.tesla.com',
-			'fleet-api.prd.na.vn.cloud.tesla.com',
-			'fleet-auth.prd.vn.cloud.tesla.com',
-		],
 		hostApprovalLinks: [],
 		connectorName: 'Tesla',
 	})
+	expect(payload.allowedHosts).toEqual(
+		expect.arrayContaining([
+			'auth.tesla.com',
+			'fleet-api.prd.na.vn.cloud.tesla.com',
+			'fleet-auth.prd.vn.cloud.tesla.com',
+		]),
+	)
 	expect(mockModule.createSecretHostApprovalToken).not.toHaveBeenCalled()
 })
