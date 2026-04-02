@@ -415,6 +415,15 @@ async function buildConnectOauthHostApprovalLinks(input: {
 		0,
 		maxConnectOauthApprovalSecrets,
 	)
+	const secrets = await listSecrets({
+		env: input.env,
+		userId: input.userId,
+		scope: 'user',
+		storageContext: null,
+	})
+	const approvedHostsBySecretName = new Map(
+		secrets.map((secret) => [secret.name, new Set(secret.allowedHosts)]),
+	)
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.request.url,
@@ -422,6 +431,9 @@ async function buildConnectOauthHostApprovalLinks(input: {
 	const links = await Promise.all(
 		uniqueSecretNames.flatMap((secretName) =>
 			uniqueHosts.map(async (host) => {
+				if (approvedHostsBySecretName.get(secretName)?.has(host)) {
+					return null
+				}
 				const token = await createSecretHostApprovalToken(input.env, {
 					userId: input.userId,
 					name: secretName,
@@ -444,12 +456,14 @@ async function buildConnectOauthHostApprovalLinks(input: {
 			}),
 		),
 	)
-	return links.sort((left, right) => {
+	return links
+		.filter((link): link is ConnectOauthHostApprovalLink => link !== null)
+		.sort((left, right) => {
 		return (
 			left.secretName.localeCompare(right.secretName) ||
 			left.host.localeCompare(right.host)
 		)
-	})
+		})
 }
 
 async function handleOAuthExchangeAction(input: {
