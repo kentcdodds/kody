@@ -19,7 +19,7 @@ const inputSchema = z.object({
 		),
 	category: z
 		.string()
-		.max(120)
+		.max(80)
 		.optional()
 		.describe(
 			'Optional freeform category string. Suggested examples include preference, profile, workflow, relationship, or identifier.',
@@ -27,16 +27,16 @@ const inputSchema = z.object({
 	subject: z
 		.string()
 		.min(1)
-		.max(300)
+		.max(200)
 		.describe('Short durable subject/title for the memory.'),
 	summary: z
 		.string()
 		.min(1)
-		.max(800)
+		.max(500)
 		.describe('Compact durable memory summary.'),
 	details: z
 		.string()
-		.max(4_000)
+		.max(2_000)
 		.optional()
 		.describe('Optional additional durable detail for the memory record.'),
 	tags: z
@@ -46,7 +46,7 @@ const inputSchema = z.object({
 		.describe('Optional tags for retrieval and filtering.'),
 	dedupe_key: z
 		.string()
-		.max(200)
+		.max(160)
 		.optional()
 		.describe('Optional stable dedupe key supplied by the agent.'),
 	status: z

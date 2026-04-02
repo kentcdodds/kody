@@ -5,7 +5,7 @@ import { requireMcpUser as requireMetaUser } from './require-user.ts'
 export const memoryCategoryField = z
 	.string()
 	.min(1)
-	.max(120)
+	.max(80)
 	.optional()
 	.describe(
 			'Optional freeform category label for the memory. Suggested examples: preference, identifier, relationship, workflow, project, profile.',
@@ -23,16 +23,16 @@ export const memoryBaseInputSchema = {
 	subject: z
 		.string()
 		.min(1)
-		.max(300)
+		.max(200)
 		.describe('Short durable subject line for the memory record.'),
 	summary: z
 		.string()
 		.min(1)
-		.max(800)
+		.max(500)
 		.describe('Compact durable summary of the memory.'),
 	details: z
 		.string()
-		.max(4_000)
+		.max(2_000)
 		.optional()
 		.describe('Optional supporting details for the durable memory record.'),
 	category: memoryCategoryField,
@@ -40,7 +40,7 @@ export const memoryBaseInputSchema = {
 	dedupe_key: z
 		.string()
 		.min(1)
-		.max(200)
+		.max(160)
 		.optional()
 		.describe(
 			'Optional stable agent-supplied dedupe key for the memory. Reuse when the agent wants a deterministic durable key.',

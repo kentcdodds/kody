@@ -59,21 +59,6 @@ export async function loadRelevantMemoriesForTool(input: {
 	}
 }
 
-export async function buildMemoryToolContext(input: {
-	env: Pick<Env, 'APP_DB' | 'AI'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
-	callerContext: McpCallerContext
-	conversationId: string
-	memoryContext?: {
-		task?: string
-		query?: string
-		entities?: Array<string>
-		constraints?: Array<string>
-	} | null
-	limit?: number
-}) {
-	return loadRelevantMemoriesForTool(input)
-}
-
 export async function surfaceToolMemories(input: {
 	env: Pick<Env, 'APP_DB' | 'AI'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
 	callerContext: McpCallerContext

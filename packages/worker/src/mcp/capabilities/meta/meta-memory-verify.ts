@@ -5,7 +5,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { verifyMemoryCandidate } from '#mcp/memory/service.ts'
 import {
 	memoryMatchSchema,
-	verifyCandidateInputSchema,
+	memoryVerifyInputSchema,
 	requireMcpUser,
 	verifyFirstGuidance,
 } from './meta-memory-shared.ts'
@@ -40,28 +40,7 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: verifyCandidateInputSchema.extend({
-			limit: z
-				.number()
-				.int()
-				.min(1)
-				.max(20)
-				.optional()
-				.describe('Maximum related memories to return. Defaults to 5.'),
-			conversation_id: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(
-					'Optional conversation id for suppression-aware verification.',
-				),
-			include_suppressed_in_conversation: z
-				.boolean()
-				.optional()
-				.describe(
-					'When true, include memories already surfaced in this conversation.',
-				),
-		}),
+		inputSchema: memoryVerifyInputSchema,
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
