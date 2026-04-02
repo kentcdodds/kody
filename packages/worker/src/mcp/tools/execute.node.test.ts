@@ -29,6 +29,12 @@ test('registers the execute tool contract', async () => {
 	})
 	expect(typeof definition?.description).toBe('string')
 	expect((definition?.description ?? '').length).toBeGreaterThan(0)
+	expect(definition?.description).toContain(
+		'Never place placeholder text into user-visible or third-party-visible content',
+	)
+	expect(definition?.description).toContain(
+		'issue bodies, comments, prompts, logs, or returned strings',
+	)
 	expect(Object.keys(definition?.inputSchema ?? {})).toEqual([
 		'code',
 		'conversationId',

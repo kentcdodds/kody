@@ -191,7 +191,7 @@ export type UnifiedSearchMatch =
 	| UiArtifactSearchHit
 
 function buildSecretUsage(name: string) {
-	return `Use in execute-time fetch placeholders like {{secret:${name}|scope=user}} and ask the user to approve each destination host in the app when needed.`
+	return `Use in execute-time fetch placeholders like {{secret:${name}|scope=user}} and ask the user to approve each destination host in the app when needed. Only place placeholders in fetch URL/header/body fields or x-kody-secret capability inputs; do not copy them into visible content such as prompts, comments, issue bodies, logs, or returned strings.`
 }
 
 function rowToSecretHit(

@@ -8,6 +8,10 @@ import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 
+function buildSecretUsageWarning(name: string) {
+	return `Use \`{{secret:${name}|scope=user}}\` only in execute-time fetch URL/header/body fields or capability inputs that explicitly opt into secret placeholders. Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.`
+}
+
 export type SearchEntityType = 'capability' | 'skill' | 'app' | 'secret'
 
 export type SearchResultStructuredContent = {
@@ -187,7 +191,7 @@ export function formatSearchMarkdown(input: {
 			'- Builtin capabilities — `execute` / `codemode.<name>(args)`',
 			'- Saved skills — `codemode.meta_run_skill({ name, params })`',
 			'- Saved apps — `open_generated_ui({ app_id })`; users can also open the hosted URL for the saved app',
-			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat)',
+			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
 
@@ -294,7 +298,7 @@ export function toSlimStructuredMatches(input: {
 			id: match.name,
 			title: match.name,
 			description: match.description,
-			usage: `{{secret:${match.name}|scope=user}}`,
+			usage: buildSecretUsageWarning(match.name),
 		}
 	})
 }
@@ -489,6 +493,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		'## Usage',
 		'',
 		`- Placeholder: \`{{secret:${detail.row.name}|scope=user}}\``,
+		`- ${buildSecretUsageWarning(detail.row.name)}`,
 		'- List secret metadata with `codemode.secret_list(...)` inside `execute` when needed.',
 	]
 	return {
@@ -499,7 +504,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			id: detail.id,
 			title: detail.title,
 			description: detail.description,
-			usage: `{{secret:${detail.row.name}|scope=user}}`,
+			usage: buildSecretUsageWarning(detail.row.name),
 			scope: detail.row.scope,
 			updatedAt: detail.row.updatedAt,
 		} satisfies SearchEntityDetailStructured,

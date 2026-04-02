@@ -45,6 +45,12 @@ The sandbox exposes **`fetch`**, secret placeholders in approved contexts,
 [Secrets, values, and host approval](./secrets-and-values.md) for placeholders,
 host approval, and **`codemode.secret_list`** / **`secret_set`**.
 
+Treat placeholder syntax as operational wiring, not prose. Do not place the
+exact **`{{secret:...}}`** token into issue bodies, comments, prompts, logs, or
+other content that may be shown to users or sent to third parties. If you need
+to mention a placeholder literally, obfuscate it instead of embedding the exact
+token.
+
 ## Values
 
 Readable non-secret configuration uses **`codemode.value_get`** and
