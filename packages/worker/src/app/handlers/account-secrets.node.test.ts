@@ -230,3 +230,83 @@ test('connect oauth returns direct host approval links for saved token secrets',
 		}),
 	)
 })
+
+test('connect oauth omits direct host approval links when hosts are already approved', async () => {
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'teslaAccessToken',
+			scope: 'user',
+			description: '',
+			appId: null,
+			allowedHosts: [
+				'auth.tesla.com',
+				'fleet-api.prd.na.vn.cloud.tesla.com',
+				'fleet-auth.prd.vn.cloud.tesla.com',
+			],
+			allowedCapabilities: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+		{
+			name: 'teslaRefreshToken',
+			scope: 'user',
+			description: '',
+			appId: null,
+			allowedHosts: [
+				'auth.tesla.com',
+				'fleet-api.prd.na.vn.cloud.tesla.com',
+				'fleet-auth.prd.vn.cloud.tesla.com',
+			],
+			allowedCapabilities: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'Tesla',
+				tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
+				apiBaseUrl: 'https://fleet-api.prd.na.vn.cloud.tesla.com',
+				flow: 'pkce',
+				clientIdValueName: 'tesla-client-id',
+				accessTokenSecretName: 'teslaAccessToken',
+				refreshTokenSecretName: 'teslaRefreshToken',
+				allowedHosts: [
+					'fleet-api.prd.na.vn.cloud.tesla.com',
+					'fleet-auth.prd.vn.cloud.tesla.com',
+				],
+				tokenPayload: {
+					access_token: 'access-token',
+					refresh_token: 'refresh-token',
+				},
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload).toMatchObject({
+		ok: true,
+		accessTokenSaved: true,
+		refreshTokenSaved: true,
+		hostApprovalLinks: [],
+		connectorName: 'Tesla',
+	})
+	expect(payload.allowedHosts).toEqual(
+		expect.arrayContaining([
+			'auth.tesla.com',
+			'fleet-api.prd.na.vn.cloud.tesla.com',
+			'fleet-auth.prd.vn.cloud.tesla.com',
+		]),
+	)
+	expect(mockModule.createSecretHostApprovalToken).not.toHaveBeenCalled()
+})
