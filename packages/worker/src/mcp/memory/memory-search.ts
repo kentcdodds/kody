@@ -103,6 +103,8 @@ export async function searchMemories(input: {
 				lastAccessedAt: row.last_accessed_at,
 				deletedAt: row.deleted_at,
 				score: fused.get(id) ?? 0,
+				lexicalRank: lexicalRankById.get(id),
+				vectorRank: vectorRankById.get(id),
 			}
 		}),
 		offline,

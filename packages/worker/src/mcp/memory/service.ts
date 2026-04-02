@@ -104,6 +104,9 @@ export async function upsertMemory(
 	const existing = input.memoryId
 		? await getMemoryById(input.env.APP_DB, input.userId, input.memoryId)
 		: null
+	if (input.memoryId && !existing) {
+		throw new Error('Memory not found for this user.')
+	}
 	const status = input.status ?? 'active'
 	const row: McpMemoryRow = existing
 		? {
