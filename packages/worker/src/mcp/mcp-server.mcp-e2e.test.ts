@@ -913,6 +913,71 @@ test('generated UI execute supports session storage context', async () => {
 	expect(payload.result?.result?.value).toBe('value')
 })
 
+test('generated UI execute merges per-call params over session params', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const openResult = await mcpClient.client.callTool({
+		name: 'open_generated_ui',
+		arguments: {
+			code: '<main><h1>Parameterized Execute</h1></main>',
+		},
+	})
+	const openStructured = (openResult as CallToolResult).structuredContent as
+		| {
+				appSession?: {
+					token?: string
+					endpoints?: {
+						execute?: string
+					}
+				} | null
+		  }
+		| undefined
+	const executeEndpoint = openStructured?.appSession?.endpoints?.execute
+	const executeToken = openStructured?.appSession?.token
+	expect(typeof executeEndpoint).toBe('string')
+	expect(typeof executeToken).toBe('string')
+
+	const response = await fetch(executeEndpoint!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${executeToken}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async (params) => ({
+				owner: params.owner,
+				limit: params.limit,
+				nested: params.nested,
+			})`,
+			params: {
+				owner: 'override-owner',
+				limit: 5,
+				nested: { enabled: true },
+			},
+		}),
+	})
+	expect(response.ok).toBe(true)
+	const payload = (await response.json()) as {
+		ok?: boolean
+		result?: {
+			owner?: string
+			limit?: number
+			nested?: {
+				enabled?: boolean
+			}
+		}
+	}
+	expect(payload.ok).toBe(true)
+	expect(payload.result).toEqual({
+		owner: 'override-owner',
+		limit: 5,
+		nested: { enabled: true },
+	})
+})
+
 test('mcp server stores connector configs without resolving secret policies', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)

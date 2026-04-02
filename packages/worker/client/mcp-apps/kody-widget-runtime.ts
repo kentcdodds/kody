@@ -127,6 +127,7 @@ type MessageLogRefs = {
 
 export type KodyWidgetPublicApi = Record<string, unknown> & {
 	params: JsonRecord
+	executeCode: (code: string, params?: JsonRecord) => Promise<unknown>
 }
 
 type KodyWidgetReadyState = {
@@ -145,7 +146,10 @@ type KodyWindow = Window &
 			requestDisplayMode?: (
 				mode: DisplayMode,
 			) => DisplayMode | null | Promise<DisplayMode | null>
-			executeCode?: (code: string) => unknown | Promise<unknown>
+			executeCode?: (
+				code: string,
+				params?: JsonRecord,
+			) => unknown | Promise<unknown>
 		}
 		__kodyLocalMessageLogRoot?: HTMLElement | null
 		__kodyLocalMessageLogList?: HTMLElement | null
@@ -935,7 +939,7 @@ export function initializeGeneratedUiRuntime() {
 		return { response, payload }
 	}
 
-	async function executeCodeWithHttp(code: string) {
+	async function executeCodeWithHttp(code: string, params?: JsonRecord) {
 		const target = getSessionRequestTarget('execute')
 		if (!target) {
 			throw new Error('Code execution is unavailable in this context.')
@@ -943,7 +947,10 @@ export function initializeGeneratedUiRuntime() {
 		const { response, payload } = await fetchJsonResponse({
 			url: target.url,
 			method: 'POST',
-			body: { code },
+			body: {
+				code,
+				...(params ? { params } : {}),
+			},
 			token: target.token,
 		})
 		if (!response.ok || !payload || payload.ok !== true) {
@@ -1056,16 +1063,16 @@ export function initializeGeneratedUiRuntime() {
 		return null
 	}
 
-	async function executeCodeInCurrentContext(code: string) {
+	async function executeCodeInCurrentContext(code: string, params?: JsonRecord) {
 		if (runtimeMode === 'hosted') {
-			return await executeCodeWithHttp(code)
+			return await executeCodeWithHttp(code, params)
 		}
 		if (runtimeMode === 'mcp') {
 			const hook = getRuntimeHooks().executeCode
 			if (typeof hook === 'function') {
-				return await hook(code)
+				return await hook(code, params)
 			}
-			return await executeCodeWithHttp(code)
+			return await executeCodeWithHttp(code, params)
 		}
 		return null
 	}
@@ -1129,9 +1136,12 @@ export function initializeGeneratedUiRuntime() {
 			}
 			return await requestDisplayMode('fullscreen')
 		},
-		async executeCode(code: string) {
+		async executeCode(code: string, params?: JsonRecord) {
 			if (typeof code !== 'string' || code.length === 0) return null
-			return await executeCodeInCurrentContext(code)
+			if (params != null && !isRecord(params)) {
+				throw new Error('executeCode params must be an object.')
+			}
+			return await executeCodeInCurrentContext(code, params)
 		},
 		async saveSecret(input: any): Promise<SaveSecretResult> {
 			if (!input || typeof input !== 'object') {

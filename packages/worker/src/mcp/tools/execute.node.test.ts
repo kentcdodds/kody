@@ -31,6 +31,7 @@ test('registers the execute tool contract', async () => {
 	expect((definition?.description ?? '').length).toBeGreaterThan(0)
 	expect(Object.keys(definition?.inputSchema ?? {})).toEqual([
 		'code',
+		'params',
 		'conversationId',
 		'memoryContext',
 	])
