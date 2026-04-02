@@ -48,11 +48,19 @@ export async function searchMemories(input: {
 		const index = getCapabilityVectorIndex(input.env)!
 		const queryVector = await embedTextForVectorize(input.env, query)
 		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
+		const userIds = Array.from(
+			new Set(input.rows.map((row) => row.user_id).filter(Boolean)),
+		)
 		const vectorMatches = await index.query(queryVector, {
 			topK,
 			returnMetadata: 'none',
 			filter: {
 				kind: { $eq: 'memory' },
+				...(userIds.length === 1
+					? {
+							userId: { $eq: userIds[0] },
+						}
+					: {}),
 			},
 		})
 		const seen = new Set<string>()

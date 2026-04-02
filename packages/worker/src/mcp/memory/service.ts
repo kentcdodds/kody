@@ -28,6 +28,23 @@ const maxTagLength = 80
 const maxTagCount = 16
 const defaultSuppressionTtlMs = 30 * 24 * 60 * 60 * 1_000
 
+function logMemoryVectorSyncError(input: {
+	operation: 'upsert' | 'delete'
+	memoryId: string
+	userId: string
+	category: string | null
+	error: unknown
+}) {
+	console.warn('memory-vector-sync-failed', {
+		operation: input.operation,
+		memoryId: input.memoryId,
+		userId: input.userId,
+		category: input.category,
+		error:
+			input.error instanceof Error ? input.error.message : String(input.error),
+	})
+}
+
 type MemoryOwnerContext = {
 	userId: string
 	storageContext?: StorageContext | null
@@ -154,20 +171,30 @@ export async function upsertMemory(
 		await insertMemory(input.env.APP_DB, row)
 	}
 
-	await upsertMemoryVector(input.env as Env, {
-		memoryId: row.id,
-		userId: input.userId,
-		category: row.category,
-		status: row.status,
-		embedText: buildMemoryEmbedText({
+	try {
+		await upsertMemoryVector(input.env as Env, {
+			memoryId: row.id,
+			userId: input.userId,
 			category: row.category,
-			subject: row.subject,
-			summary: row.summary,
-			details: row.details,
-			tags: normalized.tags,
-			dedupeKey: row.dedupe_key,
-		}),
-	})
+			status: row.status,
+			embedText: buildMemoryEmbedText({
+				category: row.category,
+				subject: row.subject,
+				summary: row.summary,
+				details: row.details,
+				tags: normalized.tags,
+				dedupeKey: row.dedupe_key,
+			}),
+		})
+	} catch (error) {
+		logMemoryVectorSyncError({
+			operation: 'upsert',
+			memoryId: row.id,
+			userId: input.userId,
+			category: row.category,
+			error,
+		})
+	}
 
 	const warnings =
 		input.verificationReference == null || input.verificationReference.trim() === ''
@@ -200,7 +227,17 @@ export async function deleteMemory(
 			input.memoryId,
 		)
 		if (!deleted) return null
-		await deleteMemoryVector(input.env as Env, input.memoryId)
+		try {
+			await deleteMemoryVector(input.env as Env, input.memoryId)
+		} catch (error) {
+			logMemoryVectorSyncError({
+				operation: 'delete',
+				memoryId: input.memoryId,
+				userId: input.userId,
+				category: existing.category,
+				error,
+			})
+		}
 		return toMemoryRecord(existing)
 	}
 
@@ -224,20 +261,30 @@ export async function deleteMemory(
 		deleted_at: now,
 		updated_at: now,
 	}
-	await upsertMemoryVector(input.env as Env, {
-		memoryId: deletedRow.id,
-		userId: input.userId,
-		category: deletedRow.category,
-		status: deletedRow.status,
-		embedText: buildMemoryEmbedText({
+	try {
+		await upsertMemoryVector(input.env as Env, {
+			memoryId: deletedRow.id,
+			userId: input.userId,
 			category: deletedRow.category,
-			subject: deletedRow.subject,
-			summary: deletedRow.summary,
-			details: deletedRow.details,
-			tags: parseTags(deletedRow.tags_json),
-			dedupeKey: deletedRow.dedupe_key,
-		}),
-	})
+			status: deletedRow.status,
+			embedText: buildMemoryEmbedText({
+				category: deletedRow.category,
+				subject: deletedRow.subject,
+				summary: deletedRow.summary,
+				details: deletedRow.details,
+				tags: parseTags(deletedRow.tags_json),
+				dedupeKey: deletedRow.dedupe_key,
+			}),
+		})
+	} catch (error) {
+		logMemoryVectorSyncError({
+			operation: 'upsert',
+			memoryId: deletedRow.id,
+			userId: input.userId,
+			category: deletedRow.category,
+			error,
+		})
+	}
 	return toMemoryRecord(deletedRow)
 }
 
@@ -269,10 +316,12 @@ export async function searchMemoryRecords(
 		if (!input.category) return true
 		return row.category === normalizeOptionalString(input.category, maxCategoryLength)
 	})
+	const targetLimit = normalizeLimit(input.limit)
+	const rankedLimit = Math.min(filteredRows.length, targetLimit * 5)
 	const { matches } = await searchMemories({
 		env: input.env as Env,
 		query,
-		limit: normalizeLimit(input.limit) * 3,
+		limit: rankedLimit,
 		rows: filteredRows,
 	})
 	const filtered = await filterSuppressedMatches({
@@ -285,7 +334,7 @@ export async function searchMemoryRecords(
 	})
 	return {
 		query,
-		matches: filtered.matches.slice(0, normalizeLimit(input.limit)),
+		matches: filtered.matches.slice(0, targetLimit),
 		suppressedCount: filtered.suppressedCount,
 	}
 }
@@ -311,7 +360,6 @@ export async function verifyMemoryCandidate(
 		userId: input.userId,
 		storageContext: input.storageContext,
 		query,
-		category: candidate.category,
 		limit: input.limit,
 		conversationId: input.conversationId ?? null,
 		includeSuppressedInConversation:
@@ -327,20 +375,7 @@ export async function verifyMemoryCandidate(
 			dedupe_key: candidate.dedupeKey,
 		},
 		relatedMemories: result.matches.map((match) => ({
-			memory: {
-				id: match.id,
-				category: match.category,
-				status: match.status,
-				subject: match.subject,
-				summary: match.summary,
-				details: match.details,
-				tags: match.tags,
-				dedupeKey: match.dedupeKey,
-				createdAt: match.createdAt,
-				updatedAt: match.updatedAt,
-				lastAccessedAt: match.lastAccessedAt,
-				deletedAt: match.deletedAt,
-			},
+			memory: mapSearchMatchToMemoryRecord(match),
 			score: match.score,
 		})),
 		suppressedCount: result.suppressedCount,
@@ -372,20 +407,7 @@ export async function surfaceRelevantMemories(
 		}
 	}
 
-	const memories = result.matches.map((match) => ({
-		id: match.id,
-		category: match.category,
-		status: match.status,
-		subject: match.subject,
-		summary: match.summary,
-		details: match.details,
-		tags: match.tags,
-		dedupeKey: match.dedupeKey,
-		createdAt: match.createdAt,
-		updatedAt: match.updatedAt,
-		lastAccessedAt: match.lastAccessedAt,
-		deletedAt: match.deletedAt,
-	}))
+	const memories = result.matches.map(mapSearchMatchToMemoryRecord)
 
 	const memoryIds = memories.map((memory) => memory.id)
 	if (memoryIds.length > 0) {
@@ -516,6 +538,23 @@ function parseTags(raw: string) {
 		return parsed.filter((item): item is string => typeof item === 'string')
 	} catch {
 		return []
+	}
+}
+
+function mapSearchMatchToMemoryRecord(match: MemorySearchMatch): MemoryRecord {
+	return {
+		id: match.id,
+		category: match.category,
+		status: match.status,
+		subject: match.subject,
+		summary: match.summary,
+		details: match.details,
+		tags: match.tags,
+		dedupeKey: match.dedupeKey,
+		createdAt: match.createdAt,
+		updatedAt: match.updatedAt,
+		lastAccessedAt: match.lastAccessedAt,
+		deletedAt: match.deletedAt,
 	}
 }
 
