@@ -14,6 +14,20 @@ export type SearchResultStructuredContent = {
 	matches: Array<SlimSearchMatch>
 	offline: boolean
 	warnings: Array<string>
+	memories?: {
+		surfaced: Array<{
+			id: string
+			category: string | null
+			status: string
+			subject: string
+			summary: string
+			details: string
+			tags: Array<string>
+			updatedAt: string
+		}>
+		suppressedCount: number
+		retrievalQuery: string
+	}
 	homeConnectorStatus?: {
 		connectorId: string
 		state: string
@@ -176,6 +190,14 @@ export function formatSearchMarkdown(input: {
 	warnings: Array<string>
 	baseUrl: string
 	includePreamble?: boolean
+	memories?: {
+		surfaced: Array<{
+			category: string | null
+			subject: string
+			summary: string
+		}>
+		suppressedCount: number
+	}
 }) {
 	const lines: Array<string> = ['# Search results', '']
 	if (input.includePreamble ?? true) {
@@ -195,6 +217,19 @@ export function formatSearchMarkdown(input: {
 		lines.push('', '## Warnings', '')
 		for (const warning of input.warnings) {
 			lines.push(`- ${warning}`)
+		}
+	}
+
+	if (input.memories && input.memories.surfaced.length > 0) {
+		lines.push('', '## Relevant memories', '')
+		for (const memory of input.memories.surfaced) {
+			const categorySuffix = memory.category ? ` (${memory.category})` : ''
+			lines.push(`- **${memory.subject}**${categorySuffix}: ${memory.summary}`)
+		}
+		if (input.memories.suppressedCount > 0) {
+			lines.push(
+				`- ${String(input.memories.suppressedCount)} additional memory item(s) were suppressed for this conversation.`,
+			)
 		}
 	}
 

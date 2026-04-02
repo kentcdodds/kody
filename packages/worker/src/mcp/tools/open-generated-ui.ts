@@ -10,12 +10,20 @@ import {
 	resolveConversationId,
 } from '#mcp/tools/tool-call-context.ts'
 import {
+	loadRelevantMemoriesForTool,
+	formatSurfacedMemoriesMarkdown,
+	buildMemoryStructuredContent,
+} from '#mcp/tools/memory-tool-context.ts'
+import {
 	applyUiArtifactParameters,
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
-import { prependToolMetadataContent } from './tool-response-content.ts'
+import {
+	appendToolContent,
+	prependToolMetadataContent,
+} from './tool-response-content.ts'
 
 const openGeneratedUiTool = {
 	name: 'open_generated_ui',
@@ -153,16 +161,31 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				hostedUrl,
 				appSession,
 			}
+			const memoryResult = await loadRelevantMemoriesForTool({
+				env: agent.getEnv(),
+				callerContext,
+				conversationId,
+				memoryContext: args.memoryContext,
+			})
 			return {
-				content: prependToolMetadataContent(conversationId, [
-					{
-						type: 'text',
-						text: appId
-							? `## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
-							: '## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will render the provided inline source inside the widget runtime.',
-					},
-				]),
-				structuredContent,
+				content: prependToolMetadataContent(
+					conversationId,
+					appendToolContent(
+						[
+						{
+							type: 'text',
+							text: appId
+								? `## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
+								: '## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will render the provided inline source inside the widget runtime.',
+						},
+						],
+						formatSurfacedMemoriesMarkdown(memoryResult),
+					),
+				),
+				structuredContent: {
+					...structuredContent,
+					...buildMemoryStructuredContent(memoryResult),
+				},
 			}
 		},
 	)

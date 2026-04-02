@@ -29,6 +29,7 @@ import {
 } from './mcp/generated-ui-api.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
+import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import { handleSkillReindexRequest } from './skill-maintenance.ts'
 import { handleUiArtifactReindexRequest } from './ui-artifact-maintenance.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
@@ -84,6 +85,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/reindex-skills') {
 			return handleSkillReindexRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/reindex-memories') {
+			return handleMemoryReindexRequest(request, env)
 		}
 
 		if (url.pathname === '/__maintenance/reindex-apps') {

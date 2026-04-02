@@ -7,7 +7,7 @@ const conversationIdDescription =
 	'Optional short conversation identifier. Ties related calls together. On the first call, omit this to receive a server-generated ID, or supply your own. Pass the returned `conversationId` on every subsequent call in the same conversation - this enables optimizations like reduced response size. Generated values should be short and random enough to avoid collisions.'
 
 const memoryContextDescription =
-	'Optional short, structured task context for future memory-aware behavior. Keep it brief and factual rather than hidden reasoning.'
+	'Optional short, structured task context for memory retrieval. Keep it brief and factual rather than hidden reasoning. If durable memory may need to be written or deleted, agents should later run `meta_memory_verify` before mutating memory.'
 
 const memoryContextFieldDescription =
 	'Optional task or goal summary for future memory retrieval.'

@@ -17,6 +17,12 @@ import {
 	memoryContextInputField,
 	resolveConversationId,
 } from './tool-call-context.ts'
+import {
+	buildMemoryRetrievalQuery,
+	buildMemoryStructuredContent,
+	formatSurfacedMemoriesMarkdown,
+	surfaceToolMemories,
+} from './memory-tool-context.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 
 const executeTool = {
@@ -82,6 +88,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 		async ({
 			code,
 			conversationId,
+			memoryContext,
 		}: {
 			code: string
 			conversationId?: string
@@ -97,6 +104,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			const registry = await getCapabilityRegistryForContext({
 				env,
 				callerContext,
+			})
+			const surfacedMemories = await surfaceToolMemories({
+				env,
+				callerContext,
+				conversationId: resolvedConversationId,
+				retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
 			})
 			const registeredCapabilityCount = Object.keys(
 				registry.capabilityHandlers,
@@ -143,12 +156,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							type: 'text',
 							text: formatExecutionOutput(result),
 						},
+						...formatSurfacedMemoriesMarkdown(surfacedMemories),
 					]),
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						error: errorMessage,
 						errorDetails,
 						logs: result.logs ?? [],
+						...buildMemoryStructuredContent(surfacedMemories),
 					},
 					isError: true,
 				}
@@ -171,11 +186,13 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						type: 'text',
 						text: formatExecutionOutput(result),
 					},
+					...formatSurfacedMemoriesMarkdown(surfacedMemories),
 				]),
 				structuredContent: {
 					conversationId: resolvedConversationId,
 					result: result.result,
 					logs: result.logs ?? [],
+					...buildMemoryStructuredContent(surfacedMemories),
 				},
 				isError: false,
 			}
