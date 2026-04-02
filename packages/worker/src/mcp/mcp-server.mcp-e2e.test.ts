@@ -369,13 +369,15 @@ test('mcp search surfaces strongly matching saved skills without collection filt
 			| undefined
 
 		expect(searchText).toContain('Launch Cursor Cloud Agent')
-		expect(searchStructured?.result?.matches?.some((match) => {
-			return (
-				match.type === 'skill' &&
-				match.id === 'launch-cursor-cloud-agent' &&
-				match.name === 'launch-cursor-cloud-agent'
-			)
-		})).toBe(true)
+		expect(
+			searchStructured?.result?.matches?.some((match) => {
+				return (
+					match.type === 'skill' &&
+					match.id === 'launch-cursor-cloud-agent' &&
+					match.name === 'launch-cursor-cloud-agent'
+				)
+			}),
+		).toBe(true)
 	}
 })
 

@@ -482,8 +482,9 @@ test('runCodemodeWithRegistry batch capability rewrite ignores Secret "…" text
 		baseUrl: 'https://heykody.dev',
 		user: { userId: 'user-123' },
 	})
-	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret').mockImplementation(
-		async (input) => {
+	const resolveSecretSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockImplementation(async (input) => {
 			if (input.name === 'cloudflareToken' || input.name === 'extraSecret') {
 				return {
 					found: true,
@@ -494,8 +495,7 @@ test('runCodemodeWithRegistry batch capability rewrite ignores Secret "…" text
 				}
 			}
 			return { found: false }
-		},
-	)
+		})
 	const getRegistrySpy = vi
 		.spyOn(
 			await import('#mcp/capabilities/registry.ts'),

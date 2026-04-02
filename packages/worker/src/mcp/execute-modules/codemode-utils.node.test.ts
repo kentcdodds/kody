@@ -19,7 +19,9 @@ type SandboxHelpers = {
 	refreshAccessToken: (providerName: string) => Promise<string>
 	createAuthenticatedFetch: (
 		providerName: string,
-	) => Promise<(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>>
+	) => Promise<
+		(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
+	>
 }
 
 const spotifyConnector = {

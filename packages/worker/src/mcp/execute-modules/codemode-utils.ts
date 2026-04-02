@@ -196,7 +196,10 @@ async function refreshAccessTokenWithConnector(
 		)
 	}
 
-	if (typeof payload.refresh_token === 'string' && payload.refresh_token.length > 0) {
+	if (
+		typeof payload.refresh_token === 'string' &&
+		payload.refresh_token.length > 0
+	) {
 		await persistSecret(
 			codemode,
 			providerName,
