@@ -6,7 +6,10 @@ const mockModule = vi.hoisted(() => {
 		toUIMessageStreamResponse,
 	}))
 	const convertToModelMessages = vi.fn(async (messages) => messages)
-	const stepCountIs = vi.fn((count: number) => ({ type: 'step-count-is', count }))
+	const stepCountIs = vi.fn((count: number) => ({
+		type: 'step-count-is',
+		count,
+	}))
 	const model = vi.fn(() => ({ provider: 'workers-ai-model' }))
 	const createWorkersAI = vi.fn(() => model)
 
@@ -28,7 +31,8 @@ vi.mock('ai', () => ({
 }))
 
 vi.mock('workers-ai-provider', () => ({
-	createWorkersAI: (...args: Array<unknown>) => mockModule.createWorkersAI(...args),
+	createWorkersAI: (...args: Array<unknown>) =>
+		mockModule.createWorkersAI(...args),
 }))
 
 const { createAiRuntime } = await import('./ai-runtime.ts')

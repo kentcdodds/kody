@@ -3,13 +3,18 @@ import {
 	buildAccountSecretId,
 	parseAccountSecretId,
 } from '@kody-internal/shared/account-secret-route.ts'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
 import { type StorageContext } from '#mcp/storage.ts'
-import { verifySecretHostApprovalToken } from '#mcp/secrets/host-approval.ts'
+import {
+	buildSecretHostApprovalUrl,
+	createSecretHostApprovalToken,
+	verifySecretHostApprovalToken,
+} from '#mcp/secrets/host-approval.ts'
 import {
 	deleteSecret,
 	listAppSecretsByAppIds,
@@ -73,6 +78,15 @@ type AccountSecretsPayload = {
 	selectedSecret: AccountSecretDetail | null
 	approval: SecretApprovalView | null
 }
+
+type ConnectOauthHostApprovalLink = {
+	secretName: string
+	host: string
+	approvalUrl: string
+}
+
+const maxConnectOauthApprovalHosts = 10
+const maxConnectOauthApprovalSecrets = 4
 
 type SecretApprovalAction = 'approve' | 'reject'
 
@@ -355,13 +369,86 @@ async function handleConnectOauthAction(input: {
 		tokenPayload: tokenRecord,
 		allowedHosts,
 	})
+	const approvalSecretNames = [
+		accessTokenSecretName,
+		...(refreshSaved && refreshTokenSecretName ? [refreshTokenSecretName] : []),
+	]
+	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
+	try {
+		hostApprovalLinks = await buildConnectOauthHostApprovalLinks({
+			env: input.env,
+			request: input.request,
+			userId: input.user.mcpUser.userId,
+			allowedHosts,
+			secretNames: approvalSecretNames,
+		})
+	} catch (error) {
+		console.error('Failed to build OAuth host approval links.', {
+			userId: input.user.mcpUser.userId,
+			secretNames: approvalSecretNames,
+			error,
+		})
+	}
 
 	return jsonResponse({
 		ok: true,
 		accessTokenSaved: Boolean(accessSaved),
 		refreshTokenSaved: refreshSaved,
 		allowedHosts,
+		hostApprovalLinks,
 		connectorName,
+	})
+}
+
+async function buildConnectOauthHostApprovalLinks(input: {
+	env: Env
+	request: Request
+	userId: string
+	allowedHosts: Array<string>
+	secretNames: Array<string>
+}) {
+	const uniqueHosts = Array.from(new Set(input.allowedHosts)).slice(
+		0,
+		maxConnectOauthApprovalHosts,
+	)
+	const uniqueSecretNames = Array.from(new Set(input.secretNames)).slice(
+		0,
+		maxConnectOauthApprovalSecrets,
+	)
+	const baseUrl = getAppBaseUrl({
+		env: input.env,
+		requestUrl: input.request.url,
+	})
+	const links = await Promise.all(
+		uniqueSecretNames.flatMap((secretName) =>
+			uniqueHosts.map(async (host) => {
+				const token = await createSecretHostApprovalToken(input.env, {
+					userId: input.userId,
+					name: secretName,
+					scope: 'user',
+					requestedHost: host,
+					storageContext: null,
+				})
+				return {
+					secretName,
+					host,
+					approvalUrl: buildSecretHostApprovalUrl({
+						baseUrl,
+						token,
+						name: secretName,
+						scope: 'user',
+						requestedHost: host,
+						storageContext: null,
+					}),
+				} satisfies ConnectOauthHostApprovalLink
+			}),
+		),
+	)
+	return links.sort((left, right) => {
+		return (
+			left.secretName.localeCompare(right.secretName) ||
+			left.host.localeCompare(right.host)
+		)
 	})
 }
 
