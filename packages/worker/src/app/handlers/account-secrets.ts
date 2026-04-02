@@ -85,6 +85,9 @@ type ConnectOauthHostApprovalLink = {
 	approvalUrl: string
 }
 
+const maxConnectOauthApprovalHosts = 10
+const maxConnectOauthApprovalSecrets = 4
+
 type SecretApprovalAction = 'approve' | 'reject'
 
 export function createAccountSecretsHandler(_env: Env) {
@@ -366,16 +369,26 @@ async function handleConnectOauthAction(input: {
 		tokenPayload: tokenRecord,
 		allowedHosts,
 	})
-	const hostApprovalLinks = await buildConnectOauthHostApprovalLinks({
-		env: input.env,
-		request: input.request,
-		userId: input.user.mcpUser.userId,
-		allowedHosts,
-		secretNames: [
-			accessTokenSecretName,
-			...(refreshSaved && refreshTokenSecretName ? [refreshTokenSecretName] : []),
-		],
-	})
+	const approvalSecretNames = [
+		accessTokenSecretName,
+		...(refreshSaved && refreshTokenSecretName ? [refreshTokenSecretName] : []),
+	]
+	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
+	try {
+		hostApprovalLinks = await buildConnectOauthHostApprovalLinks({
+			env: input.env,
+			request: input.request,
+			userId: input.user.mcpUser.userId,
+			allowedHosts,
+			secretNames: approvalSecretNames,
+		})
+	} catch (error) {
+		console.error('Failed to build OAuth host approval links.', {
+			userId: input.user.mcpUser.userId,
+			secretNames: approvalSecretNames,
+			error,
+		})
+	}
 
 	return jsonResponse({
 		ok: true,
@@ -394,13 +407,21 @@ async function buildConnectOauthHostApprovalLinks(input: {
 	allowedHosts: Array<string>
 	secretNames: Array<string>
 }) {
+	const uniqueHosts = Array.from(new Set(input.allowedHosts)).slice(
+		0,
+		maxConnectOauthApprovalHosts,
+	)
+	const uniqueSecretNames = Array.from(new Set(input.secretNames)).slice(
+		0,
+		maxConnectOauthApprovalSecrets,
+	)
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.request.url,
 	})
 	const links = await Promise.all(
-		input.secretNames.flatMap((secretName) =>
-			input.allowedHosts.map(async (host) => {
+		uniqueSecretNames.flatMap((secretName) =>
+			uniqueHosts.map(async (host) => {
 				const token = await createSecretHostApprovalToken(input.env, {
 					userId: input.userId,
 					name: secretName,

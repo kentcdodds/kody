@@ -189,5 +189,46 @@ test('connect oauth returns direct host approval links for saved token secrets',
 		connectorName: 'GitHub',
 	})
 	expect(mockModule.createSecretHostApprovalToken).toHaveBeenCalledTimes(4)
-	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledTimes(2)
+	expect(mockModule.createSecretHostApprovalToken).toHaveBeenNthCalledWith(
+		1,
+		expect.objectContaining({ COOKIE_SECRET: 'secret' }),
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			name: 'githubAccessToken',
+			scope: 'user',
+			requestedHost: 'api.github.com',
+			storageContext: null,
+		}),
+	)
+	expect(mockModule.createSecretHostApprovalToken).toHaveBeenNthCalledWith(
+		4,
+		expect.objectContaining({ COOKIE_SECRET: 'secret' }),
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			name: 'githubRefreshToken',
+			scope: 'user',
+			requestedHost: 'github.com',
+			storageContext: null,
+		}),
+	)
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenNthCalledWith(
+		1,
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			name: 'githubAccessToken',
+			scope: 'user',
+			allowedHosts: ['api.github.com', 'github.com'],
+			storageContext: { sessionId: null, appId: null },
+		}),
+	)
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenNthCalledWith(
+		2,
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			name: 'githubRefreshToken',
+			scope: 'user',
+			allowedHosts: ['api.github.com', 'github.com'],
+			storageContext: { sessionId: null, appId: null },
+		}),
+	)
 })

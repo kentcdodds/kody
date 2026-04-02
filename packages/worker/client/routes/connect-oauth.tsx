@@ -1087,7 +1087,7 @@ export function ConnectOauthRoute(handle: Handle) {
 											<a
 												href={link.approvalUrl}
 												target="_blank"
-												rel="noreferrer"
+												rel="noreferrer noopener"
 											>
 												Approve <code>{link.host}</code> for{' '}
 												<code>{link.secretName}</code>
@@ -1319,7 +1319,10 @@ function parseHostApprovalLinks(
 			typeof entry === 'object' &&
 			typeof (entry as { secretName?: unknown }).secretName === 'string' &&
 			typeof (entry as { host?: unknown }).host === 'string' &&
-			typeof (entry as { approvalUrl?: unknown }).approvalUrl === 'string',
+			typeof (entry as { approvalUrl?: unknown }).approvalUrl === 'string' &&
+			isSafeExternalUrl(
+				(entry as { approvalUrl?: string }).approvalUrl ?? '',
+			),
 	)
 }
 
