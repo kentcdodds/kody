@@ -75,6 +75,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				code: z
 					.string()
 					.describe('JavaScript async arrow function to execute capabilities.'),
+				params: z
+					.record(z.string(), z.unknown())
+					.optional()
+					.describe(
+						'Optional JSON params injected as `params` when invoking the async function.',
+					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
 			},
@@ -82,9 +88,11 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 		},
 		async ({
 			code,
+			params,
 			conversationId,
 		}: {
 			code: string
+			params?: Record<string, unknown>
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
@@ -115,7 +123,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						env,
 						callerContext,
 						code,
-						undefined,
+						params,
 						agent.getLoopbackExports(),
 					),
 			)

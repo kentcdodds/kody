@@ -11,6 +11,11 @@ capability call takes one **args** object that matches that capability’s
 **inputSchema** and returns data that matches its **outputSchema** when one
 exists.
 
+**execute** also accepts optional **`params`**. When provided, Kody injects that
+JSON object as **`params`** when invoking your async function, so code like
+**`async (params) => { ... }`** can read structured inputs without manually
+stringifying them into the source.
+
 ## Chaining
 
 Prefer **one execute** when the plan is clear: call several capabilities in a

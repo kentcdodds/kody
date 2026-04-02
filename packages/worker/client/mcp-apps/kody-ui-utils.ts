@@ -320,10 +320,14 @@ export function readSavedAppSourceFromHostToolResult(
 async function executeCodeWithHostTool(
 	hostBridge: ReturnType<typeof createWidgetHostBridge>,
 	code: string,
+	params?: Record<string, unknown>,
 ) {
 	const result = (await hostBridge.callTool({
 		name: 'execute',
-		arguments: { code },
+		arguments: {
+			code,
+			...(params ? { params } : {}),
+		},
 		timeoutMs: 90_000,
 	})) as HostToolResult | null
 	const errorMessage = getHostToolErrorMessage(result)
@@ -369,7 +373,10 @@ type GeneratedUiRuntimeHooks = {
 	requestDisplayMode?: (
 		mode: DisplayMode,
 	) => DisplayMode | null | Promise<DisplayMode | null>
-	executeCode?: (code: string) => unknown | Promise<unknown>
+	executeCode?: (
+		code: string,
+		params?: Record<string, unknown>,
+	) => unknown | Promise<unknown>
 }
 
 type GeneratedUiWindow = Window &
@@ -462,6 +469,7 @@ function getSessionRequestTarget(
 async function executeCodeWithHttp(
 	appSession: AppSessionHttpContext | null | undefined,
 	code: string,
+	params?: Record<string, unknown>,
 ) {
 	const target = getSessionRequestTarget(appSession, 'execute')
 	if (!target) {
@@ -473,7 +481,10 @@ async function executeCodeWithHttp(
 	const { response, payload } = await fetchJsonResponse({
 		url: target.url,
 		method: 'POST',
-		body: { code },
+		body: {
+			code,
+			...(params ? { params } : {}),
+		},
 		token: target.token,
 	})
 	if (!response.ok || !payload || payload.ok !== true) {
@@ -641,12 +652,16 @@ async function initializeRenderedMcpDocument(
 		sendMessage: (text) => hostBridge.sendUserMessageWithFallback(text),
 		openLink: (url) => hostBridge.openLink(url),
 		requestDisplayMode,
-		executeCode: async (code) => {
-			const viaHttp = await executeCodeWithHttp(bootstrap.appSession, code)
+		executeCode: async (code, params) => {
+			const viaHttp = await executeCodeWithHttp(
+				bootstrap.appSession,
+				code,
+				params,
+			)
 			if (viaHttp.handled) {
 				return viaHttp.result
 			}
-			return await executeCodeWithHostTool(hostBridge, code)
+			return await executeCodeWithHostTool(hostBridge, code, params)
 		},
 	})
 	initializeGeneratedUiRuntime()

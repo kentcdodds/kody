@@ -27,6 +27,7 @@ import {
 
 const executeRequestSchema = z.object({
 	code: z.string().min(1),
+	params: z.record(z.string(), z.unknown()).optional(),
 })
 
 const secretMutationSchema = z.object({
@@ -216,6 +217,13 @@ function createGeneratedUiExecuteHandler(env: Env) {
 			if (!body.success) {
 				return jsonResponse({ error: body.error.message }, 400)
 			}
+			const mergedParams =
+				body.data.params == null
+					? context.params
+					: {
+							...context.params,
+							...body.data.params,
+						}
 			const result = await runCodemodeWithRegistry(
 				env,
 				createMcpCallerContext({
@@ -228,7 +236,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					},
 				}),
 				body.data.code,
-				Object.keys(context.params).length > 0 ? context.params : undefined,
+				Object.keys(mergedParams).length > 0 ? mergedParams : undefined,
 				workerExports,
 			)
 			if (result.error) {

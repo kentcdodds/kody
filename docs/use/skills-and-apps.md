@@ -30,6 +30,10 @@ Import **`kodyWidget`** from **`@kody/ui-utils`** for helpers, **`executeCode`**
 for low-level server calls, secrets, values, OAuth, and forms. Use generated UI
 when the user must enter sensitive data instead of pasting into chat.
 
+`kodyWidget.executeCode(code, params?)` also accepts optional per-call JSON
+params. Those values are injected as **`params`** inside the async function and
+override saved-app/session params for that execution only.
+
 For third-party OAuth, run **`kody_official_guide`** with **`guide`**
 **`oauth`** first (hosted **`/connect/oauth`**). Use **`guide`**
 **`generated_ui_oauth`** only for OAuth built inside a saved app.

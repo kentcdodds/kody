@@ -180,6 +180,21 @@ test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', ()
 	)
 })
 
+test('kodyWidget public api exposes executeCode helper', () => {
+	const readyState = getOrCreateKodyWidgetReadyStateForTest()
+	readyState.reset()
+	const fakeWidget = {
+		params: {},
+		executeCode: async () => 'ok',
+	} as {
+		params: Record<string, never>
+		executeCode: (code: string, params?: Record<string, unknown>) => Promise<string>
+	}
+	readyState.resolve(fakeWidget)
+
+	expect(typeof kodyWidget.executeCode).toBe('function')
+})
+
 test('getKodyWidget throws until the runtime is ready', () => {
 	const readyState = getOrCreateKodyWidgetReadyStateForTest()
 	readyState.reset()
