@@ -8,10 +8,6 @@ import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 
-function buildSecretUsageWarning(name: string) {
-	return `Use \`{{secret:${name}|scope=user}}\` only in execute-time fetch URL/header/body fields or capability inputs that explicitly opt into secret placeholders. Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.`
-}
-
 export type SearchEntityType = 'capability' | 'skill' | 'app' | 'secret'
 
 export type SearchResultStructuredContent = {
@@ -298,7 +294,7 @@ export function toSlimStructuredMatches(input: {
 			id: match.name,
 			title: match.name,
 			description: match.description,
-			usage: buildSecretUsageWarning(match.name),
+			usage: `{{secret:${match.name}|scope=user}}`,
 		}
 	})
 }
@@ -493,7 +489,8 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		'## Usage',
 		'',
 		`- Placeholder: \`{{secret:${detail.row.name}|scope=user}}\``,
-		`- ${buildSecretUsageWarning(detail.row.name)}`,
+		'- Use placeholders only in execute-time fetch URL/header/body fields or capability inputs that explicitly opt into secret placeholders.',
+		'- Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.',
 		'- List secret metadata with `codemode.secret_list(...)` inside `execute` when needed.',
 	]
 	return {
@@ -504,7 +501,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			id: detail.id,
 			title: detail.title,
 			description: detail.description,
-			usage: buildSecretUsageWarning(detail.row.name),
+			usage: `{{secret:${detail.row.name}|scope=user}}`,
 			scope: detail.row.scope,
 			updatedAt: detail.row.updatedAt,
 		} satisfies SearchEntityDetailStructured,
