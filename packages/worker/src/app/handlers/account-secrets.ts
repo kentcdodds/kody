@@ -315,6 +315,16 @@ async function handleConnectOauthAction(input: {
 		)
 	}
 
+	const approvedHostsBySecretName = new Map(
+		(
+			await listSecrets({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				scope: 'user',
+				storageContext: null,
+			})
+		).map((secret) => [secret.name, new Set(secret.allowedHosts)]),
+	)
 	const accessSaved = await saveSecret({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
@@ -381,6 +391,7 @@ async function handleConnectOauthAction(input: {
 			userId: input.user.mcpUser.userId,
 			allowedHosts,
 			secretNames: approvalSecretNames,
+			approvedHostsBySecretName,
 		})
 	} catch (error) {
 		console.error('Failed to build OAuth host approval links.', {
@@ -406,6 +417,7 @@ async function buildConnectOauthHostApprovalLinks(input: {
 	userId: string
 	allowedHosts: Array<string>
 	secretNames: Array<string>
+	approvedHostsBySecretName?: Map<string, Set<string>>
 }) {
 	const uniqueHosts = Array.from(new Set(input.allowedHosts)).slice(
 		0,
@@ -415,15 +427,18 @@ async function buildConnectOauthHostApprovalLinks(input: {
 		0,
 		maxConnectOauthApprovalSecrets,
 	)
-	const secrets = await listSecrets({
-		env: input.env,
-		userId: input.userId,
-		scope: 'user',
-		storageContext: null,
-	})
-	const approvedHostsBySecretName = new Map(
-		secrets.map((secret) => [secret.name, new Set(secret.allowedHosts)]),
-	)
+	const approvedHostsBySecretName =
+		input.approvedHostsBySecretName ??
+		new Map(
+			(
+				await listSecrets({
+					env: input.env,
+					userId: input.userId,
+					scope: 'user',
+					storageContext: null,
+				})
+			).map((secret) => [secret.name, new Set(secret.allowedHosts)]),
+		)
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.request.url,
@@ -459,10 +474,10 @@ async function buildConnectOauthHostApprovalLinks(input: {
 	return links
 		.filter((link): link is ConnectOauthHostApprovalLink => link !== null)
 		.sort((left, right) => {
-		return (
-			left.secretName.localeCompare(right.secretName) ||
-			left.host.localeCompare(right.host)
-		)
+			return (
+				left.secretName.localeCompare(right.secretName) ||
+				left.host.localeCompare(right.host)
+			)
 		})
 }
 
