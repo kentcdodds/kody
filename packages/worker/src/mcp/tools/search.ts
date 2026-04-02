@@ -20,6 +20,7 @@ import {
 } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
+import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import {
 	getHomeConnectorStatus,
 	type HomeConnectorStatus,
@@ -558,11 +559,25 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 
 			const normalizedHomeConnectorStatus =
 				serializeHomeConnectorStatus(homeConnectorStatus)
+			const memoryToolContext = await loadRelevantMemoriesForTool({
+				env: agent.getEnv(),
+				callerContext,
+				conversationId,
+				memoryContext: args.memoryContext,
+			})
+			const searchMemories = memoryToolContext
+				? {
+						surfaced: memoryToolContext.memories,
+						suppressedCount: memoryToolContext.suppressedCount,
+						retrievalQuery: memoryToolContext.retrievalQuery,
+					}
+				: undefined
 
 			const payload: {
 				matches: Awaited<ReturnType<typeof searchUnified>>['matches']
 				offline: boolean
 				warnings: Array<string>
+				memories?: SearchResultStructuredContent['memories']
 				homeConnectorStatus?: {
 					connectorId: string
 					state: string
@@ -573,6 +588,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				matches: outcome.result.matches,
 				offline: outcome.result.offline,
 				warnings,
+				...(searchMemories
+					? {
+							memories: searchMemories,
+						}
+					: {}),
 				...(normalizedHomeConnectorStatus
 					? {
 							homeConnectorStatus: normalizedHomeConnectorStatus,
@@ -611,6 +631,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					formatSearchMarkdown({
 						matches: value.matches,
 						warnings: value.warnings,
+						memories: value.memories,
 						baseUrl,
 						includePreamble,
 					}),
@@ -623,6 +644,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			const result: SearchResultStructuredContent = {
 				offline: trimmedPayload.offline,
 				warnings: trimmedPayload.warnings,
+				...(trimmedPayload.memories
+					? {
+							memories: trimmedPayload.memories,
+						}
+					: {}),
 				...(trimmedPayload.homeConnectorStatus
 					? { homeConnectorStatus: trimmedPayload.homeConnectorStatus }
 					: {}),

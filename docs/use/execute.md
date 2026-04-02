@@ -32,6 +32,22 @@ To run persisted user code by name, use **`meta_run_skill`** with **`name`** and
 optional **`params`**. To inspect source, use **`meta_get_skill`**. You can also
 inline saved skill code into **execute** when that fits the workflow.
 
+## Long-term memory
+
+Kody can surface a small number of relevant long-term memories when you pass a
+short **`memoryContext`** with **`conversationId`** on normal MCP tool calls.
+
+For memory mutations, the workflow is explicit and strict:
+
+- **Always run `meta_memory_verify` before writing or deleting memory**
+- then decide whether to call **`meta_memory_upsert`**,
+  **`meta_memory_delete`**, both, or neither
+- **`meta_memory_upsert`** creates a new memory when **`memory_id`** is omitted
+  and updates an existing memory when **`memory_id`** is provided
+
+Kody retrieves related memories, but the **consuming agent** remains responsible
+for deciding what action to take.
+
 ## MCP server instructions
 
 Users can read or replace their own MCP server instruction overlay with

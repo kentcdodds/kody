@@ -37,3 +37,33 @@ test('registers the execute tool contract', async () => {
 	])
 	expect(typeof handler).toBe('function')
 })
+
+test('memory context schema mentions current retrieval behavior', async () => {
+	const registerTool = vi.fn()
+
+	await registerExecuteTool({
+		server: {
+			registerTool,
+		} as never,
+		getEnv: vi.fn(),
+		getCallerContext: vi.fn(),
+		requireDomain: vi.fn(),
+		getLoopbackExports: vi.fn(),
+	} as never)
+
+	const [, definition] = registerTool.mock.calls[0] ?? []
+	const schema = definition?.inputSchema as
+		| {
+				memoryContext?: {
+					description?: string
+				}
+		  }
+		| undefined
+
+	expect(schema?.memoryContext?.description).toContain(
+		'memory retrieval',
+	)
+	expect(schema?.memoryContext?.description).toContain(
+		'meta_memory_verify',
+	)
+})

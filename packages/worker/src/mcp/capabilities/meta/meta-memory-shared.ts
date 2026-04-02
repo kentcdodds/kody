@@ -1,0 +1,101 @@
+import { z } from 'zod'
+import { memoryStatusValues } from '#mcp/memory/types.ts'
+import { requireMcpUser as requireMetaUser } from './require-user.ts'
+
+export const memoryCategoryField = z
+	.string()
+	.min(1)
+	.max(80)
+	.optional()
+	.describe(
+			'Optional freeform category label for the memory. Suggested examples: preference, identifier, relationship, workflow, project, profile.',
+	)
+
+export const memoryTagInputSchema = z.string().min(1).max(80)
+
+export const memoryTagsField = z
+	.array(memoryTagInputSchema)
+	.max(12)
+	.optional()
+	.describe('Optional short tags for retrieval and filtering.')
+
+export const memoryBaseInputSchema = {
+	subject: z
+		.string()
+		.min(1)
+		.max(200)
+		.describe('Short durable subject line for the memory record.'),
+	summary: z
+		.string()
+		.min(1)
+		.max(500)
+		.describe('Compact durable summary of the memory.'),
+	details: z
+		.string()
+		.max(2_000)
+		.optional()
+		.describe('Optional supporting details for the durable memory record.'),
+	category: memoryCategoryField,
+	tags: memoryTagsField,
+	dedupe_key: z
+		.string()
+		.min(1)
+		.max(160)
+		.optional()
+		.describe(
+			'Optional stable agent-supplied dedupe key for the memory. Reuse when the agent wants a deterministic durable key.',
+		),
+} as const
+
+export const verifyCandidateInputSchema = z.object(memoryBaseInputSchema)
+
+export const memoryVerifyInputSchema = verifyCandidateInputSchema.extend({
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(20)
+		.optional()
+		.describe('Maximum related memories to return. Defaults to 5.'),
+	conversation_id: z
+		.string()
+		.min(1)
+		.max(64)
+		.optional()
+		.describe(
+			'Optional conversation id used to suppress memories that were already surfaced in the same conversation.',
+		),
+	include_suppressed_in_conversation: z
+		.boolean()
+		.optional()
+		.describe(
+			'When true, include memories even if they were already surfaced for the same conversation id.',
+		),
+})
+
+export const memoryRecordSchema = z.object({
+	id: z.string(),
+	category: z.string().nullable(),
+	status: z.enum(memoryStatusValues),
+	subject: z.string(),
+	summary: z.string(),
+	details: z.string(),
+	tags: z.array(z.string()),
+	dedupe_key: z.string().nullable(),
+	created_at: z.string(),
+	updated_at: z.string(),
+	last_accessed_at: z.string().nullable(),
+	deleted_at: z.string().nullable(),
+})
+
+export const memoryMatchSchema = memoryRecordSchema.extend({
+	score: z.number(),
+})
+
+export const verifyFirstGuidance =
+	'Always run meta_memory_verify before upserting or deleting memories. Review the related memories returned by verify, then decide whether to upsert, delete, both, or do nothing. Do not mutate memory blindly.'
+
+export const verifyFirstWarning =
+	'If you are considering writing or deleting memory, run meta_memory_verify first and review related memories before taking action.'
+
+export const requireMcpUser = requireMetaUser

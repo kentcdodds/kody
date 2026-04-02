@@ -22,6 +22,17 @@ function getTextContent(content: CallToolResult['content']) {
 	return nonMetadata?.text ?? textBlocks[0]?.text ?? ''
 }
 
+function getAllTextContent(content: CallToolResult['content']) {
+	if (!Array.isArray(content)) return ''
+	return content
+		.filter(
+			(item): item is Extract<ContentBlock, { type: 'text' }> =>
+				item.type === 'text' && typeof item.text === 'string',
+		)
+		.map((item) => item.text)
+		.join('\n\n')
+}
+
 test('mcp server returns built-in instructions and base server metadata', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
@@ -580,6 +591,214 @@ test('mcp server executes user code against codemode and tracks execute context'
 		(contextStructuredResult?.conversationId ?? '').length,
 	).toBeGreaterThan(0)
 	expect(contextStructuredResult?.result?.ok).toBe(true)
+})
+
+test('mcp server verifies, upserts, deletes, and surfaces memories', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const verifyResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_verify({
+					subject: 'User prefers npm over pnpm',
+					summary: 'Always use npm commands in this repository.',
+					category: 'preference',
+					tags: ['package-manager', 'repo-workflow'],
+				})
+			}`,
+		},
+	})
+	const verifyStructured = (verifyResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					candidate?: {
+						subject?: string
+					}
+					related_memories?: Array<unknown>
+					guidance?: string
+				}
+		  }
+		| undefined
+	expect(verifyStructured?.result?.candidate?.subject).toBe(
+		'User prefers npm over pnpm',
+	)
+	expect(verifyStructured?.result?.related_memories).toEqual([])
+	expect(verifyStructured?.result?.guidance).toContain(
+		'Always run meta_memory_verify before upserting or deleting memories.',
+	)
+
+	const upsertResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_upsert({
+					subject: 'User prefers npm over pnpm',
+					summary: 'Always use npm commands in this repository.',
+					category: 'preference',
+					tags: ['package-manager', 'repo-workflow'],
+					verified_by_agent: true,
+					verification_reference: 'verify-1',
+				})
+			}`,
+		},
+	})
+	const upsertStructured = (upsertResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					mode?: string
+					memory?: {
+						id?: string
+						subject?: string
+						status?: string
+					}
+				}
+		  }
+		| undefined
+	const memoryId = upsertStructured?.result?.memory?.id
+	expect(upsertStructured?.result?.mode).toBe('created')
+	expect(upsertStructured?.result?.memory?.subject).toBe(
+		'User prefers npm over pnpm',
+	)
+	expect(upsertStructured?.result?.memory?.status).toBe('active')
+	expect(typeof memoryId).toBe('string')
+
+	const verifyExistingResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_verify({
+					subject: 'User prefers npm over pnpm',
+					summary: 'Always use npm commands in this repository.',
+					category: 'preference',
+					tags: ['package-manager'],
+				})
+			}`,
+		},
+	})
+	const verifyExistingStructured = (verifyExistingResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					related_memories?: Array<{
+						id?: string
+						subject?: string
+					}>
+				}
+		  }
+		| undefined
+	expect(verifyExistingStructured?.result?.related_memories?.[0]).toEqual(
+		expect.objectContaining({
+			id: memoryId,
+			subject: 'User prefers npm over pnpm',
+		}),
+	)
+
+	const contextualResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => ({ ok: true })`,
+			conversationId: 'memory-conv-1',
+			memoryContext: {
+				task: 'Follow repo package manager preference',
+				entities: ['npm'],
+				constraints: ['use repository preference'],
+			},
+		},
+	})
+	const contextualStructured = (contextualResult as CallToolResult)
+		.structuredContent as
+		| {
+				memories?: {
+					surfaced?: Array<{
+						id?: string
+						subject?: string
+					}>
+				}
+		  }
+		| undefined
+	expect(contextualStructured?.memories?.surfaced?.[0]).toEqual(
+		expect.objectContaining({
+			id: memoryId,
+			subject: 'User prefers npm over pnpm',
+		}),
+	)
+	expect(
+		getAllTextContent((contextualResult as CallToolResult).content),
+	).toContain(
+		'## Relevant memories',
+	)
+
+	const suppressedResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => ({ ok: true })`,
+			conversationId: 'memory-conv-1',
+			memoryContext: {
+				task: 'Follow repo package manager preference',
+				entities: ['npm'],
+			},
+		},
+	})
+	const suppressedStructured = (suppressedResult as CallToolResult)
+		.structuredContent as
+		| {
+				memories?: {
+					surfaced?: Array<unknown>
+					suppressedCount?: number
+				}
+		  }
+		| undefined
+	expect(suppressedStructured?.memories?.surfaced).toEqual([])
+	expect(suppressedStructured?.memories?.suppressedCount).toBeGreaterThanOrEqual(
+		1,
+	)
+
+	const softDeleteResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_delete({
+					memory_id: ${JSON.stringify(memoryId)},
+					verified_by_agent: true,
+					verification_reference: 'verify-delete-1',
+				})
+			}`,
+		},
+	})
+	const softDeleteStructured = (softDeleteResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					memory?: {
+						status?: string
+					} | null
+				}
+		  }
+		| undefined
+	expect(softDeleteStructured?.result?.memory?.status).toBe('deleted')
+
+	const getDeletedResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_get({
+					memory_id: ${JSON.stringify(memoryId)},
+				})
+			}`,
+		},
+	})
+	const getDeletedStructured = (getDeletedResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					status?: string
+				} | null
+		  }
+		| undefined
+	expect(getDeletedStructured?.result?.status).toBe('deleted')
 })
 
 test('mcp server executes directly available codemode helpers', async () => {

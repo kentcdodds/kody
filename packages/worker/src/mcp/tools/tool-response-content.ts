@@ -11,3 +11,12 @@ export function prependToolMetadataContent(
 	if (!content || content.length === 0) return [metadataBlock]
 	return [metadataBlock, ...content]
 }
+
+export function appendToolContent(
+	content: Array<ContentBlock> | undefined,
+	extraContent: Array<ContentBlock> | undefined,
+) {
+	if (!content || content.length === 0) return extraContent ?? []
+	if (!extraContent || extraContent.length === 0) return content
+	return [...content, ...extraContent]
+}

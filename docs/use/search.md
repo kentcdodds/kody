@@ -9,6 +9,10 @@ values).
 Pass a **`query`** string that describes what you want to do. Results are
 ranked; order in the response matters.
 
+When a tool call also includes **`memoryContext`**, Kody may attach a small
+number of relevant long-term memories that have not already been surfaced for
+that **`conversationId`**.
+
 Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches when the response must stay
 small.
@@ -42,3 +46,5 @@ for an empty ranked list.
 
 Saved **skills** and **apps** require a signed-in MCP user. Capabilities and
 builtin behavior still work without user-scoped data.
+
+Long-term memory retrieval also requires a signed-in MCP user.
