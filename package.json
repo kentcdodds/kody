@@ -56,7 +56,8 @@
     "test:mcp": "nx run worker:test-mcp",
     "prepare": "husky",
     "nx:graph": "nx graph",
-    "nx:show-projects": "nx show projects"
+    "nx:show-projects": "nx show projects",
+    "dev:talks": "npm --prefix docs/talks/kody-mcp-runtime run dev"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.13.4",
@@ -107,6 +108,7 @@
     "packages/shared",
     "packages/home-connector",
     "packages/worker",
-    "packages/mock-servers/*"
+    "packages/mock-servers/*",
+    "docs/talks/*"
   ]
 }
