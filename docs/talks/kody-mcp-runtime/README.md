@@ -51,6 +51,25 @@ Build static output:
 npm run build
 ```
 
+## Look and feel
+
+- **Colors:** `themeConfig.primary` in `slides.md` drives links, markers, and
+  accents. `uno.config.ts` replaces flat `bg-main` with a light teal/cyan
+  gradient (and a deep green-tinted gradient in dark mode). `style.css` adds
+  heading, list, table, and blockquote tinting from `--slidev-theme-primary`.
+- **Light / dark:** `colorSchema: auto` follows `prefers-color-scheme`. Use
+  Slidev’s built-in theme control or press **`d`**; after that, Slidev stores a
+  preference in `localStorage` under `slidev-color-schema` (`auto` / `light` /
+  `dark`). To force a single mode only, set `colorSchema` to `light` or `dark`
+  in headmatter.
+- **Slide change:** `defaults.transition: slide-left` uses Slidev’s built-in
+  horizontal slide: **forward** uses `slide-left`, **backward** uses
+  `slide-right` (see [animations](https://sli.dev/guide/animations.html)).
+  Timing and easing come from `--slidev-transition-duration` and
+  `--slidev-slide-easing` in `style.css`. For a cross-fade, use `fade` or
+  `fade-out` instead.
+- **Deck CSS:** `style.css` is global (accent colors and transition duration).
+
 ## Assets
 
 `public/demo/cursor-pr-dashboard.png` is a **tiny placeholder** so

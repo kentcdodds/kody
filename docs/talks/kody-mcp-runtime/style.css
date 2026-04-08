@@ -1,0 +1,87 @@
+/* Deck-wide tweaks (default theme). See headmatter themeConfig + colorSchema. */
+
+:root {
+	--slidev-transition-duration: 0.64s;
+	/* Smooth deceleration when slides move (horizontal + vertical presets). */
+	--slidev-slide-easing: cubic-bezier(0.22, 1, 0.36, 1);
+	--kody-accent-soft: color-mix(
+		in srgb,
+		var(--slidev-theme-primary) 18%,
+		transparent
+	);
+	--kody-accent-mid: color-mix(
+		in srgb,
+		var(--slidev-theme-primary) 45%,
+		transparent
+	);
+}
+
+/* Slide motion: custom easing (Slidev defaults to `ease` on these selectors). */
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active,
+.slide-up-enter-active,
+.slide-up-leave-active,
+.slide-down-enter-active,
+.slide-down-leave-active {
+	transition: all var(--slidev-transition-duration) var(--slidev-slide-easing);
+}
+
+/* Headings: teal accent without drowning the slide */
+.slidev-layout h1 {
+	color: var(--slidev-theme-primary);
+}
+
+.slidev-layout h2 {
+	padding-bottom: 0.2em;
+	margin-bottom: 0.35em;
+	border-bottom: 2px solid var(--kody-accent-mid);
+}
+
+.slidev-layout h3 {
+	color: color-mix(in srgb, var(--slidev-theme-primary) 82%, #334155 18%);
+}
+
+html.dark .slidev-layout h3 {
+	color: color-mix(in srgb, var(--slidev-theme-primary) 75%, #e2e8f0 25%);
+}
+
+/* Lists + tables pick up a bit of brand */
+.slidev-layout ul {
+	list-style: none;
+	padding-left: 0;
+}
+
+.slidev-layout ul > li {
+	position: relative;
+	padding-left: 1.1em;
+	margin: 0.25em 0;
+}
+
+.slidev-layout ul > li::before {
+	position: absolute;
+	left: 0;
+	top: 0.55em;
+	width: 0.35em;
+	height: 0.35em;
+	content: '';
+	background: var(--slidev-theme-primary);
+	border-radius: 9999px;
+	opacity: 0.85;
+}
+
+.slidev-layout th {
+	color: var(--slidev-theme-primary);
+	border-bottom: 2px solid var(--kody-accent-mid);
+}
+
+.slidev-layout tr:hover td {
+	background: var(--kody-accent-soft);
+}
+
+/* Code callouts: faint teal wash */
+.slidev-layout blockquote {
+	border-left-width: 4px;
+	background: var(--kody-accent-soft);
+}

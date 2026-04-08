@@ -6,6 +6,11 @@ info:
   inference.'
 class: text-center
 mdc: true
+colorSchema: auto
+themeConfig:
+  primary: '#14b8a6'
+defaults:
+  transition: slide-left
 ---
 
 # Kody
@@ -181,19 +186,13 @@ week —
 
 not a single impressive model reply.
 
-### Run this deck
-
-`npm run dev:talks` from the Kody repo root.
-
 <!--
 Thank you / Q&A. Offer links: heykody.dev, docs/use/index.md, this repo.
 -->
 
 ---
 
-layout: center class: text-center
-
----
+## layout: center
 
 # Live demo cheat sheet
 
