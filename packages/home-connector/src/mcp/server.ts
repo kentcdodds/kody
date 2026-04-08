@@ -4,6 +4,7 @@ import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema
 import { z } from 'zod'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
+import { type createSonosAdapter } from '../adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
 import { type HomeConnectorState } from '../state.ts'
@@ -41,6 +42,7 @@ export function createHomeConnectorMcpServer(input: {
 	state: HomeConnectorState
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>
 	lutron: ReturnType<typeof createLutronAdapter>
+	sonos: ReturnType<typeof createSonosAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
@@ -48,6 +50,7 @@ export function createHomeConnectorMcpServer(input: {
 	})
 	const samsungTv = input.samsungTv
 	const lutron = input.lutron
+	const sonos = input.sonos
 
 	const server = new McpServer(
 		{
@@ -56,7 +59,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools currently support Roku, Samsung TV, and Lutron discovery, control, and diagnostics.',
+				'Home connector MCP server. Tools currently support Roku, Samsung TV, Lutron, and Sonos discovery, control, and diagnostics.',
 		},
 	)
 
@@ -88,6 +91,29 @@ export function createHomeConnectorMcpServer(input: {
 			},
 			handler,
 		)
+	}
+
+	function playerScopedSchema(
+		shape: Record<string, z.ZodTypeAny> = {},
+	): Record<string, unknown> {
+		return z.toJSONSchema(
+			z.object({
+				playerId: z.string().min(1).optional(),
+				...shape,
+			}),
+		) as Record<string, unknown>
+	}
+
+	function structuredTextResult(text: string, structuredContent: unknown) {
+		return {
+			content: [
+				{
+					type: 'text' as const,
+					text,
+				},
+			],
+			structuredContent,
+		}
 	}
 
 	registerTool(
@@ -1120,6 +1146,976 @@ export function createHomeConnectorMcpServer(input: {
 				],
 				structuredContent: result,
 			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_scan_players',
+			title: 'Scan Sonos Players',
+			description:
+				'Scan the local network for Sonos players using the configured Sonos discovery endpoint.',
+			inputSchema: {},
+		},
+		async () => {
+			const players = await sonos.scan()
+			return structuredTextResult(
+				players.length === 0
+					? 'No Sonos players discovered.'
+					: `Discovered ${players.length} Sonos player(s).`,
+				{ players },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_list_players',
+			title: 'List Sonos Players',
+			description:
+				'List known Sonos players with room names, models, group membership, and adoption state.',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const players = await sonos.listPlayers()
+			return structuredTextResult(
+				players.length === 0
+					? 'No Sonos players are currently known.'
+					: players
+							.map(
+								(player) =>
+									`- ${player.roomName} (${player.playerId}) adopted=${String(player.adopted)} group=${player.groupId ?? 'standalone'}`,
+							)
+							.join('\n'),
+				{ players },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_adopt_player',
+			title: 'Adopt Sonos Player',
+			description:
+				'Mark a discovered Sonos player as adopted so it becomes a managed player.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					playerId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const playerId = String(args['playerId'] ?? '')
+			const player = sonos.adoptPlayer(playerId)
+			return structuredTextResult(
+				`Adopted Sonos player ${player.roomName}.`,
+				player,
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_list_groups',
+			title: 'List Sonos Groups',
+			description: 'List current Sonos groups, coordinators, and member rooms.',
+			inputSchema: playerScopedSchema(),
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const groups = await sonos.listGroups(
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				groups.length === 0
+					? 'No Sonos groups are currently available.'
+					: groups
+							.map(
+								(group) =>
+									`- ${group.groupId}: ${group.members.map((member) => member.roomName).join(', ')}`,
+							)
+							.join('\n'),
+				{ groups },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_get_player_status',
+			title: 'Get Sonos Player Status',
+			description:
+				'Get transport, track, queue, volume, EQ, and input status for a Sonos player.',
+			inputSchema: playerScopedSchema(),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const result = await sonos.getPlayerStatus(
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				`${result.player.roomName} is ${result.transportState ?? 'unknown'} at volume ${String(result.volume ?? 'unknown')}.`,
+				result,
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_get_group_status',
+			title: 'Get Sonos Group Status',
+			description: 'Get playback and membership details for a Sonos group.',
+			inputSchema: playerScopedSchema({
+				groupId: z.string().min(1),
+			}),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const groupId = String(args['groupId'] ?? '')
+			const result = await sonos.getGroupStatus(
+				groupId,
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				`Sonos group ${groupId} is ${result.transportState ?? 'unknown'}.`,
+				result,
+			)
+		},
+	)
+
+	const transportTools = [
+		{
+			name: 'sonos_play',
+			title: 'Play Sonos',
+			description: 'Resume playback for a Sonos player or its coordinator.',
+			handler: async (playerId?: string) => {
+				await sonos.play(playerId)
+				return structuredTextResult('Started Sonos playback.', {
+					playerId: playerId ?? null,
+				})
+			},
+		},
+		{
+			name: 'sonos_pause',
+			title: 'Pause Sonos',
+			description: 'Pause Sonos playback.',
+			handler: async (playerId?: string) => {
+				await sonos.pause(playerId)
+				return structuredTextResult('Paused Sonos playback.', {
+					playerId: playerId ?? null,
+				})
+			},
+		},
+		{
+			name: 'sonos_stop',
+			title: 'Stop Sonos',
+			description: 'Stop Sonos playback.',
+			handler: async (playerId?: string) => {
+				await sonos.stop(playerId)
+				return structuredTextResult('Stopped Sonos playback.', {
+					playerId: playerId ?? null,
+				})
+			},
+		},
+		{
+			name: 'sonos_next_track',
+			title: 'Next Sonos Track',
+			description: 'Skip to the next Sonos track.',
+			handler: async (playerId?: string) => {
+				await sonos.nextTrack(playerId)
+				return structuredTextResult('Skipped to the next Sonos track.', {
+					playerId: playerId ?? null,
+				})
+			},
+		},
+		{
+			name: 'sonos_previous_track',
+			title: 'Previous Sonos Track',
+			description: 'Go back to the previous Sonos track.',
+			handler: async (playerId?: string) => {
+				await sonos.previousTrack(playerId)
+				return structuredTextResult('Went to the previous Sonos track.', {
+					playerId: playerId ?? null,
+				})
+			},
+		},
+	] as const
+
+	for (const tool of transportTools) {
+		registerTool(
+			{
+				name: tool.name,
+				title: tool.title,
+				description: tool.description,
+				inputSchema: playerScopedSchema(),
+			},
+			async (args) =>
+				await tool.handler(
+					args['playerId'] == null ? undefined : String(args['playerId']),
+				),
+		)
+	}
+
+	registerTool(
+		{
+			name: 'sonos_seek',
+			title: 'Seek Sonos Track',
+			description: 'Seek within the current Sonos track using hh:mm:ss.',
+			inputSchema: playerScopedSchema({
+				position: z.string().min(1),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const position = String(args['position'] ?? '')
+			await sonos.seek(playerId, position)
+			return structuredTextResult(`Sought Sonos playback to ${position}.`, {
+				playerId: playerId ?? null,
+				position,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_set_play_mode',
+			title: 'Set Sonos Play Mode',
+			description: 'Set the Sonos play mode for the current queue.',
+			inputSchema: playerScopedSchema({
+				playMode: z.enum([
+					'NORMAL',
+					'REPEAT_ALL',
+					'REPEAT_ONE',
+					'SHUFFLE_NOREPEAT',
+					'SHUFFLE',
+					'SHUFFLE_REPEAT_ONE',
+				]),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const playMode = String(args['playMode'] ?? 'NORMAL')
+			await sonos.setPlayMode(playerId, playMode)
+			return structuredTextResult(`Set Sonos play mode to ${playMode}.`, {
+				playerId: playerId ?? null,
+				playMode,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_set_volume',
+			title: 'Set Sonos Volume',
+			description: 'Set a Sonos player volume between 0 and 100.',
+			inputSchema: playerScopedSchema({
+				volume: z.number().min(0).max(100),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const volume = Number(args['volume'] ?? 0)
+			await sonos.setVolume(playerId, volume)
+			return structuredTextResult(`Set Sonos volume to ${volume}.`, {
+				playerId: playerId ?? null,
+				volume,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_adjust_volume',
+			title: 'Adjust Sonos Volume',
+			description:
+				'Adjust a Sonos player volume by a positive or negative delta.',
+			inputSchema: playerScopedSchema({
+				delta: z.number().int().min(-100).max(100),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const delta = Number(args['delta'] ?? 0)
+			await sonos.adjustVolume(playerId, delta)
+			return structuredTextResult(`Adjusted Sonos volume by ${delta}.`, {
+				playerId: playerId ?? null,
+				delta,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_set_mute',
+			title: 'Set Sonos Mute',
+			description: 'Mute or unmute a Sonos player.',
+			inputSchema: playerScopedSchema({
+				muted: z.boolean(),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const muted = Boolean(args['muted'])
+			await sonos.setMute(playerId, muted)
+			return structuredTextResult(
+				`${muted ? 'Muted' : 'Unmuted'} Sonos playback.`,
+				{
+					playerId: playerId ?? null,
+					muted,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_list_favorites',
+			title: 'List Sonos Favorites',
+			description: 'List Sonos favorites currently available to the household.',
+			inputSchema: playerScopedSchema(),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const favorites = await sonos.listFavorites(
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				favorites.length === 0
+					? 'No Sonos favorites are currently available.'
+					: favorites
+							.map(
+								(favorite) =>
+									`- ${favorite.title} (${favorite.favoriteId}) provider=${favorite.provider ?? 'unknown'}`,
+							)
+							.join('\n'),
+				{ favorites },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_search_favorites',
+			title: 'Search Sonos Favorites',
+			description: 'Search Sonos favorites by title.',
+			inputSchema: playerScopedSchema({
+				query: z.string().min(1),
+			}),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const query = String(args['query'] ?? '')
+			const favorites = await sonos.searchFavorites(
+				query,
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				favorites.length === 0
+					? `No Sonos favorites matched "${query}".`
+					: `Matched ${favorites.length} Sonos favorite(s) for "${query}".`,
+				{ favorites, query },
+			)
+		},
+	)
+
+	for (const entry of [
+		{
+			name: 'sonos_play_favorite',
+			title: 'Play Sonos Favorite',
+			description:
+				'Resolve a Sonos favorite by id or title, load it into the queue, and start playback.',
+			handler: async (args: Record<string, unknown>) =>
+				await sonos.playFavorite({
+					playerId:
+						args['playerId'] == null ? undefined : String(args['playerId']),
+					favoriteId:
+						args['favoriteId'] == null ? undefined : String(args['favoriteId']),
+					title: args['title'] == null ? undefined : String(args['title']),
+				}),
+		},
+		{
+			name: 'sonos_enqueue_favorite',
+			title: 'Enqueue Sonos Favorite',
+			description:
+				'Resolve a Sonos favorite by id or title and add it to the active queue.',
+			handler: async (args: Record<string, unknown>) =>
+				await sonos.enqueueFavorite({
+					playerId:
+						args['playerId'] == null ? undefined : String(args['playerId']),
+					favoriteId:
+						args['favoriteId'] == null ? undefined : String(args['favoriteId']),
+					title: args['title'] == null ? undefined : String(args['title']),
+				}),
+		},
+	] as const) {
+		registerTool(
+			{
+				name: entry.name,
+				title: entry.title,
+				description: entry.description,
+				inputSchema: playerScopedSchema({
+					favoriteId: z.string().min(1).optional(),
+					title: z.string().min(1).optional(),
+				}),
+			},
+			async (args) => {
+				const favorite = await entry.handler(args)
+				return structuredTextResult(`${entry.title} completed.`, {
+					favorite,
+				})
+			},
+		)
+	}
+
+	registerTool(
+		{
+			name: 'sonos_list_saved_queues',
+			title: 'List Sonos Saved Queues',
+			description: 'List Sonos saved queues.',
+			inputSchema: playerScopedSchema(),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const savedQueues = await sonos.listSavedQueues(
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				savedQueues.length === 0
+					? 'No Sonos saved queues are currently available.'
+					: savedQueues
+							.map(
+								(savedQueue) =>
+									`- ${savedQueue.title} (${savedQueue.savedQueueId})`,
+							)
+							.join('\n'),
+				{ savedQueues },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_search_saved_queues',
+			title: 'Search Sonos Saved Queues',
+			description: 'Search Sonos saved queues by title.',
+			inputSchema: playerScopedSchema({
+				query: z.string().min(1),
+			}),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const query = String(args['query'] ?? '')
+			const savedQueues = await sonos.searchSavedQueues(
+				query,
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				savedQueues.length === 0
+					? `No Sonos saved queues matched "${query}".`
+					: `Matched ${savedQueues.length} Sonos saved queue(s) for "${query}".`,
+				{ savedQueues, query },
+			)
+		},
+	)
+
+	for (const entry of [
+		{
+			name: 'sonos_play_saved_queue',
+			title: 'Play Sonos Saved Queue',
+			description:
+				'Resolve a Sonos saved queue by id or title, load it into the active queue, and start playback.',
+			handler: async (args: Record<string, unknown>) =>
+				await sonos.playSavedQueue({
+					playerId:
+						args['playerId'] == null ? undefined : String(args['playerId']),
+					savedQueueId:
+						args['savedQueueId'] == null
+							? undefined
+							: String(args['savedQueueId']),
+					title: args['title'] == null ? undefined : String(args['title']),
+				}),
+		},
+		{
+			name: 'sonos_enqueue_saved_queue',
+			title: 'Enqueue Sonos Saved Queue',
+			description:
+				'Resolve a Sonos saved queue by id or title and add it to the active queue.',
+			handler: async (args: Record<string, unknown>) =>
+				await sonos.enqueueSavedQueue({
+					playerId:
+						args['playerId'] == null ? undefined : String(args['playerId']),
+					savedQueueId:
+						args['savedQueueId'] == null
+							? undefined
+							: String(args['savedQueueId']),
+					title: args['title'] == null ? undefined : String(args['title']),
+				}),
+		},
+	] as const) {
+		registerTool(
+			{
+				name: entry.name,
+				title: entry.title,
+				description: entry.description,
+				inputSchema: playerScopedSchema({
+					savedQueueId: z.string().min(1).optional(),
+					title: z.string().min(1).optional(),
+				}),
+			},
+			async (args) => {
+				const savedQueue = await entry.handler(args)
+				return structuredTextResult(`${entry.title} completed.`, {
+					savedQueue,
+				})
+			},
+		)
+	}
+
+	registerTool(
+		{
+			name: 'sonos_list_queue',
+			title: 'List Sonos Queue',
+			description: 'List the active Sonos queue for a player.',
+			inputSchema: playerScopedSchema(),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const queue = await sonos.listQueue(
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult(
+				queue.length === 0
+					? 'The Sonos queue is empty.'
+					: queue
+							.map(
+								(track) =>
+									`${track.position}. ${track.title ?? 'Unknown'} (${track.queueItemId})`,
+							)
+							.join('\n'),
+				{ queue },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_clear_queue',
+			title: 'Clear Sonos Queue',
+			description: 'Remove all items from the active Sonos queue.',
+			inputSchema: playerScopedSchema(),
+			annotations: {
+				destructiveHint: true,
+			},
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			await sonos.clearQueue(playerId)
+			return structuredTextResult('Cleared the Sonos queue.', {
+				playerId: playerId ?? null,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_remove_queue_track',
+			title: 'Remove Sonos Queue Track',
+			description:
+				'Remove a single item from the active Sonos queue by queueItemId or 1-based position.',
+			inputSchema: playerScopedSchema({
+				queueItemId: z.string().min(1).optional(),
+				position: z.number().int().min(1).optional(),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const queueItemId =
+				args['queueItemId'] == null ? undefined : String(args['queueItemId'])
+			const position =
+				args['position'] == null ? undefined : Number(args['position'])
+			await sonos.removeQueueTrack({
+				playerId,
+				queueItemId,
+				position,
+			})
+			return structuredTextResult('Removed the requested Sonos queue track.', {
+				playerId: playerId ?? null,
+				queueItemId: queueItemId ?? null,
+				position: position ?? null,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_group_players',
+			title: 'Group Sonos Players',
+			description: 'Join a Sonos player to another player’s group coordinator.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					playerId: z.string().min(1),
+					coordinatorPlayerId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const playerId = String(args['playerId'] ?? '')
+			const coordinatorPlayerId = String(args['coordinatorPlayerId'] ?? '')
+			await sonos.groupPlayers({
+				playerId,
+				coordinatorPlayerId,
+			})
+			return structuredTextResult('Grouped the Sonos players.', {
+				playerId,
+				coordinatorPlayerId,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_ungroup_player',
+			title: 'Ungroup Sonos Player',
+			description:
+				'Remove a Sonos player from its current group and make it standalone.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					playerId: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const playerId = String(args['playerId'] ?? '')
+			await sonos.ungroupPlayer(playerId)
+			return structuredTextResult('Ungrouped the Sonos player.', {
+				playerId,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_get_audio_input',
+			title: 'Get Sonos Audio Input',
+			description:
+				'Get line-in details for a Sonos player that supports audio input.',
+			inputSchema: playerScopedSchema(),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const result = await sonos.getAudioInput(
+				args['playerId'] == null ? undefined : String(args['playerId']),
+			)
+			return structuredTextResult('Fetched Sonos audio input status.', result)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_select_audio_input',
+			title: 'Select Sonos Audio Input',
+			description: 'Switch a Sonos player to its line-in audio input.',
+			inputSchema: playerScopedSchema(),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			await sonos.selectAudioInput(playerId)
+			return structuredTextResult('Selected the Sonos audio input.', {
+				playerId: playerId ?? null,
+			})
+		},
+	)
+
+	registerTool(
+		{
+			name: 'sonos_set_line_in_level',
+			title: 'Set Sonos Line-In Level',
+			description:
+				'Set the line-in input level for a Sonos player with audio input support.',
+			inputSchema: playerScopedSchema({
+				level: z.number().int().min(0).max(10),
+				rightLevel: z.number().int().min(0).max(10).optional(),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const level = Number(args['level'] ?? 0)
+			const rightLevel =
+				args['rightLevel'] == null ? level : Number(args['rightLevel'])
+			await sonos.setLineInLevel(playerId, level, rightLevel)
+			return structuredTextResult('Updated the Sonos line-in level.', {
+				playerId: playerId ?? null,
+				leftLevel: level,
+				rightLevel,
+			})
+		},
+	)
+
+	for (const entry of [
+		{
+			name: 'sonos_start_line_in_to_group',
+			title: 'Start Sonos Line-In To Group',
+			description:
+				'Transmit a Sonos player line-in source to the specified group coordinator.',
+			handler: async (args: Record<string, unknown>) =>
+				await sonos.startLineInToGroup({
+					sourcePlayerId: String(args['sourcePlayerId'] ?? ''),
+					coordinatorPlayerId: String(args['coordinatorPlayerId'] ?? ''),
+				}),
+		},
+		{
+			name: 'sonos_stop_line_in_to_group',
+			title: 'Stop Sonos Line-In To Group',
+			description:
+				'Stop transmitting a Sonos player line-in source to the specified group coordinator.',
+			handler: async (args: Record<string, unknown>) =>
+				await sonos.stopLineInToGroup({
+					sourcePlayerId: String(args['sourcePlayerId'] ?? ''),
+					coordinatorPlayerId: String(args['coordinatorPlayerId'] ?? ''),
+				}),
+		},
+	] as const) {
+		registerTool(
+			{
+				name: entry.name,
+				title: entry.title,
+				description: entry.description,
+				inputSchema: z.toJSONSchema(
+					z.object({
+						sourcePlayerId: z.string().min(1),
+						coordinatorPlayerId: z.string().min(1),
+					}),
+				) as Record<string, unknown>,
+			},
+			async (args) => {
+				await entry.handler(args)
+				return structuredTextResult(`${entry.title} completed.`, {
+					sourcePlayerId: String(args['sourcePlayerId'] ?? ''),
+					coordinatorPlayerId: String(args['coordinatorPlayerId'] ?? ''),
+				})
+			},
+		)
+	}
+
+	registerTool(
+		{
+			name: 'sonos_search_local_library',
+			title: 'Search Sonos Local Library',
+			description:
+				'Search the Sonos local library across artists, albums, and tracks.',
+			inputSchema: playerScopedSchema({
+				query: z.string().min(1),
+				category: z.enum(['artists', 'albums', 'tracks']).optional(),
+				limit: z.number().int().min(1).max(1000).optional(),
+			}),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const result = await sonos.searchLocalLibrary({
+				query: String(args['query'] ?? ''),
+				playerId:
+					args['playerId'] == null ? undefined : String(args['playerId']),
+				category:
+					args['category'] == null
+						? undefined
+						: (String(args['category']) as 'artists' | 'albums' | 'tracks'),
+				limit: args['limit'] == null ? undefined : Number(args['limit']),
+			})
+			return structuredTextResult('Searched the Sonos local library.', {
+				result,
+			})
+		},
+	)
+
+	for (const entry of [
+		{
+			name: 'sonos_list_library_artists',
+			title: 'List Sonos Library Artists',
+			category: 'artists' as const,
+		},
+		{
+			name: 'sonos_list_library_albums',
+			title: 'List Sonos Library Albums',
+			category: 'albums' as const,
+		},
+		{
+			name: 'sonos_list_library_tracks',
+			title: 'List Sonos Library Tracks',
+			category: 'tracks' as const,
+		},
+	] as const) {
+		registerTool(
+			{
+				name: entry.name,
+				title: entry.title,
+				description: `${entry.title} from the Sonos local library, optionally filtering by a query string.`,
+				inputSchema: playerScopedSchema({
+					query: z.string().min(1).optional(),
+					limit: z.number().int().min(1).max(1000).optional(),
+				}),
+				annotations: {
+					readOnlyHint: true,
+				},
+			},
+			async (args) => {
+				const items =
+					entry.category === 'artists'
+						? await sonos.listLibraryArtists(
+								args['playerId'] == null ? undefined : String(args['playerId']),
+								args['query'] == null ? undefined : String(args['query']),
+								args['limit'] == null ? undefined : Number(args['limit']),
+							)
+						: entry.category === 'albums'
+							? await sonos.listLibraryAlbums(
+									args['playerId'] == null
+										? undefined
+										: String(args['playerId']),
+									args['query'] == null ? undefined : String(args['query']),
+									args['limit'] == null ? undefined : Number(args['limit']),
+								)
+							: await sonos.listLibraryTracks(
+									args['playerId'] == null
+										? undefined
+										: String(args['playerId']),
+									args['query'] == null ? undefined : String(args['query']),
+									args['limit'] == null ? undefined : Number(args['limit']),
+								)
+				return structuredTextResult(
+					items.length === 0
+						? `${entry.title} returned no results.`
+						: `${entry.title} returned ${items.length} item(s).`,
+					{ items },
+				)
+			},
+		)
+	}
+
+	registerTool(
+		{
+			name: 'sonos_play_uri',
+			title: 'Play Sonos URI',
+			description:
+				'Set a Sonos player transport URI directly and start playback.',
+			inputSchema: playerScopedSchema({
+				uri: z.string().min(1),
+				metadata: z.string().optional(),
+				title: z.string().optional(),
+				artist: z.string().optional(),
+				album: z.string().optional(),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			await sonos.playUri({
+				playerId,
+				uri: String(args['uri'] ?? ''),
+				metadata:
+					args['metadata'] == null ? undefined : String(args['metadata']),
+				title: args['title'] == null ? undefined : String(args['title']),
+				artist: args['artist'] == null ? undefined : String(args['artist']),
+				album: args['album'] == null ? undefined : String(args['album']),
+			})
+			return structuredTextResult(
+				'Started playback from the provided Sonos URI.',
+				{
+					playerId: playerId ?? null,
+					uri: String(args['uri'] ?? ''),
+				},
+			)
+		},
+	)
+
+	for (const entry of [
+		{
+			name: 'sonos_set_bass',
+			title: 'Set Sonos Bass',
+			field: 'bass',
+			handler: async (playerId: string | undefined, value: number) =>
+				await sonos.setBass(playerId, value),
+		},
+		{
+			name: 'sonos_set_treble',
+			title: 'Set Sonos Treble',
+			field: 'treble',
+			handler: async (playerId: string | undefined, value: number) =>
+				await sonos.setTreble(playerId, value),
+		},
+	] as const) {
+		registerTool(
+			{
+				name: entry.name,
+				title: entry.title,
+				description: `${entry.title} between -10 and 10.`,
+				inputSchema: playerScopedSchema({
+					value: z.number().int().min(-10).max(10),
+				}),
+			},
+			async (args) => {
+				const playerId =
+					args['playerId'] == null ? undefined : String(args['playerId'])
+				const value = Number(args['value'] ?? 0)
+				await entry.handler(playerId, value)
+				return structuredTextResult(`${entry.title} updated.`, {
+					playerId: playerId ?? null,
+					value,
+				})
+			},
+		)
+	}
+
+	registerTool(
+		{
+			name: 'sonos_set_loudness',
+			title: 'Set Sonos Loudness',
+			description: 'Enable or disable Sonos loudness compensation.',
+			inputSchema: playerScopedSchema({
+				loudness: z.boolean(),
+			}),
+		},
+		async (args) => {
+			const playerId =
+				args['playerId'] == null ? undefined : String(args['playerId'])
+			const loudness = Boolean(args['loudness'])
+			await sonos.setLoudness(playerId, loudness)
+			return structuredTextResult('Updated Sonos loudness.', {
+				playerId: playerId ?? null,
+				loudness,
+			})
 		},
 	)
 

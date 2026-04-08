@@ -14,6 +14,7 @@ async function main() {
 		connector.config,
 		connector.lutron,
 		connector.samsungTv,
+		connector.sonos,
 	)
 
 	const server = http.createServer(

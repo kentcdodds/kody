@@ -43,6 +43,7 @@ test('explicit Roku discovery URL overrides the default in mock mode', () => {
 	using _env = createTemporaryEnv({
 		MOCKS: 'true',
 		ROKU_DISCOVERY_URL: 'http://roku.mock.local/discovery',
+		SONOS_DISCOVERY_URL: 'http://sonos.mock.local/discovery',
 		SAMSUNG_TV_DISCOVERY_URL: 'http://samsung-tv.mock.local/discovery',
 		LUTRON_DISCOVERY_URL: 'http://lutron.mock.local/discovery',
 		HOME_CONNECTOR_ID: 'default',
@@ -51,10 +52,25 @@ test('explicit Roku discovery URL overrides the default in mock mode', () => {
 
 	const config = loadHomeConnectorConfig()
 	expect(config.rokuDiscoveryUrl).toBe('http://roku.mock.local/discovery')
+	expect(config.sonosDiscoveryUrl).toBe('http://sonos.mock.local/discovery')
 	expect(config.samsungTvDiscoveryUrl).toBe(
 		'http://samsung-tv.mock.local/discovery',
 	)
 	expect(config.lutronDiscoveryUrl).toBe('http://lutron.mock.local/discovery')
+})
+
+test('live connector defaults Sonos discovery to SSDP', () => {
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		SONOS_DISCOVERY_URL: undefined,
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.sonosDiscoveryUrl).toBe(
+		'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
+	)
 })
 
 test('live connector defaults Samsung TV discovery to mDNS', () => {

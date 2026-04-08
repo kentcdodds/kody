@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../mocks/test-server.ts'
 import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
+import { createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { createAppState } from '../src/state.ts'
@@ -16,6 +17,7 @@ function createConfig(): HomeConnectorConfig {
 		sharedSecret: 'secret',
 		rokuDiscoveryUrl: 'http://roku.mock.local/discovery',
 		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
+		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		dataPath: '/tmp',
 		dbPath: ':memory:',
@@ -35,6 +37,11 @@ function createAdapters(config: HomeConnectorConfig) {
 			state,
 			storage,
 		}),
+		sonos: createSonosAdapter({
+			config,
+			state,
+			storage,
+		}),
 		samsungTv: createSamsungTvAdapter({
 			config,
 			state,
@@ -47,11 +54,17 @@ installHomeConnectorMockServer()
 
 test('home route toggles worker snapshot link by connector id', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
 	try {
-		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
 		const responseWithConnector = await router.fetch('http://example.test/')
 		expect(responseWithConnector.status).toBe(200)
 		const htmlWithConnector = await responseWithConnector.text()
@@ -71,9 +84,15 @@ test('home route toggles worker snapshot link by connector id', async () => {
 
 test('health route returns ok json', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
 	try {
-		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
 		const response = await router.fetch('http://example.test/health')
 		expect(response.status).toBe(200)
 		expect(await response.json()).toEqual({
@@ -88,13 +107,19 @@ test('health route returns ok json', async () => {
 
 test('roku status route renders connector details', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
 	state.connection.connected = true
 	state.connection.lastSyncAt = '2026-03-24T12:00:00.000Z'
 	try {
-		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
 		const response = await router.fetch('http://example.test/roku/status')
 		expect(response.status).toBe(200)
 		const html = await response.text()
@@ -109,7 +134,7 @@ test('roku status route renders connector details', async () => {
 
 test('roku status route renders discovery diagnostics summary', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
 	state.rokuDiscoveryDiagnostics = {
 		protocol: 'ssdp',
 		discoveryUrl: 'ssdp://239.255.255.250:1900',
@@ -129,7 +154,13 @@ test('roku status route renders discovery diagnostics summary', async () => {
 		deviceInfoLookups: [],
 	}
 	try {
-		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
 		const response = await router.fetch('http://example.test/roku/status')
 		expect(response.status).toBe(200)
 		const html = await response.text()
@@ -144,9 +175,15 @@ test('roku status route renders discovery diagnostics summary', async () => {
 
 test('roku status route can run a manual scan', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
 	try {
-		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
 		const response = await router.fetch(
 			new Request('http://example.test/roku/status', {
 				method: 'POST',
@@ -164,13 +201,19 @@ test('roku status route can run a manual scan', async () => {
 
 test('roku setup route reports missing shared secret clearly', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
 	state.connection.sharedSecret = null
 	state.connection.mocksEnabled = true
 	try {
-		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
 		const response = await router.fetch('http://example.test/roku/setup')
 		expect(response.status).toBe(200)
 		const html = await response.text()
@@ -183,9 +226,15 @@ test('roku setup route reports missing shared secret clearly', async () => {
 
 test('lutron status route can run a manual scan', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
 	try {
-		const router = createHomeConnectorRouter(state, config, lutron, samsungTv)
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
 		const response = await router.fetch(
 			new Request('http://example.test/lutron/status', {
 				method: 'POST',
@@ -197,6 +246,33 @@ test('lutron status route can run a manual scan', async () => {
 		expect(html).toContain('Scan complete. Discovered 2 Lutron processor(s).')
 		expect(html).toContain('Primary Processor')
 		expect(html).toContain('Wireless Processor')
+	} finally {
+		storage.close()
+	}
+})
+
+test('sonos status route can run a manual scan', async () => {
+	const config = createConfig()
+	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+		)
+		const response = await router.fetch(
+			new Request('http://example.test/sonos/status', {
+				method: 'POST',
+			}),
+		)
+		expect(response.status).toBe(200)
+		const html = await response.text()
+		expect(html).toContain('Sonos status')
+		expect(html).toContain('Scan complete. Discovered 2 Sonos player(s).')
+		expect(html).toContain('Office Speakers')
+		expect(html).toContain('Gym')
 	} finally {
 		storage.close()
 	}

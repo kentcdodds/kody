@@ -5,6 +5,7 @@ import { RootLayout } from './root.ts'
 import { type routes } from './routes.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { type LutronDiscoveryDiagnostics } from '../src/adapters/lutron/types.ts'
+import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
@@ -21,6 +22,8 @@ function renderQuickLinks(state: HomeConnectorState) {
 		<li><a href="/roku/setup">Roku setup</a></li>
 		<li><a href="/lutron/status">Lutron status</a></li>
 		<li><a href="/lutron/setup">Lutron setup</a></li>
+		<li><a href="/sonos/status">Sonos status</a></li>
+		<li><a href="/sonos/setup">Sonos setup</a></li>
 		<li><a href="/samsung-tv/status">Samsung TV status</a></li>
 		<li><a href="/samsung-tv/setup">Samsung TV setup</a></li>
 		<li><a href="/health">Health JSON</a></li>
@@ -57,6 +60,7 @@ export function createHomeDashboardHandler(
 	state: HomeConnectorState,
 	lutron: ReturnType<typeof createLutronAdapter>,
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
+	sonos: ReturnType<typeof createSonosAdapter>,
 ) {
 	return {
 		middleware: [],
@@ -69,6 +73,7 @@ export function createHomeDashboardHandler(
 			).length
 			const lutronStatus = lutron.getStatus()
 			const samsungStatus = samsungTv.getStatus()
+			const sonosStatus = sonos.getStatus()
 
 			return render(
 				RootLayout({
@@ -145,6 +150,18 @@ export function createHomeDashboardHandler(
 									{
 										label: 'Samsung paired',
 										value: String(samsungStatus.pairedCount),
+									},
+									{
+										label: 'Sonos adopted',
+										value: String(sonosStatus.adopted.length),
+									},
+									{
+										label: 'Sonos discovered',
+										value: String(sonosStatus.discovered.length),
+									},
+									{
+										label: 'Sonos audio input',
+										value: String(sonosStatus.audioInputSupportedCount),
 									},
 									{
 										label: 'Mocks',

@@ -103,6 +103,27 @@ function initializeSchema(db: SqliteDatabase) {
 				REFERENCES lutron_processors(connector_id, processor_id)
 				ON DELETE CASCADE
 		);
+
+		CREATE TABLE IF NOT EXISTS sonos_players (
+			connector_id TEXT NOT NULL,
+			player_id TEXT NOT NULL,
+			udn TEXT NOT NULL,
+			room_name TEXT NOT NULL,
+			display_name TEXT,
+			friendly_name TEXT NOT NULL,
+			model_name TEXT,
+			model_number TEXT,
+			serial_num TEXT,
+			household_id TEXT,
+			host TEXT NOT NULL,
+			description_url TEXT NOT NULL,
+			audio_input_supported INTEGER NOT NULL DEFAULT 0,
+			adopted INTEGER NOT NULL DEFAULT 0,
+			last_seen_at TEXT,
+			raw_description_xml TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, player_id)
+		);
 	`)
 }
 

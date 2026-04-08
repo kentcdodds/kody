@@ -7,6 +7,8 @@ export const routes = route({
 	rokuSetup: '/roku/setup',
 	lutronStatus: '/lutron/status',
 	lutronSetup: '/lutron/setup',
+	sonosStatus: '/sonos/status',
+	sonosSetup: '/sonos/setup',
 	samsungTvStatus: '/samsung-tv/status',
 	samsungTvSetup: '/samsung-tv/setup',
 })

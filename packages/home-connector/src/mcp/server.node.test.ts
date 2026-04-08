@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
 import { createLutronAdapter } from '../adapters/lutron/index.ts'
+import { createSonosAdapter } from '../adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { loadHomeConnectorConfig } from '../config.ts'
 import { createHomeConnectorMcpServer } from './server.ts'
@@ -14,6 +15,7 @@ function createConfig() {
 		'home-connector-secret-home-connector-secret'
 	process.env.WORKER_BASE_URL = 'http://localhost:3742'
 	process.env.LUTRON_DISCOVERY_URL = 'http://lutron.mock.local/discovery'
+	process.env.SONOS_DISCOVERY_URL = 'http://sonos.mock.local/discovery'
 	process.env.SAMSUNG_TV_DISCOVERY_URL =
 		'http://samsung-tv.mock.local/discovery'
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
@@ -36,13 +38,20 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		state,
 		storage,
 	})
+	const sonos = createSonosAdapter({
+		config,
+		state,
+		storage,
+	})
 	await samsungTv.scan()
 	await lutron.scan()
+	await sonos.scan()
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
 		samsungTv,
 		lutron,
+		sonos,
 	})
 
 	try {
@@ -61,6 +70,11 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'lutron_get_inventory')).toBe(
 			true,
 		)
+		expect(tools.some((tool) => tool.name === 'sonos_list_players')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'sonos_play_favorite')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'sonos_search_local_library'),
+		).toBe(true)
 		const lutronCredentialsTool = tools.find(
 			(tool) => tool.name === 'lutron_set_credentials',
 		)
@@ -84,6 +98,11 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		const lutronProcessors = await mcp.callTool('lutron_list_processors')
 		expect(lutronProcessors.structuredContent).toMatchObject({
 			processors: expect.any(Array),
+		})
+
+		const sonosPlayers = await mcp.callTool('sonos_list_players')
+		expect(sonosPlayers.structuredContent).toMatchObject({
+			players: expect.any(Array),
 		})
 	} finally {
 		storage.close()

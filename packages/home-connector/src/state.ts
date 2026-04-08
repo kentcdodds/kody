@@ -4,6 +4,7 @@ import {
 } from './adapters/roku/types.ts'
 import { type LutronDiscoveryDiagnostics } from './adapters/lutron/types.ts'
 import { type SamsungTvDiscoveryDiagnostics } from './adapters/samsung-tv/types.ts'
+import { type SonosDiscoveryDiagnostics } from './adapters/sonos/types.ts'
 
 export type HomeConnectorConnectionState = {
 	workerUrl: string
@@ -21,6 +22,7 @@ export type HomeConnectorState = {
 	rokuDiscoveryDiagnostics: RokuDiscoveryDiagnostics | null
 	samsungTvDiscoveryDiagnostics: SamsungTvDiscoveryDiagnostics | null
 	lutronDiscoveryDiagnostics: LutronDiscoveryDiagnostics | null
+	sonosDiscoveryDiagnostics: SonosDiscoveryDiagnostics | null
 }
 
 const initialState: HomeConnectorState = {
@@ -37,6 +39,7 @@ const initialState: HomeConnectorState = {
 	rokuDiscoveryDiagnostics: null,
 	samsungTvDiscoveryDiagnostics: null,
 	lutronDiscoveryDiagnostics: null,
+	sonosDiscoveryDiagnostics: null,
 }
 
 export function createAppState(): HomeConnectorState {
@@ -84,6 +87,14 @@ export function setLutronDiscoveryDiagnostics(
 ) {
 	state.lutronDiscoveryDiagnostics = diagnostics
 	return state.lutronDiscoveryDiagnostics
+}
+
+export function setSonosDiscoveryDiagnostics(
+	state: HomeConnectorState,
+	diagnostics: SonosDiscoveryDiagnostics | null,
+) {
+	state.sonosDiscoveryDiagnostics = diagnostics
+	return state.sonosDiscoveryDiagnostics
 }
 
 export function getDiscoveredRokuDevices(state: HomeConnectorState) {

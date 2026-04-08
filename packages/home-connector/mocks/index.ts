@@ -1,9 +1,11 @@
 import { setupServer } from 'msw/node'
 import { mswHandlers } from './msw-handlers.ts'
 import { resetMockLutronSystem } from '../src/adapters/lutron/mock-driver.ts'
+import { resetMockSonosState } from '../src/adapters/sonos/mock-driver.ts'
 import { resetMockSamsungDevices } from '../src/adapters/samsung-tv/mock-driver.ts'
 
 resetMockLutronSystem()
+resetMockSonosState()
 resetMockSamsungDevices()
 const server = setupServer(...mswHandlers)
 

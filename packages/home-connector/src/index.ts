@@ -1,4 +1,5 @@
 import { createLutronAdapter } from './adapters/lutron/index.ts'
+import { createSonosAdapter } from './adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from './adapters/samsung-tv/index.ts'
 import { createHomeConnectorMcpServer } from './mcp/server.ts'
 import { loadHomeConnectorConfig } from './config.ts'
@@ -26,11 +27,17 @@ export function createHomeConnectorApp() {
 		state,
 		storage,
 	})
+	const sonos = createSonosAdapter({
+		config,
+		state,
+		storage,
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
 		samsungTv,
 		lutron,
+		sonos,
 	})
 	const workerConnector = createWorkerConnector({
 		config,
@@ -44,6 +51,7 @@ export function createHomeConnectorApp() {
 		storage,
 		samsungTv,
 		lutron,
+		sonos,
 		mcp,
 		workerConnector,
 	}
