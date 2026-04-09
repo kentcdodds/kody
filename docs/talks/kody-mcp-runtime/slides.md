@@ -192,8 +192,8 @@ Thank you / Q&A. Offer links: heykody.dev, docs/use/index.md, this repo.
 -->
 
 ---
-
-## layout: center
+layout: center
+---
 
 # Live demo cheat sheet
 

@@ -13,11 +13,11 @@
   "description": "A starter and reference for building full stack web applications",
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": [
-      "oxfmt",
+      "oxfmt --no-error-on-unmatched-pattern",
       "oxlint --fix"
     ],
     "*.{json,jsonc,md,css}": [
-      "oxfmt"
+      "oxfmt --no-error-on-unmatched-pattern"
     ]
   },
   "scripts": {
