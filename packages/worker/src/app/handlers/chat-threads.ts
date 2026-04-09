@@ -21,7 +21,10 @@ export function createChatThreadsHandler(appEnv: AppEnv) {
 	return {
 		middleware: [],
 		async action({ request }) {
-			const user = await readAuthenticatedAppUser(request, appEnv as Env)
+			const user = await readAuthenticatedAppUser(
+				request,
+				appEnv as unknown as Env,
+			)
 			if (!user) {
 				return jsonResponse(
 					{ ok: false, error: 'Unauthorized' },
@@ -70,7 +73,10 @@ export function createDeleteChatThreadHandler(appEnv: AppEnv) {
 	return {
 		middleware: [],
 		async action({ request }) {
-			const user = await readAuthenticatedAppUser(request, appEnv as Env)
+			const user = await readAuthenticatedAppUser(
+				request,
+				appEnv as unknown as Env,
+			)
 			if (!user) {
 				return jsonResponse(
 					{ ok: false, error: 'Unauthorized' },
@@ -123,7 +129,10 @@ export function createUpdateChatThreadHandler(appEnv: AppEnv) {
 	return {
 		middleware: [],
 		async action({ request }) {
-			const user = await readAuthenticatedAppUser(request, appEnv as Env)
+			const user = await readAuthenticatedAppUser(
+				request,
+				appEnv as unknown as Env,
+			)
 			if (!user) {
 				return jsonResponse(
 					{ ok: false, error: 'Unauthorized' },

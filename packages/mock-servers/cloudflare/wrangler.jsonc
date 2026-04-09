@@ -6,4 +6,50 @@
 	"main": "./src/worker.ts",
 	"preview_urls": true,
 	"observability": { "enabled": true },
+	"migrations": [
+		{
+			"new_classes": ["MockCloudflareEmailMessagesDurableObject"],
+			"tag": "v1",
+		},
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "MockCloudflareEmailMessagesDurableObject",
+				"name": "MOCK_CLOUDFLARE_EMAIL_STATE",
+			},
+		],
+	},
+	"env": {
+		"production": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "MockCloudflareEmailMessagesDurableObject",
+						"name": "MOCK_CLOUDFLARE_EMAIL_STATE",
+					},
+				],
+			},
+		},
+		"preview": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "MockCloudflareEmailMessagesDurableObject",
+						"name": "MOCK_CLOUDFLARE_EMAIL_STATE",
+					},
+				],
+			},
+		},
+		"test": {
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "MockCloudflareEmailMessagesDurableObject",
+						"name": "MOCK_CLOUDFLARE_EMAIL_STATE",
+					},
+				],
+			},
+		},
+	},
 }

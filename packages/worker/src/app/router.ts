@@ -52,50 +52,59 @@ export function createAppRouter(appEnv: AppEnv) {
 	router.map(routes.login, login)
 	router.map(routes.signup, signup)
 	router.map(routes.account, account)
-	router.map(routes.accountSecrets, createAccountSecretsHandler(appEnv as Env))
+	router.map(
+		routes.accountSecrets,
+		createAccountSecretsHandler(appEnv as unknown as Env),
+	)
 	router.map(
 		routes.accountSecretNew,
-		createAccountSecretsHandler(appEnv as Env),
+		createAccountSecretsHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.accountSecretsApprove,
-		createAccountSecretsHandler(appEnv as Env),
+		createAccountSecretsHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.accountSecretDetail,
-		createAccountSecretsHandler(appEnv as Env),
+		createAccountSecretsHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.accountSecretUserDetail,
-		createAccountSecretsHandler(appEnv as Env),
+		createAccountSecretsHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.accountSecretAppDetail,
-		createAccountSecretsHandler(appEnv as Env),
+		createAccountSecretsHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.accountSecretSessionDetail,
-		createAccountSecretsHandler(appEnv as Env),
+		createAccountSecretsHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.accountSecretsApi,
-		createAccountSecretsApiHandler(appEnv as Env),
+		createAccountSecretsApiHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.accountSecretsApiPost,
-		createAccountSecretsApiHandler(appEnv as Env),
+		createAccountSecretsApiHandler(appEnv as unknown as Env),
 	)
-	router.map(routes.connectSecret, createConnectSecretHandler(appEnv as Env))
+	router.map(
+		routes.connectSecret,
+		createConnectSecretHandler(appEnv as unknown as Env),
+	)
 	router.map(
 		routes.connectSecretApi,
-		createConnectSecretApiHandler(appEnv as Env),
+		createConnectSecretApiHandler(appEnv as unknown as Env),
 	)
 	router.map(
 		routes.connectSecretApiPost,
-		createConnectSecretApiHandler(appEnv as Env),
+		createConnectSecretApiHandler(appEnv as unknown as Env),
 	)
-	router.map(routes.connectOauth, createConnectOauthHandler(appEnv as Env))
-	router.map(routes.savedUi, createSavedUiPageHandler(appEnv as Env))
+	router.map(
+		routes.connectOauth,
+		createConnectOauthHandler(appEnv as unknown as Env),
+	)
+	router.map(routes.savedUi, createSavedUiPageHandler(appEnv as unknown as Env))
 	router.map(routes.auth, createAuthHandler(appEnv))
 	router.map(routes.session, session)
 	router.map(routes.logout, logout)

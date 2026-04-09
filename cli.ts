@@ -68,7 +68,6 @@ let shutdown: (() => void) | null = null
 let devChildren: Array<ChildProcess> = []
 let workerOrigin = ''
 let homeConnectorOrigin = ''
-let mockResendProcess: ChildProcess | null = null
 let mockAiProcess: ChildProcess | null = null
 let mockCloudflareProcess: ChildProcess | null = null
 let mockEnvOverrides: Record<string, string> = {}
@@ -91,7 +90,7 @@ async function startDev() {
 	shutdown = setupShutdown(
 		() => devChildren,
 		() =>
-			[mockResendProcess, mockAiProcess, mockCloudflareProcess].filter(
+			[mockAiProcess, mockCloudflareProcess].filter(
 				Boolean,
 			) as Array<ChildProcess>,
 	)
@@ -472,6 +471,7 @@ async function attachCloudflareMock(
 	})
 	mockEnv.CLOUDFLARE_API_BASE_URL = baseUrl
 	mockEnv.CLOUDFLARE_API_TOKEN = apiToken
+	mockEnv.CLOUDFLARE_ACCOUNT_ID = 'cf_account_mock_123'
 	const didStart = await waitForMockReady(baseUrl, child)
 	if (!didStart) {
 		console.warn(
@@ -491,125 +491,64 @@ async function attachOptionalMocksInParallel(
 async function ensureMockServers() {
 	const previousMockEnvOverrides = { ...mockEnvOverrides }
 	const desiredAiMode = resolveAiMode()
-	const canReuseResendMock = isChildRunning(mockResendProcess)
 	const canReuseAiMock = isChildRunning(mockAiProcess)
 	const hasMatchingCachedMode = mockEnvOverrides.AI_MODE === desiredAiMode
-	const canReuseCachedResendEnv =
-		canReuseResendMock &&
-		hasEnvValue(mockEnvOverrides.RESEND_API_BASE_URL) &&
-		hasEnvValue(mockEnvOverrides.RESEND_API_KEY)
 	const canReuseCachedAiEnv =
 		canReuseAiMock &&
 		hasEnvValue(previousMockEnvOverrides.AI_MOCK_BASE_URL) &&
 		hasEnvValue(previousMockEnvOverrides.AI_MOCK_API_KEY)
+	const canReuseCachedCloudflareEnv =
+		isChildRunning(mockCloudflareProcess) &&
+		hasEnvValue(previousMockEnvOverrides.CLOUDFLARE_API_BASE_URL) &&
+		hasEnvValue(previousMockEnvOverrides.CLOUDFLARE_API_TOKEN) &&
+		hasEnvValue(previousMockEnvOverrides.CLOUDFLARE_ACCOUNT_ID)
 
 	if (
-		canReuseCachedResendEnv &&
+		canReuseCachedCloudflareEnv &&
 		hasMatchingCachedMode &&
 		(desiredAiMode === 'remote' || canReuseCachedAiEnv)
 	) {
-		const resendForAnchor = new URL(
-			mockEnvOverrides.RESEND_API_BASE_URL ??
-				`http://127.0.0.1:${defaultMockPort}`,
+		const cloudflareForAnchor = new URL(
+			mockEnvOverrides.CLOUDFLARE_API_BASE_URL ??
+				`http://127.0.0.1:${defaultMockPort + 240}`,
 		)
 		const anchorFromReuse = Number.parseInt(
-			resendForAnchor.port || String(defaultMockPort),
+			cloudflareForAnchor.port || String(defaultMockPort + 240),
 			10,
 		)
 		await attachOptionalMocksInParallel(mockEnvOverrides, anchorFromReuse)
 		return mockEnvOverrides
 	}
 
-	if (!canReuseResendMock && mockAiProcess && !mockAiProcess.killed) {
+	if (mockCloudflareProcess && !mockCloudflareProcess.killed) {
+		await stopChild(mockCloudflareProcess)
+		mockCloudflareProcess = null
+	}
+	if (mockAiProcess && !mockAiProcess.killed && !canReuseCachedAiEnv) {
 		await stopChild(mockAiProcess)
 		mockAiProcess = null
 	}
-	let mockPort: number
-	if (canReuseCachedResendEnv) {
-		const resendBaseUrl = new URL(mockEnvOverrides.RESEND_API_BASE_URL ?? '')
-		const parsedResendPort = Number.parseInt(
-			resendBaseUrl.port || String(defaultMockPort),
-			10,
-		)
-		mockPort = Number.isNaN(parsedResendPort)
-			? defaultMockPort
-			: parsedResendPort
-		mockEnvOverrides = {
-			...mockEnvOverrides,
-			AI_MODE: desiredAiMode,
-		}
-	} else {
-		const desiredPort = Number.parseInt(
-			process.env.MOCK_API_PORT ?? String(defaultMockPort),
-			10,
-		)
-		const portRange = Array.from(
-			{ length: 10 },
-			(_, index) => desiredPort + index,
-		)
-		mockPort = await getPort({ port: portRange })
-		if (mockCloudflareProcess && !mockCloudflareProcess.killed) {
-			await stopChild(mockCloudflareProcess)
-			mockCloudflareProcess = null
-		}
-		const baseUrl = `http://127.0.0.1:${mockPort}`
-		const apiToken = `mock-resend-${randomUUID()}`
-		const child = runNpmScript(
-			'dev:mock-resend',
-			[
-				'--port',
-				String(mockPort),
-				'--ip',
-				'127.0.0.1',
-				'--var',
-				`MOCK_API_TOKEN:${apiToken}`,
-			],
-			{},
-			{
-				label: 'dev:mock-resend',
-				mode: 'buffer-on-error',
-			},
-		)
-		mockResendProcess = child
-		child.once('exit', () => {
-			if (mockResendProcess === child) {
-				mockResendProcess = null
-			}
-		})
-		mockEnvOverrides = {
-			RESEND_API_BASE_URL: baseUrl,
-			RESEND_API_KEY: apiToken,
-			AI_MODE: desiredAiMode,
-		}
-		if (!hasEnvValue(process.env.RESEND_FROM_EMAIL)) {
-			mockEnvOverrides.RESEND_FROM_EMAIL = 'reset@kody.dev'
-		}
+	const desiredPort = Number.parseInt(
+		process.env.MOCK_API_PORT ?? String(defaultMockPort),
+		10,
+	)
+	const portRange = Array.from(
+		{ length: 10 },
+		(_, index) => desiredPort + index,
+	)
+	const mockPort = await getPort({ port: portRange })
+	mockEnvOverrides = {
+		AI_MODE: desiredAiMode,
 	}
-
-	const pendingMockStarts: Array<Promise<void>> = []
-	const resendBaseUrl = mockEnvOverrides.RESEND_API_BASE_URL
-	if (resendBaseUrl && mockResendProcess && !canReuseCachedResendEnv) {
-		pendingMockStarts.push(
-			(async () => {
-				const didStart = await waitForMockReady(
-					resendBaseUrl,
-					mockResendProcess,
-				)
-				if (!didStart) {
-					console.warn(
-						`Mock API worker did not become ready within ${mockReadyTimeoutMs}ms.`,
-					)
-				}
-				console.log(dim(`Mock API worker running at ${resendBaseUrl}`))
-				console.log(dim(`Resend mock base URL ${resendBaseUrl}`))
-			})(),
-		)
+	if (!hasEnvValue(process.env.CLOUDFLARE_EMAIL_FROM)) {
+		mockEnvOverrides.CLOUDFLARE_EMAIL_FROM = 'reset@kody.dev'
 	}
 
 	const optionalMocksReady = attachOptionalMocksInParallel(
 		mockEnvOverrides,
 		mockPort,
 	)
+	const pendingMockStarts: Array<Promise<void>> = []
 
 	if (desiredAiMode === 'mock') {
 		if (canReuseCachedAiEnv) {
@@ -668,7 +607,7 @@ async function ensureMockServers() {
 		mockEnvOverrides.AI_MOCK_API_KEY = ''
 	}
 
-	await Promise.all([...pendingMockStarts, optionalMocksReady])
+	await Promise.all([optionalMocksReady, ...pendingMockStarts])
 
 	return mockEnvOverrides
 }

@@ -1,5 +1,8 @@
 {
   "name": "@kody/mock-cloudflare",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@kody-internal/shared": "file:../../shared"
+  }
 }
