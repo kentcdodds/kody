@@ -66,18 +66,19 @@ automatically:
   auth metadata, generated UI resources, and email links)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
-- `RESEND_API_BASE_URL` (optional, defaults to `https://api.resend.com`)
-- `RESEND_API_KEY` (optional, required to send via Resend)
-- `RESEND_FROM_EMAIL` (optional, required to send via Resend)
+- `CLOUDFLARE_EMAIL_FROM` (optional; sender address for outbound email)
 - `AI_GATEWAY_ID` (required when `AI_MODE=remote`; deploy workflows sync a
   gateway ID from GitHub Actions secrets so remote inference goes through
   Cloudflare AI Gateway)
 - `CLOUDFLARE_ACCOUNT_ID` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests against the correct account;
   also required when using the `page_to_markdown` capability's Cloudflare
-  Browser Rendering fallback against the live API)
+  Browser Rendering fallback against the live API and for the Cloudflare Email
+  Service REST API fallback used by local mocks and preview deploys)
 - `CLOUDFLARE_API_TOKEN` (required for local development when `AI_MODE=remote`
-  so Wrangler can authenticate Workers AI requests)
+  so Wrangler can authenticate Workers AI requests; also reused by the
+  Cloudflare Email Service REST API fallback when local/preview email is routed
+  through the Cloudflare mock or API)
 - `SENTRY_DSN` (optional Cloudflare Worker secret; enables error reporting and
   tracing for the Worker and Durable Objects)
 - `SENTRY_ENVIRONMENT` (set per deploy via `packages/worker/wrangler.jsonc`
@@ -113,9 +114,7 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
-- `RESEND_API_KEY` (optional, required to send via Resend in non-mock
-  environments)
-- `RESEND_FROM_EMAIL` (optional, required to send via Resend)
+- `CLOUDFLARE_EMAIL_FROM` (optional, required to send app email)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
@@ -160,11 +159,9 @@ How to get/set each value:
     ID.
   - Store that value as the preview GitHub Actions secret so preview deploys
     sync a different worker secret than production.
-- `RESEND_API_KEY` (optional)
-  - Create in Resend Dashboard (API keys), then store in GitHub Actions secrets.
-- `RESEND_FROM_EMAIL` (optional)
-  - Use your verified sender/from address in Resend (for example
-    `noreply@example.com`), then store it as a secret.
+- `CLOUDFLARE_EMAIL_FROM` (optional)
+  - Use a sender address on a domain onboarded to Cloudflare Email Service (for
+    example `noreply@example.com`), then store it as a GitHub Actions secret.
 - `SENTRY_DSN` (optional)
   - In Sentry: create a project, copy the DSN, and add it as the repository
     secret `SENTRY_DSN`. Production and preview deploy workflows sync it with

@@ -3,7 +3,7 @@ import { object, parseSafe, string } from 'remix/data-schema'
 import { createDb, passwordResetsTable, usersTable } from '#worker/db.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { logAuditEvent, getRequestIp } from '#app/audit-log.ts'
-import { sendResendEmail } from '#app/email/resend.ts'
+import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { type routes } from '#app/routes.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
@@ -25,6 +25,11 @@ const resetConfirmSchema = object({
 function buildResetEmail(resetUrl: string) {
 	return {
 		subject: 'Reset your kody password',
+		text: [
+			'We received a request to reset your kody password.',
+			`Reset your password: ${resetUrl}`,
+			'If you did not request a reset, you can safely ignore this email.',
+		].join('\n\n'),
 		html: `<!doctype html>
 <html lang="en">
   <head>
@@ -59,7 +64,7 @@ function logMissingEmailConfig(payload: {
 	html: string
 }) {
 	console.warn(
-		'resend-from-email-missing',
+		'cloudflare-email-from-missing',
 		JSON.stringify({
 			to: payload.to,
 			from: payload.from,
@@ -130,7 +135,7 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 				const resetUrl = new URL('/reset-password', appBaseUrl)
 				resetUrl.searchParams.set('token', token)
 				const email = buildResetEmail(resetUrl.toString())
-				const fromEmail = appEnv.RESEND_FROM_EMAIL?.trim() ?? ''
+				const fromEmail = appEnv.CLOUDFLARE_EMAIL_FROM?.trim() ?? ''
 
 				if (!fromEmail) {
 					logMissingEmailConfig({
@@ -141,22 +146,24 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 					})
 				} else {
 					try {
-						const apiBaseUrl =
-							appEnv.RESEND_API_BASE_URL ?? 'https://api.resend.com'
-						await sendResendEmail(
+						await sendCloudflareEmail(
 							{
-								apiBaseUrl,
-								apiKey: appEnv.RESEND_API_KEY,
+								accountId: appEnv.CLOUDFLARE_ACCOUNT_ID,
+								apiBaseUrl: appEnv.CLOUDFLARE_API_BASE_URL,
+								apiToken: appEnv.CLOUDFLARE_API_TOKEN,
+								binding: appEnv.EMAIL,
+								isLocalDev: appEnv.WRANGLER_IS_LOCAL_DEV === 'true',
 							},
 							{
 								to: normalizedEmail,
 								from: fromEmail,
 								subject: email.subject,
 								html: email.html,
+								text: email.text,
 							},
 						)
 					} catch (error) {
-						console.warn('resend-email-error', error)
+						console.warn('cloudflare-email-error', error)
 					}
 				}
 

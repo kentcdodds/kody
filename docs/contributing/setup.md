@@ -33,16 +33,18 @@ Quick notes for getting a local kody environment running.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed.
 - `npm run dev` (starts mock API servers automatically, the main worker, and the
-  local home connector; it sets `RESEND_API_BASE_URL`, `AI_MODE=mock`,
-  `AI_MOCK_BASE_URL`, and (unless `SKIP_CLOUDFLARE_MOCK=1` or `AI_MODE=remote`)
-  `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` to the local Cloudflare API
-  mock Worker for `page_to_markdown` and the internal Cloudflare API client. The
+  local home connector; it sets `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and
+  `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
+  to the local Cloudflare API mock Worker for `page_to_markdown`, the internal
+  Cloudflare API client, and local email sending. Unless you already set
+  `CLOUDFLARE_EMAIL_FROM`, the launcher also defaults it to `reset@kody.dev`.
+  Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The
   home connector receives the resolved worker origin via `WORKER_BASE_URL`. When
   `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
   it to both the worker and the connector so the outbound registration handshake
   succeeds in local development. The main worker and home connector stream logs
-  live; the client bundle and background mock workers now buffer their logs and
-  only print them if that child process exits with an error.)
+  live; the client bundle and background mock workers buffer logs and only print
+  them if that child process exits with an error.)
 - The home automation connector now lives in `packages/home-connector`.
   - `npm run dev:home-connector` starts the local connector app on Node 24 with
     `node --watch`, so connector code changes automatically restart the local

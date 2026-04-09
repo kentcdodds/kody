@@ -1,9 +1,0 @@
-{
-  "name": "@kody/mock-resend",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@kody-internal/shared": "file:../../shared",
-    "@kody/worker": "file:../../worker"
-  }
-}
