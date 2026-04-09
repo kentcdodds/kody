@@ -25,7 +25,10 @@ import {
 	type SecretMetadata,
 	type SecretSearchRow,
 } from '#mcp/secrets/types.ts'
-import { buildValueEntityId, describeValue } from '#mcp/tools/search-entities.ts'
+import {
+	buildValueEntityId,
+	describeValue,
+} from '#mcp/tools/search-entities.ts'
 import {
 	type UiArtifactSearchHit,
 	searchUiArtifactsForUser,
@@ -94,10 +97,7 @@ type ValueLexicalFields = Pick<
 	'name' | 'description' | 'scope' | 'value' | 'appId'
 >
 
-function scoreValuePhraseBonus(
-	query: string,
-	row: ValueLexicalFields,
-): number {
+function scoreValuePhraseBonus(query: string, row: ValueLexicalFields): number {
 	const normalizedQuery = normalizeSearchPhrase(query)
 	let bonus = 0
 	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
@@ -1019,9 +1019,16 @@ export async function searchUnified(input: {
 		if (key.startsWith('v:')) {
 			const hit = valueById.get(key.slice(2))
 			if (!hit) return 0
-			const doc = [hit.name, hit.description, hit.scope, hit.value, hit.appId ?? '']
-				.join('\n')
-			return lexicalScore(input.query, doc) + scoreValuePhraseBonus(input.query, hit)
+			const doc = [
+				hit.name,
+				hit.description,
+				hit.scope,
+				hit.value,
+				hit.appId ?? '',
+			].join('\n')
+			return (
+				lexicalScore(input.query, doc) + scoreValuePhraseBonus(input.query, hit)
+			)
 		}
 		if (key.startsWith('a:')) {
 			const hit = uiArtifactById.get(key.slice(2))
