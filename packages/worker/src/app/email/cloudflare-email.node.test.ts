@@ -99,8 +99,9 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 		},
 	)
 
-	expect(sendResult.ok).toBe(true)
-	expect(sendResult.id).toBeUndefined()
+	expect(sendResult).toEqual({
+		ok: true,
+	})
 
 	const response = await fetch(`${mock.origin}/__mocks/messages?token=${token}`)
 	expect(response.status).toBe(200)
