@@ -281,7 +281,7 @@ export function formatSearchMarkdown(input: {
 			'',
 			'**How to run matches:**',
 			'',
-			'- Builtin capabilities — `execute` / `codemode.<name>(args)`',
+			'- Built-in capabilities — `execute` / `codemode.<name>(args)`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
 			'- Saved skills — `codemode.meta_run_skill({ name, params })`',

@@ -329,3 +329,38 @@ test('search returns value and connector entities as first-class matches', async
 	expect(value.value).toBe('kentcdodds/kody')
 	expect(value.usage).toContain('value_get')
 })
+
+test('search skips connector rows whose stored id disagrees with config.name', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {} as Record<string, CapabilitySpec>
+	const mismatchedConnectorRow = createValueRow('_connector:github', {
+		value: JSON.stringify({
+			name: 'github-enterprise',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: 'github_refresh_token',
+			requiredHosts: ['api.github.com'],
+		}),
+		description: 'Mismatched connector config',
+	})
+
+	const result = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'github connector config',
+		limit: 10,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		userValueRows: [mismatchedConnectorRow],
+		appSecretsByAppId: new Map(),
+	})
+
+	expect(result.matches.some((match) => match.type === 'connector')).toBe(false)
+})

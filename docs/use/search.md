@@ -1,6 +1,6 @@
 # Search
 
-The **search** tool finds **builtin capabilities**, **persisted values**,
+The **search** tool finds **built-in capabilities**, **persisted values**,
 **saved connectors**, **saved skills**, **saved apps** (MCP App artifacts), and
 **user secret references** (metadata only, not secret values).
 
@@ -45,10 +45,3 @@ If ranked search misses what you need, **rephrase the query** or use
 dynamic entries such as home connector tools). **`entity`** does not help when a
 **`query`** returned no matches — **`entity`** looks up a known id, not a fix
 for an empty ranked list.
-
-## Authentication
-
-Saved **values**, **connectors**, **skills**, and **apps** require a signed-in
-MCP user. Capabilities and builtin behavior still work without user-scoped data.
-
-Long-term memory retrieval also requires a signed-in MCP user.

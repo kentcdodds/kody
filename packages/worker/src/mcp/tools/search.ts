@@ -108,7 +108,7 @@ const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities, Values, Connectors, Skills, Apps, and Secrets',
 	description: `
-Find **builtin capabilities**, **persisted values**, **saved connectors**,
+Find **built-in capabilities**, **persisted values**, **saved connectors**,
 **saved skills**, **saved apps**, and **user secret references** (metadata only)
 before \`execute\` or \`open_generated_ui\`.
 
@@ -120,15 +120,14 @@ empty ranked list.
 | \`connector\` | \`skill\` | \`app\` | \`secret\`), including schemas for
 capabilities. Types and fields: see response.
 
-Skills need a signed-in user. Run a skill: \`meta_run_skill({ name, params })\`;
-source: \`meta_get_skill\`. Apps: \`open_generated_ui({ app_id })\`. Secrets: never
-raw in results; use \`codemode.secret_list\` during execute and UI for missing values.
+Run a skill: \`meta_run_skill({ name, params })\`; source: \`meta_get_skill\`.
+Apps: \`open_generated_ui({ app_id })\`. Secrets: never raw in results; use
+\`codemode.secret_list\` during execute and UI for missing values.
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
 use \`codemode.connector_get\` / \`codemode.connector_list\`.
 
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
-\`meta_get_home_connector_status\` (home connector). Searchable values and
-connectors come from the signed-in user's persisted config.
+\`meta_get_home_connector_status\` (home connector).
 
 Domain hints for \`query\` / \`skill_collection\`: \`coding\`, \`meta\`, \`home\`
 (see server instructions).

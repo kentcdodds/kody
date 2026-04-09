@@ -301,6 +301,7 @@ export type ValueSearchHitSummary = {
 export type ValueSearchHit = ValueSearchHitSummary
 
 type ConnectorSearchEntry = {
+	connectorId: string
 	row: ValueMetadata
 	config: ConnectorConfig
 }
@@ -387,8 +388,8 @@ function rowToConnectorHit(
 ): ConnectorSearchHit {
 	return {
 		type: 'connector',
-		connectorName: entry.config.name,
-		title: entry.config.name,
+		connectorName: entry.connectorId,
+		title: entry.connectorId,
 		description: describeConnector(entry.config, entry.row.description),
 		flow: entry.config.flow,
 		tokenUrl: entry.config.tokenUrl,
@@ -398,7 +399,7 @@ function rowToConnectorHit(
 		accessTokenSecretName: entry.config.accessTokenSecretName,
 		refreshTokenSecretName: entry.config.refreshTokenSecretName ?? null,
 		requiredHosts: entry.config.requiredHosts ?? [],
-		usage: buildConnectorUsage(entry.config.name),
+		usage: buildConnectorUsage(entry.connectorId),
 		fusedScore,
 		lexicalRank,
 		vectorRank,
@@ -703,11 +704,16 @@ async function searchConnectorsForUser(input: {
 				connectorName,
 			)
 			if (!config) return null
-			return { row, config } satisfies ConnectorSearchEntry
+			if (config.name !== connectorName) return null
+			return {
+				connectorId: connectorName,
+				row,
+				config,
+			} satisfies ConnectorSearchEntry
 		})
 		.filter((entry): entry is ConnectorSearchEntry => entry != null)
 	const entryById = new Map(
-		entries.map((entry) => [entry.config.name, entry] as const),
+		entries.map((entry) => [entry.connectorId, entry] as const),
 	)
 	const ids = [...entryById.keys()]
 	if (ids.length === 0) {
@@ -716,7 +722,7 @@ async function searchConnectorsForUser(input: {
 
 	const docsById = Object.fromEntries(
 		entries.map(
-			(entry) => [entry.config.name, buildConnectorEmbedDoc(entry)] as const,
+			(entry) => [entry.connectorId, buildConnectorEmbedDoc(entry)] as const,
 		),
 	)
 	const lexicalOrder = sortIdsByScore(ids, (id) =>
