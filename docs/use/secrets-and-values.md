@@ -6,6 +6,9 @@ Secret **values** do not belong in chat. Prefer **saved secrets**, **generated
 UI** flows, or execution-time persistence when a token already exists inside
 trusted code.
 
+Use **search** first to discover saved secret references or connectors before
+switching to **execute**.
+
 During **execute**, **`await codemode.secret_list({})`** (or a narrowed
 **`scope`** such as **`app`**) returns **metadata only**: names, descriptions,
 allowed hosts, allowed capabilities — not plaintext values.

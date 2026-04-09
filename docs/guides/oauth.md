@@ -4,6 +4,10 @@
 Linear, Spotify, etc. to Kody). The default pattern is Kody’s **hosted
 connector**, not custom generated UI.
 
+If the OAuth connection will power a downstream skill or app, load
+`kody_official_guide` with `guide: "integration_bootstrap"` before building that
+artifact. This guide covers the OAuth mechanics only.
+
 ## Default: `/connect/oauth`
 
 Send the signed-in user to **`/connect/oauth`** on your deployment host with
@@ -75,5 +79,8 @@ authenticating to Kody**. This guide is for **outbound** provider OAuth.
 3. Tell the user the exact **redirect URI** to register:
    \`{origin}/connect/oauth\`.
 4. Have the user open the connect URL while signed in; wait for success.
-5. Continue with capabilities that use \`{{secret:…}}\` or connector helpers;
+5. If the OAuth connection will back a saved skill or app, verify connector
+   state and run the authenticated smoke test described in
+   `guide: "integration_bootstrap"` before saving the downstream artifact.
+6. Continue with capabilities that use \`{{secret:…}}\` or connector helpers;
    host/capability approval may still be required after save.

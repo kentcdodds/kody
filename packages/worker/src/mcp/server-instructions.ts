@@ -45,7 +45,8 @@ search
 
 execute
 - Async arrow function; \`codemode\` + OAuth helpers \`refreshAccessToken\` / \`createAuthenticatedFetch\`. Prefer one \`execute\` when the plan is clear. Full rules for \`fetch\`, placeholders, \`secret_list\` / \`value_get\`, and \`x-kody-secret\`: see the \`execute\` tool description.
-- Official how-to guides from the Kody repo: \`kody_official_guide\` with \`guide\` \`oauth\` (standard OAuth, \`/connect/oauth\`) first; \`generated_ui_oauth\` for saved-app OAuth edge cases; \`connect_secret\` for API keys/PATs. If unsure, \`search\` for this capability and load the right guide before implementing.
+- Official how-to guides from the Kody repo: if a requested skill, app, or workflow depends on a third-party integration, secrets, or OAuth, call \`kody_official_guide\` with \`guide: "integration_bootstrap"\` before building or saving the downstream artifact. Then load the relevant setup guide: \`oauth\` for standard third-party OAuth (\`/connect/oauth\`), \`generated_ui_oauth\` only for deliberate saved-app OAuth, and \`connect_secret\` for API keys/PATs. If unsure, \`search\` for this capability and load the right guide before implementing.
+- Do not save or present an auth-dependent skill or app as complete until \`search\` shows the required connector or secret reference exists and a minimal authenticated \`execute\` smoke test succeeds.
 
 open_generated_ui
 - Exactly one of \`code\` or \`app_id\`. Sensitive input: use UI; import \`kodyWidget\` from \`@kody/ui-utils\`. Details: \`open_generated_ui\` tool description.

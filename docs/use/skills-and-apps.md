@@ -34,6 +34,8 @@ when the user must enter sensitive data instead of pasting into chat.
 params. Those values are injected as **`params`** inside the async function and
 override saved-app/session params for that execution only.
 
-For third-party OAuth, run **`kody_official_guide`** with **`guide`**
-**`oauth`** first (hosted **`/connect/oauth`**). Use **`guide`**
-**`generated_ui_oauth`** only for OAuth built inside a saved app.
+If a skill or saved app depends on a third-party integration, run
+**`kody_official_guide`** with **`guide`** **`integration_bootstrap`** first.
+For third-party OAuth, then run **`guide`** **`oauth`** (hosted
+**`/connect/oauth`**). Use **`guide`** **`generated_ui_oauth`** only for OAuth
+built inside a saved app.

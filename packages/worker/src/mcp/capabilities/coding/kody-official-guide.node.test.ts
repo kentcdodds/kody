@@ -14,18 +14,18 @@ const ctx = {
 
 test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	const originalFetch = globalThis.fetch
-	const url = buildKodyOfficialGuideUrlForTest('oauth')
-	expect(url).toMatch(/\/oauth\.md$/)
+	const url = buildKodyOfficialGuideUrlForTest('integration_bootstrap')
+	expect(url).toMatch(/\/integration-bootstrap\.md$/)
 	globalThis.fetch = (async (input) => {
 		expect(String(input)).toBe(url)
 		return new Response('# Hello\n\nbody', { status: 200 })
 	}) as typeof fetch
 	try {
 		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'oauth' },
+			{ guide: 'integration_bootstrap' },
 			ctx,
 		)
-		expect(result.title).toBe('OAuth guide (standard path)')
+		expect(result.title).toBe('Integration bootstrap guide')
 		expect(result.body).toBe('# Hello\n\nbody')
 	} finally {
 		globalThis.fetch = originalFetch

@@ -16,6 +16,12 @@ export const KODY_GUIDES_REPO = {
 export type KodyOfficialGuideId = keyof typeof kodyOfficialGuideCatalog
 
 export const kodyOfficialGuideCatalog = {
+	integration_bootstrap: {
+		file: 'integration-bootstrap.md',
+		title: 'Integration bootstrap guide',
+		summary:
+			'START HERE when a third-party integration must work before saving a dependent skill or app: inspect connector/secret state, stop for setup, then run an authenticated smoke test.',
+	},
 	oauth: {
 		file: 'oauth.md',
 		title: 'OAuth guide (standard path)',
@@ -37,6 +43,7 @@ export const kodyOfficialGuideCatalog = {
 } as const
 
 const guideIds = Object.keys(kodyOfficialGuideCatalog) as [
+	'integration_bootstrap',
 	'oauth',
 	'generated_ui_oauth',
 	'connect_secret',
@@ -89,9 +96,9 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For OAuth questions, use `guide: "oauth"` first** (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom saved-app OAuth. For API keys/PATs, use `connect_secret`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a skill, app, or workflow, use `guide: "integration_bootstrap"` first.** For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom saved-app OAuth. For API keys/PATs, use `connect_secret`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
-		'Available guides (order matters—start with `oauth` for OAuth):',
+		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
 		'',
 		'Requires network access to raw.githubusercontent.com; failures surface as errors (no offline copy).',
@@ -103,6 +110,7 @@ const guideFieldSchema = z
 	.describe(
 		[
 			'Which guide to load.',
+			'`integration_bootstrap`: required sequence before building skills/apps that depend on a third-party integration.',
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
 			'`generated_ui_oauth`: edge case—OAuth in a saved generated UI app.',
 			'`connect_secret`: /connect/secret for API keys and PATs.',
@@ -125,6 +133,12 @@ const outputSchema = z.object({
 const allKeywords = [
 	...new Set([
 		'oauth',
+		'integration bootstrap',
+		'bootstrap',
+		'third-party integration',
+		'connector_list',
+		'secret_list',
+		'smoke test',
 		'pkce',
 		'generated ui',
 		'hosted callback',

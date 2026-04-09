@@ -36,7 +36,9 @@ read \`kodyWidget.params\` after \`import { kodyWidget } from '@kody/ui-utils'\`
 
 Use for sensitive input (never ask the user to paste credentials in chat).
 Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
-OAuth: standard path is \`/connect/oauth\`—run \`kody_official_guide\` (\`guide: "oauth"\`) first; for OAuth inside a saved app only, use \`guide: "generated_ui_oauth"\`.
+If the app depends on a third-party integration, load \`kody_official_guide\` (\`guide: "integration_bootstrap"\`) before building or saving the downstream app.
+OAuth: standard path is \`/connect/oauth\`—then run \`kody_official_guide\` (\`guide: "oauth"\`); for OAuth inside a saved app only, use \`guide: "generated_ui_oauth"\`.
+Do not treat an auth-dependent app as complete until the required connector/secret exists and a minimal authenticated smoke test succeeds.
 
 Persist with \`ui_save_app\`; discover with \`search\` or \`ui_list_apps\`.
 
@@ -172,12 +174,12 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					conversationId,
 					appendToolContent(
 						[
-						{
-							type: 'text',
-							text: appId
-								? `## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
-								: '## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will render the provided inline source inside the widget runtime.',
-						},
+							{
+								type: 'text',
+								text: appId
+									? `## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
+									: '## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will render the provided inline source inside the widget runtime.',
+							},
 						],
 						formatSurfacedMemoriesMarkdown(memoryResult),
 					),

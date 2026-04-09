@@ -1,7 +1,9 @@
 # Generated UI OAuth guide
 
-**This is the edge-case guide.** For normal third-party OAuth, load the standard
-guide first: \`kody_official_guide\` with \`guide: "oauth"\`, or read
+**This is the edge-case guide.** If the integration will power a downstream
+skill or app, load `kody_official_guide` with `guide: "integration_bootstrap"`
+first. For normal third-party OAuth, then load the standard guide:
+\`kody_official_guide\` with \`guide: "oauth"\`, or read
 [OAuth guide](./oauth.md) (hosted **`/connect/oauth`**—no generated UI
 required).
 

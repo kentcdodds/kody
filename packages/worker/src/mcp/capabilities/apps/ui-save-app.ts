@@ -73,7 +73,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 	{
 		name: 'ui_save_app',
 		description:
-			'Create or replace a saved UI artifact for the signed-in user so it can be reopened later by app_id without sending the source back through the model context.',
+			'Create or replace a saved UI artifact for the signed-in user so it can be reopened later by app_id without sending the source back through the model context. If the saved app depends on a third-party integration, load `kody_official_guide` with `guide: "integration_bootstrap"` first and verify the required connector/secret plus a minimal authenticated smoke test before treating the downstream app as complete.',
 		keywords: ['ui', 'app', 'artifact', 'save', 'persist', 'update', 'mcp app'],
 		readOnly: false,
 		idempotent: false,

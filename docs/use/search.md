@@ -34,6 +34,8 @@ Examples:
 - `user:preferred_org:value`
 - `github:connector`
 - `my-skill-name:skill`
+- `spotify:connector`
+- `spotify-access-token:secret`
 
 There is **no separate `detail` flag** on search. Deeper inspection of one
 entity uses **`entity`**, not a different mode of the same ranked query.
@@ -45,3 +47,16 @@ If ranked search misses what you need, **rephrase the query** or use
 dynamic entries such as home connector tools). **`entity`** does not help when a
 **`query`** returned no matches — **`entity`** looks up a known id, not a fix
 for an empty ranked list.
+
+## Authentication
+
+Saved **skills** and **apps** require a signed-in MCP user. Capabilities and
+builtin behavior still work without user-scoped data.
+
+Long-term memory retrieval also requires a signed-in MCP user.
+
+Use **search** as the default way to discover whether a connector or secret
+already exists before switching to **execute**. Runtime helpers such as
+**`codemode.secret_list(...)`** are still useful when code running inside
+**execute** needs current secret metadata, but they are no longer the primary
+discovery path.
