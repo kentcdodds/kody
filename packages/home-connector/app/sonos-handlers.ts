@@ -5,6 +5,7 @@ import {
 	type SonosDiscoveryDiagnostics,
 	type SonosGroup,
 } from '../src/adapters/sonos/types.ts'
+import { captureHomeConnectorException } from '../src/sentry.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 import { render } from './render.ts'
 import { RootLayout } from './root.ts'
@@ -275,13 +276,28 @@ export function createSonosStatusHandler(
 						scanMessage: `Scan complete. Discovered ${players.length} Sonos player(s).`,
 					})
 				} catch (error) {
-					const [status, groups] = await Promise.all([
-						sonos.getStatus(),
+					const status = sonos.getStatus()
+					captureHomeConnectorException(error, {
+						tags: {
+							route: '/sonos/status',
+							action: 'scan',
+						},
+						contexts: {
+							sonos: {
+								discoveryUrl:
+									state.sonosDiscoveryDiagnostics?.discoveryUrl ?? 'unknown',
+								connectorId: state.connection.connectorId,
+								knownPlayers: status.allPlayers.length,
+							},
+						},
+					})
+					const [statusResult, groups] = await Promise.all([
+						Promise.resolve(status),
 						sonos.listGroups().catch(() => []),
 					])
 					return renderSonosStatusPage({
 						state,
-						status,
+						status: statusResult,
 						groups,
 						scanError:
 							error instanceof Error

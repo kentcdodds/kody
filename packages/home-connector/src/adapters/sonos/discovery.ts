@@ -24,6 +24,8 @@ type SonosDescriptionLookup = {
 	diagnostic: SonosDescriptionLookupDiagnostic
 }
 
+const sonosFetchTimeoutMs = 10_000
+
 function normalizeBaseUrl(url: string) {
 	return url.endsWith('/') ? url.slice(0, -1) : url
 }
@@ -60,6 +62,13 @@ function createSsdpSearchMessage(input: SonosSsdpDiscoveryConfig) {
 		'',
 		'',
 	].join('\r\n')
+}
+
+function isTimeoutError(error: unknown) {
+	return (
+		error instanceof Error &&
+		(error.name === 'TimeoutError' || error.name === 'AbortError')
+	)
 }
 
 function parseHttpLikeHeaders(message: string) {
@@ -136,7 +145,19 @@ function parseDescriptionXml(input: {
 }
 
 async function fetchText(url: string) {
-	const response = await fetch(url)
+	let response: Response
+	try {
+		response = await fetch(url, {
+			signal: AbortSignal.timeout(sonosFetchTimeoutMs),
+		})
+	} catch (error) {
+		if (isTimeoutError(error)) {
+			throw new Error(
+				`Request timed out after ${sonosFetchTimeoutMs}ms for ${url}`,
+			)
+		}
+		throw error
+	}
 	if (!response.ok) {
 		throw new Error(`Request failed (${response.status}) for ${url}`)
 	}
@@ -144,7 +165,19 @@ async function fetchText(url: string) {
 }
 
 async function fetchJson<T>(url: string) {
-	const response = await fetch(url)
+	let response: Response
+	try {
+		response = await fetch(url, {
+			signal: AbortSignal.timeout(sonosFetchTimeoutMs),
+		})
+	} catch (error) {
+		if (isTimeoutError(error)) {
+			throw new Error(
+				`Request timed out after ${sonosFetchTimeoutMs}ms for ${url}`,
+			)
+		}
+		throw error
+	}
 	if (!response.ok) {
 		throw new Error(`Request failed (${response.status}) for ${url}`)
 	}

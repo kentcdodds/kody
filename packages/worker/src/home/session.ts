@@ -98,8 +98,28 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		void this.handleWebSocketMessage(ws, message)
 	}
 
-	webSocketClose(_ws: WebSocket): void {
+	webSocketClose(
+		_ws: WebSocket,
+		code: number,
+		reason: string,
+		wasClean: boolean,
+	): void {
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
+		const closeMessage = `Home connector session websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''}`
+		console.warn(closeMessage)
+		Sentry.captureMessage(closeMessage, {
+			level: 'warning',
+			tags: {
+				service: 'worker',
+				worker_component: 'home-connector-session',
+			},
+			extra: {
+				code,
+				reason,
+				wasClean,
+				connectorId: this.stateSnapshot.persisted.connectorId,
+			},
+		})
 		void this.persistState()
 	}
 
@@ -193,6 +213,20 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	private async handleHello(ws: WebSocket, message: HomeConnectorHelloMessage) {
 		const expectedSecret = this.env.HOME_CONNECTOR_SHARED_SECRET?.trim()
 		if (!expectedSecret || message.sharedSecret !== expectedSecret) {
+			Sentry.captureMessage(
+				'Home connector session rejected websocket hello.',
+				{
+					level: 'error',
+					tags: {
+						service: 'worker',
+						worker_component: 'home-connector-session',
+					},
+					extra: {
+						connectorId: message.connectorId,
+						hasExpectedSecret: Boolean(expectedSecret),
+					},
+				},
+			)
 			ws.send(
 				stringifyHomeConnectorMessage({
 					type: 'server.error',

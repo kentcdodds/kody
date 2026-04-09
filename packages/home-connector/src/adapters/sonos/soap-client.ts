@@ -8,11 +8,20 @@ import {
 	type SonosQueueTrack,
 } from './types.ts'
 
+const sonosSoapTimeoutMs = 10_000
+
 function buildSoapEnvelope(body: string) {
 	return `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 	<s:Body>${body}</s:Body>
 </s:Envelope>`
+}
+
+function isTimeoutError(error: unknown) {
+	return (
+		error instanceof Error &&
+		(error.name === 'TimeoutError' || error.name === 'AbortError')
+	)
 }
 
 export function stripSonosUuidPrefix(udn: string) {
@@ -78,18 +87,30 @@ async function soapRequest(input: {
 	action: string
 	body: string
 }) {
-	const response = await fetch(`http://${input.host}:1400${input.path}`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'text/xml; charset="utf-8"',
-			SOAPAction: `${input.serviceType}#${input.action}`,
-		},
-		body: buildSoapEnvelope(input.body),
-	})
+	const url = `http://${input.host}:1400${input.path}`
+	let response: Response
+	try {
+		response = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'text/xml; charset="utf-8"',
+				SOAPAction: `${input.serviceType}#${input.action}`,
+			},
+			body: buildSoapEnvelope(input.body),
+			signal: AbortSignal.timeout(sonosSoapTimeoutMs),
+		})
+	} catch (error) {
+		if (isTimeoutError(error)) {
+			throw new Error(
+				`Sonos ${input.action} timed out after ${sonosSoapTimeoutMs}ms for ${url}`,
+			)
+		}
+		throw error
+	}
 	const text = await response.text()
 	if (!response.ok) {
 		throw new Error(
-			`Sonos ${input.action} failed (${response.status}): ${text}`,
+			`Sonos ${input.action} failed (${response.status}) for ${url}: ${text}`,
 		)
 	}
 	return text

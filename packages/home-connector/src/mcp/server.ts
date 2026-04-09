@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
@@ -20,11 +21,23 @@ export type HomeConnectorToolDescriptor = {
 
 type HomeConnectorToolHandler = (
 	args: Record<string, unknown>,
+	context?: HomeConnectorToolCallContext,
 ) => Promise<CallToolResult>
+
+type HomeConnectorToolCallContext = {
+	requestId?: string
+	sessionId?: string
+	transport?: string
+	source?: string
+}
 
 export type HomeConnectorToolRegistry = {
 	list(): Array<HomeConnectorToolDescriptor>
-	call(name: string, args?: Record<string, unknown>): Promise<CallToolResult>
+	call(
+		name: string,
+		args?: Record<string, unknown>,
+		context?: HomeConnectorToolCallContext,
+	): Promise<CallToolResult>
 }
 
 export type HomeConnectorMcpServer = {
@@ -71,11 +84,88 @@ export function createHomeConnectorMcpServer(input: {
 		}
 	>()
 
+	function getToolResultCount(result: CallToolResult) {
+		if (Array.isArray(result.content)) return result.content.length
+		if (
+			result.structuredContent &&
+			typeof result.structuredContent === 'object' &&
+			!Array.isArray(result.structuredContent)
+		) {
+			return Object.keys(result.structuredContent).length
+		}
+		return 0
+	}
+
+	function getSdkToolCallContext(
+		context: unknown,
+	): HomeConnectorToolCallContext {
+		const raw = context as
+			| {
+					mcpReq?: { id?: string | number }
+					sessionId?: string
+					http?: { req?: unknown }
+			  }
+			| undefined
+		return {
+			requestId:
+				typeof raw?.mcpReq?.id === 'string' ||
+				typeof raw?.mcpReq?.id === 'number'
+					? String(raw.mcpReq.id)
+					: undefined,
+			sessionId: typeof raw?.sessionId === 'string' ? raw.sessionId : undefined,
+			transport: raw?.http?.req ? 'http' : 'stdio',
+			source: 'mcp-sdk',
+		}
+	}
+
 	function registerTool(
 		descriptor: HomeConnectorToolDescriptor,
 		handler: HomeConnectorToolHandler,
 	) {
-		tools.set(descriptor.name, { descriptor, handler })
+		const instrumentedHandler: HomeConnectorToolHandler = async (
+			args,
+			context,
+		) => {
+			return await Sentry.startSpan(
+				{
+					op: 'mcp.server',
+					name: `tools/call ${descriptor.name}`,
+					forceTransaction: true,
+					attributes: {
+						'mcp.tool.name': descriptor.name,
+						'mcp.method.name': 'tools/call',
+						...(context?.requestId
+							? { 'mcp.request.id': context.requestId }
+							: {}),
+						...(context?.sessionId
+							? { 'mcp.session.id': context.sessionId }
+							: {}),
+						...(context?.transport
+							? { 'mcp.transport': context.transport }
+							: {}),
+						...(context?.source
+							? { 'home_connector.tool.source': context.source }
+							: {}),
+						'home_connector.tool.argument_count': Object.keys(args).length,
+					},
+				},
+				async (span) => {
+					try {
+						const result = await handler(args, context)
+						span.setAttribute('mcp.tool.result.is_error', false)
+						span.setAttribute(
+							'mcp.tool.result.content_count',
+							getToolResultCount(result),
+						)
+						return result
+					} catch (error) {
+						span.setAttribute('mcp.tool.result.is_error', true)
+						throw error
+					}
+				},
+			)
+		}
+		tools.set(descriptor.name, { descriptor, handler: instrumentedHandler })
 		server.registerTool(
 			descriptor.name,
 			{
@@ -89,7 +179,8 @@ export function createHomeConnectorMcpServer(input: {
 					? { annotations: descriptor.annotations }
 					: {}),
 			},
-			handler,
+			async (args, context) =>
+				await instrumentedHandler(args, getSdkToolCallContext(context)),
 		)
 	}
 
@@ -2136,12 +2227,12 @@ export function createHomeConnectorMcpServer(input: {
 				list() {
 					return [...tools.values()].map((entry) => entry.descriptor)
 				},
-				call(name, args = {}) {
+				call(name, args = {}, context) {
 					const tool = tools.get(name)
 					if (!tool) {
 						throw new Error(`Unknown connector tool "${name}".`)
 					}
-					return tool.handler(args)
+					return tool.handler(args, context)
 				},
 			}
 		},
