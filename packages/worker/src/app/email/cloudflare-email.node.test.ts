@@ -120,7 +120,52 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 	})
 })
 
-test('sendCloudflareEmail returns skipped when API config is missing', async () => {
+test('sendCloudflareEmail defaults the API base URL when it is unset', async () => {
+	const originalFetch = globalThis.fetch
+	const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+		return new Response(
+			JSON.stringify({
+				success: true,
+				result: { messageId: 'email_default_base_url' },
+			}),
+			{
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			},
+		)
+	})
+	globalThis.fetch = fetchSpy as typeof fetch
+
+	try {
+		const result = await sendCloudflareEmail(
+			{
+				accountId: mockAccountId,
+				apiToken: 'test-token',
+			},
+			{
+				to: 'recipient@example.com',
+				from: 'reset@kody.dev',
+				subject: 'Default base URL',
+				html: '<p>body</p>',
+				text: 'body',
+			},
+		)
+
+		expect(result).toEqual({
+			ok: true,
+			id: 'email_default_base_url',
+		})
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+		const [input] = fetchSpy.mock.calls[0]!
+		expect(String(input)).toBe(
+			`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email-service/send`,
+		)
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
+test('sendCloudflareEmail returns skipped when account or token is missing', async () => {
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
 	try {

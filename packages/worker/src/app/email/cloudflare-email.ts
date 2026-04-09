@@ -10,6 +10,8 @@ type CloudflareEmailClientConfig = {
 	apiToken?: string
 }
 
+const defaultCloudflareApiBaseUrl = 'https://api.cloudflare.com'
+
 type CloudflareApiEnvelope = {
 	success: boolean
 	errors?: Array<{
@@ -129,9 +131,11 @@ export async function sendCloudflareEmail(
 	message: OutboundEmail,
 ): Promise<CloudflareSendResult> {
 	const normalized = normalizeEmailPayload(message)
+	const apiBaseUrl =
+		typeof config.apiBaseUrl === 'string' && config.apiBaseUrl.trim().length > 0
+			? config.apiBaseUrl.trim()
+			: defaultCloudflareApiBaseUrl
 	const hasApiConfig =
-		typeof config.apiBaseUrl === 'string' &&
-		config.apiBaseUrl.trim().length > 0 &&
 		typeof config.apiToken === 'string' &&
 		config.apiToken.trim().length > 0 &&
 		typeof config.accountId === 'string' &&
@@ -141,7 +145,7 @@ export async function sendCloudflareEmail(
 		return sendViaCloudflareApi(
 			{
 				accountId: config.accountId!.trim(),
-				apiBaseUrl: config.apiBaseUrl!.trim(),
+				apiBaseUrl,
 				apiToken: config.apiToken!.trim(),
 			},
 			normalized,
