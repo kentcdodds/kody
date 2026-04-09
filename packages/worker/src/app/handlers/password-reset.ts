@@ -149,9 +149,7 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 						await sendCloudflareEmail(
 							{
 								accountId: appEnv.CLOUDFLARE_ACCOUNT_ID,
-								apiBaseUrl:
-									appEnv.CLOUDFLARE_API_BASE_URL ??
-									'https://api.cloudflare.com',
+								apiBaseUrl: appEnv.CLOUDFLARE_API_BASE_URL,
 								apiToken: appEnv.CLOUDFLARE_API_TOKEN,
 							},
 							{

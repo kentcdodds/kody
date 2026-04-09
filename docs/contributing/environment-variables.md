@@ -91,17 +91,18 @@ Optional Worker secret:
   dev uses offline search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is
   missing.
 
-## Cloudflare API (Worker + Browser Rendering)
+## Cloudflare API (Worker + Browser Rendering + Email)
 
 Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/mcp/cloudflare/cloudflare-rest-client.ts`):
 
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the internal API client
-  (`Authorization: Bearer ...`) for `page_to_markdown` Browser Rendering. User
-  Cloudflare API calls from codemode use saved secrets and secret-aware `fetch`
-  (see `docs/contributing/skill-patterns/cloudflare-api-v4.md`). Local
-  `npm run dev` sets this to the Cloudflare mock token unless `AI_MODE=remote`
-  or `SKIP_CLOUDFLARE_MOCK=1`; when unset and no mock is attached, the billed
+  (`Authorization: Bearer ...`) for `page_to_markdown` Browser Rendering and
+  the Cloudflare Email sender. User Cloudflare API calls from codemode use
+  saved secrets and secret-aware `fetch` (see
+  `docs/contributing/skill-patterns/cloudflare-api-v4.md`). Local `npm run dev`
+  sets this to the Cloudflare mock token unless `AI_MODE=remote` or
+  `SKIP_CLOUDFLARE_MOCK=1`; when unset and no mock is attached, the billed
   `page_to_markdown` Browser Rendering fallback fails fast with a setup hint.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the
   `page_to_markdown` capability when it falls back to Browser Rendering
@@ -109,8 +110,9 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   Worker var (not a secret) and should match the account behind
   `CLOUDFLARE_API_TOKEN`.
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
-  `https://api.cloudflare.com` when unset. Local `npm run dev` sets this to the
-  Cloudflare mock Worker unless `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.
+  `https://api.cloudflare.com` when unset, including for outbound email sending.
+  Local `npm run dev` sets this to the Cloudflare mock Worker unless
+  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.
 
 ## Home connector bridge
 
