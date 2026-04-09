@@ -267,6 +267,62 @@ test('tool-result notification updates render data with structured content', asy
 	})
 })
 
+test('render-data snapshots unwrap tool output structured content', async () => {
+	const renderDataEvents: Array<Record<string, unknown> | undefined> = []
+
+	globalThis.window = {
+		parent: {
+			postMessage() {
+				// No-op for this notification-driven test.
+			},
+		},
+	} as unknown as Window & typeof globalThis
+
+	const bridge = createWidgetHostBridge({
+		appInfo: {
+			name: 'kody-ui-utils',
+			version: '1.0.0',
+		},
+		onRenderData(renderData) {
+			renderDataEvents.push(renderData)
+		},
+	})
+
+	bridge.handleHostMessage({
+		type: 'ui-lifecycle-iframe-render-data',
+		payload: {
+			renderData: {
+				theme: 'light',
+				displayMode: 'inline',
+				toolOutput: {
+					content: [
+						{
+							type: 'text',
+							text: 'Generated UI ready',
+						},
+					],
+					isError: false,
+					structuredContent: {
+						renderSource: 'inline_code',
+						runtime: 'html',
+						sourceCode: '<main>Hello</main>',
+					},
+				},
+			},
+		},
+	})
+
+	expect(renderDataEvents.at(-1)).toEqual({
+		theme: 'light',
+		displayMode: 'inline',
+		toolOutput: {
+			renderSource: 'inline_code',
+			runtime: 'html',
+			sourceCode: '<main>Hello</main>',
+		},
+	})
+})
+
 test('sendSizeChanged posts the standard MCP Apps notification', async () => {
 	const hostPostedMessages: Array<HostRequestMessage> = []
 	let bridge: ReturnType<typeof createWidgetHostBridge>

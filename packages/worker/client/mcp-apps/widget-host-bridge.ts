@@ -123,11 +123,32 @@ export function createWidgetHostBridge(
 	}
 
 	function updateRenderData(patch: Record<string, unknown>) {
-		const nextRenderData = {
+		const nextRenderData = normalizeRenderData({
 			...(latestRenderData ?? {}),
 			...patch,
-		}
+		})
 		dispatchRenderData(nextRenderData)
+	}
+
+	function normalizeToolOutput(value: unknown) {
+		if (!isRecord(value)) return undefined
+		if (isRecord(value.structuredContent)) {
+			return value.structuredContent
+		}
+		if (isRecord(value.result)) {
+			return value.result
+		}
+		return value
+	}
+
+	function normalizeRenderData(renderData: Record<string, unknown>) {
+		const normalizedToolOutput = normalizeToolOutput(renderData.toolOutput)
+		return normalizedToolOutput
+			? {
+					...renderData,
+					toolOutput: normalizedToolOutput,
+				}
+			: renderData
 	}
 
 	function normalizeToolNotificationPayload(
@@ -136,9 +157,9 @@ export function createWidgetHostBridge(
 	) {
 		if (!isRecord(params)) return
 		if (key === 'toolOutput') {
-			const structuredContent = params.structuredContent
-			if (isRecord(structuredContent)) {
-				updateRenderData({ toolOutput: structuredContent })
+			const normalizedToolOutput = normalizeToolOutput(params)
+			if (normalizedToolOutput) {
+				updateRenderData({ toolOutput: normalizedToolOutput })
 				return
 			}
 		}
@@ -183,13 +204,11 @@ export function createWidgetHostBridge(
 
 		if (message.type === renderDataMessageType) {
 			const payload = isRecord(message.payload) ? message.payload : undefined
-			const renderData = isRecord(payload?.renderData)
-				? {
-						...(latestRenderData ?? {}),
-						...payload.renderData,
-					}
-				: payload?.renderData
-			dispatchRenderData(renderData)
+			if (isRecord(payload?.renderData)) {
+				updateRenderData(payload.renderData)
+				return
+			}
+			dispatchRenderData(payload?.renderData)
 			return
 		}
 
