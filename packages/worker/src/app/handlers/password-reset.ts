@@ -151,8 +151,6 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 								accountId: appEnv.CLOUDFLARE_ACCOUNT_ID,
 								apiBaseUrl: appEnv.CLOUDFLARE_API_BASE_URL,
 								apiToken: appEnv.CLOUDFLARE_API_TOKEN,
-								binding: appEnv.EMAIL,
-								isLocalDev: appEnv.WRANGLER_IS_LOCAL_DEV === 'true',
 							},
 							{
 								to: normalizedEmail,

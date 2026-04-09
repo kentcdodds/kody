@@ -4,23 +4,10 @@ import {
 	type OutboundEmail,
 } from '@kody-internal/shared/outbound-email.ts'
 
-type CloudflareEmailBindingResponse = {
-	messageId: string
-	success: boolean
-}
-
-export type CloudflareEmailBinding = {
-	send(
-		message: OutboundEmail,
-	): Promise<CloudflareEmailBindingResponse | void>
-}
-
 type CloudflareEmailClientConfig = {
 	accountId?: string
 	apiBaseUrl?: string
 	apiToken?: string
-	binding?: CloudflareEmailBinding
-	isLocalDev?: boolean
 }
 
 type CloudflareApiEnvelope = {
@@ -65,6 +52,8 @@ function logSkippedEmail(reason: string, message: OutboundEmail) {
 			to: message.to,
 			from: message.from,
 			subject: message.subject,
+			html: message.html,
+			text: message.text,
 		}),
 	)
 }
@@ -135,48 +124,11 @@ async function sendViaCloudflareApi(
 	}
 }
 
-async function sendViaBinding(
-	binding: CloudflareEmailBinding,
-	message: OutboundEmail,
-): Promise<CloudflareSendResult> {
-	try {
-		const response = await binding.send(message)
-		const hasResponse =
-			typeof response === 'object' &&
-			response !== null &&
-			'success' in response
-		const success = hasResponse
-			? (response as CloudflareEmailBindingResponse).success !== false
-			: true
-		const messageId = hasResponse
-			? (response as CloudflareEmailBindingResponse).messageId
-			: undefined
-		return {
-			ok: success,
-			id: messageId,
-			error: success ? undefined : 'Cloudflare Email binding failed.',
-		}
-	} catch (error) {
-		console.warn('cloudflare-email-binding-failed', error)
-		return {
-			ok: false,
-			error:
-				error instanceof Error
-					? error.message
-					: 'Cloudflare Email binding failed.',
-		}
-	}
-}
-
 export async function sendCloudflareEmail(
 	config: CloudflareEmailClientConfig,
 	message: OutboundEmail,
 ): Promise<CloudflareSendResult> {
 	const normalized = normalizeEmailPayload(message)
-	if (config.binding && !config.isLocalDev) {
-		return sendViaBinding(config.binding, normalized)
-	}
-
 	const hasApiConfig =
 		typeof config.apiBaseUrl === 'string' &&
 		config.apiBaseUrl.trim().length > 0 &&

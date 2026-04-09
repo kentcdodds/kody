@@ -29,11 +29,6 @@
 				"binding": "AI",
 				"remote": true,
 			},
-			"send_email": [
-				{
-					"name": "EMAIL",
-				},
-			],
 			"worker_loaders": [
 				{
 					"binding": "LOADER",

@@ -6,7 +6,6 @@ import {
 	string,
 	type InferOutput,
 } from 'remix/data-schema'
-import { type CloudflareEmailBinding } from '#app/email/cloudflare-email.ts'
 
 const d1DatabaseSchema = createSchema<unknown, D1Database>((value, context) => {
 	if (value) {
@@ -41,21 +40,6 @@ const optionalUrlStringSchema = createSchema<unknown, string | undefined>(
 		}
 	},
 )
-
-const optionalEmailBindingSchema = createSchema<
-	unknown,
-	CloudflareEmailBinding | undefined
->((value, context) => {
-	if (value === undefined) return { value: undefined }
-	if (
-		value &&
-		typeof value === 'object' &&
-		typeof (value as { send?: unknown }).send === 'function'
-	) {
-		return { value: value as CloudflareEmailBinding }
-	}
-	return fail('Expected Email binding', context.path)
-})
 
 const optionalCommitShaSchema = createSchema<unknown, string | undefined>(
 	(value, context) => {
@@ -125,8 +109,6 @@ export const EnvSchema = object({
 		'COOKIE_SECRET must be at least 32 characters for session signing.',
 	),
 	APP_DB: d1DatabaseSchema,
-	EMAIL: optionalEmailBindingSchema,
-	WRANGLER_IS_LOCAL_DEV: optionalNonEmptyStringSchema,
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	CLOUDFLARE_EMAIL_FROM: optionalNonEmptyStringSchema,

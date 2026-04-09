@@ -114,37 +114,35 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 	})
 })
 
-test('sendCloudflareEmail prefers the binding when available', async () => {
-	const calls: Array<unknown> = []
-	const result = await sendCloudflareEmail(
-		{
-			accountId: mockAccountId,
-			apiBaseUrl: 'http://127.0.0.1:9',
-			apiToken: 'unused',
-			binding: {
-				async send(message) {
-					calls.push(message)
-					return {
-						success: true,
-						messageId: 'binding-message-id',
-					}
-				},
-			},
-		},
-		{
-			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
-			subject: 'Binding first',
-			html: '<p>binding</p>',
-		},
-	)
+test('sendCloudflareEmail returns skipped when API config is missing', async () => {
+	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-	expect(result).toEqual({
-		ok: true,
-		id: 'binding-message-id',
-		error: undefined,
-	})
-	expect(calls).toHaveLength(1)
+	try {
+		const result = await sendCloudflareEmail(
+			{},
+			{
+				to: 'recipient@example.com',
+				from: 'reset@kody.dev',
+				subject: 'Skipped email',
+				html: '<p>secret body</p>',
+				text: 'secret text',
+			},
+		)
+
+		expect(result).toEqual({
+			ok: false,
+			skipped: true,
+		})
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+		const [reason, payload] = warnSpy.mock.calls[0]!
+		expect(reason).toBe('cloudflare-email-unconfigured')
+		expect(String(payload)).toContain('secret body')
+		expect(String(payload)).toContain('secret text')
+		expect(String(payload)).toContain('recipient@example.com')
+		expect(String(payload)).toContain('Skipped email')
+	} finally {
+		warnSpy.mockRestore()
+	}
 })
 
 test('sendCloudflareEmail returns ok false when the Cloudflare API request throws', async () => {
@@ -207,35 +205,5 @@ test('sendCloudflareEmail returns ok false when the Cloudflare API returns inval
 		})
 	} finally {
 		globalThis.fetch = originalFetch
-	}
-})
-
-test('sendCloudflareEmail redacts skipped email body content from logs', async () => {
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-	try {
-		const result = await sendCloudflareEmail(
-			{},
-			{
-				to: 'recipient@example.com',
-				from: 'reset@kody.dev',
-				subject: 'Skipped email',
-				html: '<p>secret body</p>',
-				text: 'secret text',
-			},
-		)
-
-		expect(result).toEqual({
-			ok: false,
-			skipped: true,
-		})
-		expect(warnSpy).toHaveBeenCalledTimes(1)
-		const [, payload] = warnSpy.mock.calls[0]!
-		expect(String(payload)).not.toContain('secret body')
-		expect(String(payload)).not.toContain('secret text')
-		expect(String(payload)).toContain('recipient@example.com')
-		expect(String(payload)).toContain('Skipped email')
-	} finally {
-		warnSpy.mockRestore()
 	}
 })
