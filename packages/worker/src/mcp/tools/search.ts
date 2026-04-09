@@ -1,6 +1,11 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+import {
+	parseConnectorConfig,
+	parseConnectorJson,
+	parseConnectorValueName,
+} from '#mcp/capabilities/values/connector-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { searchUnified } from '#mcp/capabilities/unified-search.ts'
 import {
@@ -21,6 +26,13 @@ import {
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
+import {
+	buildValueEntityId,
+	describeValue,
+	parseValueEntityId,
+} from '#mcp/tools/search-entities.ts'
+import { listValues } from '#mcp/values/service.ts'
+import { type ValueMetadata } from '#mcp/values/types.ts'
 import {
 	getHomeConnectorStatus,
 	type HomeConnectorStatus,
@@ -95,21 +107,25 @@ function applyMaxResponseSize<TPayload>(
 
 const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities, Skills, Apps, and Secrets',
+	title: 'Search Capabilities, Values, Connectors, Skills, Apps, and Secrets',
 	description: `
-Find **builtin capabilities**, **saved skills**, **saved apps**, and **user secret
-references** (metadata only) before \`execute\` or \`open_generated_ui\`.
+Find **built-in capabilities**, **persisted values**, **saved connectors**,
+**saved skills**, **saved apps**, and **user secret references** (metadata only)
+before \`execute\` or \`open_generated_ui\`.
 
 **query** — ranked markdown + structured matches (order matters). If nothing useful
 returns, rephrase or call \`meta_list_capabilities\`; \`entity\` does not fix an
 empty ranked list.
 
-**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`skill\` | \`app\`
-| \`secret\`), including schemas for capabilities. Types and fields: see response.
+**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
+| \`connector\` | \`skill\` | \`app\` | \`secret\`), including schemas for
+capabilities. Types and fields: see response.
 
-Skills need a signed-in user. Run a skill: \`meta_run_skill({ name, params })\`;
-source: \`meta_get_skill\`. Apps: \`open_generated_ui({ app_id })\`. Secrets: never
-raw in results; use \`codemode.secret_list\` during execute and UI for missing values.
+Run a skill: \`meta_run_skill({ name, params })\`; source: \`meta_get_skill\`.
+Apps: \`open_generated_ui({ app_id })\`. Secrets: never raw in results; use
+\`codemode.secret_list\` during execute and UI for missing values.
+Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
+use \`codemode.connector_get\` / \`codemode.connector_list\`.
 
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
 \`meta_get_home_connector_status\` (home connector).
@@ -122,8 +138,11 @@ skills only).
 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
+- \`{ "query": "preferred org value or saved connector", "limit": 10 }\`
 - \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
 - \`{ "entity": "page_to_markdown:capability" }\`
+- \`{ "entity": "user:preferred_org:value" }\`
+- \`{ "entity": "github:connector" }\`
 - To run a skill: \`meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })\`
 - To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
 
@@ -141,6 +160,7 @@ type OptionalSearchRowsResult = {
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
 	userSecretRows: Array<SecretSearchRow>
+	userValueRows: Array<ValueMetadata>
 	warnings: Array<string>
 }
 
@@ -186,46 +206,80 @@ export async function loadOptionalSearchRows(input: {
 	loadSkills: () => Promise<Array<McpSkillRow>>
 	loadUiArtifacts: () => Promise<Array<UiArtifactRow>>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
+	loadUserValues: () => Promise<Array<ValueMetadata>>
 }): Promise<OptionalSearchRowsResult> {
 	if (!input.userId) {
 		return {
 			skillRows: [],
 			uiArtifactRows: [],
 			userSecretRows: [],
+			userValueRows: [],
 			warnings: [],
 		}
 	}
 
 	const warnings: Array<string> = []
-	let skillRows: Array<McpSkillRow> = []
-	let uiArtifactRows: Array<UiArtifactRow> = []
-	let userSecretRows: Array<SecretSearchRow> = []
+	const [
+		skillRowsResult,
+		uiArtifactRowsResult,
+		userSecretRowsResult,
+		userValueRowsResult,
+	] = await Promise.allSettled([
+		input.loadSkills(),
+		input.loadUiArtifacts(),
+		input.loadUserSecrets(),
+		input.loadUserValues(),
+	])
 
-	try {
-		skillRows = await input.loadSkills()
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const skillRows =
+		skillRowsResult.status === 'fulfilled' ? skillRowsResult.value : []
+	if (skillRowsResult.status === 'rejected') {
+		const message =
+			skillRowsResult.reason instanceof Error
+				? skillRowsResult.reason.message
+				: String(skillRowsResult.reason)
 		warnings.push(`Saved skills are temporarily unavailable: ${message}`)
 	}
 
-	try {
-		uiArtifactRows = await input.loadUiArtifacts()
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const uiArtifactRows =
+		uiArtifactRowsResult.status === 'fulfilled'
+			? uiArtifactRowsResult.value
+			: []
+	if (uiArtifactRowsResult.status === 'rejected') {
+		const message =
+			uiArtifactRowsResult.reason instanceof Error
+				? uiArtifactRowsResult.reason.message
+				: String(uiArtifactRowsResult.reason)
 		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
 	}
 
-	try {
-		userSecretRows = await input.loadUserSecrets()
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const userSecretRows =
+		userSecretRowsResult.status === 'fulfilled'
+			? userSecretRowsResult.value
+			: []
+	if (userSecretRowsResult.status === 'rejected') {
+		const message =
+			userSecretRowsResult.reason instanceof Error
+				? userSecretRowsResult.reason.message
+				: String(userSecretRowsResult.reason)
 		warnings.push(`User secrets are temporarily unavailable: ${message}`)
+	}
+
+	const userValueRows =
+		userValueRowsResult.status === 'fulfilled' ? userValueRowsResult.value : []
+	if (userValueRowsResult.status === 'rejected') {
+		const message =
+			userValueRowsResult.reason instanceof Error
+				? userValueRowsResult.reason.message
+				: String(userValueRowsResult.reason)
+		warnings.push(`Persisted values are temporarily unavailable: ${message}`)
 	}
 
 	return {
 		skillRows,
 		uiArtifactRows,
 		userSecretRows,
+		userValueRows,
 		warnings,
 	}
 }
@@ -236,24 +290,35 @@ async function loadSearchRowsAndRegistry(input: {
 	userId: string | null
 	skillCollection?: string
 }) {
-	const registry = await getCapabilityRegistryForContext({
-		env: input.agent.getEnv(),
-		callerContext: input.callerContext,
-	})
-	const optionalRows = await loadOptionalSearchRows({
-		userId: input.userId,
-		loadSkills: () =>
-			listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
-		loadUiArtifacts: () =>
-			listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
-				hidden: false,
-			}),
-		loadUserSecrets: () =>
-			listUserSecretsForSearch({
-				env: input.agent.getEnv(),
-				userId: input.userId!,
-			}),
-	})
+	const [registry, optionalRows] = await Promise.all([
+		getCapabilityRegistryForContext({
+			env: input.agent.getEnv(),
+			callerContext: input.callerContext,
+		}),
+		loadOptionalSearchRows({
+			userId: input.userId,
+			loadSkills: () =>
+				listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
+			loadUiArtifacts: () =>
+				listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
+					hidden: false,
+				}),
+			loadUserSecrets: () =>
+				listUserSecretsForSearch({
+					env: input.agent.getEnv(),
+					userId: input.userId!,
+				}),
+			loadUserValues: () =>
+				listValues({
+					env: input.agent.getEnv(),
+					userId: input.userId!,
+					storageContext: {
+						sessionId: input.callerContext.storageContext?.sessionId ?? null,
+						appId: input.callerContext.storageContext?.appId ?? null,
+					},
+				}),
+		}),
+	])
 	const appSecretsByAppId = input.userId
 		? await listAppSecretsByAppIds({
 				env: input.agent.getEnv(),
@@ -270,6 +335,22 @@ async function loadSearchRowsAndRegistry(input: {
 		appSecretsByAppId,
 		...optionalRows,
 	}
+}
+
+function findConnectorDetail(
+	rows: Array<ValueMetadata>,
+	connectorName: string,
+) {
+	for (const row of rows) {
+		if (parseConnectorValueName(row.name) !== connectorName) continue
+		const config = parseConnectorConfig(
+			parseConnectorJson(row.value),
+			connectorName,
+		)
+		if (!config) continue
+		return { row, config }
+	}
+	return null
 }
 
 async function resolveEntityDetail(input: {
@@ -335,6 +416,43 @@ async function resolveEntityDetail(input: {
 		}
 	}
 
+	if (ref.type === 'value') {
+		const valueRef = parseValueEntityId(ref.id)
+		const row = input.searchRows.userValueRows.find(
+			(value) => value.scope === valueRef.scope && value.name === valueRef.name,
+		)
+		if (!row) {
+			throw new Error('Persisted value not found for this user.')
+		}
+		return {
+			type: 'value' as const,
+			id: buildValueEntityId(row),
+			title: row.name,
+			description: describeValue(row),
+			row,
+		}
+	}
+
+	if (ref.type === 'connector') {
+		const connector = findConnectorDetail(
+			input.searchRows.userValueRows,
+			ref.id,
+		)
+		if (!connector) {
+			throw new Error('Saved connector not found for this user.')
+		}
+		return {
+			type: 'connector' as const,
+			id: connector.config.name,
+			title: connector.config.name,
+			description:
+				connector.row.description.trim() ||
+				`Saved OAuth connector configuration (${connector.config.flow} flow).`,
+			row: connector.row,
+			config: connector.config,
+		}
+	}
+
 	const row = input.searchRows.userSecretRows.find(
 		(secret) => secret.name === ref.id,
 	)
@@ -367,7 +485,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						'Optional exact entity reference in the format "{id}:{type}" where type is capability, skill, app, or secret.',
+						'Optional exact entity reference in the format "{id}:{type}" where type is capability, skill, app, secret, value, or connector.',
 					),
 				skill_collection: z
 					.string()
@@ -455,6 +573,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 								skillRows: searchRows.skillRows,
 								uiArtifactRows: searchRows.uiArtifactRows,
 								userSecretRows: searchRows.userSecretRows,
+								userValueRows: searchRows.userValueRows,
 								warnings: searchRows.warnings,
 								appSecretsByAppId: searchRows.appSecretsByAppId,
 							},
@@ -475,6 +594,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						skillRows: searchRows.skillRows,
 						uiArtifactRows: searchRows.uiArtifactRows,
 						userSecretRows: searchRows.userSecretRows,
+						userValueRows: searchRows.userValueRows,
 						appSecretsByAppId: searchRows.appSecretsByAppId,
 					}),
 				}

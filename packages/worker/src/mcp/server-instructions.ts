@@ -13,13 +13,13 @@ End-user documentation (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use
 
 Three-step flow:
-1. \`search\` — builtin capabilities, saved skills, saved apps, secret references (metadata).
+1. \`search\` — built-in capabilities, saved skills, saved apps, persisted values, saved connectors, and secret references (metadata).
 2. \`execute\` — \`codemode[capabilityName](args)\`; saved skills via \`meta_run_skill\` or inline code from \`meta_get_skill\`.
 3. \`open_generated_ui\` — MCP App runtime (\`code\` or \`app_id\`).
 
 Conventions
 - ${conversationIdGuidance}
-- \`memoryContext\`: short and task-focused. Kody may use it to surface a few relevant long-term memories for authenticated users and suppress repeats within the same \`conversationId\`.
+- \`memoryContext\`: short and task-focused. Kody may use it to surface a few relevant long-term memories and suppress repeats within the same \`conversationId\`.
 - Do not ask the user to paste secrets in chat; use saved secrets or \`open_generated_ui\`.
 - \`meta_save_skill\`: repeatable workflows only; optional \`collection\`; same name replaces an existing skill. One-off work: \`execute\`. Skill params: pass via \`meta_run_skill\` → \`params\` in codemode.
 - \`ui_save_app\` / \`app_id\`: persisted UI artifacts (hidden from search unless \`hidden: false\`). \`codemode.secret_list\` / \`secret_set\`: metadata-only list; set only for values already in trusted execution (see \`execute\` tool description).
@@ -32,13 +32,13 @@ Domains (builtin capability groups)
 ${domainInstructions}
 
 What shows up in \`search\` (before you search)
-- Result **types**: \`capability\` (builtin), \`skill\` (saved codemode), \`app\` (saved UI shell), \`secret\` (metadata only). Use \`entity: "{id}:{type}"\` for one item’s detail.
+- Result **types**: \`capability\` (built-in), \`skill\` (saved codemode), \`app\` (saved UI shell), \`value\` (persisted non-secret config), \`connector\` (saved connector config), \`secret\` (metadata only). Use \`entity: "{id}:{type}"\` for one item’s detail.
 - **Saved skills** may use an optional **collection** (a user-defined label for grouping). Narrow with \`skill_collection\`; list a user’s collections via \`meta_list_skill_collections\`. Collections are not a closed list—any label when saving or from the user.
 
 search
 - \`query\`: natural language; results are ranked (order matters). Optional \`limit\`, \`maxResponseSize\`, \`skill_collection\`.
-- \`entity: "{id}:{type}"\` (\`capability\` | \`skill\` | \`app\` | \`secret\`) for one entity’s detail (schemas, usage). If a \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
-- Saved skills/apps need an authenticated user. Examples:
+- \`entity: "{id}:{type}"\` (\`capability\` | \`skill\` | \`app\` | \`value\` | \`connector\` | \`secret\`) for one entity’s detail (schemas, usage). If a \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
+- Examples:
   - search({ query: 'saved dashboard app or generated UI runtime' })
   - search({ query: 'Cloudflare API zones dns workers d1' })
   - search({ entity: 'page_to_markdown:capability' })

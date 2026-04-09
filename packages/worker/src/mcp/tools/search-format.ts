@@ -1,5 +1,6 @@
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { compressSchemaForLlm } from '#mcp/capabilities/schema-compression.ts'
+import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type UnifiedSearchMatch } from '#mcp/capabilities/unified-search.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
@@ -7,8 +8,15 @@ import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import { type ValueMetadata } from '#mcp/values/types.ts'
 
-export type SearchEntityType = 'capability' | 'skill' | 'app' | 'secret'
+export type SearchEntityType =
+	| 'capability'
+	| 'skill'
+	| 'app'
+	| 'secret'
+	| 'value'
+	| 'connector'
 
 export type SearchResultStructuredContent = {
 	matches: Array<SlimSearchMatch>
@@ -69,6 +77,27 @@ export type SlimSearchMatch =
 			description: string
 			usage: string
 	  }
+	| {
+			type: 'value'
+			id: string
+			name: string
+			title: string
+			description: string
+			usage: string
+			scope: string
+			appId: string | null
+	  }
+	| {
+			type: 'connector'
+			id: string
+			name: string
+			title: string
+			description: string
+			usage: string
+			flow: string
+			apiBaseUrl: string | null
+			requiredHosts: Array<string>
+	  }
 
 export type SearchEntityDetailStructured =
 	| {
@@ -124,6 +153,35 @@ export type SearchEntityDetailStructured =
 			scope: string
 			updatedAt: string
 	  }
+	| {
+			kind: 'entity'
+			type: 'value'
+			id: string
+			title: string
+			description: string
+			usage: string
+			scope: string
+			appId: string | null
+			value: string
+			updatedAt: string
+			ttlMs: number | null
+	  }
+	| {
+			kind: 'entity'
+			type: 'connector'
+			id: string
+			title: string
+			description: string
+			usage: string
+			flow: ConnectorConfig['flow']
+			tokenUrl: string
+			apiBaseUrl: string | null
+			clientIdValueName: string
+			clientSecretSecretName: string | null
+			accessTokenSecretName: string
+			refreshTokenSecretName: string | null
+			requiredHosts: Array<string>
+	  }
 
 export type SearchEntityDetail =
 	| {
@@ -155,6 +213,21 @@ export type SearchEntityDetail =
 			description: string
 			row: SecretSearchRow
 	  }
+	| {
+			type: 'value'
+			id: string
+			title: string
+			description: string
+			row: ValueMetadata
+	  }
+	| {
+			type: 'connector'
+			id: string
+			title: string
+			description: string
+			row: ValueMetadata
+			config: ConnectorConfig
+	  }
 
 export function parseEntityRef(entity: string): {
 	id: string
@@ -164,7 +237,7 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new Error(
-			'Entity must use the format "{id}:{type}" where type is capability, skill, app, or secret.',
+			'Entity must use the format "{id}:{type}" where type is capability, skill, app, secret, value, or connector.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
@@ -173,10 +246,12 @@ export function parseEntityRef(entity: string): {
 		type !== 'capability' &&
 		type !== 'skill' &&
 		type !== 'app' &&
-		type !== 'secret'
+		type !== 'secret' &&
+		type !== 'value' &&
+		type !== 'connector'
 	) {
 		throw new Error(
-			'Entity type must be one of: capability, skill, app, or secret.',
+			'Entity type must be one of: capability, skill, app, secret, value, or connector.',
 		)
 	}
 	if (!id) {
@@ -206,7 +281,9 @@ export function formatSearchMarkdown(input: {
 			'',
 			'**How to run matches:**',
 			'',
-			'- Builtin capabilities — `execute` / `codemode.<name>(args)`',
+			'- Built-in capabilities — `execute` / `codemode.<name>(args)`',
+			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
+			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
 			'- Saved skills — `codemode.meta_run_skill({ name, params })`',
 			'- Saved apps — `open_generated_ui({ app_id })`; users can also open the hosted URL for the saved app',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
@@ -282,6 +359,25 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 			`**Hosted URL:** \`${hostedUrl}\``,
 		]
 	}
+	if (match.type === 'value') {
+		return [
+			`## Value — \`${match.name}\` (\`${match.scope}\` scope)`,
+			'',
+			match.description,
+			'',
+			`**Entity:** \`${match.valueId}:value\``,
+		]
+	}
+	if (match.type === 'connector') {
+		return [
+			`## Connector — \`${match.connectorName}\``,
+			'',
+			match.description,
+			'',
+			`**Flow:** \`${match.flow}\``,
+			`**API base URL:** ${match.apiBaseUrl ? `\`${match.apiBaseUrl}\`` : 'none'}`,
+		]
+	}
 	return [`## Secret — \`${match.name}\``, '', match.description]
 }
 
@@ -322,6 +418,31 @@ export function toSlimStructuredMatches(input: {
 				description: match.description,
 				usage: `open_generated_ui({ app_id: "${match.appId}" })`,
 				hostedUrl: buildSavedUiUrl(input.baseUrl, match.appId),
+			}
+		}
+		if (match.type === 'value') {
+			return {
+				type: 'value',
+				id: match.valueId,
+				name: match.name,
+				title: match.name,
+				description: match.description,
+				usage: `codemode.value_get({ name: "${match.name}", scope: "${match.scope}" })`,
+				scope: match.scope,
+				appId: match.appId,
+			}
+		}
+		if (match.type === 'connector') {
+			return {
+				type: 'connector',
+				id: match.connectorName,
+				name: match.connectorName,
+				title: match.title,
+				description: match.description,
+				usage: `codemode.connector_get({ name: "${match.connectorName}" })`,
+				flow: match.flow,
+				apiBaseUrl: match.apiBaseUrl,
+				requiredHosts: match.requiredHosts,
 			}
 		}
 		return {
@@ -511,6 +632,95 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		}
 	}
 
+	if (detail.type === 'value') {
+		const lines = [
+			`# Value — \`${detail.row.name}\``,
+			'',
+			detail.description,
+			'',
+			'## Summary',
+			'',
+			`- Scope: \`${detail.row.scope}\``,
+			`- App ID: ${detail.row.appId ? `\`${detail.row.appId}\`` : 'none'}`,
+			`- Updated at: \`${detail.row.updatedAt}\``,
+			`- TTL (ms): ${formatTtlMs(detail.row.ttlMs)}`,
+			'',
+			'## Read this value',
+			'',
+			`- \`codemode.value_get({ name: "${detail.row.name}", scope: "${detail.row.scope}" })\``,
+			`- \`codemode.value_list({ scope: "${detail.row.scope}" })\``,
+			'',
+			'## Stored value',
+			'',
+			'```text',
+			detail.row.value,
+			'```',
+		]
+		return {
+			markdown: lines.join('\n'),
+			structured: {
+				kind: 'entity',
+				type: 'value',
+				id: detail.id,
+				title: detail.title,
+				description: detail.description,
+				usage: `codemode.value_get({ name: "${detail.row.name}", scope: "${detail.row.scope}" })`,
+				scope: detail.row.scope,
+				appId: detail.row.appId,
+				value: detail.row.value,
+				updatedAt: detail.row.updatedAt,
+				ttlMs: detail.row.ttlMs,
+			} satisfies SearchEntityDetailStructured,
+		}
+	}
+
+	if (detail.type === 'connector') {
+		const requiredHosts = detail.config.requiredHosts ?? []
+		const lines = [
+			`# Connector — \`${detail.config.name}\``,
+			'',
+			detail.description,
+			'',
+			'## Summary',
+			'',
+			`- Flow: \`${detail.config.flow}\``,
+			`- Token URL: \`${detail.config.tokenUrl}\``,
+			`- API base URL: ${detail.config.apiBaseUrl ? `\`${detail.config.apiBaseUrl}\`` : 'none'}`,
+			`- Required hosts: ${requiredHosts.length > 0 ? requiredHosts.map((host) => `\`${host}\``).join(', ') : 'none'}`,
+			'',
+			'## Read this connector',
+			'',
+			`- \`codemode.connector_get({ name: "${detail.config.name}" })\``,
+			'- `codemode.connector_list({})`',
+			'',
+			'## Related stored names',
+			'',
+			`- Client ID value name: \`${detail.config.clientIdValueName}\``,
+			`- Client secret secret name: ${detail.config.clientSecretSecretName ? `\`${detail.config.clientSecretSecretName}\`` : 'none'}`,
+			`- Access token secret name: \`${detail.config.accessTokenSecretName}\``,
+			`- Refresh token secret name: ${detail.config.refreshTokenSecretName ? `\`${detail.config.refreshTokenSecretName}\`` : 'none'}`,
+		]
+		return {
+			markdown: lines.join('\n'),
+			structured: {
+				kind: 'entity',
+				type: 'connector',
+				id: detail.id,
+				title: detail.title,
+				description: detail.description,
+				usage: `codemode.connector_get({ name: "${detail.config.name}" })`,
+				flow: detail.config.flow,
+				tokenUrl: detail.config.tokenUrl,
+				apiBaseUrl: detail.config.apiBaseUrl ?? null,
+				clientIdValueName: detail.config.clientIdValueName,
+				clientSecretSecretName: detail.config.clientSecretSecretName ?? null,
+				accessTokenSecretName: detail.config.accessTokenSecretName,
+				refreshTokenSecretName: detail.config.refreshTokenSecretName ?? null,
+				requiredHosts,
+			} satisfies SearchEntityDetailStructured,
+		}
+	}
+
 	const lines = [
 		`# Secret — \`${detail.row.name}\``,
 		'',
@@ -546,4 +756,9 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 function formatList(items: Array<string>) {
 	if (items.length === 0) return 'none'
 	return items.map((item) => `\`${item}\``).join(', ')
+}
+
+function formatTtlMs(ttlMs: number | null) {
+	if (ttlMs == null) return 'none'
+	return `\`${ttlMs.toLocaleString()}\``
 }

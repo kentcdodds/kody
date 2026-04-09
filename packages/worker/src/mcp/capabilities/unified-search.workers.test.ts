@@ -3,6 +3,7 @@ import { searchUnified } from './unified-search.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import { type ValueMetadata } from '#mcp/values/types.ts'
 
 function createSkillRow(skillId: string): McpSkillRow {
 	return {
@@ -50,6 +51,23 @@ function createUiArtifactRow(appId: string): UiArtifactRow {
 	}
 }
 
+function createValueRow(
+	name: string,
+	overrides: Partial<ValueMetadata> = {},
+): ValueMetadata {
+	return {
+		name,
+		scope: 'user',
+		value: 'stored-value',
+		description: 'Stored config value',
+		appId: null,
+		createdAt: '2026-03-20T00:00:00.000Z',
+		updatedAt: '2026-03-20T00:00:00.000Z',
+		ttlMs: null,
+		...overrides,
+	}
+}
+
 test('skill search hits include usage hints', async () => {
 	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
 	const skillRow = createSkillRow('skill-usage-hint')
@@ -60,12 +78,12 @@ test('skill search hits include usage hints', async () => {
 		baseUrl: 'http://localhost',
 		query: 'open pull requests for cursor agents',
 		limit: 5,
-		detail: false,
 		specs,
 		userId: 'user-123',
 		skillRows: [skillRow],
 		uiArtifactRows: [],
 		userSecretRows: [],
+		userValueRows: [],
 		appSecretsByAppId: new Map(),
 	})
 
@@ -107,6 +125,7 @@ test('skill collection filter narrows saved skill matches', async () => {
 		skillRows: [matchingRow, otherRow],
 		uiArtifactRows: [],
 		userSecretRows: [],
+		userValueRows: [],
 		appSecretsByAppId: new Map(),
 	})
 
@@ -184,6 +203,7 @@ test('skill name and description matches survive cross-entity ranking', async ()
 		skillRows: [skillRow],
 		uiArtifactRows: [],
 		userSecretRows: [],
+		userValueRows: [],
 		appSecretsByAppId: new Map(),
 	})
 
@@ -217,6 +237,7 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 				updatedAt: '2026-03-20T00:00:00.000Z',
 			},
 		],
+		userValueRows: [],
 		appSecretsByAppId: new Map([
 			[
 				appRow.id,
@@ -252,4 +273,94 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 	])
 	expect(app.usage).toContain('"params"')
 	expect(app.hostedUrl).toBe('http://localhost/ui/app-123')
+})
+
+test('search returns value and connector entities as first-class matches', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {} as Record<string, CapabilitySpec>
+	const valueRow = createValueRow('github_repo', {
+		value: 'kentcdodds/kody',
+		description: 'Default GitHub repository',
+	})
+	const connectorRow = createValueRow('_connector:github', {
+		value: JSON.stringify({
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: 'github_refresh_token',
+			requiredHosts: ['api.github.com'],
+		}),
+		description: 'GitHub OAuth connector config',
+	})
+
+	const result = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'github connector config repo value',
+		limit: 10,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		userValueRows: [valueRow, connectorRow],
+		appSecretsByAppId: new Map(),
+	})
+
+	const connector = result.matches.find((match) => match.type === 'connector')
+	if (!connector || connector.type !== 'connector') {
+		throw new Error('Expected a connector result.')
+	}
+	expect(connector.connectorName).toBe('github')
+	expect(connector.apiBaseUrl).toBe('https://api.github.com')
+	expect(connector.requiredHosts).toEqual(['api.github.com'])
+	expect(connector.usage).toContain('connector_get')
+
+	const value = result.matches.find((match) => match.type === 'value')
+	if (!value || value.type !== 'value') {
+		throw new Error('Expected a value result.')
+	}
+	expect(value.name).toBe('github_repo')
+	expect(value.scope).toBe('user')
+	expect(value.value).toBe('kentcdodds/kody')
+	expect(value.usage).toContain('value_get')
+})
+
+test('search skips connector rows whose stored id disagrees with config.name', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {} as Record<string, CapabilitySpec>
+	const mismatchedConnectorRow = createValueRow('_connector:github', {
+		value: JSON.stringify({
+			name: 'github-enterprise',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: 'github_refresh_token',
+			requiredHosts: ['api.github.com'],
+		}),
+		description: 'Mismatched connector config',
+	})
+
+	const result = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'github connector config',
+		limit: 10,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		userValueRows: [mismatchedConnectorRow],
+		appSecretsByAppId: new Map(),
+	})
+
+	expect(result.matches.some((match) => match.type === 'connector')).toBe(false)
 })
