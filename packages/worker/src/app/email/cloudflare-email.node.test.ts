@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
@@ -145,4 +145,97 @@ test('sendCloudflareEmail prefers the binding when available', async () => {
 		error: undefined,
 	})
 	expect(calls).toHaveLength(1)
+})
+
+test('sendCloudflareEmail returns ok false when the Cloudflare API request throws', async () => {
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = vi.fn(async () => {
+		throw new Error('network down')
+	}) as typeof fetch
+
+	try {
+		const result = await sendCloudflareEmail(
+			{
+				accountId: mockAccountId,
+				apiBaseUrl: 'https://api.cloudflare.test',
+				apiToken: 'test-token',
+			},
+			{
+				to: 'recipient@example.com',
+				from: 'reset@kody.dev',
+				subject: 'Request failure',
+				html: '<p>body</p>',
+			},
+		)
+
+		expect(result).toEqual({
+			ok: false,
+			error: 'network down',
+		})
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
+test('sendCloudflareEmail returns ok false when the Cloudflare API returns invalid JSON', async () => {
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = vi.fn(async () => {
+		return new Response('not-json', {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}) as typeof fetch
+
+	try {
+		const result = await sendCloudflareEmail(
+			{
+				accountId: mockAccountId,
+				apiBaseUrl: 'https://api.cloudflare.test',
+				apiToken: 'test-token',
+			},
+			{
+				to: 'recipient@example.com',
+				from: 'reset@kody.dev',
+				subject: 'Invalid JSON',
+				html: '<p>body</p>',
+			},
+		)
+
+		expect(result).toEqual({
+			ok: false,
+			error: 'Cloudflare Email API returned an error response.',
+		})
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
+test('sendCloudflareEmail redacts skipped email body content from logs', async () => {
+	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+	try {
+		const result = await sendCloudflareEmail(
+			{},
+			{
+				to: 'recipient@example.com',
+				from: 'reset@kody.dev',
+				subject: 'Skipped email',
+				html: '<p>secret body</p>',
+				text: 'secret text',
+			},
+		)
+
+		expect(result).toEqual({
+			ok: false,
+			skipped: true,
+		})
+		expect(warnSpy).toHaveBeenCalledTimes(1)
+		const [, payload] = warnSpy.mock.calls[0]!
+		expect(String(payload)).not.toContain('secret body')
+		expect(String(payload)).not.toContain('secret text')
+		expect(String(payload)).toContain('recipient@example.com')
+		expect(String(payload)).toContain('Skipped email')
+	} finally {
+		warnSpy.mockRestore()
+	}
 })

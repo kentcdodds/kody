@@ -65,7 +65,6 @@ function logSkippedEmail(reason: string, message: OutboundEmail) {
 			to: message.to,
 			from: message.from,
 			subject: message.subject,
-			body: message.html,
 		}),
 	)
 }
@@ -84,18 +83,31 @@ async function sendViaCloudflareApi(
 		`client/v4/accounts/${config.accountId}/email-service/send`,
 		normalizeApiBaseUrl(config.apiBaseUrl),
 	)
-	const response = await fetch(endpoint.toString(), {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${config.apiToken}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify(message),
-	})
+	let response: Response
+	try {
+		response = await fetch(endpoint.toString(), {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${config.apiToken}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(message),
+		})
+	} catch (error) {
+		console.warn('cloudflare-email-api-request-failed', error)
+		return {
+			ok: false,
+			error:
+				error instanceof Error
+					? error.message
+					: 'Cloudflare Email API request failed.',
+		}
+	}
+
 	const payload = (await response
 		.json()
 		.catch(() => null)) as CloudflareApiEnvelope | null
-	if (!response.ok || payload?.success === false) {
+	if (!response.ok || payload?.success !== true) {
 		console.warn(
 			'cloudflare-email-api-failed',
 			JSON.stringify({
