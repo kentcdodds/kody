@@ -25,11 +25,13 @@ test('optional search rows fall back when saved skills lookup fails', async () =
 			},
 		],
 		loadUserSecrets: async () => [],
+		loadUserValues: async () => [],
 	})
 
 	expect(result.skillRows).toEqual([])
 	expect(result.uiArtifactRows).toHaveLength(1)
 	expect(result.userSecretRows).toEqual([])
+	expect(result.userValueRows).toEqual([])
 	expect(result.warnings).toEqual([
 		'Saved skills are temporarily unavailable: D1 skills unavailable',
 	])
@@ -43,13 +45,35 @@ test('optional search rows fall back when saved apps lookup fails', async () => 
 			throw new Error('D1 apps unavailable')
 		},
 		loadUserSecrets: async () => [],
+		loadUserValues: async () => [],
 	})
 
 	expect(result.skillRows).toEqual([])
 	expect(result.uiArtifactRows).toEqual([])
 	expect(result.userSecretRows).toEqual([])
+	expect(result.userValueRows).toEqual([])
 	expect(result.warnings).toEqual([
 		'Saved apps are temporarily unavailable: D1 apps unavailable',
+	])
+})
+
+test('optional search rows fall back when persisted values lookup fails', async () => {
+	const result = await loadOptionalSearchRows({
+		userId: 'user-123',
+		loadSkills: async () => [],
+		loadUiArtifacts: async () => [],
+		loadUserSecrets: async () => [],
+		loadUserValues: async () => {
+			throw new Error('D1 values unavailable')
+		},
+	})
+
+	expect(result.skillRows).toEqual([])
+	expect(result.uiArtifactRows).toEqual([])
+	expect(result.userSecretRows).toEqual([])
+	expect(result.userValueRows).toEqual([])
+	expect(result.warnings).toEqual([
+		'Persisted values are temporarily unavailable: D1 values unavailable',
 	])
 })
 
@@ -65,12 +89,16 @@ test('optional search rows skip D1 access without a user', async () => {
 		loadUserSecrets: async () => {
 			throw new Error('should not run')
 		},
+		loadUserValues: async () => {
+			throw new Error('should not run')
+		},
 	})
 
 	expect(result).toEqual({
 		skillRows: [],
 		uiArtifactRows: [],
 		userSecretRows: [],
+		userValueRows: [],
 		warnings: [],
 	})
 })

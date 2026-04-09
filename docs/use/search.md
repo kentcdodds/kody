@@ -1,8 +1,8 @@
 # Search
 
-The **search** tool finds **builtin capabilities**, **saved skills**, **saved
-apps** (MCP App artifacts), and **user secret references** (metadata only, not
-values).
+The **search** tool finds **builtin capabilities**, **persisted values**,
+**saved connectors**, **saved skills**, **saved apps** (MCP App artifacts), and
+**user secret references** (metadata only, not secret values).
 
 ## Queries and ranking
 
@@ -18,17 +18,21 @@ Optional **`limit`** caps how many ranked hits return. Optional
 small.
 
 Optional **`skill_collection`** narrows saved skills to one collection slug
-while still searching capabilities, apps, and secrets normally.
+while still searching capabilities, values, connectors, apps, and secrets
+normally.
 
 ## Single-entity detail
 
 To get **full markdown and schemas for one hit** (for example a capability’s
 `inputSchema` / `outputSchema`), call **search** again with **`entity`** set to
-`"{id}:{type}"` where **`type`** is `capability`, `skill`, `app`, or `secret`.
+`"{id}:{type}"` where **`type`** is `capability`, `value`, `connector`, `skill`,
+`app`, or `secret`.
 
 Examples:
 
 - `page_to_markdown:capability`
+- `user:preferred_org:value`
+- `github:connector`
 - `my-skill-name:skill`
 
 There is **no separate `detail` flag** on search. Deeper inspection of one
@@ -44,7 +48,7 @@ for an empty ranked list.
 
 ## Authentication
 
-Saved **skills** and **apps** require a signed-in MCP user. Capabilities and
-builtin behavior still work without user-scoped data.
+Saved **values**, **connectors**, **skills**, and **apps** require a signed-in
+MCP user. Capabilities and builtin behavior still work without user-scoped data.
 
 Long-term memory retrieval also requires a signed-in MCP user.

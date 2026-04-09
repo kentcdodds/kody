@@ -12,6 +12,12 @@ import {
 	sortIdsByScore,
 } from './capability-search.ts'
 import { type CapabilitySpec } from './types.ts'
+import {
+	type ConnectorConfig,
+	parseConnectorConfig,
+	parseConnectorJson,
+	parseConnectorValueName,
+} from '#mcp/capabilities/values/connector-shared.ts'
 import { buildSkillEmbedText } from '#mcp/skills/skill-embed-and-flags.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
@@ -19,11 +25,13 @@ import {
 	type SecretMetadata,
 	type SecretSearchRow,
 } from '#mcp/secrets/types.ts'
+import { buildValueEntityId } from '#mcp/tools/search-entities.ts'
 import {
 	type UiArtifactSearchHit,
 	searchUiArtifactsForUser,
 } from '#mcp/ui-artifacts-search.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import { type ValueMetadata, type ValueScope } from '#mcp/values/types.ts'
 
 function parseJsonStringArray(raw: string): Array<string> {
 	try {
@@ -119,6 +127,94 @@ function scoreUiArtifactLexicalMatch(
 	return lexicalScore(query, doc) + bonus
 }
 
+function buildValueUsage(name: string, scope: ValueScope): string {
+	return `Read with value_get: ${JSON.stringify({ name, scope })}. List related persisted config with value_list${scope === 'user' ? '({ scope: "user" })' : '({ ... })'}.`
+}
+
+function describeValue(row: ValueMetadata): string {
+	const description = row.description.trim()
+	if (description) return description
+	if (row.scope === 'app' && row.appId) {
+		return `Persisted app-scoped value for app ${row.appId}.`
+	}
+	return `Persisted ${row.scope}-scoped value.`
+}
+
+function scoreValueLexicalMatch(
+	query: string,
+	row: ValueMetadata,
+	doc: string,
+): number {
+	const normalizedQuery = normalizeSearchPhrase(query)
+	let bonus = 0
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.description) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.scope) * 0.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.appId) * 0.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.value) * 1
+	return lexicalScore(query, doc) + bonus
+}
+
+function buildValueEmbedDoc(row: ValueMetadata): string {
+	return [
+		`value ${row.name}`,
+		`scope ${row.scope}`,
+		row.description,
+		row.value,
+		row.appId ? `app ${row.appId}` : '',
+	].join('\n')
+}
+
+function buildConnectorUsage(name: string): string {
+	return `Read with connector_get: ${JSON.stringify({ name })}. Browse saved connector configs with connector_list({}).`
+}
+
+function describeConnector(
+	config: ConnectorConfig,
+	description: string | null | undefined,
+): string {
+	const trimmed = description?.trim()
+	if (trimmed) return trimmed
+	return `Saved OAuth connector configuration (${config.flow} flow).`
+}
+
+function scoreConnectorLexicalMatch(
+	query: string,
+	entry: ConnectorSearchEntry,
+	doc: string,
+): number {
+	const requiredHosts = entry.config.requiredHosts ?? []
+	const normalizedQuery = normalizeSearchPhrase(query)
+	let bonus = 0
+	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.config.name) * 2
+	bonus +=
+		scoreSkillPhraseMatch(
+			normalizedQuery,
+			describeConnector(entry.config, entry.row.description),
+		) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.config.apiBaseUrl) * 1
+	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.config.tokenUrl) * 0.75
+	bonus +=
+		scoreSkillPhraseMatch(normalizedQuery, requiredHosts.join(' ')) * 0.75
+	return lexicalScore(query, doc) + bonus
+}
+
+function buildConnectorEmbedDoc(entry: ConnectorSearchEntry): string {
+	const requiredHosts = entry.config.requiredHosts ?? []
+	return [
+		`connector ${entry.config.name}`,
+		describeConnector(entry.config, entry.row.description),
+		entry.config.flow,
+		entry.config.tokenUrl,
+		entry.config.apiBaseUrl ?? '',
+		entry.config.clientIdValueName,
+		entry.config.clientSecretSecretName ?? '',
+		entry.config.accessTokenSecretName,
+		entry.config.refreshTokenSecretName ?? '',
+		requiredHosts.join('\n'),
+	].join('\n')
+}
+
 function skillRowEmbedDoc(
 	row: McpSkillRow,
 	specs: Record<string, CapabilitySpec>,
@@ -186,10 +282,56 @@ export type SecretSearchHitSummary = {
 
 export type SecretSearchHit = SecretSearchHitSummary
 
+export type ValueSearchHitSummary = {
+	type: 'value'
+	valueId: string
+	name: string
+	scope: ValueScope
+	description: string
+	value: string
+	appId: string | null
+	updatedAt: string
+	ttlMs: number | null
+	usage: string
+	fusedScore: number
+	lexicalRank?: number
+	vectorRank?: number
+}
+
+export type ValueSearchHit = ValueSearchHitSummary
+
+type ConnectorSearchEntry = {
+	row: ValueMetadata
+	config: ConnectorConfig
+}
+
+export type ConnectorSearchHitSummary = {
+	type: 'connector'
+	connectorName: string
+	title: string
+	description: string
+	flow: ConnectorConfig['flow']
+	tokenUrl: string
+	apiBaseUrl: string | null
+	clientIdValueName: string
+	clientSecretSecretName: string | null
+	accessTokenSecretName: string
+	refreshTokenSecretName: string | null
+	requiredHosts: Array<string>
+	usage: string
+	fusedScore: number
+	lexicalRank?: number
+	vectorRank?: number
+}
+
+export type ConnectorSearchHit = ConnectorSearchHitSummary
+
 export type UnifiedSearchMatch =
 	| CapabilitySearchHitTyped
 	| SkillSearchHit
 	| SecretSearchHit
+	| ValueSearchHit
+	| ConnectorSearchHit
 	| UiArtifactSearchHit
 
 function buildSecretUsage(name: string) {
@@ -208,6 +350,55 @@ function rowToSecretHit(
 		name: row.name,
 		description: row.description,
 		usage: buildSecretUsage(row.name),
+		fusedScore,
+		lexicalRank,
+		vectorRank,
+	}
+}
+
+function rowToValueHit(
+	row: ValueMetadata,
+	fusedScore: number,
+	lexicalRank?: number,
+	vectorRank?: number,
+): ValueSearchHit {
+	return {
+		type: 'value',
+		valueId: buildValueEntityId(row),
+		name: row.name,
+		scope: row.scope,
+		description: describeValue(row),
+		value: row.value,
+		appId: row.appId,
+		updatedAt: row.updatedAt,
+		ttlMs: row.ttlMs,
+		usage: buildValueUsage(row.name, row.scope),
+		fusedScore,
+		lexicalRank,
+		vectorRank,
+	}
+}
+
+function rowToConnectorHit(
+	entry: ConnectorSearchEntry,
+	fusedScore: number,
+	lexicalRank?: number,
+	vectorRank?: number,
+): ConnectorSearchHit {
+	return {
+		type: 'connector',
+		connectorName: entry.config.name,
+		title: entry.config.name,
+		description: describeConnector(entry.config, entry.row.description),
+		flow: entry.config.flow,
+		tokenUrl: entry.config.tokenUrl,
+		apiBaseUrl: entry.config.apiBaseUrl ?? null,
+		clientIdValueName: entry.config.clientIdValueName,
+		clientSecretSecretName: entry.config.clientSecretSecretName ?? null,
+		accessTokenSecretName: entry.config.accessTokenSecretName,
+		refreshTokenSecretName: entry.config.refreshTokenSecretName ?? null,
+		requiredHosts: entry.config.requiredHosts ?? [],
+		usage: buildConnectorUsage(entry.config.name),
 		fusedScore,
 		lexicalRank,
 		vectorRank,
@@ -439,6 +630,134 @@ async function searchSecretsForUser(input: {
 	}
 }
 
+async function searchValuesForUser(input: {
+	query: string
+	limit: number
+	rows: Array<ValueMetadata>
+}): Promise<{ matches: Array<ValueSearchHit>; offline: boolean }> {
+	const rowsById = new Map(
+		input.rows
+			.filter((row) => parseConnectorValueName(row.name) == null)
+			.map((row) => [buildValueEntityId(row), row] as const),
+	)
+	const ids = [...rowsById.keys()]
+	if (ids.length === 0) {
+		return { matches: [], offline: false }
+	}
+
+	const docsById = Object.fromEntries(
+		[...rowsById.values()].map(
+			(row) => [buildValueEntityId(row), buildValueEmbedDoc(row)] as const,
+		),
+	)
+	const lexicalOrder = sortIdsByScore(ids, (id) =>
+		scoreValueLexicalMatch(input.query, rowsById.get(id)!, docsById[id]!),
+	)
+	const queryVector = deterministicEmbedding(input.query)
+	const vectorOrder = sortIdsByScore(ids, (id) =>
+		cosineSimilarity(queryVector, deterministicEmbedding(docsById[id]!)),
+	)
+
+	const lexicalRankById = new Map<string, number>()
+	for (let index = 0; index < lexicalOrder.length; index += 1) {
+		lexicalRankById.set(lexicalOrder[index]!, index + 1)
+	}
+	const vectorRankById = new Map<string, number>()
+	for (let index = 0; index < vectorOrder.length; index += 1) {
+		vectorRankById.set(vectorOrder[index]!, index + 1)
+	}
+
+	const fused = reciprocalRankFusion(
+		[lexicalOrder, vectorOrder],
+		CAPABILITY_SEARCH_RRF_K,
+	)
+	const ordered = sortIdsByScore(ids, (id) => fused.get(id) ?? 0).slice(
+		0,
+		Math.max(1, Math.min(input.limit, ids.length)),
+	)
+
+	return {
+		matches: ordered.map((id) =>
+			rowToValueHit(
+				rowsById.get(id)!,
+				fused.get(id) ?? 0,
+				lexicalRankById.get(id),
+				vectorRankById.get(id),
+			),
+		),
+		offline: false,
+	}
+}
+
+async function searchConnectorsForUser(input: {
+	query: string
+	limit: number
+	rows: Array<ValueMetadata>
+}): Promise<{ matches: Array<ConnectorSearchHit>; offline: boolean }> {
+	const entries = input.rows
+		.map((row) => {
+			const connectorName = parseConnectorValueName(row.name)
+			if (!connectorName) return null
+			const config = parseConnectorConfig(
+				parseConnectorJson(row.value),
+				connectorName,
+			)
+			if (!config) return null
+			return { row, config } satisfies ConnectorSearchEntry
+		})
+		.filter((entry): entry is ConnectorSearchEntry => entry != null)
+	const entryById = new Map(
+		entries.map((entry) => [entry.config.name, entry] as const),
+	)
+	const ids = [...entryById.keys()]
+	if (ids.length === 0) {
+		return { matches: [], offline: false }
+	}
+
+	const docsById = Object.fromEntries(
+		entries.map(
+			(entry) => [entry.config.name, buildConnectorEmbedDoc(entry)] as const,
+		),
+	)
+	const lexicalOrder = sortIdsByScore(ids, (id) =>
+		scoreConnectorLexicalMatch(input.query, entryById.get(id)!, docsById[id]!),
+	)
+	const queryVector = deterministicEmbedding(input.query)
+	const vectorOrder = sortIdsByScore(ids, (id) =>
+		cosineSimilarity(queryVector, deterministicEmbedding(docsById[id]!)),
+	)
+
+	const lexicalRankById = new Map<string, number>()
+	for (let index = 0; index < lexicalOrder.length; index += 1) {
+		lexicalRankById.set(lexicalOrder[index]!, index + 1)
+	}
+	const vectorRankById = new Map<string, number>()
+	for (let index = 0; index < vectorOrder.length; index += 1) {
+		vectorRankById.set(vectorOrder[index]!, index + 1)
+	}
+
+	const fused = reciprocalRankFusion(
+		[lexicalOrder, vectorOrder],
+		CAPABILITY_SEARCH_RRF_K,
+	)
+	const ordered = sortIdsByScore(ids, (id) => fused.get(id) ?? 0).slice(
+		0,
+		Math.max(1, Math.min(input.limit, ids.length)),
+	)
+
+	return {
+		matches: ordered.map((id) =>
+			rowToConnectorHit(
+				entryById.get(id)!,
+				fused.get(id) ?? 0,
+				lexicalRankById.get(id),
+				vectorRankById.get(id),
+			),
+		),
+		offline: false,
+	}
+}
+
 export async function searchUnified(input: {
 	env: Env
 	baseUrl: string
@@ -450,6 +769,7 @@ export async function searchUnified(input: {
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
 	userSecretRows: Array<SecretSearchRow>
+	userValueRows: Array<ValueMetadata>
 	appSecretsByAppId: Map<string, Array<SecretMetadata>>
 }): Promise<{ matches: Array<UnifiedSearchMatch>; offline: boolean }> {
 	const builtinFilter: VectorizeVectorMetadataFilter = {
@@ -485,11 +805,35 @@ export async function searchUnified(input: {
 		matches: [],
 		offline: false,
 	}
+	let valueResult: {
+		matches: Array<ValueSearchHit>
+		offline: boolean
+	} = {
+		matches: [],
+		offline: false,
+	}
+	let connectorResult: {
+		matches: Array<ConnectorSearchHit>
+		offline: boolean
+	} = {
+		matches: [],
+		offline: false,
+	}
 	if (input.userId) {
 		secretResult = await searchSecretsForUser({
 			query: input.query,
 			limit: candidateLimit,
 			rows: input.userSecretRows,
+		})
+		valueResult = await searchValuesForUser({
+			query: input.query,
+			limit: candidateLimit,
+			rows: input.userValueRows,
+		})
+		connectorResult = await searchConnectorsForUser({
+			query: input.query,
+			limit: candidateLimit,
+			rows: input.userValueRows,
 		})
 		skillResult = await searchSkillsForUser({
 			env: input.env,
@@ -518,21 +862,41 @@ export async function searchUnified(input: {
 	const secretByName = new Map(
 		secretResult.matches.map((m) => [m.name, m] as const),
 	)
+	const valueById = new Map(
+		valueResult.matches.map((m) => [m.valueId, m] as const),
+	)
+	const connectorByName = new Map(
+		connectorResult.matches.map((m) => [m.connectorName, m] as const),
+	)
 	const uiArtifactById = new Map(
 		uiArtifactResult.matches.map((m) => [m.appId, m] as const),
 	)
 	const capKeys = capResult.matches.map((m) => `c:${m.name}`)
 	const skillKeys = skillResult.matches.map((m) => `s:${m.skillName}`)
 	const secretKeys = secretResult.matches.map((m) => `u:${m.name}`)
+	const valueKeys = valueResult.matches.map((m) => `v:${m.valueId}`)
+	const connectorKeys = connectorResult.matches.map(
+		(m) => `n:${m.connectorName}`,
+	)
 	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
 	const fusedCross = reciprocalRankFusion(
-		[capKeys, skillKeys, secretKeys, uiArtifactKeys],
+		[capKeys, skillKeys, secretKeys, valueKeys, connectorKeys, uiArtifactKeys],
 		CAPABILITY_SEARCH_RRF_K,
 	)
 	const allKeys = [
-		...new Set([...capKeys, ...skillKeys, ...secretKeys, ...uiArtifactKeys]),
+		...new Set([
+			...capKeys,
+			...skillKeys,
+			...secretKeys,
+			...valueKeys,
+			...connectorKeys,
+			...uiArtifactKeys,
+		]),
 	]
 	function getEntityScore(key: string): number {
+		if (key.startsWith('n:')) {
+			return connectorByName.get(key.slice(2))?.fusedScore ?? 0
+		}
 		if (key.startsWith('c:')) {
 			return capByName.get(key.slice(2))?.fusedScore ?? 0
 		}
@@ -542,12 +906,30 @@ export async function searchUnified(input: {
 		if (key.startsWith('u:')) {
 			return secretByName.get(key.slice(2))?.fusedScore ?? 0
 		}
+		if (key.startsWith('v:')) {
+			return valueById.get(key.slice(2))?.fusedScore ?? 0
+		}
 		if (key.startsWith('a:')) {
 			return uiArtifactById.get(key.slice(2))?.fusedScore ?? 0
 		}
 		return 0
 	}
 	function getUnifiedLexicalScore(key: string): number {
+		if (key.startsWith('n:')) {
+			const hit = connectorByName.get(key.slice(2))
+			if (!hit) return 0
+			return lexicalScore(
+				input.query,
+				[
+					hit.connectorName,
+					hit.description,
+					hit.flow,
+					hit.tokenUrl,
+					hit.apiBaseUrl ?? '',
+					hit.requiredHosts.join(' '),
+				].join('\n'),
+			)
+		}
 		if (key.startsWith('c:')) {
 			const hit = capByName.get(key.slice(2))
 			return hit ? scoreCapabilityLexicalMatch(input.query, hit) : 0
@@ -583,6 +965,16 @@ export async function searchUnified(input: {
 		if (key.startsWith('u:')) {
 			const hit = secretByName.get(key.slice(2))
 			return hit ? scoreSecretLexicalMatch(input.query, hit) : 0
+		}
+		if (key.startsWith('v:')) {
+			const hit = valueById.get(key.slice(2))
+			if (!hit) return 0
+			return lexicalScore(
+				input.query,
+				[hit.name, hit.description, hit.scope, hit.value, hit.appId ?? ''].join(
+					'\n',
+				),
+			)
 		}
 		if (key.startsWith('a:')) {
 			const hit = uiArtifactById.get(key.slice(2))
@@ -627,6 +1019,18 @@ export async function searchUnified(input: {
 			if (hit) {
 				matches.push({ ...hit, fusedScore: score })
 			}
+		} else if (key.startsWith('v:')) {
+			const id = key.slice(2)
+			const hit = valueById.get(id)
+			if (hit) {
+				matches.push({ ...hit, fusedScore: score })
+			}
+		} else if (key.startsWith('n:')) {
+			const name = key.slice(2)
+			const hit = connectorByName.get(name)
+			if (hit) {
+				matches.push({ ...hit, fusedScore: score })
+			}
 		} else if (key.startsWith('a:')) {
 			const id = key.slice(2)
 			const hit = uiArtifactById.get(id)
@@ -640,6 +1044,8 @@ export async function searchUnified(input: {
 		capResult.offline ||
 		skillResult.offline ||
 		secretResult.offline ||
+		valueResult.offline ||
+		connectorResult.offline ||
 		uiArtifactResult.offline
 	return { matches, offline }
 }
