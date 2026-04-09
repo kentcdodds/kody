@@ -1,5 +1,28 @@
 import { type Handle } from 'remix/component'
-import { colors, radius, shadows, spacing } from '#client/styles/tokens.ts'
+import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	cardCss,
+	cardTitleCss,
+	descriptionCss,
+	detailGridCss,
+	detailItemCss,
+	detailLabelCss,
+	detailValueCss,
+	fieldCss,
+	fieldLabelCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	insetCardCss,
+	listCss,
+	pageDescriptionCss,
+	pageEyebrowCss,
+	pageHeaderCss,
+	pageTitleCss,
+	primaryLinkCss,
+	sectionTitleCss,
+	stackedPageCss,
+	inputCss,
+} from '#client/styles/style-primitives.ts'
 
 type OAuthFlow = 'pkce' | 'confidential'
 
@@ -677,22 +700,13 @@ export function ConnectOauthRoute(handle: Handle) {
 		const instructions = config.providerSetupInstructions
 		if (instructions && instructions.trim()) {
 			return (
-				<p
-					css={{
-						whiteSpace: 'pre-wrap',
-						backgroundColor: colors.surface,
-						border: `1px solid ${colors.border}`,
-						padding: spacing.md,
-						borderRadius: radius.md,
-						color: colors.textMuted,
-					}}
-				>
+				<p css={{ ...insetCardCss, margin: 0, whiteSpace: 'pre-wrap' }}>
 					{instructions}
 				</p>
 			)
 		}
 		return (
-			<p css={{ color: colors.textMuted }}>
+			<p css={descriptionCss}>
 				Create an OAuth app with your provider and enter the Client ID below.
 			</p>
 		)
@@ -701,22 +715,13 @@ export function ConnectOauthRoute(handle: Handle) {
 	const renderAllowedHosts = () => {
 		if (!config) return null
 		return (
-			<section
-				css={{
-					padding: spacing.md,
-					borderRadius: radius.md,
-					border: `1px solid ${colors.border}`,
-					backgroundColor: colors.surface,
-					display: 'grid',
-					gap: spacing.xs,
-				}}
-			>
-				<h3 css={{ margin: 0 }}>Allowed hosts</h3>
-				<p css={{ margin: 0, color: colors.textMuted }}>
+			<section css={insetCardCss}>
+				<h3 css={sectionTitleCss}>Allowed hosts</h3>
+				<p css={descriptionCss}>
 					These hosts will be approved for the saved secrets. Host approvals are
 					never automatic.
 				</p>
-				<ul css={{ margin: 0, paddingLeft: spacing.lg }}>
+				<ul css={listCss}>
 					{config.allowedHosts.map((host) => (
 						<li key={host}>{host}</li>
 					))}
@@ -728,18 +733,9 @@ export function ConnectOauthRoute(handle: Handle) {
 	const renderExistingConnectorConfig = () => {
 		if (!existingConnectorConfig) return null
 		return (
-			<section
-				css={{
-					padding: spacing.md,
-					borderRadius: radius.md,
-					border: `1px solid ${colors.border}`,
-					backgroundColor: colors.surface,
-					display: 'grid',
-					gap: spacing.sm,
-				}}
-			>
-				<h2 css={{ margin: 0 }}>Existing connector config</h2>
-				<p css={{ margin: 0, color: colors.textMuted }}>
+			<section css={cardCss}>
+				<h2 css={cardTitleCss}>Existing connector config</h2>
+				<p css={descriptionCss}>
 					Loaded from{' '}
 					<code>
 						{existingConnectorValueName ??
@@ -747,47 +743,52 @@ export function ConnectOauthRoute(handle: Handle) {
 					</code>
 					.
 				</p>
-				<p css={{ margin: 0 }}>
-					Flow: <strong>{existingConnectorConfig.flow}</strong>
-				</p>
-				<p css={{ margin: 0 }}>
-					Token URL: <code>{existingConnectorConfig.tokenUrl}</code>
-				</p>
-				{existingConnectorConfig.apiBaseUrl ? (
-					<p css={{ margin: 0 }}>
-						API base URL: <code>{existingConnectorConfig.apiBaseUrl}</code>
-					</p>
-				) : null}
-				<p css={{ margin: 0 }}>
-					Client ID value:{' '}
-					<code>{existingConnectorConfig.clientIdValueName}</code>
-				</p>
-				<p css={{ margin: 0 }}>
-					Client secret secret:{' '}
-					<code>
-						{existingConnectorConfig.clientSecretSecretName ?? 'Not used'}
-					</code>
-				</p>
-				<p css={{ margin: 0 }}>
-					Access token secret:{' '}
-					<code>{existingConnectorConfig.accessTokenSecretName}</code>
-				</p>
-				<p css={{ margin: 0 }}>
-					Refresh token secret:{' '}
-					<code>
-						{existingConnectorConfig.refreshTokenSecretName ?? 'Not used'}
-					</code>
-				</p>
-				<div css={{ display: 'grid', gap: spacing.xs }}>
-					<strong>Required hosts</strong>
+				<div css={detailGridCss}>
+					<div css={detailItemCss}>
+						<span css={detailLabelCss}>Flow</span>
+						<span css={detailValueCss}>{existingConnectorConfig.flow}</span>
+					</div>
+					<div css={detailItemCss}>
+						<span css={detailLabelCss}>Token URL</span>
+						<code>{existingConnectorConfig.tokenUrl}</code>
+					</div>
+					{existingConnectorConfig.apiBaseUrl ? (
+						<div css={detailItemCss}>
+							<span css={detailLabelCss}>API base URL</span>
+							<code>{existingConnectorConfig.apiBaseUrl}</code>
+						</div>
+					) : null}
+					<div css={detailItemCss}>
+						<span css={detailLabelCss}>Client ID value</span>
+						<code>{existingConnectorConfig.clientIdValueName}</code>
+					</div>
+					<div css={detailItemCss}>
+						<span css={detailLabelCss}>Client secret secret</span>
+						<code>
+							{existingConnectorConfig.clientSecretSecretName ?? 'Not used'}
+						</code>
+					</div>
+					<div css={detailItemCss}>
+						<span css={detailLabelCss}>Access token secret</span>
+						<code>{existingConnectorConfig.accessTokenSecretName}</code>
+					</div>
+					<div css={detailItemCss}>
+						<span css={detailLabelCss}>Refresh token secret</span>
+						<code>
+							{existingConnectorConfig.refreshTokenSecretName ?? 'Not used'}
+						</code>
+					</div>
+				</div>
+				<div css={insetCardCss}>
+					<strong css={sectionTitleCss}>Required hosts</strong>
 					{existingConnectorConfig.requiredHosts.length > 0 ? (
-						<ul css={{ margin: 0, paddingLeft: spacing.lg }}>
+						<ul css={listCss}>
 							{existingConnectorConfig.requiredHosts.map((host) => (
 								<li key={host}>{host}</li>
 							))}
 						</ul>
 					) : (
-						<p css={{ margin: 0, color: colors.textMuted }}>None configured.</p>
+						<p css={descriptionCss}>None configured.</p>
 					)}
 				</div>
 			</section>
@@ -845,72 +846,67 @@ export function ConnectOauthRoute(handle: Handle) {
 	return () => {
 		if (!config) {
 			return (
-				<section css={{ padding: spacing.lg }}>
-					<h1 css={{ margin: 0 }}>Connect OAuth</h1>
-					<p css={{ color: colors.textMuted }}>{statusMessage}</p>
+				<section css={pageCss}>
+					<header css={headerCss}>
+						<span css={eyebrowCss}>Kody secure connection</span>
+						<h1 css={pageTitleCss}>Connect OAuth</h1>
+						<p css={pageDescriptionCss}>{statusMessage}</p>
+					</header>
 				</section>
 			)
 		}
 		return (
-			<section
-				css={{
-					maxWidth: '60rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.lg,
-				}}
-			>
-				<header>
-					<h1 css={{ margin: 0 }}>Connect {config.provider}</h1>
-					<p css={{ color: colors.textMuted }}>
+			<section css={pageCss}>
+				<header css={headerCss}>
+					<span css={eyebrowCss}>Kody secure connection</span>
+					<h1 css={pageTitleCss}>Connect {config.provider}</h1>
+					<p css={pageDescriptionCss}>
 						Follow the steps below to connect your account using OAuth.
 					</p>
 				</header>
-				<section
-					css={{
-						padding: spacing.md,
-						borderRadius: radius.md,
-						border: `1px solid ${colors.border}`,
-						backgroundColor: colors.surface,
-						boxShadow: shadows.sm,
-					}}
-				>
-					<strong>status</strong>
-					<p
+				<section css={getStatusCardCss(statusTone)}>
+					<div
 						css={{
-							margin: `${spacing.xs} 0 0`,
-							color: statusTone === 'error' ? colors.danger : colors.textMuted,
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'space-between',
+							gap: spacing.sm,
+							flexWrap: 'wrap',
 						}}
 					>
-						{statusMessage}
-					</p>
+						<strong css={sectionTitleCss}>Status</strong>
+						<span css={getStatusBadgeCss(statusTone)}>{currentStep}</span>
+					</div>
+					<p css={getStatusMessageCss(statusTone)}>{statusMessage}</p>
 				</section>
-				<section
-					css={{
-						padding: spacing.md,
-						borderRadius: radius.md,
-						border: `1px solid ${colors.border}`,
-						backgroundColor: colors.surface,
-						display: 'grid',
-						gap: spacing.sm,
-					}}
-				>
-					<h2 css={{ margin: 0 }}>Provider details</h2>
-					<p css={{ margin: 0 }}>
-						Authorize URL: <code>{config.authorizeUrl}</code>
-					</p>
-					<p css={{ margin: 0 }}>
-						Token URL: <code>{config.tokenUrl}</code>
-					</p>
-					<p css={{ margin: 0 }}>Flow: {config.flow}</p>
-					<p css={{ margin: 0 }}>
-						Scope: {config.scopes.length ? config.scopes.join(' ') : 'None'}
-					</p>
+				<section css={cardCss}>
+					<h2 css={cardTitleCss}>Provider details</h2>
+					<div css={detailGridCss}>
+						<div css={detailItemCss}>
+							<span css={detailLabelCss}>Authorize URL</span>
+							<code>{config.authorizeUrl}</code>
+						</div>
+						<div css={detailItemCss}>
+							<span css={detailLabelCss}>Token URL</span>
+							<code>{config.tokenUrl}</code>
+						</div>
+						<div css={detailItemCss}>
+							<span css={detailLabelCss}>Flow</span>
+							<span css={detailValueCss}>{config.flow}</span>
+						</div>
+						<div css={detailItemCss}>
+							<span css={detailLabelCss}>Scopes</span>
+							<span css={detailValueCss}>
+								{config.scopes.length ? config.scopes.join(' ') : 'None'}
+							</span>
+						</div>
+					</div>
 					{config.dashboardUrl && isSafeExternalUrl(config.dashboardUrl) ? (
 						<a
 							href={config.dashboardUrl}
 							target="_blank"
 							rel="noreferrer noopener"
+							css={primaryLinkCss}
 						>
 							Open provider dashboard
 						</a>
@@ -918,17 +914,8 @@ export function ConnectOauthRoute(handle: Handle) {
 				</section>
 				{renderExistingConnectorConfig()}
 				{currentStep === 'setup' ? (
-					<section
-						css={{
-							padding: spacing.md,
-							borderRadius: radius.md,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.surface,
-							display: 'grid',
-							gap: spacing.md,
-						}}
-					>
-						<h2 css={{ margin: 0 }}>
+					<section css={cardCss}>
+						<h2 css={cardTitleCss}>
 							1. {existingConnectorConfig ? 'Review' : 'Save'} OAuth client
 							configuration
 						</h2>
@@ -938,8 +925,8 @@ export function ConnectOauthRoute(handle: Handle) {
 							on={{ submit: handleSetupSubmit }}
 							css={{ display: 'grid', gap: spacing.md }}
 						>
-							<label>
-								<span>Client ID</span>
+							<label css={fieldCss}>
+								<span css={fieldLabelCss}>Client ID</span>
 								<input
 									name="clientId"
 									required
@@ -950,36 +937,29 @@ export function ConnectOauthRoute(handle: Handle) {
 											update()
 										},
 									}}
+									css={inputCss}
 								/>
 							</label>
-							<p css={{ margin: 0, color: colors.textMuted }}>
+							<p css={descriptionCss}>
 								Saved as <code>{config.clientIdValueName}</code>
 								{hasStoredClientId ? '.' : ' after you continue.'}
 							</p>
 							{config.flow === 'confidential' ? (
 								hasStoredClientSecret && !revealStoredClientSecretField ? (
-									<section
-										css={{
-											padding: spacing.md,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.border}`,
-											backgroundColor: colors.surface,
-											display: 'grid',
-											gap: spacing.sm,
-										}}
-									>
-										<p css={{ margin: 0 }}>
+									<section css={insetCardCss}>
+										<p css={{ margin: 0, color: colors.text }}>
 											Using the stored client secret in{' '}
 											<code>
 												{config.clientSecretSecretName ?? 'unknown secret'}
 											</code>
 											.
 										</p>
-										<p css={{ margin: 0, color: colors.textMuted }}>
+										<p css={descriptionCss}>
 											You can continue without re-entering it.
 										</p>
 										<button
 											type="button"
+											css={secondaryButtonCss}
 											on={{
 												click: () => {
 													revealStoredClientSecretField = true
@@ -991,8 +971,8 @@ export function ConnectOauthRoute(handle: Handle) {
 										</button>
 									</section>
 								) : (
-									<label>
-										<span>Client Secret</span>
+									<label css={fieldCss}>
+										<span css={fieldLabelCss}>Client Secret</span>
 										<input
 											name="clientSecret"
 											type="password"
@@ -1004,33 +984,29 @@ export function ConnectOauthRoute(handle: Handle) {
 													update()
 												},
 											}}
+											css={inputCss}
 										/>
 									</label>
 								)
 							) : null}
-							<button type="submit" disabled={submitting}>
+							<button
+								type="submit"
+								disabled={submitting}
+								css={primaryButtonCss}
+							>
 								Save configuration
 							</button>
 						</form>
 					</section>
 				) : null}
 				{currentStep === 'connect' ? (
-					<section
-						css={{
-							padding: spacing.md,
-							borderRadius: radius.md,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.surface,
-							display: 'grid',
-							gap: spacing.sm,
-						}}
-					>
-						<h2 css={{ margin: 0 }}>2. Connect</h2>
-						<p css={{ margin: 0 }}>
+					<section css={cardCss}>
+						<h2 css={cardTitleCss}>2. Connect</h2>
+						<p css={{ margin: 0, color: colors.text }}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
 						{existingConnectorConfig ? (
-							<p css={{ margin: 0, color: colors.textMuted }}>
+							<p css={descriptionCss}>
 								Using stored client ID <code>{config.clientIdValueName}</code>
 								{config.flow === 'confidential' && hasStoredClientSecret
 									? ` and stored client secret ${config.clientSecretSecretName ?? ''}.`
@@ -1041,53 +1017,50 @@ export function ConnectOauthRoute(handle: Handle) {
 							type="button"
 							on={{ click: () => void handleConnect() }}
 							disabled={submitting}
+							css={primaryButtonCss}
 						>
 							Connect {config.provider}
 						</button>
 					</section>
 				) : null}
 				{currentStep === 'success' ? (
-					<section
-						css={{
-							padding: spacing.md,
-							borderRadius: radius.md,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.surface,
-							display: 'grid',
-							gap: spacing.sm,
-						}}
-					>
-						<h2 css={{ margin: 0 }}>4. Success</h2>
-						<p css={{ margin: 0 }}>
-							Access token saved:{' '}
-							<strong>{accessTokenSaved ? 'Yes' : 'No'}</strong>
-						</p>
-						<p css={{ margin: 0 }}>
-							Refresh token saved:{' '}
-							<strong>{refreshTokenSaved ? 'Yes' : 'No'}</strong>
-						</p>
-						<h3 css={{ margin: `${spacing.sm} 0 0` }}>Host approvals</h3>
-						<p css={{ margin: 0 }}>
+					<section css={cardCss}>
+						<h2 css={cardTitleCss}>4. Success</h2>
+						<div css={detailGridCss}>
+							<div css={detailItemCss}>
+								<span css={detailLabelCss}>Access token saved</span>
+								<strong css={detailValueCss}>
+									{accessTokenSaved ? 'Yes' : 'No'}
+								</strong>
+							</div>
+							<div css={detailItemCss}>
+								<span css={detailLabelCss}>Refresh token saved</span>
+								<strong css={detailValueCss}>
+									{refreshTokenSaved ? 'Yes' : 'No'}
+								</strong>
+							</div>
+						</div>
+						<h3 css={sectionTitleCss}>Host approvals</h3>
+						<p css={{ margin: 0, color: colors.text }}>
 							Hosts are never auto-approved. Review these allowed hosts in your
 							account secrets.
 						</p>
-						<ul>
+						<ul css={listCss}>
 							{config.allowedHosts.map((host) => (
 								<li key={host}>{host}</li>
 							))}
 						</ul>
 						{hostApprovalLinks.length > 0 ? (
-							<div css={{ display: 'grid', gap: spacing.xs }}>
-								<p css={{ margin: 0, color: colors.textMuted }}>
-									Approve each token host directly:
-								</p>
-								<ul css={{ margin: 0, paddingLeft: spacing.lg }}>
+							<div css={insetCardCss}>
+								<p css={descriptionCss}>Approve each token host directly:</p>
+								<ul css={listCss}>
 									{hostApprovalLinks.map((link) => (
 										<li key={`${link.secretName}:${link.host}`}>
 											<a
 												href={link.approvalUrl}
 												target="_blank"
 												rel="noreferrer noopener"
+												css={primaryLinkCss}
 											>
 												Approve <code>{link.host}</code> for{' '}
 												<code>{link.secretName}</code>
@@ -1097,7 +1070,12 @@ export function ConnectOauthRoute(handle: Handle) {
 								</ul>
 							</div>
 						) : null}
-						<a href="/account/secrets" target="_blank" rel="noreferrer">
+						<a
+							href="/account/secrets"
+							target="_blank"
+							rel="noreferrer"
+							css={primaryLinkCss}
+						>
 							Open account secrets
 						</a>
 					</section>
@@ -1410,4 +1388,55 @@ function createCodeVerifier() {
 	const bytes = new Uint8Array(64)
 	crypto.getRandomValues(bytes)
 	return base64UrlEncode(bytes)
+}
+
+const pageCss = {
+	...stackedPageCss,
+	maxWidth: '56rem',
+	margin: '0 auto',
+}
+
+const headerCss = pageHeaderCss
+const eyebrowCss = pageEyebrowCss
+const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+const secondaryButtonCss = getSecondaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
+
+function getStatusCardCss(tone: 'info' | 'warn' | 'error') {
+	return {
+		...cardCss,
+		border: `1px solid ${tone === 'error' ? colors.error : colors.primary}`,
+		backgroundColor:
+			tone === 'error'
+				? 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))'
+				: colors.primarySoftest,
+	}
+}
+
+function getStatusBadgeCss(tone: 'info' | 'warn' | 'error') {
+	return {
+		display: 'inline-flex',
+		alignItems: 'center',
+		justifyContent: 'center',
+		padding: `0.25rem ${spacing.sm}`,
+		borderRadius: radius.full,
+		backgroundColor:
+			tone === 'error'
+				? 'color-mix(in srgb, var(--color-danger) 14%, transparent)'
+				: colors.surface,
+		color: tone === 'error' ? colors.error : colors.primaryText,
+		fontSize: typography.fontSize.xs,
+		fontWeight: typography.fontWeight.semibold,
+		letterSpacing: '0.08em',
+		textTransform: 'uppercase' as const,
+	}
+}
+
+function getStatusMessageCss(tone: 'info' | 'warn' | 'error') {
+	return {
+		margin: 0,
+		color: tone === 'error' ? colors.error : colors.text,
+	}
 }

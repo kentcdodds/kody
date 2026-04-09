@@ -1,18 +1,18 @@
-import { expect, test } from 'vitest'
-import {
+import { expect, test, vi } from 'vitest'
+import * as uiUtils from './kody-ui-utils.ts'
+import { getKodyWidgetRuntimeStateForTest } from './kody-widget-runtime.ts'
+
+const {
 	absolutizeHtmlAttributeUrls,
 	buildCodemodeCapabilityExecuteCode,
 	buildGeneratedUiRuntimeHeadInjection,
-	getOrCreateKodyWidgetReadyStateForTest,
-	getKodyWidget,
 	injectIntoHtmlDocument,
 	injectRuntimeStateIntoDocument,
 	kodyWidget,
 	measureRenderedFrameSize,
 	readSavedAppSourceFromHostToolResult,
 	shouldInitializeGeneratedUiRuntimeImmediately,
-	whenKodyWidgetReady,
-} from './kody-ui-utils.ts'
+} = uiUtils
 
 test('injectIntoHtmlDocument inserts content into an existing head', () => {
 	const result = injectIntoHtmlDocument(
@@ -182,61 +182,63 @@ test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', ()
 })
 
 test('kodyWidget public api exposes executeCode helper', () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
-	const fakeWidget = {
-		params: {},
-		executeCode: async () => 'ok',
-	} as {
-		params: Record<string, never>
-		executeCode: (code: string, params?: Record<string, unknown>) => Promise<string>
-	}
-	readyState.resolve(fakeWidget)
-
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
 	expect(typeof kodyWidget.executeCode).toBe('function')
 })
 
-test('getKodyWidget throws until the runtime is ready', () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
-
-	expect(() => getKodyWidget()).toThrow(
-		/kodyWidget is not ready yet.*whenKodyWidgetReady/,
-	)
+test('public module does not export readiness helpers', () => {
+	expect('getKodyWidget' in uiUtils).toBe(false)
+	expect('whenKodyWidgetReady' in uiUtils).toBe(false)
 })
 
-test('whenKodyWidgetReady resolves once the runtime publishes the widget', async () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
-
-	const fakeWidget = {
-		params: { owner: 'kody' },
-		sendMessage() {
-			return true
-		},
+test('imported kodyWidget is synchronously stable before runtime init', () => {
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	const kodyGlobal = globalThis as typeof globalThis & {
+		kodyWidget?: typeof kodyWidget
 	}
 
-	const pendingWidget = whenKodyWidgetReady()
-	readyState.resolve(fakeWidget)
-
-	await expect(pendingWidget).resolves.toBe(fakeWidget)
-	await expect(whenKodyWidgetReady()).resolves.toBe(fakeWidget)
-})
-
-test('imported kodyWidget proxy exposes resolved runtime properties', () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
-	const fakeWidget = {
-		params: {},
-		value: 41,
-	} as {
-		params: Record<string, never>
-		value: number
-	}
-	readyState.resolve(fakeWidget)
-
-	expect(kodyWidget.value).toBe(41)
+	expect(kodyWidget).toBe(kodyGlobal.kodyWidget)
 	expect(kodyWidget.params).toEqual({})
+	expect(typeof kodyWidget.sendMessage).toBe('function')
+})
+
+test('async helpers read installed runtime state', async () => {
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	runtimeState.install({
+		mode: 'mcp',
+		params: { owner: 'kody' },
+		hooks: {
+			executeCode: async () => 'ok',
+		},
+	})
+
+	expect(kodyWidget.params).toEqual({ owner: 'kody' })
+	await expect(kodyWidget.executeCode('return "ok"')).resolves.toBe('ok')
+})
+
+test('runtime-backed helpers time out if the runtime never becomes ready', async () => {
+	vi.useFakeTimers()
+	try {
+		const runtimeState = getKodyWidgetRuntimeStateForTest()
+		runtimeState.reset()
+		runtimeState.install({
+			mode: 'mcp',
+			ready: false,
+		})
+
+		const pending = kodyWidget.executeCode('return "ok"')
+		const rejection = expect(pending).rejects.toThrow(
+			/timed out waiting for the kodyWidget runtime to initialize/i,
+		)
+
+		await vi.advanceTimersByTimeAsync(10_001)
+		await rejection
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('buildGeneratedUiRuntimeHeadInjection includes module script by default', () => {

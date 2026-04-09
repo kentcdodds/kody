@@ -1,7 +1,10 @@
 /// <reference lib="dom" />
 import './kody-ui-utils.css'
 import { createWidgetHostBridge } from './widget-host-bridge.js'
-import { initializeGeneratedUiRuntime } from './kody-widget-runtime.ts'
+import {
+	initializeGeneratedUiRuntime,
+	setGeneratedUiRuntimeHooks,
+} from './kody-widget-runtime.ts'
 import {
 	buildGeneratedUiRuntimeImportMap,
 	type GeneratedUiRuntimeBootstrap,
@@ -28,13 +31,7 @@ export {
 	type GeneratedUiRuntimeBootstrap,
 	generatedUiRuntimeModuleSpecifier,
 } from './kody-ui-utils-contract.ts'
-export {
-	getOrCreateKodyWidgetReadyStateForTest,
-	getKodyWidget,
-	kodyWidget,
-	whenKodyWidgetReady,
-	type KodyWidgetPublicApi,
-} from './kody-widget-runtime.ts'
+export { kodyWidget, type KodyWidgetPublicApi } from './kody-widget-runtime.ts'
 
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'
@@ -618,8 +615,7 @@ window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 }
 
 function installGeneratedUiRuntimeHooks(hooks: GeneratedUiRuntimeHooks) {
-	;(globalThis.window as GeneratedUiWindow).__kodyGeneratedUiRuntimeHooks =
-		hooks
+	setGeneratedUiRuntimeHooks(hooks)
 }
 
 export function shouldInitializeGeneratedUiRuntimeImmediately(input: {
@@ -894,27 +890,23 @@ async function initializeGeneratedUiRuntimeEntry() {
 	initializeGeneratedUiRuntime()
 }
 
-const documentRef = globalThis.document
-
-if (documentRef) {
+function startGeneratedUiRuntimeEntry() {
+	const documentRef = globalThis.document
+	if (!documentRef) return
 	const bootstrap = readGeneratedUiBootstrap()
+	const run = () => {
+		void initializeGeneratedUiRuntimeEntry()
+	}
 	if (
 		shouldInitializeGeneratedUiRuntimeImmediately({
 			documentReadyState: documentRef.readyState,
 			bootstrapMode: bootstrap.mode,
 		})
 	) {
-		await initializeGeneratedUiRuntimeEntry()
-	} else {
-		await new Promise<void>((resolve) => {
-			documentRef.addEventListener(
-				'DOMContentLoaded',
-				() => {
-					resolve()
-				},
-				{ once: true },
-			)
-		})
-		await initializeGeneratedUiRuntimeEntry()
+		run()
+		return
 	}
+	documentRef.addEventListener('DOMContentLoaded', run, { once: true })
 }
+
+startGeneratedUiRuntimeEntry()

@@ -125,14 +125,9 @@ type MessageLogRefs = {
 	list: HTMLElement
 }
 
-export type KodyWidgetPublicApi = Record<string, unknown> & {
+export type KodyWidgetPublicApi = Record<string, any> & {
 	params: JsonRecord
 	executeCode: (code: string, params?: JsonRecord) => Promise<unknown>
-}
-
-type KodyWidgetReadyState = {
-	promise: Promise<KodyWidgetPublicApi>
-	resolve: (widget: KodyWidgetPublicApi) => void
 }
 
 type KodyWindow = Window &
@@ -153,101 +148,168 @@ type KodyWindow = Window &
 		}
 		__kodyLocalMessageLogRoot?: HTMLElement | null
 		__kodyLocalMessageLogList?: HTMLElement | null
-		__kodyWidgetReadyState?: KodyWidgetReadyState
+		__kodyWidgetRuntimeState?: KodyWidgetRuntimeState
 		kodyWidget?: KodyWidgetPublicApi
 		params?: Record<string, unknown>
 	}
+
+type GeneratedUiRuntimeHooks = NonNullable<
+	KodyWindow['__kodyGeneratedUiRuntimeHooks']
+>
+
+type KodyWidgetRuntimeState = {
+	initialized: boolean
+	ready: boolean
+	mode: GeneratedUiRuntimeBootstrap['mode']
+	params: JsonRecord
+	appSession: GeneratedUiAppSessionBootstrap | null
+	hooks: GeneratedUiRuntimeHooks
+	readyPromise: Promise<void>
+	resolveReady: () => void
+}
+
+const kodyWidgetRuntimeReadyTimeoutMs = 10_000
 
 const kodyWindow = (
 	typeof window === 'object' && window ? window : globalThis
 ) as KodyWindow
 
-let currentKodyWidget: KodyWidgetPublicApi | null = null
-let kodyWidgetReadyState: KodyWidgetReadyState | null = null
-
-function readKodyWidget() {
-	return currentKodyWidget
+function createKodyWidgetRuntimeState(): KodyWidgetRuntimeState {
+	let resolveReady = () => {}
+	const readyPromise = new Promise<void>((resolve) => {
+		resolveReady = resolve
+	})
+	return {
+		initialized: false,
+		ready: false,
+		mode: 'entry',
+		params: {},
+		appSession: null,
+		hooks: {},
+		readyPromise,
+		resolveReady,
+	}
 }
 
-function getOrCreateKodyWidgetReadyState(): KodyWidgetReadyState {
-	const existingState = kodyWidgetReadyState
+function getOrCreateKodyWidgetRuntimeState() {
+	const existingState = kodyWindow.__kodyWidgetRuntimeState
 	if (existingState) {
 		return existingState
 	}
-	let resolvePromise: ((widget: KodyWidgetPublicApi) => void) | null = null
-	const state: KodyWidgetReadyState = {
-		promise: new Promise<KodyWidgetPublicApi>((resolve) => {
-			resolvePromise = resolve
-		}),
-		resolve(widget) {
-			resolvePromise?.(widget)
-		},
-	}
-	kodyWidgetReadyState = state
+	const state = createKodyWidgetRuntimeState()
+	kodyWindow.__kodyWidgetRuntimeState = state
 	return state
 }
 
-function resolveKodyWidgetReady(widget: KodyWidgetPublicApi) {
-	getOrCreateKodyWidgetReadyState().resolve(widget)
+function syncKodyWidgetParams() {
+	const state = getOrCreateKodyWidgetRuntimeState()
+	kodyWindow.__kodyAppParams = state.params
+	kodyWindow.params = state.params
 }
 
-export function getKodyWidget(): KodyWidgetPublicApi {
-	const widget = readKodyWidget()
-	if (widget) {
-		return widget
+function markKodyWidgetRuntimeReady() {
+	const state = getOrCreateKodyWidgetRuntimeState()
+	if (state.ready) {
+		return
 	}
-	throw new Error(
-		'kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/ui-utils` and await it before using the runtime helpers.',
-	)
+	state.ready = true
+	state.resolveReady()
 }
 
-export function whenKodyWidgetReady(): Promise<KodyWidgetPublicApi> {
-	const widget = readKodyWidget()
-	if (widget) {
-		return Promise.resolve(widget)
+function getKodyWidgetRuntimeHooks(): GeneratedUiRuntimeHooks {
+	const state = getOrCreateKodyWidgetRuntimeState()
+	const runtimeHooks = isRecord(kodyWindow.__kodyGeneratedUiRuntimeHooks)
+		? kodyWindow.__kodyGeneratedUiRuntimeHooks
+		: state.hooks
+	state.hooks = runtimeHooks
+	return runtimeHooks
+}
+
+export function setGeneratedUiRuntimeHooks(
+	hooks: KodyWindow['__kodyGeneratedUiRuntimeHooks'],
+) {
+	const state = getOrCreateKodyWidgetRuntimeState()
+	state.hooks = isRecord(hooks) ? hooks : {}
+	kodyWindow.__kodyGeneratedUiRuntimeHooks = state.hooks
+}
+
+async function ensureKodyWidgetRuntimeReady() {
+	const state = getOrCreateKodyWidgetRuntimeState()
+	if (state.ready) {
+		return state
 	}
-	return getOrCreateKodyWidgetReadyState().promise
+	if (getBootstrap().mode === 'entry') {
+		return state
+	}
+	let timeoutId: ReturnType<typeof setTimeout> | null = null
+	try {
+		await Promise.race([
+			state.readyPromise,
+			new Promise<never>((_resolve, reject) => {
+				timeoutId = globalThis.setTimeout(() => {
+					reject(
+						new Error(
+							`Timed out waiting for the kodyWidget runtime to initialize after ${kodyWidgetRuntimeReadyTimeoutMs / 1000} seconds. Make sure the generated UI runtime bootstrap has finished loading before calling host-backed kodyWidget methods.`,
+						),
+					)
+				}, kodyWidgetRuntimeReadyTimeoutMs)
+			}),
+		])
+	} finally {
+		if (timeoutId != null) {
+			globalThis.clearTimeout(timeoutId)
+		}
+	}
+	return getOrCreateKodyWidgetRuntimeState()
 }
 
-export function getOrCreateKodyWidgetReadyStateForTest() {
+function getOrCreateKodyWidgetFacade() {
+	const existingWidget = kodyWindow.kodyWidget
+	if (existingWidget) {
+		return existingWidget
+	}
+	const widget = createKodyWidgetFacade()
+	kodyWindow.kodyWidget = widget
+	return widget
+}
+
+export function getKodyWidgetRuntimeStateForTest() {
 	return {
-		resolve(widget: KodyWidgetPublicApi) {
-			currentKodyWidget = widget
-			resolveKodyWidgetReady(widget)
+		install(input: {
+			mode: GeneratedUiRuntimeBootstrap['mode']
+			params?: JsonRecord
+			appSession?: GeneratedUiAppSessionBootstrap | null
+			hooks?: KodyWindow['__kodyGeneratedUiRuntimeHooks']
+			ready?: boolean
+		}) {
+			const state = getOrCreateKodyWidgetRuntimeState()
+			state.mode = input.mode
+			state.params = input.params ?? {}
+			state.appSession = input.appSession ?? null
+			state.initialized = input.mode !== 'entry'
+			kodyWindow.__kodyGeneratedUiBootstrap = {
+				mode: input.mode,
+				params: state.params,
+				appSession: state.appSession,
+			}
+			kodyWindow.__kodyGeneratedUiRuntimeInitialized = state.initialized
+			setGeneratedUiRuntimeHooks(input.hooks)
+			syncKodyWidgetParams()
+			if (state.initialized && input.ready !== false) {
+				markKodyWidgetRuntimeReady()
+			}
 		},
 		reset() {
-			currentKodyWidget = null
-			kodyWidgetReadyState = null
+			kodyWindow.__kodyWidgetRuntimeState = createKodyWidgetRuntimeState()
+			kodyWindow.__kodyGeneratedUiBootstrap = undefined
+			kodyWindow.__kodyGeneratedUiRuntimeInitialized = false
+			kodyWindow.__kodyGeneratedUiRuntimeHooks = undefined
+			syncKodyWidgetParams()
 		},
 	}
 }
 
-export const kodyWidget = new Proxy(Object.create(null), {
-	get(_target, property) {
-		const widget = getKodyWidget()
-		const value = Reflect.get(widget, property)
-		return typeof value === 'function' ? value.bind(widget) : value
-	},
-	has(_target, property) {
-		return property in getKodyWidget()
-	},
-	ownKeys() {
-		return Reflect.ownKeys(getKodyWidget())
-	},
-	getOwnPropertyDescriptor(_target, property) {
-		const descriptor = Reflect.getOwnPropertyDescriptor(
-			getKodyWidget(),
-			property,
-		)
-		if (!descriptor) {
-			return undefined
-		}
-		return {
-			...descriptor,
-			configurable: true,
-		}
-	},
-}) as KodyWidgetPublicApi
+export const kodyWidget = getOrCreateKodyWidgetFacade()
 
 function isRecord(value: unknown): value is JsonRecord {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -863,6 +925,273 @@ function getBootstrap(): WidgetRuntimeBootstrap {
 	}
 }
 
+function getApiErrorMessage(payload: JsonRecord | null, fallback: string) {
+	return typeof payload?.error === 'string' ? payload.error : fallback
+}
+
+function getSessionRequestTarget(
+	type: 'execute' | 'secrets' | 'delete-secret',
+) {
+	const state = getOrCreateKodyWidgetRuntimeState()
+	const sessionToken =
+		state.appSession && typeof state.appSession.token === 'string'
+			? state.appSession.token
+			: null
+	const sessionEndpoints = state.appSession?.endpoints ?? null
+	if (!sessionToken || !sessionEndpoints) {
+		return null
+	}
+	const url =
+		type === 'execute'
+			? sessionEndpoints.execute
+			: type === 'secrets'
+				? sessionEndpoints.secrets
+				: sessionEndpoints.deleteSecret
+	if (typeof url !== 'string' || url.length === 0) {
+		return null
+	}
+	return { url, token: sessionToken }
+}
+
+async function fetchJsonResponse(input: {
+	url: string
+	method?: 'GET' | 'POST'
+	body?: JsonRecord
+	token?: string
+}): Promise<{ response: Response; payload: JsonRecord | null }> {
+	const headers = new Headers({
+		Accept: 'application/json',
+	})
+	if (input.body) {
+		headers.set('Content-Type', 'application/json')
+	}
+	if (input.token) {
+		headers.set('Authorization', 'Bearer ' + input.token)
+	}
+	const response = await fetch(input.url, {
+		method: input.method ?? 'GET',
+		headers,
+		body: input.body ? JSON.stringify(input.body) : undefined,
+		cache: 'no-store',
+		credentials: input.token ? 'omit' : 'include',
+	})
+	const payload = (await response.json().catch(() => null)) as JsonRecord | null
+	return { response, payload }
+}
+
+function getOAuthStorage(): Storage {
+	try {
+		return window.localStorage
+	} catch {
+		return window.sessionStorage
+	}
+}
+
+async function requestDisplayMode(
+	mode: DisplayMode,
+): Promise<DisplayMode | null> {
+	await ensureKodyWidgetRuntimeReady()
+	if (getOrCreateKodyWidgetRuntimeState().mode === 'mcp') {
+		const hook = getKodyWidgetRuntimeHooks().requestDisplayMode
+		return typeof hook === 'function' ? await hook(mode) : null
+	}
+	return null
+}
+
+async function executeCodeWithHttp(code: string, params?: JsonRecord) {
+	const target = getSessionRequestTarget('execute')
+	if (!target) {
+		throw new Error('Code execution is unavailable in this context.')
+	}
+	const { response, payload } = await fetchJsonResponse({
+		url: target.url,
+		method: 'POST',
+		body: {
+			code,
+			...(params ? { params } : {}),
+		},
+		token: target.token,
+	})
+	if (!response.ok || !payload || payload.ok !== true) {
+		throw new Error(getApiErrorMessage(payload, 'Code execution failed.'))
+	}
+	return payload.result ?? null
+}
+
+async function executeCodeInCurrentContext(code: string, params?: JsonRecord) {
+	const state = await ensureKodyWidgetRuntimeReady()
+	if (state.mode === 'hosted') {
+		return await executeCodeWithHttp(code, params)
+	}
+	if (state.mode === 'mcp') {
+		const hook = getKodyWidgetRuntimeHooks().executeCode
+		if (typeof hook === 'function') {
+			return await hook(code, params)
+		}
+		return await executeCodeWithHttp(code, params)
+	}
+	return null
+}
+
+async function saveSecretWithHttp(
+	input: SaveSecretInput,
+): Promise<SaveSecretResult> {
+	const target = getSessionRequestTarget('secrets')
+	if (!target) {
+		return {
+			ok: false,
+			error: 'Secret storage is unavailable in this context.',
+		}
+	}
+	const { response, payload } = await fetchJsonResponse({
+		url: target.url,
+		method: 'POST',
+		body: {
+			name: input.name,
+			value: input.value,
+			description: input.description ?? '',
+			...(input.scope ? { scope: input.scope } : {}),
+		},
+		token: target.token,
+	})
+	if (!response.ok || !payload || payload.ok !== true) {
+		return {
+			ok: false,
+			error: getApiErrorMessage(payload, 'Unable to save secret.'),
+		}
+	}
+	return {
+		ok: true,
+		secret: coerceSecretMetadata(payload.secret) ?? undefined,
+	}
+}
+
+async function saveSecretInCurrentContext(
+	input: SaveSecretInput,
+): Promise<SaveSecretResult> {
+	await ensureKodyWidgetRuntimeReady()
+	return await saveSecretWithHttp(input)
+}
+
+async function listSecretsWithHttp(
+	scope?: GeneratedUiStorageScope,
+): Promise<Array<GeneratedUiSecretMetadata>> {
+	const target = getSessionRequestTarget('secrets')
+	if (!target) return []
+	const url = new URL(target.url)
+	if (scope) {
+		url.searchParams.set('scope', scope)
+	}
+	const { response, payload } = await fetchJsonResponse({
+		url: url.toString(),
+		method: 'GET',
+		token: target.token,
+	})
+	if (!response.ok || !Array.isArray(payload?.secrets)) {
+		throw new Error(getApiErrorMessage(payload, 'Unable to list secrets.'))
+	}
+	return payload.secrets
+		.map((secret: unknown) => coerceSecretMetadata(secret))
+		.filter((secret: GeneratedUiSecretMetadata | null) => secret != null)
+}
+
+async function listSecretsInCurrentContext(
+	scope?: GeneratedUiStorageScope,
+): Promise<Array<GeneratedUiSecretMetadata>> {
+	await ensureKodyWidgetRuntimeReady()
+	try {
+		const response = await listSecretsWithHttp(scope ?? undefined)
+		return Array.isArray(response) ? response : []
+	} catch {
+		return []
+	}
+}
+
+async function deleteSecretWithHttp(
+	input: DeleteSecretInput,
+): Promise<DeleteSecretResult> {
+	const target = getSessionRequestTarget('delete-secret')
+	if (!target) {
+		return {
+			ok: false,
+			error: 'Secret storage is unavailable in this context.',
+		}
+	}
+	const { response, payload } = await fetchJsonResponse({
+		url: target.url,
+		method: 'POST',
+		body: {
+			name: input.name,
+			...(input.scope ? { scope: input.scope } : {}),
+		},
+		token: target.token,
+	})
+	if (!response.ok || !payload || payload.ok !== true) {
+		return {
+			ok: false,
+			error: getApiErrorMessage(payload, 'Unable to delete secret.'),
+		}
+	}
+	return {
+		ok: true,
+		deleted: payload.deleted === true,
+	}
+}
+
+async function deleteSecretInCurrentContext(
+	input: DeleteSecretInput,
+): Promise<DeleteSecretResult> {
+	await ensureKodyWidgetRuntimeReady()
+	return await deleteSecretWithHttp(input)
+}
+
+function sendMessageInCurrentContext(text: unknown) {
+	const send = () => {
+		const runtimeMode = getOrCreateKodyWidgetRuntimeState().mode
+		if (runtimeMode === 'hosted') {
+			if (typeof text === 'string' && text.length > 0) {
+				console.info('[kodyWidget] message:', text)
+			}
+			return false
+		}
+		if (runtimeMode === 'mcp') {
+			const hook = getKodyWidgetRuntimeHooks().sendMessage
+			return typeof hook === 'function' ? hook(String(text ?? '')) : false
+		}
+		return appendLocalMessageLogEntry(text)
+	}
+	if (
+		getOrCreateKodyWidgetRuntimeState().ready ||
+		getBootstrap().mode === 'entry'
+	) {
+		return send()
+	}
+	return ensureKodyWidgetRuntimeReady().then(() => send())
+}
+
+function openLinkInCurrentContext(url: string) {
+	const open = () => {
+		const runtimeMode = getOrCreateKodyWidgetRuntimeState().mode
+		if (runtimeMode === 'hosted') {
+			if (typeof url !== 'string' || url.length === 0) return false
+			window.open(url, '_blank', 'noopener,noreferrer')
+			return true
+		}
+		if (runtimeMode === 'mcp') {
+			const hook = getKodyWidgetRuntimeHooks().openLink
+			return typeof hook === 'function' ? hook(url) : false
+		}
+		return false
+	}
+	if (
+		getOrCreateKodyWidgetRuntimeState().ready ||
+		getBootstrap().mode === 'entry'
+	) {
+		return open()
+	}
+	return ensureKodyWidgetRuntimeReady().then(() => open())
+}
+
 export function initializeGeneratedUiRuntime() {
 	if (kodyWindow.__kodyGeneratedUiRuntimeInitialized) {
 		return
@@ -871,267 +1200,46 @@ export function initializeGeneratedUiRuntime() {
 	if (bootstrap.mode === 'entry') {
 		return
 	}
+	const state = getOrCreateKodyWidgetRuntimeState()
+	state.initialized = true
+	state.mode = bootstrap.mode
+	state.params = bootstrap.params
+	state.appSession = bootstrap.appSession
 	kodyWindow.__kodyGeneratedUiRuntimeInitialized = true
-	const runtimeMode: Exclude<GeneratedUiRuntimeBootstrap['mode'], 'entry'> =
-		bootstrap.mode
-	const runtimeParams = bootstrap.params
-	const sessionToken =
-		bootstrap.appSession && typeof bootstrap.appSession.token === 'string'
-			? bootstrap.appSession.token
-			: null
-	const sessionEndpoints = bootstrap.appSession?.endpoints ?? null
+	syncKodyWidgetParams()
+	markKodyWidgetRuntimeReady()
 
-	function getApiErrorMessage(payload: JsonRecord | null, fallback: string) {
-		return typeof payload?.error === 'string' ? payload.error : fallback
-	}
+	window.addEventListener('error', (event) => {
+		console.error(
+			'Generated UI app error:',
+			event.error?.message ?? event.message ?? event.error ?? 'Unknown error',
+		)
+	})
 
-	function getRuntimeHooks(): NonNullable<
-		KodyWindow['__kodyGeneratedUiRuntimeHooks']
-	> {
-		return isRecord(kodyWindow.__kodyGeneratedUiRuntimeHooks)
-			? kodyWindow.__kodyGeneratedUiRuntimeHooks
-			: {}
-	}
+	window.addEventListener('unhandledrejection', (event) => {
+		console.error(
+			'Generated UI app rejection:',
+			event.reason?.message ?? event.reason ?? 'Unknown rejection',
+		)
+	})
+}
 
-	function getSessionRequestTarget(
-		type: 'execute' | 'secrets' | 'delete-secret',
-	) {
-		if (!sessionToken || !sessionEndpoints) {
-			return null
-		}
-		const url =
-			type === 'execute'
-				? sessionEndpoints.execute
-				: type === 'secrets'
-					? sessionEndpoints.secrets
-					: sessionEndpoints.deleteSecret
-		if (typeof url !== 'string' || url.length === 0) {
-			return null
-		}
-		return { url, token: sessionToken }
-	}
-
-	async function fetchJsonResponse(input: {
-		url: string
-		method?: 'GET' | 'POST'
-		body?: JsonRecord
-		token?: string
-	}): Promise<{ response: Response; payload: JsonRecord | null }> {
-		const headers = new Headers({
-			Accept: 'application/json',
-		})
-		if (input.body) {
-			headers.set('Content-Type', 'application/json')
-		}
-		if (input.token) {
-			headers.set('Authorization', 'Bearer ' + input.token)
-		}
-		const response = await fetch(input.url, {
-			method: input.method ?? 'GET',
-			headers,
-			body: input.body ? JSON.stringify(input.body) : undefined,
-			cache: 'no-store',
-			credentials: input.token ? 'omit' : 'include',
-		})
-		const payload = (await response
-			.json()
-			.catch(() => null)) as JsonRecord | null
-		return { response, payload }
-	}
-
-	async function executeCodeWithHttp(code: string, params?: JsonRecord) {
-		const target = getSessionRequestTarget('execute')
-		if (!target) {
-			throw new Error('Code execution is unavailable in this context.')
-		}
-		const { response, payload } = await fetchJsonResponse({
-			url: target.url,
-			method: 'POST',
-			body: {
-				code,
-				...(params ? { params } : {}),
-			},
-			token: target.token,
-		})
-		if (!response.ok || !payload || payload.ok !== true) {
-			throw new Error(getApiErrorMessage(payload, 'Code execution failed.'))
-		}
-		return payload.result ?? null
-	}
-
-	async function saveSecretWithHttp(
-		input: SaveSecretInput,
-	): Promise<SaveSecretResult> {
-		const target = getSessionRequestTarget('secrets')
-		if (!target) {
-			return {
-				ok: false,
-				error: 'Secret storage is unavailable in this context.',
-			}
-		}
-		const { response, payload } = await fetchJsonResponse({
-			url: target.url,
-			method: 'POST',
-			body: {
-				name: input.name,
-				value: input.value,
-				description: input.description ?? '',
-				...(input.scope ? { scope: input.scope } : {}),
-			},
-			token: target.token,
-		})
-		if (!response.ok || !payload || payload.ok !== true) {
-			return {
-				ok: false,
-				error: getApiErrorMessage(payload, 'Unable to save secret.'),
-			}
-		}
-		return {
-			ok: true,
-			secret: coerceSecretMetadata(payload.secret) ?? undefined,
-		}
-	}
-
-	async function listSecretsWithHttp(
-		scope?: GeneratedUiStorageScope,
-	): Promise<Array<GeneratedUiSecretMetadata>> {
-		const target = getSessionRequestTarget('secrets')
-		if (!target) return []
-		const url = new URL(target.url)
-		if (scope) {
-			url.searchParams.set('scope', scope)
-		}
-		const { response, payload } = await fetchJsonResponse({
-			url: url.toString(),
-			method: 'GET',
-			token: target.token,
-		})
-		if (!response.ok || !Array.isArray(payload?.secrets)) {
-			throw new Error(getApiErrorMessage(payload, 'Unable to list secrets.'))
-		}
-		return payload.secrets
-			.map((secret: unknown) => coerceSecretMetadata(secret))
-			.filter((secret: GeneratedUiSecretMetadata | null) => secret != null)
-	}
-
-	async function deleteSecretWithHttp(
-		input: DeleteSecretInput,
-	): Promise<DeleteSecretResult> {
-		const target = getSessionRequestTarget('delete-secret')
-		if (!target) {
-			return {
-				ok: false,
-				error: 'Secret storage is unavailable in this context.',
-			}
-		}
-		const { response, payload } = await fetchJsonResponse({
-			url: target.url,
-			method: 'POST',
-			body: {
-				name: input.name,
-				...(input.scope ? { scope: input.scope } : {}),
-			},
-			token: target.token,
-		})
-		if (!response.ok || !payload || payload.ok !== true) {
-			return {
-				ok: false,
-				error: getApiErrorMessage(payload, 'Unable to delete secret.'),
-			}
-		}
-		return {
-			ok: true,
-			deleted: payload.deleted === true,
-		}
-	}
-
-	function getOAuthStorage(): Storage {
-		try {
-			return window.localStorage
-		} catch {
-			return window.sessionStorage
-		}
-	}
-
-	async function requestDisplayMode(
-		mode: DisplayMode,
-	): Promise<DisplayMode | null> {
-		if (runtimeMode === 'mcp') {
-			const hook = getRuntimeHooks().requestDisplayMode
-			return typeof hook === 'function' ? await hook(mode) : null
-		}
-		return null
-	}
-
-	async function executeCodeInCurrentContext(code: string, params?: JsonRecord) {
-		if (runtimeMode === 'hosted') {
-			return await executeCodeWithHttp(code, params)
-		}
-		if (runtimeMode === 'mcp') {
-			const hook = getRuntimeHooks().executeCode
-			if (typeof hook === 'function') {
-				return await hook(code, params)
-			}
-			return await executeCodeWithHttp(code, params)
-		}
-		return null
-	}
-
-	async function saveSecretInCurrentContext(
-		input: SaveSecretInput,
-	): Promise<SaveSecretResult> {
-		return await saveSecretWithHttp(input)
-	}
-
-	async function listSecretsInCurrentContext(
-		scope?: GeneratedUiStorageScope,
-	): Promise<Array<GeneratedUiSecretMetadata>> {
-		try {
-			const response = await listSecretsWithHttp(scope ?? undefined)
-			return Array.isArray(response) ? response : []
-		} catch {
-			return []
-		}
-	}
-
-	async function deleteSecretInCurrentContext(
-		input: DeleteSecretInput,
-	): Promise<DeleteSecretResult> {
-		return await deleteSecretWithHttp(input)
-	}
-
-	const kodyWidget = {
-		params: runtimeParams,
+function createKodyWidgetFacade(): KodyWidgetPublicApi {
+	return {
+		get params() {
+			return getOrCreateKodyWidgetRuntimeState().params
+		},
 		sendMessage(text: unknown) {
-			if (runtimeMode === 'hosted') {
-				if (typeof text === 'string' && text.length > 0) {
-					console.info('[kodyWidget] message:', text)
-				}
-				return false
-			}
-			if (runtimeMode === 'mcp') {
-				const hook = getRuntimeHooks().sendMessage
-				return typeof hook === 'function' ? hook(String(text ?? '')) : false
-			}
-			return appendLocalMessageLogEntry(text)
+			return sendMessageInCurrentContext(text)
 		},
 		openLink(url: string) {
-			if (runtimeMode === 'hosted') {
-				if (typeof url !== 'string' || url.length === 0) return false
-				window.open(url, '_blank', 'noopener,noreferrer')
-				return true
-			}
-			if (runtimeMode === 'mcp') {
-				const hook = getRuntimeHooks().openLink
-				return typeof hook === 'function' ? hook(url) : false
-			}
-			return false
+			return openLinkInCurrentContext(url)
 		},
 		async requestDisplayMode(mode: DisplayMode) {
 			return await requestDisplayMode(mode)
 		},
 		async toggleFullscreen() {
-			if (runtimeMode === 'hosted') {
+			if (getOrCreateKodyWidgetRuntimeState().mode === 'hosted') {
 				return 'inline'
 			}
 			return await requestDisplayMode('fullscreen')
@@ -1741,7 +1849,7 @@ export function initializeGeneratedUiRuntime() {
 					scope: coerceStorageScope(input.scope) ?? undefined,
 				})
 			}
-			const saved = await kodyWidget.saveSecrets(secrets)
+			const saved = (await kodyWidget.saveSecrets(secrets)) as SaveSecretsResult
 			return {
 				ok: saved.ok,
 				accessTokenSaved: saved.results.some(
@@ -1861,24 +1969,5 @@ export function initializeGeneratedUiRuntime() {
 			}
 			return await deleteSecretInCurrentContext(input)
 		},
-	}
-
-	kodyWindow.__kodyAppParams = runtimeParams
-	currentKodyWidget = kodyWidget
-	kodyWindow.params = runtimeParams
-	resolveKodyWidgetReady(kodyWidget)
-
-	window.addEventListener('error', (event) => {
-		console.error(
-			'Generated UI app error:',
-			event.error?.message ?? event.message ?? event.error ?? 'Unknown error',
-		)
-	})
-
-	window.addEventListener('unhandledrejection', (event) => {
-		console.error(
-			'Generated UI app rejection:',
-			event.reason?.message ?? event.reason ?? 'Unknown rejection',
-		)
-	})
+	} as KodyWidgetPublicApi
 }

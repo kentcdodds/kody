@@ -1,5 +1,13 @@
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import { type Handle } from 'remix/component'
+import {
+	cardCss,
+	mutedLinkCss,
+	pageDescriptionCss,
+	pageEyebrowCss,
+	pageHeaderCss,
+	pageTitleCss,
+	stackedPageCss,
+} from '#client/styles/style-primitives.ts'
 
 export function OAuthCallbackRoute(_handle: Handle) {
 	return () => {
@@ -17,57 +25,32 @@ export function OAuthCallbackRoute(_handle: Handle) {
 		const detail = isError ? message : code
 
 		return (
-			<section
-				css={{
-					maxWidth: '32rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.lg,
-				}}
-			>
-				<header css={{ display: 'grid', gap: spacing.xs }}>
-					<h2
-						css={{
-							fontSize: typography.fontSize.xl,
-							fontWeight: typography.fontWeight.semibold,
-							color: colors.text,
-						}}
-					>
-						OAuth callback
-					</h2>
-					<p css={{ color: colors.textMuted }}>{title}.</p>
+			<section css={pageCss}>
+				<header css={headerCss}>
+					<span css={eyebrowCss}>Kody secure connection</span>
+					<h2 css={pageTitleCss}>OAuth callback</h2>
+					<p css={pageDescriptionCss}>{title}.</p>
 				</header>
-				{detail ? (
-					<pre
-						css={{
-							margin: 0,
-							padding: spacing.md,
-							borderRadius: radius.md,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.surface,
-							whiteSpace: 'pre-wrap',
-						}}
-					>
-						{detail}
-					</pre>
-				) : null}
-				{state ? (
-					<p css={{ color: colors.textMuted, margin: 0 }}>State: {state}</p>
-				) : null}
-				<a
-					href="/"
-					css={{
-						color: colors.textMuted,
-						fontSize: typography.fontSize.sm,
-						textDecoration: 'none',
-						'&:hover': {
-							textDecoration: 'underline',
-						},
-					}}
-				>
+				{detail ? <pre css={detailCardCss}>{detail}</pre> : null}
+				{state ? <p css={pageDescriptionCss}>State: {state}</p> : null}
+				<a href="/" css={mutedLinkCss}>
 					Back home
 				</a>
 			</section>
 		)
 	}
+}
+
+const pageCss = {
+	...stackedPageCss,
+	maxWidth: '32rem',
+	margin: '0 auto',
+}
+
+const headerCss = pageHeaderCss
+const eyebrowCss = pageEyebrowCss
+const detailCardCss = {
+	...cardCss,
+	margin: 0,
+	whiteSpace: 'pre-wrap' as const,
 }

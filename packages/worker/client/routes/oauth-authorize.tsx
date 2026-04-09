@@ -4,13 +4,24 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from '#client/session.ts'
+import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	colors,
-	radius,
-	shadows,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
+	cardCss,
+	descriptionCss,
+	fieldCss,
+	fieldLabelCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	insetCardCss,
+	inputCss,
+	mutedLinkCss,
+	pageDescriptionCss,
+	pageEyebrowCss,
+	pageHeaderCss,
+	pageTitleCss,
+	sectionTitleCss,
+	stackedPageCss,
+} from '#client/styles/style-primitives.ts'
 
 type OAuthAuthorizeInfo = {
 	client: { id: string; name: string }
@@ -206,64 +217,23 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				: 'Authorize'
 
 		return (
-			<section
-				css={{
-					maxWidth: '28rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.lg,
-				}}
-			>
-				<header css={{ display: 'grid', gap: spacing.xs }}>
-					<h2
-						css={{
-							fontSize: typography.fontSize.xl,
-							fontWeight: typography.fontWeight.semibold,
-							color: colors.text,
-						}}
-					>
-						Authorize access
-					</h2>
-					<p css={{ color: colors.textMuted }}>
+			<section css={pageCss}>
+				<header css={headerCss}>
+					<span css={eyebrowCss}>Kody secure connection</span>
+					<h2 css={pageTitleCss}>Authorize access</h2>
+					<p css={pageDescriptionCss}>
 						{clientLabel} wants to access your kody account.
 					</p>
 				</header>
-				<section
-					css={{
-						padding: spacing.lg,
-						borderRadius: radius.lg,
-						border: `1px solid ${colors.border}`,
-						backgroundColor: colors.surface,
-						boxShadow: shadows.sm,
-						display: 'grid',
-						gap: spacing.sm,
-					}}
-				>
-					<p
-						css={{
-							margin: 0,
-							fontWeight: typography.fontWeight.medium,
-							color: colors.text,
-						}}
-					>
-						Requested scopes
-					</p>
-					<p css={{ margin: 0, color: colors.textMuted }}>{scopeLabel}</p>
+				<section css={cardCss}>
+					<p css={sectionTitleCss}>Requested scopes</p>
+					<p css={descriptionCss}>{scopeLabel}</p>
 				</section>
 				{isSessionLoading ? (
-					<p css={{ color: colors.textMuted }}>Checking your session…</p>
+					<p css={descriptionCss}>Checking your session...</p>
 				) : null}
 				{isLoggedIn ? (
-					<section
-						css={{
-							padding: spacing.md,
-							borderRadius: radius.md,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.surface,
-							display: 'grid',
-							gap: spacing.xs,
-						}}
-					>
+					<section css={insetCardCss}>
 						<p
 							css={{
 								margin: 0,
@@ -273,22 +243,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						>
 							Signed in as {sessionEmail}
 						</p>
-						<p css={{ margin: 0, color: colors.textMuted }}>
-							Approve to continue with this account.
-						</p>
+						<p css={descriptionCss}>Approve to continue with this account.</p>
 					</section>
 				) : null}
 				{status === 'loading' ? (
-					<p css={{ color: colors.textMuted }}>
-						Loading authorization details…
-					</p>
+					<p css={descriptionCss}>Loading authorization details...</p>
 				) : null}
 				{message ? (
 					<p
-						css={{
-							color: message.type === 'error' ? colors.error : colors.text,
-							fontSize: typography.fontSize.sm,
-						}}
+						css={getMessageCardCss(message.type)}
 						role={message.type === 'error' ? 'alert' : undefined}
 					>
 						{message.text}
@@ -296,29 +259,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				) : null}
 				<form
 					css={{
-						display: 'grid',
-						gap: spacing.md,
-						padding: spacing.lg,
-						borderRadius: radius.lg,
-						border: `1px solid ${colors.border}`,
-						backgroundColor: colors.surface,
-						boxShadow: shadows.sm,
+						...cardCss,
 						opacity: formReady ? 1 : 0.7,
 					}}
 					on={{ submit: handleSubmit }}
 				>
 					{!isLoggedIn && isSessionReady ? (
 						<>
-							<label css={{ display: 'grid', gap: spacing.xs }}>
-								<span
-									css={{
-										color: colors.text,
-										fontWeight: typography.fontWeight.medium,
-										fontSize: typography.fontSize.sm,
-									}}
-								>
-									Email
-								</span>
+							<label css={fieldCss}>
+								<span css={fieldLabelCss}>Email</span>
 								<input
 									type="email"
 									name="email"
@@ -326,25 +275,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 									autoComplete="email"
 									placeholder="you@example.com"
 									disabled={actionsDisabled}
-									css={{
-										padding: spacing.sm,
-										borderRadius: radius.md,
-										border: `1px solid ${colors.border}`,
-										fontSize: typography.fontSize.base,
-										fontFamily: typography.fontFamily,
-									}}
+									css={inputCss}
 								/>
 							</label>
-							<label css={{ display: 'grid', gap: spacing.xs }}>
-								<span
-									css={{
-										color: colors.text,
-										fontWeight: typography.fontWeight.medium,
-										fontSize: typography.fontSize.sm,
-									}}
-								>
-									Password
-								</span>
+							<label css={fieldCss}>
+								<span css={fieldLabelCss}>Password</span>
 								<input
 									type="password"
 									name="password"
@@ -352,13 +287,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 									autoComplete="current-password"
 									placeholder="Enter your password"
 									disabled={actionsDisabled}
-									css={{
-										padding: spacing.sm,
-										borderRadius: radius.md,
-										border: `1px solid ${colors.border}`,
-										fontSize: typography.fontSize.base,
-										fontFamily: typography.fontFamily,
-									}}
+									css={inputCss}
 								/>
 							</label>
 						</>
@@ -367,17 +296,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						<button
 							type="submit"
 							disabled={actionsDisabled}
-							css={{
-								padding: `${spacing.sm} ${spacing.lg}`,
-								borderRadius: radius.full,
-								border: 'none',
-								backgroundColor: colors.primary,
-								color: colors.onPrimary,
-								fontSize: typography.fontSize.base,
-								fontWeight: typography.fontWeight.semibold,
-								cursor: actionsDisabled ? 'not-allowed' : 'pointer',
-								opacity: actionsDisabled ? 0.7 : 1,
-							}}
+							css={primaryButtonCss}
 						>
 							{authorizeLabel}
 						</button>
@@ -385,36 +304,45 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							type="button"
 							disabled={actionsDisabled}
 							on={{ click: () => submitDecision('deny') }}
-							css={{
-								padding: `${spacing.sm} ${spacing.lg}`,
-								borderRadius: radius.full,
-								border: `1px solid ${colors.border}`,
-								backgroundColor: 'transparent',
-								color: colors.text,
-								fontSize: typography.fontSize.base,
-								fontWeight: typography.fontWeight.medium,
-								cursor: actionsDisabled ? 'not-allowed' : 'pointer',
-								opacity: actionsDisabled ? 0.7 : 1,
-							}}
+							css={secondaryButtonCss}
 						>
 							Deny
 						</button>
 					</div>
 				</form>
-				<a
-					href="/"
-					css={{
-						color: colors.textMuted,
-						fontSize: typography.fontSize.sm,
-						textDecoration: 'none',
-						'&:hover': {
-							textDecoration: 'underline',
-						},
-					}}
-				>
+				<a href="/" css={mutedLinkCss}>
 					Back home
 				</a>
 			</section>
 		)
+	}
+}
+
+const pageCss = {
+	...stackedPageCss,
+	maxWidth: '28rem',
+	margin: '0 auto',
+}
+
+const headerCss = pageHeaderCss
+const eyebrowCss = pageEyebrowCss
+const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+const secondaryButtonCss = getSecondaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
+
+function getMessageCardCss(type: 'error' | 'info') {
+	return {
+		margin: 0,
+		padding: spacing.md,
+		borderRadius: radius.md,
+		border: `1px solid ${type === 'error' ? colors.error : colors.primary}`,
+		backgroundColor:
+			type === 'error'
+				? 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))'
+				: colors.primarySoftest,
+		color: type === 'error' ? colors.error : colors.text,
+		fontSize: typography.fontSize.sm,
 	}
 }
