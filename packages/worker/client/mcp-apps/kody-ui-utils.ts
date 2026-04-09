@@ -572,12 +572,23 @@ function writeDocument(html: string) {
 	documentRef.close()
 }
 
-function buildHeadInjection(input: {
+export type BuildGeneratedUiHeadInjectionInput = {
 	mode: Extract<GeneratedUiRuntimeMode, 'hosted' | 'mcp'>
 	params?: Record<string, unknown>
 	appSession?: AppSessionEnvelope | null
 	baseHref: string | null
-}) {
+	/**
+	 * When false, omit the runtime module script. Use when the generated UI shell
+	 * has already loaded `kody-ui-utils.js` — a second `<script type="module">` for
+	 * the same URL does not re-run the module, so hooks/init must be triggered
+	 * from the shell instead.
+	 */
+	includeRuntimeScript?: boolean
+}
+
+export function buildGeneratedUiRuntimeHeadInjection(
+	input: BuildGeneratedUiHeadInjectionInput,
+) {
 	const stylesheetHref = resolveGeneratedUiAssetUrl(
 		generatedUiRuntimeStylesheetPath,
 		input.baseHref,
@@ -593,13 +604,16 @@ function buildHeadInjection(input: {
 	}
 	const bootstrapJson = escapeInlineScriptSource(JSON.stringify(bootstrap))
 	const runtimeImportMap = buildGeneratedUiRuntimeImportMap(runtimeScriptHref)
+	const includeRuntimeScript = input.includeRuntimeScript !== false
+	const runtimeScriptTag = includeRuntimeScript
+		? `\n<script type="module" src="${runtimeScriptHref}"></script>`
+		: ''
 	return `
 <link rel="stylesheet" href="${stylesheetHref}" />
 ${runtimeImportMap}
 <script>
 window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
-</script>
-<script type="module" src="${runtimeScriptHref}"></script>
+</script>${runtimeScriptTag}
 	`.trim()
 }
 
@@ -619,27 +633,17 @@ export function shouldInitializeGeneratedUiRuntimeImmediately(input: {
 	)
 }
 
-async function initializeRenderedMcpDocument(
+function activateMcpGeneratedUiRuntime(
+	hostBridge: ReturnType<typeof createWidgetHostBridge>,
 	bootstrap: GeneratedUiRuntimeBootstrap,
+	latestRenderDataRef: { current: RenderDataEnvelope | undefined },
 ) {
-	let latestRenderData: RenderDataEnvelope | undefined
-	const hostBridge = createWidgetHostBridge({
-		appInfo: {
-			name: 'kody-ui-utils',
-			version: '1.0.0',
-		},
-		onRenderData: (renderData) => {
-			latestRenderData = isRecord(renderData)
-				? (renderData as RenderDataEnvelope)
-				: undefined
-		},
-	})
 	const requestDisplayMode = async (mode: DisplayMode) => {
-		const displayMode = latestRenderData?.displayMode
+		const displayMode = latestRenderDataRef.current?.displayMode
 		const availableDisplayModes = Array.isArray(
-			latestRenderData?.availableDisplayModes,
+			latestRenderDataRef.current?.availableDisplayModes,
 		)
-			? latestRenderData.availableDisplayModes
+			? latestRenderDataRef.current.availableDisplayModes
 			: []
 		const nextMode =
 			mode === 'fullscreen' && displayMode === 'fullscreen' ? 'inline' : mode
@@ -665,17 +669,45 @@ async function initializeRenderedMcpDocument(
 		},
 	})
 	initializeGeneratedUiRuntime()
+	void observeRenderedDocumentSize(hostBridge)
+}
+
+async function initializeRenderedMcpDocument(
+	bootstrap: GeneratedUiRuntimeBootstrap,
+) {
+	let latestRenderData: RenderDataEnvelope | undefined
+	const latestRenderDataRef = {
+		get current() {
+			return latestRenderData
+		},
+	}
+	const hostBridge = createWidgetHostBridge({
+		appInfo: {
+			name: 'kody-ui-utils',
+			version: '1.0.0',
+		},
+		onRenderData: (renderData) => {
+			latestRenderData = isRecord(renderData)
+				? (renderData as RenderDataEnvelope)
+				: undefined
+		},
+	})
+	activateMcpGeneratedUiRuntime(hostBridge, bootstrap, latestRenderDataRef)
 	globalThis.window.addEventListener('message', (event: MessageEvent) => {
 		hostBridge.handleHostMessage(event.data)
 	})
 	void hostBridge.initialize()
 	hostBridge.requestRenderData()
-	void observeRenderedDocumentSize(hostBridge)
 }
 
 async function initializeShellHostDocument() {
 	const baseHref = getBaseHref()
 	let latestRenderData: RenderDataEnvelope | undefined
+	const latestRenderDataRef = {
+		get current() {
+			return latestRenderData
+		},
+	}
 	let latestEnvelope: RenderEnvelope | null = null
 
 	const hostBridge = createWidgetHostBridge({
@@ -775,14 +807,21 @@ async function initializeShellHostDocument() {
 			renderGeneratedUiDocument({
 				code,
 				runtime,
-				headInjection: buildHeadInjection({
+				headInjection: buildGeneratedUiRuntimeHeadInjection({
 					mode: 'mcp',
 					params: envelope.params,
-					appSession: envelope.appSession,
+					appSession: envelope.appSession ?? undefined,
 					baseHref,
+					includeRuntimeScript: false,
 				}),
 				baseHref,
 			})
+
+		const mcpRuntimeBootstrap: GeneratedUiRuntimeBootstrap = {
+			mode: 'mcp',
+			params: envelope.params ?? {},
+			...(envelope.appSession ? { appSession: envelope.appSession } : {}),
+		}
 
 		if (envelope.mode === 'inline_code') {
 			if (!envelope.code) {
@@ -794,6 +833,11 @@ async function initializeShellHostDocument() {
 				return
 			}
 			writeDocument(buildDocument(envelope.code, envelope.runtime ?? 'html'))
+			activateMcpGeneratedUiRuntime(
+				hostBridge,
+				mcpRuntimeBootstrap,
+				latestRenderDataRef,
+			)
 			return
 		}
 
@@ -813,6 +857,11 @@ async function initializeShellHostDocument() {
 			)
 			if (latestEnvelope !== envelope) return
 			writeDocument(buildDocument(resolved.code, resolved.runtime))
+			activateMcpGeneratedUiRuntime(
+				hostBridge,
+				mcpRuntimeBootstrap,
+				latestRenderDataRef,
+			)
 		} catch (error) {
 			if (latestEnvelope !== envelope) return
 			const message =

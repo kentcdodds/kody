@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	absolutizeHtmlAttributeUrls,
 	buildCodemodeCapabilityExecuteCode,
+	buildGeneratedUiRuntimeHeadInjection,
 	getOrCreateKodyWidgetReadyStateForTest,
 	getKodyWidget,
 	injectIntoHtmlDocument,
@@ -236,6 +237,28 @@ test('imported kodyWidget proxy exposes resolved runtime properties', () => {
 
 	expect(kodyWidget.value).toBe(41)
 	expect(kodyWidget.params).toEqual({})
+})
+
+test('buildGeneratedUiRuntimeHeadInjection includes module script by default', () => {
+	const head = buildGeneratedUiRuntimeHeadInjection({
+		mode: 'mcp',
+		params: {},
+		baseHref: 'https://kody.example/',
+	})
+	expect(head).toContain('type="importmap"')
+	expect(head).toMatch(/<script type="module" src="[^"]*kody-ui-utils\.js"/)
+})
+
+test('buildGeneratedUiRuntimeHeadInjection can omit module script for shell-rendered apps', () => {
+	const head = buildGeneratedUiRuntimeHeadInjection({
+		mode: 'mcp',
+		params: {},
+		baseHref: 'https://kody.example/',
+		includeRuntimeScript: false,
+	})
+	expect(head).toContain('type="importmap"')
+	expect(head).toContain('window.__kodyGeneratedUiBootstrap')
+	expect(head).not.toMatch(/<script type="module"/)
 })
 
 test('hosted and mcp runtimes initialize immediately on import', () => {
