@@ -25,6 +25,17 @@ import {
 	transitions,
 	typography,
 } from '#client/styles/tokens.ts'
+import {
+	cardCss,
+	cardTitleCss,
+	descriptionCss,
+	fieldCss,
+	fieldLabelCss,
+	getDangerButtonCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	inputCss,
+} from '#client/styles/style-primitives.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
 import {
 	normalizeAllowedCapabilities,
@@ -992,28 +1003,13 @@ export function AccountSecretsRoute(handle: Handle) {
 				>
 					<aside
 						css={{
-							display: 'grid',
-							gap: spacing.md,
-							padding: spacing.lg,
-							borderRadius: radius.lg,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.surface,
-							boxShadow: shadows.sm,
+							...cardCss,
 							alignSelf: 'start',
 						}}
 					>
 						<div css={{ display: 'grid', gap: spacing.xs }}>
-							<h2
-								css={{
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-									color: colors.text,
-								}}
-							>
-								Saved secrets
-							</h2>
-							<p css={{ margin: 0, color: colors.textMuted }}>
+							<h2 css={cardTitleCss}>Saved secrets</h2>
+							<p css={descriptionCss}>
 								Select a secret to edit its metadata, value, and allowed hosts.
 							</p>
 						</div>
@@ -1187,13 +1183,8 @@ export function AccountSecretsRoute(handle: Handle) {
 
 					<div
 						css={{
-							display: 'grid',
+							...cardCss,
 							gap: spacing.lg,
-							padding: spacing.lg,
-							borderRadius: radius.lg,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.surface,
-							boxShadow: shadows.sm,
 						}}
 					>
 						{showEditor ? (
@@ -1438,29 +1429,6 @@ export function AccountSecretsRoute(handle: Handle) {
 	}
 }
 
-const fieldCss = {
-	display: 'grid',
-	gap: spacing.xs,
-}
-
-const fieldLabelCss = {
-	color: colors.text,
-	fontWeight: typography.fontWeight.medium,
-	fontSize: typography.fontSize.sm,
-}
-
-const inputCss = {
-	width: '100%',
-	padding: spacing.sm,
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.background,
-	color: colors.text,
-	fontSize: typography.fontSize.base,
-	fontFamily: typography.fontFamily,
-	boxSizing: 'border-box' as const,
-}
-
 const comboboxListCss = {
 	position: 'absolute' as const,
 	top: '100%',
@@ -1498,25 +1466,6 @@ const comboboxOptionCss = {
 	},
 }
 
-const primaryButtonCss = {
-	padding: `${spacing.sm} ${spacing.md}`,
-	borderRadius: radius.full,
-	border: 'none',
-	backgroundColor: colors.primary,
-	color: colors.onPrimary,
-	fontWeight: typography.fontWeight.medium,
-	cursor: 'pointer',
-}
-
-const secondaryButtonCss = {
-	...primaryButtonCss,
-	backgroundColor: 'transparent',
-	color: colors.text,
-	border: `1px solid ${colors.border}`,
-}
-
-const dangerButtonCss = {
-	...primaryButtonCss,
-	backgroundColor: colors.danger,
-	color: colors.onDanger,
-}
+const primaryButtonCss = getPrimaryButtonCss()
+const secondaryButtonCss = getSecondaryButtonCss()
+const dangerButtonCss = getDangerButtonCss()

@@ -1,11 +1,12 @@
 import { type Handle } from 'remix/component'
+import { colors, mq, spacing } from '#client/styles/tokens.ts'
 import {
-	colors,
-	mq,
-	radius,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
+	fieldCss,
+	fieldLabelCss,
+	getSecondaryButtonCss,
+	inputCss,
+	textareaCss,
+} from '#client/styles/style-primitives.ts'
 
 type SecretEditorFieldsProps = {
 	description: string
@@ -235,44 +236,7 @@ export function SecretEditorFields(_handle: Handle) {
 	)
 }
 
-const fieldCss = {
-	display: 'grid',
-	gap: spacing.xs,
-}
-
-const fieldLabelCss = {
-	color: colors.text,
-	fontWeight: typography.fontWeight.medium,
-	fontSize: typography.fontSize.sm,
-}
-
-const inputCss = {
-	width: '100%',
-	padding: spacing.sm,
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.background,
-	color: colors.text,
-	fontSize: typography.fontSize.base,
-	fontFamily: typography.fontFamily,
-	boxSizing: 'border-box' as const,
-}
-
-const textareaCss = {
-	...inputCss,
-	resize: 'vertical' as const,
-	minHeight: '7rem',
-}
-
-const secondaryButtonCss = {
-	padding: `${spacing.sm} ${spacing.md}`,
-	borderRadius: radius.full,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: 'transparent',
-	color: colors.text,
-	fontWeight: typography.fontWeight.medium,
-	cursor: 'pointer',
-}
+const secondaryButtonCss = getSecondaryButtonCss()
 
 const iconButtonCss = {
 	position: 'absolute' as const,

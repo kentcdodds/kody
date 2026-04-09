@@ -1,14 +1,18 @@
 import { type Handle } from 'remix/component'
 import { navigate } from '#client/client-router.tsx'
 import { getScopeLabel } from './account-approval-shared.ts'
+import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	colors,
-	mq,
-	radius,
-	shadows,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
+	cardCss,
+	cardTitleCss,
+	detailLabelCss,
+	fieldCss,
+	fieldLabelCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	inputCss,
+	listCss,
+} from '#client/styles/style-primitives.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
 import {
 	normalizeAllowedCapabilities,
@@ -937,73 +941,9 @@ export function ConnectSecretRoute(handle: Handle) {
 	}
 }
 
-const cardCss = {
-	padding: spacing.lg,
-	borderRadius: radius.lg,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.surface,
-	boxShadow: shadows.sm,
-	display: 'grid',
-	gap: spacing.sm,
-}
-
-const cardTitleCss = {
-	margin: 0,
-	fontSize: typography.fontSize.lg,
-	fontWeight: typography.fontWeight.semibold,
-	color: colors.text,
-}
-
-const labelCss = {
-	fontWeight: typography.fontWeight.medium,
-	fontSize: typography.fontSize.sm,
-	color: colors.textMuted,
-}
-
-const fieldCss = {
-	display: 'grid',
-	gap: spacing.xs,
-}
-
-const fieldLabelCss = {
-	color: colors.text,
-	fontWeight: typography.fontWeight.medium,
-	fontSize: typography.fontSize.sm,
-}
-
-const inputCss = {
-	width: '100%',
-	padding: spacing.sm,
-	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.background,
-	color: colors.text,
-	fontSize: typography.fontSize.base,
-	fontFamily: typography.fontFamily,
-	boxSizing: 'border-box' as const,
-}
-
-const listCss = {
-	margin: 0,
-	paddingLeft: spacing.lg,
-	display: 'grid',
-	gap: spacing.xs,
-	color: colors.text,
-}
-
-const primaryButtonCss = {
-	padding: `${spacing.sm} ${spacing.lg}`,
-	borderRadius: radius.full,
-	border: 'none',
-	backgroundColor: colors.primary,
-	color: colors.onPrimary,
-	fontWeight: typography.fontWeight.semibold,
-	cursor: 'pointer',
-}
-
-const secondaryButtonCss = {
-	...primaryButtonCss,
-	backgroundColor: 'transparent',
-	color: colors.text,
-	border: `1px solid ${colors.border}`,
-}
+const labelCss = detailLabelCss
+const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+const secondaryButtonCss = getSecondaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})

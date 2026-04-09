@@ -1,11 +1,18 @@
 import { type Handle } from 'remix/component'
+import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	colors,
-	radius,
-	shadows,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
+	cardCss,
+	fieldCss,
+	fieldLabelCss,
+	getPrimaryButtonCss,
+	inputCss,
+	mutedLinkCss,
+	pageDescriptionCss,
+	pageHeaderCss,
+	pageTitleCss,
+	primaryLinkCss,
+	stackedPageCss,
+} from '#client/styles/style-primitives.ts'
 
 type ResetStatus = 'idle' | 'submitting' | 'success' | 'error'
 
@@ -110,36 +117,13 @@ export function ResetPasswordRoute(handle: Handle) {
 				: 'We will send a reset link to your email.'
 
 		return (
-			<section
-				css={{
-					maxWidth: '28rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.lg,
-				}}
-			>
-				<header css={{ display: 'grid', gap: spacing.xs }}>
-					<h2
-						css={{
-							fontSize: typography.fontSize.xl,
-							fontWeight: typography.fontWeight.semibold,
-							color: colors.text,
-						}}
-					>
-						{title}
-					</h2>
-					<p css={{ color: colors.textMuted }}>{description}</p>
+			<section css={pageCss}>
+				<header css={pageHeaderCss}>
+					<h2 css={pageTitleCss}>{title}</h2>
+					<p css={pageDescriptionCss}>{description}</p>
 				</header>
 				<form
-					css={{
-						display: 'grid',
-						gap: spacing.md,
-						padding: spacing.lg,
-						borderRadius: radius.lg,
-						border: `1px solid ${colors.border}`,
-						backgroundColor: colors.surface,
-						boxShadow: shadows.sm,
-					}}
+					css={cardCss}
 					on={{
 						submit: (event) =>
 							mode === 'confirm'
@@ -148,16 +132,8 @@ export function ResetPasswordRoute(handle: Handle) {
 					}}
 				>
 					{mode === 'confirm' ? (
-						<label css={{ display: 'grid', gap: spacing.xs }}>
-							<span
-								css={{
-									color: colors.text,
-									fontWeight: typography.fontWeight.medium,
-									fontSize: typography.fontSize.sm,
-								}}
-							>
-								New password
-							</span>
+						<label css={fieldCss}>
+							<span css={fieldLabelCss}>New password</span>
 							<input
 								type="password"
 								name="password"
@@ -165,26 +141,12 @@ export function ResetPasswordRoute(handle: Handle) {
 								autoComplete="new-password"
 								placeholder="At least 8 characters"
 								disabled={isSubmitting}
-								css={{
-									padding: spacing.sm,
-									borderRadius: radius.md,
-									border: `1px solid ${colors.border}`,
-									fontSize: typography.fontSize.base,
-									fontFamily: typography.fontFamily,
-								}}
+								css={inputCss}
 							/>
 						</label>
 					) : (
-						<label css={{ display: 'grid', gap: spacing.xs }}>
-							<span
-								css={{
-									color: colors.text,
-									fontWeight: typography.fontWeight.medium,
-									fontSize: typography.fontSize.sm,
-								}}
-							>
-								Email
-							</span>
+						<label css={fieldCss}>
+							<span css={fieldLabelCss}>Email</span>
 							<input
 								type="email"
 								name="email"
@@ -192,31 +154,11 @@ export function ResetPasswordRoute(handle: Handle) {
 								autoComplete="email"
 								placeholder="you@example.com"
 								disabled={isSubmitting}
-								css={{
-									padding: spacing.sm,
-									borderRadius: radius.md,
-									border: `1px solid ${colors.border}`,
-									fontSize: typography.fontSize.base,
-									fontFamily: typography.fontFamily,
-								}}
+								css={inputCss}
 							/>
 						</label>
 					)}
-					<button
-						type="submit"
-						disabled={isSubmitting}
-						css={{
-							padding: `${spacing.sm} ${spacing.lg}`,
-							borderRadius: radius.full,
-							border: 'none',
-							backgroundColor: colors.primary,
-							color: colors.onPrimary,
-							fontSize: typography.fontSize.base,
-							fontWeight: typography.fontWeight.semibold,
-							cursor: isSubmitting ? 'not-allowed' : 'pointer',
-							opacity: isSubmitting ? 0.7 : 1,
-						}}
-					>
+					<button type="submit" disabled={isSubmitting} css={primaryButtonCss}>
 						{isSubmitting
 							? 'Submitting...'
 							: mode === 'confirm'
@@ -236,30 +178,10 @@ export function ResetPasswordRoute(handle: Handle) {
 					) : null}
 				</form>
 				<div css={{ display: 'grid', gap: spacing.sm }}>
-					<a
-						href="/login"
-						css={{
-							color: colors.primaryText,
-							fontSize: typography.fontSize.sm,
-							textDecoration: 'none',
-							'&:hover': {
-								textDecoration: 'underline',
-							},
-						}}
-					>
+					<a href="/login" css={primaryLinkCss}>
 						Back to sign in
 					</a>
-					<a
-						href="/"
-						css={{
-							color: colors.textMuted,
-							fontSize: typography.fontSize.sm,
-							textDecoration: 'none',
-							'&:hover': {
-								textDecoration: 'underline',
-							},
-						}}
-					>
+					<a href="/" css={mutedLinkCss}>
 						Back home
 					</a>
 				</div>
@@ -267,3 +189,11 @@ export function ResetPasswordRoute(handle: Handle) {
 		)
 	}
 }
+
+const pageCss = {
+	...stackedPageCss,
+	maxWidth: '28rem',
+	margin: '0 auto',
+}
+
+const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })

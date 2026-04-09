@@ -1,6 +1,13 @@
 import { type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
+import {
+	getAlertCardCss,
+	pageDescriptionCss,
+	pageHeaderCss,
+	pageTitleCss,
+	stackedPageCss,
+} from '#client/styles/style-primitives.ts'
 
 type SavedUiArtifact = {
 	appId: string
@@ -472,43 +479,23 @@ export function SavedUiRoute(handle: Handle) {
 		return (
 			<section
 				css={{
-					display: 'grid',
-					gap: spacing.lg,
+					...stackedPageCss,
 					minHeight: 'calc(100vh - 7rem)',
 				}}
 			>
-				<header css={{ display: 'grid', gap: spacing.xs }}>
-					<h1
-						css={{
-							margin: 0,
-							color: colors.text,
-							fontSize: typography.fontSize.xl,
-							fontWeight: typography.fontWeight.semibold,
-						}}
-					>
+				<header css={pageHeaderCss}>
+					<h1 css={pageTitleCss}>
 						{status === 'ready' ? (artifact?.title ?? 'Saved UI') : 'Saved UI'}
 					</h1>
-					<p css={{ margin: 0, color: colors.textMuted }}>
+					<p css={pageDescriptionCss}>
 						Hosted fallback for a saved generated UI.
 					</p>
 				</header>
 				{status === 'loading' ? (
-					<p css={{ margin: 0, color: colors.textMuted }}>
-						Loading saved UI...
-					</p>
+					<p css={pageDescriptionCss}>Loading saved UI...</p>
 				) : null}
 				{errorMessage ? (
-					<p
-						role="alert"
-						css={{
-							margin: 0,
-							padding: `${spacing.sm} ${spacing.md}`,
-							borderRadius: '0.75rem',
-							border: `1px solid ${colors.error}`,
-							color: colors.error,
-							backgroundColor: colors.surface,
-						}}
-					>
+					<p role="alert" css={getAlertCardCss('error')}>
 						{errorMessage}
 					</p>
 				) : null}

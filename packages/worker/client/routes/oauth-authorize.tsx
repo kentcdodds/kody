@@ -10,6 +10,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
+	getAlertCardCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	insetCardCss,
@@ -251,7 +252,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				) : null}
 				{message ? (
 					<p
-						css={getMessageCardCss(message.type)}
+						css={getAlertCardCss(message.type)}
 						role={message.type === 'error' ? 'alert' : undefined}
 					>
 						{message.text}
@@ -331,18 +332,3 @@ const secondaryButtonCss = getSecondaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',
 })
-
-function getMessageCardCss(type: 'error' | 'info') {
-	return {
-		margin: 0,
-		padding: spacing.md,
-		borderRadius: radius.md,
-		border: `1px solid ${type === 'error' ? colors.error : colors.primary}`,
-		backgroundColor:
-			type === 'error'
-				? 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))'
-				: colors.primarySoftest,
-		color: type === 'error' ? colors.error : colors.text,
-		fontSize: typography.fontSize.sm,
-	}
-}

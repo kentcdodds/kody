@@ -5,14 +5,20 @@ import {
 	listenToRouterNavigation,
 } from '#client/client-router.tsx'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
+import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
-	colors,
-	radius,
-	shadows,
-	spacing,
-	transitions,
-	typography,
-} from '#client/styles/tokens.ts'
+	cardCss,
+	fieldCss,
+	fieldLabelCss,
+	getPrimaryButtonCss,
+	inputCss,
+	mutedLinkCss,
+	pageDescriptionCss,
+	pageHeaderCss,
+	pageTitleCss,
+	primaryLinkCss,
+	stackedPageCss,
+} from '#client/styles/style-primitives.ts'
 
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
@@ -155,48 +161,14 @@ export function LoginRoute(handle: Handle) {
 		const toggleAction = isSignup ? 'Sign in instead' : 'Sign up instead'
 
 		return (
-			<section
-				css={{
-					maxWidth: '28rem',
-					margin: '0 auto',
-					display: 'grid',
-					gap: spacing.lg,
-				}}
-			>
-				<header css={{ display: 'grid', gap: spacing.xs }}>
-					<h2
-						css={{
-							fontSize: typography.fontSize.xl,
-							fontWeight: typography.fontWeight.semibold,
-							color: colors.text,
-						}}
-					>
-						{title}
-					</h2>
-					<p css={{ color: colors.textMuted }}>{description}</p>
+			<section css={pageCss}>
+				<header css={pageHeaderCss}>
+					<h2 css={pageTitleCss}>{title}</h2>
+					<p css={pageDescriptionCss}>{description}</p>
 				</header>
-				<form
-					css={{
-						display: 'grid',
-						gap: spacing.md,
-						padding: spacing.lg,
-						borderRadius: radius.lg,
-						border: `1px solid ${colors.border}`,
-						backgroundColor: colors.surface,
-						boxShadow: shadows.sm,
-					}}
-					on={{ submit: handleSubmit }}
-				>
-					<label css={{ display: 'grid', gap: spacing.xs }}>
-						<span
-							css={{
-								color: colors.text,
-								fontWeight: typography.fontWeight.medium,
-								fontSize: typography.fontSize.sm,
-							}}
-						>
-							Email
-						</span>
+				<form css={cardCss} on={{ submit: handleSubmit }}>
+					<label css={fieldCss}>
+						<span css={fieldLabelCss}>Email</span>
 						<input
 							type="email"
 							name="email"
@@ -204,38 +176,18 @@ export function LoginRoute(handle: Handle) {
 							autoFocus
 							autoComplete="email"
 							placeholder="you@example.com"
-							css={{
-								padding: spacing.sm,
-								borderRadius: radius.md,
-								border: `1px solid ${colors.border}`,
-								fontSize: typography.fontSize.base,
-								fontFamily: typography.fontFamily,
-							}}
+							css={inputCss}
 						/>
 					</label>
-					<label css={{ display: 'grid', gap: spacing.xs }}>
-						<span
-							css={{
-								color: colors.text,
-								fontWeight: typography.fontWeight.medium,
-								fontSize: typography.fontSize.sm,
-							}}
-						>
-							Password
-						</span>
+					<label css={fieldCss}>
+						<span css={fieldLabelCss}>Password</span>
 						<input
 							type="password"
 							name="password"
 							required
 							autoComplete={isSignup ? 'new-password' : 'current-password'}
 							placeholder="At least 8 characters"
-							css={{
-								padding: spacing.sm,
-								borderRadius: radius.md,
-								border: `1px solid ${colors.border}`,
-								fontSize: typography.fontSize.base,
-								fontFamily: typography.fontFamily,
-							}}
+							css={inputCss}
 						/>
 					</label>
 					{!isSignup ? (
@@ -275,34 +227,7 @@ export function LoginRoute(handle: Handle) {
 							</span>
 						</label>
 					) : null}
-					<button
-						type="submit"
-						disabled={isSubmitting}
-						css={{
-							padding: `${spacing.sm} ${spacing.lg}`,
-							borderRadius: radius.full,
-							border: 'none',
-							backgroundColor: colors.primary,
-							color: colors.onPrimary,
-							fontSize: typography.fontSize.base,
-							fontWeight: typography.fontWeight.semibold,
-							cursor: isSubmitting ? 'not-allowed' : 'pointer',
-							opacity: isSubmitting ? 0.7 : 1,
-							transition: `transform ${transitions.fast}, background-color ${transitions.normal}`,
-							'&:hover': isSubmitting
-								? undefined
-								: {
-										backgroundColor: colors.primaryHover,
-										transform: 'translateY(-1px)',
-									},
-							'&:active': isSubmitting
-								? undefined
-								: {
-										backgroundColor: colors.primaryActive,
-										transform: 'translateY(0)',
-									},
-						}}
-					>
+					<button type="submit" disabled={isSubmitting} css={primaryButtonCss}>
 						{isSubmitting ? 'Submitting...' : submitLabel}
 					</button>
 					{message ? (
@@ -321,57 +246,33 @@ export function LoginRoute(handle: Handle) {
 					<a
 						href={buildAuthPath(isSignup ? 'login' : 'signup', redirectTo)}
 						aria-pressed={isSignup}
-						css={{
-							background: 'none',
-							border: 'none',
-							padding: 0,
-							color: colors.primaryText,
-							fontSize: typography.fontSize.sm,
-							cursor: 'pointer',
-							textAlign: 'left',
-							textDecoration: 'none',
-							'&:hover': {
-								textDecoration: 'underline',
-							},
-						}}
+						css={actionLinkCss}
 					>
 						{toggleLabel} {toggleAction}
 					</a>
 					{!isSignup ? (
-						<a
-							href="/reset-password"
-							css={{
-								background: 'none',
-								border: 'none',
-								padding: 0,
-								color: colors.primaryText,
-								fontSize: typography.fontSize.sm,
-								cursor: 'pointer',
-								textAlign: 'left',
-								textDecoration: 'none',
-								'&:hover': {
-									textDecoration: 'underline',
-								},
-							}}
-						>
+						<a href="/reset-password" css={actionLinkCss}>
 							Forgot password?
 						</a>
 					) : null}
-					<a
-						href="/"
-						css={{
-							color: colors.textMuted,
-							fontSize: typography.fontSize.sm,
-							textDecoration: 'none',
-							'&:hover': {
-								textDecoration: 'underline',
-							},
-						}}
-					>
+					<a href="/" css={mutedLinkCss}>
 						Back home
 					</a>
 				</div>
 			</section>
 		)
 	}
+}
+
+const pageCss = {
+	...stackedPageCss,
+	maxWidth: '28rem',
+	margin: '0 auto',
+}
+
+const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+
+const actionLinkCss = {
+	...primaryLinkCss,
+	textAlign: 'left' as const,
 }

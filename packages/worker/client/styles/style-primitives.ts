@@ -187,6 +187,12 @@ export const textareaCss = {
 	minHeight: '7rem',
 }
 
+export const compactInputCss = {
+	...inputCss,
+	padding: `${spacing.xs} ${spacing.sm}`,
+	fontSize: typography.fontSize.sm,
+}
+
 export const listCss = {
 	margin: 0,
 	paddingLeft: spacing.lg,
@@ -233,4 +239,19 @@ export const mutedLinkCss = {
 	'&:hover': {
 		textDecoration: 'underline',
 	},
+}
+
+export function getAlertCardCss(type: 'error' | 'info' = 'info') {
+	return {
+		margin: 0,
+		padding: spacing.md,
+		borderRadius: radius.md,
+		border: `1px solid ${type === 'error' ? colors.error : colors.primary}`,
+		backgroundColor:
+			type === 'error'
+				? 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))'
+				: colors.primarySoftest,
+		color: type === 'error' ? colors.error : colors.text,
+		fontSize: typography.fontSize.sm,
+	}
 }

@@ -1,6 +1,14 @@
 import { type Handle } from 'remix/component'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
+	cardCss,
+	cardTitleCss,
+	descriptionCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	primaryLinkCss,
+} from '#client/styles/style-primitives.ts'
+import {
 	type AccountStatus,
 	type ApprovalAction,
 	type ApprovalView,
@@ -199,42 +207,14 @@ export function AccountRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<section
-						css={{
-							display: 'grid',
-							gap: spacing.md,
-							padding: spacing.lg,
-							border: `1px solid ${colors.border}`,
-							borderRadius: '1rem',
-							backgroundColor: colors.surface,
-						}}
-					>
-						<h2
-							css={{
-								margin: 0,
-								fontSize: typography.fontSize.lg,
-								fontWeight: typography.fontWeight.semibold,
-								color: colors.text,
-							}}
-						>
-							Secret management
-						</h2>
-						<p css={{ margin: 0, color: colors.textMuted }}>
+					<section css={cardCss}>
+						<h2 css={cardTitleCss}>Secret management</h2>
+						<p css={descriptionCss}>
 							Create, edit, and delete secrets from the dedicated management
 							page.
 						</p>
 						<div>
-							<a
-								href="/account/secrets"
-								css={{
-									color: colors.primaryText,
-									textDecoration: 'none',
-									fontWeight: typography.fontWeight.medium,
-									'&:hover': {
-										textDecoration: 'underline',
-									},
-								}}
-							>
+							<a href="/account/secrets" css={primaryLinkCss}>
 								Manage secrets
 							</a>
 						</div>
@@ -245,22 +225,5 @@ export function AccountRoute(handle: Handle) {
 	}
 }
 
-const primaryButtonCss = {
-	padding: `${spacing.sm} ${spacing.md}`,
-	borderRadius: '999px',
-	border: 'none',
-	backgroundColor: colors.primary,
-	color: 'white',
-	fontWeight: typography.fontWeight.medium,
-	cursor: 'pointer',
-	[mq.mobile]: {
-		width: '100%',
-	},
-}
-
-const secondaryButtonCss = {
-	...primaryButtonCss,
-	backgroundColor: 'transparent',
-	color: colors.text,
-	border: `1px solid ${colors.border}`,
-}
+const primaryButtonCss = getPrimaryButtonCss({ mobileFullWidth: true })
+const secondaryButtonCss = getSecondaryButtonCss({ mobileFullWidth: true })

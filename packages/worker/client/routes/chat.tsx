@@ -26,6 +26,10 @@ import {
 	typography,
 } from '#client/styles/tokens.ts'
 import {
+	compactInputCss,
+	getPrimaryButtonCss,
+} from '#client/styles/style-primitives.ts'
+import {
 	type ChatThreadLookupResponse,
 	type ChatThreadListResponse,
 	type ChatThreadSummary,
@@ -358,6 +362,10 @@ const CHAT_PANEL_HEIGHT_MOBILE = 'calc(100vh - 5.5rem)'
  * radius = button radius + inset
  */
 const SEND_BUTTON_RADIUS = `${SEND_BUTTON_SIZE_REM / 2 + SEND_BUTTON_INSET_REM}rem`
+const newThreadButtonCss = {
+	...getPrimaryButtonCss({ weight: 'semibold' }),
+	width: '100%',
+}
 
 function resizeMessageInput(target: EventTarget | null) {
 	if (!(target instanceof HTMLTextAreaElement)) return
@@ -1034,20 +1042,7 @@ export function ChatRoute(handle: Handle) {
 						<button
 							type="button"
 							on={{ click: handleCreateThread }}
-							css={{
-								width: '100%',
-								padding: `${spacing.sm} ${spacing.md}`,
-								borderRadius: radius.full,
-								border: 'none',
-								backgroundColor: colors.primary,
-								color: colors.onPrimary,
-								fontWeight: typography.fontWeight.semibold,
-								cursor: 'pointer',
-								transition: `background-color ${transitions.normal}`,
-								'&:hover': {
-									backgroundColor: colors.primaryHover,
-								},
-							}}
+							css={newThreadButtonCss}
 						>
 							New thread
 						</button>
@@ -1067,16 +1062,7 @@ export function ChatRoute(handle: Handle) {
 							placeholder="Search chats"
 							aria-label="Search chats"
 							on={{ input: handleThreadSearchInput }}
-							css={{
-								width: '100%',
-								padding: `${spacing.xs} ${spacing.sm}`,
-								borderRadius: radius.md,
-								border: `1px solid ${colors.border}`,
-								backgroundColor: colors.background,
-								color: colors.text,
-								fontFamily: typography.fontFamily,
-								fontSize: typography.fontSize.sm,
-							}}
+							css={compactInputCss}
 						/>
 						{threadStatus === 'error' ? (
 							<p css={{ margin: 0, color: colors.error }}>{threadError}</p>
