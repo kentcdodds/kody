@@ -106,7 +106,7 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 	},
 	{
 		method: 'POST',
-		path: `/client/v4/accounts/${fixtureAccount.id}/email-service/send`,
+		path: `/client/v4/accounts/${fixtureAccount.id}/email/sending/send`,
 		description: 'Send an outbound email',
 		requiresAuth: true,
 	},
@@ -521,7 +521,14 @@ async function handleEmailSend(
 		payload_json: JSON.stringify(payload),
 	})
 
-	return envelope({ messageId }, { status: 200 })
+	return envelope(
+		{
+			delivered: Array.isArray(payload.to) ? payload.to : [payload.to],
+			permanent_bounces: [],
+			queued: [],
+		},
+		{ status: 200 },
+	)
 }
 
 async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
@@ -627,7 +634,7 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 	}
 
 	const emailMatch = url.pathname.match(
-		/^\/client\/v4\/accounts\/([^/]+)\/email-service\/send\/?$/,
+		/^\/client\/v4\/accounts\/([^/]+)\/email\/sending\/send\/?$/,
 	)
 	if (emailMatch && request.method === 'POST') {
 		return handleEmailSend(request, env, emailMatch[1]!)
