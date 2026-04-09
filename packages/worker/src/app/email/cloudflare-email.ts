@@ -10,7 +10,9 @@ type CloudflareEmailBindingResponse = {
 }
 
 export type CloudflareEmailBinding = {
-	send(message: OutboundEmail): Promise<CloudflareEmailBindingResponse>
+	send(
+		message: OutboundEmail,
+	): Promise<CloudflareEmailBindingResponse | void>
 }
 
 type CloudflareEmailClientConfig = {
@@ -127,10 +129,20 @@ async function sendViaBinding(
 ): Promise<CloudflareSendResult> {
 	try {
 		const response = await binding.send(message)
+		const hasResponse =
+			typeof response === 'object' &&
+			response !== null &&
+			'success' in response
+		const success = hasResponse
+			? (response as CloudflareEmailBindingResponse).success !== false
+			: true
+		const messageId = hasResponse
+			? (response as CloudflareEmailBindingResponse).messageId
+			: undefined
 		return {
-			ok: response.success,
-			id: response.messageId,
-			error: response.success ? undefined : 'Cloudflare Email binding failed.',
+			ok: success,
+			id: messageId,
+			error: success ? undefined : 'Cloudflare Email binding failed.',
 		}
 	} catch (error) {
 		console.warn('cloudflare-email-binding-failed', error)
