@@ -100,7 +100,7 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 	)
 
 	expect(sendResult.ok).toBe(true)
-	expect(sendResult.id).toMatch(/^email_/)
+	expect(sendResult.id).toBeUndefined()
 
 	const response = await fetch(`${mock.origin}/__mocks/messages?token=${token}`)
 	expect(response.status).toBe(200)
@@ -126,7 +126,11 @@ test('sendCloudflareEmail defaults the API base URL when it is unset', async () 
 		return new Response(
 			JSON.stringify({
 				success: true,
-				result: { messageId: 'email_default_base_url' },
+				result: {
+					delivered: ['recipient@example.com'],
+					permanent_bounces: [],
+					queued: [],
+				},
 			}),
 			{
 				status: 200,
@@ -153,12 +157,11 @@ test('sendCloudflareEmail defaults the API base URL when it is unset', async () 
 
 		expect(result).toEqual({
 			ok: true,
-			id: 'email_default_base_url',
 		})
 		expect(fetchSpy).toHaveBeenCalledTimes(1)
 		const [input] = fetchSpy.mock.calls[0]!
 		expect(String(input)).toBe(
-			`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email-service/send`,
+			`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email/sending/send`,
 		)
 	} finally {
 		globalThis.fetch = originalFetch

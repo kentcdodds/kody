@@ -20,6 +20,9 @@ type CloudflareApiEnvelope = {
 	}>
 	result?: {
 		messageId?: string
+		delivered?: string[]
+		permanent_bounces?: string[]
+		queued?: string[]
 	}
 }
 
@@ -71,7 +74,7 @@ async function sendViaCloudflareApi(
 	message: OutboundEmail,
 ): Promise<CloudflareSendResult> {
 	const endpoint = new URL(
-		`client/v4/accounts/${config.accountId}/email-service/send`,
+		`client/v4/accounts/${config.accountId}/email/sending/send`,
 		normalizeApiBaseUrl(config.apiBaseUrl),
 	)
 	let response: Response
