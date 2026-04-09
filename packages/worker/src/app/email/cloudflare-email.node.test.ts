@@ -68,7 +68,7 @@ async function startCloudflareMock(token: string) {
 		await waitForMock(origin)
 		return mock
 	} catch (error) {
-		await mock[Symbol.asyncDispose]()
+		await stopProcess(proc)
 		throw error
 	}
 }
@@ -122,7 +122,7 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 
 test('sendCloudflareEmail defaults the API base URL when it is unset', async () => {
 	const originalFetch = globalThis.fetch
-	const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+	const fetchSpy = vi.fn(async () => {
 		return new Response(
 			JSON.stringify({
 				success: true,
