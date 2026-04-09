@@ -25,7 +25,7 @@ import {
 	type SecretMetadata,
 	type SecretSearchRow,
 } from '#mcp/secrets/types.ts'
-import { buildValueEntityId } from '#mcp/tools/search-entities.ts'
+import { buildValueEntityId, describeValue } from '#mcp/tools/search-entities.ts'
 import {
 	type UiArtifactSearchHit,
 	searchUiArtifactsForUser,
@@ -129,15 +129,6 @@ function scoreUiArtifactLexicalMatch(
 
 function buildValueUsage(name: string, scope: ValueScope): string {
 	return `Read with value_get: ${JSON.stringify({ name, scope })}. List related persisted config with value_list${scope === 'user' ? '({ scope: "user" })' : '({ ... })'}.`
-}
-
-function describeValue(row: ValueMetadata): string {
-	const description = row.description.trim()
-	if (description) return description
-	if (row.scope === 'app' && row.appId) {
-		return `Persisted app-scoped value for app ${row.appId}.`
-	}
-	return `Persisted ${row.scope}-scoped value.`
 }
 
 function scoreValueLexicalMatch(

@@ -28,6 +28,7 @@ import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import {
 	buildValueEntityId,
+	describeValue,
 	parseValueEntityId,
 } from '#mcp/tools/search-entities.ts'
 import { listValues } from '#mcp/values/service.ts'
@@ -335,15 +336,6 @@ async function loadSearchRowsAndRegistry(input: {
 		appSecretsByAppId,
 		...optionalRows,
 	}
-}
-
-function describeValue(row: ValueMetadata): string {
-	const description = row.description.trim()
-	if (description) return description
-	if (row.scope === 'app' && row.appId) {
-		return `Persisted app-scoped value for app ${row.appId}.`
-	}
-	return `Persisted ${row.scope}-scoped value.`
 }
 
 function findConnectorDetail(

@@ -1,4 +1,5 @@
 import { storageScopeValues, type StorageScope } from '#mcp/storage.ts'
+import { type ValueMetadata } from '#mcp/values/types.ts'
 
 export function buildValueEntityId(input: {
 	name: string
@@ -32,4 +33,13 @@ export function parseValueEntityId(id: string): {
 	} catch {
 		throw new Error('Value entity name must be URL-encoded when needed.')
 	}
+}
+
+export function describeValue(row: ValueMetadata): string {
+	const description = row.description.trim()
+	if (description) return description
+	if (row.scope === 'app' && row.appId) {
+		return `Persisted app-scoped value for app ${row.appId}.`
+	}
+	return `Persisted ${row.scope}-scoped value.`
 }
