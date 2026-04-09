@@ -159,19 +159,19 @@ the current chat client.
 
 # 3. Secrets with real boundaries
 
-- Use **`/connect/secret`** or generated UI instead of pasting credentials in
-  chat
+- When Kody needs a secret, it gives you a secure UI instead of putting it in
+  context
 - The agent can inspect **secret metadata**, but not plaintext values
 - Secret placeholders resolve only in **secret-aware** paths
-- Saving a secret does **not** approve sending it anywhere
+- Secrets are only available to **approved** capabilities and hosts
 - Only the account admin UI can approve which hosts may receive that secret
 
 ```mermaid
 flowchart LR
-  user[User enters secret] --> vault[Saved secret]
-  vault --> policy[Host approval policy]
-  policy --> approved[Approved domain]
-  policy -. blocks .-> denied[Unapproved domain]
+  fetch[Secret fetch] --> blocked[Blocked: unapproved host]
+  blocked --> approve[Approve host]
+  approve --> retry[Retry]
+  retry --> success[Success]
 ```
 
 **The agent never needs the raw secret, and unapproved egress stays blocked.**
@@ -186,12 +186,8 @@ steps.
 # 4. `open_generated_ui` turns chats into apps
 
 - Chat is not always the right interface
-- **`open_generated_ui`** takes either inline **`code`** or a saved **`app_id`**
-- Use it for dashboards, forms, callback pages, and any flow where the user
-  should click instead of paste into chat
-- **`ui_save_app`** persists that UI so you can reopen it later instead of
-  regenerating it
-- Saved apps can stay hidden or show up in **`search`** when you want reuse
+- The model can generate UI to display inline
+- If the user likes it, they can save it as a saved app and open it again later
 - The UI can call back into server-side code for secrets, OAuth, and approved
   API access
 
@@ -201,11 +197,11 @@ steps.
 
 # 5. OAuth is built in
 
-- Default path: hosted **`/connect/oauth`**
-- Kody handles **authorize -> callback -> token exchange -> persistence**
-- You mostly provide provider configuration and the correct redirect URI
-- If you need branded UX or a callback on a saved app URL, there is an
-  edge-case path for generated UI OAuth
+- When regular access-token secrets aren't enough, Kody can build a full OAuth
+  flow for you
+- When Kody needs OAuth for a provider, it tells you how to set it up
+- Kody handles **authorize -> callback -> token exchange -> persistence ->
+  refresh**
 
 **Building integrations becomes configuration work, not auth plumbing.**
 
