@@ -19,7 +19,6 @@ type CloudflareApiEnvelope = {
 		message?: string
 	}>
 	result?: {
-		messageId?: string
 		delivered?: string[]
 		permanent_bounces?: string[]
 		queued?: string[]
@@ -28,7 +27,6 @@ type CloudflareApiEnvelope = {
 
 type CloudflareSendResult = {
 	ok: boolean
-	id?: string
 	skipped?: boolean
 	error?: string
 }
@@ -122,10 +120,6 @@ async function sendViaCloudflareApi(
 
 	return {
 		ok: true,
-		id:
-			typeof payload?.result?.messageId === 'string'
-				? payload.result.messageId
-				: undefined,
 	}
 }
 
