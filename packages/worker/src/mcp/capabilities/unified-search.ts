@@ -127,6 +127,30 @@ function scoreUiArtifactLexicalMatch(
 	return lexicalScore(query, doc) + bonus
 }
 
+type ValueLexicalFields = Pick<
+	ValueMetadata,
+	'name' | 'description' | 'scope' | 'value' | 'appId'
+>
+
+function scoreValueLexicalBonus(
+	normalizedQuery: string,
+	row: ValueLexicalFields,
+): number {
+	let bonus = 0
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.description) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.scope) * 0.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.appId) * 0.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.value) * 1
+	return bonus
+}
+
+function buildValueLexicalDoc(row: ValueLexicalFields): string {
+	return [row.name, row.description, row.scope, row.value, row.appId ?? ''].join(
+		'\n',
+	)
+}
+
 function buildValueUsage(name: string, scope: ValueScope): string {
 	return `Read with value_get: ${JSON.stringify({ name, scope })}. List related persisted config with value_list${scope === 'user' ? '({ scope: "user" })' : '({ ... })'}.`
 }
@@ -137,13 +161,7 @@ function scoreValueLexicalMatch(
 	doc: string,
 ): number {
 	const normalizedQuery = normalizeSearchPhrase(query)
-	let bonus = 0
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.description) * 1.5
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.scope) * 0.5
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.appId) * 0.5
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.value) * 1
-	return lexicalScore(query, doc) + bonus
+	return lexicalScore(query, doc) + scoreValueLexicalBonus(normalizedQuery, row)
 }
 
 function buildValueEmbedDoc(row: ValueMetadata): string {
@@ -174,20 +192,41 @@ function scoreConnectorLexicalMatch(
 	entry: ConnectorSearchEntry,
 	doc: string,
 ): number {
-	const requiredHosts = entry.config.requiredHosts ?? []
 	const normalizedQuery = normalizeSearchPhrase(query)
+	return (
+		lexicalScore(query, doc) +
+		scoreConnectorLexicalBonus(normalizedQuery, {
+			connectorName: entry.config.name,
+			description: describeConnector(entry.config, entry.row.description),
+			apiBaseUrl: entry.config.apiBaseUrl ?? null,
+			flow: entry.config.flow,
+			tokenUrl: entry.config.tokenUrl,
+			requiredHosts: entry.config.requiredHosts ?? [],
+		})
+	)
+}
+
+type ConnectorLexicalFields = {
+	connectorName: string
+	description: string
+	apiBaseUrl: string | null
+	flow: ConnectorConfig['flow']
+	tokenUrl: string
+	requiredHosts: Array<string>
+}
+
+function scoreConnectorLexicalBonus(
+	normalizedQuery: string,
+	entry: ConnectorLexicalFields,
+): number {
 	let bonus = 0
-	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.config.name) * 2
+	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.connectorName) * 2
+	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.description) * 1.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.apiBaseUrl) * 1
+	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.tokenUrl) * 0.75
 	bonus +=
-		scoreSkillPhraseMatch(
-			normalizedQuery,
-			describeConnector(entry.config, entry.row.description),
-		) * 1.5
-	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.config.apiBaseUrl) * 1
-	bonus += scoreSkillPhraseMatch(normalizedQuery, entry.config.tokenUrl) * 0.75
-	bonus +=
-		scoreSkillPhraseMatch(normalizedQuery, requiredHosts.join(' ')) * 0.75
-	return lexicalScore(query, doc) + bonus
+		scoreSkillPhraseMatch(normalizedQuery, entry.requiredHosts.join(' ')) * 0.75
+	return bonus
 }
 
 function buildConnectorEmbedDoc(entry: ConnectorSearchEntry): string {
@@ -930,16 +969,26 @@ export async function searchUnified(input: {
 		if (key.startsWith('n:')) {
 			const hit = connectorByName.get(key.slice(2))
 			if (!hit) return 0
-			return lexicalScore(
-				input.query,
-				[
-					hit.connectorName,
-					hit.description,
-					hit.flow,
-					hit.tokenUrl,
-					hit.apiBaseUrl ?? '',
-					hit.requiredHosts.join(' '),
-				].join('\n'),
+			return (
+				lexicalScore(
+					input.query,
+					[
+						hit.connectorName,
+						hit.description,
+						hit.flow,
+						hit.tokenUrl,
+						hit.apiBaseUrl ?? '',
+						hit.requiredHosts.join(' '),
+					].join('\n'),
+				) +
+				scoreConnectorLexicalBonus(normalizeSearchPhrase(input.query), {
+					connectorName: hit.connectorName,
+					description: hit.description,
+					apiBaseUrl: hit.apiBaseUrl,
+					flow: hit.flow,
+					tokenUrl: hit.tokenUrl,
+					requiredHosts: hit.requiredHosts,
+				})
 			)
 		}
 		if (key.startsWith('c:')) {
@@ -981,11 +1030,9 @@ export async function searchUnified(input: {
 		if (key.startsWith('v:')) {
 			const hit = valueById.get(key.slice(2))
 			if (!hit) return 0
-			return lexicalScore(
-				input.query,
-				[hit.name, hit.description, hit.scope, hit.value, hit.appId ?? ''].join(
-					'\n',
-				),
+			return (
+				lexicalScore(input.query, buildValueLexicalDoc(hit)) +
+				scoreValueLexicalBonus(normalizeSearchPhrase(input.query), hit)
 			)
 		}
 		if (key.startsWith('a:')) {

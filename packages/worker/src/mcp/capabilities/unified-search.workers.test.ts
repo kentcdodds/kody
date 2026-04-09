@@ -330,6 +330,90 @@ test('search returns value and connector entities as first-class matches', async
 	expect(value.usage).toContain('value_get')
 })
 
+test('exact value and connector phrase matches win cross-entity lexical tiebreaks', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {
+		github_helper: {
+			name: 'github_helper',
+			domain: 'coding',
+			description: 'Connector config for GitHub automation.',
+			keywords: ['github', 'connector', 'config'],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['query'],
+			requiredInputFields: ['query'],
+			outputFields: ['result'],
+			inputSchema: {},
+		},
+	} satisfies Record<string, CapabilitySpec>
+	const valueRow = createValueRow('github_connector', {
+		description: 'Stored user setting',
+		value: 'enabled',
+	})
+
+	const valueResult = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'github connector',
+		limit: 5,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [],
+		userSecretRows: [
+			{
+				name: 'github-secret',
+				scope: 'user',
+				description: 'Connector token for GitHub',
+				appId: null,
+				updatedAt: '2026-03-20T00:00:00.000Z',
+			},
+		],
+		userValueRows: [valueRow],
+		appSecretsByAppId: new Map(),
+	})
+
+	expect(valueResult.matches[0]).toMatchObject({
+		type: 'value',
+		name: 'github_connector',
+	})
+
+	const connectorRow = createValueRow('_connector:github-connector', {
+		value: JSON.stringify({
+			name: 'github-connector',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: 'github_refresh_token',
+			requiredHosts: ['api.github.com'],
+		}),
+		description: 'GitHub connector config',
+	})
+
+	const connectorResult = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'github connector config',
+		limit: 5,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		userValueRows: [connectorRow],
+		appSecretsByAppId: new Map(),
+	})
+
+	expect(connectorResult.matches[0]).toMatchObject({
+		type: 'connector',
+		connectorName: 'github-connector',
+	})
+})
+
 test('search skips connector rows whose stored id disagrees with config.name', async () => {
 	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
 	const specs = {} as Record<string, CapabilitySpec>
