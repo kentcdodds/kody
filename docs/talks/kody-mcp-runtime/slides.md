@@ -11,6 +11,7 @@ themeConfig:
   primary: '#14b8a6'
 defaults:
   transition: slide-left
+favicon: /favicon.ico
 ---
 
 # Kody
