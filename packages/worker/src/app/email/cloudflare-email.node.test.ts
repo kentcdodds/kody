@@ -57,13 +57,19 @@ async function startCloudflareMock(token: string) {
 	})
 	captureOutput(proc.stdout)
 	captureOutput(proc.stderr)
-	await waitForMock(origin)
-	return {
+	const mock = {
 		origin,
 		token,
 		async [Symbol.asyncDispose]() {
 			await stopProcess(proc)
 		},
+	}
+	try {
+		await waitForMock(origin)
+		return mock
+	} catch (error) {
+		await mock[Symbol.asyncDispose]()
+		throw error
 	}
 }
 
