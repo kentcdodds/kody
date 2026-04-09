@@ -1,5 +1,6 @@
 import { renderGeneratedUiDocument } from '@kody-internal/shared/generated-ui-documents.ts'
 import {
+	generatedUiRuntimeEntryScriptPath,
 	generatedUiRuntimeScriptPath,
 	generatedUiRuntimeStylesheetPath,
 	resolveGeneratedUiAssetUrl,
@@ -48,10 +49,14 @@ function buildHeadInjection(
 		generatedUiRuntimeScriptPath,
 		appBaseUrl,
 	)
+	const runtimeEntryScriptSrc = resolveGeneratedUiAssetUrl(
+		generatedUiRuntimeEntryScriptPath,
+		appBaseUrl,
+	)
 	return `
 <link rel="stylesheet" href="${stylesheetHref}" />
 ${injectGeneratedUiBootstrapScript(bootstrap)}
 ${buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
-<script type="module" src="${runtimeScriptSrc}"></script>
+<script type="module" src="${runtimeEntryScriptSrc}"></script>
 	`.trim()
 }

@@ -43,6 +43,9 @@ test('renderHostedSavedUiHtml emits shared runtime assets for html apps', () => 
 	expect(runtimeScriptMatch?.[1]).toBe(
 		'https://kody.example/mcp-apps/kody-ui-utils.js',
 	)
+	expect(result).toContain(
+		'"@kody/ui-utils":"https://kody.example/mcp-apps/kody-ui-runtime.js"',
+	)
 	const importMapMatch = result.match(
 		/<script type="importmap">([^<]+)<\/script>/,
 	)
@@ -51,7 +54,7 @@ test('renderHostedSavedUiHtml emits shared runtime assets for html apps', () => 
 		imports?: Record<string, string>
 	}
 	expect(importMap.imports?.['@kody/ui-utils']).toBe(
-		'https://kody.example/mcp-apps/kody-ui-utils.js',
+		'https://kody.example/mcp-apps/kody-ui-runtime.js',
 	)
 	const bootstrapMatch = result.match(
 		/window\.__kodyGeneratedUiBootstrap = ([^;]+);/,
@@ -97,7 +100,7 @@ test('renderHostedSavedUiHtml keeps user javascript separate from runtime bootst
 		imports?: Record<string, string>
 	}
 	expect(importMap.imports?.['@kody/ui-utils']).toBe(
-		'https://kody.example/mcp-apps/kody-ui-utils.js',
+		'https://kody.example/mcp-apps/kody-ui-runtime.js',
 	)
 	expect(result).toContain(
 		'<script type="module">\n' +

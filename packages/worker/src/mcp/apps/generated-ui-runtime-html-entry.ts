@@ -1,4 +1,5 @@
 import {
+	generatedUiRuntimeEntryScriptPath,
 	generatedUiRuntimeScriptPath,
 	generatedUiRuntimeStylesheetPath,
 	resolveGeneratedUiAssetUrl,
@@ -13,6 +14,10 @@ export const generatedUiRuntimeResourceUri =
 	'ui://generated-ui-runtime/entry-point.html' as const
 
 export function renderGeneratedUiRuntimeHtmlEntry(baseUrl: string | URL) {
+	const runtimeEntryScriptHref = resolveGeneratedUiAssetUrl(
+		generatedUiRuntimeEntryScriptPath,
+		baseUrl,
+	)
 	const runtimeScriptHref = resolveGeneratedUiAssetUrl(
 		generatedUiRuntimeScriptPath,
 		baseUrl,
@@ -41,7 +46,7 @@ window.__kodyGeneratedUiBootstrap = ${bootstrapJson};
 	</head>
 	<body data-kody-runtime="fragment">
 		<div id="app" data-generated-ui-root></div>
-		<script type="module" src="${runtimeScriptHref}" crossorigin="anonymous"></script>
+		<script type="module" src="${runtimeEntryScriptHref}" crossorigin="anonymous"></script>
 	</body>
 </html>
 `.trim()

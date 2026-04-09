@@ -27,8 +27,11 @@ when the app should appear in discovery for reuse.
 parameters.
 
 Import **`kodyWidget`** from **`@kody/ui-utils`** for helpers, **`executeCode`**
-for low-level server calls, secrets, values, OAuth, and forms. Use generated UI
-when the user must enter sensitive data instead of pasting into chat.
+for low-level server calls, secrets, values, OAuth, and forms. The module waits
+until the widget runtime is ready before the import resolves, so app code should
+use the imported `kodyWidget` directly rather than calling any readiness helper.
+Use generated UI when the user must enter sensitive data instead of pasting into
+chat.
 
 `kodyWidget.executeCode(code, params?)` also accepts optional per-call JSON
 params. Those values are injected as **`params`** inside the async function and

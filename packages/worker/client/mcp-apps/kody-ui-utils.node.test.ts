@@ -3,16 +3,21 @@ import {
 	absolutizeHtmlAttributeUrls,
 	buildCodemodeCapabilityExecuteCode,
 	buildGeneratedUiRuntimeHeadInjection,
-	getOrCreateKodyWidgetReadyStateForTest,
-	getKodyWidget,
 	injectIntoHtmlDocument,
 	injectRuntimeStateIntoDocument,
-	kodyWidget,
 	measureRenderedFrameSize,
 	readSavedAppSourceFromHostToolResult,
 	shouldInitializeGeneratedUiRuntimeImmediately,
-	whenKodyWidgetReady,
-} from './kody-ui-utils.ts'
+} from './kody-ui-runtime.ts'
+import { whenKodyWidgetReady } from './kody-widget-runtime.ts'
+
+const kodyWindow = globalThis as typeof globalThis & {
+	kodyWidget?: Record<string, unknown>
+	__kodyWidgetReadyState?: {
+		promise: Promise<unknown>
+		resolve: (widget: unknown) => void
+	}
+}
 
 test('injectIntoHtmlDocument inserts content into an existing head', () => {
 	const result = injectIntoHtmlDocument(
@@ -181,75 +186,48 @@ test('buildCodemodeCapabilityExecuteCode serializes capability calls safely', ()
 	)
 })
 
-test('kodyWidget public api exposes executeCode helper', () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
+test('whenKodyWidgetReady resolves from shared window state', async () => {
+	delete kodyWindow.kodyWidget
+	delete kodyWindow.__kodyWidgetReadyState
+
+	const pendingWidget = whenKodyWidgetReady()
 	const fakeWidget = {
 		params: {},
-		executeCode: async () => 'ok',
-	} as {
-		params: Record<string, never>
-		executeCode: (code: string, params?: Record<string, unknown>) => Promise<string>
-	}
-	readyState.resolve(fakeWidget)
-
-	expect(typeof kodyWidget.executeCode).toBe('function')
-})
-
-test('getKodyWidget throws until the runtime is ready', () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
-
-	expect(() => getKodyWidget()).toThrow(
-		/kodyWidget is not ready yet.*whenKodyWidgetReady/,
-	)
-})
-
-test('whenKodyWidgetReady resolves once the runtime publishes the widget', async () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
-
-	const fakeWidget = {
-		params: { owner: 'kody' },
 		sendMessage() {
 			return true
 		},
 	}
-
-	const pendingWidget = whenKodyWidgetReady()
-	readyState.resolve(fakeWidget)
+	kodyWindow.kodyWidget = fakeWidget
+	kodyWindow.__kodyWidgetReadyState?.resolve(fakeWidget)
 
 	await expect(pendingWidget).resolves.toBe(fakeWidget)
-	await expect(whenKodyWidgetReady()).resolves.toBe(fakeWidget)
 })
 
-test('imported kodyWidget proxy exposes resolved runtime properties', () => {
-	const readyState = getOrCreateKodyWidgetReadyStateForTest()
-	readyState.reset()
+test('public kodyWidget import exposes the shared runtime widget instance', async () => {
 	const fakeWidget = {
-		params: {},
+		params: { owner: 'kody' },
+		executeCode: async () => 'ok',
 		value: 41,
-	} as {
-		params: Record<string, never>
-		value: number
 	}
-	readyState.resolve(fakeWidget)
+	kodyWindow.kodyWidget = fakeWidget
 
-	expect(kodyWidget.value).toBe(41)
-	expect(kodyWidget.params).toEqual({})
+	const { kodyWidget } = await import('./kody-ui-utils.ts')
+	expect(kodyWidget).toBe(fakeWidget)
+	expect(kodyWidget.params).toEqual({ owner: 'kody' })
+	expect(await kodyWidget.executeCode('return 1')).toBe('ok')
 })
 
-test('buildGeneratedUiRuntimeHeadInjection includes module script by default', () => {
+test('buildGeneratedUiRuntimeHeadInjection includes runtime bootstrap script by default', () => {
 	const head = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',
 		params: {},
 		baseHref: 'https://kody.example/',
 	})
 	expect(head).toContain('type="importmap"')
-	expect(head).toMatch(/<script type="module" src="[^"]*kody-ui-utils\.js"/)
+	expect(head).toMatch(/<script type="module" src="[^"]*kody-ui-runtime\.js"/)
 })
 
-test('buildGeneratedUiRuntimeHeadInjection can omit module script for shell-rendered apps', () => {
+test('buildGeneratedUiRuntimeHeadInjection can omit runtime script for shell-rendered apps', () => {
 	const head = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',
 		params: {},

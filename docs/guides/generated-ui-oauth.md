@@ -64,7 +64,8 @@ of treating it like a secret.
    browser instead of trying to complete the flow in the conversation iframe.
 5. In the hosted generated UI, import \`kodyWidget\` from \`@kody/ui-utils\` and
    use it directly to read the callback, validate state, exchange the code in
-   the browser, and save tokens.
+   the browser, and save tokens. The import resolves only after the widget
+   runtime is ready, so no extra readiness helper is needed.
 
 ## Generated UI helpers to use
 

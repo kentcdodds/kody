@@ -33,5 +33,7 @@ playwright-report
 test-results
 packages/worker/public/client-entry.js
 packages/worker/public/mcp-apps/kody-ui-utils.js
+packages/worker/public/mcp-apps/kody-ui-runtime.js
+packages/worker/public/mcp-apps/kody-ui-runtime.css
 packages/worker/wrangler-preview.generated.json
 packages/worker/wrangler-production.generated.json

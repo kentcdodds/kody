@@ -162,15 +162,12 @@ const kodyWindow = (
 	typeof window === 'object' && window ? window : globalThis
 ) as KodyWindow
 
-let currentKodyWidget: KodyWidgetPublicApi | null = null
-let kodyWidgetReadyState: KodyWidgetReadyState | null = null
-
 function readKodyWidget() {
-	return currentKodyWidget
+	return kodyWindow.kodyWidget ?? null
 }
 
 function getOrCreateKodyWidgetReadyState(): KodyWidgetReadyState {
-	const existingState = kodyWidgetReadyState
+	const existingState = kodyWindow.__kodyWidgetReadyState
 	if (existingState) {
 		return existingState
 	}
@@ -183,22 +180,12 @@ function getOrCreateKodyWidgetReadyState(): KodyWidgetReadyState {
 			resolvePromise?.(widget)
 		},
 	}
-	kodyWidgetReadyState = state
+	kodyWindow.__kodyWidgetReadyState = state
 	return state
 }
 
 function resolveKodyWidgetReady(widget: KodyWidgetPublicApi) {
 	getOrCreateKodyWidgetReadyState().resolve(widget)
-}
-
-export function getKodyWidget(): KodyWidgetPublicApi {
-	const widget = readKodyWidget()
-	if (widget) {
-		return widget
-	}
-	throw new Error(
-		'kodyWidget is not ready yet. Import `whenKodyWidgetReady()` from `@kody/ui-utils` and await it before using the runtime helpers.',
-	)
 }
 
 export function whenKodyWidgetReady(): Promise<KodyWidgetPublicApi> {
@@ -208,46 +195,6 @@ export function whenKodyWidgetReady(): Promise<KodyWidgetPublicApi> {
 	}
 	return getOrCreateKodyWidgetReadyState().promise
 }
-
-export function getOrCreateKodyWidgetReadyStateForTest() {
-	return {
-		resolve(widget: KodyWidgetPublicApi) {
-			currentKodyWidget = widget
-			resolveKodyWidgetReady(widget)
-		},
-		reset() {
-			currentKodyWidget = null
-			kodyWidgetReadyState = null
-		},
-	}
-}
-
-export const kodyWidget = new Proxy(Object.create(null), {
-	get(_target, property) {
-		const widget = getKodyWidget()
-		const value = Reflect.get(widget, property)
-		return typeof value === 'function' ? value.bind(widget) : value
-	},
-	has(_target, property) {
-		return property in getKodyWidget()
-	},
-	ownKeys() {
-		return Reflect.ownKeys(getKodyWidget())
-	},
-	getOwnPropertyDescriptor(_target, property) {
-		const descriptor = Reflect.getOwnPropertyDescriptor(
-			getKodyWidget(),
-			property,
-		)
-		if (!descriptor) {
-			return undefined
-		}
-		return {
-			...descriptor,
-			configurable: true,
-		}
-	},
-}) as KodyWidgetPublicApi
 
 function isRecord(value: unknown): value is JsonRecord {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -1063,7 +1010,10 @@ export function initializeGeneratedUiRuntime() {
 		return null
 	}
 
-	async function executeCodeInCurrentContext(code: string, params?: JsonRecord) {
+	async function executeCodeInCurrentContext(
+		code: string,
+		params?: JsonRecord,
+	) {
 		if (runtimeMode === 'hosted') {
 			return await executeCodeWithHttp(code, params)
 		}
@@ -1864,7 +1814,7 @@ export function initializeGeneratedUiRuntime() {
 	}
 
 	kodyWindow.__kodyAppParams = runtimeParams
-	currentKodyWidget = kodyWidget
+	kodyWindow.kodyWidget = kodyWidget
 	kodyWindow.params = runtimeParams
 	resolveKodyWidgetReady(kodyWidget)
 
