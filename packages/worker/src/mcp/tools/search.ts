@@ -219,36 +219,59 @@ export async function loadOptionalSearchRows(input: {
 	}
 
 	const warnings: Array<string> = []
-	let skillRows: Array<McpSkillRow> = []
-	let uiArtifactRows: Array<UiArtifactRow> = []
-	let userSecretRows: Array<SecretSearchRow> = []
-	let userValueRows: Array<ValueMetadata> = []
+	const [
+		skillRowsResult,
+		uiArtifactRowsResult,
+		userSecretRowsResult,
+		userValueRowsResult,
+	] = await Promise.allSettled([
+		input.loadSkills(),
+		input.loadUiArtifacts(),
+		input.loadUserSecrets(),
+		input.loadUserValues(),
+	])
 
-	try {
-		skillRows = await input.loadSkills()
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const skillRows =
+		skillRowsResult.status === 'fulfilled' ? skillRowsResult.value : []
+	if (skillRowsResult.status === 'rejected') {
+		const message =
+			skillRowsResult.reason instanceof Error
+				? skillRowsResult.reason.message
+				: String(skillRowsResult.reason)
 		warnings.push(`Saved skills are temporarily unavailable: ${message}`)
 	}
 
-	try {
-		uiArtifactRows = await input.loadUiArtifacts()
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const uiArtifactRows =
+		uiArtifactRowsResult.status === 'fulfilled'
+			? uiArtifactRowsResult.value
+			: []
+	if (uiArtifactRowsResult.status === 'rejected') {
+		const message =
+			uiArtifactRowsResult.reason instanceof Error
+				? uiArtifactRowsResult.reason.message
+				: String(uiArtifactRowsResult.reason)
 		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
 	}
 
-	try {
-		userSecretRows = await input.loadUserSecrets()
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const userSecretRows =
+		userSecretRowsResult.status === 'fulfilled'
+			? userSecretRowsResult.value
+			: []
+	if (userSecretRowsResult.status === 'rejected') {
+		const message =
+			userSecretRowsResult.reason instanceof Error
+				? userSecretRowsResult.reason.message
+				: String(userSecretRowsResult.reason)
 		warnings.push(`User secrets are temporarily unavailable: ${message}`)
 	}
 
-	try {
-		userValueRows = await input.loadUserValues()
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const userValueRows =
+		userValueRowsResult.status === 'fulfilled' ? userValueRowsResult.value : []
+	if (userValueRowsResult.status === 'rejected') {
+		const message =
+			userValueRowsResult.reason instanceof Error
+				? userValueRowsResult.reason.message
+				: String(userValueRowsResult.reason)
 		warnings.push(`Persisted values are temporarily unavailable: ${message}`)
 	}
 
@@ -267,33 +290,35 @@ async function loadSearchRowsAndRegistry(input: {
 	userId: string | null
 	skillCollection?: string
 }) {
-	const registry = await getCapabilityRegistryForContext({
-		env: input.agent.getEnv(),
-		callerContext: input.callerContext,
-	})
-	const optionalRows = await loadOptionalSearchRows({
-		userId: input.userId,
-		loadSkills: () =>
-			listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
-		loadUiArtifacts: () =>
-			listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
-				hidden: false,
-			}),
-		loadUserSecrets: () =>
-			listUserSecretsForSearch({
-				env: input.agent.getEnv(),
-				userId: input.userId!,
-			}),
-		loadUserValues: () =>
-			listValues({
-				env: input.agent.getEnv(),
-				userId: input.userId!,
-				storageContext: {
-					sessionId: input.callerContext.storageContext?.sessionId ?? null,
-					appId: input.callerContext.storageContext?.appId ?? null,
-				},
-			}),
-	})
+	const [registry, optionalRows] = await Promise.all([
+		getCapabilityRegistryForContext({
+			env: input.agent.getEnv(),
+			callerContext: input.callerContext,
+		}),
+		loadOptionalSearchRows({
+			userId: input.userId,
+			loadSkills: () =>
+				listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
+			loadUiArtifacts: () =>
+				listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
+					hidden: false,
+				}),
+			loadUserSecrets: () =>
+				listUserSecretsForSearch({
+					env: input.agent.getEnv(),
+					userId: input.userId!,
+				}),
+			loadUserValues: () =>
+				listValues({
+					env: input.agent.getEnv(),
+					userId: input.userId!,
+					storageContext: {
+						sessionId: input.callerContext.storageContext?.sessionId ?? null,
+						appId: input.callerContext.storageContext?.appId ?? null,
+					},
+				}),
+		}),
+	])
 	const appSecretsByAppId = input.userId
 		? await listAppSecretsByAppIds({
 				env: input.agent.getEnv(),

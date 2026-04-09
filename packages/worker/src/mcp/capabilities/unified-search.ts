@@ -776,27 +776,30 @@ export async function searchUnified(input: {
 		kind: { $eq: 'builtin' },
 	}
 	const candidateLimit = Math.min(100, Math.max(input.limit * 3, 25))
-	const capResult = await searchCapabilities({
+	const offlineByEnv = isCapabilitySearchOffline(input.env)
+	const capResultPromise = searchCapabilities({
 		env: input.env,
 		query: input.query,
 		limit: candidateLimit,
 		detail: false,
 		specs: input.specs,
-		vectorMetadataFilter: isCapabilitySearchOffline(input.env)
-			? undefined
-			: builtinFilter,
+		vectorMetadataFilter: offlineByEnv ? undefined : builtinFilter,
 	})
+	let capResult: Awaited<ReturnType<typeof searchCapabilities>> = {
+		matches: [],
+		offline: offlineByEnv,
+	}
 
 	let skillResult: { matches: Array<SkillSearchHit>; offline: boolean } = {
 		matches: [],
-		offline: capResult.offline,
+		offline: offlineByEnv,
 	}
 	let uiArtifactResult: {
 		matches: Array<UiArtifactSearchHit>
 		offline: boolean
 	} = {
 		matches: [],
-		offline: capResult.offline,
+		offline: offlineByEnv,
 	}
 	let secretResult: {
 		matches: Array<SecretSearchHit>
@@ -820,39 +823,51 @@ export async function searchUnified(input: {
 		offline: false,
 	}
 	if (input.userId) {
-		secretResult = await searchSecretsForUser({
-			query: input.query,
-			limit: candidateLimit,
-			rows: input.userSecretRows,
-		})
-		valueResult = await searchValuesForUser({
-			query: input.query,
-			limit: candidateLimit,
-			rows: input.userValueRows,
-		})
-		connectorResult = await searchConnectorsForUser({
-			query: input.query,
-			limit: candidateLimit,
-			rows: input.userValueRows,
-		})
-		skillResult = await searchSkillsForUser({
-			env: input.env,
-			query: input.query,
-			limit: candidateLimit,
-			specs: input.specs,
-			userId: input.userId,
-			collectionSlug: input.skillCollectionSlug,
-			rows: input.skillRows,
-		})
-		uiArtifactResult = await searchUiArtifactsForUser({
-			baseUrl: input.baseUrl,
-			env: input.env,
-			query: input.query,
-			limit: candidateLimit,
-			userId: input.userId,
-			rows: input.uiArtifactRows,
-			appSecretsByAppId: input.appSecretsByAppId,
-		})
+		;[
+			capResult,
+			secretResult,
+			valueResult,
+			connectorResult,
+			skillResult,
+			uiArtifactResult,
+		] = await Promise.all([
+			capResultPromise,
+			searchSecretsForUser({
+				query: input.query,
+				limit: candidateLimit,
+				rows: input.userSecretRows,
+			}),
+			searchValuesForUser({
+				query: input.query,
+				limit: candidateLimit,
+				rows: input.userValueRows,
+			}),
+			searchConnectorsForUser({
+				query: input.query,
+				limit: candidateLimit,
+				rows: input.userValueRows,
+			}),
+			searchSkillsForUser({
+				env: input.env,
+				query: input.query,
+				limit: candidateLimit,
+				specs: input.specs,
+				userId: input.userId,
+				collectionSlug: input.skillCollectionSlug,
+				rows: input.skillRows,
+			}),
+			searchUiArtifactsForUser({
+				baseUrl: input.baseUrl,
+				env: input.env,
+				query: input.query,
+				limit: candidateLimit,
+				userId: input.userId,
+				rows: input.uiArtifactRows,
+				appSecretsByAppId: input.appSecretsByAppId,
+			}),
+		])
+	} else {
+		capResult = await capResultPromise
 	}
 
 	const capByName = new Map(capResult.matches.map((m) => [m.name, m] as const))
