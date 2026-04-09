@@ -364,3 +364,97 @@ test('search skips connector rows whose stored id disagrees with config.name', a
 
 	expect(result.matches.some((match) => match.type === 'connector')).toBe(false)
 })
+
+test('exact value-name matches win cross-entity lexical ties', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {
+		preferred_org_lookup: {
+			name: 'preferred_org_lookup',
+			domain: 'meta',
+			description: 'Look up preferred org settings.',
+			keywords: ['preferred', 'org', 'lookup'],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['name'],
+			requiredInputFields: ['name'],
+			outputFields: ['value'],
+			inputSchema: {},
+		},
+	} satisfies Record<string, CapabilitySpec>
+	const valueRow = createValueRow('preferred_org', {
+		description: 'Stored organization preference',
+		value: 'kentcdodds',
+	})
+
+	const result = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'preferred org',
+		limit: 5,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		userValueRows: [valueRow],
+		appSecretsByAppId: new Map(),
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'value',
+		name: 'preferred_org',
+	})
+})
+
+test('exact connector-name matches win cross-entity lexical ties', async () => {
+	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
+	const specs = {
+		github_connector_lookup: {
+			name: 'github_connector_lookup',
+			domain: 'meta',
+			description: 'Inspect saved GitHub connector details.',
+			keywords: ['github', 'connector', 'lookup'],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['name'],
+			requiredInputFields: ['name'],
+			outputFields: ['connector'],
+			inputSchema: {},
+		},
+	} satisfies Record<string, CapabilitySpec>
+	const connectorRow = createValueRow('_connector:github', {
+		value: JSON.stringify({
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: 'github_refresh_token',
+			requiredHosts: ['api.github.com'],
+		}),
+		description: 'GitHub OAuth connector config',
+	})
+
+	const result = await searchUnified({
+		env,
+		baseUrl: 'http://localhost',
+		query: 'github',
+		limit: 5,
+		specs,
+		userId: 'user-123',
+		skillRows: [],
+		uiArtifactRows: [],
+		userSecretRows: [],
+		userValueRows: [connectorRow],
+		appSecretsByAppId: new Map(),
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'connector',
+		connectorName: 'github',
+	})
+})
