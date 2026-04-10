@@ -1,6 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import * as uiUtils from './kody-ui-utils.ts'
-import { getKodyWidgetRuntimeStateForTest } from './kody-widget-runtime.ts'
+import {
+	getKodyWidgetRuntimeStateForTest,
+	updateGeneratedUiRuntimeBootstrap,
+} from './kody-widget-runtime.ts'
 
 const {
 	absolutizeHtmlAttributeUrls,
@@ -217,6 +220,40 @@ test('async helpers read installed runtime state', async () => {
 
 	expect(kodyWidget.params).toEqual({ owner: 'kody' })
 	await expect(kodyWidget.executeCode('return "ok"')).resolves.toBe('ok')
+})
+
+test('runtime bootstrap updates refresh params and app session without reinit', () => {
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	runtimeState.install({
+		mode: 'mcp',
+		params: { owner: 'kody' },
+		appSession: {
+			token: 'token-1',
+			endpoints: {
+				source: 'https://kody.example/ui-api/app/source',
+				execute: 'https://kody.example/ui-api/app/execute',
+				secrets: 'https://kody.example/ui-api/app/secrets',
+				deleteSecret: 'https://kody.example/ui-api/app/secrets/delete',
+			},
+		},
+	})
+
+	updateGeneratedUiRuntimeBootstrap({
+		mode: 'mcp',
+		params: { owner: 'updated', limit: 3 },
+		appSession: {
+			token: 'token-2',
+			endpoints: {
+				source: 'https://kody.example/ui-api/next/source',
+				execute: 'https://kody.example/ui-api/next/execute',
+				secrets: 'https://kody.example/ui-api/next/secrets',
+				deleteSecret: 'https://kody.example/ui-api/next/secrets/delete',
+			},
+		},
+	})
+
+	expect(kodyWidget.params).toEqual({ owner: 'updated', limit: 3 })
 })
 
 test('runtime-backed helpers time out if the runtime never becomes ready', async () => {

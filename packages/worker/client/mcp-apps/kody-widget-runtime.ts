@@ -884,35 +884,28 @@ function coerceSessionEndpoints(value: unknown): SessionEndpoints | null {
 	}
 }
 
-function getBootstrap(): WidgetRuntimeBootstrap {
-	if (!isRecord(kodyWindow.__kodyGeneratedUiBootstrap)) {
+function normalizeBootstrap(value: unknown): WidgetRuntimeBootstrap {
+	if (!isRecord(value)) {
 		return {
 			mode: 'entry',
 			params: {},
 			appSession: null,
 		}
 	}
-	const params = isRecord(kodyWindow.__kodyGeneratedUiBootstrap.params)
-		? kodyWindow.__kodyGeneratedUiBootstrap.params
-		: {}
-	const appSession = isRecord(kodyWindow.__kodyGeneratedUiBootstrap.appSession)
+	const params = isRecord(value.params) ? value.params : {}
+	const appSession = isRecord(value.appSession)
 		? {
 				token:
-					typeof kodyWindow.__kodyGeneratedUiBootstrap.appSession.token ===
-					'string'
-						? kodyWindow.__kodyGeneratedUiBootstrap.appSession.token
+					typeof value.appSession.token === 'string'
+						? value.appSession.token
 						: undefined,
-				endpoints: coerceSessionEndpoints(
-					kodyWindow.__kodyGeneratedUiBootstrap.appSession.endpoints,
-				),
+				endpoints: coerceSessionEndpoints(value.appSession.endpoints),
 			}
 		: null
 	return {
 		mode:
-			kodyWindow.__kodyGeneratedUiBootstrap.mode === 'entry' ||
-			kodyWindow.__kodyGeneratedUiBootstrap.mode === 'hosted' ||
-			kodyWindow.__kodyGeneratedUiBootstrap.mode === 'mcp'
-				? kodyWindow.__kodyGeneratedUiBootstrap.mode
+			value.mode === 'entry' || value.mode === 'hosted' || value.mode === 'mcp'
+				? value.mode
 				: 'entry',
 		params,
 		appSession:
@@ -922,6 +915,34 @@ function getBootstrap(): WidgetRuntimeBootstrap {
 						endpoints: appSession.endpoints,
 					}
 				: null,
+	}
+}
+
+function applyBootstrapToRuntimeState(bootstrap: WidgetRuntimeBootstrap) {
+	const state = getOrCreateKodyWidgetRuntimeState()
+	state.mode = bootstrap.mode
+	state.params = bootstrap.params
+	state.appSession = bootstrap.appSession
+	kodyWindow.__kodyGeneratedUiBootstrap = {
+		mode: bootstrap.mode,
+		params: bootstrap.params,
+		appSession: bootstrap.appSession,
+	}
+	syncKodyWidgetParams()
+	return state
+}
+
+function getBootstrap(): WidgetRuntimeBootstrap {
+	return normalizeBootstrap(kodyWindow.__kodyGeneratedUiBootstrap)
+}
+
+export function updateGeneratedUiRuntimeBootstrap(
+	bootstrap: GeneratedUiRuntimeBootstrap,
+) {
+	const normalizedBootstrap = normalizeBootstrap(bootstrap)
+	const state = applyBootstrapToRuntimeState(normalizedBootstrap)
+	if (normalizedBootstrap.mode !== 'entry' && state.initialized) {
+		markKodyWidgetRuntimeReady()
 	}
 }
 
@@ -1200,13 +1221,9 @@ export function initializeGeneratedUiRuntime() {
 	if (bootstrap.mode === 'entry') {
 		return
 	}
-	const state = getOrCreateKodyWidgetRuntimeState()
+	const state = applyBootstrapToRuntimeState(bootstrap)
 	state.initialized = true
-	state.mode = bootstrap.mode
-	state.params = bootstrap.params
-	state.appSession = bootstrap.appSession
 	kodyWindow.__kodyGeneratedUiRuntimeInitialized = true
-	syncKodyWidgetParams()
 	markKodyWidgetRuntimeReady()
 
 	window.addEventListener('error', (event) => {
