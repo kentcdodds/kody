@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import getPort from 'get-port'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
@@ -83,10 +83,14 @@ function mockCloudflareContext(origin: string, token: string) {
 }
 
 // Each case spawns `wrangler dev` and waits up to 25s for /__mocks/meta. The
-// shared Vitest CI timeout is 20s (vitest-shared.ts), so a slow cold start can
-// exceed the per-test limit and fail only on heavier cases (e.g. HTML fallback).
-describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
-	test('createCloudflareRestClient rawRequest returns JSON from mock Cloudflare API', async () => {
+// shared Vitest CI timeout is 20s (vitest-shared.ts), so each test needs a
+// higher limit for cold starts.
+const wranglerMockTimeout = { timeout: 60_000 } as const
+
+test(
+	'createCloudflareRestClient rawRequest returns JSON from mock Cloudflare API',
+	wranglerMockTimeout,
+	async () => {
 		const token = 'coding-cloudflare-token'
 		await using mock = await startCloudflareMock(token)
 		const ctx = mockCloudflareContext(mock.origin, mock.token)
@@ -104,9 +108,13 @@ describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
 		expect(
 			body.result?.some((account) => account.id === 'cf_account_mock_123'),
 		).toBe(true)
-	})
+	},
+)
 
-	test('createCloudflareRestClient rejects paths not under /client/v4/', async () => {
+test(
+	'createCloudflareRestClient rejects paths not under /client/v4/',
+	wranglerMockTimeout,
+	async () => {
 		const token = 'coding-cloudflare-reject-token'
 		await using mock = await startCloudflareMock(token)
 		const ctx = mockCloudflareContext(mock.origin, mock.token)
@@ -117,9 +125,13 @@ describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
 				path: '/zones',
 			}),
 		).rejects.toThrow('path must start with `/client/v4/`')
-	})
+	},
+)
 
-	test('page_to_markdown returns negotiated markdown without Browser Rendering', async () => {
+test(
+	'page_to_markdown returns negotiated markdown without Browser Rendering',
+	wranglerMockTimeout,
+	async () => {
 		const token = 'coding-cloudflare-page-negotiated-token'
 		await using mock = await startCloudflareMock(token)
 		const ctx = mockCloudflareContext(mock.origin, mock.token)
@@ -133,9 +145,13 @@ describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
 		expect(result.browserRendering).toBeNull()
 		expect(result.negotiated?.contentType).toContain('text/markdown')
 		expect(result.markdown).toContain('# Mock markdown')
-	})
+	},
+)
 
-	test('page_to_markdown does not treat markdown error responses as negotiated success', async () => {
+test(
+	'page_to_markdown does not treat markdown error responses as negotiated success',
+	wranglerMockTimeout,
+	async () => {
 		const token = 'coding-cloudflare-page-error-token'
 		await using mock = await startCloudflareMock(token)
 		const ctx = mockCloudflareContext(mock.origin, mock.token)
@@ -156,9 +172,13 @@ describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
 		expect(result.markdown).toContain(
 			`source: ${mock.origin}/__mocks/markdown-error`,
 		)
-	})
+	},
+)
 
-	test('page_to_markdown falls back to Browser Rendering for html pages', async () => {
+test(
+	'page_to_markdown falls back to Browser Rendering for html pages',
+	wranglerMockTimeout,
+	async () => {
 		const token = 'coding-cloudflare-page-markdown-token'
 		await using mock = await startCloudflareMock(token)
 		const ctx = mockCloudflareContext(mock.origin, mock.token)
@@ -178,9 +198,13 @@ describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
 		expect(result.markdown).toContain('# Mock Browser Rendering')
 		expect(result.markdown).toContain(`source: ${mock.origin}/__mocks`)
 		expect(result.markdown).toContain('userAgent: kody-test-agent')
-	})
+	},
+)
 
-	test('page_to_markdown converts inline html with Browser Rendering', async () => {
+test(
+	'page_to_markdown converts inline html with Browser Rendering',
+	wranglerMockTimeout,
+	async () => {
 		const token = 'coding-cloudflare-page-inline-token'
 		await using mock = await startCloudflareMock(token)
 		const ctx = mockCloudflareContext(mock.origin, mock.token)
@@ -201,9 +225,13 @@ describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
 		expect(result.markdown).toContain(
 			'source: <main><h1>Hello</h1><p>From HTML</p></main>',
 		)
-	})
+	},
+)
 
-	test('page_to_markdown fails clearly when Browser Rendering account id is missing', async () => {
+test(
+	'page_to_markdown fails clearly when Browser Rendering account id is missing',
+	wranglerMockTimeout,
+	async () => {
 		const token = 'coding-cloudflare-page-no-account-token'
 		await using mock = await startCloudflareMock(token)
 		const ctx = {
@@ -224,5 +252,5 @@ describe('coding capabilities (wrangler mock)', { timeout: 60_000 }, () => {
 				ctx,
 			),
 		).rejects.toThrow('CLOUDFLARE_ACCOUNT_ID is not set')
-	})
-})
+	},
+)

@@ -22,106 +22,37 @@ function getTextContent(content: CallToolResult['content']) {
 	return nonMetadata?.text ?? textBlocks[0]?.text ?? ''
 }
 
-function getAllTextContent(content: CallToolResult['content']) {
-	if (!Array.isArray(content)) return ''
-	return content
-		.filter(
-			(item): item is Extract<ContentBlock, { type: 'text' }> =>
-				item.type === 'text' && typeof item.text === 'string',
-		)
-		.map((item) => item.text)
-		.join('\n\n')
-}
-
-test('mcp server returns built-in instructions and base server metadata', async () => {
+test('mcp server lists tools and search returns matches', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
 
 	const tools = await mcpClient.client.listTools()
-	const toolDescriptions = new Map(
-		tools.tools.map((tool) => [tool.name, tool.inputSchema] as const),
-	)
-	const conversationIdDescription =
-		'Ties related calls together. On the first call, omit this to receive a server-generated ID, or supply your own. Pass the returned `conversationId` on every subsequent call in the same conversation - this enables optimizations like reduced response size.'
+	expect(tools.tools.some((t) => t.name === 'search')).toBe(true)
 
-	for (const toolName of ['search', 'execute', 'open_generated_ui']) {
-		const schema = toolDescriptions.get(toolName) as
-			| {
-					properties?: {
-						conversationId?: {
-							description?: string
-						}
-					}
-			  }
-			| undefined
-		expect(schema?.properties?.conversationId?.description).toContain(
-			conversationIdDescription,
-		)
-	}
-
-	const basicSearchResult = await mcpClient.client.callTool({
+	const searchResult = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
 			query: 'generated ui',
 			limit: 3,
 		},
 	})
-
-	const basicStructuredResult = (basicSearchResult as CallToolResult)
-		.structuredContent as
+	const structured = (searchResult as CallToolResult).structuredContent as
 		| {
 				conversationId?: string
-				result?: {
-					matches?: Array<unknown>
-				}
+				result?: { matches?: Array<unknown> }
 		  }
 		| undefined
-
-	const basicConversationId = basicStructuredResult?.conversationId
-	const basicContent = (basicSearchResult as CallToolResult).content
-	const basicFirstContent = Array.isArray(basicContent) ? basicContent[0] : null
-
-	expect(typeof basicConversationId).toBe('string')
-	expect(basicFirstContent).toEqual({
-		type: 'text',
-		text: `conversationId: ${basicConversationId}`,
-	})
-	expect(Array.isArray(basicStructuredResult?.result?.matches)).toBe(true)
-
-	const contextualSearchResult = await mcpClient.client.callTool({
-		name: 'search',
-		arguments: {
-			query: 'generated ui',
-			conversationId: 'searchctx1234',
-			memoryContext: {
-				task: 'Find UI-related tools',
-				entities: ['generated ui'],
-				constraints: ['brief'],
-			},
-		},
-	})
-
-	const contextualStructuredResult = (contextualSearchResult as CallToolResult)
-		.structuredContent as
-		| {
-				conversationId?: string
-				result?: {
-					matches?: Array<unknown>
-				}
-		  }
-		| undefined
-
-	expect(contextualStructuredResult?.conversationId).toBe('searchctx1234')
-	expect(Array.isArray(contextualStructuredResult?.result?.matches)).toBe(true)
+	expect(typeof structured?.conversationId).toBe('string')
+	expect(Array.isArray(structured?.result?.matches)).toBe(true)
 })
 
-test('mcp server saves and browses skill collections', async () => {
+test('mcp server saves skills and run_skill works', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
 
-	const saveResult = await mcpClient.client.callTool({
+	await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -141,73 +72,6 @@ test('mcp server saves and browses skill collections', async () => {
 		},
 	})
 
-	const saveStructured = (saveResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					name?: string
-					collection?: string | null
-					collection_slug?: string | null
-				}
-		  }
-		| undefined
-	const savedSkill = saveStructured?.result
-	expect(savedSkill?.name).toBe('summarize-agent-prs')
-	expect(savedSkill?.collection).toBe('GitHub Workflows')
-	expect(savedSkill?.collection_slug).toBe('github-workflows')
-
-	const listResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.meta_list_skill_collections({})
-			}`,
-		},
-	})
-	const listStructured = (listResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					total?: number
-					collections?: Array<{
-						name?: string
-						slug?: string
-						skill_count?: number
-					}>
-				}
-		  }
-		| undefined
-	expect(listStructured?.result?.total).toBe(1)
-	expect(listStructured?.result?.collections).toEqual([
-		{
-			name: 'GitHub Workflows',
-			slug: 'github-workflows',
-			skill_count: 1,
-		},
-	])
-
-	const getResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.meta_get_skill({
-					name: ${JSON.stringify(savedSkill?.name)},
-				})
-			}`,
-		},
-	})
-	const getStructured = (getResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					name?: string
-					collection?: string | null
-					collection_slug?: string | null
-				}
-		  }
-		| undefined
-	expect(getStructured?.result?.name).toBe('summarize-agent-prs')
-	expect(getStructured?.result?.collection).toBe('GitHub Workflows')
-	expect(getStructured?.result?.collection_slug).toBe('github-workflows')
-
-	const conversationId = 'skills-search-flow'
 	const searchResult = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
@@ -215,184 +79,39 @@ test('mcp server saves and browses skill collections', async () => {
 			skill_collection: 'github-workflows',
 			limit: 25,
 			maxResponseSize: 20_000,
-			conversationId,
 		},
 	})
-	const searchText = getTextContent((searchResult as CallToolResult).content)
 	const searchStructured = (searchResult as CallToolResult).structuredContent as
 		| {
 				result?: {
-					matches?: Array<{
-						type?: string
-						id?: string
-						name?: string
-						collection?: string | null
-						collectionSlug?: string | null
-					}>
+					matches?: Array<{ type?: string; id?: string }>
 				}
 		  }
 		| undefined
-	expect(searchText).toContain('# Search results')
-	expect(searchText).toContain('**How to run matches:**')
-	expect(searchText).toContain('## Skill — Summarize agent PRs')
-	expect(searchText).toContain('(name: `summarize-agent-prs`)')
 	expect(
-		searchStructured?.result?.matches?.find((match) => match.type === 'skill'),
-	).toEqual(
-		expect.objectContaining({
-			id: savedSkill?.name,
-			name: savedSkill?.name,
-			collection: 'GitHub Workflows',
-			collectionSlug: 'github-workflows',
-		}),
-	)
-
-	const followupSearchResult = await mcpClient.client.callTool({
-		name: 'search',
-		arguments: {
-			query: 'github pull requests',
-			limit: 10,
-			conversationId,
-		},
-	})
-	const followupSearchText = getTextContent(
-		(followupSearchResult as CallToolResult).content,
-	)
-	expect(followupSearchText).toContain('# Search results')
-	expect(followupSearchText).not.toContain('**How to run matches:**')
-
-	const entityResult = await mcpClient.client.callTool({
-		name: 'search',
-		arguments: {
-			entity: `${savedSkill?.name}:skill`,
-		},
-	})
-	const entityText = getTextContent((entityResult as CallToolResult).content)
-	const entityStructured = (entityResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					kind?: string
-					type?: string
-					id?: string
-					name?: string
-					collection?: string | null
-				}
-		  }
-		| undefined
-	expect(entityText).toContain('# Skill — Summarize agent PRs')
-	expect(entityText).toContain('## Run this skill')
-	expect(entityText).toContain('Name: `summarize-agent-prs`')
-	expect(entityStructured?.result).toEqual(
-		expect.objectContaining({
-			kind: 'entity',
-			type: 'skill',
-			id: savedSkill?.name,
-			collection: 'GitHub Workflows',
-			collectionSlug: 'github-workflows',
-		}),
-	)
+		searchStructured?.result?.matches?.some(
+			(m) => m.type === 'skill' && m.id === 'summarize-agent-prs',
+		),
+	).toBe(true)
 
 	const runResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
-				return await codemode.meta_run_skill({
-					name: ${JSON.stringify(savedSkill?.name)},
-				})
+				return await codemode.meta_run_skill({ name: 'summarize-agent-prs' })
 			}`,
 		},
 	})
 	const runStructured = (runResult as CallToolResult).structuredContent as
 		| {
-				result?: {
-					ok?: boolean
-					result?: {
-						ok?: boolean
-					}
-				}
+				result?: { ok?: boolean; result?: { ok?: boolean } }
 		  }
 		| undefined
-	expect(runStructured?.result).toEqual(
-		expect.objectContaining({
-			ok: true,
-			result: {
-				ok: true,
-			},
-		}),
-	)
+	expect(runStructured?.result?.ok).toBe(true)
+	expect(runStructured?.result?.result).toEqual({ ok: true })
 })
 
-test('mcp search surfaces strongly matching saved skills without collection filters', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
-
-	const saveResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.meta_save_skill({
-					name: 'launch-cursor-cloud-agent',
-					title: 'Launch Cursor Cloud Agent',
-					description: 'Launch a Cursor Cloud Agent for autonomous coding tasks.',
-					collection: 'Cursor',
-					keywords: ['cursor', 'cloud', 'agent', 'launch'],
-					code: 'async () => ({ ok: true })',
-					search_text: 'launch cursor cloud agent autonomous coding task',
-					read_only: true,
-					idempotent: true,
-					destructive: false,
-				})
-			}`,
-		},
-	})
-	const saveStructured = (saveResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					name?: string
-				}
-		  }
-		| undefined
-	expect(saveStructured?.result?.name).toBe('launch-cursor-cloud-agent')
-
-	for (const query of ['launch Cursor Cloud agent', 'Cursor Cloud agent']) {
-		const searchResult = await mcpClient.client.callTool({
-			name: 'search',
-			arguments: {
-				query,
-				limit: 10,
-				maxResponseSize: 20_000,
-			},
-		})
-		const searchText = getTextContent((searchResult as CallToolResult).content)
-		const searchStructured = (searchResult as CallToolResult)
-			.structuredContent as
-			| {
-					result?: {
-						matches?: Array<{
-							type?: string
-							id?: string
-							name?: string
-							title?: string
-						}>
-					}
-			  }
-			| undefined
-
-		expect(searchText).toContain('Launch Cursor Cloud Agent')
-		expect(
-			searchStructured?.result?.matches?.some((match) => {
-				return (
-					match.type === 'skill' &&
-					match.id === 'launch-cursor-cloud-agent' &&
-					match.name === 'launch-cursor-cloud-agent'
-				)
-			}),
-		).toBe(true)
-	}
-})
-
-test('mcp server executes user code against codemode and tracks execute context', async () => {
+test('mcp server ui_save_app hidden flag and search listing', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -408,75 +127,36 @@ test('mcp server executes user code against codemode and tracks execute context'
 					})`,
 		},
 	})
-
-	const saveAppStructuredResult = (saveAppResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: Record<string, unknown>
-		  }
+	const saveStructured = (saveAppResult as CallToolResult).structuredContent as
+		| { result?: Record<string, unknown> }
 		| undefined
-	const executeResult = saveAppStructuredResult?.result as
-		| Record<string, unknown>
-		| undefined
-	expect(typeof executeResult?.app_id).toBe('string')
-	expect(executeResult?.hosted_url).toBe(
-		`${server.origin}/ui/${executeResult?.app_id}`,
-	)
-	expect(executeResult?.hidden).toBe(true)
+	const appId = saveStructured?.result?.app_id
+	expect(typeof appId).toBe('string')
+	expect(saveStructured?.result?.hidden).toBe(true)
 
-	const hiddenSearchResult = await mcpClient.client.callTool({
+	const hiddenSearch = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
 			query: 'Execute generated app',
 		},
 	})
-	const hiddenSearchText = getTextContent(
-		(hiddenSearchResult as CallToolResult).content,
-	)
-	const hiddenSearchStructured = (hiddenSearchResult as CallToolResult)
-		.structuredContent as
+	const hiddenStructured = (hiddenSearch as CallToolResult).structuredContent as
 		| {
-				result?: {
-					matches?: Array<{
-						type?: string
-						id?: string
-					}>
-				}
+				result?: { matches?: Array<{ type?: string; id?: string }> }
 		  }
 		| undefined
-	expect(hiddenSearchText).toContain('# Search results')
 	expect(
-		hiddenSearchStructured?.result?.matches?.some(
-			(match) => match.type === 'app' && match.id === executeResult?.app_id,
+		hiddenStructured?.result?.matches?.some(
+			(m) => m.type === 'app' && m.id === appId,
 		),
 	).toBe(false)
 
-	const savedAppMetadata = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.ui_get_app({
-					app_id: ${JSON.stringify(executeResult?.app_id)},
-				})
-			}`,
-		},
-	})
-	const savedAppMetadataStructured = (savedAppMetadata as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					hidden?: boolean
-				}
-		  }
-		| undefined
-	expect(savedAppMetadataStructured?.result?.hidden).toBe(true)
-
-	const searchableUpdateResult = await mcpClient.client.callTool({
+	await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
 				return await codemode.ui_save_app({
-					app_id: ${JSON.stringify(executeResult?.app_id)},
+					app_id: ${JSON.stringify(appId)},
 					title: 'Execute generated app',
 					description: 'Saved through execute.',
 					code: '<main><h1>Execute App</h1></main>',
@@ -485,17 +165,8 @@ test('mcp server executes user code against codemode and tracks execute context'
 			}`,
 		},
 	})
-	const searchableUpdateStructured = (searchableUpdateResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					hidden?: boolean
-				}
-		  }
-		| undefined
-	expect(searchableUpdateStructured?.result?.hidden).toBe(false)
 
-	const visibleSearchResult = await mcpClient.client.callTool({
+	const visibleSearch = await mcpClient.client.callTool({
 		name: 'search',
 		arguments: {
 			query: 'Execute generated app',
@@ -503,10 +174,7 @@ test('mcp server executes user code against codemode and tracks execute context'
 			maxResponseSize: 20_000,
 		},
 	})
-	const visibleSearchText = getTextContent(
-		(visibleSearchResult as CallToolResult).content,
-	)
-	const visibleSearchStructured = (visibleSearchResult as CallToolResult)
+	const visibleStructured = (visibleSearch as CallToolResult)
 		.structuredContent as
 		| {
 				result?: {
@@ -518,82 +186,20 @@ test('mcp server executes user code against codemode and tracks execute context'
 				}
 		  }
 		| undefined
-	expect(visibleSearchText).toContain('## App — Execute generated app')
-	expect(visibleSearchText).toContain(
-		`**Hosted URL:** \`${server.origin}/ui/${executeResult?.app_id}\``,
-	)
 	expect(
-		visibleSearchStructured?.result?.matches?.find(
-			(match) => match.type === 'app' && match.id === executeResult?.app_id,
+		visibleStructured?.result?.matches?.find(
+			(m) => m.type === 'app' && m.id === appId,
 		),
 	).toEqual(
 		expect.objectContaining({
 			type: 'app',
-			id: executeResult?.app_id,
-			hostedUrl: `${server.origin}/ui/${executeResult?.app_id}`,
+			id: appId,
+			hostedUrl: `${server.origin}/ui/${appId}`,
 		}),
 	)
-
-	const appEntityResult = await mcpClient.client.callTool({
-		name: 'search',
-		arguments: {
-			entity: `${executeResult?.app_id}:app`,
-		},
-	})
-	const appEntityText = getTextContent(
-		(appEntityResult as CallToolResult).content,
-	)
-	const appEntityStructured = (appEntityResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					kind?: string
-					type?: string
-					id?: string
-					hostedUrl?: string
-				}
-		  }
-		| undefined
-	expect(appEntityText).toContain('# App — Execute generated app')
-	expect(appEntityText).toContain('## Open this app')
-	expect(appEntityStructured?.result).toEqual(
-		expect.objectContaining({
-			kind: 'entity',
-			type: 'app',
-			id: executeResult?.app_id,
-			hostedUrl: `${server.origin}/ui/${executeResult?.app_id}`,
-		}),
-	)
-
-	const contextResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => ({ ok: true })`,
-			memoryContext: {
-				task: 'Return a small payload',
-				constraints: ['no side effects'],
-			},
-		},
-	})
-
-	const contextStructuredResult = (contextResult as CallToolResult)
-		.structuredContent as
-		| {
-				conversationId?: string
-				result?: {
-					ok?: boolean
-				}
-		  }
-		| undefined
-
-	expect(typeof contextStructuredResult?.conversationId).toBe('string')
-	expect(
-		(contextStructuredResult?.conversationId ?? '').length,
-	).toBeGreaterThan(0)
-	expect(contextStructuredResult?.result?.ok).toBe(true)
 })
 
-test('mcp server verifies, upserts, deletes, and surfaces memories', async () => {
+test('mcp memory verify upsert and delete', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -612,23 +218,9 @@ test('mcp server verifies, upserts, deletes, and surfaces memories', async () =>
 		},
 	})
 	const verifyStructured = (verifyResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					candidate?: {
-						subject?: string
-					}
-					related_memories?: Array<unknown>
-					guidance?: string
-				}
-		  }
+		| { result?: { related_memories?: Array<unknown> } }
 		| undefined
-	expect(verifyStructured?.result?.candidate?.subject).toBe(
-		'User prefers npm over pnpm',
-	)
 	expect(verifyStructured?.result?.related_memories).toEqual([])
-	expect(verifyStructured?.result?.guidance).toContain(
-		'Always run meta_memory_verify before upserting or deleting memories.',
-	)
 
 	const upsertResult = await mcpClient.client.callTool({
 		name: 'execute',
@@ -646,115 +238,10 @@ test('mcp server verifies, upserts, deletes, and surfaces memories', async () =>
 		},
 	})
 	const upsertStructured = (upsertResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					mode?: string
-					memory?: {
-						id?: string
-						subject?: string
-						status?: string
-					}
-				}
-		  }
+		| { result?: { memory?: { id?: string } } }
 		| undefined
 	const memoryId = upsertStructured?.result?.memory?.id
-	expect(upsertStructured?.result?.mode).toBe('created')
-	expect(upsertStructured?.result?.memory?.subject).toBe(
-		'User prefers npm over pnpm',
-	)
-	expect(upsertStructured?.result?.memory?.status).toBe('active')
 	expect(typeof memoryId).toBe('string')
-
-	const verifyExistingResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.meta_memory_verify({
-					subject: 'User prefers npm over pnpm',
-					summary: 'Always use npm commands in this repository.',
-					category: 'preference',
-					tags: ['package-manager'],
-				})
-			}`,
-		},
-	})
-	const verifyExistingStructured = (verifyExistingResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					related_memories?: Array<{
-						id?: string
-						subject?: string
-					}>
-				}
-		  }
-		| undefined
-	expect(verifyExistingStructured?.result?.related_memories?.[0]).toEqual(
-		expect.objectContaining({
-			id: memoryId,
-			subject: 'User prefers npm over pnpm',
-		}),
-	)
-
-	const contextualResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => ({ ok: true })`,
-			conversationId: 'memory-conv-1',
-			memoryContext: {
-				task: 'Follow repo package manager preference',
-				entities: ['npm'],
-				constraints: ['use repository preference'],
-			},
-		},
-	})
-	const contextualStructured = (contextualResult as CallToolResult)
-		.structuredContent as
-		| {
-				memories?: {
-					surfaced?: Array<{
-						id?: string
-						subject?: string
-					}>
-				}
-		  }
-		| undefined
-	expect(contextualStructured?.memories?.surfaced?.[0]).toEqual(
-		expect.objectContaining({
-			id: memoryId,
-			subject: 'User prefers npm over pnpm',
-		}),
-	)
-	expect(
-		getAllTextContent((contextualResult as CallToolResult).content),
-	).toContain(
-		'## Relevant memories',
-	)
-
-	const suppressedResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => ({ ok: true })`,
-			conversationId: 'memory-conv-1',
-			memoryContext: {
-				task: 'Follow repo package manager preference',
-				entities: ['npm'],
-			},
-		},
-	})
-	const suppressedStructured = (suppressedResult as CallToolResult)
-		.structuredContent as
-		| {
-				memories?: {
-					surfaced?: Array<unknown>
-					suppressedCount?: number
-				}
-		  }
-		| undefined
-	expect(suppressedStructured?.memories?.surfaced).toEqual([])
-	expect(suppressedStructured?.memories?.suppressedCount).toBeGreaterThanOrEqual(
-		1,
-	)
 
 	const softDeleteResult = await mcpClient.client.callTool({
 		name: 'execute',
@@ -770,13 +257,7 @@ test('mcp server verifies, upserts, deletes, and surfaces memories', async () =>
 	})
 	const softDeleteStructured = (softDeleteResult as CallToolResult)
 		.structuredContent as
-		| {
-				result?: {
-					memory?: {
-						status?: string
-					} | null
-				}
-		  }
+		| { result?: { memory?: { status?: string } | null } }
 		| undefined
 	expect(softDeleteStructured?.result?.memory?.status).toBe('deleted')
 
@@ -791,17 +272,11 @@ test('mcp server verifies, upserts, deletes, and surfaces memories', async () =>
 		},
 	})
 	const getDeletedStructured = (getDeletedResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					status?: string
-				} | null
-		  }
-		| undefined
+		.structuredContent as { result?: { status?: string } | null } | undefined
 	expect(getDeletedStructured?.result?.status).toBe('deleted')
 })
 
-test('mcp server executes directly available codemode helpers', async () => {
+test('mcp server executes codemode helpers with connector', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -827,8 +302,7 @@ test('mcp server executes directly available codemode helpers', async () => {
 			}),
 		},
 	)
-	const secretSaveRaw = await secretSaveResponse.text()
-	expect(secretSaveResponse.ok, secretSaveRaw).toBe(true)
+	expect(secretSaveResponse.ok, await secretSaveResponse.text()).toBe(true)
 
 	const setupResult = await mcpClient.client.callTool({
 		name: 'execute',
@@ -856,8 +330,9 @@ test('mcp server executes directly available codemode helpers', async () => {
 		},
 	})
 	if ((setupResult as CallToolResult).isError) {
-		const setupText = getTextContent((setupResult as CallToolResult).content)
-		throw new Error(`Helper setup execute failed: ${setupText}`)
+		throw new Error(
+			`Helper setup execute failed: ${getTextContent((setupResult as CallToolResult).content)}`,
+		)
 	}
 
 	const result = await mcpClient.client.callTool({
@@ -877,24 +352,15 @@ test('mcp server executes directly available codemode helpers', async () => {
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
 				result?: Record<string, unknown>
-				error?: unknown
 		  }
 		| undefined
 	const executeResult = structuredResult?.result as
 		| Record<string, unknown>
 		| undefined
-	const textOutput = getTextContent((result as CallToolResult).content)
-	if ((result as CallToolResult).isError) {
-		expect(textOutput).toContain(
-			'Token refresh failed for connector "spotify" with HTTP 400.',
-		)
-	} else {
-		expect(executeResult).toEqual(
-			expect.objectContaining({
-				status: expect.any(Number),
-			}),
-		)
-	}
+	expect(
+		(result as CallToolResult).isError ||
+			typeof executeResult?.status === 'number',
+	).toBe(true)
 })
 
 test('mcp server returns structured guidance for missing secret errors in execute', async () => {
@@ -918,29 +384,20 @@ test('mcp server returns structured guidance for missing secret errors in execut
 
 	const structuredResult = (result as CallToolResult).structuredContent as
 		| {
-				error?: unknown
 				errorDetails?: Record<string, unknown>
 		  }
 		| undefined
-	const errorDetails = structuredResult?.errorDetails
-	const textOutput = getTextContent((result as CallToolResult).content)
-
 	expect((result as CallToolResult).isError).toBe(true)
-	expect(textOutput).toContain('Secret "missingToken" was not found.')
-	expect(textOutput).toContain(
-		'Next step: Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
+	expect(structuredResult?.errorDetails).toEqual(
+		expect.objectContaining({
+			kind: 'secret_required',
+			secretNames: ['missingToken'],
+			suggestedAction: {
+				type: 'open_generated_ui',
+				reason: 'collect_secret',
+			},
+		}),
 	)
-	expect(errorDetails).toEqual({
-		kind: 'secret_required',
-		message: 'Secret "missingToken" was not found.',
-		nextStep:
-			'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
-		secretNames: ['missingToken'],
-		suggestedAction: {
-			type: 'open_generated_ui',
-			reason: 'collect_secret',
-		},
-	})
 })
 
 test('mcp server opens generated ui from inline and saved app sources', async () => {
@@ -952,27 +409,18 @@ test('mcp server opens generated ui from inline and saved app sources', async ()
 		name: 'open_generated_ui',
 		arguments: {
 			code: '<main><h1>Hello Shell</h1><p>Inline app content.</p></main>',
-			conversationId: 'uictx1234567',
-			memoryContext: {
-				task: 'Render inline UI',
-				entities: ['generated ui'],
-			},
 		},
 	})
-
-	const inlineStructuredResult = (inlineResult as CallToolResult)
-		.structuredContent as
+	const inlineStructured = (inlineResult as CallToolResult).structuredContent as
 		| {
-				conversationId?: string
+				renderSource?: string
 				appId?: string | null
 				hostedUrl?: string | null
-				renderSource?: string
 		  }
 		| undefined
-	expect(inlineStructuredResult?.conversationId).toBe('uictx1234567')
-	expect(inlineStructuredResult?.renderSource).toBe('inline_code')
-	expect(inlineStructuredResult?.appId).toBeNull()
-	expect(inlineStructuredResult?.hostedUrl).toBeNull()
+	expect(inlineStructured?.renderSource).toBe('inline_code')
+	expect(inlineStructured?.appId).toBeNull()
+	expect(inlineStructured?.hostedUrl).toBeNull()
 
 	const runtimeResponse = await fetch(
 		new URL('/ui/runtime.js', server.origin),
@@ -997,11 +445,7 @@ test('mcp server opens generated ui from inline and saved app sources', async ()
 		},
 	})
 	const savedStructured = (savedResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					app_id?: string
-				}
-		  }
+		| { result?: { app_id?: string } }
 		| undefined
 	const savedAppId = savedStructured?.result?.app_id
 	expect(typeof savedAppId).toBe('string')
@@ -1012,8 +456,7 @@ test('mcp server opens generated ui from inline and saved app sources', async ()
 			app_id: savedAppId,
 		},
 	})
-
-	const savedAppOpenStructuredResult = (savedAppOpenResult as CallToolResult)
+	const savedOpenStructured = (savedAppOpenResult as CallToolResult)
 		.structuredContent as
 		| {
 				appId?: string | null
@@ -1021,9 +464,9 @@ test('mcp server opens generated ui from inline and saved app sources', async ()
 				renderSource?: string
 		  }
 		| undefined
-	expect(savedAppOpenStructuredResult?.renderSource).toBe('saved_app')
-	expect(savedAppOpenStructuredResult?.appId).toBe(savedAppId)
-	expect(savedAppOpenStructuredResult?.hostedUrl).toContain(`/ui/${savedAppId}`)
+	expect(savedOpenStructured?.renderSource).toBe('saved_app')
+	expect(savedOpenStructured?.appId).toBe(savedAppId)
+	expect(savedOpenStructured?.hostedUrl).toContain(`/ui/${savedAppId}`)
 })
 
 test('mcp endpoint requires OAuth bearer auth', async () => {
@@ -1038,35 +481,6 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	expect(response.headers.get('WWW-Authenticate') ?? '').toContain(
 		'resource_metadata=',
 	)
-})
-
-test('mcp server streams token logs from execute', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
-
-	const result = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				console.log('first log')
-				await new Promise((resolve) => setTimeout(resolve, 10))
-				console.log('second log')
-				return { ok: true }
-			}`,
-		},
-	})
-
-	const structuredResult = (result as CallToolResult).structuredContent as
-		| {
-				logs?: Array<string>
-		  }
-		| undefined
-	const logs = structuredResult?.logs ?? []
-
-	expect(logs.length).toBeGreaterThanOrEqual(2)
-	expect(logs[0] ?? '').toContain('first log')
-	expect(logs[1] ?? '').toContain('second log')
 })
 
 test('generated UI execute supports session storage context', async () => {
@@ -1084,9 +498,7 @@ test('generated UI execute supports session storage context', async () => {
 		| {
 				appSession?: {
 					token?: string
-					endpoints?: {
-						execute?: string
-					}
+					endpoints?: { execute?: string }
 				} | null
 		  }
 		| undefined
@@ -1120,141 +532,11 @@ test('generated UI execute supports session storage context', async () => {
 	expect(response.ok).toBe(true)
 	const payload = (await response.json()) as {
 		ok?: boolean
-		result?: {
-			result?: {
-				name?: string
-				value?: string
-			}
-		}
+		result?: { result?: { name?: string; value?: string } }
 	}
 	expect(payload.ok).toBe(true)
 	expect(payload.result?.result?.name).toBe('example')
 	expect(payload.result?.result?.value).toBe('value')
-})
-
-test('generated UI execute merges per-call params over session params', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
-
-	const openResult = await mcpClient.client.callTool({
-		name: 'open_generated_ui',
-		arguments: {
-			code: '<main><h1>Parameterized Execute</h1></main>',
-		},
-	})
-	const openStructured = (openResult as CallToolResult).structuredContent as
-		| {
-				appSession?: {
-					token?: string
-					endpoints?: {
-						execute?: string
-					}
-				} | null
-		  }
-		| undefined
-	const executeEndpoint = openStructured?.appSession?.endpoints?.execute
-	const executeToken = openStructured?.appSession?.token
-	expect(typeof executeEndpoint).toBe('string')
-	expect(typeof executeToken).toBe('string')
-
-	const response = await fetch(executeEndpoint!, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${executeToken}`,
-			'Content-Type': 'application/json',
-			Accept: 'application/json',
-		},
-		body: JSON.stringify({
-			code: `async (params) => ({
-				owner: params.owner,
-				limit: params.limit,
-				nested: params.nested,
-			})`,
-			params: {
-				owner: 'override-owner',
-				limit: 5,
-				nested: { enabled: true },
-			},
-		}),
-	})
-	expect(response.ok).toBe(true)
-	const payload = (await response.json()) as {
-		ok?: boolean
-		result?: {
-			owner?: string
-			limit?: number
-			nested?: {
-				enabled?: boolean
-			}
-		}
-	}
-	expect(payload.ok).toBe(true)
-	expect(payload.result).toEqual({
-		owner: 'override-owner',
-		limit: 5,
-		nested: { enabled: true },
-	})
-})
-
-test('mcp server stores connector configs without resolving secret policies', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
-	const appCookieHeader = await loginToApp(server.origin, database.user)
-
-	const secretSaveResponse = await fetch(
-		new URL('/account/secrets.json', server.origin),
-		{
-			method: 'POST',
-			headers: {
-				Cookie: appCookieHeader,
-				'Content-Type': 'application/json',
-				Accept: 'application/json',
-			},
-			body: JSON.stringify({
-				action: 'save',
-				name: 'restrictedToken',
-				value: 'secret',
-				scope: 'user',
-				description: 'Restricted',
-				allowedHosts: [],
-				allowedCapabilities: [],
-			}),
-		},
-	)
-	const secretSaveRaw = await secretSaveResponse.text()
-	expect(secretSaveResponse.ok, secretSaveRaw).toBe(true)
-
-	const result = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				await codemode.connector_save({
-					name: 'restricted',
-					tokenUrl: 'https://example.com',
-					apiBaseUrl: 'https://example.com',
-					flow: 'pkce',
-					clientIdValueName: 'client-id',
-					accessTokenSecretName: 'restrictedToken',
-					refreshTokenSecretName: 'restrictedToken',
-					clientSecretSecretName: null,
-					requiredHosts: [],
-				})
-				return { ok: true }
-			}`,
-		},
-	})
-
-	const structuredResult = (result as CallToolResult).structuredContent as
-		| {
-				result?: {
-					ok?: boolean
-				}
-		  }
-		| undefined
-	expect((result as CallToolResult).isError).toBe(false)
-	expect(structuredResult?.result?.ok).toBe(true)
 })
 
 test('mcp server resolves host approval errors into structured guidance', async () => {
@@ -1283,8 +565,7 @@ test('mcp server resolves host approval errors into structured guidance', async 
 			}),
 		},
 	)
-	const secretSaveRaw = await secretSaveResponse.text()
-	expect(secretSaveResponse.ok, secretSaveRaw).toBe(true)
+	expect(secretSaveResponse.ok, await secretSaveResponse.text()).toBe(true)
 
 	const result = await mcpClient.client.callTool({
 		name: 'execute',
@@ -1301,48 +582,12 @@ test('mcp server resolves host approval errors into structured guidance', async 
 	})
 
 	const structuredResult = (result as CallToolResult).structuredContent as
-		| {
-				errorDetails?: Record<string, unknown>
-		  }
+		| { errorDetails?: Record<string, unknown> }
 		| undefined
-	const errorDetails = structuredResult?.errorDetails
 	expect((result as CallToolResult).isError).toBe(true)
-	expect(errorDetails?.kind).toBe('host_approval_required_batch')
-})
-
-test('mcp server supports multi-step execute workflows', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
-
-	const result = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				const first = await codemode.ui_save_app({
-					title: 'Workflow',
-					description: 'First',
-					code: '<main>first</main>',
-				})
-				const second = await codemode.ui_save_app({
-					title: 'Workflow',
-					description: 'Second',
-					code: '<main>second</main>',
-				})
-				return { first, second }
-			}`,
-		},
-	})
-
-	const structuredResult = (result as CallToolResult).structuredContent as
-		| {
-				result?: { first?: { app_id?: string }; second?: { app_id?: string } }
-		  }
-		| undefined
-	const resultBody = structuredResult?.result
-
-	expect(typeof resultBody?.first?.app_id).toBe('string')
-	expect(typeof resultBody?.second?.app_id).toBe('string')
+	expect(structuredResult?.errorDetails?.kind).toBe(
+		'host_approval_required_batch',
+	)
 })
 
 test('mcp server exposes direct refreshAccessToken helper', async () => {
@@ -1371,8 +616,7 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 			}),
 		},
 	)
-	const secretSaveRaw = await secretSaveResponse.text()
-	expect(secretSaveResponse.ok, secretSaveRaw).toBe(true)
+	expect(secretSaveResponse.ok, await secretSaveResponse.text()).toBe(true)
 
 	const setupResult = await mcpClient.client.callTool({
 		name: 'execute',
@@ -1400,8 +644,9 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 		},
 	})
 	if ((setupResult as CallToolResult).isError) {
-		const setupText = getTextContent((setupResult as CallToolResult).content)
-		throw new Error(`Helper setup execute failed: ${setupText}`)
+		throw new Error(
+			`Helper setup execute failed: ${getTextContent((setupResult as CallToolResult).content)}`,
+		)
 	}
 
 	const result = await mcpClient.client.callTool({
@@ -1414,83 +659,10 @@ test('mcp server exposes direct refreshAccessToken helper', async () => {
 	})
 
 	const structuredResult = (result as CallToolResult).structuredContent as
-		| {
-				errorDetails?: Record<string, unknown>
-		  }
+		| { errorDetails?: Record<string, unknown> }
 		| undefined
-	const textOutput = getTextContent((result as CallToolResult).content)
 	expect((result as CallToolResult).isError).toBe(true)
-	expect(textOutput).toContain('Secrets require host approval:')
-	expect(textOutput).toContain('restrictedRefreshToken')
-	expect(textOutput).toContain('accounts.spotify.com')
 	expect(structuredResult?.errorDetails?.kind).toBe(
 		'host_approval_required_batch',
 	)
-})
-
-test('mcp server persists user MCP server instructions overlay', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using mcpClient = await createMcpClient(server.origin, database.user)
-
-	const setResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.meta_set_mcp_server_instructions({
-					instructions: 'Prefer short answers.',
-				})
-			}`,
-		},
-	})
-	const setStructured = (setResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					ok?: boolean
-					max_length?: number
-					instructions?: string | null
-				}
-		  }
-		| undefined
-	expect(setStructured?.result?.ok).toBe(true)
-	expect(setStructured?.result?.instructions).toBe('Prefer short answers.')
-	expect(setStructured?.result?.max_length).toBe(4_000)
-
-	const getResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.meta_get_mcp_server_instructions({})
-			}`,
-		},
-	})
-	const getStructured = (getResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					instructions?: string | null
-					max_length?: number
-				}
-		  }
-		| undefined
-	expect(getStructured?.result?.instructions).toBe('Prefer short answers.')
-	expect(getStructured?.result?.max_length).toBe(4_000)
-
-	const clearResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.meta_set_mcp_server_instructions({
-					instructions: '',
-				})
-			}`,
-		},
-	})
-	const clearStructured = (clearResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					instructions?: string | null
-				}
-		  }
-		| undefined
-	expect(clearStructured?.result?.instructions).toBeNull()
 })

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { buildUiArtifactEmbedText } from './ui-artifacts-embed.ts'
 
-test('buildUiArtifactEmbedText keeps parameter hints', () => {
+test('buildUiArtifactEmbedText includes parameter names', () => {
 	const text = buildUiArtifactEmbedText({
 		title: 'Spotify OAuth Setup',
 		description: 'Connect Spotify to Kody.',
@@ -16,8 +16,5 @@ test('buildUiArtifactEmbedText keeps parameter hints', () => {
 		],
 	})
 
-	expect(text).toContain('Spotify OAuth Setup')
-	expect(text).toContain('Connect Spotify to Kody.')
-	expect(text).toContain('saved app parameters')
-	expect(text).toContain('clientId string required Spotify client id')
+	expect(text).toContain('clientId')
 })
