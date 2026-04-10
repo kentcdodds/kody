@@ -1,11 +1,17 @@
 import { expect, test } from '@playwright/test'
 
+function escapeHtmlScriptContent(value: string) {
+	return value.replaceAll('</script>', '<\\/script>')
+}
+
 test('generated UI shell rerenders inline and saved apps without document rewrites', async ({
 	page,
 	baseURL,
 }) => {
 	if (!baseURL) {
-		throw new Error('Playwright baseURL is required for generated UI shell tests.')
+		throw new Error(
+			'Playwright baseURL is required for generated UI shell tests.',
+		)
 	}
 
 	const runtimeUrl = new URL('/dev/generated-ui', baseURL).toString()
@@ -22,8 +28,8 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		"btn.id = 'second-inline-button'",
 		"btn.textContent = 'Second inline button'",
 		"document.querySelector('#inline-app')?.append(btn)",
-		"window.kodyWidget.executeCode('async () => ({ phase: \"inline\", owner: window.kodyWidget.params.owner })').then((result) => {",
-		"\tdocument.body.dataset.inlineExecute = JSON.stringify(result)",
+		'window.kodyWidget.executeCode(\'async () => ({ phase: "inline", owner: window.kodyWidget.params.owner })\').then((result) => {',
+		'\tdocument.body.dataset.inlineExecute = JSON.stringify(result)',
 		'})',
 		'</script>',
 	].join('\n')
@@ -37,14 +43,16 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		'<body data-shell-body="saved">',
 		'<main id="saved-app"><button id="saved-app-button">Saved app</button></main>',
 		'<script type="module">',
-		"const result = await window.kodyWidget.executeCode('async () => ({ phase: \"saved\", owner: window.kodyWidget.params.owner })')",
-		"window.document.body.dataset.savedExecute = JSON.stringify(result)",
-		"window.document.body.dataset.savedParams = JSON.stringify(window.kodyWidget.params)",
+		'const result = await window.kodyWidget.executeCode(\'async () => ({ phase: "saved", owner: window.kodyWidget.params.owner })\')',
+		'window.document.body.dataset.savedExecute = JSON.stringify(result)',
+		'window.document.body.dataset.savedParams = JSON.stringify(window.kodyWidget.params)',
 		"window.document.documentElement.dataset.savedHtmlAttr = window.document.documentElement.getAttribute('data-shell-phase') ?? 'missing'",
 		'</script>',
 		'</body>',
 		'</html>',
 	].join('\n')
+	const inlineHtmlJson = escapeHtmlScriptContent(JSON.stringify(inlineHtml))
+	const savedHtmlJson = escapeHtmlScriptContent(JSON.stringify(savedHtml))
 
 	await page.setContent(`
 		<!doctype html>
@@ -62,7 +70,7 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 						lastSize: null,
 						toolCalls: [],
 						savedSource: {
-							code: ${JSON.stringify(savedHtml)},
+							code: ${savedHtmlJson},
 							runtime: 'html',
 						},
 					}
@@ -83,7 +91,7 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 							hostState.renderData = {
 								toolOutput: {
 									renderSource: 'inline_code',
-									code: ${JSON.stringify(inlineHtml)},
+									code: ${inlineHtmlJson},
 									runtime: 'html',
 									params,
 								},
@@ -180,12 +188,23 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 	`)
 
 	await page.waitForSelector('#generated-ui-frame')
+	await page.waitForFunction(() => {
+		return Boolean(
+			(
+				window as typeof window & {
+					__generatedUiHostActions?: unknown
+				}
+			).__generatedUiHostActions,
+		)
+	})
 	await page.evaluate(() => {
-		;(window as typeof window & {
-			__generatedUiHostActions: {
-				renderInline: (params: Record<string, unknown>) => void
+		;(
+			window as typeof window & {
+				__generatedUiHostActions: {
+					renderInline: (params: Record<string, unknown>) => void
+				}
 			}
-		}).__generatedUiHostActions.renderInline({ owner: 'alpha' })
+		).__generatedUiHostActions.renderInline({ owner: 'alpha' })
 	})
 
 	const frame = page.frameLocator('#generated-ui-frame')
@@ -203,29 +222,43 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		.poll(async () => {
 			return await page.evaluate(() => {
 				return (
-					(window as typeof window & {
-						__generatedUiHostState: { lastSize?: { height?: number } | null }
-					}).__generatedUiHostState.lastSize?.height ?? 0
+					(
+						window as typeof window & {
+							__generatedUiHostState: { lastSize?: { height?: number } | null }
+						}
+					).__generatedUiHostState.lastSize?.height ?? 0
 				)
 			})
 		})
 		.toBeGreaterThan(0)
 
 	await page.evaluate(() => {
-		;(window as typeof window & {
-			__generatedUiHostActions: {
-				renderSaved: (params: Record<string, unknown>) => void
+		;(
+			window as typeof window & {
+				__generatedUiHostActions: {
+					renderSaved: (params: Record<string, unknown>) => void
+				}
 			}
-		}).__generatedUiHostActions.renderSaved({ owner: 'beta', count: 2 })
+		).__generatedUiHostActions.renderSaved({ owner: 'beta', count: 2 })
 	})
 
-	await expect(
-		frame.getByRole('button', { name: 'Saved app' }),
-	).toBeVisible()
-	await expect(frame.locator('html')).toHaveAttribute('data-shell-phase', 'saved')
-	await expect(frame.locator('body')).toHaveAttribute('data-shell-body', 'saved')
-	await expect(frame.locator('body')).toHaveAttribute('data-saved-execute', /beta/)
-	await expect(frame.locator('body')).toHaveAttribute('data-saved-params', /beta/)
+	await expect(frame.getByRole('button', { name: 'Saved app' })).toBeVisible()
+	await expect(frame.locator('html')).toHaveAttribute(
+		'data-shell-phase',
+		'saved',
+	)
+	await expect(frame.locator('body')).toHaveAttribute(
+		'data-shell-body',
+		'saved',
+	)
+	await expect(frame.locator('body')).toHaveAttribute(
+		'data-saved-execute',
+		/beta/,
+	)
+	await expect(frame.locator('body')).toHaveAttribute(
+		'data-saved-params',
+		/beta/,
+	)
 	await expect(frame.locator('html')).toHaveAttribute(
 		'data-saved-html-attr',
 		'saved',
@@ -234,12 +267,12 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		.poll(async () => {
 			return await page.evaluate(() => {
 				return (
-					(window as typeof window & {
+					window as typeof window & {
 						__generatedUiHostState: {
 							toolCalls: Array<{ name?: string }>
 						}
-					}).__generatedUiHostState.toolCalls.map((call) => call.name)
-				)
+					}
+				).__generatedUiHostState.toolCalls.map((call) => call.name)
 			})
 		})
 		.toEqual(['execute', 'ui_load_app_source', 'execute'])

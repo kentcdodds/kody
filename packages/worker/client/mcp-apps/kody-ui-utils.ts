@@ -211,8 +211,10 @@ function coerceAppSession(value: unknown): AppSessionEnvelope | null {
 		return null
 	}
 	return {
-		sessionId: typeof value.sessionId === 'string' ? value.sessionId : undefined,
-		expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : undefined,
+		sessionId:
+			typeof value.sessionId === 'string' ? value.sessionId : undefined,
+		expiresAt:
+			typeof value.expiresAt === 'string' ? value.expiresAt : undefined,
 		endpoints,
 		token: typeof value.token === 'string' ? value.token : undefined,
 	}
@@ -589,12 +591,11 @@ async function observeRenderedDocumentSize(
 	}
 }
 
-const generatedUiUserHeadSlotSelector = '[data-generated-ui-user-head-slot="true"]'
+const generatedUiUserHeadSlotSelector =
+	'[data-generated-ui-user-head-slot="true"]'
 const generatedUiBodySlotSelector = '[data-generated-ui-body-slot="true"]'
 
-function ensureGeneratedUiShellRenderState():
-	| GeneratedUiShellRenderState
-	| null {
+function ensureGeneratedUiShellRenderState(): GeneratedUiShellRenderState | null {
 	const documentRef = globalThis.document
 	if (!documentRef?.head || !documentRef.body) {
 		return null
@@ -714,7 +715,9 @@ function getShellScriptExecutionMode(script: HTMLScriptElement) {
 	if (!isClassicJavascriptScriptType(normalizedType)) {
 		return 'data' as const
 	}
-	return script.src ? ('native-classic' as const) : ('isolated-classic' as const)
+	return script.src
+		? ('native-classic' as const)
+		: ('isolated-classic' as const)
 }
 
 function collectElementAttributes(element: Element) {
@@ -729,7 +732,9 @@ function classifyGeneratedUiShellRenderDocument(input: {
 	preserveDocumentChrome: boolean
 }) {
 	const parsed: ParsedShellRenderDocument = {
-		title: input.preserveDocumentChrome ? (input.documentRef.title || null) : null,
+		title: input.preserveDocumentChrome
+			? input.documentRef.title || null
+			: null,
 		htmlAttributes: input.preserveDocumentChrome
 			? collectElementAttributes(input.documentRef.documentElement)
 			: [],
@@ -878,7 +883,8 @@ function buildGeneratedUiShellRenderSource(input: {
 			baseHref: input.baseHref,
 		}),
 		preserveDocumentChrome:
-			input.runtime === 'html' && /<(?:!doctype|html|head|body)\b/i.test(input.code),
+			input.runtime === 'html' &&
+			/<(?:!doctype|html|head|body)\b/i.test(input.code),
 	}
 }
 
@@ -1003,11 +1009,7 @@ function activateMcpGeneratedUiRuntime(
 		requestDisplayMode,
 		executeCode: async (code, params) => {
 			const { appSession } = readGeneratedUiBootstrap()
-			const viaHttp = await executeCodeWithHttp(
-				appSession,
-				code,
-				params,
-			)
+			const viaHttp = await executeCodeWithHttp(appSession, code, params)
 			if (viaHttp.handled) {
 				return viaHttp.result
 			}
