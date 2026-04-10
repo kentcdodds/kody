@@ -40,6 +40,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  environments: write
 
 concurrency:
   group: >-
@@ -567,3 +568,62 @@ jobs:
         run: |
           set -euo pipefail
           node tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"
+
+      - name: 🏷️ Delete GitHub preview environment
+        if: always()
+        uses: actions/github-script@v8.0.0
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+        with:
+          script: |
+            const eventName = process.env.EVENT_NAME;
+            let envName;
+            if (eventName === "pull_request") {
+              const n = process.env.PR_NUMBER;
+              if (!n) {
+                core.info("No PR number on event; skipping GitHub environment delete.");
+                return;
+              }
+              envName = `preview-${n}`;
+            } else if (
+              eventName === "workflow_dispatch" &&
+              process.env.INPUT_TARGET === "pr"
+            ) {
+              const n = process.env.INPUT_PR_NUMBER;
+              if (!n) {
+                core.info(
+                  "Manual cleanup without pr_number; skipping GitHub environment delete.",
+                );
+                return;
+              }
+              envName = `preview-${n}`;
+            } else {
+              core.info(
+                "Skipping GitHub environment delete (branch-targeted cleanups use a different naming scheme).",
+              );
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            try {
+              await github.request(
+                "DELETE /repos/{owner}/{repo}/environments/{environment_name}",
+                {
+                  owner,
+                  repo,
+                  environment_name: envName,
+                },
+              );
+              core.notice(`Deleted GitHub environment: ${envName}`);
+            } catch (e) {
+              if (e.status === 404) {
+                core.info(
+                  `GitHub environment not found (already deleted): ${envName}`,
+                );
+              } else {
+                throw e;
+              }
+            }
