@@ -39,8 +39,8 @@ type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 
 type AppSessionEnvelope = {
-	sessionId: string
-	expiresAt: string
+	sessionId?: string
+	expiresAt?: string
 	endpoints: {
 		source: string
 		execute: string
@@ -206,19 +206,13 @@ function coerceRuntime(value: unknown): AppRuntime | undefined {
 
 function coerceAppSession(value: unknown): AppSessionEnvelope | null {
 	if (!isRecord(value)) return null
-	if (
-		typeof value.sessionId !== 'string' ||
-		typeof value.expiresAt !== 'string'
-	) {
-		return null
-	}
 	const endpoints = coerceGeneratedUiEndpoints(value.endpoints)
 	if (!endpoints) {
 		return null
 	}
 	return {
-		sessionId: value.sessionId,
-		expiresAt: value.expiresAt,
+		sessionId: typeof value.sessionId === 'string' ? value.sessionId : undefined,
+		expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : undefined,
 		endpoints,
 		token: typeof value.token === 'string' ? value.token : undefined,
 	}

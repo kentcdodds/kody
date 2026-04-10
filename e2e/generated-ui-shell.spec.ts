@@ -26,7 +26,7 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		"\tdocument.body.dataset.inlineExecute = JSON.stringify(result)",
 		'})',
 		'</script>',
-	].join('')
+	].join('\n')
 	const savedHtml = [
 		'<!doctype html>',
 		'<html lang="en" data-shell-phase="saved">',
@@ -44,7 +44,7 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		'</script>',
 		'</body>',
 		'</html>',
-	].join('')
+	].join('\n')
 
 	await page.setContent(`
 		<!doctype html>
