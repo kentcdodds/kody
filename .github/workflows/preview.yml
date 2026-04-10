@@ -40,7 +40,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  environments: write
 
 concurrency:
   group: >-
@@ -569,8 +568,18 @@ jobs:
           set -euo pipefail
           node tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"
 
+      - name: ℹ️ Skip GitHub preview environment delete
+        if: >-
+          always() &&
+          secrets.PREVIEW_ENVIRONMENT_GITHUB_TOKEN == ''
+        run: >
+          echo "Skipping GitHub preview environment delete;
+          PREVIEW_ENVIRONMENT_GITHUB_TOKEN is not configured."
+
       - name: 🏷️ Delete GitHub preview environment
-        if: always()
+        if: >-
+          always() &&
+          secrets.PREVIEW_ENVIRONMENT_GITHUB_TOKEN != ''
         uses: actions/github-script@v8.0.0
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -578,6 +587,7 @@ jobs:
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         with:
+          github-token: ${{ secrets.PREVIEW_ENVIRONMENT_GITHUB_TOKEN }}
           script: |
             const eventName = process.env.EVENT_NAME;
             let envName;
