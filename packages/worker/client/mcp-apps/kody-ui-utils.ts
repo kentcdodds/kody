@@ -835,18 +835,7 @@ async function executeGeneratedUiShellScript(
 	if (!scriptDescriptor.src) {
 		script.textContent = scriptDescriptor.textContent
 		if (scriptDescriptor.executionMode === 'module') {
-			const loading = new Promise<void>((resolve, reject) => {
-				script.addEventListener('load', () => resolve(), { once: true })
-				script.addEventListener(
-					'error',
-					() => {
-						reject(new Error('Failed to execute generated UI module script.'))
-					},
-					{ once: true },
-				)
-			})
 			insertScript()
-			await loading
 			return
 		}
 		insertScript()
@@ -1058,6 +1047,14 @@ async function initializeShellHostDocument() {
 	}
 	let latestEnvelope: RenderEnvelope | null = null
 	const shellRenderState = ensureGeneratedUiShellRenderState()
+	let renderQueue: Promise<void> = Promise.resolve()
+
+	const scheduleRenderEnvelope = (envelope: RenderEnvelope | null) => {
+		renderQueue = renderQueue
+			.catch(() => undefined)
+			.then(() => renderEnvelope(envelope))
+			.catch(() => undefined)
+	}
 
 	const hostBridge = createWidgetHostBridge({
 		appInfo: {
@@ -1069,7 +1066,7 @@ async function initializeShellHostDocument() {
 				? (renderData as RenderDataEnvelope)
 				: undefined
 			latestRenderData = nextRenderData
-			void renderEnvelope(getEnvelopeFromRenderData(nextRenderData))
+			scheduleRenderEnvelope(getEnvelopeFromRenderData(nextRenderData))
 		},
 	})
 
@@ -1146,7 +1143,7 @@ async function initializeShellHostDocument() {
 		}
 	}
 
-	const renderEnvelope = async (envelope: RenderEnvelope | null) => {
+	async function renderEnvelope(envelope: RenderEnvelope | null) {
 		latestEnvelope = envelope
 		if (!envelope) {
 			return
@@ -1229,7 +1226,7 @@ async function initializeShellHostDocument() {
 	)
 	void hostBridge.initialize()
 	hostBridge.requestRenderData()
-	void renderEnvelope(getEnvelopeFromRenderData(latestRenderData))
+	scheduleRenderEnvelope(getEnvelopeFromRenderData(latestRenderData))
 }
 
 async function initializeGeneratedUiRuntimeEntry() {
