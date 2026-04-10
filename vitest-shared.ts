@@ -8,6 +8,7 @@ export const testTimeout = process.env.CI ? 20_000 : 5_000
 
 loadDotEnv({
 	path: resolve(rootDir, 'packages/worker/.env'),
+	quiet: true,
 })
 
 export const sharedProjectConfig = {
@@ -31,10 +32,12 @@ export const sharedProjectConfig = {
 			},
 		],
 	},
-	esbuild: {
+	oxc: {
 		target: 'es2023',
-		jsx: 'automatic',
-		jsxImportSource: 'remix/component',
+		jsx: {
+			runtime: 'automatic',
+			importSource: 'remix/component',
+		},
 	},
 	test: {
 		testTimeout,
