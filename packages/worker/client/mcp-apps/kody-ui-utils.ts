@@ -4,6 +4,7 @@ import { createWidgetHostBridge } from './widget-host-bridge.js'
 import {
 	initializeGeneratedUiRuntime,
 	setGeneratedUiRuntimeHooks,
+	updateGeneratedUiRuntimeBootstrap,
 } from './kody-widget-runtime.ts'
 import {
 	buildGeneratedUiRuntimeImportMap,
@@ -38,8 +39,8 @@ type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 
 type AppSessionEnvelope = {
-	sessionId: string
-	expiresAt: string
+	sessionId?: string
+	expiresAt?: string
 	endpoints: {
 		source: string
 		execute: string
@@ -89,6 +90,39 @@ type SizeMeasurementElement = {
 type SizeMeasurementDocument = {
 	body?: SizeMeasurementElement | null
 	documentElement?: SizeMeasurementElement | null
+}
+
+type ShellScriptExecutionMode =
+	| 'module'
+	| 'native-classic'
+	| 'isolated-classic'
+	| 'ignore'
+	| 'data'
+
+type ShellScriptDescriptor = {
+	target: 'head' | 'body'
+	executionMode: ShellScriptExecutionMode
+	attributes: Array<{ name: string; value: string }>
+	src: string | null
+	textContent: string
+}
+
+type ParsedShellRenderDocument = {
+	title: string | null
+	htmlAttributes: Array<{ name: string; value: string }>
+	bodyAttributes: Array<{ name: string; value: string }>
+	headNodes: Array<Node>
+	bodyNodes: Array<Node>
+	scripts: Array<ShellScriptDescriptor>
+}
+
+type GeneratedUiShellRenderState = {
+	headSlot: HTMLElement
+	bodySlot: HTMLElement
+	mountedHeadNodes: Array<Node>
+	managedHtmlAttributes: Set<string>
+	managedBodyAttributes: Set<string>
+	defaultTitle: string
 }
 
 type HostToolResult = {
@@ -172,19 +206,15 @@ function coerceRuntime(value: unknown): AppRuntime | undefined {
 
 function coerceAppSession(value: unknown): AppSessionEnvelope | null {
 	if (!isRecord(value)) return null
-	if (
-		typeof value.sessionId !== 'string' ||
-		typeof value.expiresAt !== 'string'
-	) {
-		return null
-	}
 	const endpoints = coerceGeneratedUiEndpoints(value.endpoints)
 	if (!endpoints) {
 		return null
 	}
 	return {
-		sessionId: value.sessionId,
-		expiresAt: value.expiresAt,
+		sessionId:
+			typeof value.sessionId === 'string' ? value.sessionId : undefined,
+		expiresAt:
+			typeof value.expiresAt === 'string' ? value.expiresAt : undefined,
 		endpoints,
 		token: typeof value.token === 'string' ? value.token : undefined,
 	}
@@ -561,12 +591,328 @@ async function observeRenderedDocumentSize(
 	}
 }
 
-function writeDocument(html: string) {
+const generatedUiUserHeadSlotSelector =
+	'[data-generated-ui-user-head-slot="true"]'
+const generatedUiBodySlotSelector = '[data-generated-ui-body-slot="true"]'
+
+function ensureGeneratedUiShellRenderState(): GeneratedUiShellRenderState | null {
+	const documentRef = globalThis.document
+	if (!documentRef?.head || !documentRef.body) {
+		return null
+	}
+	const existingHeadSlot = documentRef.head.querySelector(
+		generatedUiUserHeadSlotSelector,
+	)
+	let headSlot: HTMLElement
+	if (existingHeadSlot instanceof HTMLElement) {
+		headSlot = existingHeadSlot
+	} else {
+		headSlot = documentRef.createElement('meta')
+		headSlot.setAttribute('data-generated-ui-user-head-slot', 'true')
+		documentRef.head.appendChild(headSlot)
+	}
+	const existingBodySlot = documentRef.body.querySelector(
+		generatedUiBodySlotSelector,
+	)
+	let bodySlot: HTMLElement
+	if (existingBodySlot instanceof HTMLElement) {
+		bodySlot = existingBodySlot
+	} else {
+		bodySlot = documentRef.createElement('div')
+		bodySlot.setAttribute('id', 'app')
+		bodySlot.setAttribute('data-generated-ui-root', '')
+		bodySlot.setAttribute('data-generated-ui-body-slot', 'true')
+		documentRef.body.insertBefore(bodySlot, documentRef.body.firstChild)
+	}
+	return {
+		headSlot,
+		bodySlot,
+		mountedHeadNodes: [],
+		managedHtmlAttributes: new Set<string>(),
+		managedBodyAttributes: new Set<string>(),
+		defaultTitle: documentRef.title,
+	}
+}
+
+function clearGeneratedUiShellHead(state: GeneratedUiShellRenderState) {
+	for (const node of state.mountedHeadNodes) {
+		node.parentNode?.removeChild(node)
+	}
+	state.mountedHeadNodes = []
+}
+
+function setManagedElementAttributes(
+	element: HTMLElement,
+	nextAttributes: Array<{ name: string; value: string }>,
+	managedAttributes: Set<string>,
+) {
+	for (const name of managedAttributes) {
+		element.removeAttribute(name)
+	}
+	managedAttributes.clear()
+	for (const attribute of nextAttributes) {
+		element.setAttribute(attribute.name, attribute.value)
+		managedAttributes.add(attribute.name)
+	}
+}
+
+function mountGeneratedUiShellHeadNodes(
+	state: GeneratedUiShellRenderState,
+	nodes: Array<Node>,
+) {
 	const documentRef = globalThis.document
 	if (!documentRef) return
-	documentRef.open()
-	documentRef.write(html)
-	documentRef.close()
+	const parentNode = state.headSlot.parentNode
+	if (!parentNode) return
+	for (const node of nodes) {
+		const clone = documentRef.importNode(node, true)
+		parentNode.insertBefore(clone, state.headSlot)
+		state.mountedHeadNodes.push(clone)
+	}
+}
+
+function mountGeneratedUiShellBodyNodes(
+	state: GeneratedUiShellRenderState,
+	nodes: Array<Node>,
+) {
+	const documentRef = globalThis.document
+	if (!documentRef) return
+	state.bodySlot.replaceChildren(
+		...nodes.map((node) => documentRef.importNode(node, true)),
+	)
+}
+
+function preserveGeneratedUiHeadNode(node: Node) {
+	if (node instanceof HTMLTitleElement) return false
+	if (node instanceof HTMLBaseElement) return false
+	if (node instanceof HTMLMetaElement) {
+		return !node.hasAttribute('charset') && node.httpEquiv.length === 0
+	}
+	if (node.nodeType === Node.TEXT_NODE) {
+		return (node.textContent ?? '').trim().length > 0
+	}
+	return true
+}
+
+function isClassicJavascriptScriptType(type: string) {
+	return (
+		type === '' ||
+		type === 'application/ecmascript' ||
+		type === 'application/javascript' ||
+		type === 'text/ecmascript' ||
+		type === 'text/javascript'
+	)
+}
+
+function getShellScriptExecutionMode(script: HTMLScriptElement) {
+	const normalizedType = script.type.trim().toLowerCase()
+	if (normalizedType === 'importmap' || normalizedType === 'speculationrules') {
+		return 'ignore' as const
+	}
+	if (normalizedType === 'module') {
+		return 'module' as const
+	}
+	if (!isClassicJavascriptScriptType(normalizedType)) {
+		return 'data' as const
+	}
+	return script.src
+		? ('native-classic' as const)
+		: ('isolated-classic' as const)
+}
+
+function collectElementAttributes(element: Element) {
+	return Array.from(element.attributes, (attribute) => ({
+		name: attribute.name,
+		value: attribute.value,
+	}))
+}
+
+function classifyGeneratedUiShellRenderDocument(input: {
+	documentRef: Document
+	preserveDocumentChrome: boolean
+}) {
+	const parsed: ParsedShellRenderDocument = {
+		title: input.preserveDocumentChrome
+			? input.documentRef.title || null
+			: null,
+		htmlAttributes: input.preserveDocumentChrome
+			? collectElementAttributes(input.documentRef.documentElement)
+			: [],
+		bodyAttributes: input.preserveDocumentChrome
+			? collectElementAttributes(input.documentRef.body)
+			: [],
+		headNodes: [],
+		bodyNodes: [],
+		scripts: [],
+	}
+
+	for (const node of Array.from(input.documentRef.head.childNodes)) {
+		if (node instanceof HTMLScriptElement) {
+			const executionMode = getShellScriptExecutionMode(node)
+			if (executionMode === 'data') {
+				if (preserveGeneratedUiHeadNode(node)) {
+					parsed.headNodes.push(node)
+				}
+				continue
+			}
+			if (executionMode === 'ignore') {
+				continue
+			}
+			parsed.scripts.push({
+				target: 'head',
+				executionMode,
+				attributes: collectElementAttributes(node),
+				src: node.src || null,
+				textContent: node.textContent ?? '',
+			})
+			continue
+		}
+		if (preserveGeneratedUiHeadNode(node)) {
+			parsed.headNodes.push(node)
+		}
+	}
+
+	for (const node of Array.from(input.documentRef.body.childNodes)) {
+		if (node instanceof HTMLScriptElement) {
+			const executionMode = getShellScriptExecutionMode(node)
+			if (executionMode === 'data') {
+				parsed.bodyNodes.push(node)
+				continue
+			}
+			if (executionMode === 'ignore') {
+				continue
+			}
+			parsed.scripts.push({
+				target: 'body',
+				executionMode,
+				attributes: collectElementAttributes(node),
+				src: node.src || null,
+				textContent: node.textContent ?? '',
+			})
+			continue
+		}
+		parsed.bodyNodes.push(node)
+	}
+
+	return parsed
+}
+
+function wrapInlineClassicScriptForIsolation(source: string) {
+	return [';(function () {', source, '}).call(window);'].join('\n')
+}
+
+async function executeGeneratedUiShellScript(
+	state: GeneratedUiShellRenderState,
+	scriptDescriptor: ShellScriptDescriptor,
+) {
+	const documentRef = globalThis.document
+	if (!documentRef) return
+	const script = documentRef.createElement('script')
+	const insertScript = () => {
+		if (scriptDescriptor.target === 'head') {
+			state.headSlot.parentNode?.insertBefore(script, state.headSlot)
+			state.mountedHeadNodes.push(script)
+			return
+		}
+		state.bodySlot.appendChild(script)
+	}
+	for (const attribute of scriptDescriptor.attributes) {
+		if (attribute.name === 'src' || attribute.name === 'type') {
+			continue
+		}
+		script.setAttribute(attribute.name, attribute.value)
+	}
+	if (scriptDescriptor.executionMode === 'module') {
+		script.type = 'module'
+	}
+	if (scriptDescriptor.executionMode === 'isolated-classic') {
+		script.textContent = wrapInlineClassicScriptForIsolation(
+			scriptDescriptor.textContent,
+		)
+		insertScript()
+		return
+	}
+	const shouldAwaitLoad =
+		scriptDescriptor.executionMode === 'module' ||
+		scriptDescriptor.src != null
+	if (!scriptDescriptor.src) {
+		script.textContent = scriptDescriptor.textContent
+		if (!shouldAwaitLoad) {
+			insertScript()
+			return
+		}
+	}
+	const loading = new Promise<void>((resolve, reject) => {
+		script.addEventListener('load', () => resolve(), { once: true })
+		script.addEventListener(
+			'error',
+			() => {
+				reject(new Error(`Failed to load generated UI script: ${script.src}`))
+			},
+			{ once: true },
+		)
+	})
+	if (scriptDescriptor.executionMode === 'native-classic') {
+		script.async = false
+	}
+	if (scriptDescriptor.src) {
+		script.src = scriptDescriptor.src
+	}
+	insertScript()
+	await loading
+}
+
+function buildGeneratedUiShellRenderSource(input: {
+	code: string
+	runtime: AppRuntime
+	baseHref: string | null
+}) {
+	return {
+		htmlSource: renderGeneratedUiDocument({
+			code: input.code,
+			runtime: input.runtime,
+			headInjection: '',
+			baseHref: input.baseHref,
+		}),
+		preserveDocumentChrome:
+			input.runtime === 'html' &&
+			/<(?:!doctype|html|head|body)\b/i.test(input.code),
+	}
+}
+
+async function renderGeneratedUiShellDocument(input: {
+	state: GeneratedUiShellRenderState
+	htmlSource: string
+	preserveDocumentChrome: boolean
+}) {
+	const documentRef = globalThis.document
+	if (!documentRef) return
+	const parsedDocument = new DOMParser().parseFromString(
+		input.htmlSource,
+		'text/html',
+	)
+	const classifiedDocument = classifyGeneratedUiShellRenderDocument({
+		documentRef: parsedDocument,
+		preserveDocumentChrome: input.preserveDocumentChrome,
+	})
+	clearGeneratedUiShellHead(input.state)
+	input.state.bodySlot.replaceChildren()
+	setManagedElementAttributes(
+		documentRef.documentElement,
+		classifiedDocument.htmlAttributes,
+		input.state.managedHtmlAttributes,
+	)
+	setManagedElementAttributes(
+		documentRef.body,
+		classifiedDocument.bodyAttributes,
+		input.state.managedBodyAttributes,
+	)
+	documentRef.title = classifiedDocument.title ?? input.state.defaultTitle
+	mountGeneratedUiShellHeadNodes(input.state, classifiedDocument.headNodes)
+	mountGeneratedUiShellBodyNodes(input.state, classifiedDocument.bodyNodes)
+	for (const scriptDescriptor of classifiedDocument.scripts) {
+		await executeGeneratedUiShellScript(input.state, scriptDescriptor)
+	}
 }
 
 export type BuildGeneratedUiHeadInjectionInput = {
@@ -648,16 +994,14 @@ function activateMcpGeneratedUiRuntime(
 		}
 		return (await hostBridge.requestDisplayMode(nextMode)) ?? null
 	}
+	updateGeneratedUiRuntimeBootstrap(bootstrap)
 	installGeneratedUiRuntimeHooks({
 		sendMessage: (text) => hostBridge.sendUserMessageWithFallback(text),
 		openLink: (url) => hostBridge.openLink(url),
 		requestDisplayMode,
 		executeCode: async (code, params) => {
-			const viaHttp = await executeCodeWithHttp(
-				bootstrap.appSession,
-				code,
-				params,
-			)
+			const { appSession } = readGeneratedUiBootstrap()
+			const viaHttp = await executeCodeWithHttp(appSession, code, params)
 			if (viaHttp.handled) {
 				return viaHttp.result
 			}
@@ -704,7 +1048,17 @@ async function initializeShellHostDocument() {
 			return latestRenderData
 		},
 	}
-	let latestEnvelope: RenderEnvelope | null = null
+	const shellRenderState = ensureGeneratedUiShellRenderState()
+	let renderQueue: Promise<void> = Promise.resolve()
+	let latestScheduledRenderId = 0
+
+	const scheduleRenderEnvelope = (envelope: RenderEnvelope | null) => {
+		const renderId = ++latestScheduledRenderId
+		renderQueue = renderQueue
+			.catch(() => undefined)
+			.then(() => renderEnvelope(envelope, renderId))
+			.catch(() => undefined)
+	}
 
 	const hostBridge = createWidgetHostBridge({
 		appInfo: {
@@ -716,7 +1070,7 @@ async function initializeShellHostDocument() {
 				? (renderData as RenderDataEnvelope)
 				: undefined
 			latestRenderData = nextRenderData
-			void renderEnvelope(getEnvelopeFromRenderData(nextRenderData))
+			scheduleRenderEnvelope(getEnvelopeFromRenderData(nextRenderData))
 		},
 	})
 
@@ -793,76 +1147,82 @@ async function initializeShellHostDocument() {
 		}
 	}
 
-	const renderEnvelope = async (envelope: RenderEnvelope | null) => {
-		latestEnvelope = envelope
+	const isStaleRender = (renderId: number) => renderId !== latestScheduledRenderId
+
+	async function renderEnvelope(
+		envelope: RenderEnvelope | null,
+		renderId: number,
+	) {
+		if (isStaleRender(renderId)) {
+			return
+		}
 		if (!envelope) {
 			return
 		}
-
-		const buildDocument = (code: string, runtime: AppRuntime) =>
-			renderGeneratedUiDocument({
-				code,
-				runtime,
-				headInjection: buildGeneratedUiRuntimeHeadInjection({
-					mode: 'mcp',
-					params: envelope.params,
-					appSession: envelope.appSession ?? undefined,
-					baseHref,
-					includeRuntimeScript: false,
-				}),
-				baseHref,
-			})
 
 		const mcpRuntimeBootstrap: GeneratedUiRuntimeBootstrap = {
 			mode: 'mcp',
 			params: envelope.params ?? {},
 			...(envelope.appSession ? { appSession: envelope.appSession } : {}),
 		}
+		updateGeneratedUiRuntimeBootstrap(mcpRuntimeBootstrap)
+
+		const renderCode = async (code: string, runtime: AppRuntime) => {
+			if (!shellRenderState) {
+				return
+			}
+			const renderSource = buildGeneratedUiShellRenderSource({
+				code,
+				runtime,
+				baseHref,
+			})
+			await renderGeneratedUiShellDocument({
+				state: shellRenderState,
+				htmlSource: renderSource.htmlSource,
+				preserveDocumentChrome: renderSource.preserveDocumentChrome,
+			})
+		}
+
+		const renderError = async (message: string) => {
+			if (!shellRenderState) {
+				return
+			}
+			await renderGeneratedUiShellDocument({
+				state: shellRenderState,
+				htmlSource: renderGeneratedUiErrorDocument(message),
+				preserveDocumentChrome: true,
+			})
+		}
 
 		if (envelope.mode === 'inline_code') {
 			if (!envelope.code) {
-				writeDocument(
-					renderGeneratedUiErrorDocument(
-						'The tool result did not include inline code.',
-					),
-				)
+				await renderError('The tool result did not include inline code.')
 				return
 			}
-			writeDocument(buildDocument(envelope.code, envelope.runtime ?? 'html'))
-			activateMcpGeneratedUiRuntime(
-				hostBridge,
-				mcpRuntimeBootstrap,
-				latestRenderDataRef,
-			)
+			await renderCode(envelope.code, envelope.runtime ?? 'html')
 			return
 		}
 
 		if (!envelope.appId) {
-			writeDocument(
-				renderGeneratedUiErrorDocument(
-					'The tool result did not include an app_id.',
-				),
-			)
+			await renderError('The tool result did not include an app_id.')
 			return
 		}
 
 		try {
+			if (isStaleRender(renderId)) {
+				return
+			}
 			const resolved = await resolveSavedAppCode(
 				envelope.appId,
 				envelope.appSession,
 			)
-			if (latestEnvelope !== envelope) return
-			writeDocument(buildDocument(resolved.code, resolved.runtime))
-			activateMcpGeneratedUiRuntime(
-				hostBridge,
-				mcpRuntimeBootstrap,
-				latestRenderDataRef,
-			)
+			if (isStaleRender(renderId)) return
+			await renderCode(resolved.code, resolved.runtime)
 		} catch (error) {
-			if (latestEnvelope !== envelope) return
+			if (isStaleRender(renderId)) return
 			const message =
 				error instanceof Error ? error.message : 'Unknown app loading error.'
-			writeDocument(renderGeneratedUiErrorDocument(message))
+			await renderError(message)
 		}
 	}
 
@@ -870,9 +1230,17 @@ async function initializeShellHostDocument() {
 		hostBridge.handleHostMessage(event.data)
 	})
 
+	activateMcpGeneratedUiRuntime(
+		hostBridge,
+		{
+			mode: 'mcp',
+			params: {},
+		},
+		latestRenderDataRef,
+	)
 	void hostBridge.initialize()
 	hostBridge.requestRenderData()
-	void renderEnvelope(getEnvelopeFromRenderData(latestRenderData))
+	scheduleRenderEnvelope(getEnvelopeFromRenderData(latestRenderData))
 }
 
 async function initializeGeneratedUiRuntimeEntry() {
