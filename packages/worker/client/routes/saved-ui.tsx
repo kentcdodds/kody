@@ -1,6 +1,6 @@
 import { type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
-import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, mq } from '#client/styles/tokens.ts'
 import {
 	getAlertCardCss,
 	pageDescriptionCss,

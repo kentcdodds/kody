@@ -1,5 +1,5 @@
 import { type Handle } from 'remix/component'
-import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,

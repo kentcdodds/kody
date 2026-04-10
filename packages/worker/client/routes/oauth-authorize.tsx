@@ -4,7 +4,7 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from '#client/session.ts'
-import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,

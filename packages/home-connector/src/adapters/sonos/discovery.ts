@@ -26,10 +26,6 @@ type SonosDescriptionLookup = {
 
 const sonosFetchTimeoutMs = 10_000
 
-function normalizeBaseUrl(url: string) {
-	return url.endsWith('/') ? url.slice(0, -1) : url
-}
-
 function parseNumberOrDefault(value: string | null, fallback: number) {
 	if (!value) return fallback
 	const parsed = Number.parseInt(value, 10)
