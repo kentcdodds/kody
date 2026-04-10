@@ -832,10 +832,15 @@ async function executeGeneratedUiShellScript(
 		insertScript()
 		return
 	}
+	const shouldAwaitLoad =
+		scriptDescriptor.executionMode === 'module' ||
+		scriptDescriptor.src != null
 	if (!scriptDescriptor.src) {
 		script.textContent = scriptDescriptor.textContent
-		insertScript()
-		return
+		if (!shouldAwaitLoad) {
+			insertScript()
+			return
+		}
 	}
 	const loading = new Promise<void>((resolve, reject) => {
 		script.addEventListener('load', () => resolve(), { once: true })
@@ -850,7 +855,9 @@ async function executeGeneratedUiShellScript(
 	if (scriptDescriptor.executionMode === 'native-classic') {
 		script.async = false
 	}
-	script.src = scriptDescriptor.src
+	if (scriptDescriptor.src) {
+		script.src = scriptDescriptor.src
+	}
 	insertScript()
 	await loading
 }
