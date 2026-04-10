@@ -1041,14 +1041,15 @@ async function initializeShellHostDocument() {
 			return latestRenderData
 		},
 	}
-	let latestEnvelope: RenderEnvelope | null = null
 	const shellRenderState = ensureGeneratedUiShellRenderState()
 	let renderQueue: Promise<void> = Promise.resolve()
+	let latestScheduledRenderId = 0
 
 	const scheduleRenderEnvelope = (envelope: RenderEnvelope | null) => {
+		const renderId = ++latestScheduledRenderId
 		renderQueue = renderQueue
 			.catch(() => undefined)
-			.then(() => renderEnvelope(envelope))
+			.then(() => renderEnvelope(envelope, renderId))
 			.catch(() => undefined)
 	}
 
@@ -1139,8 +1140,15 @@ async function initializeShellHostDocument() {
 		}
 	}
 
-	async function renderEnvelope(envelope: RenderEnvelope | null) {
-		latestEnvelope = envelope
+	const isStaleRender = (renderId: number) => renderId !== latestScheduledRenderId
+
+	async function renderEnvelope(
+		envelope: RenderEnvelope | null,
+		renderId: number,
+	) {
+		if (isStaleRender(renderId)) {
+			return
+		}
 		if (!envelope) {
 			return
 		}
@@ -1194,14 +1202,17 @@ async function initializeShellHostDocument() {
 		}
 
 		try {
+			if (isStaleRender(renderId)) {
+				return
+			}
 			const resolved = await resolveSavedAppCode(
 				envelope.appId,
 				envelope.appSession,
 			)
-			if (latestEnvelope !== envelope) return
+			if (isStaleRender(renderId)) return
 			await renderCode(resolved.code, resolved.runtime)
 		} catch (error) {
-			if (latestEnvelope !== envelope) return
+			if (isStaleRender(renderId)) return
 			const message =
 				error instanceof Error ? error.message : 'Unknown app loading error.'
 			await renderError(message)
