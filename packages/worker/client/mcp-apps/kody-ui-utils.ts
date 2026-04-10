@@ -834,10 +834,6 @@ async function executeGeneratedUiShellScript(
 	}
 	if (!scriptDescriptor.src) {
 		script.textContent = scriptDescriptor.textContent
-		if (scriptDescriptor.executionMode === 'module') {
-			insertScript()
-			return
-		}
 		insertScript()
 		return
 	}
