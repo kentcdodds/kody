@@ -1002,13 +1002,15 @@ function activateMcpGeneratedUiRuntime(
 		}
 		return (await hostBridge.requestDisplayMode(nextMode)) ?? null
 	}
+	updateGeneratedUiRuntimeBootstrap(bootstrap)
 	installGeneratedUiRuntimeHooks({
 		sendMessage: (text) => hostBridge.sendUserMessageWithFallback(text),
 		openLink: (url) => hostBridge.openLink(url),
 		requestDisplayMode,
 		executeCode: async (code, params) => {
+			const { appSession } = readGeneratedUiBootstrap()
 			const viaHttp = await executeCodeWithHttp(
-				bootstrap.appSession,
+				appSession,
 				code,
 				params,
 			)
