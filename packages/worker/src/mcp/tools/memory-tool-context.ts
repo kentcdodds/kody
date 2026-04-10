@@ -19,7 +19,8 @@ export type MemoryToolSummary = {
 }
 
 export async function loadRelevantMemoriesForTool(input: {
-	env: Pick<Env, 'APP_DB' | 'AI'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	env: Pick<Env, 'APP_DB' | 'AI'> &
+		Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
 	callerContext: McpCallerContext
 	conversationId: string
 	memoryContext?: {
@@ -60,7 +61,8 @@ export async function loadRelevantMemoriesForTool(input: {
 }
 
 export async function surfaceToolMemories(input: {
-	env: Pick<Env, 'APP_DB' | 'AI'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	env: Pick<Env, 'APP_DB' | 'AI'> &
+		Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
 	callerContext: McpCallerContext
 	conversationId: string
 	retrievalQuery: string
@@ -88,12 +90,17 @@ export async function surfaceToolMemories(input: {
 	} satisfies MemoryToolSummary
 }
 
-export function buildMemoryRetrievalQuery(input: {
-	task?: string
-	query?: string
-	entities?: Array<string>
-	constraints?: Array<string>
-} | null | undefined) {
+export function buildMemoryRetrievalQuery(
+	input:
+		| {
+				task?: string
+				query?: string
+				entities?: Array<string>
+				constraints?: Array<string>
+		  }
+		| null
+		| undefined,
+) {
 	if (!input) return ''
 	const parts = [
 		input.task?.trim() ?? '',

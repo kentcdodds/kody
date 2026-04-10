@@ -52,7 +52,9 @@ const inputSchema = z.object({
 	status: z
 		.enum(['active', 'archived'])
 		.optional()
-		.describe('Optional non-deleted status for the memory. Defaults to active.'),
+		.describe(
+			'Optional non-deleted status for the memory. Defaults to active.',
+		),
 	verified_by_agent: z
 		.boolean()
 		.describe(

@@ -28,7 +28,9 @@ export async function searchMemories(input: {
 	}
 
 	const docsById = Object.fromEntries(
-		input.rows.map((row) => [row.id, buildMemoryEmbedTextFromRow(row)] as const),
+		input.rows.map(
+			(row) => [row.id, buildMemoryEmbedTextFromRow(row)] as const,
+		),
 	)
 	const lexicalOrder = sortIdsByScore(ids, (id) =>
 		lexicalScore(query, docsById[id]!),

@@ -41,4 +41,3 @@ export function buildMemoryEmbedTextFromRow(row: McpMemoryRow) {
 		dedupeKey: row.dedupe_key,
 	})
 }
-

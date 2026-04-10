@@ -8,7 +8,7 @@ export const memoryCategoryField = z
 	.max(80)
 	.optional()
 	.describe(
-			'Optional freeform category label for the memory. Suggested examples: preference, identifier, relationship, workflow, project, profile.',
+		'Optional freeform category label for the memory. Suggested examples: preference, identifier, relationship, workflow, project, profile.',
 	)
 
 export const memoryTagInputSchema = z.string().min(1).max(80)

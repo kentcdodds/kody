@@ -10,8 +10,7 @@ export const metaMemoryGetCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'meta_memory_get',
-		description:
-			'Load one stored durable memory by id for the signed-in user.',
+		description: 'Load one stored durable memory by id for the signed-in user.',
 		keywords: ['memory', 'get', 'load', 'read', 'durable memory'],
 		readOnly: true,
 		idempotent: true,

@@ -3,7 +3,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { deleteMemory, getMemory } from '#mcp/memory/service.ts'
-import { memoryRecordSchema, verifyFirstGuidance } from './meta-memory-shared.ts'
+import {
+	memoryRecordSchema,
+	verifyFirstGuidance,
+} from './meta-memory-shared.ts'
 import { requireMcpUser } from './require-user.ts'
 
 const outputSchema = z.object({

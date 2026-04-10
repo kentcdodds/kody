@@ -109,9 +109,7 @@ type SurfaceRelevantMemoriesInput = MemoryOwnerContext & {
 	limit?: number
 }
 
-export async function upsertMemory(
-	input: MemoryUpsertInput,
-): Promise<{
+export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 	mode: 'created' | 'updated'
 	memory: MemoryRecord
 	warnings: Array<string>
@@ -197,7 +195,8 @@ export async function upsertMemory(
 	}
 
 	const warnings =
-		input.verificationReference == null || input.verificationReference.trim() === ''
+		input.verificationReference == null ||
+		input.verificationReference.trim() === ''
 			? [
 					'No verification_reference was supplied. Agents should run meta_memory_verify first and include a verification reference when possible.',
 				]
@@ -242,17 +241,22 @@ export async function deleteMemory(
 	}
 
 	const now = new Date().toISOString()
-	const updated = await updateMemory(input.env.APP_DB, input.userId, input.memoryId, {
-		category: existing.category,
-		status: 'deleted',
-		subject: existing.subject,
-		summary: existing.summary,
-		details: existing.details,
-		tags_json: existing.tags_json,
-		dedupe_key: existing.dedupe_key,
-		last_accessed_at: existing.last_accessed_at,
-		deleted_at: now,
-	})
+	const updated = await updateMemory(
+		input.env.APP_DB,
+		input.userId,
+		input.memoryId,
+		{
+			category: existing.category,
+			status: 'deleted',
+			subject: existing.subject,
+			summary: existing.summary,
+			details: existing.details,
+			tags_json: existing.tags_json,
+			dedupe_key: existing.dedupe_key,
+			last_accessed_at: existing.last_accessed_at,
+			deleted_at: now,
+		},
+	)
 	if (!updated) return null
 
 	const deletedRow = {
@@ -291,13 +295,15 @@ export async function deleteMemory(
 export async function getMemory(
 	input: MemoryGetInput,
 ): Promise<MemoryRecord | null> {
-	const row = await getMemoryById(input.env.APP_DB, input.userId, input.memoryId)
+	const row = await getMemoryById(
+		input.env.APP_DB,
+		input.userId,
+		input.memoryId,
+	)
 	return row ? toMemoryRecord(row) : null
 }
 
-export async function searchMemoryRecords(
-	input: MemorySearchInput,
-): Promise<{
+export async function searchMemoryRecords(input: MemorySearchInput): Promise<{
 	query: string
 	matches: Array<MemorySearchMatch>
 	suppressedCount: number
@@ -314,7 +320,10 @@ export async function searchMemoryRecords(
 	})
 	const filteredRows = rows.filter((row) => {
 		if (!input.category) return true
-		return row.category === normalizeOptionalString(input.category, maxCategoryLength)
+		return (
+			row.category ===
+			normalizeOptionalString(input.category, maxCategoryLength)
+		)
 	})
 	const targetLimit = normalizeLimit(input.limit)
 	const rankedLimit = Math.min(filteredRows.length, targetLimit * 5)
@@ -339,9 +348,7 @@ export async function searchMemoryRecords(
 	}
 }
 
-export async function verifyMemoryCandidate(
-	input: MemoryVerifyInput,
-): Promise<{
+export async function verifyMemoryCandidate(input: MemoryVerifyInput): Promise<{
 	candidate: {
 		subject: string
 		summary: string
@@ -439,8 +446,16 @@ function normalizeMemoryPayload(input: {
 	tags?: Array<string> | null
 	dedupeKey?: string | null
 }) {
-	const subject = normalizeRequiredString(input.subject, maxSubjectLength, 'subject')
-	const summary = normalizeRequiredString(input.summary, maxSummaryLength, 'summary')
+	const subject = normalizeRequiredString(
+		input.subject,
+		maxSubjectLength,
+		'subject',
+	)
+	const summary = normalizeRequiredString(
+		input.summary,
+		maxSummaryLength,
+		'summary',
+	)
 	return {
 		category: normalizeOptionalString(input.category, maxCategoryLength),
 		subject,
@@ -471,7 +486,11 @@ function buildVerifyQuery(input: {
 		.trim()
 }
 
-function normalizeRequiredString(value: string, maxLength: number, field: string) {
+function normalizeRequiredString(
+	value: string,
+	maxLength: number,
+	field: string,
+) {
 	const normalized = normalizeOptionalString(value, maxLength)
 	if (!normalized) throw new Error(`Memory ${field} is required.`)
 	return normalized

@@ -37,9 +37,7 @@ export const metaMemorySearchCapability = defineDomainCapability(
 			include_deleted: z
 				.boolean()
 				.optional()
-				.describe(
-					'Whether to include deleted memories. Defaults to false.',
-				),
+				.describe('Whether to include deleted memories. Defaults to false.'),
 		}),
 		outputSchema: z.object({
 			query: z.string(),

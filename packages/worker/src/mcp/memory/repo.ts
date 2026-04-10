@@ -153,12 +153,10 @@ export async function listMemoriesByUserId(
 	options?: {
 		statuses?: Array<McpMemoryRow['status']>
 		limit?: number
-	}
+	},
 ): Promise<Array<McpMemoryRow>> {
 	const statuses =
-		options?.statuses && options.statuses.length > 0
-			? options.statuses
-			: null
+		options?.statuses && options.statuses.length > 0 ? options.statuses : null
 	const statusClause = statuses
 		? `AND status IN (${statuses.map(() => '?').join(', ')})`
 		: ''

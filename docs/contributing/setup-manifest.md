@@ -90,8 +90,8 @@ automatically:
   `/health` versioning)
 - `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.
   Production email uses the default public API base when this is unset. Local
-  `npm run dev` targets the Cloudflare mock unless `SKIP_CLOUDFLARE_MOCK=1`.
-  The internal Cloudflare API client expects paths under `/client/v4/`.)
+  `npm run dev` targets the Cloudflare mock unless `SKIP_CLOUDFLARE_MOCK=1`. The
+  internal Cloudflare API client expects paths under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities`,
   `POST /__maintenance/reindex-skills`, and `POST /__maintenance/reindex-apps`

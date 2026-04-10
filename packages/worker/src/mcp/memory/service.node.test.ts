@@ -7,7 +7,10 @@ import {
 	upsertMemory,
 	verifyMemoryCandidate,
 } from './service.ts'
-import { type McpMemoryConversationSuppressionRow, type McpMemoryRow } from './types.ts'
+import {
+	type McpMemoryConversationSuppressionRow,
+	type McpMemoryRow,
+} from './types.ts'
 
 function createMemoryTestDb() {
 	const memories = new Map<string, McpMemoryRow>()
@@ -154,9 +157,8 @@ function createMemoryTestDb() {
 										'set last_accessed_at = ?, updated_at = updated_at',
 									)
 								) {
-									const [lastAccessedAt, userId, ...memoryIds] = params as Array<
-										string
-									>
+									const [lastAccessedAt, userId, ...memoryIds] =
+										params as Array<string>
 									let changes = 0
 									for (const memoryId of memoryIds) {
 										const existing = memories.get(memoryId)
@@ -236,7 +238,7 @@ function createMemoryTestDb() {
 const env = (db: D1Database) =>
 	({
 		APP_DB: db,
-	} satisfies Pick<Env, 'APP_DB'>) as Pick<Env, 'APP_DB' | 'AI'>
+	}) satisfies Pick<Env, 'APP_DB'> as Pick<Env, 'APP_DB' | 'AI'>
 
 test('memory service upserts, verifies, and soft deletes', async () => {
 	const testDb = createMemoryTestDb()
