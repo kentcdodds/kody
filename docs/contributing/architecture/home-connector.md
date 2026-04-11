@@ -3,6 +3,10 @@
 The local `packages/home-connector` process is the bridge between Kody's
 Cloudflare Worker and devices that are only reachable on the local network.
 
+It is a **remote connector** with `kind: home`. The wire protocol, URL shapes,
+and secret configuration for **any** outbound connector are documented in
+[Remote connectors](./remote-connectors.md).
+
 ## Current adapters
 
 The connector currently exposes three local-device families:

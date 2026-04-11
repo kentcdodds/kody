@@ -36,10 +36,15 @@ Requests are handled in this order:
    - `/.well-known/oauth-protected-resource/mcp`
 5. MCP endpoint:
    - `/mcp` (requires OAuth bearer token)
-6. Home connector session endpoint:
-   - `/home/connectors/:connectorId...` (internal-only Worker route that proxies
-     websocket upgrades and JSON-RPC helper requests to the
-     `HomeConnectorSession` Durable Object)
+6. Remote connector session endpoints (internal-only Worker routes that proxy
+   WebSocket upgrades and JSON-RPC helper requests to the `HomeConnectorSession`
+   Durable Object):
+   - `/home/connectors/:connectorId...` — legacy **`home`** connector URL
+     (session key equals `connectorId`)
+   - `/connectors/:kind/:instanceId...` — generic **`kind`** + instance (session
+     key `kind:instanceId` when `kind` is not `home`)
+
+   See [Remote connectors](./remote-connectors.md).
 7. Internal chat agent endpoint:
    - `/chat-agent/:threadId...` (requires the app session cookie and routes to
      the per-thread chat Agent instance)
@@ -104,8 +109,11 @@ The home automation flow adds two more Durable Objects:
   home connector tools when needed.
 
 The chat agent still attaches to the main compact MCP server (`kody`), but it
-also attaches to `home` and the runtime capability registry synthesizes a `home`
-domain for `search` / `execute` from the connected home connector tool surface.
+also attaches to `home` and the runtime capability registry **merges**
+synthesized domains from **remote connectors** listed in MCP caller context
+(`remoteConnectors` or legacy `homeConnectorId`). A single **`home`** +
+**`default`** instance keeps the builtin `home` domain name; other combinations
+use distinct domain ids. See [Remote connectors](./remote-connectors.md).
 
 Shared options are built in `packages/worker/src/sentry-options.ts`: **release**
 comes from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and
