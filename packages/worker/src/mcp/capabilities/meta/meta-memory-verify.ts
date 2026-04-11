@@ -4,15 +4,28 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { verifyMemoryCandidate } from '#mcp/memory/service.ts'
 import {
-	memoryMatchSchema,
+	memoryRecordSchema,
 	memoryVerifyInputSchema,
 	requireMcpUser,
-	verifyFirstGuidance,
 } from './meta-memory-shared.ts'
 
 const recommendedActions: Array<
 	'upsert' | 'delete' | 'upsert_and_delete' | 'none'
 > = ['upsert', 'delete', 'upsert_and_delete', 'none']
+
+const relatedMemorySchema = memoryRecordSchema
+	.pick({
+		id: true,
+		category: true,
+		status: true,
+		subject: true,
+		summary: true,
+		tags: true,
+		dedupe_key: true,
+	})
+	.extend({
+		score: z.number(),
+	})
 
 const outputSchema = z.object({
 	candidate: z.object({
@@ -23,8 +36,7 @@ const outputSchema = z.object({
 		tags: z.array(z.string()),
 		dedupe_key: z.string().nullable(),
 	}),
-	related_memories: z.array(memoryMatchSchema),
-	guidance: z.string(),
+	related_memories: z.array(relatedMemorySchema),
 	recommended_actions: z.array(
 		z.enum(['upsert', 'delete', 'upsert_and_delete', 'none']),
 	),
@@ -65,7 +77,6 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 				related_memories: result.relatedMemories.map((match) =>
 					formatMemoryMatch(match.memory, match.score),
 				),
-				guidance: verifyFirstGuidance,
 				recommended_actions: recommendedActions,
 			}
 		},
@@ -79,13 +90,8 @@ function formatMemoryMatch(
 		status: 'active' | 'deleted' | 'archived'
 		subject: string
 		summary: string
-		details: string
 		tags: Array<string>
 		dedupeKey: string | null
-		createdAt: string
-		updatedAt: string
-		lastAccessedAt: string | null
-		deletedAt: string | null
 	},
 	score: number,
 ) {
@@ -95,13 +101,8 @@ function formatMemoryMatch(
 		status: match.status,
 		subject: match.subject,
 		summary: match.summary,
-		details: match.details,
 		tags: match.tags,
 		dedupe_key: match.dedupeKey,
-		created_at: match.createdAt,
-		updated_at: match.updatedAt,
-		last_accessed_at: match.lastAccessedAt,
-		deleted_at: match.deletedAt,
 		score,
 	}
 }
