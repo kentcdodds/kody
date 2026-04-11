@@ -1,4 +1,5 @@
 import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
+import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
@@ -210,6 +211,18 @@ export function formatExecutionOutput(result: ExecuteResult) {
 		return `Error: ${errorText}\n\nNext step: ${details.nextStep}`
 	}
 	return truncateExecutionResult(result.result)
+}
+
+export function extractRawContent(value: unknown): Array<ContentBlock> | null {
+	if (
+		typeof value === 'object' &&
+		value !== null &&
+		'__mcpContent' in value &&
+		Array.isArray((value as { __mcpContent: unknown }).__mcpContent)
+	) {
+		return (value as { __mcpContent: Array<ContentBlock> }).__mcpContent
+	}
+	return null
 }
 
 function stringifyExecutionError(error: unknown) {
