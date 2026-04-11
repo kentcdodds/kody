@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import {
+	extractRawContent,
 	formatExecutionOutput,
 	getExecutionErrorDetails,
 } from '#mcp/executor.ts'
@@ -189,17 +190,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				registeredCapabilityCount,
 				sandboxError: false,
 			})
+			const rawContent = extractRawContent(result.result)
 			return {
 				content: prependToolMetadataContent(resolvedConversationId, [
-					{
-						type: 'text',
-						text: formatExecutionOutput(result),
-					},
+					...(rawContent ?? [
+						{
+							type: 'text',
+							text: formatExecutionOutput(result),
+						},
+					]),
 					...formatSurfacedMemoriesMarkdown(surfacedMemories),
 				]),
 				structuredContent: {
 					conversationId: resolvedConversationId,
-					result: result.result,
+					result: rawContent ? null : result.result,
 					logs: result.logs ?? [],
 					...buildMemoryStructuredContent(surfacedMemories),
 				},

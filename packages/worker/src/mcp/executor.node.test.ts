@@ -1,11 +1,16 @@
 import { expect, test } from 'vitest'
+import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createCapabilitySecretAccessDeniedMessage,
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
-import { formatExecutionOutput, getExecutionErrorDetails } from './executor.ts'
+import {
+	extractRawContent,
+	formatExecutionOutput,
+	getExecutionErrorDetails,
+} from './executor.ts'
 
 test('getExecutionErrorDetails returns concrete guidance for capability access denial', () => {
 	const error = new Error(
@@ -57,6 +62,32 @@ test('formatExecutionOutput keeps missing secret guidance intact', () => {
 	expect(formatExecutionOutput(result)).toContain(
 		'Open a generated UI so the user can provide and save this secret',
 	)
+})
+
+test('extractRawContent returns MCP content blocks from sentinel result', () => {
+	const content: Array<ContentBlock> = [
+		{
+			type: 'image',
+			data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+			mimeType: 'image/png',
+		},
+		{
+			type: 'text',
+			text: 'Screenshot of https://example.com',
+		},
+	]
+
+	expect(
+		extractRawContent({
+			__mcpContent: content,
+		}),
+	).toEqual(content)
+})
+
+test('extractRawContent returns null for non-sentinel values', () => {
+	expect(extractRawContent({ result: 'not raw content' })).toBeNull()
+	expect(extractRawContent('plain text')).toBeNull()
+	expect(extractRawContent(null)).toBeNull()
 })
 
 test('getExecutionErrorDetails returns batch capability approvals', () => {
