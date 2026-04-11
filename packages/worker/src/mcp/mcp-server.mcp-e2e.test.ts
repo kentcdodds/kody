@@ -243,6 +243,80 @@ test('mcp memory verify upsert and delete', async () => {
 	const memoryId = upsertStructured?.result?.memory?.id
 	expect(typeof memoryId).toBe('string')
 
+	const verifyRelatedResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_verify({
+					subject: 'User prefers npm over pnpm',
+					summary: 'Always use npm commands in this repository.',
+					category: 'preference',
+					tags: ['package-manager', 'repo-workflow'],
+				})
+			}`,
+		},
+	})
+	const verifyRelatedStructured = (verifyRelatedResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					candidate?: {
+						subject?: string
+						summary?: string
+						details?: string
+						category?: string | null
+						tags?: Array<string>
+						dedupe_key?: string | null
+					}
+					related_memories?: Array<Record<string, unknown>>
+					recommended_actions?: Array<string>
+					guidance?: string
+				}
+		  }
+		| undefined
+	expect(verifyRelatedStructured?.result?.candidate).toEqual({
+		subject: 'User prefers npm over pnpm',
+		summary: 'Always use npm commands in this repository.',
+		details: '',
+		category: 'preference',
+		tags: ['package-manager', 'repo-workflow'],
+		dedupe_key: null,
+	})
+	expect(verifyRelatedStructured?.result?.related_memories).toEqual([
+		expect.objectContaining({
+			id: memoryId,
+			category: 'preference',
+			status: 'active',
+			subject: 'User prefers npm over pnpm',
+			summary: 'Always use npm commands in this repository.',
+			tags: ['package-manager', 'repo-workflow'],
+			dedupe_key: null,
+			score: expect.any(Number),
+		}),
+	])
+	expect(verifyRelatedStructured?.result?.recommended_actions).toEqual([
+		'upsert',
+		'delete',
+		'upsert_and_delete',
+		'none',
+	])
+	expect(verifyRelatedStructured?.result).not.toHaveProperty('guidance')
+	expect(
+		verifyRelatedStructured?.result?.related_memories?.[0],
+	).not.toHaveProperty('details')
+	expect(
+		verifyRelatedStructured?.result?.related_memories?.[0],
+	).not.toHaveProperty('created_at')
+	expect(
+		verifyRelatedStructured?.result?.related_memories?.[0],
+	).not.toHaveProperty('updated_at')
+	expect(
+		verifyRelatedStructured?.result?.related_memories?.[0],
+	).not.toHaveProperty('last_accessed_at')
+	expect(
+		verifyRelatedStructured?.result?.related_memories?.[0],
+	).not.toHaveProperty('deleted_at')
+
 	const softDeleteResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
