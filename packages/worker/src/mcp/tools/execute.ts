@@ -62,6 +62,8 @@ Example:
   return { source: page.source, preview: page.markdown.slice(0, 120) };
 }\`
 
+To return non-text MCP content blocks (e.g. images), see: https://github.com/kentcdodds/kody/blob/main/docs/use/raw-content-blocks.md
+
 More context: https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md
 	`.trim(),
 	annotations: {
