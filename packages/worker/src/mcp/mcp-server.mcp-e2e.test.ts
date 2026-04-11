@@ -47,6 +47,55 @@ test('mcp server lists tools and search returns matches', async () => {
 	expect(Array.isArray(structured?.result?.matches)).toBe(true)
 })
 
+test('mcp search uses the query as memory context fallback', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_upsert({
+					subject: 'User prefers npm over pnpm',
+					summary: 'Always use npm commands in this repository.',
+					category: 'preference',
+					tags: ['package-manager', 'repo-workflow'],
+					verified_by_agent: true,
+					verification_reference: 'verify-search-fallback-1',
+				})
+			}`,
+		},
+	})
+
+	const query = 'npm over pnpm'
+	const searchResult = await mcpClient.client.callTool({
+		name: 'search',
+		arguments: {
+			query,
+		},
+	})
+	const structured = (searchResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					memories?: {
+						retrievalQuery?: string
+						surfaced?: Array<{ subject?: string }>
+					}
+				}
+		  }
+		| undefined
+
+	expect(structured?.result?.memories?.retrievalQuery).toBe(query)
+	expect(structured?.result?.memories?.surfaced).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				subject: 'User prefers npm over pnpm',
+			}),
+		]),
+	)
+})
+
 test('mcp server saves skills and run_skill works', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)

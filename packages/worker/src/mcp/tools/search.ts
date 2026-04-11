@@ -63,6 +63,18 @@ const maxChars = maxTokens * charsPerToken
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
 
+export function resolveSearchMemoryContext(input: {
+	query?: string
+	memoryContext?: z.infer<typeof memoryContextInputField>
+}) {
+	if (input.memoryContext !== undefined) {
+		return input.memoryContext
+	}
+
+	const query = input.query?.trim() ?? ''
+	return query.length > 0 ? { query } : undefined
+}
+
 function truncateSearchText(text: string): string {
 	if (text.length <= maxChars) return text
 
@@ -683,7 +695,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				env: agent.getEnv(),
 				callerContext,
 				conversationId,
-				memoryContext: args.memoryContext,
+				memoryContext: resolveSearchMemoryContext({
+					query: args.query,
+					memoryContext: args.memoryContext,
+				}),
 			})
 			const searchMemories = memoryToolContext
 				? {

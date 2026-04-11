@@ -2,7 +2,43 @@ import { expect, test } from 'vitest'
 import {
 	loadDownHomeConnectorStatus,
 	loadOptionalSearchRows,
+	resolveSearchMemoryContext,
 } from './search.ts'
+
+test('search memory context falls back to the query when omitted', () => {
+	expect(
+		resolveSearchMemoryContext({
+			query: 'saved interactive dashboard app',
+		}),
+	).toEqual({
+		query: 'saved interactive dashboard app',
+	})
+})
+
+test('search memory context preserves explicit caller context', () => {
+	expect(
+		resolveSearchMemoryContext({
+			query: 'saved interactive dashboard app',
+			memoryContext: {
+				task: 'Find dashboard app',
+				query: 'saved dashboard app',
+				entities: ['dashboard'],
+			},
+		}),
+	).toEqual({
+		task: 'Find dashboard app',
+		query: 'saved dashboard app',
+		entities: ['dashboard'],
+	})
+})
+
+test('search memory context does not synthesize a fallback for blank queries', () => {
+	expect(
+		resolveSearchMemoryContext({
+			query: '   ',
+		}),
+	).toBeUndefined()
+})
 
 test('optional search rows fall back when saved skills lookup fails', async () => {
 	const result = await loadOptionalSearchRows({
