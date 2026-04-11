@@ -15,6 +15,30 @@ type DiscoveredSamsungService = SamsungTvDiscoveryServiceDiagnostic & {
 	serviceUrl: string | null
 }
 
+function resolveSamsungDeviceInfoUrl(
+	service: DiscoveredSamsungService,
+): string {
+	if (service.serviceUrl) {
+		if (service.address) {
+			try {
+				const url = new URL(service.serviceUrl)
+				if (url.hostname.endsWith('.local')) {
+					url.hostname = service.address
+					return url.toString()
+				}
+			} catch {
+				// Use the advertised URL as-is when it is not a parseable URL.
+			}
+		}
+		return service.serviceUrl
+	}
+	const host = service.address ?? service.host?.replace(/\.$/, '') ?? ''
+	if (host && service.port) {
+		return `http://${host}:${String(service.port)}/api/v2/`
+	}
+	return ''
+}
+
 function createSamsungDeviceId(input: {
 	host: string
 	rawDeviceInfo: Record<string, unknown> | null
@@ -49,6 +73,7 @@ function parseSamsungLookupOutput(
 	instanceName: string,
 	output: {
 		host: string | null
+		address: string | null
 		port: number | null
 		txtLine: string
 		raw: string
@@ -61,6 +86,7 @@ function parseSamsungLookupOutput(
 	return {
 		instanceName,
 		host: output.host,
+		address: output.address,
 		port: output.port,
 		txt,
 		serviceUrl: txt['se'] ?? null,
@@ -74,11 +100,7 @@ async function fetchSamsungDeviceInfo(input: {
 	device: SamsungTvDeviceRecord | null
 	lookup: SamsungTvMetadataLookupDiagnostic
 }> {
-	const deviceInfoUrl =
-		input.service.serviceUrl ??
-		(input.service.host && input.service.port
-			? `http://${input.service.host}:${String(input.service.port)}/api/v2/`
-			: '')
+	const deviceInfoUrl = resolveSamsungDeviceInfoUrl(input.service)
 	if (!deviceInfoUrl) {
 		return {
 			device: null,

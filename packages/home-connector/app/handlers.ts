@@ -823,6 +823,10 @@ function renderSamsungTvDiscoveryDiagnostics(
 								html`<li class="card">
 									<div>Instance: <code>${service.instanceName}</code></div>
 									<div>Host: <code>${service.host ?? 'unknown'}</code></div>
+									<div>
+										Resolved IPv4:
+										<code>${service.address ?? 'none'}</code>
+									</div>
 									<div>Port: ${service.port ?? 'unknown'}</div>
 									<div>
 										Service URL: <code>${service.txt['se'] ?? 'missing'}</code>

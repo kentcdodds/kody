@@ -1,6 +1,8 @@
 export type SamsungTvDiscoveryServiceDiagnostic = {
 	instanceName: string
 	host: string | null
+	/** IPv4 from mDNS when present; preferred for HTTP to the TV API. */
+	address: string | null
 	port: number | null
 	txt: Record<string, string>
 	raw: string
