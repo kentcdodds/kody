@@ -76,3 +76,9 @@ token.
 
 Readable non-secret configuration uses **`codemode.value_get`** and
 **`codemode.value_list`** (for example data generated UI should persist).
+
+## Returning content blocks
+
+By default, **`execute`** returns text output. To return non-text MCP content
+blocks such as images, return an object with a **`__mcpContent`** array instead;
+see [Raw MCP content blocks](./raw-content-blocks.md).
