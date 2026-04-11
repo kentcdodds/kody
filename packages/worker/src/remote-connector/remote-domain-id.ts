@@ -28,8 +28,12 @@ export function remoteConnectorCapabilityPrefix(
 			.replace(/^_|_$/g, '') || 'instance'
 
 	if (k === 'home') {
-		const homeRefs = allRefs.filter((r) => r.kind === 'home')
-		if (homeRefs.length === 1 && rawId === 'default') {
+		const isOnlyBuiltinHome =
+			rawId === 'default' &&
+			allRefs.length === 1 &&
+			allRefs[0]?.kind.trim().toLowerCase() === 'home' &&
+			allRefs[0]?.instanceId.trim() === 'default'
+		if (isOnlyBuiltinHome) {
 			return 'home'
 		}
 		return `home_${slug}`

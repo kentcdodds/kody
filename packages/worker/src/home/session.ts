@@ -45,7 +45,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		tools: [],
 	}
 
-	private ingressSessionKey: string | null = null
+	private ingressSessionKeys = new WeakMap<WebSocket, string | null>()
 
 	private pendingRequests = new Map<string, PendingRpcRequest>()
 
@@ -55,14 +55,12 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	async fetch(request: Request): Promise<Response> {
-		const sessionKeyHeader = request.headers
-			.get('X-Kody-Connector-Session-Key')
-			?.trim()
-		this.ingressSessionKey = sessionKeyHeader || null
-
 		const url = new URL(request.url)
 		if (request.headers.get('Upgrade') === 'websocket') {
-			return this.handleWebSocketUpgrade(request)
+			const sessionKeyHeader = request.headers
+				.get('X-Kody-Connector-Session-Key')
+				?.trim()
+			return this.handleWebSocketUpgrade(sessionKeyHeader || null)
 		}
 		if (request.method === 'GET' && url.pathname.endsWith('/snapshot')) {
 			return jsonResponse(await this.getSnapshot())
@@ -175,7 +173,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		await this.ctx.storage.put(stateStorageKey, this.stateSnapshot)
 	}
 
-	private async handleWebSocketUpgrade(_request: Request) {
+	private async handleWebSocketUpgrade(ingressSessionKey: string | null) {
 		const pair = new WebSocketPair()
 		const sockets = Object.values(pair)
 		const client = sockets[0]
@@ -184,6 +182,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			throw new Error('Failed to create WebSocket pair.')
 		}
 		this.ctx.acceptWebSocket(server, [connectorTag])
+		this.stashIngressSessionKey(server, ingressSessionKey)
 		server.send(
 			stringifyHomeConnectorMessage({
 				type: 'server.ping',
@@ -229,9 +228,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		const declaredKind = (message.connectorKind ?? 'home').trim().toLowerCase()
 		const instanceId = message.connectorId.trim()
 		const expectedSessionKey = connectorSessionKey(declaredKind, instanceId)
+		const ingressSessionKey = this.loadIngressSessionKey(ws)
 		if (
-			this.ingressSessionKey &&
-			this.ingressSessionKey !== expectedSessionKey
+			ingressSessionKey &&
+			ingressSessionKey !== expectedSessionKey
 		) {
 			Sentry.captureMessage(
 				'Remote connector session rejected hello (session key mismatch).',
@@ -244,7 +244,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 					extra: {
 						connectorId: message.connectorId,
 						declaredKind,
-						ingressSessionKey: this.ingressSessionKey,
+						ingressSessionKey,
 						expectedSessionKey,
 					},
 				},
@@ -379,6 +379,32 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		)
 
 		return response
+	}
+
+	private stashIngressSessionKey(ws: WebSocket, ingressSessionKey: string | null) {
+		this.ingressSessionKeys.set(ws, ingressSessionKey)
+		try {
+			ws.serializeAttachment(ingressSessionKey ?? '')
+		} catch {
+			// No attachment support; keep in-memory map only.
+		}
+	}
+
+	private loadIngressSessionKey(ws: WebSocket): string | null {
+		if (this.ingressSessionKeys.has(ws)) {
+			return this.ingressSessionKeys.get(ws) ?? null
+		}
+		let ingressSessionKey: string | null = null
+		try {
+			const attachment = ws.deserializeAttachment()
+			if (typeof attachment === 'string') {
+				ingressSessionKey = attachment || null
+			}
+		} catch {
+			// Ignore deserialization errors, we only enforce if we have a key.
+		}
+		this.ingressSessionKeys.set(ws, ingressSessionKey)
+		return ingressSessionKey
 	}
 }
 
