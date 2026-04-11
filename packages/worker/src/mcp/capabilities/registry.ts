@@ -3,8 +3,12 @@ import {
 	type BuiltCapabilityRegistry,
 } from './build-capability-registry.ts'
 import { builtinDomains } from './builtin-domains.ts'
-import { synthesizeHomeDomain } from './home/index.ts'
+import {
+	type SynthesizedRemoteConnectorDomain,
+	synthesizeRemoteToolDomain,
+} from './home/index.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 
 const staticRegistry = buildCapabilityRegistry(builtinDomains)
 
@@ -28,16 +32,21 @@ export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
 }): Promise<BuiltCapabilityRegistry> {
-	const homeDomain = await synthesizeHomeDomain(input.env, {
-		connectorId: input.callerContext.homeConnectorId ?? null,
-		baseUrl: input.callerContext.baseUrl,
-	})
-	if (!homeDomain) {
+	const refs = normalizeRemoteConnectorRefs(input.callerContext)
+	const synthesizedDomains: Array<SynthesizedRemoteConnectorDomain['domain']> =
+		[]
+	for (const ref of refs) {
+		const synthesized = await synthesizeRemoteToolDomain(input.env, ref, refs)
+		if (synthesized) {
+			synthesizedDomains.push(synthesized.domain)
+		}
+	}
+	if (synthesizedDomains.length === 0) {
 		return staticRegistry
 	}
 	const registry = buildCapabilityRegistry([
 		...builtinDomains,
-		homeDomain.domain,
+		...synthesizedDomains,
 	])
 	return registry
 }

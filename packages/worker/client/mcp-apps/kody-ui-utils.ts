@@ -833,8 +833,7 @@ async function executeGeneratedUiShellScript(
 		return
 	}
 	const shouldAwaitLoad =
-		scriptDescriptor.executionMode === 'module' ||
-		scriptDescriptor.src != null
+		scriptDescriptor.executionMode === 'module' || scriptDescriptor.src != null
 	if (!scriptDescriptor.src) {
 		script.textContent = scriptDescriptor.textContent
 		if (!shouldAwaitLoad) {
@@ -1147,7 +1146,8 @@ async function initializeShellHostDocument() {
 		}
 	}
 
-	const isStaleRender = (renderId: number) => renderId !== latestScheduledRenderId
+	const isStaleRender = (renderId: number) =>
+		renderId !== latestScheduledRenderId
 
 	async function renderEnvelope(
 		envelope: RenderEnvelope | null,

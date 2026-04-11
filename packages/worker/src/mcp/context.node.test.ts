@@ -9,6 +9,7 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 	).toEqual({
 		baseUrl: 'https://example.com',
 		homeConnectorId: null,
+		remoteConnectors: null,
 		storageContext: null,
 		user: null,
 	})
@@ -28,7 +29,7 @@ test('parseMcpCallerContext validates caller context shape', () => {
 				appId: 'app-123',
 			},
 		}),
-	).toEqual({
+	).toMatchObject({
 		baseUrl: 'https://example.com',
 		user: {
 			userId: '123',

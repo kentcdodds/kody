@@ -33,6 +33,10 @@ import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import { handleSkillReindexRequest } from './skill-maintenance.ts'
 import { handleUiArtifactReindexRequest } from './ui-artifact-maintenance.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
+import {
+	connectorSessionKey,
+	parseConnectorRoutePath,
+} from './remote-connector/connector-session-key.ts'
 
 export { ChatAgent, CodemodeFetchGateway, HomeConnectorSession, HomeMCP, MCP }
 
@@ -130,16 +134,20 @@ const appHandler = withCors({
 			return handleGeneratedUiApiRequest(request, env)
 		}
 
-		if (url.pathname.startsWith('/home/connectors/')) {
-			const parts = url.pathname.split('/').filter(Boolean)
-			const connectorId = parts[2]?.trim()
-			if (!connectorId) {
-				return new Response('Connector ID is required.', { status: 400 })
-			}
-			const stub = env.HOME_CONNECTOR_SESSION.get(
-				env.HOME_CONNECTOR_SESSION.idFromName(connectorId),
+		const connectorRoute = parseConnectorRoutePath(url.pathname)
+		if (connectorRoute) {
+			const sessionKey = connectorSessionKey(
+				connectorRoute.kind,
+				connectorRoute.instanceId,
 			)
-			return stub.fetch(request)
+			const stub = env.HOME_CONNECTOR_SESSION.get(
+				env.HOME_CONNECTOR_SESSION.idFromName(sessionKey),
+			)
+			const forwardUrl = new URL(request.url)
+			forwardUrl.pathname = connectorRoute.rest || '/'
+			const forwardRequest = new Request(forwardUrl.toString(), request)
+			forwardRequest.headers.set('X-Kody-Connector-Session-Key', sessionKey)
+			return stub.fetch(forwardRequest)
 		}
 
 		if (url.pathname.startsWith(`${chatAgentBasePath}/`)) {

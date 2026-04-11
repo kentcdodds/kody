@@ -1,4 +1,5 @@
 import {
+	array,
 	nullable,
 	number,
 	object,
@@ -6,6 +7,7 @@ import {
 	string,
 	type InferOutput,
 } from 'remix/data-schema'
+import { minLength } from 'remix/data-schema/checks'
 
 export const aiModeValues = ['mock', 'remote'] as const
 export type AiMode = (typeof aiModeValues)[number]
@@ -21,10 +23,16 @@ export const mcpStorageContextSchema = object({
 	appId: optional(nullable(string())),
 })
 
+const remoteConnectorRefSchema = object({
+	kind: string().pipe(minLength(1)),
+	instanceId: string().pipe(minLength(1)),
+})
+
 export const mcpCallerContextSchema = object({
 	baseUrl: string(),
 	user: optional(nullable(mcpUserContextSchema)),
 	homeConnectorId: optional(nullable(string())),
+	remoteConnectors: optional(nullable(array(remoteConnectorRefSchema))),
 	storageContext: optional(nullable(mcpStorageContextSchema)),
 })
 

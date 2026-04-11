@@ -16,6 +16,8 @@ import {
 	jsonResponse,
 	stringifyHomeConnectorMessage,
 } from './utils.ts'
+import { connectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
+import { resolveRemoteConnectorSharedSecret } from '#worker/remote-connector/resolve-remote-connector-secret.ts'
 
 const connectorTag = 'connector'
 const stateStorageKey = 'home-connector-session-state'
@@ -36,11 +38,14 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	private stateSnapshot: HomeConnectorSessionState = {
 		persisted: {
 			connectorId: null,
+			connectorKind: null,
 			connectedAt: null,
 			lastSeenAt: null,
 		},
 		tools: [],
 	}
+
+	private ingressSessionKey: string | null = null
 
 	private pendingRequests = new Map<string, PendingRpcRequest>()
 
@@ -50,6 +55,11 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	async fetch(request: Request): Promise<Response> {
+		const sessionKeyHeader = request.headers
+			.get('X-Kody-Connector-Session-Key')
+			?.trim()
+		this.ingressSessionKey = sessionKeyHeader || null
+
 		const url = new URL(request.url)
 		if (request.headers.get('Upgrade') === 'websocket') {
 			return this.handleWebSocketUpgrade(request)
@@ -138,10 +148,12 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	async getSnapshot(): Promise<HomeConnectorSnapshot | null> {
-		const { connectorId, connectedAt, lastSeenAt } =
+		const { connectorId, connectorKind, connectedAt, lastSeenAt } =
 			this.stateSnapshot.persisted
 		if (!connectorId || !connectedAt || !lastSeenAt) return null
+		const kind = (connectorKind && connectorKind.trim()) || ('home' as const)
 		return {
+			...(kind !== 'home' ? { connectorKind: kind } : {}),
 			connectorId,
 			connectedAt,
 			lastSeenAt,
@@ -153,6 +165,9 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		const stored =
 			await this.ctx.storage.get<HomeConnectorSessionState>(stateStorageKey)
 		if (!stored) return
+		if (stored.persisted.connectorKind === undefined) {
+			stored.persisted.connectorKind = null
+		}
 		this.stateSnapshot = stored
 	}
 
@@ -211,7 +226,44 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	private async handleHello(ws: WebSocket, message: HomeConnectorHelloMessage) {
-		const expectedSecret = this.env.HOME_CONNECTOR_SHARED_SECRET?.trim()
+		const declaredKind = (message.connectorKind ?? 'home').trim().toLowerCase()
+		const instanceId = message.connectorId.trim()
+		const expectedSessionKey = connectorSessionKey(declaredKind, instanceId)
+		if (
+			this.ingressSessionKey &&
+			this.ingressSessionKey !== expectedSessionKey
+		) {
+			Sentry.captureMessage(
+				'Remote connector session rejected hello (session key mismatch).',
+				{
+					level: 'error',
+					tags: {
+						service: 'worker',
+						worker_component: 'home-connector-session',
+					},
+					extra: {
+						connectorId: message.connectorId,
+						declaredKind,
+						ingressSessionKey: this.ingressSessionKey,
+						expectedSessionKey,
+					},
+				},
+			)
+			ws.send(
+				stringifyHomeConnectorMessage({
+					type: 'server.error',
+					message: 'Connector session key does not match this endpoint.',
+				}),
+			)
+			ws.close(4003, 'session-mismatch')
+			return
+		}
+
+		const expectedSecret = resolveRemoteConnectorSharedSecret(
+			declaredKind,
+			instanceId,
+			this.env,
+		)
 		if (!expectedSecret || message.sharedSecret !== expectedSecret) {
 			Sentry.captureMessage(
 				'Home connector session rejected websocket hello.',
@@ -223,6 +275,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 					},
 					extra: {
 						connectorId: message.connectorId,
+						declaredKind,
 						hasExpectedSecret: Boolean(expectedSecret),
 					},
 				},
@@ -240,6 +293,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		const now = new Date().toISOString()
 		this.stateSnapshot.persisted = {
 			connectorId: message.connectorId,
+			connectorKind: declaredKind,
 			connectedAt: this.stateSnapshot.persisted.connectedAt ?? now,
 			lastSeenAt: now,
 		}

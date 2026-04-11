@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { getHomeConnectorStatus } from '#worker/home/status.ts'
+import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 
 const outputSchema = z.object({
 	status: z.enum(['connected', 'disconnected', 'unavailable', 'error']),
@@ -36,9 +37,11 @@ export const metaGetHomeConnectorStatusCapability = defineDomainCapability(
 		inputSchema: z.object({}),
 		outputSchema,
 		async handler(_args, ctx) {
+			const refs = normalizeRemoteConnectorRefs(ctx.callerContext)
+			const homeRef = refs.find((r) => r.kind === 'home')
 			const status = await getHomeConnectorStatus(
 				ctx.env,
-				ctx.callerContext.homeConnectorId ?? null,
+				homeRef?.instanceId ?? null,
 			)
 			return {
 				status: status.state,

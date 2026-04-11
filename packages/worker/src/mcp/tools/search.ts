@@ -34,9 +34,11 @@ import {
 import { listValues } from '#mcp/values/service.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import {
-	getHomeConnectorStatus,
+	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
 } from '#worker/home/status.ts'
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import {
 	callerContextFields,
@@ -140,7 +142,7 @@ Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connector
 use \`codemode.connector_get\` / \`codemode.connector_list\`.
 
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
-\`meta_get_home_connector_status\` (home connector).
+\`meta_list_remote_connector_status\` / \`meta_get_home_connector_status\` (remote connectors).
 
 Domain hints for \`query\` / \`skill_collection\`: \`coding\`, \`meta\`, \`home\`
 (see server instructions).
@@ -181,20 +183,19 @@ type SearchRowsAndRegistry = OptionalSearchRowsResult & {
 	appSecretsByAppId: Awaited<ReturnType<typeof listAppSecretsByAppIds>>
 }
 
-function shouldIncludeHomeConnectorStatus(status: HomeConnectorStatus) {
+function shouldIncludeRemoteConnectorStatus(status: HomeConnectorStatus) {
 	return status.state !== 'connected' || status.toolCount === 0
 }
 
-function serializeHomeConnectorStatus(status: HomeConnectorStatus | null):
-	| {
-			connectorId: string
-			state: string
-			connected: boolean
-			toolCount: number
-	  }
-	| undefined {
-	if (!status) return undefined
+function serializeRemoteConnectorStatus(status: HomeConnectorStatus): {
+	connectorKind: string
+	connectorId: string
+	state: string
+	connected: boolean
+	toolCount: number
+} {
 	return {
+		connectorKind: status.connectorKind,
 		connectorId: status.connectorId ?? 'unknown',
 		state: status.state,
 		connected: status.connected,
@@ -202,15 +203,34 @@ function serializeHomeConnectorStatus(status: HomeConnectorStatus | null):
 	}
 }
 
+export async function loadDownRemoteConnectorStatuses(input: {
+	env: Env
+	callerContext: Pick<McpCallerContext, 'homeConnectorId' | 'remoteConnectors'>
+}): Promise<Array<HomeConnectorStatus>> {
+	const refs = normalizeRemoteConnectorRefs(input.callerContext)
+	const down: Array<HomeConnectorStatus> = []
+	for (const ref of refs) {
+		const status = await getRemoteConnectorStatus(input.env, ref)
+		if (shouldIncludeRemoteConnectorStatus(status)) {
+			down.push(status)
+		}
+	}
+	return down
+}
+
+/** @deprecated Prefer loadDownRemoteConnectorStatuses with full caller context. */
 export async function loadDownHomeConnectorStatus(input: {
 	env: Env
 	homeConnectorId: string | null
 }): Promise<HomeConnectorStatus | null> {
-	const status = await getHomeConnectorStatus(input.env, input.homeConnectorId)
-	if (!shouldIncludeHomeConnectorStatus(status)) {
-		return null
-	}
-	return status
+	const statuses = await loadDownRemoteConnectorStatuses({
+		env: input.env,
+		callerContext: {
+			homeConnectorId: input.homeConnectorId,
+			remoteConnectors: null,
+		},
+	})
+	return statuses[0] ?? null
 }
 
 export async function loadOptionalSearchRows(input: {
@@ -557,7 +577,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			const limit = args.limit ?? defaultSearchLimit
 			const maxResponseSize = args.maxResponseSize ?? defaultMaxResponseSize
 			let warnings: Array<string> = []
-			let homeConnectorStatus: HomeConnectorStatus | null = null
+			let remoteConnectorDownStatuses: Array<HomeConnectorStatus> = []
 
 			const searchSpan = async () => {
 				const searchRows = await loadSearchRowsAndRegistry({
@@ -566,9 +586,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					userId,
 					skillCollection: args.skill_collection,
 				})
-				homeConnectorStatus = await loadDownHomeConnectorStatus({
+				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
 					env: agent.getEnv(),
-					homeConnectorId: callerContext.homeConnectorId ?? null,
+					callerContext,
 				})
 				warnings = searchRows.warnings
 
@@ -689,8 +709,15 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				}
 			}
 
+			const normalizedRemoteConnectorStatuses =
+				remoteConnectorDownStatuses.length > 0
+					? remoteConnectorDownStatuses.map(serializeRemoteConnectorStatus)
+					: undefined
 			const normalizedHomeConnectorStatus =
-				serializeHomeConnectorStatus(homeConnectorStatus)
+				remoteConnectorDownStatuses.length === 1 &&
+				remoteConnectorDownStatuses[0]?.connectorKind === 'home'
+					? serializeRemoteConnectorStatus(remoteConnectorDownStatuses[0]!)
+					: undefined
 			const memoryToolContext = await loadRelevantMemoriesForTool({
 				env: agent.getEnv(),
 				callerContext,
@@ -714,11 +741,19 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				warnings: Array<string>
 				memories?: SearchResultStructuredContent['memories']
 				homeConnectorStatus?: {
+					connectorKind: string
 					connectorId: string
 					state: string
 					connected: boolean
 					toolCount: number
 				}
+				remoteConnectorStatuses?: Array<{
+					connectorKind: string
+					connectorId: string
+					state: string
+					connected: boolean
+					toolCount: number
+				}>
 			} = {
 				matches: outcome.result.matches,
 				offline: outcome.result.offline,
@@ -726,6 +761,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				...(searchMemories
 					? {
 							memories: searchMemories,
+						}
+					: {}),
+				...(normalizedRemoteConnectorStatuses
+					? {
+							remoteConnectorStatuses: normalizedRemoteConnectorStatuses,
 						}
 					: {}),
 				...(normalizedHomeConnectorStatus

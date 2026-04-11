@@ -9,5 +9,8 @@ export const capabilityDomainNames = {
 	values: 'values',
 } as const
 
-export type CapabilityDomain =
+export type BuiltinCapabilityDomain =
 	(typeof capabilityDomainNames)[keyof typeof capabilityDomainNames]
+
+/** Built-in domain ids plus runtime remote-connector domains (e.g. `remote:home:default`). */
+export type CapabilityDomain = string

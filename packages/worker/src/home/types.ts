@@ -16,6 +16,8 @@ export type HomeToolDescriptor = {
 }
 
 export type HomeConnectorSnapshot = {
+	/** Logical connector kind (e.g. `home`). Defaults to `home` when omitted. */
+	connectorKind?: string
 	connectorId: string
 	connectedAt: string
 	lastSeenAt: string
@@ -26,6 +28,8 @@ export type HomeConnectorHelloMessage = {
 	type: 'connector.hello'
 	connectorId: string
 	sharedSecret: string
+	/** When omitted, treated as `home` for backward compatibility. */
+	connectorKind?: string
 }
 
 export type HomeConnectorHeartbeatMessage = {
@@ -63,6 +67,8 @@ export type HomeConnectorClientMessage =
 
 export type HomeConnectorPersistedState = {
 	connectorId: string | null
+	/** Persisted connector kind; null means legacy sessions (treated as `home`). */
+	connectorKind: string | null
 	connectedAt: string | null
 	lastSeenAt: string | null
 }
