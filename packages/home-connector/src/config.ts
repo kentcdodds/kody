@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
@@ -12,10 +13,16 @@ export type HomeConnectorConfig = {
 	lutronDiscoveryUrl: string
 	sonosDiscoveryUrl: string
 	bondDiscoveryUrl: string
+	venstarThermostats: Array<VenstarThermostatConfig>
 	dataPath: string
 	dbPath: string
 	port: number
 	mocksEnabled: boolean
+}
+
+export type VenstarThermostatConfig = {
+	name: string
+	ip: string
 }
 
 function trimTrailingSlash(value: string) {
@@ -53,6 +60,57 @@ function resolveHomeConnectorDbPath(dataPath: string) {
 	)
 }
 
+function normalizeVenstarThermostatConfig(
+	entry: unknown,
+): VenstarThermostatConfig | null {
+	if (!entry || typeof entry !== 'object') return null
+	const record = entry as Record<string, unknown>
+	const name = String(record['name'] ?? '').trim()
+	const ip = String(record['ip'] ?? '').trim()
+	if (!name || !ip) return null
+	return { name, ip }
+}
+
+function parseVenstarThermostats(
+	raw: string,
+	source: string,
+): Array<VenstarThermostatConfig> {
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(raw)
+	} catch (error) {
+		console.warn(
+			`Invalid Venstar thermostat config JSON from ${source}: ${error instanceof Error ? error.message : String(error)}`,
+		)
+		return []
+	}
+	if (!Array.isArray(parsed)) {
+		console.warn(
+			`Invalid Venstar thermostat config from ${source}: expected an array.`,
+		)
+		return []
+	}
+	return parsed
+		.map((entry) => normalizeVenstarThermostatConfig(entry))
+		.filter(
+			(entry): entry is VenstarThermostatConfig => entry != null,
+		)
+}
+
+function resolveVenstarThermostats(dataPath: string) {
+	const envValue = process.env.VENSTAR_THERMOSTATS?.trim()
+	if (envValue) {
+		return parseVenstarThermostats(envValue, 'VENSTAR_THERMOSTATS')
+	}
+	const filePath = path.join(dataPath, 'venstar-thermostats.json')
+	if (!existsSync(filePath)) {
+		return []
+	}
+	const fileValue = readFileSync(filePath, 'utf8').trim()
+	if (!fileValue) return []
+	return parseVenstarThermostats(fileValue, filePath)
+}
+
 export function loadHomeConnectorConfig(): HomeConnectorConfig {
 	const port = Number.parseInt(process.env.PORT ?? '4040', 10)
 	const homeConnectorId = process.env.HOME_CONNECTOR_ID?.trim() || 'default'
@@ -82,6 +140,7 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 			'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
 		bondDiscoveryUrl:
 			process.env.BOND_DISCOVERY_URL?.trim() || 'mdns://_bond._tcp.local',
+		venstarThermostats: resolveVenstarThermostats(dataPath),
 		dataPath,
 		dbPath: resolveHomeConnectorDbPath(dataPath),
 		port: Number.isFinite(port) ? port : 4040,

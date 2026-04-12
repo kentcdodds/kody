@@ -8,6 +8,7 @@ import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
 import { type createSonosAdapter } from '../adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
+import { type createVenstarAdapter } from '../adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
 import { registerBondHomeConnectorTools } from './register-bond-tools.ts'
 import { type HomeConnectorState } from '../state.ts'
@@ -59,6 +60,7 @@ export function createHomeConnectorMcpServer(input: {
 	lutron: ReturnType<typeof createLutronAdapter>
 	sonos: ReturnType<typeof createSonosAdapter>
 	bond: ReturnType<typeof createBondAdapter>
+	venstar: ReturnType<typeof createVenstarAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
@@ -68,6 +70,7 @@ export function createHomeConnectorMcpServer(input: {
 	const lutron = input.lutron
 	const sonos = input.sonos
 	const bond = input.bond
+	const venstar = input.venstar
 
 	const server = new McpServer(
 		{
@@ -76,7 +79,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, and Bond (Olibra Bond Bridge / shades, groups, and RF devices) discovery, control, and diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
+				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), and Venstar WiFi thermostat control and diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
 		},
 	)
 
@@ -210,6 +213,238 @@ export function createHomeConnectorMcpServer(input: {
 			structuredContent,
 		}
 	}
+
+	function venstarScopedSchema(
+		shape: Record<string, z.ZodTypeAny> = {},
+	): Record<string, unknown> {
+		return z.toJSONSchema(
+			z.object({
+				thermostat: z
+					.string()
+					.min(1)
+					.optional()
+					.describe('Venstar thermostat name or IP.'),
+				...shape,
+			}),
+		) as Record<string, unknown>
+	}
+
+	registerTool(
+		{
+			name: 'venstar_list_thermostats',
+			title: 'List Venstar Thermostats',
+			description:
+				'List configured Venstar thermostats with their configured name/IP and current status summary.',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const thermostats = await venstar.listThermostatsWithStatus()
+			return {
+				content: [
+					{
+						type: 'text',
+						text:
+							thermostats.length === 0
+								? 'No Venstar thermostats are configured.'
+								: thermostats
+										.map(
+											(thermostat) =>
+												`- ${thermostat.name} (${thermostat.ip}) mode=${thermostat.summary.mode} state=${thermostat.summary.state} temp=${thermostat.summary.spacetemp}`,
+										)
+										.join('\n'),
+					},
+				],
+				structuredContent: {
+					thermostats,
+				},
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'venstar_get_thermostat_info',
+			title: 'Get Venstar Thermostat Info',
+			description:
+				'Fetch /query/info for a Venstar thermostat (by name or IP) including mode, state, setpoints, humidity, and schedule details.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					thermostat: z.string().min(1).optional(),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const thermostat = args['thermostat']
+			const result = await venstar.getInfo(
+				thermostat == null ? undefined : String(thermostat),
+			)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Fetched Venstar info for ${result.thermostat.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'venstar_get_thermostat_sensors',
+			title: 'Get Venstar Thermostat Sensors',
+			description:
+				'Fetch /query/sensors data for a Venstar thermostat by name or IP.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					thermostat: z.string().min(1).optional(),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const thermostat = args['thermostat']
+			const result = await venstar.getSensors(
+				thermostat == null ? undefined : String(thermostat),
+			)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Fetched Venstar sensors for ${result.thermostat.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'venstar_get_thermostat_runtimes',
+			title: 'Get Venstar Thermostat Runtimes',
+			description:
+				'Fetch /query/runtimes data for a Venstar thermostat by name or IP.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					thermostat: z.string().min(1).optional(),
+				}),
+			) as Record<string, unknown>,
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const thermostat = args['thermostat']
+			const result = await venstar.getRuntimes(
+				thermostat == null ? undefined : String(thermostat),
+			)
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Fetched Venstar runtimes for ${result.thermostat.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'venstar_control_thermostat',
+			title: 'Control Venstar Thermostat',
+			description:
+				'POST /control to set Venstar mode, fan, heattemp, and cooltemp. In auto mode, cooltemp must exceed heattemp + setpointdelta.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					thermostat: z.string().min(1).optional(),
+					mode: z.number().int().min(0).max(3).optional(),
+					fan: z.number().int().min(0).max(1).optional(),
+					heattemp: z.number().int().optional(),
+					cooltemp: z.number().int().optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const result = await venstar.controlThermostat({
+				thermostat:
+					args['thermostat'] == null ? undefined : String(args['thermostat']),
+				mode: args['mode'] == null ? undefined : Number(args['mode']),
+				fan: args['fan'] == null ? undefined : Number(args['fan']),
+				heattemp:
+					args['heattemp'] == null ? undefined : Number(args['heattemp']),
+				cooltemp:
+					args['cooltemp'] == null ? undefined : Number(args['cooltemp']),
+			})
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Updated Venstar control settings for ${result.thermostat.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
+
+	registerTool(
+		{
+			name: 'venstar_set_thermostat_settings',
+			title: 'Set Venstar Thermostat Settings',
+			description:
+				'POST /settings to update away mode, schedule enablement, humidity setpoints, and temperature units for a Venstar thermostat.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					thermostat: z.string().min(1).optional(),
+					away: z.number().int().min(0).max(1).optional(),
+					schedule: z.number().int().min(0).max(1).optional(),
+					humidify: z.number().int().optional(),
+					dehumidify: z.number().int().optional(),
+					tempunits: z.number().int().min(0).max(1).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const result = await venstar.setSettings({
+				thermostat:
+					args['thermostat'] == null ? undefined : String(args['thermostat']),
+				away: args['away'] == null ? undefined : Number(args['away']),
+				schedule:
+					args['schedule'] == null ? undefined : Number(args['schedule']),
+				humidify:
+					args['humidify'] == null ? undefined : Number(args['humidify']),
+				dehumidify:
+					args['dehumidify'] == null ? undefined : Number(args['dehumidify']),
+				tempunits:
+					args['tempunits'] == null ? undefined : Number(args['tempunits']),
+			})
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `Updated Venstar settings for ${result.thermostat.name}.`,
+					},
+				],
+				structuredContent: result,
+			}
+		},
+	)
 
 	registerTool(
 		{

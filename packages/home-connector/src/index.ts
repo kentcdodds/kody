@@ -1,6 +1,7 @@
 import { createBondAdapter } from './adapters/bond/index.ts'
 import { createLutronAdapter } from './adapters/lutron/index.ts'
 import { createSonosAdapter } from './adapters/sonos/index.ts'
+import { createVenstarAdapter } from './adapters/venstar/index.ts'
 import { createSamsungTvAdapter } from './adapters/samsung-tv/index.ts'
 import { createHomeConnectorMcpServer } from './mcp/server.ts'
 import { loadHomeConnectorConfig } from './config.ts'
@@ -38,6 +39,7 @@ export function createHomeConnectorApp() {
 		state,
 		storage,
 	})
+	const venstar = createVenstarAdapter({ config })
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
@@ -45,6 +47,7 @@ export function createHomeConnectorApp() {
 		lutron,
 		sonos,
 		bond,
+		venstar,
 	})
 	const workerConnector = createWorkerConnector({
 		config,
@@ -60,6 +63,7 @@ export function createHomeConnectorApp() {
 		lutron,
 		sonos,
 		bond,
+		venstar,
 		mcp,
 		workerConnector,
 	}

@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { expect, test } from 'vitest'
 import { loadHomeConnectorConfig } from './config.ts'
 
@@ -57,6 +60,7 @@ test('explicit Roku discovery URL overrides the default in mock mode', () => {
 		'http://samsung-tv.mock.local/discovery',
 	)
 	expect(config.lutronDiscoveryUrl).toBe('http://lutron.mock.local/discovery')
+	expect(config.venstarThermostats).toEqual([])
 })
 
 test('live connector defaults Sonos discovery to SSDP', () => {
@@ -109,6 +113,23 @@ test('live connector defaults Lutron discovery to mDNS', () => {
 	expect(config.lutronDiscoveryUrl).toBe('mdns://_lutron._tcp.local')
 })
 
+test('loads Venstar thermostat configs from JSON', () => {
+	using _env = createTemporaryEnv({
+		VENSTAR_THERMOSTATS: JSON.stringify([
+			{ name: 'Hallway', ip: '192.168.1.120' },
+			{ name: 'Office', ip: '192.168.1.121' },
+		]),
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.venstarThermostats).toEqual([
+		{ name: 'Hallway', ip: '192.168.1.120' },
+		{ name: 'Office', ip: '192.168.1.121' },
+	])
+})
+
 test('db path can be derived from HOME_CONNECTOR_DATA_PATH', () => {
 	using _env = createTemporaryEnv({
 		HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
@@ -132,4 +153,46 @@ test('HOME_CONNECTOR_DB_PATH overrides the default sqlite location', () => {
 
 	const config = loadHomeConnectorConfig()
 	expect(config.dbPath).toBe('/tmp/custom-home-connector.sqlite')
+})
+
+test('VENSTAR_THERMOSTATS config parses valid entries', () => {
+	using _env = createTemporaryEnv({
+		VENSTAR_THERMOSTATS: JSON.stringify([
+			{ name: 'Downstairs', ip: '10.0.0.10' },
+			{ name: 'Upstairs', ip: 'http://10.0.0.11/' },
+			{ name: '', ip: '10.0.0.12' },
+		]),
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.venstarThermostats).toEqual([
+		{ name: 'Downstairs', ip: '10.0.0.10' },
+		{ name: 'Upstairs', ip: 'http://10.0.0.11/' },
+	])
+})
+
+test('venstar thermostats load from data path file', () => {
+	const directory = mkdtempSync(path.join(tmpdir(), 'kody-venstar-'))
+	const filePath = path.join(directory, 'venstar-thermostats.json')
+	writeFileSync(
+		filePath,
+		JSON.stringify([
+			{ name: 'Office', ip: '192.168.1.12' },
+			{ name: 'Guest', ip: '192.168.1.13' },
+		]),
+	)
+	using _env = createTemporaryEnv({
+		HOME_CONNECTOR_DATA_PATH: directory,
+		VENSTAR_THERMOSTATS: undefined,
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.venstarThermostats).toEqual([
+		{ name: 'Office', ip: '192.168.1.12' },
+		{ name: 'Guest', ip: '192.168.1.13' },
+	])
 })

@@ -178,7 +178,14 @@ export async function synthesizeRemoteToolDomain(
 
 	const domainKeywordRoots =
 		k === 'home'
-			? (['home', 'roku', 'lutron', 'automation', 'devices'] as const)
+			? ([
+					'home',
+					'roku',
+					'lutron',
+					'venstar',
+					'automation',
+					'devices',
+				] as const)
 			: [k, 'integration', 'connector']
 
 	const domainDescription =

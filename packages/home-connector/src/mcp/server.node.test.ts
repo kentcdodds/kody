@@ -4,6 +4,7 @@ import { createBondAdapter } from '../adapters/bond/index.ts'
 import { createLutronAdapter } from '../adapters/lutron/index.ts'
 import { createSonosAdapter } from '../adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
+import { createVenstarAdapter } from '../adapters/venstar/index.ts'
 import { loadHomeConnectorConfig } from '../config.ts'
 import { createHomeConnectorMcpServer } from './server.ts'
 import { createAppState } from '../state.ts'
@@ -20,6 +21,9 @@ function createConfig() {
 	process.env.SAMSUNG_TV_DISCOVERY_URL =
 		'http://samsung-tv.mock.local/discovery'
 	process.env.BOND_DISCOVERY_URL = 'http://bond.mock.local/discovery'
+	process.env.VENSTAR_THERMOSTATS = JSON.stringify([
+		{ name: 'Hallway', ip: 'venstar.mock.local' },
+	])
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
 	return loadHomeConnectorConfig()
 }
@@ -50,6 +54,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		state,
 		storage,
 	})
+	const venstar = createVenstarAdapter({ config })
 	await samsungTv.scan()
 	await lutron.scan()
 	await sonos.scan()
@@ -61,6 +66,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		lutron,
 		sonos,
 		bond,
+		venstar,
 	})
 
 	try {
@@ -94,6 +100,15 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'bond_list_groups')).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'venstar_list_thermostats'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'venstar_list_thermostats'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'venstar_control_thermostat'),
 		).toBe(true)
 		const bondAuthGuide = await mcp.callTool('bond_authentication_guide')
 		expect(bondAuthGuide.content[0]?.type).toBe('text')
@@ -129,6 +144,16 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		const sonosPlayers = await mcp.callTool('sonos_list_players')
 		expect(sonosPlayers.structuredContent).toMatchObject({
 			players: expect.any(Array),
+		})
+
+		const venstarThermostats = await mcp.callTool('venstar_list_thermostats')
+		expect(venstarThermostats.structuredContent).toMatchObject({
+			thermostats: expect.any(Array),
+		})
+
+		const venstarThermostats = await mcp.callTool('venstar_list_thermostats')
+		expect(venstarThermostats.structuredContent).toMatchObject({
+			thermostats: expect.any(Array),
 		})
 
 		await mcp.callTool('bond_adopt_bridge', { bridgeId: 'MOCKBOND1' })

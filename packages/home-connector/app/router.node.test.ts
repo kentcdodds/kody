@@ -21,6 +21,7 @@ function createConfig(): HomeConnectorConfig {
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
+		venstarThermostats: [],
 		dataPath: '/tmp',
 		dbPath: ':memory:',
 		port: 4040,
