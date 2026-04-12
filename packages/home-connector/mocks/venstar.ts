@@ -14,20 +14,26 @@ function resolveIpFromUrl(url: URL) {
 	return url.hostname
 }
 
+const infoPattern = /^http:\/\/[^/]+\/query\/info\/?$/
+const sensorsPattern = /^http:\/\/[^/]+\/query\/sensors\/?$/
+const runtimesPattern = /^http:\/\/[^/]+\/query\/runtimes\/?$/
+const controlPattern = /^http:\/\/[^/]+\/control\/?$/
+const settingsPattern = /^http:\/\/[^/]+\/settings\/?$/
+
 export const venstarHandlers = [
-	http.get('http://*:*/query/info', ({ request }) => {
+	http.get(infoPattern, ({ request }) => {
 		const ip = resolveIpFromUrl(new URL(request.url))
 		return HttpResponse.json(getMockVenstarInfo(ip))
 	}),
-	http.get('http://*:*/query/sensors', ({ request }) => {
+	http.get(sensorsPattern, ({ request }) => {
 		const ip = resolveIpFromUrl(new URL(request.url))
 		return HttpResponse.json(getMockVenstarSensors(ip))
 	}),
-	http.get('http://*:*/query/runtimes', ({ request }) => {
+	http.get(runtimesPattern, ({ request }) => {
 		const ip = resolveIpFromUrl(new URL(request.url))
 		return HttpResponse.json(getMockVenstarRuntimes(ip))
 	}),
-	http.post('http://*:*/control', async ({ request }) => {
+	http.post(controlPattern, async ({ request }) => {
 		const ip = resolveIpFromUrl(new URL(request.url))
 		const body = await request.text()
 		const params = new URLSearchParams(body)
@@ -43,7 +49,7 @@ export const venstarHandlers = [
 		}
 		return HttpResponse.json(applyMockVenstarControl(ip, payload))
 	}),
-	http.post('http://*:*/settings', async ({ request }) => {
+	http.post(settingsPattern, async ({ request }) => {
 		const ip = resolveIpFromUrl(new URL(request.url))
 		const body = await request.text()
 		const params = new URLSearchParams(body)
