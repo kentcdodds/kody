@@ -136,6 +136,8 @@ empty ranked list.
 capabilities. Types and fields: see response.
 
 Run a skill: \`meta_run_skill({ name, params })\`; source: \`meta_get_skill\`.
+Manage schedules: \`scheduler_create\`, \`scheduler_list\`, \`scheduler_get\`,
+\`scheduler_update\`, \`scheduler_delete\`, \`scheduler_run_now\`.
 Apps: \`open_generated_ui({ app_id })\`. Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
