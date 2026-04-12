@@ -9,12 +9,13 @@ and secret configuration for **any** outbound connector are documented in
 
 ## Current adapters
 
-The connector currently exposes three local-device families:
+The connector currently exposes these local-device families:
 
 - Roku discovery and control over SSDP + ECP HTTP
 - Lutron HomeWorks QSX discovery and control over mDNS + LEAP TLS
 - Samsung TV / Frame discovery and control over mDNS, REST, and local WebSocket
   channels
+- Venstar WiFi thermostat status and control over the local REST API
 
 Both surfaces are registered as MCP tools inside the connector and then exposed
 to the Worker through the existing outbound WebSocket session to
@@ -83,6 +84,15 @@ Power support is intentionally split:
 This works well enough to expose as a connector capability, but it should still
 be treated as best-effort because Samsung Frame firmware can blur the line
 between Art Mode and true standby.
+
+## Venstar thermostat integration
+
+The Venstar adapter lives under `packages/home-connector/src/adapters/venstar/`
+and supports LAN-only REST calls to `/query/info`, `/query/sensors`,
+`/query/runtimes`, `/control`, and `/settings` for thermostats that have the
+local API enabled. Thermostats are configured with a name and static IP address
+via `VENSTAR_THERMOSTATS` or a `venstar-thermostats.json` file under
+`HOME_CONNECTOR_DATA_PATH` (defaulting to `~/.kody/home-connector`).
 
 ## Local persistence
 
