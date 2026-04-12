@@ -18,6 +18,10 @@
 			"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"],
 			"tag": "v3",
 		},
+		{
+			"new_sqlite_classes": ["SchedulerDO"],
+			"tag": "v4",
+		},
 	],
 
 	"observability": {
@@ -56,6 +60,10 @@
 					{
 						"class_name": "HomeMCP",
 						"name": "HOME_MCP_OBJECT",
+					},
+					{
+						"class_name": "SchedulerDO",
+						"name": "SCHEDULER_DO",
 					},
 				],
 			},
@@ -116,6 +124,10 @@
 						"class_name": "HomeMCP",
 						"name": "HOME_MCP_OBJECT",
 					},
+					{
+						"class_name": "SchedulerDO",
+						"name": "SCHEDULER_DO",
+					},
 				],
 			},
 			"d1_databases": [
@@ -174,6 +186,10 @@
 					{
 						"class_name": "HomeMCP",
 						"name": "HOME_MCP_OBJECT",
+					},
+					{
+						"class_name": "SchedulerDO",
+						"name": "SCHEDULER_DO",
 					},
 				],
 			},

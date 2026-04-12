@@ -5,6 +5,7 @@ export const capabilityDomainNames = {
 	home: 'home',
 	math: 'math',
 	meta: 'meta',
+	scheduler: 'scheduler',
 	secrets: 'secrets',
 	values: 'values',
 } as const

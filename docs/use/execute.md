@@ -32,6 +32,23 @@ To run persisted user code by name, use **`meta_run_skill`** with **`name`** and
 optional **`params`**. To inspect source, use **`meta_get_skill`**. You can also
 inline saved skill code into **execute** when that fits the workflow.
 
+## Scheduled jobs
+
+Kody can persist scheduled codemode jobs per user:
+
+- **`scheduler_upsert`** — create a new one-shot or recurring cron job, or
+  update an existing one when you pass **`id`**
+- **`scheduler_list`** — list jobs with next run time, last run status, and a
+  human-readable schedule summary
+- **`scheduler_get`** — inspect one job
+- **`scheduler_delete`** — remove a job
+- **`scheduler_run_now`** — trigger a job immediately without changing its normal
+  schedule
+
+Cron schedules use standard **5-field cron syntax** and may include an IANA
+timezone such as **`America/New_York`**. One-shot schedules use an ISO 8601 UTC
+timestamp such as **`2026-04-17T15:00:00Z`**.
+
 ## Long-term memory
 
 Kody can surface a small number of relevant long-term memories when you pass a
