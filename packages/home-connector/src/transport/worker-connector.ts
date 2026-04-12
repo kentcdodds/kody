@@ -245,6 +245,7 @@ export function createWorkerConnector(input: {
 			)
 			const hello: HomeConnectorHelloMessage = {
 				type: 'connector.hello',
+				connectorKind: 'home',
 				connectorId: input.config.homeConnectorId,
 				sharedSecret: input.config.sharedSecret!,
 			}

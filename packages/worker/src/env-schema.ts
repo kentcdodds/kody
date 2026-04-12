@@ -74,6 +74,62 @@ const optionalAiModeSchema = createSchema<
 	return fail(`Expected one of: ${aiModeValues.join(', ')}`, context.path)
 })
 
+const optionalRemoteConnectorSecretsSchema = createSchema<
+	unknown,
+	Record<string, string> | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (typeof value !== 'string') return fail('Expected string', context.path)
+
+	const trimmed = value.trim()
+	if (!trimmed) return { value: undefined }
+
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(trimmed) as unknown
+	} catch {
+		return fail(
+			'REMOTE_CONNECTOR_SECRETS must be valid JSON when set.',
+			context.path,
+		)
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		return fail(
+			'REMOTE_CONNECTOR_SECRETS must be a JSON object mapping "kind:instanceId" keys to secret strings.',
+			context.path,
+		)
+	}
+
+	const out: Record<string, string> = {}
+	for (const [rawKey, rawVal] of Object.entries(parsed)) {
+		const key = rawKey.trim()
+		const colon = key.indexOf(':')
+		if (colon <= 0 || colon === key.length - 1) {
+			return fail(
+				`REMOTE_CONNECTOR_SECRETS has invalid key "${rawKey}" (expected "kind:instanceId").`,
+				context.path,
+			)
+		}
+		const kind = key.slice(0, colon).trim().toLowerCase()
+		const instanceId = key.slice(colon + 1).trim()
+		if (!kind || !instanceId) {
+			return fail(
+				`REMOTE_CONNECTOR_SECRETS has invalid key "${rawKey}" (kind and instanceId must be non-empty).`,
+				context.path,
+			)
+		}
+		const canonicalKey = `${kind}:${instanceId}`
+		if (typeof rawVal !== 'string' || !rawVal.trim()) {
+			return fail(
+				`REMOTE_CONNECTOR_SECRETS value for "${canonicalKey}" must be a non-empty string.`,
+				context.path,
+			)
+		}
+		out[canonicalKey] = rawVal.trim()
+	}
+	return { value: out }
+})
+
 const optionalSentryTracesSampleRateSchema = createSchema<
 	unknown,
 	number | undefined
@@ -125,6 +181,7 @@ export const EnvSchema = object({
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	HOME_CONNECTOR_SHARED_SECRET: optionalNonEmptyStringSchema,
+	REMOTE_CONNECTOR_SECRETS: optionalRemoteConnectorSecretsSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

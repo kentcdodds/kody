@@ -42,6 +42,18 @@ export function parseHomeConnectorMessage(
 	if (type === 'connector.hello') {
 		const connectorId = (value as Record<string, unknown>)['connectorId']
 		const sharedSecret = (value as Record<string, unknown>)['sharedSecret']
+		const record = value as Record<string, unknown>
+		const hasConnectorKindKey = Object.hasOwn(record, 'connectorKind')
+		const connectorKindRaw = record['connectorKind']
+		if (hasConnectorKindKey && typeof connectorKindRaw !== 'string') {
+			throw new Error(
+				'Invalid connector hello: connectorKind must be a string.',
+			)
+		}
+		const connectorKind =
+			typeof connectorKindRaw === 'string' && connectorKindRaw.trim()
+				? connectorKindRaw.trim().toLowerCase()
+				: undefined
 		if (typeof connectorId !== 'string' || typeof sharedSecret !== 'string') {
 			throw new Error('Invalid connector hello payload.')
 		}
@@ -49,6 +61,7 @@ export function parseHomeConnectorMessage(
 			type,
 			connectorId,
 			sharedSecret,
+			...(connectorKind ? { connectorKind } : {}),
 		}
 	}
 	if (type === 'connector.heartbeat') {

@@ -24,5 +24,8 @@ not signed in, user-scoped results are empty.
 
 ## Home automation
 
-If home-related tools appear missing, check home connector status with
-**`meta_get_home_connector_status`** when that capability is available.
+If home-related tools appear missing, check connector status with
+**`meta_list_remote_connector_status`** (all attached remote connectors) or
+**`meta_get_home_connector_status`** (first **`home`** connector only) when
+those capabilities are available. For protocol and URL requirements, see
+[Remote connectors](../contributing/architecture/remote-connectors.md).

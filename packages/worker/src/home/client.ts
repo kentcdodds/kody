@@ -1,4 +1,8 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import {
+	connectorIngressPath,
+	connectorSessionKey,
+} from '#worker/remote-connector/connector-session-key.ts'
 import { type HomeConnectorSnapshot, type HomeToolDescriptor } from './types.ts'
 
 export type HomeMcpTool = HomeToolDescriptor
@@ -12,13 +16,19 @@ export type HomeMcpClient = {
 	getSnapshot(): Promise<HomeConnectorSnapshot | null>
 }
 
-function createSessionUrl(connectorId: string, pathname: string): string {
-	return `https://home-connectors/${connectorId}${pathname}`
+function createSessionUrl(
+	kind: string,
+	instanceId: string,
+	pathname: string,
+): string {
+	const base = connectorIngressPath(kind, instanceId)
+	return `https://home-connectors${base}${pathname}`
 }
 
-function getSessionStub(env: Env, connectorId: string) {
+function getSessionStub(env: Env, kind: string, instanceId: string) {
+	const sessionKey = connectorSessionKey(kind, instanceId)
 	return env.HOME_CONNECTOR_SESSION.get(
-		env.HOME_CONNECTOR_SESSION.idFromName(connectorId),
+		env.HOME_CONNECTOR_SESSION.idFromName(sessionKey),
 	)
 }
 
@@ -29,16 +39,17 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 	return (await response.json()) as T
 }
 
-export function createHomeMcpClient(
+export function createRemoteConnectorMcpClient(
 	env: Env,
-	connectorId: string,
+	kind: string,
+	instanceId: string,
 ): HomeMcpClient {
-	const stub = getSessionStub(env, connectorId)
+	const stub = getSessionStub(env, kind, instanceId)
 
 	return {
 		async listTools() {
 			const response = await stub.fetch(
-				createSessionUrl(connectorId, '/rpc/tools-list'),
+				createSessionUrl(kind, instanceId, '/rpc/tools-list'),
 				{
 					method: 'POST',
 				},
@@ -50,7 +61,7 @@ export function createHomeMcpClient(
 		},
 		async callTool(name, args) {
 			const response = await stub.fetch(
-				createSessionUrl(connectorId, '/rpc/tools-call'),
+				createSessionUrl(kind, instanceId, '/rpc/tools-call'),
 				{
 					method: 'POST',
 					headers: {
@@ -66,9 +77,16 @@ export function createHomeMcpClient(
 		},
 		async getSnapshot() {
 			const response = await stub.fetch(
-				createSessionUrl(connectorId, '/snapshot'),
+				createSessionUrl(kind, instanceId, '/snapshot'),
 			)
 			return parseJsonResponse<HomeConnectorSnapshot | null>(response)
 		},
 	}
+}
+
+export function createHomeMcpClient(
+	env: Env,
+	connectorId: string,
+): HomeMcpClient {
+	return createRemoteConnectorMcpClient(env, 'home', connectorId)
 }

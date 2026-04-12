@@ -37,11 +37,19 @@ export type SearchResultStructuredContent = {
 		retrievalQuery: string
 	}
 	homeConnectorStatus?: {
+		connectorKind: string
 		connectorId: string
 		state: string
 		connected: boolean
 		toolCount: number
 	}
+	remoteConnectorStatuses?: Array<{
+		connectorKind: string
+		connectorId: string
+		state: string
+		connected: boolean
+		toolCount: number
+	}>
 }
 
 export type SlimSearchMatch =

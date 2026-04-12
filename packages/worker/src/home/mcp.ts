@@ -16,6 +16,7 @@ import {
 	parseMcpCallerContext,
 	type McpServerProps,
 } from '#worker/mcp/context.ts'
+import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 
 export type HomeMcpState = {}
 export type HomeMcpProps = McpServerProps
@@ -42,15 +43,21 @@ type HomeMcpBridge = {
 	getHomeClient(): Promise<ReturnType<typeof createHomeMcpClient>>
 }
 
+function resolveHomeBridgeInstanceId(
+	callerContext: McpServerProps,
+): string | null {
+	const refs = normalizeRemoteConnectorRefs(callerContext)
+	const home = refs.find((r) => r.kind === 'home')
+	return home?.instanceId ?? null
+}
+
 async function createHomeToolErrorResult(
 	agent: HomeMcpBridge,
 	error: unknown,
 ): Promise<CallToolResult> {
 	const callerContext = agent.getCallerContext()
-	const status = await getHomeConnectorStatus(
-		agent.getEnv(),
-		callerContext.homeConnectorId ?? null,
-	)
+	const homeInstanceId = resolveHomeBridgeInstanceId(callerContext)
+	const status = await getHomeConnectorStatus(agent.getEnv(), homeInstanceId)
 	const fallbackMessage =
 		error instanceof Error ? error.message : 'Unknown home connector error.'
 	const message =
@@ -177,14 +184,14 @@ class HomeMCPBase extends McpAgent<Env, HomeMcpState, HomeMcpProps> {
 	}
 
 	async getHomeClient() {
-		const { homeConnectorId } = this.getCallerContext()
-		if (!homeConnectorId) {
+		const homeInstanceId = resolveHomeBridgeInstanceId(this.getCallerContext())
+		if (!homeInstanceId) {
 			throw new Error(
 				'No home connector is associated with this MCP caller context.',
 			)
 		}
 
-		return createHomeMcpClient(this.env, homeConnectorId)
+		return createHomeMcpClient(this.env, homeInstanceId)
 	}
 }
 

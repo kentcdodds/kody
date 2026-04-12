@@ -9,26 +9,14 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 	).toEqual({
 		baseUrl: 'https://example.com',
 		homeConnectorId: null,
+		remoteConnectors: null,
 		storageContext: null,
 		user: null,
 	})
 })
 
 test('parseMcpCallerContext validates caller context shape', () => {
-	expect(
-		parseMcpCallerContext({
-			baseUrl: 'https://example.com',
-			user: {
-				userId: '123',
-				email: 'user@example.com',
-				displayName: 'user',
-			},
-			storageContext: {
-				sessionId: 'session-123',
-				appId: 'app-123',
-			},
-		}),
-	).toEqual({
+	const parsed = parseMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
 			userId: '123',
@@ -40,4 +28,18 @@ test('parseMcpCallerContext validates caller context shape', () => {
 			appId: 'app-123',
 		},
 	})
+	expect(parsed).toMatchObject({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: '123',
+			email: 'user@example.com',
+			displayName: 'user',
+		},
+		storageContext: {
+			sessionId: 'session-123',
+			appId: 'app-123',
+		},
+	})
+	expect(parsed.homeConnectorId ?? null).toBeNull()
+	expect(parsed.remoteConnectors ?? null).toBeNull()
 })

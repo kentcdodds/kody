@@ -126,6 +126,26 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   `packages/home-connector` service when it opens the outbound WebSocket session
   to the worker. When unset, the worker rejects home connector registration and
   the internal home MCP bridge cannot route `home` capabilities.
+
+### Remote connector secrets (Worker)
+
+See `packages/worker/src/env-schema.ts` and
+`packages/worker/src/remote-connector/resolve-remote-connector-secret.ts`.
+
+- `REMOTE_CONNECTOR_SECRETS` — optional Worker **secret** (JSON string) whose
+  value is a JSON object mapping **`"kind:instanceId"`** keys (trimmed, kind
+  lowercased) to **shared secret strings** for **`connector.hello`**. When a key
+  is present, it overrides per-connector lookup before any kind-specific
+  fallback. At Worker boot, invalid JSON or malformed keys fail env validation
+  with a clear error. At runtime, if the value is a plain string in a test
+  harness, malformed JSON is logged and ignored for map lookup only.
+- For **`kind: home`**, if a key is missing in the map, the worker still falls
+  back to **`HOME_CONNECTOR_SHARED_SECRET`**. Non-`home` kinds have **no**
+  legacy fallback; they must appear in the map (or hello is rejected).
+
+Authoring guide for outbound WebSocket services:
+[`architecture/remote-connectors.md`](./architecture/remote-connectors.md).
+
 - `HOME_CONNECTOR_*` — when you start the full local stack with `npm run dev`,
   any `HOME_CONNECTOR_`-prefixed variable is forwarded to the child connector
   process with the prefix removed. For example, `HOME_CONNECTOR_MOCKS=false`

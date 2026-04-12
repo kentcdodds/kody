@@ -3,6 +3,10 @@ import {
 	type MessageExtraInfo,
 } from '@modelcontextprotocol/sdk/types.js'
 import { type Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import {
+	connectorIngressPath,
+	connectorSessionKey,
+} from '#worker/remote-connector/connector-session-key.ts'
 import { type HomeConnectorJsonRpcResponse } from './types.ts'
 
 export class HomeConnectorClientTransport implements Transport {
@@ -15,16 +19,21 @@ export class HomeConnectorClientTransport implements Transport {
 	) => void
 
 	private readonly input: {
-		connectorId: string
+		kind: string
+		instanceId: string
 		baseUrl: string
 	}
 
-	constructor(input: { connectorId: string; baseUrl: string }) {
-		this.input = input
+	constructor(input: { kind?: string; instanceId: string; baseUrl: string }) {
+		this.input = {
+			kind: input.kind ?? 'home',
+			instanceId: input.instanceId,
+			baseUrl: input.baseUrl,
+		}
 	}
 
 	async start(): Promise<void> {
-		this.sessionId = this.input.connectorId
+		this.sessionId = connectorSessionKey(this.input.kind, this.input.instanceId)
 	}
 
 	async send(message: JSONRPCMessage): Promise<void> {
@@ -47,16 +56,14 @@ export class HomeConnectorClientTransport implements Transport {
 	private async forwardJsonRpc(
 		message: JSONRPCMessage,
 	): Promise<HomeConnectorJsonRpcResponse | null> {
-		const response = await fetch(
-			`${this.input.baseUrl}/home/connectors/${this.input.connectorId}/rpc/jsonrpc`,
-			{
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ message }),
+		const path = `${connectorIngressPath(this.input.kind, this.input.instanceId)}/rpc/jsonrpc`
+		const response = await fetch(`${this.input.baseUrl}${path}`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
 			},
-		)
+			body: JSON.stringify({ message }),
+		})
 		if (!response.ok) {
 			throw new Error(
 				`Home connector bridge request failed with ${response.status}.`,

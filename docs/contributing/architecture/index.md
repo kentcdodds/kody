@@ -19,6 +19,8 @@ is trying to become.
   Objects.
 - [Home Connector](./home-connector.md): local device adapters, Samsung token
   persistence, and connector-specific discovery/runtime behavior.
+- [Remote connectors](./remote-connectors.md): generic outbound WebSocket
+  protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
 - [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
   for securely reaching local-network systems through an outbound agent
   connection.

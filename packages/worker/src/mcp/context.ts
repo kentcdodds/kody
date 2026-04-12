@@ -5,6 +5,7 @@ import {
 	type McpStorageContext,
 	type McpUserContext,
 } from '@kody-internal/shared/chat.ts'
+import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 
 export type McpServerProps = McpCallerContext
 
@@ -12,12 +13,14 @@ export function createMcpCallerContext(input: {
 	baseUrl: string
 	user?: McpUserContext | null
 	homeConnectorId?: string | null
+	remoteConnectors?: Array<RemoteConnectorRef> | null
 	storageContext?: McpStorageContext | null
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
 		user: input.user ?? null,
 		homeConnectorId: input.homeConnectorId ?? null,
+		remoteConnectors: input.remoteConnectors ?? null,
 		storageContext: input.storageContext ?? null,
 	}
 }

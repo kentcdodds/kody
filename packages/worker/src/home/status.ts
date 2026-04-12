@@ -1,8 +1,10 @@
-import { createHomeMcpClient } from './client.ts'
+import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
+import { createRemoteConnectorMcpClient } from './client.ts'
 import { type HomeConnectorSnapshot } from './types.ts'
 
 export type HomeConnectorStatus = {
 	state: 'connected' | 'disconnected' | 'unavailable' | 'error'
+	connectorKind: string
 	connectorId: string | null
 	connected: boolean
 	connectedAt: string | null
@@ -12,12 +14,25 @@ export type HomeConnectorStatus = {
 	error: string | null
 }
 
+function connectorLabel(kind: string, connectorId: string) {
+	const k = kind.trim().toLowerCase()
+	if (k === 'home') {
+		return `home connector "${connectorId}"`
+	}
+	return `${k} connector "${connectorId}"`
+}
+
 function createConnectedStatus(
 	snapshot: HomeConnectorSnapshot,
+	kind: string,
 ): HomeConnectorStatus {
+	const resolvedKind =
+		(snapshot.connectorKind ?? kind).trim().toLowerCase() || 'home'
 	const toolCount = snapshot.tools.length
+	const label = connectorLabel(resolvedKind, snapshot.connectorId)
 	return {
 		state: 'connected',
+		connectorKind: resolvedKind,
 		connectorId: snapshot.connectorId,
 		connected: true,
 		connectedAt: snapshot.connectedAt,
@@ -25,21 +40,26 @@ function createConnectedStatus(
 		toolCount,
 		message:
 			toolCount > 0
-				? `The home connector "${snapshot.connectorId}" is connected and exposing ${toolCount} tool${toolCount === 1 ? '' : 's'}.`
-				: `The home connector "${snapshot.connectorId}" is connected, but it has not exposed any tools yet.`,
+				? `The ${label} is connected and exposing ${toolCount} tool${toolCount === 1 ? '' : 's'}.`
+				: `The ${label} is connected, but it has not exposed any tools yet.`,
 		error: null,
 	}
 }
 
-function createDisconnectedStatus(connectorId: string): HomeConnectorStatus {
+function createDisconnectedStatus(
+	ref: RemoteConnectorRef,
+): HomeConnectorStatus {
+	const k = ref.kind.trim().toLowerCase()
+	const label = connectorLabel(k, ref.instanceId)
 	return {
 		state: 'disconnected',
-		connectorId,
+		connectorKind: k,
+		connectorId: ref.instanceId,
 		connected: false,
 		connectedAt: null,
 		lastSeenAt: null,
 		toolCount: 0,
-		message: `The home connector "${connectorId}" is not currently connected.`,
+		message: `The ${label} is not currently connected.`,
 		error: null,
 	}
 }
@@ -47,6 +67,7 @@ function createDisconnectedStatus(connectorId: string): HomeConnectorStatus {
 function createUnavailableStatus(): HomeConnectorStatus {
 	return {
 		state: 'unavailable',
+		connectorKind: 'home',
 		connectorId: null,
 		connected: false,
 		connectedAt: null,
@@ -58,18 +79,21 @@ function createUnavailableStatus(): HomeConnectorStatus {
 }
 
 function createErrorStatus(
-	connectorId: string,
+	ref: RemoteConnectorRef,
 	error: unknown,
 ): HomeConnectorStatus {
 	const message = error instanceof Error ? error.message : String(error)
+	const k = ref.kind.trim().toLowerCase()
+	const label = connectorLabel(k, ref.instanceId)
 	return {
 		state: 'error',
-		connectorId,
+		connectorKind: k,
+		connectorId: ref.instanceId,
 		connected: false,
 		connectedAt: null,
 		lastSeenAt: null,
 		toolCount: 0,
-		message: `Kody could not determine the home connector status for "${connectorId}".`,
+		message: `Kody could not determine the status for the ${label}.`,
 		error: message,
 	}
 }
@@ -77,16 +101,29 @@ function createErrorStatus(
 export function formatHomeConnectorUnavailableMessage(
 	status: HomeConnectorStatus,
 ) {
+	return formatRemoteConnectorUnavailableMessage(status)
+}
+
+export function formatRemoteConnectorUnavailableMessage(
+	status: HomeConnectorStatus,
+) {
+	const isHome = status.connectorKind === 'home'
 	switch (status.state) {
 		case 'connected':
 			if (status.toolCount > 0) {
 				return status.message
 			}
-			return `${status.message} Home capabilities cannot be searched or used until the connector exposes tools.`
+			return isHome
+				? `${status.message} Home capabilities cannot be searched or used until the connector exposes tools.`
+				: `${status.message} Capabilities from this connector cannot be searched or used until it exposes tools.`
 		case 'disconnected':
-			return `${status.message} Kody cannot search or use home capabilities until it reconnects. Ask the user to start or reconnect the home connector and then try again.`
+			return isHome
+				? `${status.message} Kody cannot search or use home capabilities until it reconnects. Ask the user to start or reconnect the home connector and then try again.`
+				: `${status.message} Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.`
 		case 'unavailable':
-			return `${status.message} Kody cannot search or use home capabilities from this session.`
+			return isHome
+				? `${status.message} Kody cannot search or use home capabilities from this session.`
+				: `${status.message} Kody cannot use this connector from this session.`
 		case 'error':
 			return status.error
 				? `${status.message} Underlying error: ${status.error}`
@@ -94,9 +131,25 @@ export function formatHomeConnectorUnavailableMessage(
 		default: {
 			const exhaustiveState: never = status.state
 			throw new Error(
-				`Unhandled home connector status state: ${exhaustiveState}`,
+				`Unhandled remote connector status state: ${exhaustiveState}`,
 			)
 		}
+	}
+}
+
+export async function getRemoteConnectorStatus(
+	env: Env,
+	ref: RemoteConnectorRef,
+): Promise<HomeConnectorStatus> {
+	try {
+		const client = createRemoteConnectorMcpClient(env, ref.kind, ref.instanceId)
+		const snapshot = await client.getSnapshot()
+		if (!snapshot) {
+			return createDisconnectedStatus(ref)
+		}
+		return createConnectedStatus(snapshot, ref.kind)
+	} catch (error) {
+		return createErrorStatus(ref, error)
 	}
 }
 
@@ -108,13 +161,8 @@ export async function getHomeConnectorStatus(
 		return createUnavailableStatus()
 	}
 
-	try {
-		const snapshot = await createHomeMcpClient(env, connectorId).getSnapshot()
-		if (!snapshot) {
-			return createDisconnectedStatus(connectorId)
-		}
-		return createConnectedStatus(snapshot)
-	} catch (error) {
-		return createErrorStatus(connectorId, error)
-	}
+	return getRemoteConnectorStatus(env, {
+		kind: 'home',
+		instanceId: connectorId,
+	})
 }

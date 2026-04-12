@@ -47,6 +47,12 @@ To merge extra domains later (e.g. plugins), the seam is:
 `buildCapabilityRegistry([...builtinDomains, ...extraDomains])` with real
 `Capability` handlers (typical Workers model: snapshot at deploy).
 
+**Remote connectors:** at runtime, `getCapabilityRegistryForContext` also merges
+domains synthesized from outbound WebSocket connectors (see
+[`architecture/remote-connectors.md`](./architecture/remote-connectors.md)).
+Those domains are driven by MCP **`remoteConnectors`** / **`homeConnectorId`**
+rather than by editing `builtinDomains` in-repo.
+
 `defineCapability()` in
 `packages/worker/src/mcp/capabilities/define-capability.ts` is still what
 normalizes Zod → JSON Schema and wraps handlers with logging; domain helpers
