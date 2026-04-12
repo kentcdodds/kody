@@ -179,13 +179,22 @@ class SchedulerDOBase extends DurableObject<Env> {
 		}
 		await this.persistCallerContext(payload.callerContext)
 		const existing = await this.requireStoredJob(jobId)
-		const schedule = payload.body.schedule
+		const hasScheduleUpdate = payload.body.schedule !== undefined
+		const hasTimezoneUpdate = payload.body.timezone !== undefined
+		const schedule = hasScheduleUpdate
 			? normalizeScheduledJobSchedule(payload.body.schedule)
 			: existing.schedule
 		const timezone =
 			payload.body.timezone === null
 				? normalizeSchedulerTimezone(null)
 				: normalizeSchedulerTimezone(payload.body.timezone ?? existing.timezone)
+		const nextRunAt =
+			hasScheduleUpdate || hasTimezoneUpdate
+				? computeNextRunAt({
+						schedule,
+						timezone,
+					})
+				: existing.nextRunAt
 		const updated: ScheduledJob = {
 			...existing,
 			name:
@@ -203,10 +212,7 @@ class SchedulerDOBase extends DurableObject<Env> {
 			schedule,
 			timezone,
 			enabled: payload.body.enabled ?? existing.enabled,
-			nextRunAt: computeNextRunAt({
-				schedule,
-				timezone,
-			}),
+			nextRunAt,
 		}
 		await this.ctx.storage.put(getJobStorageKey(jobId), updated)
 		await this.syncAlarm()
