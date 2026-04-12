@@ -4,6 +4,7 @@ import { ChatAgent } from './chat-agent.ts'
 import { HomeConnectorSession } from './home/session.ts'
 import { HomeMCP } from './home/mcp.ts'
 import { MCP } from './mcp/index.ts'
+import { SchedulerDO } from './scheduler/scheduler-do.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
@@ -38,7 +39,14 @@ import {
 	parseConnectorRoutePath,
 } from './remote-connector/connector-session-key.ts'
 
-export { ChatAgent, CodemodeFetchGateway, HomeConnectorSession, HomeMCP, MCP }
+export {
+	ChatAgent,
+	CodemodeFetchGateway,
+	HomeConnectorSession,
+	HomeMCP,
+	MCP,
+	SchedulerDO,
+}
 
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
 

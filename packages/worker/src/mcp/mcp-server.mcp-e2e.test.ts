@@ -160,6 +160,141 @@ test('mcp server saves skills and run_skill works', async () => {
 	expect(runStructured?.result?.result).toEqual({ ok: true })
 })
 
+test('mcp server manages scheduled codemode jobs', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const createResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.scheduler_upsert({
+					name: 'daily-summary',
+					code: 'async () => ({ ran: true })',
+					schedule: { type: 'cron', expression: '0 7 * * *' },
+					timezone: 'America/New_York',
+				})
+			}`,
+		},
+	})
+	const createStructured = (createResult as CallToolResult).structuredContent as
+		| { result?: { id?: string; timezone?: string; scheduleSummary?: string } }
+		| undefined
+	const jobId = createStructured?.result?.id
+	expect(typeof jobId).toBe('string')
+	expect(createStructured?.result?.timezone).toBe('America/New_York')
+	expect(createStructured?.result?.scheduleSummary).toContain(
+		'America/New_York',
+	)
+
+	const listResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.scheduler_list({})
+			}`,
+		},
+	})
+	const listStructured = (listResult as CallToolResult).structuredContent as
+		| {
+				result?: Array<{
+					id?: string
+					nextRunAt?: string
+					scheduleSummary?: string
+				}>
+		  }
+		| undefined
+	const listedJob = listStructured?.result?.find((job) => job.id === jobId)
+	expect(listedJob?.nextRunAt).toMatch(/Z$/)
+	expect(listedJob?.scheduleSummary).toContain('cron')
+
+	const runNowResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async (params) => {
+				return await codemode.scheduler_run_now({ id: params.jobId })
+			}`,
+			params: { jobId },
+		},
+	})
+	const runNowStructured = (runNowResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					job?: { lastRunStatus?: string; lastRunAt?: string }
+					execution?: { ok?: boolean; result?: { ran?: boolean } }
+				}
+		  }
+		| undefined
+	expect(runNowStructured?.result?.execution?.ok).toBe(true)
+	expect(runNowStructured?.result?.execution?.result).toEqual({ ran: true })
+	expect(runNowStructured?.result?.job?.lastRunStatus).toBe('success')
+	expect(runNowStructured?.result?.job?.lastRunAt).toMatch(/Z$/)
+
+	const futureRunAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+	const updateResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async (params) => {
+				return await codemode.scheduler_upsert({
+					id: params.jobId,
+					enabled: false,
+					schedule: { type: 'once', runAt: params.futureRunAt },
+				})
+			}`,
+			params: { jobId, futureRunAt },
+		},
+	})
+	const updateStructured = (updateResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					enabled?: boolean
+					nextRunAt?: string
+					schedule?: { type?: string; runAt?: string }
+				}
+		  }
+		| undefined
+	expect(updateStructured?.result?.enabled).toBe(false)
+	expect(updateStructured?.result?.schedule).toEqual({
+		type: 'once',
+		runAt: futureRunAt,
+	})
+	expect(updateStructured?.result?.nextRunAt).toBe(futureRunAt)
+
+	const getResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async (params) => {
+				return await codemode.scheduler_get({ id: params.jobId })
+			}`,
+			params: { jobId },
+		},
+	})
+	const getStructured = (getResult as CallToolResult).structuredContent as
+		| { result?: { id?: string; enabled?: boolean; scheduleSummary?: string } }
+		| undefined
+	expect(getStructured?.result?.id).toBe(jobId)
+	expect(getStructured?.result?.enabled).toBe(false)
+	expect(getStructured?.result?.scheduleSummary).toContain('Runs once at')
+
+	const deleteResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async (params) => {
+				return await codemode.scheduler_delete({ id: params.jobId })
+			}`,
+			params: { jobId },
+		},
+	})
+	const deleteStructured = (deleteResult as CallToolResult).structuredContent as
+		| { result?: { id?: string; deleted?: boolean } }
+		| undefined
+	expect(deleteStructured?.result).toEqual({
+		id: jobId,
+		deleted: true,
+	})
+})
+
 test('mcp server ui_save_app hidden flag and search listing', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
@@ -295,13 +430,14 @@ test('mcp memory verify upsert and delete', async () => {
 	const softDeleteResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
+			code: `async (params) => {
 				return await codemode.meta_memory_delete({
-					memory_id: ${JSON.stringify(memoryId)},
+					memory_id: params.memoryId,
 					verified_by_agent: true,
 					verification_reference: 'verify-delete-1',
 				})
 			}`,
+			params: { memoryId },
 		},
 	})
 	const softDeleteStructured = (softDeleteResult as CallToolResult)
@@ -313,11 +449,12 @@ test('mcp memory verify upsert and delete', async () => {
 	const getDeletedResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
+			code: `async (params) => {
 				return await codemode.meta_memory_get({
-					memory_id: ${JSON.stringify(memoryId)},
+					memory_id: params.memoryId,
 				})
 			}`,
+			params: { memoryId },
 		},
 	})
 	const getDeletedStructured = (getDeletedResult as CallToolResult)

@@ -79,6 +79,17 @@ async function createDatabase(password: string) {
 	} as unknown as D1Database
 }
 
+function mockSchedulerDoNamespace(): DurableObjectNamespace {
+	return {
+		idFromName() {
+			return { toString: () => 'scheduler-do-test-id' } as DurableObjectId
+		},
+		get() {
+			return {} as DurableObjectStub
+		},
+	} as unknown as DurableObjectNamespace
+}
+
 function createEnv(
 	helpers: OAuthHelpers,
 	appDb?: D1Database,
@@ -89,6 +100,7 @@ function createEnv(
 		OAUTH_PROVIDER: helpers,
 		APP_DB: resolvedDb,
 		COOKIE_SECRET: cookieSecretValue,
+		SCHEDULER_DO: mockSchedulerDoNamespace(),
 	} as unknown as Env
 }
 
