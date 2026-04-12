@@ -31,7 +31,7 @@ export function assertValidCronExpression(expression: string) {
 			'Cron expressions must use standard 5-field syntax: minute hour day-of-month month day-of-week.',
 		)
 	}
-	return trimmed
+	return fields.join(' ')
 }
 
 export function parseOnceRunAt(runAt: string) {
