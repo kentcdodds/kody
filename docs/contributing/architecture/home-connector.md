@@ -17,7 +17,7 @@ The connector currently exposes these local-device families:
   channels
 - Venstar WiFi thermostat status and control over the local REST API
 
-Both surfaces are registered as MCP tools inside the connector and then exposed
+All surfaces are registered as MCP tools inside the connector and then exposed
 to the Worker through the existing outbound WebSocket session to
 `HomeConnectorSession`.
 

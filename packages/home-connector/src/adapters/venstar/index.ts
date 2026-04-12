@@ -85,6 +85,29 @@ function buildInfoSummary(info: VenstarInfoResponse) {
 	}
 }
 
+function buildOfflineSummary(message: string) {
+	return {
+		mode: null,
+		state: null,
+		fan: null,
+		spacetemp: null,
+		heattemp: null,
+		cooltemp: null,
+		humidity: null,
+		schedule: null,
+		away: null,
+		setpointdelta: null,
+		units: null,
+		status: 'offline',
+		message,
+	}
+}
+
+type VenstarInfoSummary = ReturnType<typeof buildInfoSummary>
+type VenstarStatusSummary =
+	| VenstarInfoSummary
+	| (ReturnType<typeof buildOfflineSummary> & { status: 'offline' })
+
 export function createVenstarAdapter(input: { config: HomeConnectorConfig }) {
 	const { config } = input
 
@@ -92,18 +115,34 @@ export function createVenstarAdapter(input: { config: HomeConnectorConfig }) {
 		listThermostats() {
 			return config.venstarThermostats
 		},
-		async listThermostatsWithStatus() {
-			const results = await Promise.all(
+		async listThermostatsWithStatus(): Promise<
+			Array<
+				(typeof config.venstarThermostats)[number] & {
+					info: VenstarInfoResponse | null
+					summary: VenstarStatusSummary
+				}
+			>
+		> {
+			return await Promise.all(
 				config.venstarThermostats.map(async (thermostat) => {
-					const info = await fetchVenstarInfo(thermostat)
-					return {
-						...thermostat,
-						info,
-						summary: buildInfoSummary(info),
+					try {
+						const info = await fetchVenstarInfo(thermostat)
+						return {
+							...thermostat,
+							info,
+							summary: buildInfoSummary(info),
+						}
+					} catch (error) {
+						const message =
+							error instanceof Error ? error.message : String(error)
+						return {
+							...thermostat,
+							info: null,
+							summary: buildOfflineSummary(message),
+						}
 					}
 				}),
 			)
-			return results
 		},
 		async getInfo(identifier?: string) {
 			const thermostat = resolveThermostat(config, identifier)
@@ -138,11 +177,12 @@ export function createVenstarAdapter(input: { config: HomeConnectorConfig }) {
 			const info = await fetchVenstarInfo(thermostat)
 			ensureAutoModeSetpoints(payload, info)
 			const response = await postVenstarControl(thermostat, payload)
+			const updatedInfo = await fetchVenstarInfo(thermostat)
 			return {
 				thermostat,
 				request: payload,
 				response,
-				info: buildInfoSummary(info),
+				info: buildInfoSummary(updatedInfo),
 			}
 		},
 		async setSettings(

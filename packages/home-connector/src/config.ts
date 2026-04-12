@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
@@ -65,8 +65,11 @@ function normalizeVenstarThermostatConfig(
 ): VenstarThermostatConfig | null {
 	if (!entry || typeof entry !== 'object') return null
 	const record = entry as Record<string, unknown>
-	const name = String(record['name'] ?? '').trim()
-	const ip = String(record['ip'] ?? '').trim()
+	if (typeof record['name'] !== 'string' || typeof record['ip'] !== 'string') {
+		return null
+	}
+	const name = record['name'].trim()
+	const ip = record['ip'].trim()
 	if (!name || !ip) return null
 	return { name, ip }
 }
@@ -103,12 +106,21 @@ function resolveVenstarThermostats(dataPath: string) {
 		return parseVenstarThermostats(envValue, 'VENSTAR_THERMOSTATS')
 	}
 	const filePath = path.join(dataPath, 'venstar-thermostats.json')
-	if (!existsSync(filePath)) {
-		return []
+	try {
+		const fileValue = readFileSync(filePath, 'utf8').trim()
+		if (!fileValue) return []
+		return parseVenstarThermostats(fileValue, filePath)
+	} catch (error) {
+		if (
+			error &&
+			typeof error === 'object' &&
+			'code' in error &&
+			(error as { code?: string }).code === 'ENOENT'
+		) {
+			return []
+		}
+		throw error
 	}
-	const fileValue = readFileSync(filePath, 'utf8').trim()
-	if (!fileValue) return []
-	return parseVenstarThermostats(fileValue, filePath)
 }
 
 export function loadHomeConnectorConfig(): HomeConnectorConfig {

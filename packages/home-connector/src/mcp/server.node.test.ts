@@ -102,9 +102,6 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
 		).toBe(true)
 		expect(
-			tools.some((tool) => tool.name === 'venstar_list_thermostats'),
-		).toBe(true)
-		expect(
 			tools.some((tool) => tool.name === 'venstar_get_thermostat_info'),
 		).toBe(true)
 		expect(

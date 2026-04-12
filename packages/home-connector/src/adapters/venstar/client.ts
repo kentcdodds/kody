@@ -9,6 +9,8 @@ import {
 	type VenstarSettingsResponse,
 } from './types.ts'
 
+const venstarRequestTimeoutMs = 5_000
+
 function buildThermostatBaseUrl(thermostat: VenstarThermostatConfig) {
 	const normalized = thermostat.ip.trim().replace(/^https?:\/\//i, '')
 	return `http://${normalized.replace(/\/$/, '')}`
@@ -37,10 +39,42 @@ async function parseJsonResponse<T>(response: Response, label: string) {
 	return (await response.json()) as T
 }
 
+async function fetchWithTimeout(input: {
+	url: string
+	init?: RequestInit
+	label: string
+}) {
+	let response: Response
+	const controller = new AbortController()
+	const timeout = setTimeout(() => controller.abort(), venstarRequestTimeoutMs)
+	try {
+		response = await fetch(input.url, {
+			...input.init,
+			signal: controller.signal,
+		})
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			(error.name === 'TimeoutError' || error.name === 'AbortError')
+		) {
+			throw new Error(
+				`${input.label} timed out after ${venstarRequestTimeoutMs}ms.`,
+			)
+		}
+		throw error
+	} finally {
+		clearTimeout(timeout)
+	}
+	return response
+}
+
 export async function fetchVenstarInfo(
 	thermostat: VenstarThermostatConfig,
 ): Promise<VenstarInfoResponse> {
-	const response = await fetch(buildThermostatUrl(thermostat, '/query/info'))
+	const response = await fetchWithTimeout({
+		url: buildThermostatUrl(thermostat, '/query/info'),
+		label: 'Venstar info request',
+	})
 	return await parseJsonResponse<VenstarInfoResponse>(
 		response,
 		'Venstar info request',
@@ -50,7 +84,10 @@ export async function fetchVenstarInfo(
 export async function fetchVenstarSensors(
 	thermostat: VenstarThermostatConfig,
 ): Promise<VenstarSensorsResponse> {
-	const response = await fetch(buildThermostatUrl(thermostat, '/query/sensors'))
+	const response = await fetchWithTimeout({
+		url: buildThermostatUrl(thermostat, '/query/sensors'),
+		label: 'Venstar sensors request',
+	})
 	return await parseJsonResponse<VenstarSensorsResponse>(
 		response,
 		'Venstar sensors request',
@@ -60,9 +97,10 @@ export async function fetchVenstarSensors(
 export async function fetchVenstarRuntimes(
 	thermostat: VenstarThermostatConfig,
 ): Promise<VenstarRuntimesResponse> {
-	const response = await fetch(
-		buildThermostatUrl(thermostat, '/query/runtimes'),
-	)
+	const response = await fetchWithTimeout({
+		url: buildThermostatUrl(thermostat, '/query/runtimes'),
+		label: 'Venstar runtimes request',
+	})
 	return await parseJsonResponse<VenstarRuntimesResponse>(
 		response,
 		'Venstar runtimes request',
@@ -74,16 +112,20 @@ export async function postVenstarControl(
 	payload: VenstarControlRequest,
 ): Promise<VenstarControlResponse> {
 	const mappedPayload: Record<string, string | number | boolean> = {}
-	for (const [key, value] of Object.entries(payload)) {
-		if (value == null) continue
-		mappedPayload[key] = value as string | number | boolean
-	}
-	const response = await fetch(buildThermostatUrl(thermostat, '/control'), {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
+	if (payload.mode != null) mappedPayload['mode'] = payload.mode
+	if (payload.fan != null) mappedPayload['fan'] = payload.fan
+	if (payload.heattemp != null) mappedPayload['heattemp'] = payload.heattemp
+	if (payload.cooltemp != null) mappedPayload['cooltemp'] = payload.cooltemp
+	const response = await fetchWithTimeout({
+		url: buildThermostatUrl(thermostat, '/control'),
+		label: 'Venstar control request',
+		init: {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: createFormBody(mappedPayload),
 		},
-		body: createFormBody(mappedPayload),
 	})
 	return await parseJsonResponse<VenstarControlResponse>(
 		response,
@@ -101,12 +143,16 @@ export async function postVenstarSettings(
 	if (payload.tempunits != null) mappedPayload['tempunits'] = payload.tempunits
 	if (payload.humidify != null) mappedPayload['hum'] = payload.humidify
 	if (payload.dehumidify != null) mappedPayload['dehum'] = payload.dehumidify
-	const response = await fetch(buildThermostatUrl(thermostat, '/settings'), {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
+	const response = await fetchWithTimeout({
+		url: buildThermostatUrl(thermostat, '/settings'),
+		label: 'Venstar settings request',
+		init: {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: createFormBody(mappedPayload),
 		},
-		body: createFormBody(mappedPayload),
 	})
 	return await parseJsonResponse<VenstarSettingsResponse>(
 		response,

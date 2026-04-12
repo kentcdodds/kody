@@ -3,7 +3,7 @@ import { mswHandlers } from './msw-handlers.ts'
 import { resetMockLutronSystem } from '../src/adapters/lutron/mock-driver.ts'
 import { resetMockSonosState } from '../src/adapters/sonos/mock-driver.ts'
 import { resetMockSamsungDevices } from '../src/adapters/samsung-tv/mock-driver.ts'
-import { resetMockVenstarState } from '../src/adapters/venstar/mock-driver.ts'
+import { resetMockVenstarState } from './venstar.ts'
 
 let installedServer: ReturnType<typeof setupServer> | null = null
 

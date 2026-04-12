@@ -202,6 +202,13 @@ export function createHomeConnectorMcpServer(input: {
 		) as Record<string, unknown>
 	}
 
+	function hasAnyValue(
+		value: Record<string, unknown>,
+		keys: Array<string>,
+	): boolean {
+		return keys.some((key) => value[key] !== undefined)
+	}
+
 	function structuredTextResult(text: string, structuredContent: unknown) {
 		return {
 			content: [
@@ -356,13 +363,27 @@ export function createHomeConnectorMcpServer(input: {
 			description:
 				'POST /control to set Venstar mode, fan, heattemp, and cooltemp. In auto mode, cooltemp must exceed heattemp + setpointdelta.',
 			inputSchema: z.toJSONSchema(
-				z.object({
-					thermostat: z.string().min(1).optional(),
-					mode: z.number().int().min(0).max(3).optional(),
-					fan: z.number().int().min(0).max(1).optional(),
-					heattemp: z.number().int().optional(),
-					cooltemp: z.number().int().optional(),
-				}),
+				z
+					.object({
+						thermostat: z.string().min(1).optional(),
+						mode: z.number().int().min(0).max(3).optional(),
+						fan: z.number().int().min(0).max(1).optional(),
+						heattemp: z.number().int().optional(),
+						cooltemp: z.number().int().optional(),
+					})
+					.refine(
+						(value) =>
+							hasAnyValue(value, [
+								'mode',
+								'fan',
+								'heattemp',
+								'cooltemp',
+							]),
+						{
+							message:
+								'Provide at least one control change (mode, fan, heattemp, or cooltemp).',
+						},
+					),
 			) as Record<string, unknown>,
 		},
 		async (args) => {
@@ -395,14 +416,29 @@ export function createHomeConnectorMcpServer(input: {
 			description:
 				'POST /settings to update away mode, schedule enablement, humidity setpoints, and temperature units for a Venstar thermostat.',
 			inputSchema: z.toJSONSchema(
-				z.object({
-					thermostat: z.string().min(1).optional(),
-					away: z.number().int().min(0).max(1).optional(),
-					schedule: z.number().int().min(0).max(1).optional(),
-					humidify: z.number().int().optional(),
-					dehumidify: z.number().int().optional(),
-					tempunits: z.number().int().min(0).max(1).optional(),
-				}),
+				z
+					.object({
+						thermostat: z.string().min(1).optional(),
+						away: z.number().int().min(0).max(1).optional(),
+						schedule: z.number().int().min(0).max(1).optional(),
+						humidify: z.number().int().optional(),
+						dehumidify: z.number().int().optional(),
+						tempunits: z.number().int().min(0).max(1).optional(),
+					})
+					.refine(
+						(value) =>
+							hasAnyValue(value, [
+								'away',
+								'schedule',
+								'humidify',
+								'dehumidify',
+								'tempunits',
+							]),
+						{
+							message:
+								'Provide at least one settings change (away, schedule, humidify, dehumidify, or tempunits).',
+						},
+					),
 			) as Record<string, unknown>,
 		},
 		async (args) => {

@@ -67,21 +67,21 @@ const mockThermostats: Record<string, MockThermostatState> = {}
 function createDefaultThermostatState(): MockThermostatState {
 	return {
 		info: { ...defaultInfo },
-		sensors: defaultSensors,
-		runtimes: defaultRuntimes,
+		sensors: structuredClone(defaultSensors),
+		runtimes: structuredClone(defaultRuntimes),
 	}
 }
 
 export function resetMockVenstarState() {
 	mockThermostats['192.168.10.40'] = {
 		info: { ...defaultInfo, spacetemp: 71 },
-		sensors: defaultSensors,
-		runtimes: defaultRuntimes,
+		sensors: structuredClone(defaultSensors),
+		runtimes: structuredClone(defaultRuntimes),
 	}
 	mockThermostats['192.168.10.41'] = {
 		info: { ...defaultInfo, spacetemp: 74, humidity: 38 },
-		sensors: defaultSensors,
-		runtimes: defaultRuntimes,
+		sensors: structuredClone(defaultSensors),
+		runtimes: structuredClone(defaultRuntimes),
 	}
 }
 

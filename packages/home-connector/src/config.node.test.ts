@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
@@ -176,23 +176,27 @@ test('VENSTAR_THERMOSTATS config parses valid entries', () => {
 test('venstar thermostats load from data path file', () => {
 	const directory = mkdtempSync(path.join(tmpdir(), 'kody-venstar-'))
 	const filePath = path.join(directory, 'venstar-thermostats.json')
-	writeFileSync(
-		filePath,
-		JSON.stringify([
+	try {
+		writeFileSync(
+			filePath,
+			JSON.stringify([
+				{ name: 'Office', ip: '192.168.1.12' },
+				{ name: 'Guest', ip: '192.168.1.13' },
+			]),
+		)
+		using _env = createTemporaryEnv({
+			HOME_CONNECTOR_DATA_PATH: directory,
+			VENSTAR_THERMOSTATS: undefined,
+			HOME_CONNECTOR_ID: 'default',
+			WORKER_BASE_URL: 'http://localhost:3742',
+		})
+
+		const config = loadHomeConnectorConfig()
+		expect(config.venstarThermostats).toEqual([
 			{ name: 'Office', ip: '192.168.1.12' },
 			{ name: 'Guest', ip: '192.168.1.13' },
-		]),
-	)
-	using _env = createTemporaryEnv({
-		HOME_CONNECTOR_DATA_PATH: directory,
-		VENSTAR_THERMOSTATS: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.venstarThermostats).toEqual([
-		{ name: 'Office', ip: '192.168.1.12' },
-		{ name: 'Guest', ip: '192.168.1.13' },
-	])
+		])
+	} finally {
+		rmSync(directory, { recursive: true, force: true })
+	}
 })
