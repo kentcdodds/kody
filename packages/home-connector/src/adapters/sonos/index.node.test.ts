@@ -12,6 +12,7 @@ function createConfig() {
 		'home-connector-secret-home-connector-secret'
 	process.env.WORKER_BASE_URL = 'http://localhost:3742'
 	process.env.SONOS_DISCOVERY_URL = 'http://sonos.mock.local/discovery'
+	process.env.VENSTAR_THERMOSTATS = '[]'
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
 	return loadHomeConnectorConfig()
 }

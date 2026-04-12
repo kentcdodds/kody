@@ -16,6 +16,7 @@ function createConfig() {
 		'home-connector-secret-home-connector-secret'
 	process.env.WORKER_BASE_URL = 'http://localhost:3742'
 	process.env.ROKU_DISCOVERY_URL = 'http://roku.mock.local/discovery'
+	process.env.VENSTAR_THERMOSTATS = '[]'
 	return loadHomeConnectorConfig()
 }
 

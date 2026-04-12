@@ -181,6 +181,10 @@ Authoring guide for outbound WebSocket services:
   value such as `http://lutron.mock.local/discovery`. Live discovery now uses a
   single pure-JS mDNS path that works across macOS and Linux/container
   environments.
+- `VENSTAR_THERMOSTATS` — optional connector env var. JSON array of Venstar
+  thermostat configs (`[{ "name": "...", "ip": "192.168.1.10" }]`). When unset,
+  the connector falls back to `<HOME_CONNECTOR_DATA_PATH>/venstar-thermostats.json`
+  if it exists; otherwise an empty array is used.
 - `HOME_CONNECTOR_DATA_PATH` — optional connector env var. Directory used for
   connector-owned local data files. When `HOME_CONNECTOR_DB_PATH` is unset, the
   Samsung TV and Lutron integrations store their local SQLite database at
