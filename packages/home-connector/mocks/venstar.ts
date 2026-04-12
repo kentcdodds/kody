@@ -10,8 +10,6 @@ import {
 
 export { resetMockVenstarState }
 
-resetMockVenstarState()
-
 function resolveIpFromUrl(url: URL) {
 	return url.hostname
 }
