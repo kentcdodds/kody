@@ -1,12 +1,16 @@
 /**
  * Stable Durable Object id segment for a remote connector WebSocket session.
  * For kind "home" and instanceId X, returns X unchanged so existing deployments
- * keep the same DO id as before (idFromName(connectorId) only).
+ * keep the same DO id as before (idFromName(connectorId) only). Home instance
+ * ids containing ":" are prefixed to avoid collisions with non-home keys.
  */
 export function connectorSessionKey(kind: string, instanceId: string): string {
 	const k = kind.trim().toLowerCase()
 	const id = instanceId.trim()
 	if (k === 'home') {
+		if (id.includes(':')) {
+			return `home:${id}`
+		}
 		return id
 	}
 	return `${k}:${id}`

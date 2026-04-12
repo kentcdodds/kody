@@ -10,6 +10,12 @@ test('connectorSessionKey preserves home instance id', () => {
 	expect(connectorSessionKey('HOME', 'living-room')).toBe('living-room')
 })
 
+test('connectorSessionKey prefixes home ids containing colons', () => {
+	expect(connectorSessionKey('home', 'other:default')).toBe(
+		'home:other:default',
+	)
+})
+
 test('connectorSessionKey prefixes non-home kinds', () => {
 	expect(connectorSessionKey('custom', 'alpha')).toBe('custom:alpha')
 })

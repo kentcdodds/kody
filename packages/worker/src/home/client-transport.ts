@@ -3,7 +3,10 @@ import {
 	type MessageExtraInfo,
 } from '@modelcontextprotocol/sdk/types.js'
 import { type Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { connectorIngressPath } from '#worker/remote-connector/connector-session-key.ts'
+import {
+	connectorIngressPath,
+	connectorSessionKey,
+} from '#worker/remote-connector/connector-session-key.ts'
 import { type HomeConnectorJsonRpcResponse } from './types.ts'
 
 export class HomeConnectorClientTransport implements Transport {
@@ -30,7 +33,10 @@ export class HomeConnectorClientTransport implements Transport {
 	}
 
 	async start(): Promise<void> {
-		this.sessionId = `${this.input.kind}:${this.input.instanceId}`
+		this.sessionId = connectorSessionKey(
+			this.input.kind,
+			this.input.instanceId,
+		)
 	}
 
 	async send(message: JSONRPCMessage): Promise<void> {
