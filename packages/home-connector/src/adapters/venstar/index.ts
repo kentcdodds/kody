@@ -20,6 +20,10 @@ function normalizeThermostatName(value: string) {
 	return value.trim().toLowerCase()
 }
 
+function normalizeThermostatIp(value: string) {
+	return value.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '')
+}
+
 function resolveThermostat(config: HomeConnectorConfig, identifier?: string) {
 	const thermostats = config.venstarThermostats
 	if (thermostats.length === 0) {
@@ -34,14 +38,14 @@ function resolveThermostat(config: HomeConnectorConfig, identifier?: string) {
 		)
 	}
 	const normalized = normalizeThermostatName(identifier)
+	const normalizedIp = normalizeThermostatIp(identifier)
 	const match =
 		thermostats.find(
 			(entry) => normalizeThermostatName(entry.name) === normalized,
 		) ??
 		thermostats.find((entry) => entry.ip.trim() === identifier.trim()) ??
 		thermostats.find(
-			(entry) =>
-				entry.ip.trim() === identifier.trim().replace(/^https?:\/\//i, ''),
+			(entry) => normalizeThermostatIp(entry.ip) === normalizedIp,
 		)
 	if (!match) {
 		throw new Error(`Venstar thermostat "${identifier}" was not found.`)
