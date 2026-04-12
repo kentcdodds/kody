@@ -245,7 +245,12 @@ class SchedulerDOBase extends DurableObject<Env> {
 			lastRunStatus: execution.ok ? 'success' : 'error',
 			lastRunError: execution.ok ? undefined : execution.error,
 		}
-		await this.ctx.storage.put(getJobStorageKey(jobId), updated)
+		if (existing.schedule.type === 'once') {
+			await this.ctx.storage.delete(getJobStorageKey(jobId))
+			await this.syncAlarm()
+		} else {
+			await this.ctx.storage.put(getJobStorageKey(jobId), updated)
+		}
 		return {
 			job: toScheduledJobView(updated),
 			execution,
