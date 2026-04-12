@@ -36,12 +36,11 @@ inline saved skill code into **execute** when that fits the workflow.
 
 Kody can persist scheduled codemode jobs per user:
 
-- **`scheduler_create`** — create a one-shot or recurring cron job
+- **`scheduler_upsert`** — create a new one-shot or recurring cron job, or
+  update an existing one when you pass **`id`**
 - **`scheduler_list`** — list jobs with next run time, last run status, and a
   human-readable schedule summary
 - **`scheduler_get`** — inspect one job
-- **`scheduler_update`** — change code, params, schedule, timezone, name, or
-  enabled state
 - **`scheduler_delete`** — remove a job
 - **`scheduler_run_now`** — trigger a job immediately without changing its normal
   schedule

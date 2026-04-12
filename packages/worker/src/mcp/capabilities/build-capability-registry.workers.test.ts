@@ -83,10 +83,9 @@ test('builtin capability domains include scheduler', async () => {
 	expect(
 		schedulerDomain?.capabilities.map((capability) => capability.name),
 	).toEqual([
-		'scheduler_create',
+		'scheduler_upsert',
 		'scheduler_list',
 		'scheduler_get',
-		'scheduler_update',
 		'scheduler_delete',
 		'scheduler_run_now',
 	])

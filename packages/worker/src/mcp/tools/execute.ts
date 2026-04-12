@@ -38,8 +38,8 @@ builtin capability). Discover names with \`search\`; for one capability’s
 Saved skills: prefer \`meta_run_skill({ name, params })\`, or \`meta_get_skill\`
 then paste code here.
 
-Scheduled jobs: use \`scheduler_create\`, \`scheduler_list\`, \`scheduler_get\`,
-\`scheduler_update\`, \`scheduler_delete\`, and \`scheduler_run_now\` to manage
+Scheduled jobs: use \`scheduler_upsert\`, \`scheduler_list\`, \`scheduler_get\`,
+\`scheduler_delete\`, and \`scheduler_run_now\` to manage
 one-shot or recurring codemode executions for the signed-in user.
 
 Sandbox surface:

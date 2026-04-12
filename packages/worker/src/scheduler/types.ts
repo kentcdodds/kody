@@ -68,3 +68,13 @@ export type SchedulerUpdateInput = {
 	timezone?: string | null
 	enabled?: boolean
 }
+
+export type SchedulerUpsertInput = {
+	id?: string
+	name?: string
+	code?: string
+	params?: Record<string, unknown> | null
+	schedule?: ScheduledJobSchedule
+	timezone?: string | null
+	enabled?: boolean
+}

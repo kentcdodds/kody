@@ -169,7 +169,7 @@ test('mcp server manages scheduled codemode jobs', async () => {
 		name: 'execute',
 		arguments: {
 			code: `async () => {
-				return await codemode.scheduler_create({
+				return await codemode.scheduler_upsert({
 					name: 'daily-summary',
 					code: 'async () => ({ ran: true })',
 					schedule: { type: 'cron', expression: '0 7 * * *' },
@@ -212,9 +212,10 @@ test('mcp server manages scheduled codemode jobs', async () => {
 	const runNowResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
-				return await codemode.scheduler_run_now({ id: ${JSON.stringify(jobId)} })
+			code: `async (params) => {
+				return await codemode.scheduler_run_now({ id: params.jobId })
 			}`,
+			params: { jobId },
 		},
 	})
 	const runNowStructured = (runNowResult as CallToolResult).structuredContent as
@@ -234,13 +235,14 @@ test('mcp server manages scheduled codemode jobs', async () => {
 	const updateResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
-				return await codemode.scheduler_update({
-					id: ${JSON.stringify(jobId)},
+			code: `async (params) => {
+				return await codemode.scheduler_upsert({
+					id: params.jobId,
 					enabled: false,
-					schedule: { type: 'once', runAt: ${JSON.stringify(futureRunAt)} },
+					schedule: { type: 'once', runAt: params.futureRunAt },
 				})
 			}`,
+			params: { jobId, futureRunAt },
 		},
 	})
 	const updateStructured = (updateResult as CallToolResult).structuredContent as
@@ -262,9 +264,10 @@ test('mcp server manages scheduled codemode jobs', async () => {
 	const getResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
-				return await codemode.scheduler_get({ id: ${JSON.stringify(jobId)} })
+			code: `async (params) => {
+				return await codemode.scheduler_get({ id: params.jobId })
 			}`,
+			params: { jobId },
 		},
 	})
 	const getStructured = (getResult as CallToolResult).structuredContent as
@@ -277,9 +280,10 @@ test('mcp server manages scheduled codemode jobs', async () => {
 	const deleteResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
-				return await codemode.scheduler_delete({ id: ${JSON.stringify(jobId)} })
+			code: `async (params) => {
+				return await codemode.scheduler_delete({ id: params.jobId })
 			}`,
+			params: { jobId },
 		},
 	})
 	const deleteStructured = (deleteResult as CallToolResult).structuredContent as
