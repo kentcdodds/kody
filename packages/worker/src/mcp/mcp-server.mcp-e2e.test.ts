@@ -425,13 +425,14 @@ test('mcp memory verify upsert and delete', async () => {
 	const softDeleteResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
+			code: `async (params) => {
 				return await codemode.meta_memory_delete({
-					memory_id: ${JSON.stringify(memoryId)},
+					memory_id: params.memoryId,
 					verified_by_agent: true,
 					verification_reference: 'verify-delete-1',
 				})
 			}`,
+			params: { memoryId },
 		},
 	})
 	const softDeleteStructured = (softDeleteResult as CallToolResult)
@@ -443,11 +444,12 @@ test('mcp memory verify upsert and delete', async () => {
 	const getDeletedResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
+			code: `async (params) => {
 				return await codemode.meta_memory_get({
-					memory_id: ${JSON.stringify(memoryId)},
+					memory_id: params.memoryId,
 				})
 			}`,
+			params: { memoryId },
 		},
 	})
 	const getDeletedStructured = (getDeletedResult as CallToolResult)
