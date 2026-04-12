@@ -8,6 +8,8 @@ import {
 	resetMockVenstarState,
 } from '../src/adapters/venstar/mock-driver.ts'
 
+export { resetMockVenstarState }
+
 resetMockVenstarState()
 
 function resolveIpFromUrl(url: URL) {

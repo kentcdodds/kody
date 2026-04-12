@@ -105,7 +105,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			tools.some((tool) => tool.name === 'venstar_list_thermostats'),
 		).toBe(true)
 		expect(
-			tools.some((tool) => tool.name === 'venstar_list_thermostats'),
+			tools.some((tool) => tool.name === 'venstar_get_thermostat_info'),
 		).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'venstar_control_thermostat'),
@@ -144,11 +144,6 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		const sonosPlayers = await mcp.callTool('sonos_list_players')
 		expect(sonosPlayers.structuredContent).toMatchObject({
 			players: expect.any(Array),
-		})
-
-		const venstarThermostats = await mcp.callTool('venstar_list_thermostats')
-		expect(venstarThermostats.structuredContent).toMatchObject({
-			thermostats: expect.any(Array),
 		})
 
 		const venstarThermostats = await mcp.callTool('venstar_list_thermostats')
