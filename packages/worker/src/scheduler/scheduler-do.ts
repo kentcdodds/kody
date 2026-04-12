@@ -21,11 +21,14 @@ import {
 	type SchedulerUpdateInput,
 } from './types.ts'
 
-const callerContextStorageKey = 'scheduler:caller-context'
 const jobStorageKeyPrefix = 'job:'
 
 function getJobStorageKey(jobId: string) {
 	return `${jobStorageKeyPrefix}${jobId}`
+}
+
+function getJobCallerContextStorageKey(jobId: string) {
+	return `job-context:${jobId}`
 }
 
 function requirePersistableSchedulerCallerContext(
@@ -119,17 +122,18 @@ class SchedulerDOBase extends DurableObject<Env> {
 			await this.syncAlarm()
 			return
 		}
-		const callerContext = await this.getPersistedCallerContext()
 		const result = await processDueJobs({
 			jobs: dueJobs,
 			now,
-			executeJob: async (job) => this.executeJob(job, callerContext),
+			executeJob: async (job) =>
+				this.executeJob(job, await this.getPersistedCallerContext(job.id)),
 		})
 		for (const job of result.saveJobs) {
 			await this.ctx.storage.put(getJobStorageKey(job.id), job)
 		}
 		for (const jobId of result.deleteJobIds) {
 			await this.ctx.storage.delete(getJobStorageKey(jobId))
+			await this.ctx.storage.delete(getJobCallerContextStorageKey(jobId))
 		}
 		await this.syncAlarm()
 	}
@@ -137,7 +141,6 @@ class SchedulerDOBase extends DurableObject<Env> {
 	private async handleCreateJob(request: Request) {
 		const payload =
 			await this.parseMutationRequest<SchedulerCreateInput>(request)
-		await this.persistCallerContext(payload.callerContext)
 		const timezone = normalizeSchedulerTimezone(payload.body.timezone)
 		const schedule = normalizeScheduledJobSchedule(payload.body.schedule)
 		const now = new Date().toISOString()
@@ -156,6 +159,7 @@ class SchedulerDOBase extends DurableObject<Env> {
 			}),
 		}
 		await this.ctx.storage.put(getJobStorageKey(job.id), job)
+		await this.persistCallerContext(job.id, payload.callerContext)
 		await this.syncAlarm()
 		return toScheduledJobView(job)
 	}
@@ -177,19 +181,23 @@ class SchedulerDOBase extends DurableObject<Env> {
 				'Scheduler job id in the body must match the request path.',
 			)
 		}
-		await this.persistCallerContext(payload.callerContext)
 		const existing = await this.requireStoredJob(jobId)
-		const hasScheduleUpdate = payload.body.schedule !== undefined
-		const hasTimezoneUpdate = payload.body.timezone !== undefined
-		const schedule = hasScheduleUpdate
-			? normalizeScheduledJobSchedule(payload.body.schedule)
+		const nextSchedule = payload.body.schedule
+		const nextTimezone = payload.body.timezone
+		const nextEnabled = payload.body.enabled ?? existing.enabled
+		const schedule = nextSchedule !== undefined
+			? normalizeScheduledJobSchedule(nextSchedule)
 			: existing.schedule
 		const timezone =
-			payload.body.timezone === null
+			nextTimezone === null
 				? normalizeSchedulerTimezone(null)
-				: normalizeSchedulerTimezone(payload.body.timezone ?? existing.timezone)
+				: normalizeSchedulerTimezone(nextTimezone ?? existing.timezone)
+		const shouldRecomputeNextRunAt =
+			JSON.stringify(schedule) !== JSON.stringify(existing.schedule) ||
+			timezone !== existing.timezone ||
+			(existing.enabled === false && nextEnabled === true)
 		const nextRunAt =
-			hasScheduleUpdate || hasTimezoneUpdate
+			shouldRecomputeNextRunAt
 				? computeNextRunAt({
 						schedule,
 						timezone,
@@ -211,10 +219,11 @@ class SchedulerDOBase extends DurableObject<Env> {
 					: normalizeOptionalParams(payload.body.params),
 			schedule,
 			timezone,
-			enabled: payload.body.enabled ?? existing.enabled,
+			enabled: nextEnabled,
 			nextRunAt,
 		}
 		await this.ctx.storage.put(getJobStorageKey(jobId), updated)
+		await this.persistCallerContext(jobId, payload.callerContext)
 		await this.syncAlarm()
 		return toScheduledJobView(updated)
 	}
@@ -222,6 +231,7 @@ class SchedulerDOBase extends DurableObject<Env> {
 	private async handleDeleteJob(jobId: string) {
 		await this.requireStoredJob(jobId)
 		await this.ctx.storage.delete(getJobStorageKey(jobId))
+		await this.ctx.storage.delete(getJobCallerContextStorageKey(jobId))
 		await this.syncAlarm()
 		return {
 			id: jobId,
@@ -236,7 +246,6 @@ class SchedulerDOBase extends DurableObject<Env> {
 				'Scheduler job id in the body must match the request path.',
 			)
 		}
-		await this.persistCallerContext(payload.callerContext)
 		const existing = await this.requireStoredJob(jobId)
 		const execution = await this.executeJob(existing, payload.callerContext)
 		const updated: ScheduledJob = {
@@ -247,9 +256,11 @@ class SchedulerDOBase extends DurableObject<Env> {
 		}
 		if (existing.schedule.type === 'once') {
 			await this.ctx.storage.delete(getJobStorageKey(jobId))
+			await this.ctx.storage.delete(getJobCallerContextStorageKey(jobId))
 			await this.syncAlarm()
 		} else {
 			await this.ctx.storage.put(getJobStorageKey(jobId), updated)
+			await this.persistCallerContext(jobId, payload.callerContext)
 		}
 		return {
 			job: toScheduledJobView(updated),
@@ -269,13 +280,22 @@ class SchedulerDOBase extends DurableObject<Env> {
 				logs: [],
 			}
 		}
-		const execution = await runCodemodeWithRegistry(
-			this.env,
-			callerContext,
-			job.code,
-			job.params,
-			workerExports,
-		)
+		let execution
+		try {
+			execution = await runCodemodeWithRegistry(
+				this.env,
+				callerContext,
+				job.code,
+				job.params,
+				workerExports,
+			)
+		} catch (error) {
+			return {
+				ok: false,
+				error: formatSchedulerError(error),
+				logs: [],
+			}
+		}
 		if (execution.error) {
 			return {
 				ok: false,
@@ -308,15 +328,19 @@ class SchedulerDOBase extends DurableObject<Env> {
 	}
 
 	private async persistCallerContext(
+		jobId: string,
 		callerContext: PersistedSchedulerCallerContext,
 	) {
-		await this.ctx.storage.put(callerContextStorageKey, callerContext)
+		await this.ctx.storage.put(
+			getJobCallerContextStorageKey(jobId),
+			callerContext,
+		)
 	}
 
-	private async getPersistedCallerContext() {
+	private async getPersistedCallerContext(jobId: string) {
 		return (
 			(await this.ctx.storage.get<PersistedSchedulerCallerContext>(
-				callerContextStorageKey,
+				getJobCallerContextStorageKey(jobId),
 			)) ?? null
 		)
 	}

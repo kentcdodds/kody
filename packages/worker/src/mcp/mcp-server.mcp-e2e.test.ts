@@ -230,6 +230,7 @@ test('mcp server manages scheduled codemode jobs', async () => {
 	expect(runNowStructured?.result?.job?.lastRunStatus).toBe('success')
 	expect(runNowStructured?.result?.job?.lastRunAt).toMatch(/Z$/)
 
+	const futureRunAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 	const updateResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
@@ -237,7 +238,7 @@ test('mcp server manages scheduled codemode jobs', async () => {
 				return await codemode.scheduler_update({
 					id: ${JSON.stringify(jobId)},
 					enabled: false,
-					schedule: { type: 'once', runAt: '2026-04-18T15:00:00Z' },
+					schedule: { type: 'once', runAt: ${JSON.stringify(futureRunAt)} },
 				})
 			}`,
 		},
@@ -254,9 +255,9 @@ test('mcp server manages scheduled codemode jobs', async () => {
 	expect(updateStructured?.result?.enabled).toBe(false)
 	expect(updateStructured?.result?.schedule).toEqual({
 		type: 'once',
-		runAt: '2026-04-18T15:00:00.000Z',
+		runAt: futureRunAt,
 	})
-	expect(updateStructured?.result?.nextRunAt).toBe('2026-04-18T15:00:00.000Z')
+	expect(updateStructured?.result?.nextRunAt).toBe(futureRunAt)
 
 	const getResult = await mcpClient.client.callTool({
 		name: 'execute',
