@@ -20,10 +20,7 @@ function normalizeThermostatName(value: string) {
 	return value.trim().toLowerCase()
 }
 
-function resolveThermostat(
-	config: HomeConnectorConfig,
-	identifier?: string,
-) {
+function resolveThermostat(config: HomeConnectorConfig, identifier?: string) {
 	const thermostats = config.venstarThermostats
 	if (thermostats.length === 0) {
 		throw new Error(
@@ -43,7 +40,8 @@ function resolveThermostat(
 		) ??
 		thermostats.find((entry) => entry.ip.trim() === identifier.trim()) ??
 		thermostats.find(
-			(entry) => entry.ip.trim() === identifier.trim().replace(/^https?:\/\//i, ''),
+			(entry) =>
+				entry.ip.trim() === identifier.trim().replace(/^https?:\/\//i, ''),
 		)
 	if (!match) {
 		throw new Error(`Venstar thermostat "${identifier}" was not found.`)
@@ -55,7 +53,8 @@ function ensureAutoModeSetpoints(
 	request: VenstarControlRequest,
 	info: VenstarInfoResponse,
 ) {
-	if (request.mode !== autoModeValue) return
+	const mode = request.mode ?? info.mode
+	if (mode !== autoModeValue) return
 	const heat = request.heattemp ?? info.heattemp
 	const cool = request.cooltemp ?? info.cooltemp
 	const delta = info.setpointdelta ?? 0
@@ -112,7 +111,7 @@ export function createVenstarAdapter(input: { config: HomeConnectorConfig }) {
 			}
 		},
 		async getSensors(identifier?: string): Promise<{
-			thermostat: typeof config.venstarThermostats[number]
+			thermostat: (typeof config.venstarThermostats)[number]
 			sensors: VenstarSensorsResponse
 		}> {
 			const thermostat = resolveThermostat(config, identifier)
@@ -120,7 +119,7 @@ export function createVenstarAdapter(input: { config: HomeConnectorConfig }) {
 			return { thermostat, sensors }
 		},
 		async getRuntimes(identifier?: string): Promise<{
-			thermostat: typeof config.venstarThermostats[number]
+			thermostat: (typeof config.venstarThermostats)[number]
 			runtimes: VenstarRuntimesResponse
 		}> {
 			const thermostat = resolveThermostat(config, identifier)

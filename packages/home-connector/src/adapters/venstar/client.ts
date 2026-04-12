@@ -40,9 +40,7 @@ async function parseJsonResponse<T>(response: Response, label: string) {
 export async function fetchVenstarInfo(
 	thermostat: VenstarThermostatConfig,
 ): Promise<VenstarInfoResponse> {
-	const response = await fetch(
-		buildThermostatUrl(thermostat, '/query/info'),
-	)
+	const response = await fetch(buildThermostatUrl(thermostat, '/query/info'))
 	return await parseJsonResponse<VenstarInfoResponse>(
 		response,
 		'Venstar info request',
@@ -52,9 +50,7 @@ export async function fetchVenstarInfo(
 export async function fetchVenstarSensors(
 	thermostat: VenstarThermostatConfig,
 ): Promise<VenstarSensorsResponse> {
-	const response = await fetch(
-		buildThermostatUrl(thermostat, '/query/sensors'),
-	)
+	const response = await fetch(buildThermostatUrl(thermostat, '/query/sensors'))
 	return await parseJsonResponse<VenstarSensorsResponse>(
 		response,
 		'Venstar sensors request',
@@ -77,16 +73,18 @@ export async function postVenstarControl(
 	thermostat: VenstarThermostatConfig,
 	payload: VenstarControlRequest,
 ): Promise<VenstarControlResponse> {
-	const response = await fetch(
-		buildThermostatUrl(thermostat, '/control'),
-		{
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: createFormBody(payload),
+	const mappedPayload: Record<string, string | number | boolean> = {}
+	for (const [key, value] of Object.entries(payload)) {
+		if (value == null) continue
+		mappedPayload[key] = value as string | number | boolean
+	}
+	const response = await fetch(buildThermostatUrl(thermostat, '/control'), {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded',
 		},
-	)
+		body: createFormBody(mappedPayload),
+	})
 	return await parseJsonResponse<VenstarControlResponse>(
 		response,
 		'Venstar control request',
@@ -103,16 +101,13 @@ export async function postVenstarSettings(
 	if (payload.tempunits != null) mappedPayload['tempunits'] = payload.tempunits
 	if (payload.humidify != null) mappedPayload['hum'] = payload.humidify
 	if (payload.dehumidify != null) mappedPayload['dehum'] = payload.dehumidify
-	const response = await fetch(
-		buildThermostatUrl(thermostat, '/settings'),
-		{
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: createFormBody(mappedPayload),
+	const response = await fetch(buildThermostatUrl(thermostat, '/settings'), {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded',
 		},
-	)
+		body: createFormBody(mappedPayload),
+	})
 	return await parseJsonResponse<VenstarSettingsResponse>(
 		response,
 		'Venstar settings request',

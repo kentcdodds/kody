@@ -214,21 +214,6 @@ export function createHomeConnectorMcpServer(input: {
 		}
 	}
 
-	function venstarScopedSchema(
-		shape: Record<string, z.ZodTypeAny> = {},
-	): Record<string, unknown> {
-		return z.toJSONSchema(
-			z.object({
-				thermostat: z
-					.string()
-					.min(1)
-					.optional()
-					.describe('Venstar thermostat name or IP.'),
-				...shape,
-			}),
-		) as Record<string, unknown>
-	}
-
 	registerTool(
 		{
 			name: 'venstar_list_thermostats',
