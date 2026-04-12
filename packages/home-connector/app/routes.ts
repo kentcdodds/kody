@@ -11,4 +11,6 @@ export const routes = route({
 	sonosSetup: '/sonos/setup',
 	samsungTvStatus: '/samsung-tv/status',
 	samsungTvSetup: '/samsung-tv/setup',
+	bondStatus: '/bond/status',
+	bondSetup: '/bond/setup',
 })

@@ -85,6 +85,18 @@ test('live connector defaults Samsung TV discovery to mDNS', () => {
 	expect(config.samsungTvDiscoveryUrl).toBe('mdns://_samsungmsf._tcp.local')
 })
 
+test('live connector defaults Bond discovery to mDNS', () => {
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		BOND_DISCOVERY_URL: undefined,
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.bondDiscoveryUrl).toBe('mdns://_bond._tcp.local')
+})
+
 test('live connector defaults Lutron discovery to mDNS', () => {
 	using _env = createTemporaryEnv({
 		MOCKS: 'false',

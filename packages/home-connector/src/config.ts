@@ -11,6 +11,7 @@ export type HomeConnectorConfig = {
 	samsungTvDiscoveryUrl: string
 	lutronDiscoveryUrl: string
 	sonosDiscoveryUrl: string
+	bondDiscoveryUrl: string
 	dataPath: string
 	dbPath: string
 	port: number
@@ -79,6 +80,8 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		sonosDiscoveryUrl:
 			process.env.SONOS_DISCOVERY_URL?.trim() ||
 			'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
+		bondDiscoveryUrl:
+			process.env.BOND_DISCOVERY_URL?.trim() || 'mdns://_bond._tcp.local',
 		dataPath,
 		dbPath: resolveHomeConnectorDbPath(dataPath),
 		port: Number.isFinite(port) ? port : 4040,

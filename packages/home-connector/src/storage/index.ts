@@ -104,6 +104,35 @@ function initializeSchema(db: SqliteDatabase) {
 				ON DELETE CASCADE
 		);
 
+		CREATE TABLE IF NOT EXISTS bond_bridges (
+			connector_id TEXT NOT NULL,
+			bridge_id TEXT NOT NULL,
+			bondid TEXT NOT NULL,
+			instance_name TEXT NOT NULL,
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL DEFAULT 80,
+			model TEXT,
+			fw_ver TEXT,
+			raw_discovery_json TEXT,
+			adopted INTEGER NOT NULL DEFAULT 0,
+			last_seen_at TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, bridge_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS bond_tokens (
+			connector_id TEXT NOT NULL,
+			bridge_id TEXT NOT NULL,
+			token TEXT NOT NULL,
+			last_verified_at TEXT,
+			last_auth_error TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, bridge_id),
+			FOREIGN KEY (connector_id, bridge_id)
+				REFERENCES bond_bridges(connector_id, bridge_id)
+				ON DELETE CASCADE
+		);
+
 		CREATE TABLE IF NOT EXISTS sonos_players (
 			connector_id TEXT NOT NULL,
 			player_id TEXT NOT NULL,

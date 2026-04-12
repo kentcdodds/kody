@@ -300,6 +300,41 @@ const styles = `
 	.muted {
 		color: var(--color-text-muted);
 	}
+
+	.field-stack {
+		display: grid;
+		gap: var(--spacing-md);
+		max-width: 36rem;
+	}
+
+	.field-stack label {
+		display: grid;
+		gap: var(--spacing-xs);
+		font-weight: var(--font-weight-semibold);
+	}
+
+	.field-stack input,
+	.field-stack select,
+	.field-stack textarea {
+		font: inherit;
+		padding: var(--spacing-sm) var(--spacing-md);
+		border-radius: var(--radius-md);
+		border: 1px solid var(--color-border);
+		background: var(--color-background);
+		color: var(--color-text);
+	}
+
+	.field-stack textarea {
+		min-height: 5rem;
+		resize: vertical;
+	}
+
+	.form-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--spacing-sm);
+		align-items: center;
+	}
 `
 
 export function RootLayout(input: {

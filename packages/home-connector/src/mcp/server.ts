@@ -3,11 +3,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
+import { type createBondAdapter } from '../adapters/bond/index.ts'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
 import { type createSonosAdapter } from '../adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
+import { registerBondHomeConnectorTools } from './register-bond-tools.ts'
 import { type HomeConnectorState } from '../state.ts'
 
 export type HomeConnectorToolDescriptor = {
@@ -56,6 +58,7 @@ export function createHomeConnectorMcpServer(input: {
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>
 	lutron: ReturnType<typeof createLutronAdapter>
 	sonos: ReturnType<typeof createSonosAdapter>
+	bond: ReturnType<typeof createBondAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
@@ -64,6 +67,7 @@ export function createHomeConnectorMcpServer(input: {
 	const samsungTv = input.samsungTv
 	const lutron = input.lutron
 	const sonos = input.sonos
+	const bond = input.bond
 
 	const server = new McpServer(
 		{
@@ -72,7 +76,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools currently support Roku, Samsung TV, Lutron, and Sonos discovery, control, and diagnostics.',
+				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, and Bond (Olibra Bond Bridge / shades, groups, and RF devices) discovery, control, and diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
 		},
 	)
 
@@ -2209,6 +2213,12 @@ export function createHomeConnectorMcpServer(input: {
 			})
 		},
 	)
+
+	registerBondHomeConnectorTools({
+		registerTool,
+		bond,
+		config: input.config,
+	})
 
 	return {
 		server,

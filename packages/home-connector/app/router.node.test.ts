@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../mocks/test-server.ts'
+import { createBondAdapter } from '../src/adapters/bond/index.ts'
 import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
-import { createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
+import { createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { createAppState } from '../src/state.ts'
 import { createHomeConnectorStorage } from '../src/storage/index.ts'
@@ -19,6 +20,7 @@ function createConfig(): HomeConnectorConfig {
 		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
+		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
 		dataPath: '/tmp',
 		dbPath: ':memory:',
 		port: 4040,
@@ -47,6 +49,11 @@ function createAdapters(config: HomeConnectorConfig) {
 			state,
 			storage,
 		}),
+		bond: createBondAdapter({
+			config,
+			state,
+			storage,
+		}),
 	}
 }
 
@@ -54,7 +61,8 @@ installHomeConnectorMockServer()
 
 test('home route toggles worker snapshot link by connector id', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv, bond } =
+		createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
 	try {
@@ -64,6 +72,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 			lutron,
 			samsungTv,
 			sonos,
+			bond,
 		)
 		const responseWithConnector = await router.fetch('http://example.test/')
 		expect(responseWithConnector.status).toBe(200)
@@ -82,9 +91,10 @@ test('home route toggles worker snapshot link by connector id', async () => {
 	}
 })
 
-test('health route returns ok json', async () => {
+test('bond setup route renders token form', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv } = createAdapters(config)
+	const { state, storage, lutron, sonos, samsungTv, bond } =
+		createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -92,6 +102,30 @@ test('health route returns ok json', async () => {
 			lutron,
 			samsungTv,
 			sonos,
+			bond,
+		)
+		const response = await router.fetch('http://example.test/bond/setup')
+		expect(response.status).toBe(200)
+		const html = await response.text()
+		expect(html).toContain('Save pasted token')
+		expect(html).toContain('Retrieve token from bridge')
+	} finally {
+		storage.close()
+	}
+})
+
+test('health route returns ok json', async () => {
+	const config = createConfig()
+	const { state, storage, lutron, sonos, samsungTv, bond } =
+		createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
 		)
 		const response = await router.fetch('http://example.test/health')
 		expect(response.status).toBe(200)

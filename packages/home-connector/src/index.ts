@@ -1,3 +1,4 @@
+import { createBondAdapter } from './adapters/bond/index.ts'
 import { createLutronAdapter } from './adapters/lutron/index.ts'
 import { createSonosAdapter } from './adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from './adapters/samsung-tv/index.ts'
@@ -32,12 +33,18 @@ export function createHomeConnectorApp() {
 		state,
 		storage,
 	})
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
 		samsungTv,
 		lutron,
 		sonos,
+		bond,
 	})
 	const workerConnector = createWorkerConnector({
 		config,
@@ -52,6 +59,7 @@ export function createHomeConnectorApp() {
 		samsungTv,
 		lutron,
 		sonos,
+		bond,
 		mcp,
 		workerConnector,
 	}

@@ -5,6 +5,7 @@ process.env.LUTRON_DISCOVERY_URL ??= 'http://lutron.mock.local/discovery'
 process.env.SONOS_DISCOVERY_URL ??= 'http://sonos.mock.local/discovery'
 process.env.SAMSUNG_TV_DISCOVERY_URL ??=
 	'http://samsung-tv.mock.local/discovery'
+process.env.BOND_DISCOVERY_URL ??= 'http://bond.mock.local/discovery'
 
 await import('../src/sentry-init.ts')
 await import('./index.ts')

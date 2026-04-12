@@ -1,4 +1,5 @@
 import { http, passthrough, type RequestHandler } from 'msw'
+import { bondHandlers } from './bond.ts'
 import { lutronHandlers } from './lutron.ts'
 import { rokuHandlers } from './roku.ts'
 import { samsungTvHandlers } from './samsung-tv.ts'
@@ -14,6 +15,7 @@ const passthroughHandlers: Array<RequestHandler> = [
 
 export const mswHandlers: Array<RequestHandler> = [
 	...passthroughHandlers,
+	...bondHandlers,
 	...lutronHandlers,
 	...rokuHandlers,
 	...sonosHandlers,

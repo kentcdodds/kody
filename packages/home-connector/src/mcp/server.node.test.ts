@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
+import { createBondAdapter } from '../adapters/bond/index.ts'
 import { createLutronAdapter } from '../adapters/lutron/index.ts'
 import { createSonosAdapter } from '../adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
@@ -18,6 +19,7 @@ function createConfig() {
 	process.env.SONOS_DISCOVERY_URL = 'http://sonos.mock.local/discovery'
 	process.env.SAMSUNG_TV_DISCOVERY_URL =
 		'http://samsung-tv.mock.local/discovery'
+	process.env.BOND_DISCOVERY_URL = 'http://bond.mock.local/discovery'
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
 	return loadHomeConnectorConfig()
 }
@@ -43,15 +45,22 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		state,
 		storage,
 	})
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
 	await samsungTv.scan()
 	await lutron.scan()
 	await sonos.scan()
+	await bond.scan()
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
 		samsungTv,
 		lutron,
 		sonos,
+		bond,
 	})
 
 	try {
@@ -75,6 +84,23 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'sonos_search_local_library'),
 		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'bond_list_bridges')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'bond_authentication_guide'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'bond_prune_discovered_bridges'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'bond_list_groups')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
+		).toBe(true)
+		const bondAuthGuide = await mcp.callTool('bond_authentication_guide')
+		expect(bondAuthGuide.content[0]?.type).toBe('text')
+		expect(
+			String((bondAuthGuide.content[0] as { text?: string }).text),
+		).toContain('/bond/setup')
+
 		const lutronCredentialsTool = tools.find(
 			(tool) => tool.name === 'lutron_set_credentials',
 		)
@@ -104,6 +130,27 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(sonosPlayers.structuredContent).toMatchObject({
 			players: expect.any(Array),
 		})
+
+		await mcp.callTool('bond_adopt_bridge', { bridgeId: 'MOCKBOND1' })
+		bond.setToken('MOCKBOND1', 'mock-bond-token')
+		const bondDevices = await mcp.callTool('bond_list_devices', {
+			bridgeId: 'MOCKBOND1',
+		})
+		expect(bondDevices.structuredContent).toMatchObject({
+			devices: expect.any(Array),
+		})
+		const shadeMove = await mcp.callTool('bond_shade_set_position', {
+			bridgeId: 'MOCKBOND1',
+			deviceId: 'mockdev1',
+			position: 50,
+		})
+		expect(shadeMove.structuredContent).toMatchObject({
+			argument: 50,
+		})
+
+		await expect(
+			mcp.callTool('bond_release_bridge', { bridgeId: 'not-a-bridge' }),
+		).rejects.toThrow('not-a-bridge')
 	} finally {
 		storage.close()
 	}

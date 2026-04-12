@@ -10,11 +10,16 @@ import {
 	createSamsungTvStatusHandler,
 } from './handlers.ts'
 import {
+	createBondSetupHandler,
+	createBondStatusHandler,
+} from './bond-handlers.ts'
+import {
 	createSonosSetupHandler,
 	createSonosStatusHandler,
 } from './sonos-handlers.ts'
 import { routes } from './routes.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
+import { type createBondAdapter } from '../src/adapters/bond/index.ts'
 import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
@@ -26,6 +31,7 @@ export function createHomeConnectorRouter(
 	lutron: ReturnType<typeof createLutronAdapter>,
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
+	bond: ReturnType<typeof createBondAdapter>,
 ) {
 	const router = createRouter({
 		middleware: [],
@@ -33,7 +39,7 @@ export function createHomeConnectorRouter(
 
 	router.map(
 		routes.home,
-		createHomeDashboardHandler(state, lutron, samsungTv, sonos),
+		createHomeDashboardHandler(state, lutron, samsungTv, sonos, bond),
 	)
 	router.map(routes.health, createHealthHandler(state))
 	router.map(routes.lutronStatus, createLutronStatusHandler(state, lutron))
@@ -50,6 +56,8 @@ export function createHomeConnectorRouter(
 		routes.samsungTvSetup,
 		createSamsungTvSetupHandler(state, samsungTv),
 	)
+	router.map(routes.bondStatus, createBondStatusHandler(state, bond))
+	router.map(routes.bondSetup, createBondSetupHandler(state, bond))
 
 	return router
 }

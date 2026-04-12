@@ -5,6 +5,7 @@ import { RootLayout } from './root.ts'
 import { type routes } from './routes.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { type LutronDiscoveryDiagnostics } from '../src/adapters/lutron/types.ts'
+import { type createBondAdapter } from '../src/adapters/bond/index.ts'
 import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type HomeConnectorState } from '../src/state.ts'
@@ -26,6 +27,8 @@ function renderQuickLinks(state: HomeConnectorState) {
 		<li><a href="/sonos/setup">Sonos setup</a></li>
 		<li><a href="/samsung-tv/status">Samsung TV status</a></li>
 		<li><a href="/samsung-tv/setup">Samsung TV setup</a></li>
+		<li><a href="/bond/status">Bond status</a></li>
+		<li><a href="/bond/setup">Bond token setup</a></li>
 		<li><a href="/health">Health JSON</a></li>
 		${workerSnapshotUrl
 			? html`<li>
@@ -61,6 +64,7 @@ export function createHomeDashboardHandler(
 	lutron: ReturnType<typeof createLutronAdapter>,
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
+	bond: ReturnType<typeof createBondAdapter>,
 ) {
 	return {
 		middleware: [],
@@ -74,6 +78,7 @@ export function createHomeDashboardHandler(
 			const lutronStatus = lutron.getStatus()
 			const samsungStatus = samsungTv.getStatus()
 			const sonosStatus = sonos.getStatus()
+			const bondStatus = bond.getStatus()
 
 			return render(
 				RootLayout({
@@ -162,6 +167,20 @@ export function createHomeDashboardHandler(
 									{
 										label: 'Sonos audio input',
 										value: String(sonosStatus.audioInputSupportedCount),
+									},
+									{
+										label: 'Bond adopted',
+										value: String(bondStatus.adopted.length),
+									},
+									{
+										label: 'Bond discovered',
+										value: String(bondStatus.discovered.length),
+									},
+									{
+										label: 'Bond with token',
+										value: String(
+											bondStatus.bridges.filter((b) => b.hasStoredToken).length,
+										),
 									},
 									{
 										label: 'Mocks',
