@@ -83,7 +83,7 @@ function createCapabilityFromTool(input: {
 	const binding: RemoteToolCapabilityBinding = {
 		capabilityName,
 		kind: (snapshot.connectorKind ?? ref.kind).trim().toLowerCase(),
-		instanceId: snapshot.connectorId,
+		instanceId: ref.instanceId,
 		mcpToolName: tool.name,
 	}
 
@@ -210,21 +210,3 @@ export async function synthesizeRemoteToolDomain(
 	}
 }
 
-export type SynthesizedHomeDomain = SynthesizedRemoteConnectorDomain
-
-export async function synthesizeHomeDomain(
-	env: Env,
-	input: {
-		connectorId: string | null
-		baseUrl: string
-	},
-): Promise<SynthesizedHomeDomain | null> {
-	if (!input.connectorId) {
-		return null
-	}
-	const ref: RemoteConnectorRef = {
-		kind: 'home',
-		instanceId: input.connectorId,
-	}
-	return synthesizeRemoteToolDomain(env, ref, [ref])
-}
