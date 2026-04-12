@@ -199,9 +199,6 @@ jobs:
                 ;;
             esac
             echo "${secret_env_key}=$MOCK_API_TOKEN" >> "$OVERRIDES_FILE"
-            if [ "$service_key" = "CLOUDFLARE" ]; then
-              echo "CLOUDFLARE_ACCOUNT_ID=cf_account_mock_123" >> "$OVERRIDES_FILE"
-            fi
 
             mock_summary_line="- ${service}: ${mock_url} (\`${mock_worker_name}\`)"
             mock_comment_summary_line="- ${service}: [${mock_url}/__mocks](${mock_url}/__mocks?token=${MOCK_API_TOKEN}) (\`${mock_worker_name}\`)"

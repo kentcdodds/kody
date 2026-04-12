@@ -28,10 +28,12 @@ export function normalizeRemoteConnectorRefs(
 		context.remoteConnectors !== undefined &&
 		context.remoteConnectors !== null
 	) {
-		return context.remoteConnectors.map((ref) => ({
-			kind: normalizeKind(ref.kind),
-			instanceId: normalizeInstanceId(ref.instanceId),
-		}))
+		return context.remoteConnectors
+			.map((ref) => ({
+				kind: normalizeKind(ref.kind),
+				instanceId: normalizeInstanceId(ref.instanceId),
+			}))
+			.filter((ref) => ref.kind.length > 0 && ref.instanceId.length > 0)
 	}
 	const hid = context.homeConnectorId?.trim()
 	if (!hid) {

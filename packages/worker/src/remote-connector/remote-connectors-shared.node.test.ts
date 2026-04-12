@@ -24,3 +24,12 @@ test('normalizeRemoteConnectorRefs uses remoteConnectors when provided', () => {
 		{ kind: 'custom', instanceId: 'x' },
 	])
 })
+
+test('normalizeRemoteConnectorRefs empty array does not fall back to homeConnectorId', () => {
+	expect(
+		normalizeRemoteConnectorRefs({
+			homeConnectorId: 'living-room',
+			remoteConnectors: [],
+		}),
+	).toEqual([])
+})

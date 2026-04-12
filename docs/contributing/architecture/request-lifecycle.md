@@ -45,6 +45,7 @@ Requests are handled in this order:
      key `kind:instanceId` when `kind` is not `home`)
 
    See [Remote connectors](./remote-connectors.md).
+
 7. Internal chat agent endpoint:
    - `/chat-agent/:threadId...` (requires the app session cookie and routes to
      the per-thread chat Agent instance)

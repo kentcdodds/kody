@@ -33,10 +33,7 @@ export class HomeConnectorClientTransport implements Transport {
 	}
 
 	async start(): Promise<void> {
-		this.sessionId = connectorSessionKey(
-			this.input.kind,
-			this.input.instanceId,
-		)
+		this.sessionId = connectorSessionKey(this.input.kind, this.input.instanceId)
 	}
 
 	async send(message: JSONRPCMessage): Promise<void> {

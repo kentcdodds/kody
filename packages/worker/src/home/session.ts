@@ -226,13 +226,13 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 
 	private async handleHello(ws: WebSocket, message: HomeConnectorHelloMessage) {
 		const declaredKind = (message.connectorKind ?? 'home').trim().toLowerCase()
-		const instanceId = message.connectorId.trim()
-		const expectedSessionKey = connectorSessionKey(declaredKind, instanceId)
+		const canonicalInstanceId = message.connectorId.trim()
+		const expectedSessionKey = connectorSessionKey(
+			declaredKind,
+			canonicalInstanceId,
+		)
 		const ingressSessionKey = this.loadIngressSessionKey(ws)
-		if (
-			ingressSessionKey &&
-			ingressSessionKey !== expectedSessionKey
-		) {
+		if (ingressSessionKey && ingressSessionKey !== expectedSessionKey) {
 			Sentry.captureMessage(
 				'Remote connector session rejected hello (session key mismatch).',
 				{
@@ -242,7 +242,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 						worker_component: 'home-connector-session',
 					},
 					extra: {
-						connectorId: message.connectorId,
+						connectorId: canonicalInstanceId,
 						declaredKind,
 						ingressSessionKey,
 						expectedSessionKey,
@@ -261,7 +261,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 
 		const expectedSecret = resolveRemoteConnectorSharedSecret(
 			declaredKind,
-			instanceId,
+			canonicalInstanceId,
 			this.env,
 		)
 		if (!expectedSecret || message.sharedSecret !== expectedSecret) {
@@ -274,7 +274,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 						worker_component: 'home-connector-session',
 					},
 					extra: {
-						connectorId: message.connectorId,
+						connectorId: canonicalInstanceId,
 						declaredKind,
 						hasExpectedSecret: Boolean(expectedSecret),
 					},
@@ -292,7 +292,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 
 		const now = new Date().toISOString()
 		this.stateSnapshot.persisted = {
-			connectorId: message.connectorId,
+			connectorId: canonicalInstanceId,
 			connectorKind: declaredKind,
 			connectedAt: this.stateSnapshot.persisted.connectedAt ?? now,
 			lastSeenAt: now,
@@ -301,7 +301,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		ws.send(
 			stringifyHomeConnectorMessage({
 				type: 'server.ack',
-				connectorId: message.connectorId,
+				connectorId: canonicalInstanceId,
 			}),
 		)
 	}
@@ -381,7 +381,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		return response
 	}
 
-	private stashIngressSessionKey(ws: WebSocket, ingressSessionKey: string | null) {
+	private stashIngressSessionKey(
+		ws: WebSocket,
+		ingressSessionKey: string | null,
+	) {
 		this.ingressSessionKeys.set(ws, ingressSessionKey)
 		try {
 			ws.serializeAttachment(ingressSessionKey ?? '')

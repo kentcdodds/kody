@@ -1,5 +1,7 @@
 import {
 	array,
+	createSchema,
+	fail,
 	nullable,
 	number,
 	object,
@@ -7,7 +9,28 @@ import {
 	string,
 	type InferOutput,
 } from 'remix/data-schema'
-import { minLength } from 'remix/data-schema/checks'
+
+const remoteConnectorKindFieldSchema = createSchema<unknown, string>(
+	(value, context) => {
+		if (typeof value !== 'string') return fail('Expected string', context.path)
+		const trimmed = value.trim().toLowerCase()
+		if (!trimmed) {
+			return fail('remote connector kind must not be empty', context.path)
+		}
+		return { value: trimmed }
+	},
+)
+
+const remoteConnectorInstanceIdFieldSchema = createSchema<unknown, string>(
+	(value, context) => {
+		if (typeof value !== 'string') return fail('Expected string', context.path)
+		const trimmed = value.trim()
+		if (!trimmed) {
+			return fail('remote connector instanceId must not be empty', context.path)
+		}
+		return { value: trimmed }
+	},
+)
 
 export const aiModeValues = ['mock', 'remote'] as const
 export type AiMode = (typeof aiModeValues)[number]
@@ -24,8 +47,8 @@ export const mcpStorageContextSchema = object({
 })
 
 const remoteConnectorRefSchema = object({
-	kind: string().pipe(minLength(1)),
-	instanceId: string().pipe(minLength(1)),
+	kind: remoteConnectorKindFieldSchema,
+	instanceId: remoteConnectorInstanceIdFieldSchema,
 })
 
 export const mcpCallerContextSchema = object({

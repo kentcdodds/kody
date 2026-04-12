@@ -827,6 +827,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				...(trimmedPayload.homeConnectorStatus
 					? { homeConnectorStatus: trimmedPayload.homeConnectorStatus }
 					: {}),
+				...(trimmedPayload.remoteConnectorStatuses
+					? {
+							remoteConnectorStatuses: trimmedPayload.remoteConnectorStatuses,
+						}
+					: {}),
 				matches: toSlimStructuredMatches({
 					matches: trimmedPayload.matches,
 					baseUrl,

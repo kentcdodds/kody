@@ -1,10 +1,10 @@
 # Remote connectors
 
 A **remote connector** is any service that opens an **outbound WebSocket** to
-the Kody Worker and exposes **MCP-style tools** (`tools/list`, `tools/call`) over
-that socket. The Worker’s `HomeConnectorSession` Durable Object (binding name
-`HOME_CONNECTOR_SESSION`) holds one live session per **session key** and proxies
-HTTP `fetch` from Worker code to JSON-RPC on the socket.
+the Kody Worker and exposes **MCP-style tools** (`tools/list`, `tools/call`)
+over that socket. The Worker’s `HomeConnectorSession` Durable Object (binding
+name `HOME_CONNECTOR_SESSION`) holds one live session per **session key** and
+proxies HTTP `fetch` from Worker code to JSON-RPC on the socket.
 
 The first shipped connector is **`packages/home-connector`** (`kind: home`).
 Additional kinds use the same protocol and routing pattern described below.
@@ -33,7 +33,6 @@ All messages are **JSON objects** with a **`type`** field.
 ### Client → Worker (connector)
 
 1. **`connector.hello`** (required first logical message after open)
-
    - **`type`:** `"connector.hello"`
    - **`connectorId`:** string — instance id (for example `default`,
      `living-room`).
@@ -44,12 +43,10 @@ All messages are **JSON objects** with a **`type`** field.
      Lowercase values are normalized.
 
 2. **`connector.heartbeat`**
-
    - **`type`:** `"connector.heartbeat"`
    - Keeps `lastSeenAt` fresh in the session DO.
 
 3. **`connector.jsonrpc`**
-
    - **`type`:** `"connector.jsonrpc"`
    - **`message`:** a single JSON-RPC 2.0 object (request or response).
 
@@ -72,11 +69,11 @@ The Worker sends MCP-style requests over the WebSocket wrapped in
   normal MCP **`CallToolResult`**-compatible payload (content, structured
   content, `isError`, etc.).
 
-The connector should handle **`notifications/tools/list_changed`** from the
-Worker by re-listing tools if it implements dynamic registration; the reference
-implementation in `packages/home-connector` responds by sending a
-`notifications/tools/list_changed` **to** the Worker after `server.ack` so the
-session refreshes its tool snapshot.
+If the Worker forwards **`notifications/tools/list_changed`**, the connector
+should re-list tools when it supports dynamic registration. Separately, the
+reference implementation in `packages/home-connector` **proactively** sends
+`notifications/tools/list_changed` **to** the Worker right after
+**`server.ack`** so the session performs an initial tool snapshot refresh.
 
 ## HTTP helper endpoints (same origin)
 
@@ -90,9 +87,9 @@ for bridging.
 For capabilities to be synthesized from a connector, the MCP session must list
 that connector:
 
-- **`remoteConnectors`:** optional array of `{ kind, instanceId }`. When
-  present (including empty), it fully defines the set of remote connectors for
-  that session.
+- **`remoteConnectors`:** optional array of `{ kind, instanceId }`. When present
+  (including empty), it fully defines the set of remote connectors for that
+  session.
 - **`homeConnectorId`:** when `remoteConnectors` is omitted, a non-null value
   maps to `{ kind: "home", instanceId: homeConnectorId }`.
 
@@ -128,8 +125,10 @@ Source: `packages/shared/src/chat.ts`,
 - Protocol types and parsing: `packages/worker/src/home/types.ts`,
   `packages/worker/src/home/utils.ts`
 - Session Durable Object: `packages/worker/src/home/session.ts`
-- Ingress and session key: `packages/worker/src/remote-connector/connector-session-key.ts`
-- Home connector WebSocket client: `packages/home-connector/src/transport/worker-connector.ts`
+- Ingress and session key:
+  `packages/worker/src/remote-connector/connector-session-key.ts`
+- Home connector WebSocket client:
+  `packages/home-connector/src/transport/worker-connector.ts`
 
 ## Related docs
 

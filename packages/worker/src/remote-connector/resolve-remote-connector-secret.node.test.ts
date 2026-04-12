@@ -12,10 +12,10 @@ test('falls back to HOME_CONNECTOR_SHARED_SECRET for home kind', () => {
 test('REMOTE_CONNECTOR_SECRETS overrides per kind and instance', () => {
 	const env = {
 		HOME_CONNECTOR_SHARED_SECRET: 'legacy-secret',
-		REMOTE_CONNECTOR_SECRETS: JSON.stringify({
+		REMOTE_CONNECTOR_SECRETS: {
 			'custom:alpha': 'alpha-secret',
 			'home:default': 'home-override',
-		}),
+		},
 	} as Env
 	expect(resolveRemoteConnectorSharedSecret('custom', 'alpha', env)).toBe(
 		'alpha-secret',

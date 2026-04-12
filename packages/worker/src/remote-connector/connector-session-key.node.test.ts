@@ -33,6 +33,13 @@ test('parseConnectorRoutePath handles generic and legacy paths', () => {
 		instanceId: 'default',
 		rest: '/rpc/tools-list',
 	})
+	expect(
+		parseConnectorRoutePath('/connectors/home/default/rpc/tools-list'),
+	).toEqual({
+		kind: 'home',
+		instanceId: 'default',
+		rest: '/rpc/tools-list',
+	})
 	expect(parseConnectorRoutePath('/home/connectors')).toBeNull()
 })
 

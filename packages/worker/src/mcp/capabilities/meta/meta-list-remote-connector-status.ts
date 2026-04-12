@@ -42,21 +42,22 @@ export const metaListRemoteConnectorStatusCapability = defineDomainCapability(
 		outputSchema,
 		async handler(_args, ctx) {
 			const refs = normalizeRemoteConnectorRefs(ctx.callerContext)
-			const connectors = []
-			for (const ref of refs) {
-				const s = await getRemoteConnectorStatus(ctx.env, ref)
-				connectors.push({
-					connector_kind: s.connectorKind,
-					connector_instance_id: s.connectorId ?? ref.instanceId,
-					status: s.state,
-					connected: s.connected,
-					connected_at: s.connectedAt,
-					last_seen_at: s.lastSeenAt,
-					tool_count: s.toolCount,
-					message: s.message,
-					error: s.error,
-				})
-			}
+			const connectors = await Promise.all(
+				refs.map(async (ref) => {
+					const s = await getRemoteConnectorStatus(ctx.env, ref)
+					return {
+						connector_kind: s.connectorKind,
+						connector_instance_id: s.connectorId ?? ref.instanceId,
+						status: s.state,
+						connected: s.connected,
+						connected_at: s.connectedAt,
+						last_seen_at: s.lastSeenAt,
+						tool_count: s.toolCount,
+						message: s.message,
+						error: s.error,
+					}
+				}),
+			)
 			return { connectors }
 		},
 	},
