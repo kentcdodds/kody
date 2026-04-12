@@ -31,8 +31,8 @@ export function parseConnectorRoutePath(pathname: string): {
 	}
 	// /connectors/:kind/:instanceId/...
 	if (parts.length >= 3 && parts[0] === 'connectors' && parts[1] && parts[2]) {
-		const decodedKind = decodeSegment(parts[1]!.trim())
-		const decodedInstanceId = decodeSegment(parts[2]!.trim())
+		const decodedKind = decodeSegment(parts[1]!)
+		const decodedInstanceId = decodeSegment(parts[2]!)
 		if (!decodedKind || !decodedInstanceId) return null
 		const kind = decodedKind.trim()
 		const instanceId = decodedInstanceId.trim()
@@ -47,7 +47,7 @@ export function parseConnectorRoutePath(pathname: string): {
 		parts[1] === 'connectors' &&
 		parts[2]
 	) {
-		const decodedInstanceId = decodeSegment(parts[2]!.trim())
+		const decodedInstanceId = decodeSegment(parts[2]!)
 		if (!decodedInstanceId) return null
 		const instanceId = decodedInstanceId.trim()
 		if (!instanceId) return null

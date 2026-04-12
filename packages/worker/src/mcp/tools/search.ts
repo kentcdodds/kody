@@ -208,14 +208,10 @@ export async function loadDownRemoteConnectorStatuses(input: {
 	callerContext: Pick<McpCallerContext, 'homeConnectorId' | 'remoteConnectors'>
 }): Promise<Array<HomeConnectorStatus>> {
 	const refs = normalizeRemoteConnectorRefs(input.callerContext)
-	const down: Array<HomeConnectorStatus> = []
-	for (const ref of refs) {
-		const status = await getRemoteConnectorStatus(input.env, ref)
-		if (shouldIncludeRemoteConnectorStatus(status)) {
-			down.push(status)
-		}
-	}
-	return down
+	const statuses = await Promise.all(
+		refs.map((ref) => getRemoteConnectorStatus(input.env, ref)),
+	)
+	return statuses.filter(shouldIncludeRemoteConnectorStatus)
 }
 
 /** @deprecated Prefer loadDownRemoteConnectorStatuses with full caller context. */

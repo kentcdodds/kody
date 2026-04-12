@@ -225,7 +225,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	private async handleHello(ws: WebSocket, message: HomeConnectorHelloMessage) {
-		const declaredKind = (message.connectorKind ?? 'home').trim().toLowerCase()
+		const trimmedKind = (message.connectorKind ?? '').trim()
+		const declaredKind = (
+			trimmedKind === '' ? 'home' : trimmedKind
+		).toLowerCase()
 		const canonicalInstanceId = message.connectorId.trim()
 		const expectedSessionKey = connectorSessionKey(
 			declaredKind,

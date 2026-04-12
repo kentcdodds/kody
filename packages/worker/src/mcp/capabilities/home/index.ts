@@ -27,7 +27,10 @@ export type SynthesizedRemoteConnectorDomain = {
 }
 
 function createCapabilityNameFromPrefix(prefix: string, toolName: string) {
-	const safeTool = toolName.replaceAll(/[^\w]+/g, '_').replaceAll(/_+/g, '_')
+	const safeTool = toolName
+		.replaceAll(/[^\w]+/g, '_')
+		.replaceAll(/_+/g, '_')
+		.replace(/^_|_$/g, '')
 	return `${prefix}_${safeTool}`
 }
 
