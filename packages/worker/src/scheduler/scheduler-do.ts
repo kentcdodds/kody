@@ -8,6 +8,7 @@ import { processDueJobs } from './process-due-jobs.ts'
 import {
 	computeNextRunAt,
 	formatSchedulerError,
+	isJobDue,
 	normalizeScheduledJobSchedule,
 	normalizeSchedulerTimezone,
 	toScheduledJobView,
@@ -31,7 +32,9 @@ function requirePersistableSchedulerCallerContext(
 	callerContext: McpCallerContext,
 ): PersistedSchedulerCallerContext {
 	if (!callerContext.user) {
-		throw new Error('Authenticated MCP user is required for scheduler operations.')
+		throw new Error(
+			'Authenticated MCP user is required for scheduler operations.',
+		)
 	}
 	return createMcpCallerContext({
 		baseUrl: callerContext.baseUrl,
@@ -95,7 +98,10 @@ class SchedulerDOBase extends DurableObject<Env> {
 				request.method === 'POST'
 			) {
 				return Response.json(
-					await this.handleRunNow(decodeURIComponent(segments[1] ?? ''), request),
+					await this.handleRunNow(
+						decodeURIComponent(segments[1] ?? ''),
+						request,
+					),
 				)
 			}
 			return new Response('Not found', { status: 404 })
@@ -106,8 +112,8 @@ class SchedulerDOBase extends DurableObject<Env> {
 
 	async alarm(): Promise<void> {
 		const now = new Date()
-		const dueJobs = (await this.listStoredJobs()).filter(
-			(job) => job.enabled && new Date(job.nextRunAt).valueOf() <= now.valueOf(),
+		const dueJobs = (await this.listStoredJobs()).filter((job) =>
+			isJobDue(job, now),
 		)
 		if (dueJobs.length === 0) {
 			await this.syncAlarm()
@@ -129,7 +135,8 @@ class SchedulerDOBase extends DurableObject<Env> {
 	}
 
 	private async handleCreateJob(request: Request) {
-		const payload = await this.parseMutationRequest<SchedulerCreateInput>(request)
+		const payload =
+			await this.parseMutationRequest<SchedulerCreateInput>(request)
 		await this.persistCallerContext(payload.callerContext)
 		const timezone = normalizeSchedulerTimezone(payload.body.timezone)
 		const schedule = normalizeScheduledJobSchedule(payload.body.schedule)
@@ -163,9 +170,12 @@ class SchedulerDOBase extends DurableObject<Env> {
 	}
 
 	private async handleUpdateJob(jobId: string, request: Request) {
-		const payload = await this.parseMutationRequest<SchedulerUpdateInput>(request)
+		const payload =
+			await this.parseMutationRequest<SchedulerUpdateInput>(request)
 		if (payload.body.id && payload.body.id !== jobId) {
-			throw new Error('Scheduler job id in the body must match the request path.')
+			throw new Error(
+				'Scheduler job id in the body must match the request path.',
+			)
 		}
 		await this.persistCallerContext(payload.callerContext)
 		const existing = await this.requireStoredJob(jobId)
@@ -216,7 +226,9 @@ class SchedulerDOBase extends DurableObject<Env> {
 	private async handleRunNow(jobId: string, request: Request) {
 		const payload = await this.parseMutationRequest<{ id?: string }>(request)
 		if (payload.body.id && payload.body.id !== jobId) {
-			throw new Error('Scheduler job id in the body must match the request path.')
+			throw new Error(
+				'Scheduler job id in the body must match the request path.',
+			)
 		}
 		await this.persistCallerContext(payload.callerContext)
 		const existing = await this.requireStoredJob(jobId)
@@ -284,7 +296,9 @@ class SchedulerDOBase extends DurableObject<Env> {
 		}
 	}
 
-	private async persistCallerContext(callerContext: PersistedSchedulerCallerContext) {
+	private async persistCallerContext(
+		callerContext: PersistedSchedulerCallerContext,
+	) {
 		await this.ctx.storage.put(callerContextStorageKey, callerContext)
 	}
 
@@ -297,7 +311,9 @@ class SchedulerDOBase extends DurableObject<Env> {
 	}
 
 	private async requireStoredJob(jobId: string) {
-		const job = await this.ctx.storage.get<ScheduledJob>(getJobStorageKey(jobId))
+		const job = await this.ctx.storage.get<ScheduledJob>(
+			getJobStorageKey(jobId),
+		)
 		if (!job) {
 			throw new Error(`Scheduled job "${jobId}" was not found.`)
 		}
@@ -309,8 +325,11 @@ class SchedulerDOBase extends DurableObject<Env> {
 
 	private async listStoredJobs() {
 		const jobs = [
-			...(await this.ctx.storage.list<ScheduledJob>({ prefix: jobStorageKeyPrefix }))
-				.values(),
+			...(
+				await this.ctx.storage.list<ScheduledJob>({
+					prefix: jobStorageKeyPrefix,
+				})
+			).values(),
 		].map((job) => ({
 			...job,
 			timezone: normalizeSchedulerTimezone(job.timezone),
@@ -324,7 +343,9 @@ class SchedulerDOBase extends DurableObject<Env> {
 	}
 
 	private async syncAlarm() {
-		const enabledJobs = (await this.listStoredJobs()).filter((job) => job.enabled)
+		const enabledJobs = (await this.listStoredJobs()).filter(
+			(job) => job.enabled,
+		)
 		if (enabledJobs.length === 0) {
 			await this.ctx.storage.deleteAlarm()
 			return
