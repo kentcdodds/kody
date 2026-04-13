@@ -6,6 +6,7 @@ import { HomeMCP } from './home/mcp.ts'
 import { MCP } from './mcp/index.ts'
 import { SchedulerDO } from './scheduler/scheduler-do.ts'
 import { AppFacetBridge, AppRunner } from './mcp/app-runner.ts'
+import { JobFacetBridge, JobRunner } from './jobs/job-runner.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
@@ -50,6 +51,8 @@ export {
 	SchedulerDO,
 	AppFacetBridge,
 	AppRunner,
+	JobFacetBridge,
+	JobRunner,
 }
 
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'

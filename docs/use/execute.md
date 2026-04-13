@@ -34,20 +34,36 @@ inline saved skill code into **execute** when that fits the workflow.
 
 ## Scheduled jobs
 
-Kody can persist scheduled codemode jobs per user:
+Kody can persist alarm-driven scheduled jobs for the signed-in user:
 
-- **`scheduler_upsert`** — create a new one-shot or recurring cron job, or
-  update an existing one when you pass **`id`**
-- **`scheduler_list`** — list jobs with next run time, last run status, and a
-  human-readable schedule summary
-- **`scheduler_get`** — inspect one job
-- **`scheduler_delete`** — remove a job
-- **`scheduler_run_now`** — trigger a job immediately without changing its
-  normal schedule
+- **`job_create`** — create a new scheduled Durable Object facet job
+- **`job_update`** — update a saved job in place; changing `serverCode` rotates
+  `serverCodeId`
+- **`job_list`** — list jobs with schedule summary, next run time, counters, and
+  last error
+- **`job_get`** — inspect one job
+- **`job_delete`** — remove the saved job and delete its facet storage
+- **`job_run_now`** — trigger a run immediately without changing the normal next
+  scheduled fire time
+- **`job_enable`** / **`job_disable`** — toggle alarm scheduling
+- **`job_history`** — inspect recent supervisor-tracked run history
+- **`job_storage_reset`** — clear the facet SQLite database while keeping the
+  job
+- **`job_server_exec`** — run one-off JavaScript inside the facet for debugging
+  or migrations
 
-Cron schedules use standard **5-field cron syntax** and may include an IANA
-timezone such as **`America/New_York`**. One-shot schedules use an ISO 8601 UTC
-timestamp such as **`2026-04-17T15:00:00Z`**.
+Jobs define **`serverCode`** that exports **`class Job extends DurableObject`**
+with an async **`run()`** method. The supervisor Durable Object loads that code
+as a facet through Cloudflare's Dynamic Worker loader, keeps its own separate
+SQLite status/history tables, and re-arms alarms after every run.
+
+Schedules support either:
+
+- cron: `{ cron: "0 8 * * *" }`
+- interval: `{ intervalMs: 3600000 }`
+
+Cron schedules use standard **5-field cron syntax** and an IANA timezone such as
+**`America/Denver`**.
 
 ## Long-term memory
 

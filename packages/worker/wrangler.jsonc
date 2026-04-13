@@ -2,7 +2,11 @@
 	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "kody",
 	"compatibility_date": "2026-04-13",
-	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public",
+		"experimental",
+	],
 	"main": "./src/index.ts",
 	"upload_source_maps": true,
 	"migrations": [
@@ -25,6 +29,10 @@
 		{
 			"new_sqlite_classes": ["AppRunner"],
 			"tag": "v5",
+		},
+		{
+			"new_sqlite_classes": ["JobRunner"],
+			"tag": "v6",
 		},
 	],
 
@@ -75,6 +83,10 @@
 					{
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
+					},
+					{
+						"class_name": "JobRunner",
+						"name": "JOB_RUNNER",
 					},
 				],
 			},
@@ -146,6 +158,10 @@
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
 					},
+					{
+						"class_name": "JobRunner",
+						"name": "JOB_RUNNER",
+					},
 				],
 			},
 			"d1_databases": [
@@ -215,6 +231,10 @@
 					{
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
+					},
+					{
+						"class_name": "JobRunner",
+						"name": "JOB_RUNNER",
 					},
 				],
 			},
