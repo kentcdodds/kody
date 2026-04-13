@@ -3,7 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { exportSavedAppRunnerStorage } from '#mcp/app-runner.ts'
+import { appRunnerRpc } from '#mcp/app-runner.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
 
 const inputSchema = z.object({
@@ -39,11 +39,10 @@ export const appStorageResetCapability = defineDomainCapability(
 			if (!app) {
 				throw new Error('Saved app not found for this user.')
 			}
-			const result = await exportSavedAppRunnerStorage({
-				env: ctx.env,
-				appId: args.app_id,
-				facetName: args.facet_name ?? 'main',
-			})
+		const result = await appRunnerRpc(ctx.env, args.app_id).resetStorage({
+			appId: args.app_id,
+			facetName: args.facet_name ?? 'main',
+		})
 			return {
 				ok: true as const,
 				app_id: result.appId,

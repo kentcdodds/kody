@@ -189,17 +189,17 @@ function createGeneratedUiSourceHandler(env: Env) {
 					description: app.description,
 					parameters: parseUiArtifactParameters(app.parameters),
 					params: resolvedParams,
-					clientCode: app.clientCode,
-					serverCode: app.serverCode,
-					serverCodeId: app.serverCodeId,
+					client_code: app.clientCode,
+					server_code: app.serverCode,
+					server_code_id: app.serverCodeId,
+					app_backend: {
+						basePath: buildSavedAppBackendBasePath(app.id),
+						facetNames: ['main'],
+					},
 					created_at: app.created_at,
 					updated_at: app.updated_at,
 				},
 				appSession,
-				appBackend: {
-					basePath: buildSavedAppBackendBasePath(app.id),
-					facetNames: ['main'],
-				},
 			})
 			response.headers.append(
 				'Set-Cookie',
