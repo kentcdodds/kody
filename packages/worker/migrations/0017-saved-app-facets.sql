@@ -34,6 +34,20 @@ SELECT
 	description,
 	CASE
 		WHEN source_type = 'html' THEN source_code
+		WHEN source_type = 'javascript' THEN
+			'<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+	</head>
+	<body data-kody-runtime="javascript">
+		<div id="app" data-generated-ui-root></div>
+		<script type="module">
+' || replace(source_code, '</script', '<\/script') || '
+		</script>
+	</body>
+</html>'
 		ELSE ''
 	END AS client_code,
 	NULL AS server_code,

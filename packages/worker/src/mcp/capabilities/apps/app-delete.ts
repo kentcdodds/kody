@@ -3,6 +3,8 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { deleteAllAppScopedSecrets } from '#mcp/secrets/service.ts'
+import { deleteAllAppScopedValues } from '#mcp/values/service.ts'
 import { deleteSavedAppRunner } from '#mcp/app-runner.ts'
 import { deleteUiArtifact } from '#mcp/ui-artifacts-repo.ts'
 import { deleteUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
@@ -31,6 +33,16 @@ export const appDeleteCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			await deleteUiArtifact(ctx.env.APP_DB, user.userId, args.app_id)
 			await Promise.allSettled([
+				deleteAllAppScopedSecrets({
+					env: ctx.env,
+					userId: user.userId,
+					appId: args.app_id,
+				}),
+				deleteAllAppScopedValues({
+					env: ctx.env,
+					userId: user.userId,
+					appId: args.app_id,
+				}),
 				deleteUiArtifactVector(ctx.env, args.app_id),
 				deleteSavedAppRunner({
 					env: ctx.env,

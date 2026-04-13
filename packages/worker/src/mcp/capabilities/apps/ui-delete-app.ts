@@ -4,8 +4,10 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { deleteSavedAppRunner } from '#mcp/app-runner.ts'
+import { deleteAllAppScopedSecrets } from '#mcp/secrets/service.ts'
 import { deleteUiArtifact } from '#mcp/ui-artifacts-repo.ts'
 import { deleteUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
+import { deleteAllAppScopedValues } from '#mcp/values/service.ts'
 
 const outputSchema = z.object({
 	deleted: z.boolean(),
@@ -38,6 +40,16 @@ export const uiDeleteAppCapability = defineDomainCapability(
 			if (removed) {
 				await Promise.allSettled([
 					deleteUiArtifactVector(ctx.env, args.app_id),
+					deleteAllAppScopedSecrets({
+						env: ctx.env,
+						userId: user.userId,
+						appId: args.app_id,
+					}),
+					deleteAllAppScopedValues({
+						env: ctx.env,
+						userId: user.userId,
+						appId: args.app_id,
+					}),
 					deleteSavedAppRunner({
 						env: ctx.env,
 						appId: args.app_id,

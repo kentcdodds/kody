@@ -1,5 +1,11 @@
 import { expect, test } from 'vitest'
-import { deleteValue, getValue, listValues, saveValue } from './service.ts'
+import {
+	deleteAllAppScopedValues,
+	deleteValue,
+	getValue,
+	listValues,
+	saveValue,
+} from './service.ts'
 import { type ValueBucketRow, type ValueEntryRow } from './types.ts'
 
 function createValueTestDb() {
@@ -120,6 +126,25 @@ function createValueTestDb() {
 									created_at: existing?.created_at ?? createdAt,
 									updated_at: updatedAt,
 								})
+								return { meta: { changes: 1 } }
+							}
+							if (
+								normalizedQuery.startsWith(
+									'delete from value_buckets where user_id = ? and scope = ? and binding_key = ?',
+								)
+							) {
+								const [userId, scope, bindingKey] = params as Array<string>
+								const bucketKey = getBucketKey(userId, scope, bindingKey)
+								const bucket = buckets.get(bucketKey)
+								if (!bucket) {
+									return { meta: { changes: 0 } }
+								}
+								buckets.delete(bucketKey)
+								for (const [entryKey, entry] of entries) {
+									if (entry.bucket_id === bucket.id) {
+										entries.delete(entryKey)
+									}
+								}
 								return { meta: { changes: 1 } }
 							}
 							if (normalizedQuery.startsWith('delete from value_entries')) {
@@ -249,4 +274,68 @@ test('value service rejects unavailable scoped storage', async () => {
 			},
 		}),
 	).rejects.toThrow('Value scope "app" is unavailable in this context.')
+})
+
+test('deleteAllAppScopedValues removes all app-scoped values for one app', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+
+	await saveValue({
+		env,
+		userId: 'user-123',
+		scope: 'app',
+		name: 'token',
+		value: 'app-one',
+		storageContext: {
+			sessionId: null,
+			appId: 'app-1',
+		},
+	})
+	await saveValue({
+		env,
+		userId: 'user-123',
+		scope: 'app',
+		name: 'token',
+		value: 'app-two',
+		storageContext: {
+			sessionId: null,
+			appId: 'app-2',
+		},
+	})
+
+	await expect(
+		deleteAllAppScopedValues({
+			env,
+			userId: 'user-123',
+			appId: 'app-1',
+		}),
+	).resolves.toBe(true)
+
+	await expect(
+		getValue({
+			env,
+			userId: 'user-123',
+			name: 'token',
+			scope: 'app',
+			storageContext: {
+				sessionId: null,
+				appId: 'app-1',
+			},
+		}),
+	).resolves.toBeNull()
+
+	await expect(
+		getValue({
+			env,
+			userId: 'user-123',
+			name: 'token',
+			scope: 'app',
+			storageContext: {
+				sessionId: null,
+				appId: 'app-2',
+			},
+		}),
+	).resolves.toMatchObject({
+		value: 'app-two',
+	})
 })

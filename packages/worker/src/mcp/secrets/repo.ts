@@ -195,6 +195,21 @@ export async function listAppScopeSecretMetadata(input: {
 	return (results ?? []).map(mapSecretMetadataRow)
 }
 
+export async function deleteAppScopeSecretBuckets(input: {
+	db: D1Database
+	userId: string
+	appId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`DELETE FROM secret_buckets
+			WHERE user_id = ? AND scope = 'app' AND binding_key = ?`,
+		)
+		.bind(input.userId, input.appId)
+		.run()
+	return result.meta.changes ?? 0
+}
+
 function mapSecretBucketRow(row: Record<string, unknown>): SecretBucketRow {
 	return {
 		id: String(row['id']),
