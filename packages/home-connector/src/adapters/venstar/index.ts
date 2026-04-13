@@ -1,4 +1,5 @@
 import { type HomeConnectorConfig } from '../../config.ts'
+import { type HomeConnectorState } from '../../state.ts'
 import {
 	fetchVenstarInfo,
 	fetchVenstarRuntimes,
@@ -6,6 +7,7 @@ import {
 	postVenstarControl,
 	postVenstarSettings,
 } from './client.ts'
+import { scanVenstarThermostats } from './discovery.ts'
 import {
 	type VenstarControlRequest,
 	type VenstarInfoResponse,
@@ -21,7 +23,10 @@ function normalizeThermostatName(value: string) {
 }
 
 function normalizeThermostatIp(value: string) {
-	return value.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '')
+	return value
+		.trim()
+		.replace(/^https?:\/\//i, '')
+		.replace(/\/$/, '')
 }
 
 function resolveThermostat(config: HomeConnectorConfig, identifier?: string) {
@@ -108,10 +113,31 @@ type VenstarStatusSummary =
 	| VenstarInfoSummary
 	| (ReturnType<typeof buildOfflineSummary> & { status: 'offline' })
 
-export function createVenstarAdapter(input: { config: HomeConnectorConfig }) {
-	const { config } = input
+export function createVenstarAdapter(input: {
+	config: HomeConnectorConfig
+	state: HomeConnectorState
+}) {
+	const { config, state } = input
 
 	return {
+		async scan() {
+			return (await scanVenstarThermostats(state, config)).thermostats
+		},
+		getStatus() {
+			const configured = config.venstarThermostats
+			const configuredIps = new Set(
+				configured.map((thermostat) => normalizeThermostatIp(thermostat.ip)),
+			)
+			return {
+				configured,
+				discovered: state.venstarDiscoveredThermostats.filter(
+					(thermostat) =>
+						!configuredIps.has(normalizeThermostatIp(thermostat.ip)),
+				),
+				allDiscovered: state.venstarDiscoveredThermostats,
+				diagnostics: state.venstarDiscoveryDiagnostics,
+			}
+		},
 		listThermostats() {
 			return config.venstarThermostats
 		},

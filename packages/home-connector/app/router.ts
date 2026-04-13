@@ -64,7 +64,10 @@ export function createHomeConnectorRouter(
 	)
 	router.map(routes.bondStatus, createBondStatusHandler(state, bond))
 	router.map(routes.bondSetup, createBondSetupHandler(state, bond))
-	router.map(routes.venstarStatus, createVenstarStatusHandler(state, venstar))
+	router.map(
+		routes.venstarStatus,
+		createVenstarStatusHandler(state, config, venstar),
+	)
 	router.map(
 		routes.venstarSetup,
 		createVenstarSetupHandler(state, config, venstar),

@@ -101,6 +101,20 @@ test('live connector defaults Bond discovery to mDNS', () => {
 	expect(config.bondDiscoveryUrl).toBe('mdns://_bond._tcp.local')
 })
 
+test('live connector defaults Venstar discovery to SSDP', () => {
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		VENSTAR_DISCOVERY_URL: undefined,
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.venstarDiscoveryUrl).toBe(
+		'ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp',
+	)
+})
+
 test('live connector defaults Lutron discovery to mDNS', () => {
 	using _env = createTemporaryEnv({
 		MOCKS: 'false',

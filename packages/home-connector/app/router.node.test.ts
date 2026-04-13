@@ -22,6 +22,7 @@ function createConfig(): HomeConnectorConfig {
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
+		venstarDiscoveryUrl: 'http://venstar.mock.local/discovery',
 		venstarThermostats: [{ name: 'Hallway', ip: 'venstar.mock.local' }],
 		dataPath: '/tmp',
 		dbPath: ':memory:',
@@ -56,7 +57,7 @@ function createAdapters(config: HomeConnectorConfig) {
 			state,
 			storage,
 		}),
-		venstar: createVenstarAdapter({ config }),
+		venstar: createVenstarAdapter({ config, state }),
 	}
 }
 
@@ -146,6 +147,7 @@ test('venstar routes render status and setup details', async () => {
 		expect(statusHtml).toContain('Hallway')
 		expect(statusHtml).toContain('venstar.mock.local')
 		expect(statusHtml).toContain('Online thermostats')
+		expect(statusHtml).toContain('Scan now')
 
 		const setupResponse = await router.fetch(
 			'http://example.test/venstar/setup',
@@ -155,6 +157,34 @@ test('venstar routes render status and setup details', async () => {
 		expect(setupHtml).toContain('Venstar setup')
 		expect(setupHtml).toContain('VENSTAR_THERMOSTATS')
 		expect(setupHtml).toContain('venstar-thermostats.json')
+	} finally {
+		storage.close()
+	}
+})
+
+test('venstar status scan shows discovered thermostats', async () => {
+	const config = createConfig()
+	const { state, storage, lutron, sonos, samsungTv, bond, venstar } =
+		createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			venstar,
+		)
+		const response = await router.fetch('http://example.test/venstar/status', {
+			method: 'POST',
+		})
+		expect(response.status).toBe(200)
+		const html = await response.text()
+		expect(html).toContain('Scan complete. Discovered')
+		expect(html).toContain('Discovered thermostats')
+		expect(html).toContain('Mock Venstar 2')
+		expect(html).toContain('Copy this name/IP into')
 	} finally {
 		storage.close()
 	}

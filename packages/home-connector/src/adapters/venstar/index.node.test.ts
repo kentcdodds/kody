@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../../../mocks/test-server.ts'
 import { loadHomeConnectorConfig } from '../../config.ts'
 import { createVenstarAdapter } from './index.ts'
+import { createAppState } from '../../state.ts'
 
 function createConfig() {
 	process.env.MOCKS = 'true'
@@ -21,7 +22,10 @@ installHomeConnectorMockServer()
 
 test('venstar list returns configured thermostats with status', async () => {
 	const config = createConfig()
-	const venstar = createVenstarAdapter({ config })
+	const venstar = createVenstarAdapter({
+		config,
+		state: createAppState(),
+	})
 
 	const result = await venstar.listThermostatsWithStatus()
 
@@ -31,7 +35,10 @@ test('venstar list returns configured thermostats with status', async () => {
 
 test('venstar control validates auto mode setpoints', async () => {
 	const config = createConfig()
-	const venstar = createVenstarAdapter({ config })
+	const venstar = createVenstarAdapter({
+		config,
+		state: createAppState(),
+	})
 
 	await expect(
 		venstar.controlThermostat({
@@ -45,7 +52,10 @@ test('venstar control validates auto mode setpoints', async () => {
 
 test('venstar settings updates complete in mock mode', async () => {
 	const config = createConfig()
-	const venstar = createVenstarAdapter({ config })
+	const venstar = createVenstarAdapter({
+		config,
+		state: createAppState(),
+	})
 
 	const result = await venstar.setSettings({
 		thermostat: 'Office',
@@ -55,4 +65,32 @@ test('venstar settings updates complete in mock mode', async () => {
 	})
 
 	expect(result.response.success).toBe(true)
+})
+
+test('venstar scan discovers thermostats and records diagnostics', async () => {
+	const config = createConfig()
+	config.venstarDiscoveryUrl = 'http://venstar.mock.local/discovery'
+	const state = createAppState()
+	const venstar = createVenstarAdapter({
+		config,
+		state,
+	})
+
+	const result = await venstar.scan()
+
+	expect(result).toHaveLength(2)
+	expect(result[0]).toMatchObject({
+		name: 'Hallway',
+		ip: '192.168.10.40',
+	})
+	expect(venstar.getStatus()).toMatchObject({
+		discovered: expect.arrayContaining([
+			expect.objectContaining({
+				name: 'Hallway',
+			}),
+		]),
+		diagnostics: expect.objectContaining({
+			protocol: 'json',
+		}),
+	})
 })

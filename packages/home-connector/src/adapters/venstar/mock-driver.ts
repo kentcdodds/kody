@@ -14,6 +14,13 @@ type MockThermostatState = {
 	runtimes: VenstarRuntimesResponse
 }
 
+export type MockVenstarDiscoveryEntry = {
+	name: string
+	ip: string
+	location: string
+	usn: string
+}
+
 const defaultInfo: VenstarInfoResponse = {
 	mode: 3,
 	state: 0,
@@ -88,7 +95,10 @@ export function resetMockVenstarState() {
 resetMockVenstarState()
 
 function getThermostatState(ip: string) {
-	const normalized = ip.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '')
+	const normalized = ip
+		.trim()
+		.replace(/^https?:\/\//i, '')
+		.replace(/\/$/, '')
 	const existing = mockThermostats[normalized]
 	if (existing) return existing
 	const created = createDefaultThermostatState()
@@ -150,4 +160,20 @@ export function applyMockVenstarSettings(
 	return {
 		success: true,
 	}
+}
+
+export function listMockVenstarDiscoveryEntries(): Array<MockVenstarDiscoveryEntry> {
+	return Object.entries(mockThermostats).map(([ip, state], index) => ({
+		name:
+			typeof state.info.name === 'string' && state.info.name.trim().length > 0
+				? state.info.name.trim()
+				: `Mock Venstar ${String(index + 1)}`,
+		ip,
+		location: `http://${ip}/`,
+		usn: `colortouch:ecp:00:23:a7:3a:b2:${String(index + 10).padStart(2, '0')}:name:${encodeURIComponent(
+			typeof state.info.name === 'string' && state.info.name.trim().length > 0
+				? state.info.name.trim()
+				: `Mock Venstar ${String(index + 1)}`,
+		)}:type:residential`,
+	}))
 }
