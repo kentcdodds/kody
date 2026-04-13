@@ -60,6 +60,8 @@
     "dev:talks": "npm --prefix docs/talks/kody-mcp-runtime run dev"
   },
   "devDependencies": {
+    "@kody-internal/shared": "file:packages/shared",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@cloudflare/vitest-pool-workers": "^0.14.5",
     "@cloudflare/workers-types": "^4.20260413.1",
     "@epic-web/config": "^1.24.1",
@@ -70,6 +72,7 @@
     "concurrently": "^9.2.1",
     "dotenv": "^17.3.1",
     "esbuild": "^0.27.4",
+    "get-port": "^7.1.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "nx": "^22.6.1",
@@ -82,25 +85,6 @@
   },
   "overrides": {
     "@modelcontextprotocol/sdk": "1.29.0"
-  },
-  "dependencies": {
-    "@cloudflare/ai-chat": "^0.4.2",
-    "@cloudflare/codemode": "^0.3.4",
-    "@cloudflare/workers-oauth-provider": "^0.4.0",
-    "@epic-web/invariant": "^1.0.0",
-    "@kody-internal/shared": "file:packages/shared",
-    "@mcp-ui/server": "6.1.0",
-    "@modelcontextprotocol/ext-apps": "^1.2.2",
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "@sentry/cloudflare": "^10.45.0",
-    "acorn": "^8.16.0",
-    "agents": "^0.10.1",
-    "bonjour": "^3.5.1",
-    "croner": "^10.0.1",
-    "get-port": "^7.1.0",
-    "remix": "3.0.0-alpha.3",
-    "workers-ai-provider": "^3.1.2",
-    "zod": "^4.3.6"
   },
   "engines": {
     "node": "24.x"
