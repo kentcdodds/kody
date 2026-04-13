@@ -550,7 +550,11 @@ class AppRunnerBase extends DurableObject<Env> {
 				`${config.appId}:${facetName}:${config.serverCodeId}`,
 				async () => ({
 					compatibilityDate: '2026-04-13',
-					compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
+					compatibilityFlags: [
+						'nodejs_compat',
+						'global_fetch_strictly_public',
+						'unsafe_eval',
+					],
 					mainModule: 'facet-entry.js',
 					modules: {
 						'facet-entry.js': createFacetWrapperModule({
