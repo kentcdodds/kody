@@ -5,11 +5,7 @@ import {
 	listJobsByUserId,
 	updateJob,
 } from './repo.ts'
-import {
-	computeNextJobRunAt,
-	normalizeJobSchedule,
-	normalizeJobTimezone,
-} from './schedule.ts'
+import { normalizeJobSchedule, normalizeJobTimezone } from './schedule.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -159,11 +155,3 @@ export async function listJobRecords(db: D1Database, userId: string) {
 	return await listJobsByUserId(db, userId)
 }
 
-export function computeInitialNextRunAt(
-	job: Pick<JobRecord, 'schedule' | 'timezone'>,
-) {
-	return computeNextJobRunAt({
-		schedule: job.schedule,
-		timezone: job.timezone,
-	})
-}

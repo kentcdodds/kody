@@ -1,5 +1,5 @@
 import { Cron } from 'croner'
-import { type JobRecord, type JobSchedule, type JobSummary } from './types.ts'
+import { type JobRecord, type JobSchedule } from './types.ts'
 
 export const defaultJobTimezone = 'America/Denver'
 const cronFieldPattern = /\s+/
@@ -92,27 +92,3 @@ export function computeNextJobRunAt(input: {
 	return nextRun.toISOString()
 }
 
-export function toJobSummary(input: {
-	job: JobRecord
-	status: {
-		nextRunAt: string | null
-		runCount: number
-		successCount: number
-		failureCount: number
-		lastRunStartedAt: string | null
-		lastRunFinishedAt: string | null
-		lastRunDurationMs: number | null
-		lastError: JobSummary['lastError']
-		killSwitchEnabled: boolean
-		historyLimit: number
-	}
-}): JobSummary {
-	return {
-		...input.job,
-		...input.status,
-		scheduleSummary: formatJobScheduleSummary({
-			schedule: input.job.schedule,
-			timezone: input.job.timezone,
-		}),
-	}
-}
