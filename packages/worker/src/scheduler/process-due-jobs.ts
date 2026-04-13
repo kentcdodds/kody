@@ -1,11 +1,5 @@
-import {
-	computeNextRunAt,
-	formatSchedulerError,
-} from './schedule.ts'
-import {
-	type ScheduledJob,
-	type SchedulerExecutionResult,
-} from './types.ts'
+import { computeNextRunAt, formatSchedulerError } from './schedule.ts'
+import { type ScheduledJob, type SchedulerExecutionResult } from './types.ts'
 
 type ProcessDueJobsResult = {
 	deleteJobIds: Array<string>

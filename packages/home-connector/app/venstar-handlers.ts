@@ -167,10 +167,8 @@ function renderVenstarDiscoveryDiagnostics(
 								<div>Info URL: <code>${lookup.infoUrl}</code></div>
 								<div>Error: ${lookup.error ?? 'none'}</div>
 								${lookup.parsed
-									? html`<div>
-											Parsed:
-											<code>${formatJson(lookup.parsed)}</code>
-										</div>`
+									? html`<div>Parsed:</div>
+											${renderCodeBlock(formatJson(lookup.parsed))}`
 									: ''}
 								${lookup.raw ? renderCodeBlock(formatJson(lookup.raw)) : ''}
 							</li>`,

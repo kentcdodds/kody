@@ -81,12 +81,25 @@ function normalizeDeviceLocation(location: string) {
 	return url.toString()
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-	const response = await fetch(url)
-	if (!response.ok) {
-		throw new Error(`Request failed (${response.status}) for ${url}`)
+async function fetchJson<T>(url: string, timeoutMs = 5_000): Promise<T> {
+	const controller = new AbortController()
+	const timeout = setTimeout(() => controller.abort(), timeoutMs)
+	try {
+		const response = await fetch(url, {
+			signal: controller.signal,
+		})
+		if (!response.ok) {
+			throw new Error(`Request failed (${response.status}) for ${url}`)
+		}
+		return (await response.json()) as T
+	} catch (error) {
+		if (error instanceof Error && error.name === 'AbortError') {
+			throw new Error(`Request timed out for ${url}`)
+		}
+		throw error
+	} finally {
+		clearTimeout(timeout)
 	}
-	return (await response.json()) as T
 }
 
 function buildInfoUrl(location: string) {
@@ -110,17 +123,24 @@ async function discoverSsdpLocations(input: {
 		const raw = message.toString()
 		const headers = parseHttpLikeHeaders(raw)
 		const locationHeader = headers.get('location')
+		let location: string | null = null
+		if (locationHeader) {
+			try {
+				location = normalizeDeviceLocation(locationHeader)
+			} catch {
+				location = null
+			}
+		}
 		hits.push({
 			receivedAt: input.now,
 			remoteAddress: remote.address,
 			remotePort: remote.port,
 			raw,
-			location: locationHeader ? normalizeDeviceLocation(locationHeader) : null,
+			location,
 			usn: headers.get('usn') ?? null,
 			server: headers.get('server') ?? null,
 		})
-		if (!locationHeader) return
-		const location = normalizeDeviceLocation(locationHeader)
+		if (!location) return
 		if (locations.has(location)) return
 		locations.set(location, {
 			location,
@@ -304,9 +324,7 @@ async function discoverVenstarThermostatsFromJson(
 				rawDiscovery: entry,
 			}
 		})
-		.filter(
-			(entry): entry is VenstarDiscoveredThermostat => entry != null,
-		)
+		.filter((entry): entry is VenstarDiscoveredThermostat => entry != null)
 	return {
 		thermostats,
 		diagnostics: {

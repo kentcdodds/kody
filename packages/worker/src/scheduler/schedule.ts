@@ -1,5 +1,9 @@
 import { Cron } from 'croner'
-import { type ScheduledJob, type ScheduledJobSchedule, type ScheduledJobView } from './types.ts'
+import {
+	type ScheduledJob,
+	type ScheduledJobSchedule,
+	type ScheduledJobView,
+} from './types.ts'
 
 export const defaultSchedulerTimezone = 'UTC'
 
@@ -64,7 +68,9 @@ export function computeNextRunAt(input: {
 				? new Date(input.from)
 				: new Date()
 	if (Number.isNaN(from.valueOf())) {
-		throw new Error('Cannot compute the next run time from an invalid reference date.')
+		throw new Error(
+			'Cannot compute the next run time from an invalid reference date.',
+		)
 	}
 	if (input.schedule.type === 'once') {
 		return parseOnceRunAt(input.schedule.runAt).toISOString()

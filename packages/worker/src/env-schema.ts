@@ -165,12 +165,17 @@ export const EnvSchema = object({
 		'COOKIE_SECRET must be at least 32 characters for session signing.',
 	),
 	APP_DB: d1DatabaseSchema,
-	SCHEDULER_DO: createSchema<unknown, DurableObjectNamespace>((value, context) => {
-		if (value) {
-			return { value: value as DurableObjectNamespace }
-		}
-		return fail('Missing SCHEDULER_DO binding for scheduled codemode jobs.', context.path)
-	}),
+	SCHEDULER_DO: createSchema<unknown, DurableObjectNamespace>(
+		(value, context) => {
+			if (value) {
+				return { value: value as DurableObjectNamespace }
+			}
+			return fail(
+				'Missing SCHEDULER_DO binding for scheduled codemode jobs.',
+				context.path,
+			)
+		},
+	),
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	CLOUDFLARE_EMAIL_FROM: optionalNonEmptyStringSchema,

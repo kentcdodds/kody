@@ -163,19 +163,19 @@ export function applyMockVenstarSettings(
 }
 
 export function listMockVenstarDiscoveryEntries(): Array<MockVenstarDiscoveryEntry> {
-	return Object.entries(mockThermostats).map(([ip, state], index) => ({
-		name:
+	return Object.entries(mockThermostats).map(([ip, state], index) => {
+		const name =
 			typeof state.info.name === 'string' && state.info.name.trim().length > 0
 				? state.info.name.trim()
-				: `Mock Venstar ${String(index + 1)}`,
-		ip,
-		location: `http://${ip}/`,
-		usn: `colortouch:ecp:00:23:a7:3a:b2:${String(index + 10).padStart(2, '0')}:name:${encodeURIComponent(
-			typeof state.info.name === 'string' && state.info.name.trim().length > 0
-				? state.info.name.trim()
-				: `Mock Venstar ${String(index + 1)}`,
-		)}:type:residential`,
-	}))
+				: `Mock Venstar ${String(index + 1)}`
+		const stableId = encodeURIComponent(ip)
+		return {
+			name,
+			ip,
+			location: `http://${ip}/`,
+			usn: `colortouch:ecp:ip:${stableId}:name:${encodeURIComponent(name)}:type:residential`,
+		}
+	})
 }
 
 export function getMockVenstarDiscoveryPayload() {

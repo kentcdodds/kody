@@ -26,17 +26,20 @@ async function schedulerJsonRequest<TResult>(
 		method: string
 		pathname: string
 		body?: unknown
-	}
+	},
 ) {
-	const response = await stub.fetch(`https://scheduler.internal${input.pathname}`, {
-		method: input.method,
-		headers: input.body
-			? {
-					'Content-Type': 'application/json',
-				}
-			: undefined,
-		body: input.body === undefined ? undefined : JSON.stringify(input.body),
-	})
+	const response = await stub.fetch(
+		`https://scheduler.internal${input.pathname}`,
+		{
+			method: input.method,
+			headers: input.body
+				? {
+						'Content-Type': 'application/json',
+					}
+				: undefined,
+			body: input.body === undefined ? undefined : JSON.stringify(input.body),
+		},
+	)
 	if (!response.ok) {
 		throw new Error(await response.text())
 	}
@@ -56,10 +59,13 @@ export async function schedulerCreate(
 }
 
 export async function schedulerList(env: Env, userId: string) {
-	return schedulerJsonRequest<Array<ScheduledJobView>>(getSchedulerStub(env, userId), {
-		method: 'GET',
-		pathname: '/jobs',
-	})
+	return schedulerJsonRequest<Array<ScheduledJobView>>(
+		getSchedulerStub(env, userId),
+		{
+			method: 'GET',
+			pathname: '/jobs',
+		},
+	)
 }
 
 export async function schedulerGet(env: Env, userId: string, jobId: string) {
@@ -104,9 +110,12 @@ export async function schedulerRunNow(
 	if (!id) {
 		throw new Error('Scheduler run_now requires a job id.')
 	}
-	return schedulerJsonRequest<SchedulerRunNowResponse>(getSchedulerStub(env, userId), {
-		method: 'POST',
-		pathname: `/jobs/${encodeURIComponent(id)}/run-now`,
-		body: request,
-	})
+	return schedulerJsonRequest<SchedulerRunNowResponse>(
+		getSchedulerStub(env, userId),
+		{
+			method: 'POST',
+			pathname: `/jobs/${encodeURIComponent(id)}/run-now`,
+			body: request,
+		},
+	)
 }

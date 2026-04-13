@@ -373,12 +373,7 @@ export function createHomeConnectorMcpServer(input: {
 					})
 					.refine(
 						(value) =>
-							hasAnyValue(value, [
-								'mode',
-								'fan',
-								'heattemp',
-								'cooltemp',
-							]),
+							hasAnyValue(value, ['mode', 'fan', 'heattemp', 'cooltemp']),
 						{
 							message:
 								'Provide at least one control change (mode, fan, heattemp, or cooltemp).',
