@@ -98,6 +98,49 @@ function readClientIdFromAuthorizeRequest(request: Request) {
 	return clientId ? clientId : null
 }
 
+function isLoopbackHostname(hostname: string) {
+	return hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.')
+}
+
+function redirectUriMatchesRegisteredUri(
+	requestUri: string,
+	registeredUris: Array<string>,
+) {
+	return registeredUris.some((registeredUri) => {
+		try {
+			const requestUrl = new URL(requestUri)
+			const registeredUrl = new URL(registeredUri)
+			if (
+				isLoopbackHostname(requestUrl.hostname) &&
+				isLoopbackHostname(registeredUrl.hostname)
+			) {
+				return (
+					requestUrl.protocol === registeredUrl.protocol &&
+					requestUrl.hostname === registeredUrl.hostname &&
+					requestUrl.pathname === registeredUrl.pathname &&
+					requestUrl.search === registeredUrl.search
+				)
+			}
+		} catch {
+			return false
+		}
+		return requestUri === registeredUri
+	})
+}
+
+async function requestHasRedirectUriMismatch(
+	helpers: OAuthHelpers,
+	request: Request,
+) {
+	const url = new URL(request.url)
+	const clientId = url.searchParams.get('client_id')?.trim()
+	const redirectUri = url.searchParams.get('redirect_uri')?.trim()
+	if (!clientId || !redirectUri) return false
+	const client = await helpers.lookupClient(clientId)
+	if (!client) return false
+	return !redirectUriMatchesRegisteredUri(redirectUri, client.redirectUris)
+}
+
 async function listUserGrantsForClient(
 	helpers: OAuthHelpers,
 	userId: string,
@@ -140,7 +183,10 @@ async function handleResetClientRequest(
 ) {
 	const url = new URL(request.url)
 	const errorDescription = url.searchParams.get('error_description')?.trim() ?? ''
-	if (!isInvalidRedirectUriError(errorDescription)) {
+	const redirectUriMismatch = await requestHasRedirectUriMismatch(helpers, request)
+	const hasInvalidRedirectUri =
+		isInvalidRedirectUriError(errorDescription) || redirectUriMismatch
+	if (!hasInvalidRedirectUri) {
 		return respondAuthorizeError(
 			request,
 			'Stored client cleanup is only available for redirect URI mismatches.',

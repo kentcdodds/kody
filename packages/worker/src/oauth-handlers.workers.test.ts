@@ -357,6 +357,65 @@ test('reset client is rejected when the request is not a redirect mismatch', asy
 	})
 })
 
+test('reset client also works when the mismatch came from authorize-info loading', async () => {
+	const deletedClientIds = new Array<string>()
+	const userId = await createStableUserIdFromEmail('user@example.com')
+	const helpers = createHelpers({
+		listUserGrants: async (requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			return {
+				items: [
+					{
+						id: 'grant-1',
+						clientId: 'client-123',
+						userId,
+						scope: ['profile'],
+						metadata: {},
+						createdAt: 0,
+					},
+				],
+			}
+		},
+		revokeGrant: async () => undefined,
+		deleteClient: async (clientId) => {
+			deletedClientIds.push(clientId)
+		},
+	})
+	setAuthSessionSecret(cookieSecret)
+	const cookie = await createAuthCookie(
+		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		false,
+	)
+
+	const response = await handleAuthorizeRequest(
+		new Request(
+			'https://example.com/oauth/authorize?client_id=client-123&redirect_uri=https%3A%2F%2Flocalhost%3A8888%2Fcallback',
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					Cookie: cookie,
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					decision: 'reset-client',
+					resetReason:
+						'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.',
+				}),
+			},
+		),
+		createEnv(helpers),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		message:
+			'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+	})
+	expect(deletedClientIds).toEqual(['client-123'])
+})
+
 test('oauth callback page returns SPA shell', async () => {
 	const response = handleOAuthCallback(
 		new Request('https://example.com/oauth/callback?code=abc123&state=demo'),

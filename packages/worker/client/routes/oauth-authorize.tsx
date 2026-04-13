@@ -37,6 +37,10 @@ type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
 const invalidRedirectUriMessage =
 	'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.'
 
+function isInvalidRedirectUriMessage(message: string | null | undefined) {
+	return message === invalidRedirectUriMessage
+}
+
 function getSearchParams() {
 	return typeof window === 'undefined'
 		? new URLSearchParams()
@@ -219,7 +223,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			sessionStatus === 'loading' || sessionStatus === 'idle'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
 		const showResetClientCard =
-			queryError === invalidRedirectUriMessage && !resetCompleted
+			(isInvalidRedirectUriMessage(queryError) ||
+				isInvalidRedirectUriMessage(message?.text)) &&
+			!resetCompleted
 		const actionsDisabled =
 			status !== 'ready' || Boolean(submittingDecision) || isSessionLoading
 		const resetClientDisabled =
