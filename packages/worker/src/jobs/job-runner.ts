@@ -146,17 +146,18 @@ class JobRunnerBase extends DurableObject<Env> {
 	async getDetails(): Promise<JobDetails> {
 		const config = await this.readConfig(this.ctx.id.toString())
 		const status = await this.readRunnerStatus()
+		const job = await this.requireJob()
 		return {
 			id: config.jobId,
 			userId: config.userId,
-			name: (await this.requireJob()).name,
+			name: job.name,
 			serverCode: config.serverCode,
 			serverCodeId: config.serverCodeId,
 			schedule: config.schedule,
 			timezone: config.timezone,
 			enabled: config.enabled,
-			createdAt: (await this.requireJob()).createdAt,
-			updatedAt: (await this.requireJob()).updatedAt,
+			createdAt: job.createdAt,
+			updatedAt: job.updatedAt,
 			...status,
 			scheduleSummary: await this.getScheduleSummary(),
 		}
