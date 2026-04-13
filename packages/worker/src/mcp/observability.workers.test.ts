@@ -146,7 +146,8 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 			{
 				title: 'Observed app',
 				description: 'Observation test app.',
-				code: 'document.querySelector("#app")!.innerHTML = "<h1>Observed app</h1>"',
+				clientCode:
+					'document.querySelector("#app")!.innerHTML = "<h1>Observed app</h1>"',
 			},
 			{
 				env: {
@@ -160,6 +161,26 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 										}),
 									}
 								},
+							}
+						},
+					},
+					APP_RUNNER: {
+						idFromName(name: string) {
+							return name as unknown as DurableObjectId
+						},
+						get() {
+							return {
+								configure: async () => ({
+									appId: 'generated-app',
+									userId: 'user-1',
+									baseUrl: 'https://example.com',
+									facetNames: ['main'],
+									serverCode: null,
+									serverCodeId: crypto.randomUUID(),
+									rateLimitPerMinute: 120,
+									killSwitchEnabled: false,
+									lastError: null,
+								}),
 							}
 						},
 					},
@@ -200,7 +221,7 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 				app_id: 'app-1',
 				title: 'Observed app',
 				description: 'Observation test app.',
-				code: '<main><h1>Observed app</h1></main>',
+				clientCode: '<main><h1>Observed app</h1></main>',
 				hidden: false,
 			},
 			{
@@ -215,6 +236,26 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 										}),
 									}
 								},
+							}
+						},
+					},
+					APP_RUNNER: {
+						idFromName(name: string) {
+							return name as unknown as DurableObjectId
+						},
+						get() {
+							return {
+								configure: async () => ({
+									appId: 'app-1',
+									userId: 'user-1',
+									baseUrl: 'https://example.com',
+									facetNames: ['main'],
+									serverCode: null,
+									serverCodeId: crypto.randomUUID(),
+									rateLimitPerMinute: 120,
+									killSwitchEnabled: false,
+									lastError: null,
+								}),
 							}
 						},
 					},

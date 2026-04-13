@@ -141,15 +141,14 @@ test('readSavedAppSourceFromHostToolResult reads a saved app source payload', ()
 	const result = readSavedAppSourceFromHostToolResult({
 		structuredContent: {
 			app_id: 'app-123',
-			runtime: 'javascript',
-			code: 'console.log("hello")',
+			client_code: '<main>hello</main>',
 		},
 	})
 
 	expect(result).toEqual({
 		handled: true,
-		runtime: 'javascript',
-		code: 'console.log("hello")',
+		runtime: 'html',
+		code: '<main>hello</main>',
 	})
 })
 
