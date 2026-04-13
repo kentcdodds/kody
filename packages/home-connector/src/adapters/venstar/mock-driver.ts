@@ -81,12 +81,12 @@ function createDefaultThermostatState(): MockThermostatState {
 
 export function resetMockVenstarState() {
 	mockThermostats['192.168.10.40'] = {
-		info: { ...defaultInfo, spacetemp: 71 },
+		info: { ...defaultInfo, name: 'Hallway', spacetemp: 71 },
 		sensors: structuredClone(defaultSensors),
 		runtimes: structuredClone(defaultRuntimes),
 	}
 	mockThermostats['192.168.10.41'] = {
-		info: { ...defaultInfo, spacetemp: 74, humidity: 38 },
+		info: { ...defaultInfo, name: 'Office', spacetemp: 74, humidity: 38 },
 		sensors: structuredClone(defaultSensors),
 		runtimes: structuredClone(defaultRuntimes),
 	}

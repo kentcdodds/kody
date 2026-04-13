@@ -183,7 +183,8 @@ test('venstar status scan shows discovered thermostats', async () => {
 		const html = await response.text()
 		expect(html).toContain('Scan complete. Discovered')
 		expect(html).toContain('Discovered thermostats')
-		expect(html).toContain('Mock Venstar 2')
+		expect(html).toContain('Office')
+		expect(html).toContain('Mock Venstar 3')
 		expect(html).toContain('Copy this name/IP into')
 	} finally {
 		storage.close()
