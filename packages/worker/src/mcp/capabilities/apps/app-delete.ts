@@ -12,7 +12,7 @@ import { deleteUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 const outputSchema = z.object({
 	ok: z.literal(true),
 	app_id: z.string(),
-	deleted: z.literal(true),
+	deleted: z.boolean(),
 })
 
 export const appDeleteCapability = defineDomainCapability(
@@ -31,22 +31,22 @@ export const appDeleteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const app = await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
+			const app = await getUiArtifactById(
+				ctx.env.APP_DB,
+				user.userId,
+				args.app_id,
+			)
 			if (!app) {
-				throw new Error('Saved app not found for this user.')
+				return {
+					ok: true,
+					app_id: args.app_id,
+					deleted: false,
+				} as const
 			}
 			await deleteSavedAppRunner({
 				env: ctx.env,
 				appId: args.app_id,
 			})
-			const deleted = await deleteUiArtifact(
-				ctx.env.APP_DB,
-				user.userId,
-				args.app_id,
-			)
-			if (!deleted) {
-				throw new Error('Saved app not found for this user.')
-			}
 			const cleanupResults = await Promise.allSettled([
 				deleteAllAppScopedSecrets({
 					env: ctx.env,
@@ -69,8 +69,18 @@ export const appDeleteCapability = defineDomainCapability(
 				)
 			if (cleanupErrors.length > 0) {
 				throw new Error(
-					`Saved app deleted, but cleanup failed: ${cleanupErrors.join('; ')}`,
+					`Saved app cleanup failed before deleting the record: ${cleanupErrors.join(
+						'; ',
+					)}`,
 				)
+			}
+			const deleted = await deleteUiArtifact(
+				ctx.env.APP_DB,
+				user.userId,
+				args.app_id,
+			)
+			if (!deleted) {
+				throw new Error('Saved app not found for this user.')
 			}
 			return {
 				ok: true,
