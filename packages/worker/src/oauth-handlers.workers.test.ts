@@ -359,6 +359,7 @@ test('reset client is rejected when the request is not a redirect mismatch', asy
 
 test('reset client also works when the mismatch came from authorize-info loading', async () => {
 	const deletedClientIds = new Array<string>()
+	const revokedGrantIds = new Array<string>()
 	const userId = await createStableUserIdFromEmail('user@example.com')
 	const helpers = createHelpers({
 		listUserGrants: async (requestedUserId) => {
@@ -376,7 +377,9 @@ test('reset client also works when the mismatch came from authorize-info loading
 				],
 			}
 		},
-		revokeGrant: async () => undefined,
+		revokeGrant: async (grantId) => {
+			revokedGrantIds.push(grantId)
+		},
 		deleteClient: async (clientId) => {
 			deletedClientIds.push(clientId)
 		},
@@ -411,6 +414,7 @@ test('reset client also works when the mismatch came from authorize-info loading
 		message:
 			'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
 	})
+	expect(revokedGrantIds).toEqual(['grant-1'])
 	expect(deletedClientIds).toEqual(['client-123'])
 })
 

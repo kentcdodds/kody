@@ -174,6 +174,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			}
 			if (typeof payload?.message === 'string') {
 				resetCompleted = true
+				submittingDecision = null
 				setMessage({ type: 'info', text: payload.message })
 				return
 			}
