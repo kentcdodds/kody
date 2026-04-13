@@ -185,9 +185,10 @@ class SchedulerDOBase extends DurableObject<Env> {
 		const nextSchedule = payload.body.schedule
 		const nextTimezone = payload.body.timezone
 		const nextEnabled = payload.body.enabled ?? existing.enabled
-		const schedule = nextSchedule !== undefined
-			? normalizeScheduledJobSchedule(nextSchedule)
-			: existing.schedule
+		const schedule =
+			nextSchedule !== undefined
+				? normalizeScheduledJobSchedule(nextSchedule)
+				: existing.schedule
 		const timezone =
 			nextTimezone === null
 				? normalizeSchedulerTimezone(null)
@@ -196,13 +197,12 @@ class SchedulerDOBase extends DurableObject<Env> {
 			JSON.stringify(schedule) !== JSON.stringify(existing.schedule) ||
 			timezone !== existing.timezone ||
 			(existing.enabled === false && nextEnabled === true)
-		const nextRunAt =
-			shouldRecomputeNextRunAt
-				? computeNextRunAt({
-						schedule,
-						timezone,
-					})
-				: existing.nextRunAt
+		const nextRunAt = shouldRecomputeNextRunAt
+			? computeNextRunAt({
+					schedule,
+					timezone,
+				})
+			: existing.nextRunAt
 		const updated: ScheduledJob = {
 			...existing,
 			name:

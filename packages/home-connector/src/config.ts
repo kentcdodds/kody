@@ -13,6 +13,7 @@ export type HomeConnectorConfig = {
 	lutronDiscoveryUrl: string
 	sonosDiscoveryUrl: string
 	bondDiscoveryUrl: string
+	venstarDiscoveryUrl: string
 	venstarThermostats: Array<VenstarThermostatConfig>
 	dataPath: string
 	dbPath: string
@@ -95,9 +96,7 @@ function parseVenstarThermostats(
 	}
 	return parsed
 		.map((entry) => normalizeVenstarThermostatConfig(entry))
-		.filter(
-			(entry): entry is VenstarThermostatConfig => entry != null,
-		)
+		.filter((entry): entry is VenstarThermostatConfig => entry != null)
 }
 
 function resolveVenstarThermostats(dataPath: string) {
@@ -152,6 +151,9 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 			'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
 		bondDiscoveryUrl:
 			process.env.BOND_DISCOVERY_URL?.trim() || 'mdns://_bond._tcp.local',
+		venstarDiscoveryUrl:
+			process.env.VENSTAR_DISCOVERY_URL?.trim() ||
+			'ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp',
 		venstarThermostats: resolveVenstarThermostats(dataPath),
 		dataPath,
 		dbPath: resolveHomeConnectorDbPath(dataPath),

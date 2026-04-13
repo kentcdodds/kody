@@ -42,8 +42,8 @@ Kody can persist scheduled codemode jobs per user:
   human-readable schedule summary
 - **`scheduler_get`** — inspect one job
 - **`scheduler_delete`** — remove a job
-- **`scheduler_run_now`** — trigger a job immediately without changing its normal
-  schedule
+- **`scheduler_run_now`** — trigger a job immediately without changing its
+  normal schedule
 
 Cron schedules use standard **5-field cron syntax** and may include an IANA
 timezone such as **`America/New_York`**. One-shot schedules use an ISO 8601 UTC

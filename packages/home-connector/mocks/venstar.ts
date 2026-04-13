@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import {
 	applyMockVenstarControl,
 	applyMockVenstarSettings,
+	getMockVenstarDiscoveryPayload,
 	getMockVenstarInfo,
 	getMockVenstarRuntimes,
 	getMockVenstarSensors,
@@ -19,8 +20,12 @@ const sensorsPattern = /^http:\/\/[^/]+\/query\/sensors\/?$/
 const runtimesPattern = /^http:\/\/[^/]+\/query\/runtimes\/?$/
 const controlPattern = /^http:\/\/[^/]+\/control\/?$/
 const settingsPattern = /^http:\/\/[^/]+\/settings\/?$/
+const discoveryPattern = /^http:\/\/venstar\.mock\.local\/discovery\/?$/
 
 export const venstarHandlers = [
+	http.get(discoveryPattern, () => {
+		return HttpResponse.json(getMockVenstarDiscoveryPayload())
+	}),
 	http.get(infoPattern, ({ request }) => {
 		const ip = resolveIpFromUrl(new URL(request.url))
 		return HttpResponse.json(getMockVenstarInfo(ip))
@@ -58,9 +63,7 @@ export const venstarHandlers = [
 			...(params.has('schedule')
 				? { schedule: Number(params.get('schedule')) }
 				: {}),
-			...(params.has('hum')
-				? { humidify: Number(params.get('hum')) }
-				: {}),
+			...(params.has('hum') ? { humidify: Number(params.get('hum')) } : {}),
 			...(params.has('dehum')
 				? { dehumidify: Number(params.get('dehum')) }
 				: {}),

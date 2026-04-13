@@ -6,6 +6,10 @@ import { type LutronDiscoveryDiagnostics } from './adapters/lutron/types.ts'
 import { type SamsungTvDiscoveryDiagnostics } from './adapters/samsung-tv/types.ts'
 import { type BondDiscoveryDiagnostics } from './adapters/bond/types.ts'
 import { type SonosDiscoveryDiagnostics } from './adapters/sonos/types.ts'
+import {
+	type VenstarDiscoveredThermostat,
+	type VenstarDiscoveryDiagnostics,
+} from './adapters/venstar/types.ts'
 
 export type HomeConnectorConnectionState = {
 	workerUrl: string
@@ -25,6 +29,8 @@ export type HomeConnectorState = {
 	lutronDiscoveryDiagnostics: LutronDiscoveryDiagnostics | null
 	sonosDiscoveryDiagnostics: SonosDiscoveryDiagnostics | null
 	bondDiscoveryDiagnostics: BondDiscoveryDiagnostics | null
+	venstarDiscoveryDiagnostics: VenstarDiscoveryDiagnostics | null
+	venstarDiscoveredThermostats: Array<VenstarDiscoveredThermostat>
 }
 
 const initialState: HomeConnectorState = {
@@ -43,6 +49,8 @@ const initialState: HomeConnectorState = {
 	lutronDiscoveryDiagnostics: null,
 	sonosDiscoveryDiagnostics: null,
 	bondDiscoveryDiagnostics: null,
+	venstarDiscoveryDiagnostics: null,
+	venstarDiscoveredThermostats: [],
 }
 
 export function createAppState(): HomeConnectorState {
@@ -106,6 +114,22 @@ export function setBondDiscoveryDiagnostics(
 ) {
 	state.bondDiscoveryDiagnostics = diagnostics
 	return state.bondDiscoveryDiagnostics
+}
+
+export function setVenstarDiscoveryDiagnostics(
+	state: HomeConnectorState,
+	diagnostics: VenstarDiscoveryDiagnostics | null,
+) {
+	state.venstarDiscoveryDiagnostics = diagnostics
+	return state.venstarDiscoveryDiagnostics
+}
+
+export function setVenstarDiscoveredThermostats(
+	state: HomeConnectorState,
+	thermostats: Array<VenstarDiscoveredThermostat>,
+) {
+	state.venstarDiscoveredThermostats = [...thermostats]
+	return state.venstarDiscoveredThermostats
 }
 
 export function getDiscoveredRokuDevices(state: HomeConnectorState) {

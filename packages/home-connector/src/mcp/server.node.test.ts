@@ -54,7 +54,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		state,
 		storage,
 	})
-	const venstar = createVenstarAdapter({ config })
+	const venstar = createVenstarAdapter({ config, state })
 	await samsungTv.scan()
 	await lutron.scan()
 	await sonos.scan()

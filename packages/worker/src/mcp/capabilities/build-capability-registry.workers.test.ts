@@ -76,7 +76,9 @@ test('buildCapabilityRegistry rejects duplicate domain registration', () => {
 
 test('builtin capability domains include scheduler', async () => {
 	const { builtinDomains } = await import('./builtin-domains.ts')
-	expect(builtinDomains.some((domain) => domain.name === 'scheduler')).toBe(true)
+	expect(builtinDomains.some((domain) => domain.name === 'scheduler')).toBe(
+		true,
+	)
 	const schedulerDomain = builtinDomains.find(
 		(domain) => domain.name === 'scheduler',
 	)

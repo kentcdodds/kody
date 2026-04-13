@@ -30,6 +30,7 @@ function createConfig(dbPath: string) {
 		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
+		venstarDiscoveryUrl: 'http://venstar.mock.local/discovery',
 		venstarThermostats: [],
 		dataPath: path.dirname(dbPath),
 		dbPath,

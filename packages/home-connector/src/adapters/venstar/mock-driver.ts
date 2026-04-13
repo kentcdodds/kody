@@ -14,6 +14,13 @@ type MockThermostatState = {
 	runtimes: VenstarRuntimesResponse
 }
 
+export type MockVenstarDiscoveryEntry = {
+	name: string
+	ip: string
+	location: string
+	usn: string
+}
+
 const defaultInfo: VenstarInfoResponse = {
 	mode: 3,
 	state: 0,
@@ -73,13 +80,16 @@ function createDefaultThermostatState(): MockThermostatState {
 }
 
 export function resetMockVenstarState() {
+	for (const key of Object.keys(mockThermostats)) {
+		delete mockThermostats[key]
+	}
 	mockThermostats['192.168.10.40'] = {
-		info: { ...defaultInfo, spacetemp: 71 },
+		info: { ...defaultInfo, name: 'Hallway', spacetemp: 71 },
 		sensors: structuredClone(defaultSensors),
 		runtimes: structuredClone(defaultRuntimes),
 	}
 	mockThermostats['192.168.10.41'] = {
-		info: { ...defaultInfo, spacetemp: 74, humidity: 38 },
+		info: { ...defaultInfo, name: 'Office', spacetemp: 74, humidity: 38 },
 		sensors: structuredClone(defaultSensors),
 		runtimes: structuredClone(defaultRuntimes),
 	}
@@ -88,7 +98,10 @@ export function resetMockVenstarState() {
 resetMockVenstarState()
 
 function getThermostatState(ip: string) {
-	const normalized = ip.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '')
+	const normalized = ip
+		.trim()
+		.replace(/^https?:\/\//i, '')
+		.replace(/\/$/, '')
 	const existing = mockThermostats[normalized]
 	if (existing) return existing
 	const created = createDefaultThermostatState()
@@ -149,5 +162,27 @@ export function applyMockVenstarSettings(
 	}
 	return {
 		success: true,
+	}
+}
+
+export function listMockVenstarDiscoveryEntries(): Array<MockVenstarDiscoveryEntry> {
+	return Object.entries(mockThermostats).map(([ip, state], index) => {
+		const name =
+			typeof state.info.name === 'string' && state.info.name.trim().length > 0
+				? state.info.name.trim()
+				: `Mock Venstar ${String(index + 1)}`
+		const stableId = encodeURIComponent(ip)
+		return {
+			name,
+			ip,
+			location: `http://${ip}/`,
+			usn: `colortouch:ecp:ip:${stableId}:name:${encodeURIComponent(name)}:type:residential`,
+		}
+	})
+}
+
+export function getMockVenstarDiscoveryPayload() {
+	return {
+		thermostats: listMockVenstarDiscoveryEntries(),
 	}
 }

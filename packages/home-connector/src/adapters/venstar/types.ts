@@ -67,3 +67,45 @@ export type VenstarSettingsResponse = {
 	success?: boolean
 	[key: string]: unknown
 }
+
+export type VenstarDiscoveredThermostat = {
+	name: string
+	ip: string
+	location: string
+	usn: string | null
+	lastSeenAt: string
+	rawDiscovery: Record<string, unknown> | null
+}
+
+export type VenstarSsdpHitDiagnostic = {
+	receivedAt: string
+	remoteAddress: string
+	remotePort: number
+	raw: string
+	location: string | null
+	usn: string | null
+	server: string | null
+}
+
+export type VenstarInfoLookupDiagnostic = {
+	location: string
+	infoUrl: string
+	raw: Record<string, unknown> | null
+	parsed: {
+		name: string
+		ip: string
+		mode: number | null
+		spacetemp: number | null
+		humidity: number | null
+	} | null
+	error: string | null
+}
+
+export type VenstarDiscoveryDiagnostics = {
+	protocol: 'json' | 'ssdp'
+	discoveryUrl: string
+	scannedAt: string
+	jsonResponse: Record<string, unknown> | null
+	ssdpHits: Array<VenstarSsdpHitDiagnostic>
+	infoLookups: Array<VenstarInfoLookupDiagnostic>
+}
