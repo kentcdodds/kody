@@ -132,7 +132,7 @@ async function probeVenstarSubnet(cidrs: Array<string>): Promise<{
 
 			const infoUrl = `http://${ip}/query/info`
 			try {
-				const info = await fetchJson<Record<string, unknown>>(infoUrl, 2_000)
+				const info = await fetchJson<Record<string, unknown>>(infoUrl, 750)
 				if (!looksLikeVenstarInfo(info)) continue
 				const location = normalizeDeviceLocation(`http://${ip}/`)
 				if (seen.has(location)) continue
