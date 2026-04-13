@@ -16,6 +16,7 @@ async function main() {
 		connector.samsungTv,
 		connector.sonos,
 		connector.bond,
+		connector.venstar,
 	)
 
 	const server = http.createServer(

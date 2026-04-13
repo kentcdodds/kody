@@ -4,6 +4,7 @@ import { createBondAdapter } from '../src/adapters/bond/index.ts'
 import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { createSonosAdapter } from '../src/adapters/sonos/index.ts'
+import { createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { createAppState } from '../src/state.ts'
 import { createHomeConnectorStorage } from '../src/storage/index.ts'
@@ -21,7 +22,7 @@ function createConfig(): HomeConnectorConfig {
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
-		venstarThermostats: [],
+		venstarThermostats: [{ name: 'Hallway', ip: 'venstar.mock.local' }],
 		dataPath: '/tmp',
 		dbPath: ':memory:',
 		port: 4040,
@@ -55,6 +56,7 @@ function createAdapters(config: HomeConnectorConfig) {
 			state,
 			storage,
 		}),
+		venstar: createVenstarAdapter({ config }),
 	}
 }
 
@@ -62,7 +64,7 @@ installHomeConnectorMockServer()
 
 test('home route toggles worker snapshot link by connector id', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond } =
+	const { state, storage, lutron, sonos, samsungTv, bond, venstar } =
 		createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
@@ -74,12 +76,17 @@ test('home route toggles worker snapshot link by connector id', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			venstar,
 		)
 		const responseWithConnector = await router.fetch('http://example.test/')
 		expect(responseWithConnector.status).toBe(200)
 		const htmlWithConnector = await responseWithConnector.text()
 		expect(htmlWithConnector).toContain('Home connector admin')
 		expect(htmlWithConnector).toContain('/home/connectors/default/snapshot')
+		expect(htmlWithConnector).toContain('/venstar/status')
+		expect(htmlWithConnector).toContain('/venstar/setup')
+		expect(htmlWithConnector).toContain('Venstar configured')
+		expect(htmlWithConnector).toContain('Venstar online')
 
 		state.connection.connectorId = ''
 		const responseWithoutConnector = await router.fetch('http://example.test/')
@@ -94,7 +101,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 
 test('bond setup route renders token form', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond } =
+	const { state, storage, lutron, sonos, samsungTv, bond, venstar } =
 		createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
@@ -104,6 +111,7 @@ test('bond setup route renders token form', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			venstar,
 		)
 		const response = await router.fetch('http://example.test/bond/setup')
 		expect(response.status).toBe(200)
@@ -115,9 +123,9 @@ test('bond setup route renders token form', async () => {
 	}
 })
 
-test('health route returns ok json', async () => {
+test('venstar routes render status and setup details', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond } =
+	const { state, storage, lutron, sonos, samsungTv, bond, venstar } =
 		createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
@@ -127,6 +135,44 @@ test('health route returns ok json', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			venstar,
+		)
+		const statusResponse = await router.fetch(
+			'http://example.test/venstar/status',
+		)
+		expect(statusResponse.status).toBe(200)
+		const statusHtml = await statusResponse.text()
+		expect(statusHtml).toContain('Venstar status')
+		expect(statusHtml).toContain('Hallway')
+		expect(statusHtml).toContain('venstar.mock.local')
+		expect(statusHtml).toContain('Online thermostats')
+
+		const setupResponse = await router.fetch(
+			'http://example.test/venstar/setup',
+		)
+		expect(setupResponse.status).toBe(200)
+		const setupHtml = await setupResponse.text()
+		expect(setupHtml).toContain('Venstar setup')
+		expect(setupHtml).toContain('VENSTAR_THERMOSTATS')
+		expect(setupHtml).toContain('venstar-thermostats.json')
+	} finally {
+		storage.close()
+	}
+})
+
+test('health route returns ok json', async () => {
+	const config = createConfig()
+	const { state, storage, lutron, sonos, samsungTv, bond, venstar } =
+		createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			venstar,
 		)
 		const response = await router.fetch('http://example.test/health')
 		expect(response.status).toBe(200)

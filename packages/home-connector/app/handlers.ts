@@ -8,6 +8,7 @@ import { type LutronDiscoveryDiagnostics } from '../src/adapters/lutron/types.ts
 import { type createBondAdapter } from '../src/adapters/bond/index.ts'
 import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
+import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
 import { scanRokuDevices } from '../src/adapters/roku/index.ts'
@@ -29,6 +30,8 @@ function renderQuickLinks(state: HomeConnectorState) {
 		<li><a href="/samsung-tv/setup">Samsung TV setup</a></li>
 		<li><a href="/bond/status">Bond status</a></li>
 		<li><a href="/bond/setup">Bond token setup</a></li>
+		<li><a href="/venstar/status">Venstar status</a></li>
+		<li><a href="/venstar/setup">Venstar setup</a></li>
 		<li><a href="/health">Health JSON</a></li>
 		${workerSnapshotUrl
 			? html`<li>
@@ -65,6 +68,7 @@ export function createHomeDashboardHandler(
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
 	bond: ReturnType<typeof createBondAdapter>,
+	venstar: ReturnType<typeof createVenstarAdapter>,
 ) {
 	return {
 		middleware: [],
@@ -79,6 +83,10 @@ export function createHomeDashboardHandler(
 			const samsungStatus = samsungTv.getStatus()
 			const sonosStatus = sonos.getStatus()
 			const bondStatus = bond.getStatus()
+			const venstarStatus = await venstar.listThermostatsWithStatus()
+			const onlineVenstarCount = venstarStatus.filter(
+				(thermostat) => thermostat.info != null,
+			).length
 
 			return render(
 				RootLayout({
@@ -181,6 +189,18 @@ export function createHomeDashboardHandler(
 										value: String(
 											bondStatus.bridges.filter((b) => b.hasStoredToken).length,
 										),
+									},
+									{
+										label: 'Venstar configured',
+										value: String(venstarStatus.length),
+									},
+									{
+										label: 'Venstar online',
+										value: String(onlineVenstarCount),
+									},
+									{
+										label: 'Venstar offline',
+										value: String(venstarStatus.length - onlineVenstarCount),
 									},
 									{
 										label: 'Mocks',
