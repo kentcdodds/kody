@@ -2,6 +2,10 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { type createBondAdapter } from '../adapters/bond/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
+import {
+	buildToolInputSchema,
+	type ToolInputSchema,
+} from './tool-input-schema.ts'
 
 type BondToolDescriptor = {
 	name: string
@@ -11,13 +15,17 @@ type BondToolDescriptor = {
 	annotations?: Record<string, unknown>
 }
 
+type BondRegisteredToolDescriptor = BondToolDescriptor & {
+	sdkInputSchema?: ToolInputSchema
+}
+
 type BondToolHandler = (
 	args: Record<string, unknown>,
 ) => Promise<CallToolResult>
 
 export function registerBondHomeConnectorTools(input: {
 	registerTool: (
-		descriptor: BondToolDescriptor,
+		descriptor: BondRegisteredToolDescriptor,
 		handler: BondToolHandler,
 	) => void
 	bond: ReturnType<typeof createBondAdapter>
@@ -44,15 +52,11 @@ export function registerBondHomeConnectorTools(input: {
 		].join('\n')
 	}
 
-	function bridgeScopedSchema(
-		shape: Record<string, z.ZodTypeAny> = {},
-	): Record<string, unknown> {
-		return z.toJSONSchema(
-			z.object({
-				bridgeId: z.string().min(1).optional(),
-				...shape,
-			}),
-		) as Record<string, unknown>
+	function bridgeScopedSchema(shape: Record<string, z.ZodTypeAny> = {}) {
+		return buildToolInputSchema({
+			bridgeId: z.string().min(1).optional(),
+			...shape,
+		})
 	}
 
 	registerTool(
@@ -153,11 +157,9 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Adopt Bond Bridge',
 			description:
 				'Mark a discovered Bond bridge as adopted so it can be controlled and receive stored tokens.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					bridgeId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				bridgeId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const bridgeId = String(args['bridgeId'] ?? '')
@@ -180,11 +182,9 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Release Bond Bridge',
 			description:
 				'Remove a Bond bridge and its stored token from this connector database. Fails if the bridge id is unknown.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					bridgeId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				bridgeId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const bridgeId = String(args['bridgeId'] ?? '')
@@ -229,13 +229,11 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Update Bond Bridge Connection',
 			description:
 				'Update the stored host (and optional port) used to reach a Bond bridge when mDNS names are unreliable.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					bridgeId: z.string().min(1),
-					host: z.string().min(1),
-					port: z.number().int().min(1).max(65535).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				bridgeId: z.string().min(1),
+				host: z.string().min(1),
+				port: z.number().int().min(1).max(65535).optional(),
+			}),
 		},
 		async (args) => {
 			const bridgeId = String(args['bridgeId'] ?? '')
@@ -260,7 +258,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Get Bond Bridge Version',
 			description:
 				'Read Bond /v2/sys/version (no token required) for firmware and model metadata.',
-			inputSchema: bridgeScopedSchema({}),
+			...bridgeScopedSchema({}),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -287,7 +285,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'List Bond Devices',
 			description:
 				'List devices on an adopted Bond bridge with names, types, and supported actions.',
-			inputSchema: bridgeScopedSchema({}),
+			...bridgeScopedSchema({}),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -316,7 +314,7 @@ export function registerBondHomeConnectorTools(input: {
 			name: 'bond_get_device',
 			title: 'Get Bond Device',
 			description: 'Fetch full Bond device metadata JSON.',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				deviceId: z.string().min(1),
 			}),
 			annotations: {
@@ -345,7 +343,7 @@ export function registerBondHomeConnectorTools(input: {
 			name: 'bond_get_device_state',
 			title: 'Get Bond Device State',
 			description: 'Read Bond device state (shade position, etc.).',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				deviceId: z.string().min(1),
 			}),
 			annotations: {
@@ -375,7 +373,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Open Bond Shade',
 			description:
 				'Send Bond Open action. Specify deviceId or deviceName (fuzzy match).',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				deviceId: z.string().min(1).optional(),
 				deviceName: z.string().min(1).optional(),
 			}),
@@ -408,7 +406,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Close Bond Shade',
 			description:
 				'Send Bond Close action. Specify deviceId or deviceName (fuzzy match).',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				deviceId: z.string().min(1).optional(),
 				deviceName: z.string().min(1).optional(),
 			}),
@@ -441,7 +439,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Stop Bond Shade',
 			description:
 				'Send Bond Stop action. Specify deviceId or deviceName (fuzzy match).',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				deviceId: z.string().min(1).optional(),
 				deviceName: z.string().min(1).optional(),
 			}),
@@ -474,7 +472,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Set Bond Shade Position',
 			description:
 				'Send Bond SetPosition with a 0-100 argument. Specify deviceId or deviceName (fuzzy match).',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				deviceId: z.string().min(1).optional(),
 				deviceName: z.string().min(1).optional(),
 				position: z.number().min(0).max(100),
@@ -509,7 +507,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Invoke Bond Device Action',
 			description:
 				'Invoke an arbitrary Bond device action when it exists on the device profile (validated server-side).',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				deviceId: z.string().min(1).optional(),
 				deviceName: z.string().min(1).optional(),
 				action: z.string().min(1),
@@ -549,7 +547,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'List Bond Groups',
 			description:
 				'List Bond groups with member devices and supported actions.',
-			inputSchema: bridgeScopedSchema({}),
+			...bridgeScopedSchema({}),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -578,7 +576,7 @@ export function registerBondHomeConnectorTools(input: {
 			name: 'bond_get_group',
 			title: 'Get Bond Group',
 			description: 'Fetch full Bond group metadata JSON.',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				groupId: z.string().min(1),
 			}),
 			annotations: {
@@ -607,7 +605,7 @@ export function registerBondHomeConnectorTools(input: {
 			name: 'bond_get_group_state',
 			title: 'Get Bond Group State',
 			description: 'Read Bond group state JSON.',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				groupId: z.string().min(1),
 			}),
 			annotations: {
@@ -637,7 +635,7 @@ export function registerBondHomeConnectorTools(input: {
 			title: 'Invoke Bond Group Action',
 			description:
 				'Invoke a Bond group action when it exists on the group profile (validated server-side).',
-			inputSchema: bridgeScopedSchema({
+			...bridgeScopedSchema({
 				groupId: z.string().min(1),
 				action: z.string().min(1),
 				argument: z.union([z.number(), z.string(), z.boolean()]).optional(),

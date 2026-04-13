@@ -12,6 +12,10 @@ import { type createVenstarAdapter } from '../adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
 import { registerBondHomeConnectorTools } from './register-bond-tools.ts'
 import { type HomeConnectorState } from '../state.ts'
+import {
+	buildToolInputSchema,
+	type ToolInputSchema,
+} from './tool-input-schema.ts'
 
 export type HomeConnectorToolDescriptor = {
 	name: string
@@ -20,6 +24,11 @@ export type HomeConnectorToolDescriptor = {
 	inputSchema: Record<string, unknown>
 	outputSchema?: Record<string, unknown>
 	annotations?: Record<string, unknown>
+}
+
+type HomeConnectorRegisteredToolDescriptor = HomeConnectorToolDescriptor & {
+	sdkInputSchema?: ToolInputSchema
+	sdkOutputSchema?: ToolInputSchema
 }
 
 type HomeConnectorToolHandler = (
@@ -126,7 +135,7 @@ export function createHomeConnectorMcpServer(input: {
 	}
 
 	function registerTool(
-		descriptor: HomeConnectorToolDescriptor,
+		descriptor: HomeConnectorRegisteredToolDescriptor,
 		handler: HomeConnectorToolHandler,
 	) {
 		const instrumentedHandler: HomeConnectorToolHandler = async (
@@ -172,15 +181,19 @@ export function createHomeConnectorMcpServer(input: {
 				},
 			)
 		}
-		tools.set(descriptor.name, { descriptor, handler: instrumentedHandler })
+		const { sdkInputSchema, sdkOutputSchema, ...publicDescriptor } = descriptor
+		tools.set(descriptor.name, {
+			descriptor: publicDescriptor,
+			handler: instrumentedHandler,
+		})
 		server.registerTool(
 			descriptor.name,
 			{
 				title: descriptor.title,
 				description: descriptor.description,
-				inputSchema: descriptor.inputSchema,
+				inputSchema: sdkInputSchema ?? descriptor.inputSchema,
 				...(descriptor.outputSchema
-					? { outputSchema: descriptor.outputSchema }
+					? { outputSchema: sdkOutputSchema ?? descriptor.outputSchema }
 					: {}),
 				...(descriptor.annotations
 					? { annotations: descriptor.annotations }
@@ -191,15 +204,11 @@ export function createHomeConnectorMcpServer(input: {
 		)
 	}
 
-	function playerScopedSchema(
-		shape: Record<string, z.ZodTypeAny> = {},
-	): Record<string, unknown> {
-		return z.toJSONSchema(
-			z.object({
-				playerId: z.string().min(1).optional(),
-				...shape,
-			}),
-		) as Record<string, unknown>
+	function playerScopedSchema(shape: Record<string, z.ZodTypeAny> = {}) {
+		return buildToolInputSchema({
+			playerId: z.string().min(1).optional(),
+			...shape,
+		})
 	}
 
 	function hasAnyValue(
@@ -250,12 +259,10 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Add Venstar Thermostat',
 			description:
 				'Add a Venstar thermostat to managed storage, either by IP from the latest scan or by explicit name/IP.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					ip: z.string().min(1),
-					name: z.string().min(1).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				ip: z.string().min(1),
+				name: z.string().min(1).optional(),
+			}),
 		},
 		async (args) => {
 			const ip = String(args['ip'])
@@ -281,11 +288,9 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'venstar_remove_thermostat',
 			title: 'Remove Venstar Thermostat',
 			description: 'Remove a managed Venstar thermostat by IP address.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					ip: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				ip: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const thermostat = venstar.removeThermostat(String(args['ip']))
@@ -340,11 +345,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Venstar Thermostat Info',
 			description:
 				'Fetch /query/info for a Venstar thermostat (by name or IP) including mode, state, setpoints, humidity, and schedule details.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					thermostat: z.string().min(1).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				thermostat: z.string().min(1).optional(),
+			}),
 			annotations: {
 				readOnlyHint: true,
 				idempotentHint: true,
@@ -373,11 +376,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Venstar Thermostat Sensors',
 			description:
 				'Fetch /query/sensors data for a Venstar thermostat by name or IP.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					thermostat: z.string().min(1).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				thermostat: z.string().min(1).optional(),
+			}),
 			annotations: {
 				readOnlyHint: true,
 				idempotentHint: true,
@@ -406,11 +407,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Venstar Thermostat Runtimes',
 			description:
 				'Fetch /query/runtimes data for a Venstar thermostat by name or IP.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					thermostat: z.string().min(1).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				thermostat: z.string().min(1).optional(),
+			}),
 			annotations: {
 				readOnlyHint: true,
 				idempotentHint: true,
@@ -439,7 +438,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Control Venstar Thermostat',
 			description:
 				'POST /control to set Venstar mode, fan, heattemp, and cooltemp. In auto mode, cooltemp must exceed heattemp + setpointdelta.',
-			inputSchema: z.toJSONSchema(
+			...buildToolInputSchema(
 				z
 					.object({
 						thermostat: z.string().min(1).optional(),
@@ -456,7 +455,7 @@ export function createHomeConnectorMcpServer(input: {
 								'Provide at least one control change (mode, fan, heattemp, or cooltemp).',
 						},
 					),
-			) as Record<string, unknown>,
+			),
 		},
 		async (args) => {
 			const result = await venstar.controlThermostat({
@@ -487,7 +486,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Set Venstar Thermostat Settings',
 			description:
 				'POST /settings to update away mode, schedule enablement, humidity setpoints, and temperature units for a Venstar thermostat.',
-			inputSchema: z.toJSONSchema(
+			...buildToolInputSchema(
 				z
 					.object({
 						thermostat: z.string().min(1).optional(),
@@ -511,7 +510,7 @@ export function createHomeConnectorMcpServer(input: {
 								'Provide at least one settings change (away, schedule, humidify, dehumidify, or tempunits).',
 						},
 					),
-			) as Record<string, unknown>,
+			),
 		},
 		async (args) => {
 			const result = await venstar.setSettings({
@@ -604,11 +603,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Adopt Roku Device',
 			description:
 				'Mark a discovered Roku device as adopted so it becomes a managed device.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const device = roku.adoptDevice(String(args['deviceId'] ?? ''))
@@ -630,11 +627,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Ignore Roku Device',
 			description:
 				'Mark a discovered Roku device as ignored so it remains visible but unmanaged.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const device = roku.ignoreDevice(String(args['deviceId'] ?? ''))
@@ -655,12 +650,10 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'roku_press_key',
 			title: 'Press Roku Key',
 			description: 'Send a Roku ECP keypress to an adopted Roku device.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-					key: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+				key: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -684,13 +677,11 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Launch Roku App',
 			description:
 				'Launch a Roku app on an adopted device, optionally with deep-link parameters.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-					appId: z.string().min(1),
-					params: z.record(z.string(), z.string()).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+				appId: z.string().min(1),
+				params: z.record(z.string(), z.string()).optional(),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -717,32 +708,31 @@ export function createHomeConnectorMcpServer(input: {
 		},
 	)
 
+	const rokuListAppsOutputSchema = buildToolInputSchema({
+		deviceId: z.string(),
+		deviceName: z.string(),
+		apps: z.array(
+			z.object({
+				id: z.string(),
+				name: z.string(),
+				type: z.string(),
+				version: z.string(),
+			}),
+		),
+		responseText: z.string(),
+	})
+
 	registerTool(
 		{
 			name: 'roku_list_apps',
 			title: 'List Roku Apps',
 			description:
 				'List installed Roku apps on an adopted device using the Roku ECP app query.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
-			outputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string(),
-					deviceName: z.string(),
-					apps: z.array(
-						z.object({
-							id: z.string(),
-							name: z.string(),
-							type: z.string(),
-							version: z.string(),
-						}),
-					),
-					responseText: z.string(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
+			outputSchema: rokuListAppsOutputSchema.inputSchema,
+			sdkOutputSchema: rokuListAppsOutputSchema.sdkInputSchema,
 			annotations: {
 				readOnlyHint: true,
 				idempotentHint: true,
@@ -763,31 +753,30 @@ export function createHomeConnectorMcpServer(input: {
 		},
 	)
 
+	const rokuActiveAppOutputSchema = buildToolInputSchema({
+		deviceId: z.string(),
+		deviceName: z.string(),
+		app: z
+			.object({
+				id: z.string(),
+				name: z.string(),
+				type: z.string(),
+				version: z.string(),
+			})
+			.nullable(),
+		responseText: z.string(),
+	})
+
 	registerTool(
 		{
 			name: 'roku_get_active_app',
 			title: 'Get Active Roku App',
 			description: 'Get the currently active Roku app on an adopted device.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
-			outputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string(),
-					deviceName: z.string(),
-					app: z
-						.object({
-							id: z.string(),
-							name: z.string(),
-							type: z.string(),
-							version: z.string(),
-						})
-						.nullable(),
-					responseText: z.string(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
+			outputSchema: rokuActiveAppOutputSchema.inputSchema,
+			sdkOutputSchema: rokuActiveAppOutputSchema.sdkInputSchema,
 			annotations: {
 				readOnlyHint: true,
 				idempotentHint: true,
@@ -873,22 +862,23 @@ export function createHomeConnectorMcpServer(input: {
 		},
 	)
 
+	const lutronCredentialsSchema = buildToolInputSchema({
+		processorId: z.string().min(1),
+		username: z.string().min(1),
+		password: z.string().min(1),
+	})
+
 	registerTool(
 		{
 			name: 'lutron_set_credentials',
 			title: 'Set Lutron Credentials',
 			description:
 				'Associate a stored username/password with a discovered Lutron processor for LEAP login on port 8081.',
-			inputSchema: markSecretInputFields(
-				z.toJSONSchema(
-					z.object({
-						processorId: z.string().min(1),
-						username: z.string().min(1),
-						password: z.string().min(1),
-					}),
-				) as Record<string, unknown>,
-				['username', 'password'],
-			) as Record<string, unknown>,
+			inputSchema: markSecretInputFields(lutronCredentialsSchema.inputSchema, [
+				'username',
+				'password',
+			]) as Record<string, unknown>,
+			sdkInputSchema: lutronCredentialsSchema.sdkInputSchema,
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -913,11 +903,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Authenticate Lutron Processor',
 			description:
 				'Attempt a LEAP login against a discovered Lutron processor using stored credentials.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -940,11 +928,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Lutron Inventory',
 			description:
 				'Read the live area, zone, control-station, and scene-button inventory from a Lutron processor.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+			}),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -970,12 +956,10 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Press Lutron Scene Button',
 			description:
 				'Press a Lutron keypad button (scene-like control) using LEAP PressAndRelease.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-					buttonId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+				buttonId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -998,13 +982,11 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'lutron_set_zone_level',
 			title: 'Set Lutron Zone Level',
 			description: 'Set a Lutron zone level using LEAP GoToLevel.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-					zoneId: z.string().min(1),
-					level: z.number().min(0).max(100),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+				zoneId: z.string().min(1),
+				level: z.number().min(0).max(100),
+			}),
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -1029,16 +1011,14 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Set Lutron Zone Color',
 			description:
 				'Set a Lutron SpectrumTune or ColorTune zone using HSV color, optionally overriding level and vibrancy.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-					zoneId: z.string().min(1),
-					hue: z.number().min(0).max(360),
-					saturation: z.number().min(0).max(100),
-					level: z.number().min(0).max(100).optional(),
-					vibrancy: z.number().min(0).max(100).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+				zoneId: z.string().min(1),
+				hue: z.number().min(0).max(360),
+				saturation: z.number().min(0).max(100),
+				level: z.number().min(0).max(100).optional(),
+				vibrancy: z.number().min(0).max(100).optional(),
+			}),
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -1072,14 +1052,12 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Set Lutron Zone White Tuning',
 			description:
 				'Set a Lutron WhiteTune or SpectrumTune zone to a Kelvin temperature, optionally overriding level.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-					zoneId: z.string().min(1),
-					kelvin: z.number().min(1000).max(25000),
-					level: z.number().min(0).max(100).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+				zoneId: z.string().min(1),
+				kelvin: z.number().min(1000).max(25000),
+				level: z.number().min(0).max(100).optional(),
+			}),
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -1108,13 +1086,11 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Set Lutron Switched Zone State',
 			description:
 				'Set a Lutron switched, receptacle, or other on-off zone to On or Off.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-					zoneId: z.string().min(1),
-					state: z.enum(['On', 'Off']),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+				zoneId: z.string().min(1),
+				state: z.enum(['On', 'Off']),
+			}),
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -1143,13 +1119,11 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Set Lutron Shade Level',
 			description:
 				'Set a Lutron shade zone to a target level between 0 and 100.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					processorId: z.string().min(1),
-					zoneId: z.string().min(1),
-					level: z.number().min(0).max(100),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				processorId: z.string().min(1),
+				zoneId: z.string().min(1),
+				level: z.number().min(0).max(100),
+			}),
 		},
 		async (args) => {
 			const processorId = String(args['processorId'] ?? '')
@@ -1237,11 +1211,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Adopt Samsung TV',
 			description:
 				'Mark a discovered Samsung TV as adopted so it becomes a managed device.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const device = samsungTv.adoptDevice(String(args['deviceId'] ?? ''))
@@ -1263,11 +1235,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Samsung TV Device Info',
 			description:
 				'Read current device metadata from a Samsung TV over its local api/v2 endpoint.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -1293,11 +1263,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Pair Samsung TV',
 			description:
 				'Establish a tokened remote session with a Samsung TV and persist the token locally.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -1319,13 +1287,11 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'samsung_press_key',
 			title: 'Press Samsung TV Key',
 			description: 'Send a remote key to an adopted, paired Samsung TV.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-					key: z.string().min(1),
-					times: z.number().int().min(1).max(20).optional(),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+				key: z.string().min(1),
+				times: z.number().int().min(1).max(20).optional(),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -1351,11 +1317,9 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'samsung_go_home',
 			title: 'Go Home On Samsung TV',
 			description: 'Send the Home key to an adopted, paired Samsung TV.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -1378,11 +1342,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Power Off Samsung TV',
 			description:
 				'Best-effort power off for an adopted, paired Samsung TV using the local remote channel.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 			annotations: {
 				destructiveHint: true,
 			},
@@ -1408,11 +1370,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Power On Samsung TV',
 			description:
 				'Best-effort power on for an adopted Samsung TV using Wake-on-LAN and the stored TV MAC address.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -1435,11 +1395,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Known Samsung TV Apps Status',
 			description:
 				'Check a curated set of common app IDs to see which apps are installed on a Samsung TV.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -1465,12 +1423,10 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Launch Samsung TV App',
 			description:
 				'Launch a Samsung TV app by explicit app ID on an adopted device.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-					appId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+				appId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -1494,11 +1450,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Samsung TV Art Mode',
 			description:
 				'Get the current Art Mode state for an adopted, paired Samsung Frame TV.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+			}),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -1523,12 +1477,10 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'samsung_set_art_mode',
 			title: 'Set Samsung TV Art Mode',
 			description: 'Turn Samsung Frame TV Art Mode on or off.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					deviceId: z.string().min(1),
-					mode: z.enum(['on', 'off']),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				deviceId: z.string().min(1),
+				mode: z.enum(['on', 'off']),
+			}),
 		},
 		async (args) => {
 			const deviceId = String(args['deviceId'] ?? '')
@@ -1625,11 +1577,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Adopt Sonos Player',
 			description:
 				'Mark a discovered Sonos player as adopted so it becomes a managed player.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					playerId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				playerId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const playerId = String(args['playerId'] ?? '')
@@ -1646,7 +1596,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_list_groups',
 			title: 'List Sonos Groups',
 			description: 'List current Sonos groups, coordinators, and member rooms.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 			annotations: {
 				readOnlyHint: true,
 				idempotentHint: true,
@@ -1676,7 +1626,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Sonos Player Status',
 			description:
 				'Get transport, track, queue, volume, EQ, and input status for a Sonos player.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -1697,7 +1647,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_get_group_status',
 			title: 'Get Sonos Group Status',
 			description: 'Get playback and membership details for a Sonos group.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				groupId: z.string().min(1),
 			}),
 			annotations: {
@@ -1781,7 +1731,7 @@ export function createHomeConnectorMcpServer(input: {
 				name: tool.name,
 				title: tool.title,
 				description: tool.description,
-				inputSchema: playerScopedSchema(),
+				...playerScopedSchema(),
 			},
 			async (args) =>
 				await tool.handler(
@@ -1795,7 +1745,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_seek',
 			title: 'Seek Sonos Track',
 			description: 'Seek within the current Sonos track using hh:mm:ss.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				position: z.string().min(1),
 			}),
 		},
@@ -1816,7 +1766,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_set_play_mode',
 			title: 'Set Sonos Play Mode',
 			description: 'Set the Sonos play mode for the current queue.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				playMode: z.enum([
 					'NORMAL',
 					'REPEAT_ALL',
@@ -1844,7 +1794,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_set_volume',
 			title: 'Set Sonos Volume',
 			description: 'Set a Sonos player volume between 0 and 100.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				volume: z.number().min(0).max(100),
 			}),
 		},
@@ -1866,7 +1816,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Adjust Sonos Volume',
 			description:
 				'Adjust a Sonos player volume by a positive or negative delta.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				delta: z.number().int().min(-100).max(100),
 			}),
 		},
@@ -1887,7 +1837,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_set_mute',
 			title: 'Set Sonos Mute',
 			description: 'Mute or unmute a Sonos player.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				muted: z.boolean(),
 			}),
 		},
@@ -1911,7 +1861,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_list_favorites',
 			title: 'List Sonos Favorites',
 			description: 'List Sonos favorites currently available to the household.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -1939,7 +1889,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_search_favorites',
 			title: 'Search Sonos Favorites',
 			description: 'Search Sonos favorites by title.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				query: z.string().min(1),
 			}),
 			annotations: {
@@ -1996,7 +1946,7 @@ export function createHomeConnectorMcpServer(input: {
 				name: entry.name,
 				title: entry.title,
 				description: entry.description,
-				inputSchema: playerScopedSchema({
+				...playerScopedSchema({
 					favoriteId: z.string().min(1).optional(),
 					title: z.string().min(1).optional(),
 				}),
@@ -2015,7 +1965,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_list_saved_queues',
 			title: 'List Sonos Saved Queues',
 			description: 'List Sonos saved queues.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -2043,7 +1993,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_search_saved_queues',
 			title: 'Search Sonos Saved Queues',
 			description: 'Search Sonos saved queues by title.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				query: z.string().min(1),
 			}),
 			annotations: {
@@ -2104,7 +2054,7 @@ export function createHomeConnectorMcpServer(input: {
 				name: entry.name,
 				title: entry.title,
 				description: entry.description,
-				inputSchema: playerScopedSchema({
+				...playerScopedSchema({
 					savedQueueId: z.string().min(1).optional(),
 					title: z.string().min(1).optional(),
 				}),
@@ -2123,7 +2073,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_list_queue',
 			title: 'List Sonos Queue',
 			description: 'List the active Sonos queue for a player.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -2151,7 +2101,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_clear_queue',
 			title: 'Clear Sonos Queue',
 			description: 'Remove all items from the active Sonos queue.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 			annotations: {
 				destructiveHint: true,
 			},
@@ -2172,7 +2122,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Remove Sonos Queue Track',
 			description:
 				'Remove a single item from the active Sonos queue by queueItemId or 1-based position.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				queueItemId: z.string().min(1).optional(),
 				position: z.number().int().min(1).optional(),
 			}),
@@ -2202,12 +2152,10 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_group_players',
 			title: 'Group Sonos Players',
 			description: 'Join a Sonos player to another player’s group coordinator.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					playerId: z.string().min(1),
-					coordinatorPlayerId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				playerId: z.string().min(1),
+				coordinatorPlayerId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const playerId = String(args['playerId'] ?? '')
@@ -2229,11 +2177,9 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Ungroup Sonos Player',
 			description:
 				'Remove a Sonos player from its current group and make it standalone.',
-			inputSchema: z.toJSONSchema(
-				z.object({
-					playerId: z.string().min(1),
-				}),
-			) as Record<string, unknown>,
+			...buildToolInputSchema({
+				playerId: z.string().min(1),
+			}),
 		},
 		async (args) => {
 			const playerId = String(args['playerId'] ?? '')
@@ -2250,7 +2196,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Get Sonos Audio Input',
 			description:
 				'Get line-in details for a Sonos player that supports audio input.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 			annotations: {
 				readOnlyHint: true,
 			},
@@ -2268,7 +2214,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_select_audio_input',
 			title: 'Select Sonos Audio Input',
 			description: 'Switch a Sonos player to its line-in audio input.',
-			inputSchema: playerScopedSchema(),
+			...playerScopedSchema(),
 		},
 		async (args) => {
 			const playerId =
@@ -2286,7 +2232,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Set Sonos Line-In Level',
 			description:
 				'Set the line-in input level for a Sonos player with audio input support.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				level: z.number().int().min(0).max(10),
 				rightLevel: z.number().int().min(0).max(10).optional(),
 			}),
@@ -2335,12 +2281,10 @@ export function createHomeConnectorMcpServer(input: {
 				name: entry.name,
 				title: entry.title,
 				description: entry.description,
-				inputSchema: z.toJSONSchema(
-					z.object({
-						sourcePlayerId: z.string().min(1),
-						coordinatorPlayerId: z.string().min(1),
-					}),
-				) as Record<string, unknown>,
+				...buildToolInputSchema({
+					sourcePlayerId: z.string().min(1),
+					coordinatorPlayerId: z.string().min(1),
+				}),
 			},
 			async (args) => {
 				await entry.handler(args)
@@ -2358,7 +2302,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Search Sonos Local Library',
 			description:
 				'Search the Sonos local library across artists, albums, and tracks.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				query: z.string().min(1),
 				category: z.enum(['artists', 'albums', 'tracks']).optional(),
 				limit: z.number().int().min(1).max(1000).optional(),
@@ -2406,7 +2350,7 @@ export function createHomeConnectorMcpServer(input: {
 				name: entry.name,
 				title: entry.title,
 				description: `${entry.title} from the Sonos local library, optionally filtering by a query string.`,
-				inputSchema: playerScopedSchema({
+				...playerScopedSchema({
 					query: z.string().min(1).optional(),
 					limit: z.number().int().min(1).max(1000).optional(),
 				}),
@@ -2453,7 +2397,7 @@ export function createHomeConnectorMcpServer(input: {
 			title: 'Play Sonos URI',
 			description:
 				'Set a Sonos player transport URI directly and start playback.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				uri: z.string().min(1),
 				metadata: z.string().optional(),
 				title: z.string().optional(),
@@ -2504,7 +2448,7 @@ export function createHomeConnectorMcpServer(input: {
 				name: entry.name,
 				title: entry.title,
 				description: `${entry.title} between -10 and 10.`,
-				inputSchema: playerScopedSchema({
+				...playerScopedSchema({
 					value: z.number().int().min(-10).max(10),
 				}),
 			},
@@ -2526,7 +2470,7 @@ export function createHomeConnectorMcpServer(input: {
 			name: 'sonos_set_loudness',
 			title: 'Set Sonos Loudness',
 			description: 'Enable or disable Sonos loudness compensation.',
-			inputSchema: playerScopedSchema({
+			...playerScopedSchema({
 				loudness: z.boolean(),
 			}),
 		},
