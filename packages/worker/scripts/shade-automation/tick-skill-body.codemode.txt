@@ -192,7 +192,7 @@ async () => {
 		studioSkipOffice = true
 	}
 
-	const wxUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=cloud_cover&daily=temperature_2m_max&current=cloud_cover,shortwave_radiation,is_day&forecast_days=1&timezone=${encodeURIComponent(TZ)}`
+	const wxUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=cloud_cover&daily=temperature_2m_max&current=cloud_cover,shortwave_radiation,is_day&forecast_days=1&temperature_unit=fahrenheit&timezone=${encodeURIComponent(TZ)}`
 	const wx = await fetch(wxUrl).then((r) => r.json())
 	const ccNow = Number(wx.current?.cloud_cover ?? 0)
 	const dmax = Number(wx.daily?.temperature_2m_max?.[0] ?? 0)
