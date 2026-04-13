@@ -1,10 +1,12 @@
 import { z } from 'zod'
-import { exportSavedAppRunnerStorage } from '#mcp/app-runner.ts'
+import {
+	exportSavedAppRunnerStorage,
+	syncSavedAppRunnerFromDb,
+} from '#mcp/app-runner.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
 
 const outputSchema = z.object({
 	ok: z.literal(true),
@@ -42,11 +44,11 @@ export const appStorageExportCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const artifact = await getUiArtifactById(
-				ctx.env.APP_DB,
-				user.userId,
-				args.app_id,
-			)
+			const artifact = await syncSavedAppRunnerFromDb({
+				env: ctx.env,
+				appId: args.app_id,
+				userId: user.userId,
+			})
 			if (!artifact) {
 				throw new Error('Saved app not found for this user.')
 			}

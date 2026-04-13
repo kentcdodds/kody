@@ -32,37 +32,40 @@ export const uiDeleteAppCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-		const existing = await getUiArtifactById(
-			ctx.env.APP_DB,
-			user.userId,
-			args.app_id,
-		)
-		if (!existing) {
-			return { deleted: false, app_id: args.app_id }
-		}
-		await deleteSavedAppRunner({
-			env: ctx.env,
-			appId: args.app_id,
-		})
-		const removed = await deleteUiArtifact(
-			ctx.env.APP_DB,
-			user.userId,
-			args.app_id,
-		)
-		await Promise.allSettled([
-			deleteUiArtifactVector(ctx.env, args.app_id),
-			deleteAllAppScopedSecrets({
+			const existing = await getUiArtifactById(
+				ctx.env.APP_DB,
+				user.userId,
+				args.app_id,
+			)
+			if (!existing) {
+				return { deleted: false, app_id: args.app_id }
+			}
+			const removed = await deleteUiArtifact(
+				ctx.env.APP_DB,
+				user.userId,
+				args.app_id,
+			)
+			if (!removed) {
+				return { deleted: false, app_id: args.app_id }
+			}
+			await deleteSavedAppRunner({
 				env: ctx.env,
-				userId: user.userId,
 				appId: args.app_id,
-			}),
-			deleteAllAppScopedValues({
-				env: ctx.env,
-				userId: user.userId,
-				appId: args.app_id,
-			}),
-		])
-		return { deleted: removed, app_id: args.app_id }
+			})
+			await Promise.allSettled([
+				deleteUiArtifactVector(ctx.env, args.app_id),
+				deleteAllAppScopedSecrets({
+					env: ctx.env,
+					userId: user.userId,
+					appId: args.app_id,
+				}),
+				deleteAllAppScopedValues({
+					env: ctx.env,
+					userId: user.userId,
+					appId: args.app_id,
+				}),
+			])
+			return { deleted: removed, app_id: args.app_id }
 		},
 	},
 )

@@ -3,8 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { appRunnerRpc } from '#mcp/app-runner.ts'
-import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
+import { appRunnerRpc, syncSavedAppRunnerFromDb } from '#mcp/app-runner.ts'
 
 const inputSchema = z.object({
 	app_id: z.string().min(1).describe('Saved app id to reset.'),
@@ -35,14 +34,18 @@ export const appStorageResetCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-		const app = await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
-		if (!app) {
-			throw new Error('Saved app not found for this user.')
-		}
-		const result = await appRunnerRpc(ctx.env, args.app_id).resetStorage({
-			appId: args.app_id,
-			facetName: args.facet_name ?? 'main',
-		})
+			const app = await syncSavedAppRunnerFromDb({
+				env: ctx.env,
+				appId: args.app_id,
+				userId: user.userId,
+			})
+			if (!app) {
+				throw new Error('Saved app not found for this user.')
+			}
+			const result = await appRunnerRpc(ctx.env, args.app_id).resetStorage({
+				appId: args.app_id,
+				facetName: args.facet_name ?? 'main',
+			})
 			return {
 				ok: true as const,
 				app_id: result.appId,
