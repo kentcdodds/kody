@@ -93,8 +93,18 @@ export const uiSaveAppCapability = defineDomainCapability(
 				? JSON.stringify(parameters)
 				: null
 			let hidden: boolean
+			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
+				null
 
 			if (isUpdate) {
+				existingApp = await getUiArtifactById(
+					ctx.env.APP_DB,
+					user.userId,
+					appId,
+				)
+				if (!existingApp) {
+					throw new Error('Saved UI artifact not found for this user.')
+				}
 				const updated = await updateUiArtifact(
 					ctx.env.APP_DB,
 					user.userId,
@@ -112,19 +122,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
-				if (args.hidden === undefined) {
-					const existing = await getUiArtifactById(
-						ctx.env.APP_DB,
-						user.userId,
-						appId,
-					)
-					if (!existing) {
-						throw new Error('Saved UI artifact not found for this user.')
-					}
-					hidden = existing.hidden
-				} else {
-					hidden = args.hidden
-				}
+				hidden = args.hidden ?? existingApp.hidden
 			} else {
 				hidden = args.hidden ?? true
 				const now = new Date().toISOString()
@@ -154,6 +152,20 @@ export const uiSaveAppCapability = defineDomainCapability(
 			} catch (cause) {
 				if (!isUpdate) {
 					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
+				} else if (existingApp) {
+					try {
+						await updateUiArtifact(ctx.env.APP_DB, user.userId, appId, {
+							title: existingApp.title,
+							description: existingApp.description,
+							clientCode: existingApp.clientCode,
+							serverCode: existingApp.serverCode,
+							serverCodeId: existingApp.serverCodeId,
+							parameters: existingApp.parameters,
+							hidden: existingApp.hidden,
+						})
+					} catch {
+						// Preserve the original runner configuration failure.
+					}
 				}
 				throw cause
 			}
