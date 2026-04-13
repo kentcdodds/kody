@@ -104,7 +104,6 @@ function createFacetWrapperModule(input: {
 }) {
 	const exportName = buildFacetClassExportName(input.facetName)
 	return `
-import { DurableObject } from 'cloudflare:workers'
 import * as userModule from './user-app.js'
 
 const BaseApp = userModule.App
