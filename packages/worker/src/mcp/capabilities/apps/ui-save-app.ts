@@ -42,7 +42,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'Client source for the generic MCP UI shell. Prefer a self-contained HTML document or fragment so the saved app owns the visible UI.',
+			'HTML source for the generic MCP UI shell. Provide a self-contained HTML document or fragment. If the app needs browser-side logic, include it with `<script type="module">...</script>` inside the HTML.',
 		),
 	serverCode: z
 		.string()
