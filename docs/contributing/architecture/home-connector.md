@@ -94,6 +94,15 @@ local API enabled. Thermostats are configured with a name and static IP address
 via `VENSTAR_THERMOSTATS` or a `venstar-thermostats.json` file under
 `HOME_CONNECTOR_DATA_PATH` (defaulting to `~/.kody/home-connector`).
 
+Discovery prefers SSDP (`venstar:thermostat:ecp`). When SSDP returns nothing
+(common on Docker bridge networks such as many NAS installs), the connector
+falls back to probing `/query/info` across `VENSTAR_FALLBACK_CIDRS`, or across
+private `/24` subnets inferred from local interfaces unless
+`VENSTAR_AUTOSCAN_LAN=false`. For containers that only see a Docker `172.x/16`
+address, set `VENSTAR_FALLBACK_CIDRS` to your LAN (for example
+`192.168.1.0/24`), or run the connector with host networking so SSDP multicast
+works.
+
 ## Local persistence
 
 Unlike the Worker-side home connector session, which persists its own view of

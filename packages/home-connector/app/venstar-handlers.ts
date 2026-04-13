@@ -102,6 +102,22 @@ function renderVenstarDiscoveryDiagnostics(
 				{ label: 'Last scan', value: diagnostics.scannedAt },
 				{ label: 'SSDP hits', value: diagnostics.ssdpHits.length },
 				{ label: 'Info lookups', value: diagnostics.infoLookups.length },
+				...(diagnostics.subnetProbe
+					? [
+							{
+								label: 'Subnet probe CIDRs',
+								value: diagnostics.subnetProbe.cidrs.join(', '),
+							},
+							{
+								label: 'Subnet hosts probed',
+								value: String(diagnostics.subnetProbe.hostsProbed),
+							},
+							{
+								label: 'Subnet Venstar matches',
+								value: String(diagnostics.subnetProbe.venstarMatches),
+							},
+						]
+					: []),
 			])}
 		</section>
 		${diagnostics.jsonResponse
@@ -129,6 +145,36 @@ function renderVenstarDiscoveryDiagnostics(
 						)}
 					</ul>`}
 		</section>
+		${diagnostics.ssdpHits.length === 0 && diagnostics.subnetProbe
+			? html`<section class="card">
+					<h2>Why SSDP can be empty</h2>
+					<p class="muted">
+						Docker and some NAS deployments block SSDP multicast unless the
+						connector uses host networking. When SSDP finds nothing, this build
+						falls back to probing
+						<code>/query/info</code>
+						on your LAN CIDRs from
+						<code>VENSTAR_FALLBACK_CIDRS</code>
+						, or from private /24 interfaces unless
+						<code>VENSTAR_AUTOSCAN_LAN=false</code>
+						. Set
+						<code>VENSTAR_FALLBACK_CIDRS=192.168.1.0/24</code>
+						(replace with your subnet) if autoscan does not see your LAN.
+					</p>
+				</section>`
+			: ''}
+		${diagnostics.ssdpHits.length === 0 && !diagnostics.subnetProbe
+			? html`<section class="card">
+					<h2>No SSDP responses</h2>
+					<p class="muted">
+						This connector did not receive SSDP replies and had no LAN CIDRs to
+						probe (configure
+						<code>VENSTAR_FALLBACK_CIDRS</code>
+						, use host networking, or ensure the container has a private /24
+						interface for autoscan).
+					</p>
+				</section>`
+			: ''}
 		<section class="card">
 			<h2>Info lookups</h2>
 			${diagnostics.infoLookups.length === 0

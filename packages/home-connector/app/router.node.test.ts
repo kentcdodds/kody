@@ -23,6 +23,7 @@ function createConfig(): HomeConnectorConfig {
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
 		venstarDiscoveryUrl: 'http://venstar.mock.local/discovery',
+		venstarSubnetProbeCidrs: [],
 		venstarThermostats: [{ name: 'Hallway', ip: 'venstar.mock.local' }],
 		dataPath: '/tmp',
 		dbPath: ':memory:',

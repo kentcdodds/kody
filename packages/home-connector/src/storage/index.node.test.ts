@@ -31,6 +31,7 @@ function createConfig(dbPath: string) {
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
 		venstarDiscoveryUrl: 'http://venstar.mock.local/discovery',
+		venstarSubnetProbeCidrs: [],
 		venstarThermostats: [],
 		dataPath: path.dirname(dbPath),
 		dbPath,

@@ -111,8 +111,23 @@ test('live connector defaults Venstar discovery to SSDP', () => {
 
 	const config = loadHomeConnectorConfig()
 	expect(config.venstarDiscoveryUrl).toBe(
-		'ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp',
+		'ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp&mx=2&timeoutMs=5000',
 	)
+})
+
+test('Venstar subnet probe CIDRs load from VENSTAR_FALLBACK_CIDRS', () => {
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		VENSTAR_FALLBACK_CIDRS: '192.168.1.0/24, 10.0.0.5/32',
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.venstarSubnetProbeCidrs).toEqual([
+		'192.168.1.0/24',
+		'10.0.0.5/32',
+	])
 })
 
 test('live connector defaults Lutron discovery to mDNS', () => {

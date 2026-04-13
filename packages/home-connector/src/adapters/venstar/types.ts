@@ -101,6 +101,12 @@ export type VenstarInfoLookupDiagnostic = {
 	error: string | null
 }
 
+export type VenstarSubnetProbeSummary = {
+	cidrs: Array<string>
+	hostsProbed: number
+	venstarMatches: number
+}
+
 export type VenstarDiscoveryDiagnostics = {
 	protocol: 'json' | 'ssdp'
 	discoveryUrl: string
@@ -108,4 +114,6 @@ export type VenstarDiscoveryDiagnostics = {
 	jsonResponse: Record<string, unknown> | null
 	ssdpHits: Array<VenstarSsdpHitDiagnostic>
 	infoLookups: Array<VenstarInfoLookupDiagnostic>
+	/** Present after a LAN `/query/info` sweep when SSDP found no devices. */
+	subnetProbe: VenstarSubnetProbeSummary | null
 }

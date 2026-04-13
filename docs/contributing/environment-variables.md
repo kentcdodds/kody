@@ -181,6 +181,20 @@ Authoring guide for outbound WebSocket services:
   value such as `http://lutron.mock.local/discovery`. Live discovery now uses a
   single pure-JS mDNS path that works across macOS and Linux/container
   environments.
+- `VENSTAR_DISCOVERY_URL` — optional connector env var. Defaults to Venstar SSDP
+  multicast discovery
+  (`ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp&mx=2&timeoutMs=5000`).
+  SSDP often fails from Docker bridge networks; see `VENSTAR_FALLBACK_CIDRS`.
+- `VENSTAR_FALLBACK_CIDRS` — optional comma-separated CIDR list used **only when
+  SSDP finds no thermostats**. Each entry must be `a.b.c.0/24` (scan
+  `.1`–`.254`) or `a.b.c.d/32` (single host). The connector probes
+  `http://{ip}/query/info` and keeps responses that look like Venstar JSON (for
+  example `VENSTAR_FALLBACK_CIDRS=192.168.1.0/24` on a NAS deployment).
+- `VENSTAR_AUTOSCAN_LAN` — optional connector env var. When `false`, disables
+  the automatic private `/24` sweep derived from `os.networkInterfaces()`
+  (RFC1918 addresses with a `/24` CIDR). Defaults to enabled when
+  `VENSTAR_FALLBACK_CIDRS` is unset. Set `false` if you want SSDP-only
+  discovery.
 - `VENSTAR_THERMOSTATS` — optional connector env var. JSON array of Venstar
   thermostat configs (`[{ "name": "...", "ip": "192.168.1.10" }]`). When unset,
   the connector falls back to

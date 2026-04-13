@@ -1,7 +1,7 @@
 import { createSocket } from 'node:dgram'
 import { createServer } from 'node:http'
 import { type AddressInfo } from 'node:net'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createAppState } from '../../state.ts'
 import { type HomeConnectorConfig } from '../../config.ts'
 import { scanVenstarThermostats } from './discovery.ts'
@@ -98,6 +98,7 @@ function createConfig(discoveryUrl: string): HomeConnectorConfig {
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
 		venstarDiscoveryUrl: discoveryUrl,
+		venstarSubnetProbeCidrs: [],
 		venstarThermostats: [],
 		dataPath: '/tmp',
 		dbPath: ':memory:',
@@ -129,4 +130,52 @@ test('venstar SSDP discovery finds thermostat details and diagnostics', async ()
 	})
 	expect(state.venstarDiscoveredThermostats).toHaveLength(1)
 	expect(state.venstarDiscoveryDiagnostics?.ssdpHits).toHaveLength(1)
+})
+
+test('venstar subnet probe discovers thermostats when SSDP finds nothing', async () => {
+	const previousFetch = globalThis.fetch
+	const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+		const url = typeof input === 'string' ? input : input.toString()
+		if (url === 'http://10.0.0.88/query/info') {
+			return new Response(
+				JSON.stringify({
+					name: 'Subnet fixture',
+					mode: 1,
+					state: 0,
+					fan: 0,
+					spacetemp: 70,
+					heattemp: 68,
+					cooltemp: 74,
+					humidity: 35,
+				}),
+				{ status: 200, headers: { 'Content-Type': 'application/json' } },
+			)
+		}
+		return new Response('not found', { status: 404 })
+	})
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		const state = createAppState()
+		const config = createConfig(
+			'ssdp://127.0.0.1:49151?st=venstar:thermostat:ecp&timeoutMs=80',
+		)
+		config.venstarSubnetProbeCidrs = ['10.0.0.88/32']
+
+		const result = await scanVenstarThermostats(state, config)
+
+		expect(result.thermostats).toHaveLength(1)
+		expect(result.thermostats[0]).toMatchObject({
+			name: 'Subnet fixture',
+			ip: '10.0.0.88',
+		})
+		expect(result.diagnostics.subnetProbe).toMatchObject({
+			cidrs: ['10.0.0.88/32'],
+			hostsProbed: 1,
+			venstarMatches: 1,
+		})
+		expect(fetchMock).toHaveBeenCalled()
+	} finally {
+		globalThis.fetch = previousFetch
+	}
 })

@@ -10,6 +10,7 @@ import {
 	type VenstarDiscoveryDiagnostics,
 	type VenstarInfoLookupDiagnostic,
 	type VenstarSsdpHitDiagnostic,
+	type VenstarSubnetProbeSummary,
 } from './types.ts'
 
 type VenstarSsdpDiscoveryConfig = {
@@ -44,7 +45,7 @@ function parseSsdpDiscoveryUrl(
 		searchTarget:
 			url.searchParams.get('st')?.trim() || 'venstar:thermostat:ecp',
 		mx: parseNumberOrDefault(url.searchParams.get('mx'), 1),
-		timeoutMs: parseNumberOrDefault(url.searchParams.get('timeoutMs'), 1_500),
+		timeoutMs: parseNumberOrDefault(url.searchParams.get('timeoutMs'), 5_000),
 	}
 }
 
@@ -106,6 +107,116 @@ function buildInfoUrl(location: string) {
 	return `${location.replace(/\/$/, '')}/query/info`
 }
 
+function looksLikeVenstarInfo(body: unknown): body is Record<string, unknown> {
+	if (!body || typeof body !== 'object') return false
+	const record = body as Record<string, unknown>
+	return (
+		typeof record['mode'] === 'number' &&
+		typeof record['state'] === 'number' &&
+		typeof record['spacetemp'] === 'number'
+	)
+}
+
+function expandVenstarSubnetProbeCidr(cidr: string): Array<string> {
+	const trimmed = cidr.trim()
+	const single = /^(\d{1,3}(?:\.\d{1,3}){3})\/32$/i.exec(trimmed)
+	if (single) {
+		const ip = single[1] ?? ''
+		const parts = ip.split('.').map((octet) => Number.parseInt(octet, 10))
+		if (
+			parts.length === 4 &&
+			parts.every(
+				(octet) => Number.isFinite(octet) && octet >= 0 && octet <= 255,
+			)
+		) {
+			return [ip]
+		}
+		return []
+	}
+	const slash24 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.0\/24$/i.exec(trimmed)
+	if (!slash24) {
+		throw new Error(
+			`Invalid Venstar subnet probe CIDR "${cidr}". Use a.b.c.0/24 or a.b.c.d/32.`,
+		)
+	}
+	const a = Number(slash24[1])
+	const b = Number(slash24[2])
+	const c = Number(slash24[3])
+	if ([a, b, c].some((octet) => octet < 0 || octet > 255)) {
+		throw new Error(`Invalid Venstar subnet probe CIDR "${cidr}".`)
+	}
+	const ips: Array<string> = []
+	for (let host = 1; host <= 254; host++) {
+		ips.push(`${a}.${b}.${c}.${host}`)
+	}
+	return ips
+}
+
+function tryExpandVenstarSubnetCidr(cidr: string): Array<string> {
+	try {
+		return expandVenstarSubnetProbeCidr(cidr)
+	} catch (error) {
+		console.warn(
+			`Skipping Venstar subnet probe CIDR "${cidr}": ${error instanceof Error ? error.message : String(error)}`,
+		)
+		return []
+	}
+}
+
+async function probeVenstarSubnet(cidrs: Array<string>): Promise<{
+	locations: Array<VenstarSsdpLocation>
+	infoByLocationUrl: Map<string, Record<string, unknown>>
+	summary: VenstarSubnetProbeSummary
+}> {
+	const targets: Array<{ cidr: string; ip: string }> = []
+	for (const cidr of cidrs) {
+		for (const ip of tryExpandVenstarSubnetCidr(cidr)) {
+			targets.push({ cidr, ip })
+		}
+	}
+
+	const locations: Array<VenstarSsdpLocation> = []
+	const infoByLocationUrl = new Map<string, Record<string, unknown>>()
+	const seen = new Set<string>()
+	const concurrency = Math.min(48, Math.max(1, targets.length))
+
+	let cursor = 0
+	async function worker() {
+		for (;;) {
+			const index = cursor++
+			if (index >= targets.length) return
+			const { ip } = targets[index]!
+			const infoUrl = `http://${ip}/query/info`
+			try {
+				const info = await fetchJson<Record<string, unknown>>(infoUrl, 2_000)
+				if (!looksLikeVenstarInfo(info)) continue
+				const location = normalizeDeviceLocation(`http://${ip}/`)
+				if (seen.has(location)) continue
+				seen.add(location)
+				locations.push({
+					location,
+					usn: null,
+				})
+				infoByLocationUrl.set(location, info)
+			} catch {
+				// ignore — most IPs are not Venstars
+			}
+		}
+	}
+
+	await Promise.all(Array.from({ length: concurrency }, () => worker()))
+
+	return {
+		locations,
+		infoByLocationUrl,
+		summary: {
+			cidrs,
+			hostsProbed: targets.length,
+			venstarMatches: locations.length,
+		},
+	}
+}
+
 async function discoverSsdpLocations(input: {
 	discoveryUrl: string
 	now: string
@@ -151,9 +262,15 @@ async function discoverSsdpLocations(input: {
 	try {
 		await new Promise<void>((resolve, reject) => {
 			let settled = false
+			const repeatTimers: Array<NodeJS.Timeout> = []
+			let finalTimer: NodeJS.Timeout | undefined
 
 			function cleanup() {
 				socket.off('error', handleError)
+				for (const timer of repeatTimers) {
+					clearTimeout(timer)
+				}
+				if (finalTimer) clearTimeout(finalTimer)
 			}
 
 			function handleError(error: Error) {
@@ -165,18 +282,36 @@ async function discoverSsdpLocations(input: {
 
 			socket.on('error', handleError)
 			socket.bind(0, () => {
-				socket.send(searchMessage, config.port, config.address, (error) => {
-					if (error) {
-						handleError(error)
-						return
-					}
-					setTimeout(() => {
-						if (settled) return
-						settled = true
-						cleanup()
-						resolve()
-					}, config.timeoutMs)
-				})
+				try {
+					socket.setBroadcast(true)
+				} catch {
+					// ignore — not all platforms support toggling broadcast
+				}
+				try {
+					socket.setMulticastTTL(4)
+				} catch {
+					// ignore — not all platforms expose multicast TTL on UDP sockets
+				}
+
+				const sendSearch = () => {
+					socket.send(searchMessage, config.port, config.address, (error) => {
+						if (error) {
+							handleError(error)
+						}
+					})
+				}
+
+				sendSearch()
+				for (const delay of [350, 700]) {
+					repeatTimers.push(setTimeout(sendSearch, delay))
+				}
+
+				finalTimer = setTimeout(() => {
+					if (settled) return
+					settled = true
+					cleanup()
+					resolve()
+				}, config.timeoutMs)
 			})
 		})
 	} finally {
@@ -192,6 +327,8 @@ async function discoverSsdpLocations(input: {
 async function buildThermostatFromLocation(input: {
 	location: VenstarSsdpLocation
 	index: number
+	/** When set (subnet probe), skip a second HTTP round trip to `/query/info`. */
+	cachedInfo?: Record<string, unknown>
 }): Promise<{
 	thermostat: VenstarDiscoveredThermostat
 	diagnostic: VenstarInfoLookupDiagnostic
@@ -200,7 +337,10 @@ async function buildThermostatFromLocation(input: {
 	const infoUrl = buildInfoUrl(location)
 	const ip = new URL(location).host
 	try {
-		const info = await fetchJson<Record<string, unknown>>(infoUrl)
+		const info =
+			input.cachedInfo !== undefined
+				? input.cachedInfo
+				: await fetchJson<Record<string, unknown>>(infoUrl)
 		const discoveredName =
 			typeof info['name'] === 'string' && info['name'].trim()
 				? info['name'].trim()
@@ -262,33 +402,52 @@ async function buildThermostatFromLocation(input: {
 }
 
 async function discoverVenstarThermostatsFromSsdp(
-	discoveryUrl: string,
+	config: HomeConnectorConfig,
 ): Promise<{
 	thermostats: Array<VenstarDiscoveredThermostat>
 	diagnostics: VenstarDiscoveryDiagnostics
 }> {
 	const now = new Date().toISOString()
 	const { locations, hits } = await discoverSsdpLocations({
-		discoveryUrl,
+		discoveryUrl: config.venstarDiscoveryUrl,
 		now,
 	})
+	let mergedLocations = [...locations]
+	let subnetProbe: VenstarDiscoveryDiagnostics['subnetProbe'] = null
+	const infoByLocationUrl = new Map<string, Record<string, unknown>>()
+
+	if (
+		mergedLocations.length === 0 &&
+		config.venstarSubnetProbeCidrs.length > 0
+	) {
+		const subnet = await probeVenstarSubnet(config.venstarSubnetProbeCidrs)
+		mergedLocations = subnet.locations
+		subnetProbe = subnet.summary
+		for (const [url, info] of subnet.infoByLocationUrl) {
+			infoByLocationUrl.set(url, info)
+		}
+	}
+
 	const lookups = await Promise.all(
-		locations.map((location, index) =>
-			buildThermostatFromLocation({
+		mergedLocations.map((location, index) => {
+			const cached = infoByLocationUrl.get(location.location)
+			return buildThermostatFromLocation({
 				location,
 				index,
-			}),
-		),
+				...(cached !== undefined ? { cachedInfo: cached } : {}),
+			})
+		}),
 	)
 	return {
 		thermostats: lookups.map((lookup) => lookup.thermostat),
 		diagnostics: {
 			protocol: 'ssdp',
-			discoveryUrl,
+			discoveryUrl: config.venstarDiscoveryUrl,
 			scannedAt: now,
 			jsonResponse: null,
 			ssdpHits: hits,
 			infoLookups: lookups.map((lookup) => lookup.diagnostic),
+			subnetProbe,
 		},
 	}
 }
@@ -333,6 +492,7 @@ async function discoverVenstarThermostatsFromJson(
 			scannedAt: now,
 			jsonResponse: payload as Record<string, unknown>,
 			ssdpHits: [],
+			subnetProbe: null,
 			infoLookups: thermostats.map((thermostat) => ({
 				location: thermostat.location,
 				infoUrl: buildInfoUrl(thermostat.location),
@@ -359,7 +519,7 @@ export async function scanVenstarThermostats(
 ) {
 	const result = config.venstarDiscoveryUrl.startsWith('http')
 		? await discoverVenstarThermostatsFromJson(config.venstarDiscoveryUrl)
-		: await discoverVenstarThermostatsFromSsdp(config.venstarDiscoveryUrl)
+		: await discoverVenstarThermostatsFromSsdp(config)
 	setVenstarDiscoveredThermostats(state, result.thermostats)
 	setVenstarDiscoveryDiagnostics(state, result.diagnostics)
 	return result
