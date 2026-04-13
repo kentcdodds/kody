@@ -270,10 +270,10 @@ export function createVenstarStatusHandler(
 		async action({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				try {
-					const discovered = await venstar.scan(state)
+					const discovered = await venstar.scan()
 					return renderVenstarStatusPage({
 						state,
-						status: venstar.getStatus(state),
+						status: venstar.getStatus(),
 						thermostats: await venstar.listThermostatsWithStatus(),
 						scanMessage: `Scan complete. Discovered ${discovered.length} Venstar thermostat(s).`,
 					})
@@ -292,7 +292,7 @@ export function createVenstarStatusHandler(
 					})
 					return renderVenstarStatusPage({
 						state,
-						status: venstar.getStatus(state),
+						status: venstar.getStatus(),
 						thermostats: await venstar.listThermostatsWithStatus(),
 						scanError:
 							error instanceof Error
@@ -303,7 +303,7 @@ export function createVenstarStatusHandler(
 			}
 			return renderVenstarStatusPage({
 				state,
-				status: venstar.getStatus(state),
+				status: venstar.getStatus(),
 				thermostats: await venstar.listThermostatsWithStatus(),
 			})
 		},
@@ -322,7 +322,7 @@ export function createVenstarSetupHandler(
 		middleware: [],
 		async action() {
 			const thermostats = venstar.listThermostats()
-			const status = venstar.getStatus(state)
+			const status = venstar.getStatus()
 			const configFilePath = path.join(
 				config.dataPath,
 				'venstar-thermostats.json',

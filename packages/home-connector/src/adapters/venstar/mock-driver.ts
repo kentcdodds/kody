@@ -177,3 +177,9 @@ export function listMockVenstarDiscoveryEntries(): Array<MockVenstarDiscoveryEnt
 		)}:type:residential`,
 	}))
 }
+
+export function getMockVenstarDiscoveryPayload() {
+	return {
+		thermostats: listMockVenstarDiscoveryEntries(),
+	}
+}
