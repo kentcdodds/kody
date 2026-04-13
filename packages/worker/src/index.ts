@@ -152,11 +152,21 @@ const appHandler = withCors({
 			if (!appId) {
 				return new Response('Not found.', { status: 404 })
 			}
-			const auth = await readGeneratedUiAppBackendSession({
-				request,
-				env,
-				appId,
-			})
+			let auth: Awaited<
+				ReturnType<typeof readGeneratedUiAppBackendSession>
+			> | null = null
+			try {
+				auth = await readGeneratedUiAppBackendSession({
+					request,
+					env,
+					appId,
+				})
+			} catch {
+				return Response.json(
+					{ ok: false, error: 'Unauthorized saved app backend request.' },
+					{ status: 401 },
+				)
+			}
 			if (!auth || auth.app_id !== appId) {
 				return Response.json(
 					{ ok: false, error: 'Unauthorized saved app backend request.' },

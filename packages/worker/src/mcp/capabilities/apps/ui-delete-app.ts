@@ -36,15 +36,13 @@ export const uiDeleteAppCapability = defineDomainCapability(
 				args.app_id,
 			)
 			if (removed) {
-				try {
-					await deleteUiArtifactVector(ctx.env, args.app_id)
-				} catch {
-					// Vector cleanup should not fail the primary delete.
-				}
-				await deleteSavedAppRunner({
-					env: ctx.env,
-					appId: args.app_id,
-				})
+				await Promise.allSettled([
+					deleteUiArtifactVector(ctx.env, args.app_id),
+					deleteSavedAppRunner({
+						env: ctx.env,
+						appId: args.app_id,
+					}),
+				])
 			}
 			return { deleted: removed, app_id: args.app_id }
 		},
