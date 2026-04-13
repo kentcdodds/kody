@@ -1,6 +1,6 @@
 # Saved app backends
 
-Saved apps now persist **two** code artifacts:
+Saved apps persist **two** code artifacts:
 
 - **`clientCode`** — HTML for the generic MCP app shell
 - **`serverCode`** — optional Durable Object code that runs behind
@@ -23,6 +23,9 @@ Object Facet** and gives it an isolated SQLite database.
 }
 ```
 
+`clientCode` supports **HTML only**. If the app needs browser-side logic,
+include it inside `<script type="module">...</script>` tags in the HTML.
+
 `serverCodeId` rotates on every save so Cloudflare's Dynamic Worker loader does
 not reuse stale code.
 
@@ -40,10 +43,7 @@ return snake_case fields:
 }
 ```
 
-The migration preserves legacy HTML in `client_code`. Legacy `javascript`
-artifacts are rewritten into an equivalent HTML document with a module script so
-they can continue to render under the new model. Re-save older apps if you want
-their stored representation to match the new canonical shape exactly.
+`client_code` contains HTML. `server_code` contains Workers JavaScript.
 
 ## Authoring `serverCode`
 

@@ -61,7 +61,9 @@ const inputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Inline UI source to render immediately.'),
+			.describe(
+				'Inline HTML source to render immediately. Provide an HTML fragment or full HTML document.',
+			),
 		app_id: z
 			.string()
 			.min(1)

@@ -8,6 +8,9 @@ This example shows a saved app that uses both:
 
 Save it with **`ui_save_app`**, then reopen it with **`open_generated_ui`**.
 
+`clientCode` supports **HTML only**. If the UI needs browser-side logic, include
+it in `<script type="module">...</script>` tags in the HTML.
+
 ## `clientCode`
 
 ```html

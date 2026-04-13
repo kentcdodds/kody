@@ -16,10 +16,16 @@ Optional **collection** groups related skills. Use **meta_get_skill**,
 
 **ui_save_app** persists reusable **generated UI** as a saved app record with:
 
-- **`clientCode`** — the HTML UI rendered inside the generic shell
+- **`clientCode`** — HTML rendered inside the generic shell
 - **`serverCode`** — optional Durable Object facet backend code
 - **`serverCodeId`** — rotated automatically on each save when backend code
   changes so Cloudflare reloads the Dynamic Worker
+
+`clientCode` supports **HTML only**. Put browser-side logic inside
+`<script type="module">...</script>` tags in that HTML.
+
+`clientCode` supports **HTML only**. Put browser logic inside
+`<script type="module">...</script>` tags in that HTML.
 
 Reopen with **open_generated_ui** using **`app_id`**, or discover apps via
 **search**.
