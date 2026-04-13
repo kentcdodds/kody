@@ -1,5 +1,5 @@
 import { type Handle } from 'remix/component'
-import { type UiArtifactParameterDefinition } from '#mcp/ui-artifact-parameters.ts'
+import { type UiArtifactParameterDefinition } from '@kody-internal/shared/ui-artifact-parameters.ts'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { colors, mq } from '#client/styles/tokens.ts'
 import {
