@@ -14,6 +14,7 @@ import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
 import { scanRokuDevices } from '../src/adapters/roku/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { captureHomeConnectorException } from '../src/sentry.ts'
+import { renderInfoRows } from './handler-utils.ts'
 
 function renderQuickLinks(state: HomeConnectorState) {
 	const workerSnapshotUrl = state.connection.connectorId
@@ -43,23 +44,6 @@ function renderQuickLinks(state: HomeConnectorState) {
 
 function getConnectionStatusSummary(state: HomeConnectorState) {
 	return state.connection.connected ? 'connected' : 'disconnected'
-}
-
-function renderInfoRows(
-	rows: Array<{
-		label: string
-		value: string | ReturnType<typeof html>
-	}>,
-) {
-	return html`<div class="info-list">
-		${rows.map(
-			(row) =>
-				html`<div class="info-row">
-					<div class="info-label">${row.label}</div>
-					<div class="info-value">${row.value}</div>
-				</div>`,
-		)}
-	</div>`
 }
 
 export function createHomeDashboardHandler(

@@ -9,39 +9,12 @@ import { type HomeConnectorState } from '../src/state.ts'
 import { render } from './render.ts'
 import { RootLayout } from './root.ts'
 import { type routes } from './routes.ts'
-
-function renderInfoRows(
-	rows: Array<{
-		label: string
-		value: string | number | ReturnType<typeof html>
-	}>,
-) {
-	return html`<div class="info-list">
-		${rows.map(
-			(row) =>
-				html`<div class="info-row">
-					<div class="info-label">${row.label}</div>
-					<div class="info-value">${row.value}</div>
-				</div>`,
-		)}
-	</div>`
-}
-
-function formatJson(value: unknown) {
-	return JSON.stringify(value, null, 2)
-}
-
-function renderCodeBlock(value: string) {
-	return html`<pre><code>${value}</code></pre>`
-}
-
-function renderBanner(input: { tone: 'success' | 'error'; message: string }) {
-	return html`<section
-		class="card ${input.tone === 'error' ? 'card-error' : 'card-success'}"
-	>
-		<p>${input.message}</p>
-	</section>`
-}
+import {
+	formatJson,
+	renderBanner,
+	renderCodeBlock,
+	renderInfoRows,
+} from './handler-utils.ts'
 
 function renderThermostatList(
 	thermostats: Awaited<

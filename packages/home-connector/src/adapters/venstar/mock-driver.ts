@@ -80,6 +80,9 @@ function createDefaultThermostatState(): MockThermostatState {
 }
 
 export function resetMockVenstarState() {
+	for (const key of Object.keys(mockThermostats)) {
+		delete mockThermostats[key]
+	}
 	mockThermostats['192.168.10.40'] = {
 		info: { ...defaultInfo, name: 'Hallway', spacetemp: 71 },
 		sensors: structuredClone(defaultSensors),
