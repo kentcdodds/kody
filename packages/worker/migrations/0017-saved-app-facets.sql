@@ -32,7 +32,10 @@ SELECT
 	user_id,
 	title,
 	description,
-	'' AS client_code,
+	CASE
+		WHEN source_type = 'html' THEN source_code
+		ELSE ''
+	END AS client_code,
 	NULL AS server_code,
 	lower(hex(randomblob(16))) AS server_code_id,
 	parameters,
