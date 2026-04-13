@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import path from 'node:path'
 
@@ -13,23 +12,16 @@ export type HomeConnectorConfig = {
 	lutronDiscoveryUrl: string
 	sonosDiscoveryUrl: string
 	bondDiscoveryUrl: string
-	venstarDiscoveryUrl: string
 	/**
-	 * When SSDP finds nothing, probe `http://{ip}/query/info` on each host in
-	 * these CIDRs (`VENSTAR_FALLBACK_CIDRS`, or auto from RFC1918 /24 interfaces
-	 * unless `VENSTAR_AUTOSCAN_LAN=false`).
+	 * Venstar discovery uses direct HTTP probes to `/query/info` across these
+	 * CIDRs. When unset, the connector derives private `/24` networks from local
+	 * interfaces. `VENSTAR_SCAN_CIDRS` can override the derived list.
 	 */
-	venstarSubnetProbeCidrs: Array<string>
-	venstarThermostats: Array<VenstarThermostatConfig>
+	venstarScanCidrs: Array<string>
 	dataPath: string
 	dbPath: string
 	port: number
 	mocksEnabled: boolean
-}
-
-export type VenstarThermostatConfig = {
-	name: string
-	ip: string
 }
 
 function trimTrailingSlash(value: string) {
@@ -67,46 +59,8 @@ function resolveHomeConnectorDbPath(dataPath: string) {
 	)
 }
 
-function normalizeVenstarThermostatConfig(
-	entry: unknown,
-): VenstarThermostatConfig | null {
-	if (!entry || typeof entry !== 'object') return null
-	const record = entry as Record<string, unknown>
-	if (typeof record['name'] !== 'string' || typeof record['ip'] !== 'string') {
-		return null
-	}
-	const name = record['name'].trim()
-	const ip = record['ip'].trim()
-	if (!name || !ip) return null
-	return { name, ip }
-}
-
-function parseVenstarThermostats(
-	raw: string,
-	source: string,
-): Array<VenstarThermostatConfig> {
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(raw)
-	} catch (error) {
-		console.warn(
-			`Invalid Venstar thermostat config JSON from ${source}: ${error instanceof Error ? error.message : String(error)}`,
-		)
-		return []
-	}
-	if (!Array.isArray(parsed)) {
-		console.warn(
-			`Invalid Venstar thermostat config from ${source}: expected an array.`,
-		)
-		return []
-	}
-	return parsed
-		.map((entry) => normalizeVenstarThermostatConfig(entry))
-		.filter((entry): entry is VenstarThermostatConfig => entry != null)
-}
-
-function resolveVenstarFallbackCidrs(): Array<string> {
-	const raw = process.env.VENSTAR_FALLBACK_CIDRS?.trim()
+function resolveVenstarScanCidrsFromEnv(): Array<string> {
+	const raw = process.env.VENSTAR_SCAN_CIDRS?.trim()
 	if (!raw) return []
 	return raw
 		.split(',')
@@ -121,52 +75,84 @@ function isPrivateRfc1918Ipv4(parts: Array<number>) {
 	)
 }
 
-function deriveVenstarAutoscanCidrs(): Array<string> {
-	if (process.env.VENSTAR_AUTOSCAN_LAN === 'false') return []
+function parseIpv4Parts(value: string) {
+	const parts = value.split('.').map((octet) => Number.parseInt(octet, 10))
+	if (
+		parts.length !== 4 ||
+		parts.some((octet) => !Number.isFinite(octet) || octet < 0 || octet > 255)
+	) {
+		return null
+	}
+	return parts
+}
+
+function ipv4PartsToInt(parts: Array<number>) {
+	return (
+		(((parts[0] ?? 0) << 24) |
+			((parts[1] ?? 0) << 16) |
+			((parts[2] ?? 0) << 8) |
+			(parts[3] ?? 0)) >>>
+		0
+	)
+}
+
+function ipv4IntToCidr24(value: number) {
+	const a = (value >>> 24) & 255
+	const b = (value >>> 16) & 255
+	const c = (value >>> 8) & 255
+	return `${a}.${b}.${c}.0/24`
+}
+
+function deriveVenstarAutoscanCidrsFromCidr(cidr: string): Array<string> {
+	const match = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(cidr.trim())
+	if (!match) return []
+	const address = match[1] ?? ''
+	const prefix = Number.parseInt(match[2] ?? '', 10)
+	if (!Number.isFinite(prefix) || prefix < 0 || prefix > 32) return []
+	const parts = parseIpv4Parts(address)
+	if (!parts || !isPrivateRfc1918Ipv4(parts)) return []
+	if (prefix === 32) return [`${address}/32`]
+	if (prefix >= 24) return [`${parts[0]}.${parts[1]}.${parts[2]}.0/24`]
+
+	const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0
+	const addressInt = ipv4PartsToInt(parts)
+	const networkInt = addressInt & mask
+	const broadcastInt = (networkInt | (~mask >>> 0)) >>> 0
+	const firstCidr24 = networkInt & 0xffffff00
+	const lastCidr24 = broadcastInt & 0xffffff00
+	const derived: Array<string> = []
+	for (let current = firstCidr24; current <= lastCidr24; current += 256) {
+		derived.push(ipv4IntToCidr24(current))
+	}
+	if (derived.length > 16) {
+		console.warn(
+			`Skipping broad Venstar autoscan CIDR "${cidr}" because it expands to ${derived.length} /24 scan blocks. Use VENSTAR_SCAN_CIDRS to set a smaller range explicitly.`,
+		)
+		return []
+	}
+	return derived
+}
+
+export function deriveVenstarAutoscanCidrsFromInterfaces(
+	interfaces: ReturnType<typeof networkInterfaces>,
+) {
 	const cidrs = new Set<string>()
-	for (const entries of Object.values(networkInterfaces())) {
+	for (const entries of Object.values(interfaces)) {
 		if (!entries) continue
 		for (const entry of entries) {
 			if (entry.internal || entry.family !== 'IPv4') continue
 			const cidr = entry.cidr
-			if (!cidr || !cidr.endsWith('/24')) continue
-			const [addr] = cidr.split('/')
-			if (!addr) continue
-			const parts = addr.split('.').map((octet) => Number.parseInt(octet, 10))
-			if (
-				parts.length !== 4 ||
-				parts.some((octet) => !Number.isFinite(octet))
-			) {
-				continue
+			if (!cidr) continue
+			for (const derived of deriveVenstarAutoscanCidrsFromCidr(cidr)) {
+				cidrs.add(derived)
 			}
-			if (!isPrivateRfc1918Ipv4(parts)) continue
-			cidrs.add(`${parts[0]}.${parts[1]}.${parts[2]}.0/24`)
 		}
 	}
 	return [...cidrs]
 }
 
-function resolveVenstarThermostats(dataPath: string) {
-	const envValue = process.env.VENSTAR_THERMOSTATS?.trim()
-	if (envValue) {
-		return parseVenstarThermostats(envValue, 'VENSTAR_THERMOSTATS')
-	}
-	const filePath = path.join(dataPath, 'venstar-thermostats.json')
-	try {
-		const fileValue = readFileSync(filePath, 'utf8').trim()
-		if (!fileValue) return []
-		return parseVenstarThermostats(fileValue, filePath)
-	} catch (error) {
-		if (
-			error &&
-			typeof error === 'object' &&
-			'code' in error &&
-			(error as { code?: string }).code === 'ENOENT'
-		) {
-			return []
-		}
-		throw error
-	}
+function deriveVenstarAutoscanCidrs() {
+	return deriveVenstarAutoscanCidrsFromInterfaces(networkInterfaces())
 }
 
 export function loadHomeConnectorConfig(): HomeConnectorConfig {
@@ -180,13 +166,11 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerBaseUrl,
 		homeConnectorId,
 	)
-	const explicitVenstarCidrs = resolveVenstarFallbackCidrs()
-	const venstarSubnetProbeCidrs =
+	const explicitVenstarCidrs = resolveVenstarScanCidrsFromEnv()
+	const venstarScanCidrs =
 		explicitVenstarCidrs.length > 0
 			? explicitVenstarCidrs
-			: process.env.VENSTAR_AUTOSCAN_LAN !== 'false'
-				? deriveVenstarAutoscanCidrs()
-				: []
+			: deriveVenstarAutoscanCidrs()
 	return {
 		homeConnectorId,
 		workerBaseUrl,
@@ -205,11 +189,7 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 			'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
 		bondDiscoveryUrl:
 			process.env.BOND_DISCOVERY_URL?.trim() || 'mdns://_bond._tcp.local',
-		venstarDiscoveryUrl:
-			process.env.VENSTAR_DISCOVERY_URL?.trim() ||
-			'ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp&mx=2&timeoutMs=5000',
-		venstarSubnetProbeCidrs,
-		venstarThermostats: resolveVenstarThermostats(dataPath),
+		venstarScanCidrs,
 		dataPath,
 		dbPath: resolveHomeConnectorDbPath(dataPath),
 		port: Number.isFinite(port) ? port : 4040,

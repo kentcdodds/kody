@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { expect, test } from 'vitest'
-import { loadHomeConnectorConfig } from './config.ts'
+import {
+	deriveVenstarAutoscanCidrsFromInterfaces,
+	loadHomeConnectorConfig,
+} from './config.ts'
 
 function createTemporaryEnv(values: Record<string, string | undefined>) {
 	const previousValues = Object.fromEntries(
@@ -42,7 +42,7 @@ test('live connector defaults Roku discovery to SSDP', () => {
 	expect(config.rokuDiscoveryUrl).toBe('ssdp://239.255.255.250:1900')
 })
 
-test('explicit Roku discovery URL overrides the default in mock mode', () => {
+test('explicit discovery URLs override defaults in mock mode', () => {
 	using _env = createTemporaryEnv({
 		MOCKS: 'true',
 		ROKU_DISCOVERY_URL: 'http://roku.mock.local/discovery',
@@ -60,7 +60,6 @@ test('explicit Roku discovery URL overrides the default in mock mode', () => {
 		'http://samsung-tv.mock.local/discovery',
 	)
 	expect(config.lutronDiscoveryUrl).toBe('http://lutron.mock.local/discovery')
-	expect(config.venstarThermostats).toEqual([])
 })
 
 test('live connector defaults Sonos discovery to SSDP', () => {
@@ -101,33 +100,50 @@ test('live connector defaults Bond discovery to mDNS', () => {
 	expect(config.bondDiscoveryUrl).toBe('mdns://_bond._tcp.local')
 })
 
-test('live connector defaults Venstar discovery to SSDP', () => {
+test('VENSTAR_SCAN_CIDRS overrides derived Venstar scan CIDRs', () => {
 	using _env = createTemporaryEnv({
 		MOCKS: 'false',
-		VENSTAR_DISCOVERY_URL: undefined,
+		VENSTAR_SCAN_CIDRS: '192.168.1.0/24, 10.0.0.5/32',
 		HOME_CONNECTOR_ID: 'default',
 		WORKER_BASE_URL: 'http://localhost:3742',
 	})
 
 	const config = loadHomeConnectorConfig()
-	expect(config.venstarDiscoveryUrl).toBe(
-		'ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp&mx=2&timeoutMs=5000',
-	)
+	expect(config.venstarScanCidrs).toEqual(['192.168.1.0/24', '10.0.0.5/32'])
 })
 
-test('Venstar subnet probe CIDRs load from VENSTAR_FALLBACK_CIDRS', () => {
-	using _env = createTemporaryEnv({
-		MOCKS: 'false',
-		VENSTAR_FALLBACK_CIDRS: '192.168.1.0/24, 10.0.0.5/32',
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
+test('derived Venstar autoscan CIDRs split a /23 into /24 scan blocks', () => {
+	expect(
+		deriveVenstarAutoscanCidrsFromInterfaces({
+			en0: [
+				{
+					address: '192.168.0.151',
+					netmask: '255.255.254.0',
+					family: 'IPv4',
+					mac: '00:00:00:00:00:00',
+					internal: false,
+					cidr: '192.168.0.151/23',
+				},
+			],
+		}),
+	).toEqual(['192.168.0.0/24', '192.168.1.0/24'])
+})
 
-	const config = loadHomeConnectorConfig()
-	expect(config.venstarSubnetProbeCidrs).toEqual([
-		'192.168.1.0/24',
-		'10.0.0.5/32',
-	])
+test('derived Venstar autoscan CIDRs collapse narrower private ranges to one /24', () => {
+	expect(
+		deriveVenstarAutoscanCidrsFromInterfaces({
+			en0: [
+				{
+					address: '192.168.4.18',
+					netmask: '255.255.255.128',
+					family: 'IPv4',
+					mac: '00:00:00:00:00:00',
+					internal: false,
+					cidr: '192.168.4.18/25',
+				},
+			],
+		}),
+	).toEqual(['192.168.4.0/24'])
 })
 
 test('live connector defaults Lutron discovery to mDNS', () => {
@@ -140,23 +156,6 @@ test('live connector defaults Lutron discovery to mDNS', () => {
 
 	const config = loadHomeConnectorConfig()
 	expect(config.lutronDiscoveryUrl).toBe('mdns://_lutron._tcp.local')
-})
-
-test('loads Venstar thermostat configs from JSON', () => {
-	using _env = createTemporaryEnv({
-		VENSTAR_THERMOSTATS: JSON.stringify([
-			{ name: 'Hallway', ip: '192.168.1.120' },
-			{ name: 'Office', ip: '192.168.1.121' },
-		]),
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.venstarThermostats).toEqual([
-		{ name: 'Hallway', ip: '192.168.1.120' },
-		{ name: 'Office', ip: '192.168.1.121' },
-	])
 })
 
 test('db path can be derived from HOME_CONNECTOR_DATA_PATH', () => {
@@ -182,50 +181,4 @@ test('HOME_CONNECTOR_DB_PATH overrides the default sqlite location', () => {
 
 	const config = loadHomeConnectorConfig()
 	expect(config.dbPath).toBe('/tmp/custom-home-connector.sqlite')
-})
-
-test('VENSTAR_THERMOSTATS config parses valid entries', () => {
-	using _env = createTemporaryEnv({
-		VENSTAR_THERMOSTATS: JSON.stringify([
-			{ name: 'Downstairs', ip: '10.0.0.10' },
-			{ name: 'Upstairs', ip: 'http://10.0.0.11/' },
-			{ name: '', ip: '10.0.0.12' },
-		]),
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.venstarThermostats).toEqual([
-		{ name: 'Downstairs', ip: '10.0.0.10' },
-		{ name: 'Upstairs', ip: 'http://10.0.0.11/' },
-	])
-})
-
-test('venstar thermostats load from data path file', () => {
-	const directory = mkdtempSync(path.join(tmpdir(), 'kody-venstar-'))
-	const filePath = path.join(directory, 'venstar-thermostats.json')
-	try {
-		writeFileSync(
-			filePath,
-			JSON.stringify([
-				{ name: 'Office', ip: '192.168.1.12' },
-				{ name: 'Guest', ip: '192.168.1.13' },
-			]),
-		)
-		using _env = createTemporaryEnv({
-			HOME_CONNECTOR_DATA_PATH: directory,
-			VENSTAR_THERMOSTATS: undefined,
-			HOME_CONNECTOR_ID: 'default',
-			WORKER_BASE_URL: 'http://localhost:3742',
-		})
-
-		const config = loadHomeConnectorConfig()
-		expect(config.venstarThermostats).toEqual([
-			{ name: 'Office', ip: '192.168.1.12' },
-			{ name: 'Guest', ip: '192.168.1.13' },
-		])
-	} finally {
-		rmSync(directory, { recursive: true, force: true })
-	}
 })

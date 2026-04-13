@@ -1,5 +1,6 @@
 import { type HomeConnectorConfig } from '../../config.ts'
 import { type HomeConnectorState } from '../../state.ts'
+import { type HomeConnectorStorage } from '../../storage/index.ts'
 import {
 	fetchVenstarInfo,
 	fetchVenstarRuntimes,
@@ -9,8 +10,17 @@ import {
 } from './client.ts'
 import { scanVenstarThermostats } from './discovery.ts'
 import {
+	getVenstarThermostat,
+	listVenstarThermostats,
+	removeVenstarThermostat,
+	type VenstarPersistedThermostat,
+	updateVenstarLastSeen,
+	upsertVenstarThermostat,
+} from './repository.ts'
+import {
 	type VenstarControlRequest,
 	type VenstarInfoResponse,
+	type VenstarManagedThermostat,
 	type VenstarRuntimesResponse,
 	type VenstarSensorsResponse,
 	type VenstarSettingsRequest,
@@ -29,31 +39,56 @@ function normalizeThermostatIp(value: string) {
 		.replace(/\/$/, '')
 }
 
-function resolveThermostat(config: HomeConnectorConfig, identifier?: string) {
-	const thermostats = config.venstarThermostats
+function mapPersistedToManaged(
+	thermostat: VenstarPersistedThermostat,
+): VenstarManagedThermostat {
+	return {
+		name: thermostat.name,
+		ip: thermostat.ip,
+		lastSeenAt: thermostat.lastSeenAt,
+	}
+}
+
+function requireConfiguredThermostats(
+	storage: HomeConnectorStorage,
+	connectorId: string,
+) {
+	const thermostats = listVenstarThermostats(storage, connectorId)
 	if (thermostats.length === 0) {
 		throw new Error(
-			'No Venstar thermostats are configured. Update the venstar-thermostats.json file or VENSTAR_THERMOSTATS env var.',
+			'No Venstar thermostats are configured yet. Scan and add one from the home connector UI first.',
 		)
 	}
-	if (!identifier) {
+	return thermostats
+}
+
+function resolveThermostat(input: {
+	storage: HomeConnectorStorage
+	connectorId: string
+	identifier?: string
+}): VenstarPersistedThermostat {
+	const thermostats = requireConfiguredThermostats(
+		input.storage,
+		input.connectorId,
+	)
+	if (!input.identifier) {
 		if (thermostats.length === 1) return thermostats[0]!
 		throw new Error(
 			'Multiple Venstar thermostats are configured. Provide a thermostat name or IP.',
 		)
 	}
-	const normalized = normalizeThermostatName(identifier)
-	const normalizedIp = normalizeThermostatIp(identifier)
+
+	const normalized = normalizeThermostatName(input.identifier)
+	const normalizedIp = normalizeThermostatIp(input.identifier)
 	const match =
 		thermostats.find(
 			(entry) => normalizeThermostatName(entry.name) === normalized,
 		) ??
-		thermostats.find((entry) => entry.ip.trim() === identifier.trim()) ??
 		thermostats.find(
 			(entry) => normalizeThermostatIp(entry.ip) === normalizedIp,
 		)
 	if (!match) {
-		throw new Error(`Venstar thermostat "${identifier}" was not found.`)
+		throw new Error(`Venstar thermostat "${input.identifier}" was not found.`)
 	}
 	return match
 }
@@ -82,7 +117,8 @@ function buildInfoSummary(info: VenstarInfoResponse) {
 		spacetemp: info.spacetemp,
 		heattemp: info.heattemp,
 		cooltemp: info.cooltemp,
-		humidity: info.humidity,
+		humidity:
+			info.humidity ?? (typeof info['hum'] === 'number' ? info['hum'] : null),
 		schedule: info.schedule,
 		away: info.away,
 		setpointdelta: info.setpointdelta,
@@ -116,15 +152,94 @@ type VenstarStatusSummary =
 export function createVenstarAdapter(input: {
 	config: HomeConnectorConfig
 	state: HomeConnectorState
+	storage: HomeConnectorStorage
 }) {
-	const { config, state } = input
+	const { config, state, storage } = input
+	const connectorId = config.homeConnectorId
+
+	async function withLastSeen<
+		T extends { thermostat: VenstarPersistedThermostat },
+	>(result: T, lastSeenAt = new Date().toISOString()) {
+		updateVenstarLastSeen({
+			storage,
+			connectorId,
+			ip: result.thermostat.ip,
+			lastSeenAt,
+		})
+		return result
+	}
+
+	async function addThermostat(input: { name: string; ip: string }) {
+		const thermostat = upsertVenstarThermostat({
+			storage,
+			connectorId,
+			name: input.name.trim(),
+			ip: normalizeThermostatIp(input.ip),
+		})
+		if (!thermostat) {
+			throw new Error('Failed to save Venstar thermostat.')
+		}
+		return mapPersistedToManaged(thermostat)
+	}
+
+	async function addDiscoveredThermostat(ip: string) {
+		const discovered = state.venstarDiscoveredThermostats.find(
+			(thermostat) =>
+				normalizeThermostatIp(thermostat.ip) === normalizeThermostatIp(ip),
+		)
+		if (!discovered) {
+			throw new Error(`Discovered Venstar thermostat "${ip}" was not found.`)
+		}
+		return await addThermostat({
+			name: discovered.name,
+			ip: discovered.ip,
+		})
+	}
+
+	async function addAllDiscoveredThermostats() {
+		const added: Array<VenstarManagedThermostat> = []
+		for (const thermostat of state.venstarDiscoveredThermostats) {
+			const exists = listVenstarThermostats(storage, connectorId).some(
+				(current) =>
+					normalizeThermostatIp(current.ip) ===
+					normalizeThermostatIp(thermostat.ip),
+			)
+			if (exists) continue
+			added.push(
+				await addThermostat({
+					name: thermostat.name,
+					ip: thermostat.ip,
+				}),
+			)
+		}
+		return added
+	}
+
+	function removeThermostat(ip: string) {
+		const existing = getVenstarThermostat(
+			storage,
+			connectorId,
+			normalizeThermostatIp(ip),
+		)
+		if (!existing) {
+			throw new Error(`Configured Venstar thermostat "${ip}" was not found.`)
+		}
+		removeVenstarThermostat({
+			storage,
+			connectorId,
+			ip: existing.ip,
+		})
+		return mapPersistedToManaged(existing)
+	}
 
 	return {
 		async scan() {
 			return (await scanVenstarThermostats(state, config)).thermostats
 		},
 		getStatus() {
-			const configured = config.venstarThermostats
+			const configured = listVenstarThermostats(storage, connectorId).map(
+				mapPersistedToManaged,
+			)
 			const configuredIps = new Set(
 				configured.map((thermostat) => normalizeThermostatIp(thermostat.ip)),
 			)
@@ -139,22 +254,34 @@ export function createVenstarAdapter(input: {
 			}
 		},
 		listThermostats() {
-			return config.venstarThermostats
+			return listVenstarThermostats(storage, connectorId).map(
+				mapPersistedToManaged,
+			)
 		},
+		addThermostat,
+		addDiscoveredThermostat,
+		addAllDiscoveredThermostats,
+		removeThermostat,
 		async listThermostatsWithStatus(): Promise<
 			Array<
-				(typeof config.venstarThermostats)[number] & {
+				VenstarManagedThermostat & {
 					info: VenstarInfoResponse | null
 					summary: VenstarStatusSummary
 				}
 			>
 		> {
 			return await Promise.all(
-				config.venstarThermostats.map(async (thermostat) => {
+				listVenstarThermostats(storage, connectorId).map(async (thermostat) => {
 					try {
 						const info = await fetchVenstarInfo(thermostat)
+						updateVenstarLastSeen({
+							storage,
+							connectorId,
+							ip: thermostat.ip,
+							lastSeenAt: new Date().toISOString(),
+						})
 						return {
-							...thermostat,
+							...mapPersistedToManaged(thermostat),
 							info,
 							summary: buildInfoSummary(info),
 						}
@@ -162,7 +289,7 @@ export function createVenstarAdapter(input: {
 						const message =
 							error instanceof Error ? error.message : String(error)
 						return {
-							...thermostat,
+							...mapPersistedToManaged(thermostat),
 							info: null,
 							summary: buildOfflineSummary(message),
 						}
@@ -171,57 +298,77 @@ export function createVenstarAdapter(input: {
 			)
 		},
 		async getInfo(identifier?: string) {
-			const thermostat = resolveThermostat(config, identifier)
+			const thermostat = resolveThermostat({
+				storage,
+				connectorId,
+				identifier,
+			})
 			const info = await fetchVenstarInfo(thermostat)
-			return {
+			return await withLastSeen({
 				thermostat,
 				info,
 				summary: buildInfoSummary(info),
-			}
+			})
 		},
 		async getSensors(identifier?: string): Promise<{
-			thermostat: (typeof config.venstarThermostats)[number]
+			thermostat: VenstarPersistedThermostat
 			sensors: VenstarSensorsResponse
 		}> {
-			const thermostat = resolveThermostat(config, identifier)
+			const thermostat = resolveThermostat({
+				storage,
+				connectorId,
+				identifier,
+			})
 			const sensors = await fetchVenstarSensors(thermostat)
-			return { thermostat, sensors }
+			return await withLastSeen({ thermostat, sensors })
 		},
 		async getRuntimes(identifier?: string): Promise<{
-			thermostat: (typeof config.venstarThermostats)[number]
+			thermostat: VenstarPersistedThermostat
 			runtimes: VenstarRuntimesResponse
 		}> {
-			const thermostat = resolveThermostat(config, identifier)
+			const thermostat = resolveThermostat({
+				storage,
+				connectorId,
+				identifier,
+			})
 			const runtimes = await fetchVenstarRuntimes(thermostat)
-			return { thermostat, runtimes }
+			return await withLastSeen({ thermostat, runtimes })
 		},
 		async controlThermostat(
 			request: VenstarControlRequest & { thermostat?: string },
 		) {
 			const { thermostat: identifier, ...payload } = request
-			const thermostat = resolveThermostat(config, identifier)
+			const thermostat = resolveThermostat({
+				storage,
+				connectorId,
+				identifier,
+			})
 			const info = await fetchVenstarInfo(thermostat)
 			ensureAutoModeSetpoints(payload, info)
 			const response = await postVenstarControl(thermostat, payload)
 			const updatedInfo = await fetchVenstarInfo(thermostat)
-			return {
+			return await withLastSeen({
 				thermostat,
 				request: payload,
 				response,
 				info: buildInfoSummary(updatedInfo),
-			}
+			})
 		},
 		async setSettings(
 			request: VenstarSettingsRequest & { thermostat?: string },
 		) {
 			const { thermostat: identifier, ...payload } = request
-			const thermostat = resolveThermostat(config, identifier)
+			const thermostat = resolveThermostat({
+				storage,
+				connectorId,
+				identifier,
+			})
 			const response = await postVenstarSettings(thermostat, payload)
-			return {
+			return await withLastSeen({
 				thermostat,
 				request: payload,
 				response,
-			}
+			})
 		},
 	}
 }

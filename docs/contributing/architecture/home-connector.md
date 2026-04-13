@@ -90,18 +90,15 @@ between Art Mode and true standby.
 The Venstar adapter lives under `packages/home-connector/src/adapters/venstar/`
 and supports LAN-only REST calls to `/query/info`, `/query/sensors`,
 `/query/runtimes`, `/control`, and `/settings` for thermostats that have the
-local API enabled. Thermostats are configured with a name and static IP address
-via `VENSTAR_THERMOSTATS` or a `venstar-thermostats.json` file under
-`HOME_CONNECTOR_DATA_PATH` (defaulting to `~/.kody/home-connector`).
+local API enabled. Managed thermostats are stored in the connector's local
+SQLite database and are added through the home connector UI or Venstar MCP tools
+rather than env/file configuration.
 
-Discovery prefers SSDP (`venstar:thermostat:ecp`). When SSDP returns nothing
-(common on Docker bridge networks such as many NAS installs), the connector
-falls back to probing `/query/info` across `VENSTAR_FALLBACK_CIDRS`, or across
-private `/24` subnets inferred from local interfaces unless
-`VENSTAR_AUTOSCAN_LAN=false`. For containers that only see a Docker `172.x/16`
-address, set `VENSTAR_FALLBACK_CIDRS` to your LAN (for example
-`192.168.1.0/24`), or run the connector with host networking so SSDP multicast
-works.
+Discovery is subnet-scan-only. The connector probes `/query/info` across
+`VENSTAR_SCAN_CIDRS` when that env var is set; otherwise it derives private
+`/24` networks from local IPv4 interfaces. This avoids the SSDP multicast
+fragility that showed up on NAS and Docker bridge deployments while keeping the
+user flow aligned with the other managed device integrations.
 
 ## Local persistence
 
@@ -118,6 +115,9 @@ The connector stores a local SQLite database containing:
 - discovered Lutron processor metadata
 - Lutron credentials associated with each discovered processor
 - last Lutron authentication success/error details
+- discovered Bond bridges and tokens
+- discovered Sonos players
+- managed Venstar thermostats
 
 By default the database is stored at
 `~/.kody/home-connector/home-connector.sqlite`. Operators can override the base

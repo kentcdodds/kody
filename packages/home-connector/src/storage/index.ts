@@ -153,6 +153,15 @@ function initializeSchema(db: SqliteDatabase) {
 			updated_at TEXT NOT NULL,
 			PRIMARY KEY (connector_id, player_id)
 		);
+
+		CREATE TABLE IF NOT EXISTS venstar_thermostats (
+			connector_id TEXT NOT NULL,
+			ip TEXT NOT NULL,
+			name TEXT NOT NULL,
+			last_seen_at TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, ip)
+		);
 	`)
 }
 

@@ -5,6 +5,7 @@ import { createLutronAdapter } from '../adapters/lutron/index.ts'
 import { createSonosAdapter } from '../adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { createVenstarAdapter } from '../adapters/venstar/index.ts'
+import { upsertVenstarThermostat } from '../adapters/venstar/repository.ts'
 import { loadHomeConnectorConfig } from '../config.ts'
 import { createHomeConnectorMcpServer } from './server.ts'
 import { createAppState } from '../state.ts'
@@ -21,9 +22,7 @@ function createConfig() {
 	process.env.SAMSUNG_TV_DISCOVERY_URL =
 		'http://samsung-tv.mock.local/discovery'
 	process.env.BOND_DISCOVERY_URL = 'http://bond.mock.local/discovery'
-	process.env.VENSTAR_THERMOSTATS = JSON.stringify([
-		{ name: 'Hallway', ip: 'venstar.mock.local' },
-	])
+	process.env.VENSTAR_SCAN_CIDRS = '192.168.10.40/32,192.168.10.41/32'
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
 	return loadHomeConnectorConfig()
 }
@@ -34,6 +33,12 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 	const config = createConfig()
 	const state = createAppState()
 	const storage = createHomeConnectorStorage(config)
+	upsertVenstarThermostat({
+		storage,
+		connectorId: config.homeConnectorId,
+		name: 'Hallway',
+		ip: '192.168.10.40',
+	})
 	const samsungTv = createSamsungTvAdapter({
 		config,
 		state,
@@ -54,7 +59,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		state,
 		storage,
 	})
-	const venstar = createVenstarAdapter({ config, state })
+	const venstar = createVenstarAdapter({ config, state, storage })
 	await samsungTv.scan()
 	await lutron.scan()
 	await sonos.scan()
@@ -101,6 +106,15 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
 		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'venstar_scan_thermostats')).toBe(
+			true,
+		)
+		expect(tools.some((tool) => tool.name === 'venstar_add_thermostat')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'venstar_remove_thermostat'),
+		).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'venstar_get_thermostat_info'),
 		).toBe(true)
@@ -146,6 +160,29 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		const venstarThermostats = await mcp.callTool('venstar_list_thermostats')
 		expect(venstarThermostats.structuredContent).toMatchObject({
 			thermostats: expect.any(Array),
+		})
+		const venstarScan = await mcp.callTool('venstar_scan_thermostats')
+		expect(venstarScan.structuredContent).toMatchObject({
+			discovered: expect.any(Array),
+			diagnostics: expect.anything(),
+		})
+		const addedVenstar = await mcp.callTool('venstar_add_thermostat', {
+			ip: '192.168.10.41',
+		})
+		expect(addedVenstar.structuredContent).toMatchObject({
+			thermostat: {
+				name: 'Office',
+				ip: '192.168.10.41',
+			},
+		})
+		const removedVenstar = await mcp.callTool('venstar_remove_thermostat', {
+			ip: '192.168.10.41',
+		})
+		expect(removedVenstar.structuredContent).toMatchObject({
+			thermostat: {
+				name: 'Office',
+				ip: '192.168.10.41',
+			},
 		})
 
 		await mcp.callTool('bond_adopt_bridge', { bridgeId: 'MOCKBOND1' })

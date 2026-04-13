@@ -14,7 +14,7 @@ function createConfig() {
 	process.env.WORKER_BASE_URL = 'http://localhost:3742'
 	process.env.SAMSUNG_TV_DISCOVERY_URL =
 		'http://samsung-tv.mock.local/discovery'
-	process.env.VENSTAR_THERMOSTATS = '[]'
+	process.env.VENSTAR_SCAN_CIDRS = '192.168.10.40/32'
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
 	return loadHomeConnectorConfig()
 }

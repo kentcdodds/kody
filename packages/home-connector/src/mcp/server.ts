@@ -223,10 +223,87 @@ export function createHomeConnectorMcpServer(input: {
 
 	registerTool(
 		{
+			name: 'venstar_scan_thermostats',
+			title: 'Scan Venstar Thermostats',
+			description:
+				'Probe Venstar scan CIDRs for thermostats and return discovered unmanaged devices plus discovery diagnostics.',
+			inputSchema: {},
+		},
+		async () => {
+			const discovered = await venstar.scan()
+			const status = venstar.getStatus()
+			return structuredTextResult(
+				discovered.length === 0
+					? 'No Venstar thermostats were discovered.'
+					: `Discovered ${discovered.length} Venstar thermostat(s).`,
+				{
+					discovered,
+					diagnostics: status.diagnostics,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'venstar_add_thermostat',
+			title: 'Add Venstar Thermostat',
+			description:
+				'Add a Venstar thermostat to managed storage, either by IP from the latest scan or by explicit name/IP.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					ip: z.string().min(1),
+					name: z.string().min(1).optional(),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const ip = String(args['ip'])
+			const name = args['name']
+			const thermostat =
+				name == null
+					? await venstar.addDiscoveredThermostat(ip)
+					: await venstar.addThermostat({
+							name: String(name),
+							ip,
+						})
+			return structuredTextResult(
+				`Added ${thermostat.name} (${thermostat.ip}) to managed Venstar thermostats.`,
+				{
+					thermostat,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'venstar_remove_thermostat',
+			title: 'Remove Venstar Thermostat',
+			description: 'Remove a managed Venstar thermostat by IP address.',
+			inputSchema: z.toJSONSchema(
+				z.object({
+					ip: z.string().min(1),
+				}),
+			) as Record<string, unknown>,
+		},
+		async (args) => {
+			const thermostat = venstar.removeThermostat(String(args['ip']))
+			return structuredTextResult(
+				`Removed ${thermostat.name} (${thermostat.ip}) from managed Venstar thermostats.`,
+				{
+					thermostat,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
 			name: 'venstar_list_thermostats',
 			title: 'List Venstar Thermostats',
 			description:
-				'List configured Venstar thermostats with their configured name/IP and current status summary.',
+				'List managed Venstar thermostats with their saved name/IP and current status summary.',
 			inputSchema: {},
 			annotations: {
 				readOnlyHint: true,
@@ -241,7 +318,7 @@ export function createHomeConnectorMcpServer(input: {
 						type: 'text',
 						text:
 							thermostats.length === 0
-								? 'No Venstar thermostats are configured.'
+								? 'No Venstar thermostats are managed yet.'
 								: thermostats
 										.map(
 											(thermostat) =>

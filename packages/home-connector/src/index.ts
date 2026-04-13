@@ -39,7 +39,7 @@ export function createHomeConnectorApp() {
 		state,
 		storage,
 	})
-	const venstar = createVenstarAdapter({ config, state })
+	const venstar = createVenstarAdapter({ config, state, storage })
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,

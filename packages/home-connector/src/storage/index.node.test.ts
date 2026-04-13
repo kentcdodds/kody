@@ -16,6 +16,11 @@ import {
 	saveSamsungTvToken,
 	upsertDiscoveredSamsungTvs,
 } from '../adapters/samsung-tv/repository.ts'
+import {
+	listVenstarThermostats,
+	removeVenstarThermostat,
+	upsertVenstarThermostat,
+} from '../adapters/venstar/repository.ts'
 import { createHomeConnectorStorage } from './index.ts'
 
 function createConfig(dbPath: string) {
@@ -30,9 +35,7 @@ function createConfig(dbPath: string) {
 		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
-		venstarDiscoveryUrl: 'http://venstar.mock.local/discovery',
-		venstarSubnetProbeCidrs: [],
-		venstarThermostats: [],
+		venstarScanCidrs: ['192.168.10.40/32'],
 		dataPath: path.dirname(dbPath),
 		dbPath,
 		port: 4040,
@@ -153,6 +156,61 @@ test('sqlite storage persists Bond bridges and tokens', () => {
 		const afterPrune = listBondBridges(storage, 'default')
 		expect(afterPrune).toHaveLength(1)
 		expect(afterPrune[0]?.bridgeId).toBe('BONDTEST1')
+	} finally {
+		storage.close()
+		rmSync(directory, {
+			force: true,
+			recursive: true,
+		})
+	}
+})
+
+test('sqlite storage persists Venstar managed thermostats', () => {
+	const directory = mkdtempSync(path.join(tmpdir(), 'kody-home-connector-'))
+	const dbPath = path.join(directory, 'home-connector.sqlite')
+	const storage = createHomeConnectorStorage(createConfig(dbPath))
+
+	try {
+		upsertVenstarThermostat({
+			storage,
+			connectorId: 'default',
+			name: 'Hallway',
+			ip: '192.168.10.40',
+			lastSeenAt: '2026-04-13T18:00:00.000Z',
+		})
+		upsertVenstarThermostat({
+			storage,
+			connectorId: 'default',
+			name: 'Office',
+			ip: '192.168.10.41',
+		})
+
+		expect(listVenstarThermostats(storage, 'default')).toEqual([
+			{
+				name: 'Hallway',
+				ip: '192.168.10.40',
+				lastSeenAt: '2026-04-13T18:00:00.000Z',
+			},
+			{
+				name: 'Office',
+				ip: '192.168.10.41',
+				lastSeenAt: null,
+			},
+		])
+
+		removeVenstarThermostat({
+			storage,
+			connectorId: 'default',
+			ip: '192.168.10.41',
+		})
+
+		expect(listVenstarThermostats(storage, 'default')).toEqual([
+			{
+				name: 'Hallway',
+				ip: '192.168.10.40',
+				lastSeenAt: '2026-04-13T18:00:00.000Z',
+			},
+		])
 	} finally {
 		storage.close()
 		rmSync(directory, {

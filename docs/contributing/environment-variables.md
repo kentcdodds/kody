@@ -181,34 +181,23 @@ Authoring guide for outbound WebSocket services:
   value such as `http://lutron.mock.local/discovery`. Live discovery now uses a
   single pure-JS mDNS path that works across macOS and Linux/container
   environments.
-- `VENSTAR_DISCOVERY_URL` — optional connector env var. Defaults to Venstar SSDP
-  multicast discovery
-  (`ssdp://239.255.255.250:1900?st=venstar:thermostat:ecp&mx=2&timeoutMs=5000`).
-  SSDP often fails from Docker bridge networks; see `VENSTAR_FALLBACK_CIDRS`.
-- `VENSTAR_FALLBACK_CIDRS` — optional comma-separated CIDR list used **only when
-  SSDP finds no thermostats**. Each entry must be `a.b.c.0/24` (scan
-  `.1`–`.254`) or `a.b.c.d/32` (single host). The connector probes
-  `http://{ip}/query/info` and keeps responses that look like Venstar JSON (for
-  example `VENSTAR_FALLBACK_CIDRS=192.168.1.0/24` on a NAS deployment).
-- `VENSTAR_AUTOSCAN_LAN` — optional connector env var. When `false`, disables
-  the automatic private `/24` sweep derived from `os.networkInterfaces()`
-  (RFC1918 addresses with a `/24` CIDR). Defaults to enabled when
-  `VENSTAR_FALLBACK_CIDRS` is unset. Set `false` if you want SSDP-only
-  discovery.
-- `VENSTAR_THERMOSTATS` — optional connector env var. JSON array of Venstar
-  thermostat configs (`[{ "name": "...", "ip": "192.168.1.10" }]`). When unset,
-  the connector falls back to
-  `<HOME_CONNECTOR_DATA_PATH>/venstar-thermostats.json` if it exists; otherwise
-  an empty array is used.
+- `VENSTAR_SCAN_CIDRS` — optional connector env var. Comma-separated CIDR list
+  for Venstar subnet scanning. Each entry must be `a.b.c.0/24` (scan
+  `.1`–`.254`) or `a.b.c.d/32` (single host). When unset, the connector derives
+  private `/24` networks from local IPv4 interfaces and probes
+  `http://{ip}/query/info` directly. Example:
+  `VENSTAR_SCAN_CIDRS=192.168.1.0/24,10.0.0.50/32`. Broader private interface
+  CIDRs like `/23` are automatically split into multiple `/24` scan blocks.
 - `HOME_CONNECTOR_DATA_PATH` — optional connector env var. Directory used for
   connector-owned local data files. When `HOME_CONNECTOR_DB_PATH` is unset, the
-  Samsung TV and Lutron integrations store their local SQLite database at
+  home connector stores its local SQLite database at
   `<HOME_CONNECTOR_DATA_PATH>/home-connector.sqlite`. Defaults to
   `~/.kody/home-connector`.
 - `HOME_CONNECTOR_DB_PATH` — optional connector env var. Full path to the local
-  SQLite file used by the home connector to persist Samsung TV device metadata,
-  Samsung pairing tokens, and Lutron discovered processor + credential state
-  across restarts. Overrides the derived `HOME_CONNECTOR_DATA_PATH` location.
+  SQLite file used by the home connector to persist device integration state
+  such as Samsung TV metadata/tokens, Lutron processor credentials, Bond bridge
+  state, Sonos players, and Venstar managed thermostats across restarts.
+  Overrides the derived `HOME_CONNECTOR_DATA_PATH` location.
 
 ## Why Zod?
 

@@ -68,6 +68,12 @@ export type VenstarSettingsResponse = {
 	[key: string]: unknown
 }
 
+export type VenstarManagedThermostat = {
+	name: string
+	ip: string
+	lastSeenAt: string | null
+}
+
 export type VenstarDiscoveredThermostat = {
 	name: string
 	ip: string
@@ -108,7 +114,7 @@ export type VenstarSubnetProbeSummary = {
 }
 
 export type VenstarDiscoveryDiagnostics = {
-	protocol: 'json' | 'ssdp'
+	protocol: 'subnet'
 	discoveryUrl: string
 	scannedAt: string
 	jsonResponse: Record<string, unknown> | null

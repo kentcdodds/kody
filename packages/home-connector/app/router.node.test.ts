@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../mocks/test-server.ts'
 import { createBondAdapter } from '../src/adapters/bond/index.ts'
@@ -5,12 +8,13 @@ import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { createVenstarAdapter } from '../src/adapters/venstar/index.ts'
+import { upsertVenstarThermostat } from '../src/adapters/venstar/repository.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { createAppState } from '../src/state.ts'
 import { createHomeConnectorStorage } from '../src/storage/index.ts'
 import { createHomeConnectorRouter } from './router.ts'
 
-function createConfig(): HomeConnectorConfig {
+function createConfig(dataPath = '/tmp'): HomeConnectorConfig {
 	return {
 		homeConnectorId: 'default',
 		workerBaseUrl: 'http://localhost:3742',
@@ -22,10 +26,8 @@ function createConfig(): HomeConnectorConfig {
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
-		venstarDiscoveryUrl: 'http://venstar.mock.local/discovery',
-		venstarSubnetProbeCidrs: [],
-		venstarThermostats: [{ name: 'Hallway', ip: 'venstar.mock.local' }],
-		dataPath: '/tmp',
+		venstarScanCidrs: ['192.168.10.40/32', '192.168.10.41/32'],
+		dataPath,
 		dbPath: ':memory:',
 		port: 4040,
 		mocksEnabled: true,
@@ -34,6 +36,12 @@ function createConfig(): HomeConnectorConfig {
 
 function createAdapters(config: HomeConnectorConfig) {
 	const storage = createHomeConnectorStorage(config)
+	upsertVenstarThermostat({
+		storage,
+		connectorId: config.homeConnectorId,
+		name: 'Hallway',
+		ip: 'venstar.mock.local',
+	})
 	const state = createAppState()
 	return {
 		state,
@@ -58,11 +66,15 @@ function createAdapters(config: HomeConnectorConfig) {
 			state,
 			storage,
 		}),
-		venstar: createVenstarAdapter({ config, state }),
+		venstar: createVenstarAdapter({ config, state, storage }),
 	}
 }
 
 installHomeConnectorMockServer()
+
+function createTemporaryDataPath() {
+	return mkdtempSync(path.join(tmpdir(), 'kody-home-connector-venstar-'))
+}
 
 test('home route toggles worker snapshot link by connector id', async () => {
 	const config = createConfig()
@@ -156,8 +168,9 @@ test('venstar routes render status and setup details', async () => {
 		expect(setupResponse.status).toBe(200)
 		const setupHtml = await setupResponse.text()
 		expect(setupHtml).toContain('Venstar setup')
-		expect(setupHtml).toContain('VENSTAR_THERMOSTATS')
-		expect(setupHtml).toContain('venstar-thermostats.json')
+		expect(setupHtml).toContain('Save thermostat')
+		expect(setupHtml).toContain('Remove thermostat')
+		expect(setupHtml).toContain('local SQLite')
 	} finally {
 		storage.close()
 	}
@@ -179,16 +192,141 @@ test('venstar status scan shows discovered thermostats', async () => {
 		)
 		const response = await router.fetch('http://example.test/venstar/status', {
 			method: 'POST',
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded',
+			},
+			body: 'action=scan',
 		})
 		expect(response.status).toBe(200)
 		const html = await response.text()
 		expect(html).toContain('Scan complete. Discovered')
 		expect(html).toContain('Discovered thermostats')
 		expect(html).toContain('Office')
-		expect(html).toContain('Mock Venstar 3')
-		expect(html).toContain('Copy this name/IP into')
+		expect(html).toContain('Add to managed thermostats')
 	} finally {
 		storage.close()
+	}
+})
+
+test('venstar status can adopt a discovered thermostat', async () => {
+	const dataPath = createTemporaryDataPath()
+	const config = createConfig(dataPath)
+	const { state, storage, lutron, sonos, samsungTv, bond, venstar } =
+		createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			venstar,
+		)
+
+		await router.fetch('http://example.test/venstar/status', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded',
+			},
+			body: 'action=scan',
+		})
+
+		const response = await router.fetch('http://example.test/venstar/status', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				action: 'adopt-discovered',
+				thermostatName: 'Office',
+				thermostatIp: '192.168.10.41',
+			}).toString(),
+		})
+
+		expect(response.status).toBe(200)
+		const html = await response.text()
+		expect(html).toContain(
+			'Added Office (192.168.10.41) to managed thermostats.',
+		)
+		expect(venstar.listThermostats()).toMatchObject([
+			{
+				name: 'Hallway',
+				ip: 'venstar.mock.local',
+				lastSeenAt: expect.any(String),
+			},
+			{
+				name: 'Office',
+				ip: '192.168.10.41',
+				lastSeenAt: expect.any(String),
+			},
+		])
+	} finally {
+		storage.close()
+		rmSync(dataPath, { recursive: true, force: true })
+	}
+})
+
+test('venstar setup can save and remove thermostats directly', async () => {
+	const dataPath = createTemporaryDataPath()
+	const config = createConfig(dataPath)
+	const { state, storage, lutron, sonos, samsungTv, bond, venstar } =
+		createAdapters(config)
+	try {
+		venstar.removeThermostat('venstar.mock.local')
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			venstar,
+		)
+
+		const saveResponse = await router.fetch(
+			'http://example.test/venstar/setup',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					action: 'save-manual',
+					thermostatName: 'UPSTAIRS',
+					thermostatIp: '192.168.0.71',
+				}).toString(),
+			},
+		)
+		expect(saveResponse.status).toBe(200)
+		expect(await saveResponse.text()).toContain(
+			'Saved UPSTAIRS (192.168.0.71) to managed thermostats.',
+		)
+		expect(venstar.listThermostats()).toEqual([
+			{ name: 'UPSTAIRS', ip: '192.168.0.71', lastSeenAt: null },
+		])
+
+		const removeResponse = await router.fetch(
+			'http://example.test/venstar/setup',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					action: 'remove-configured',
+					thermostatIp: '192.168.0.71',
+				}).toString(),
+			},
+		)
+		expect(removeResponse.status).toBe(200)
+		expect(await removeResponse.text()).toContain(
+			'Removed UPSTAIRS (192.168.0.71) from managed thermostats.',
+		)
+		expect(venstar.listThermostats()).toEqual([])
+	} finally {
+		storage.close()
+		rmSync(dataPath, { recursive: true, force: true })
 	}
 })
 

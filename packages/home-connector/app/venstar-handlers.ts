@@ -1,10 +1,12 @@
-import path from 'node:path'
 import { type BuildAction } from 'remix/fetch-router'
 import { html } from 'remix/html-template'
 import { captureHomeConnectorException } from '../src/sentry.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
-import { type VenstarDiscoveryDiagnostics } from '../src/adapters/venstar/types.ts'
+import {
+	type VenstarDiscoveryDiagnostics,
+	type VenstarManagedThermostat,
+} from '../src/adapters/venstar/types.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 import { render } from './render.ts'
 import { RootLayout } from './root.ts'
@@ -16,6 +18,102 @@ import {
 	renderInfoRows,
 } from './handler-utils.ts'
 
+function requireStringField(
+	formData: FormData,
+	key: string,
+	label: string,
+): string {
+	const value = formData.get(key)
+	if (typeof value !== 'string' || value.trim().length === 0) {
+		throw new Error(`${label} is required.`)
+	}
+	return value.trim()
+}
+
+async function readPostedFormData(request: Request, fallbackAction: string) {
+	const contentType = request.headers.get('content-type')?.toLowerCase() ?? ''
+	if (
+		contentType.includes('application/x-www-form-urlencoded') ||
+		contentType.includes('multipart/form-data')
+	) {
+		return await request.formData()
+	}
+	const formData = new FormData()
+	formData.set('action', fallbackAction)
+	return formData
+}
+
+async function handleVenstarMutation(input: {
+	action: string
+	formData: FormData
+	venstar: ReturnType<typeof createVenstarAdapter>
+}) {
+	const { action, formData, venstar } = input
+
+	if (action === 'scan') {
+		const discovered = await venstar.scan()
+		return {
+			message: `Scan complete. Discovered ${discovered.length} Venstar thermostat(s).`,
+		}
+	}
+
+	if (action === 'adopt-discovered') {
+		const thermostatIp = requireStringField(
+			formData,
+			'thermostatIp',
+			'Thermostat IP',
+		)
+		const thermostat = await venstar.addDiscoveredThermostat(thermostatIp)
+		return {
+			message: `Added ${thermostat.name} (${thermostat.ip}) to managed thermostats.`,
+		}
+	}
+
+	if (action === 'adopt-all-discovered') {
+		const thermostats = await venstar.addAllDiscoveredThermostats()
+		if (thermostats.length === 0) {
+			throw new Error('No discovered Venstar thermostats are available to add.')
+		}
+		return {
+			message: `Added ${thermostats.length} discovered Venstar thermostat(s) to managed thermostats.`,
+		}
+	}
+
+	if (action === 'save-manual') {
+		const thermostat = await venstar.addThermostat({
+			name: requireStringField(formData, 'thermostatName', 'Thermostat name'),
+			ip: requireStringField(formData, 'thermostatIp', 'Thermostat IP'),
+		})
+		return {
+			message: `Saved ${thermostat.name} (${thermostat.ip}) to managed thermostats.`,
+		}
+	}
+
+	if (action === 'remove-configured') {
+		const thermostatIp = requireStringField(
+			formData,
+			'thermostatIp',
+			'Thermostat IP',
+		)
+		const thermostat = venstar.removeThermostat(thermostatIp)
+		return {
+			message: `Removed ${thermostat.name} (${thermostat.ip}) from managed thermostats.`,
+		}
+	}
+
+	throw new Error(`Unknown Venstar action "${action}".`)
+}
+
+function renderStorageNotice() {
+	return html`<section class="card">
+		<h2>Persistence</h2>
+		<p class="muted">
+			Managed Venstar thermostats are stored in the connector&apos;s local
+			SQLite database and are immediately available to the UI and MCP tools.
+		</p>
+	</section>`
+}
+
 function renderThermostatList(
 	thermostats: Awaited<
 		ReturnType<
@@ -25,10 +123,8 @@ function renderThermostatList(
 ) {
 	if (thermostats.length === 0) {
 		return html`<p class="muted">
-			No Venstar thermostats are configured yet. Add one in
-			<code>VENSTAR_THERMOSTATS</code>
-			or
-			<code>venstar-thermostats.json</code>.
+			No Venstar thermostats are managed yet. Scan and add them here, or save
+			one manually from the setup page.
 		</p>`
 	}
 
@@ -58,6 +154,29 @@ function renderThermostatList(
 	</ul>`
 }
 
+function renderConfiguredThermostatEditor(
+	thermostats: Array<VenstarManagedThermostat>,
+) {
+	if (thermostats.length === 0) {
+		return html`<p class="muted">No Venstar thermostats are managed yet.</p>`
+	}
+
+	return html`<ul class="list">
+		${thermostats.map(
+			(thermostat) => html`<li class="card">
+				<strong>${thermostat.name}</strong>
+				<div>IP: <code>${thermostat.ip}</code></div>
+				<div>Last seen: ${thermostat.lastSeenAt ?? 'unknown'}</div>
+				<form method="POST">
+					<input type="hidden" name="action" value="remove-configured" />
+					<input type="hidden" name="thermostatIp" value="${thermostat.ip}" />
+					<button type="submit">Remove thermostat</button>
+				</form>
+			</li>`,
+		)}
+	</ul>`
+}
+
 function renderDiscoveredThermostatList(
 	thermostats: ReturnType<
 		ReturnType<typeof createVenstarAdapter>['getStatus']
@@ -65,9 +184,10 @@ function renderDiscoveredThermostatList(
 ) {
 	if (thermostats.length === 0) {
 		return html`<p class="muted">
-			No new Venstar thermostats were discovered in the last scan.
+			No unmanaged Venstar thermostats were discovered in the last scan.
 		</p>`
 	}
+
 	return html`<ul class="list">
 		${thermostats.map(
 			(thermostat) => html`<li class="card">
@@ -75,10 +195,11 @@ function renderDiscoveredThermostatList(
 				<div>IP: <code>${thermostat.ip}</code></div>
 				<div>Location: <code>${thermostat.location}</code></div>
 				<div>Last seen: ${thermostat.lastSeenAt}</div>
-				<div class="muted">
-					Copy this name/IP into <code>VENSTAR_THERMOSTATS</code> or
-					<code>venstar-thermostats.json</code>.
-				</div>
+				<form method="POST">
+					<input type="hidden" name="action" value="adopt-discovered" />
+					<input type="hidden" name="thermostatIp" value="${thermostat.ip}" />
+					<button type="submit">Add to managed thermostats</button>
+				</form>
 			</li>`,
 		)}
 	</ul>`
@@ -90,91 +211,28 @@ function renderVenstarDiscoveryDiagnostics(
 	if (!diagnostics) {
 		return html`<p class="muted">No Venstar scan diagnostics captured yet.</p>`
 	}
+
 	return html`
 		<section class="card">
 			<h2>Discovery diagnostics</h2>
 			${renderInfoRows([
 				{ label: 'Protocol', value: diagnostics.protocol },
 				{
-					label: 'Discovery URL',
+					label: 'Scan CIDRs',
 					value: html`<code>${diagnostics.discoveryUrl}</code>`,
 				},
 				{ label: 'Last scan', value: diagnostics.scannedAt },
-				{ label: 'SSDP hits', value: diagnostics.ssdpHits.length },
+				{
+					label: 'Hosts probed',
+					value: String(diagnostics.subnetProbe?.hostsProbed ?? 0),
+				},
+				{
+					label: 'Venstar matches',
+					value: String(diagnostics.subnetProbe?.venstarMatches ?? 0),
+				},
 				{ label: 'Info lookups', value: diagnostics.infoLookups.length },
-				...(diagnostics.subnetProbe
-					? [
-							{
-								label: 'Subnet probe CIDRs',
-								value: diagnostics.subnetProbe.cidrs.join(', '),
-							},
-							{
-								label: 'Subnet hosts probed',
-								value: String(diagnostics.subnetProbe.hostsProbed),
-							},
-							{
-								label: 'Subnet Venstar matches',
-								value: String(diagnostics.subnetProbe.venstarMatches),
-							},
-						]
-					: []),
 			])}
 		</section>
-		${diagnostics.jsonResponse
-			? html`<section class="card">
-					<h2>Raw discovery payload</h2>
-					${renderCodeBlock(formatJson(diagnostics.jsonResponse))}
-				</section>`
-			: ''}
-		<section class="card">
-			<h2>SSDP hits</h2>
-			${diagnostics.ssdpHits.length === 0
-				? html`<p class="muted">No SSDP hits were captured.</p>`
-				: html`<ul class="list">
-						${diagnostics.ssdpHits.map(
-							(hit) => html`<li class="card">
-								<div>
-									From:
-									<code>${hit.remoteAddress}:${String(hit.remotePort)}</code>
-								</div>
-								<div>Location: <code>${hit.location ?? 'missing'}</code></div>
-								<div>USN: <code>${hit.usn ?? 'missing'}</code></div>
-								<div>Server: <code>${hit.server ?? 'missing'}</code></div>
-								${renderCodeBlock(hit.raw)}
-							</li>`,
-						)}
-					</ul>`}
-		</section>
-		${diagnostics.ssdpHits.length === 0 && diagnostics.subnetProbe
-			? html`<section class="card">
-					<h2>Why SSDP can be empty</h2>
-					<p class="muted">
-						Docker and some NAS deployments block SSDP multicast unless the
-						connector uses host networking. When SSDP finds nothing, this build
-						falls back to probing
-						<code>/query/info</code>
-						on your LAN CIDRs from
-						<code>VENSTAR_FALLBACK_CIDRS</code>
-						, or from private /24 interfaces unless
-						<code>VENSTAR_AUTOSCAN_LAN=false</code>
-						. Set
-						<code>VENSTAR_FALLBACK_CIDRS=192.168.1.0/24</code>
-						(replace with your subnet) if autoscan does not see your LAN.
-					</p>
-				</section>`
-			: ''}
-		${diagnostics.ssdpHits.length === 0 && !diagnostics.subnetProbe
-			? html`<section class="card">
-					<h2>No SSDP responses</h2>
-					<p class="muted">
-						This connector did not receive SSDP replies and had no LAN CIDRs to
-						probe (configure
-						<code>VENSTAR_FALLBACK_CIDRS</code>
-						, use host networking, or ensure the container has a private /24
-						interface for autoscan).
-					</p>
-				</section>`
-			: ''}
 		<section class="card">
 			<h2>Info lookups</h2>
 			${diagnostics.infoLookups.length === 0
@@ -199,6 +257,7 @@ function renderVenstarDiscoveryDiagnostics(
 
 function renderVenstarStatusPage(input: {
 	state: HomeConnectorState
+	config: HomeConnectorConfig
 	status: ReturnType<ReturnType<typeof createVenstarAdapter>['getStatus']>
 	thermostats: Awaited<
 		ReturnType<
@@ -217,16 +276,29 @@ function renderVenstarStatusPage(input: {
 			body: html`<section class="card">
 					<h1>Venstar status</h1>
 					<p class="muted">
-						Live connectivity and temperature state for the configured Venstar
-						thermostats on this connector.
+						Live connectivity and management for Venstar thermostats on this
+						connector.
 					</p>
 					<p>
 						<a href="/venstar/setup">Venstar setup</a>
-						<span class="muted"> — review the local configuration inputs</span>
+						<span class="muted">
+							— add, remove, and review managed thermostats
+						</span>
 					</p>
 					<form method="POST">
+						<input type="hidden" name="action" value="scan" />
 						<button type="submit">Scan now</button>
 					</form>
+					${input.status.discovered.length > 0
+						? html`<form method="POST">
+								<input
+									type="hidden"
+									name="action"
+									value="adopt-all-discovered"
+								/>
+								<button type="submit">Add all discovered thermostats</button>
+							</form>`
+						: ''}
 					<div class="status-grid">
 						<div>
 							<strong>Worker connection</strong>
@@ -237,7 +309,7 @@ function renderVenstarStatusPage(input: {
 							</div>
 						</div>
 						<div>
-							<strong>Configured thermostats</strong>
+							<strong>Managed thermostats</strong>
 							<div>${input.thermostats.length}</div>
 						</div>
 						<div>
@@ -249,7 +321,7 @@ function renderVenstarStatusPage(input: {
 							<div>${input.thermostats.length - onlineCount}</div>
 						</div>
 						<div>
-							<strong>Discovered thermostats</strong>
+							<strong>Unmanaged discoveries</strong>
 							<div>${input.status.discovered.length}</div>
 						</div>
 					</div>
@@ -260,15 +332,18 @@ function renderVenstarStatusPage(input: {
 				${input.scanError
 					? renderBanner({ tone: 'error', message: input.scanError })
 					: ''}
+				${renderStorageNotice()}
 				<section class="card">
-					<h2>Configured thermostats</h2>
+					<h2>Managed thermostats</h2>
 					${renderThermostatList(input.thermostats)}
 				</section>
 				<section class="card">
 					<h2>Discovered thermostats</h2>
 					<p class="muted">
-						Discovery helps you find thermostat names and IPs to copy into the
-						static Venstar config.
+						Discovery probes
+						<code>/query/info</code>
+						directly across the configured scan subnets, then lets you adopt the
+						thermostats immediately.
 					</p>
 					${renderDiscoveredThermostatList(input.status.discovered)}
 				</section>
@@ -286,40 +361,53 @@ export function createVenstarStatusHandler(
 		middleware: [],
 		async action({ request }: { request: Request }) {
 			if (request.method === 'POST') {
+				const formData = await readPostedFormData(request, 'scan')
+				const action =
+					typeof formData.get('action') === 'string'
+						? String(formData.get('action'))
+						: 'scan'
 				try {
-					const discovered = await venstar.scan()
+					const result = await handleVenstarMutation({
+						action,
+						formData,
+						venstar,
+					})
 					return renderVenstarStatusPage({
 						state,
+						config,
 						status: venstar.getStatus(),
 						thermostats: await venstar.listThermostatsWithStatus(),
-						scanMessage: `Scan complete. Discovered ${discovered.length} Venstar thermostat(s).`,
+						scanMessage: result.message,
 					})
 				} catch (error) {
 					captureHomeConnectorException(error, {
 						tags: {
 							route: '/venstar/status',
-							action: 'scan',
+							action,
 						},
 						contexts: {
 							venstar: {
-								discoveryUrl: config.venstarDiscoveryUrl,
+								scanCidrs: config.venstarScanCidrs,
 								connectorId: state.connection.connectorId,
 							},
 						},
 					})
 					return renderVenstarStatusPage({
 						state,
+						config,
 						status: venstar.getStatus(),
 						thermostats: await venstar.listThermostatsWithStatus(),
 						scanError:
 							error instanceof Error
-								? `Scan failed: ${error.message}`
-								: `Scan failed: ${String(error)}`,
+								? `Action failed: ${error.message}`
+								: `Action failed: ${String(error)}`,
 					})
 				}
 			}
+
 			return renderVenstarStatusPage({
 				state,
+				config,
 				status: venstar.getStatus(),
 				thermostats: await venstar.listThermostatsWithStatus(),
 			})
@@ -335,94 +423,145 @@ export function createVenstarSetupHandler(
 	config: HomeConnectorConfig,
 	venstar: ReturnType<typeof createVenstarAdapter>,
 ) {
+	function renderVenstarSetupPage(input: {
+		saveMessage?: string | null
+		saveError?: string | null
+	}) {
+		const thermostats = venstar.listThermostats()
+		const status = venstar.getStatus()
+		return render(
+			RootLayout({
+				title: 'home connector - venstar setup',
+				body: html`<section class="card">
+						<h1>Venstar setup</h1>
+						<p class="muted">
+							Add thermostats directly here, or scan the LAN and adopt
+							discovered devices with one click.
+						</p>
+						<p>
+							<a href="/venstar/status">Venstar status</a>
+							<span class="muted">
+								— scan the network and verify live thermostat status
+							</span>
+						</p>
+						${renderInfoRows([
+							{ label: 'Worker URL', value: config.workerBaseUrl },
+							{
+								label: 'Connector ID',
+								value: state.connection.connectorId || 'not registered yet',
+							},
+							{
+								label: 'Managed thermostats',
+								value: String(thermostats.length),
+							},
+							{
+								label: 'Unmanaged discoveries',
+								value: String(status.discovered.length),
+							},
+							{
+								label: 'Scan CIDRs',
+								value: html`<code
+									>${config.venstarScanCidrs.join(', ') || 'none'}</code
+								>`,
+							},
+						])}
+					</section>
+					${input.saveMessage
+						? renderBanner({ tone: 'success', message: input.saveMessage })
+						: ''}
+					${input.saveError
+						? renderBanner({ tone: 'error', message: input.saveError })
+						: ''}
+					${renderStorageNotice()}
+					<section class="card">
+						<h2>Add thermostat manually</h2>
+						<form method="POST">
+							<input type="hidden" name="action" value="save-manual" />
+							<label>
+								Name
+								<input
+									type="text"
+									name="thermostatName"
+									placeholder="UPSTAIRS"
+									required
+								/>
+							</label>
+							<label>
+								IP address
+								<input
+									type="text"
+									name="thermostatIp"
+									placeholder="192.168.0.71"
+									required
+								/>
+							</label>
+							<button type="submit">Save thermostat</button>
+						</form>
+					</section>
+					<section class="card">
+						<h2>Managed thermostats</h2>
+						${renderConfiguredThermostatEditor(thermostats)}
+					</section>
+					<section class="card">
+						<h2>Discovered thermostats</h2>
+						<p class="muted">
+							Run a scan from the Venstar status page, then add discovered
+							thermostats here without editing config files.
+						</p>
+						${status.discovered.length > 0
+							? html`<form method="POST">
+									<input
+										type="hidden"
+										name="action"
+										value="adopt-all-discovered"
+									/>
+									<button type="submit">Add all discovered thermostats</button>
+								</form>`
+							: ''}
+						${renderDiscoveredThermostatList(status.discovered)}
+					</section>`,
+			}),
+		)
+	}
+
 	return {
 		middleware: [],
-		async action() {
-			const thermostats = venstar.listThermostats()
-			const status = venstar.getStatus()
-			const configFilePath = path.join(
-				config.dataPath,
-				'venstar-thermostats.json',
-			)
-			return render(
-				RootLayout({
-					title: 'home connector - venstar setup',
-					body: html`<section class="card">
-							<h1>Venstar setup</h1>
-							<p class="muted">
-								Configure Venstar thermostats with a static IP address and turn
-								on the thermostat&apos;s local API before using control tools.
-							</p>
-							<p>
-								<a href="/venstar/status">Venstar status</a>
-								<span class="muted">
-									— verify connectivity after you save config
-								</span>
-							</p>
-							${renderInfoRows([
-								{ label: 'Worker URL', value: config.workerBaseUrl },
-								{
-									label: 'Connector ID',
-									value: state.connection.connectorId || 'not registered yet',
-								},
-								{
-									label: 'Configured thermostats',
-									value: String(thermostats.length),
-								},
-								{
-									label: 'Discovery URL',
-									value: html`<code>${config.venstarDiscoveryUrl}</code>`,
-								},
-								{
-									label: 'Discovered thermostats',
-									value: String(status.discovered.length),
-								},
-								{
-									label: 'Env var',
-									value: html`<code>VENSTAR_THERMOSTATS</code>`,
-								},
-								{
-									label: 'Config file',
-									value: html`<code>${configFilePath}</code>`,
-								},
-							])}
-						</section>
-						<section class="card">
-							<h2>Expected JSON</h2>
-							<pre><code>[
-  {"name":"Hallway","ip":"192.168.1.40"},
-  {"name":"Bedroom","ip":"192.168.1.41"}
-]</code></pre>
-						</section>
-						<section class="card">
-							<h2>Configured thermostats</h2>
-							${thermostats.length === 0
-								? html`<p class="muted">
-										No Venstar thermostats are configured yet.
-									</p>`
-								: html`<ul class="list">
-										${thermostats.map(
-											(thermostat) =>
-												html`<li class="card">
-													<strong>${thermostat.name}</strong>
-													<div>IP: <code>${thermostat.ip}</code></div>
-												</li>`,
-										)}
-									</ul>`}
-							${status.discovered.length === 0
-								? ''
-								: html`<p class="muted">
-										A recent scan also found ${status.discovered.length}
-										unconfigured thermostat(s) on the LAN.
-									</p>`}
-							<p class="muted">
-								Setup stays read-only here because thermostat registration lives
-								in the connector env/file config, while live checks happen on
-								the Venstar status page.
-							</p>
-						</section>`,
-				}),
-			)
+		async action({ request }: { request: Request }) {
+			if (request.method === 'POST') {
+				const formData = await readPostedFormData(request, 'save-manual')
+				const action =
+					typeof formData.get('action') === 'string'
+						? String(formData.get('action'))
+						: 'save-manual'
+				try {
+					const result = await handleVenstarMutation({
+						action,
+						formData,
+						venstar,
+					})
+					return renderVenstarSetupPage({
+						saveMessage: result.message,
+					})
+				} catch (error) {
+					captureHomeConnectorException(error, {
+						tags: {
+							route: '/venstar/setup',
+							action,
+						},
+						contexts: {
+							venstar: {
+								scanCidrs: config.venstarScanCidrs,
+								connectorId: state.connection.connectorId,
+							},
+						},
+					})
+					return renderVenstarSetupPage({
+						saveError: error instanceof Error ? error.message : String(error),
+					})
+				}
+			}
+
+			return renderVenstarSetupPage({})
 		},
 	} satisfies BuildAction<
 		typeof routes.venstarSetup.method,
