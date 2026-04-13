@@ -99,31 +99,6 @@ async () => {
 
 	const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-	// Dynamic keys so skill-save inference (static registry) does not reject home connector tools.
-	const cap = (fragments) => (args) => codemode[fragments.join('')](args)
-	const homeLutronInventory = cap([
-		'home',
-		'_',
-		'lut',
-		'ron',
-		'_',
-		'get',
-		'_',
-		'in',
-		'ventory',
-	])
-	const homeBondShadeSet = cap([
-		'home',
-		'_',
-		'bond',
-		'_',
-		'shade',
-		'_',
-		'set',
-		'_',
-		'position',
-	])
-
 	const DEVICES = {
 		kitchenSouth: '8b42d22d727fb1cd',
 		kitchenWest: '4a0522ccbb052cb1',
@@ -182,7 +157,7 @@ async () => {
 
 	let studioSkipOffice = true
 	try {
-		const inv = await homeLutronInventory({
+		const inv = await codemode.home_lutron_get_inventory({
 			processorId: LUTRON_PROCESSOR,
 		})
 		const z = inv.zones?.find((x) => String(x.zoneId) === STUDIO_ZONE_ID)
@@ -302,7 +277,7 @@ async () => {
 	}
 
 	for (const c of cmds) {
-		await homeBondShadeSet({
+		await codemode.home_bond_shade_set_position({
 			deviceId: c.deviceId,
 			position: c.position,
 		})
