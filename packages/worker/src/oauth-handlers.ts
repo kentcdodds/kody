@@ -92,7 +92,11 @@ function readClientIdFromAuthorizeRequest(request: Request) {
 }
 
 function isLoopbackHostname(hostname: string) {
-	return hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.')
+	return (
+		hostname === 'localhost' ||
+		hostname === '::1' ||
+		hostname.startsWith('127.')
+	)
 }
 
 function redirectUriMatchesRegisteredUri(
@@ -174,7 +178,10 @@ async function handleResetClientRequest(
 	helpers: OAuthHelpers,
 	requestIp?: string,
 ) {
-	const redirectUriMismatch = await requestHasRedirectUriMismatch(helpers, request)
+	const redirectUriMismatch = await requestHasRedirectUriMismatch(
+		helpers,
+		request,
+	)
 	if (!redirectUriMismatch) {
 		return respondAuthorizeError(
 			request,
@@ -194,7 +201,10 @@ async function handleResetClientRequest(
 		)
 	}
 
-	const { email: sessionEmail, setCookie } = await resolveSessionEmail(request, env)
+	const { email: sessionEmail, setCookie } = await resolveSessionEmail(
+		request,
+		env,
+	)
 	if (!sessionEmail) {
 		void logAuditEvent({
 			category: 'oauth',
@@ -215,7 +225,9 @@ async function handleResetClientRequest(
 	try {
 		const userId = await createStableUserIdFromEmail(sessionEmail)
 		const grants = await listUserGrantsForClient(helpers, userId, clientId)
-		await Promise.all(grants.map((grant) => helpers.revokeGrant(grant.id, userId)))
+		await Promise.all(
+			grants.map((grant) => helpers.revokeGrant(grant.id, userId)),
+		)
 		await helpers.deleteClient(clientId)
 		void logAuditEvent({
 			category: 'oauth',

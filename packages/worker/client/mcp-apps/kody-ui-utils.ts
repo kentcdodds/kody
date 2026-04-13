@@ -335,7 +335,7 @@ export function readSavedAppSourceFromHostToolResult(
 			? structuredContent.client_code
 			: typeof structuredContent?.clientCode === 'string'
 				? structuredContent.clientCode
-			: null
+				: null
 	if (!code) {
 		return {
 			handled: true as const,
@@ -387,20 +387,19 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	const runtime = coerceRuntime(value.runtime) ?? (code ? 'html' : undefined)
 	const params = coerceJsonRecord(value.params)
 	const appSession = coerceAppSession(value.appSession)
-	const appBackend =
-		isRecord(value.appBackend)
-			? {
-					basePath:
-						typeof value.appBackend.basePath === 'string'
-							? value.appBackend.basePath
-							: '',
-					facetNames: Array.isArray(value.appBackend.facetNames)
-						? value.appBackend.facetNames.filter(
-								(entry): entry is string => typeof entry === 'string',
-							)
-						: undefined,
-				}
-			: null
+	const appBackend = isRecord(value.appBackend)
+		? {
+				basePath:
+					typeof value.appBackend.basePath === 'string'
+						? value.appBackend.basePath
+						: '',
+				facetNames: Array.isArray(value.appBackend.facetNames)
+					? value.appBackend.facetNames.filter(
+							(entry): entry is string => typeof entry === 'string',
+						)
+					: undefined,
+			}
+		: null
 	return {
 		mode: renderSource,
 		code,
@@ -1157,8 +1156,7 @@ async function initializeShellHostDocument() {
 					getApiErrorMessage(payload, 'Failed to load saved app source.'),
 				)
 			}
-			const code =
-				typeof app.client_code === 'string' ? app.client_code : null
+			const code = typeof app.client_code === 'string' ? app.client_code : null
 			if (!code) {
 				throw new Error('Saved app source is missing client_code.')
 			}
@@ -1192,7 +1190,7 @@ async function initializeShellHostDocument() {
 			mode: 'mcp',
 			params: envelope.params ?? {},
 			...(envelope.appSession ? { appSession: envelope.appSession } : {}),
-				...(envelope.appBackend ? { appBackend: envelope.appBackend } : {}),
+			...(envelope.appBackend ? { appBackend: envelope.appBackend } : {}),
 		}
 		updateGeneratedUiRuntimeBootstrap(mcpRuntimeBootstrap)
 

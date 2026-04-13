@@ -124,7 +124,10 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function submitDecision(decision: OAuthAuthorizeDecision, form?: HTMLFormElement) {
+	async function submitDecision(
+		decision: OAuthAuthorizeDecision,
+		form?: HTMLFormElement,
+	) {
 		if (submittingDecision) return
 		submittingDecision = decision
 		handle.update()
@@ -286,8 +289,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						<p css={sectionTitleCss}>Reset stored connection</p>
 						<p css={descriptionCss}>
 							Delete this trusted client&apos;s saved registration and grants,
-							then start the connection again from the client to create a
-							fresh record.
+							then start the connection again from the client to create a fresh
+							record.
 						</p>
 						{isLoggedIn ? (
 							<button

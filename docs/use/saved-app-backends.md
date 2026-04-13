@@ -7,8 +7,8 @@ Saved apps now persist **two** code artifacts:
   **`/app/:appId/*`**
 
 Every saved app gets its own **`AppRunner`** supervisor Durable Object. When the
-app defines **`serverCode`**, the supervisor loads the saved code as a
-**Durable Object Facet** and gives it an isolated SQLite database.
+app defines **`serverCode`**, the supervisor loads the saved code as a **Durable
+Object Facet** and gives it an isolated SQLite database.
 
 ## Save input shape
 
@@ -16,10 +16,10 @@ app defines **`serverCode`**, the supervisor loads the saved code as a
 
 ```json
 {
-  "app_id": "app-123",
-  "clientCode": "<main>...</main>",
-  "serverCode": "import { DurableObject } from 'cloudflare:workers'; ...",
-  "serverCodeId": "uuid"
+	"app_id": "app-123",
+	"clientCode": "<main>...</main>",
+	"serverCode": "import { DurableObject } from 'cloudflare:workers'; ...",
+	"serverCodeId": "uuid"
 }
 ```
 
@@ -33,10 +33,10 @@ return snake_case fields:
 
 ```json
 {
-  "app_id": "app-123",
-  "client_code": "<main>...</main>",
-  "server_code": "import { DurableObject } from 'cloudflare:workers'; ...",
-  "server_code_id": "uuid"
+	"app_id": "app-123",
+	"client_code": "<main>...</main>",
+	"server_code": "import { DurableObject } from 'cloudflare:workers'; ...",
+	"server_code_id": "uuid"
 }
 ```
 

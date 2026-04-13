@@ -170,8 +170,7 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		title: String(row['title']),
 		description: String(row['description']),
 		clientCode: String(row['client_code']),
-		serverCode:
-			row['server_code'] == null ? null : String(row['server_code']),
+		serverCode: row['server_code'] == null ? null : String(row['server_code']),
 		serverCodeId: String(row['server_code_id']),
 		parameters: row['parameters'] == null ? null : String(row['parameters']),
 		hidden:

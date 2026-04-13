@@ -27,10 +27,9 @@ Reopen with **open_generated_ui** using **`app_id`**, or discover apps via
 Saved apps can be **hidden** from search by default; set **`hidden: false`**
 when the app should appear in discovery for reuse.
 
-Saved app backends run behind **`/app/:appId/*`** with their own isolated
-SQLite database per facet. The default facet is **`main`**. Additional named
-facets such as **`jobs`** or **`cache`** are supported by the lifecycle
-capabilities.
+Saved app backends run behind **`/app/:appId/*`** with their own isolated SQLite
+database per facet. The default facet is **`main`**. Additional named facets
+such as **`jobs`** or **`cache`** are supported by the lifecycle capabilities.
 
 Use these lifecycle capabilities when you need backend maintenance:
 

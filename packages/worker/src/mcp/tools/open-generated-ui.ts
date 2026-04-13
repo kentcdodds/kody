@@ -2,7 +2,10 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { generatedUiRuntimeResourceUri } from '#mcp/apps/generated-ui-runtime-html-entry.ts'
-import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
+import {
+	buildSavedAppBackendBasePath,
+	createGeneratedUiAppSession,
+} from '#mcp/generated-ui-app-session.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	conversationIdInputField,
@@ -19,7 +22,6 @@ import {
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
-import { buildSavedAppBackendBasePath } from '#mcp/generated-ui-app-session.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import {
 	appendToolContent,

@@ -900,7 +900,8 @@ function coerceAppBackend(
 	}
 	const facetNames = Array.isArray(value.facetNames)
 		? value.facetNames.filter(
-				(entry): entry is string => typeof entry === 'string' && entry.length > 0,
+				(entry): entry is string =>
+					typeof entry === 'string' && entry.length > 0,
 			)
 		: undefined
 	return {

@@ -219,16 +219,17 @@ export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
 	}
 
 	async connectorList() {
-		const values = await import('#mcp/values/service.ts').then(({ listValues }) =>
-			listValues({
-				env: this.env,
-				userId: this.ctx.props.userId,
-				scope: 'user',
-				storageContext: {
-					sessionId: null,
-					appId: this.ctx.props.appId,
-				},
-			}),
+		const values = await import('#mcp/values/service.ts').then(
+			({ listValues }) =>
+				listValues({
+					env: this.env,
+					userId: this.ctx.props.userId,
+					scope: 'user',
+					storageContext: {
+						sessionId: null,
+						appId: this.ctx.props.appId,
+					},
+				}),
 		)
 		const connectors = values
 			.map((value) => {
@@ -292,10 +293,12 @@ export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
 		return `{{secret:${name}|scope=${scope}}}`
 	}
 
-	async metaRunSkill(name: string, params: Record<string, unknown> | undefined) {
-		const { metaRunSkillCapability } = await import(
-			'#mcp/capabilities/meta/meta-run-skill.ts'
-		)
+	async metaRunSkill(
+		name: string,
+		params: Record<string, unknown> | undefined,
+	) {
+		const { metaRunSkillCapability } =
+			await import('#mcp/capabilities/meta/meta-run-skill.ts')
 		const { createMcpCallerContext } = await import('#mcp/context.ts')
 		return await metaRunSkillCapability.handler(
 			{ name, params },
@@ -385,8 +388,7 @@ class AppRunnerBase extends DurableObject<Env> {
 			serverCodeId: input.serverCodeId,
 			rateLimitPerMinute:
 				input.rateLimitPerMinute ?? existing.rateLimitPerMinute,
-			killSwitchEnabled:
-				input.killSwitchEnabled ?? existing.killSwitchEnabled,
+			killSwitchEnabled: input.killSwitchEnabled ?? existing.killSwitchEnabled,
 		}
 		await this.writeConfig(nextConfig)
 		if (
@@ -485,7 +487,10 @@ class AppRunnerBase extends DurableObject<Env> {
 	) {
 		const config = await this.readConfig(this.ctx.id.toString())
 		if (!config.userId) {
-			return jsonResponse({ ok: false, error: 'App runner is not configured.' }, 400)
+			return jsonResponse(
+				{ ok: false, error: 'App runner is not configured.' },
+				400,
+			)
 		}
 		switch (action) {
 			case 'reset-storage':
@@ -550,11 +555,7 @@ class AppRunnerBase extends DurableObject<Env> {
 				`${config.appId}:${facetName}:${config.serverCodeId}`,
 				async () => ({
 					compatibilityDate: '2026-04-13',
-					compatibilityFlags: [
-						'nodejs_compat',
-						'global_fetch_strictly_public',
-						'unsafe_eval',
-					],
+					compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
 					mainModule: 'facet-entry.js',
 					modules: {
 						'facet-entry.js': createFacetWrapperModule({
@@ -605,7 +606,8 @@ class AppRunnerBase extends DurableObject<Env> {
 	}
 
 	private async readConfig(appId: string) {
-		const existing = await this.ctx.storage.get<AppRunnerConfig>(configStorageKey)
+		const existing =
+			await this.ctx.storage.get<AppRunnerConfig>(configStorageKey)
 		return existing ?? defaultConfig(appId)
 	}
 
@@ -782,7 +784,11 @@ export async function syncSavedAppRunnerFromDb(input: {
 	userId: string
 	baseUrl?: string
 }) {
-	const artifact = await getUiArtifactById(input.env.APP_DB, input.userId, input.appId)
+	const artifact = await getUiArtifactById(
+		input.env.APP_DB,
+		input.userId,
+		input.appId,
+	)
 	if (!artifact) {
 		return null
 	}

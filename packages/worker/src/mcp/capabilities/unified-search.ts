@@ -163,11 +163,11 @@ function scoreUiArtifactLexicalMatch(
 	const doc = [
 		hit.title,
 		hit.description,
-		hit.hasServerCode ? 'has facet backend durable object sqlite' : 'client only',
+		hit.hasServerCode
+			? 'has facet backend durable object sqlite'
+			: 'client only',
 		parameterText,
-	].join(
-		'\n',
-	)
+	].join('\n')
 	let bonus = 0
 	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.title) * 1.5
 	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.description) * 1

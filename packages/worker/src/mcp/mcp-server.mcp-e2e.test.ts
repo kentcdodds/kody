@@ -325,19 +325,25 @@ test('saved apps with server code expose isolated backend storage', async () => 
 	expect(openStructured?.appBackend?.basePath).toBe(`/app/${savedAppId}`)
 	expect(typeof openStructured?.appSession?.token).toBe('string')
 
-	const sourceResponse = await fetch(openStructured!.appSession!.endpoints!.source!, {
-		headers: {
-			Authorization: `Bearer ${openStructured!.appSession!.token}`,
-			Accept: 'application/json',
+	const sourceResponse = await fetch(
+		openStructured!.appSession!.endpoints!.source!,
+		{
+			headers: {
+				Authorization: `Bearer ${openStructured!.appSession!.token}`,
+				Accept: 'application/json',
+			},
 		},
-	})
+	)
 	expect(sourceResponse.ok).toBe(true)
 	const backendCookie = sourceResponse.headers.get('Set-Cookie')
 	expect(backendCookie).toContain('kody_generated_ui_app=')
 	const scopedCookieHeader = backendCookie?.split(';')[0] ?? ''
 
 	const firstResponse = await fetch(
-		new URL(`${openStructured!.appBackend!.basePath}/api/counter`, server.origin),
+		new URL(
+			`${openStructured!.appBackend!.basePath}/api/counter`,
+			server.origin,
+		),
 		{
 			headers: {
 				Accept: 'application/json',
@@ -349,7 +355,10 @@ test('saved apps with server code expose isolated backend storage', async () => 
 	expect(await firstResponse.json()).toEqual({ count: 1 })
 
 	const secondResponse = await fetch(
-		new URL(`${openStructured!.appBackend!.basePath}/api/counter`, server.origin),
+		new URL(
+			`${openStructured!.appBackend!.basePath}/api/counter`,
+			server.origin,
+		),
 		{
 			headers: {
 				Accept: 'application/json',
@@ -361,7 +370,10 @@ test('saved apps with server code expose isolated backend storage', async () => 
 	expect(await secondResponse.json()).toEqual({ count: 2 })
 
 	const unauthenticatedResponse = await fetch(
-		new URL(`${openStructured!.appBackend!.basePath}/api/counter`, server.origin),
+		new URL(
+			`${openStructured!.appBackend!.basePath}/api/counter`,
+			server.origin,
+		),
 		{
 			headers: {
 				Accept: 'application/json',
