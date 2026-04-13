@@ -57,6 +57,9 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 	})
 }
 
+const invalidRedirectUriMessage =
+	'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.'
+
 function getOAuthHelpers(env: Env) {
 	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
 	if (!helpers) {
@@ -86,6 +89,36 @@ async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
 	}
 }
 
+function isInvalidRedirectUriError(message: string) {
+	return message === invalidRedirectUriMessage
+}
+
+function readClientIdFromAuthorizeRequest(request: Request) {
+	const clientId = new URL(request.url).searchParams.get('client_id')?.trim()
+	return clientId ? clientId : null
+}
+
+async function listUserGrantsForClient(
+	helpers: OAuthHelpers,
+	userId: string,
+	clientId: string,
+) {
+	const grants = new Array<{ id: string }>()
+	let cursor: string | undefined
+
+	do {
+		const page = await helpers.listUserGrants(userId, { cursor })
+		for (const grant of page.items) {
+			if (grant.clientId === clientId) {
+				grants.push({ id: grant.id })
+			}
+		}
+		cursor = page.cursor
+	} while (cursor)
+
+	return grants
+}
+
 function resolveScopes(requestedScopes: Array<string>) {
 	if (requestedScopes.length === 0) return oauthScopes
 	const invalidScopes = requestedScopes.filter(
@@ -97,6 +130,97 @@ function resolveScopes(requestedScopes: Array<string>) {
 		}
 	}
 	return requestedScopes
+}
+
+async function handleResetClientRequest(
+	request: Request,
+	env: Env,
+	helpers: OAuthHelpers,
+	requestIp?: string,
+) {
+	const url = new URL(request.url)
+	const errorDescription = url.searchParams.get('error_description')?.trim() ?? ''
+	if (!isInvalidRedirectUriError(errorDescription)) {
+		return respondAuthorizeError(
+			request,
+			'Stored client cleanup is only available for redirect URI mismatches.',
+			400,
+			'invalid_request',
+		)
+	}
+
+	const clientId = readClientIdFromAuthorizeRequest(request)
+	if (!clientId) {
+		return respondAuthorizeError(
+			request,
+			'Missing client ID for stored client cleanup.',
+			400,
+			'invalid_request',
+		)
+	}
+
+	const { email: sessionEmail, setCookie } = await resolveSessionEmail(request, env)
+	if (!sessionEmail) {
+		void logAuditEvent({
+			category: 'oauth',
+			action: 'reset_client',
+			result: 'failure',
+			ip: requestIp,
+			clientId,
+			reason: 'missing_session',
+		})
+		return respondAuthorizeError(
+			request,
+			'Sign in before deleting stored client records.',
+			401,
+			'unauthorized',
+		)
+	}
+
+	try {
+		const userId = await createStableUserIdFromEmail(sessionEmail)
+		const grants = await listUserGrantsForClient(helpers, userId, clientId)
+		await Promise.all(grants.map((grant) => helpers.revokeGrant(grant.id, userId)))
+		await helpers.deleteClient(clientId)
+		void logAuditEvent({
+			category: 'oauth',
+			action: 'reset_client',
+			result: 'success',
+			email: sessionEmail,
+			ip: requestIp,
+			clientId,
+		})
+		return jsonResponse(
+			{
+				ok: true,
+				message:
+					'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+			},
+			setCookie
+				? {
+						headers: {
+							'Set-Cookie': setCookie,
+						},
+					}
+				: undefined,
+		)
+	} catch (error) {
+		void logAuditEvent({
+			category: 'oauth',
+			action: 'reset_client',
+			result: 'failure',
+			email: sessionEmail,
+			ip: requestIp,
+			clientId,
+			reason: error instanceof Error ? error.message : 'unknown_error',
+		})
+		return respondAuthorizeError(
+			request,
+			'Unable to delete stored client records right now.',
+			500,
+			'server_error',
+		)
+	}
 }
 
 function createAccessDeniedRedirectUrl(request: AuthRequest) {
@@ -192,6 +316,12 @@ export async function handleAuthorizeRequest(
 
 	const requestIp = getRequestIp(request) ?? undefined
 	const helpers = getOAuthHelpers(env)
+	const formData = await request.formData()
+	const decision = String(formData.get('decision') ?? 'approve')
+	if (decision === 'reset-client') {
+		return handleResetClientRequest(request, env, helpers, requestIp)
+	}
+
 	const resolution = await resolveAuthRequest(helpers, request)
 	if ('error' in resolution) {
 		return respondAuthorizeError(
@@ -201,8 +331,6 @@ export async function handleAuthorizeRequest(
 	}
 
 	const { authRequest } = resolution
-	const formData = await request.formData()
-	const decision = String(formData.get('decision') ?? 'approve')
 	if (decision === 'deny') {
 		const redirectTo = createAccessDeniedRedirectUrl(authRequest)
 		if (!redirectTo) {

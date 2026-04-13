@@ -11,6 +11,7 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getAlertCardCss,
+	getDangerButtonCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	insetCardCss,
@@ -31,6 +32,10 @@ type OAuthAuthorizeInfo = {
 
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
+type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
+
+const invalidRedirectUriMessage =
+	'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.'
 
 function getSearchParams() {
 	return typeof window === 'undefined'
@@ -42,10 +47,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let info: OAuthAuthorizeInfo | null = null
 	let status: OAuthAuthorizeStatus = 'idle'
 	let message: OAuthAuthorizeMessage | null = null
-	let submitting = false
+	let submittingDecision: OAuthAuthorizeDecision | null = null
 	let lastSearch = ''
 	let session: SessionInfo | null = null
 	let sessionStatus: SessionStatus = 'idle'
+	let resetCompleted = false
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
@@ -116,12 +122,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function submitDecision(
-		decision: 'approve' | 'deny',
-		form?: HTMLFormElement,
-	) {
-		if (submitting) return
-		submitting = true
+	async function submitDecision(decision: OAuthAuthorizeDecision, form?: HTMLFormElement) {
+		if (submittingDecision) return
+		submittingDecision = decision
 		handle.update()
 
 		try {
@@ -136,7 +139,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						type: 'error',
 						text: 'Email and password are required.',
 					})
-					submitting = false
+					submittingDecision = null
 					handle.update()
 					return
 				}
@@ -159,12 +162,17 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						? payload.error
 						: 'Unable to complete authorization.'
 				setMessage({ type: 'error', text: errorText })
-				submitting = false
+				submittingDecision = null
 				handle.update()
 				return
 			}
 			if (payload?.redirectTo) {
 				window.location.assign(payload.redirectTo)
+				return
+			}
+			if (typeof payload?.message === 'string') {
+				resetCompleted = true
+				setMessage({ type: 'info', text: payload.message })
 				return
 			}
 			setMessage({ type: 'error', text: 'Missing redirect response.' })
@@ -174,7 +182,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				text: 'Network error. Please try again.',
 			})
 		} finally {
-			submitting = false
+			submittingDecision = null
 			handle.update()
 		}
 	}
@@ -204,18 +212,28 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const scopes = info?.scopes ?? []
 		const scopeLabel =
 			scopes.length > 0 ? scopes.join(', ') : 'No scopes requested.'
+		const queryError = readQueryError()
 		const sessionEmail = session?.email ?? ''
 		const isSessionReady = sessionStatus === 'ready'
 		const isSessionLoading =
 			sessionStatus === 'loading' || sessionStatus === 'idle'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
-		const actionsDisabled = status !== 'ready' || submitting || isSessionLoading
+		const showResetClientCard =
+			queryError === invalidRedirectUriMessage && !resetCompleted
+		const actionsDisabled =
+			status !== 'ready' || Boolean(submittingDecision) || isSessionLoading
+		const resetClientDisabled =
+			Boolean(submittingDecision) || isSessionLoading || !isLoggedIn
 		const formReady = status === 'ready' && !isSessionLoading
-		const authorizeLabel = submitting
+		const authorizeLabel = submittingDecision
 			? 'Submitting...'
 			: isLoggedIn
 				? 'Approve connection'
 				: 'Authorize'
+		const resetClientLabel =
+			submittingDecision === 'reset-client'
+				? 'Deleting stored client...'
+				: 'Delete stored client'
 
 		return (
 			<section css={pageCss}>
@@ -257,6 +275,30 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					>
 						{message.text}
 					</p>
+				) : null}
+				{showResetClientCard ? (
+					<section css={cardCss}>
+						<p css={sectionTitleCss}>Reset stored connection</p>
+						<p css={descriptionCss}>
+							Delete this trusted client&apos;s saved registration and grants,
+							then start the connection again from the client to create a
+							fresh record.
+						</p>
+						{isLoggedIn ? (
+							<button
+								type="button"
+								disabled={resetClientDisabled}
+								on={{ click: () => submitDecision('reset-client') }}
+								css={dangerButtonCss}
+							>
+								{resetClientLabel}
+							</button>
+						) : isSessionReady ? (
+							<p css={descriptionCss}>
+								Sign in first, then delete the stored client record.
+							</p>
+						) : null}
+					</section>
 				) : null}
 				<form
 					css={{
@@ -329,6 +371,10 @@ const headerCss = pageHeaderCss
 const eyebrowCss = pageEyebrowCss
 const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
 const secondaryButtonCss = getSecondaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
+const dangerButtonCss = getDangerButtonCss({
 	size: 'lg',
 	weight: 'semibold',
 })

@@ -13,6 +13,7 @@ import {
 	handleOAuthCallback,
 	oauthScopes,
 } from './oauth-handlers.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const baseAuthRequest: AuthRequest = {
 	responseType: 'code',
@@ -248,6 +249,112 @@ test('authorize uses default scopes when none requested', async () => {
 	)
 	const capturedOptions = await capturedOptionsPromise
 	expect(capturedOptions.scope).toEqual(oauthScopes)
+})
+
+test('reset client deletes matching grants and client registration', async () => {
+	const revokedGrantIds = new Array<string>()
+	const deletedClientIds = new Array<string>()
+	const userId = await createStableUserIdFromEmail('user@example.com')
+	const helpers = createHelpers({
+		parseAuthRequest: async () => {
+			throw new Error(
+				'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.',
+			)
+		},
+		listUserGrants: async (requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			return {
+				items: [
+					{
+						id: 'grant-1',
+						clientId: 'client-123',
+						userId,
+						scope: ['profile'],
+						metadata: {},
+						createdAt: 0,
+					},
+					{
+						id: 'grant-2',
+						clientId: 'other-client',
+						userId,
+						scope: ['profile'],
+						metadata: {},
+						createdAt: 0,
+					},
+					{
+						id: 'grant-3',
+						clientId: 'client-123',
+						userId,
+						scope: ['email'],
+						metadata: {},
+						createdAt: 0,
+					},
+				],
+			}
+		},
+		revokeGrant: async (grantId, requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			revokedGrantIds.push(grantId)
+		},
+		deleteClient: async (clientId) => {
+			deletedClientIds.push(clientId)
+		},
+	})
+	setAuthSessionSecret(cookieSecret)
+	const cookie = await createAuthCookie(
+		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		false,
+	)
+
+	const response = await handleAuthorizeRequest(
+		new Request(
+			`https://example.com/oauth/authorize?client_id=client-123&error_description=${encodeURIComponent('Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.')}`,
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					Cookie: cookie,
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ decision: 'reset-client' }),
+			},
+		),
+		createEnv(helpers),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		message:
+			'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+	})
+	expect(revokedGrantIds).toEqual(['grant-1', 'grant-3'])
+	expect(deletedClientIds).toEqual(['client-123'])
+})
+
+test('reset client is rejected when the request is not a redirect mismatch', async () => {
+	const response = await handleAuthorizeRequest(
+		new Request(
+			'https://example.com/oauth/authorize?client_id=client-123&error_description=Authorization%20error',
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ decision: 'reset-client' }),
+			},
+		),
+		createEnv(createHelpers()),
+	)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error:
+			'Stored client cleanup is only available for redirect URI mismatches.',
+		code: 'invalid_request',
+	})
 })
 
 test('oauth callback page returns SPA shell', async () => {
