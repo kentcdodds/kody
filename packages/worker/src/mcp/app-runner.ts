@@ -478,10 +478,17 @@ class AppRunnerBase extends DurableObject<Env> {
 		request: Request,
 	) {
 		const config = await this.readConfig(this.ctx.id.toString())
+		const requestUserId = request.headers.get('X-Kody-App-User-Id')
 		if (!config.userId) {
 			return jsonResponse(
 				{ ok: false, error: 'App runner is not configured.' },
 				400,
+			)
+		}
+		if (!requestUserId || requestUserId !== config.userId) {
+			return jsonResponse(
+				{ ok: false, error: 'Unauthorized saved app lifecycle request.' },
+				403,
 			)
 		}
 		switch (action) {
