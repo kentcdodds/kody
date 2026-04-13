@@ -133,10 +133,40 @@ Use `job_history({ job_id, limit? })` to inspect recent runs.
 
 - `job_storage_reset({ job_id })` deletes the facet storage but keeps the saved
   job record and supervisor history.
-- `job_server_exec({ job_id, code, params? })` executes one-off JavaScript
-  against the live facet instance for debugging or data migrations.
+- `job_server_exec({ job_id, code, params? })` compiles your snippet into a
+  throwaway Dynamic Worker and gives it a `job` RPC stub plus `params`.
+
+`job_server_exec` does **not** string-eval code inside the running facet. The
+snippet runs in a separate short-lived worker and can only call methods the
+user-authored `Job` class explicitly exposes over RPC.
+
+Example:
+
+```ts
+await codemode.job_server_exec({
+	job_id: 'job-123',
+	code: `
+		return await job.readState()
+	`,
+})
+```
+
+Or with params:
+
+```ts
+await codemode.job_server_exec({
+	job_id: 'job-123',
+	code: `
+		return await job.setCount(params.count)
+	`,
+	params: { count: 5 },
+})
+```
+
+If you need raw storage inspection, prefer `job_storage_export` instead of
+adding broad debug methods to the job facet.
 
 ## Example
 
-See [Feed watcher example](./examples/job-feed-watcher.md) for a job that keeps
+See [Feed watcher example](./examples/job-feed-checker.md) for a job that keeps
 track of the last-seen item id in SQLite and only emits new items on later runs.

@@ -123,7 +123,12 @@ export const jobUpdateInputSchema = z.object({
 
 export const jobServerExecInputSchema = z.object({
 	job_id: z.string().min(1),
-	code: z.string().min(1),
+	code: z
+		.string()
+		.min(1)
+		.describe(
+			'JavaScript snippet compiled into a throwaway Dynamic Worker. The snippet runs with `job` (RPC stub to the job facet) and `params` in scope.',
+		),
 	params: z.record(z.string(), z.unknown()).optional(),
 })
 

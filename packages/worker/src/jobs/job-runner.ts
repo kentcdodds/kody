@@ -4,13 +4,13 @@ import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	type FacetStorageExport,
 	FacetKodyBridge,
-	callFacetExec,
 	callFacetStorageExport,
 	callFacetStorageReset,
 	createFacetStartup,
 	jsonResponse,
 	toFacetErrorDetails,
 } from '#mcp/facet-runtime.ts'
+import { runJobExecWorker } from './exec-worker.ts'
 import { getJobById } from './repo.ts'
 import { computeNextJobRunAt, formatJobScheduleSummary } from './schedule.ts'
 import { buildJobStorageBindingId } from './service.ts'
@@ -208,7 +208,12 @@ class JobRunnerBase extends DurableObject<Env> {
 
 	async execServer(input: { code: string; params?: Record<string, unknown> }) {
 		const facet = await this.getFacetStub()
-		return await callFacetExec(facet, input.code, input.params)
+		return await runJobExecWorker({
+			loader: this.env.APP_LOADER,
+			jobFacet: facet,
+			code: input.code,
+			params: input.params,
+		})
 	}
 
 	async deleteRunner() {

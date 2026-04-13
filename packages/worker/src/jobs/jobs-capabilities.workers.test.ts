@@ -49,6 +49,18 @@ function createJobCode(flavor: string) {
 				this.ctx.storage.kv.put('count', count)
 				return { count, flavor: '${flavor}' }
 			}
+
+			async readState() {
+				return {
+					count: Number(this.ctx.storage.kv.get('count') ?? 0),
+					flavor: '${flavor}',
+				}
+			}
+
+			async setCount(nextCount) {
+				this.ctx.storage.kv.put('count', Number(nextCount ?? 0))
+				return await this.readState()
+			}
 		}
 	`.trim()
 }
@@ -72,6 +84,7 @@ test('job capabilities create, update, run, and delete cron jobs end-to-end', as
 	const jobUpdate = capabilityMap['job_update']!.handler
 	const jobRunNow = capabilityMap['job_run_now']!.handler
 	const jobHistory = capabilityMap['job_history']!.handler
+	const jobServerExec = capabilityMap['job_server_exec']!.handler
 	const jobDelete = capabilityMap['job_delete']!.handler
 	const created = await createJob(
 		{
@@ -133,6 +146,48 @@ test('job capabilities create, update, run, and delete cron jobs end-to-end', as
 	})
 	expect(runNow.job.runCount).toBe(2)
 	expect(runNow.job.successCount).toBe(2)
+
+	const trivialExec = await jobServerExec(
+		{
+			job_id: created.id,
+			code: `
+				return {
+					hello: 'world',
+					source: params.source,
+				}
+			`,
+			params: {
+				source: 'throwaway-worker',
+			},
+		},
+		ctx,
+	)
+	expect(trivialExec).toEqual({
+		ok: true,
+		job_id: created.id,
+		result: {
+			hello: 'world',
+			source: 'throwaway-worker',
+		},
+	})
+
+	const rpcExec = await jobServerExec(
+		{
+			job_id: created.id,
+			code: `
+				return await job.readState()
+			`,
+		},
+		ctx,
+	)
+	expect(rpcExec).toEqual({
+		ok: true,
+		job_id: created.id,
+		result: {
+			count: 2,
+			flavor: 'beta',
+		},
+	})
 
 	const deleted = await jobDelete({ job_id: created.id }, ctx)
 	expect(deleted).toEqual({
