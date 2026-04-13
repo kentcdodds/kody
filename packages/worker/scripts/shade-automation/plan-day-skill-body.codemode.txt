@@ -1,0 +1,229 @@
+/**
+ * Daily planner for shade automation — Kody skill shade-automation-plan-day.
+ * Stores shadeAutomationPollWindow: Denver-local minutes + nautical dawn / dusk + astronomical dusk.
+ * Open-Meteo sunrise/sunset strings are interpreted as America/Denver wall time (not Date.parse UTC).
+ */
+async () => {
+	const TZ = 'America/Denver'
+	const lat = 40.42823
+	const lon = -111.78912
+	const now = new Date()
+	const dateKey = new Intl.DateTimeFormat('en-CA', {
+		timeZone: TZ,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+	}).format(now)
+
+	const PI = Math.PI
+	const sin = Math.sin
+	const cos = Math.cos
+	const tan = Math.tan
+	const asin = Math.asin
+	const atan2 = Math.atan2
+	const rad = PI / 180
+	const dayMs = 1000 * 60 * 60 * 24
+	const J1970 = 2440588
+	const J2000 = 2451545
+	const eOb = rad * 23.4397
+	function toJulian(date) {
+		return date.valueOf() / dayMs - 0.5 + J1970
+	}
+	function toDays(date) {
+		return toJulian(date) - J2000
+	}
+	function rightAscension(l, b) {
+		return atan2(sin(l) * cos(eOb) - tan(b) * sin(eOb), cos(l))
+	}
+	function declination(l, b) {
+		return asin(sin(b) * cos(eOb) + cos(b) * sin(eOb) * sin(l))
+	}
+	function azimuthSunCalc(H, phi, dec) {
+		return atan2(sin(H), cos(H) * sin(phi) - tan(dec) * cos(phi))
+	}
+	function altitude(H, phi, dec) {
+		return asin(sin(phi) * sin(dec) + cos(phi) * cos(dec) * cos(H))
+	}
+	function siderealTime(d, lw) {
+		return rad * (280.16 + 360.9856235 * d) - lw
+	}
+	function solarMeanAnomaly(d) {
+		return rad * (357.5291 + 0.98560028 * d)
+	}
+	function eclipticLongitude(M) {
+		const C = rad * (1.9148 * sin(M) + 0.02 * sin(2 * M) + 0.0003 * sin(3 * M))
+		const P = rad * 102.9372
+		return M + C + P + PI
+	}
+	function sunCoords(d) {
+		const M = solarMeanAnomaly(d)
+		const L = eclipticLongitude(M)
+		return { dec: declination(L, 0), ra: rightAscension(L, 0) }
+	}
+	function sunElevationDeg(date, latDeg, lngDeg) {
+		const lw = rad * -lngDeg
+		const phi = rad * latDeg
+		const d = toDays(date)
+		const c = sunCoords(d)
+		const H = siderealTime(d, lw) - c.ra
+		const alt = altitude(H, phi, c.dec)
+		return (alt * 180) / PI
+	}
+
+	/** UTC ms for a calendar wall clock in America/Denver on dateKey (YYYY-MM-DD). */
+	function utcMillisAtDenverWall(dateStr, hour, minute) {
+		const [y, mo, d] = dateStr.split('-').map(Number)
+		const anchor = Date.UTC(y, mo - 1, d - 1, 12, 0, 0)
+		for (let k = 0; k < 48 * 60; k++) {
+			const ms = anchor + k * 60 * 1000
+			const dk = new Intl.DateTimeFormat('en-CA', {
+				timeZone: TZ,
+				year: 'numeric',
+				month: '2-digit',
+				day: '2-digit',
+			}).format(new Date(ms))
+			if (dk !== dateStr) continue
+			const h = Number.parseInt(
+				new Intl.DateTimeFormat('en-US', {
+					timeZone: TZ,
+					hour: 'numeric',
+					hour12: false,
+				}).format(new Date(ms)),
+				10,
+			)
+			const mi = Number.parseInt(
+				new Intl.DateTimeFormat('en-US', {
+					timeZone: TZ,
+					minute: '2-digit',
+				}).format(new Date(ms)),
+				10,
+			)
+			if (h === hour && mi === minute) return ms
+		}
+		return null
+	}
+
+	/** Minutes from midnight Denver for Open-Meteo local datetime string (no Z). */
+	function openMeteoLocalToMinute(iso) {
+		if (!iso || typeof iso !== 'string') return null
+		const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})/)
+		if (!m) return null
+		const day = `${m[1]}-${m[2]}-${m[3]}`
+		const hour = Number.parseInt(m[4], 10)
+		const minute = Number.parseInt(m[5], 10)
+		const utc = utcMillisAtDenverWall(day, hour, minute)
+		if (utc == null) return hour * 60 + minute
+		const h = Number.parseInt(
+			new Intl.DateTimeFormat('en-US', {
+				timeZone: TZ,
+				hour: 'numeric',
+				hour12: false,
+			}).format(new Date(utc)),
+			10,
+		)
+		const mi = Number.parseInt(
+			new Intl.DateTimeFormat('en-US', {
+				timeZone: TZ,
+				minute: '2-digit',
+			}).format(new Date(utc)),
+			10,
+		)
+		return h * 60 + mi
+	}
+
+	function elevationAtDenverMinute(dateStr, minuteFromMidnight) {
+		const h = Math.floor(minuteFromMidnight / 60)
+		const mi = minuteFromMidnight % 60
+		const utc = utcMillisAtDenverWall(dateStr, h, mi)
+		if (utc == null) return null
+		return sunElevationDeg(new Date(utc), lat, lon)
+	}
+
+	function findTwilightMinutes(dateStr) {
+		const el = []
+		for (let m = 0; m < 1440; m++) {
+			el.push(elevationAtDenverMinute(dateStr, m))
+		}
+		let nauticalDawnMin = null
+		for (let m = 1; m < 12 * 60; m++) {
+			const a = el[m - 1]
+			const b = el[m]
+			if (a == null || b == null) continue
+			if (a < -12 && b >= -12 && b > a) {
+				nauticalDawnMin = m
+				break
+			}
+		}
+		let nauticalDuskMin = null
+		for (let m = 12 * 60 + 1; m < 1440; m++) {
+			const a = el[m - 1]
+			const b = el[m]
+			if (a == null || b == null) continue
+			if (nauticalDuskMin == null && a > -12 && b <= -12 && b < a) {
+				nauticalDuskMin = m
+				break
+			}
+		}
+		let astronomicalDuskMin = null
+		const astroFrom = nauticalDuskMin != null ? nauticalDuskMin + 1 : 12 * 60 + 1
+		for (let m = astroFrom; m < 1440; m++) {
+			const a = el[m - 1]
+			const b = el[m]
+			if (a == null || b == null) continue
+			if (a > -18 && b <= -18 && b < a) {
+				astronomicalDuskMin = m
+				break
+			}
+		}
+		return { nauticalDawnMin, nauticalDuskMin, astronomicalDuskMin, el }
+	}
+
+	const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=sunrise,sunset&timezone=${encodeURIComponent(TZ)}&start_date=${dateKey}&end_date=${dateKey}`
+	let sunrise = null
+	let sunset = null
+	let sunriseMin = 6 * 60 + 30
+	let sunsetMin = 21 * 60
+	try {
+		const res = await fetch(url)
+		const j = await res.json()
+		sunrise = j.daily?.sunrise?.[0] ?? null
+		sunset = j.daily?.sunset?.[0] ?? null
+		const sm = openMeteoLocalToMinute(sunrise)
+		const em = openMeteoLocalToMinute(sunset)
+		if (sm != null) sunriseMin = sm
+		if (em != null) sunsetMin = em
+	} catch {
+		// defaults above
+	}
+
+	const tw = findTwilightMinutes(dateKey)
+	let nauticalDawnMin = tw.nauticalDawnMin ?? Math.max(0, sunriseMin - 90)
+	let nauticalDuskMin = tw.nauticalDuskMin ?? Math.min(23 * 60 + 59, sunsetMin + 60)
+	let astronomicalDuskMin = tw.astronomicalDuskMin ?? Math.min(23 * 60 + 59, sunsetMin + 90)
+	if (astronomicalDuskMin <= nauticalDuskMin) {
+		astronomicalDuskMin = Math.min(23 * 60 + 59, nauticalDuskMin + 45)
+	}
+
+	const startMin = Math.max(0, nauticalDawnMin - 20)
+	const endMin = Math.min(24 * 60 - 1, astronomicalDuskMin + 45)
+
+	const window = JSON.stringify({
+		date: dateKey,
+		startMin,
+		endMin,
+		sunrise,
+		sunset,
+		sunriseMin,
+		sunsetMin,
+		nauticalDawnMin,
+		nauticalDuskMin,
+		astronomicalDuskMin,
+	})
+	await codemode.value_set({
+		name: 'shadeAutomationPollWindow',
+		value: window,
+		scope: 'user',
+		description: 'Daily shade poll window + twilight milestones (Denver minutes from midnight)',
+	})
+	return { ok: true, window: JSON.parse(window) }
+}
