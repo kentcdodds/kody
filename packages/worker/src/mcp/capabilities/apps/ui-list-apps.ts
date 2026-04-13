@@ -7,6 +7,7 @@ import {
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 
 const outputSchema = z.object({
@@ -45,7 +46,7 @@ export const uiListAppsCapability = defineDomainCapability(
 					app_id: row.id,
 					title: row.title,
 					description: row.description,
-					has_server_code: row.serverCode != null,
+					has_server_code: hasUiArtifactServerCode(row.serverCode),
 					server_code_id: row.serverCodeId,
 					parameters: parseUiArtifactParameters(row.parameters),
 					hidden: row.hidden,

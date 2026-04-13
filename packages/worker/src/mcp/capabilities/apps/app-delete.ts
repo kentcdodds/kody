@@ -80,7 +80,15 @@ export const appDeleteCapability = defineDomainCapability(
 				args.app_id,
 			)
 			if (!deleted) {
-				throw new Error('Saved app not found for this user.')
+				console.warn('saved-app-delete-already-missing-after-cleanup', {
+					appId: args.app_id,
+					userId: user.userId,
+				})
+				return {
+					ok: true,
+					app_id: args.app_id,
+					deleted: false,
+				} as const
 			}
 			return {
 				ok: true,

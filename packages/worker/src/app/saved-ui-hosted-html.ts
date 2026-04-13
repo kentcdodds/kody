@@ -14,7 +14,10 @@ import {
 	buildSavedAppBackendBasePath,
 	type GeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
-import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import {
+	hasUiArtifactServerCode,
+	type UiArtifactRow,
+} from '#mcp/ui-artifacts-types.ts'
 
 type HostedSavedUiInput = {
 	artifact: UiArtifactRow
@@ -67,7 +70,7 @@ ${buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
 function buildAppBackendBootstrap(
 	artifact: UiArtifactRow,
 ): GeneratedUiAppBackendBootstrap | null {
-	if (artifact.serverCode == null) {
+	if (!hasUiArtifactServerCode(artifact.serverCode)) {
 		return null
 	}
 	return {

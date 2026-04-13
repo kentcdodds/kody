@@ -14,10 +14,13 @@ import {
 	buildFacetClassExportName,
 	buildFacetName,
 } from '#mcp/app-runner-facet-names.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 
 const defaultAppRateLimit = 120
 const appRunnerFacetIdPrefix = 'facet'
 const appBackendHeader = 'X-Kody-App-Backend'
+const defaultStorageExportPageSize = 250
+const maxStorageExportPageSize = 1_000
 
 type AppRunnerConfig = {
 	appId: string
@@ -55,6 +58,9 @@ type FacetStorageExport = {
 		value: unknown
 	}>
 	estimatedBytes: number
+	truncated: boolean
+	nextStartAfter: string | null
+	pageSize: number
 }
 
 const configStorageKey = 'config'
@@ -110,14 +116,40 @@ export class ${exportName} extends BaseApp {
 		return { ok: true }
 	}
 
-	async __kody_exportStorage() {
+	async __kody_exportStorage(options) {
+		const requestedPageSize =
+			typeof options?.pageSize === 'number' && Number.isFinite(options.pageSize)
+				? Math.trunc(options.pageSize)
+				: ${defaultStorageExportPageSize}
+		const pageSize = Math.min(
+			Math.max(requestedPageSize, 1),
+			${maxStorageExportPageSize},
+		)
+		const startAfter =
+			typeof options?.startAfter === 'string' && options.startAfter
+				? options.startAfter
+				: undefined
 		const entries = []
-		for (const [key, value] of await this.ctx.storage.list()) {
+		let nextStartAfter = null
+		let truncated = false
+		const listedEntries = await this.ctx.storage.list({
+			...(startAfter ? { startAfter } : {}),
+			limit: pageSize + 1,
+		})
+		for (const [key, value] of listedEntries) {
+			if (entries.length === pageSize) {
+				truncated = true
+				break
+			}
 			entries.push({ key, value })
+			nextStartAfter = key
 		}
 		return {
 			entries,
 			estimatedBytes: this.ctx.storage.sql.databaseSize,
+			truncated,
+			nextStartAfter: truncated ? nextStartAfter : null,
+			pageSize,
 		}
 	}
 
@@ -421,14 +453,25 @@ class AppRunnerBase extends DurableObject<Env> {
 		}
 	}
 
-	async exportStorage(input: { appId: string; facetName?: string | null }) {
+	async exportStorage(input: {
+		appId: string
+		facetName?: string | null
+		pageSize?: number
+		startAfter?: string | null
+	}) {
 		const facetName = buildFacetName(input.facetName)
 		const facet = await this.getFacetStub(facetName)
 		const result = await (
 			facet as unknown as {
-				__kody_exportStorage: () => Promise<FacetStorageExport>
+				__kody_exportStorage: (payload?: {
+					pageSize?: number
+					startAfter?: string | null
+				}) => Promise<FacetStorageExport>
 			}
-		).__kody_exportStorage()
+		).__kody_exportStorage({
+			pageSize: input.pageSize,
+			startAfter: input.startAfter ?? null,
+		})
 		return {
 			ok: true,
 			appId: input.appId,
@@ -499,13 +542,22 @@ class AppRunnerBase extends DurableObject<Env> {
 						facetName,
 					}),
 				)
-			case 'export-storage':
+			case 'export-storage': {
+				const requestUrl = new URL(request.url)
+				const pageSizeParam = requestUrl.searchParams.get('page_size')
+				const startAfter = requestUrl.searchParams.get('start_after')
 				return jsonResponse(
 					await this.exportStorage({
 						appId: config.appId,
 						facetName,
+						pageSize:
+							pageSizeParam != null && pageSizeParam !== ''
+								? Number(pageSizeParam)
+								: undefined,
+						startAfter,
 					}),
 				)
+			}
 			case 'exec-server': {
 				const payload = await readJson<{
 					code?: string
@@ -539,7 +591,7 @@ class AppRunnerBase extends DurableObject<Env> {
 				503,
 			)
 		}
-		if (!config.serverCode) {
+		if (!hasUiArtifactServerCode(config.serverCode)) {
 			throw jsonResponse(
 				{
 					ok: false,
@@ -727,6 +779,8 @@ export function appRunnerRpc(env: Env, appId: string) {
 		exportStorage: (payload: {
 			appId: string
 			facetName?: string | null
+			pageSize?: number
+			startAfter?: string | null
 		}) => Promise<{
 			ok: true
 			appId: string
@@ -755,10 +809,14 @@ export async function exportSavedAppRunnerStorage(input: {
 	env: Env
 	appId: string
 	facetName?: string | null
+	pageSize?: number
+	startAfter?: string | null
 }) {
 	return await appRunnerRpc(input.env, input.appId).exportStorage({
 		appId: input.appId,
 		facetName: input.facetName ?? 'main',
+		pageSize: input.pageSize,
+		startAfter: input.startAfter ?? null,
 	})
 }
 

@@ -26,6 +26,7 @@ import {
 	getUiArtifactById,
 	getUiArtifactByOwnerIds,
 } from '#mcp/ui-artifacts-repo.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 
 const executeRequestSchema = z.object({
 	code: z.string().min(1),
@@ -193,7 +194,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 					client_code: app.clientCode,
 					server_code: app.serverCode,
 					server_code_id: app.serverCodeId,
-					...(app.serverCode != null
+					...(hasUiArtifactServerCode(app.serverCode)
 						? {
 								app_backend: {
 									basePath: buildSavedAppBackendBasePath(app.id),
@@ -206,7 +207,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 				},
 				appSession,
 			})
-			if (app.serverCode != null) {
+			if (hasUiArtifactServerCode(app.serverCode)) {
 				response.headers.append(
 					'Set-Cookie',
 					await createGeneratedUiAppBackendCookieHeader({

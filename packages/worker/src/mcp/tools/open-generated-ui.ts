@@ -22,6 +22,7 @@ import {
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import {
 	appendToolContent,
@@ -168,7 +169,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				params: resolvedParams,
 				hostedUrl,
 				appSession,
-				appBackend: savedApp?.serverCode
+				appBackend: hasUiArtifactServerCode(savedApp?.serverCode)
 					? {
 							basePath: buildSavedAppBackendBasePath(savedApp.id),
 							facetNames: ['main'],

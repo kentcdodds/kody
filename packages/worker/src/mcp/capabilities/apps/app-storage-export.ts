@@ -20,6 +20,9 @@ const outputSchema = z.object({
 			}),
 		),
 		estimatedBytes: z.number(),
+		truncated: z.boolean(),
+		nextStartAfter: z.string().nullable(),
+		pageSize: z.number(),
 	}),
 })
 
@@ -40,6 +43,18 @@ export const appStorageExportCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe('Optional facet name. Defaults to `main`.'),
+			page_size: z
+				.number()
+				.int()
+				.min(1)
+				.max(1_000)
+				.optional()
+				.describe('Optional page size for large storage exports.'),
+			start_after: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Optional storage key to continue after from a prior page.'),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
@@ -57,6 +72,8 @@ export const appStorageExportCapability = defineDomainCapability(
 				env: ctx.env,
 				appId: args.app_id,
 				facetName: args.facet_name,
+				pageSize: args.page_size,
+				startAfter: args.start_after,
 			})
 			return {
 				ok: true as const,

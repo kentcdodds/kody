@@ -181,7 +181,15 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 		}),
 	)
 
-	const saveResult = await mcpClient.client.callTool({
+	// The generated UI runtime executes out-of-band HTTP requests with its own app
+	// session. Reconnect the MCP client before resuming tool calls so the test
+	// exercises a fresh MCP session after that browser-style interaction.
+	await using resumedMcpClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const saveResult = await resumedMcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -200,7 +208,7 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 	const savedAppId = saveStructured?.result?.app_id
 	expect(typeof savedAppId).toBe('string')
 
-	const savedSearchResult = await mcpClient.client.callTool({
+	const savedSearchResult = await resumedMcpClient.client.callTool({
 		name: 'search',
 		arguments: {
 			query: 'Persistent UI',
@@ -232,7 +240,7 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 		}),
 	)
 
-	const savedOpenResult = await mcpClient.client.callTool({
+	const savedOpenResult = await resumedMcpClient.client.callTool({
 		name: 'open_generated_ui',
 		arguments: {
 			app_id: savedAppId,

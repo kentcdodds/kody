@@ -19,6 +19,7 @@ import {
 	configureSavedAppRunner,
 	deleteSavedAppRunner,
 } from '#mcp/app-runner.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -105,6 +106,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				hidden: boolean
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
+				const hasBackend = hasUiArtifactServerCode(nextServerCode)
 				try {
 					await configureSavedAppRunner({
 						env: ctx.env,
@@ -149,7 +151,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							embedText: buildUiArtifactEmbedText({
 								title: args.title,
 								description: args.description,
-								hasServerCode: nextServerCode != null,
+								hasServerCode: hasBackend,
 								parameters,
 							}),
 						})
@@ -195,7 +197,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				return {
 					app_id: input.appId,
 					server_code_id: input.serverCodeId,
-					has_server_code: nextServerCode != null,
+					has_server_code: hasBackend,
 					hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, input.appId),
 					parameters,
 					hidden: input.hidden,

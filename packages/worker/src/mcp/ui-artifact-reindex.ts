@@ -9,6 +9,7 @@ import {
 	listUiArtifactsByUserId,
 	uiArtifactVectorId,
 } from '#mcp/ui-artifacts-repo.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { listAppSecretsByAppIds } from '#mcp/secrets/service.ts'
 
 const upsertBatchSize = 16
@@ -85,7 +86,7 @@ export async function reindexUiArtifactVectors(env: Env): Promise<{
 			return `${buildUiArtifactEmbedText({
 				title: row.title,
 				description: row.description,
-				hasServerCode: row.serverCode != null,
+				hasServerCode: hasUiArtifactServerCode(row.serverCode),
 				parameters: parseUiArtifactParameters(row.parameters),
 			})}${secretText}`
 		})
