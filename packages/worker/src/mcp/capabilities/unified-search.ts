@@ -160,7 +160,12 @@ function scoreUiArtifactLexicalMatch(
 	const parameterText = (hit.parameters ?? [])
 		.map((parameter) => `${parameter.name} ${parameter.description}`)
 		.join('\n')
-	const doc = [hit.title, hit.description, hit.runtime, parameterText].join(
+	const doc = [
+		hit.title,
+		hit.description,
+		hit.hasServerCode ? 'has facet backend durable object sqlite' : 'client only',
+		parameterText,
+	].join(
 		'\n',
 	)
 	let bonus = 0

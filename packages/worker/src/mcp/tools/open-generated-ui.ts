@@ -19,6 +19,7 @@ import {
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
+import { buildSavedAppBackendBasePath } from '#mcp/generated-ui-app-session.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import {
 	appendToolContent,
@@ -162,6 +163,12 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				params: resolvedParams,
 				hostedUrl,
 				appSession,
+				appBackend: appId
+					? {
+							basePath: buildSavedAppBackendBasePath(appId),
+							facetNames: ['main'],
+						}
+					: null,
 			}
 			const memoryResult = await loadRelevantMemoriesForTool({
 				env: agent.getEnv(),

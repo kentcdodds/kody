@@ -15,6 +15,7 @@ import {
 	deleteUiArtifactVector,
 	upsertUiArtifactVector,
 } from '#mcp/ui-artifacts-vectorize.ts'
+import { configureSavedAppRunner } from '#mcp/app-runner.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -34,17 +35,18 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe('What the saved app does and when it is useful.'),
-	code: z
+	clientCode: z
 		.string()
 		.min(1)
 		.describe(
-			'App source for the generic MCP UI shell. Prefer a self-contained HTML document or fragment so the generated app owns the visible UI. Legacy `javascript` source is still supported for previously saved apps.',
+			'Client source for the generic MCP UI shell. Prefer a self-contained HTML document or fragment so the saved app owns the visible UI.',
 		),
-	runtime: z
-		.enum(['html', 'javascript'])
-		.default('html')
+	serverCode: z
+		.string()
+		.min(1)
+		.optional()
 		.describe(
-			'Source format accepted by the generic UI shell. Prefer `html`; `javascript` is kept for legacy saved apps.',
+			'Optional Durable Object server code for this saved app. The code must export `class App extends DurableObject` and can use its own isolated facet SQLite storage.',
 		),
 	parameters: z
 		.array(uiArtifactParameterSchema)
@@ -62,7 +64,8 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	app_id: z.string(),
-	runtime: z.enum(['html', 'javascript']),
+	server_code_id: z.string(),
+	has_server_code: z.boolean(),
 	hosted_url: z.string().url(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
 	hidden: z.boolean(),
@@ -84,6 +87,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
+			const serverCodeId = crypto.randomUUID()
 			const parameters = normalizeUiArtifactParameters(args.parameters)
 			const serializedParameters = parameters
 				? JSON.stringify(parameters)
@@ -98,8 +102,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 					{
 						title: args.title,
 						description: args.description,
-						code: args.code,
-						runtime: args.runtime,
+						clientCode: args.clientCode,
+						serverCode: args.serverCode ?? null,
+						serverCodeId,
 						parameters: serializedParameters,
 						hidden: args.hidden,
 					},
@@ -128,8 +133,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 					user_id: user.userId,
 					title: args.title,
 					description: args.description,
-					code: args.code,
-					runtime: args.runtime,
+					clientCode: args.clientCode,
+					serverCode: args.serverCode ?? null,
+					serverCodeId,
 					parameters: serializedParameters,
 					hidden,
 					created_at: now,
@@ -138,6 +144,13 @@ export const uiSaveAppCapability = defineDomainCapability(
 			}
 
 			try {
+				await configureSavedAppRunner({
+					env: ctx.env,
+					appId,
+					userId: user.userId,
+					serverCode: args.serverCode ?? null,
+					serverCodeId,
+				})
 				if (!hidden) {
 					await upsertUiArtifactVector(ctx.env, {
 						appId,
@@ -145,7 +158,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						embedText: buildUiArtifactEmbedText({
 							title: args.title,
 							description: args.description,
-							runtime: args.runtime,
+							hasServerCode: args.serverCode != null,
 							parameters,
 						}),
 					})
@@ -184,7 +197,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 
 			return {
 				app_id: appId,
-				runtime: args.runtime,
+				server_code_id: serverCodeId,
+				has_server_code: args.serverCode != null,
 				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
 				parameters,
 				hidden,

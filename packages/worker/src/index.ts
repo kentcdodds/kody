@@ -5,6 +5,7 @@ import { HomeConnectorSession } from './home/session.ts'
 import { HomeMCP } from './home/mcp.ts'
 import { MCP } from './mcp/index.ts'
 import { SchedulerDO } from './scheduler/scheduler-do.ts'
+import { AppFacetBridge, AppRunner } from './mcp/app-runner.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
@@ -28,6 +29,7 @@ import {
 	handleGeneratedUiApiRequest,
 	isGeneratedUiApiRequest,
 } from './mcp/generated-ui-api.ts'
+import { readGeneratedUiAppBackendSession } from './mcp/generated-ui-app-auth.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
@@ -46,6 +48,8 @@ export {
 	HomeMCP,
 	MCP,
 	SchedulerDO,
+	AppFacetBridge,
+	AppRunner,
 }
 
 const claudeWidgetDomainSuffix = '.claudemcpcontent.com'
@@ -140,6 +144,33 @@ const appHandler = withCors({
 
 		if (isGeneratedUiApiRequest(url.pathname)) {
 			return handleGeneratedUiApiRequest(request, env)
+		}
+
+		if (url.pathname.startsWith('/app/')) {
+			const [, , rawAppId, ...rest] = url.pathname.split('/')
+			const appId = rawAppId?.trim()
+			if (!appId) {
+				return new Response('Not found.', { status: 404 })
+			}
+			const auth = await readGeneratedUiAppBackendSession({
+				request,
+				env,
+				appId,
+			})
+			if (!auth || auth.app_id !== appId) {
+				return Response.json(
+					{ ok: false, error: 'Unauthorized saved app backend request.' },
+					{ status: 401 },
+				)
+			}
+			const runner = ctx.exports.AppRunner.getByName(appId)
+			const forwardedUrl = new URL(request.url)
+			forwardedUrl.pathname = `/${rest.join('/')}`
+			const forwardedRequest = new Request(forwardedUrl.toString(), request)
+			forwardedRequest.headers.set('X-Kody-App-Id', appId)
+			forwardedRequest.headers.set('X-Kody-App-User-Id', auth.user.userId)
+			forwardedRequest.headers.set('X-Kody-App-Base-Url', forwardedUrl.origin)
+			return await runner.fetch(forwardedRequest)
 		}
 
 		const connectorRoute = parseConnectorRoutePath(url.pathname)

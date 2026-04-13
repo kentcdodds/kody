@@ -8,45 +8,40 @@ import { deleteUiArtifact } from '#mcp/ui-artifacts-repo.ts'
 import { deleteUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 
 const outputSchema = z.object({
-	deleted: z.boolean(),
+	ok: z.literal(true),
 	app_id: z.string(),
+	deleted: z.literal(true),
 })
 
-export const uiDeleteAppCapability = defineDomainCapability(
+export const appDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.apps,
 	{
-		name: 'ui_delete_app',
-		description: 'Delete a saved UI artifact owned by the signed-in user.',
-		keywords: ['ui', 'app', 'artifact', 'delete', 'remove'],
+		name: 'app_delete',
+		description:
+			'Delete a saved app record and all known facet storage for that app.',
+		keywords: ['app', 'delete', 'facet', 'storage', 'saved app'],
 		readOnly: false,
 		idempotent: true,
 		destructive: true,
 		inputSchema: z.object({
-			app_id: z
-				.string()
-				.min(1)
-				.describe('Saved UI artifact id returned by ui_save_app.'),
+			app_id: z.string().min(1),
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const removed = await deleteUiArtifact(
-				ctx.env.APP_DB,
-				user.userId,
-				args.app_id,
-			)
-			if (removed) {
-				try {
-					await deleteUiArtifactVector(ctx.env, args.app_id)
-				} catch {
-					// Vector cleanup should not fail the primary delete.
-				}
-				await deleteSavedAppRunner({
+			await deleteUiArtifact(ctx.env.APP_DB, user.userId, args.app_id)
+			await Promise.allSettled([
+				deleteUiArtifactVector(ctx.env, args.app_id),
+				deleteSavedAppRunner({
 					env: ctx.env,
 					appId: args.app_id,
-				})
-			}
-			return { deleted: removed, app_id: args.app_id }
+				}),
+			])
+			return {
+				ok: true,
+				app_id: args.app_id,
+				deleted: true,
+			} as const
 		},
 	},
 )

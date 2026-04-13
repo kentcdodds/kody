@@ -147,7 +147,7 @@ export type SearchEntityDetailStructured =
 			description: string
 			usage: string
 			hostedUrl: string
-			runtime: string
+			hasServerCode: boolean
 			parameters: ReturnType<typeof parseUiArtifactParameters>
 			hidden: boolean
 	  }
@@ -607,7 +607,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Summary',
 			'',
 			`- App ID: \`${detail.row.id}\``,
-			`- Runtime: \`${detail.row.runtime}\``,
+			`- Has backend: ${detail.row.serverCode ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.row.hidden ? 'yes' : 'no'}`,
 			'',
 			'## Open this app',
@@ -633,7 +633,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				description: detail.description,
 				usage: `open_generated_ui({ app_id: "${detail.row.id}" })`,
 				hostedUrl: detail.hostedUrl,
-				runtime: detail.row.runtime,
+				hasServerCode: detail.row.serverCode != null,
 				parameters,
 				hidden: detail.row.hidden,
 			} satisfies SearchEntityDetailStructured,

@@ -85,7 +85,7 @@ export async function reindexUiArtifactVectors(env: Env): Promise<{
 			return `${buildUiArtifactEmbedText({
 				title: row.title,
 				description: row.description,
-				runtime: row.runtime,
+				hasServerCode: row.serverCode != null,
 				parameters: parseUiArtifactParameters(row.parameters),
 			})}${secretText}`
 		})

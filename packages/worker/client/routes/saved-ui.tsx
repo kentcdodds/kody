@@ -15,8 +15,13 @@ type SavedUiArtifact = {
 	description: string
 	keywords: Array<string>
 	params: Record<string, unknown>
-	runtime: 'html' | 'javascript'
-	code: string
+	clientCode: string
+	serverCode: string | null
+	serverCodeId: string
+	appBackend: {
+		basePath: string
+		facetNames: Array<string>
+	} | null
 	createdAt: string
 	updatedAt: string
 	appSession: {
@@ -100,8 +105,10 @@ async function loadSavedUi(appId: string) {
 			title?: string
 			description?: string
 			params?: Record<string, unknown>
-			runtime?: 'html' | 'javascript'
-			code?: string
+			client_code?: string
+			server_code?: string | null
+			server_code_id?: string
+			app_backend?: SavedUiArtifact['appBackend']
 			created_at?: string
 			updated_at?: string
 		}
@@ -121,8 +128,26 @@ async function loadSavedUi(appId: string) {
 			!Array.isArray(payload.app.params)
 				? payload.app.params
 				: {},
-		runtime: payload.app.runtime ?? 'html',
-		code: payload.app.code ?? '',
+		clientCode: payload.app.client_code ?? '',
+		serverCode:
+			typeof payload.app.server_code === 'string'
+				? payload.app.server_code
+				: null,
+		serverCodeId: payload.app.server_code_id ?? '',
+		appBackend:
+			payload.app.app_backend &&
+			typeof payload.app.app_backend === 'object' &&
+			!Array.isArray(payload.app.app_backend) &&
+			typeof payload.app.app_backend.basePath === 'string'
+				? {
+						basePath: payload.app.app_backend.basePath,
+						facetNames: Array.isArray(payload.app.app_backend.facetNames)
+							? payload.app.app_backend.facetNames.filter(
+									(value): value is string => typeof value === 'string',
+								)
+							: ['main'],
+					}
+				: null,
 		createdAt: payload.app.created_at ?? '',
 		updatedAt: payload.app.updated_at ?? '',
 		appSession: payload.appSession ?? null,
@@ -421,8 +446,10 @@ export function SavedUiRoute(handle: Handle) {
 						title: artifact.title,
 						description: artifact.description,
 						params: artifact.params,
-						runtime: artifact.runtime,
-						code: artifact.code,
+						client_code: artifact.clientCode,
+						server_code: artifact.serverCode,
+						server_code_id: artifact.serverCodeId,
+						app_backend: artifact.appBackend,
 					},
 				})
 				return

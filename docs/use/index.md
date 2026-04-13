@@ -12,6 +12,7 @@ Read in order for a full tour, or jump to a topic.
 - [Search](./search.md)
 - [Execute and workflows](./execute.md) — includes per-user MCP instruction
   overlays
+- [Saved app backends](./saved-app-backends.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets, values, and host approval](./secrets-and-values.md)
 - [Skills, saved apps, and generated UI](./skills-and-apps.md)

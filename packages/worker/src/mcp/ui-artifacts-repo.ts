@@ -15,17 +15,18 @@ export async function insertUiArtifact(
 	await db
 		.prepare(
 			`INSERT INTO ui_artifacts (
-				id, user_id, title, description, source_code, source_type,
-				parameters, hidden, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, user_id, title, description, client_code, server_code,
+				server_code_id, parameters, hidden, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
 			row.title,
 			row.description,
-			row.code,
-			row.runtime,
+			row.clientCode,
+			row.serverCode ?? null,
+			row.serverCodeId,
 			row.parameters ?? null,
 			row.hidden ? 1 : 0,
 			row.created_at ?? now,
@@ -41,8 +42,8 @@ export async function getUiArtifactById(
 ): Promise<UiArtifactRow | null> {
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, hidden, created_at, updated_at
+			`SELECT id, user_id, title, description, client_code, server_code,
+				server_code_id, parameters, hidden, created_at, updated_at
 			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
 		)
 		.bind(artifactId, userId)
@@ -62,8 +63,8 @@ export async function getUiArtifactByOwnerIds(
 	const placeholders = ownerIds.map(() => '?').join(', ')
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, hidden, created_at, updated_at
+			`SELECT id, user_id, title, description, client_code, server_code,
+				server_code_id, parameters, hidden, created_at, updated_at
 			FROM ui_artifacts
 			WHERE id = ? AND user_id IN (${placeholders})
 			LIMIT 1`,
@@ -93,7 +94,13 @@ export async function updateUiArtifact(
 	updates: Partial<
 		Pick<
 			UiArtifactRow,
-			'title' | 'description' | 'code' | 'runtime' | 'parameters' | 'hidden'
+			| 'title'
+			| 'description'
+			| 'clientCode'
+			| 'serverCode'
+			| 'serverCodeId'
+			| 'parameters'
+			| 'hidden'
 		>
 	>,
 ): Promise<boolean> {
@@ -110,11 +117,14 @@ export async function updateUiArtifact(
 	if (updates.description !== undefined) {
 		addAssignment('description', updates.description)
 	}
-	if (updates.code !== undefined) {
-		addAssignment('source_code', updates.code)
+	if (updates.clientCode !== undefined) {
+		addAssignment('client_code', updates.clientCode)
 	}
-	if (updates.runtime !== undefined) {
-		addAssignment('source_type', updates.runtime)
+	if (updates.serverCode !== undefined) {
+		addAssignment('server_code', updates.serverCode ?? null)
+	}
+	if (updates.serverCodeId !== undefined) {
+		addAssignment('server_code_id', updates.serverCodeId)
 	}
 	if (updates.parameters !== undefined) {
 		addAssignment('parameters', updates.parameters ?? null)
@@ -142,8 +152,8 @@ export async function listUiArtifactsByUserId(
 	const hidden = options?.hidden
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, title, description, source_code, source_type,
-				parameters, hidden, created_at, updated_at
+			`SELECT id, user_id, title, description, client_code, server_code,
+				server_code_id, parameters, hidden, created_at, updated_at
 			FROM ui_artifacts
 			WHERE user_id = ?
 				${hidden === undefined ? '' : 'AND hidden = ?'}`,
@@ -159,8 +169,10 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		user_id: String(row['user_id']),
 		title: String(row['title']),
 		description: String(row['description']),
-		code: String(row['source_code']),
-		runtime: String(row['source_type']) as UiArtifactRow['runtime'],
+		clientCode: String(row['client_code']),
+		serverCode:
+			row['server_code'] == null ? null : String(row['server_code']),
+		serverCodeId: String(row['server_code_id']),
 		parameters: row['parameters'] == null ? null : String(row['parameters']),
 		hidden:
 			row['hidden'] === 1 || row['hidden'] === '1' || row['hidden'] === true,

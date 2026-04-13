@@ -35,8 +35,9 @@ function createUiArtifactRow(appId: string): UiArtifactRow {
 		user_id: 'user-123',
 		title: 'Cloudflare deploy app',
 		description: 'Saved UI for deploying a Worker',
-		code: '<main>Deploy</main>',
-		runtime: 'html',
+		clientCode: '<main>Deploy</main>',
+		serverCode: null,
+		serverCodeId: 'server-code-id-123',
 		parameters: JSON.stringify([
 			{
 				name: 'workerName',

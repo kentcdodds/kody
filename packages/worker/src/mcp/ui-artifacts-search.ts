@@ -25,7 +25,7 @@ function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 	return `${buildUiArtifactEmbedText({
 		title: row.title,
 		description: row.description,
-		runtime: row.runtime,
+		hasServerCode: row.serverCode != null,
 		parameters: parseUiArtifactParameters(row.parameters),
 	})}${secretText}`
 }
@@ -65,7 +65,7 @@ export type UiArtifactSearchHitSummary = {
 	title: string
 	description: string
 	hostedUrl: string
-	runtime: string
+	hasServerCode: boolean
 	parameters: Array<{
 		name: string
 		description: string
@@ -101,7 +101,7 @@ function rowToUiArtifactHit(
 		title: row.title,
 		description: row.description,
 		hostedUrl: buildSavedUiUrl(baseUrl, row.id),
-		runtime: row.runtime,
+		hasServerCode: row.serverCode != null,
 		parameters,
 		usage: buildUsage(row),
 		availableSecrets: appSecrets.map((secret) => ({
