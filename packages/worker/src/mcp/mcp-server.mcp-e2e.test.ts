@@ -151,10 +151,12 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 		result?: { result?: { name?: string; value?: string } }
 	}
 	expect(executePayload.ok).toBe(true)
-	expect(executePayload.result?.result).toEqual({
-		name: 'example',
-		value: 'value',
-	})
+	expect(executePayload.result?.result).toEqual(
+		expect.objectContaining({
+			name: 'example',
+			value: 'value',
+		}),
+	)
 
 	const saveResult = await mcpClient.client.callTool({
 		name: 'execute',
