@@ -25,7 +25,10 @@ export function renderCodeBlock(value: string) {
 	return html`<pre><code>${value}</code></pre>`
 }
 
-export function renderBanner(input: { tone: 'success' | 'error'; message: string }) {
+export function renderBanner(input: {
+	tone: 'success' | 'error'
+	message: string
+}) {
 	return html`<section
 		class="card ${input.tone === 'error' ? 'card-error' : 'card-success'}"
 	>

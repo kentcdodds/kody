@@ -7,11 +7,7 @@ import { type HomeConnectorState } from '../src/state.ts'
 import { render } from './render.ts'
 import { RootLayout } from './root.ts'
 import { type routes } from './routes.ts'
-import {
-	formatJson,
-	renderBanner,
-	renderCodeBlock,
-} from './handler-utils.ts'
+import { formatJson, renderBanner, renderCodeBlock } from './handler-utils.ts'
 
 function renderBondDiscoveryDiagnostics(
 	diagnostics: BondDiscoveryDiagnostics | null,
