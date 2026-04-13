@@ -399,8 +399,6 @@ test('reset client also works when the mismatch came from authorize-info loading
 				},
 				body: new URLSearchParams({
 					decision: 'reset-client',
-					resetReason:
-						'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.',
 				}),
 			},
 		),

@@ -24,6 +24,7 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
+import { invalidRedirectUriMessage } from '@kody-internal/shared/oauth-messages.ts'
 
 type OAuthAuthorizeInfo = {
 	client: { id: string; name: string }
@@ -33,9 +34,6 @@ type OAuthAuthorizeInfo = {
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
 type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
-
-const invalidRedirectUriMessage =
-	'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.'
 
 function isInvalidRedirectUriMessage(message: string | null | undefined) {
 	return message === invalidRedirectUriMessage

@@ -11,6 +11,7 @@ import { getEnv } from '#app/env.ts'
 import { Layout } from '#app/layout.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { render } from '#app/render.ts'
+import { invalidRedirectUriMessage } from '@kody-internal/shared/oauth-messages.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
@@ -56,9 +57,6 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 		},
 	})
 }
-
-const invalidRedirectUriMessage =
-	'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.'
 
 function getOAuthHelpers(env: Env) {
 	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
