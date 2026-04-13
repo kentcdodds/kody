@@ -24,8 +24,9 @@ Optional **collection** groups related skills. Use **meta_get_skill**,
 `clientCode` supports **HTML only**. Put browser-side logic inside
 `<script type="module">...</script>` tags in that HTML.
 
-`clientCode` supports **HTML only**. Put browser logic inside
-`<script type="module">...</script>` tags in that HTML.
+When updating an existing saved app with `app_id`, omitted fields preserve the
+current saved value. Omit `serverCode` to keep the existing backend, or pass
+`serverCode: null` to clear it explicitly.
 
 Reopen with **open_generated_ui** using **`app_id`**, or discover apps via
 **search**.
@@ -41,7 +42,8 @@ Use these lifecycle capabilities when you need backend maintenance:
 
 - **`app_storage_reset`**
 - **`app_storage_export`**
-- **`app_server_exec`**
+- **`app_server_exec`** — compiles a throwaway exec worker with `app` /
+  `appStub` RPC access to the saved app facet
 - **`app_delete`**
 
 See [Saved app backends](./saved-app-backends.md) for the route contract, RPC

@@ -17,17 +17,25 @@ Object Facet** and gives it an isolated SQLite database.
 ```json
 {
 	"app_id": "app-123",
+	"title": "Counter app",
+	"description": "Saved app with a backend counter",
 	"clientCode": "<main>...</main>",
-	"serverCode": "import { DurableObject } from 'cloudflare:workers'; ...",
-	"serverCodeId": "uuid"
+	"serverCode": "import { DurableObject } from 'cloudflare:workers'; ..."
 }
 ```
 
 `clientCode` supports **HTML only**. If the app needs browser-side logic,
 include it inside `<script type="module">...</script>` tags in the HTML.
 
-`serverCodeId` rotates on every save so Cloudflare's Dynamic Worker loader does
-not reuse stale code.
+When **creating** a saved app, `title`, `description`, and `clientCode` are
+required.
+
+When **updating** an existing saved app with `app_id`, omitted fields preserve
+their current saved values:
+
+- omit `serverCode` to keep the current backend
+- pass **`serverCode: null`** to clear the backend explicitly
+- `server_code_id` only rotates when the saved backend actually changes
 
 ## Read shape
 
@@ -111,6 +119,48 @@ Kody now exposes saved app backend lifecycle operations:
 
 Facet names default to `main`. Kody reserves named facets such as `jobs` and
 `cache` for future multi-facet saved apps.
+
+## `app_server_exec` contract
+
+`app_server_exec` does **not** eval source inside the running facet. Instead,
+Kody compiles the provided `code` into a **throwaway Dynamic Worker** and binds
+the saved app facet as an RPC stub.
+
+Inside the snippet body you can access:
+
+- **`app`** (alias **`appStub`**) — RPC stub for the saved app `App` class
+- **`params`** — optional JSON input passed through the capability
+
+Example:
+
+```ts
+await codemode.app_server_exec({
+	app_id: 'app-123',
+	params: { amount: 2 },
+	code: `
+		return await app.incrementBy(params.amount ?? 1)
+	`,
+})
+```
+
+That means the saved app must expose explicit RPC methods on its exported `App`
+class:
+
+```ts
+import { DurableObject } from 'cloudflare:workers'
+
+export class App extends DurableObject {
+	async incrementBy(amount = 1) {
+		const current = Number((await this.ctx.storage.get('count')) ?? 0)
+		const next = current + Number(amount)
+		await this.ctx.storage.put('count', next)
+		return { count: next }
+	}
+}
+```
+
+For raw SQLite inspection, use **`app_storage_export`** instead of
+`app_server_exec`.
 
 ## Example: counter app
 

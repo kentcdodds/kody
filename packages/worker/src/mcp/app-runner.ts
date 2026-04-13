@@ -96,10 +96,7 @@ function defaultRateWindow(now: number): AppRunnerRateWindow {
 	}
 }
 
-function createFacetWrapperModule(input: {
-	facetName: string
-	serverCode: string
-}) {
+function createFacetWrapperModule(input: { facetName: string }) {
 	const exportName = buildFacetClassExportName(input.facetName)
 	return `
 import * as userModule from './user-app.js'
@@ -152,13 +149,21 @@ export class ${exportName} extends BaseApp {
 			pageSize,
 		}
 	}
+}
+`.trim()
+}
 
-	async __kody_exec(code, params) {
-		if (typeof code !== 'string' || !code.trim()) {
-			throw new Error('Facet exec requires non-empty code.')
-		}
-		const runner = new Function('facet', 'params', code)
-		return await runner(this, params ?? {})
+const savedAppExecEntrypointName = 'SavedAppExecWorker'
+
+function createSavedAppExecWorkerModule(input: { code: string }) {
+	return `
+import { WorkerEntrypoint } from 'cloudflare:workers'
+
+export class ${savedAppExecEntrypointName} extends WorkerEntrypoint {
+	async run(params) {
+		const app = this.env.APP
+		const appStub = app
+		${input.code}
 	}
 }
 `.trim()
@@ -488,14 +493,23 @@ class AppRunnerBase extends DurableObject<Env> {
 	}) {
 		const facetName = buildFacetName(input.facetName)
 		const facet = await this.getFacetStub(facetName)
-		const result = await (
-			facet as unknown as {
-				__kody_exec: (
-					code: string,
-					params?: Record<string, unknown>,
-				) => Promise<unknown>
-			}
-		).__kody_exec(input.code, input.params)
+		const execWorker = this.env.APP_LOADER.load({
+			compatibilityDate: '2026-04-13',
+			compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
+			mainModule: 'exec-entry.js',
+			modules: {
+				'exec-entry.js': createSavedAppExecWorkerModule({
+					code: input.code,
+				}),
+			},
+			env: {
+				APP: facet,
+			},
+			globalOutbound: null,
+		}).getEntrypoint(savedAppExecEntrypointName) as unknown as {
+			run: (params?: Record<string, unknown>) => Promise<unknown>
+		}
+		const result = await execWorker.run(input.params)
 		return {
 			ok: true,
 			appId: input.appId,
@@ -611,7 +625,6 @@ class AppRunnerBase extends DurableObject<Env> {
 					modules: {
 						'facet-entry.js': createFacetWrapperModule({
 							facetName,
-							serverCode: config.serverCode!,
 						}),
 						'user-app.js': config.serverCode!,
 					},
