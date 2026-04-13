@@ -11,7 +11,6 @@ import { getEnv } from '#app/env.ts'
 import { Layout } from '#app/layout.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { render } from '#app/render.ts'
-import { invalidRedirectUriMessage } from '@kody-internal/shared/oauth-messages.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
@@ -175,7 +174,6 @@ async function handleResetClientRequest(
 	helpers: OAuthHelpers,
 	requestIp?: string,
 ) {
-	const url = new URL(request.url)
 	const redirectUriMismatch = await requestHasRedirectUriMismatch(helpers, request)
 	if (!redirectUriMismatch) {
 		return respondAuthorizeError(
