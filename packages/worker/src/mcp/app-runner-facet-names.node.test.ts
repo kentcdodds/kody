@@ -13,6 +13,8 @@ test('buildFacetName defaults blank values to main', () => {
 
 test('buildFacetClassExportName keeps main facet stable', () => {
 	expect(buildFacetClassExportName('main')).toBe('App')
+	expect(buildFacetClassExportName(' main ')).toBe('App')
+	expect(buildFacetClassExportName('')).toBe('App')
 })
 
 test('buildFacetClassExportName stays unique for colliding sanitized names', () => {

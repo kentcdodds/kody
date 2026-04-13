@@ -14,9 +14,10 @@ function fnv1a32(input: string): number {
 }
 
 export function buildFacetClassExportName(facetName: string) {
-	const sanitizedFacetName = facetName.replaceAll(/[^a-zA-Z0-9_]/g, '_')
-	const hashSuffix = fnv1a32(facetName).toString(16).padStart(8, '0')
-	return facetName === 'main'
+	const canonicalName = buildFacetName(facetName)
+	const sanitizedFacetName = canonicalName.replaceAll(/[^a-zA-Z0-9_]/g, '_')
+	const hashSuffix = fnv1a32(canonicalName).toString(16).padStart(8, '0')
+	return canonicalName === 'main'
 		? appFacetClassName
 		: `${appFacetClassName}_${sanitizedFacetName}_${hashSuffix}`
 }
