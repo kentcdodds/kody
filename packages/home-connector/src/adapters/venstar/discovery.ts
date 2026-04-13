@@ -120,7 +120,7 @@ async function probeVenstarSubnet(cidrs: Array<string>): Promise<{
 	const locations: Array<VenstarLocation> = []
 	const infoByLocationUrl = new Map<string, Record<string, unknown>>()
 	const seen = new Set<string>()
-	const concurrency = Math.min(48, Math.max(1, targets.length))
+	const concurrency = targets.length
 
 	let cursor = 0
 	async function worker() {
