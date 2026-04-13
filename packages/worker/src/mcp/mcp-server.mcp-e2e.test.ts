@@ -17,8 +17,10 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	})
 
 	expect(response.status).toBe(401)
-	expect(response.headers.get('WWW-Authenticate') ?? '').toContain(
-		'resource_metadata=',
+	const authenticateHeader = response.headers.get('WWW-Authenticate') ?? ''
+	expect(authenticateHeader).toMatch(/^Bearer\s+/)
+	expect(authenticateHeader).toContain(
+		`resource_metadata="${server.origin}/.well-known/oauth-protected-resource"`,
 	)
 })
 
@@ -123,7 +125,7 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 	expect(typeof executeEndpoint).toBe('string')
 	expect(typeof executeToken).toBe('string')
 
-	const executeResponse = await fetch(executeEndpoint!, {
+	const setValueResponse = await fetch(executeEndpoint!, {
 		method: 'POST',
 		headers: {
 			Authorization: `Bearer ${executeToken}`,
@@ -137,6 +139,27 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 					value: 'value',
 					scope: 'session',
 				})
+				return { ok: true }
+			}`,
+		}),
+	})
+	expect(setValueResponse.ok).toBe(true)
+	const setValuePayload = (await setValueResponse.json()) as {
+		ok?: boolean
+		result?: { ok?: boolean }
+	}
+	expect(setValuePayload.ok).toBe(true)
+	expect(setValuePayload.result).toEqual({ ok: true })
+
+	const getValueResponse = await fetch(executeEndpoint!, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${executeToken}`,
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+		},
+		body: JSON.stringify({
+			code: `async () => {
 				const result = await codemode.value_get({
 					name: 'example',
 					scope: 'session',
@@ -145,13 +168,13 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 			}`,
 		}),
 	})
-	expect(executeResponse.ok).toBe(true)
-	const executePayload = (await executeResponse.json()) as {
+	expect(getValueResponse.ok).toBe(true)
+	const getValuePayload = (await getValueResponse.json()) as {
 		ok?: boolean
 		result?: { result?: { name?: string; value?: string } }
 	}
-	expect(executePayload.ok).toBe(true)
-	expect(executePayload.result?.result).toEqual(
+	expect(getValuePayload.ok).toBe(true)
+	expect(getValuePayload.result?.result).toEqual(
 		expect.objectContaining({
 			name: 'example',
 			value: 'value',
