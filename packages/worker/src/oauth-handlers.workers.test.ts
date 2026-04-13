@@ -308,7 +308,7 @@ test('reset client deletes matching grants and client registration', async () =>
 
 	const response = await handleAuthorizeRequest(
 		new Request(
-			`https://example.com/oauth/authorize?client_id=client-123&error_description=${encodeURIComponent('Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.')}`,
+			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/invalid')}&error_description=${encodeURIComponent('Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.')}`,
 			{
 				method: 'POST',
 				headers: {
@@ -335,7 +335,7 @@ test('reset client deletes matching grants and client registration', async () =>
 test('reset client is rejected when the request is not a redirect mismatch', async () => {
 	const response = await handleAuthorizeRequest(
 		new Request(
-			'https://example.com/oauth/authorize?client_id=client-123&error_description=Authorization%20error',
+			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=Authorization%20error`,
 			{
 				method: 'POST',
 				headers: {

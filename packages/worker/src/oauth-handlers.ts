@@ -87,10 +87,6 @@ async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
 	}
 }
 
-function isInvalidRedirectUriError(message: string) {
-	return message === invalidRedirectUriMessage
-}
-
 function readClientIdFromAuthorizeRequest(request: Request) {
 	const clientId = new URL(request.url).searchParams.get('client_id')?.trim()
 	return clientId ? clientId : null
@@ -180,11 +176,8 @@ async function handleResetClientRequest(
 	requestIp?: string,
 ) {
 	const url = new URL(request.url)
-	const errorDescription = url.searchParams.get('error_description')?.trim() ?? ''
 	const redirectUriMismatch = await requestHasRedirectUriMismatch(helpers, request)
-	const hasInvalidRedirectUri =
-		isInvalidRedirectUriError(errorDescription) || redirectUriMismatch
-	if (!hasInvalidRedirectUri) {
+	if (!redirectUriMismatch) {
 		return respondAuthorizeError(
 			request,
 			'Stored client cleanup is only available for redirect URI mismatches.',
