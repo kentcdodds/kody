@@ -170,7 +170,7 @@ test('venstar routes render status and setup details', async () => {
 		expect(setupHtml).toContain('Venstar setup')
 		expect(setupHtml).toContain('Save thermostat')
 		expect(setupHtml).toContain('Remove thermostat')
-		expect(setupHtml).toContain('local SQLite')
+		expect(setupHtml).toContain('SQLite database')
 	} finally {
 		storage.close()
 	}
