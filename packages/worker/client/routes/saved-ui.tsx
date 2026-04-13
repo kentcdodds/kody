@@ -1,4 +1,5 @@
 import { type Handle } from 'remix/component'
+import { type UiArtifactParameterDefinition } from '#mcp/ui-artifact-parameters.ts'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { colors, mq } from '#client/styles/tokens.ts'
 import {
@@ -15,6 +16,8 @@ type SavedUiArtifact = {
 	description: string
 	keywords: Array<string>
 	params: Record<string, unknown>
+	parameters: Array<UiArtifactParameterDefinition> | null
+	hidden: boolean
 	clientCode: string
 	serverCode: string | null
 	serverCodeId: string
@@ -104,6 +107,7 @@ async function loadSavedUi(appId: string) {
 			app_id?: string
 			title?: string
 			description?: string
+			parameters?: Array<UiArtifactParameterDefinition> | null
 			params?: Record<string, unknown>
 			client_code?: string
 			server_code?: string | null
@@ -111,6 +115,7 @@ async function loadSavedUi(appId: string) {
 			app_backend?: SavedUiArtifact['appBackend']
 			created_at?: string
 			updated_at?: string
+			hidden?: boolean
 		}
 		appSession?: SavedUiArtifact['appSession']
 	} | null
@@ -128,6 +133,10 @@ async function loadSavedUi(appId: string) {
 			!Array.isArray(payload.app.params)
 				? payload.app.params
 				: {},
+		parameters: Array.isArray(payload.app.parameters)
+			? payload.app.parameters
+			: null,
+		hidden: payload.app.hidden ?? true,
 		clientCode: payload.app.client_code ?? '',
 		serverCode:
 			typeof payload.app.server_code === 'string'
@@ -445,8 +454,8 @@ export function SavedUiRoute(handle: Handle) {
 						app_id: artifact.appId,
 						title: artifact.title,
 						description: artifact.description,
-						parameters: [],
-						hidden: true,
+						parameters: artifact.parameters,
+						hidden: artifact.hidden,
 						params: artifact.params,
 						client_code: artifact.clientCode,
 						server_code: artifact.serverCode,

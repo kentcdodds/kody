@@ -148,8 +148,13 @@ const appHandler = withCors({
 
 		if (url.pathname.startsWith('/app/')) {
 			const [, , rawAppId, ...rest] = url.pathname.split('/')
-			const appId = rawAppId?.trim()
+			let appId = rawAppId?.trim()
 			if (!appId) {
+				return new Response('Not found.', { status: 404 })
+			}
+			try {
+				appId = decodeURIComponent(appId)
+			} catch {
 				return new Response('Not found.', { status: 404 })
 			}
 			let auth: Awaited<

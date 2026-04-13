@@ -187,6 +187,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 					app_id: app.id,
 					title: app.title,
 					description: app.description,
+					hidden: app.hidden,
 					parameters: parseUiArtifactParameters(app.parameters),
 					params: resolvedParams,
 					client_code: app.clientCode,
