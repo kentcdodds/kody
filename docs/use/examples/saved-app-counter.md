@@ -14,6 +14,7 @@ Save it with **`ui_save_app`**, then reopen it with **`open_generated_ui`**.
 <main>
 	<h1>Facet counter</h1>
 	<p id="count-value">Loading...</p>
+	<p id="error-message" role="alert" hidden></p>
 	<div style="display:flex;gap:0.5rem;">
 		<button id="refresh-button" type="button">Refresh</button>
 		<button id="increment-button" type="button">Increment</button>
@@ -24,29 +25,76 @@ Save it with **`ui_save_app`**, then reopen it with **`open_generated_ui`**.
 	import { kodyWidget } from '@kody/ui-utils'
 
 	const counterValue = document.querySelector('#count-value')
+	const errorMessage = document.querySelector('#error-message')
 	const refreshButton = document.querySelector('#refresh-button')
 	const incrementButton = document.querySelector('#increment-button')
 
-	async function readCounter() {
-		const basePath = kodyWidget.appBackend?.basePath
-		if (!basePath) {
-			throw new Error('Saved app backend is not available.')
+	function showCounterError(message) {
+		console.error(message)
+		if (errorMessage) {
+			errorMessage.hidden = false
+			errorMessage.textContent = message
 		}
-		const response = await fetch(`${basePath}/api/counter`)
-		const payload = await response.json()
-		counterValue.textContent = String(payload.count ?? 0)
+	}
+
+	function clearCounterError() {
+		if (errorMessage) {
+			errorMessage.hidden = true
+			errorMessage.textContent = ''
+		}
+	}
+
+	async function readCounterPayload(response) {
+		if (!response.ok) {
+			throw new Error(`Counter request failed with ${response.status}.`)
+		}
+		const contentType = response.headers.get('content-type') ?? ''
+		if (!contentType.includes('application/json')) {
+			throw new Error('Counter response was not JSON.')
+		}
+		const payload = await response.json().catch(() => null)
+		if (!payload || typeof payload !== 'object') {
+			throw new Error('Counter response JSON was invalid.')
+		}
+		return payload
+	}
+
+	async function readCounter() {
+		try {
+			clearCounterError()
+			const basePath = kodyWidget.appBackend?.basePath
+			if (!basePath) {
+				throw new Error('Saved app backend is not available.')
+			}
+			const response = await fetch(`${basePath}/api/counter`)
+			const payload = await readCounterPayload(response)
+			counterValue.textContent = String(payload.count ?? 0)
+		} catch (error) {
+			counterValue.textContent = 'Error'
+			showCounterError(
+				error instanceof Error ? error.message : 'Unable to load counter.',
+			)
+		}
 	}
 
 	async function incrementCounter() {
-		const basePath = kodyWidget.appBackend?.basePath
-		if (!basePath) {
-			throw new Error('Saved app backend is not available.')
+		try {
+			clearCounterError()
+			const basePath = kodyWidget.appBackend?.basePath
+			if (!basePath) {
+				throw new Error('Saved app backend is not available.')
+			}
+			const response = await fetch(`${basePath}/api/counter`, {
+				method: 'POST',
+			})
+			const payload = await readCounterPayload(response)
+			counterValue.textContent = String(payload.count ?? 0)
+		} catch (error) {
+			counterValue.textContent = 'Error'
+			showCounterError(
+				error instanceof Error ? error.message : 'Unable to increment counter.',
+			)
 		}
-		const response = await fetch(`${basePath}/api/counter`, {
-			method: 'POST',
-		})
-		const payload = await response.json()
-		counterValue.textContent = String(payload.count ?? 0)
 	}
 
 	refreshButton?.addEventListener('click', () => {

@@ -26,6 +26,9 @@
 		"prepare-e2e-env": {
 			"cache": true
 		},
+		"prepare-playwright": {
+			"cache": false
+		},
 		"test-e2e": {
 			"cache": true
 		},

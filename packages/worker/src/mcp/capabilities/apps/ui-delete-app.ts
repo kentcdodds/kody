@@ -48,11 +48,11 @@ export const uiDeleteAppCapability = defineDomainCapability(
 			if (!removed) {
 				return { deleted: false, app_id: args.app_id }
 			}
-			await deleteSavedAppRunner({
-				env: ctx.env,
-				appId: args.app_id,
-			})
 			await Promise.allSettled([
+				deleteSavedAppRunner({
+					env: ctx.env,
+					appId: args.app_id,
+				}),
 				deleteUiArtifactVector(ctx.env, args.app_id),
 				deleteAllAppScopedSecrets({
 					env: ctx.env,

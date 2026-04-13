@@ -44,6 +44,10 @@ export const appDeleteCapability = defineDomainCapability(
 				} as const
 			}
 			const cleanupResults = await Promise.allSettled([
+				deleteSavedAppRunner({
+					env: ctx.env,
+					appId: args.app_id,
+				}),
 				deleteAllAppScopedSecrets({
 					env: ctx.env,
 					userId: user.userId,
@@ -78,10 +82,6 @@ export const appDeleteCapability = defineDomainCapability(
 			if (!deleted) {
 				throw new Error('Saved app not found for this user.')
 			}
-			await deleteSavedAppRunner({
-				env: ctx.env,
-				appId: args.app_id,
-			})
 			return {
 				ok: true,
 				app_id: args.app_id,

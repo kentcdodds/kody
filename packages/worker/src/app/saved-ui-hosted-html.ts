@@ -27,7 +27,7 @@ export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
 		code: input.artifact.clientCode,
 		runtime: 'html',
 		headInjection: buildHeadInjection(
-			input.artifact.id,
+			input.artifact,
 			input.appSession,
 			input.appBaseUrl,
 		),
@@ -36,7 +36,7 @@ export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
 }
 
 function buildHeadInjection(
-	appId: string,
+	artifact: UiArtifactRow,
 	appSession: GeneratedUiAppSession,
 	appBaseUrl: string,
 ) {
@@ -46,7 +46,7 @@ function buildHeadInjection(
 			token: appSession.token,
 			endpoints: appSession.endpoints,
 		},
-		appBackend: buildAppBackendBootstrap(appId),
+		appBackend: buildAppBackendBootstrap(artifact),
 	}
 	const stylesheetHref = resolveGeneratedUiAssetUrl(
 		generatedUiRuntimeStylesheetPath,
@@ -65,10 +65,13 @@ ${buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
 }
 
 function buildAppBackendBootstrap(
-	appId: string,
-): GeneratedUiAppBackendBootstrap {
+	artifact: UiArtifactRow,
+): GeneratedUiAppBackendBootstrap | null {
+	if (artifact.serverCode == null) {
+		return null
+	}
 	return {
-		basePath: buildSavedAppBackendBasePath(appId),
+		basePath: buildSavedAppBackendBasePath(artifact.id),
 		facetNames: ['main'],
 	}
 }

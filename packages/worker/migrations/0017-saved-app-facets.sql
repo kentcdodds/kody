@@ -44,7 +44,7 @@ SELECT
 	<body data-kody-runtime="javascript">
 		<div id="app" data-generated-ui-root></div>
 		<script type="module">
-' || replace(source_code, '</script', '<\/script') || '
+' || replace(source_code, '</', '<\/') || '
 		</script>
 	</body>
 </html>'

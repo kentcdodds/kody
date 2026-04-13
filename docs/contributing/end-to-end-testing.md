@@ -61,8 +61,10 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - `preview:e2e` prepares `packages/worker/.env`, builds the client bundles,
   applies local D1 migrations, and starts Wrangler against
   `.wrangler/state/e2e`.
-- `npm run test:e2e:run`, `npm run test:e2e:ui`, and plain `npx playwright test`
-  all use the same Playwright-native path.
+- `npm run test:e2e:run` now ensures Playwright Chromium is installed before the
+  suite starts.
+- `npm run test:e2e:ui` and plain `npx playwright test` still assume Playwright
+  browsers are already installed.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler still loads
   `packages/worker/.env` values for local secrets.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
@@ -101,6 +103,7 @@ handled by the static asset fetcher in `packages/worker/src/index.ts`.
 Common commands:
 
 - `npm run test:e2e:run`
+- `npm run test:e2e:install`
 - `npm run test:e2e:run -- --grep "smoke test"`
 - `npx playwright test`
 - `npx playwright test e2e/login.spec.ts`

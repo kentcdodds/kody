@@ -81,6 +81,13 @@
 				"command": "node tools/prepare-e2e-env.ts"
 			}
 		},
+		"prepare-playwright": {
+			"executor": "nx:run-commands",
+			"inputs": ["{workspaceRoot}/tools/ensure-playwright-browser.ts"],
+			"options": {
+				"command": "npm run test:e2e:ensure"
+			}
+		},
 		"test-mcp": {
 			"executor": "nx:run-commands",
 			"dependsOn": ["build-mcp-apps", "prepare-e2e-env"],
@@ -90,7 +97,7 @@
 		},
 		"test-e2e": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-client", "prepare-e2e-env"],
+			"dependsOn": ["build-client", "prepare-e2e-env", "prepare-playwright"],
 			"inputs": [
 				"{workspaceRoot}/e2e/**/*",
 				"{workspaceRoot}/playwright.config.ts",

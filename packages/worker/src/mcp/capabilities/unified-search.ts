@@ -163,9 +163,7 @@ function scoreUiArtifactLexicalMatch(
 	const doc = [
 		hit.title,
 		hit.description,
-		hit.hasServerCode
-			? 'has facet backend durable object sqlite'
-			: 'client only',
+		hit.hasServerCode ? 'facet backend' : 'client only',
 		parameterText,
 	].join('\n')
 	let bonus = 0

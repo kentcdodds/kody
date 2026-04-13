@@ -10,9 +10,12 @@ import {
 	parseConnectorConfig,
 	parseConnectorJson,
 } from '#mcp/capabilities/values/connector-shared.ts'
+import {
+	buildFacetClassExportName,
+	buildFacetName,
+} from '#mcp/app-runner-facet-names.ts'
 
 const defaultAppRateLimit = 120
-const appFacetClassName = 'App'
 const appRunnerFacetIdPrefix = 'facet'
 const appBackendHeader = 'X-Kody-App-Backend'
 
@@ -85,17 +88,6 @@ function defaultRateWindow(now: number): AppRunnerRateWindow {
 		windowStartedAt: now,
 		requestCount: 0,
 	}
-}
-
-function buildFacetName(rawFacetName: string | null | undefined) {
-	const facetName = rawFacetName?.trim() || 'main'
-	return facetName
-}
-
-function buildFacetClassExportName(facetName: string) {
-	return facetName === 'main'
-		? appFacetClassName
-		: `${appFacetClassName}_${facetName.replaceAll(/[^a-zA-Z0-9_]/g, '_')}`
 }
 
 function createFacetWrapperModule(input: {
@@ -309,7 +301,7 @@ export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
 					user: {
 						userId: this.ctx.props.userId,
 						email: '',
-						displayName: 'saved-app',
+						displayName: `saved-app:${this.ctx.props.appId}`,
 					},
 					storageContext: {
 						sessionId: null,
@@ -790,6 +782,10 @@ export async function syncSavedAppRunnerFromDb(input: {
 		input.appId,
 	)
 	if (!artifact) {
+		await deleteSavedAppRunner({
+			env: input.env,
+			appId: input.appId,
+		})
 		return null
 	}
 	await configureSavedAppRunner({

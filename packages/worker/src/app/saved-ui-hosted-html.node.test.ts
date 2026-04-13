@@ -71,10 +71,7 @@ test('renderHostedSavedUiHtml emits shared runtime assets for html apps', () => 
 		secrets: 'https://kody.example/ui-api/session-123/secrets',
 		deleteSecret: 'https://kody.example/ui-api/session-123/secrets/delete',
 	})
-	expect(bootstrap.appBackend).toEqual({
-		basePath: '/app/app-123',
-		facetNames: ['main'],
-	})
+	expect(bootstrap.appBackend).toBeNull()
 })
 
 test('renderHostedSavedUiHtml renders clientCode html and backend bootstrap', () => {

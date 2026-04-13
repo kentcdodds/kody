@@ -15,7 +15,10 @@ import {
 	deleteUiArtifactVector,
 	upsertUiArtifactVector,
 } from '#mcp/ui-artifacts-vectorize.ts'
-import { configureSavedAppRunner } from '#mcp/app-runner.ts'
+import {
+	configureSavedAppRunner,
+	deleteSavedAppRunner,
+} from '#mcp/app-runner.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -87,7 +90,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
-			const serverCodeId = crypto.randomUUID()
+			const nextServerCode = args.serverCode ?? null
 			const parameters = normalizeUiArtifactParameters(args.parameters)
 			const serializedParameters = parameters
 				? JSON.stringify(parameters)
@@ -95,6 +98,109 @@ export const uiSaveAppCapability = defineDomainCapability(
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
 				null
+
+			async function saveAndIndexApp(input: {
+				appId: string
+				serverCodeId: string
+				hidden: boolean
+				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
+			}) {
+				try {
+					await configureSavedAppRunner({
+						env: ctx.env,
+						appId: input.appId,
+						userId: user.userId,
+						baseUrl: ctx.callerContext.baseUrl,
+						serverCode: nextServerCode,
+						serverCodeId: input.serverCodeId,
+					})
+				} catch (cause) {
+					if (!isUpdate) {
+						await Promise.allSettled([
+							deleteSavedAppRunner({
+								env: ctx.env,
+								appId: input.appId,
+							}),
+							deleteUiArtifact(ctx.env.APP_DB, user.userId, input.appId),
+						])
+					} else if (input.existingApp) {
+						try {
+							await updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
+								title: input.existingApp.title,
+								description: input.existingApp.description,
+								clientCode: input.existingApp.clientCode,
+								serverCode: input.existingApp.serverCode,
+								serverCodeId: input.existingApp.serverCodeId,
+								parameters: input.existingApp.parameters,
+								hidden: input.existingApp.hidden,
+							})
+						} catch {
+							// Preserve the original runner configuration failure.
+						}
+					}
+					throw cause
+				}
+
+				try {
+					if (!input.hidden) {
+						await upsertUiArtifactVector(ctx.env, {
+							appId: input.appId,
+							userId: user.userId,
+							embedText: buildUiArtifactEmbedText({
+								title: args.title,
+								description: args.description,
+								hasServerCode: nextServerCode != null,
+								parameters,
+							}),
+						})
+					} else if (isUpdate) {
+						await deleteUiArtifactVector(ctx.env, input.appId)
+					}
+				} catch (cause) {
+					if (!isUpdate) {
+						await Promise.allSettled([
+							deleteSavedAppRunner({
+								env: ctx.env,
+								appId: input.appId,
+							}),
+							deleteUiArtifact(ctx.env.APP_DB, user.userId, input.appId),
+						])
+						throw cause
+					}
+
+					const { errorName, errorMessage } = errorFields(cause)
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'capability',
+						capabilityName: 'ui_save_app',
+						domain: capabilityDomainNames.apps,
+						outcome: 'failure',
+						durationMs: 0,
+						baseUrl: ctx.callerContext.baseUrl,
+						hasUser: true,
+						failurePhase: 'handler',
+						message:
+							'Failed to refresh saved app vector index after in-place update.',
+						errorName,
+						errorMessage,
+						cause,
+						context: {
+							userId: user.userId,
+							appId: input.appId,
+							isUpdate,
+						},
+					})
+				}
+
+				return {
+					app_id: input.appId,
+					server_code_id: input.serverCodeId,
+					has_server_code: nextServerCode != null,
+					hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, input.appId),
+					parameters,
+					hidden: input.hidden,
+				}
+			}
 
 			if (isUpdate) {
 				existingApp = await getUiArtifactById(
@@ -105,6 +211,10 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!existingApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				const serverCodeChanged = nextServerCode !== existingApp.serverCode
+				const serverCodeId = serverCodeChanged
+					? crypto.randomUUID()
+					: existingApp.serverCodeId
 				const updated = await updateUiArtifact(
 					ctx.env.APP_DB,
 					user.userId,
@@ -113,7 +223,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						title: args.title,
 						description: args.description,
 						clientCode: args.clientCode,
-						serverCode: args.serverCode ?? null,
+						serverCode: nextServerCode,
 						serverCodeId,
 						parameters: serializedParameters,
 						hidden: args.hidden,
@@ -123,7 +233,14 @@ export const uiSaveAppCapability = defineDomainCapability(
 					throw new Error('Saved UI artifact not found for this user.')
 				}
 				hidden = args.hidden ?? existingApp.hidden
+				return await saveAndIndexApp({
+					appId,
+					serverCodeId,
+					hidden,
+					existingApp,
+				})
 			} else {
+				const serverCodeId = crypto.randomUUID()
 				hidden = args.hidden ?? true
 				const now = new Date().toISOString()
 				await insertUiArtifact(ctx.env.APP_DB, {
@@ -132,97 +249,19 @@ export const uiSaveAppCapability = defineDomainCapability(
 					title: args.title,
 					description: args.description,
 					clientCode: args.clientCode,
-					serverCode: args.serverCode ?? null,
+					serverCode: nextServerCode,
 					serverCodeId,
 					parameters: serializedParameters,
 					hidden,
 					created_at: now,
 					updated_at: now,
 				})
-			}
-
-			try {
-				await configureSavedAppRunner({
-					env: ctx.env,
+				return await saveAndIndexApp({
 					appId,
-					userId: user.userId,
-					baseUrl: ctx.callerContext.baseUrl,
-					serverCode: args.serverCode ?? null,
 					serverCodeId,
+					hidden,
+					existingApp,
 				})
-			} catch (cause) {
-				if (!isUpdate) {
-					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
-				} else if (existingApp) {
-					try {
-						await updateUiArtifact(ctx.env.APP_DB, user.userId, appId, {
-							title: existingApp.title,
-							description: existingApp.description,
-							clientCode: existingApp.clientCode,
-							serverCode: existingApp.serverCode,
-							serverCodeId: existingApp.serverCodeId,
-							parameters: existingApp.parameters,
-							hidden: existingApp.hidden,
-						})
-					} catch {
-						// Preserve the original runner configuration failure.
-					}
-				}
-				throw cause
-			}
-
-			try {
-				if (!hidden) {
-					await upsertUiArtifactVector(ctx.env, {
-						appId,
-						userId: user.userId,
-						embedText: buildUiArtifactEmbedText({
-							title: args.title,
-							description: args.description,
-							hasServerCode: args.serverCode != null,
-							parameters,
-						}),
-					})
-				} else if (isUpdate) {
-					await deleteUiArtifactVector(ctx.env, appId)
-				}
-			} catch (cause) {
-				if (!isUpdate) {
-					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
-					throw cause
-				}
-
-				const { errorName, errorMessage } = errorFields(cause)
-				logMcpEvent({
-					category: 'mcp',
-					tool: 'capability',
-					capabilityName: 'ui_save_app',
-					domain: capabilityDomainNames.apps,
-					outcome: 'failure',
-					durationMs: 0,
-					baseUrl: ctx.callerContext.baseUrl,
-					hasUser: true,
-					failurePhase: 'handler',
-					message:
-						'Failed to refresh saved app vector index after in-place update.',
-					errorName,
-					errorMessage,
-					cause,
-					context: {
-						userId: user.userId,
-						appId,
-						isUpdate,
-					},
-				})
-			}
-
-			return {
-				app_id: appId,
-				server_code_id: serverCodeId,
-				has_server_code: args.serverCode != null,
-				hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, appId),
-				parameters,
-				hidden,
 			}
 		},
 	},

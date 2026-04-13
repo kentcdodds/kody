@@ -117,22 +117,23 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			const title = args.title ?? null
 			const description = args.description ?? null
 			let resolvedParams: Record<string, unknown> | undefined
+			let savedApp: Awaited<ReturnType<typeof getUiArtifactById>> | null = null
 			if (appId) {
 				if (!callerContext.user) {
 					throw new Error(
 						'Authentication required to access saved UI artifacts.',
 					)
 				}
-				const app = await getUiArtifactById(
+				savedApp = await getUiArtifactById(
 					agent.getEnv().APP_DB,
 					callerContext.user.userId,
 					appId,
 				)
-				if (!app) {
+				if (!savedApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
 				resolvedParams = applyUiArtifactParameters({
-					definitions: parseUiArtifactParameters(app.parameters),
+					definitions: parseUiArtifactParameters(savedApp.parameters),
 					values: args.params,
 				})
 			}
@@ -165,9 +166,9 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				params: resolvedParams,
 				hostedUrl,
 				appSession,
-				appBackend: appId
+				appBackend: savedApp?.serverCode
 					? {
-							basePath: buildSavedAppBackendBasePath(appId),
+							basePath: buildSavedAppBackendBasePath(savedApp.id),
 							facetNames: ['main'],
 						}
 					: null,

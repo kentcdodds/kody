@@ -244,6 +244,13 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 				renderSource?: string
 				appId?: string | null
 				hostedUrl?: string | null
+				appSession?: {
+					token?: string
+					endpoints?: { source?: string }
+				} | null
+				appBackend?: {
+					basePath?: string
+				} | null
 		  }
 		| undefined
 	expect(savedOpenStructured?.renderSource).toBe('saved_app')
@@ -251,6 +258,22 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 	expect(savedOpenStructured?.hostedUrl).toBe(
 		`${server.origin}/ui/${savedAppId}`,
 	)
+	expect(savedOpenStructured?.appBackend).toBeNull()
+	const sourceResponse = await fetch(
+		savedOpenStructured!.appSession!.endpoints!.source!,
+		{
+			headers: {
+				Authorization: `Bearer ${savedOpenStructured!.appSession!.token}`,
+				Accept: 'application/json',
+			},
+		},
+	)
+	expect(sourceResponse.ok).toBe(true)
+	expect(sourceResponse.headers.get('Set-Cookie')).toBeNull()
+	const sourcePayload = (await sourceResponse.json()) as {
+		app?: { app_backend?: unknown }
+	}
+	expect(sourcePayload.app?.app_backend).toBeUndefined()
 })
 
 test('saved apps with server code expose isolated backend storage', async () => {

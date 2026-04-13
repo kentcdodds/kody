@@ -192,25 +192,31 @@ function createGeneratedUiSourceHandler(env: Env) {
 					client_code: app.clientCode,
 					server_code: app.serverCode,
 					server_code_id: app.serverCodeId,
-					app_backend: {
-						basePath: buildSavedAppBackendBasePath(app.id),
-						facetNames: ['main'],
-					},
+					...(app.serverCode != null
+						? {
+								app_backend: {
+									basePath: buildSavedAppBackendBasePath(app.id),
+									facetNames: ['main'],
+								},
+							}
+						: {}),
 					created_at: app.created_at,
 					updated_at: app.updated_at,
 				},
 				appSession,
 			})
-			response.headers.append(
-				'Set-Cookie',
-				await createGeneratedUiAppBackendCookieHeader({
-					env,
-					request,
-					appId: app.id,
-					token: appSession.token,
-					expiresAt: appSession.expiresAt,
-				}),
-			)
+			if (app.serverCode != null) {
+				response.headers.append(
+					'Set-Cookie',
+					await createGeneratedUiAppBackendCookieHeader({
+						env,
+						request,
+						appId: app.id,
+						token: appSession.token,
+						expiresAt: appSession.expiresAt,
+					}),
+				)
+			}
 			return response
 		},
 	} satisfies BuildAction<
