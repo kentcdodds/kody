@@ -347,10 +347,15 @@ class AppRunnerBase extends DurableObject<Env> {
 			await this.recordSuccess()
 			return response
 		} catch (error) {
-			await this.recordFailure(error)
 			if (error instanceof Response) {
+				if ([404, 429, 503].includes(error.status)) {
+					await this.recordSuccess()
+				} else {
+					await this.recordFailure(error)
+				}
 				return error
 			}
+			await this.recordFailure(error)
 			return jsonResponse(
 				{
 					ok: false,

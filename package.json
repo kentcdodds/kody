@@ -80,7 +80,7 @@
     "wrangler": "^4.82.1"
   },
   "overrides": {
-    "@modelcontextprotocol/sdk": "1.26.0"
+    "@modelcontextprotocol/sdk": "1.29.0"
   },
   "dependencies": {
     "@cloudflare/ai-chat": "^0.4.2",
@@ -90,7 +90,7 @@
     "@kody-internal/shared": "file:packages/shared",
     "@mcp-ui/server": "6.1.0",
     "@modelcontextprotocol/ext-apps": "^1.2.2",
-    "@modelcontextprotocol/sdk": "1.26.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@sentry/cloudflare": "^10.45.0",
     "acorn": "^8.16.0",
     "agents": "^0.10.1",

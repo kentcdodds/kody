@@ -35,10 +35,10 @@ export const appStorageResetCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const app = await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
-			if (!app) {
-				throw new Error('Saved app not found for this user.')
-			}
+		const app = await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
+		if (!app) {
+			throw new Error('Saved app not found for this user.')
+		}
 		const result = await appRunnerRpc(ctx.env, args.app_id).resetStorage({
 			appId: args.app_id,
 			facetName: args.facet_name ?? 'main',
