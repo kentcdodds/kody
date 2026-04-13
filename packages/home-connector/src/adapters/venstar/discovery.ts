@@ -284,7 +284,7 @@ async function discoverVenstarThermostatsFromJson(
 		thermostats?: Array<Record<string, unknown>>
 	}>(discoveryUrl)
 	const thermostats = (payload.thermostats ?? [])
-		.map((entry, index) => {
+		.map((entry) => {
 			const name = String(entry['name'] ?? '').trim()
 			const ip = String(entry['ip'] ?? '').trim()
 			const location =
@@ -302,14 +302,11 @@ async function discoverVenstarThermostatsFromJson(
 				lastSeenAt:
 					typeof entry['lastSeenAt'] === 'string' ? entry['lastSeenAt'] : now,
 				rawDiscovery: entry,
-				_sortIndex: index,
 			}
 		})
 		.filter(
-			(entry): entry is VenstarDiscoveredThermostat & { _sortIndex: number } =>
-				entry != null,
+			(entry): entry is VenstarDiscoveredThermostat => entry != null,
 		)
-		.map(({ _sortIndex: _ignoredSortIndex, ...thermostat }) => thermostat)
 	return {
 		thermostats,
 		diagnostics: {
