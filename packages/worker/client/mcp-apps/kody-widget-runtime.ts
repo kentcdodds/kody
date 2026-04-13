@@ -284,6 +284,7 @@ export function getKodyWidgetRuntimeStateForTest() {
 			mode: GeneratedUiRuntimeBootstrap['mode']
 			params?: JsonRecord
 			appSession?: GeneratedUiAppSessionBootstrap | null
+			appBackend?: GeneratedUiAppBackendBootstrap | null
 			hooks?: KodyWindow['__kodyGeneratedUiRuntimeHooks']
 			ready?: boolean
 		}) {
@@ -291,11 +292,13 @@ export function getKodyWidgetRuntimeStateForTest() {
 			state.mode = input.mode
 			state.params = input.params ?? {}
 			state.appSession = input.appSession ?? null
+			state.appBackend = input.appBackend ?? null
 			state.initialized = input.mode !== 'entry'
 			kodyWindow.__kodyGeneratedUiBootstrap = {
 				mode: input.mode,
 				params: state.params,
 				appSession: state.appSession,
+				appBackend: state.appBackend,
 			}
 			kodyWindow.__kodyGeneratedUiRuntimeInitialized = state.initialized
 			setGeneratedUiRuntimeHooks(input.hooks)

@@ -40,7 +40,7 @@ export const appServerExecCapability = defineDomainCapability(
 		keywords: ['app', 'server', 'facet', 'debug', 'migration', 'exec'],
 		readOnly: false,
 		idempotent: false,
-		destructive: false,
+		destructive: true,
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {

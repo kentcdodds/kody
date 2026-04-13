@@ -10,9 +10,9 @@ Every saved app gets its own **`AppRunner`** supervisor Durable Object. When the
 app defines **`serverCode`**, the supervisor loads the saved code as a
 **Durable Object Facet** and gives it an isolated SQLite database.
 
-## Saved app shape
+## Save input shape
 
-`ui_save_app` and saved app reads now use:
+`ui_save_app` accepts camelCase fields:
 
 ```json
 {
@@ -26,9 +26,24 @@ app defines **`serverCode`**, the supervisor loads the saved code as a
 `serverCodeId` rotates on every save so Cloudflare's Dynamic Worker loader does
 not reuse stale code.
 
-There is **no backwards compatibility** with the older single-blob saved app
-shape. Existing saved apps may appear empty after this migration and should be
-re-saved in the new format.
+## Read shape
+
+Saved app reads (`ui_get_app`, `ui_load_app_source`, generated UI source APIs)
+return snake_case fields:
+
+```json
+{
+  "app_id": "app-123",
+  "client_code": "<main>...</main>",
+  "server_code": "import { DurableObject } from 'cloudflare:workers'; ...",
+  "server_code_id": "uuid"
+}
+```
+
+The migration preserves legacy HTML in `client_code`. Legacy `javascript`
+artifacts are rewritten into an equivalent HTML document with a module script so
+they can continue to render under the new model. Re-save older apps if you want
+their stored representation to match the new canonical shape exactly.
 
 ## Authoring `serverCode`
 

@@ -57,9 +57,13 @@ export async function readGeneratedUiAppBackendSession(input: {
 	if (!token) {
 		return null
 	}
-	const session = await verifyGeneratedUiAppSession(input.env, token)
-	if (session.app_id !== input.appId) {
-		throw new Error('Generated UI app session does not match the requested app.')
+	try {
+		const session = await verifyGeneratedUiAppSession(input.env, token)
+		if (session.app_id !== input.appId) {
+			return null
+		}
+		return session
+	} catch {
+		return null
 	}
-	return session
 }

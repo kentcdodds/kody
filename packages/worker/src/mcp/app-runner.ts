@@ -142,8 +142,7 @@ export class ${exportName} extends BaseApp {
 }
 
 function buildFacetRequestUrl(request: Request, facetName: string) {
-	const originalUrl = new URL(request.url)
-	const nextUrl = new URL(originalUrl.toString())
+	const nextUrl = new URL(request.url)
 	nextUrl.searchParams.set('__facet', facetName)
 	return nextUrl.toString()
 }
@@ -395,10 +394,12 @@ class AppRunnerBase extends DurableObject<Env> {
 			existing.serverCodeId !== nextConfig.serverCodeId ||
 			existing.serverCode !== nextConfig.serverCode
 		) {
-			this.ctx.facets.abort(
-				buildFacetName('main'),
-				new Error('Saved app server code updated.'),
-			)
+			for (const facetName of dedupeFacetNames(nextConfig.facetNames)) {
+				this.ctx.facets.abort(
+					buildFacetName(facetName),
+					new Error('Saved app server code updated.'),
+				)
+			}
 		}
 		return nextConfig
 	}
@@ -700,22 +701,21 @@ export async function configureSavedAppRunner(input: {
 }
 
 export async function deleteSavedAppRunner(input: { env: Env; appId: string }) {
-	const runner = input.env.APP_RUNNER.get(
-		input.env.APP_RUNNER.idFromName(input.appId),
-	)
-	return await (runner as unknown as {
-		deleteApp: (payload: {
-			appId: string
-			facetNames?: Array<string> | null
-		}) => Promise<{ ok: true; appId: string }>
-	}).deleteApp({
+	const runner = appRunnerRpc(input.env, input.appId)
+	const status = await runner.getStatus({ appId: input.appId })
+	return await runner.deleteApp({
 		appId: input.appId,
-		facetNames: ['main', 'jobs', 'cache'],
+		facetNames: status.config.facetNames,
 	})
 }
 
 export function appRunnerRpc(env: Env, appId: string) {
 	return env.APP_RUNNER.get(env.APP_RUNNER.idFromName(appId)) as unknown as {
+		getStatus: (payload: { appId: string }) => Promise<{
+			config: AppRunnerConfig
+			metrics: AppRunnerMetrics
+			storageBytes: number
+		}>
 		resetStorage: (payload: {
 			appId: string
 			facetName?: string | null
@@ -740,6 +740,10 @@ export function appRunnerRpc(env: Env, appId: string) {
 			facetName: string
 			result: unknown
 		}>
+		deleteApp: (payload: {
+			appId: string
+			facetNames?: Array<string> | null
+		}) => Promise<{ ok: true; appId: string }>
 	}
 }
 

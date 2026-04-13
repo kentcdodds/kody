@@ -151,6 +151,14 @@ export const uiSaveAppCapability = defineDomainCapability(
 					serverCode: args.serverCode ?? null,
 					serverCodeId,
 				})
+			} catch (cause) {
+				if (!isUpdate) {
+					await deleteUiArtifact(ctx.env.APP_DB, user.userId, appId)
+				}
+				throw cause
+			}
+
+			try {
 				if (!hidden) {
 					await upsertUiArtifactVector(ctx.env, {
 						appId,

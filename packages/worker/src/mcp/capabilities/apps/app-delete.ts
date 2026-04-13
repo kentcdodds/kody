@@ -6,7 +6,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { deleteAllAppScopedSecrets } from '#mcp/secrets/service.ts'
 import { deleteAllAppScopedValues } from '#mcp/values/service.ts'
 import { deleteSavedAppRunner } from '#mcp/app-runner.ts'
-import { deleteUiArtifact } from '#mcp/ui-artifacts-repo.ts'
+import { deleteUiArtifact, getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
 import { deleteUiArtifactVector } from '#mcp/ui-artifacts-vectorize.ts'
 
 const outputSchema = z.object({
@@ -31,8 +31,23 @@ export const appDeleteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			await deleteUiArtifact(ctx.env.APP_DB, user.userId, args.app_id)
-			await Promise.allSettled([
+			const app = await getUiArtifactById(ctx.env.APP_DB, user.userId, args.app_id)
+			if (!app) {
+				throw new Error('Saved app not found for this user.')
+			}
+			await deleteSavedAppRunner({
+				env: ctx.env,
+				appId: args.app_id,
+			})
+			const deleted = await deleteUiArtifact(
+				ctx.env.APP_DB,
+				user.userId,
+				args.app_id,
+			)
+			if (!deleted) {
+				throw new Error('Saved app not found for this user.')
+			}
+			const cleanupResults = await Promise.allSettled([
 				deleteAllAppScopedSecrets({
 					env: ctx.env,
 					userId: user.userId,
@@ -44,11 +59,19 @@ export const appDeleteCapability = defineDomainCapability(
 					appId: args.app_id,
 				}),
 				deleteUiArtifactVector(ctx.env, args.app_id),
-				deleteSavedAppRunner({
-					env: ctx.env,
-					appId: args.app_id,
-				}),
 			])
+			const cleanupErrors = cleanupResults
+				.filter((result) => result.status === 'rejected')
+				.map((result) =>
+					result.reason instanceof Error
+						? result.reason.message
+						: String(result.reason),
+				)
+			if (cleanupErrors.length > 0) {
+				throw new Error(
+					`Saved app deleted, but cleanup failed: ${cleanupErrors.join('; ')}`,
+				)
+			}
 			return {
 				ok: true,
 				app_id: args.app_id,

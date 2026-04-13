@@ -445,6 +445,8 @@ export function SavedUiRoute(handle: Handle) {
 						app_id: artifact.appId,
 						title: artifact.title,
 						description: artifact.description,
+						parameters: [],
+						hidden: true,
 						params: artifact.params,
 						client_code: artifact.clientCode,
 						server_code: artifact.serverCode,

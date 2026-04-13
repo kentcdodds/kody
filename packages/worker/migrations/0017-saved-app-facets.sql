@@ -1,4 +1,4 @@
-PRAGMA foreign_keys=OFF;
+PRAGMA defer_foreign_keys = ON;
 
 CREATE TABLE ui_artifacts_v2 (
 	id TEXT PRIMARY KEY NOT NULL,
@@ -64,4 +64,4 @@ ALTER TABLE ui_artifacts_v2 RENAME TO ui_artifacts;
 
 CREATE INDEX idx_ui_artifacts_user_id ON ui_artifacts(user_id);
 
-PRAGMA foreign_keys=ON;
+PRAGMA defer_foreign_keys = OFF;

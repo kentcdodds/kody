@@ -599,6 +599,9 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 
 	if (detail.type === 'app') {
 		const parameters = parseUiArtifactParameters(detail.row.parameters)
+		const hasServerCode =
+			typeof detail.row.serverCode === 'string' &&
+			detail.row.serverCode.trim().length > 0
 		const lines = [
 			`# App — ${detail.row.title}`,
 			'',
@@ -607,7 +610,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Summary',
 			'',
 			`- App ID: \`${detail.row.id}\``,
-			`- Has backend: ${detail.row.serverCode ? 'yes' : 'no'}`,
+			`- Has backend: ${hasServerCode ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.row.hidden ? 'yes' : 'no'}`,
 			'',
 			'## Open this app',
@@ -633,7 +636,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				description: detail.description,
 				usage: `open_generated_ui({ app_id: "${detail.row.id}" })`,
 				hostedUrl: detail.hostedUrl,
-				hasServerCode: detail.row.serverCode != null,
+				hasServerCode,
 				parameters,
 				hidden: detail.row.hidden,
 			} satisfies SearchEntityDetailStructured,
