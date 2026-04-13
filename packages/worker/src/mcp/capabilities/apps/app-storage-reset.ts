@@ -38,6 +38,7 @@ export const appStorageResetCapability = defineDomainCapability(
 				env: ctx.env,
 				appId: args.app_id,
 				userId: user.userId,
+				baseUrl: ctx.callerContext.baseUrl,
 			})
 			if (!app) {
 				throw new Error('Saved app not found for this user.')

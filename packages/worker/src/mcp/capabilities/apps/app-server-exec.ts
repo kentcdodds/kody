@@ -49,6 +49,7 @@ export const appServerExecCapability = defineDomainCapability(
 				env: ctx.env,
 				appId: args.app_id,
 				userId: user.userId,
+				baseUrl: ctx.callerContext.baseUrl,
 			})
 			if (!artifact) {
 				throw new Error('Saved app not found for this user.')

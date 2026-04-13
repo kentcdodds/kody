@@ -146,6 +146,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					env: ctx.env,
 					appId,
 					userId: user.userId,
+					baseUrl: ctx.callerContext.baseUrl,
 					serverCode: args.serverCode ?? null,
 					serverCodeId,
 				})

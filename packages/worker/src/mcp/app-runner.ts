@@ -777,6 +777,7 @@ export async function syncSavedAppRunnerFromDb(input: {
 	env: Env
 	appId: string
 	userId: string
+	baseUrl?: string
 }) {
 	const artifact = await getUiArtifactById(input.env.APP_DB, input.userId, input.appId)
 	if (!artifact) {
@@ -786,6 +787,7 @@ export async function syncSavedAppRunnerFromDb(input: {
 		env: input.env,
 		appId: artifact.id,
 		userId: artifact.user_id,
+		baseUrl: input.baseUrl,
 		serverCode: artifact.serverCode,
 		serverCodeId: artifact.serverCodeId,
 	})
