@@ -14,11 +14,38 @@ Optional **collection** groups related skills. Use **meta_get_skill**,
 
 ## Saved apps (MCP App artifacts)
 
-**ui_save_app** persists reusable **generated UI** source. Reopen with
-**open_generated_ui** using **`app_id`**, or discover apps via **search**.
+**ui_save_app** persists reusable **generated UI** as a saved app record with:
+
+- **`clientCode`** — HTML rendered inside the generic shell
+- **`serverCode`** — optional Durable Object facet backend code
+- **`serverCodeId`** — rotated automatically on each save when backend code
+  changes so Cloudflare reloads the Dynamic Worker
+
+`clientCode` supports **HTML only**. Put browser-side logic inside
+`<script type="module">...</script>` tags in that HTML.
+
+`clientCode` supports **HTML only**. Put browser logic inside
+`<script type="module">...</script>` tags in that HTML.
+
+Reopen with **open_generated_ui** using **`app_id`**, or discover apps via
+**search**.
 
 Saved apps can be **hidden** from search by default; set **`hidden: false`**
 when the app should appear in discovery for reuse.
+
+Saved app backends run behind **`/app/:appId/*`** with their own isolated SQLite
+database per facet. The default facet is **`main`**. Additional named facets
+such as **`jobs`** or **`cache`** are supported by the lifecycle capabilities.
+
+Use these lifecycle capabilities when you need backend maintenance:
+
+- **`app_storage_reset`**
+- **`app_storage_export`**
+- **`app_server_exec`**
+- **`app_delete`**
+
+See [Saved app backends](./saved-app-backends.md) for the route contract, RPC
+bridge surface, and a complete **counter app** example.
 
 ## Generated UI
 
@@ -33,6 +60,10 @@ when the user must enter sensitive data instead of pasting into chat.
 `kodyWidget.executeCode(code, params?)` also accepts optional per-call JSON
 params. Those values are injected as **`params`** inside the async function and
 override saved-app/session params for that execution only.
+
+Saved app client code can also use **`kodyWidget.appBackend`** to discover the
+scoped backend base path for direct requests such as
+**`fetch(\`\${kodyWidget.appBackend?.basePath}/api/counter\`)`**.
 
 If a skill or saved app depends on a third-party integration, run
 **`kody_official_guide`** with **`guide`** **`integration_bootstrap`** first.

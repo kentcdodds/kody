@@ -15,10 +15,16 @@ const outputSchema = z.object({
 	description: z.string(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
 	hidden: z.boolean(),
-	code: z
+	client_code: z
 		.string()
-		.describe('Generated UI source code to render inside the generic shell.'),
-	runtime: z.string(),
+		.describe('Client source code rendered inside the generic shell.'),
+	server_code: z
+		.string()
+		.nullable()
+		.describe('Optional Durable Object server code for the app backend.'),
+	server_code_id: z
+		.string()
+		.describe('Dynamic worker cache key for the current server code revision.'),
 	created_at: z.string(),
 	updated_at: z.string(),
 })
@@ -56,8 +62,9 @@ export const uiGetAppCapability = defineDomainCapability(
 				description: row.description,
 				parameters: parseUiArtifactParameters(row.parameters),
 				hidden: row.hidden,
-				code: row.code,
-				runtime: row.runtime,
+				client_code: row.clientCode,
+				server_code: row.serverCode,
+				server_code_id: row.serverCodeId,
 				created_at: row.created_at,
 				updated_at: row.updated_at,
 			}

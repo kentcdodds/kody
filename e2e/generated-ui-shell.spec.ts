@@ -70,8 +70,14 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 						lastSize: null,
 						toolCalls: [],
 						savedSource: {
-							code: ${savedHtmlJson},
-							runtime: 'html',
+							app_id: 'saved-app-123',
+							title: 'Saved app',
+							description: 'Saved test app',
+							client_code: ${savedHtmlJson},
+							server_code: null,
+							server_code_id: 'server-code-1',
+							parameters: null,
+							hidden: false,
 						},
 					}
 					window.__generatedUiHostState = hostState

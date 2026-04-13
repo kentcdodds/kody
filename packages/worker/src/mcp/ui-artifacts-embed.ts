@@ -4,7 +4,7 @@ export function buildUiArtifactEmbedText(
 	input: {
 		title: string
 		description: string
-		runtime: string
+		hasServerCode: boolean
 		parameters?: Array<{
 			name: string
 			description: string
@@ -37,9 +37,9 @@ export function buildUiArtifactEmbedText(
 	const text = [
 		input.title,
 		input.description,
-		input.runtime,
 		'mcp app',
 		'ui artifact',
+		input.hasServerCode ? 'facet backend' : 'client only',
 		...(parameterText ? [parameterText] : []),
 	].join('\n')
 	return text.slice(0, maxChars)

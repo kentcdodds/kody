@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import {
+	type GeneratedUiAppBackendBootstrap,
 	type GeneratedUiAppSessionBootstrap,
 	type GeneratedUiRuntimeBootstrap,
 	type GeneratedUiSecretMetadata,
@@ -16,6 +17,7 @@ type WidgetRuntimeBootstrap = {
 	mode: GeneratedUiRuntimeBootstrap['mode']
 	params: JsonRecord
 	appSession: GeneratedUiAppSessionBootstrap | null
+	appBackend: GeneratedUiAppBackendBootstrap | null
 }
 type SaveSecretInput = {
 	name: string
@@ -127,6 +129,7 @@ type MessageLogRefs = {
 
 export type KodyWidgetPublicApi = Record<string, any> & {
 	params: JsonRecord
+	appBackend: GeneratedUiAppBackendBootstrap | null
 	executeCode: (code: string, params?: JsonRecord) => Promise<unknown>
 }
 
@@ -163,6 +166,7 @@ type KodyWidgetRuntimeState = {
 	mode: GeneratedUiRuntimeBootstrap['mode']
 	params: JsonRecord
 	appSession: GeneratedUiAppSessionBootstrap | null
+	appBackend: GeneratedUiAppBackendBootstrap | null
 	hooks: GeneratedUiRuntimeHooks
 	readyPromise: Promise<void>
 	resolveReady: () => void
@@ -185,6 +189,7 @@ function createKodyWidgetRuntimeState(): KodyWidgetRuntimeState {
 		mode: 'entry',
 		params: {},
 		appSession: null,
+		appBackend: null,
 		hooks: {},
 		readyPromise,
 		resolveReady,
@@ -279,6 +284,7 @@ export function getKodyWidgetRuntimeStateForTest() {
 			mode: GeneratedUiRuntimeBootstrap['mode']
 			params?: JsonRecord
 			appSession?: GeneratedUiAppSessionBootstrap | null
+			appBackend?: GeneratedUiAppBackendBootstrap | null
 			hooks?: KodyWindow['__kodyGeneratedUiRuntimeHooks']
 			ready?: boolean
 		}) {
@@ -286,11 +292,13 @@ export function getKodyWidgetRuntimeStateForTest() {
 			state.mode = input.mode
 			state.params = input.params ?? {}
 			state.appSession = input.appSession ?? null
+			state.appBackend = input.appBackend ?? null
 			state.initialized = input.mode !== 'entry'
 			kodyWindow.__kodyGeneratedUiBootstrap = {
 				mode: input.mode,
 				params: state.params,
 				appSession: state.appSession,
+				appBackend: state.appBackend,
 			}
 			kodyWindow.__kodyGeneratedUiRuntimeInitialized = state.initialized
 			setGeneratedUiRuntimeHooks(input.hooks)
@@ -884,12 +892,31 @@ function coerceSessionEndpoints(value: unknown): SessionEndpoints | null {
 	}
 }
 
+function coerceAppBackend(
+	value: unknown,
+): GeneratedUiAppBackendBootstrap | null {
+	if (!isRecord(value) || typeof value.basePath !== 'string') {
+		return null
+	}
+	const facetNames = Array.isArray(value.facetNames)
+		? value.facetNames.filter(
+				(entry): entry is string =>
+					typeof entry === 'string' && entry.length > 0,
+			)
+		: undefined
+	return {
+		basePath: value.basePath,
+		...(facetNames && facetNames.length > 0 ? { facetNames } : {}),
+	}
+}
+
 function normalizeBootstrap(value: unknown): WidgetRuntimeBootstrap {
 	if (!isRecord(value)) {
 		return {
 			mode: 'entry',
 			params: {},
 			appSession: null,
+			appBackend: null,
 		}
 	}
 	const params = isRecord(value.params) ? value.params : {}
@@ -915,6 +942,7 @@ function normalizeBootstrap(value: unknown): WidgetRuntimeBootstrap {
 						endpoints: appSession.endpoints,
 					}
 				: null,
+		appBackend: coerceAppBackend(value.appBackend),
 	}
 }
 
@@ -923,10 +951,12 @@ function applyBootstrapToRuntimeState(bootstrap: WidgetRuntimeBootstrap) {
 	state.mode = bootstrap.mode
 	state.params = bootstrap.params
 	state.appSession = bootstrap.appSession
+	state.appBackend = bootstrap.appBackend
 	kodyWindow.__kodyGeneratedUiBootstrap = {
 		mode: bootstrap.mode,
 		params: bootstrap.params,
 		appSession: bootstrap.appSession,
+		appBackend: bootstrap.appBackend,
 	}
 	syncKodyWidgetParams()
 	return state
@@ -1245,6 +1275,9 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 	return {
 		get params() {
 			return getOrCreateKodyWidgetRuntimeState().params
+		},
+		get appBackend() {
+			return getOrCreateKodyWidgetRuntimeState().appBackend
 		},
 		sendMessage(text: unknown) {
 			return sendMessageInCurrentContext(text)

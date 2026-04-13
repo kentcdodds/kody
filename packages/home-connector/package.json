@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@kody-internal/shared": "file:../shared",
-    "@modelcontextprotocol/sdk": "1.26.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@sentry/node": "^10.45.0",
     "dns-equal": "^1.0.0",
     "dns-txt": "^2.0.2",

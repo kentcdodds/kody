@@ -37,10 +37,16 @@ export type GeneratedUiAppSessionBootstrap = {
 	endpoints: GeneratedUiSessionEndpoints
 }
 
+export type GeneratedUiAppBackendBootstrap = {
+	basePath: string
+	facetNames?: Array<string>
+}
+
 export type GeneratedUiRuntimeBootstrap = {
 	mode: 'entry' | 'hosted' | 'mcp'
 	params?: Record<string, unknown>
 	appSession?: GeneratedUiAppSessionBootstrap | null
+	appBackend?: GeneratedUiAppBackendBootstrap | null
 }
 
 export const generatedUiRuntimeModuleSpecifier = '@kody/ui-utils' as const

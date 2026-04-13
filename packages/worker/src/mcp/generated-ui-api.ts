@@ -11,8 +11,10 @@ import {
 } from '#mcp/executor.ts'
 import {
 	createGeneratedUiAppSession,
+	buildSavedAppBackendBasePath,
 	verifyGeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
+import { createGeneratedUiAppBackendCookieHeader } from '#mcp/generated-ui-app-auth.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { deleteSecret, listSecrets, saveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
@@ -24,6 +26,7 @@ import {
 	getUiArtifactById,
 	getUiArtifactByOwnerIds,
 } from '#mcp/ui-artifacts-repo.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 
 const executeRequestSchema = z.object({
 	code: z.string().min(1),
@@ -179,21 +182,44 @@ function createGeneratedUiSourceHandler(env: Env) {
 						? sourceContext.homeConnectorId
 						: null,
 			})
-			return jsonResponse({
+			const response = jsonResponse({
 				ok: true,
 				app: {
 					app_id: app.id,
 					title: app.title,
 					description: app.description,
+					hidden: app.hidden,
 					parameters: parseUiArtifactParameters(app.parameters),
 					params: resolvedParams,
-					runtime: app.runtime,
-					code: app.code,
+					client_code: app.clientCode,
+					server_code: app.serverCode,
+					server_code_id: app.serverCodeId,
+					...(hasUiArtifactServerCode(app.serverCode)
+						? {
+								app_backend: {
+									basePath: buildSavedAppBackendBasePath(app.id),
+									facetNames: ['main'],
+								},
+							}
+						: {}),
 					created_at: app.created_at,
 					updated_at: app.updated_at,
 				},
 				appSession,
 			})
+			if (hasUiArtifactServerCode(app.serverCode)) {
+				response.headers.append(
+					'Set-Cookie',
+					await createGeneratedUiAppBackendCookieHeader({
+						env,
+						request,
+						appId: app.id,
+						token: appSession.token,
+						expiresAt: appSession.expiresAt,
+					}),
+				)
+			}
+			return response
 		},
 	} satisfies BuildAction<
 		typeof generatedUiApiRoutes.source.method,

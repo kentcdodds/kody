@@ -160,9 +160,12 @@ function scoreUiArtifactLexicalMatch(
 	const parameterText = (hit.parameters ?? [])
 		.map((parameter) => `${parameter.name} ${parameter.description}`)
 		.join('\n')
-	const doc = [hit.title, hit.description, hit.runtime, parameterText].join(
-		'\n',
-	)
+	const doc = [
+		hit.title,
+		hit.description,
+		hit.hasServerCode ? 'facet backend' : 'client only',
+		parameterText,
+	].join('\n')
 	let bonus = 0
 	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.title) * 1.5
 	bonus += scoreSkillPhraseMatch(normalizedQuery, hit.description) * 1

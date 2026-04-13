@@ -16,6 +16,7 @@ import {
 } from '#mcp/storage-bindings.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
+	deleteAppScopeSecretBuckets,
 	deleteSecretEntry,
 	getSecretBucket,
 	getSecretEntry,
@@ -210,6 +211,18 @@ export async function deleteSecret(input: DeleteSecretInput) {
 		db: input.env.APP_DB,
 		bucketId: bucket.id,
 		name: input.name,
+	})
+}
+
+export async function deleteAllAppScopedSecrets(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	appId: string
+}) {
+	return await deleteAppScopeSecretBuckets({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		appId: input.appId,
 	})
 }
 

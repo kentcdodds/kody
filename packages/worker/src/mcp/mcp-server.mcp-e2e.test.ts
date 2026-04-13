@@ -181,14 +181,22 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 		}),
 	)
 
-	const saveResult = await mcpClient.client.callTool({
+	// The generated UI runtime executes out-of-band HTTP requests with its own app
+	// session. Reconnect the MCP client before resuming tool calls so the test
+	// exercises a fresh MCP session after that browser-style interaction.
+	await using resumedMcpClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const saveResult = await resumedMcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
 				return await codemode.ui_save_app({
 					title: 'Persistent UI',
 					description: 'Saved from test',
-					code: '<main><h1>Saved</h1></main>',
+					clientCode: '<main><h1>Saved</h1></main>',
 					hidden: false,
 				})
 			}`,
@@ -200,7 +208,7 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 	const savedAppId = saveStructured?.result?.app_id
 	expect(typeof savedAppId).toBe('string')
 
-	const savedSearchResult = await mcpClient.client.callTool({
+	const savedSearchResult = await resumedMcpClient.client.callTool({
 		name: 'search',
 		arguments: {
 			query: 'Persistent UI',
@@ -232,7 +240,7 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 		}),
 	)
 
-	const savedOpenResult = await mcpClient.client.callTool({
+	const savedOpenResult = await resumedMcpClient.client.callTool({
 		name: 'open_generated_ui',
 		arguments: {
 			app_id: savedAppId,
@@ -244,6 +252,13 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 				renderSource?: string
 				appId?: string | null
 				hostedUrl?: string | null
+				appSession?: {
+					token?: string
+					endpoints?: { source?: string }
+				} | null
+				appBackend?: {
+					basePath?: string
+				} | null
 		  }
 		| undefined
 	expect(savedOpenStructured?.renderSource).toBe('saved_app')
@@ -251,4 +266,150 @@ test('authenticated mcp client can open generated ui and reopen a saved app', as
 	expect(savedOpenStructured?.hostedUrl).toBe(
 		`${server.origin}/ui/${savedAppId}`,
 	)
+	expect(savedOpenStructured?.appBackend).toBeNull()
+	const sourceResponse = await fetch(
+		savedOpenStructured!.appSession!.endpoints!.source!,
+		{
+			headers: {
+				Authorization: `Bearer ${savedOpenStructured!.appSession!.token}`,
+				Accept: 'application/json',
+			},
+		},
+	)
+	expect(sourceResponse.ok).toBe(true)
+	expect(sourceResponse.headers.get('Set-Cookie')).toBeNull()
+	const sourcePayload = (await sourceResponse.json()) as {
+		app?: { app_backend?: unknown }
+	}
+	expect(sourcePayload.app?.app_backend).toBeUndefined()
+})
+
+test('saved apps with server code expose isolated backend storage', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					title: 'Facet Counter',
+					description: 'Saved app with a backend facet counter',
+					clientCode: '<main><h1>Facet Counter</h1></main>',
+					serverCode: \`
+						import { DurableObject } from 'cloudflare:workers'
+
+						export class App extends DurableObject {
+							async fetch(request) {
+								const url = new URL(request.url)
+								if (url.pathname !== '/api/counter') {
+									return new Response('Not found', { status: 404 })
+								}
+								const current = (await this.ctx.storage.get('count')) ?? 0
+								const next = Number(current) + 1
+								await this.ctx.storage.put('count', next)
+								return Response.json({ count: next })
+							}
+						}
+					\`,
+					hidden: true,
+				})
+			}`,
+		},
+	})
+
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					app_id?: string
+					server_code_id?: string
+					has_server_code?: boolean
+				}
+		  }
+		| undefined
+	const savedAppId = saveStructured?.result?.app_id
+	expect(typeof savedAppId).toBe('string')
+	expect(saveStructured?.result?.has_server_code).toBe(true)
+	expect(typeof saveStructured?.result?.server_code_id).toBe('string')
+
+	const openResult = await mcpClient.client.callTool({
+		name: 'open_generated_ui',
+		arguments: {
+			app_id: savedAppId,
+		},
+	})
+	const openStructured = (openResult as CallToolResult).structuredContent as
+		| {
+				appId?: string | null
+				appSession?: {
+					token?: string
+					expiresAt?: string
+					endpoints?: { source?: string }
+				} | null
+				appBackend?: {
+					basePath?: string
+				} | null
+		  }
+		| undefined
+	expect(openStructured?.appId).toBe(savedAppId)
+	expect(openStructured?.appBackend?.basePath).toBe(`/app/${savedAppId}`)
+	expect(typeof openStructured?.appSession?.token).toBe('string')
+
+	const sourceResponse = await fetch(
+		openStructured!.appSession!.endpoints!.source!,
+		{
+			headers: {
+				Authorization: `Bearer ${openStructured!.appSession!.token}`,
+				Accept: 'application/json',
+			},
+		},
+	)
+	expect(sourceResponse.ok).toBe(true)
+	const backendCookie = sourceResponse.headers.get('Set-Cookie')
+	expect(backendCookie).toContain('kody_generated_ui_app=')
+	const scopedCookieHeader = backendCookie?.split(';')[0] ?? ''
+
+	const firstResponse = await fetch(
+		new URL(
+			`${openStructured!.appBackend!.basePath}/api/counter`,
+			server.origin,
+		),
+		{
+			headers: {
+				Accept: 'application/json',
+				Cookie: scopedCookieHeader,
+			},
+		},
+	)
+	expect(firstResponse.ok).toBe(true)
+	expect(await firstResponse.json()).toEqual({ count: 1 })
+
+	const secondResponse = await fetch(
+		new URL(
+			`${openStructured!.appBackend!.basePath}/api/counter`,
+			server.origin,
+		),
+		{
+			headers: {
+				Accept: 'application/json',
+				Cookie: scopedCookieHeader,
+			},
+		},
+	)
+	expect(secondResponse.ok).toBe(true)
+	expect(await secondResponse.json()).toEqual({ count: 2 })
+
+	const unauthenticatedResponse = await fetch(
+		new URL(
+			`${openStructured!.appBackend!.basePath}/api/counter`,
+			server.origin,
+		),
+		{
+			headers: {
+				Accept: 'application/json',
+			},
+		},
+	)
+	expect(unauthenticatedResponse.status).toBe(401)
 })

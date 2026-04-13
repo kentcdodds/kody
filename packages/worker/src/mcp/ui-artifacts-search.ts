@@ -12,7 +12,10 @@ import {
 import { type SecretMetadata } from '#mcp/secrets/types.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
-import { type UiArtifactRow } from './ui-artifacts-types.ts'
+import {
+	hasUiArtifactServerCode,
+	type UiArtifactRow,
+} from './ui-artifacts-types.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 
 function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
@@ -25,7 +28,7 @@ function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 	return `${buildUiArtifactEmbedText({
 		title: row.title,
 		description: row.description,
-		runtime: row.runtime,
+		hasServerCode: hasUiArtifactServerCode(row.serverCode),
 		parameters: parseUiArtifactParameters(row.parameters),
 	})}${secretText}`
 }
@@ -65,7 +68,7 @@ export type UiArtifactSearchHitSummary = {
 	title: string
 	description: string
 	hostedUrl: string
-	runtime: string
+	hasServerCode: boolean
 	parameters: Array<{
 		name: string
 		description: string
@@ -101,7 +104,7 @@ function rowToUiArtifactHit(
 		title: row.title,
 		description: row.description,
 		hostedUrl: buildSavedUiUrl(baseUrl, row.id),
-		runtime: row.runtime,
+		hasServerCode: hasUiArtifactServerCode(row.serverCode),
 		parameters,
 		usage: buildUsage(row),
 		availableSecrets: appSecrets.map((secret) => ({

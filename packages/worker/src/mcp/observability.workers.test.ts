@@ -146,20 +146,57 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 			{
 				title: 'Observed app',
 				description: 'Observation test app.',
-				code: 'document.querySelector("#app")!.innerHTML = "<h1>Observed app</h1>"',
+				clientCode:
+					'document.querySelector("#app")!.innerHTML = "<h1>Observed app</h1>"',
 			},
 			{
 				env: {
 					APP_DB: {
-						prepare() {
+						prepare(query: string) {
 							return {
 								bind() {
 									return {
+										first: async () =>
+											query.includes('SELECT id, user_id')
+												? {
+														id: 'app-1',
+														user_id: 'user-1',
+														title: 'Observed app',
+														description: 'Observation test app.',
+														client_code: '<main><h1>Observed app</h1></main>',
+														server_code: null,
+														server_code_id: 'server-code-1',
+														parameters: null,
+														hidden: 0,
+														created_at: '2026-04-13T00:00:00.000Z',
+														updated_at: '2026-04-13T00:00:00.000Z',
+													}
+												: null,
 										run: async () => ({
 											meta: { changes: 1 },
 										}),
 									}
 								},
+							}
+						},
+					},
+					APP_RUNNER: {
+						idFromName(name: string) {
+							return name as unknown as DurableObjectId
+						},
+						get() {
+							return {
+								configure: async () => ({
+									appId: 'generated-app',
+									userId: 'user-1',
+									baseUrl: 'https://example.com',
+									facetNames: ['main'],
+									serverCode: null,
+									serverCodeId: crypto.randomUUID(),
+									rateLimitPerMinute: 120,
+									killSwitchEnabled: false,
+									lastError: null,
+								}),
 							}
 						},
 					},
@@ -200,21 +237,57 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 				app_id: 'app-1',
 				title: 'Observed app',
 				description: 'Observation test app.',
-				code: '<main><h1>Observed app</h1></main>',
+				clientCode: '<main><h1>Observed app</h1></main>',
 				hidden: false,
 			},
 			{
 				env: {
 					APP_DB: {
-						prepare() {
+						prepare(query: string) {
 							return {
 								bind() {
 									return {
+										first: async () =>
+											query.includes('SELECT id, user_id')
+												? {
+														id: 'app-1',
+														user_id: 'user-1',
+														title: 'Observed app',
+														description: 'Observation test app.',
+														client_code: '<main><h1>Observed app</h1></main>',
+														server_code: null,
+														server_code_id: 'server-code-1',
+														parameters: null,
+														hidden: 0,
+														created_at: '2026-04-13T00:00:00.000Z',
+														updated_at: '2026-04-13T00:00:00.000Z',
+													}
+												: null,
 										run: async () => ({
 											meta: { changes: 1 },
 										}),
 									}
 								},
+							}
+						},
+					},
+					APP_RUNNER: {
+						idFromName(name: string) {
+							return name as unknown as DurableObjectId
+						},
+						get() {
+							return {
+								configure: async () => ({
+									appId: 'app-1',
+									userId: 'user-1',
+									baseUrl: 'https://example.com',
+									facetNames: ['main'],
+									serverCode: null,
+									serverCodeId: crypto.randomUUID(),
+									rateLimitPerMinute: 120,
+									killSwitchEnabled: false,
+									lastError: null,
+								}),
 							}
 						},
 					},

@@ -146,6 +146,22 @@ export async function listValueMetadataForBucket(input: {
 	return (results ?? []).map(mapValueMetadataRow)
 }
 
+export async function deleteValueBucketByBinding(input: {
+	db: D1Database
+	userId: string
+	scope: ValueScope
+	bindingKey: string
+}): Promise<boolean> {
+	const result = await input.db
+		.prepare(
+			`DELETE FROM value_buckets
+			WHERE user_id = ? AND scope = ? AND binding_key = ?`,
+		)
+		.bind(input.userId, input.scope, input.bindingKey)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 function mapValueBucketRow(row: Record<string, unknown>): ValueBucketRow {
 	return {
 		id: String(row['id']),

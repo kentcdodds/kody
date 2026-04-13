@@ -1,11 +1,10 @@
+import {
+	type UiArtifactParameterDefinition,
+	type UiArtifactParameterInput,
+	type UiArtifactParameterType,
+	uiArtifactParameterTypes,
+} from '@kody-internal/shared/ui-artifact-parameters.ts'
 import { z } from 'zod'
-
-const uiArtifactParameterTypes = [
-	'string',
-	'number',
-	'boolean',
-	'json',
-] as const
 const reservedParameterNames = new Set([
 	'__proto__',
 	'constructor',
@@ -15,24 +14,6 @@ const reservedParameterNames = new Set([
 	'__lookupGetter__',
 	'__lookupSetter__',
 ])
-
-export type UiArtifactParameterType = (typeof uiArtifactParameterTypes)[number]
-
-export type UiArtifactParameterInput = {
-	name: string
-	description: string
-	type: UiArtifactParameterType
-	required?: boolean | undefined
-	default?: unknown
-}
-
-export type UiArtifactParameterDefinition = {
-	name: string
-	description: string
-	type: UiArtifactParameterType
-	required: boolean
-	default?: unknown
-}
 
 export const uiArtifactParameterSchema = z.object({
 	name: z

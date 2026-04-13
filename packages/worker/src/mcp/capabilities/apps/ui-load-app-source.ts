@@ -13,8 +13,9 @@ const outputSchema = z.object({
 	app_id: z.string(),
 	title: z.string(),
 	description: z.string(),
-	runtime: z.enum(['html', 'javascript']),
-	code: z.string(),
+	client_code: z.string(),
+	server_code: z.string().nullable(),
+	server_code_id: z.string(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
 	hidden: z.boolean(),
 })
@@ -50,8 +51,9 @@ export const uiLoadAppSourceCapability = defineDomainCapability(
 				app_id: row.id,
 				title: row.title,
 				description: row.description,
-				runtime: row.runtime,
-				code: row.code,
+				client_code: row.clientCode,
+				server_code: row.serverCode,
+				server_code_id: row.serverCodeId,
 				parameters: parseUiArtifactParameters(row.parameters),
 				hidden: row.hidden,
 			}

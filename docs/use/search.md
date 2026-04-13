@@ -1,8 +1,9 @@
 # Search
 
 The **search** tool finds **built-in capabilities**, **persisted values**,
-**saved connectors**, **saved skills**, **saved apps** (MCP App artifacts), and
-**user secret references** (metadata only, not secret values).
+**saved connectors**, **saved skills**, **saved apps** (client + optional facet
+backend artifacts), and **user secret references** (metadata only, not secret
+values).
 
 ## Queries and ranking
 
@@ -52,6 +53,10 @@ for an empty ranked list.
 
 Saved **skills** and **apps** require a signed-in MCP user. Capabilities and
 builtin behavior still work without user-scoped data.
+
+Saved app search hits include whether an app has backend server code. Entity
+detail for an app also includes the hosted fallback URL plus whether the app has
+an isolated Durable Object backend.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

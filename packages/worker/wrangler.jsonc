@@ -1,7 +1,7 @@
 {
 	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "kody",
-	"compatibility_date": "2026-01-31",
+	"compatibility_date": "2026-04-13",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": "./src/index.ts",
 	"upload_source_maps": true,
@@ -22,6 +22,10 @@
 			"new_sqlite_classes": ["SchedulerDO"],
 			"tag": "v4",
 		},
+		{
+			"new_sqlite_classes": ["AppRunner"],
+			"tag": "v5",
+		},
 	],
 
 	"observability": {
@@ -36,6 +40,9 @@
 			"worker_loaders": [
 				{
 					"binding": "LOADER",
+				},
+				{
+					"binding": "APP_LOADER",
 				},
 			],
 			"assets": {
@@ -64,6 +71,10 @@
 					{
 						"class_name": "SchedulerDO",
 						"name": "SCHEDULER_DO",
+					},
+					{
+						"class_name": "AppRunner",
+						"name": "APP_RUNNER",
 					},
 				],
 			},
@@ -100,6 +111,9 @@
 				{
 					"binding": "LOADER",
 				},
+				{
+					"binding": "APP_LOADER",
+				},
 			],
 			"assets": {
 				"directory": "./public",
@@ -127,6 +141,10 @@
 					{
 						"class_name": "SchedulerDO",
 						"name": "SCHEDULER_DO",
+					},
+					{
+						"class_name": "AppRunner",
+						"name": "APP_RUNNER",
 					},
 				],
 			},
@@ -163,6 +181,9 @@
 				{
 					"binding": "LOADER",
 				},
+				{
+					"binding": "APP_LOADER",
+				},
 			],
 			"assets": {
 				"directory": "./public",
@@ -190,6 +211,10 @@
 					{
 						"class_name": "SchedulerDO",
 						"name": "SCHEDULER_DO",
+					},
+					{
+						"class_name": "AppRunner",
+						"name": "APP_RUNNER",
 					},
 				],
 			},

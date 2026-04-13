@@ -7,7 +7,10 @@ import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
-import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import {
+	hasUiArtifactServerCode,
+	type UiArtifactRow,
+} from '#mcp/ui-artifacts-types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 
 export type SearchEntityType =
@@ -147,7 +150,7 @@ export type SearchEntityDetailStructured =
 			description: string
 			usage: string
 			hostedUrl: string
-			runtime: string
+			hasServerCode: boolean
 			parameters: ReturnType<typeof parseUiArtifactParameters>
 			hidden: boolean
 	  }
@@ -599,6 +602,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 
 	if (detail.type === 'app') {
 		const parameters = parseUiArtifactParameters(detail.row.parameters)
+		const hasServerCode = hasUiArtifactServerCode(detail.row.serverCode)
 		const lines = [
 			`# App — ${detail.row.title}`,
 			'',
@@ -607,7 +611,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Summary',
 			'',
 			`- App ID: \`${detail.row.id}\``,
-			`- Runtime: \`${detail.row.runtime}\``,
+			`- Has backend: ${hasServerCode ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.row.hidden ? 'yes' : 'no'}`,
 			'',
 			'## Open this app',
@@ -633,7 +637,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				description: detail.description,
 				usage: `open_generated_ui({ app_id: "${detail.row.id}" })`,
 				hostedUrl: detail.hostedUrl,
-				runtime: detail.row.runtime,
+				hasServerCode,
 				parameters,
 				hidden: detail.row.hidden,
 			} satisfies SearchEntityDetailStructured,

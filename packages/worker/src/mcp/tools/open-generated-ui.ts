@@ -2,7 +2,10 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { generatedUiRuntimeResourceUri } from '#mcp/apps/generated-ui-runtime-html-entry.ts'
-import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
+import {
+	buildSavedAppBackendBasePath,
+	createGeneratedUiAppSession,
+} from '#mcp/generated-ui-app-session.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	conversationIdInputField,
@@ -19,6 +22,7 @@ import {
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
+import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import {
 	appendToolContent,
@@ -58,7 +62,9 @@ const inputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Inline UI source to render immediately.'),
+			.describe(
+				'Inline HTML source to render immediately. Provide an HTML fragment or full HTML document.',
+			),
 		app_id: z
 			.string()
 			.min(1)
@@ -114,22 +120,23 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			const title = args.title ?? null
 			const description = args.description ?? null
 			let resolvedParams: Record<string, unknown> | undefined
+			let savedApp: Awaited<ReturnType<typeof getUiArtifactById>> | null = null
 			if (appId) {
 				if (!callerContext.user) {
 					throw new Error(
 						'Authentication required to access saved UI artifacts.',
 					)
 				}
-				const app = await getUiArtifactById(
+				savedApp = await getUiArtifactById(
 					agent.getEnv().APP_DB,
 					callerContext.user.userId,
 					appId,
 				)
-				if (!app) {
+				if (!savedApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
 				resolvedParams = applyUiArtifactParameters({
-					definitions: parseUiArtifactParameters(app.parameters),
+					definitions: parseUiArtifactParameters(savedApp.parameters),
 					values: args.params,
 				})
 			}
@@ -162,6 +169,12 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				params: resolvedParams,
 				hostedUrl,
 				appSession,
+				appBackend: hasUiArtifactServerCode(savedApp?.serverCode)
+					? {
+							basePath: buildSavedAppBackendBasePath(savedApp.id),
+							facetNames: ['main'],
+						}
+					: null,
 			}
 			const memoryResult = await loadRelevantMemoriesForTool({
 				env: agent.getEnv(),

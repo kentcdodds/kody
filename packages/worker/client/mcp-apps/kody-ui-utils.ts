@@ -62,6 +62,7 @@ type RenderEnvelope = {
 	runtime?: AppRuntime
 	params?: Record<string, unknown>
 	appSession?: AppSessionEnvelope | null
+	appBackend?: GeneratedUiRuntimeBootstrap['appBackend']
 }
 
 type RenderDataEnvelope = {
@@ -330,17 +331,21 @@ export function readSavedAppSourceFromHostToolResult(
 		? result.structuredContent
 		: null
 	const code =
-		typeof structuredContent?.code === 'string' ? structuredContent.code : null
+		typeof structuredContent?.client_code === 'string'
+			? structuredContent.client_code
+			: typeof structuredContent?.clientCode === 'string'
+				? structuredContent.clientCode
+				: null
 	if (!code) {
 		return {
 			handled: true as const,
-			errorMessage: 'Saved app source is missing code.',
+			errorMessage: 'Saved app source is missing client_code.',
 		}
 	}
 	return {
 		handled: true as const,
 		code,
-		runtime: coerceRuntime(structuredContent?.runtime) ?? 'html',
+		runtime: 'html',
 	}
 }
 
@@ -382,7 +387,28 @@ function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	const runtime = coerceRuntime(value.runtime) ?? (code ? 'html' : undefined)
 	const params = coerceJsonRecord(value.params)
 	const appSession = coerceAppSession(value.appSession)
-	return { mode: renderSource, code, appId, runtime, params, appSession }
+	const appBackend = isRecord(value.appBackend)
+		? {
+				basePath:
+					typeof value.appBackend.basePath === 'string'
+						? value.appBackend.basePath
+						: '',
+				facetNames: Array.isArray(value.appBackend.facetNames)
+					? value.appBackend.facetNames.filter(
+							(entry): entry is string => typeof entry === 'string',
+						)
+					: undefined,
+			}
+		: null
+	return {
+		mode: renderSource,
+		code,
+		appId,
+		runtime,
+		params,
+		appSession,
+		...(appBackend && appBackend.basePath ? { appBackend } : {}),
+	}
 }
 
 function getEnvelopeFromRenderData(renderData: RenderDataEnvelope | undefined) {
@@ -1130,13 +1156,13 @@ async function initializeShellHostDocument() {
 					getApiErrorMessage(payload, 'Failed to load saved app source.'),
 				)
 			}
-			const code = typeof app.code === 'string' ? app.code : null
+			const code = typeof app.client_code === 'string' ? app.client_code : null
 			if (!code) {
-				throw new Error('Saved app source is missing code.')
+				throw new Error('Saved app source is missing client_code.')
 			}
 			return {
 				code,
-				runtime: coerceRuntime(app.runtime) ?? 'html',
+				runtime: 'html',
 			}
 		} catch (error) {
 			if (hostToolResult.handled) {
@@ -1164,6 +1190,7 @@ async function initializeShellHostDocument() {
 			mode: 'mcp',
 			params: envelope.params ?? {},
 			...(envelope.appSession ? { appSession: envelope.appSession } : {}),
+			...(envelope.appBackend ? { appBackend: envelope.appBackend } : {}),
 		}
 		updateGeneratedUiRuntimeBootstrap(mcpRuntimeBootstrap)
 

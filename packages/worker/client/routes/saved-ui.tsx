@@ -1,4 +1,5 @@
 import { type Handle } from 'remix/component'
+import { type UiArtifactParameterDefinition } from '@kody-internal/shared/ui-artifact-parameters.ts'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { colors, mq } from '#client/styles/tokens.ts'
 import {
@@ -15,8 +16,15 @@ type SavedUiArtifact = {
 	description: string
 	keywords: Array<string>
 	params: Record<string, unknown>
-	runtime: 'html' | 'javascript'
-	code: string
+	parameters: Array<UiArtifactParameterDefinition> | null
+	hidden: boolean
+	clientCode: string
+	serverCode: string | null
+	serverCodeId: string
+	appBackend: {
+		basePath: string
+		facetNames: Array<string>
+	} | null
 	createdAt: string
 	updatedAt: string
 	appSession: {
@@ -99,11 +107,15 @@ async function loadSavedUi(appId: string) {
 			app_id?: string
 			title?: string
 			description?: string
+			parameters?: Array<UiArtifactParameterDefinition> | null
 			params?: Record<string, unknown>
-			runtime?: 'html' | 'javascript'
-			code?: string
+			client_code?: string
+			server_code?: string | null
+			server_code_id?: string
+			app_backend?: SavedUiArtifact['appBackend']
 			created_at?: string
 			updated_at?: string
+			hidden?: boolean
 		}
 		appSession?: SavedUiArtifact['appSession']
 	} | null
@@ -121,8 +133,30 @@ async function loadSavedUi(appId: string) {
 			!Array.isArray(payload.app.params)
 				? payload.app.params
 				: {},
-		runtime: payload.app.runtime ?? 'html',
-		code: payload.app.code ?? '',
+		parameters: Array.isArray(payload.app.parameters)
+			? payload.app.parameters
+			: null,
+		hidden: payload.app.hidden ?? true,
+		clientCode: payload.app.client_code ?? '',
+		serverCode:
+			typeof payload.app.server_code === 'string'
+				? payload.app.server_code
+				: null,
+		serverCodeId: payload.app.server_code_id ?? '',
+		appBackend:
+			payload.app.app_backend &&
+			typeof payload.app.app_backend === 'object' &&
+			!Array.isArray(payload.app.app_backend) &&
+			typeof payload.app.app_backend.basePath === 'string'
+				? {
+						basePath: payload.app.app_backend.basePath,
+						facetNames: Array.isArray(payload.app.app_backend.facetNames)
+							? payload.app.app_backend.facetNames.filter(
+									(value): value is string => typeof value === 'string',
+								)
+							: ['main'],
+					}
+				: null,
 		createdAt: payload.app.created_at ?? '',
 		updatedAt: payload.app.updated_at ?? '',
 		appSession: payload.appSession ?? null,
@@ -420,9 +454,13 @@ export function SavedUiRoute(handle: Handle) {
 						app_id: artifact.appId,
 						title: artifact.title,
 						description: artifact.description,
+						parameters: artifact.parameters,
+						hidden: artifact.hidden,
 						params: artifact.params,
-						runtime: artifact.runtime,
-						code: artifact.code,
+						client_code: artifact.clientCode,
+						server_code: artifact.serverCode,
+						server_code_id: artifact.serverCodeId,
+						app_backend: artifact.appBackend,
 					},
 				})
 				return
