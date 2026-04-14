@@ -259,7 +259,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
-						storageId: null,
+						storageId: context.sessionId,
 					},
 				}),
 				body.data.code,
@@ -326,6 +326,7 @@ function createGeneratedUiSecretsHandler(env: Env) {
 					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
+						storageId: context.sessionId,
 					},
 				})
 				return jsonResponse({
@@ -365,6 +366,7 @@ function createGeneratedUiSecretsHandler(env: Env) {
 					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
+						storageId: context.sessionId,
 					},
 					sessionExpiresAt: context.expiresAt,
 				})
@@ -424,6 +426,7 @@ function createGeneratedUiDeleteSecretHandler(env: Env) {
 					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
+						storageId: context.sessionId,
 					},
 				})
 				return jsonResponse({

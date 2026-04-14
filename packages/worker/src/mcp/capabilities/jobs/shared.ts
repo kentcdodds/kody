@@ -96,7 +96,6 @@ export const jobUpsertInputSchema = z
 		code: z
 			.string()
 			.min(1)
-			.nullable()
 			.optional()
 			.describe('Codemode async arrow function source. Required on create.'),
 		params: z

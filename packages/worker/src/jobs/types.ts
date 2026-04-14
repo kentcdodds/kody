@@ -101,7 +101,7 @@ export type JobCreateInput = {
 export type JobUpdateInput = {
 	id: string
 	name?: string
-	code?: string | null
+	code?: string
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
@@ -112,7 +112,7 @@ export type JobUpdateInput = {
 export type JobUpsertInput = {
 	id?: string
 	name?: string
-	code?: string | null
+	code?: string
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
