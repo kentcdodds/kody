@@ -24,7 +24,6 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
-import { canResetStoredClientForMessage } from '@kody-internal/shared/oauth-messages.ts'
 
 type OAuthAuthorizeInfo = {
 	client: { id: string; name: string }
@@ -50,6 +49,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let session: SessionInfo | null = null
 	let sessionStatus: SessionStatus = 'idle'
 	let resetCompleted = false
+	let allowClientReset = false
+	let activeInfoRequestId = 0
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
@@ -64,23 +65,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		return error ? `Authorization error: ${error}` : null
 	}
 
-	function readResetErrorDescription() {
-		const queryError = readQueryError()
-		if (canResetStoredClientForMessage(queryError)) {
-			return queryError
-		}
-		const messageText = message?.text
-		return canResetStoredClientForMessage(messageText) ? messageText : null
-	}
-
-	async function loadInfo() {
-		status = 'loading'
-
-		const queryError = readQueryError()
-		if (queryError) {
-			message = { type: 'error', text: queryError }
-		}
-
+	async function loadInfo(requestId: number) {
 		try {
 			const query = typeof window === 'undefined' ? '' : window.location.search
 			const response = await fetch(`/oauth/authorize-info${query}`, {
@@ -88,6 +73,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				credentials: 'include',
 			})
 			const payload = await response.json().catch(() => null)
+			if (requestId !== activeInfoRequestId) return
 			if (!response.ok || !payload?.ok) {
 				const errorText =
 					typeof payload?.error === 'string'
@@ -95,6 +81,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						: 'Unable to load authorization details.'
 				info = null
 				status = 'error'
+				allowClientReset = payload?.allowClientReset === true
 				message = { type: 'error', text: errorText }
 				handle.update()
 				return
@@ -104,13 +91,14 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				scopes: payload.scopes,
 			}
 			status = 'ready'
-			if (!queryError) {
-				message = null
-			}
+			allowClientReset = false
+			message = null
 			handle.update()
 		} catch {
+			if (requestId !== activeInfoRequestId) return
 			info = null
 			status = 'error'
+			allowClientReset = false
 			message = {
 				type: 'error',
 				text: 'Unable to load authorization details.',
@@ -156,16 +144,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				body.set('email', email)
 				body.set('password', password)
 			}
-			let submitUrl = window.location.href
-			if (decision === 'reset-client') {
-				const resetErrorDescription = readResetErrorDescription()
-				if (resetErrorDescription) {
-					const url = new URL(submitUrl)
-					url.searchParams.set('error_description', resetErrorDescription)
-					submitUrl = url.toString()
-				}
-			}
-			const response = await fetch(submitUrl, {
+			const response = await fetch(window.location.href, {
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
@@ -222,7 +201,14 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			typeof window === 'undefined' ? '' : window.location.search
 		if (currentSearch !== lastSearch) {
 			lastSearch = currentSearch
-			void loadInfo()
+			resetCompleted = false
+			allowClientReset = false
+			info = null
+			status = 'loading'
+			const queryError = readQueryError()
+			message = queryError ? { type: 'error', text: queryError } : null
+			activeInfoRequestId += 1
+			void loadInfo(activeInfoRequestId)
 		}
 		if (sessionStatus === 'idle') {
 			void loadSession()
@@ -232,13 +218,12 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const scopes = info?.scopes ?? []
 		const scopeLabel =
 			scopes.length > 0 ? scopes.join(', ') : 'No scopes requested.'
-		const resetErrorDescription = readResetErrorDescription()
 		const sessionEmail = session?.email ?? ''
 		const isSessionReady = sessionStatus === 'ready'
 		const isSessionLoading =
 			sessionStatus === 'loading' || sessionStatus === 'idle'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
-		const showResetClientCard = Boolean(resetErrorDescription) && !resetCompleted
+		const showResetClientCard = allowClientReset && !resetCompleted
 		const showAuthorizeForm = !resetCompleted
 		const actionsDisabled =
 			status !== 'ready' || Boolean(submittingDecision) || isSessionLoading

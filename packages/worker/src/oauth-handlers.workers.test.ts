@@ -120,6 +120,10 @@ function createFormRequest(
 	})
 }
 
+function getCookiePair(setCookie: string) {
+	return setCookie.split(';', 1)[0] ?? setCookie
+}
+
 test('authorize page returns SPA shell', async () => {
 	const response = await handleAuthorizeRequest(
 		new Request('https://example.com/oauth/authorize'),
@@ -147,6 +151,31 @@ test('authorize info returns client and scopes', async () => {
 		client: { id: baseClient.clientId, name: baseClient.clientName },
 		scopes: baseAuthRequest.scope,
 	})
+})
+
+test('authorize info marks invalid client mismatch as resettable', async () => {
+	const response = await handleAuthorizeInfo(
+		new Request(
+			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+		),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => {
+					throw new Error(invalidClientIdMismatchMessage)
+				},
+			}),
+		),
+	)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: invalidClientIdMismatchMessage,
+		allowClientReset: true,
+	})
+	expect(response.headers.get('Set-Cookie')).toContain(
+		'kody_oauth_client_reset=',
+	)
 })
 
 test('authorize denies access and redirects with error', async () => {
@@ -338,6 +367,9 @@ test('reset client deletes stale client registrations after invalid client misma
 	const deletedClientIds = new Array<string>()
 	const userId = await createStableUserIdFromEmail('user@example.com')
 	const helpers = createHelpers({
+		parseAuthRequest: async () => {
+			throw new Error(invalidClientIdMismatchMessage)
+		},
 		listUserGrants: async (requestedUserId) => {
 			expect(requestedUserId).toBe(userId)
 			return {
@@ -374,6 +406,14 @@ test('reset client deletes stale client registrations after invalid client misma
 		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
 		false,
 	)
+	const authorizeInfoResponse = await handleAuthorizeInfo(
+		new Request(
+			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+		),
+		createEnv(helpers),
+	)
+	const resetVerificationCookie =
+		authorizeInfoResponse.headers.get('Set-Cookie') ?? ''
 
 	const response = await handleAuthorizeRequest(
 		new Request(
@@ -382,13 +422,39 @@ test('reset client deletes stale client registrations after invalid client misma
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
-					Cookie: cookie,
+					Cookie: `${getCookiePair(cookie)}; ${getCookiePair(resetVerificationCookie)}`,
 					'Content-Type': 'application/x-www-form-urlencoded',
 				},
 				body: new URLSearchParams({ decision: 'reset-client' }),
 			},
 		),
 		createEnv(helpers),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		message:
+			'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+	})
+	expect(revokedGrantIds).toEqual(['grant-1', 'grant-2'])
+	expect(deletedClientIds).toEqual(['client-123'])
+})
+
+test('reset client rejects invalid client mismatch without verification cookie', async () => {
+	const response = await handleAuthorizeRequest(
+		new Request(
+			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ decision: 'reset-client' }),
+			},
+		),
+		createEnv(createHelpers()),
 	)
 
 	expect(response.status).toBe(400)
@@ -398,8 +464,6 @@ test('reset client deletes stale client registrations after invalid client misma
 			'Stored client cleanup is only available for stale or mismatched client registrations.',
 		code: 'invalid_request',
 	})
-	expect(revokedGrantIds).toEqual([])
-	expect(deletedClientIds).toEqual([])
 })
 
 test('reset client is rejected when the request is not a redirect mismatch', async () => {

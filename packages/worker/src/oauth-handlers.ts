@@ -2,8 +2,10 @@ import {
 	type AuthRequest,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
+import { createCookie } from '@remix-run/cookie'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import {
+	isSecureRequest,
 	readAuthSessionResult,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
@@ -14,6 +16,7 @@ import { render } from '#app/render.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
+import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 
 export const oauthPaths = {
 	authorize: '/oauth/authorize',
@@ -40,20 +43,30 @@ type OAuthContext = ExecutionContext & {
 	props?: OAuthProps
 }
 
+type OAuthClientResetVerification = {
+	clientId: string
+	reason: 'invalid-client-id-mismatch'
+}
+
 function renderSpaShell(status = 200) {
 	return render(Layout({}), { status })
 }
 
 const dummyPasswordHash =
 	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
+const oauthClientResetVerificationCookieName = 'kody_oauth_client_reset'
+const oauthClientResetVerificationMaxAgeSeconds = 60 * 5
+
+let oauthClientResetVerificationCookie: ReturnType<typeof createCookie> | null =
+	null
+let oauthClientResetVerificationCookieSecret: string | null = null
 
 function jsonResponse(data: unknown, init?: ResponseInit) {
+	const headers = new Headers(init?.headers)
+	headers.set('Content-Type', 'application/json')
 	return new Response(JSON.stringify(data), {
 		...init,
-		headers: {
-			'Content-Type': 'application/json',
-			...init?.headers,
-		},
+		headers,
 	})
 }
 
@@ -63,6 +76,109 @@ function getOAuthHelpers(env: Env) {
 		throw new Error('OAuth provider helpers are not available.')
 	}
 	return helpers
+}
+
+function getOAuthClientResetVerificationCookie(secret: string) {
+	if (
+		oauthClientResetVerificationCookie &&
+		oauthClientResetVerificationCookieSecret === secret
+	) {
+		return oauthClientResetVerificationCookie
+	}
+
+	oauthClientResetVerificationCookieSecret = secret
+	oauthClientResetVerificationCookie = createCookie(
+		oauthClientResetVerificationCookieName,
+		{
+			httpOnly: true,
+			sameSite: 'Lax',
+			path: oauthPaths.authorize,
+			maxAge: oauthClientResetVerificationMaxAgeSeconds,
+			secrets: [secret],
+		},
+	)
+	return oauthClientResetVerificationCookie
+}
+
+function isOAuthClientResetVerification(
+	value: unknown,
+): value is OAuthClientResetVerification {
+	if (!value || typeof value !== 'object') return false
+	const record = value as Record<string, unknown>
+	return (
+		typeof record.clientId === 'string' &&
+		record.clientId.length > 0 &&
+		record.reason === 'invalid-client-id-mismatch'
+	)
+}
+
+function requestHasOAuthClientResetVerificationCookie(request: Request) {
+	const cookieHeader = request.headers.get('Cookie')
+	return (
+		cookieHeader?.includes(`${oauthClientResetVerificationCookieName}=`) ??
+		false
+	)
+}
+
+async function createOAuthClientResetVerificationCookie(
+	request: Request,
+	env: Env,
+	verification: OAuthClientResetVerification,
+) {
+	const appEnv = getEnv(env)
+	return getOAuthClientResetVerificationCookie(appEnv.COOKIE_SECRET).serialize(
+		JSON.stringify(verification),
+		{
+			secure: isSecureRequest(request),
+		},
+	)
+}
+
+async function destroyOAuthClientResetVerificationCookie(
+	request: Request,
+	env: Env,
+) {
+	const appEnv = getEnv(env)
+	return getOAuthClientResetVerificationCookie(appEnv.COOKIE_SECRET).serialize(
+		'',
+		{
+			secure: isSecureRequest(request),
+			maxAge: 0,
+			expires: new Date(0),
+		},
+	)
+}
+
+async function readOAuthClientResetVerification(
+	request: Request,
+	env: Env,
+): Promise<OAuthClientResetVerification | null> {
+	const cookieHeader = request.headers.get('Cookie')
+	if (!cookieHeader) return null
+
+	const appEnv = getEnv(env)
+	const stored = await getOAuthClientResetVerificationCookie(
+		appEnv.COOKIE_SECRET,
+	).parse(cookieHeader)
+	if (!stored || typeof stored !== 'string') return null
+
+	try {
+		const parsed = JSON.parse(stored)
+		return isOAuthClientResetVerification(parsed) ? parsed : null
+	} catch {
+		return null
+	}
+}
+
+function createSetCookieHeaders(cookies: Array<string | null | undefined>) {
+	const headers = new Headers()
+	let hasCookie = false
+	for (const cookie of cookies) {
+		if (!cookie) continue
+		headers.append('Set-Cookie', cookie)
+		hasCookie = true
+	}
+	return hasCookie ? headers : undefined
 }
 
 async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
@@ -172,32 +288,92 @@ function resolveScopes(requestedScopes: Array<string>) {
 	return requestedScopes
 }
 
+async function resolveAuthorizeInfoResetState(
+	request: Request,
+	env: Env,
+	helpers: OAuthHelpers,
+	errorMessage: string,
+) {
+	const shouldClearVerificationCookie =
+		requestHasOAuthClientResetVerificationCookie(request)
+	const redirectUriMismatch = await requestHasRedirectUriMismatch(
+		helpers,
+		request,
+	)
+	if (redirectUriMismatch) {
+		return {
+			allowClientReset: true,
+			setCookie: shouldClearVerificationCookie
+				? await destroyOAuthClientResetVerificationCookie(request, env)
+				: null,
+		}
+	}
+
+	if (errorMessage === invalidClientIdMismatchMessage) {
+		const clientId = readClientIdFromAuthorizeRequest(request)
+		if (clientId) {
+			return {
+				allowClientReset: true,
+				setCookie: await createOAuthClientResetVerificationCookie(
+					request,
+					env,
+					{
+						clientId,
+						reason: 'invalid-client-id-mismatch',
+					},
+				),
+			}
+		}
+	}
+
+	return {
+		allowClientReset: false,
+		setCookie: shouldClearVerificationCookie
+			? await destroyOAuthClientResetVerificationCookie(request, env)
+			: null,
+	}
+}
+
 async function handleResetClientRequest(
 	request: Request,
 	env: Env,
 	helpers: OAuthHelpers,
 	requestIp?: string,
 ) {
+	const clientId = readClientIdFromAuthorizeRequest(request)
+	const hasResetVerificationCookie =
+		requestHasOAuthClientResetVerificationCookie(request)
+	const verifiedClientReset = await readOAuthClientResetVerification(
+		request,
+		env,
+	)
+	const clearResetVerificationCookie = hasResetVerificationCookie
+		? await destroyOAuthClientResetVerificationCookie(request, env)
+		: null
 	const redirectUriMismatch = await requestHasRedirectUriMismatch(
 		helpers,
 		request,
 	)
-	if (!redirectUriMismatch) {
+	const canResetStoredClient =
+		redirectUriMismatch ||
+		(clientId !== null && verifiedClientReset?.clientId === clientId)
+	if (!canResetStoredClient) {
 		return respondAuthorizeError(
 			request,
 			'Stored client cleanup is only available for stale or mismatched client registrations.',
 			400,
 			'invalid_request',
+			createSetCookieHeaders([clearResetVerificationCookie]),
 		)
 	}
 
-	const clientId = readClientIdFromAuthorizeRequest(request)
 	if (!clientId) {
 		return respondAuthorizeError(
 			request,
 			'Missing client ID for stored client cleanup.',
 			400,
 			'invalid_request',
+			createSetCookieHeaders([clearResetVerificationCookie]),
 		)
 	}
 
@@ -219,6 +395,7 @@ async function handleResetClientRequest(
 			'Sign in before deleting stored client records.',
 			401,
 			'unauthorized',
+			createSetCookieHeaders([clearResetVerificationCookie]),
 		)
 	}
 
@@ -243,13 +420,12 @@ async function handleResetClientRequest(
 				message:
 					'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
 			},
-			setCookie
-				? {
-						headers: {
-							'Set-Cookie': setCookie,
-						},
-					}
-				: undefined,
+			{
+				headers: createSetCookieHeaders([
+					clearResetVerificationCookie,
+					setCookie,
+				]),
+			},
 		)
 	} catch (error) {
 		void logAuditEvent({
@@ -266,6 +442,7 @@ async function handleResetClientRequest(
 			'Unable to delete stored client records right now.',
 			500,
 			'server_error',
+			createSetCookieHeaders([clearResetVerificationCookie]),
 		)
 	}
 }
@@ -284,11 +461,17 @@ function createAuthorizeErrorRedirect(
 	request: Request,
 	error: string,
 	description: string,
+	headersInit?: HeadersInit,
 ) {
 	const redirectUrl = new URL(request.url)
 	redirectUrl.searchParams.set('error', error)
 	redirectUrl.searchParams.set('error_description', description)
-	return Response.redirect(redirectUrl.toString(), 303)
+	const headers = new Headers(headersInit)
+	headers.set('Location', redirectUrl.toString())
+	return new Response(null, {
+		status: 303,
+		headers,
+	})
 }
 
 function respondAuthorizeError(
@@ -296,10 +479,14 @@ function respondAuthorizeError(
 	message: string,
 	status = 400,
 	errorCode = 'invalid_request',
+	headers?: HeadersInit,
 ) {
 	return wantsJson(request)
-		? jsonResponse({ ok: false, error: message, code: errorCode }, { status })
-		: createAuthorizeErrorRedirect(request, errorCode, message)
+		? jsonResponse(
+				{ ok: false, error: message, code: errorCode },
+				{ status, headers },
+			)
+		: createAuthorizeErrorRedirect(request, errorCode, message, headers)
 }
 
 async function resolveSessionEmail(request: Request, env: Env) {
@@ -327,26 +514,51 @@ export async function handleAuthorizeInfo(
 	const helpers = getOAuthHelpers(env)
 	const resolution = await resolveAuthRequest(helpers, request)
 	if ('error' in resolution) {
-		return jsonResponse({ ok: false, error: resolution.error }, { status: 400 })
-	}
-
-	const { authRequest, client } = resolution
-	const resolvedScopes = resolveScopes(authRequest.scope)
-	if (!Array.isArray(resolvedScopes)) {
+		const { allowClientReset, setCookie } =
+			await resolveAuthorizeInfoResetState(
+				request,
+				env,
+				helpers,
+				resolution.error ?? 'Unable to parse OAuth request.',
+			)
 		return jsonResponse(
-			{ ok: false, error: resolvedScopes.error },
-			{ status: 400 },
+			{ ok: false, error: resolution.error, allowClientReset },
+			{
+				status: 400,
+				headers: createSetCookieHeaders([setCookie]),
+			},
 		)
 	}
 
-	return jsonResponse({
-		ok: true,
-		client: {
-			id: client.clientId,
-			name: client.clientName ?? client.clientId,
+	const { authRequest, client } = resolution
+	const clearResetVerificationCookie =
+		requestHasOAuthClientResetVerificationCookie(request)
+			? await destroyOAuthClientResetVerificationCookie(request, env)
+			: null
+	const resolvedScopes = resolveScopes(authRequest.scope)
+	if (!Array.isArray(resolvedScopes)) {
+		return jsonResponse(
+			{ ok: false, error: resolvedScopes.error, allowClientReset: false },
+			{
+				status: 400,
+				headers: createSetCookieHeaders([clearResetVerificationCookie]),
+			},
+		)
+	}
+
+	return jsonResponse(
+		{
+			ok: true,
+			client: {
+				id: client.clientId,
+				name: client.clientName ?? client.clientId,
+			},
+			scopes: resolvedScopes,
 		},
-		scopes: resolvedScopes,
-	})
+		{
+			headers: createSetCookieHeaders([clearResetVerificationCookie]),
+		},
+	)
 }
 
 export async function handleAuthorizeRequest(
@@ -473,13 +685,9 @@ export async function handleAuthorizeRequest(
 		if (wantsJson(request)) {
 			return jsonResponse(
 				{ ok: true, redirectTo },
-				setCookie
-					? {
-							headers: {
-								'Set-Cookie': setCookie,
-							},
-						}
-					: undefined,
+				{
+					headers: createSetCookieHeaders([setCookie]),
+				},
 			)
 		}
 

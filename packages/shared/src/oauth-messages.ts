@@ -3,12 +3,3 @@ export const invalidRedirectUriMessage =
 
 export const invalidClientIdMismatchMessage =
 	'Invalid client. The clientId provided does not match to this client.'
-
-export function canResetStoredClientForMessage(
-	message: string | null | undefined,
-) {
-	return (
-		message === invalidRedirectUriMessage ||
-		message === invalidClientIdMismatchMessage
-	)
-}
