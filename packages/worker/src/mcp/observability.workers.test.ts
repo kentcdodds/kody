@@ -132,6 +132,52 @@ test('ui_save_app rejects invalid serverCode before persistence', async () => {
 	).rejects.toThrow('serverCode must export class App extends DurableObject')
 })
 
+test('ui_save_app update rejects invalid existing serverCode even when omitted', async () => {
+	const handler = capabilityMap['ui_save_app'].handler
+	await expect(
+		handler(
+			{
+				app_id: 'app-1',
+				title: 'Updated title',
+			},
+			{
+				env: {
+					APP_DB: {
+						prepare(_query: string) {
+							return {
+								bind() {
+									return {
+										first: async () => ({
+											id: 'app-1',
+											user_id: 'user-1',
+											title: 'Observed app',
+											description: 'Observation test app.',
+											client_code: '<main><h1>Observed app</h1></main>',
+											server_code: 'export const nope = 1',
+											server_code_id: 'server-code-1',
+											parameters: null,
+											hidden: 0,
+											created_at: '2026-04-13T00:00:00.000Z',
+											updated_at: '2026-04-13T00:00:00.000Z',
+										}),
+									}
+								},
+							}
+						},
+					},
+				} as unknown as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+					},
+				}),
+			},
+		),
+	).rejects.toThrow('serverCode must export class App extends DurableObject')
+})
+
 test('logMcpEvent reports failure without throwing when Sentry is off', () => {
 	const originalInfo = console.info
 	console.info = () => {}
