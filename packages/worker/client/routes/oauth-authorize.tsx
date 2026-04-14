@@ -224,6 +224,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			(canResetStoredClientForMessage(queryError) ||
 				canResetStoredClientForMessage(message?.text)) &&
 			!resetCompleted
+		const showAuthorizeForm = !resetCompleted
 		const actionsDisabled =
 			status !== 'ready' || Boolean(submittingDecision) || isSessionLoading
 		const resetClientDisabled =
@@ -266,7 +267,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						>
 							Signed in as {sessionEmail}
 						</p>
-						<p css={descriptionCss}>Approve to continue with this account.</p>
+						<p css={descriptionCss}>
+							{resetCompleted
+								? 'Start the connection again from your client to continue with this account.'
+								: 'Approve to continue with this account.'}
+						</p>
 					</section>
 				) : null}
 				{status === 'loading' ? (
@@ -304,59 +309,61 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						) : null}
 					</section>
 				) : null}
-				<form
-					css={{
-						...cardCss,
-						opacity: formReady ? 1 : 0.7,
-					}}
-					on={{ submit: handleSubmit }}
-				>
-					{!isLoggedIn && isSessionReady ? (
-						<>
-							<label css={fieldCss}>
-								<span css={fieldLabelCss}>Email</span>
-								<input
-									type="email"
-									name="email"
-									required
-									autoComplete="email"
-									placeholder="you@example.com"
-									disabled={actionsDisabled}
-									css={inputCss}
-								/>
-							</label>
-							<label css={fieldCss}>
-								<span css={fieldLabelCss}>Password</span>
-								<input
-									type="password"
-									name="password"
-									required
-									autoComplete="current-password"
-									placeholder="Enter your password"
-									disabled={actionsDisabled}
-									css={inputCss}
-								/>
-							</label>
-						</>
-					) : null}
-					<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
-						<button
-							type="submit"
-							disabled={actionsDisabled}
-							css={primaryButtonCss}
-						>
-							{authorizeLabel}
-						</button>
-						<button
-							type="button"
-							disabled={actionsDisabled}
-							on={{ click: () => submitDecision('deny') }}
-							css={secondaryButtonCss}
-						>
-							Deny
-						</button>
-					</div>
-				</form>
+				{showAuthorizeForm ? (
+					<form
+						css={{
+							...cardCss,
+							opacity: formReady ? 1 : 0.7,
+						}}
+						on={{ submit: handleSubmit }}
+					>
+						{!isLoggedIn && isSessionReady ? (
+							<>
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Email</span>
+									<input
+										type="email"
+										name="email"
+										required
+										autoComplete="email"
+										placeholder="you@example.com"
+										disabled={actionsDisabled}
+										css={inputCss}
+									/>
+								</label>
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Password</span>
+									<input
+										type="password"
+										name="password"
+										required
+										autoComplete="current-password"
+										placeholder="Enter your password"
+										disabled={actionsDisabled}
+										css={inputCss}
+									/>
+								</label>
+							</>
+						) : null}
+						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+							<button
+								type="submit"
+								disabled={actionsDisabled}
+								css={primaryButtonCss}
+							>
+								{authorizeLabel}
+							</button>
+							<button
+								type="button"
+								disabled={actionsDisabled}
+								on={{ click: () => submitDecision('deny') }}
+								css={secondaryButtonCss}
+							>
+								Deny
+							</button>
+						</div>
+					</form>
+				) : null}
 				<a href="/" css={mutedLinkCss}>
 					Back home
 				</a>
