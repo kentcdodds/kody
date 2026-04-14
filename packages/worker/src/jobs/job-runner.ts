@@ -62,6 +62,10 @@ import * as userModule from './user-job.js'
 const BaseJob = userModule.Job
 const reservedMethodNames = new Set([
 	'fetch',
+	'alarm',
+	'webSocketMessage',
+	'webSocketClose',
+	'webSocketError',
 	'__kody_resetStorage',
 	'__kody_exportStorage',
 	'__kody_invokeUserMethod',
@@ -150,7 +154,8 @@ export class ${jobExecEntrypointName} extends WorkerEntrypoint {
 				return this.env.JOB.callJobRpc(methodName, args)
 			},
 		}
-		${input.code}
+		const __kodyUserCode = (${input.code})
+		return await __kodyUserCode(params)
 	}
 }
 	`.trim()
@@ -361,8 +366,7 @@ class JobRunnerBase extends DurableObject<Env> {
 			serverCode: input.serverCode,
 			serverCodeId: input.serverCodeId,
 			methodName: input.methodName?.trim() || existing.methodName || 'run',
-			killSwitchEnabled:
-				input.killSwitchEnabled ?? existing.killSwitchEnabled,
+			killSwitchEnabled: input.killSwitchEnabled ?? existing.killSwitchEnabled,
 		}
 		await this.writeConfig(nextConfig)
 		if (
@@ -547,7 +551,8 @@ class JobRunnerBase extends DurableObject<Env> {
 	}
 
 	private async readConfig(jobId: string) {
-		const existing = await this.ctx.storage.get<JobRunnerConfig>(configStorageKey)
+		const existing =
+			await this.ctx.storage.get<JobRunnerConfig>(configStorageKey)
 		return existing ?? defaultConfig(jobId)
 	}
 
@@ -657,4 +662,3 @@ export function jobRunnerRpc(env: Env, jobId: string) {
 		}>
 	}
 }
-

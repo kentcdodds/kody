@@ -1,11 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import {
-	configureJobRunner,
-	jobRunnerRpc,
-	JobRunner,
-} from './job-runner.ts'
+import { configureJobRunner, jobRunnerRpc, JobRunner } from './job-runner.ts'
 
 test('facet job runner preserves isolated sqlite state per job', async () => {
 	await configureJobRunner({

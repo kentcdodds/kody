@@ -1,10 +1,7 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { parseMcpCallerContext } from '#mcp/context.ts'
 import { exports as workerExports } from 'cloudflare:workers'
-import {
-	applyExecutionOutcome,
-	processDueJobs,
-} from './process-due-jobs.ts'
+import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import {
 	configureJobRunner,
 	deleteJobRunner,
@@ -120,39 +117,32 @@ function resolveUpdatedShape(input: {
 	body: JobUpdateInput
 }) {
 	const nextKind = input.body.kind ?? input.existing.kind
+	const kindChanged =
+		input.body.kind !== undefined && input.body.kind !== input.existing.kind
 	let nextCode =
 		input.body.code === undefined
-			? input.existing.code
+			? kindChanged && nextKind === 'facet'
+				? undefined
+				: input.existing.code
 			: input.body.code === null
 				? undefined
 				: normalizeJobCode(input.body.code)
 	let nextServerCode =
 		input.body.serverCode === undefined
-			? input.existing.serverCode
+			? kindChanged && nextKind === 'codemode'
+				? undefined
+				: input.existing.serverCode
 			: input.body.serverCode === null
 				? undefined
 				: normalizeJobServerCode(input.body.serverCode)
 	let nextMethodName =
 		input.body.methodName === undefined
-			? input.existing.methodName
+			? kindChanged && nextKind === 'codemode'
+				? undefined
+				: input.existing.methodName
 			: input.body.methodName === null
 				? undefined
 				: normalizeOptionalMethodName(input.body.methodName)
-	const kindChanged =
-		input.body.kind !== undefined && input.body.kind !== input.existing.kind
-
-	if (kindChanged) {
-		if (nextKind === 'codemode') {
-			if (input.body.serverCode === undefined) {
-				nextServerCode = undefined
-			}
-			if (input.body.methodName === undefined) {
-				nextMethodName = undefined
-			}
-		} else if (input.body.code === undefined) {
-			nextCode = undefined
-		}
-	}
 
 	if (nextKind === 'codemode') {
 		if (!nextCode) {
@@ -185,7 +175,7 @@ function resolveUpdatedShape(input: {
 			nextServerCode !== input.existing.serverCode ||
 			input.existing.kind !== 'facet'
 				? crypto.randomUUID()
-				: input.existing.serverCodeId ?? crypto.randomUUID(),
+				: (input.existing.serverCodeId ?? crypto.randomUUID()),
 		methodName: nextMethodName,
 	}
 }
@@ -376,8 +366,7 @@ export async function updateJob(input: {
 			userId: callerContext.user.userId,
 			job: existing,
 			callerContextJson:
-				existingRow.callerContextJson ??
-				serializeCallerContext(callerContext),
+				existingRow.callerContextJson ?? serializeCallerContext(callerContext),
 		}).catch(() => {})
 		await syncRunnerForJob({
 			env: input.env,
@@ -425,9 +414,8 @@ export async function executeJobOnce(input: {
 				logs: [],
 			}
 		} else if (input.job.kind === 'codemode') {
-			const { runCodemodeWithRegistry } = await import(
-				'#mcp/run-codemode-registry.ts'
-			)
+			const { runCodemodeWithRegistry } =
+				await import('#mcp/run-codemode-registry.ts')
 			const result = await runCodemodeWithRegistry(
 				input.env,
 				input.callerContext,
@@ -499,7 +487,16 @@ export async function runJobNow(input: {
 		job: row.record,
 		callerContext: activeCallerContext,
 	})
-	const updated = applyExecutionOutcome(row.record, outcome)
+	const updated =
+		row.record.schedule.type === 'once'
+			? applyExecutionOutcome(row.record, outcome)
+			: applyExecutionOutcome(row.record, outcome, {
+					nextRunAt: computeNextRunAt({
+						schedule: row.record.schedule,
+						timezone: row.record.timezone,
+						from: outcome.finishedAt,
+					}),
+				})
 	if (row.record.schedule.type === 'once') {
 		await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
 		await deleteJobRunner({
@@ -574,10 +571,7 @@ export async function runDueJobsForUser(input: {
 	return dueRows.length
 }
 
-export async function getNextRunnableJob(input: {
-	env: Env
-	userId: string
-}) {
+export async function getNextRunnableJob(input: { env: Env; userId: string }) {
 	const row = await getNextRunnableJobRow(input.env.APP_DB, input.userId)
 	return row?.record ?? null
 }

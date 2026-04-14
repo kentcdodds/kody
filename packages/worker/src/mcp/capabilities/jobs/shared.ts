@@ -90,7 +90,9 @@ export const jobUpsertInputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Existing job id to update in place. Omit to create a new job.'),
+			.describe(
+				'Existing job id to update in place. Omit to create a new job.',
+			),
 		name: z
 			.string()
 			.min(1)
@@ -104,7 +106,9 @@ export const jobUpsertInputSchema = z
 			.min(1)
 			.nullable()
 			.optional()
-			.describe('Codemode async arrow function source. Use only for codemode jobs.'),
+			.describe(
+				'Codemode async arrow function source. Use only for codemode jobs.',
+			),
 		serverCode: z
 			.string()
 			.min(1)
@@ -140,7 +144,9 @@ export const jobUpsertInputSchema = z
 		killSwitchEnabled: z
 			.boolean()
 			.optional()
-			.describe('Emergency stop that blocks execution without deleting the job.'),
+			.describe(
+				'Emergency stop that blocks execution without deleting the job.',
+			),
 	})
 	.superRefine((value, ctx) => {
 		if (value.id !== undefined) return

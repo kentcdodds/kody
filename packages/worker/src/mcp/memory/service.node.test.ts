@@ -389,24 +389,21 @@ test('memory service rejects invalid source uris and tolerates missing stored va
 		}),
 	).rejects.toThrow('Memory source_uris entries must be valid URLs.')
 
-	testDb.memories.set(
-		'legacy-memory',
-		{
-			id: 'legacy-memory',
-			user_id: 'user-123',
-			category: 'profile',
-			status: 'active',
-			subject: 'Legacy memory',
-			summary: 'Stored before source URIs existed.',
-			details: '',
-			tags_json: '["legacy"]',
-			dedupe_key: null,
-			created_at: '2026-01-01T00:00:00.000Z',
-			updated_at: '2026-01-01T00:00:00.000Z',
-			last_accessed_at: null,
-			deleted_at: null,
-		} as unknown as McpMemoryRow,
-	)
+	testDb.memories.set('legacy-memory', {
+		id: 'legacy-memory',
+		user_id: 'user-123',
+		category: 'profile',
+		status: 'active',
+		subject: 'Legacy memory',
+		summary: 'Stored before source URIs existed.',
+		details: '',
+		tags_json: '["legacy"]',
+		dedupe_key: null,
+		created_at: '2026-01-01T00:00:00.000Z',
+		updated_at: '2026-01-01T00:00:00.000Z',
+		last_accessed_at: null,
+		deleted_at: null,
+	} as unknown as McpMemoryRow)
 
 	const loaded = await getMemory({
 		env: { APP_DB: testDb.db },

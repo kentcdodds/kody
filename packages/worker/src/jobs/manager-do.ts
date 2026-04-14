@@ -1,8 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { getNextRunnableJob } from './service.ts'
-import { runDueJobsForUser } from './service.ts'
+import { getNextRunnableJob, runDueJobsForUser } from './service.ts'
 
 const userIdStorageKey = 'user-id'
 

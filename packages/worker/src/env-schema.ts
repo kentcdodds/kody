@@ -181,10 +181,7 @@ export const EnvSchema = object({
 			if (value) {
 				return { value: value as DurableObjectNamespace }
 			}
-			return fail(
-				'Missing JOB_RUNNER binding for facet jobs.',
-				context.path,
-			)
+			return fail('Missing JOB_RUNNER binding for facet jobs.', context.path)
 		},
 	),
 	APP_BASE_URL: optionalUrlStringSchema,

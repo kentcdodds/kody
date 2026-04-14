@@ -19,7 +19,6 @@ function createDatabase() {
 		['jobs', []],
 	])
 
-	const toRecord = (value: unknown) => value as Record<string, unknown>
 	const clone = <T>(value: T): T => structuredClone(value)
 
 	function getTable(name: string) {
@@ -85,8 +84,7 @@ function createDatabase() {
 								return selectOne(
 									'secret_entries',
 									(row) =>
-										row['bucket_id'] === params[0] &&
-										row['name'] === params[1],
+										row['bucket_id'] === params[0] && row['name'] === params[1],
 								) as T | null
 							}
 							if (query.includes('FROM value_buckets')) {
@@ -102,8 +100,7 @@ function createDatabase() {
 								return selectOne(
 									'value_entries',
 									(row) =>
-										row['bucket_id'] === params[0] &&
-										row['name'] === params[1],
+										row['bucket_id'] === params[0] && row['name'] === params[1],
 								) as T | null
 							}
 							if (query.includes('FROM jobs WHERE id = ? AND user_id = ?')) {
@@ -142,7 +139,10 @@ function createDatabase() {
 									) as T[],
 								}
 							}
-							if (query.includes('FROM jobs') && query.includes('next_run_at <= ?')) {
+							if (
+								query.includes('FROM jobs') &&
+								query.includes('next_run_at <= ?')
+							) {
 								return {
 									results: selectAll(
 										'jobs',
@@ -158,7 +158,10 @@ function createDatabase() {
 									) as T[],
 								}
 							}
-							if (query.includes('FROM value_entries') && query.includes('ORDER BY')) {
+							if (
+								query.includes('FROM value_entries') &&
+								query.includes('ORDER BY')
+							) {
 								return {
 									results: selectAll(
 										'value_entries',
@@ -179,7 +182,10 @@ function createDatabase() {
 										) as T[],
 								}
 							}
-							if (query.includes('FROM secret_entries') && query.includes('ORDER BY')) {
+							if (
+								query.includes('FROM secret_entries') &&
+								query.includes('ORDER BY')
+							) {
 								return {
 									results: selectAll(
 										'secret_entries',
@@ -313,7 +319,8 @@ function createDatabase() {
 								upsert(
 									'jobs',
 									(existing) =>
-										existing['id'] === row.id && existing['user_id'] === row.user_id,
+										existing['id'] === row.id &&
+										existing['user_id'] === row.user_id,
 									row,
 								)
 								return { meta: { changes: 1, last_row_id: 0 } }
@@ -355,7 +362,8 @@ function createDatabase() {
 								upsert(
 									'jobs',
 									(existing) =>
-										existing['id'] === row.id && existing['user_id'] === row.user_id,
+										existing['id'] === row.id &&
+										existing['user_id'] === row.user_id,
 									row,
 								)
 								return { meta: { changes: 1, last_row_id: 0 } }
@@ -484,18 +492,23 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 	)
 
 	const executeSpy = vi
-		.spyOn(await import('#mcp/run-codemode-registry.ts'), 'runCodemodeWithRegistry')
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
 		.mockImplementation(async (_env, persistedContext, code, params) => {
-			const resolvedSecret = await (await import('#mcp/secrets/service.ts')).resolveSecret(
-				{
-					env,
-					userId: persistedContext.user?.userId ?? '',
-					name: 'apiToken',
-					scope: 'app',
-					storageContext: persistedContext.storageContext,
-				},
-			)
-			const resolvedValue = await (await import('#mcp/values/service.ts')).getValue({
+			const resolvedSecret = await (
+				await import('#mcp/secrets/service.ts')
+			).resolveSecret({
+				env,
+				userId: persistedContext.user?.userId ?? '',
+				name: 'apiToken',
+				scope: 'app',
+				storageContext: persistedContext.storageContext,
+			})
+			const resolvedValue = await (
+				await import('#mcp/values/service.ts')
+			).getValue({
 				env,
 				userId: persistedContext.user?.userId ?? '',
 				name: 'projectId',
@@ -574,7 +587,10 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 	}
 
 	const executeSpy = vi
-		.spyOn(await import('#mcp/run-codemode-registry.ts'), 'runCodemodeWithRegistry')
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
 		.mockResolvedValue({
 			error: createCapabilitySecretAccessDeniedMessage(
 				'apiToken',

@@ -44,8 +44,12 @@ export const jobUpsertCapability = defineDomainCapability(
 									? { params: args.params }
 									: {}),
 								schedule: args.schedule!,
-								...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
-								...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
+								...(args.timezone !== undefined
+									? { timezone: args.timezone }
+									: {}),
+								...(args.enabled !== undefined
+									? { enabled: args.enabled }
+									: {}),
 								...(args.killSwitchEnabled !== undefined
 									? { killSwitchEnabled: args.killSwitchEnabled }
 									: {}),
@@ -69,8 +73,12 @@ export const jobUpsertCapability = defineDomainCapability(
 								...(args.schedule !== undefined
 									? { schedule: args.schedule }
 									: {}),
-								...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
-								...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
+								...(args.timezone !== undefined
+									? { timezone: args.timezone }
+									: {}),
+								...(args.enabled !== undefined
+									? { enabled: args.enabled }
+									: {}),
 								...(args.killSwitchEnabled !== undefined
 									? { killSwitchEnabled: args.killSwitchEnabled }
 									: {}),

@@ -89,19 +89,17 @@ function mapRow(row: Record<string, unknown>): JobRow {
 			row['params_json'] == null ? null : String(row['params_json']),
 			undefined,
 		),
-		schedule: parseJson<JobRecord['schedule']>(
-			String(row['schedule_json']),
-			{
-				type: 'once',
-				runAt: String(row['next_run_at']),
-			},
-		),
+		schedule: parseJson<JobRecord['schedule']>(String(row['schedule_json']), {
+			type: 'once',
+			runAt: String(row['next_run_at']),
+		}),
 		timezone: String(row['timezone']),
 		enabled: Number(row['enabled']) === 1,
 		killSwitchEnabled: Number(row['kill_switch_enabled']) === 1,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
-		lastRunAt: row['last_run_at'] == null ? undefined : String(row['last_run_at']),
+		lastRunAt:
+			row['last_run_at'] == null ? undefined : String(row['last_run_at']),
 		lastRunStatus:
 			row['last_run_status'] == null
 				? undefined
@@ -109,7 +107,9 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		lastRunError:
 			row['last_run_error'] == null ? undefined : String(row['last_run_error']),
 		lastDurationMs:
-			row['last_duration_ms'] == null ? undefined : Number(row['last_duration_ms']),
+			row['last_duration_ms'] == null
+				? undefined
+				: Number(row['last_duration_ms']),
 		nextRunAt: String(row['next_run_at']),
 		runCount: Number(row['run_count']) || 0,
 		successCount: Number(row['success_count']) || 0,
@@ -268,7 +268,9 @@ export async function listJobRowsByUserId(
 	userId: string,
 ): Promise<Array<JobRow>> {
 	const { results } = await db
-		.prepare(`SELECT * FROM jobs WHERE user_id = ? ORDER BY next_run_at ASC, name ASC`)
+		.prepare(
+			`SELECT * FROM jobs WHERE user_id = ? ORDER BY next_run_at ASC, name ASC`,
+		)
 		.bind(userId)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
@@ -322,4 +324,3 @@ export async function deleteJobRow(
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
-
