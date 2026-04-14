@@ -3,7 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
-import { createJob, executeJobOnce } from './service.ts'
+import { createJob, executeJobOnce, updateJob } from './service.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -293,28 +293,27 @@ function createDatabase() {
 									id: params[0],
 									user_id: params[1],
 									name: params[2],
-									kind: params[3],
-									code: params[4],
-									server_code: params[5],
-									server_code_id: params[6],
-									method_name: params[7],
-									params_json: params[8],
-									schedule_json: params[9],
-									timezone: params[10],
-									enabled: params[11],
-									kill_switch_enabled: params[12],
-									caller_context_json: params[13],
-									created_at: params[14],
-									updated_at: params[15],
-									last_run_at: params[16],
-									last_run_status: params[17],
-									last_run_error: params[18],
-									last_duration_ms: params[19],
-									next_run_at: params[20],
-									run_count: params[21],
-									success_count: params[22],
-									error_count: params[23],
-									run_history_json: params[24],
+									code: params[3],
+									server_code: params[4],
+									server_code_id: params[5],
+									method_name: params[6],
+									params_json: params[7],
+									schedule_json: params[8],
+									timezone: params[9],
+									enabled: params[10],
+									kill_switch_enabled: params[11],
+									caller_context_json: params[12],
+									created_at: params[13],
+									updated_at: params[14],
+									last_run_at: params[15],
+									last_run_status: params[16],
+									last_run_error: params[17],
+									last_duration_ms: params[18],
+									next_run_at: params[19],
+									run_count: params[20],
+									success_count: params[21],
+									error_count: params[22],
+									run_history_json: params[23],
 								}
 								upsert(
 									'jobs',
@@ -327,37 +326,36 @@ function createDatabase() {
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const row = {
-									id: params[22],
-									user_id: params[23],
+									id: params[21],
+									user_id: params[22],
 									name: params[0],
-									kind: params[1],
-									code: params[2],
-									server_code: params[3],
-									server_code_id: params[4],
-									method_name: params[5],
-									params_json: params[6],
-									schedule_json: params[7],
-									timezone: params[8],
-									enabled: params[9],
-									kill_switch_enabled: params[10],
-									caller_context_json: params[11],
-									updated_at: params[12],
-									last_run_at: params[13],
-									last_run_status: params[14],
-									last_run_error: params[15],
-									last_duration_ms: params[16],
-									next_run_at: params[17],
-									run_count: params[18],
-									success_count: params[19],
-									error_count: params[20],
-									run_history_json: params[21],
+									code: params[1],
+									server_code: params[2],
+									server_code_id: params[3],
+									method_name: params[4],
+									params_json: params[5],
+									schedule_json: params[6],
+									timezone: params[7],
+									enabled: params[8],
+									kill_switch_enabled: params[9],
+									caller_context_json: params[10],
+									updated_at: params[11],
+									last_run_at: params[12],
+									last_run_status: params[13],
+									last_run_error: params[14],
+									last_duration_ms: params[15],
+									next_run_at: params[16],
+									run_count: params[17],
+									success_count: params[18],
+									error_count: params[19],
+									run_history_json: params[20],
 									created_at:
 										selectOne(
 											'jobs',
 											(existing) =>
-												existing['id'] === params[22] &&
-												existing['user_id'] === params[23],
-										)?.['created_at'] ?? params[12],
+												existing['id'] === params[21] &&
+												existing['user_id'] === params[22],
+										)?.['created_at'] ?? params[11],
 								}
 								upsert(
 									'jobs',
@@ -415,7 +413,6 @@ test('createJob stores a codemode job with interval support', async () => {
 		callerContext,
 		body: {
 			name: 'Deploy Worker',
-			kind: 'codemode',
 			code: 'async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
@@ -424,12 +421,184 @@ test('createJob stores a codemode job with interval support', async () => {
 		} satisfies JobCreateInput,
 	})
 
-	expect(result.kind).toBe('codemode')
 	expect(result.schedule).toEqual({
 		type: 'interval',
 		every: '15m',
 	})
 	expect(result.scheduleSummary).toBe('Runs every 15m')
+})
+
+test('updateJob can add and remove facet state without changing code', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		JOB_RUNNER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					configure: async () => ({ ok: true }),
+					deleteJob: async () => ({ ok: true }),
+				}
+			},
+		},
+	} as unknown as Env
+	const callerContext = createBaseCallerContext()
+
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Facet toggle',
+			code: 'async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+
+	const withFacet = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: created.id,
+			serverCode: `
+import { DurableObject } from 'cloudflare:workers'
+
+export class Job extends DurableObject {
+	async run(input = {}) {
+		return input
+	}
+}
+			`.trim(),
+		},
+	})
+
+	expect(withFacet.code).toBe('async () => ({ ok: true })')
+	expect(withFacet.serverCode).toContain('export class Job')
+	expect(withFacet.serverCodeId).toBeTypeOf('string')
+	expect(withFacet.methodName).toBe('run')
+
+	const withoutFacet = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: created.id,
+			serverCode: null,
+		},
+	})
+
+	expect(withoutFacet.code).toBe('async () => ({ ok: true })')
+	expect(withoutFacet.serverCode).toBeUndefined()
+	expect(withoutFacet.serverCodeId).toBeUndefined()
+	expect(withoutFacet.methodName).toBeUndefined()
+})
+
+test('executeJobOnce exposes job.call when facet state is configured', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		LOADER: {} as WorkerLoader,
+		JOB_RUNNER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					configure: async () => ({ ok: true }),
+					deleteJob: async () => ({ ok: true }),
+					callJobRpc: async (payload: {
+						methodName?: string
+						args?: Array<unknown>
+					}) => {
+						expect(payload.methodName).toBe('increment')
+						expect(payload.args).toEqual([{ step: 'deploy' }])
+						return {
+							ok: true,
+							via: 'facet',
+							step: 'deploy',
+						}
+					},
+				}
+			},
+		},
+	} as unknown as Env
+	const callerContext = createBaseCallerContext()
+
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Facet bridge',
+			code: 'async (params) => await job.call("increment", params)',
+			serverCode: `
+import { DurableObject } from 'cloudflare:workers'
+
+export class Job extends DurableObject {
+	async increment(input = {}) {
+		return input
+	}
+}
+			`.trim(),
+			params: {
+				step: 'deploy',
+			},
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+
+	const createdJob = (await import('./repo.ts')).getJobRowById(
+		db,
+		callerContext.user.userId,
+		jobView.id,
+	)
+
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockImplementation(async (_env, _persistedContext, code, params, options) => {
+			expect(code).toContain('job.call("increment", params)')
+			expect(params).toEqual({ step: 'deploy' })
+			expect(options?.helperPrelude).toContain('const job =')
+			const facetResult = await options?.additionalTools?.job_call?.({
+				methodName: 'increment',
+				args: [params],
+			})
+			return {
+				result: facetResult,
+				logs: ['job helper executed'],
+			}
+		})
+
+	try {
+		const row = await createdJob
+		if (!row) {
+			throw new Error('Expected created job row.')
+		}
+		const outcome = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: {
+				ok: true,
+				via: 'facet',
+				step: 'deploy',
+			},
+			logs: ['job helper executed'],
+		})
+	} finally {
+		executeSpy.mockRestore()
+	}
 })
 
 test('executeJobOnce preserves codemode secret and value semantics', async () => {
@@ -473,7 +642,6 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		callerContext,
 		body: {
 			name: 'Use codemode semantics',
-			kind: 'codemode',
 			code: 'async () => ({ ok: true })',
 			params: {
 				step: 'deploy',
@@ -568,7 +736,6 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 		id: 'job-1',
 		userId: callerContext.user.userId,
 		name: 'Forbidden secret access',
-		kind: 'codemode',
 		code: 'async () => null',
 		schedule: {
 			type: 'once',

@@ -3,7 +3,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { configureJobRunner, jobRunnerRpc, JobRunner } from './job-runner.ts'
 
-test('facet job runner preserves isolated sqlite state per job', async () => {
+test('job facet RPC preserves isolated sqlite state per job', async () => {
 	await configureJobRunner({
 		env,
 		jobId: 'facet-job-a',
@@ -68,33 +68,30 @@ export class Job extends DurableObject {
 	const runnerB = jobRunnerRpc(env, 'facet-job-b')
 
 	await expect(
-		runnerA.runStoredJob({
+		runnerA.callJobRpc({
 			jobId: 'facet-job-a',
-			params: { echo: 'first' },
+			methodName: 'run',
+			args: [{ echo: 'first' }],
 		}),
 	).resolves.toMatchObject({
-		result: {
-			count: 1,
-			echo: 'first',
-		},
+		count: 1,
+		echo: 'first',
 	})
 	await expect(
-		runnerA.runStoredJob({
+		runnerA.callJobRpc({
 			jobId: 'facet-job-a',
+			methodName: 'run',
 		}),
 	).resolves.toMatchObject({
-		result: {
-			count: 2,
-		},
+		count: 2,
 	})
 	await expect(
-		runnerB.runStoredJob({
+		runnerB.callJobRpc({
 			jobId: 'facet-job-b',
+			methodName: 'run',
 		}),
 	).resolves.toMatchObject({
-		result: {
-			count: 1,
-		},
+		count: 1,
 	})
 
 	const stubA = env.JOB_RUNNER.get(env.JOB_RUNNER.idFromName('facet-job-a'))
@@ -166,16 +163,15 @@ export class Job extends DurableObject {
 
 	const runner = jobRunnerRpc(env, 'facet-job-delete')
 	await expect(
-		runner.runStoredJob({
+		runner.callJobRpc({
 			jobId: 'facet-job-delete',
 			facetName: 'secondary',
-			params: { key: 'secondary-counter' },
+			methodName: 'run',
+			args: [{ key: 'secondary-counter' }],
 		}),
 	).resolves.toMatchObject({
-		result: {
-			key: 'secondary-counter',
-			count: 1,
-		},
+		key: 'secondary-counter',
+		count: 1,
 	})
 
 	await expect(
@@ -234,15 +230,14 @@ export class Job extends DurableObject {
 	})
 
 	await expect(
-		runner.runStoredJob({
+		runner.callJobRpc({
 			jobId: 'facet-job-delete',
 			facetName: 'secondary',
-			params: { key: 'secondary-counter' },
+			methodName: 'run',
+			args: [{ key: 'secondary-counter' }],
 		}),
 	).resolves.toMatchObject({
-		result: {
-			key: 'secondary-counter',
-			count: 1,
-		},
+		key: 'secondary-counter',
+		count: 1,
 	})
 })

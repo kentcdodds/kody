@@ -14,7 +14,7 @@ export const jobUpsertCapability = defineDomainCapability(
 	{
 		name: 'job_upsert',
 		description:
-			'Create a new job when id is omitted, or update an existing job when id is provided. Supports codemode jobs, facet-backed Durable Object jobs, cron schedules, interval schedules, and one-shot runs.',
+			'Create a new job when id is omitted, or update an existing job when id is provided. Jobs always run through codemode and may optionally use a facet-backed Durable Object for persistent state. Supports cron schedules, interval schedules, and one-shot runs.',
 		keywords: ['job', 'upsert', 'create', 'update', 'cron', 'interval'],
 		readOnly: false,
 		idempotent: false,
@@ -30,10 +30,7 @@ export const jobUpsertCapability = defineDomainCapability(
 							callerContext: ctx.callerContext,
 							body: {
 								name: args.name ?? '',
-								kind: args.kind!,
-								...(args.code !== undefined && args.code !== null
-									? { code: args.code }
-									: {}),
+								code: args.code ?? '',
 								...(args.serverCode !== undefined && args.serverCode !== null
 									? { serverCode: args.serverCode }
 									: {}),
@@ -61,7 +58,6 @@ export const jobUpsertCapability = defineDomainCapability(
 							body: {
 								id: args.id,
 								...(args.name !== undefined ? { name: args.name } : {}),
-								...(args.kind !== undefined ? { kind: args.kind } : {}),
 								...(args.code !== undefined ? { code: args.code } : {}),
 								...(args.serverCode !== undefined
 									? { serverCode: args.serverCode }

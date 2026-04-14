@@ -14,7 +14,6 @@ const defaultJobFacetName = 'main'
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
 const jobFacetClassExportName = 'JobFacet'
-const jobExecEntrypointName = 'JobExecWorker'
 
 type JobRunnerConfig = {
 	jobId: string
@@ -139,24 +138,6 @@ export class ${jobFacetClassExportName} extends BaseJob {
 			this,
 			Array.isArray(args) ? args : [],
 		)
-	}
-}
-	`.trim()
-}
-
-function createJobExecWorkerModule(input: { code: string }) {
-	return `
-import { WorkerEntrypoint } from 'cloudflare:workers'
-
-export class ${jobExecEntrypointName} extends WorkerEntrypoint {
-	async run(params) {
-		const job = {
-			call: (methodName, ...args) => {
-				return this.env.JOB.callJobRpc(methodName, args)
-			},
-		}
-		const __kodyUserCode = (${input.code})
-		return await __kodyUserCode(params)
 	}
 }
 	`.trim()
@@ -433,70 +414,6 @@ class JobRunnerBase extends DurableObject<Env> {
 		}
 	}
 
-	async runStoredJob(input: {
-		jobId: string
-		facetName?: string | null
-		methodName?: string | null
-		params?: Record<string, unknown>
-	}) {
-		const config = await this.readConfig(input.jobId)
-		const methodName = input.methodName?.trim() || config.methodName || 'run'
-		const result = await this.callJobRpc({
-			jobId: input.jobId,
-			facetName: input.facetName ?? defaultJobFacetName,
-			methodName,
-			args: input.params === undefined ? [] : [input.params],
-		})
-		return {
-			ok: true,
-			jobId: input.jobId,
-			methodName,
-			result,
-		}
-	}
-
-	async execServer(input: {
-		jobId: string
-		facetName?: string | null
-		code: string
-		params?: Record<string, unknown>
-	}) {
-		const facetName = input.facetName?.trim() || defaultJobFacetName
-		await this.getFacetStub(input.jobId, facetName)
-		const config = await this.readConfig(input.jobId)
-		const execWorker = this.env.APP_LOADER.load({
-			compatibilityDate: '2026-04-13',
-			compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
-			mainModule: 'exec-entry.js',
-			modules: {
-				'exec-entry.js': createJobExecWorkerModule({
-					code: input.code,
-				}),
-			},
-			env: {
-				JOB: this.ctx.exports.JobFacetBridge({
-					props: {
-						jobId: input.jobId,
-						userId: config.userId,
-						baseUrl: config.baseUrl || 'http://internal.invalid',
-						storageContext: config.storageContext,
-						facetName,
-					},
-				}),
-			},
-			globalOutbound: null,
-		}).getEntrypoint(jobExecEntrypointName) as unknown as {
-			run: (params?: Record<string, unknown>) => Promise<unknown>
-		}
-		const result = await execWorker.run(input.params ?? {})
-		return {
-			ok: true,
-			jobId: input.jobId,
-			facetName,
-			result,
-		}
-	}
-
 	async callJobRpc(input: {
 		jobId: string
 		facetName?: string | null
@@ -661,28 +578,6 @@ export function jobRunnerRpc(env: Env, jobId: string) {
 			jobId: string
 			facetName: string
 			export: JobStorageExport
-		}>
-		runStoredJob: (payload: {
-			jobId: string
-			facetName?: string | null
-			methodName?: string | null
-			params?: Record<string, unknown>
-		}) => Promise<{
-			ok: true
-			jobId: string
-			methodName: string
-			result: unknown
-		}>
-		execServer: (payload: {
-			jobId: string
-			facetName?: string | null
-			code: string
-			params?: Record<string, unknown>
-		}) => Promise<{
-			ok: true
-			jobId: string
-			facetName: string
-			result: unknown
 		}>
 		callJobRpc: (payload: {
 			jobId: string

@@ -40,8 +40,8 @@ then paste code here.
 
 Jobs: use \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`, and
 \`job_run_now\` to manage one-shot, interval, or cron jobs for the signed-in
-user. Jobs support both codemode execution and facet-backed Durable Object
-execution.
+user. Jobs always run through codemode and may optionally use a facet-backed
+Durable Object for persistent state.
 
 Sandbox surface:
 - \`codemode\`: \`(args) => Promise<unknown>\` per capability.
@@ -145,7 +145,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						callerContext,
 						code,
 						params,
-						agent.getLoopbackExports(),
+						{
+							executorExports: agent.getLoopbackExports(),
+						},
 					),
 			)
 			const durationMs = Math.round(performance.now() - startedAt)

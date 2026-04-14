@@ -263,7 +263,9 @@ function createGeneratedUiExecuteHandler(env: Env) {
 				}),
 				body.data.code,
 				Object.keys(mergedParams).length > 0 ? mergedParams : undefined,
-				workerExports,
+				{
+					executorExports: workerExports,
+				},
 			)
 			if (result.error) {
 				const errorDetails = getExecutionErrorDetails(result.error)

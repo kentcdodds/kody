@@ -45,13 +45,14 @@ Kody has one persisted jobs system per user:
 - **`job_run_now`** — trigger a job immediately without changing its normal
   schedule
 
-Jobs support two execution kinds:
+Jobs always run through codemode:
 
-- **`codemode`** jobs store async arrow function source and run through the same
+- **`code`** stores the async arrow function source and runs through the same
   execute/capability runtime as normal `execute`
-- **`facet`** jobs store `serverCode` that exports
-  **`class Job extends DurableObject`** and run through an isolated per-job
-  facet Durable Object with its own SQLite state
+- **`serverCode`** is optional and can provide a facet-backed Durable Object
+  backend with isolated per-job SQLite state
+- When `serverCode` is present, codemode can call the facet through
+  **`job.call(methodName, ...args)`**
 
 Schedules support:
 

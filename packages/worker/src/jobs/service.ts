@@ -59,7 +59,7 @@ function normalizeJobName(name: string) {
 function normalizeJobCode(code: string) {
 	const trimmed = code.trim()
 	if (!trimmed) {
-		throw new Error('Codemode jobs require non-empty code.')
+		throw new Error('Jobs require non-empty code.')
 	}
 	return trimmed
 }
@@ -67,7 +67,7 @@ function normalizeJobCode(code: string) {
 function normalizeJobServerCode(serverCode: string) {
 	const trimmed = serverCode.trim()
 	if (!trimmed) {
-		throw new Error('Facet jobs require non-empty serverCode.')
+		throw new Error('Jobs with facet state require non-empty serverCode.')
 	}
 	return trimmed
 }
@@ -86,27 +86,39 @@ function normalizeOptionalMethodName(
 	return trimmed && trimmed.length > 0 ? trimmed : fallback
 }
 
+function hasFacetState(job: Pick<JobRecord, 'serverCode'>) {
+	return typeof job.serverCode === 'string' && job.serverCode.trim().length > 0
+}
+
+function createJobHelperPrelude() {
+	return `
+const job = {
+  call: async (methodName, ...args) => {
+    return await codemode.job_call({
+      methodName,
+      args,
+    });
+  },
+};
+	`.trim()
+}
+
 function resolveCreateShape(input: JobCreateInput) {
-	if (input.kind === 'codemode') {
-		if (input.serverCode !== undefined) {
-			throw new Error('Codemode jobs do not accept serverCode.')
-		}
+	const code = normalizeJobCode(input.code)
+	if (input.serverCode === undefined) {
 		if (input.methodName !== undefined && input.methodName !== null) {
-			throw new Error('Codemode jobs do not accept methodName.')
+			throw new Error('Jobs without serverCode do not accept methodName.')
 		}
 		return {
-			code: normalizeJobCode(input.code ?? ''),
+			code,
 			serverCode: undefined,
 			serverCodeId: undefined,
 			methodName: undefined,
 		}
 	}
-	if (input.code !== undefined) {
-		throw new Error('Facet jobs do not accept code.')
-	}
 	return {
-		code: undefined,
-		serverCode: normalizeJobServerCode(input.serverCode ?? ''),
+		code,
+		serverCode: normalizeJobServerCode(input.serverCode),
 		serverCodeId: crypto.randomUUID(),
 		methodName: normalizeOptionalMethodName(input.methodName),
 	}
@@ -116,43 +128,37 @@ function resolveUpdatedShape(input: {
 	existing: JobRecord
 	body: JobUpdateInput
 }) {
-	const nextKind = input.body.kind ?? input.existing.kind
-	const kindChanged =
-		input.body.kind !== undefined && input.body.kind !== input.existing.kind
 	let nextCode =
 		input.body.code === undefined
-			? kindChanged && nextKind === 'facet'
-				? undefined
-				: input.existing.code
+			? input.existing.code
 			: input.body.code === null
 				? undefined
 				: normalizeJobCode(input.body.code)
 	let nextServerCode =
 		input.body.serverCode === undefined
-			? kindChanged && nextKind === 'codemode'
-				? undefined
-				: input.existing.serverCode
+			? input.existing.serverCode
 			: input.body.serverCode === null
 				? undefined
 				: normalizeJobServerCode(input.body.serverCode)
 	let nextMethodName =
 		input.body.methodName === undefined
-			? kindChanged && nextKind === 'codemode'
+			? nextServerCode === undefined
 				? undefined
-				: input.existing.methodName
+				: input.existing.serverCode === undefined
+					? undefined
+					: input.existing.methodName
 			: input.body.methodName === null
 				? undefined
 				: normalizeOptionalMethodName(input.body.methodName)
 
-	if (nextKind === 'codemode') {
-		if (!nextCode) {
-			throw new Error('Codemode jobs require code.')
-		}
-		if (nextServerCode !== undefined || nextMethodName !== undefined) {
-			throw new Error('Codemode jobs cannot store facet fields.')
+	if (!nextCode) {
+		throw new Error('Jobs require code.')
+	}
+	if (nextServerCode === undefined) {
+		if (nextMethodName !== undefined) {
+			throw new Error('Jobs without serverCode cannot store methodName.')
 		}
 		return {
-			kind: nextKind,
 			code: nextCode,
 			serverCode: undefined,
 			serverCodeId: undefined,
@@ -160,20 +166,12 @@ function resolveUpdatedShape(input: {
 		}
 	}
 
-	if (nextCode !== undefined) {
-		throw new Error('Facet jobs cannot store codemode code.')
-	}
-	if (!nextServerCode) {
-		throw new Error('Facet jobs require serverCode.')
-	}
 	nextMethodName = normalizeOptionalMethodName(nextMethodName)
 	return {
-		kind: nextKind,
-		code: undefined,
+		code: nextCode,
 		serverCode: nextServerCode,
 		serverCodeId:
-			nextServerCode !== input.existing.serverCode ||
-			input.existing.kind !== 'facet'
+			nextServerCode !== input.existing.serverCode
 				? crypto.randomUUID()
 				: (input.existing.serverCodeId ?? crypto.randomUUID()),
 		methodName: nextMethodName,
@@ -185,7 +183,7 @@ async function syncRunnerForJob(input: {
 	job: JobRecord
 	callerContext: PersistedJobCallerContext | null
 }) {
-	if (input.job.kind !== 'facet') {
+	if (!hasFacetState(input.job)) {
 		await deleteJobRunner({
 			env: input.env,
 			jobId: input.job.id,
@@ -194,7 +192,7 @@ async function syncRunnerForJob(input: {
 	}
 	if (!input.callerContext?.user?.userId) {
 		throw new Error(
-			'Facet jobs require persisted caller context with an authenticated user.',
+			'Jobs with facet state require persisted caller context with an authenticated user.',
 		)
 	}
 	await configureJobRunner({
@@ -208,6 +206,34 @@ async function syncRunnerForJob(input: {
 		methodName: input.job.methodName,
 		killSwitchEnabled: input.job.killSwitchEnabled,
 	})
+}
+
+function createJobCodemodeTools(input: { env: Env; job: JobRecord }) {
+	if (!hasFacetState(input.job)) {
+		return undefined
+	}
+	return {
+		job_call: async (args: unknown) => {
+			const payload =
+				typeof args === 'object' && args !== null
+					? (args as {
+							methodName?: unknown
+							args?: unknown
+						})
+					: {}
+			const methodName =
+				typeof payload.methodName === 'string' ? payload.methodName.trim() : ''
+			if (!methodName) {
+				throw new Error('job.call requires a non-empty method name.')
+			}
+			const methodArgs = Array.isArray(payload.args) ? payload.args : []
+			return await jobRunnerRpc(input.env, input.job.id).callJobRpc({
+				jobId: input.job.id,
+				methodName,
+				args: methodArgs,
+			})
+		},
+	}
 }
 
 export async function createJob(input: {
@@ -225,7 +251,6 @@ export async function createJob(input: {
 		id: crypto.randomUUID(),
 		userId: callerContext.user.userId,
 		name: normalizeJobName(input.body.name),
-		kind: input.body.kind,
 		code: shape.code,
 		serverCode: shape.serverCode,
 		serverCodeId: shape.serverCodeId,
@@ -325,7 +350,6 @@ export async function updateJob(input: {
 			input.body.name === undefined
 				? existing.name
 				: normalizeJobName(input.body.name),
-		kind: shape.kind,
 		code: shape.code,
 		serverCode: shape.serverCode,
 		serverCodeId: shape.serverCodeId,
@@ -413,37 +437,30 @@ export async function executeJobOnce(input: {
 					'Job caller context is missing. Re-save the job to refresh its execution context.',
 				logs: [],
 			}
-		} else if (input.job.kind === 'codemode') {
+		} else {
 			const { runCodemodeWithRegistry } =
 				await import('#mcp/run-codemode-registry.ts')
+			const usesFacet = hasFacetState(input.job)
 			const result = await runCodemodeWithRegistry(
 				input.env,
 				input.callerContext,
-				input.job.code!,
+				input.job.code,
 				input.job.params,
-				workerExports,
+				{
+					executorExports: workerExports,
+					additionalTools: createJobCodemodeTools({
+						env: input.env,
+						job: input.job,
+					}),
+					helperPrelude: usesFacet ? createJobHelperPrelude() : undefined,
+				},
 			)
-			execution = result.error
-				? {
-						ok: false,
-						error: formatJobError(result.error),
-						logs: result.logs ?? [],
-					}
-				: {
-						ok: true,
-						result: result.result,
-						logs: result.logs ?? [],
-					}
-		} else {
-			const result = await jobRunnerRpc(input.env, input.job.id).runStoredJob({
-				jobId: input.job.id,
-				methodName: input.job.methodName,
-				params: input.job.params,
-			})
 			execution = {
-				ok: true,
-				result: result.result,
-				logs: [],
+				ok: !result.error,
+				...(result.error
+					? { error: formatJobError(result.error) }
+					: { result: result.result }),
+				logs: result.logs ?? [],
 			}
 		}
 	} catch (error) {
@@ -475,7 +492,7 @@ export async function runJobNow(input: {
 	const activeCallerContext = input.callerContext
 		? requirePersistableJobCallerContext(input.callerContext)
 		: row.callerContext
-	if (row.record.kind === 'facet') {
+	if (hasFacetState(row.record)) {
 		await syncRunnerForJob({
 			env: input.env,
 			job: row.record,
@@ -538,7 +555,7 @@ export async function runDueJobsForUser(input: {
 		executeJob: async (job) => {
 			const row = dueRows.find((candidate) => candidate.record.id === job.id)
 			const callerContext = row?.callerContext ?? null
-			if (job.kind === 'facet') {
+			if (hasFacetState(job)) {
 				await syncRunnerForJob({
 					env: input.env,
 					job,

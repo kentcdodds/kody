@@ -27,6 +27,11 @@ import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
 
+type AdditionalCodemodeTools = Record<
+	string,
+	(args: unknown) => Promise<unknown>
+>
+
 export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -36,13 +41,21 @@ export async function buildCodemodeFns(
 			capabilityName: string,
 		) => Promise<string>
 		trackSecretInputValue?: (value: string) => void
+		additionalTools?: AdditionalCodemodeTools
 	},
 ) {
 	const { capabilityMap } = await getCapabilityRegistryForContext({
 		env,
 		callerContext,
 	})
-	return Object.fromEntries(
+	const additionalTools = options?.additionalTools ?? {}
+	for (const name of Object.keys(additionalTools)) {
+		if (capabilityMap[name]) {
+			throw new Error(`Codemode helper "${name}" collides with a capability.`)
+		}
+	}
+	return {
+		...Object.fromEntries(
 		Object.values(capabilityMap).map((capability) => [
 			capability.name,
 			async (args: unknown) => {
@@ -70,7 +83,9 @@ export async function buildCodemodeFns(
 				})
 			},
 		]),
-	)
+		),
+		...additionalTools,
+	}
 }
 
 export async function buildCodemodeProvider(
@@ -78,6 +93,7 @@ export async function buildCodemodeProvider(
 	callerContext: McpCallerContext,
 	options?: {
 		trackSecretInputValue?: (value: string) => void
+		additionalTools?: AdditionalCodemodeTools
 	},
 ): Promise<ResolvedProvider> {
 	const tools = await buildCodemodeFns(env, callerContext, options)
@@ -143,7 +159,11 @@ export async function runCodemodeWithRegistry(
 	callerContext: McpCallerContext,
 	code: string,
 	params?: Record<string, unknown>,
-	executorExports?: typeof workerExports,
+	options?: {
+		executorExports?: typeof workerExports
+		additionalTools?: AdditionalCodemodeTools
+		helperPrelude?: string
+	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
 	const { normalizeCode } = await import('@cloudflare/codemode')
@@ -153,7 +173,7 @@ export async function runCodemodeWithRegistry(
 	)
 	const executor = createExecuteExecutor({
 		env,
-		exports: executorExports ?? workerExports,
+		exports: options?.executorExports ?? workerExports,
 		gatewayProps: {
 			baseUrl: callerContext.baseUrl,
 			userId: callerContext.user?.userId ?? null,
@@ -164,6 +184,7 @@ export async function runCodemodeWithRegistry(
 		trackSecretInputValue: (value) => {
 			secretRedactor.track(value)
 		},
+		additionalTools: options?.additionalTools,
 	})
 	const wrappedCode =
 		params !== undefined
@@ -172,6 +193,7 @@ export async function runCodemodeWithRegistry(
 	const normalized = normalizeCode(wrappedCode)
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
+${options?.helperPrelude ? `${options.helperPrelude}\n` : ''}
   const __kodyUserCode = (${normalized});
   return await __kodyUserCode();
 }`

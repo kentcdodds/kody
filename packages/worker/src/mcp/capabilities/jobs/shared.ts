@@ -33,14 +33,11 @@ export const jobScheduleSchema = z.discriminatedUnion('type', [
 	}),
 ])
 
-export const jobKindSchema = z.enum(['codemode', 'facet'])
-
 export const jobViewSchema = z.object({
 	version: z.literal(1),
 	id: z.string(),
 	name: z.string(),
-	kind: jobKindSchema,
-	code: z.string().optional(),
+	code: z.string(),
 	serverCode: z.string().optional(),
 	serverCodeId: z.string().optional(),
 	methodName: z.string().optional(),
@@ -98,24 +95,19 @@ export const jobUpsertInputSchema = z
 			.min(1)
 			.optional()
 			.describe('Job name. Required when creating a new job.'),
-		kind: jobKindSchema
-			.optional()
-			.describe('Execution kind: "codemode" or "facet". Required on create.'),
 		code: z
 			.string()
 			.min(1)
 			.nullable()
 			.optional()
-			.describe(
-				'Codemode async arrow function source. Use only for codemode jobs.',
-			),
+			.describe('Codemode async arrow function source. Required on create.'),
 		serverCode: z
 			.string()
 			.min(1)
 			.nullable()
 			.optional()
 			.describe(
-				'Facet job server code that exports `class Job extends DurableObject`. Use only for facet jobs.',
+				'Optional facet backend server code that exports `class Job extends DurableObject` for persistent job state.',
 			),
 		methodName: z
 			.string()
@@ -123,7 +115,7 @@ export const jobUpsertInputSchema = z
 			.nullable()
 			.optional()
 			.describe(
-				'Facet job method invoked on each run. Defaults to `run` for facet jobs.',
+				'Optional facet job method invoked through `job.call(...)`. Defaults to `run` when serverCode is present.',
 			),
 		params: z
 			.record(z.string(), z.unknown())
@@ -157,13 +149,6 @@ export const jobUpsertInputSchema = z
 				message: 'name is required when creating a job.',
 			})
 		}
-		if (value.kind === undefined) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ['kind'],
-				message: 'kind is required when creating a job.',
-			})
-		}
 		if (value.schedule === undefined) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
@@ -171,18 +156,11 @@ export const jobUpsertInputSchema = z
 				message: 'schedule is required when creating a job.',
 			})
 		}
-		if (value.kind === 'codemode' && value.code == null) {
+		if (value.code == null) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['code'],
-				message: 'code is required when creating a codemode job.',
-			})
-		}
-		if (value.kind === 'facet' && value.serverCode == null) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ['serverCode'],
-				message: 'serverCode is required when creating a facet job.',
+				message: 'code is required when creating a job.',
 			})
 		}
 	}) satisfies z.ZodType<JobUpsertInput>
