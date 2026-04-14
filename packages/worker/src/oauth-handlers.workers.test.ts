@@ -7,6 +7,7 @@ import {
 } from '@cloudflare/workers-oauth-provider'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import {
 	handleAuthorizeInfo,
 	handleAuthorizeRequest,
@@ -332,6 +333,74 @@ test('reset client deletes matching grants and client registration', async () =>
 	expect(deletedClientIds).toEqual(['client-123'])
 })
 
+test('reset client deletes stale client registrations after invalid client mismatch', async () => {
+	const revokedGrantIds = new Array<string>()
+	const deletedClientIds = new Array<string>()
+	const userId = await createStableUserIdFromEmail('user@example.com')
+	const helpers = createHelpers({
+		listUserGrants: async (requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			return {
+				items: [
+					{
+						id: 'grant-1',
+						clientId: 'client-123',
+						userId,
+						scope: ['profile'],
+						metadata: {},
+						createdAt: 0,
+					},
+					{
+						id: 'grant-2',
+						clientId: 'client-123',
+						userId,
+						scope: ['email'],
+						metadata: {},
+						createdAt: 0,
+					},
+				],
+			}
+		},
+		revokeGrant: async (grantId, requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			revokedGrantIds.push(grantId)
+		},
+		deleteClient: async (clientId) => {
+			deletedClientIds.push(clientId)
+		},
+	})
+	setAuthSessionSecret(cookieSecret)
+	const cookie = await createAuthCookie(
+		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		false,
+	)
+
+	const response = await handleAuthorizeRequest(
+		new Request(
+			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					Cookie: cookie,
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ decision: 'reset-client' }),
+			},
+		),
+		createEnv(helpers),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		message:
+			'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+	})
+	expect(revokedGrantIds).toEqual(['grant-1', 'grant-2'])
+	expect(deletedClientIds).toEqual(['client-123'])
+})
+
 test('reset client is rejected when the request is not a redirect mismatch', async () => {
 	const response = await handleAuthorizeRequest(
 		new Request(
@@ -352,7 +421,7 @@ test('reset client is rejected when the request is not a redirect mismatch', asy
 	await expect(response.json()).resolves.toEqual({
 		ok: false,
 		error:
-			'Stored client cleanup is only available for redirect URI mismatches.',
+			'Stored client cleanup is only available for stale or mismatched client registrations.',
 		code: 'invalid_request',
 	})
 })

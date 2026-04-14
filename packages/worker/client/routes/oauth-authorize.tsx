@@ -24,7 +24,7 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
-import { invalidRedirectUriMessage } from '@kody-internal/shared/oauth-messages.ts'
+import { canResetStoredClientForMessage } from '@kody-internal/shared/oauth-messages.ts'
 
 type OAuthAuthorizeInfo = {
 	client: { id: string; name: string }
@@ -34,10 +34,6 @@ type OAuthAuthorizeInfo = {
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
 type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
-
-function isInvalidRedirectUriMessage(message: string | null | undefined) {
-	return message === invalidRedirectUriMessage
-}
 
 function getSearchParams() {
 	return typeof window === 'undefined'
@@ -225,8 +221,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			sessionStatus === 'loading' || sessionStatus === 'idle'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
 		const showResetClientCard =
-			(isInvalidRedirectUriMessage(queryError) ||
-				isInvalidRedirectUriMessage(message?.text)) &&
+			(canResetStoredClientForMessage(queryError) ||
+				canResetStoredClientForMessage(message?.text)) &&
 			!resetCompleted
 		const actionsDisabled =
 			status !== 'ready' || Boolean(submittingDecision) || isSessionLoading
