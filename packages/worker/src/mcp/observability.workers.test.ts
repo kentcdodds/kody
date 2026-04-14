@@ -108,6 +108,30 @@ test('ui_save_app capability logs parse_input failure and rethrows', async () =>
 	expect(event.failurePhase).toBe('parse_input')
 })
 
+test('ui_save_app rejects invalid serverCode before persistence', async () => {
+	const handler = capabilityMap['ui_save_app'].handler
+	await expect(
+		handler(
+			{
+				title: 'Invalid server app',
+				description: 'Should fail fast for invalid serverCode.',
+				clientCode: '<main>Invalid server app</main>',
+				serverCode: 'export const nope = 1',
+			},
+			{
+				env: {} as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: 'user-1',
+						email: 'user@example.com',
+					},
+				}),
+			},
+		),
+	).rejects.toThrow('serverCode must export class App extends DurableObject')
+})
+
 test('logMcpEvent reports failure without throwing when Sentry is off', () => {
 	const originalInfo = console.info
 	console.info = () => {}

@@ -1,15 +1,13 @@
-# Saved app example: counter backend
+# Saved app example: `/api/state` + `/api/action`
 
-This example shows a saved app that uses both:
+This example shows the default saved-app backend structure for non-trivial apps:
 
-- **`clientCode`** for the UI
-- **`serverCode`** for a Durable Object facet backend with isolated SQLite
-  storage
+- **`clientCode`** is mostly UI plus fetches to
+  **`kodyWidget.appBackend.basePath`**
+- **`serverCode`** owns storage, validation, and mutations
+- the backend exposes **`GET /api/state`** and **`POST /api/action`**
 
 Save it with **`ui_save_app`**, then reopen it with **`open_generated_ui`**.
-
-`clientCode` supports **HTML only**. If the UI needs browser-side logic, include
-it in `<script type="module">...</script>` tags in the HTML.
 
 ## `clientCode`
 
@@ -21,6 +19,7 @@ it in `<script type="module">...</script>` tags in the HTML.
 	<div style="display:flex;gap:0.5rem;">
 		<button id="refresh-button" type="button">Refresh</button>
 		<button id="increment-button" type="button">Increment</button>
+		<button id="reset-button" type="button">Reset</button>
 	</div>
 </main>
 
@@ -31,9 +30,9 @@ it in `<script type="module">...</script>` tags in the HTML.
 	const errorMessage = document.querySelector('#error-message')
 	const refreshButton = document.querySelector('#refresh-button')
 	const incrementButton = document.querySelector('#increment-button')
+	const resetButton = document.querySelector('#reset-button')
 
 	function showCounterError(message) {
-		console.error(message)
 		if (errorMessage) {
 			errorMessage.hidden = false
 			errorMessage.textContent = message
@@ -47,13 +46,9 @@ it in `<script type="module">...</script>` tags in the HTML.
 		}
 	}
 
-	async function readCounterPayload(response) {
+	async function readStatePayload(response) {
 		if (!response.ok) {
 			throw new Error(`Counter request failed with ${response.status}.`)
-		}
-		const contentType = response.headers.get('content-type') ?? ''
-		if (!contentType.includes('application/json')) {
-			throw new Error('Counter response was not JSON.')
 		}
 		const payload = await response.json().catch(() => null)
 		if (!payload || typeof payload !== 'object') {
@@ -62,53 +57,59 @@ it in `<script type="module">...</script>` tags in the HTML.
 		return payload
 	}
 
-	async function readCounter() {
+	async function loadState() {
 		try {
 			clearCounterError()
 			const basePath = kodyWidget.appBackend?.basePath
 			if (!basePath) {
 				throw new Error('Saved app backend is not available.')
 			}
-			const response = await fetch(`${basePath}/api/counter`)
-			const payload = await readCounterPayload(response)
+			const response = await fetch(`${basePath}/api/state`)
+			const payload = await readStatePayload(response)
 			counterValue.textContent = String(payload.count ?? 0)
 		} catch (error) {
 			counterValue.textContent = 'Error'
 			showCounterError(
-				error instanceof Error ? error.message : 'Unable to load counter.',
+				error instanceof Error ? error.message : 'Unable to load state.',
 			)
 		}
 	}
 
-	async function incrementCounter() {
+	async function runAction(action) {
 		try {
 			clearCounterError()
 			const basePath = kodyWidget.appBackend?.basePath
 			if (!basePath) {
 				throw new Error('Saved app backend is not available.')
 			}
-			const response = await fetch(`${basePath}/api/counter`, {
+			const response = await fetch(`${basePath}/api/action`, {
 				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ action }),
 			})
-			const payload = await readCounterPayload(response)
+			const payload = await readStatePayload(response)
 			counterValue.textContent = String(payload.count ?? 0)
 		} catch (error) {
 			counterValue.textContent = 'Error'
 			showCounterError(
-				error instanceof Error ? error.message : 'Unable to increment counter.',
+				error instanceof Error ? error.message : 'Unable to run action.',
 			)
 		}
 	}
 
 	refreshButton?.addEventListener('click', () => {
-		void readCounter()
+		void loadState()
 	})
 
 	incrementButton?.addEventListener('click', () => {
-		void incrementCounter()
+		void runAction('increment')
 	})
 
-	void readCounter()
+	resetButton?.addEventListener('click', () => {
+		void runAction('reset')
+	})
+
+	void loadState()
 </script>
 ```
 
@@ -120,15 +121,24 @@ import { DurableObject } from 'cloudflare:workers'
 export class App extends DurableObject {
 	async fetch(request: Request) {
 		const url = new URL(request.url)
-		if (url.pathname === '/api/counter' && request.method === 'GET') {
-			return Response.json({
-				count: this.ctx.storage.kv.get('count') ?? 0,
-			})
+		const count = Number((await this.ctx.storage.get('count')) ?? 0)
+
+		if (url.pathname === '/api/state' && request.method === 'GET') {
+			return Response.json({ count })
 		}
 
-		if (url.pathname === '/api/counter' && request.method === 'POST') {
-			const nextCount = (this.ctx.storage.kv.get('count') ?? 0) + 1
-			this.ctx.storage.kv.put('count', nextCount)
+		if (url.pathname === '/api/action' && request.method === 'POST') {
+			const body = await request.json().catch(() => null)
+			const nextCount =
+				body?.action === 'increment'
+					? count + 1
+					: body?.action === 'reset'
+						? 0
+						: null
+			if (nextCount === null) {
+				return new Response('Unsupported action.', { status: 400 })
+			}
+			await this.ctx.storage.put('count', nextCount)
 			return Response.json({ count: nextCount })
 		}
 
@@ -142,7 +152,7 @@ export class App extends DurableObject {
 ```json
 {
 	"title": "Facet counter",
-	"description": "Simple counter app backed by a saved app Durable Object facet.",
+	"description": "Counter app that uses the default /api/state and /api/action backend pattern.",
 	"clientCode": "<paste clientCode here>",
 	"serverCode": "<paste serverCode here>",
 	"hidden": false
@@ -151,8 +161,11 @@ export class App extends DurableObject {
 
 ## Notes
 
-- The client talks to its backend with **`fetch('/app/<appId>/...')`**
-  indirectly through **`kodyWidget.appBackend.basePath`**.
+- This is a good default pattern for integration-backed apps too; replace the
+  counter storage logic with connector lookups and provider API calls in
+  **`serverCode`**.
+- The client talks to its backend indirectly through
+  **`kodyWidget.appBackend.basePath`**.
 - The backend cannot make arbitrary outbound network calls. It only gets the
   explicit bridge bindings Kody passes in.
 - Reset the stored counter with **`app_storage_reset({ app_id })`**.
