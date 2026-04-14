@@ -23,48 +23,85 @@ import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
+	parseUiArtifactParameters,
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
 
-const inputSchema = z.object({
-	app_id: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional saved UI artifact id to update in place. Omit to create a new saved app.',
-		),
-	title: z.string().min(1).describe('Short title for the saved UI artifact.'),
-	description: z
-		.string()
-		.min(1)
-		.describe('What the saved app does and when it is useful.'),
-	clientCode: z
-		.string()
-		.min(1)
-		.describe(
-			'HTML source for the generic MCP UI shell. Provide a self-contained HTML document or fragment. If the app needs browser-side logic, include it with `<script type="module">...</script>` inside the HTML.',
-		),
-	serverCode: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional Durable Object server code for this saved app. The code must export `class App extends DurableObject` and can use its own isolated facet SQLite storage.',
-		),
-	parameters: z
-		.array(uiArtifactParameterSchema)
-		.optional()
-		.describe(
-			'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` helper from `@kody/ui-utils`.',
-		),
-	hidden: z
-		.boolean()
-		.optional()
-		.describe(
-			'Whether this saved app should stay hidden from search results. Defaults to true so one-off apps stay private unless explicitly made discoverable.',
-		),
-})
+const inputSchema = z
+	.object({
+		app_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional saved UI artifact id to update in place. Omit to create a new saved app. When app_id is provided, omitted fields preserve the existing saved value.',
+			),
+		title: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Short title for the saved UI artifact. Required when creating a new saved app.',
+			),
+		description: z
+			.string()
+			.min(1)
+			.optional()
+			.describe('What the saved app does and when it is useful.'),
+		clientCode: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'HTML source for the generic MCP UI shell. Provide a self-contained HTML document or fragment. If the app needs browser-side logic, include it with `<script type="module">...</script>` inside the HTML. Required when creating a new saved app.',
+			),
+		serverCode: z
+			.string()
+			.min(1)
+			.nullable()
+			.optional()
+			.describe(
+				'Optional Durable Object server code for this saved app. The code must export `class App extends DurableObject` and can use its own isolated facet SQLite storage. Omit this field on updates to preserve the current backend, or pass null to clear it explicitly.',
+			),
+		parameters: z
+			.array(uiArtifactParameterSchema)
+			.optional()
+			.describe(
+				'Optional parameter definitions for reusable saved apps. Resolved values are exposed at runtime on the imported `kodyWidget.params` helper from `@kody/ui-utils`.',
+			),
+		hidden: z
+			.boolean()
+			.optional()
+			.describe(
+				'Whether this saved app should stay hidden from search results. Defaults to true so one-off apps stay private unless explicitly made discoverable.',
+			),
+	})
+	.superRefine((value, ctx) => {
+		if (value.app_id !== undefined) {
+			return
+		}
+		if (value.title === undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['title'],
+				message: 'title is required when creating a saved app.',
+			})
+		}
+		if (value.description === undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['description'],
+				message: 'description is required when creating a saved app.',
+			})
+		}
+		if (value.clientCode === undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['clientCode'],
+				message: 'clientCode is required when creating a saved app.',
+			})
+		}
+	})
 
 const outputSchema = z.object({
 	app_id: z.string(),
@@ -80,7 +117,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 	{
 		name: 'ui_save_app',
 		description:
-			'Create or replace a saved UI artifact for the signed-in user so it can be reopened later by app_id without sending the source back through the model context. If the saved app depends on a third-party integration, load `kody_official_guide` with `guide: "integration_bootstrap"` first and verify the required connector/secret plus a minimal authenticated smoke test before treating the downstream app as complete.',
+			'Create a saved UI artifact or partially update an existing one for the signed-in user so it can be reopened later by app_id without sending the source back through the model context. When updating, omitted fields preserve the existing saved value. If the saved app depends on a third-party integration, load `kody_official_guide` with `guide: "integration_bootstrap"` first and verify the required connector/secret plus a minimal authenticated smoke test before treating the downstream app as complete.',
 		keywords: ['ui', 'app', 'artifact', 'save', 'persist', 'update', 'mcp app'],
 		readOnly: false,
 		idempotent: false,
@@ -91,29 +128,29 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
-			const nextServerCode = args.serverCode ?? null
-			const parameters = normalizeUiArtifactParameters(args.parameters)
-			const serializedParameters = parameters
-				? JSON.stringify(parameters)
-				: null
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
 				null
 
 			async function saveAndIndexApp(input: {
 				appId: string
+				title: string
+				description: string
+				clientCode: string
+				serverCode: string | null
 				serverCodeId: string
+				parameters: ReturnType<typeof normalizeUiArtifactParameters>
 				hidden: boolean
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
-				const hasBackend = hasUiArtifactServerCode(nextServerCode)
+				const hasBackend = hasUiArtifactServerCode(input.serverCode)
 				try {
 					await configureSavedAppRunner({
 						env: ctx.env,
 						appId: input.appId,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
-						serverCode: nextServerCode,
+						serverCode: input.serverCode,
 						serverCodeId: input.serverCodeId,
 					})
 				} catch (cause) {
@@ -149,10 +186,10 @@ export const uiSaveAppCapability = defineDomainCapability(
 							appId: input.appId,
 							userId: user.userId,
 							embedText: buildUiArtifactEmbedText({
-								title: args.title,
-								description: args.description,
+								title: input.title,
+								description: input.description,
 								hasServerCode: hasBackend,
-								parameters,
+								parameters: input.parameters,
 							}),
 						})
 					} else if (isUpdate) {
@@ -199,7 +236,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					server_code_id: input.serverCodeId,
 					has_server_code: hasBackend,
 					hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, input.appId),
-					parameters,
+					parameters: input.parameters,
 					hidden: input.hidden,
 				}
 			}
@@ -213,23 +250,45 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!existingApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
-				const serverCodeChanged = nextServerCode !== existingApp.serverCode
+				const title = args.title ?? existingApp.title
+				const description = args.description ?? existingApp.description
+				const clientCode = args.clientCode ?? existingApp.clientCode
+				const serverCode =
+					args.serverCode === undefined
+						? existingApp.serverCode
+						: args.serverCode
+				const parameters =
+					args.parameters === undefined
+						? parseUiArtifactParameters(existingApp.parameters)
+						: normalizeUiArtifactParameters(args.parameters)
+				const serializedParameters =
+					args.parameters === undefined
+						? undefined
+						: parameters
+							? JSON.stringify(parameters)
+							: null
+				const serverCodeChanged = serverCode !== existingApp.serverCode
 				const serverCodeId = serverCodeChanged
 					? crypto.randomUUID()
 					: existingApp.serverCodeId
+				const updates: Parameters<typeof updateUiArtifact>[3] = {
+					title: args.title,
+					description: args.description,
+					clientCode: args.clientCode,
+					hidden: args.hidden,
+				}
+				if (args.parameters !== undefined) {
+					updates.parameters = serializedParameters
+				}
+				if (args.serverCode !== undefined) {
+					updates.serverCode = serverCode
+					updates.serverCodeId = serverCodeId
+				}
 				const updated = await updateUiArtifact(
 					ctx.env.APP_DB,
 					user.userId,
 					appId,
-					{
-						title: args.title,
-						description: args.description,
-						clientCode: args.clientCode,
-						serverCode: nextServerCode,
-						serverCodeId,
-						parameters: serializedParameters,
-						hidden: args.hidden,
-					},
+					updates,
 				)
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
@@ -237,21 +296,34 @@ export const uiSaveAppCapability = defineDomainCapability(
 				hidden = args.hidden ?? existingApp.hidden
 				return await saveAndIndexApp({
 					appId,
+					title,
+					description,
+					clientCode,
+					serverCode,
 					serverCodeId,
+					parameters,
 					hidden,
 					existingApp,
 				})
 			} else {
+				const title = args.title!
+				const description = args.description!
+				const clientCode = args.clientCode!
+				const serverCode = args.serverCode ?? null
+				const parameters = normalizeUiArtifactParameters(args.parameters)
+				const serializedParameters = parameters
+					? JSON.stringify(parameters)
+					: null
 				const serverCodeId = crypto.randomUUID()
 				hidden = args.hidden ?? true
 				const now = new Date().toISOString()
 				await insertUiArtifact(ctx.env.APP_DB, {
 					id: appId,
 					user_id: user.userId,
-					title: args.title,
-					description: args.description,
-					clientCode: args.clientCode,
-					serverCode: nextServerCode,
+					title,
+					description,
+					clientCode,
+					serverCode,
 					serverCodeId,
 					parameters: serializedParameters,
 					hidden,
@@ -260,7 +332,12 @@ export const uiSaveAppCapability = defineDomainCapability(
 				})
 				return await saveAndIndexApp({
 					appId,
+					title,
+					description,
+					clientCode,
+					serverCode,
 					serverCodeId,
+					parameters,
 					hidden,
 					existingApp,
 				})

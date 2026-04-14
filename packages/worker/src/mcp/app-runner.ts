@@ -96,15 +96,18 @@ function defaultRateWindow(now: number): AppRunnerRateWindow {
 	}
 }
 
-function createFacetWrapperModule(input: {
-	facetName: string
-	serverCode: string
-}) {
+function createFacetWrapperModule(input: { facetName: string }) {
 	const exportName = buildFacetClassExportName(input.facetName)
 	return `
 import * as userModule from './user-app.js'
 
 const BaseApp = userModule.App
+const reservedFacetMethodNames = new Set([
+	'fetch',
+	'__kody_resetStorage',
+	'__kody_exportStorage',
+	'__kody_invokeUserMethod',
+])
 
 if (typeof BaseApp !== 'function') {
 	throw new Error('Saved app server code must export class App extends DurableObject.')
@@ -153,12 +156,49 @@ export class ${exportName} extends BaseApp {
 		}
 	}
 
-	async __kody_exec(code, params) {
-		if (typeof code !== 'string' || !code.trim()) {
-			throw new Error('Facet exec requires non-empty code.')
+	async __kody_invokeUserMethod(methodName, args) {
+		if (typeof methodName !== 'string' || !methodName.trim()) {
+			throw new Error('Saved app RPC method name must be a non-empty string.')
 		}
-		const runner = new Function('facet', 'params', code)
-		return await runner(this, params ?? {})
+		const normalizedMethodName = methodName.trim()
+		if (
+			reservedFacetMethodNames.has(normalizedMethodName) ||
+			normalizedMethodName.startsWith('__kody_')
+		) {
+			throw new Error(
+				\`Saved app RPC method "\${normalizedMethodName}" is not allowed.\`,
+			)
+		}
+		const method = Reflect.get(this, normalizedMethodName)
+		if (typeof method !== 'function') {
+			throw new Error(
+				\`Saved app RPC method "\${normalizedMethodName}" was not found.\`,
+			)
+		}
+		return await Reflect.apply(
+			method,
+			this,
+			Array.isArray(args) ? args : [],
+		)
+	}
+}
+`.trim()
+}
+
+const savedAppExecEntrypointName = 'SavedAppExecWorker'
+
+function createSavedAppExecWorkerModule(input: { code: string }) {
+	return `
+import { WorkerEntrypoint } from 'cloudflare:workers'
+
+export class ${savedAppExecEntrypointName} extends WorkerEntrypoint {
+	async run(params) {
+		const app = {
+			call: (methodName, ...args) => {
+				return this.env.APP.callAppRpc(methodName, args)
+			},
+		}
+		${input.code}
 	}
 }
 `.trim()
@@ -185,6 +225,16 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 }
 
 export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
+	async callAppRpc(methodName: string, args: Array<unknown> = []) {
+		const runner = appRunnerRpc(this.env, this.ctx.props.appId)
+		return await runner.callFacetRpc({
+			appId: this.ctx.props.appId,
+			facetName: this.ctx.props.facetName,
+			methodName,
+			args,
+		})
+	}
+
 	async fetchWithResolvedSecrets(input: {
 		url: string
 		method?: string
@@ -487,15 +537,32 @@ class AppRunnerBase extends DurableObject<Env> {
 		params?: Record<string, unknown>
 	}) {
 		const facetName = buildFacetName(input.facetName)
-		const facet = await this.getFacetStub(facetName)
-		const result = await (
-			facet as unknown as {
-				__kody_exec: (
-					code: string,
-					params?: Record<string, unknown>,
-				) => Promise<unknown>
-			}
-		).__kody_exec(input.code, input.params)
+		await this.getFacetStub(facetName)
+		const config = await this.readConfig(this.ctx.id.toString())
+		const execWorker = this.env.APP_LOADER.load({
+			compatibilityDate: '2026-04-13',
+			compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
+			mainModule: 'exec-entry.js',
+			modules: {
+				'exec-entry.js': createSavedAppExecWorkerModule({
+					code: input.code,
+				}),
+			},
+			env: {
+				APP: this.ctx.exports.AppFacetBridge({
+					props: {
+						appId: input.appId,
+						userId: config.userId,
+						baseUrl: config.baseUrl || 'http://internal.invalid',
+						facetName,
+					},
+				}),
+			},
+			globalOutbound: null,
+		}).getEntrypoint(savedAppExecEntrypointName) as unknown as {
+			run: (params?: Record<string, unknown>) => Promise<unknown>
+		}
+		const result = await execWorker.run(input.params ?? {})
 		return {
 			ok: true,
 			appId: input.appId,
@@ -611,7 +678,6 @@ class AppRunnerBase extends DurableObject<Env> {
 					modules: {
 						'facet-entry.js': createFacetWrapperModule({
 							facetName,
-							serverCode: config.serverCode!,
 						}),
 						'user-app.js': config.serverCode!,
 					},
@@ -635,6 +701,23 @@ class AppRunnerBase extends DurableObject<Env> {
 				),
 			}
 		})
+	}
+
+	async callFacetRpc(input: {
+		appId: string
+		facetName?: string | null
+		methodName: string
+		args?: Array<unknown>
+	}) {
+		const facet = await this.getFacetStub(buildFacetName(input.facetName))
+		return await (
+			facet as unknown as {
+				__kody_invokeUserMethod: (
+					methodName: string,
+					args?: Array<unknown>,
+				) => Promise<unknown>
+			}
+		).__kody_invokeUserMethod(input.methodName, input.args ?? [])
 	}
 
 	private async applyRateLimit() {
@@ -798,6 +881,12 @@ export function appRunnerRpc(env: Env, appId: string) {
 			facetName: string
 			result: unknown
 		}>
+		callFacetRpc: (payload: {
+			appId: string
+			facetName?: string | null
+			methodName: string
+			args?: Array<unknown>
+		}) => Promise<unknown>
 		deleteApp: (payload: {
 			appId: string
 			facetNames?: Array<string> | null

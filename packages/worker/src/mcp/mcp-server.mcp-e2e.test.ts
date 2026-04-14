@@ -413,3 +413,399 @@ test('saved apps with server code expose isolated backend storage', async () => 
 	)
 	expect(unauthenticatedResponse.status).toBe(401)
 })
+
+test('app_server_exec runs snippets in a throwaway worker with app RPC access', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const serverCode =
+		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async incrementBy(amount = 1) { const current = Number((await this.ctx.storage.get("count")) ?? 0); const next = current + Number(amount); await this.ctx.storage.put("count", next); return { count: next } } }'
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					title: 'Facet Exec App',
+					description: 'Saved app used to verify app_server_exec.',
+					clientCode: '<main><h1>Facet Exec App</h1></main>',
+					serverCode: ${JSON.stringify(serverCode)},
+					hidden: true,
+				})
+			}`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| { result?: { app_id?: string } }
+		| undefined
+	const savedAppId = saveStructured?.result?.app_id
+	expect(typeof savedAppId).toBe('string')
+
+	await using trivialExecClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const trivialExecResult = await trivialExecClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.app_server_exec({
+					app_id: ${JSON.stringify(savedAppId)},
+					code: ${JSON.stringify(`return { hello: 'world' }`)},
+				})
+			}`,
+		},
+	})
+	const trivialExecStructured = (trivialExecResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					ok?: boolean
+					app_id?: string
+					facet_name?: string
+					result?: { hello?: string }
+				}
+		  }
+		| undefined
+	expect(trivialExecStructured?.result).toEqual({
+		ok: true,
+		app_id: savedAppId,
+		facet_name: 'main',
+		result: { hello: 'world' },
+	})
+
+	await using rpcExecClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const rpcExecResult = await rpcExecClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.app_server_exec({
+					app_id: ${JSON.stringify(savedAppId)},
+					params: { amount: 3 },
+					code: ${JSON.stringify(`return await app.call("incrementBy", params.amount ?? 1)`)},
+				})
+			}`,
+		},
+	})
+	const rpcExecStructured = (rpcExecResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					result?: { count?: number }
+				}
+		  }
+		| undefined
+	expect(rpcExecStructured?.result?.result).toEqual({ count: 3 })
+
+	await using forbiddenExecClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const forbiddenExecResult = await forbiddenExecClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.app_server_exec({
+					app_id: ${JSON.stringify(savedAppId)},
+					code: ${JSON.stringify(`return await app.call("__kody_resetStorage")`)},
+				})
+			}`,
+		},
+	})
+	const forbiddenExecStructured = (forbiddenExecResult as CallToolResult)
+		.structuredContent as
+		| {
+				error?: string
+		  }
+		| undefined
+	expect(forbiddenExecResult.isError).toBe(true)
+	expect(forbiddenExecStructured?.error).toContain(
+		'Saved app RPC method "__kody_resetStorage" is not allowed.',
+	)
+
+	await using exportClient = await createMcpClient(server.origin, database.user)
+
+	const exportResult = await exportClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.app_storage_export({
+					app_id: ${JSON.stringify(savedAppId)},
+				})
+			}`,
+		},
+	})
+	const exportStructured = (exportResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					export?: {
+						entries?: Array<{ key?: string; value?: unknown }>
+					}
+				}
+		  }
+		| undefined
+	expect(exportStructured?.result?.export?.entries).toEqual([
+		{ key: 'count', value: 3 },
+	])
+})
+
+test('ui_save_app preserves omitted backend code and requires explicit clearing', async () => {
+	await using database = await createTestDatabase()
+	await using server = await startDevServer(database.persistDir)
+	await using mcpClient = await createMcpClient(server.origin, database.user)
+
+	const initialServerCode =
+		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v1" } }'
+	const replacementServerCode =
+		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v2" } }'
+
+	const saveResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					title: 'Patchable App',
+					description: 'Saved app used to verify partial ui_save_app updates.',
+					clientCode: '<main><h1>Patchable v1</h1></main>',
+					serverCode: ${JSON.stringify(initialServerCode)},
+					parameters: [
+						{
+							name: 'team',
+							description: 'Team slug',
+							type: 'string',
+							required: true,
+						},
+					],
+					hidden: true,
+				})
+			}`,
+		},
+	})
+	const saveStructured = (saveResult as CallToolResult).structuredContent as
+		| {
+				result?: {
+					app_id?: string
+					server_code_id?: string
+					has_server_code?: boolean
+				}
+		  }
+		| undefined
+	const savedAppId = saveStructured?.result?.app_id
+	const initialServerCodeId = saveStructured?.result?.server_code_id
+	expect(typeof savedAppId).toBe('string')
+	expect(typeof initialServerCodeId).toBe('string')
+	expect(saveStructured?.result?.has_server_code).toBe(true)
+
+	const clientOnlyUpdateResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					app_id: ${JSON.stringify(savedAppId)},
+					clientCode: '<main><h1>Patchable v2</h1></main>',
+				})
+			}`,
+		},
+	})
+	const clientOnlyUpdateStructured = (clientOnlyUpdateResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					server_code_id?: string
+					has_server_code?: boolean
+				}
+		  }
+		| undefined
+	expect(clientOnlyUpdateStructured?.result?.server_code_id).toBe(
+		initialServerCodeId,
+	)
+	expect(clientOnlyUpdateStructured?.result?.has_server_code).toBe(true)
+
+	await using preservedSourceClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const preservedSourceResult = await preservedSourceClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_load_app_source({
+					app_id: ${JSON.stringify(savedAppId)},
+				})
+			}`,
+		},
+	})
+	const preservedSourceStructured = (preservedSourceResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					app_id?: string
+					title?: string
+					description?: string
+					client_code?: string
+					server_code?: string | null
+					server_code_id?: string
+					parameters?: Array<{
+						name?: string
+						description?: string
+						type?: string
+						required?: boolean
+					}> | null
+					hidden?: boolean
+				}
+		  }
+		| undefined
+	expect(preservedSourceStructured?.result).toEqual(
+		expect.objectContaining({
+			app_id: savedAppId,
+			title: 'Patchable App',
+			description: 'Saved app used to verify partial ui_save_app updates.',
+			client_code: '<main><h1>Patchable v2</h1></main>',
+			server_code: initialServerCode,
+			server_code_id: initialServerCodeId,
+			parameters: [
+				{
+					name: 'team',
+					description: 'Team slug',
+					type: 'string',
+					required: true,
+				},
+			],
+			hidden: true,
+		}),
+	)
+
+	const clearServerCodeResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					app_id: ${JSON.stringify(savedAppId)},
+					serverCode: null,
+				})
+			}`,
+		},
+	})
+	const clearServerCodeStructured = (clearServerCodeResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					server_code_id?: string
+					has_server_code?: boolean
+				}
+		  }
+		| undefined
+	const clearedServerCodeId = clearServerCodeStructured?.result?.server_code_id
+	expect(typeof clearedServerCodeId).toBe('string')
+	expect(clearedServerCodeId).not.toBe(initialServerCodeId)
+	expect(clearServerCodeStructured?.result?.has_server_code).toBe(false)
+
+	await using clearedSourceClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const clearedSourceResult = await clearedSourceClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_load_app_source({
+					app_id: ${JSON.stringify(savedAppId)},
+				})
+			}`,
+		},
+	})
+	const clearedSourceStructured = (clearedSourceResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					app_id?: string
+					client_code?: string
+					server_code?: string | null
+					server_code_id?: string
+					hidden?: boolean
+				}
+		  }
+		| undefined
+	expect(clearedSourceStructured?.result).toEqual(
+		expect.objectContaining({
+			app_id: savedAppId,
+			client_code: '<main><h1>Patchable v2</h1></main>',
+			server_code: null,
+			server_code_id: clearedServerCodeId,
+			hidden: true,
+		}),
+	)
+
+	const replaceServerCodeResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_save_app({
+					app_id: ${JSON.stringify(savedAppId)},
+					serverCode: ${JSON.stringify(replacementServerCode)},
+				})
+			}`,
+		},
+	})
+	const replaceServerCodeStructured = (
+		replaceServerCodeResult as CallToolResult
+	).structuredContent as
+		| {
+				result?: {
+					server_code_id?: string
+					has_server_code?: boolean
+				}
+		  }
+		| undefined
+	const replacementServerCodeId =
+		replaceServerCodeStructured?.result?.server_code_id
+	expect(typeof replacementServerCodeId).toBe('string')
+	expect(replacementServerCodeId).not.toBe(clearedServerCodeId)
+	expect(replaceServerCodeStructured?.result?.has_server_code).toBe(true)
+
+	await using replacedSourceClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const replacedSourceResult = await replacedSourceClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.ui_load_app_source({
+					app_id: ${JSON.stringify(savedAppId)},
+				})
+			}`,
+		},
+	})
+	const replacedSourceStructured = (replacedSourceResult as CallToolResult)
+		.structuredContent as
+		| {
+				result?: {
+					app_id?: string
+					client_code?: string
+					server_code?: string | null
+					server_code_id?: string
+					hidden?: boolean
+				}
+		  }
+		| undefined
+	expect(replacedSourceStructured?.result).toEqual(
+		expect.objectContaining({
+			app_id: savedAppId,
+			client_code: '<main><h1>Patchable v2</h1></main>',
+			server_code: replacementServerCode,
+			server_code_id: replacementServerCodeId,
+			hidden: true,
+		}),
+	)
+})
