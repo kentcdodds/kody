@@ -3,9 +3,9 @@ export const capabilityDomainNames = {
 	apps: 'apps',
 	coding: 'coding',
 	home: 'home',
+	jobs: 'jobs',
 	math: 'math',
 	meta: 'meta',
-	scheduler: 'scheduler',
 	secrets: 'secrets',
 	values: 'values',
 } as const

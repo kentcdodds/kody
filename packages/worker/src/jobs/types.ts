@@ -1,0 +1,129 @@
+import {
+	type McpCallerContext,
+	type McpUserContext,
+} from '@kody-internal/shared/chat.ts'
+
+export type JobKind = 'codemode' | 'facet'
+
+export type JobSchedule =
+	| {
+			type: 'cron'
+			expression: string
+	  }
+	| {
+			type: 'interval'
+			every: string
+	  }
+	| {
+			type: 'once'
+			runAt: string
+	  }
+
+export type JobRunStatus = 'success' | 'error'
+
+export type JobRunHistoryEntry = {
+	startedAt: string
+	finishedAt: string
+	status: JobRunStatus
+	durationMs: number
+	error?: string
+}
+
+export type JobRecord = {
+	version: 1
+	id: string
+	userId: string
+	name: string
+	kind: JobKind
+	code?: string
+	serverCode?: string
+	serverCodeId?: string
+	methodName?: string
+	params?: Record<string, unknown>
+	schedule: JobSchedule
+	timezone: string
+	enabled: boolean
+	killSwitchEnabled: boolean
+	createdAt: string
+	updatedAt: string
+	lastRunAt?: string
+	lastRunStatus?: JobRunStatus
+	lastRunError?: string
+	lastDurationMs?: number
+	nextRunAt: string
+	runCount: number
+	successCount: number
+	errorCount: number
+	runHistory: Array<JobRunHistoryEntry>
+}
+
+export type JobView = Omit<JobRecord, 'userId'> & {
+	scheduleSummary: string
+}
+
+export type JobExecutionResult =
+	| {
+			ok: true
+			result?: unknown
+			logs: Array<string>
+	  }
+	| {
+			ok: false
+			error: string
+			logs: Array<string>
+	  }
+
+export type JobExecutionOutcome = {
+	execution: JobExecutionResult
+	startedAt: string
+	finishedAt: string
+	durationMs: number
+}
+
+export type PersistedJobCallerContext = Pick<
+	McpCallerContext,
+	'baseUrl' | 'homeConnectorId' | 'remoteConnectors' | 'storageContext'
+> & {
+	user: McpUserContext
+}
+
+export type JobCreateInput = {
+	name: string
+	kind: JobKind
+	code?: string
+	serverCode?: string
+	methodName?: string | null
+	params?: Record<string, unknown>
+	schedule: JobSchedule
+	timezone?: string | null
+	enabled?: boolean
+	killSwitchEnabled?: boolean
+}
+
+export type JobUpdateInput = {
+	id: string
+	name?: string
+	kind?: JobKind
+	code?: string | null
+	serverCode?: string | null
+	methodName?: string | null
+	params?: Record<string, unknown> | null
+	schedule?: JobSchedule
+	timezone?: string | null
+	enabled?: boolean
+	killSwitchEnabled?: boolean
+}
+
+export type JobUpsertInput = {
+	id?: string
+	name?: string
+	kind?: JobKind
+	code?: string | null
+	serverCode?: string | null
+	methodName?: string | null
+	params?: Record<string, unknown> | null
+	schedule?: JobSchedule
+	timezone?: string | null
+	enabled?: boolean
+	killSwitchEnabled?: boolean
+}

@@ -624,11 +624,11 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	const replacementServerCode =
 		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v2" } }'
 
-	const saveResult = await mcpClient.client.callTool({
+	const flowResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
-				return await codemode.ui_save_app({
+				const saved = await codemode.ui_save_app({
 					title: 'Patchable App',
 					description: 'Saved app used to verify partial ui_save_app updates.',
 					clientCode: '<main><h1>Patchable v1</h1></main>',
@@ -643,85 +643,107 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 					],
 					hidden: true,
 				})
-			}`,
-		},
-	})
-	const saveStructured = (saveResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					app_id?: string
-					server_code_id?: string
-					has_server_code?: boolean
-				}
-		  }
-		| undefined
-	const savedAppId = saveStructured?.result?.app_id
-	const initialServerCodeId = saveStructured?.result?.server_code_id
-	expect(typeof savedAppId).toBe('string')
-	expect(typeof initialServerCodeId).toBe('string')
-	expect(saveStructured?.result?.has_server_code).toBe(true)
-
-	const clientOnlyUpdateResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.ui_save_app({
-					app_id: ${JSON.stringify(savedAppId)},
+				const appId = saved.app_id
+				const initialServerCodeId = saved.server_code_id
+				const clientOnlyUpdate = await codemode.ui_save_app({
+					app_id: appId,
 					clientCode: '<main><h1>Patchable v2</h1></main>',
 				})
+				const preservedSource = await codemode.ui_load_app_source({
+					app_id: appId,
+				})
+				const clearedServerCode = await codemode.ui_save_app({
+					app_id: appId,
+					serverCode: null,
+				})
+				const clearedSource = await codemode.ui_load_app_source({
+					app_id: appId,
+				})
+				const replacedServerCode = await codemode.ui_save_app({
+					app_id: appId,
+					serverCode: ${JSON.stringify(replacementServerCode)},
+				})
+				const replacedSource = await codemode.ui_load_app_source({
+					app_id: appId,
+				})
+				return {
+					saved,
+					initialServerCodeId,
+					clientOnlyUpdate,
+					preservedSource,
+					clearedServerCode,
+					clearedSource,
+					replacedServerCode,
+					replacedSource,
+				}
 			}`,
 		},
 	})
-	const clientOnlyUpdateStructured = (clientOnlyUpdateResult as CallToolResult)
-		.structuredContent as
+	const flowStructured = (flowResult as CallToolResult).structuredContent as
 		| {
 				result?: {
-					server_code_id?: string
-					has_server_code?: boolean
+					saved?: {
+						app_id?: string
+						server_code_id?: string
+						has_server_code?: boolean
+					}
+					initialServerCodeId?: string
+					clientOnlyUpdate?: {
+						server_code_id?: string
+						has_server_code?: boolean
+					}
+					preservedSource?: {
+						app_id?: string
+						title?: string
+						description?: string
+						client_code?: string
+						server_code?: string | null
+						server_code_id?: string
+						parameters?: Array<{
+							name?: string
+							description?: string
+							type?: string
+							required?: boolean
+						}> | null
+						hidden?: boolean
+					}
+					clearedServerCode?: {
+						server_code_id?: string
+						has_server_code?: boolean
+					}
+					clearedSource?: {
+						app_id?: string
+						client_code?: string
+						server_code?: string | null
+						server_code_id?: string
+						hidden?: boolean
+					}
+					replacedServerCode?: {
+						server_code_id?: string
+						has_server_code?: boolean
+					}
+					replacedSource?: {
+						app_id?: string
+						client_code?: string
+						server_code?: string | null
+						server_code_id?: string
+						hidden?: boolean
+					}
 				}
 		  }
 		| undefined
-	expect(clientOnlyUpdateStructured?.result?.server_code_id).toBe(
+	const savedAppId = flowStructured?.result?.saved?.app_id
+	const initialServerCodeId = flowStructured?.result?.initialServerCodeId
+	expect(typeof savedAppId).toBe('string')
+	expect(typeof initialServerCodeId).toBe('string')
+	expect(flowStructured?.result?.saved?.has_server_code).toBe(true)
+
+	expect(flowStructured?.result?.clientOnlyUpdate?.server_code_id).toBe(
 		initialServerCodeId,
 	)
-	expect(clientOnlyUpdateStructured?.result?.has_server_code).toBe(true)
+	expect(flowStructured?.result?.clientOnlyUpdate?.has_server_code).toBe(true)
 
-	await using preservedSourceClient = await createMcpClient(
-		server.origin,
-		database.user,
-	)
-
-	const preservedSourceResult = await preservedSourceClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.ui_load_app_source({
-					app_id: ${JSON.stringify(savedAppId)},
-				})
-			}`,
-		},
-	})
-	const preservedSourceStructured = (preservedSourceResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					app_id?: string
-					title?: string
-					description?: string
-					client_code?: string
-					server_code?: string | null
-					server_code_id?: string
-					parameters?: Array<{
-						name?: string
-						description?: string
-						type?: string
-						required?: boolean
-					}> | null
-					hidden?: boolean
-				}
-		  }
-		| undefined
-	expect(preservedSourceStructured?.result).toEqual(
+	expect(flowStructured?.result?.preservedSource).toEqual(
 		expect.objectContaining({
 			app_id: savedAppId,
 			title: 'Patchable App',
@@ -741,59 +763,13 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 		}),
 	)
 
-	const clearServerCodeResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.ui_save_app({
-					app_id: ${JSON.stringify(savedAppId)},
-					serverCode: null,
-				})
-			}`,
-		},
-	})
-	const clearServerCodeStructured = (clearServerCodeResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					server_code_id?: string
-					has_server_code?: boolean
-				}
-		  }
-		| undefined
-	const clearedServerCodeId = clearServerCodeStructured?.result?.server_code_id
+	const clearedServerCodeId =
+		flowStructured?.result?.clearedServerCode?.server_code_id
 	expect(typeof clearedServerCodeId).toBe('string')
 	expect(clearedServerCodeId).not.toBe(initialServerCodeId)
-	expect(clearServerCodeStructured?.result?.has_server_code).toBe(false)
+	expect(flowStructured?.result?.clearedServerCode?.has_server_code).toBe(false)
 
-	await using clearedSourceClient = await createMcpClient(
-		server.origin,
-		database.user,
-	)
-
-	const clearedSourceResult = await clearedSourceClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.ui_load_app_source({
-					app_id: ${JSON.stringify(savedAppId)},
-				})
-			}`,
-		},
-	})
-	const clearedSourceStructured = (clearedSourceResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					app_id?: string
-					client_code?: string
-					server_code?: string | null
-					server_code_id?: string
-					hidden?: boolean
-				}
-		  }
-		| undefined
-	expect(clearedSourceStructured?.result).toEqual(
+	expect(flowStructured?.result?.clearedSource).toEqual(
 		expect.objectContaining({
 			app_id: savedAppId,
 			client_code: '<main><h1>Patchable v2</h1></main>',
@@ -803,61 +779,13 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 		}),
 	)
 
-	const replaceServerCodeResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.ui_save_app({
-					app_id: ${JSON.stringify(savedAppId)},
-					serverCode: ${JSON.stringify(replacementServerCode)},
-				})
-			}`,
-		},
-	})
-	const replaceServerCodeStructured = (
-		replaceServerCodeResult as CallToolResult
-	).structuredContent as
-		| {
-				result?: {
-					server_code_id?: string
-					has_server_code?: boolean
-				}
-		  }
-		| undefined
 	const replacementServerCodeId =
-		replaceServerCodeStructured?.result?.server_code_id
+		flowStructured?.result?.replacedServerCode?.server_code_id
 	expect(typeof replacementServerCodeId).toBe('string')
 	expect(replacementServerCodeId).not.toBe(clearedServerCodeId)
-	expect(replaceServerCodeStructured?.result?.has_server_code).toBe(true)
+	expect(flowStructured?.result?.replacedServerCode?.has_server_code).toBe(true)
 
-	await using replacedSourceClient = await createMcpClient(
-		server.origin,
-		database.user,
-	)
-
-	const replacedSourceResult = await replacedSourceClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `async () => {
-				return await codemode.ui_load_app_source({
-					app_id: ${JSON.stringify(savedAppId)},
-				})
-			}`,
-		},
-	})
-	const replacedSourceStructured = (replacedSourceResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					app_id?: string
-					client_code?: string
-					server_code?: string | null
-					server_code_id?: string
-					hidden?: boolean
-				}
-		  }
-		| undefined
-	expect(replacedSourceStructured?.result).toEqual(
+	expect(flowStructured?.result?.replacedSource).toEqual(
 		expect.objectContaining({
 			app_id: savedAppId,
 			client_code: '<main><h1>Patchable v2</h1></main>',

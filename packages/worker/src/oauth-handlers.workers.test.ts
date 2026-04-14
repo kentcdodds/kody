@@ -81,10 +81,10 @@ async function createDatabase(password: string) {
 	} as unknown as D1Database
 }
 
-function mockSchedulerDoNamespace(): DurableObjectNamespace {
+function mockJobDoNamespace(id: string): DurableObjectNamespace {
 	return {
 		idFromName() {
-			return { toString: () => 'scheduler-do-test-id' } as DurableObjectId
+			return { toString: () => id } as DurableObjectId
 		},
 		get() {
 			return {} as DurableObjectStub
@@ -102,7 +102,8 @@ function createEnv(
 		OAUTH_PROVIDER: helpers,
 		APP_DB: resolvedDb,
 		COOKIE_SECRET: cookieSecretValue,
-		SCHEDULER_DO: mockSchedulerDoNamespace(),
+		JOB_MANAGER: mockJobDoNamespace('job-manager-test-id'),
+		JOB_RUNNER: mockJobDoNamespace('job-runner-test-id'),
 	} as unknown as Env
 }
 

@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	computeNextRunAt,
 	formatScheduleSummary,
-	normalizeScheduledJobSchedule,
+	normalizeJobSchedule,
 } from './schedule.ts'
 
 test('computeNextRunAt handles timezone-aware cron schedules', () => {
@@ -29,15 +29,36 @@ test('computeNextRunAt preserves UTC once schedules', () => {
 	expect(nextRunAt).toBe('2026-04-17T15:00:00.000Z')
 })
 
-test('normalizeScheduledJobSchedule trims cron expressions', () => {
+test('computeNextRunAt advances interval schedules', () => {
+	const nextRunAt = computeNextRunAt({
+		schedule: {
+			type: 'interval',
+			every: '15m',
+		},
+		from: '2026-04-17T15:00:00.000Z',
+	})
+
+	expect(nextRunAt).toBe('2026-04-17T15:15:00.000Z')
+})
+
+test('normalizeJobSchedule trims cron expressions and interval units', () => {
 	expect(
-		normalizeScheduledJobSchedule({
+		normalizeJobSchedule({
 			type: 'cron',
 			expression: '  */15   7 * * 1-5  ',
 		}),
 	).toEqual({
 		type: 'cron',
 		expression: '*/15 7 * * 1-5',
+	})
+	expect(
+		normalizeJobSchedule({
+			type: 'interval',
+			every: ' 05M ',
+		}),
+	).toEqual({
+		type: 'interval',
+		every: '5m',
 	})
 })
 
