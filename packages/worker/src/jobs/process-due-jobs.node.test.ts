@@ -1,11 +1,14 @@
 import { expect, test } from 'vitest'
 import { processDueJobs } from './process-due-jobs.ts'
-import { type ScheduledJob } from './types.ts'
+import { type JobRecord } from './types.ts'
 
-function createCronJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
+function createCronJob(overrides: Partial<JobRecord> = {}): JobRecord {
 	return {
+		version: 1,
 		id: 'job-1',
+		userId: 'user-1',
 		name: 'Morning job',
+		kind: 'codemode',
 		code: 'async () => ({ ok: true })',
 		schedule: {
 			type: 'cron',
@@ -13,8 +16,14 @@ function createCronJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
 		},
 		timezone: 'UTC',
 		enabled: true,
+		killSwitchEnabled: false,
 		createdAt: '2026-04-12T00:00:00.000Z',
+		updatedAt: '2026-04-12T00:00:00.000Z',
 		nextRunAt: '2026-04-12T07:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
 		...overrides,
 	}
 }
@@ -32,9 +41,14 @@ test('processDueJobs records failures without aborting later jobs', async () => 
 				throw new Error('boom')
 			}
 			return {
-				ok: true,
-				logs: ['ok'],
-				result: { ok: true },
+				execution: {
+					ok: true,
+					logs: ['ok'],
+					result: { ok: true },
+				},
+				startedAt: now.toISOString(),
+				finishedAt: now.toISOString(),
+				durationMs: 0,
 			}
 		},
 	})
@@ -73,9 +87,14 @@ test('processDueJobs deletes one-shot jobs after execution', async () => {
 		now: new Date('2026-04-12T07:00:00.000Z'),
 		async executeJob() {
 			return {
-				ok: false,
-				error: 'expected failure',
-				logs: [],
+				execution: {
+					ok: false,
+					error: 'expected failure',
+					logs: [],
+				},
+				startedAt: '2026-04-12T07:00:00.000Z',
+				finishedAt: '2026-04-12T07:00:00.000Z',
+				durationMs: 0,
 			}
 		},
 	})

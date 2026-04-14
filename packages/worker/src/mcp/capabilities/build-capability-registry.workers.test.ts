@@ -74,22 +74,20 @@ test('buildCapabilityRegistry rejects duplicate domain registration', () => {
 	)
 })
 
-test('builtin capability domains include scheduler', async () => {
+test('builtin capability domains include jobs', async () => {
 	const { builtinDomains } = await import('./builtin-domains.ts')
-	expect(builtinDomains.some((domain) => domain.name === 'scheduler')).toBe(
+	expect(builtinDomains.some((domain) => domain.name === 'jobs')).toBe(
 		true,
 	)
-	const schedulerDomain = builtinDomains.find(
-		(domain) => domain.name === 'scheduler',
-	)
+	const jobsDomain = builtinDomains.find((domain) => domain.name === 'jobs')
 	expect(
-		schedulerDomain?.capabilities.map((capability) => capability.name),
+		jobsDomain?.capabilities.map((capability) => capability.name),
 	).toEqual([
-		'scheduler_upsert',
-		'scheduler_list',
-		'scheduler_get',
-		'scheduler_delete',
-		'scheduler_run_now',
+		'job_upsert',
+		'job_list',
+		'job_get',
+		'job_delete',
+		'job_run_now',
 	])
 })
 

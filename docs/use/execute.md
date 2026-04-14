@@ -32,22 +32,33 @@ To run persisted user code by name, use **`meta_run_skill`** with **`name`** and
 optional **`params`**. To inspect source, use **`meta_get_skill`**. You can also
 inline saved skill code into **execute** when that fits the workflow.
 
-## Scheduled jobs
+## Jobs
 
-Kody can persist scheduled codemode jobs per user:
+Kody has one persisted jobs system per user:
 
-- **`scheduler_upsert`** — create a new one-shot or recurring cron job, or
-  update an existing one when you pass **`id`**
-- **`scheduler_list`** — list jobs with next run time, last run status, and a
-  human-readable schedule summary
-- **`scheduler_get`** — inspect one job
-- **`scheduler_delete`** — remove a job
-- **`scheduler_run_now`** — trigger a job immediately without changing its
-  normal schedule
+- **`job_upsert`** — create a new job, or update an existing one when you pass
+  **`id`**
+- **`job_list`** — list jobs with next run time, last run status, counters, and
+  a human-readable schedule summary
+- **`job_get`** — inspect one job
+- **`job_delete`** — remove a job
+- **`job_run_now`** — trigger a job immediately without changing its normal
+  schedule
 
-Cron schedules use standard **5-field cron syntax** and may include an IANA
-timezone such as **`America/New_York`**. One-shot schedules use an ISO 8601 UTC
-timestamp such as **`2026-04-17T15:00:00Z`**.
+Jobs support two execution kinds:
+
+- **`codemode`** jobs store async arrow function source and run through the same
+  execute/capability runtime as normal `execute`
+- **`facet`** jobs store `serverCode` that exports
+  **`class Job extends DurableObject`** and run through an isolated per-job
+  facet Durable Object with its own SQLite state
+
+Schedules support:
+
+- **cron** — standard **5-field cron syntax**, optionally with an IANA timezone
+  such as **`America/New_York`**
+- **interval** — fixed durations such as **`15m`**, **`1h`**, or **`1d`**
+- **once** — an ISO 8601 UTC timestamp such as **`2026-04-17T15:00:00Z`**
 
 ## Long-term memory
 

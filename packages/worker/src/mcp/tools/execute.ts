@@ -38,9 +38,10 @@ builtin capability). Discover names with \`search\`; for one capability’s
 Saved skills: prefer \`meta_run_skill({ name, params })\`, or \`meta_get_skill\`
 then paste code here.
 
-Scheduled jobs: use \`scheduler_upsert\`, \`scheduler_list\`, \`scheduler_get\`,
-\`scheduler_delete\`, and \`scheduler_run_now\` to manage
-one-shot or recurring codemode executions for the signed-in user.
+Jobs: use \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`, and
+\`job_run_now\` to manage one-shot, interval, or cron jobs for the signed-in
+user. Jobs support both codemode execution and facet-backed Durable Object
+execution.
 
 Sandbox surface:
 - \`codemode\`: \`(args) => Promise<unknown>\` per capability.

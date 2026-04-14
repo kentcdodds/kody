@@ -11,6 +11,8 @@ Current schema is defined by migrations in `packages/worker/migrations/`:
 - `users`: login identity and password hash
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `chat_threads`: per-user chat thread records and relational metadata
+- `jobs`: unified persisted job definitions, caller context, schedule state, and
+  run observability counters/history
 
 App access pattern:
 
@@ -51,6 +53,24 @@ Chat conversations run through a chat Agent Durable Object.
 - The Worker routes same-origin browser chat traffic to the agent using the
   existing app session cookie rather than the public MCP OAuth flow
 
+## Durable Objects (`JobManager` and `JobRunner`)
+
+Unified jobs use two Durable Object roles:
+
+- `JobManager`: one object per user, responsible only for alarm scheduling and
+  dispatching due jobs from D1-backed metadata
+- `JobRunner`: one object per facet-backed job, responsible for dynamic-worker
+  loading, explicit RPC bridging, and isolated facet SQLite state
+
+Storage split:
+
+- D1 `jobs` table: job metadata, persisted caller context, schedule, run
+  counters, last error, last duration, and run history
+- `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
+  due jobs
+- `JobRunner` parent SQLite: facet runner config and observability for one job
+- Facet SQLite: the user job's isolated Durable Object state
+
 ## Configuration reference
 
 Bindings are configured per environment in `packages/worker/wrangler.jsonc`
@@ -60,4 +80,6 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `OAUTH_KV` (KV)
 - `MCP_OBJECT` (Durable Objects)
 - `ChatAgent` (Durable Objects)
+- `JOB_MANAGER` (Durable Objects)
+- `JOB_RUNNER` (Durable Objects)
 - `ASSETS` (static assets bucket)
