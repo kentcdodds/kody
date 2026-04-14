@@ -61,7 +61,7 @@ SELECT
 		WHEN code IS NOT NULL AND TRIM(code) != '' THEN code
 		WHEN server_code IS NOT NULL AND TRIM(server_code) != '' THEN
 			'async (params) => await job.call(''' ||
-			REPLACE(COALESCE(NULLIF(TRIM(method_name), ''), 'run'), '''', CHAR(92) || '''') ||
+			REPLACE(REPLACE(COALESCE(NULLIF(TRIM(method_name), ''), 'run'), CHAR(92), CHAR(92) || CHAR(92)), '''', CHAR(92) || '''') ||
 			''', params)'
 		ELSE 'async () => { throw new Error("migration: missing code") }'
 	END AS code,
