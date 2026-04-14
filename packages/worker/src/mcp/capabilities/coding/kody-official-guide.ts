@@ -22,6 +22,12 @@ export const kodyOfficialGuideCatalog = {
 		summary:
 			'START HERE when a third-party integration must work before saving a dependent skill or app: inspect connector/secret state, stop for setup, then run an authenticated smoke test.',
 	},
+	integration_backed_app: {
+		file: 'integration-backed-app-happy-path.md',
+		title: 'Integration-backed app happy path',
+		summary:
+			'After connector/secret verification and a cheap smoke test, proceed directly to a saved app with serverCode endpoints and client fetches; avoid unnecessary repo spelunking.',
+	},
 	oauth: {
 		file: 'oauth.md',
 		title: 'OAuth guide (standard path)',
@@ -44,6 +50,7 @@ export const kodyOfficialGuideCatalog = {
 
 const guideIds = Object.keys(kodyOfficialGuideCatalog) as [
 	'integration_bootstrap',
+	'integration_backed_app',
 	'oauth',
 	'generated_ui_oauth',
 	'connect_secret',
@@ -96,7 +103,7 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a skill, app, or workflow, use `guide: "integration_bootstrap"` first.** For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom saved-app OAuth. For API keys/PATs, use `connect_secret`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a skill, app, or workflow, use `guide: "integration_bootstrap"` first.** After the smoke test passes and you are ready to build a saved app, use `guide: "integration_backed_app"` for the default serverCode-first app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom saved-app OAuth. For API keys/PATs, use `connect_secret`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
 		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
@@ -111,6 +118,7 @@ const guideFieldSchema = z
 		[
 			'Which guide to load.',
 			'`integration_bootstrap`: required sequence before building skills/apps that depend on a third-party integration.',
+			'`integration_backed_app`: default saved-app construction pattern after the integration smoke test passes.',
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
 			'`generated_ui_oauth`: edge case—OAuth in a saved generated UI app.',
 			'`connect_secret`: /connect/secret for API keys and PATs.',
@@ -135,10 +143,14 @@ const allKeywords = [
 		'oauth',
 		'integration bootstrap',
 		'bootstrap',
+		'integration backed app',
 		'third-party integration',
 		'connector_list',
 		'secret_list',
 		'smoke test',
+		'serverCode',
+		'clientCode',
+		'app backend',
 		'pkce',
 		'generated ui',
 		'hosted callback',

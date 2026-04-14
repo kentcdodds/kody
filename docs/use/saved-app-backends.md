@@ -53,6 +53,14 @@ return snake_case fields:
 
 `client_code` contains HTML. `server_code` contains Workers JavaScript.
 
+For non-trivial or integration-backed apps, prefer a saved app with:
+
+- `GET /api/state` for the current UI state
+- `POST /api/action` for validated mutations
+- `clientCode` that stays mostly UI plus fetches through
+  `kodyWidget.appBackend.basePath`
+- `serverCode` that owns storage, provider API calls, and request validation
+
 ## Authoring `serverCode`
 
 Saved app server code must export:
@@ -167,35 +175,66 @@ may be invoked through this bridge.
 For raw SQLite inspection, use **`app_storage_export`** instead of
 `app_server_exec`.
 
-## Example: counter app
+## Example: `/api/state` + `/api/action` pattern
 
 Save this app with `ui_save_app`:
 
 ```ts
 await codemode.ui_save_app({
 	title: 'Facet counter',
-	description: 'Counter app with a real Durable Object backend',
+	description:
+		'Counter app that uses the default /api/state and /api/action backend pattern.',
 	clientCode: `
 		<main>
 			<h1>Facet counter</h1>
-			<button id="increment">Increment</button>
 			<output id="count">0</output>
+			<div style="display:flex;gap:0.5rem;">
+				<button id="refresh" type="button">Refresh</button>
+				<button id="increment" type="button">Increment</button>
+				<button id="reset" type="button">Reset</button>
+			</div>
 			<script type="module">
 				import { kodyWidget } from '@kody/ui-utils'
 
-				const button = document.querySelector('#increment')
 				const output = document.querySelector('#count')
+				const refreshButton = document.querySelector('#refresh')
+				const incrementButton = document.querySelector('#increment')
+				const resetButton = document.querySelector('#reset')
 				const backendBase = kodyWidget.appBackend?.basePath
 
+			function requireBackendBase() {
+				if (!backendBase) {
+					output.textContent = 'Backend unavailable'
+					throw new Error('Saved app backend is not available.')
+				}
+				return backendBase
+			}
+
 				async function refresh() {
-					const response = await fetch(\`\${backendBase}/api/count\`)
+				const response = await fetch(\`\${requireBackendBase()}/api/state\`)
 					const payload = await response.json()
 					output.textContent = String(payload.count)
 				}
 
-				button?.addEventListener('click', async () => {
-					await fetch(\`\${backendBase}/api/count\`, { method: 'POST' })
+				async function runAction(action) {
+				await fetch(\`\${requireBackendBase()}/api/action\`, {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ action }),
+					})
 					await refresh()
+				}
+
+				refreshButton?.addEventListener('click', () => {
+					void refresh()
+				})
+
+				incrementButton?.addEventListener('click', () => {
+					void runAction('increment')
+				})
+
+				resetButton?.addEventListener('click', () => {
+					void runAction('reset')
 				})
 
 				void refresh()
@@ -210,12 +249,21 @@ await codemode.ui_save_app({
 				const url = new URL(request.url)
 				const count = Number((await this.ctx.storage.get('count')) ?? 0)
 
-				if (url.pathname === '/api/count' && request.method === 'GET') {
+				if (url.pathname === '/api/state' && request.method === 'GET') {
 					return Response.json({ count })
 				}
 
-				if (url.pathname === '/api/count' && request.method === 'POST') {
-					const nextCount = count + 1
+				if (url.pathname === '/api/action' && request.method === 'POST') {
+					const body = await request.json().catch(() => null)
+					const nextCount =
+						body?.action === 'increment'
+							? count + 1
+							: body?.action === 'reset'
+								? 0
+								: null
+					if (nextCount === null) {
+						return new Response('Unsupported action', { status: 400 })
+					}
 					await this.ctx.storage.put('count', nextCount)
 					return Response.json({ count: nextCount })
 				}
@@ -227,3 +275,7 @@ await codemode.ui_save_app({
 	hidden: false,
 })
 ```
+
+See
+[Saved app example: `/api/state` + `/api/action`](./examples/saved-app-counter.md)
+for the same pattern written out as a reusable example page.

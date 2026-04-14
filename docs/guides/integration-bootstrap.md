@@ -54,6 +54,13 @@ If those conditions are not met, stop and fix the integration first.
      hosts all work end-to-end.
 5. Only after the smoke test succeeds should you build or save the dependent
    skill or app.
+   - If the connector or tokens already exist and the smoke test passes, proceed
+     directly to app or skill construction.
+   - Do not spend extra time exploring the local repo when the connector state,
+     secret names, allowed hosts, and provider contract are already clear
+     enough.
+   - For the default saved-app structure after bootstrap, load
+     `kody_official_guide` with `guide: "integration_backed_app"`.
 6. If the smoke test fails, keep working on integration setup. Do not treat the
    downstream artifact as ready.
 

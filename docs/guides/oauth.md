@@ -84,3 +84,162 @@ authenticating to Kody**. This guide is for **outbound** provider OAuth.
    `guide: "integration_bootstrap"` before saving the downstream artifact.
 6. Continue with capabilities that use \`{{secret:…}}\` or connector helpers;
    host/capability approval may still be required after save.
+
+## Example: Spotify-backed saved app after auth bootstrap
+
+Use this pattern only **after** the hosted `/connect/oauth` flow is complete,
+the Spotify connector already exists, and the authenticated smoke test passes.
+
+The ordering is:
+
+1. auth bootstrap first
+2. smoke test second
+3. save the app with `serverCode` backend routes
+4. keep `clientCode` mostly UI plus fetches to `kodyWidget.appBackend.basePath`
+
+For non-trivial apps, keep provider API calls in `serverCode`, not in embedded
+client-side `executeCode(...)` strings. Those inline snippets are acceptable for
+quick or throwaway prototypes only.
+
+```ts
+await codemode.ui_save_app({
+	title: 'Spotify playback controls',
+	description:
+		'Read current playback state and trigger simple Spotify actions through a saved app backend.',
+	clientCode: `
+		<main>
+			<h1>Spotify playback controls</h1>
+			<p id="track">Loading...</p>
+			<div style="display:flex;gap:0.5rem;">
+				<button type="button" data-action="refresh">Refresh</button>
+				<button type="button" data-action="next">Next track</button>
+				<button type="button" data-action="pause">Pause</button>
+			</div>
+			<script type="module">
+				import { kodyWidget } from '@kody/ui-utils'
+
+				const track = document.querySelector('#track')
+				const basePath = kodyWidget.appBackend?.basePath
+				function requireBackendBasePath() {
+					if (!basePath) {
+						track.textContent = 'Saved app backend is not available.'
+						return null
+					}
+					return basePath
+				}
+
+				async function loadState() {
+					const resolvedBasePath = requireBackendBasePath()
+					if (!resolvedBasePath) return
+					const response = await fetch(\`\${resolvedBasePath}/api/state\`)
+					const payload = await response.json()
+					track.textContent = payload.trackName
+						? \`\${payload.trackName} — \${payload.artistName}\`
+						: 'Nothing is currently playing.'
+				}
+
+				async function runAction(action) {
+					const resolvedBasePath = requireBackendBasePath()
+					if (!resolvedBasePath) return
+					await fetch(\`\${resolvedBasePath}/api/action\`, {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ action }),
+					})
+					await loadState()
+				}
+
+				document.querySelectorAll('[data-action]').forEach((button) => {
+					button.addEventListener('click', () => {
+						const action = button.getAttribute('data-action')
+						if (action === 'refresh') {
+							void loadState()
+							return
+						}
+						if (action) void runAction(action)
+					})
+				})
+
+				void loadState()
+			</script>
+		</main>
+	`,
+	serverCode: `
+		import { DurableObject } from 'cloudflare:workers'
+
+		export class App extends DurableObject {
+			async spotifyRequest(path, init = {}) {
+				const { connector } = await this.env.KODY.connectorGet({ name: 'spotify' })
+				if (!connector?.apiBaseUrl) {
+					return new Response('Missing spotify connector.', { status: 400 })
+				}
+
+				const authorization = await this.env.KODY.secretPlaceholder(
+					connector.accessTokenSecretName,
+					'user',
+				)
+				const upstream = await this.env.KODY.fetchWithResolvedSecrets({
+					url: new URL(path, connector.apiBaseUrl).toString(),
+					method: init.method ?? 'GET',
+					headers: {
+						authorization: \`Bearer \${authorization}\`,
+						...(init.body ? { 'content-type': 'application/json' } : {}),
+					},
+					body: init.body,
+				})
+
+				return await fetch(upstream.url, {
+					method: upstream.method,
+					headers: upstream.headers,
+					body: upstream.body,
+				})
+			}
+
+			async fetch(request) {
+				const url = new URL(request.url)
+
+				if (url.pathname === '/api/state' && request.method === 'GET') {
+					const response = await this.spotifyRequest('/me/player/currently-playing')
+					const payload = response.ok ? await response.json().catch(() => null) : null
+					return Response.json({
+						trackName: payload?.item?.name ?? null,
+						artistName: payload?.item?.artists?.[0]?.name ?? null,
+					})
+				}
+
+				if (url.pathname === '/api/action' && request.method === 'POST') {
+					const body = await request.json().catch(() => null)
+					const path =
+						body?.action === 'next'
+							? '/me/player/next'
+							: body?.action === 'pause'
+								? '/me/player/pause'
+								: null
+					if (!path) return new Response('Unsupported action.', { status: 400 })
+					try {
+						const response = await this.spotifyRequest(path, { method: 'POST' })
+						if (!response.ok) {
+							const details = await response.text().catch(() => '')
+							return new Response(
+								details || 'Spotify action request failed.',
+								{ status: response.status || 502 },
+							)
+						}
+						return Response.json({ ok: true })
+					} catch (error) {
+						return new Response(
+							error instanceof Error
+								? error.message
+								: 'Spotify action request failed.',
+							{ status: 502 },
+						)
+					}
+				}
+
+				return new Response('Not found.', { status: 404 })
+			}
+		}
+	`,
+	hidden: false,
+})
+```

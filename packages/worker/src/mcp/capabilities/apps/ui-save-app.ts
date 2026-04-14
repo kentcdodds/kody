@@ -27,6 +27,16 @@ import {
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
 
+const appServerCodeExportPattern =
+	/export\s+class\s+App\s+extends\s+DurableObject\b/
+
+function assertValidSavedAppServerCode(serverCode: string | null | undefined) {
+	if (serverCode == null) return
+	if (!appServerCodeExportPattern.test(serverCode)) {
+		throw new Error('serverCode must export class App extends DurableObject')
+	}
+}
+
 const inputSchema = z
 	.object({
 		app_id: z
@@ -53,7 +63,7 @@ const inputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'HTML source for the generic MCP UI shell. Provide a self-contained HTML document or fragment. If the app needs browser-side logic, include it with `<script type="module">...</script>` inside the HTML. Required when creating a new saved app.',
+				'HTML source for the generic MCP UI shell. Provide a self-contained HTML document or fragment. If the app needs browser-side logic, include it with `<script type="module">...</script>` inside the HTML. For non-trivial saved apps, keep clientCode focused on UI and fetches to the saved app backend instead of embedding large server-side `executeCode(...)` strings. Required when creating a new saved app.',
 			),
 		serverCode: z
 			.string()
@@ -61,7 +71,7 @@ const inputSchema = z
 			.nullable()
 			.optional()
 			.describe(
-				'Optional Durable Object server code for this saved app. The code must export `class App extends DurableObject` and can use its own isolated facet SQLite storage. Omit this field on updates to preserve the current backend, or pass null to clear it explicitly.',
+				'Optional Durable Object server code for this saved app. The code must export `class App extends DurableObject` and can use its own isolated facet SQLite storage. Prefer serverCode for non-trivial or integration-backed saved apps. Omit this field on updates to preserve the current backend, or pass null to clear it explicitly.',
 			),
 		parameters: z
 			.array(uiArtifactParameterSchema)
@@ -78,6 +88,16 @@ const inputSchema = z
 	})
 	.superRefine((value, ctx) => {
 		if (value.app_id !== undefined) {
+			if (
+				value.serverCode != null &&
+				!appServerCodeExportPattern.test(value.serverCode)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['serverCode'],
+					message: 'serverCode must export class App extends DurableObject',
+				})
+			}
 			return
 		}
 		if (value.title === undefined) {
@@ -101,6 +121,16 @@ const inputSchema = z
 				message: 'clientCode is required when creating a saved app.',
 			})
 		}
+		if (
+			value.serverCode != null &&
+			!appServerCodeExportPattern.test(value.serverCode)
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['serverCode'],
+				message: 'serverCode must export class App extends DurableObject',
+			})
+		}
 	})
 
 const outputSchema = z.object({
@@ -117,7 +147,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 	{
 		name: 'ui_save_app',
 		description:
-			'Create a saved UI artifact or partially update an existing one for the signed-in user so it can be reopened later by app_id without sending the source back through the model context. When updating, omitted fields preserve the existing saved value. If the saved app depends on a third-party integration, load `kody_official_guide` with `guide: "integration_bootstrap"` first and verify the required connector/secret plus a minimal authenticated smoke test before treating the downstream app as complete.',
+			'Create a saved UI artifact or partially update an existing one for the signed-in user so it can be reopened later by app_id without sending the source back through the model context. When updating, omitted fields preserve the existing saved value. For non-trivial or integration-backed saved apps, prefer `serverCode` backend endpoints with `clientCode` fetches through `kodyWidget.appBackend.basePath`; reserve embedded client-side `executeCode(...)` strings for quick prototypes or one-off experiments. If the saved app depends on a third-party integration, load `kody_official_guide` with `guide: "integration_bootstrap"` first and verify the required connector/secret plus a minimal authenticated smoke test before treating the downstream app as complete.',
 		keywords: ['ui', 'app', 'artifact', 'save', 'persist', 'update', 'mcp app'],
 		readOnly: false,
 		idempotent: false,
@@ -257,6 +287,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					args.serverCode === undefined
 						? existingApp.serverCode
 						: args.serverCode
+				assertValidSavedAppServerCode(serverCode)
 				const parameters =
 					args.parameters === undefined
 						? parseUiArtifactParameters(existingApp.parameters)
@@ -310,6 +341,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const description = args.description!
 				const clientCode = args.clientCode!
 				const serverCode = args.serverCode ?? null
+				assertValidSavedAppServerCode(serverCode)
 				const parameters = normalizeUiArtifactParameters(args.parameters)
 				const serializedParameters = parameters
 					? JSON.stringify(parameters)
