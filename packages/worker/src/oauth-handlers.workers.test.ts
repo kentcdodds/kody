@@ -391,14 +391,15 @@ test('reset client deletes stale client registrations after invalid client misma
 		createEnv(helpers),
 	)
 
-	expect(response.status).toBe(200)
+	expect(response.status).toBe(400)
 	await expect(response.json()).resolves.toEqual({
-		ok: true,
-		message:
-			'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+		ok: false,
+		error:
+			'Stored client cleanup is only available for stale or mismatched client registrations.',
+		code: 'invalid_request',
 	})
-	expect(revokedGrantIds).toEqual(['grant-1', 'grant-2'])
-	expect(deletedClientIds).toEqual(['client-123'])
+	expect(revokedGrantIds).toEqual([])
+	expect(deletedClientIds).toEqual([])
 })
 
 test('reset client is rejected when the request is not a redirect mismatch', async () => {

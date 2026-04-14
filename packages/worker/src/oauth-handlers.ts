@@ -14,7 +14,6 @@ import { render } from '#app/render.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
-import { canResetStoredClientForMessage } from '@kody-internal/shared/oauth-messages.ts'
 
 export const oauthPaths = {
 	authorize: '/oauth/authorize',
@@ -90,13 +89,6 @@ async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
 function readClientIdFromAuthorizeRequest(request: Request) {
 	const clientId = new URL(request.url).searchParams.get('client_id')?.trim()
 	return clientId ? clientId : null
-}
-
-function readAuthorizeErrorDescription(request: Request) {
-	const errorDescription = new URL(request.url).searchParams
-		.get('error_description')
-		?.trim()
-	return errorDescription ? errorDescription : null
 }
 
 function isLoopbackHostname(hostname: string) {
@@ -190,10 +182,7 @@ async function handleResetClientRequest(
 		helpers,
 		request,
 	)
-	const queryErrorDescription = readAuthorizeErrorDescription(request)
-	const canResetStoredClient =
-		redirectUriMismatch || canResetStoredClientForMessage(queryErrorDescription)
-	if (!canResetStoredClient) {
+	if (!redirectUriMismatch) {
 		return respondAuthorizeError(
 			request,
 			'Stored client cleanup is only available for stale or mismatched client registrations.',
