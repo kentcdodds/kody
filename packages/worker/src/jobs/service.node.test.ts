@@ -324,8 +324,8 @@ function createDatabase() {
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const row = {
-									id: params[20],
-									user_id: params[21],
+									id: params[19],
+									user_id: params[20],
 									name: params[0],
 									code: params[1],
 									storage_id: params[2],
@@ -349,8 +349,8 @@ function createDatabase() {
 										selectOne(
 											'jobs',
 											(existing) =>
-												existing['id'] === params[20] &&
-												existing['user_id'] === params[21],
+												existing['id'] === params[19] &&
+												existing['user_id'] === params[20],
 										)?.['created_at'] ?? params[9],
 								}
 								upsert(
