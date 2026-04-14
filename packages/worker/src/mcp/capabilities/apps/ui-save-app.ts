@@ -263,7 +263,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						: normalizeUiArtifactParameters(args.parameters)
 				const serializedParameters =
 					args.parameters === undefined
-						? existingApp.parameters
+						? undefined
 						: parameters
 							? JSON.stringify(parameters)
 							: null
@@ -275,8 +275,10 @@ export const uiSaveAppCapability = defineDomainCapability(
 					title: args.title,
 					description: args.description,
 					clientCode: args.clientCode,
-					parameters: serializedParameters,
 					hidden: args.hidden,
+				}
+				if (args.parameters !== undefined) {
+					updates.parameters = serializedParameters
 				}
 				if (args.serverCode !== undefined) {
 					updates.serverCode = serverCode

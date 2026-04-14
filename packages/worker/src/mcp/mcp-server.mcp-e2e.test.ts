@@ -503,6 +503,33 @@ test('app_server_exec runs snippets in a throwaway worker with app RPC access', 
 		| undefined
 	expect(rpcExecStructured?.result?.result).toEqual({ count: 3 })
 
+	await using forbiddenExecClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const forbiddenExecResult = await forbiddenExecClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.app_server_exec({
+					app_id: ${JSON.stringify(savedAppId)},
+					code: ${JSON.stringify(`return await app.call("__kody_resetStorage")`)},
+				})
+			}`,
+		},
+	})
+	const forbiddenExecStructured = (forbiddenExecResult as CallToolResult)
+		.structuredContent as
+		| {
+				error?: string
+		  }
+		| undefined
+	expect(forbiddenExecResult.isError).toBe(true)
+	expect(forbiddenExecStructured?.error).toContain(
+		'Saved app RPC method "__kody_resetStorage" is not allowed.',
+	)
+
 	await using exportClient = await createMcpClient(server.origin, database.user)
 
 	const exportResult = await exportClient.client.callTool({
@@ -548,6 +575,14 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 					description: 'Saved app used to verify partial ui_save_app updates.',
 					clientCode: '<main><h1>Patchable v1</h1></main>',
 					serverCode: ${JSON.stringify(initialServerCode)},
+					parameters: [
+						{
+							name: 'team',
+							description: 'Team slug',
+							type: 'string',
+							required: true,
+						},
+					],
 					hidden: true,
 				})
 			}`,
@@ -618,7 +653,12 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 					client_code?: string
 					server_code?: string | null
 					server_code_id?: string
-					parameters?: null
+					parameters?: Array<{
+						name?: string
+						description?: string
+						type?: string
+						required?: boolean
+					}> | null
 					hidden?: boolean
 				}
 		  }
@@ -631,7 +671,14 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 			client_code: '<main><h1>Patchable v2</h1></main>',
 			server_code: initialServerCode,
 			server_code_id: initialServerCodeId,
-			parameters: null,
+			parameters: [
+				{
+					name: 'team',
+					description: 'Team slug',
+					type: 'string',
+					required: true,
+				},
+			],
 			hidden: true,
 		}),
 	)

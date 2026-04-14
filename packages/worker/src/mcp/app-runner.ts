@@ -102,6 +102,12 @@ function createFacetWrapperModule(input: { facetName: string }) {
 import * as userModule from './user-app.js'
 
 const BaseApp = userModule.App
+const reservedFacetMethodNames = new Set([
+	'fetch',
+	'__kody_resetStorage',
+	'__kody_exportStorage',
+	'__kody_invokeUserMethod',
+])
 
 if (typeof BaseApp !== 'function') {
 	throw new Error('Saved app server code must export class App extends DurableObject.')
@@ -148,6 +154,32 @@ export class ${exportName} extends BaseApp {
 			nextStartAfter: truncated ? nextStartAfter : null,
 			pageSize,
 		}
+	}
+
+	async __kody_invokeUserMethod(methodName, args) {
+		if (typeof methodName !== 'string' || !methodName.trim()) {
+			throw new Error('Saved app RPC method name must be a non-empty string.')
+		}
+		const normalizedMethodName = methodName.trim()
+		if (
+			reservedFacetMethodNames.has(normalizedMethodName) ||
+			normalizedMethodName.startsWith('__kody_')
+		) {
+			throw new Error(
+				\`Saved app RPC method "\${normalizedMethodName}" is not allowed.\`,
+			)
+		}
+		const method = Reflect.get(this, normalizedMethodName)
+		if (typeof method !== 'function') {
+			throw new Error(
+				\`Saved app RPC method "\${normalizedMethodName}" was not found.\`,
+			)
+		}
+		return await Reflect.apply(
+			method,
+			this,
+			Array.isArray(args) ? args : [],
+		)
 	}
 }
 `.trim()
@@ -678,13 +710,14 @@ class AppRunnerBase extends DurableObject<Env> {
 		args?: Array<unknown>
 	}) {
 		const facet = await this.getFacetStub(buildFacetName(input.facetName))
-		const method = Reflect.get(facet, input.methodName)
-		if (typeof method !== 'function') {
-			throw new Error(
-				`Saved app RPC method "${input.methodName}" was not found.`,
-			)
-		}
-		return await Reflect.apply(method, facet, input.args ?? [])
+		return await (
+			facet as unknown as {
+				__kody_invokeUserMethod: (
+					methodName: string,
+					args?: Array<unknown>,
+				) => Promise<unknown>
+			}
+		).__kody_invokeUserMethod(input.methodName, input.args ?? [])
 	}
 
 	private async applyRateLimit() {

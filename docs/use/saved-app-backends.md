@@ -160,6 +160,10 @@ export class App extends DurableObject {
 }
 ```
 
+`app.call(...)` rejects reserved method names such as `fetch` and any name that
+starts with `__kody_`. Only user-defined public methods on the saved app class
+may be invoked through this bridge.
+
 For raw SQLite inspection, use **`app_storage_export`** instead of
 `app_server_exec`.
 
