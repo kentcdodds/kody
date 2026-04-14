@@ -161,10 +161,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				const resetErrorDescription = readResetErrorDescription()
 				if (resetErrorDescription) {
 					const url = new URL(submitUrl)
-					if (!url.searchParams.get('error_description')) {
-						url.searchParams.set('error_description', resetErrorDescription)
-						submitUrl = url.toString()
-					}
+					url.searchParams.set('error_description', resetErrorDescription)
+					submitUrl = url.toString()
 				}
 			}
 			const response = await fetch(submitUrl, {
