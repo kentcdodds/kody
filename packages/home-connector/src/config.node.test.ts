@@ -49,6 +49,7 @@ test('explicit discovery URLs override defaults in mock mode', () => {
 		SONOS_DISCOVERY_URL: 'http://sonos.mock.local/discovery',
 		SAMSUNG_TV_DISCOVERY_URL: 'http://samsung-tv.mock.local/discovery',
 		LUTRON_DISCOVERY_URL: 'http://lutron.mock.local/discovery',
+		JELLYFISH_DISCOVERY_URL: 'http://jellyfish.mock.local/discovery',
 		HOME_CONNECTOR_ID: 'default',
 		WORKER_BASE_URL: 'http://localhost:3742',
 	})
@@ -60,6 +61,9 @@ test('explicit discovery URLs override defaults in mock mode', () => {
 		'http://samsung-tv.mock.local/discovery',
 	)
 	expect(config.lutronDiscoveryUrl).toBe('http://lutron.mock.local/discovery')
+	expect(config.jellyfishDiscoveryUrl).toBe(
+		'http://jellyfish.mock.local/discovery',
+	)
 })
 
 test('live connector defaults Sonos discovery to SSDP', () => {
@@ -110,6 +114,18 @@ test('VENSTAR_SCAN_CIDRS overrides derived Venstar scan CIDRs', () => {
 
 	const config = loadHomeConnectorConfig()
 	expect(config.venstarScanCidrs).toEqual(['192.168.1.0/24', '10.0.0.5/32'])
+})
+
+test('JELLYFISH_SCAN_CIDRS overrides derived JellyFish scan CIDRs', () => {
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		JELLYFISH_SCAN_CIDRS: '192.168.2.0/24, 10.0.0.6/32',
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.jellyfishScanCidrs).toEqual(['192.168.2.0/24', '10.0.0.6/32'])
 })
 
 test('derived Venstar autoscan CIDRs split a /23 into /24 scan blocks', () => {

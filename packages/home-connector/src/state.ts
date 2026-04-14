@@ -5,6 +5,10 @@ import {
 import { type LutronDiscoveryDiagnostics } from './adapters/lutron/types.ts'
 import { type SamsungTvDiscoveryDiagnostics } from './adapters/samsung-tv/types.ts'
 import { type BondDiscoveryDiagnostics } from './adapters/bond/types.ts'
+import {
+	type JellyfishDiscoveredController,
+	type JellyfishDiscoveryDiagnostics,
+} from './adapters/jellyfish/types.ts'
 import { type SonosDiscoveryDiagnostics } from './adapters/sonos/types.ts'
 import {
 	type VenstarDiscoveredThermostat,
@@ -29,6 +33,8 @@ export type HomeConnectorState = {
 	lutronDiscoveryDiagnostics: LutronDiscoveryDiagnostics | null
 	sonosDiscoveryDiagnostics: SonosDiscoveryDiagnostics | null
 	bondDiscoveryDiagnostics: BondDiscoveryDiagnostics | null
+	jellyfishDiscoveryDiagnostics: JellyfishDiscoveryDiagnostics | null
+	jellyfishDiscoveredControllers: Array<JellyfishDiscoveredController>
 	venstarDiscoveryDiagnostics: VenstarDiscoveryDiagnostics | null
 	venstarDiscoveredThermostats: Array<VenstarDiscoveredThermostat>
 }
@@ -49,6 +55,8 @@ const initialState: HomeConnectorState = {
 	lutronDiscoveryDiagnostics: null,
 	sonosDiscoveryDiagnostics: null,
 	bondDiscoveryDiagnostics: null,
+	jellyfishDiscoveryDiagnostics: null,
+	jellyfishDiscoveredControllers: [],
 	venstarDiscoveryDiagnostics: null,
 	venstarDiscoveredThermostats: [],
 }
@@ -114,6 +122,22 @@ export function setBondDiscoveryDiagnostics(
 ) {
 	state.bondDiscoveryDiagnostics = diagnostics
 	return state.bondDiscoveryDiagnostics
+}
+
+export function setJellyfishDiscoveryDiagnostics(
+	state: HomeConnectorState,
+	diagnostics: JellyfishDiscoveryDiagnostics | null,
+) {
+	state.jellyfishDiscoveryDiagnostics = diagnostics
+	return state.jellyfishDiscoveryDiagnostics
+}
+
+export function setJellyfishDiscoveredControllers(
+	state: HomeConnectorState,
+	controllers: Array<JellyfishDiscoveredController>,
+) {
+	state.jellyfishDiscoveredControllers = [...controllers]
+	return state.jellyfishDiscoveredControllers
 }
 
 export function setVenstarDiscoveryDiagnostics(

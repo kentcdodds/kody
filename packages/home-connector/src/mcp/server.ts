@@ -4,6 +4,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
 import { type createBondAdapter } from '../adapters/bond/index.ts'
+import { type createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
 import { type createSonosAdapter } from '../adapters/sonos/index.ts'
@@ -69,6 +70,7 @@ export function createHomeConnectorMcpServer(input: {
 	lutron: ReturnType<typeof createLutronAdapter>
 	sonos: ReturnType<typeof createSonosAdapter>
 	bond: ReturnType<typeof createBondAdapter>
+	jellyfish: ReturnType<typeof createJellyfishAdapter>
 	venstar: ReturnType<typeof createVenstarAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
@@ -79,6 +81,7 @@ export function createHomeConnectorMcpServer(input: {
 	const lutron = input.lutron
 	const sonos = input.sonos
 	const bond = input.bond
+	const jellyfish = input.jellyfish
 	const venstar = input.venstar
 
 	const server = new McpServer(
@@ -88,7 +91,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), and Venstar WiFi thermostat control and diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
+				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, and Venstar WiFi thermostat control and diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
 		},
 	)
 
@@ -229,6 +232,245 @@ export function createHomeConnectorMcpServer(input: {
 			structuredContent,
 		}
 	}
+
+	const jellyfishPatternPathSchema = buildToolInputSchema({
+		patternPath: z
+			.string()
+			.min(1)
+			.describe('Pattern path in "<folder>/<pattern name>" form.'),
+		timeoutMs: z
+			.number()
+			.int()
+			.min(250)
+			.max(30_000)
+			.optional()
+			.describe('Optional command timeout in milliseconds.'),
+	})
+
+	const jellyfishRunPatternSchema = buildToolInputSchema(
+		z
+			.object({
+				patternPath: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						'Pattern path in "<folder>/<pattern name>" form for running a saved pattern.',
+					),
+				patternData: z
+					.record(z.string(), z.any())
+					.optional()
+					.describe(
+						'Inline pattern configuration object. Use this to run a modified or custom pattern.',
+					),
+				zoneNames: z
+					.array(z.string().min(1))
+					.optional()
+					.describe(
+						'Optional subset of zone names. When omitted, the controller runs the pattern on all known zones.',
+					),
+				state: z
+					.enum(['on', 'off'])
+					.optional()
+					.describe('Optional state, defaulting to "on".'),
+				timeoutMs: z
+					.number()
+					.int()
+					.min(250)
+					.max(30_000)
+					.optional()
+					.describe('Optional command timeout in milliseconds.'),
+			})
+			.refine(
+				(value) =>
+					Number(Boolean(value.patternPath)) +
+						Number(Boolean(value.patternData)) ===
+					1,
+				{
+					message:
+						'Provide exactly one of patternPath or patternData for jellyfish_run_pattern.',
+				},
+			),
+	)
+
+	registerTool(
+		{
+			name: 'jellyfish_scan_controllers',
+			title: 'Scan JellyFish Controllers',
+			description:
+				'Scan configured CIDRs for JellyFish controllers, persist any discovered controllers locally, and return discovery diagnostics.',
+			inputSchema: {},
+		},
+		async () => {
+			const result = await jellyfish.scan()
+			const status = jellyfish.getStatus()
+			return structuredTextResult(
+				result.length === 0
+					? 'No JellyFish controllers were discovered.'
+					: `Discovered ${result.length} JellyFish controller(s).`,
+				{
+					controllers: result,
+					diagnostics: status.diagnostics,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'jellyfish_list_controllers',
+			title: 'List JellyFish Controllers',
+			description:
+				'List persisted JellyFish controllers and their latest connectivity metadata.',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const controllers = jellyfish.listControllers()
+			return structuredTextResult(
+				controllers.length === 0
+					? 'No JellyFish controllers are currently known.'
+					: controllers
+							.map(
+								(controller) =>
+									`- ${controller.name} (${controller.hostname}) lastConnected=${controller.lastConnectedAt ?? 'never'}`,
+							)
+							.join('\n'),
+				{
+					controllers,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'jellyfish_list_zones',
+			title: 'List JellyFish Zones',
+			description:
+				'List the current JellyFish zones, including zone names and pixel counts.',
+			...buildToolInputSchema({
+				timeoutMs: z
+					.number()
+					.int()
+					.min(250)
+					.max(30_000)
+					.optional()
+					.describe('Optional command timeout in milliseconds.'),
+			}),
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const result = await jellyfish.listZones({
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
+			return structuredTextResult(
+				result.zones.length === 0
+					? 'No JellyFish zones were returned by the controller.'
+					: `Loaded ${result.zones.length} JellyFish zone(s).`,
+				result,
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'jellyfish_list_patterns',
+			title: 'List JellyFish Patterns',
+			description:
+				'List runnable JellyFish patterns. Folder marker rows are filtered out so the result is ready to use.',
+			...buildToolInputSchema({
+				timeoutMs: z
+					.number()
+					.int()
+					.min(250)
+					.max(30_000)
+					.optional()
+					.describe('Optional command timeout in milliseconds.'),
+			}),
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const result = await jellyfish.listPatterns({
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
+			return structuredTextResult(
+				result.patterns.length === 0
+					? 'No JellyFish patterns were returned by the controller.'
+					: `Loaded ${result.patterns.length} JellyFish pattern(s).`,
+				result,
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'jellyfish_get_pattern',
+			title: 'Get JellyFish Pattern',
+			description: 'Fetch and parse a saved JellyFish pattern by patternPath.',
+			inputSchema: jellyfishPatternPathSchema.inputSchema,
+			sdkInputSchema: jellyfishPatternPathSchema.sdkInputSchema,
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const result = await jellyfish.getPattern({
+				patternPath: String(args['patternPath'] ?? ''),
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
+			return structuredTextResult(
+				`Loaded JellyFish pattern ${result.pattern.path}.`,
+				result,
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'jellyfish_run_pattern',
+			title: 'Run JellyFish Pattern',
+			description:
+				'Run a JellyFish pattern by patternPath or inline patternData. When zoneNames is omitted, the pattern runs on all known zones.',
+			inputSchema: jellyfishRunPatternSchema.inputSchema,
+			sdkInputSchema: jellyfishRunPatternSchema.sdkInputSchema,
+		},
+		async (args) => {
+			const result = await jellyfish.runPattern({
+				patternPath:
+					args['patternPath'] == null ? undefined : String(args['patternPath']),
+				patternData:
+					args['patternData'] &&
+					typeof args['patternData'] === 'object' &&
+					!Array.isArray(args['patternData'])
+						? (args['patternData'] as Record<string, unknown>)
+						: undefined,
+				zoneNames: Array.isArray(args['zoneNames'])
+					? args['zoneNames'].map((zone) => String(zone))
+					: undefined,
+				state: args['state'] === 'off' ? 'off' : 'on',
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
+			return structuredTextResult(
+				`Ran JellyFish pattern on ${result.zoneNames.length} zone(s).`,
+				result,
+			)
+		},
+	)
 
 	registerTool(
 		{

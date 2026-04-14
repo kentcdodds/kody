@@ -12,12 +12,19 @@ export type HomeConnectorConfig = {
 	lutronDiscoveryUrl: string
 	sonosDiscoveryUrl: string
 	bondDiscoveryUrl: string
+	jellyfishDiscoveryUrl: string | null
 	/**
 	 * Venstar discovery uses direct HTTP probes to `/query/info` across these
 	 * CIDRs. When unset, the connector derives private `/24` networks from local
 	 * interfaces. `VENSTAR_SCAN_CIDRS` can override the derived list.
 	 */
 	venstarScanCidrs: Array<string>
+	/**
+	 * JellyFish discovery uses direct WebSocket probes to `ws://<host>:9000`
+	 * across these CIDRs unless `JELLYFISH_DISCOVERY_URL` points to a JSON
+	 * discovery feed.
+	 */
+	jellyfishScanCidrs: Array<string>
 	dataPath: string
 	dbPath: string
 	port: number
@@ -59,8 +66,8 @@ function resolveHomeConnectorDbPath(dataPath: string) {
 	)
 }
 
-function resolveVenstarScanCidrsFromEnv(): Array<string> {
-	const raw = process.env.VENSTAR_SCAN_CIDRS?.trim()
+function resolveScanCidrsFromEnv(envVar: string): Array<string> {
+	const raw = process.env[envVar]?.trim()
 	if (!raw) return []
 	return raw
 		.split(',')
@@ -103,7 +110,7 @@ function ipv4IntToCidr24(value: number) {
 	return `${a}.${b}.${c}.0/24`
 }
 
-function deriveVenstarAutoscanCidrsFromCidr(cidr: string): Array<string> {
+function derivePrivateAutoscanCidrsFromCidr(cidr: string): Array<string> {
 	const match = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(cidr.trim())
 	if (!match) return []
 	const address = match[1] ?? ''
@@ -126,14 +133,14 @@ function deriveVenstarAutoscanCidrsFromCidr(cidr: string): Array<string> {
 	}
 	if (derived.length > 16) {
 		console.warn(
-			`Skipping broad Venstar autoscan CIDR "${cidr}" because it expands to ${derived.length} /24 scan blocks. Use VENSTAR_SCAN_CIDRS to set a smaller range explicitly.`,
+			`Skipping broad autoscan CIDR "${cidr}" because it expands to ${derived.length} /24 scan blocks. Set a smaller scan range explicitly.`,
 		)
 		return []
 	}
 	return derived
 }
 
-export function deriveVenstarAutoscanCidrsFromInterfaces(
+export function derivePrivateAutoscanCidrsFromInterfaces(
 	interfaces: ReturnType<typeof networkInterfaces>,
 ) {
 	const cidrs = new Set<string>()
@@ -143,7 +150,7 @@ export function deriveVenstarAutoscanCidrsFromInterfaces(
 			if (entry.internal || entry.family !== 'IPv4') continue
 			const cidr = entry.cidr
 			if (!cidr) continue
-			for (const derived of deriveVenstarAutoscanCidrsFromCidr(cidr)) {
+			for (const derived of derivePrivateAutoscanCidrsFromCidr(cidr)) {
 				cidrs.add(derived)
 			}
 		}
@@ -151,8 +158,18 @@ export function deriveVenstarAutoscanCidrsFromInterfaces(
 	return [...cidrs]
 }
 
+export function deriveVenstarAutoscanCidrsFromInterfaces(
+	interfaces: ReturnType<typeof networkInterfaces>,
+) {
+	return derivePrivateAutoscanCidrsFromInterfaces(interfaces)
+}
+
 function deriveVenstarAutoscanCidrs() {
 	return deriveVenstarAutoscanCidrsFromInterfaces(networkInterfaces())
+}
+
+function deriveJellyfishAutoscanCidrs() {
+	return derivePrivateAutoscanCidrsFromInterfaces(networkInterfaces())
 }
 
 export function loadHomeConnectorConfig(): HomeConnectorConfig {
@@ -166,11 +183,16 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerBaseUrl,
 		homeConnectorId,
 	)
-	const explicitVenstarCidrs = resolveVenstarScanCidrsFromEnv()
+	const explicitVenstarCidrs = resolveScanCidrsFromEnv('VENSTAR_SCAN_CIDRS')
 	const venstarScanCidrs =
 		explicitVenstarCidrs.length > 0
 			? explicitVenstarCidrs
 			: deriveVenstarAutoscanCidrs()
+	const explicitJellyfishCidrs = resolveScanCidrsFromEnv('JELLYFISH_SCAN_CIDRS')
+	const jellyfishScanCidrs =
+		explicitJellyfishCidrs.length > 0
+			? explicitJellyfishCidrs
+			: deriveJellyfishAutoscanCidrs()
 	return {
 		homeConnectorId,
 		workerBaseUrl,
@@ -189,7 +211,9 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 			'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
 		bondDiscoveryUrl:
 			process.env.BOND_DISCOVERY_URL?.trim() || 'mdns://_bond._tcp.local',
+		jellyfishDiscoveryUrl: process.env.JELLYFISH_DISCOVERY_URL?.trim() || null,
 		venstarScanCidrs,
+		jellyfishScanCidrs,
 		dataPath,
 		dbPath: resolveHomeConnectorDbPath(dataPath),
 		port: Number.isFinite(port) ? port : 4040,

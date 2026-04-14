@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
 import { createBondAdapter } from '../adapters/bond/index.ts'
+import { createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../adapters/lutron/index.ts'
 import { createSonosAdapter } from '../adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
@@ -22,6 +23,7 @@ function createConfig() {
 	process.env.SAMSUNG_TV_DISCOVERY_URL =
 		'http://samsung-tv.mock.local/discovery'
 	process.env.BOND_DISCOVERY_URL = 'http://bond.mock.local/discovery'
+	process.env.JELLYFISH_DISCOVERY_URL = 'http://jellyfish.mock.local/discovery'
 	process.env.VENSTAR_SCAN_CIDRS = '192.168.10.40/32,192.168.10.41/32'
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
 	return loadHomeConnectorConfig()
@@ -59,6 +61,11 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		state,
 		storage,
 	})
+	const jellyfish = createJellyfishAdapter({
+		config,
+		state,
+		storage,
+	})
 	const venstar = createVenstarAdapter({ config, state, storage })
 	await samsungTv.scan()
 	await lutron.scan()
@@ -71,6 +78,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		lutron,
 		sonos,
 		bond,
+		jellyfish,
 		venstar,
 	})
 
@@ -106,6 +114,21 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
 		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'jellyfish_scan_controllers'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'jellyfish_list_zones')).toBe(
+			true,
+		)
+		expect(tools.some((tool) => tool.name === 'jellyfish_list_patterns')).toBe(
+			true,
+		)
+		expect(tools.some((tool) => tool.name === 'jellyfish_get_pattern')).toBe(
+			true,
+		)
+		expect(tools.some((tool) => tool.name === 'jellyfish_run_pattern')).toBe(
+			true,
+		)
 		expect(tools.some((tool) => tool.name === 'venstar_scan_thermostats')).toBe(
 			true,
 		)
@@ -126,7 +149,6 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			String((bondAuthGuide.content[0] as { text?: string }).text),
 		).toContain('/bond/setup')
-
 		const lutronCredentialsTool = tools.find(
 			(tool) => tool.name === 'lutron_set_credentials',
 		)
@@ -155,6 +177,56 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		const sonosPlayers = await mcp.callTool('sonos_list_players')
 		expect(sonosPlayers.structuredContent).toMatchObject({
 			players: expect.any(Array),
+		})
+
+		const jellyfishScan = await mcp.callTool('jellyfish_scan_controllers')
+		expect(jellyfishScan.structuredContent).toMatchObject({
+			controllers: expect.any(Array),
+			diagnostics: expect.anything(),
+		})
+		const jellyfishZones = await mcp.callTool('jellyfish_list_zones')
+		expect(jellyfishZones.structuredContent).toMatchObject({
+			controller: {
+				hostname: 'JellyFish-F348.local',
+			},
+			zones: [
+				{
+					name: 'Zone',
+				},
+			],
+		})
+		const jellyfishPatterns = await mcp.callTool('jellyfish_list_patterns')
+		expect(jellyfishPatterns.structuredContent).toMatchObject({
+			patterns: expect.arrayContaining([
+				expect.objectContaining({
+					path: 'Christmas/Christmas Tree',
+				}),
+			]),
+		})
+		const jellyfishPattern = await mcp.callTool('jellyfish_get_pattern', {
+			patternPath: 'Colors/Blue',
+		})
+		expect(jellyfishPattern.structuredContent).toMatchObject({
+			pattern: {
+				path: 'Colors/Blue',
+				data: {
+					type: 'Color',
+				},
+			},
+		})
+		const jellyfishRunPattern = await mcp.callTool('jellyfish_run_pattern', {
+			patternPath: 'Christmas/Christmas Tree',
+		})
+		expect(jellyfishRunPattern.structuredContent).toMatchObject({
+			controller: {
+				hostname: 'JellyFish-F348.local',
+			},
+			zoneNames: ['Zone'],
+			runPattern: {
+				file: 'Christmas/Christmas Tree',
+				state: 1,
+				zoneName: ['Zone'],
+			},
 		})
 
 		const venstarThermostats = await mcp.callTool('venstar_list_thermostats')

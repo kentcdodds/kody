@@ -133,6 +133,21 @@ function initializeSchema(db: SqliteDatabase) {
 				ON DELETE CASCADE
 		);
 
+		CREATE TABLE IF NOT EXISTS jellyfish_controllers (
+			connector_id TEXT NOT NULL,
+			controller_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			hostname TEXT NOT NULL,
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL DEFAULT 9000,
+			firmware_version TEXT,
+			last_seen_at TEXT,
+			last_connected_at TEXT,
+			last_error TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, controller_id)
+		);
+
 		CREATE TABLE IF NOT EXISTS sonos_players (
 			connector_id TEXT NOT NULL,
 			player_id TEXT NOT NULL,
