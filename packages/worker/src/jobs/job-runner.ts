@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
-import { DurableObject } from 'cloudflare:workers'
+import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	type FacetStorageExport,
@@ -58,6 +58,23 @@ function defaultConfig(jobId: string): JobRunnerConfig {
 }
 
 export class JobFacetBridge extends FacetKodyBridge {}
+
+export class JobExecBridge extends WorkerEntrypoint<Env, { jobId: string }> {
+	async call(methodName: string, ...args: Array<unknown>): Promise<unknown> {
+		const jobRunner = this.env.JOB_RUNNER.get(
+			this.env.JOB_RUNNER.idFromName(this.ctx.props.jobId),
+		) as unknown as {
+			callFacetMethod: (payload: {
+				methodName: string
+				args: Array<unknown>
+			}) => Promise<unknown>
+		}
+		return await jobRunner.callFacetMethod({
+			methodName,
+			args,
+		})
+	}
+}
 
 class JobRunnerBase extends DurableObject<Env> {
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -207,13 +224,32 @@ class JobRunnerBase extends DurableObject<Env> {
 	}
 
 	async execServer(input: { code: string; params?: Record<string, unknown> }) {
-		const facet = await this.getFacetStub()
 		return await runJobExecWorker({
 			loader: this.env.APP_LOADER,
-			jobFacet: facet,
+			jobExecBridge: this.ctx.exports.JobExecBridge({
+				props: {
+					jobId: this.ctx.id.toString(),
+				},
+			}),
 			code: input.code,
 			params: input.params,
 		})
+	}
+
+	async callFacetMethod(input: {
+		methodName: string
+		args: Array<unknown>
+	}): Promise<unknown> {
+		const jobFacet = (await this.getFacetStub()) as Record<string, unknown>
+		const rpcMethod = jobFacet[input.methodName]
+		if (typeof rpcMethod !== 'function') {
+			throw new Error(
+				`Job facet does not expose RPC method "${input.methodName}".`,
+			)
+		}
+		return await (
+			rpcMethod as (...rpcArgs: Array<unknown>) => Promise<unknown>
+		)(...input.args)
 	}
 
 	async deleteRunner() {

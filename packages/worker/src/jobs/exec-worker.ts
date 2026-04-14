@@ -6,7 +6,7 @@ const jobExecWorkerCompatibilityFlags = [
 
 type JobExecInput = {
 	loader: WorkerLoader
-	jobFacet: Fetcher
+	jobExecBridge: Fetcher
 	code: string
 	params?: Record<string, unknown>
 }
@@ -18,6 +18,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers'
 export class JobExec extends WorkerEntrypoint {
 	async run(params) {
 		const job = this.env.JOB
+		const paramsValue = params ?? {}
 ${indentCode(code, '\t\t')}
 	}
 }
@@ -40,7 +41,7 @@ export async function runJobExecWorker(input: JobExecInput) {
 			'job-exec.js': createJobExecModuleSource(input.code),
 		},
 		env: {
-			JOB: input.jobFacet,
+			JOB: input.jobExecBridge,
 		},
 		globalOutbound: null,
 	})
