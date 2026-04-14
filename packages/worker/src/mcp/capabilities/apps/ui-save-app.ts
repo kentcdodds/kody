@@ -283,11 +283,13 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const title = args.title ?? existingApp.title
 				const description = args.description ?? existingApp.description
 				const clientCode = args.clientCode ?? existingApp.clientCode
-				const serverCode =
-					args.serverCode === undefined
-						? existingApp.serverCode
-						: args.serverCode
+			const serverCode =
+				args.serverCode === undefined
+					? existingApp.serverCode
+					: args.serverCode
+			if (args.serverCode !== undefined) {
 				assertValidSavedAppServerCode(serverCode)
+			}
 				const parameters =
 					args.parameters === undefined
 						? parseUiArtifactParameters(existingApp.parameters)
