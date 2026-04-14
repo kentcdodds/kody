@@ -24,7 +24,6 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
-import { invalidRedirectUriMessage } from '@kody-internal/shared/oauth-messages.ts'
 
 type OAuthAuthorizeInfo = {
 	client: { id: string; name: string }
@@ -34,10 +33,6 @@ type OAuthAuthorizeInfo = {
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
 type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
-
-function isInvalidRedirectUriMessage(message: string | null | undefined) {
-	return message === invalidRedirectUriMessage
-}
 
 function getSearchParams() {
 	return typeof window === 'undefined'
@@ -54,6 +49,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let session: SessionInfo | null = null
 	let sessionStatus: SessionStatus = 'idle'
 	let resetCompleted = false
+	let allowClientReset = false
+	let activeInfoRequestId = 0
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
@@ -68,14 +65,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		return error ? `Authorization error: ${error}` : null
 	}
 
-	async function loadInfo() {
-		status = 'loading'
-
-		const queryError = readQueryError()
-		if (queryError) {
-			message = { type: 'error', text: queryError }
-		}
-
+	async function loadInfo(requestId: number) {
 		try {
 			const query = typeof window === 'undefined' ? '' : window.location.search
 			const response = await fetch(`/oauth/authorize-info${query}`, {
@@ -83,6 +73,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				credentials: 'include',
 			})
 			const payload = await response.json().catch(() => null)
+			if (requestId !== activeInfoRequestId) return
 			if (!response.ok || !payload?.ok) {
 				const errorText =
 					typeof payload?.error === 'string'
@@ -90,6 +81,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						: 'Unable to load authorization details.'
 				info = null
 				status = 'error'
+				allowClientReset = payload?.allowClientReset === true
 				message = { type: 'error', text: errorText }
 				handle.update()
 				return
@@ -99,13 +91,14 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				scopes: payload.scopes,
 			}
 			status = 'ready'
-			if (!queryError) {
-				message = null
-			}
+			allowClientReset = false
+			message = null
 			handle.update()
 		} catch {
+			if (requestId !== activeInfoRequestId) return
 			info = null
 			status = 'error'
+			allowClientReset = false
 			message = {
 				type: 'error',
 				text: 'Unable to load authorization details.',
@@ -208,7 +201,14 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			typeof window === 'undefined' ? '' : window.location.search
 		if (currentSearch !== lastSearch) {
 			lastSearch = currentSearch
-			void loadInfo()
+			resetCompleted = false
+			allowClientReset = false
+			info = null
+			status = 'loading'
+			const queryError = readQueryError()
+			message = queryError ? { type: 'error', text: queryError } : null
+			activeInfoRequestId += 1
+			void loadInfo(activeInfoRequestId)
 		}
 		if (sessionStatus === 'idle') {
 			void loadSession()
@@ -218,16 +218,13 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const scopes = info?.scopes ?? []
 		const scopeLabel =
 			scopes.length > 0 ? scopes.join(', ') : 'No scopes requested.'
-		const queryError = readQueryError()
 		const sessionEmail = session?.email ?? ''
 		const isSessionReady = sessionStatus === 'ready'
 		const isSessionLoading =
 			sessionStatus === 'loading' || sessionStatus === 'idle'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
-		const showResetClientCard =
-			(isInvalidRedirectUriMessage(queryError) ||
-				isInvalidRedirectUriMessage(message?.text)) &&
-			!resetCompleted
+		const showResetClientCard = allowClientReset && !resetCompleted
+		const showAuthorizeForm = !resetCompleted
 		const actionsDisabled =
 			status !== 'ready' || Boolean(submittingDecision) || isSessionLoading
 		const resetClientDisabled =
@@ -270,7 +267,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						>
 							Signed in as {sessionEmail}
 						</p>
-						<p css={descriptionCss}>Approve to continue with this account.</p>
+						<p css={descriptionCss}>
+							{resetCompleted
+								? 'Start the connection again from your client to continue with this account.'
+								: 'Approve to continue with this account.'}
+						</p>
 					</section>
 				) : null}
 				{status === 'loading' ? (
@@ -308,59 +309,61 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						) : null}
 					</section>
 				) : null}
-				<form
-					css={{
-						...cardCss,
-						opacity: formReady ? 1 : 0.7,
-					}}
-					on={{ submit: handleSubmit }}
-				>
-					{!isLoggedIn && isSessionReady ? (
-						<>
-							<label css={fieldCss}>
-								<span css={fieldLabelCss}>Email</span>
-								<input
-									type="email"
-									name="email"
-									required
-									autoComplete="email"
-									placeholder="you@example.com"
-									disabled={actionsDisabled}
-									css={inputCss}
-								/>
-							</label>
-							<label css={fieldCss}>
-								<span css={fieldLabelCss}>Password</span>
-								<input
-									type="password"
-									name="password"
-									required
-									autoComplete="current-password"
-									placeholder="Enter your password"
-									disabled={actionsDisabled}
-									css={inputCss}
-								/>
-							</label>
-						</>
-					) : null}
-					<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
-						<button
-							type="submit"
-							disabled={actionsDisabled}
-							css={primaryButtonCss}
-						>
-							{authorizeLabel}
-						</button>
-						<button
-							type="button"
-							disabled={actionsDisabled}
-							on={{ click: () => submitDecision('deny') }}
-							css={secondaryButtonCss}
-						>
-							Deny
-						</button>
-					</div>
-				</form>
+				{showAuthorizeForm ? (
+					<form
+						css={{
+							...cardCss,
+							opacity: formReady ? 1 : 0.7,
+						}}
+						on={{ submit: handleSubmit }}
+					>
+						{!isLoggedIn && isSessionReady ? (
+							<>
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Email</span>
+									<input
+										type="email"
+										name="email"
+										required
+										autoComplete="email"
+										placeholder="you@example.com"
+										disabled={actionsDisabled}
+										css={inputCss}
+									/>
+								</label>
+								<label css={fieldCss}>
+									<span css={fieldLabelCss}>Password</span>
+									<input
+										type="password"
+										name="password"
+										required
+										autoComplete="current-password"
+										placeholder="Enter your password"
+										disabled={actionsDisabled}
+										css={inputCss}
+									/>
+								</label>
+							</>
+						) : null}
+						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+							<button
+								type="submit"
+								disabled={actionsDisabled}
+								css={primaryButtonCss}
+							>
+								{authorizeLabel}
+							</button>
+							<button
+								type="button"
+								disabled={actionsDisabled}
+								on={{ click: () => submitDecision('deny') }}
+								css={secondaryButtonCss}
+							>
+								Deny
+							</button>
+						</div>
+					</form>
+				) : null}
 				<a href="/" css={mutedLinkCss}>
 					Back home
 				</a>

@@ -7,6 +7,7 @@ import {
 } from '@cloudflare/workers-oauth-provider'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import {
 	handleAuthorizeInfo,
 	handleAuthorizeRequest,
@@ -119,6 +120,10 @@ function createFormRequest(
 	})
 }
 
+function getCookiePair(setCookie: string) {
+	return setCookie.split(';', 1)[0] ?? setCookie
+}
+
 test('authorize page returns SPA shell', async () => {
 	const response = await handleAuthorizeRequest(
 		new Request('https://example.com/oauth/authorize'),
@@ -146,6 +151,31 @@ test('authorize info returns client and scopes', async () => {
 		client: { id: baseClient.clientId, name: baseClient.clientName },
 		scopes: baseAuthRequest.scope,
 	})
+})
+
+test('authorize info marks invalid client mismatch as resettable', async () => {
+	const response = await handleAuthorizeInfo(
+		new Request(
+			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+		),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => {
+					throw new Error(invalidClientIdMismatchMessage)
+				},
+			}),
+		),
+	)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: invalidClientIdMismatchMessage,
+		allowClientReset: true,
+	})
+	const setCookie = response.headers.get('Set-Cookie') ?? ''
+	expect(setCookie).toContain('kody_oauth_client_reset=')
+	expect(setCookie).toContain('Path=/oauth')
 })
 
 test('authorize denies access and redirects with error', async () => {
@@ -332,6 +362,110 @@ test('reset client deletes matching grants and client registration', async () =>
 	expect(deletedClientIds).toEqual(['client-123'])
 })
 
+test('reset client deletes stale client registrations after invalid client mismatch', async () => {
+	const revokedGrantIds = new Array<string>()
+	const deletedClientIds = new Array<string>()
+	const userId = await createStableUserIdFromEmail('user@example.com')
+	const helpers = createHelpers({
+		parseAuthRequest: async () => {
+			throw new Error(invalidClientIdMismatchMessage)
+		},
+		listUserGrants: async (requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			return {
+				items: [
+					{
+						id: 'grant-1',
+						clientId: 'client-123',
+						userId,
+						scope: ['profile'],
+						metadata: {},
+						createdAt: 0,
+					},
+					{
+						id: 'grant-2',
+						clientId: 'client-123',
+						userId,
+						scope: ['email'],
+						metadata: {},
+						createdAt: 0,
+					},
+				],
+			}
+		},
+		revokeGrant: async (grantId, requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			revokedGrantIds.push(grantId)
+		},
+		deleteClient: async (clientId) => {
+			deletedClientIds.push(clientId)
+		},
+	})
+	setAuthSessionSecret(cookieSecret)
+	const cookie = await createAuthCookie(
+		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		false,
+	)
+	const authorizeInfoResponse = await handleAuthorizeInfo(
+		new Request(
+			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+		),
+		createEnv(helpers),
+	)
+	const resetVerificationCookie =
+		authorizeInfoResponse.headers.get('Set-Cookie') ?? ''
+
+	const response = await handleAuthorizeRequest(
+		new Request(
+			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					Cookie: `${getCookiePair(cookie)}; ${getCookiePair(resetVerificationCookie)}`,
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ decision: 'reset-client' }),
+			},
+		),
+		createEnv(helpers),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		message:
+			'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+	})
+	expect(revokedGrantIds).toEqual(['grant-1', 'grant-2'])
+	expect(deletedClientIds).toEqual(['client-123'])
+})
+
+test('reset client rejects invalid client mismatch without verification cookie', async () => {
+	const response = await handleAuthorizeRequest(
+		new Request(
+			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ decision: 'reset-client' }),
+			},
+		),
+		createEnv(createHelpers()),
+	)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error:
+			'Stored client cleanup is only available for stale or mismatched client registrations.',
+		code: 'invalid_request',
+	})
+})
+
 test('reset client is rejected when the request is not a redirect mismatch', async () => {
 	const response = await handleAuthorizeRequest(
 		new Request(
@@ -352,7 +486,7 @@ test('reset client is rejected when the request is not a redirect mismatch', asy
 	await expect(response.json()).resolves.toEqual({
 		ok: false,
 		error:
-			'Stored client cleanup is only available for redirect URI mismatches.',
+			'Stored client cleanup is only available for stale or mismatched client registrations.',
 		code: 'invalid_request',
 	})
 })
