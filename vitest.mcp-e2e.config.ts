@@ -1,7 +1,9 @@
 import { defineProject, mergeConfig } from 'vitest/config'
 import { sharedProjectConfig } from './vitest-shared.ts'
 
-const mcpE2eTimeout = process.env.CI ? 30_000 : 10_000
+// Local `wrangler dev` + `d1 migrations apply` cold-start often exceeds 10s; keep
+// local timeouts aligned with CI so the suite measures MCP behavior, not harness speed.
+const mcpE2eTimeout = 30_000
 
 export default mergeConfig(
 	sharedProjectConfig,
