@@ -56,12 +56,6 @@ export type JobView = Omit<JobRecord, 'userId'> & {
 	scheduleSummary: string
 }
 
-export const jobStorageIdPrefix = 'job:'
-
-export function buildJobStorageId(jobId: string) {
-	return `${jobStorageIdPrefix}${jobId}`
-}
-
 export type JobExecutionResult =
 	| {
 			ok: true

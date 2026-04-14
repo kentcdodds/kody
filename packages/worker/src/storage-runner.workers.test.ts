@@ -121,7 +121,9 @@ test('storage runner supports raw SQL with explicit writable access', async () =
 		rowsWritten: 0,
 	})
 
-	const stub = env.STORAGE_RUNNER.get(env.STORAGE_RUNNER.idFromName(`user-123:${storageId}`))
+	const stub = env.STORAGE_RUNNER.get(
+		env.STORAGE_RUNNER.idFromName(JSON.stringify(['user-123', storageId])),
+	)
 	await runInDurableObject(stub, async (instance: StorageRunner, state) => {
 		expect(instance).toBeInstanceOf(StorageRunner)
 		expect(state.storage.sql.databaseSize).toBeGreaterThan(0)

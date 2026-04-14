@@ -26,6 +26,10 @@ import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
+import {
+	createStorageCodemodeTools,
+	createStorageHelperPrelude,
+} from '#worker/storage-runner.ts'
 
 type AdditionalCodemodeTools = Record<
 	string,
@@ -185,7 +189,6 @@ export async function runCodemodeWithRegistry(
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
 	const { normalizeCode } = await import('@cloudflare/codemode')
-	const { createStorageHelperPrelude } = await import('#worker/storage-runner.ts')
 	const secretRedactor = createExecutionSecretRedactor()
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
@@ -446,119 +449,6 @@ function normalizeStorageContext(
 		sessionId: storageContext.sessionId ?? null,
 		appId: storageContext.appId ?? null,
 		storageId: storageContext.storageId ?? null,
-	}
-}
-
-async function createStorageCodemodeTools(input: {
-	env: Env
-	userId: string
-	storageId: string
-	writable: boolean
-}): Promise<AdditionalCodemodeTools> {
-	const { storageRunnerRpc } = await import('#worker/storage-runner.ts')
-	function ensureWritable() {
-		if (!input.writable) {
-			throw new Error(
-				'storage is read-only in this execution. Re-run with explicit write access to mutate storage.',
-			)
-		}
-	}
-	return {
-		storage_get: async (args: unknown) => {
-			const key =
-				typeof (args as { key?: unknown })?.key === 'string'
-					? ((args as { key: string }).key.trim() ?? '')
-					: ''
-			if (!key) throw new Error('storage.get requires a non-empty key.')
-			return await storageRunnerRpc({
-				env: input.env,
-				userId: input.userId,
-				storageId: input.storageId,
-			}).getValue({
-				key,
-			})
-		},
-		storage_set: async (args: unknown) => {
-			ensureWritable()
-			const payload = args as { key?: unknown; value?: unknown }
-			const key = typeof payload?.key === 'string' ? payload.key.trim() : ''
-			if (!key) throw new Error('storage.set requires a non-empty key.')
-			return await storageRunnerRpc({
-				env: input.env,
-				userId: input.userId,
-				storageId: input.storageId,
-			}).setValue({
-				key,
-				value: payload?.value,
-			})
-		},
-		storage_delete: async (args: unknown) => {
-			ensureWritable()
-			const key =
-				typeof (args as { key?: unknown })?.key === 'string'
-					? ((args as { key: string }).key.trim() ?? '')
-					: ''
-			if (!key) throw new Error('storage.delete requires a non-empty key.')
-			return await storageRunnerRpc({
-				env: input.env,
-				userId: input.userId,
-				storageId: input.storageId,
-			}).deleteValue({
-				key,
-			})
-		},
-		storage_list: async (args: unknown) => {
-			const payload = (args ?? {}) as {
-				prefix?: unknown
-				limit?: unknown
-				startAfter?: unknown
-			}
-			return await storageRunnerRpc({
-				env: input.env,
-				userId: input.userId,
-				storageId: input.storageId,
-			}).listValues({
-				prefix:
-					typeof payload.prefix === 'string' ? payload.prefix.trim() : undefined,
-				pageSize:
-					typeof payload.limit === 'number' && Number.isFinite(payload.limit)
-						? Math.trunc(payload.limit)
-						: undefined,
-				startAfter:
-					typeof payload.startAfter === 'string'
-						? payload.startAfter.trim()
-						: undefined,
-			})
-		},
-		storage_clear: async () => {
-			ensureWritable()
-			return await storageRunnerRpc({
-				env: input.env,
-				userId: input.userId,
-				storageId: input.storageId,
-			}).clearStorage()
-		},
-		storage_sql: async (args: unknown) => {
-			const payload = (args ?? {}) as {
-				query?: unknown
-				params?: unknown
-				writable?: unknown
-			}
-			const query =
-				typeof payload.query === 'string' ? payload.query.trim() : ''
-			if (!query) throw new Error('storage.sql requires a non-empty query.')
-			const writable = payload.writable === true
-			if (writable) ensureWritable()
-			return await storageRunnerRpc({
-				env: input.env,
-				userId: input.userId,
-				storageId: input.storageId,
-			}).sqlQuery({
-				query,
-				params: Array.isArray(payload.params) ? payload.params : undefined,
-				writable,
-			})
-		},
 	}
 }
 

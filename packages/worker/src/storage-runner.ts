@@ -46,7 +46,7 @@ type StorageClearResult = {
 }
 
 function buildStorageRunnerName(userId: string, storageId: string) {
-	return `${userId}:${storageId}`
+	return JSON.stringify([userId, storageId])
 }
 
 export function createExecuteStorageId() {
