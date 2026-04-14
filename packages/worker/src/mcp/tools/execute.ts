@@ -40,12 +40,11 @@ then paste code here.
 
 Jobs: use \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`, and
 \`job_run_now\` to manage one-shot, interval, or cron jobs for the signed-in
-user. Jobs always run through codemode and have stable storage ids for durable
-state.
+user. Each job stores codemode source plus a stable durable storage id.
 
 Sandbox surface:
 - \`codemode\`: \`(args) => Promise<unknown>\` per capability.
-- \`storage\`: optional durable storage helpers when \`storageId\` is provided.
+- \`storage\`: durable storage helpers for the bound \`storageId\`.
 - \`storage.sql(query, params?)\`: raw SQLite access for the bound storage id.
 - \`refreshAccessToken(providerName)\`, \`createAuthenticatedFetch(providerName)\` for OAuth connectors.
 - \`fetch(...)\` through the host gateway; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` in URL, headers, or body on approved hosts only.

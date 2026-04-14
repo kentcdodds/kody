@@ -55,7 +55,7 @@ Chat conversations run through a chat Agent Durable Object.
 
 ## Durable Objects (`JobManager` and `StorageRunner`)
 
-Unified jobs use two Durable Object roles:
+Jobs use two Durable Object roles:
 
 - `JobManager`: one object per user, responsible only for alarm scheduling and
   dispatching due jobs from D1-backed metadata

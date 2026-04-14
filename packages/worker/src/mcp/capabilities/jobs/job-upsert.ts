@@ -14,7 +14,7 @@ export const jobUpsertCapability = defineDomainCapability(
 	{
 		name: 'job_upsert',
 		description:
-			'Create a new job when id is omitted, or update an existing job when id is provided. Jobs always run through codemode and may optionally use a facet-backed Durable Object for persistent state. Supports cron schedules, interval schedules, and one-shot runs.',
+			'Create a new job when id is omitted, or update an existing job when id is provided. Jobs have durable storage identified by `storageId` and support cron schedules, interval schedules, and one-shot runs.',
 		keywords: ['job', 'upsert', 'create', 'update', 'cron', 'interval'],
 		readOnly: false,
 		idempotent: false,
