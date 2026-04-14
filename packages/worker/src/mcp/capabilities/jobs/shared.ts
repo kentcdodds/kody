@@ -165,14 +165,14 @@ export const jobUpsertInputSchema = z
 				message: 'schedule is required when creating a job.',
 			})
 		}
-		if (value.kind === 'codemode' && value.code === undefined) {
+		if (value.kind === 'codemode' && value.code == null) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['code'],
 				message: 'code is required when creating a codemode job.',
 			})
 		}
-		if (value.kind === 'facet' && value.serverCode === undefined) {
+		if (value.kind === 'facet' && value.serverCode == null) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['serverCode'],

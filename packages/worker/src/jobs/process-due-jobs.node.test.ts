@@ -62,11 +62,17 @@ test('processDueJobs records failures without aborting later jobs', async () => 
 				lastRunStatus: 'error',
 				lastRunError: 'boom',
 				lastRunAt: now.toISOString(),
+				runCount: 1,
+				successCount: 0,
+				errorCount: 1,
 			}),
 			expect.objectContaining({
 				id: 'job-2',
 				lastRunStatus: 'success',
 				lastRunAt: now.toISOString(),
+				runCount: 1,
+				successCount: 1,
+				errorCount: 0,
 			}),
 		]),
 	)

@@ -21,16 +21,18 @@ export const jobDeleteCapability = defineDomainCapability(
 		outputSchema: jobDeleteOutputSchema,
 		async handler(args, ctx) {
 			const user = requireJobsUser(ctx)
-			const result = await deleteJob({
-				env: ctx.env,
-				userId: user.userId,
-				jobId: args.id,
-			})
-			await syncJobManagerAlarm({
-				env: ctx.env,
-				userId: user.userId,
-			})
-			return result
+			try {
+				return await deleteJob({
+					env: ctx.env,
+					userId: user.userId,
+					jobId: args.id,
+				})
+			} finally {
+				await syncJobManagerAlarm({
+					env: ctx.env,
+					userId: user.userId,
+				})
+			}
 		},
 	},
 )

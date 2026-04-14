@@ -376,7 +376,7 @@ class JobRunnerBase extends DurableObject<Env> {
 
 	async resetStorage(input: { jobId: string; facetName?: string | null }) {
 		const facetName = input.facetName?.trim() || defaultJobFacetName
-		const facet = await this.getFacetStub(facetName)
+		const facet = await this.getFacetStub(input.jobId, facetName)
 		await (
 			facet as unknown as { __kody_resetStorage: () => Promise<unknown> }
 		).__kody_resetStorage()
@@ -395,7 +395,7 @@ class JobRunnerBase extends DurableObject<Env> {
 		startAfter?: string | null
 	}) {
 		const facetName = input.facetName?.trim() || defaultJobFacetName
-		const facet = await this.getFacetStub(facetName)
+		const facet = await this.getFacetStub(input.jobId, facetName)
 		const result = await (
 			facet as unknown as {
 				__kody_exportStorage: (payload?: {
@@ -444,8 +444,8 @@ class JobRunnerBase extends DurableObject<Env> {
 		params?: Record<string, unknown>
 	}) {
 		const facetName = input.facetName?.trim() || defaultJobFacetName
-		await this.getFacetStub(facetName)
-		const config = await this.readConfig(this.ctx.id.toString())
+		await this.getFacetStub(input.jobId, facetName)
+		const config = await this.readConfig(input.jobId)
 		const execWorker = this.env.APP_LOADER.load({
 			compatibilityDate: '2026-04-13',
 			compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
@@ -486,7 +486,7 @@ class JobRunnerBase extends DurableObject<Env> {
 		args?: Array<unknown>
 	}) {
 		const facetName = input.facetName?.trim() || defaultJobFacetName
-		const facet = await this.getFacetStub(facetName)
+		const facet = await this.getFacetStub(input.jobId, facetName)
 		return await (
 			facet as unknown as {
 				__kody_invokeUserMethod: (
@@ -506,8 +506,8 @@ class JobRunnerBase extends DurableObject<Env> {
 		}
 	}
 
-	private async getFacetStub(facetName: string) {
-		const config = await this.readConfig(this.ctx.id.toString())
+	private async getFacetStub(jobId: string, facetName: string) {
+		const config = await this.readConfig(jobId)
 		if (config.killSwitchEnabled) {
 			throw new Error('Facet job backend is disabled.')
 		}

@@ -43,7 +43,15 @@ export function assertValidCronExpression(expression: string) {
 			'Cron expressions must use standard 5-field syntax: minute hour day-of-month month day-of-week.',
 		)
 	}
-	return fields.join(' ')
+	const normalized = fields.join(' ')
+	try {
+		new Cron(normalized, { paused: true })
+	} catch (error) {
+		throw new Error(
+			`Invalid cron expression: ${error instanceof Error ? error.message : String(error)}`,
+		)
+	}
+	return normalized
 }
 
 export function parseOnceRunAt(runAt: string) {

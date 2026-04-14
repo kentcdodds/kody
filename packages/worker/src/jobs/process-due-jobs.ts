@@ -76,9 +76,8 @@ export function applyExecutionOutcome(
 ): JobRecord {
 	const status: JobRunStatus = outcome.execution.ok ? 'success' : 'error'
 	const executionError =
-		outcome.execution.ok === true
-			? undefined
-			: overrides.lastRunError ?? outcome.execution.error
+		overrides.lastRunError ??
+		(outcome.execution.ok ? undefined : outcome.execution.error)
 	return {
 		...job,
 		updatedAt: overrides.updatedAt ?? outcome.finishedAt,

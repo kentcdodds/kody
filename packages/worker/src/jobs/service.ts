@@ -256,17 +256,27 @@ export async function createJob(input: {
 		errorCount: 0,
 		runHistory: [],
 	}
+	const callerContextJson = serializeCallerContext(callerContext)
 	await insertJobRow({
 		db: input.env.APP_DB,
 		userId: callerContext.user.userId,
 		job,
-		callerContextJson: serializeCallerContext(callerContext),
+		callerContextJson,
 	})
-	await syncRunnerForJob({
-		env: input.env,
-		job,
-		callerContext,
-	})
+	try {
+		await syncRunnerForJob({
+			env: input.env,
+			job,
+			callerContext,
+		})
+	} catch (error) {
+		await deleteJobRow(
+			input.env.APP_DB,
+			callerContext.user.userId,
+			job.id,
+		).catch(() => {})
+		throw error
+	}
 	return toJobView(job)
 }
 
@@ -347,17 +357,35 @@ export async function updateJob(input: {
 				})
 			: existing.nextRunAt,
 	}
+	const nextCallerContextJson = serializeCallerContext(callerContext)
 	await updateJobRow({
 		db: input.env.APP_DB,
 		userId: callerContext.user.userId,
 		job: updated,
-		callerContextJson: serializeCallerContext(callerContext),
+		callerContextJson: nextCallerContextJson,
 	})
-	await syncRunnerForJob({
-		env: input.env,
-		job: updated,
-		callerContext,
-	})
+	try {
+		await syncRunnerForJob({
+			env: input.env,
+			job: updated,
+			callerContext,
+		})
+	} catch (error) {
+		await updateJobRow({
+			db: input.env.APP_DB,
+			userId: callerContext.user.userId,
+			job: existing,
+			callerContextJson:
+				existingRow.callerContextJson ??
+				serializeCallerContext(callerContext),
+		}).catch(() => {})
+		await syncRunnerForJob({
+			env: input.env,
+			job: existing,
+			callerContext: existingRow.callerContext,
+		}).catch(() => {})
+		throw error
+	}
 	return toJobView(updated)
 }
 
