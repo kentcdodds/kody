@@ -19,12 +19,20 @@
 			"tag": "v3",
 		},
 		{
+			"new_sqlite_classes": ["SchedulerDO"],
+			"tag": "v4",
+		},
+		{
 			"new_sqlite_classes": ["AppRunner"],
 			"tag": "v5",
 		},
 		{
 			"new_sqlite_classes": ["JobManager", "JobRunner"],
 			"tag": "v6",
+		},
+		{
+			"deleted_classes": ["SchedulerDO"],
+			"tag": "v7",
 		},
 	],
 

@@ -138,6 +138,21 @@ function resolveUpdatedShape(input: {
 			: input.body.methodName === null
 				? undefined
 				: normalizeOptionalMethodName(input.body.methodName)
+	const kindChanged =
+		input.body.kind !== undefined && input.body.kind !== input.existing.kind
+
+	if (kindChanged) {
+		if (nextKind === 'codemode') {
+			if (input.body.serverCode === undefined) {
+				nextServerCode = undefined
+			}
+			if (input.body.methodName === undefined) {
+				nextMethodName = undefined
+			}
+		} else if (input.body.code === undefined) {
+			nextCode = undefined
+		}
+	}
 
 	if (nextKind === 'codemode') {
 		if (!nextCode) {
