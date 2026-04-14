@@ -69,14 +69,6 @@ function normalizeBridgeScope(
 	throw new Error(`Unsupported bridge scope: ${String(resolvedScope)}`)
 }
 
-export function normalizeFacetName(
-	rawFacetName: string | null | undefined,
-	fallback = 'main',
-) {
-	const facetName = rawFacetName?.trim() || fallback
-	return facetName
-}
-
 export function buildFacetClassExportName(
 	baseClassName: string,
 	facetName: string,
@@ -123,7 +115,6 @@ function createFacetWrapperModule(input: {
 	baseClassName: string
 	expectedExportDescription: string
 	facetName: string
-	serverCode: string
 }) {
 	const exportName = buildFacetClassExportName(
 		input.baseClassName,
@@ -154,14 +145,6 @@ export class ${exportName} extends BaseFacet {
 			estimatedBytes: this.ctx.storage.sql.databaseSize,
 		}
 	}
-
-	async __kody_exec(code, params) {
-		if (typeof code !== 'string' || !code.trim()) {
-			throw new Error('Facet exec requires non-empty code.')
-		}
-		const runner = new Function('facet', 'params', code)
-		return await runner(this, params ?? {})
-	}
 }
 `.trim()
 }
@@ -180,7 +163,6 @@ export async function createFacetStartup(input: CreateFacetStartupInput) {
 				baseClassName: input.baseClassName,
 				expectedExportDescription: input.expectedExportDescription,
 				facetName: input.facetName,
-				serverCode: input.serverCode,
 			}),
 			[defaultFacetModuleName]: input.serverCode,
 		},

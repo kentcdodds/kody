@@ -33,7 +33,6 @@ const reservedJobFacetMethodNames = new Set([
 	'run',
 	'__kody_resetStorage',
 	'__kody_exportStorage',
-	'__kody_exec',
 ])
 
 type JobRunnerConfig = {
@@ -168,27 +167,26 @@ class JobRunnerBase extends DurableObject<Env> {
 	}
 
 	async getDetails(): Promise<JobDetails> {
-		const config = await this.readConfig(this.ctx.id.toString())
-		const status = await this.readRunnerStatus()
 		const job = await this.requireJob()
-		return {
-			id: config.jobId,
-			userId: config.userId,
-			name: job.name,
-			serverCode: config.serverCode,
-			serverCodeId: config.serverCodeId,
-			schedule: config.schedule,
-			timezone: config.timezone,
-			enabled: config.enabled,
-			createdAt: job.createdAt,
-			updatedAt: job.updatedAt,
-			...status,
-			scheduleSummary: await this.getScheduleSummary(),
-		}
+		return await this.describeJob({
+			job,
+		})
 	}
 
 	async getHistory(limit?: number) {
 		return this.readRunHistory(limit)
+	}
+
+	async describeJob(input: { job: JobRecord }): Promise<JobDetails> {
+		const status = await this.readRunnerStatus()
+		return {
+			...input.job,
+			...status,
+			scheduleSummary: formatJobScheduleSummary({
+				schedule: input.job.schedule,
+				timezone: input.job.timezone,
+			}),
+		}
 	}
 
 	async setEnabled(input: { enabled: boolean }) {
@@ -231,11 +229,12 @@ class JobRunnerBase extends DurableObject<Env> {
 	}
 
 	async execServer(input: { code: string; params?: Record<string, unknown> }) {
+		const config = await this.readConfig(this.ctx.id.toString())
 		return await runJobExecWorker({
 			loader: this.env.APP_LOADER,
 			jobExecBridge: this.ctx.exports.JobExecBridge({
 				props: {
-					jobId: this.ctx.id.toString(),
+					jobId: config.jobId,
 				},
 			}),
 			code: input.code,
@@ -270,7 +269,12 @@ class JobRunnerBase extends DurableObject<Env> {
 	}
 
 	async deleteRunner() {
-		this.ctx.facets.delete(jobFacetName)
+		try {
+			this.ctx.facets.delete(jobFacetName)
+		} catch {
+			// Local workers-unit facets can throw an internal cleanup error even when
+			// the supervisor state is about to be deleted successfully.
+		}
 		await this.ctx.storage.deleteAll()
 		return { ok: true as const }
 	}
@@ -404,14 +408,6 @@ class JobRunnerBase extends DurableObject<Env> {
 			throw new Error(`Job "${config.jobId}" was not found.`)
 		}
 		return job
-	}
-
-	private async getScheduleSummary() {
-		const config = await this.readConfig(this.ctx.id.toString())
-		return formatJobScheduleSummary({
-			schedule: config.schedule,
-			timezone: config.timezone,
-		})
 	}
 
 	private async readConfig(jobId: string) {
@@ -594,6 +590,7 @@ export function jobRunnerRpc(env: Env, jobId: string) {
 			killSwitchEnabled?: boolean
 			recomputeNextRunAt?: boolean
 		}) => Promise<JobDetails>
+		describeJob: (payload: { job: JobRecord }) => Promise<JobDetails>
 		getDetails: () => Promise<JobDetails>
 		getHistory: (limit?: number) => Promise<Array<JobRunHistoryEntry>>
 		setEnabled: (payload: { enabled: boolean }) => Promise<JobDetails>

@@ -9,6 +9,7 @@ import {
 	listJobRecords,
 	removeJobRecord,
 	requireJobRecord,
+	restoreJobRecord,
 	updateJobRecord,
 } from '#worker/jobs/service.ts'
 import {
@@ -45,6 +46,33 @@ const jobStorageResetOutputSchema = z.object({
 	job_id: z.string(),
 })
 
+async function rollbackCreatedJob(input: {
+	ctx: CapabilityContext
+	userId: string
+	jobId: string
+}) {
+	await removeJobRecord(input.ctx.env.APP_DB, input.userId, input.jobId)
+	await Promise.allSettled([
+		jobRunnerRpc(input.ctx.env, input.jobId).deleteRunner(),
+	])
+}
+
+async function rollbackUpdatedJob(input: {
+	ctx: CapabilityContext
+	previous: Awaited<ReturnType<typeof requireJobRecord>>
+}) {
+	await restoreJobRecord(input.ctx.env.APP_DB, input.previous)
+	await Promise.allSettled([
+		syncJobRunnerFromDb({
+			env: input.ctx.env,
+			userId: input.previous.userId,
+			jobId: input.previous.id,
+			baseUrl: input.ctx.callerContext.baseUrl,
+			recomputeNextRunAt: true,
+		}),
+	])
+}
+
 const jobCreateCapability = defineDomainCapability(capabilityDomainNames.jobs, {
 	name: 'job_create',
 	description:
@@ -62,13 +90,23 @@ const jobCreateCapability = defineDomainCapability(capabilityDomainNames.jobs, {
 			userId: user.userId,
 			data: args,
 		})
-		const details = await syncJobRunnerFromDb({
-			env: ctx.env,
-			userId: user.userId,
-			jobId: job.id,
-			baseUrl: ctx.callerContext.baseUrl,
-			recomputeNextRunAt: true,
-		})
+		let details
+		try {
+			details = await syncJobRunnerFromDb({
+				env: ctx.env,
+				userId: user.userId,
+				jobId: job.id,
+				baseUrl: ctx.callerContext.baseUrl,
+				recomputeNextRunAt: true,
+			})
+		} catch (error) {
+			await rollbackCreatedJob({
+				ctx,
+				userId: user.userId,
+				jobId: job.id,
+			})
+			throw error
+		}
 		if (!details) {
 			throw new Error('Unable to configure the created job runner.')
 		}
@@ -102,15 +140,26 @@ const jobUpdateCapability = defineDomainCapability(capabilityDomainNames.jobs, {
 				historyLimit: args.patch.history_limit,
 			},
 		})
-		const details = await syncJobRunnerFromDb({
-			env: ctx.env,
-			userId: user.userId,
-			jobId: args.job_id,
-			baseUrl: ctx.callerContext.baseUrl,
-			historyLimit: args.patch.history_limit,
-			killSwitchEnabled: args.patch.kill_switch_enabled,
-			recomputeNextRunAt: updateResult.scheduleChanged,
-		})
+		let details
+		try {
+			details = await syncJobRunnerFromDb({
+				env: ctx.env,
+				userId: user.userId,
+				jobId: args.job_id,
+				baseUrl: ctx.callerContext.baseUrl,
+				historyLimit: args.patch.history_limit,
+				killSwitchEnabled: args.patch.kill_switch_enabled,
+				recomputeNextRunAt:
+					updateResult.scheduleChanged ||
+					args.patch.kill_switch_enabled === false,
+			})
+		} catch (error) {
+			await rollbackUpdatedJob({
+				ctx,
+				previous: updateResult.before,
+			})
+			throw error
+		}
 		if (!details) {
 			throw new Error('Unable to synchronize the updated job runner.')
 		}
@@ -157,11 +206,8 @@ const jobListCapability = defineDomainCapability(capabilityDomainNames.jobs, {
 		const jobs = await listJobRecords(ctx.env.APP_DB, user.userId)
 		const details = await Promise.all(
 			jobs.map((job) =>
-				syncJobRunnerFromDb({
-					env: ctx.env,
-					userId: user.userId,
-					jobId: job.id,
-					baseUrl: ctx.callerContext.baseUrl,
+				jobRunnerRpc(ctx.env, job.id).describeJob({
+					job,
 				}),
 			),
 		)
@@ -181,16 +227,10 @@ const jobGetCapability = defineDomainCapability(capabilityDomainNames.jobs, {
 	outputSchema: jobDetailsSchema,
 	async handler(args, ctx: CapabilityContext) {
 		const user = requireJobsUser(ctx)
-		const details = await syncJobRunnerFromDb({
-			env: ctx.env,
-			userId: user.userId,
-			jobId: args.job_id,
-			baseUrl: ctx.callerContext.baseUrl,
+		const job = await requireJobRecord(ctx.env.APP_DB, user.userId, args.job_id)
+		return await jobRunnerRpc(ctx.env, args.job_id).describeJob({
+			job,
 		})
-		if (!details) {
-			throw new Error(`Job "${args.job_id}" was not found.`)
-		}
-		return details
 	},
 })
 
@@ -235,19 +275,28 @@ const jobEnableCapability = defineDomainCapability(capabilityDomainNames.jobs, {
 	outputSchema: jobDetailsSchema,
 	async handler(args, ctx: CapabilityContext) {
 		const user = requireJobsUser(ctx)
-		await updateJobRecord({
+		const updateResult = await updateJobRecord({
 			db: ctx.env.APP_DB,
 			userId: user.userId,
 			jobId: args.job_id,
 			patch: { enabled: true },
 		})
-		const details = await syncJobRunnerFromDb({
-			env: ctx.env,
-			userId: user.userId,
-			jobId: args.job_id,
-			baseUrl: ctx.callerContext.baseUrl,
-			recomputeNextRunAt: true,
-		})
+		let details
+		try {
+			details = await syncJobRunnerFromDb({
+				env: ctx.env,
+				userId: user.userId,
+				jobId: args.job_id,
+				baseUrl: ctx.callerContext.baseUrl,
+				recomputeNextRunAt: true,
+			})
+		} catch (error) {
+			await rollbackUpdatedJob({
+				ctx,
+				previous: updateResult.before,
+			})
+			throw error
+		}
 		if (!details) {
 			throw new Error(`Job "${args.job_id}" was not found.`)
 		}
@@ -269,18 +318,27 @@ const jobDisableCapability = defineDomainCapability(
 		outputSchema: jobDetailsSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireJobsUser(ctx)
-			await updateJobRecord({
+			const updateResult = await updateJobRecord({
 				db: ctx.env.APP_DB,
 				userId: user.userId,
 				jobId: args.job_id,
 				patch: { enabled: false },
 			})
-			const details = await syncJobRunnerFromDb({
-				env: ctx.env,
-				userId: user.userId,
-				jobId: args.job_id,
-				baseUrl: ctx.callerContext.baseUrl,
-			})
+			let details
+			try {
+				details = await syncJobRunnerFromDb({
+					env: ctx.env,
+					userId: user.userId,
+					jobId: args.job_id,
+					baseUrl: ctx.callerContext.baseUrl,
+				})
+			} catch (error) {
+				await rollbackUpdatedJob({
+					ctx,
+					previous: updateResult.before,
+				})
+				throw error
+			}
 			if (!details) {
 				throw new Error(`Job "${args.job_id}" was not found.`)
 			}
@@ -303,15 +361,7 @@ const jobHistoryCapability = defineDomainCapability(
 		outputSchema: z.array(jobHistoryEntrySchema),
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireJobsUser(ctx)
-			const details = await syncJobRunnerFromDb({
-				env: ctx.env,
-				userId: user.userId,
-				jobId: args.job_id,
-				baseUrl: ctx.callerContext.baseUrl,
-			})
-			if (!details) {
-				throw new Error(`Job "${args.job_id}" was not found.`)
-			}
+			await requireJobRecord(ctx.env.APP_DB, user.userId, args.job_id)
 			return await jobRunnerRpc(ctx.env, args.job_id).getHistory(args.limit)
 		},
 	},
