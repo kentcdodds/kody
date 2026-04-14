@@ -17,12 +17,22 @@ Optional **collection** groups related skills. Use **meta_get_skill**,
 **ui_save_app** persists reusable **generated UI** as a saved app record with:
 
 - **`clientCode`** — HTML rendered inside the generic shell
-- **`serverCode`** — optional Durable Object facet backend code
+- **`serverCode`** — Durable Object facet backend code for real app logic
 - **`serverCodeId`** — rotated automatically on each save when backend code
   changes so Cloudflare reloads the Dynamic Worker
 
 `clientCode` supports **HTML only**. Put browser-side logic inside
 `<script type="module">...</script>` tags in that HTML.
+
+For non-trivial saved apps, treat **`serverCode`** plus
+**`kodyWidget.appBackend.basePath`** as the default pattern:
+
+- put provider API calls, persistence, validation, and mutations in
+  **`serverCode`**
+- expose backend routes such as **`/api/state`** and **`/api/action`**
+- keep **`clientCode`** mostly UI plus `fetch(...)` calls to the app backend
+- reserve embedded **`kodyWidget.executeCode(...)`** strings in client HTML for
+  quick prototypes or one-off experiments
 
 When updating an existing saved app with `app_id`, omitted fields preserve the
 current saved value. Omit `serverCode` to keep the existing backend, or pass
@@ -47,7 +57,7 @@ Use these lifecycle capabilities when you need backend maintenance:
 - **`app_delete`**
 
 See [Saved app backends](./saved-app-backends.md) for the route contract, RPC
-bridge surface, and a complete **counter app** example.
+bridge surface, and the default **`/api/state`** + **`/api/action`** pattern.
 
 ## Generated UI
 
@@ -55,20 +65,27 @@ bridge surface, and a complete **counter app** example.
 **`app_id`** (reopen saved). **`params`** applies to saved apps with declared
 parameters.
 
-Import **`kodyWidget`** from **`@kody/ui-utils`** for helpers, **`executeCode`**
-for low-level server calls, secrets, values, OAuth, and forms. Use generated UI
-when the user must enter sensitive data instead of pasting into chat.
+Import **`kodyWidget`** from **`@kody/ui-utils`** for helpers, app-backend
+discovery, secrets, values, OAuth, forms, and **`executeCode`** when you truly
+need an inline server snippet. Use generated UI when the user must enter
+sensitive data instead of pasting into chat.
 
 `kodyWidget.executeCode(code, params?)` also accepts optional per-call JSON
 params. Those values are injected as **`params`** inside the async function and
 override saved-app/session params for that execution only.
 
-Saved app client code can also use **`kodyWidget.appBackend`** to discover the
-scoped backend base path for direct requests such as
-**`fetch(\`\${kodyWidget.appBackend?.basePath}/api/counter\`)`**.
+For saved apps with real logic, use **`kodyWidget.appBackend`** as the default
+client-to-backend path:
+
+**`fetch(\`\${kodyWidget.appBackend?.basePath}/api/state\`)`**
+
+That keeps **`clientCode`** focused on UI while **`serverCode`** handles the
+backend contract.
 
 If a skill or saved app depends on a third-party integration, run
 **`kody_official_guide`** with **`guide`** **`integration_bootstrap`** first.
-For third-party OAuth, then run **`guide`** **`oauth`** (hosted
-**`/connect/oauth`**). Use **`guide`** **`generated_ui_oauth`** only for OAuth
-built inside a saved app.
+After the authenticated smoke test passes and you are ready to build the saved
+app itself, use **`guide`** **`integration_backed_app`** for the default
+serverCode-first pattern. For third-party OAuth, then run **`guide`**
+**`oauth`** (hosted **`/connect/oauth`**). Use **`guide`**
+**`generated_ui_oauth`** only for OAuth built inside a saved app.

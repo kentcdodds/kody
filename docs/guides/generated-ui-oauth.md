@@ -54,6 +54,13 @@ When the flow needs readable, non-sensitive configuration such as a client ID,
 save it with \`saveValue(...)\` and read it back with \`getValue(...)\` instead
 of treating it like a secret.
 
+Once the connector or tokens exist and the post-connect smoke test passes,
+prefer to continue with a saved app that uses `serverCode` backend endpoints for
+provider API calls and `clientCode` fetches through
+`kodyWidget.appBackend.basePath`. Keep embedded client-side `executeCode(...)`
+strings for quick prototypes or throwaway experiments, not the default
+integration-backed app structure.
+
 ## Recommended capability and tool sequence
 
 1. Generate the UI source.
