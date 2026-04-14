@@ -530,7 +530,7 @@ class AppRunnerBase extends DurableObject<Env> {
 		}).getEntrypoint(savedAppExecEntrypointName) as unknown as {
 			run: (params?: Record<string, unknown>) => Promise<unknown>
 		}
-		const result = await execWorker.run(input.params)
+		const result = await execWorker.run(input.params ?? {})
 		return {
 			ok: true,
 			appId: input.appId,
@@ -669,10 +669,6 @@ class AppRunnerBase extends DurableObject<Env> {
 				),
 			}
 		})
-	}
-
-	async getFacetRpcStub(input: { appId: string; facetName?: string | null }) {
-		return await this.getFacetStub(buildFacetName(input.facetName))
 	}
 
 	async callFacetRpc(input: {
@@ -852,10 +848,6 @@ export function appRunnerRpc(env: Env, appId: string) {
 			facetName: string
 			result: unknown
 		}>
-		getFacetRpcStub: (payload: {
-			appId: string
-			facetName?: string | null
-		}) => Promise<Record<string, unknown>>
 		callFacetRpc: (payload: {
 			appId: string
 			facetName?: string | null
