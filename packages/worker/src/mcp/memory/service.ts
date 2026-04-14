@@ -26,6 +26,8 @@ const maxCategoryLength = 80
 const maxDedupeKeyLength = 160
 const maxTagLength = 80
 const maxTagCount = 16
+const maxSourceUriLength = 2_048
+const maxSourceUriCount = 12
 const defaultSuppressionTtlMs = 30 * 24 * 60 * 60 * 1_000
 
 function logMemoryVectorSyncError(input: {
@@ -533,7 +535,7 @@ function normalizeSourceUris(sourceUris: Array<string>) {
 		new Set(
 			sourceUris.map((sourceUri) => {
 				const normalized = sourceUri.trim()
-				if (!normalized) {
+				if (!normalized || normalized.length > maxSourceUriLength) {
 					throw new Error('Memory source_uris entries must be valid URLs.')
 				}
 				try {
@@ -544,7 +546,7 @@ function normalizeSourceUris(sourceUris: Array<string>) {
 				return normalized
 			}),
 		),
-	)
+	).slice(0, maxSourceUriCount)
 }
 
 function normalizeLimit(value: number | undefined | null) {
@@ -579,7 +581,7 @@ async function filterSuppressedMatches(input: {
 	}
 }
 
-function parseTags(raw: string) {
+function parseJsonStringArray(raw: string) {
 	try {
 		const parsed = JSON.parse(raw) as unknown
 		if (!Array.isArray(parsed)) return []
@@ -589,14 +591,12 @@ function parseTags(raw: string) {
 	}
 }
 
+function parseTags(raw: string) {
+	return parseJsonStringArray(raw)
+}
+
 function parseSourceUris(raw: string) {
-	try {
-		const parsed = JSON.parse(raw) as unknown
-		if (!Array.isArray(parsed)) return []
-		return parsed.filter((item): item is string => typeof item === 'string')
-	} catch {
-		return []
-	}
+	return parseJsonStringArray(raw)
 }
 
 function mapSearchMatchToMemoryRecord(match: MemorySearchMatch): MemoryRecord {
