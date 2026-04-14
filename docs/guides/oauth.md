@@ -120,9 +120,18 @@ await codemode.ui_save_app({
 
 				const track = document.querySelector('#track')
 				const basePath = kodyWidget.appBackend?.basePath
+				function requireBackendBasePath() {
+					if (!basePath) {
+						track.textContent = 'Saved app backend is not available.'
+						return null
+					}
+					return basePath
+				}
 
 				async function loadState() {
-					const response = await fetch(\`\${basePath}/api/state\`)
+					const resolvedBasePath = requireBackendBasePath()
+					if (!resolvedBasePath) return
+					const response = await fetch(\`\${resolvedBasePath}/api/state\`)
 					const payload = await response.json()
 					track.textContent = payload.trackName
 						? \`\${payload.trackName} — \${payload.artistName}\`
@@ -130,7 +139,9 @@ await codemode.ui_save_app({
 				}
 
 				async function runAction(action) {
-					await fetch(\`\${basePath}/api/action\`, {
+					const resolvedBasePath = requireBackendBasePath()
+					if (!resolvedBasePath) return
+					await fetch(\`\${resolvedBasePath}/api/action\`, {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
 						body: JSON.stringify({ action }),
@@ -205,8 +216,24 @@ await codemode.ui_save_app({
 								? '/me/player/pause'
 								: null
 					if (!path) return new Response('Unsupported action.', { status: 400 })
-					await this.spotifyRequest(path, { method: 'POST' })
-					return Response.json({ ok: true })
+					try {
+						const response = await this.spotifyRequest(path, { method: 'POST' })
+						if (!response.ok) {
+							const details = await response.text().catch(() => '')
+							return new Response(
+								details || 'Spotify action request failed.',
+								{ status: response.status || 502 },
+							)
+						}
+						return Response.json({ ok: true })
+					} catch (error) {
+						return new Response(
+							error instanceof Error
+								? error.message
+								: 'Spotify action request failed.',
+							{ status: 502 },
+						)
+					}
 				}
 
 				return new Response('Not found.', { status: 404 })

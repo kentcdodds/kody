@@ -27,6 +27,16 @@ import {
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
 
+const appServerCodeExportPattern =
+	/export\s+class\s+App\s+extends\s+DurableObject\b/
+
+function assertValidSavedAppServerCode(serverCode: string | null | undefined) {
+	if (serverCode == null) return
+	if (!appServerCodeExportPattern.test(serverCode)) {
+		throw new Error('serverCode must export class App extends DurableObject')
+	}
+}
+
 const inputSchema = z
 	.object({
 		app_id: z
@@ -78,6 +88,16 @@ const inputSchema = z
 	})
 	.superRefine((value, ctx) => {
 		if (value.app_id !== undefined) {
+			if (
+				value.serverCode != null &&
+				!appServerCodeExportPattern.test(value.serverCode)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['serverCode'],
+					message: 'serverCode must export class App extends DurableObject',
+				})
+			}
 			return
 		}
 		if (value.title === undefined) {
@@ -99,6 +119,16 @@ const inputSchema = z
 				code: z.ZodIssueCode.custom,
 				path: ['clientCode'],
 				message: 'clientCode is required when creating a saved app.',
+			})
+		}
+		if (
+			value.serverCode != null &&
+			!appServerCodeExportPattern.test(value.serverCode)
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['serverCode'],
+				message: 'serverCode must export class App extends DurableObject',
 			})
 		}
 	})
@@ -257,6 +287,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					args.serverCode === undefined
 						? existingApp.serverCode
 						: args.serverCode
+				assertValidSavedAppServerCode(serverCode)
 				const parameters =
 					args.parameters === undefined
 						? parseUiArtifactParameters(existingApp.parameters)
@@ -310,6 +341,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const description = args.description!
 				const clientCode = args.clientCode!
 				const serverCode = args.serverCode ?? null
+				assertValidSavedAppServerCode(serverCode)
 				const parameters = normalizeUiArtifactParameters(args.parameters)
 				const serializedParameters = parameters
 					? JSON.stringify(parameters)

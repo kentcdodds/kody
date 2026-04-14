@@ -202,14 +202,22 @@ await codemode.ui_save_app({
 				const resetButton = document.querySelector('#reset')
 				const backendBase = kodyWidget.appBackend?.basePath
 
+			function requireBackendBase() {
+				if (!backendBase) {
+					output.textContent = 'Backend unavailable'
+					throw new Error('Saved app backend is not available.')
+				}
+				return backendBase
+			}
+
 				async function refresh() {
-					const response = await fetch(\`\${backendBase}/api/state\`)
+				const response = await fetch(\`\${requireBackendBase()}/api/state\`)
 					const payload = await response.json()
 					output.textContent = String(payload.count)
 				}
 
 				async function runAction(action) {
-					await fetch(\`\${backendBase}/api/action\`, {
+				await fetch(\`\${requireBackendBase()}/api/action\`, {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
 						body: JSON.stringify({ action }),

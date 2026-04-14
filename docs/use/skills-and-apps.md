@@ -77,7 +77,7 @@ override saved-app/session params for that execution only.
 For saved apps with real logic, use **`kodyWidget.appBackend`** as the default
 client-to-backend path:
 
-**`fetch(\`\${kodyWidget.appBackend?.basePath}/api/state\`)`**
+**`fetch(\`\${kodyWidget.appBackend.basePath}/api/state\`)`**
 
 That keeps **`clientCode`** focused on UI while **`serverCode`** handles the
 backend contract.
