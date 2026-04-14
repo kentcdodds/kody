@@ -64,6 +64,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		return error ? `Authorization error: ${error}` : null
 	}
 
+	function readResetErrorDescription() {
+		const queryError = readQueryError()
+		if (canResetStoredClientForMessage(queryError)) {
+			return queryError
+		}
+		const messageText = message?.text
+		return canResetStoredClientForMessage(messageText) ? messageText : null
+	}
+
 	async function loadInfo() {
 		status = 'loading'
 
@@ -147,7 +156,18 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				body.set('email', email)
 				body.set('password', password)
 			}
-			const response = await fetch(window.location.href, {
+			let submitUrl = window.location.href
+			if (decision === 'reset-client') {
+				const resetErrorDescription = readResetErrorDescription()
+				if (resetErrorDescription) {
+					const url = new URL(submitUrl)
+					if (!url.searchParams.get('error_description')) {
+						url.searchParams.set('error_description', resetErrorDescription)
+						submitUrl = url.toString()
+					}
+				}
+			}
+			const response = await fetch(submitUrl, {
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
@@ -214,16 +234,13 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const scopes = info?.scopes ?? []
 		const scopeLabel =
 			scopes.length > 0 ? scopes.join(', ') : 'No scopes requested.'
-		const queryError = readQueryError()
+		const resetErrorDescription = readResetErrorDescription()
 		const sessionEmail = session?.email ?? ''
 		const isSessionReady = sessionStatus === 'ready'
 		const isSessionLoading =
 			sessionStatus === 'loading' || sessionStatus === 'idle'
 		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
-		const showResetClientCard =
-			(canResetStoredClientForMessage(queryError) ||
-				canResetStoredClientForMessage(message?.text)) &&
-			!resetCompleted
+		const showResetClientCard = Boolean(resetErrorDescription) && !resetCompleted
 		const showAuthorizeForm = !resetCompleted
 		const actionsDisabled =
 			status !== 'ready' || Boolean(submittingDecision) || isSessionLoading
