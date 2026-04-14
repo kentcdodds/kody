@@ -92,6 +92,7 @@ function createMemoryTestDb() {
 									summary,
 									details,
 									tagsJson,
+									sourceUrisJson,
 									dedupeKey,
 									createdAt,
 									updatedAt,
@@ -107,6 +108,7 @@ function createMemoryTestDb() {
 									summary: String(summary),
 									details: String(details ?? ''),
 									tags_json: String(tagsJson ?? '[]'),
+									source_uris_json: String(sourceUrisJson ?? '[]'),
 									dedupe_key: dedupeKey == null ? null : String(dedupeKey),
 									created_at: String(createdAt),
 									updated_at: String(updatedAt),
@@ -125,6 +127,7 @@ function createMemoryTestDb() {
 										summary,
 										details,
 										tagsJson,
+										sourceUrisJson,
 										dedupeKey,
 										lastAccessedAt,
 										deletedAt,
@@ -144,6 +147,7 @@ function createMemoryTestDb() {
 										summary: String(summary),
 										details: String(details ?? ''),
 										tags_json: String(tagsJson ?? '[]'),
+										source_uris_json: String(sourceUrisJson ?? '[]'),
 										dedupe_key: dedupeKey == null ? null : String(dedupeKey),
 										last_accessed_at:
 											lastAccessedAt == null ? null : String(lastAccessedAt),
@@ -252,11 +256,15 @@ test('memory service upserts, verifies, and soft deletes', async () => {
 		details: 'Applies to code editors and dashboards.',
 		category: 'preference',
 		tags: ['theme', 'dark-mode'],
+		sourceUris: ['https://docs.example.com/preferences/editor-theme'],
 		verificationReference: 'verify-1',
 	})
 
 	expect(created.mode).toBe('created')
 	expect(created.memory.subject).toBe('Preferred editor theme')
+	expect(created.memory.sourceUris).toEqual([
+		'https://docs.example.com/preferences/editor-theme',
+	])
 
 	const verify = await verifyMemoryCandidate({
 		env: runtimeEnv,
@@ -266,11 +274,18 @@ test('memory service upserts, verifies, and soft deletes', async () => {
 			summary: 'User likes dark mode in editing interfaces.',
 			category: 'preference',
 			tags: ['theme'],
+			sourceUris: ['https://docs.example.com/preferences/editor-theme'],
 		},
 	})
 
 	expect(verify.relatedMemories).toHaveLength(1)
 	expect(verify.relatedMemories[0]?.memory.id).toBe(created.memory.id)
+	expect(verify.candidate.source_uris).toEqual([
+		'https://docs.example.com/preferences/editor-theme',
+	])
+	expect(verify.relatedMemories[0]?.memory.sourceUris).toEqual([
+		'https://docs.example.com/preferences/editor-theme',
+	])
 
 	const updated = await upsertMemory({
 		env: runtimeEnv,
@@ -280,11 +295,19 @@ test('memory service upserts, verifies, and soft deletes', async () => {
 		summary: 'User prefers dark mode everywhere.',
 		category: 'preference',
 		tags: ['theme', 'dark-mode'],
+		sourceUris: [
+			'https://docs.example.com/preferences/editor-theme',
+			'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md',
+		],
 		verificationReference: 'verify-2',
 	})
 
 	expect(updated.mode).toBe('updated')
 	expect(updated.memory.summary).toBe('User prefers dark mode everywhere.')
+	expect(updated.memory.sourceUris).toEqual([
+		'https://docs.example.com/preferences/editor-theme',
+		'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md',
+	])
 
 	const deleted = await deleteMemory({
 		env: runtimeEnv,
@@ -301,6 +324,10 @@ test('memory service upserts, verifies, and soft deletes', async () => {
 		memoryId: created.memory.id,
 	})
 	expect(loaded?.status).toBe('deleted')
+	expect(loaded?.sourceUris).toEqual([
+		'https://docs.example.com/preferences/editor-theme',
+		'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md',
+	])
 })
 
 test('memory surfacing suppresses repeated memories per conversation', async () => {
@@ -345,4 +372,47 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 
 	expect(search.matches).toHaveLength(0)
 	expect(search.suppressedCount).toBeGreaterThanOrEqual(1)
+})
+
+test('memory service rejects invalid source uris and tolerates missing stored values', async () => {
+	const testDb = createMemoryTestDb()
+	const runtimeEnv = env(testDb.db)
+
+	await expect(
+		upsertMemory({
+			env: runtimeEnv,
+			userId: 'user-123',
+			subject: 'Invalid source URIs',
+			summary: 'This write should fail validation.',
+			sourceUris: ['not-a-url'],
+			verificationReference: 'verify-4',
+		}),
+	).rejects.toThrow('Memory source_uris entries must be valid URLs.')
+
+	testDb.memories.set(
+		'legacy-memory',
+		{
+			id: 'legacy-memory',
+			user_id: 'user-123',
+			category: 'profile',
+			status: 'active',
+			subject: 'Legacy memory',
+			summary: 'Stored before source URIs existed.',
+			details: '',
+			tags_json: '["legacy"]',
+			dedupe_key: null,
+			created_at: '2026-01-01T00:00:00.000Z',
+			updated_at: '2026-01-01T00:00:00.000Z',
+			last_accessed_at: null,
+			deleted_at: null,
+		} as unknown as McpMemoryRow,
+	)
+
+	const loaded = await getMemory({
+		env: { APP_DB: testDb.db },
+		userId: 'user-123',
+		memoryId: 'legacy-memory',
+	})
+
+	expect(loaded?.sourceUris).toEqual([])
 })

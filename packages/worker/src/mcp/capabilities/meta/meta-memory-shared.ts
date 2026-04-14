@@ -11,13 +11,25 @@ export const memoryCategoryField = z
 		'Optional freeform category label for the memory. Suggested examples: preference, identifier, relationship, workflow, project, profile.',
 	)
 
+const maxSourceUriLength = 2_048
+const maxSourceUriCount = 12
+
 export const memoryTagInputSchema = z.string().min(1).max(80)
+export const memorySourceUriSchema = z.string().url().max(maxSourceUriLength)
 
 export const memoryTagsField = z
 	.array(memoryTagInputSchema)
 	.max(12)
 	.optional()
 	.describe('Optional short tags for retrieval and filtering.')
+
+export const memorySourceUrisField = z
+	.array(memorySourceUriSchema)
+	.max(maxSourceUriCount)
+	.optional()
+	.describe(
+		'Optional canonical source document URLs for the memory. Treat these as opaque references.',
+	)
 
 export const memoryBaseInputSchema = {
 	subject: z
@@ -37,6 +49,7 @@ export const memoryBaseInputSchema = {
 		.describe('Optional supporting details for the durable memory record.'),
 	category: memoryCategoryField,
 	tags: memoryTagsField,
+	source_uris: memorySourceUrisField,
 	dedupe_key: z
 		.string()
 		.min(1)
@@ -81,6 +94,7 @@ export const memoryRecordSchema = z.object({
 	summary: z.string(),
 	details: z.string(),
 	tags: z.array(z.string()),
+	source_uris: z.array(memorySourceUriSchema).optional(),
 	dedupe_key: z.string().nullable(),
 	created_at: z.string(),
 	updated_at: z.string(),

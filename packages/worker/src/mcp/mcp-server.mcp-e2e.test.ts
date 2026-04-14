@@ -59,6 +59,10 @@ test('authenticated mcp client can list tools, execute codemode, and search memo
 					summary: 'Always use npm commands in this repository.',
 					category: 'preference',
 					tags: ['package-manager', 'repo-workflow'],
+					source_uris: [
+						'https://docs.npmjs.com/cli/v11/commands/npm-install',
+						'https://github.com/kentcdodds/kody/blob/main/AGENTS.md',
+					],
 					verified_by_agent: true,
 					verification_reference: 'verify-search-fallback-1',
 				})
@@ -66,9 +70,63 @@ test('authenticated mcp client can list tools, execute codemode, and search memo
 		},
 	})
 	const upsertStructured = (upsertResult as CallToolResult).structuredContent as
-		| { result?: { memory?: { id?: string } } }
+		| { result?: { memory?: { id?: string; source_uris?: Array<string> } } }
 		| undefined
 	expect(typeof upsertStructured?.result?.memory?.id).toBe('string')
+	expect(upsertStructured?.result?.memory?.source_uris).toEqual([
+		'https://docs.npmjs.com/cli/v11/commands/npm-install',
+		'https://github.com/kentcdodds/kody/blob/main/AGENTS.md',
+	])
+
+	const memoryId = upsertStructured?.result?.memory?.id
+	if (!memoryId) {
+		throw new Error('missing memoryId')
+	}
+
+	const getResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_get({
+					memory_id: ${JSON.stringify(memoryId)},
+				})
+			}`,
+		},
+	})
+	const getStructured = (getResult as CallToolResult).structuredContent as
+		| { result?: { source_uris?: Array<string> } }
+		| undefined
+	expect(getStructured?.result?.source_uris).toEqual([
+		'https://docs.npmjs.com/cli/v11/commands/npm-install',
+		'https://github.com/kentcdodds/kody/blob/main/AGENTS.md',
+	])
+
+	const memoryCapabilitySearchResult = await mcpClient.client.callTool({
+		name: 'execute',
+		arguments: {
+			code: `async () => {
+				return await codemode.meta_memory_search({
+					query: 'npm over pnpm',
+					limit: 3,
+				})
+			}`,
+		},
+	})
+	const memoryCapabilitySearchStructured = (
+		memoryCapabilitySearchResult as CallToolResult
+	).structuredContent as
+		| {
+				result?: {
+					matches?: Array<{ source_uris?: Array<string> }>
+				}
+		  }
+		| undefined
+	expect(
+		memoryCapabilitySearchStructured?.result?.matches?.[0]?.source_uris,
+	).toEqual([
+		'https://docs.npmjs.com/cli/v11/commands/npm-install',
+		'https://github.com/kentcdodds/kody/blob/main/AGENTS.md',
+	])
 
 	const query = 'npm over pnpm'
 	const memorySearchResult = await mcpClient.client.callTool({

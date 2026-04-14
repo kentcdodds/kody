@@ -100,6 +100,7 @@ function formatMemoryRecord(
 		summary: memory.summary,
 		details: memory.details,
 		tags: memory.tags,
+		source_uris: memory.sourceUris,
 		dedupe_key: memory.dedupeKey,
 		created_at: memory.createdAt,
 		updated_at: memory.updatedAt,

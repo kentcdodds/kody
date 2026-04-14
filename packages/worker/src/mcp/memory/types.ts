@@ -13,6 +13,7 @@ export type MemoryRow = {
 	summary: string
 	details: string
 	tags_json: string
+	source_uris_json: string
 	dedupe_key: string | null
 	created_at: string
 	updated_at: string
@@ -42,6 +43,7 @@ export type MemoryMetadata = {
 	summary: string
 	details: string
 	tags: Array<string>
+	sourceUris: Array<string>
 	dedupeKey: string | null
 	createdAt: string
 	updatedAt: string

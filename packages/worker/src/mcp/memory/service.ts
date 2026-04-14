@@ -26,6 +26,8 @@ const maxCategoryLength = 80
 const maxDedupeKeyLength = 160
 const maxTagLength = 80
 const maxTagCount = 16
+const maxSourceUriLength = 2_048
+const maxSourceUriCount = 12
 const defaultSuppressionTtlMs = 30 * 24 * 60 * 60 * 1_000
 
 function logMemoryVectorSyncError(input: {
@@ -61,6 +63,7 @@ type MemoryUpsertInput = MemoryOwnerContext & {
 	summary: string
 	details?: string | null
 	tags?: Array<string> | null
+	sourceUris?: Array<string> | null
 	dedupeKey?: string | null
 	status?: 'active' | 'archived'
 	verificationReference?: string | null
@@ -95,6 +98,7 @@ type MemoryVerifyInput = MemoryOwnerContext & {
 		details?: string | null
 		category?: string | null
 		tags?: Array<string> | null
+		sourceUris?: Array<string> | null
 		dedupeKey?: string | null
 	}
 	limit?: number
@@ -132,6 +136,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 				summary: normalized.summary,
 				details: normalized.details,
 				tags_json: JSON.stringify(normalized.tags),
+				source_uris_json: JSON.stringify(normalized.sourceUris),
 				dedupe_key: normalized.dedupeKey,
 				updated_at: now,
 				deleted_at: null,
@@ -145,6 +150,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 				summary: normalized.summary,
 				details: normalized.details,
 				tags_json: JSON.stringify(normalized.tags),
+				source_uris_json: JSON.stringify(normalized.sourceUris),
 				dedupe_key: normalized.dedupeKey,
 				created_at: now,
 				updated_at: now,
@@ -160,6 +166,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 			summary: row.summary,
 			details: row.details,
 			tags_json: row.tags_json,
+			source_uris_json: row.source_uris_json,
 			dedupe_key: row.dedupe_key,
 			last_accessed_at: row.last_accessed_at,
 			deleted_at: row.deleted_at,
@@ -252,6 +259,7 @@ export async function deleteMemory(
 			summary: existing.summary,
 			details: existing.details,
 			tags_json: existing.tags_json,
+			source_uris_json: existing.source_uris_json,
 			dedupe_key: existing.dedupe_key,
 			last_accessed_at: existing.last_accessed_at,
 			deleted_at: now,
@@ -355,6 +363,7 @@ export async function verifyMemoryCandidate(input: MemoryVerifyInput): Promise<{
 		details: string
 		category: string | null
 		tags: Array<string>
+		source_uris: Array<string>
 		dedupe_key: string | null
 	}
 	relatedMemories: Array<{ memory: MemoryRecord; score: number }>
@@ -379,6 +388,7 @@ export async function verifyMemoryCandidate(input: MemoryVerifyInput): Promise<{
 			details: candidate.details,
 			category: candidate.category,
 			tags: candidate.tags,
+			source_uris: candidate.sourceUris,
 			dedupe_key: candidate.dedupeKey,
 		},
 		relatedMemories: result.matches.map((match) => ({
@@ -444,6 +454,7 @@ function normalizeMemoryPayload(input: {
 	summary: string
 	details?: string | null
 	tags?: Array<string> | null
+	sourceUris?: Array<string> | null
 	dedupeKey?: string | null
 }) {
 	const subject = normalizeRequiredString(
@@ -462,6 +473,7 @@ function normalizeMemoryPayload(input: {
 		summary,
 		details: normalizeOptionalString(input.details, maxDetailsLength) ?? '',
 		tags: normalizeTags(input.tags ?? []),
+		sourceUris: normalizeSourceUris(input.sourceUris ?? []),
 		dedupeKey: normalizeOptionalString(input.dedupeKey, maxDedupeKeyLength),
 	}
 }
@@ -518,6 +530,25 @@ function normalizeTags(tags: Array<string>) {
 	).slice(0, maxTagCount)
 }
 
+function normalizeSourceUris(sourceUris: Array<string>) {
+	return Array.from(
+		new Set(
+			sourceUris.map((sourceUri) => {
+				const normalized = sourceUri.trim()
+				if (!normalized || normalized.length > maxSourceUriLength) {
+					throw new Error('Memory source_uris entries must be valid URLs.')
+				}
+				try {
+					new URL(normalized)
+				} catch {
+					throw new Error('Memory source_uris entries must be valid URLs.')
+				}
+				return normalized
+			}),
+		),
+	).slice(0, maxSourceUriCount)
+}
+
 function normalizeLimit(value: number | undefined | null) {
 	if (!Number.isFinite(value)) return 5
 	return Math.max(1, Math.min(20, Math.trunc(value!)))
@@ -550,7 +581,7 @@ async function filterSuppressedMatches(input: {
 	}
 }
 
-function parseTags(raw: string) {
+function parseJsonStringArray(raw: string) {
 	try {
 		const parsed = JSON.parse(raw) as unknown
 		if (!Array.isArray(parsed)) return []
@@ -558,6 +589,14 @@ function parseTags(raw: string) {
 	} catch {
 		return []
 	}
+}
+
+function parseTags(raw: string) {
+	return parseJsonStringArray(raw)
+}
+
+function parseSourceUris(raw: string) {
+	return parseJsonStringArray(raw)
 }
 
 function mapSearchMatchToMemoryRecord(match: MemorySearchMatch): MemoryRecord {
@@ -569,6 +608,7 @@ function mapSearchMatchToMemoryRecord(match: MemorySearchMatch): MemoryRecord {
 		summary: match.summary,
 		details: match.details,
 		tags: match.tags,
+		sourceUris: match.sourceUris,
 		dedupeKey: match.dedupeKey,
 		createdAt: match.createdAt,
 		updatedAt: match.updatedAt,
@@ -586,6 +626,7 @@ function toMemoryRecord(row: McpMemoryRow): MemoryRecord {
 		summary: row.summary,
 		details: row.details,
 		tags: parseTags(row.tags_json),
+		sourceUris: parseSourceUris(row.source_uris_json),
 		dedupeKey: row.dedupe_key,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,

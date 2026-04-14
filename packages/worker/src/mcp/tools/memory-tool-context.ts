@@ -12,6 +12,7 @@ export type MemoryToolSummary = {
 		summary: string
 		details: string
 		tags: Array<string>
+		sourceUris: Array<string>
 		updatedAt: string
 	}>
 	suppressedCount: number
@@ -148,6 +149,11 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 				`  - Tags: ${memory.tags.map((tag) => `\`${tag}\``).join(', ')}`,
 			)
 		}
+		if (memory.sourceUris.length > 0) {
+			lines.push(
+				`  - Sources: ${memory.sourceUris.map((sourceUri) => `\`${sourceUri}\``).join(', ')}`,
+			)
+		}
 		lines.push(`  - Updated: \`${memory.updatedAt}\``)
 	}
 	if (memorySummary.suppressedCount > 0) {
@@ -168,6 +174,7 @@ function toMemoryToolSummaryItem(memory: MemoryRecord) {
 		summary: memory.summary,
 		details: memory.details,
 		tags: memory.tags,
+		sourceUris: memory.sourceUris,
 		updatedAt: memory.updatedAt,
 	}
 }

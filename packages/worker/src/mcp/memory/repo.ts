@@ -13,6 +13,7 @@ function mapMemoryRow(row: Record<string, unknown>): McpMemoryRow {
 		summary: String(row['summary']),
 		details: String(row['details'] ?? ''),
 		tags_json: String(row['tags_json'] ?? '[]'),
+		source_uris_json: String(row['source_uris_json'] ?? '[]'),
 		dedupe_key: row['dedupe_key'] == null ? null : String(row['dedupe_key']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
@@ -47,8 +48,8 @@ export async function insertMemory(
 		.prepare(
 			`INSERT INTO mcp_memories (
 				id, user_id, category, status, subject, summary, details, tags_json,
-				dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				source_uris_json, dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -59,6 +60,7 @@ export async function insertMemory(
 			row.summary,
 			row.details,
 			row.tags_json,
+			row.source_uris_json,
 			row.dedupe_key,
 			row.created_at ?? now,
 			row.updated_at ?? now,
@@ -76,7 +78,7 @@ export async function getMemoryById(
 	const row = await db
 		.prepare(
 			`SELECT id, user_id, category, status, subject, summary, details, tags_json,
-				dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
+				source_uris_json, dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
 			FROM mcp_memories
 			WHERE user_id = ? AND id = ?
 			LIMIT 1`,
@@ -97,6 +99,7 @@ export async function updateMemory(
 		summary: string
 		details: string
 		tags_json: string
+		source_uris_json: string
 		dedupe_key: string | null
 		last_accessed_at: string | null
 		deleted_at: string | null
@@ -111,6 +114,7 @@ export async function updateMemory(
 				summary = ?,
 				details = ?,
 				tags_json = ?,
+				source_uris_json = ?,
 				dedupe_key = ?,
 				last_accessed_at = ?,
 				deleted_at = ?,
@@ -124,6 +128,7 @@ export async function updateMemory(
 			fields.summary,
 			fields.details,
 			fields.tags_json,
+			fields.source_uris_json,
 			fields.dedupe_key,
 			fields.last_accessed_at,
 			fields.deleted_at,
@@ -164,7 +169,7 @@ export async function listMemoriesByUserId(
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, category, status, subject, summary, details, tags_json,
-				dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
+				source_uris_json, dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
 			FROM mcp_memories
 			WHERE user_id = ?
 				${statusClause}
@@ -182,7 +187,7 @@ export async function listAllMemories(input: {
 	const { results } = await input.db
 		.prepare(
 			`SELECT id, user_id, category, status, subject, summary, details, tags_json,
-				dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
+				source_uris_json, dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
 			FROM mcp_memories
 			ORDER BY updated_at DESC`,
 		)
