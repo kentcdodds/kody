@@ -64,7 +64,9 @@ function normalizeBridgeScope(
 	defaultScope: FacetBridgeProps['scopeLabel'],
 ) {
 	const resolvedScope = scope ?? defaultScope
-	return resolvedScope === 'user' ? 'user' : 'app'
+	if (resolvedScope === 'user') return 'user'
+	if (resolvedScope === 'app' || resolvedScope === 'job') return 'app'
+	throw new Error(`Unsupported bridge scope: ${String(resolvedScope)}`)
 }
 
 export function normalizeFacetName(

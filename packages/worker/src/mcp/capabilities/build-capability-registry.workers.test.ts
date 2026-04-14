@@ -79,7 +79,9 @@ test('builtin capability domains include jobs', async () => {
 	expect(
 		builtinDomains.some((domain) => domain.name === capabilityDomainNames.jobs),
 	).toBe(true)
-	const jobsDomain = builtinDomains.find((domain) => domain.name === 'jobs')
+	const jobsDomain = builtinDomains.find(
+		(domain) => domain.name === capabilityDomainNames.jobs,
+	)
 	expect(jobsDomain?.capabilities.map((capability) => capability.name)).toEqual(
 		[
 			'job_create',

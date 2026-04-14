@@ -45,20 +45,20 @@ function createJobCode(flavor: string) {
 
 		export class Job extends DurableObject {
 			async run() {
-				const count = Number(this.ctx.storage.kv.get('count') ?? 0) + 1
-				this.ctx.storage.kv.put('count', count)
+				const count = Number((await this.ctx.storage.get('count')) ?? 0) + 1
+				await this.ctx.storage.put('count', count)
 				return { count, flavor: '${flavor}' }
 			}
 
 			async readState() {
 				return {
-					count: Number(this.ctx.storage.kv.get('count') ?? 0),
+					count: Number((await this.ctx.storage.get('count')) ?? 0),
 					flavor: '${flavor}',
 				}
 			}
 
 			async setCount(nextCount) {
-				this.ctx.storage.kv.put('count', Number(nextCount ?? 0))
+				await this.ctx.storage.put('count', Number(nextCount ?? 0))
 				return await this.readState()
 			}
 		}
