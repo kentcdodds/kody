@@ -127,7 +127,7 @@ export const jobServerExecInputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'JavaScript snippet compiled into a throwaway Dynamic Worker. The snippet runs with `job` (RPC stub to the job facet) and `params` in scope.',
+			'JavaScript snippet compiled into a throwaway Dynamic Worker. The snippet runs with `job.call(methodName, ...args)` and `params` in scope.',
 		),
 	params: z.record(z.string(), z.unknown()).optional(),
 })

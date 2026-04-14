@@ -354,7 +354,7 @@ const jobServerExecCapability = defineDomainCapability(
 	{
 		name: 'job_server_exec',
 		description:
-			'Compile one-off JavaScript into a throwaway Dynamic Worker that receives an RPC stub to the scheduled job facet as `job`. Use it for debugging, repair tasks, or data migrations scoped to that job.',
+			'Compile one-off JavaScript into a throwaway Dynamic Worker that receives an explicit `job.call(methodName, ...args)` bridge to the scheduled job facet. Use it for debugging, repair tasks, or data migrations scoped to that job.',
 		keywords: [...jobCapabilityKeywords, 'server', 'exec', 'debug'],
 		readOnly: false,
 		idempotent: false,

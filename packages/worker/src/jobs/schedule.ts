@@ -1,5 +1,5 @@
 import { Cron } from 'croner'
-import { type JobRecord, type JobSchedule } from './types.ts'
+import { type JobSchedule } from './types.ts'
 
 export const defaultJobTimezone = 'America/Denver'
 const cronFieldPattern = /\s+/
@@ -91,4 +91,3 @@ export function computeNextJobRunAt(input: {
 	}
 	return nextRun.toISOString()
 }
-
