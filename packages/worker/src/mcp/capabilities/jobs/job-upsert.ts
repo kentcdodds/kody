@@ -84,10 +84,18 @@ export const jobUpsertCapability = defineDomainCapability(
 									: {}),
 							},
 						})
-			await syncJobManagerAlarm({
-				env: ctx.env,
-				userId: user.userId,
-			})
+			try {
+				await syncJobManagerAlarm({
+					env: ctx.env,
+					userId: user.userId,
+				})
+			} catch (syncError) {
+				console.error('[job_upsert] failed to sync job manager alarm', {
+					userId: user.userId,
+					jobId: result.id,
+					syncError,
+				})
+			}
 			return result
 		},
 	},

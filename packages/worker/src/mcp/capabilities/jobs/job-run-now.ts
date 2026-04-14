@@ -1,7 +1,6 @@
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { syncJobManagerAlarm } from '#worker/jobs/manager-do.ts'
-import { runJobNow } from '#worker/jobs/service.ts'
+import { runJobNowViaManager } from '#worker/jobs/manager-do.ts'
 import {
 	jobIdInputSchema,
 	jobRunNowOutputSchema,
@@ -22,37 +21,12 @@ export const jobRunNowCapability = defineDomainCapability(
 		outputSchema: jobRunNowOutputSchema,
 		async handler(args, ctx) {
 			const user = requireJobsUser(ctx)
-			let result: Awaited<ReturnType<typeof runJobNow>> | undefined
-			let originalError: unknown
-			try {
-				result = await runJobNow({
-					env: ctx.env,
-					userId: user.userId,
-					jobId: args.id,
-					callerContext: ctx.callerContext,
-				})
-			} catch (error) {
-				originalError = error
-			}
-			try {
-				await syncJobManagerAlarm({
-					env: ctx.env,
-					userId: user.userId,
-				})
-			} catch (syncError) {
-				if (originalError) {
-					console.error(
-						'[job_run_now] failed to sync job manager alarm after error',
-						syncError,
-					)
-				} else {
-					throw syncError
-				}
-			}
-			if (originalError) {
-				throw originalError
-			}
-			return result!
+			return await runJobNowViaManager({
+				env: ctx.env,
+				userId: user.userId,
+				jobId: args.id,
+				callerContext: ctx.callerContext,
+			})
 		},
 	},
 )

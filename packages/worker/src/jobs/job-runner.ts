@@ -24,6 +24,7 @@ type JobRunnerConfig = {
 		sessionId: string | null
 		appId: string | null
 	}
+	facetNames: Array<string>
 	serverCode: string
 	serverCodeId: string
 	methodName: string
@@ -185,6 +186,7 @@ function defaultConfig(jobId: string): JobRunnerConfig {
 			sessionId: null,
 			appId: null,
 		},
+		facetNames: [defaultJobFacetName],
 		serverCode: '',
 		serverCodeId: crypto.randomUUID(),
 		methodName: 'run',
@@ -369,11 +371,23 @@ class JobRunnerBase extends DurableObject<Env> {
 			killSwitchEnabled: input.killSwitchEnabled ?? existing.killSwitchEnabled,
 		}
 		await this.writeConfig(nextConfig)
-		if (
+		const codeChanged =
 			existing.serverCodeId !== nextConfig.serverCodeId ||
 			existing.serverCode !== nextConfig.serverCode
-		) {
-			this.ctx.facets.abort(defaultJobFacetName, new Error('Job code updated.'))
+		const bridgeChanged =
+			existing.userId !== nextConfig.userId ||
+			existing.baseUrl !== nextConfig.baseUrl ||
+			JSON.stringify(existing.storageContext) !==
+				JSON.stringify(nextConfig.storageContext)
+		if (codeChanged || bridgeChanged) {
+			for (const facetName of nextConfig.facetNames) {
+				this.ctx.facets.abort(
+					facetName,
+					new Error(
+						codeChanged ? 'Job code updated.' : 'Job bridge context updated.',
+					),
+				)
+			}
 		}
 		return nextConfig
 	}
@@ -511,7 +525,7 @@ class JobRunnerBase extends DurableObject<Env> {
 	}
 
 	private async getFacetStub(jobId: string, facetName: string) {
-		const config = await this.readConfig(jobId)
+		const config = await this.registerFacetName(jobId, facetName)
 		if (config.killSwitchEnabled) {
 			throw new Error('Facet job backend is disabled.')
 		}
@@ -554,6 +568,19 @@ class JobRunnerBase extends DurableObject<Env> {
 		const existing =
 			await this.ctx.storage.get<JobRunnerConfig>(configStorageKey)
 		return existing ?? defaultConfig(jobId)
+	}
+
+	private async registerFacetName(jobId: string, facetName: string) {
+		const config = await this.readConfig(jobId)
+		if (config.facetNames.includes(facetName)) {
+			return config
+		}
+		const nextConfig = {
+			...config,
+			facetNames: [...config.facetNames, facetName],
+		}
+		await this.writeConfig(nextConfig)
+		return nextConfig
 	}
 
 	private async writeConfig(config: JobRunnerConfig) {

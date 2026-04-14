@@ -1,7 +1,8 @@
 import * as Sentry from '@sentry/cloudflare'
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { getNextRunnableJob, runDueJobsForUser } from './service.ts'
+import { getNextRunnableJob, runDueJobsForUser, runJobNow } from './service.ts'
 
 const userIdStorageKey = 'user-id'
 
@@ -44,6 +45,38 @@ class JobManagerBase extends DurableObject<Env> {
 		})
 		await this.syncAlarm({ userId })
 	}
+
+	async runNow(input: {
+		userId: string
+		jobId: string
+		callerContext?: McpCallerContext | null
+	}) {
+		let result: Awaited<ReturnType<typeof runJobNow>> | undefined
+		let originalError: unknown
+		try {
+			result = await runJobNow({
+				env: this.env,
+				userId: input.userId,
+				jobId: input.jobId,
+				callerContext: input.callerContext ?? null,
+			})
+		} catch (error) {
+			originalError = error
+		}
+		try {
+			await this.syncAlarm({ userId: input.userId })
+		} catch (syncError) {
+			console.error('[JobManager.runNow] failed to sync job alarm', {
+				userId: input.userId,
+				jobId: input.jobId,
+				syncError,
+			})
+		}
+		if (originalError) {
+			throw originalError
+		}
+		return result!
+	}
 }
 
 export const JobManager = Sentry.instrumentDurableObjectWithSentry(
@@ -58,11 +91,29 @@ export function jobManagerRpc(env: Env, userId: string) {
 			userId: string
 			nextRunAt: string | null
 		}>
+		runNow: (payload: {
+			userId: string
+			jobId: string
+			callerContext?: McpCallerContext | null
+		}) => Promise<Awaited<ReturnType<typeof runJobNow>>>
 	}
 }
 
 export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {
 	return jobManagerRpc(input.env, input.userId).syncAlarm({
 		userId: input.userId,
+	})
+}
+
+export async function runJobNowViaManager(input: {
+	env: Env
+	userId: string
+	jobId: string
+	callerContext?: McpCallerContext | null
+}) {
+	return jobManagerRpc(input.env, input.userId).runNow({
+		userId: input.userId,
+		jobId: input.jobId,
+		callerContext: input.callerContext ?? null,
 	})
 }

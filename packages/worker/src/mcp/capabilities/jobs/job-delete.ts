@@ -38,14 +38,11 @@ export const jobDeleteCapability = defineDomainCapability(
 					userId: user.userId,
 				})
 			} catch (syncError) {
-				if (originalError) {
-					console.error(
-						'[job_delete] failed to sync job manager alarm after error',
-						syncError,
-					)
-				} else {
-					throw syncError
-				}
+				console.error('[job_delete] failed to sync job manager alarm', {
+					userId: user.userId,
+					jobId: args.id,
+					syncError,
+				})
 			}
 			if (originalError) {
 				throw originalError
