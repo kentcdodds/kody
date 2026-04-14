@@ -455,13 +455,17 @@ export async function executeJobOnce(input: {
 					helperPrelude: usesFacet ? createJobHelperPrelude() : undefined,
 				},
 			)
-			execution = {
-				ok: !result.error,
-				...(result.error
-					? { error: formatJobError(result.error) }
-					: { result: result.result }),
-				logs: result.logs ?? [],
-			}
+			execution = result.error
+				? {
+						ok: false,
+						error: formatJobError(result.error),
+						logs: result.logs ?? [],
+					}
+				: {
+						ok: true,
+						result: result.result,
+						logs: result.logs ?? [],
+					}
 		}
 	} catch (error) {
 		execution = {
