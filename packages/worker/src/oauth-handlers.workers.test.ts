@@ -173,9 +173,9 @@ test('authorize info marks invalid client mismatch as resettable', async () => {
 		error: invalidClientIdMismatchMessage,
 		allowClientReset: true,
 	})
-	expect(response.headers.get('Set-Cookie')).toContain(
-		'kody_oauth_client_reset=',
-	)
+	const setCookie = response.headers.get('Set-Cookie') ?? ''
+	expect(setCookie).toContain('kody_oauth_client_reset=')
+	expect(setCookie).toContain('Path=/oauth')
 })
 
 test('authorize denies access and redirects with error', async () => {
