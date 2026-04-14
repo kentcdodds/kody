@@ -516,7 +516,14 @@ class JobRunnerBase extends DurableObject<Env> {
 	}
 
 	async deleteJob(input: { jobId: string }) {
-		this.ctx.facets.delete(defaultJobFacetName)
+		const config = await this.readConfig(input.jobId)
+		for (const facetName of config.facetNames) {
+			try {
+				this.ctx.facets.abort(facetName, new Error('Job deleted.'))
+			} catch {
+				// Cleanup should be best-effort so missing facet state never blocks job teardown.
+			}
+		}
 		await this.ctx.storage.deleteAll()
 		return {
 			ok: true,
