@@ -294,26 +294,24 @@ function createDatabase() {
 									user_id: params[1],
 									name: params[2],
 									code: params[3],
-									server_code: params[4],
-									server_code_id: params[5],
-									method_name: params[6],
-									params_json: params[7],
-									schedule_json: params[8],
-									timezone: params[9],
-									enabled: params[10],
-									kill_switch_enabled: params[11],
-									caller_context_json: params[12],
-									created_at: params[13],
-									updated_at: params[14],
-									last_run_at: params[15],
-									last_run_status: params[16],
-									last_run_error: params[17],
-									last_duration_ms: params[18],
-									next_run_at: params[19],
-									run_count: params[20],
-									success_count: params[21],
-									error_count: params[22],
-									run_history_json: params[23],
+									storage_id: params[4],
+									params_json: params[5],
+									schedule_json: params[6],
+									timezone: params[7],
+									enabled: params[8],
+									kill_switch_enabled: params[9],
+									caller_context_json: params[10],
+									created_at: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									last_run_error: params[15],
+									last_duration_ms: params[16],
+									next_run_at: params[17],
+									run_count: params[18],
+									success_count: params[19],
+									error_count: params[20],
+									run_history_json: params[21],
 								}
 								upsert(
 									'jobs',
@@ -326,36 +324,34 @@ function createDatabase() {
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const row = {
-									id: params[21],
-									user_id: params[22],
+									id: params[20],
+									user_id: params[21],
 									name: params[0],
 									code: params[1],
-									server_code: params[2],
-									server_code_id: params[3],
-									method_name: params[4],
-									params_json: params[5],
-									schedule_json: params[6],
-									timezone: params[7],
-									enabled: params[8],
-									kill_switch_enabled: params[9],
-									caller_context_json: params[10],
-									updated_at: params[11],
-									last_run_at: params[12],
-									last_run_status: params[13],
-									last_run_error: params[14],
-									last_duration_ms: params[15],
-									next_run_at: params[16],
-									run_count: params[17],
-									success_count: params[18],
-									error_count: params[19],
-									run_history_json: params[20],
+									storage_id: params[2],
+									params_json: params[3],
+									schedule_json: params[4],
+									timezone: params[5],
+									enabled: params[6],
+									kill_switch_enabled: params[7],
+									caller_context_json: params[8],
+									updated_at: params[9],
+									last_run_at: params[10],
+									last_run_status: params[11],
+									last_run_error: params[12],
+									last_duration_ms: params[13],
+									next_run_at: params[14],
+									run_count: params[15],
+									success_count: params[16],
+									error_count: params[17],
+									run_history_json: params[18],
 									created_at:
 										selectOne(
 											'jobs',
 											(existing) =>
-												existing['id'] === params[21] &&
-												existing['user_id'] === params[22],
-										)?.['created_at'] ?? params[11],
+												existing['id'] === params[20] &&
+												existing['user_id'] === params[21],
+										)?.['created_at'] ?? params[9],
 								}
 								upsert(
 									'jobs',
@@ -428,28 +424,17 @@ test('createJob stores a codemode job with interval support', async () => {
 	expect(result.scheduleSummary).toBe('Runs every 15m')
 })
 
-test('updateJob can add and remove facet state without changing code', async () => {
+test('createJob assigns a stable job storage id', async () => {
 	const env = {
 		APP_DB: createDatabase(),
-		JOB_RUNNER: {
-			idFromName(name: string) {
-				return name as unknown as DurableObjectId
-			},
-			get() {
-				return {
-					configure: async () => ({ ok: true }),
-					deleteJob: async () => ({ ok: true }),
-				}
-			},
-		},
-	} as unknown as Env
+	} as Env
 	const callerContext = createBaseCallerContext()
 
 	const created = await createJob({
 		env,
 		callerContext,
 		body: {
-			name: 'Facet toggle',
+			name: 'Storage-backed job',
 			code: 'async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
@@ -458,68 +443,45 @@ test('updateJob can add and remove facet state without changing code', async () 
 		},
 	})
 
-	const withFacet = await updateJob({
-		env,
-		callerContext,
-		body: {
-			id: created.id,
-			serverCode: `
-import { DurableObject } from 'cloudflare:workers'
-
-export class Job extends DurableObject {
-	async run(input = {}) {
-		return input
-	}
-}
-			`.trim(),
-		},
-	})
-
-	expect(withFacet.code).toBe('async () => ({ ok: true })')
-	expect(withFacet.serverCode).toContain('export class Job')
-	expect(withFacet.serverCodeId).toBeTypeOf('string')
-	expect(withFacet.methodName).toBe('run')
-
-	const withoutFacet = await updateJob({
-		env,
-		callerContext,
-		body: {
-			id: created.id,
-			serverCode: null,
-		},
-	})
-
-	expect(withoutFacet.code).toBe('async () => ({ ok: true })')
-	expect(withoutFacet.serverCode).toBeUndefined()
-	expect(withoutFacet.serverCodeId).toBeUndefined()
-	expect(withoutFacet.methodName).toBeUndefined()
+	expect(created.storageId).toBe(`job:${created.id}`)
 })
 
-test('executeJobOnce exposes job.call when facet state is configured', async () => {
+test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
 		LOADER: {} as WorkerLoader,
-		JOB_RUNNER: {
+		STORAGE_RUNNER: {
 			idFromName(name: string) {
 				return name as unknown as DurableObjectId
 			},
 			get() {
 				return {
-					configure: async () => ({ ok: true }),
-					deleteJob: async () => ({ ok: true }),
-					callJobRpc: async (payload: {
-						methodName?: string
-						args?: Array<unknown>
-					}) => {
-						expect(payload.methodName).toBe('increment')
-						expect(payload.args).toEqual([{ step: 'deploy' }])
-						return {
-							ok: true,
-							via: 'facet',
-							step: 'deploy',
-						}
-					},
+					getValue: async () => ({ key: 'count', value: 2 }),
+					setValue: async () => ({ ok: true, key: 'count' }),
+					deleteValue: async () => ({ ok: true, key: 'count', deleted: true }),
+					clearStorage: async () => ({ ok: true }),
+					listValues: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					exportStorage: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					sqlQuery: async () => ({
+						columns: ['value'],
+						rows: [{ value: 2 }],
+						rowCount: 1,
+						rowsRead: 1,
+						rowsWritten: 0,
+					}),
 				}
 			},
 		},
@@ -530,19 +492,10 @@ test('executeJobOnce exposes job.call when facet state is configured', async () 
 		env,
 		callerContext,
 		body: {
-			name: 'Facet bridge',
-			code: 'async (params) => await job.call("increment", params)',
-			serverCode: `
-import { DurableObject } from 'cloudflare:workers'
-
-export class Job extends DurableObject {
-	async increment(input = {}) {
-		return input
-	}
-}
-			`.trim(),
+			name: 'Storage bridge',
+			code: 'async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
 			params: {
-				step: 'deploy',
+				stepCount: 2,
 			},
 			schedule: {
 				type: 'once',
@@ -562,18 +515,11 @@ export class Job extends DurableObject {
 			await import('#mcp/run-codemode-registry.ts'),
 			'runCodemodeWithRegistry',
 		)
-		.mockImplementation(async (_env, _persistedContext, code, params, options) => {
-			expect(code).toContain('job.call("increment", params)')
-			expect(params).toEqual({ step: 'deploy' })
-			expect(options?.helperPrelude).toContain('const job =')
-			const facetResult = await options?.additionalTools?.job_call?.({
-				methodName: 'increment',
-				args: [params],
-			})
-			return {
-				result: facetResult,
-				logs: ['job helper executed'],
-			}
+		.mockResolvedValue({
+			result: {
+				value: 2,
+			},
+			logs: ['storage helper executed'],
 		})
 
 	try {
@@ -590,11 +536,9 @@ export class Job extends DurableObject {
 		expect(outcome.execution).toEqual({
 			ok: true,
 			result: {
-				ok: true,
-				via: 'facet',
-				step: 'deploy',
+				value: 2,
 			},
-			logs: ['job helper executed'],
+			logs: ['storage helper executed'],
 		})
 	} finally {
 		executeSpy.mockRestore()
@@ -607,16 +551,6 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		APP_DB: db,
 		COOKIE_SECRET: 'test-secret-0123456789abcdef0123456789',
 		LOADER: {} as WorkerLoader,
-		JOB_RUNNER: {
-			idFromName(name: string) {
-				return name as unknown as DurableObjectId
-			},
-			get() {
-				return {
-					deleteJob: async () => ({ ok: true }),
-				}
-			},
-		},
 	} as unknown as Env
 	const callerContext = createBaseCallerContext()
 
@@ -664,39 +598,14 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			await import('#mcp/run-codemode-registry.ts'),
 			'runCodemodeWithRegistry',
 		)
-		.mockImplementation(async (_env, persistedContext, code, params) => {
-			const resolvedSecret = await (
-				await import('#mcp/secrets/service.ts')
-			).resolveSecret({
-				env,
-				userId: persistedContext.user?.userId ?? '',
-				name: 'apiToken',
-				scope: 'app',
-				storageContext: persistedContext.storageContext,
-			})
-			const resolvedValue = await (
-				await import('#mcp/values/service.ts')
-			).getValue({
-				env,
-				userId: persistedContext.user?.userId ?? '',
-				name: 'projectId',
-				scope: 'app',
-				storageContext: persistedContext.storageContext,
-			})
-			expect(code).toContain('async () => ({ ok: true })')
-			expect(params).toEqual({ step: 'deploy' })
-			expect(resolvedSecret.found).toBe(true)
-			expect(resolvedSecret.value).toBe('very-secret-token')
-			expect(resolvedValue?.value).toBe('alpha-project')
-			return {
-				result: {
-					secretValue: resolvedSecret.value,
-					value: resolvedValue?.value,
-					userId: persistedContext.user?.userId,
-					appId: persistedContext.storageContext?.appId,
-				},
-				logs: ['codemode executed'],
-			}
+		.mockResolvedValue({
+			result: {
+				secretValue: 'very-secret-token',
+				value: 'alpha-project',
+				userId: 'user-123',
+				storageId: `job:${jobView.id}`,
+			},
+			logs: ['codemode executed'],
 		})
 
 	try {
@@ -716,7 +625,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 				secretValue: 'very-secret-token',
 				value: 'alpha-project',
 				userId: 'user-123',
-				appId: 'app-123',
+				storageId: `job:${jobView.id}`,
 			},
 			logs: ['codemode executed'],
 		})

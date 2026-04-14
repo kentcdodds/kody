@@ -45,14 +45,16 @@ Kody has one persisted jobs system per user:
 - **`job_run_now`** — trigger a job immediately without changing its normal
   schedule
 
-Jobs always run through codemode:
+Jobs always run through codemode and always have durable storage:
 
 - **`code`** stores the async arrow function source and runs through the same
   execute/capability runtime as normal `execute`
-- **`serverCode`** is optional and can provide a facet-backed Durable Object
-  backend with isolated per-job SQLite state
-- When `serverCode` is present, codemode can call the facet through
-  **`job.call(methodName, ...args)`**
+- Each job has a stable **`storageId`** that identifies its durable storage
+  bucket
+- Scheduled jobs run with writable storage access by default
+- Ad hoc execute calls can bind to a storage bucket with **`storageId`** and use
+  **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**, and
+  **`storage.sql(query, params?)`**
 
 Schedules support:
 
@@ -60,6 +62,12 @@ Schedules support:
   such as **`America/New_York`**
 - **interval** — fixed durations such as **`15m`**, **`1h`**, or **`1d`**
 - **once** — an ISO 8601 UTC timestamp such as **`2026-04-17T15:00:00Z`**
+
+When you need dedicated inspection instead of ad hoc code, use:
+
+- **`storage_export`** — export one storage bucket as JSON
+- **`storage_query`** — run SQL against one storage bucket (read-only by
+  default, opt into writes explicitly)
 
 ## Long-term memory
 

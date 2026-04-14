@@ -5,9 +5,7 @@ type JobRowRecord = {
 	user_id: string
 	name: string
 	code: string | null
-	server_code: string | null
-	server_code_id: string | null
-	method_name: string | null
+	storage_id: string | null
 	params_json: string | null
 	schedule_json: string
 	timezone: string
@@ -38,9 +36,7 @@ function serializeJob(job: JobRecord) {
 		id: job.id,
 		name: job.name,
 		code: job.code,
-		server_code: job.serverCode ?? null,
-		server_code_id: job.serverCodeId ?? null,
-		method_name: job.methodName ?? null,
+		storage_id: job.storageId,
 		params_json: job.params ? JSON.stringify(job.params) : null,
 		schedule_json: JSON.stringify(job.schedule),
 		timezone: job.timezone,
@@ -76,12 +72,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		userId: String(row['user_id']),
 		name: String(row['name']),
 		code: String(row['code']),
-		serverCode:
-			row['server_code'] == null ? undefined : String(row['server_code']),
-		serverCodeId:
-			row['server_code_id'] == null ? undefined : String(row['server_code_id']),
-		methodName:
-			row['method_name'] == null ? undefined : String(row['method_name']),
+		storageId: String(row['storage_id']),
 		params: parseJson<Record<string, unknown> | undefined>(
 			row['params_json'] == null ? null : String(row['params_json']),
 			undefined,
@@ -121,9 +112,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		user_id: String(row['user_id']),
 		name: record.name,
 		code: record.code,
-		server_code: record.serverCode ?? null,
-		server_code_id: record.serverCodeId ?? null,
-		method_name: record.methodName ?? null,
+		storage_id: record.storageId ?? null,
 		params_json: row['params_json'] == null ? null : String(row['params_json']),
 		schedule_json: String(row['schedule_json']),
 		timezone: record.timezone,
@@ -162,21 +151,18 @@ export async function insertJobRow(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO jobs (
-				id, user_id, name, code, server_code, server_code_id,
-				method_name, params_json, schedule_json, timezone, enabled,
+				id, user_id, name, code, storage_id, params_json, schedule_json, timezone, enabled,
 				kill_switch_enabled, caller_context_json, created_at, updated_at,
 				last_run_at, last_run_status, last_run_error, last_duration_ms,
 				next_run_at, run_count, success_count, error_count, run_history_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			serialized.id,
 			input.userId,
 			serialized.name,
 			serialized.code,
-			serialized.server_code,
-			serialized.server_code_id,
-			serialized.method_name,
+			serialized.storage_id,
 			serialized.params_json,
 			serialized.schedule_json,
 			serialized.timezone,
@@ -208,20 +194,16 @@ export async function updateJobRow(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE jobs SET
-				name = ?, code = ?, server_code = ?, server_code_id = ?,
-				method_name = ?, params_json = ?, schedule_json = ?, timezone = ?,
-				enabled = ?, kill_switch_enabled = ?, caller_context_json = ?,
-				updated_at = ?, last_run_at = ?, last_run_status = ?, last_run_error = ?,
-				last_duration_ms = ?, next_run_at = ?, run_count = ?, success_count = ?,
-				error_count = ?, run_history_json = ?
+				name = ?, code = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
+				enabled = ?, kill_switch_enabled = ?, caller_context_json = ?, updated_at = ?,
+				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
+				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?, run_history_json = ?
 			WHERE id = ? AND user_id = ?`,
 		)
 		.bind(
 			serialized.name,
 			serialized.code,
-			serialized.server_code,
-			serialized.server_code_id,
-			serialized.method_name,
+			serialized.storage_id,
 			serialized.params_json,
 			serialized.schedule_json,
 			serialized.timezone,

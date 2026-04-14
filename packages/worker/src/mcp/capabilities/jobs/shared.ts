@@ -38,9 +38,7 @@ export const jobViewSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	code: z.string(),
-	serverCode: z.string().optional(),
-	serverCodeId: z.string().optional(),
-	methodName: z.string().optional(),
+	storageId: z.string(),
 	params: z.record(z.string(), z.unknown()).optional(),
 	schedule: jobScheduleSchema,
 	timezone: z.string(),
@@ -101,22 +99,6 @@ export const jobUpsertInputSchema = z
 			.nullable()
 			.optional()
 			.describe('Codemode async arrow function source. Required on create.'),
-		serverCode: z
-			.string()
-			.min(1)
-			.nullable()
-			.optional()
-			.describe(
-				'Optional facet backend server code that exports `class Job extends DurableObject` for persistent job state.',
-			),
-		methodName: z
-			.string()
-			.min(1)
-			.nullable()
-			.optional()
-			.describe(
-				'Optional facet job method invoked through `job.call(...)`. Defaults to `run` when serverCode is present.',
-			),
 		params: z
 			.record(z.string(), z.unknown())
 			.nullable()

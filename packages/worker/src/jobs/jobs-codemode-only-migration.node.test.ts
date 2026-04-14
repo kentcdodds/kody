@@ -6,7 +6,7 @@ async function readMigration(name: string) {
 	return await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8')
 }
 
-test('0020 jobs migration rewrites legacy rows into the final codemode-first shape', async () => {
+test('0021 jobs migration rewrites legacy job rows into stable storage ids', async () => {
 	const db = new DatabaseSync(':memory:')
 	db.exec(await readMigration('0018-jobs.sql'))
 	db.exec(await readMigration('0019-jobs-constraints.sql'))
@@ -77,20 +77,20 @@ test('0020 jobs migration rewrites legacy rows into the final codemode-first sha
 	)
 
 	db.exec(await readMigration('0020-jobs-codemode-only.sql'))
+	db.exec(await readMigration('0021-jobs-storage-id.sql'))
 
 	const columns = db
 		.prepare(`SELECT name FROM pragma_table_info('jobs') ORDER BY cid ASC`)
 		.all() as Array<{ name: string }>
 	expect(columns.map((column) => column.name)).not.toContain('kind')
+	expect(columns.map((column) => column.name)).toContain('storage_id')
 
 	const rows = db
 		.prepare(
 			`SELECT
 				id,
 				code,
-				server_code,
-				server_code_id,
-				method_name,
+				storage_id,
 				params_json,
 				enabled,
 				kill_switch_enabled,
@@ -109,9 +109,7 @@ test('0020 jobs migration rewrites legacy rows into the final codemode-first sha
 		{
 			id: 'codemode-job',
 			code: 'async () => ({ ok: true })',
-			server_code: null,
-			server_code_id: null,
-			method_name: null,
+			storage_id: 'job:codemode-job',
 			params_json: '{"step":"deploy"}',
 			enabled: 1,
 			kill_switch_enabled: 0,
@@ -125,9 +123,7 @@ test('0020 jobs migration rewrites legacy rows into the final codemode-first sha
 		{
 			id: 'facet-job',
 			code: "async (params) => await job.call('run', params)",
-			server_code: 'export class Job {}',
-			server_code_id: 'facet-code-1',
-			method_name: 'run',
+			storage_id: 'job:facet-job',
 			params_json: '{"step":"sync"}',
 			enabled: 0,
 			kill_switch_enabled: 1,

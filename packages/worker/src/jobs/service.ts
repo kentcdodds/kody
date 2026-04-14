@@ -3,11 +3,6 @@ import { parseMcpCallerContext } from '#mcp/context.ts'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import {
-	configureJobRunner,
-	deleteJobRunner,
-	jobRunnerRpc,
-} from './job-runner.ts'
-import {
 	deleteJobRow,
 	getJobRowById,
 	listDueJobRows,
@@ -31,8 +26,7 @@ import {
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
-
-const defaultFacetMethodName = 'run'
+import { createJobStorageId } from '#worker/storage-runner.ts'
 
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
@@ -64,63 +58,15 @@ function normalizeJobCode(code: string) {
 	return trimmed
 }
 
-function normalizeJobServerCode(serverCode: string) {
-	const trimmed = serverCode.trim()
-	if (!trimmed) {
-		throw new Error('Jobs with facet state require non-empty serverCode.')
-	}
-	return trimmed
-}
-
 function normalizeOptionalParams(
 	params: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | undefined {
 	return params === null || params === undefined ? undefined : params
 }
 
-function normalizeOptionalMethodName(
-	methodName: string | null | undefined,
-	fallback = defaultFacetMethodName,
-) {
-	const trimmed = methodName?.trim()
-	return trimmed && trimmed.length > 0 ? trimmed : fallback
-}
-
-function hasFacetState(job: Pick<JobRecord, 'serverCode'>) {
-	return typeof job.serverCode === 'string' && job.serverCode.trim().length > 0
-}
-
-function createJobHelperPrelude() {
-	return `
-const job = {
-  call: async (methodName, ...args) => {
-    return await codemode.job_call({
-      methodName,
-      args,
-    });
-  },
-};
-	`.trim()
-}
-
 function resolveCreateShape(input: JobCreateInput) {
-	const code = normalizeJobCode(input.code)
-	if (input.serverCode === undefined) {
-		if (input.methodName !== undefined && input.methodName !== null) {
-			throw new Error('Jobs without serverCode do not accept methodName.')
-		}
-		return {
-			code,
-			serverCode: undefined,
-			serverCodeId: undefined,
-			methodName: undefined,
-		}
-	}
 	return {
-		code,
-		serverCode: normalizeJobServerCode(input.serverCode),
-		serverCodeId: crypto.randomUUID(),
-		methodName: normalizeOptionalMethodName(input.methodName),
+		code: normalizeJobCode(input.code),
 	}
 }
 
@@ -128,111 +74,17 @@ function resolveUpdatedShape(input: {
 	existing: JobRecord
 	body: JobUpdateInput
 }) {
-	let nextCode =
+	const nextCode =
 		input.body.code === undefined
 			? input.existing.code
 			: input.body.code === null
 				? undefined
 				: normalizeJobCode(input.body.code)
-	let nextServerCode =
-		input.body.serverCode === undefined
-			? input.existing.serverCode
-			: input.body.serverCode === null
-				? undefined
-				: normalizeJobServerCode(input.body.serverCode)
-	let nextMethodName =
-		input.body.methodName === undefined
-			? nextServerCode === undefined
-				? undefined
-				: input.existing.serverCode === undefined
-					? undefined
-					: input.existing.methodName
-			: input.body.methodName === null
-				? undefined
-				: normalizeOptionalMethodName(input.body.methodName)
-
 	if (!nextCode) {
 		throw new Error('Jobs require code.')
 	}
-	if (nextServerCode === undefined) {
-		if (nextMethodName !== undefined) {
-			throw new Error('Jobs without serverCode cannot store methodName.')
-		}
-		return {
-			code: nextCode,
-			serverCode: undefined,
-			serverCodeId: undefined,
-			methodName: undefined,
-		}
-	}
-
-	nextMethodName = normalizeOptionalMethodName(nextMethodName)
 	return {
 		code: nextCode,
-		serverCode: nextServerCode,
-		serverCodeId:
-			nextServerCode !== input.existing.serverCode
-				? crypto.randomUUID()
-				: (input.existing.serverCodeId ?? crypto.randomUUID()),
-		methodName: nextMethodName,
-	}
-}
-
-async function syncRunnerForJob(input: {
-	env: Env
-	job: JobRecord
-	callerContext: PersistedJobCallerContext | null
-}) {
-	if (!hasFacetState(input.job)) {
-		await deleteJobRunner({
-			env: input.env,
-			jobId: input.job.id,
-		}).catch(() => {})
-		return
-	}
-	if (!input.callerContext?.user?.userId) {
-		throw new Error(
-			'Jobs with facet state require persisted caller context with an authenticated user.',
-		)
-	}
-	await configureJobRunner({
-		env: input.env,
-		jobId: input.job.id,
-		userId: input.callerContext.user.userId,
-		baseUrl: input.callerContext.baseUrl,
-		storageContext: input.callerContext.storageContext,
-		serverCode: input.job.serverCode!,
-		serverCodeId: input.job.serverCodeId!,
-		methodName: input.job.methodName,
-		killSwitchEnabled: input.job.killSwitchEnabled,
-	})
-}
-
-function createJobCodemodeTools(input: { env: Env; job: JobRecord }) {
-	if (!hasFacetState(input.job)) {
-		return undefined
-	}
-	return {
-		job_call: async (args: unknown) => {
-			const payload =
-				typeof args === 'object' && args !== null
-					? (args as {
-							methodName?: unknown
-							args?: unknown
-						})
-					: {}
-			const methodName =
-				typeof payload.methodName === 'string' ? payload.methodName.trim() : ''
-			if (!methodName) {
-				throw new Error('job.call requires a non-empty method name.')
-			}
-			const methodArgs = Array.isArray(payload.args) ? payload.args : []
-			return await jobRunnerRpc(input.env, input.job.id).callJobRpc({
-				jobId: input.job.id,
-				methodName,
-				args: methodArgs,
-			})
-		},
 	}
 }
 
@@ -246,15 +98,14 @@ export async function createJob(input: {
 	const timezone = normalizeJobTimezone(input.body.timezone)
 	const now = new Date().toISOString()
 	const shape = resolveCreateShape(input.body)
+	const jobId = crypto.randomUUID()
 	const job: JobRecord = {
 		version: 1,
-		id: crypto.randomUUID(),
+		id: jobId,
 		userId: callerContext.user.userId,
 		name: normalizeJobName(input.body.name),
 		code: shape.code,
-		serverCode: shape.serverCode,
-		serverCodeId: shape.serverCodeId,
-		methodName: shape.methodName,
+		storageId: createJobStorageId(jobId),
 		params: normalizeOptionalParams(input.body.params),
 		schedule,
 		timezone,
@@ -278,20 +129,6 @@ export async function createJob(input: {
 		job,
 		callerContextJson,
 	})
-	try {
-		await syncRunnerForJob({
-			env: input.env,
-			job,
-			callerContext,
-		})
-	} catch (error) {
-		await deleteJobRow(
-			input.env.APP_DB,
-			callerContext.user.userId,
-			job.id,
-		).catch(() => {})
-		throw error
-	}
 	return toJobView(job)
 }
 
@@ -351,9 +188,6 @@ export async function updateJob(input: {
 				? existing.name
 				: normalizeJobName(input.body.name),
 		code: shape.code,
-		serverCode: shape.serverCode,
-		serverCodeId: shape.serverCodeId,
-		methodName: shape.methodName,
 		params:
 			input.body.params === undefined
 				? existing.params
@@ -378,27 +212,6 @@ export async function updateJob(input: {
 		job: updated,
 		callerContextJson: nextCallerContextJson,
 	})
-	try {
-		await syncRunnerForJob({
-			env: input.env,
-			job: updated,
-			callerContext,
-		})
-	} catch (error) {
-		await updateJobRow({
-			db: input.env.APP_DB,
-			userId: callerContext.user.userId,
-			job: existing,
-			callerContextJson:
-				existingRow.callerContextJson ?? serializeCallerContext(callerContext),
-		}).catch(() => {})
-		await syncRunnerForJob({
-			env: input.env,
-			job: existing,
-			callerContext: existingRow.callerContext,
-		}).catch(() => {})
-		throw error
-	}
 	return toJobView(updated)
 }
 
@@ -412,10 +225,6 @@ export async function deleteJob(input: {
 		throw new Error(`Job "${input.jobId}" was not found.`)
 	}
 	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
-	await deleteJobRunner({
-		env: input.env,
-		jobId: input.jobId,
-	}).catch(() => {})
 	return {
 		id: input.jobId,
 		deleted: true as const,
@@ -440,19 +249,25 @@ export async function executeJobOnce(input: {
 		} else {
 			const { runCodemodeWithRegistry } =
 				await import('#mcp/run-codemode-registry.ts')
-			const usesFacet = hasFacetState(input.job)
 			const result = await runCodemodeWithRegistry(
 				input.env,
-				input.callerContext,
+				{
+					...input.callerContext,
+					storageContext: {
+						sessionId: null,
+						appId: null,
+						storageId: input.job.storageId,
+					},
+				},
 				input.job.code,
 				input.job.params,
 				{
 					executorExports: workerExports,
-					additionalTools: createJobCodemodeTools({
-						env: input.env,
-						job: input.job,
-					}),
-					helperPrelude: usesFacet ? createJobHelperPrelude() : undefined,
+					storageTools: {
+						userId: input.callerContext.user.userId,
+						storageId: input.job.storageId,
+						writable: true,
+					},
 				},
 			)
 			execution = result.error
@@ -496,13 +311,6 @@ export async function runJobNow(input: {
 	const activeCallerContext = input.callerContext
 		? requirePersistableJobCallerContext(input.callerContext)
 		: row.callerContext
-	if (hasFacetState(row.record)) {
-		await syncRunnerForJob({
-			env: input.env,
-			job: row.record,
-			callerContext: activeCallerContext,
-		})
-	}
 	const outcome = await executeJobOnce({
 		env: input.env,
 		job: row.record,
@@ -520,10 +328,6 @@ export async function runJobNow(input: {
 				})
 	if (row.record.schedule.type === 'once') {
 		await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
-		await deleteJobRunner({
-			env: input.env,
-			jobId: input.jobId,
-		}).catch(() => {})
 	} else {
 		await updateJobRow({
 			db: input.env.APP_DB,
@@ -559,13 +363,6 @@ export async function runDueJobsForUser(input: {
 		executeJob: async (job) => {
 			const row = dueRows.find((candidate) => candidate.record.id === job.id)
 			const callerContext = row?.callerContext ?? null
-			if (hasFacetState(job)) {
-				await syncRunnerForJob({
-					env: input.env,
-					job,
-					callerContext,
-				})
-			}
 			return executeJobOnce({
 				env: input.env,
 				job,
@@ -584,10 +381,6 @@ export async function runDueJobsForUser(input: {
 	}
 	for (const jobId of result.deleteJobIds) {
 		await deleteJobRow(input.env.APP_DB, input.userId, jobId)
-		await deleteJobRunner({
-			env: input.env,
-			jobId,
-		}).catch(() => {})
 	}
 	return dueRows.length
 }

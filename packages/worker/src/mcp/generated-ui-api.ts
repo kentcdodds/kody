@@ -259,6 +259,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 					storageContext: {
 						sessionId: context.sessionId,
 						appId: context.appId,
+						storageId: null,
 					},
 				}),
 				body.data.code,

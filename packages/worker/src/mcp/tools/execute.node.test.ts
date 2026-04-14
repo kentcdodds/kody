@@ -48,11 +48,14 @@ async function getExecuteHandler() {
 	expect(typeof handler).toBe('function')
 	return handler as (input: {
 		code: string
+		storageId?: string
+		writable?: boolean
 		conversationId?: string
 	}) => Promise<{
 		content: Array<ContentBlock>
 		structuredContent: {
 			conversationId: string
+			storage?: { id: string }
 			result: unknown
 			logs: Array<unknown>
 		}
@@ -129,6 +132,47 @@ test('execute tool keeps serializing normal success results as text', async () =
 	])
 	expect(response.structuredContent).toEqual({
 		conversationId: 'conv-456',
+		result: { ok: true },
+		logs: [],
+	})
+})
+
+test('execute tool binds storage id and writable flag when provided', async () => {
+	const handler = await getExecuteHandler()
+	mockModule.runCodemodeWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+
+	const response = await handler({
+		code: 'async () => ({ ok: true })',
+		storageId: 'job:lights-off',
+		writable: true,
+		conversationId: 'conv-789',
+	})
+
+	expect(mockModule.runCodemodeWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				storageId: 'job:lights-off',
+			},
+		}),
+		'async () => ({ ok: true })',
+		undefined,
+		expect.objectContaining({
+			storageTools: {
+				userId: '',
+				storageId: 'job:lights-off',
+				writable: true,
+			},
+		}),
+	)
+	expect(response.structuredContent).toEqual({
+		conversationId: 'conv-789',
+		storage: { id: 'job:lights-off' },
 		result: { ok: true },
 		logs: [],
 	})

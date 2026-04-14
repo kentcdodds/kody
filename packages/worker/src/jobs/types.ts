@@ -33,9 +33,7 @@ export type JobRecord = {
 	userId: string
 	name: string
 	code: string
-	serverCode?: string
-	serverCodeId?: string
-	methodName?: string
+	storageId: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone: string
@@ -56,6 +54,12 @@ export type JobRecord = {
 
 export type JobView = Omit<JobRecord, 'userId'> & {
 	scheduleSummary: string
+}
+
+export const jobStorageIdPrefix = 'job:'
+
+export function buildJobStorageId(jobId: string) {
+	return `${jobStorageIdPrefix}${jobId}`
 }
 
 export type JobExecutionResult =
@@ -87,8 +91,6 @@ export type PersistedJobCallerContext = Pick<
 export type JobCreateInput = {
 	name: string
 	code: string
-	serverCode?: string
-	methodName?: string | null
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone?: string | null
@@ -100,8 +102,6 @@ export type JobUpdateInput = {
 	id: string
 	name?: string
 	code?: string | null
-	serverCode?: string | null
-	methodName?: string | null
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
@@ -113,8 +113,6 @@ export type JobUpsertInput = {
 	id?: string
 	name?: string
 	code?: string | null
-	serverCode?: string | null
-	methodName?: string | null
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null

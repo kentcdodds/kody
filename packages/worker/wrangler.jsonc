@@ -34,6 +34,14 @@
 			"deleted_classes": ["SchedulerDO"],
 			"tag": "v7",
 		},
+		{
+			"new_sqlite_classes": ["StorageRunner"],
+			"tag": "v8",
+		},
+		{
+			"deleted_classes": ["JobRunner"],
+			"tag": "v9",
+		},
 	],
 
 	"observability": {
@@ -81,8 +89,8 @@
 						"name": "JOB_MANAGER",
 					},
 					{
-						"class_name": "JobRunner",
-						"name": "JOB_RUNNER",
+						"class_name": "StorageRunner",
+						"name": "STORAGE_RUNNER",
 					},
 					{
 						"class_name": "AppRunner",
@@ -155,8 +163,8 @@
 						"name": "JOB_MANAGER",
 					},
 					{
-						"class_name": "JobRunner",
-						"name": "JOB_RUNNER",
+						"class_name": "StorageRunner",
+						"name": "STORAGE_RUNNER",
 					},
 					{
 						"class_name": "AppRunner",
@@ -229,8 +237,8 @@
 						"name": "JOB_MANAGER",
 					},
 					{
-						"class_name": "JobRunner",
-						"name": "JOB_RUNNER",
+						"class_name": "StorageRunner",
+						"name": "STORAGE_RUNNER",
 					},
 					{
 						"class_name": "AppRunner",

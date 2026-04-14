@@ -40,11 +40,13 @@ then paste code here.
 
 Jobs: use \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`, and
 \`job_run_now\` to manage one-shot, interval, or cron jobs for the signed-in
-user. Jobs always run through codemode and may optionally use a facet-backed
-Durable Object for persistent state.
+user. Jobs always run through codemode and have stable storage ids for durable
+state.
 
 Sandbox surface:
 - \`codemode\`: \`(args) => Promise<unknown>\` per capability.
+- \`storage\`: optional durable storage helpers when \`storageId\` is provided.
+- \`storage.sql(query, params?)\`: raw SQLite access for the bound storage id.
 - \`refreshAccessToken(providerName)\`, \`createAuthenticatedFetch(providerName)\` for OAuth connectors.
 - \`fetch(...)\` through the host gateway; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` in URL, headers, or body on approved hosts only.
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
@@ -95,6 +97,19 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.describe(
 						'Optional JSON params injected as `params` when invoking the async function.',
 					),
+				storageId: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						'Optional durable storage id to bind to this execute call. Returned again in the structured response when active.',
+					),
+				writable: z
+					.boolean()
+					.optional()
+					.describe(
+						'Optional write access toggle for bound storage. Defaults to false for ad hoc execute calls.',
+					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
 			},
@@ -103,19 +118,37 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 		async ({
 			code,
 			params,
+			storageId,
+			writable,
 			conversationId,
 			memoryContext,
 		}: {
 			code: string
 			params?: Record<string, unknown>
+			storageId?: string
+			writable?: boolean
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
 			const startedAt = performance.now()
 			const env = agent.getEnv()
-			const callerContext = agent.getCallerContext()
+			const baseCallerContext = agent.getCallerContext()
+			const resolvedStorageId = storageId?.trim() || null
+			const callerContext = {
+				...baseCallerContext,
+				storageContext: {
+					sessionId: baseCallerContext.storageContext?.sessionId ?? null,
+					appId: baseCallerContext.storageContext?.appId ?? null,
+					storageId:
+						resolvedStorageId ??
+						baseCallerContext.storageContext?.storageId ??
+						null,
+				},
+			}
 			const resolvedConversationId = resolveConversationId(conversationId)
-			const { baseUrl, hasUser } = callerContextFields(callerContext)
+			const { baseUrl, hasUser, storageContext } =
+				callerContextFields(callerContext)
+			const activeStorageId = storageContext?.storageId ?? null
 			const { getCapabilityRegistryForContext } =
 				await import('#mcp/capabilities/registry.ts')
 			const registry = await getCapabilityRegistryForContext({
@@ -147,6 +180,13 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						params,
 						{
 							executorExports: agent.getLoopbackExports(),
+							storageTools: activeStorageId
+								? {
+										userId: callerContext.user?.userId ?? '',
+										storageId: activeStorageId,
+										writable: writable ?? false,
+								  }
+								: undefined,
 						},
 					),
 			)
@@ -179,6 +219,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId: resolvedConversationId,
+						...(activeStorageId
+							? { storage: { id: activeStorageId } }
+							: {}),
 						error: errorMessage,
 						errorDetails,
 						logs: result.logs ?? [],
@@ -198,6 +241,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				hasUser,
 				registeredCapabilityCount,
 				sandboxError: false,
+				context: activeStorageId ? { storageId: activeStorageId } : undefined,
 			})
 			const rawContent = extractRawContent(result.result)
 			return {
@@ -212,6 +256,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				]),
 				structuredContent: {
 					conversationId: resolvedConversationId,
+					...(activeStorageId
+						? { storage: { id: activeStorageId } }
+						: {}),
 					result: rawContent ? null : result.result,
 					logs: result.logs ?? [],
 					...buildMemoryStructuredContent(surfacedMemories),

@@ -22,7 +22,11 @@ export function getStorageBindingKey(
 ) {
 	if (scope === 'user') return ''
 	if (scope === 'app') {
-		return storageContext?.appId?.trim() ? storageContext.appId : null
+		return storageContext?.appId?.trim()
+			? storageContext.appId
+			: storageContext?.storageId?.trim()
+				? storageContext.storageId
+				: null
 	}
 	if (scope === 'session') {
 		return storageContext?.sessionId?.trim() ? storageContext.sessionId : null

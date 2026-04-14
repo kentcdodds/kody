@@ -302,6 +302,7 @@ export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
 					storageContext: {
 						sessionId: null,
 						appId: this.ctx.props.appId,
+						storageId: null,
 					},
 				}),
 		)
@@ -388,6 +389,7 @@ export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
 					storageContext: {
 						sessionId: null,
 						appId: this.ctx.props.appId,
+						storageId: null,
 					},
 				}),
 			},

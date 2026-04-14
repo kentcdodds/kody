@@ -53,26 +53,24 @@ Chat conversations run through a chat Agent Durable Object.
 - The Worker routes same-origin browser chat traffic to the agent using the
   existing app session cookie rather than the public MCP OAuth flow
 
-## Durable Objects (`JobManager` and `JobRunner`)
+## Durable Objects (`JobManager` and `StorageRunner`)
 
 Unified jobs use two Durable Object roles:
 
 - `JobManager`: one object per user, responsible only for alarm scheduling and
   dispatching due jobs from D1-backed metadata
-- `JobRunner`: one object per job that defines `serverCode`, responsible for
-  facet lifecycle, explicit RPC bridging, and isolated facet SQLite state while
-  the scheduled entrypoint itself still runs through codemode
+- `StorageRunner`: one object per durable storage id, responsible for isolated
+  SQLite state that can be bound to execute calls, jobs, and dedicated storage
+  inspection capabilities
 
 Storage split:
 
 - D1 `jobs` table: job metadata, persisted caller context, schedule, run
   counters, last error, last duration, run history, codemode source, and
-  optional facet config
+  stable `storage_id`
 - `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
   due jobs
-- `JobRunner` parent SQLite: facet runner config and observability for one job
-- Facet SQLite: optional isolated Durable Object state used by jobs that define
-  `serverCode`
+- `StorageRunner` SQLite: isolated durable state addressed by `storageId`
 
 ## Configuration reference
 
@@ -84,5 +82,5 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `MCP_OBJECT` (Durable Objects)
 - `ChatAgent` (Durable Objects)
 - `JOB_MANAGER` (Durable Objects)
-- `JOB_RUNNER` (Durable Objects)
+- `STORAGE_RUNNER` (Durable Objects)
 - `ASSETS` (static assets bucket)
