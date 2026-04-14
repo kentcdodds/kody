@@ -156,16 +156,6 @@ export class ${jobExecEntrypointName} extends WorkerEntrypoint {
 	`.trim()
 }
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': 'application/json; charset=utf-8',
-		},
-	})
-}
-
 function normalizeStorageContext(
 	storageContext:
 		| {
@@ -384,14 +374,6 @@ class JobRunnerBase extends DurableObject<Env> {
 		return nextConfig
 	}
 
-	async getStatus(jobId: string) {
-		const config = await this.readConfig(jobId)
-		return {
-			config,
-			storageBytes: this.ctx.storage.sql.databaseSize,
-		}
-	}
-
 	async resetStorage(input: { jobId: string; facetName?: string | null }) {
 		const facetName = input.facetName?.trim() || defaultJobFacetName
 		const facet = await this.getFacetStub(facetName)
@@ -527,16 +509,10 @@ class JobRunnerBase extends DurableObject<Env> {
 	private async getFacetStub(facetName: string) {
 		const config = await this.readConfig(this.ctx.id.toString())
 		if (config.killSwitchEnabled) {
-			throw jsonResponse(
-				{ ok: false, error: 'Facet job backend is disabled.' },
-				503,
-			)
+			throw new Error('Facet job backend is disabled.')
 		}
 		if (!config.serverCode.trim()) {
-			throw jsonResponse(
-				{ ok: false, error: 'Facet job does not define server code.' },
-				404,
-			)
+			throw new Error('Facet job does not define server code.')
 		}
 		return this.ctx.facets.get(facetName, async () => {
 			const worker = this.env.APP_LOADER.get(
@@ -632,10 +608,6 @@ export function jobRunnerRpc(env: Env, jobId: string) {
 			methodName?: string | null
 			killSwitchEnabled?: boolean
 		}) => Promise<JobRunnerConfig>
-		getStatus: (payload: { jobId: string }) => Promise<{
-			config: JobRunnerConfig
-			storageBytes: number
-		}>
 		resetStorage: (payload: {
 			jobId: string
 			facetName?: string | null
@@ -686,32 +658,3 @@ export function jobRunnerRpc(env: Env, jobId: string) {
 	}
 }
 
-export async function exportJobRunnerStorage(input: {
-	env: Env
-	jobId: string
-	facetName?: string | null
-	pageSize?: number
-	startAfter?: string | null
-}) {
-	return await jobRunnerRpc(input.env, input.jobId).exportStorage({
-		jobId: input.jobId,
-		facetName: input.facetName ?? defaultJobFacetName,
-		pageSize: input.pageSize,
-		startAfter: input.startAfter ?? null,
-	})
-}
-
-export async function execJobRunnerServer(input: {
-	env: Env
-	jobId: string
-	facetName?: string | null
-	code: string
-	params?: Record<string, unknown>
-}) {
-	return await jobRunnerRpc(input.env, input.jobId).execServer({
-		jobId: input.jobId,
-		facetName: input.facetName ?? defaultJobFacetName,
-		code: input.code,
-		params: input.params,
-	})
-}

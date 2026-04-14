@@ -323,9 +323,3 @@ export async function deleteJobRow(
 	return (result.meta.changes ?? 0) > 0
 }
 
-export async function listAllJobRows(db: D1Database): Promise<Array<JobRow>> {
-	const { results } = await db
-		.prepare(`SELECT * FROM jobs ORDER BY user_id ASC, next_run_at ASC, name ASC`)
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapRow)
-}
