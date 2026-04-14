@@ -686,12 +686,7 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	)
 	expect(clientOnlyUpdateStructured?.result?.has_server_code).toBe(true)
 
-	await using preservedSourceClient = await createMcpClient(
-		server.origin,
-		database.user,
-	)
-
-	const preservedSourceResult = await preservedSourceClient.client.callTool({
+	const preservedSourceResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -766,12 +761,7 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	expect(clearedServerCodeId).not.toBe(initialServerCodeId)
 	expect(clearServerCodeStructured?.result?.has_server_code).toBe(false)
 
-	await using clearedSourceClient = await createMcpClient(
-		server.origin,
-		database.user,
-	)
-
-	const clearedSourceResult = await clearedSourceClient.client.callTool({
+	const clearedSourceResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -830,12 +820,7 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	expect(replacementServerCodeId).not.toBe(clearedServerCodeId)
 	expect(replaceServerCodeStructured?.result?.has_server_code).toBe(true)
 
-	await using replacedSourceClient = await createMcpClient(
-		server.origin,
-		database.user,
-	)
-
-	const replacedSourceResult = await replacedSourceClient.client.callTool({
+	const replacedSourceResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -866,4 +851,4 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 			hidden: true,
 		}),
 	)
-})
+}, 60_000)

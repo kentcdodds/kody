@@ -21,18 +21,36 @@ export const jobDeleteCapability = defineDomainCapability(
 		outputSchema: jobDeleteOutputSchema,
 		async handler(args, ctx) {
 			const user = requireJobsUser(ctx)
+			let result: Awaited<ReturnType<typeof deleteJob>> | undefined
+			let originalError: unknown
 			try {
-				return await deleteJob({
+				result = await deleteJob({
 					env: ctx.env,
 					userId: user.userId,
 					jobId: args.id,
 				})
-			} finally {
+			} catch (error) {
+				originalError = error
+			}
+			try {
 				await syncJobManagerAlarm({
 					env: ctx.env,
 					userId: user.userId,
 				})
+			} catch (syncError) {
+				if (originalError) {
+					console.error(
+						'[job_delete] failed to sync job manager alarm after error',
+						syncError,
+					)
+				} else {
+					throw syncError
+				}
 			}
+			if (originalError) {
+				throw originalError
+			}
+			return result!
 		},
 	},
 )
