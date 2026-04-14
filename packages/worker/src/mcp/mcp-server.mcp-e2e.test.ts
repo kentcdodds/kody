@@ -419,18 +419,8 @@ test('app_server_exec runs snippets in a throwaway worker with app RPC access', 
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
 
-	const serverCode = `
-		import { DurableObject } from 'cloudflare:workers'
-
-		export class App extends DurableObject {
-			async incrementBy(amount = 1) {
-				const current = Number((await this.ctx.storage.get('count')) ?? 0)
-				const next = current + Number(amount)
-				await this.ctx.storage.put('count', next)
-				return { count: next }
-			}
-		}
-	`
+	const serverCode =
+		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async incrementBy(amount = 1) { const current = Number((await this.ctx.storage.get("count")) ?? 0); const next = current + Number(amount); await this.ctx.storage.put("count", next); return { count: next } } }'
 
 	const saveResult = await mcpClient.client.callTool({
 		name: 'execute',
@@ -452,7 +442,12 @@ test('app_server_exec runs snippets in a throwaway worker with app RPC access', 
 	const savedAppId = saveStructured?.result?.app_id
 	expect(typeof savedAppId).toBe('string')
 
-	const trivialExecResult = await mcpClient.client.callTool({
+	await using trivialExecClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const trivialExecResult = await trivialExecClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -481,14 +476,19 @@ test('app_server_exec runs snippets in a throwaway worker with app RPC access', 
 		result: { hello: 'world' },
 	})
 
-	const rpcExecResult = await mcpClient.client.callTool({
+	await using rpcExecClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const rpcExecResult = await rpcExecClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
 				return await codemode.app_server_exec({
 					app_id: ${JSON.stringify(savedAppId)},
 					params: { amount: 3 },
-					code: ${JSON.stringify(`return await app.incrementBy(params.amount ?? 1)`)},
+					code: ${JSON.stringify(`return await app.call("incrementBy", params.amount ?? 1)`)},
 				})
 			}`,
 		},
@@ -503,7 +503,9 @@ test('app_server_exec runs snippets in a throwaway worker with app RPC access', 
 		| undefined
 	expect(rpcExecStructured?.result?.result).toEqual({ count: 3 })
 
-	const exportResult = await mcpClient.client.callTool({
+	await using exportClient = await createMcpClient(server.origin, database.user)
+
+	const exportResult = await exportClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -532,24 +534,10 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
 
-	const initialServerCode = `
-		import { DurableObject } from 'cloudflare:workers'
-
-		export class App extends DurableObject {
-			async readVersion() {
-				return 'v1'
-			}
-		}
-	`
-	const replacementServerCode = `
-		import { DurableObject } from 'cloudflare:workers'
-
-		export class App extends DurableObject {
-			async readVersion() {
-				return 'v2'
-			}
-		}
-	`
+	const initialServerCode =
+		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v1" } }'
+	const replacementServerCode =
+		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v2" } }'
 
 	const saveResult = await mcpClient.client.callTool({
 		name: 'execute',
@@ -605,7 +593,12 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	)
 	expect(clientOnlyUpdateStructured?.result?.has_server_code).toBe(true)
 
-	const preservedSourceResult = await mcpClient.client.callTool({
+	await using preservedSourceClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const preservedSourceResult = await preservedSourceClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -668,7 +661,12 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	expect(clearedServerCodeId).not.toBe(initialServerCodeId)
 	expect(clearServerCodeStructured?.result?.has_server_code).toBe(false)
 
-	const clearedSourceResult = await mcpClient.client.callTool({
+	await using clearedSourceClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const clearedSourceResult = await clearedSourceClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {
@@ -727,7 +725,12 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	expect(replacementServerCodeId).not.toBe(clearedServerCodeId)
 	expect(replaceServerCodeStructured?.result?.has_server_code).toBe(true)
 
-	const replacedSourceResult = await mcpClient.client.callTool({
+	await using replacedSourceClient = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+
+	const replacedSourceResult = await replacedSourceClient.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {

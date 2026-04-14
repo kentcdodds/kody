@@ -124,11 +124,12 @@ Facet names default to `main`. Kody reserves named facets such as `jobs` and
 
 `app_server_exec` does **not** eval source inside the running facet. Instead,
 Kody compiles the provided `code` into a **throwaway Dynamic Worker** and binds
-the saved app facet as an RPC stub.
+an explicit RPC bridge for the saved app facet.
 
 Inside the snippet body you can access:
 
-- **`app`** (alias **`appStub`**) — RPC stub for the saved app `App` class
+- **`app`** — explicit bridge with `app.call(methodName, ...args)` for invoking
+  public RPC methods on the saved app `App` class
 - **`params`** — optional JSON input passed through the capability
 
 Example:
@@ -138,7 +139,7 @@ await codemode.app_server_exec({
 	app_id: 'app-123',
 	params: { amount: 2 },
 	code: `
-		return await app.incrementBy(params.amount ?? 1)
+		return await app.call('incrementBy', params.amount ?? 1)
 	`,
 })
 ```

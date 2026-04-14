@@ -42,8 +42,8 @@ Use these lifecycle capabilities when you need backend maintenance:
 
 - **`app_storage_reset`**
 - **`app_storage_export`**
-- **`app_server_exec`** — compiles a throwaway exec worker with `app` /
-  `appStub` RPC access to the saved app facet
+- **`app_server_exec`** — compiles a throwaway exec worker with an explicit
+  `app.call(methodName, ...args)` RPC bridge to the saved app facet
 - **`app_delete`**
 
 See [Saved app backends](./saved-app-backends.md) for the route contract, RPC

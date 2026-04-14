@@ -14,7 +14,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'One-off JavaScript function body compiled into a throwaway Dynamic Worker. The body receives `app` (alias `appStub`) as an RPC stub to the saved app facet plus `params` for JSON inputs.',
+			'One-off JavaScript function body compiled into a throwaway Dynamic Worker. The body receives `app.call(methodName, ...args)` for explicit RPC calls into the saved app facet plus `params` for JSON inputs.',
 		),
 	facet_name: z
 		.string()
@@ -39,7 +39,7 @@ export const appServerExecCapability = defineDomainCapability(
 	{
 		name: 'app_server_exec',
 		description:
-			'Compile and run one-off JavaScript in a throwaway Dynamic Worker with an explicit RPC stub to a saved app facet. Use this for debugging, repair tasks, or data migrations that call methods the saved app App class already exposes.',
+			'Compile and run one-off JavaScript in a throwaway Dynamic Worker with an explicit RPC bridge to a saved app facet. Use this for debugging, repair tasks, or data migrations that call methods the saved app App class already exposes.',
 		keywords: ['app', 'server', 'facet', 'debug', 'migration', 'exec'],
 		readOnly: false,
 		idempotent: false,

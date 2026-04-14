@@ -161,8 +161,11 @@ import { WorkerEntrypoint } from 'cloudflare:workers'
 
 export class ${savedAppExecEntrypointName} extends WorkerEntrypoint {
 	async run(params) {
-		const app = this.env.APP
-		const appStub = app
+		const app = {
+			call: (methodName, ...args) => {
+				return this.env.APP.callAppRpc(methodName, args)
+			},
+		}
 		${input.code}
 	}
 }
@@ -190,6 +193,16 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 }
 
 export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
+	async callAppRpc(methodName: string, args: Array<unknown> = []) {
+		const runner = appRunnerRpc(this.env, this.ctx.props.appId)
+		return await runner.callFacetRpc({
+			appId: this.ctx.props.appId,
+			facetName: this.ctx.props.facetName,
+			methodName,
+			args,
+		})
+	}
+
 	async fetchWithResolvedSecrets(input: {
 		url: string
 		method?: string
@@ -492,7 +505,8 @@ class AppRunnerBase extends DurableObject<Env> {
 		params?: Record<string, unknown>
 	}) {
 		const facetName = buildFacetName(input.facetName)
-		const facet = await this.getFacetStub(facetName)
+		await this.getFacetStub(facetName)
+		const config = await this.readConfig(this.ctx.id.toString())
 		const execWorker = this.env.APP_LOADER.load({
 			compatibilityDate: '2026-04-13',
 			compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
@@ -503,7 +517,14 @@ class AppRunnerBase extends DurableObject<Env> {
 				}),
 			},
 			env: {
-				APP: facet,
+				APP: this.ctx.exports.AppFacetBridge({
+					props: {
+						appId: input.appId,
+						userId: config.userId,
+						baseUrl: config.baseUrl || 'http://internal.invalid',
+						facetName,
+					},
+				}),
 			},
 			globalOutbound: null,
 		}).getEntrypoint(savedAppExecEntrypointName) as unknown as {
@@ -648,6 +669,26 @@ class AppRunnerBase extends DurableObject<Env> {
 				),
 			}
 		})
+	}
+
+	async getFacetRpcStub(input: { appId: string; facetName?: string | null }) {
+		return await this.getFacetStub(buildFacetName(input.facetName))
+	}
+
+	async callFacetRpc(input: {
+		appId: string
+		facetName?: string | null
+		methodName: string
+		args?: Array<unknown>
+	}) {
+		const facet = await this.getFacetStub(buildFacetName(input.facetName))
+		const method = Reflect.get(facet, input.methodName)
+		if (typeof method !== 'function') {
+			throw new Error(
+				`Saved app RPC method "${input.methodName}" was not found.`,
+			)
+		}
+		return await Reflect.apply(method, facet, input.args ?? [])
 	}
 
 	private async applyRateLimit() {
@@ -811,6 +852,16 @@ export function appRunnerRpc(env: Env, appId: string) {
 			facetName: string
 			result: unknown
 		}>
+		getFacetRpcStub: (payload: {
+			appId: string
+			facetName?: string | null
+		}) => Promise<Record<string, unknown>>
+		callFacetRpc: (payload: {
+			appId: string
+			facetName?: string | null
+			methodName: string
+			args?: Array<unknown>
+		}) => Promise<unknown>
 		deleteApp: (payload: {
 			appId: string
 			facetNames?: Array<string> | null
