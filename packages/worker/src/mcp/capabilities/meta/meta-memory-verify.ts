@@ -5,6 +5,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { verifyMemoryCandidate } from '#mcp/memory/service.ts'
 import {
 	memoryRecordSchema,
+	memorySourceUriSchema,
 	memoryVerifyInputSchema,
 	requireMcpUser,
 } from './meta-memory-shared.ts'
@@ -35,7 +36,7 @@ const outputSchema = z.object({
 		details: z.string(),
 		category: z.string().nullable(),
 		tags: z.array(z.string()),
-		source_uris: z.array(z.string().url()),
+		source_uris: z.array(memorySourceUriSchema).optional(),
 		dedupe_key: z.string().nullable(),
 	}),
 	related_memories: z.array(relatedMemorySchema),

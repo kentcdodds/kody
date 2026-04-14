@@ -79,6 +79,9 @@ test('authenticated mcp client can list tools, execute codemode, and search memo
 	])
 
 	const memoryId = upsertStructured?.result?.memory?.id
+	if (!memoryId) {
+		throw new Error('missing memoryId')
+	}
 
 	const getResult = await mcpClient.client.callTool({
 		name: 'execute',
