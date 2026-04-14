@@ -14,6 +14,10 @@ import {
 	createBondStatusHandler,
 } from './bond-handlers.ts'
 import {
+	createJellyfishSetupHandler,
+	createJellyfishStatusHandler,
+} from './jellyfish-handlers.ts'
+import {
 	createSonosSetupHandler,
 	createSonosStatusHandler,
 } from './sonos-handlers.ts'
@@ -24,6 +28,7 @@ import {
 import { routes } from './routes.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { type createBondAdapter } from '../src/adapters/bond/index.ts'
+import { type createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
@@ -37,6 +42,7 @@ export function createHomeConnectorRouter(
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
 	bond: ReturnType<typeof createBondAdapter>,
+	jellyfish: ReturnType<typeof createJellyfishAdapter>,
 	venstar: ReturnType<typeof createVenstarAdapter>,
 ) {
 	const router = createRouter({
@@ -45,7 +51,15 @@ export function createHomeConnectorRouter(
 
 	router.map(
 		routes.home,
-		createHomeDashboardHandler(state, lutron, samsungTv, sonos, bond, venstar),
+		createHomeDashboardHandler(
+			state,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			jellyfish,
+			venstar,
+		),
 	)
 	router.map(routes.health, createHealthHandler(state))
 	router.map(routes.lutronStatus, createLutronStatusHandler(state, lutron))
@@ -64,6 +78,14 @@ export function createHomeConnectorRouter(
 	)
 	router.map(routes.bondStatus, createBondStatusHandler(state, bond))
 	router.map(routes.bondSetup, createBondSetupHandler(state, bond))
+	router.map(
+		routes.jellyfishStatus,
+		createJellyfishStatusHandler(state, jellyfish),
+	)
+	router.map(
+		routes.jellyfishSetup,
+		createJellyfishSetupHandler(state, config, jellyfish),
+	)
 	router.map(
 		routes.venstarStatus,
 		createVenstarStatusHandler(state, config, venstar),

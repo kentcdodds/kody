@@ -13,6 +13,8 @@ export const routes = route({
 	samsungTvSetup: '/samsung-tv/setup',
 	bondStatus: '/bond/status',
 	bondSetup: '/bond/setup',
+	jellyfishStatus: '/jellyfish/status',
+	jellyfishSetup: '/jellyfish/setup',
 	venstarStatus: '/venstar/status',
 	venstarSetup: '/venstar/setup',
 })

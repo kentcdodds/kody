@@ -6,6 +6,7 @@ import { type routes } from './routes.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { type LutronDiscoveryDiagnostics } from '../src/adapters/lutron/types.ts'
 import { type createBondAdapter } from '../src/adapters/bond/index.ts'
+import { type createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
@@ -31,6 +32,8 @@ function renderQuickLinks(state: HomeConnectorState) {
 		<li><a href="/samsung-tv/setup">Samsung TV setup</a></li>
 		<li><a href="/bond/status">Bond status</a></li>
 		<li><a href="/bond/setup">Bond token setup</a></li>
+		<li><a href="/jellyfish/status">JellyFish status</a></li>
+		<li><a href="/jellyfish/setup">JellyFish setup</a></li>
 		<li><a href="/venstar/status">Venstar status</a></li>
 		<li><a href="/venstar/setup">Venstar setup</a></li>
 		<li><a href="/health">Health JSON</a></li>
@@ -52,6 +55,7 @@ export function createHomeDashboardHandler(
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
 	bond: ReturnType<typeof createBondAdapter>,
+	jellyfish: ReturnType<typeof createJellyfishAdapter>,
 	venstar: ReturnType<typeof createVenstarAdapter>,
 ) {
 	return {
@@ -67,6 +71,7 @@ export function createHomeDashboardHandler(
 			const samsungStatus = samsungTv.getStatus()
 			const sonosStatus = sonos.getStatus()
 			const bondStatus = bond.getStatus()
+			const jellyfishStatus = jellyfish.getStatus()
 			const venstarStatus = await venstar.listThermostatsWithStatus()
 			const onlineVenstarCount = venstarStatus.filter(
 				(thermostat) => thermostat.info != null,
@@ -173,6 +178,14 @@ export function createHomeDashboardHandler(
 										value: String(
 											bondStatus.bridges.filter((b) => b.hasStoredToken).length,
 										),
+									},
+									{
+										label: 'JellyFish controllers',
+										value: String(jellyfishStatus.controllers.length),
+									},
+									{
+										label: 'JellyFish discovered',
+										value: String(jellyfishStatus.discovered.length),
 									},
 									{
 										label: 'Venstar configured',
