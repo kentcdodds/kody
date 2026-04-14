@@ -59,17 +59,20 @@ Unified jobs use two Durable Object roles:
 
 - `JobManager`: one object per user, responsible only for alarm scheduling and
   dispatching due jobs from D1-backed metadata
-- `JobRunner`: one object per facet-backed job, responsible for dynamic-worker
-  loading, explicit RPC bridging, and isolated facet SQLite state
+- `JobRunner`: one object per job that defines `serverCode`, responsible for
+  facet lifecycle, explicit RPC bridging, and isolated facet SQLite state while
+  the scheduled entrypoint itself still runs through codemode
 
 Storage split:
 
 - D1 `jobs` table: job metadata, persisted caller context, schedule, run
-  counters, last error, last duration, and run history
+  counters, last error, last duration, run history, codemode source, and
+  optional facet config
 - `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
   due jobs
 - `JobRunner` parent SQLite: facet runner config and observability for one job
-- Facet SQLite: the user job's isolated Durable Object state
+- Facet SQLite: optional isolated Durable Object state used by jobs that define
+  `serverCode`
 
 ## Configuration reference
 
