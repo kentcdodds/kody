@@ -107,6 +107,7 @@ export async function searchMemories(input: {
 				summary: row.summary,
 				details: row.details,
 				tags: parseTags(row.tags_json),
+				sourceUris: parseJsonStringArray(row.source_uris_json),
 				dedupeKey: row.dedupe_key,
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
@@ -122,6 +123,10 @@ export async function searchMemories(input: {
 }
 
 function parseTags(raw: string): Array<string> {
+	return parseJsonStringArray(raw)
+}
+
+function parseJsonStringArray(raw: string): Array<string> {
 	try {
 		const parsed = JSON.parse(raw) as unknown
 		if (!Array.isArray(parsed)) return []

@@ -21,6 +21,7 @@ const relatedMemorySchema = memoryRecordSchema
 		subject: true,
 		summary: true,
 		tags: true,
+		source_uris: true,
 		dedupe_key: true,
 	})
 	.extend({
@@ -34,6 +35,7 @@ const outputSchema = z.object({
 		details: z.string(),
 		category: z.string().nullable(),
 		tags: z.array(z.string()),
+		source_uris: z.array(z.string().url()),
 		dedupe_key: z.string().nullable(),
 	}),
 	related_memories: z.array(relatedMemorySchema),
@@ -65,6 +67,7 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 					summary: args.summary,
 					details: args.details ?? null,
 					tags: args.tags ?? null,
+					sourceUris: args.source_uris ?? null,
 					dedupeKey: args.dedupe_key ?? null,
 				},
 				limit: args.limit,
@@ -91,6 +94,7 @@ function formatMemoryMatch(
 		subject: string
 		summary: string
 		tags: Array<string>
+		sourceUris: Array<string>
 		dedupeKey: string | null
 	},
 	score: number,
@@ -102,6 +106,7 @@ function formatMemoryMatch(
 		subject: match.subject,
 		summary: match.summary,
 		tags: match.tags,
+		source_uris: match.sourceUris,
 		dedupe_key: match.dedupeKey,
 		score,
 	}

@@ -5,6 +5,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { upsertMemory } from '#mcp/memory/service.ts'
 import {
 	memoryRecordSchema,
+	memorySourceUrisField,
 	memoryTagInputSchema,
 } from '#mcp/capabilities/meta/meta-memory-shared.ts'
 import { requireMcpUser } from './require-user.ts'
@@ -44,6 +45,7 @@ const inputSchema = z.object({
 		.max(12)
 		.optional()
 		.describe('Optional tags for retrieval and filtering.'),
+	source_uris: memorySourceUrisField,
 	dedupe_key: z
 		.string()
 		.max(160)
@@ -110,6 +112,7 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 				summary: args.summary,
 				details: args.details ?? '',
 				tags: args.tags ?? [],
+				sourceUris: args.source_uris ?? [],
 				dedupeKey: args.dedupe_key ?? null,
 				status: args.status ?? 'active',
 				verificationReference: args.verification_reference ?? null,
@@ -124,6 +127,7 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 					summary: result.memory.summary,
 					details: result.memory.details,
 					tags: result.memory.tags,
+					source_uris: result.memory.sourceUris,
 					dedupe_key: result.memory.dedupeKey,
 					created_at: result.memory.createdAt,
 					updated_at: result.memory.updatedAt,

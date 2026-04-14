@@ -64,6 +64,7 @@ export const metaMemorySearchCapability = defineDomainCapability(
 					summary: match.summary,
 					details: match.details,
 					tags: match.tags,
+					source_uris: match.sourceUris,
 					dedupe_key: match.dedupeKey,
 					created_at: match.createdAt,
 					updated_at: match.updatedAt,

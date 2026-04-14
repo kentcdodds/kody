@@ -71,6 +71,9 @@ Use these through **`execute`**:
 - **`meta_memory_get`** — load one stored memory by id
 - **`meta_memory_search`** — browse/search stored memories directly
 
+Memory records can also include optional **`source_uris`** — opaque canonical
+document URLs such as GitHub files, R2 object URLs, or Notion pages.
+
 ## Categories
 
 Memory categories are freeform strings. Kody does not force a closed list.
