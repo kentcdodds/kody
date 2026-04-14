@@ -16,9 +16,9 @@ function createJobExecModuleSource(code: string) {
 import { WorkerEntrypoint } from 'cloudflare:workers'
 
 export class JobExec extends WorkerEntrypoint {
-	async run(params) {
+	async run(inputParams) {
 		const job = this.env.JOB
-		const paramsValue = params ?? {}
+		const params = inputParams ?? {}
 ${indentCode(code, '\t\t')}
 	}
 }

@@ -28,6 +28,13 @@ const jobFacetName = 'job'
 const jobFacetIdPrefix = 'job-facet'
 const configStorageKey = 'config'
 const defaultHistoryLimit = 50
+const reservedJobFacetMethodNames = new Set([
+	'fetch',
+	'run',
+	'__kody_resetStorage',
+	'__kody_exportStorage',
+	'__kody_exec',
+])
 
 type JobRunnerConfig = {
 	jobId: string
@@ -240,11 +247,21 @@ class JobRunnerBase extends DurableObject<Env> {
 		methodName: string
 		args: Array<unknown>
 	}): Promise<unknown> {
+		const normalizedMethodName = input.methodName.trim()
+		if (
+			!normalizedMethodName ||
+			reservedJobFacetMethodNames.has(normalizedMethodName) ||
+			normalizedMethodName.startsWith('__kody_')
+		) {
+			throw new Error(
+				`Job facet RPC method "${normalizedMethodName}" is not allowed.`,
+			)
+		}
 		const jobFacet = (await this.getFacetStub()) as Record<string, unknown>
-		const rpcMethod = jobFacet[input.methodName]
+		const rpcMethod = jobFacet[normalizedMethodName]
 		if (typeof rpcMethod !== 'function') {
 			throw new Error(
-				`Job facet does not expose RPC method "${input.methodName}".`,
+				`Job facet does not expose RPC method "${normalizedMethodName}".`,
 			)
 		}
 		return await (

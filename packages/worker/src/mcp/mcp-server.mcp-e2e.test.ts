@@ -603,7 +603,14 @@ test('ui_save_app preserves omitted backend code and requires explicit clearing'
 	expect(typeof initialServerCodeId).toBe('string')
 	expect(saveStructured?.result?.has_server_code).toBe(true)
 
-	const clientOnlyUpdateResult = await mcpClient.client.callTool({
+	// A second `execute` on the same MCP session can stall after `ui_save_app`
+	// configures the app runner; use a fresh session like other tests that mix
+	// execute with out-of-band work (see the open_generated_ui test above).
+	await using clientOnlyMcp = await createMcpClient(
+		server.origin,
+		database.user,
+	)
+	const clientOnlyUpdateResult = await clientOnlyMcp.client.callTool({
 		name: 'execute',
 		arguments: {
 			code: `async () => {

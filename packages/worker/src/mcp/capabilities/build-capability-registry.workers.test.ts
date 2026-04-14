@@ -76,7 +76,9 @@ test('buildCapabilityRegistry rejects duplicate domain registration', () => {
 
 test('builtin capability domains include jobs', async () => {
 	const { builtinDomains } = await import('./builtin-domains.ts')
-	expect(builtinDomains.some((domain) => domain.name === 'jobs')).toBe(true)
+	expect(
+		builtinDomains.some((domain) => domain.name === capabilityDomainNames.jobs),
+	).toBe(true)
 	const jobsDomain = builtinDomains.find((domain) => domain.name === 'jobs')
 	expect(jobsDomain?.capabilities.map((capability) => capability.name)).toEqual(
 		[

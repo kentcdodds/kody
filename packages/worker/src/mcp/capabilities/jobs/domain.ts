@@ -131,10 +131,8 @@ const jobDeleteCapability = defineDomainCapability(capabilityDomainNames.jobs, {
 	async handler(args, ctx: CapabilityContext) {
 		const user = requireJobsUser(ctx)
 		await requireJobRecord(ctx.env.APP_DB, user.userId, args.job_id)
+		await jobRunnerRpc(ctx.env, args.job_id).deleteRunner()
 		await removeJobRecord(ctx.env.APP_DB, user.userId, args.job_id)
-		await Promise.allSettled([
-			jobRunnerRpc(ctx.env, args.job_id).deleteRunner(),
-		])
 		return {
 			job_id: args.job_id,
 			deleted: true as const,

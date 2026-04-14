@@ -27,10 +27,11 @@ export function normalizeJobName(name: string) {
 }
 
 export function normalizeJobServerCode(serverCode: string) {
-	if (!serverCode.trim()) {
+	const trimmed = serverCode.trim()
+	if (!trimmed) {
 		throw new Error('Jobs require non-empty server code.')
 	}
-	return serverCode
+	return trimmed
 }
 
 export async function createJobRecord(input: {
@@ -154,4 +155,3 @@ export async function removeJobRecord(
 export async function listJobRecords(db: D1Database, userId: string) {
 	return await listJobsByUserId(db, userId)
 }
-

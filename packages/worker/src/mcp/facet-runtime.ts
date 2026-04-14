@@ -117,10 +117,6 @@ export function toFacetErrorDetails(error: unknown): FacetErrorDetails {
 	}
 }
 
-export function formatFacetErrorMessage(error: unknown) {
-	return toFacetErrorDetails(error).message
-}
-
 function createFacetWrapperModule(input: {
 	baseClassName: string
 	expectedExportDescription: string
@@ -211,21 +207,6 @@ export async function callFacetStorageExport(facet: Fetcher) {
 			__kody_exportStorage: () => Promise<FacetStorageExport>
 		}
 	).__kody_exportStorage()
-}
-
-export async function callFacetExec(
-	facet: Fetcher,
-	code: string,
-	params?: Record<string, unknown>,
-) {
-	return await (
-		facet as unknown as {
-			__kody_exec: (
-				source: string,
-				execParams?: Record<string, unknown>,
-			) => Promise<unknown>
-		}
-	).__kody_exec(code, params)
 }
 
 export class FacetKodyBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {

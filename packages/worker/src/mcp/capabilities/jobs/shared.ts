@@ -8,21 +8,25 @@ import {
 } from '#worker/jobs/types.ts'
 
 export const jobScheduleSchema = z.union([
-	z.object({
-		cron: z
-			.string()
-			.min(1)
-			.describe(
-				'Standard 5-field cron expression: minute hour day-of-month month day-of-week.',
-			),
-	}),
-	z.object({
-		intervalMs: z
-			.number()
-			.int()
-			.positive()
-			.describe('Fixed run interval in milliseconds.'),
-	}),
+	z
+		.object({
+			cron: z
+				.string()
+				.min(1)
+				.describe(
+					'Standard 5-field cron expression: minute hour day-of-month month day-of-week.',
+				),
+		})
+		.strict(),
+	z
+		.object({
+			intervalMs: z
+				.number()
+				.int()
+				.positive()
+				.describe('Fixed run interval in milliseconds.'),
+		})
+		.strict(),
 ]) satisfies z.ZodType<JobSchedule>
 
 export const jobErrorSchema = z.object({
