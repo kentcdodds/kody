@@ -171,17 +171,23 @@ test('job capabilities create, update, run, and delete cron jobs end-to-end', as
 		},
 	})
 
-	await expect(
-		jobServerExec(
-			{
-				job_id: created.id,
-				code: `
-					return await job.call('readState')
-				`,
-			},
-			ctx,
-		),
-	).rejects.toThrow('#<Response>')
+	const rpcExec = await jobServerExec(
+		{
+			job_id: created.id,
+			code: `
+				return await job.call('readState')
+			`,
+		},
+		ctx,
+	)
+	expect(rpcExec).toEqual({
+		ok: true,
+		job_id: created.id,
+		result: {
+			count: 2,
+			flavor: 'beta',
+		},
+	})
 
 	const deleted = await jobDelete({ job_id: created.id }, ctx)
 	expect(deleted).toEqual({

@@ -155,3 +155,14 @@ export async function removeJobRecord(
 export async function listJobRecords(db: D1Database, userId: string) {
 	return await listJobsByUserId(db, userId)
 }
+
+export async function restoreJobRecord(db: D1Database, record: JobRecord) {
+	await updateJob(db, record.userId, record.id, {
+		name: record.name,
+		serverCode: record.serverCode,
+		serverCodeId: record.serverCodeId,
+		schedule: record.schedule,
+		timezone: record.timezone,
+		enabled: record.enabled,
+	})
+}
