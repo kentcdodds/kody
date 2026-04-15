@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { isReservedValueName } from '#mcp/values/value-name-guards.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { valueScopeValues } from '#mcp/values/types.ts'
 import { valueMetadataSchema } from './shared.ts'
@@ -41,16 +42,18 @@ export const valueListCapability = defineDomainCapability(
 				},
 			})
 			return {
-				values: values.map((value) => ({
-					name: value.name,
-					scope: value.scope,
-					value: value.value,
-					description: value.description,
-					app_id: value.appId,
-					created_at: value.createdAt,
-					updated_at: value.updatedAt,
-					ttl_ms: value.ttlMs,
-				})),
+				values: values
+					.filter((value) => !isReservedValueName(value.name))
+					.map((value) => ({
+						name: value.name,
+						scope: value.scope,
+						value: value.value,
+						description: value.description,
+						app_id: value.appId,
+						created_at: value.createdAt,
+						updated_at: value.updatedAt,
+						ttl_ms: value.ttlMs,
+					})),
 			}
 		},
 	},
