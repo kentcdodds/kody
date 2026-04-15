@@ -4,7 +4,7 @@ const generatedConversationIdLength = 12
 const conversationIdAlphabet = '0123456789abcdefghjkmnpqrstvwxyz'
 
 const conversationIdDescription =
-	'Optional short conversation identifier. Ties related calls together. On the first call, omit this to receive a server-generated ID, or supply your own. Pass the returned `conversationId` on every subsequent call in the same conversation - this enables optimizations like reduced response size. Generated values should be short and random enough to avoid collisions.'
+	'Optional short conversation identifier. Ties related calls together. If you already have a `conversationId` from an earlier response in the same conversation, pass it back unchanged. Otherwise omit this field to receive a server-generated ID, then reuse the returned `conversationId` on subsequent calls - this enables optimizations like reduced response size. Do not invent your own `conversationId`.'
 
 const memoryContextDescription =
 	'Optional short, structured task context for memory retrieval. Keep it brief and factual rather than hidden reasoning. If durable memory may need to be written or deleted, agents should later run `meta_memory_verify` before mutating memory.'

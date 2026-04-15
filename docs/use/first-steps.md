@@ -7,8 +7,9 @@ skill).
 
 ## Habits that help
 
-- **Pass `conversationId` back** on follow-up calls when the tool response
-  includes one. That keeps related calls grouped and can reduce response size.
+- **Reuse returned `conversationId` values.** If a prior tool response included
+  one, pass it back unchanged on follow-up calls. Otherwise omit the field and
+  use the server-generated value the tool returns. Do not make one up locally.
 - **Pass `memoryContext`** when durable user memory may matter. Kody uses it to
   surface a small set of relevant long-term memories that have not already been
   shown in the same conversation.
