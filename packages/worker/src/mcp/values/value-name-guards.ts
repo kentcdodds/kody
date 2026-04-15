@@ -1,4 +1,4 @@
-const reservedValueNames = new Set(['skillRunnerTokens'])
+const reservedValueNames = new Set<string>()
 
 export function isReservedValueName(name: string) {
 	return reservedValueNames.has(name)
