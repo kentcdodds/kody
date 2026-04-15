@@ -5,7 +5,6 @@ import {
 	applySkillParameters,
 	parseSkillParameters,
 } from '#mcp/skills/skill-parameters.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 
 const runFailureHint =
 	'If the saved codemode is wrong, use meta_get_skill to inspect it, then call meta_save_skill again with the same skill name to replace the stored code and metadata.'
@@ -46,6 +45,9 @@ export async function runSavedSkill(input: {
 		values: input.params,
 	})
 	const shouldPassParams = definitions != null || input.params !== undefined
+	const { runCodemodeWithRegistry } = await import(
+		'#mcp/run-codemode-registry.ts'
+	)
 	const exec = await runCodemodeWithRegistry(
 		input.env,
 		input.callerContext,

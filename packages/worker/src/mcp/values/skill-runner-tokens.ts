@@ -21,10 +21,12 @@ function normalizeTokenMap(raw: unknown) {
 	}
 
 	const entries = Object.entries(raw)
-		.filter(([clientName, token]) => {
-			return clientName.trim().length > 0 && typeof token === 'string'
+		.flatMap(([clientName, token]) => {
+			if (clientName.trim().length === 0 || typeof token !== 'string') {
+				return []
+			}
+			return [[clientName.trim(), token.trim()] as const]
 		})
-		.map(([clientName, token]) => [clientName.trim(), token.trim()] as const)
 		.filter(([, token]) => token.length > 0)
 		.sort(([left], [right]) => left.localeCompare(right))
 
