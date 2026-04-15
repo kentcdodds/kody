@@ -147,7 +147,43 @@ test('storage runner blocks mutating SQL when writable is false', async () => {
 	} catch (error) {
 		expect(error).toBeInstanceOf(Error)
 		expect((error as Error).message).toBe(
-			'Read-only storage.sql only allows SELECT, EXPLAIN, and schema PRAGMA queries. Pass writable: true to allow mutations.',
+			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
 		)
 	}
+})
+
+test('storage runner blocks multi-statement SQL in read-only mode', async () => {
+	const storageId = createExecuteStorageId()
+	const runner = storageRunnerRpc({
+		env,
+		userId: 'user-123',
+		storageId,
+	})
+
+	await runner.setValue({
+		key: 'counter',
+		value: 1,
+	})
+
+	try {
+		await runner.sqlQuery({
+			query: 'select 1 as ok; delete from sqlite_schema',
+			writable: false,
+		})
+		throw new Error('Expected multi-statement read-only SQL to fail.')
+	} catch (error) {
+		expect(error).toBeInstanceOf(Error)
+		expect((error as Error).message).toBe(
+			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
+		)
+	}
+
+	await expect(
+		runner.getValue({
+			key: 'counter',
+		}),
+	).resolves.toEqual({
+		key: 'counter',
+		value: 1,
+	})
 })

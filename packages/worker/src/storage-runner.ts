@@ -97,6 +97,11 @@ function assertSqlAllowed(query: string, writable: boolean | undefined) {
 		throw new Error('storage.sql requires a non-empty query.')
 	}
 	if (writable) return trimmed
+	if (trimmed.includes(';')) {
+		throw new Error(
+			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
+		)
+	}
 	const normalized = trimmed.toLowerCase()
 	const allowedReadOnlyPrefixes = [
 		'select',
@@ -113,7 +118,7 @@ function assertSqlAllowed(query: string, writable: boolean | undefined) {
 		return trimmed
 	}
 	throw new Error(
-		'Read-only storage.sql only allows SELECT, EXPLAIN, and schema PRAGMA queries. Pass writable: true to allow mutations.',
+		'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
 	)
 }
 
