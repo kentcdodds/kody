@@ -1,4 +1,18 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
+import {
+	decryptSecretValue,
+	encryptSecretValue,
+} from '#mcp/secrets/crypto.ts'
+import {
+	buildSkillRunnerSecretName,
+	parseSkillRunnerSecretClientName,
+	skillRunnerSecretNamePrefix,
+} from '#mcp/secrets/name-guards.ts'
+import {
+	deleteSecretEntry,
+	getSecretBucket,
+	upsertSecretBucket,
+} from '#mcp/secrets/repo.ts'
 import { deleteValue, getValue, saveValue } from './service.ts'
 
 export const skillRunnerTokensValueName = 'skillRunnerTokens'
@@ -17,11 +31,26 @@ export type SkillRunnerTokenRecord = {
 
 export type SkillRunnerTokenStore = Record<string, SkillRunnerTokenRecord>
 
+type StoredSkillRunnerTokenRecord = {
+	tokenHash: string
+	name: string
+	description: string
+	lastUsedAt: string | null
+}
+
+type SkillRunnerSecretEntry = {
+	name: string
+	description: string
+	encrypted_value: string
+	created_at: string
+	updated_at: string
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function normalizeTokenRecord(
+function normalizeLegacyTokenRecord(
 	clientName: string,
 	raw: unknown,
 ): SkillRunnerTokenRecord | null {
@@ -56,7 +85,7 @@ function normalizeTokenRecord(
 	}
 }
 
-function normalizeTokenStore(raw: unknown) {
+function normalizeLegacyTokenStore(raw: unknown) {
 	if (!isRecord(raw)) {
 		throw new Error(
 			'Persisted skillRunnerTokens value must be a JSON object of clientName to token.',
@@ -67,7 +96,7 @@ function normalizeTokenStore(raw: unknown) {
 		.flatMap(([clientName, rawRecord]) => {
 			const normalizedClientName = clientName.trim()
 			if (!normalizedClientName) return []
-			const normalizedRecord = normalizeTokenRecord(
+			const normalizedRecord = normalizeLegacyTokenRecord(
 				normalizedClientName,
 				rawRecord,
 			)
@@ -80,7 +109,7 @@ function normalizeTokenStore(raw: unknown) {
 	return Object.fromEntries(entries) satisfies SkillRunnerTokenStore
 }
 
-function parseTokenStore(rawValue: string | null): SkillRunnerTokenStore {
+function parseLegacyTokenStore(rawValue: string | null): SkillRunnerTokenStore {
 	if (!rawValue) return {}
 	let parsed: unknown
 	try {
@@ -90,14 +119,14 @@ function parseTokenStore(rawValue: string | null): SkillRunnerTokenStore {
 			'Persisted skillRunnerTokens value must be valid JSON containing client tokens.',
 		)
 	}
-	return normalizeTokenStore(parsed)
+	return normalizeLegacyTokenStore(parsed)
 }
 
-function tryParseTokenStore(
+function tryParseLegacyTokenStore(
 	rawValue: string | null,
 ): SkillRunnerTokenStore | null {
 	try {
-		return parseTokenStore(rawValue)
+		return parseLegacyTokenStore(rawValue)
 	} catch {
 		return null
 	}
@@ -174,7 +203,41 @@ async function matchesToken(candidateToken: string, token: string) {
 		: timingSafeEqual(tokenBytes, candidateBytes)
 }
 
-async function readTokenValue(input: {
+function normalizeStoredSkillRunnerTokenRecord(
+	clientName: string,
+	raw: unknown,
+): StoredSkillRunnerTokenRecord {
+	if (!isRecord(raw)) {
+		throw new Error(
+			`Stored skill runner token metadata for "${clientName}" must be a JSON object.`,
+		)
+	}
+	const tokenHash =
+		typeof raw['tokenHash'] === 'string' ? raw['tokenHash'].trim() : ''
+	if (!tokenHash) {
+		throw new Error(
+			`Stored skill runner token metadata for "${clientName}" is missing tokenHash.`,
+		)
+	}
+	const name =
+		typeof raw['name'] === 'string' && raw['name'].trim().length > 0
+			? raw['name'].trim()
+			: clientName
+	const description =
+		typeof raw['description'] === 'string' ? raw['description'].trim() : ''
+	const lastUsedAt =
+		typeof raw['lastUsedAt'] === 'string' && raw['lastUsedAt'].trim().length > 0
+			? raw['lastUsedAt'].trim()
+			: null
+	return {
+		tokenHash,
+		name,
+		description,
+		lastUsedAt,
+	}
+}
+
+async function readLegacyTokenValue(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {
@@ -188,14 +251,11 @@ async function readTokenValue(input: {
 	return value?.value ?? null
 }
 
-async function writeSkillRunnerTokens(input: {
+async function writeLegacySkillRunnerTokens(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	tokens: SkillRunnerTokenStore
 }) {
-	// This store mixes low-frequency admin updates with best-effort usage stamps.
-	// Under concurrent writes, the value store's normal last-write-wins behavior
-	// applies; occasional stale lastUsedAt metadata is acceptable here.
 	await saveValue({
 		env: input.env,
 		userId: input.userId,
@@ -207,106 +267,193 @@ async function writeSkillRunnerTokens(input: {
 	})
 }
 
-export async function getSkillRunnerTokens(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
+async function readStoredSkillRunnerTokenRecord(input: {
+	env: Pick<Env, 'COOKIE_SECRET'>
+	clientName: string
+	entry: SkillRunnerSecretEntry
 }) {
-	return parseTokenStore(await readTokenValue(input))
+	const decrypted = await decryptSecretValue(input.env, input.entry.encrypted_value)
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(decrypted)
+	} catch {
+		throw new Error(
+			`Stored skill runner token metadata for "${input.clientName}" must be valid JSON.`,
+		)
+	}
+	return normalizeStoredSkillRunnerTokenRecord(input.clientName, parsed)
 }
 
-export async function createSkillRunnerToken(input: {
+async function getUserSecretBucket(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-	clientName: string
-	name: string
-	description?: string | null
 }) {
-	const clientName = input.clientName.trim()
-	if (!clientName) {
-		throw new Error('clientName is required.')
-	}
-	const name = input.name.trim()
-	if (!name) {
-		throw new Error('name is required.')
-	}
-
-	const tokens = await getSkillRunnerTokens(input)
-	const existing = tokens[clientName]
-	const token = generateSkillRunnerToken()
-	tokens[clientName] = {
-		token: await hashSkillRunnerToken(token),
-		name,
-		description: input.description?.trim() ?? existing?.description ?? '',
-		lastUsedAt: existing?.lastUsedAt ?? null,
-	}
-	await writeSkillRunnerTokens({
-		env: input.env,
+	return getSecretBucket({
+		db: input.env.APP_DB,
 		userId: input.userId,
-		tokens,
+		scope: 'user',
+		bindingKey: '',
 	})
-	return {
-		...tokens[clientName],
-		token,
-	}
 }
 
-export async function revokeSkillRunnerToken(input: {
+async function getOrCreateUserSecretBucket(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}) {
+	const existing = await getUserSecretBucket(input)
+	if (existing) return existing
+	const now = new Date().toISOString()
+	const created = {
+		id: crypto.randomUUID(),
+		user_id: input.userId,
+		scope: 'user' as const,
+		binding_key: '',
+		expires_at: null,
+		created_at: now,
+		updated_at: now,
+	}
+	await upsertSecretBucket({
+		db: input.env.APP_DB,
+		row: created,
+	})
+	return created
+}
+
+async function getSkillRunnerSecretEntry(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	clientName: string
 }) {
-	const clientName = input.clientName.trim()
-	if (!clientName) {
-		throw new Error('clientName is required.')
-	}
+	const bucket = await getUserSecretBucket(input)
+	if (!bucket) return null
+	return input.env.APP_DB
+		.prepare(
+			`SELECT name, description, encrypted_value, created_at, updated_at
+			FROM secret_entries
+			WHERE bucket_id = ? AND name = ?
+			LIMIT 1`,
+		)
+		.bind(bucket.id, buildSkillRunnerSecretName(input.clientName))
+		.first<SkillRunnerSecretEntry>()
+}
 
-	const tokens = await getSkillRunnerTokens(input)
-	const existed = Object.hasOwn(tokens, clientName)
-	if (!existed) return false
+async function listSkillRunnerSecretEntries(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}) {
+	const bucket = await getUserSecretBucket(input)
+	if (!bucket) return []
+	const { results } = await input.env.APP_DB
+		.prepare(
+			`SELECT name, description, encrypted_value, created_at, updated_at
+			FROM secret_entries
+			WHERE bucket_id = ? AND name LIKE ?
+			ORDER BY name ASC`,
+		)
+		.bind(bucket.id, `${skillRunnerSecretNamePrefix}%`)
+		.all<SkillRunnerSecretEntry>()
+	return results ?? []
+}
 
-	delete tokens[clientName]
-	if (Object.keys(tokens).length === 0) {
-		await deleteValue({
+async function upsertSkillRunnerSecretEntry(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+	clientName: string
+	record: StoredSkillRunnerTokenRecord
+}) {
+	const bucket = await getOrCreateUserSecretBucket(input)
+	const encryptedValue = await encryptSecretValue(
+		input.env,
+		JSON.stringify(input.record),
+	)
+	const now = new Date().toISOString()
+	await input.env.APP_DB.prepare(
+		`INSERT INTO secret_entries (
+			bucket_id, name, description, encrypted_value, allowed_hosts,
+			allowed_capabilities, lookup_hash, created_at, updated_at
+		) VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?)
+		ON CONFLICT(bucket_id, name)
+		DO UPDATE SET
+			description = excluded.description,
+			encrypted_value = excluded.encrypted_value,
+			allowed_hosts = excluded.allowed_hosts,
+			allowed_capabilities = excluded.allowed_capabilities,
+			lookup_hash = excluded.lookup_hash,
+			updated_at = excluded.updated_at`,
+	)
+		.bind(
+			bucket.id,
+			buildSkillRunnerSecretName(input.clientName),
+			input.record.description,
+			encryptedValue,
+			input.record.tokenHash,
+			now,
+			now,
+		)
+		.run()
+}
+
+async function getSecretBackedSkillRunnerTokens(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+}) {
+	const entries = await listSkillRunnerSecretEntries(input)
+	const records = await Promise.all(
+		entries.map(async (entry) => {
+			const clientName = parseSkillRunnerSecretClientName(entry.name)
+			if (!clientName) return null
+			const record = await readStoredSkillRunnerTokenRecord({
+				env: input.env,
+				clientName,
+				entry,
+			})
+			return [clientName, record] as const
+		}),
+	)
+	return Object.fromEntries(
+		records
+			.filter((entry): entry is NonNullable<typeof entry> => entry != null)
+			.sort(([left], [right]) => left.localeCompare(right)),
+	)
+}
+
+async function migrateLegacySkillRunnerTokensForUser(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+}) {
+	const rawValue = await readLegacyTokenValue(input)
+	if (!rawValue) return false
+	const tokens = parseLegacyTokenStore(rawValue)
+	for (const [clientName, record] of Object.entries(tokens)) {
+		const tokenHash = isHashedToken(record.token)
+			? record.token
+			: await hashSkillRunnerToken(record.token)
+		await upsertSkillRunnerSecretEntry({
 			env: input.env,
 			userId: input.userId,
-			name: skillRunnerTokensValueName,
-			scope: 'user',
-			storageContext: createStorageContext(),
+			clientName,
+			record: {
+				tokenHash,
+				name: record.name,
+				description: record.description,
+				lastUsedAt: record.lastUsedAt,
+			},
 		})
-		return true
 	}
-
-	await writeSkillRunnerTokens({
+	await deleteValue({
 		env: input.env,
 		userId: input.userId,
-		tokens,
+		name: skillRunnerTokensValueName,
+		scope: 'user',
+		storageContext: createStorageContext(),
 	})
 	return true
 }
 
-export async function listSkillRunnerTokens(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-}) {
-	const tokens = await getSkillRunnerTokens(input)
-	return Object.entries(tokens)
-		.sort(([left], [right]) => left.localeCompare(right))
-		.map(([clientName, record]) => ({
-			clientName,
-			name: record.name,
-			description: record.description || null,
-			lastUsedAt: record.lastUsedAt,
-			token: maskToken(record.token),
-		}))
-}
-
-export async function resolveSkillRunnerUserByToken(input: {
+async function resolveLegacySkillRunnerUserByToken(input: {
 	env: Pick<Env, 'APP_DB'>
 	token: string
 }) {
-	const token = input.token.trim()
-	if (!token) return null
-
 	const now = new Date().toISOString()
 	const { results } = await input.env.APP_DB.prepare(
 		`SELECT vb.user_id, ve.value
@@ -325,10 +472,10 @@ export async function resolveSkillRunnerUserByToken(input: {
 			typeof row['user_id'] === 'string' ? row['user_id'].trim() : ''
 		const rawValue = typeof row['value'] === 'string' ? row['value'] : null
 		if (!userId || !rawValue) continue
-		const tokenStore = tryParseTokenStore(rawValue)
+		const tokenStore = tryParseLegacyTokenStore(rawValue)
 		if (!tokenStore) continue
 		for (const [clientName, record] of Object.entries(tokenStore)) {
-			if (await matchesToken(record.token, token)) {
+			if (await matchesToken(record.token, input.token)) {
 				return { userId, clientName }
 			}
 		}
@@ -337,22 +484,258 @@ export async function resolveSkillRunnerUserByToken(input: {
 	return null
 }
 
-export async function markSkillRunnerTokenUsed(input: {
+async function listLegacySkillRunnerTokens(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}) {
+	const tokens = parseLegacyTokenStore(await readLegacyTokenValue(input))
+	return Object.entries(tokens)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([clientName, record]) => ({
+			clientName,
+			name: record.name,
+			description: record.description || null,
+			lastUsedAt: record.lastUsedAt,
+			token: maskToken(record.token),
+		}))
+}
+
+async function markLegacySkillRunnerTokenUsed(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	clientName: string
 }) {
-	const tokens = await getSkillRunnerTokens(input)
+	const tokens = parseLegacyTokenStore(await readLegacyTokenValue(input))
 	const existing = tokens[input.clientName]
 	if (!existing) return false
 	tokens[input.clientName] = {
 		...existing,
 		lastUsedAt: new Date().toISOString(),
 	}
-	await writeSkillRunnerTokens({
+	await writeLegacySkillRunnerTokens({
 		env: input.env,
 		userId: input.userId,
 		tokens,
 	})
 	return true
+}
+
+async function revokeLegacySkillRunnerToken(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	clientName: string
+}) {
+	const tokens = parseLegacyTokenStore(await readLegacyTokenValue(input))
+	if (!Object.hasOwn(tokens, input.clientName)) return false
+	delete tokens[input.clientName]
+	if (Object.keys(tokens).length === 0) {
+		await deleteValue({
+			env: input.env,
+			userId: input.userId,
+			name: skillRunnerTokensValueName,
+			scope: 'user',
+			storageContext: createStorageContext(),
+		})
+		return true
+	}
+	await writeLegacySkillRunnerTokens({
+		env: input.env,
+		userId: input.userId,
+		tokens,
+	})
+	return true
+}
+
+export async function getSkillRunnerTokens(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+}) {
+	await migrateLegacySkillRunnerTokensForUser(input)
+	const tokens = await getSecretBackedSkillRunnerTokens(input)
+	return Object.fromEntries(
+		Object.entries(tokens).map(([clientName, record]) => [
+			clientName,
+			{
+				token: record.tokenHash,
+				name: record.name,
+				description: record.description,
+				lastUsedAt: record.lastUsedAt,
+			},
+		]),
+	) satisfies SkillRunnerTokenStore
+}
+
+export async function createSkillRunnerToken(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+	clientName: string
+	name: string
+	description?: string | null
+}) {
+	const clientName = input.clientName.trim()
+	if (!clientName) {
+		throw new Error('clientName is required.')
+	}
+	const name = input.name.trim()
+	if (!name) {
+		throw new Error('name is required.')
+	}
+
+	await migrateLegacySkillRunnerTokensForUser(input)
+	const existingEntry = await getSkillRunnerSecretEntry({
+		env: input.env,
+		userId: input.userId,
+		clientName,
+	})
+	const existingRecord = existingEntry
+		? await readStoredSkillRunnerTokenRecord({
+				env: input.env,
+				clientName,
+				entry: existingEntry,
+			})
+		: null
+	const token = generateSkillRunnerToken()
+	const tokenHash = await hashSkillRunnerToken(token)
+	await upsertSkillRunnerSecretEntry({
+		env: input.env,
+		userId: input.userId,
+		clientName,
+		record: {
+			tokenHash,
+			name,
+			description: input.description?.trim() ?? existingRecord?.description ?? '',
+			lastUsedAt: existingRecord?.lastUsedAt ?? null,
+		},
+	})
+	return {
+		token,
+		name,
+		description: input.description?.trim() ?? existingRecord?.description ?? '',
+		lastUsedAt: existingRecord?.lastUsedAt ?? null,
+	}
+}
+
+export async function revokeSkillRunnerToken(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+	clientName: string
+}) {
+	const clientName = input.clientName.trim()
+	if (!clientName) {
+		throw new Error('clientName is required.')
+	}
+
+	await migrateLegacySkillRunnerTokensForUser(input)
+	const bucket = await getUserSecretBucket(input)
+	if (bucket) {
+		const deleted = await deleteSecretEntry({
+			db: input.env.APP_DB,
+			bucketId: bucket.id,
+			name: buildSkillRunnerSecretName(clientName),
+		})
+		if (deleted) return true
+	}
+	return revokeLegacySkillRunnerToken(input)
+}
+
+export async function listSkillRunnerTokens(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+}) {
+	await migrateLegacySkillRunnerTokensForUser(input)
+	const tokens = await getSecretBackedSkillRunnerTokens(input)
+	if (Object.keys(tokens).length > 0) {
+		return Object.entries(tokens)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([clientName, record]) => ({
+				clientName,
+				name: record.name,
+				description: record.description || null,
+				lastUsedAt: record.lastUsedAt,
+				token: maskToken(record.tokenHash),
+			}))
+	}
+	return listLegacySkillRunnerTokens(input)
+}
+
+export async function resolveSkillRunnerUserByToken(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	token: string
+}) {
+	const token = input.token.trim()
+	if (!token) return null
+
+	const lookupHash = await hashSkillRunnerToken(token)
+	const now = new Date().toISOString()
+	const row = await input.env.APP_DB.prepare(
+		`SELECT sb.user_id, se.name
+			FROM secret_entries se
+			INNER JOIN secret_buckets sb ON sb.id = se.bucket_id
+			WHERE se.lookup_hash = ?
+				AND se.name LIKE ?
+				AND sb.scope = 'user'
+				AND sb.binding_key = ''
+				AND (sb.expires_at IS NULL OR sb.expires_at > ?)
+			LIMIT 1`,
+	)
+		.bind(lookupHash, `${skillRunnerSecretNamePrefix}%`, now)
+		.first<Record<string, unknown>>()
+	if (row) {
+		const userId =
+			typeof row['user_id'] === 'string' ? row['user_id'].trim() : ''
+		const clientName =
+			typeof row['name'] === 'string'
+				? parseSkillRunnerSecretClientName(row['name'])
+				: null
+		if (userId && clientName) {
+			return { userId, clientName }
+		}
+	}
+
+	const legacyAuthorizedUser = await resolveLegacySkillRunnerUserByToken({
+		env: input.env,
+		token,
+	})
+	if (!legacyAuthorizedUser) return null
+	await migrateLegacySkillRunnerTokensForUser({
+		env: input.env,
+		userId: legacyAuthorizedUser.userId,
+	}).catch((error) => {
+		console.error('Failed to migrate legacy skill runner tokens.', {
+			userId: legacyAuthorizedUser.userId,
+			error,
+		})
+	})
+	return legacyAuthorizedUser
+}
+
+export async function markSkillRunnerTokenUsed(input: {
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	userId: string
+	clientName: string
+}) {
+	await migrateLegacySkillRunnerTokensForUser(input)
+	const existingEntry = await getSkillRunnerSecretEntry({
+		env: input.env,
+		userId: input.userId,
+		clientName: input.clientName,
+	})
+	if (existingEntry) {
+		const existing = await readStoredSkillRunnerTokenRecord({
+			env: input.env,
+			clientName: input.clientName,
+			entry: existingEntry,
+		})
+		await upsertSkillRunnerSecretEntry({
+			env: input.env,
+			userId: input.userId,
+			clientName: input.clientName,
+			record: {
+				...existing,
+				lastUsedAt: new Date().toISOString(),
+			},
+		})
+		return true
+	}
+	return markLegacySkillRunnerTokenUsed(input)
 }
