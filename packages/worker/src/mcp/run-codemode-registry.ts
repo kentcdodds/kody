@@ -62,7 +62,36 @@ export async function buildCodemodeFns(
 	const additionalTools = options?.additionalTools ?? {}
 	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
-	const storageCodemodeTools = storageTools
+	const capabilityCodemodeTools = Object.fromEntries(
+		Object.values(capabilityMap).map((capability) => [
+			capability.name,
+			async (args: unknown) => {
+				const resolveSecretValue =
+					options?.resolveSecretValue ??
+					createCapabilityInputSecretResolver(
+						env,
+						callerContext,
+						capability.name,
+					)
+				const resolvedArgs = await resolveCapabilityInputSecrets({
+					schema: capability.inputSchema,
+					value: (args ?? {}) as Record<string, unknown>,
+					resolveSecretValue: (secret) =>
+						resolveSecretValue(secret, capability.name),
+				})
+				collectSecretInputValues({
+					schema: capability.inputSchema,
+					value: resolvedArgs,
+					track: options?.trackSecretInputValue,
+				})
+				return capability.handler(resolvedArgs as Record<string, unknown>, {
+					env,
+					callerContext,
+				})
+			},
+		]),
+	) as AdditionalCodemodeTools
+	const storageCodemodeTools: AdditionalCodemodeTools = storageTools
 		? await createStorageCodemodeTools({
 				env,
 				userId: callerContext.user?.userId ?? '',
@@ -72,35 +101,7 @@ export async function buildCodemodeFns(
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, storageCodemodeTools)
 	return {
-		...Object.fromEntries(
-			Object.values(capabilityMap).map((capability) => [
-				capability.name,
-				async (args: unknown) => {
-					const resolveSecretValue =
-						options?.resolveSecretValue ??
-						createCapabilityInputSecretResolver(
-							env,
-							callerContext,
-							capability.name,
-						)
-					const resolvedArgs = await resolveCapabilityInputSecrets({
-						schema: capability.inputSchema,
-						value: (args ?? {}) as Record<string, unknown>,
-						resolveSecretValue: (secret) =>
-							resolveSecretValue(secret, capability.name),
-					})
-					collectSecretInputValues({
-						schema: capability.inputSchema,
-						value: resolvedArgs,
-						track: options?.trackSecretInputValue,
-					})
-					return capability.handler(resolvedArgs as Record<string, unknown>, {
-						env,
-						callerContext,
-					})
-				},
-			]),
-		),
+		...capabilityCodemodeTools,
 		...storageCodemodeTools,
 		...additionalTools,
 	}
