@@ -31,12 +31,20 @@ export async function runSavedSkill(input: {
 }): Promise<SavedSkillRunResult> {
 	const userId = input.callerContext.user?.userId
 	if (!userId) {
-		throw new Error('Authenticated MCP user is required for this capability.')
+		return {
+			ok: false,
+			error: 'Authenticated MCP user is required for this capability.',
+			logs: [],
+		} satisfies SavedSkillRunResult
 	}
 
 	const row = await getMcpSkillByNameInput(input.env.APP_DB, userId, input.name)
 	if (!row) {
-		throw new Error('Skill not found for this user.')
+		return {
+			ok: false,
+			error: 'Skill not found for this user.',
+			logs: [],
+		} satisfies SavedSkillRunResult
 	}
 
 	const definitions = parseSkillParameters(row.parameters)

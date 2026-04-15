@@ -5,6 +5,7 @@ export const skillRunnerTokensValueName = 'skillRunnerTokens'
 
 const skillRunnerTokenBytes = 24
 const skillRunnerTokenPrefix = 'tok_'
+const skillRunnerTokenHashPrefix = 'sha256:'
 const redactedTokenValue = 'tok_…'
 
 export type SkillRunnerTokenMap = Record<string, string>
@@ -72,6 +73,26 @@ function maskToken(_token: string) {
 	return redactedTokenValue
 }
 
+async function hashSkillRunnerToken(token: string) {
+	const encoder = new TextEncoder()
+	const digest = await crypto.subtle.digest('SHA-256', encoder.encode(token))
+	return `${skillRunnerTokenHashPrefix}${toHex(new Uint8Array(digest))}`
+}
+
+function isHashedToken(token: string) {
+	return token.startsWith(skillRunnerTokenHashPrefix)
+}
+
+async function ensureHashedTokenMap(tokenMap: SkillRunnerTokenMap) {
+	const entries = await Promise.all(
+		Object.entries(tokenMap).map(async ([clientName, token]) => [
+			clientName,
+			isHashedToken(token) ? token : await hashSkillRunnerToken(token),
+		]),
+	)
+	return Object.fromEntries(entries) satisfies SkillRunnerTokenMap
+}
+
 function padToLength(buffer: Uint8Array, length: number) {
 	if (buffer.length === length) return buffer
 	const padded = new Uint8Array(length)
@@ -104,12 +125,18 @@ function timingSafeEqual(left: Uint8Array, right: Uint8Array) {
 	return isEqual && left.length === right.length
 }
 
-function includesToken(tokenMap: SkillRunnerTokenMap, token: string) {
+async function includesToken(tokenMap: SkillRunnerTokenMap, token: string) {
 	const encoder = new TextEncoder()
 	const tokenBytes = encoder.encode(token)
+	const hashedToken = await hashSkillRunnerToken(token)
+	const hashedBytes = encoder.encode(hashedToken)
 	let matched = false
 	for (const candidate of Object.values(tokenMap)) {
-		if (timingSafeEqual(tokenBytes, encoder.encode(candidate))) {
+		const candidateBytes = encoder.encode(candidate)
+		const isMatch = isHashedToken(candidate)
+			? timingSafeEqual(hashedBytes, candidateBytes)
+			: timingSafeEqual(tokenBytes, candidateBytes)
+		if (isMatch) {
 			matched = true
 		}
 	}
@@ -165,9 +192,10 @@ export async function createSkillRunnerToken(input: {
 		throw new Error('clientName is required.')
 	}
 
-	const tokens = await getSkillRunnerTokens(input)
+	let tokens = await getSkillRunnerTokens(input)
+	tokens = await ensureHashedTokenMap(tokens)
 	const token = generateSkillRunnerToken()
-	tokens[clientName] = token
+	tokens[clientName] = await hashSkillRunnerToken(token)
 	await writeSkillRunnerTokens({
 		env: input.env,
 		userId: input.userId,
@@ -202,6 +230,7 @@ export async function revokeSkillRunnerToken(input: {
 		return true
 	}
 
+	tokens = await ensureHashedTokenMap(tokens)
 	await writeSkillRunnerTokens({
 		env: input.env,
 		userId: input.userId,
@@ -249,7 +278,7 @@ export async function resolveSkillRunnerUserByToken(input: {
 		if (!userId || !rawValue) continue
 		const tokenMap = tryParseTokenMap(rawValue)
 		if (!tokenMap) continue
-		if (includesToken(tokenMap, token)) {
+		if (await includesToken(tokenMap, token)) {
 			return { userId }
 		}
 	}

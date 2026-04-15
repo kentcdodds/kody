@@ -817,10 +817,13 @@ async function handleSkillRunnerRequest(request: Request, env: Env) {
 					error: result.error ?? 'Skill execution failed.',
 				})
 	} catch (error) {
-		return jsonResponse({
-			ok: false,
-			error: error instanceof Error ? error.message : 'Skill execution failed.',
-		})
+		return jsonResponse(
+			{
+				ok: false,
+				error: error instanceof Error ? error.message : 'Skill execution failed.',
+			},
+			{ status: 500 },
+		)
 	}
 }
 
