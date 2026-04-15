@@ -33,7 +33,6 @@ const outputSchema = z.object({
 	candidate: z.object({
 		subject: z.string(),
 		summary: z.string(),
-		details: z.string(),
 		category: z.string().nullable(),
 		tags: z.array(z.string()),
 		source_uris: z.array(memorySourceUriSchema).optional(),
@@ -77,7 +76,7 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 					args.include_suppressed_in_conversation ?? false,
 			})
 			return {
-				candidate: result.candidate,
+				candidate: formatCandidate(result.candidate),
 				related_memories: result.relatedMemories.map((match) =>
 					formatMemoryMatch(match.memory, match.score),
 				),
@@ -110,5 +109,23 @@ function formatMemoryMatch(
 		source_uris: match.sourceUris,
 		dedupe_key: match.dedupeKey,
 		score,
+	}
+}
+
+function formatCandidate(candidate: {
+	subject: string
+	summary: string
+	category: string | null
+	tags: Array<string>
+	source_uris: Array<string>
+	dedupe_key: string | null
+}) {
+	return {
+		subject: candidate.subject,
+		summary: candidate.summary,
+		category: candidate.category,
+		tags: candidate.tags,
+		source_uris: candidate.source_uris,
+		dedupe_key: candidate.dedupe_key,
 	}
 }
