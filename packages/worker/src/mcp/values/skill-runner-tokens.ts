@@ -19,15 +19,6 @@ const skillRunnerTokenPrefix = 'tok_'
 const skillRunnerTokenHashPrefix = 'sha256:'
 const redactedTokenValue = 'tok_…'
 
-export type SkillRunnerTokenRecord = {
-	token: string
-	name: string
-	description: string
-	lastUsedAt: string | null
-}
-
-export type SkillRunnerTokenStore = Record<string, SkillRunnerTokenRecord>
-
 type StoredSkillRunnerTokenRecord = {
 	tokenHash: string
 	name: string
@@ -245,24 +236,6 @@ async function getSecretBackedSkillRunnerTokens(input: {
 			.filter((entry): entry is NonNullable<typeof entry> => entry != null)
 			.sort(([left], [right]) => left.localeCompare(right)),
 	)
-}
-
-export async function getSkillRunnerTokens(input: {
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
-	userId: string
-}) {
-	const tokens = await getSecretBackedSkillRunnerTokens(input)
-	return Object.fromEntries(
-		Object.entries(tokens).map(([clientName, record]) => [
-			clientName,
-			{
-				token: record.tokenHash,
-				name: record.name,
-				description: record.description,
-				lastUsedAt: record.lastUsedAt,
-			},
-		]),
-	) satisfies SkillRunnerTokenStore
 }
 
 export async function createSkillRunnerToken(input: {
