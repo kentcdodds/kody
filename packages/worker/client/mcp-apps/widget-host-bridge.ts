@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+
 type WidgetHostBridgeOptions = {
 	protocolVersion?: string
 	requestTimeoutMs?: number
@@ -296,9 +297,7 @@ export function createWidgetHostBridge(
 				}
 				return true
 			})
-			.catch(() => {
-				return false
-			})
+			.catch(() => false)
 			.finally(() => {
 				initializationPromise = null
 			})

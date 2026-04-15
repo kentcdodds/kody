@@ -66,6 +66,7 @@ type RenderEnvelope = {
 }
 
 type RenderDataEnvelope = {
+	toolInput?: Record<string, unknown>
 	toolOutput?: Record<string, unknown>
 	theme?: string
 	displayMode?: string
@@ -1095,7 +1096,8 @@ async function initializeShellHostDocument() {
 				? (renderData as RenderDataEnvelope)
 				: undefined
 			latestRenderData = nextRenderData
-			scheduleRenderEnvelope(getEnvelopeFromRenderData(nextRenderData))
+			const envelope = getEnvelopeFromRenderData(nextRenderData)
+			scheduleRenderEnvelope(envelope)
 		},
 	})
 
@@ -1265,7 +1267,11 @@ async function initializeShellHostDocument() {
 		},
 		latestRenderDataRef,
 	)
-	void hostBridge.initialize()
+	void hostBridge.initialize().then((didInitialize) => {
+		if (didInitialize) {
+			hostBridge.requestRenderData()
+		}
+	})
 	hostBridge.requestRenderData()
 	scheduleRenderEnvelope(getEnvelopeFromRenderData(latestRenderData))
 }
