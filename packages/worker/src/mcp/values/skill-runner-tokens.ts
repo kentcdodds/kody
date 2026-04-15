@@ -63,38 +63,6 @@ async function hashSkillRunnerToken(token: string) {
 	return `${skillRunnerTokenHashPrefix}${toHex(new Uint8Array(digest))}`
 }
 
-function padToLength(buffer: Uint8Array, length: number) {
-	if (buffer.length === length) return buffer
-	const padded = new Uint8Array(length)
-	padded.set(buffer)
-	return padded
-}
-
-function timingSafeEqual(left: Uint8Array, right: Uint8Array) {
-	const maxLength = Math.max(left.length, right.length)
-	const leftPadded = padToLength(left, maxLength)
-	const rightPadded = padToLength(right, maxLength)
-	const subtle = crypto.subtle as SubtleCrypto & {
-		timingSafeEqual?: (
-			a: ArrayBuffer | ArrayBufferView,
-			b: ArrayBuffer | ArrayBufferView,
-		) => boolean
-	}
-	const isEqual =
-		typeof subtle.timingSafeEqual === 'function'
-			? subtle.timingSafeEqual(leftPadded, rightPadded)
-			: (() => {
-					let result = 0
-					for (let index = 0; index < maxLength; index += 1) {
-						const leftValue = leftPadded[index] ?? 0
-						const rightValue = rightPadded[index] ?? 0
-						result |= leftValue ^ rightValue
-					}
-					return result === 0
-				})()
-	return isEqual && left.length === right.length
-}
-
 function normalizeStoredSkillRunnerTokenRecord(
 	clientName: string,
 	raw: unknown,
