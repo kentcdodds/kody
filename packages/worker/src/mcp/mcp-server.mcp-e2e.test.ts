@@ -263,4 +263,4 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 		},
 	)
 	expect(unauthenticatedResponse.status).toBe(401)
-}, 45_000)
+})
