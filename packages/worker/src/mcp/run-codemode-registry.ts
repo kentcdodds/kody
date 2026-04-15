@@ -60,51 +60,61 @@ export async function buildCodemodeFns(
 		callerContext,
 	})
 	const additionalTools = options?.additionalTools ?? {}
-	for (const name of Object.keys(additionalTools)) {
+	const storageTools = options?.storageTools
+	assertNoCapabilityCollisions(capabilityMap, additionalTools)
+	const capabilityCodemodeTools = Object.fromEntries(
+		Object.values(capabilityMap).map((capability) => [
+			capability.name,
+			async (args: unknown) => {
+				const resolveSecretValue =
+					options?.resolveSecretValue ??
+					createCapabilityInputSecretResolver(
+						env,
+						callerContext,
+						capability.name,
+					)
+				const resolvedArgs = await resolveCapabilityInputSecrets({
+					schema: capability.inputSchema,
+					value: (args ?? {}) as Record<string, unknown>,
+					resolveSecretValue: (secret) =>
+						resolveSecretValue(secret, capability.name),
+				})
+				collectSecretInputValues({
+					schema: capability.inputSchema,
+					value: resolvedArgs,
+					track: options?.trackSecretInputValue,
+				})
+				return capability.handler(resolvedArgs as Record<string, unknown>, {
+					env,
+					callerContext,
+				})
+			},
+		]),
+	) as AdditionalCodemodeTools
+	const storageCodemodeTools: AdditionalCodemodeTools = storageTools
+		? await createStorageCodemodeTools({
+				env,
+				userId: callerContext.user?.userId ?? '',
+				storageId: storageTools.storageId,
+				writable: storageTools.writable,
+			})
+		: {}
+	assertNoCapabilityCollisions(capabilityMap, storageCodemodeTools)
+	return {
+		...capabilityCodemodeTools,
+		...storageCodemodeTools,
+		...additionalTools,
+	}
+}
+
+function assertNoCapabilityCollisions(
+	capabilityMap: Record<string, unknown>,
+	tools: AdditionalCodemodeTools,
+) {
+	for (const name of Object.keys(tools)) {
 		if (capabilityMap[name]) {
 			throw new Error(`Codemode helper "${name}" collides with a capability.`)
 		}
-	}
-	const storageTools = options?.storageTools
-	return {
-		...Object.fromEntries(
-			Object.values(capabilityMap).map((capability) => [
-				capability.name,
-				async (args: unknown) => {
-					const resolveSecretValue =
-						options?.resolveSecretValue ??
-						createCapabilityInputSecretResolver(
-							env,
-							callerContext,
-							capability.name,
-						)
-					const resolvedArgs = await resolveCapabilityInputSecrets({
-						schema: capability.inputSchema,
-						value: (args ?? {}) as Record<string, unknown>,
-						resolveSecretValue: (secret) =>
-							resolveSecretValue(secret, capability.name),
-					})
-					collectSecretInputValues({
-						schema: capability.inputSchema,
-						value: resolvedArgs,
-						track: options?.trackSecretInputValue,
-					})
-					return capability.handler(resolvedArgs as Record<string, unknown>, {
-						env,
-						callerContext,
-					})
-				},
-			]),
-		),
-		...(storageTools
-			? await createStorageCodemodeTools({
-					env,
-					userId: callerContext.user?.userId ?? '',
-					storageId: storageTools.storageId,
-					writable: storageTools.writable,
-				})
-			: {}),
-		...additionalTools,
 	}
 }
 
