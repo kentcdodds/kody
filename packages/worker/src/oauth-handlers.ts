@@ -13,6 +13,8 @@ import { getEnv } from '#app/env.ts'
 import { Layout } from '#app/layout.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { render } from '#app/render.ts'
+import { runSavedSkill } from '#mcp/skills/run-saved-skill.ts'
+import { resolveSkillRunnerUserByToken } from '#mcp/values/skill-runner-tokens.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
@@ -715,9 +717,110 @@ export function handleOAuthCallback(request: Request): Response {
 	return renderSpaShell(hasError ? 400 : 200)
 }
 
+function readBearerToken(request: Request) {
+	const header = request.headers.get('Authorization')?.trim()
+	if (!header) return null
+	const match = header.match(/^Bearer\s+(.+)$/i)
+	const token = match?.[1]?.trim()
+	return token ? token : null
+}
+
+async function handleSkillRunnerRequest(request: Request, env: Env) {
+	if (request.method !== 'POST') {
+		return jsonResponse({ ok: false, error: 'Method not allowed.' }, { status: 405 })
+	}
+
+	const token = readBearerToken(request)
+	if (!token) {
+		return jsonResponse(
+			{ ok: false, error: 'Unauthorized.' },
+			{
+				status: 401,
+				headers: {
+					'WWW-Authenticate': 'Bearer',
+				},
+			},
+		)
+	}
+
+	const authorizedUser = await resolveSkillRunnerUserByToken({
+		env,
+		token,
+	})
+	if (!authorizedUser) {
+		return jsonResponse(
+			{ ok: false, error: 'Unauthorized.' },
+			{
+				status: 401,
+				headers: {
+					'WWW-Authenticate': 'Bearer',
+				},
+			},
+		)
+	}
+
+	const body = await request.json().catch(() => null)
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return jsonResponse({ ok: false, error: 'Invalid request body.' }, { status: 400 })
+	}
+	const payload = body as Record<string, unknown>
+
+	const name = typeof payload['name'] === 'string' ? payload['name'].trim() : ''
+	if (!name) {
+		return jsonResponse({ ok: false, error: 'Skill name is required.' }, { status: 400 })
+	}
+
+	const paramsRaw = payload['params']
+	const params =
+		paramsRaw === undefined
+			? undefined
+			: paramsRaw && typeof paramsRaw === 'object' && !Array.isArray(paramsRaw)
+				? (paramsRaw as Record<string, unknown>)
+				: null
+	if (params === null) {
+		return jsonResponse(
+			{ ok: false, error: 'Skill params must be a JSON object when provided.' },
+			{ status: 400 },
+		)
+	}
+
+	try {
+		const result = await runSavedSkill({
+			env,
+			callerContext: {
+				baseUrl: new URL(request.url).origin,
+				user: {
+					userId: authorizedUser.userId,
+					email: 'skill-runner@local.invalid',
+					displayName: 'skill-runner',
+				},
+				homeConnectorId: null,
+				remoteConnectors: null,
+				storageContext: null,
+			},
+			name,
+			params,
+		})
+		return result.ok
+			? jsonResponse({ ok: true, result: result.result })
+			: jsonResponse({
+					ok: false,
+					error: result.error ?? 'Skill execution failed.',
+				})
+	} catch (error) {
+		return jsonResponse({
+			ok: false,
+			error: error instanceof Error ? error.message : 'Skill execution failed.',
+		})
+	}
+}
+
 export const apiHandler = {
-	async fetch(request: Request, _env: unknown, ctx: ExecutionContext) {
+	async fetch(request: Request, env: unknown, ctx: ExecutionContext) {
 		const url = new URL(request.url)
+		if (url.pathname === '/api/skills/run') {
+			return handleSkillRunnerRequest(request, env as Env)
+		}
 		if (url.pathname === '/api/me') {
 			const props = (ctx as OAuthContext).props
 			if (!props) {

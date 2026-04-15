@@ -1,17 +1,8 @@
-import { exports as workerExports } from 'cloudflare:workers'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getMcpSkillByNameInput } from '#mcp/skills/mcp-skills-repo.ts'
-import {
-	applySkillParameters,
-	parseSkillParameters,
-} from '#mcp/skills/skill-parameters.ts'
-import { requireMcpUser } from './require-user.ts'
-
-const runFailureHint =
-	'If the saved codemode is wrong, use meta_get_skill to inspect it, then call meta_save_skill again with the same skill name to replace the stored code and metadata.'
+import { runSavedSkill } from '#mcp/skills/run-saved-skill.ts'
 
 const outputSchema = z.object({
 	ok: z.boolean(),
@@ -21,12 +12,6 @@ const outputSchema = z.object({
 	/** Present when ok is false; suggests how to fix stored skill code. */
 	hint: z.string().optional(),
 })
-
-function formatExecutionError(error: unknown): string {
-	if (typeof error === 'string') return error
-	if (error instanceof Error) return error.message
-	return String(error)
-}
 
 export const metaRunSkillCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
@@ -54,45 +39,12 @@ export const metaRunSkillCapability = defineDomainCapability(
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
-			const row = await getMcpSkillByNameInput(
-				ctx.env.APP_DB,
-				user.userId,
-				args.name,
-			)
-			if (!row) {
-				throw new Error('Skill not found for this user.')
-			}
-			const definitions = parseSkillParameters(row.parameters)
-			const params = applySkillParameters({
-				definitions,
-				values: args.params,
+			return runSavedSkill({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				name: args.name,
+				params: args.params,
 			})
-			const shouldPassParams = definitions != null || args.params !== undefined
-			const { runCodemodeWithRegistry } =
-				await import('#mcp/run-codemode-registry.ts')
-			const exec = await runCodemodeWithRegistry(
-				ctx.env,
-				ctx.callerContext,
-				row.code,
-				shouldPassParams ? params : undefined,
-				{
-					executorExports: workerExports,
-				},
-			)
-			if (exec.error) {
-				return {
-					ok: false,
-					error: formatExecutionError(exec.error),
-					logs: exec.logs ?? [],
-					hint: runFailureHint,
-				}
-			}
-			return {
-				ok: true,
-				result: exec.result,
-				logs: exec.logs ?? [],
-			}
 		},
 	},
 )
