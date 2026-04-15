@@ -598,14 +598,21 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			await import('#mcp/run-codemode-registry.ts'),
 			'runCodemodeWithRegistry',
 		)
-		.mockResolvedValue({
-			result: {
-				secretValue: 'very-secret-token',
-				value: 'alpha-project',
-				userId: 'user-123',
+		.mockImplementation(async (_env, persistedContext) => {
+			expect(persistedContext.storageContext).toEqual({
+				sessionId: null,
+				appId: 'app-123',
 				storageId: `job:${jobView.id}`,
-			},
-			logs: ['codemode executed'],
+			})
+			return {
+				result: {
+					secretValue: 'very-secret-token',
+					value: 'alpha-project',
+					userId: 'user-123',
+					storageId: `job:${jobView.id}`,
+				},
+				logs: ['codemode executed'],
+			}
 		})
 
 	try {

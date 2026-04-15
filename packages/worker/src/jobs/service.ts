@@ -254,8 +254,8 @@ export async function executeJobOnce(input: {
 				{
 					...input.callerContext,
 					storageContext: {
-						sessionId: null,
-						appId: null,
+						sessionId: input.callerContext.storageContext?.sessionId ?? null,
+						appId: input.callerContext.storageContext?.appId ?? null,
 						storageId: input.job.storageId,
 					},
 				},
