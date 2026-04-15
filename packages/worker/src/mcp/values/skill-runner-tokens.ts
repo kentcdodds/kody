@@ -70,6 +70,50 @@ function maskToken(_token: string) {
 	return redactedTokenValue
 }
 
+function padToLength(buffer: Uint8Array, length: number) {
+	if (buffer.length === length) return buffer
+	const padded = new Uint8Array(length)
+	padded.set(buffer)
+	return padded
+}
+
+function timingSafeEqual(left: Uint8Array, right: Uint8Array) {
+	const maxLength = Math.max(left.length, right.length)
+	const leftPadded = padToLength(left, maxLength)
+	const rightPadded = padToLength(right, maxLength)
+	const subtle = crypto.subtle as SubtleCrypto & {
+		timingSafeEqual?: (
+			a: ArrayBuffer | ArrayBufferView,
+			b: ArrayBuffer | ArrayBufferView,
+		) => boolean
+	}
+	const isEqual =
+		typeof subtle.timingSafeEqual === 'function'
+			? subtle.timingSafeEqual(leftPadded, rightPadded)
+			: (() => {
+					let result = 0
+					for (let index = 0; index < maxLength; index += 1) {
+						const leftValue = leftPadded[index] ?? 0
+						const rightValue = rightPadded[index] ?? 0
+						result |= leftValue ^ rightValue
+					}
+					return result === 0
+				})()
+	return isEqual && left.length === right.length
+}
+
+function includesToken(tokenMap: SkillRunnerTokenMap, token: string) {
+	const encoder = new TextEncoder()
+	const tokenBytes = encoder.encode(token)
+	let matched = false
+	for (const candidate of Object.values(tokenMap)) {
+		if (timingSafeEqual(tokenBytes, encoder.encode(candidate))) {
+			matched = true
+		}
+	}
+	return matched
+}
+
 async function readTokenValue(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
@@ -195,7 +239,7 @@ export async function resolveSkillRunnerUserByToken(input: {
 		if (!userId || !rawValue) continue
 		const tokenMap = tryParseTokenMap(rawValue)
 		if (!tokenMap) continue
-		if (Object.values(tokenMap).includes(token)) {
+		if (includesToken(tokenMap, token)) {
 			return { userId }
 		}
 	}
