@@ -8,13 +8,55 @@ const skillRunnerTokenPrefix = 'tok_'
 const skillRunnerTokenHashPrefix = 'sha256:'
 const redactedTokenValue = 'tok_…'
 
-export type SkillRunnerTokenMap = Record<string, string>
+export type SkillRunnerTokenRecord = {
+	token: string
+	name: string
+	description: string
+	lastUsedAt: string | null
+}
+
+export type SkillRunnerTokenStore = Record<string, SkillRunnerTokenRecord>
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function normalizeTokenMap(raw: unknown) {
+function normalizeTokenRecord(
+	clientName: string,
+	raw: unknown,
+): SkillRunnerTokenRecord | null {
+	if (typeof raw === 'string') {
+		const token = raw.trim()
+		if (!token) return null
+		return {
+			token,
+			name: clientName,
+			description: '',
+			lastUsedAt: null,
+		}
+	}
+	if (!isRecord(raw)) return null
+	const token = typeof raw['token'] === 'string' ? raw['token'].trim() : ''
+	if (!token) return null
+	const name =
+		typeof raw['name'] === 'string' && raw['name'].trim().length > 0
+			? raw['name'].trim()
+			: clientName
+	const description =
+		typeof raw['description'] === 'string' ? raw['description'].trim() : ''
+	const lastUsedAt =
+		typeof raw['lastUsedAt'] === 'string' && raw['lastUsedAt'].trim().length > 0
+			? raw['lastUsedAt'].trim()
+			: null
+	return {
+		token,
+		name,
+		description,
+		lastUsedAt,
+	}
+}
+
+function normalizeTokenStore(raw: unknown) {
 	if (!isRecord(raw)) {
 		throw new Error(
 			'Persisted skillRunnerTokens value must be a JSON object of clientName to token.',
@@ -22,19 +64,23 @@ function normalizeTokenMap(raw: unknown) {
 	}
 
 	const entries = Object.entries(raw)
-		.flatMap(([clientName, token]) => {
-			if (clientName.trim().length === 0 || typeof token !== 'string') {
-				return []
-			}
-			return [[clientName.trim(), token.trim()] as const]
+		.flatMap(([clientName, rawRecord]) => {
+			const normalizedClientName = clientName.trim()
+			if (!normalizedClientName) return []
+			const normalizedRecord = normalizeTokenRecord(
+				normalizedClientName,
+				rawRecord,
+			)
+			return normalizedRecord == null
+				? []
+				: [[normalizedClientName, normalizedRecord] as const]
 		})
-		.filter(([, token]) => token.length > 0)
 		.sort(([left], [right]) => left.localeCompare(right))
 
-	return Object.fromEntries(entries) satisfies SkillRunnerTokenMap
+	return Object.fromEntries(entries) satisfies SkillRunnerTokenStore
 }
 
-function parseTokenMap(rawValue: string | null): SkillRunnerTokenMap {
+function parseTokenStore(rawValue: string | null): SkillRunnerTokenStore {
 	if (!rawValue) return {}
 	let parsed: unknown
 	try {
@@ -44,12 +90,14 @@ function parseTokenMap(rawValue: string | null): SkillRunnerTokenMap {
 			'Persisted skillRunnerTokens value must be valid JSON containing client tokens.',
 		)
 	}
-	return normalizeTokenMap(parsed)
+	return normalizeTokenStore(parsed)
 }
 
-function tryParseTokenMap(rawValue: string | null): SkillRunnerTokenMap | null {
+function tryParseTokenStore(
+	rawValue: string | null,
+): SkillRunnerTokenStore | null {
 	try {
-		return parseTokenMap(rawValue)
+		return parseTokenStore(rawValue)
 	} catch {
 		return null
 	}
@@ -81,16 +129,6 @@ async function hashSkillRunnerToken(token: string) {
 
 function isHashedToken(token: string) {
 	return token.startsWith(skillRunnerTokenHashPrefix)
-}
-
-async function ensureHashedTokenMap(tokenMap: SkillRunnerTokenMap) {
-	const entries = await Promise.all(
-		Object.entries(tokenMap).map(async ([clientName, token]) => [
-			clientName,
-			isHashedToken(token) ? token : await hashSkillRunnerToken(token),
-		]),
-	)
-	return Object.fromEntries(entries) satisfies SkillRunnerTokenMap
 }
 
 function padToLength(buffer: Uint8Array, length: number) {
@@ -125,22 +163,15 @@ function timingSafeEqual(left: Uint8Array, right: Uint8Array) {
 	return isEqual && left.length === right.length
 }
 
-async function includesToken(tokenMap: SkillRunnerTokenMap, token: string) {
+async function matchesToken(candidateToken: string, token: string) {
 	const encoder = new TextEncoder()
 	const tokenBytes = encoder.encode(token)
 	const hashedToken = await hashSkillRunnerToken(token)
 	const hashedBytes = encoder.encode(hashedToken)
-	let matched = false
-	for (const candidate of Object.values(tokenMap)) {
-		const candidateBytes = encoder.encode(candidate)
-		const isMatch = isHashedToken(candidate)
-			? timingSafeEqual(hashedBytes, candidateBytes)
-			: timingSafeEqual(tokenBytes, candidateBytes)
-		if (isMatch) {
-			matched = true
-		}
-	}
-	return matched
+	const candidateBytes = encoder.encode(candidateToken)
+	return isHashedToken(candidateToken)
+		? timingSafeEqual(hashedBytes, candidateBytes)
+		: timingSafeEqual(tokenBytes, candidateBytes)
 }
 
 async function readTokenValue(input: {
@@ -160,10 +191,11 @@ async function readTokenValue(input: {
 async function writeSkillRunnerTokens(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-	tokens: SkillRunnerTokenMap
+	tokens: SkillRunnerTokenStore
 }) {
-	// Token management is low-frequency admin config, so concurrent updates
-	// intentionally use the value store's normal last-write-wins behavior.
+	// This store mixes low-frequency admin updates with best-effort usage stamps.
+	// Under concurrent writes, the value store's normal last-write-wins behavior
+	// applies; occasional stale lastUsedAt metadata is acceptable here.
 	await saveValue({
 		env: input.env,
 		userId: input.userId,
@@ -179,29 +211,43 @@ export async function getSkillRunnerTokens(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {
-	return parseTokenMap(await readTokenValue(input))
+	return parseTokenStore(await readTokenValue(input))
 }
 
 export async function createSkillRunnerToken(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	clientName: string
+	name: string
+	description?: string | null
 }) {
 	const clientName = input.clientName.trim()
 	if (!clientName) {
 		throw new Error('clientName is required.')
 	}
+	const name = input.name.trim()
+	if (!name) {
+		throw new Error('name is required.')
+	}
 
-	let tokens = await getSkillRunnerTokens(input)
-	tokens = await ensureHashedTokenMap(tokens)
+	const tokens = await getSkillRunnerTokens(input)
+	const existing = tokens[clientName]
 	const token = generateSkillRunnerToken()
-	tokens[clientName] = await hashSkillRunnerToken(token)
+	tokens[clientName] = {
+		token: await hashSkillRunnerToken(token),
+		name,
+		description: input.description?.trim() ?? existing?.description ?? '',
+		lastUsedAt: existing?.lastUsedAt ?? null,
+	}
 	await writeSkillRunnerTokens({
 		env: input.env,
 		userId: input.userId,
 		tokens,
 	})
-	return token
+	return {
+		...tokens[clientName],
+		token,
+	}
 }
 
 export async function revokeSkillRunnerToken(input: {
@@ -230,7 +276,6 @@ export async function revokeSkillRunnerToken(input: {
 		return true
 	}
 
-	tokens = await ensureHashedTokenMap(tokens)
 	await writeSkillRunnerTokens({
 		env: input.env,
 		userId: input.userId,
@@ -244,11 +289,15 @@ export async function listSkillRunnerTokens(input: {
 	userId: string
 }) {
 	const tokens = await getSkillRunnerTokens(input)
-	return Object.fromEntries(
-		Object.keys(tokens)
-			.sort((left, right) => left.localeCompare(right))
-			.map((clientName) => [clientName, maskToken(tokens[clientName] ?? '')]),
-	) satisfies SkillRunnerTokenMap
+	return Object.entries(tokens)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([clientName, record]) => ({
+			clientName,
+			name: record.name,
+			description: record.description || null,
+			lastUsedAt: record.lastUsedAt,
+			token: maskToken(record.token),
+		}))
 }
 
 export async function resolveSkillRunnerUserByToken(input: {
@@ -276,12 +325,34 @@ export async function resolveSkillRunnerUserByToken(input: {
 			typeof row['user_id'] === 'string' ? row['user_id'].trim() : ''
 		const rawValue = typeof row['value'] === 'string' ? row['value'] : null
 		if (!userId || !rawValue) continue
-		const tokenMap = tryParseTokenMap(rawValue)
-		if (!tokenMap) continue
-		if (await includesToken(tokenMap, token)) {
-			return { userId }
+		const tokenStore = tryParseTokenStore(rawValue)
+		if (!tokenStore) continue
+		for (const [clientName, record] of Object.entries(tokenStore)) {
+			if (await matchesToken(record.token, token)) {
+				return { userId, clientName }
+			}
 		}
 	}
 
 	return null
+}
+
+export async function markSkillRunnerTokenUsed(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	clientName: string
+}) {
+	const tokens = await getSkillRunnerTokens(input)
+	const existing = tokens[input.clientName]
+	if (!existing) return false
+	tokens[input.clientName] = {
+		...existing,
+		lastUsedAt: new Date().toISOString(),
+	}
+	await writeSkillRunnerTokens({
+		env: input.env,
+		userId: input.userId,
+		tokens,
+	})
+	return true
 }

@@ -10,14 +10,22 @@ export const skillRunnerTokenListCapability = defineDomainCapability(
 	{
 		name: 'skill_runner_token_list',
 		description:
-			'List external bearer tokens for the signed-in user with token values redacted.',
+			'List external bearer tokens for the signed-in user with token values redacted, including human-friendly names, optional descriptions, and last-used timestamps.',
 		keywords: ['skill', 'runner', 'token', 'bearer', 'list', 'redacted'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({}),
 		outputSchema: z.object({
-			tokens: z.record(z.string(), z.string()),
+			tokens: z.array(
+				z.object({
+					clientName: z.string(),
+					name: z.string(),
+					description: z.string().nullable(),
+					lastUsedAt: z.string().nullable(),
+					token: z.string(),
+				}),
+			),
 		}),
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)

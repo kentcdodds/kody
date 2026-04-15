@@ -10,7 +10,7 @@ export const skillRunnerTokenCreateCapability = defineDomainCapability(
 	{
 		name: 'skill_runner_token_create',
 		description:
-			'Create or rotate an external bearer token for the signed-in user by client name. The raw token is returned only from this call.',
+			'Create or rotate an external bearer token for the signed-in user by client name, with a required human-friendly name and optional description. The raw token is returned only from this call.',
 		keywords: ['skill', 'runner', 'token', 'bearer', 'create', 'rotate'],
 		readOnly: false,
 		idempotent: false,
@@ -20,20 +20,37 @@ export const skillRunnerTokenCreateCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.describe('External client name to store or rotate a token for.'),
+			name: z
+				.string()
+				.min(1)
+				.describe('Required human-friendly label for this token.'),
+			description: z
+				.string()
+				.optional()
+				.describe('Optional description for what this token is used for.'),
 		}),
 		outputSchema: z.object({
 			clientName: z.string(),
+			name: z.string(),
+			description: z.string().nullable(),
+			lastUsedAt: z.string().nullable(),
 			token: z.string(),
 		}),
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const created = await createSkillRunnerToken({
+				env: ctx.env,
+				userId: user.userId,
+				clientName: args.clientName,
+				name: args.name,
+				description: args.description,
+			})
 			return {
 				clientName: args.clientName.trim(),
-				token: await createSkillRunnerToken({
-					env: ctx.env,
-					userId: user.userId,
-					clientName: args.clientName,
-				}),
+				name: created.name,
+				description: created.description || null,
+				lastUsedAt: created.lastUsedAt,
+				token: created.token,
 			}
 		},
 	},

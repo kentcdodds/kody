@@ -14,7 +14,10 @@ import { Layout } from '#app/layout.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { render } from '#app/render.ts'
 import { runSavedSkill } from '#mcp/skills/run-saved-skill.ts'
-import { resolveSkillRunnerUserByToken } from '#mcp/values/skill-runner-tokens.ts'
+import {
+	markSkillRunnerTokenUsed,
+	resolveSkillRunnerUserByToken,
+} from '#mcp/values/skill-runner-tokens.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
@@ -761,6 +764,17 @@ async function handleSkillRunnerRequest(request: Request, env: Env) {
 			},
 		)
 	}
+	await markSkillRunnerTokenUsed({
+		env,
+		userId: authorizedUser.userId,
+		clientName: authorizedUser.clientName,
+	}).catch((error) => {
+		console.error('Failed to update skill runner token usage metadata.', {
+			userId: authorizedUser.userId,
+			clientName: authorizedUser.clientName,
+			error,
+		})
+	})
 
 	const body = await request.json().catch(() => null)
 	if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -820,7 +834,8 @@ async function handleSkillRunnerRequest(request: Request, env: Env) {
 		return jsonResponse(
 			{
 				ok: false,
-				error: error instanceof Error ? error.message : 'Skill execution failed.',
+				error:
+					error instanceof Error ? error.message : 'Skill execution failed.',
 			},
 			{ status: 500 },
 		)
