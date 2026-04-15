@@ -60,12 +60,17 @@ export async function buildCodemodeFns(
 		callerContext,
 	})
 	const additionalTools = options?.additionalTools ?? {}
-	for (const name of Object.keys(additionalTools)) {
-		if (capabilityMap[name]) {
-			throw new Error(`Codemode helper "${name}" collides with a capability.`)
-		}
-	}
 	const storageTools = options?.storageTools
+	assertNoCapabilityCollisions(capabilityMap, additionalTools)
+	const storageCodemodeTools = storageTools
+		? await createStorageCodemodeTools({
+				env,
+				userId: callerContext.user?.userId ?? '',
+				storageId: storageTools.storageId,
+				writable: storageTools.writable,
+			})
+		: {}
+	assertNoCapabilityCollisions(capabilityMap, storageCodemodeTools)
 	return {
 		...Object.fromEntries(
 			Object.values(capabilityMap).map((capability) => [
@@ -96,15 +101,19 @@ export async function buildCodemodeFns(
 				},
 			]),
 		),
-		...(storageTools
-			? await createStorageCodemodeTools({
-					env,
-					userId: callerContext.user?.userId ?? '',
-					storageId: storageTools.storageId,
-					writable: storageTools.writable,
-				})
-			: {}),
+		...storageCodemodeTools,
 		...additionalTools,
+	}
+}
+
+function assertNoCapabilityCollisions(
+	capabilityMap: Record<string, unknown>,
+	tools: AdditionalCodemodeTools,
+) {
+	for (const name of Object.keys(tools)) {
+		if (capabilityMap[name]) {
+			throw new Error(`Codemode helper "${name}" collides with a capability.`)
+		}
 	}
 }
 

@@ -308,6 +308,107 @@ test('buildCodemodeFns tracks values that crossed secret-marked capability input
 	}
 })
 
+test('buildCodemodeFns rejects storage codemode tools that collide with capabilities', async () => {
+	const env = {
+		STORAGE_RUNNER: {
+			idFromName(name: string) {
+				return name
+			},
+			get() {
+				return {}
+			},
+		},
+	} as unknown as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [
+				{
+					name: 'storage_get',
+					domain: 'storage',
+					description: 'Capability that collides with a storage helper.',
+					keywords: [],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					async handler() {
+						return { ok: true }
+					},
+				},
+			],
+			capabilityMap: {
+				storage_get: {
+					name: 'storage_get',
+					domain: 'storage',
+					description: 'Capability that collides with a storage helper.',
+					keywords: [],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					async handler() {
+						return { ok: true }
+					},
+				},
+			},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {
+				storage_get: {
+					description: 'Capability that collides with a storage helper.',
+					inputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					outputSchema: {
+						type: 'object',
+						properties: {},
+					},
+				},
+			},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+
+	try {
+		await expect(
+			buildCodemodeFns(env, callerContext, {
+				storageTools: {
+					userId: 'user-123',
+					storageId: 'exec:test-storage',
+					writable: false,
+				},
+			}),
+		).rejects.toThrow(
+			'Codemode helper "storage_get" collides with a capability.',
+		)
+	} finally {
+		getRegistrySpy.mockRestore()
+	}
+})
+
 test('runCodemodeWithRegistry redacts secret keys and survives cyclic results', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
