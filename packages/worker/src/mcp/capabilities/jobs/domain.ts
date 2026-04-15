@@ -9,7 +9,7 @@ import { jobUpsertCapability } from './job-upsert.ts'
 export const jobsDomain = defineDomain({
 	name: capabilityDomainNames.jobs,
 	description:
-		'Create, update, inspect, delete, and trigger unified jobs. Jobs support codemode execution, facet-backed Durable Object execution, cron schedules, interval schedules, and one-shot runs.',
+		'Create, update, inspect, delete, and trigger jobs with durable storage ids. Supports cron schedules, interval schedules, and one-shot runs.',
 	keywords: ['job', 'jobs', 'schedule', 'cron', 'interval', 'run later'],
 	capabilities: [
 		jobUpsertCapability,

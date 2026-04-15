@@ -3,7 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
-import { createJob, executeJobOnce } from './service.ts'
+import { createJob, executeJobOnce, updateJob } from './service.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -293,28 +293,25 @@ function createDatabase() {
 									id: params[0],
 									user_id: params[1],
 									name: params[2],
-									kind: params[3],
-									code: params[4],
-									server_code: params[5],
-									server_code_id: params[6],
-									method_name: params[7],
-									params_json: params[8],
-									schedule_json: params[9],
-									timezone: params[10],
-									enabled: params[11],
-									kill_switch_enabled: params[12],
-									caller_context_json: params[13],
-									created_at: params[14],
-									updated_at: params[15],
-									last_run_at: params[16],
-									last_run_status: params[17],
-									last_run_error: params[18],
-									last_duration_ms: params[19],
-									next_run_at: params[20],
-									run_count: params[21],
-									success_count: params[22],
-									error_count: params[23],
-									run_history_json: params[24],
+									code: params[3],
+									storage_id: params[4],
+									params_json: params[5],
+									schedule_json: params[6],
+									timezone: params[7],
+									enabled: params[8],
+									kill_switch_enabled: params[9],
+									caller_context_json: params[10],
+									created_at: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									last_run_error: params[15],
+									last_duration_ms: params[16],
+									next_run_at: params[17],
+									run_count: params[18],
+									success_count: params[19],
+									error_count: params[20],
+									run_history_json: params[21],
 								}
 								upsert(
 									'jobs',
@@ -327,37 +324,34 @@ function createDatabase() {
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const row = {
-									id: params[22],
-									user_id: params[23],
+									id: params[19],
+									user_id: params[20],
 									name: params[0],
-									kind: params[1],
-									code: params[2],
-									server_code: params[3],
-									server_code_id: params[4],
-									method_name: params[5],
-									params_json: params[6],
-									schedule_json: params[7],
-									timezone: params[8],
-									enabled: params[9],
-									kill_switch_enabled: params[10],
-									caller_context_json: params[11],
-									updated_at: params[12],
-									last_run_at: params[13],
-									last_run_status: params[14],
-									last_run_error: params[15],
-									last_duration_ms: params[16],
-									next_run_at: params[17],
-									run_count: params[18],
-									success_count: params[19],
-									error_count: params[20],
-									run_history_json: params[21],
+									code: params[1],
+									storage_id: params[2],
+									params_json: params[3],
+									schedule_json: params[4],
+									timezone: params[5],
+									enabled: params[6],
+									kill_switch_enabled: params[7],
+									caller_context_json: params[8],
+									updated_at: params[9],
+									last_run_at: params[10],
+									last_run_status: params[11],
+									last_run_error: params[12],
+									last_duration_ms: params[13],
+									next_run_at: params[14],
+									run_count: params[15],
+									success_count: params[16],
+									error_count: params[17],
+									run_history_json: params[18],
 									created_at:
 										selectOne(
 											'jobs',
 											(existing) =>
-												existing['id'] === params[22] &&
-												existing['user_id'] === params[23],
-										)?.['created_at'] ?? params[12],
+												existing['id'] === params[19] &&
+												existing['user_id'] === params[20],
+										)?.['created_at'] ?? params[9],
 								}
 								upsert(
 									'jobs',
@@ -415,7 +409,6 @@ test('createJob stores a codemode job with interval support', async () => {
 		callerContext,
 		body: {
 			name: 'Deploy Worker',
-			kind: 'codemode',
 			code: 'async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
@@ -424,12 +417,132 @@ test('createJob stores a codemode job with interval support', async () => {
 		} satisfies JobCreateInput,
 	})
 
-	expect(result.kind).toBe('codemode')
 	expect(result.schedule).toEqual({
 		type: 'interval',
 		every: '15m',
 	})
 	expect(result.scheduleSummary).toBe('Runs every 15m')
+})
+
+test('createJob assigns a stable job storage id', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	const callerContext = createBaseCallerContext()
+
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Storage-backed job',
+			code: 'async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+
+	expect(created.storageId).toBe(`job:${created.id}`)
+})
+
+test('executeJobOnce binds scheduled jobs to writable storage', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		LOADER: {} as WorkerLoader,
+		STORAGE_RUNNER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					getValue: async () => ({ key: 'count', value: 2 }),
+					setValue: async () => ({ ok: true, key: 'count' }),
+					deleteValue: async () => ({ ok: true, key: 'count', deleted: true }),
+					clearStorage: async () => ({ ok: true }),
+					listValues: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					exportStorage: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					sqlQuery: async () => ({
+						columns: ['value'],
+						rows: [{ value: 2 }],
+						rowCount: 1,
+						rowsRead: 1,
+						rowsWritten: 0,
+					}),
+				}
+			},
+		},
+	} as unknown as Env
+	const callerContext = createBaseCallerContext()
+
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Storage bridge',
+			code: 'async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
+			params: {
+				stepCount: 2,
+			},
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+
+	const createdJob = (await import('./repo.ts')).getJobRowById(
+		db,
+		callerContext.user.userId,
+		jobView.id,
+	)
+
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: {
+				value: 2,
+			},
+			logs: ['storage helper executed'],
+		})
+
+	try {
+		const row = await createdJob
+		if (!row) {
+			throw new Error('Expected created job row.')
+		}
+		const outcome = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: {
+				value: 2,
+			},
+			logs: ['storage helper executed'],
+		})
+	} finally {
+		executeSpy.mockRestore()
+	}
 })
 
 test('executeJobOnce preserves codemode secret and value semantics', async () => {
@@ -438,16 +551,6 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		APP_DB: db,
 		COOKIE_SECRET: 'test-secret-0123456789abcdef0123456789',
 		LOADER: {} as WorkerLoader,
-		JOB_RUNNER: {
-			idFromName(name: string) {
-				return name as unknown as DurableObjectId
-			},
-			get() {
-				return {
-					deleteJob: async () => ({ ok: true }),
-				}
-			},
-		},
 	} as unknown as Env
 	const callerContext = createBaseCallerContext()
 
@@ -473,7 +576,6 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		callerContext,
 		body: {
 			name: 'Use codemode semantics',
-			kind: 'codemode',
 			code: 'async () => ({ ok: true })',
 			params: {
 				step: 'deploy',
@@ -496,36 +598,18 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			await import('#mcp/run-codemode-registry.ts'),
 			'runCodemodeWithRegistry',
 		)
-		.mockImplementation(async (_env, persistedContext, code, params) => {
-			const resolvedSecret = await (
-				await import('#mcp/secrets/service.ts')
-			).resolveSecret({
-				env,
-				userId: persistedContext.user?.userId ?? '',
-				name: 'apiToken',
-				scope: 'app',
-				storageContext: persistedContext.storageContext,
+		.mockImplementation(async (_env, persistedContext) => {
+			expect(persistedContext.storageContext).toEqual({
+				sessionId: null,
+				appId: 'app-123',
+				storageId: `job:${jobView.id}`,
 			})
-			const resolvedValue = await (
-				await import('#mcp/values/service.ts')
-			).getValue({
-				env,
-				userId: persistedContext.user?.userId ?? '',
-				name: 'projectId',
-				scope: 'app',
-				storageContext: persistedContext.storageContext,
-			})
-			expect(code).toContain('async () => ({ ok: true })')
-			expect(params).toEqual({ step: 'deploy' })
-			expect(resolvedSecret.found).toBe(true)
-			expect(resolvedSecret.value).toBe('very-secret-token')
-			expect(resolvedValue?.value).toBe('alpha-project')
 			return {
 				result: {
-					secretValue: resolvedSecret.value,
-					value: resolvedValue?.value,
-					userId: persistedContext.user?.userId,
-					appId: persistedContext.storageContext?.appId,
+					secretValue: 'very-secret-token',
+					value: 'alpha-project',
+					userId: 'user-123',
+					storageId: `job:${jobView.id}`,
 				},
 				logs: ['codemode executed'],
 			}
@@ -548,7 +632,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 				secretValue: 'very-secret-token',
 				value: 'alpha-project',
 				userId: 'user-123',
-				appId: 'app-123',
+				storageId: `job:${jobView.id}`,
 			},
 			logs: ['codemode executed'],
 		})
@@ -568,7 +652,6 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 		id: 'job-1',
 		userId: callerContext.user.userId,
 		name: 'Forbidden secret access',
-		kind: 'codemode',
 		code: 'async () => null',
 		schedule: {
 			type: 'once',
