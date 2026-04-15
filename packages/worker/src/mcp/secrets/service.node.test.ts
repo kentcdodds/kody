@@ -42,7 +42,9 @@ function createSecretTestDb() {
 					return {
 						async first<T>() {
 							if (
-								normalizedQuery.startsWith('select id, user_id, scope, binding_key') &&
+								normalizedQuery.startsWith(
+									'select id, user_id, scope, binding_key',
+								) &&
 								normalizedQuery.includes('from secret_buckets')
 							) {
 								const [userId, scope, bindingKey, now] = params as Array<string>
@@ -57,7 +59,9 @@ function createSecretTestDb() {
 								return null
 							}
 							if (
-								normalizedQuery.startsWith('select bucket_id, name, description') &&
+								normalizedQuery.startsWith(
+									'select bucket_id, name, description',
+								) &&
 								normalizedQuery.includes('from secret_entries') &&
 								normalizedQuery.includes('where bucket_id = ? and name = ?')
 							) {

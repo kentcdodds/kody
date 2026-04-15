@@ -1,8 +1,5 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
-import {
-	decryptSecretValue,
-	encryptSecretValue,
-} from '#mcp/secrets/crypto.ts'
+import { decryptSecretValue, encryptSecretValue } from '#mcp/secrets/crypto.ts'
 import {
 	buildSkillRunnerSecretName,
 	parseSkillRunnerSecretClientName,
@@ -93,7 +90,10 @@ async function readStoredSkillRunnerTokenRecord(input: {
 	clientName: string
 	entry: SkillRunnerSecretEntry
 }) {
-	const decrypted = await decryptSecretValue(input.env, input.entry.encrypted_value)
+	const decrypted = await decryptSecretValue(
+		input.env,
+		input.entry.encrypted_value,
+	)
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(decrypted)
@@ -147,13 +147,12 @@ async function getSkillRunnerSecretEntry(input: {
 }) {
 	const bucket = await getUserSecretBucket(input)
 	if (!bucket) return null
-	return input.env.APP_DB
-		.prepare(
-			`SELECT name, description, encrypted_value, created_at, updated_at
+	return input.env.APP_DB.prepare(
+		`SELECT name, description, encrypted_value, created_at, updated_at
 			FROM secret_entries
 			WHERE bucket_id = ? AND name = ?
 			LIMIT 1`,
-		)
+	)
 		.bind(bucket.id, buildSkillRunnerSecretName(input.clientName))
 		.first<SkillRunnerSecretEntry>()
 }
@@ -164,13 +163,12 @@ async function listSkillRunnerSecretEntries(input: {
 }) {
 	const bucket = await getUserSecretBucket(input)
 	if (!bucket) return []
-	const { results } = await input.env.APP_DB
-		.prepare(
-			`SELECT name, description, encrypted_value, created_at, updated_at
+	const { results } = await input.env.APP_DB.prepare(
+		`SELECT name, description, encrypted_value, created_at, updated_at
 			FROM secret_entries
 			WHERE bucket_id = ? AND name LIKE ?
 			ORDER BY name ASC`,
-		)
+	)
 		.bind(bucket.id, `${skillRunnerSecretNamePrefix}%`)
 		.all<SkillRunnerSecretEntry>()
 	return results ?? []
@@ -275,7 +273,8 @@ export async function createSkillRunnerToken(input: {
 		record: {
 			tokenHash,
 			name,
-			description: input.description?.trim() ?? existingRecord?.description ?? '',
+			description:
+				input.description?.trim() ?? existingRecord?.description ?? '',
 			lastUsedAt: existingRecord?.lastUsedAt ?? null,
 		},
 	})

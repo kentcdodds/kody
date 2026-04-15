@@ -51,7 +51,9 @@ function createValueTestDb() {
 					return {
 						async first<T>() {
 							if (
-								normalizedQuery.startsWith('select id, user_id, scope, binding_key') &&
+								normalizedQuery.startsWith(
+									'select id, user_id, scope, binding_key',
+								) &&
 								normalizedQuery.includes('from secret_buckets')
 							) {
 								const [userId, scope, bindingKey, now] = params as Array<string>
@@ -73,7 +75,8 @@ function createValueTestDb() {
 								normalizedQuery.includes('where bucket_id = ? and name = ?')
 							) {
 								const [bucketId, name] = params as Array<string>
-								const entry = secretEntries.get(getEntryKey(bucketId, name)) ?? null
+								const entry =
+									secretEntries.get(getEntryKey(bucketId, name)) ?? null
 								if (!entry) return null
 								return {
 									name: entry.name,
@@ -123,7 +126,8 @@ function createValueTestDb() {
 								const results = Array.from(secretEntries.values())
 									.filter(
 										(entry) =>
-											entry.bucket_id === bucketId && entry.name.startsWith(prefix),
+											entry.bucket_id === bucketId &&
+											entry.name.startsWith(prefix),
 									)
 									.sort((left, right) => left.name.localeCompare(right.name))
 									.map((entry) => ({
@@ -192,7 +196,9 @@ function createValueTestDb() {
 							}
 							if (normalizedQuery.startsWith('delete from secret_entries')) {
 								const [bucketId, name] = params as Array<string>
-								const deleted = secretEntries.delete(getEntryKey(bucketId, name))
+								const deleted = secretEntries.delete(
+									getEntryKey(bucketId, name),
+								)
 								return { meta: { changes: deleted ? 1 : 0 } }
 							}
 							return { meta: { changes: 0 } }
@@ -207,8 +213,9 @@ function createValueTestDb() {
 		const bucket = secretBuckets.get(getBucketKey(userId, 'user', ''))
 		if (!bucket) return null
 		return (
-			secretEntries.get(getEntryKey(bucket.id, `${skillRunnerSecretPrefix}${clientName}`)) ??
-			null
+			secretEntries.get(
+				getEntryKey(bucket.id, `${skillRunnerSecretPrefix}${clientName}`),
+			) ?? null
 		)
 	}
 

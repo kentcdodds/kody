@@ -10,10 +10,7 @@ import {
 	stringifyAllowedHosts,
 } from './allowed-hosts.ts'
 import { decryptSecretValue, encryptSecretValue } from './crypto.ts'
-import {
-	assertSecretNameAllowed,
-	isReservedSecretName,
-} from './name-guards.ts'
+import { assertSecretNameAllowed, isReservedSecretName } from './name-guards.ts'
 import {
 	getStorageBindingKey,
 	resolveStorageScopeOrder,
