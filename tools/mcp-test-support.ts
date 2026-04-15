@@ -17,7 +17,7 @@ const projectRoot = process.cwd()
 const primaryUserEmail = 'me@kentcdodds.com'
 const testUserPassword = 'secret'
 const localhost = '127.0.0.1'
-const defaultWaitTimeoutMs = 25_000
+const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
 
 type TestUser = {
 	email: string

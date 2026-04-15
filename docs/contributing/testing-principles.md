@@ -30,6 +30,9 @@ when that makes a single test longer and more assertion-heavy.
   tests.
 - Prefer fast unit tests for server logic; keep e2e tests focused on a very
   small number of important happy-path journeys.
+- Treat `packages/worker/src/mcp/*.mcp-e2e.test.ts` as a tiny MCP transport
+  smoke suite. Do not add capability-specific cases there unless they require
+  the real MCP HTTP transport, OAuth flow, and saved-app session wiring.
 - Prefer asserting intermediate states inside the broader workflow that causes
   them rather than adding isolated tests that only check an incidental loading
   or transition state.

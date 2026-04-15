@@ -31,6 +31,10 @@ that are unlikely to recur.
   cases.
 - If a bug is unlikely to show up again, do not add an E2E test just to lock in
   the fix.
+- For MCP specifically, treat `*.mcp-e2e.test.ts` as a tiny transport smoke
+  suite. Do not add capability-by-capability coverage there unless the failure
+  mode depends on the real MCP HTTP transport, OAuth flow, or saved-app session
+  wiring.
 
 ## Structure and style
 
@@ -107,6 +111,10 @@ Common commands:
 - `npm run test:e2e:run -- --grep "smoke test"`
 - `npx playwright test`
 - `npx playwright test e2e/login.spec.ts`
+
+For MCP capability work, prefer `*.node.test.ts` or `*.workers.test.ts` beside
+the implementation and keep `npm run test:mcp` limited to a couple of
+high-signal smoke journeys.
 
 If `packages/worker/.env` is missing, the E2E server startup path copies
 `packages/worker/.env.example` to `packages/worker/.env` before Wrangler starts.
