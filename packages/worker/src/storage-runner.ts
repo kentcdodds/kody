@@ -96,8 +96,8 @@ function hasSqlContentAfterSemicolon(query: string, startIndex: number) {
 	let inBlockComment = false
 
 	for (let index = startIndex; index < query.length; index += 1) {
-		const current = query[index]
-		const next = query[index + 1]
+		const current = query.charAt(index)
+		const next = query.charAt(index + 1)
 
 		if (inLineComment) {
 			if (current === '\n') {
@@ -143,8 +143,8 @@ function hasMultipleSqlStatements(query: string) {
 	let inBlockComment = false
 
 	for (let index = 0; index < query.length; index += 1) {
-		const current = query[index]
-		const next = query[index + 1]
+		const current = query.charAt(index)
+		const next = query.charAt(index + 1)
 
 		if (inLineComment) {
 			if (current === '\n') {
