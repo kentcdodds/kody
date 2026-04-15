@@ -1,6 +1,4 @@
-import { skillRunnerTokensValueName } from './skill-runner-tokens.ts'
-
-const reservedValueNames = new Set([skillRunnerTokensValueName])
+const reservedValueNames = new Set<string>()
 
 export function isReservedValueName(name: string) {
 	return reservedValueNames.has(name)

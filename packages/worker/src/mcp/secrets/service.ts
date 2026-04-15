@@ -11,6 +11,10 @@ import {
 } from './allowed-hosts.ts'
 import { decryptSecretValue, encryptSecretValue } from './crypto.ts'
 import {
+	assertSecretNameAllowed,
+	isReservedSecretName,
+} from './name-guards.ts'
+import {
 	getStorageBindingKey,
 	resolveStorageScopeOrder,
 } from '#mcp/storage-bindings.ts'
@@ -82,6 +86,7 @@ export async function saveSecret(
 	if (!name) {
 		throw new Error('Secret name is required.')
 	}
+	assertSecretNameAllowed(name)
 	const value = input.value.trim()
 	if (!value) {
 		throw new Error('Secret value is required.')
@@ -147,24 +152,28 @@ export async function listSecrets(
 			}),
 		),
 	)
-	return results.flat().map((row) =>
-		toSecretMetadata({
-			name: row.name,
-			scope: row.scope,
-			description: row.description,
-			appId: row.scope === 'app' ? row.binding_key : null,
-			allowedHosts: parseAllowedHosts(row.allowed_hosts),
-			allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
-			createdAt: row.created_at,
-			updatedAt: row.updated_at,
-			expiresAt: row.expires_at,
-		}),
-	)
+	return results
+		.flat()
+		.filter((row) => !isReservedSecretName(row.name))
+		.map((row) =>
+			toSecretMetadata({
+				name: row.name,
+				scope: row.scope,
+				description: row.description,
+				appId: row.scope === 'app' ? row.binding_key : null,
+				allowedHosts: parseAllowedHosts(row.allowed_hosts),
+				allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+				expiresAt: row.expires_at,
+			}),
+		)
 }
 
 export async function resolveSecret(
 	input: ResolveSecretInput,
 ): Promise<ResolvedSecret> {
+	assertSecretNameAllowed(input.name)
 	const scopes = input.scope
 		? [input.scope]
 		: resolveStorageScopeOrder(input.storageContext ?? null)
@@ -200,6 +209,7 @@ export async function resolveSecret(
 }
 
 export async function deleteSecret(input: DeleteSecretInput) {
+	assertSecretNameAllowed(input.name)
 	const bucket = await getExistingBucketForScope({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -233,6 +243,7 @@ export async function updateSecret(
 	if (!name) {
 		throw new Error('Secret name is required.')
 	}
+	assertSecretNameAllowed(name)
 	const bucket = await getExistingBucketForScope({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -301,13 +312,15 @@ export async function listUserSecretsForSearch(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})
-	return rows.map((row) => ({
-		name: row.name,
-		scope: row.scope,
-		description: row.description,
-		appId: null,
-		updatedAt: row.updated_at,
-	}))
+	return rows
+		.filter((row) => !isReservedSecretName(row.name))
+		.map((row) => ({
+			name: row.name,
+			scope: row.scope,
+			description: row.description,
+			appId: null,
+			updatedAt: row.updated_at,
+		}))
 }
 
 export async function listAppSecretsByAppIds(input: {
@@ -322,6 +335,7 @@ export async function listAppSecretsByAppIds(input: {
 	})
 	const grouped = new Map<string, Array<SecretMetadata>>()
 	for (const row of rows) {
+		if (isReservedSecretName(row.name)) continue
 		const appId = row.binding_key
 		const current = grouped.get(appId) ?? []
 		current.push(
@@ -481,6 +495,7 @@ export async function setSecretAllowedHosts(input: {
 	if (!name) {
 		throw new Error('Secret name is required.')
 	}
+	assertSecretNameAllowed(name)
 	const bucket = await getExistingBucketForScope({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -534,6 +549,7 @@ export async function setSecretAllowedCapabilities(input: {
 	if (!name) {
 		throw new Error('Secret name is required.')
 	}
+	assertSecretNameAllowed(name)
 	const bucket = await getExistingBucketForScope({
 		db: input.env.APP_DB,
 		userId: input.userId,
