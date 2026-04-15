@@ -187,3 +187,25 @@ test('storage runner blocks multi-statement SQL in read-only mode', async () => 
 		value: 1,
 	})
 })
+
+test('storage runner allows semicolons inside string literals in read-only SQL', async () => {
+	const storageId = createExecuteStorageId()
+	const runner = storageRunnerRpc({
+		env,
+		userId: 'user-123',
+		storageId,
+	})
+
+	await expect(
+		runner.sqlQuery({
+			query: "select 'a;b' as val",
+			writable: false,
+		}),
+	).resolves.toEqual({
+		columns: ['val'],
+		rows: [{ val: 'a;b' }],
+		rowCount: 1,
+		rowsRead: 0,
+		rowsWritten: 0,
+	})
+})
