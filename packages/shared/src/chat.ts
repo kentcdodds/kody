@@ -44,6 +44,7 @@ export const mcpUserContextSchema = object({
 export const mcpStorageContextSchema = object({
 	sessionId: optional(nullable(string())),
 	appId: optional(nullable(string())),
+	storageId: optional(nullable(string())),
 })
 
 const remoteConnectorRefSchema = object({

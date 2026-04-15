@@ -176,12 +176,15 @@ export const EnvSchema = object({
 			)
 		},
 	),
-	JOB_RUNNER: createSchema<unknown, DurableObjectNamespace>(
+	STORAGE_RUNNER: createSchema<unknown, DurableObjectNamespace>(
 		(value, context) => {
 			if (value) {
 				return { value: value as DurableObjectNamespace }
 			}
-			return fail('Missing JOB_RUNNER binding for facet jobs.', context.path)
+			return fail(
+				'Missing STORAGE_RUNNER binding for durable execute and job storage.',
+				context.path,
+			)
 		},
 	),
 	APP_BASE_URL: optionalUrlStringSchema,

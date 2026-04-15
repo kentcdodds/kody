@@ -22,10 +22,14 @@ export function getStorageBindingKey(
 ) {
 	if (scope === 'user') return ''
 	if (scope === 'app') {
-		return storageContext?.appId?.trim() ? storageContext.appId : null
+		const appId = storageContext?.appId?.trim()
+		if (appId) return appId
+		const storageId = storageContext?.storageId?.trim()
+		return storageId || null
 	}
 	if (scope === 'session') {
-		return storageContext?.sessionId?.trim() ? storageContext.sessionId : null
+		const sessionId = storageContext?.sessionId?.trim()
+		return sessionId || null
 	}
 	return null
 }

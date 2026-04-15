@@ -76,7 +76,9 @@ export const metaRunSkillCapability = defineDomainCapability(
 				ctx.callerContext,
 				row.code,
 				shouldPassParams ? params : undefined,
-				workerExports,
+				{
+					executorExports: workerExports,
+				},
 			)
 			if (exec.error) {
 				return {

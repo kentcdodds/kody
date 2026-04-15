@@ -3,6 +3,7 @@ import { codingDomain } from './coding/domain.ts'
 import { jobsDomain } from './jobs/domain.ts'
 import { metaDomain } from './meta/domain.ts'
 import { secretsDomain } from './secrets/domain.ts'
+import { storageDomain } from './storage/domain.ts'
 import { valuesDomain } from './values/domain.ts'
 
 /**
@@ -19,5 +20,6 @@ export const builtinDomains = [
 	jobsDomain,
 	metaDomain,
 	secretsDomain,
+	storageDomain,
 	valuesDomain,
 ] as const

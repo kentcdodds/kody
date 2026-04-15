@@ -8,8 +8,8 @@ function createCronJob(overrides: Partial<JobRecord> = {}): JobRecord {
 		id: 'job-1',
 		userId: 'user-1',
 		name: 'Morning job',
-		kind: 'codemode',
 		code: 'async () => ({ ok: true })',
+		storageId: 'job:job-1',
 		schedule: {
 			type: 'cron',
 			expression: '0 7 * * *',

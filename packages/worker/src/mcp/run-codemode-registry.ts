@@ -26,6 +26,21 @@ import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
+import {
+	createStorageCodemodeTools,
+	createStorageHelperPrelude,
+} from '#worker/storage-runner.ts'
+
+type AdditionalCodemodeTools = Record<
+	string,
+	(args: unknown) => Promise<unknown>
+>
+
+type StorageToolOptions = {
+	userId: string
+	storageId: string
+	writable: boolean
+}
 
 export async function buildCodemodeFns(
 	env: Env,
@@ -36,13 +51,23 @@ export async function buildCodemodeFns(
 			capabilityName: string,
 		) => Promise<string>
 		trackSecretInputValue?: (value: string) => void
+		additionalTools?: AdditionalCodemodeTools
+		storageTools?: StorageToolOptions
 	},
 ) {
 	const { capabilityMap } = await getCapabilityRegistryForContext({
 		env,
 		callerContext,
 	})
-	return Object.fromEntries(
+	const additionalTools = options?.additionalTools ?? {}
+	for (const name of Object.keys(additionalTools)) {
+		if (capabilityMap[name]) {
+			throw new Error(`Codemode helper "${name}" collides with a capability.`)
+		}
+	}
+	const storageTools = options?.storageTools
+	return {
+		...Object.fromEntries(
 		Object.values(capabilityMap).map((capability) => [
 			capability.name,
 			async (args: unknown) => {
@@ -70,7 +95,17 @@ export async function buildCodemodeFns(
 				})
 			},
 		]),
-	)
+		),
+		...(storageTools
+			? await createStorageCodemodeTools({
+					env,
+					userId: callerContext.user?.userId ?? '',
+					storageId: storageTools.storageId,
+					writable: storageTools.writable,
+				})
+			: {}),
+		...additionalTools,
+	}
 }
 
 export async function buildCodemodeProvider(
@@ -78,6 +113,8 @@ export async function buildCodemodeProvider(
 	callerContext: McpCallerContext,
 	options?: {
 		trackSecretInputValue?: (value: string) => void
+		additionalTools?: AdditionalCodemodeTools
+		storageTools?: StorageToolOptions
 	},
 ): Promise<ResolvedProvider> {
 	const tools = await buildCodemodeFns(env, callerContext, options)
@@ -143,7 +180,12 @@ export async function runCodemodeWithRegistry(
 	callerContext: McpCallerContext,
 	code: string,
 	params?: Record<string, unknown>,
-	executorExports?: typeof workerExports,
+	options?: {
+		executorExports?: typeof workerExports
+		additionalTools?: AdditionalCodemodeTools
+		helperPrelude?: string
+		storageTools?: StorageToolOptions
+	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
 	const { normalizeCode } = await import('@cloudflare/codemode')
@@ -153,7 +195,7 @@ export async function runCodemodeWithRegistry(
 	)
 	const executor = createExecuteExecutor({
 		env,
-		exports: executorExports ?? workerExports,
+		exports: options?.executorExports ?? workerExports,
 		gatewayProps: {
 			baseUrl: callerContext.baseUrl,
 			userId: callerContext.user?.userId ?? null,
@@ -164,14 +206,26 @@ export async function runCodemodeWithRegistry(
 		trackSecretInputValue: (value) => {
 			secretRedactor.track(value)
 		},
+		additionalTools: options?.additionalTools,
+		storageTools: options?.storageTools,
 	})
 	const wrappedCode =
 		params !== undefined
 			? await buildParameterizedSkillCode(code, params)
 			: code
 	const normalized = normalizeCode(wrappedCode)
+	const storageHelperPrelude = options?.storageTools
+		? createStorageHelperPrelude({
+				storageId: options.storageTools.storageId,
+				writable: options.storageTools.writable,
+			})
+		: ''
+	const helperPrelude = [storageHelperPrelude, options?.helperPrelude ?? '']
+		.filter((value) => value.trim().length > 0)
+		.join('\n')
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
+${helperPrelude ? `${helperPrelude}\n` : ''}
   const __kodyUserCode = (${normalized});
   return await __kodyUserCode();
 }`
@@ -394,6 +448,7 @@ function normalizeStorageContext(
 	return {
 		sessionId: storageContext.sessionId ?? null,
 		appId: storageContext.appId ?? null,
+		storageId: storageContext.storageId ?? null,
 	}
 }
 

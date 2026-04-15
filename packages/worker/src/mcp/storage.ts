@@ -5,4 +5,5 @@ export type StorageScope = (typeof storageScopeValues)[number]
 export type StorageContext = {
 	sessionId: string | null
 	appId: string | null
+	storageId?: string | null
 }

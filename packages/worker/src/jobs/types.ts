@@ -3,8 +3,6 @@ import {
 	type McpUserContext,
 } from '@kody-internal/shared/chat.ts'
 
-export type JobKind = 'codemode' | 'facet'
-
 export type JobSchedule =
 	| {
 			type: 'cron'
@@ -34,11 +32,8 @@ export type JobRecord = {
 	id: string
 	userId: string
 	name: string
-	kind: JobKind
-	code?: string
-	serverCode?: string
-	serverCodeId?: string
-	methodName?: string
+	code: string
+	storageId: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone: string
@@ -89,10 +84,7 @@ export type PersistedJobCallerContext = Pick<
 
 export type JobCreateInput = {
 	name: string
-	kind: JobKind
-	code?: string
-	serverCode?: string
-	methodName?: string | null
+	code: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone?: string | null
@@ -103,10 +95,7 @@ export type JobCreateInput = {
 export type JobUpdateInput = {
 	id: string
 	name?: string
-	kind?: JobKind
-	code?: string | null
-	serverCode?: string | null
-	methodName?: string | null
+	code?: string
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
@@ -117,10 +106,7 @@ export type JobUpdateInput = {
 export type JobUpsertInput = {
 	id?: string
 	name?: string
-	kind?: JobKind
-	code?: string | null
-	serverCode?: string | null
-	methodName?: string | null
+	code?: string
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null

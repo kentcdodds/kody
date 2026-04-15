@@ -103,7 +103,7 @@ function createEnv(
 		APP_DB: resolvedDb,
 		COOKIE_SECRET: cookieSecretValue,
 		JOB_MANAGER: mockJobDoNamespace('job-manager-test-id'),
-		JOB_RUNNER: mockJobDoNamespace('job-runner-test-id'),
+		STORAGE_RUNNER: mockJobDoNamespace('storage-runner-test-id'),
 	} as unknown as Env
 }
 

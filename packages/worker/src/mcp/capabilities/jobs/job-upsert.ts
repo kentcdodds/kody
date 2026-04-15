@@ -14,7 +14,7 @@ export const jobUpsertCapability = defineDomainCapability(
 	{
 		name: 'job_upsert',
 		description:
-			'Create a new job when id is omitted, or update an existing job when id is provided. Supports codemode jobs, facet-backed Durable Object jobs, cron schedules, interval schedules, and one-shot runs.',
+			'Create a new job when id is omitted, or update an existing job when id is provided. Jobs have durable storage identified by `storageId` and support cron schedules, interval schedules, and one-shot runs.',
 		keywords: ['job', 'upsert', 'create', 'update', 'cron', 'interval'],
 		readOnly: false,
 		idempotent: false,
@@ -30,16 +30,7 @@ export const jobUpsertCapability = defineDomainCapability(
 							callerContext: ctx.callerContext,
 							body: {
 								name: args.name ?? '',
-								kind: args.kind!,
-								...(args.code !== undefined && args.code !== null
-									? { code: args.code }
-									: {}),
-								...(args.serverCode !== undefined && args.serverCode !== null
-									? { serverCode: args.serverCode }
-									: {}),
-								...(args.methodName !== undefined
-									? { methodName: args.methodName }
-									: {}),
+								code: args.code ?? '',
 								...(args.params !== undefined && args.params !== null
 									? { params: args.params }
 									: {}),
@@ -61,14 +52,7 @@ export const jobUpsertCapability = defineDomainCapability(
 							body: {
 								id: args.id,
 								...(args.name !== undefined ? { name: args.name } : {}),
-								...(args.kind !== undefined ? { kind: args.kind } : {}),
-								...(args.code !== undefined ? { code: args.code } : {}),
-								...(args.serverCode !== undefined
-									? { serverCode: args.serverCode }
-									: {}),
-								...(args.methodName !== undefined
-									? { methodName: args.methodName }
-									: {}),
+								...(typeof args.code === 'string' ? { code: args.code } : {}),
 								...(args.params !== undefined ? { params: args.params } : {}),
 								...(args.schedule !== undefined
 									? { schedule: args.schedule }

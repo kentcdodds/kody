@@ -35,6 +35,7 @@ export function callerContextFields(context: McpCallerContext) {
 	return {
 		baseUrl: context.baseUrl,
 		hasUser: context.user != null,
+		storageContext: context.storageContext ?? null,
 	}
 }
 

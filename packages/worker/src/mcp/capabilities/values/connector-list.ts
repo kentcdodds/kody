@@ -37,6 +37,7 @@ export const connectorListCapability = defineDomainCapability(
 				storageContext: {
 					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
 					appId: ctx.callerContext.storageContext?.appId ?? null,
+					storageId: ctx.callerContext.storageContext?.storageId ?? null,
 				},
 			})
 			const connectors = values
