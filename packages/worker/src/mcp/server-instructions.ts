@@ -5,7 +5,7 @@ const domainInstructions = builtinDomains
 	.join('\n')
 
 export const conversationIdGuidance =
-	'The public MCP tools accept optional `conversationId` and `memoryContext` fields. `conversationId` ties related calls together. On the first call, omit it to receive a server-generated ID, or supply your own. Pass the returned `conversationId` on every subsequent call in the same conversation - this enables optimizations like reduced response size. Generated values should be short and random enough to avoid collisions.'
+	'The public MCP tools accept optional `conversationId` and `memoryContext` fields. `conversationId` ties related calls together. If you already have a `conversationId` from an earlier response in the same conversation, pass it back unchanged. Otherwise omit this field to receive a server-generated ID, then reuse the returned `conversationId` on subsequent calls - this enables optimizations like reduced response size. Do not invent your own `conversationId`.'
 
 export function buildBaseMcpServerInstructions(): string {
 	return `

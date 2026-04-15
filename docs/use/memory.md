@@ -8,9 +8,10 @@ Kody supports two related memory features:
 
 ## `conversationId`
 
-**`conversationId`** ties related tool calls together. Omit it on the first call
-to receive a server-generated id, then pass the returned id on follow-up calls
-in the same conversation.
+**`conversationId`** ties related tool calls together. If you already have one
+from an earlier tool response in the same conversation, pass it back unchanged.
+Otherwise omit the field so Kody can return a server-generated id, then reuse
+that returned id on follow-up calls. Do not make one up yourself.
 
 Kody uses this id to avoid surfacing the same long-term memory repeatedly in one
 conversation.
