@@ -45,9 +45,8 @@ export async function runSavedSkill(input: {
 		values: input.params,
 	})
 	const shouldPassParams = definitions != null || input.params !== undefined
-	const { runCodemodeWithRegistry } = await import(
-		'#mcp/run-codemode-registry.ts'
-	)
+	const { runCodemodeWithRegistry } =
+		await import('#mcp/run-codemode-registry.ts')
 	const exec = await runCodemodeWithRegistry(
 		input.env,
 		input.callerContext,

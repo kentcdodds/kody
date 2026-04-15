@@ -727,7 +727,10 @@ function readBearerToken(request: Request) {
 
 async function handleSkillRunnerRequest(request: Request, env: Env) {
 	if (request.method !== 'POST') {
-		return jsonResponse({ ok: false, error: 'Method not allowed.' }, { status: 405 })
+		return jsonResponse(
+			{ ok: false, error: 'Method not allowed.' },
+			{ status: 405 },
+		)
 	}
 
 	const token = readBearerToken(request)
@@ -761,13 +764,19 @@ async function handleSkillRunnerRequest(request: Request, env: Env) {
 
 	const body = await request.json().catch(() => null)
 	if (!body || typeof body !== 'object' || Array.isArray(body)) {
-		return jsonResponse({ ok: false, error: 'Invalid request body.' }, { status: 400 })
+		return jsonResponse(
+			{ ok: false, error: 'Invalid request body.' },
+			{ status: 400 },
+		)
 	}
 	const payload = body as Record<string, unknown>
 
 	const name = typeof payload['name'] === 'string' ? payload['name'].trim() : ''
 	if (!name) {
-		return jsonResponse({ ok: false, error: 'Skill name is required.' }, { status: 400 })
+		return jsonResponse(
+			{ ok: false, error: 'Skill name is required.' },
+			{ status: 400 },
+		)
 	}
 
 	const paramsRaw = payload['params']

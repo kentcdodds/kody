@@ -220,24 +220,22 @@ export async function resolveSkillRunnerUserByToken(input: {
 	if (!token) return null
 
 	const now = new Date().toISOString()
-	const { results } = await input.env.APP_DB
-		.prepare(
-			`SELECT vb.user_id, ve.value
+	const { results } = await input.env.APP_DB.prepare(
+		`SELECT vb.user_id, ve.value
 			FROM value_entries ve
 			INNER JOIN value_buckets vb ON vb.id = ve.bucket_id
 			WHERE ve.name = ?
 				AND vb.scope = 'user'
 				AND vb.binding_key = ''
 				AND (vb.expires_at IS NULL OR vb.expires_at > ?)`,
-		)
+	)
 		.bind(skillRunnerTokensValueName, now)
 		.all<Record<string, unknown>>()
 
 	for (const row of results ?? []) {
 		const userId =
 			typeof row['user_id'] === 'string' ? row['user_id'].trim() : ''
-		const rawValue =
-			typeof row['value'] === 'string' ? row['value'] : null
+		const rawValue = typeof row['value'] === 'string' ? row['value'] : null
 		if (!userId || !rawValue) continue
 		const tokenMap = tryParseTokenMap(rawValue)
 		if (!tokenMap) continue
