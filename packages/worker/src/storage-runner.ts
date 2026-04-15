@@ -91,13 +91,159 @@ function normalizeSqlParams(params: Array<unknown> | undefined) {
 	})
 }
 
+function hasSqlContentAfterSemicolon(query: string, startIndex: number) {
+	let inLineComment = false
+	let inBlockComment = false
+
+	for (let index = startIndex; index < query.length; index += 1) {
+		const current = query.charAt(index)
+		const next = query.charAt(index + 1)
+
+		if (inLineComment) {
+			if (current === '\n') {
+				inLineComment = false
+			}
+			continue
+		}
+
+		if (inBlockComment) {
+			if (current === '*' && next === '/') {
+				inBlockComment = false
+				index += 1
+			}
+			continue
+		}
+
+		if (current === '-' && next === '-') {
+			inLineComment = true
+			index += 1
+			continue
+		}
+
+		if (current === '/' && next === '*') {
+			inBlockComment = true
+			index += 1
+			continue
+		}
+
+		if (!/\s/.test(current)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+function hasMultipleSqlStatements(query: string) {
+	let inSingleQuote = false
+	let inDoubleQuote = false
+	let inBacktickQuote = false
+	let inBracketQuote = false
+	let inLineComment = false
+	let inBlockComment = false
+
+	for (let index = 0; index < query.length; index += 1) {
+		const current = query.charAt(index)
+		const next = query.charAt(index + 1)
+
+		if (inLineComment) {
+			if (current === '\n') {
+				inLineComment = false
+			}
+			continue
+		}
+
+		if (inBlockComment) {
+			if (current === '*' && next === '/') {
+				inBlockComment = false
+				index += 1
+			}
+			continue
+		}
+
+		if (inSingleQuote) {
+			if (current === "'" && next === "'") {
+				index += 1
+				continue
+			}
+			if (current === "'") {
+				inSingleQuote = false
+			}
+			continue
+		}
+
+		if (inDoubleQuote) {
+			if (current === '"' && next === '"') {
+				index += 1
+				continue
+			}
+			if (current === '"') {
+				inDoubleQuote = false
+			}
+			continue
+		}
+
+		if (inBacktickQuote) {
+			if (current === '`') {
+				inBacktickQuote = false
+			}
+			continue
+		}
+
+		if (inBracketQuote) {
+			if (current === ']') {
+				inBracketQuote = false
+			}
+			continue
+		}
+
+		if (current === '-' && next === '-') {
+			inLineComment = true
+			index += 1
+			continue
+		}
+
+		if (current === '/' && next === '*') {
+			inBlockComment = true
+			index += 1
+			continue
+		}
+
+		if (current === "'") {
+			inSingleQuote = true
+			continue
+		}
+
+		if (current === '"') {
+			inDoubleQuote = true
+			continue
+		}
+
+		if (current === '`') {
+			inBacktickQuote = true
+			continue
+		}
+
+		if (current === '[') {
+			inBracketQuote = true
+			continue
+		}
+
+		if (current === ';' && hasSqlContentAfterSemicolon(query, index + 1)) {
+			return true
+		}
+	}
+
+	return false
+}
+
 function assertSqlAllowed(query: string, writable: boolean | undefined) {
 	const trimmed = query.trim()
 	if (!trimmed) {
 		throw new Error('storage.sql requires a non-empty query.')
 	}
 	if (writable) return trimmed
-	if (trimmed.includes(';')) {
+	if (hasMultipleSqlStatements(trimmed)) {
 		throw new Error(
 			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
 		)
