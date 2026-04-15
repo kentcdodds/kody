@@ -158,9 +158,7 @@ test('authenticated mcp client can list tools, execute codemode, and search memo
 	)
 })
 
-test(
-	'authenticated mcp client can open generated ui and reopen a saved app',
-	async () => {
+test('authenticated mcp client can open generated ui and reopen a saved app', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -319,9 +317,7 @@ test(
 		app?: { app_backend?: unknown }
 	}
 	expect(sourcePayload.app?.app_backend).toBeUndefined()
-	},
-	20_000,
-)
+}, 20_000)
 
 test('saved apps with server code expose isolated backend storage', async () => {
 	await using database = await createTestDatabase()

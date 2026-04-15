@@ -112,9 +112,7 @@ function assertSqlAllowed(query: string, writable: boolean | undefined) {
 		'pragma database_list',
 		'pragma table_list',
 	] as const
-	if (
-		allowedReadOnlyPrefixes.some((prefix) => normalized.startsWith(prefix))
-	) {
+	if (allowedReadOnlyPrefixes.some((prefix) => normalized.startsWith(prefix))) {
 		return trimmed
 	}
 	throw new Error(
@@ -144,7 +142,10 @@ class StorageRunnerBase extends DurableObject<Env> {
 		}
 	}
 
-	async setValue(input: { key: string; value: unknown }): Promise<StorageSetResult> {
+	async setValue(input: {
+		key: string
+		value: unknown
+	}): Promise<StorageSetResult> {
 		const key = normalizeStorageKey(input.key)
 		await this.ctx.storage.put(key, input.value)
 		return { ok: true, key }
@@ -215,9 +216,10 @@ class StorageRunnerBase extends DurableObject<Env> {
 	}): Promise<StorageSqlResult> {
 		const query = assertSqlAllowed(input.query, input.writable)
 		const params = normalizeSqlParams(input.params)
-		const cursor = this.ctx.storage.sql.exec<
-			Record<string, StorageSqlValue>
-		>(query, ...params)
+		const cursor = this.ctx.storage.sql.exec<Record<string, StorageSqlValue>>(
+			query,
+			...params,
+		)
 		return cursorToSqlResult(cursor)
 	}
 }
@@ -293,8 +295,7 @@ export function createStorageCodemodeTools(input: {
 						})
 					: {}
 			return await runner.listValues({
-				prefix:
-					typeof payload.prefix === 'string' ? payload.prefix : undefined,
+				prefix: typeof payload.prefix === 'string' ? payload.prefix : undefined,
 				pageSize:
 					typeof payload.pageSize === 'number' ? payload.pageSize : undefined,
 				startAfter:
@@ -344,7 +345,7 @@ export function createStorageCodemodeTools(input: {
 					storage_clear: async () => {
 						return await runner.clearStorage()
 					},
-			  }
+				}
 			: {}),
 	}
 }
@@ -364,9 +365,13 @@ const storage = {
       params,
       writable: ${input.writable ? 'true' : 'false'},
     }),
-  ${input.writable ? `set: async (key, value) => await codemode.storage_set({ key, value }),
+  ${
+		input.writable
+			? `set: async (key, value) => await codemode.storage_set({ key, value }),
   delete: async (key) => await codemode.storage_delete({ key }),
-  clear: async () => await codemode.storage_clear({}),` : ''}
+  clear: async () => await codemode.storage_clear({}),`
+			: ''
+	}
 };
 	`.trim()
 }

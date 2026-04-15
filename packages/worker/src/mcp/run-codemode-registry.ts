@@ -68,33 +68,33 @@ export async function buildCodemodeFns(
 	const storageTools = options?.storageTools
 	return {
 		...Object.fromEntries(
-		Object.values(capabilityMap).map((capability) => [
-			capability.name,
-			async (args: unknown) => {
-				const resolveSecretValue =
-					options?.resolveSecretValue ??
-					createCapabilityInputSecretResolver(
+			Object.values(capabilityMap).map((capability) => [
+				capability.name,
+				async (args: unknown) => {
+					const resolveSecretValue =
+						options?.resolveSecretValue ??
+						createCapabilityInputSecretResolver(
+							env,
+							callerContext,
+							capability.name,
+						)
+					const resolvedArgs = await resolveCapabilityInputSecrets({
+						schema: capability.inputSchema,
+						value: (args ?? {}) as Record<string, unknown>,
+						resolveSecretValue: (secret) =>
+							resolveSecretValue(secret, capability.name),
+					})
+					collectSecretInputValues({
+						schema: capability.inputSchema,
+						value: resolvedArgs,
+						track: options?.trackSecretInputValue,
+					})
+					return capability.handler(resolvedArgs as Record<string, unknown>, {
 						env,
 						callerContext,
-						capability.name,
-					)
-				const resolvedArgs = await resolveCapabilityInputSecrets({
-					schema: capability.inputSchema,
-					value: (args ?? {}) as Record<string, unknown>,
-					resolveSecretValue: (secret) =>
-						resolveSecretValue(secret, capability.name),
-				})
-				collectSecretInputValues({
-					schema: capability.inputSchema,
-					value: resolvedArgs,
-					track: options?.trackSecretInputValue,
-				})
-				return capability.handler(resolvedArgs as Record<string, unknown>, {
-					env,
-					callerContext,
-				})
-			},
-		]),
+					})
+				},
+			]),
 		),
 		...(storageTools
 			? await createStorageCodemodeTools({

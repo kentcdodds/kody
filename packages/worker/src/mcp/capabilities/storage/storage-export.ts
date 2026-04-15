@@ -2,7 +2,11 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { storageExportOutputSchema, storageIdSchema, requireStorageUser } from './shared.ts'
+import {
+	storageExportOutputSchema,
+	storageIdSchema,
+	requireStorageUser,
+} from './shared.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 
 export const storageExportCapability = defineDomainCapability(

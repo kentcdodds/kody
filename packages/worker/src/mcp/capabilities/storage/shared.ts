@@ -9,7 +9,9 @@ export const storageIdSchema = z.object({
 export const storageSqlOutputSchema = z.object({
 	storage_id: z.string(),
 	columns: z.array(z.string()),
-	rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))),
+	rows: z.array(
+		z.record(z.string(), z.union([z.string(), z.number(), z.null()])),
+	),
 	row_count: z.number(),
 	rows_read: z.number(),
 	rows_written: z.number(),

@@ -3,7 +3,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 
 async function readMigration(name: string) {
-	return await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8')
+	return await readFile(
+		new URL(`../../migrations/${name}`, import.meta.url),
+		'utf8',
+	)
 }
 
 test('0021 jobs migration rewrites legacy job rows into stable storage ids', async () => {

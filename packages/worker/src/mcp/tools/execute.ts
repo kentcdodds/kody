@@ -172,22 +172,16 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					},
 				},
 				async () =>
-					runCodemodeWithRegistry(
-						env,
-						callerContext,
-						code,
-						params,
-						{
-							executorExports: agent.getLoopbackExports(),
-							storageTools: activeStorageId
-								? {
-										userId: callerContext.user?.userId ?? '',
-										storageId: activeStorageId,
-										writable: writable ?? false,
-								  }
-								: undefined,
-						},
-					),
+					runCodemodeWithRegistry(env, callerContext, code, params, {
+						executorExports: agent.getLoopbackExports(),
+						storageTools: activeStorageId
+							? {
+									userId: callerContext.user?.userId ?? '',
+									storageId: activeStorageId,
+									writable: writable ?? false,
+								}
+							: undefined,
+					}),
 			)
 			const durationMs = Math.round(performance.now() - startedAt)
 
@@ -218,9 +212,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId: resolvedConversationId,
-						...(activeStorageId
-							? { storage: { id: activeStorageId } }
-							: {}),
+						...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
 						error: errorMessage,
 						errorDetails,
 						logs: result.logs ?? [],
@@ -255,9 +247,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				]),
 				structuredContent: {
 					conversationId: resolvedConversationId,
-					...(activeStorageId
-						? { storage: { id: activeStorageId } }
-						: {}),
+					...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
 					result: rawContent ? null : result.result,
 					logs: result.logs ?? [],
 					...buildMemoryStructuredContent(surfacedMemories),
