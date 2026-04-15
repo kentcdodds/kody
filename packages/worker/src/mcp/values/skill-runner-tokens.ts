@@ -130,6 +130,24 @@ async function readTokenValue(input: {
 	return value?.value ?? null
 }
 
+async function writeSkillRunnerTokens(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	tokens: SkillRunnerTokenMap
+}) {
+	// Token management is low-frequency admin config, so concurrent updates
+	// intentionally use the value store's normal last-write-wins behavior.
+	await saveValue({
+		env: input.env,
+		userId: input.userId,
+		name: skillRunnerTokensValueName,
+		value: JSON.stringify(input.tokens),
+		scope: 'user',
+		description: 'External skill runner bearer tokens by client name',
+		storageContext: createStorageContext(),
+	})
+}
+
 export async function getSkillRunnerTokens(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
@@ -150,14 +168,10 @@ export async function createSkillRunnerToken(input: {
 	const tokens = await getSkillRunnerTokens(input)
 	const token = generateSkillRunnerToken()
 	tokens[clientName] = token
-	await saveValue({
+	await writeSkillRunnerTokens({
 		env: input.env,
 		userId: input.userId,
-		name: skillRunnerTokensValueName,
-		value: JSON.stringify(tokens),
-		scope: 'user',
-		description: 'External skill runner bearer tokens by client name',
-		storageContext: createStorageContext(),
+		tokens,
 	})
 	return token
 }
@@ -188,14 +202,10 @@ export async function revokeSkillRunnerToken(input: {
 		return true
 	}
 
-	await saveValue({
+	await writeSkillRunnerTokens({
 		env: input.env,
 		userId: input.userId,
-		name: skillRunnerTokensValueName,
-		value: JSON.stringify(tokens),
-		scope: 'user',
-		description: 'External skill runner bearer tokens by client name',
-		storageContext: createStorageContext(),
+		tokens,
 	})
 	return true
 }
