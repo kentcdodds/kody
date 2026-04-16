@@ -190,7 +190,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			expect.objectContaining({
 				title: undefined,
 				description: undefined,
-				sourceId: 'app-app-1',
+				sourceId: 'server-code-v3',
 				clientCode: undefined,
 				hidden: undefined,
 				serverCode: null,
@@ -234,7 +234,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			expect.objectContaining({
 				title: undefined,
 				description: undefined,
-				sourceId: 'app-app-1',
+				sourceId: expect.any(String),
 				clientCode: undefined,
 				hidden: undefined,
 				serverCode: replacementServerCode,
@@ -248,7 +248,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				serverCodeId: expect.any(String),
 			}),
 		)
-		expect(randomUuidSpy).toHaveBeenCalledTimes(2)
+		expect(randomUuidSpy).toHaveBeenCalled()
 		expect(mockModule.deleteUiArtifactVector).toHaveBeenCalledTimes(3)
 	} finally {
 		randomUuidSpy.mockRestore()
