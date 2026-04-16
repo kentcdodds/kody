@@ -126,12 +126,32 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 
 		const abortController = new AbortController()
 
-		const { events, completion } = await runAgentTurn({
-			env: this.env,
-			callerContext: input.callerContext,
-			turn: input.turn,
-			abortSignal: abortController.signal,
-		})
+		const recordRunError = async (error: unknown) => {
+			const currentRun = this.stateSnapshot.activeRun
+			if (!currentRun || currentRun.runId !== input.runId) return
+			currentRun.events.push({
+				type: 'error',
+				message: error instanceof Error ? error.message : String(error),
+				phase: 'runner',
+			})
+			currentRun.done = true
+			await this.persistState()
+			this.notifyWaiters()
+		}
+
+		let events: ReturnType<typeof runAgentTurn>['events']
+		let completion: ReturnType<typeof runAgentTurn>['completion']
+		try {
+			;({ events, completion } = await runAgentTurn({
+				env: this.env,
+				callerContext: input.callerContext,
+				turn: input.turn,
+				abortSignal: abortController.signal,
+			}))
+		} catch (error) {
+			await recordRunError(error)
+			return
+		}
 
 		const consume = (async () => {
 			try {
@@ -155,16 +175,7 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 				await this.persistState()
 				this.notifyWaiters()
 			} catch (error) {
-				const currentRun = this.stateSnapshot.activeRun
-				if (!currentRun || currentRun.runId !== input.runId) return
-				currentRun.events.push({
-					type: 'error',
-					message: error instanceof Error ? error.message : String(error),
-					phase: 'runner',
-				})
-				currentRun.done = true
-				await this.persistState()
-				this.notifyWaiters()
+				await recordRunError(error)
 			}
 		})()
 
