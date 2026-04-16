@@ -70,6 +70,10 @@ function parseJson<T>(value: string | null, fallback: T): T {
 }
 
 function mapRow(row: Record<string, unknown>): JobRow {
+	const rawStorageId = row['storage_id']
+	if (rawStorageId == null) {
+		throw new Error('Job row is missing storage_id.')
+	}
 	const record: JobRecord = {
 		version: 1,
 		id: String(row['id']),
@@ -81,7 +85,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 			row['published_commit'] == null
 				? undefined
 				: String(row['published_commit']),
-		storageId: String(row['storage_id']),
+		storageId: String(rawStorageId),
 		params: parseJson<Record<string, unknown> | undefined>(
 			row['params_json'] == null ? null : String(row['params_json']),
 			undefined,
@@ -123,7 +127,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		code: record.code,
 		source_id: record.sourceId ?? null,
 		published_commit: record.publishedCommit ?? null,
-		storage_id: record.storageId ?? null,
+		storage_id: record.storageId,
 		params_json: row['params_json'] == null ? null : String(row['params_json']),
 		schedule_json: String(row['schedule_json']),
 		timezone: record.timezone,

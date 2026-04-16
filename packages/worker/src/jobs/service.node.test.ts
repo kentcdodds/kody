@@ -294,24 +294,26 @@ function createDatabase() {
 									user_id: params[1],
 									name: params[2],
 									code: params[3],
-									storage_id: params[4],
-									params_json: params[5],
-									schedule_json: params[6],
-									timezone: params[7],
-									enabled: params[8],
-									kill_switch_enabled: params[9],
-									caller_context_json: params[10],
-									created_at: params[11],
-									updated_at: params[12],
-									last_run_at: params[13],
-									last_run_status: params[14],
-									last_run_error: params[15],
-									last_duration_ms: params[16],
-									next_run_at: params[17],
-									run_count: params[18],
-									success_count: params[19],
-									error_count: params[20],
-									run_history_json: params[21],
+									source_id: params[4],
+									published_commit: params[5],
+									storage_id: params[6],
+									params_json: params[7],
+									schedule_json: params[8],
+									timezone: params[9],
+									enabled: params[10],
+									kill_switch_enabled: params[11],
+									caller_context_json: params[12],
+									created_at: params[13],
+									updated_at: params[14],
+									last_run_at: params[15],
+									last_run_status: params[16],
+									last_run_error: params[17],
+									last_duration_ms: params[18],
+									next_run_at: params[19],
+									run_count: params[20],
+									success_count: params[21],
+									error_count: params[22],
+									run_history_json: params[23],
 								}
 								upsert(
 									'jobs',
@@ -324,34 +326,36 @@ function createDatabase() {
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const row = {
-									id: params[19],
-									user_id: params[20],
+									id: params[21],
+									user_id: params[22],
 									name: params[0],
 									code: params[1],
-									storage_id: params[2],
-									params_json: params[3],
-									schedule_json: params[4],
-									timezone: params[5],
-									enabled: params[6],
-									kill_switch_enabled: params[7],
-									caller_context_json: params[8],
-									updated_at: params[9],
-									last_run_at: params[10],
-									last_run_status: params[11],
-									last_run_error: params[12],
-									last_duration_ms: params[13],
-									next_run_at: params[14],
-									run_count: params[15],
-									success_count: params[16],
-									error_count: params[17],
-									run_history_json: params[18],
+									source_id: params[2],
+									published_commit: params[3],
+									storage_id: params[4],
+									params_json: params[5],
+									schedule_json: params[6],
+									timezone: params[7],
+									enabled: params[8],
+									kill_switch_enabled: params[9],
+									caller_context_json: params[10],
+									updated_at: params[11],
+									last_run_at: params[12],
+									last_run_status: params[13],
+									last_run_error: params[14],
+									last_duration_ms: params[15],
+									next_run_at: params[16],
+									run_count: params[17],
+									success_count: params[18],
+									error_count: params[19],
+									run_history_json: params[20],
 									created_at:
 										selectOne(
 											'jobs',
 											(existing) =>
-												existing['id'] === params[19] &&
-												existing['user_id'] === params[20],
-										)?.['created_at'] ?? params[9],
+												existing['id'] === params[21] &&
+												existing['user_id'] === params[22],
+										)?.['created_at'] ?? params[11],
 								}
 								upsert(
 									'jobs',
@@ -504,12 +508,6 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 		},
 	})
 
-	const createdJob = (await import('./repo.ts')).getJobRowById(
-		db,
-		callerContext.user.userId,
-		jobView.id,
-	)
-
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
@@ -523,10 +521,13 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 		})
 
 	try {
-		const row = await createdJob
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		if (!row) {
 			throw new Error('Expected created job row.')
 		}
+		expect(row.record.storageId).toBe(`job:${jobView.id}`)
 		const outcome = await executeJobOnce({
 			env,
 			job: row.record,
@@ -587,36 +588,25 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		},
 	})
 
-	const createdJob = (await import('./repo.ts')).getJobRowById(
-		db,
-		callerContext.user.userId,
-		jobView.id,
-	)
-
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
 			'runCodemodeWithRegistry',
 		)
-		.mockImplementation(async (_env, persistedContext) => {
-			expect(persistedContext.storageContext).toEqual({
-				sessionId: null,
-				appId: 'app-123',
+		.mockResolvedValue({
+			result: {
+				secretValue: 'very-secret-token',
+				value: 'alpha-project',
+				userId: 'user-123',
 				storageId: `job:${jobView.id}`,
-			})
-			return {
-				result: {
-					secretValue: 'very-secret-token',
-					value: 'alpha-project',
-					userId: 'user-123',
-					storageId: `job:${jobView.id}`,
-				},
-				logs: ['codemode executed'],
-			}
+			},
+			logs: ['codemode executed'],
 		})
 
 	try {
-		const row = await createdJob
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		if (!row) {
 			throw new Error('Expected created job row.')
 		}
@@ -625,6 +615,19 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			job: row.record,
 			callerContext,
 		})
+
+		const [spyEnv, spyCallerContext] = executeSpy.mock.calls[0] ?? []
+		expect(spyEnv).toBe(env)
+		expect(spyCallerContext).toMatchObject({
+			baseUrl: 'https://example.com',
+			repoContext: null,
+		})
+		expect(spyCallerContext).toHaveProperty('storageContext.sessionId', null)
+		expect(spyCallerContext).toHaveProperty('storageContext.appId', 'app-123')
+		expect(spyCallerContext).toHaveProperty(
+			'storageContext.storageId',
+			`job:${jobView.id}`,
+		)
 
 		expect(outcome.execution).toEqual({
 			ok: true,
@@ -653,6 +656,7 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 		userId: callerContext.user.userId,
 		name: 'Forbidden secret access',
 		code: 'async () => null',
+		storageId: 'job:job-1',
 		schedule: {
 			type: 'once',
 			runAt: '2026-04-17T15:00:00Z',

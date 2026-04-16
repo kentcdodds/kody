@@ -10,6 +10,7 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 		baseUrl: 'https://example.com',
 		homeConnectorId: null,
 		remoteConnectors: null,
+		repoContext: null,
 		storageContext: null,
 		user: null,
 	})
@@ -42,4 +43,5 @@ test('parseMcpCallerContext validates caller context shape', () => {
 	})
 	expect(parsed.homeConnectorId ?? null).toBeNull()
 	expect(parsed.remoteConnectors ?? null).toBeNull()
+	expect(parsed.repoContext ?? null).toBeNull()
 })
