@@ -3,6 +3,7 @@ import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { getEntitySourceById } from './entity-sources.ts'
 import { parseRepoManifest } from './manifest.ts'
+import { type AppManifest } from './types.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
 export type ResolvedSavedAppSource = {
@@ -57,6 +58,19 @@ function fallbackFromArtifact(artifact: UiArtifactRow): ResolvedSavedAppSource {
 	}
 }
 
+function resolveManifestClientPath(manifest: AppManifest) {
+	if (Array.isArray(manifest.assets) && manifest.assets.length > 0) {
+		return manifest.assets[0]!
+	}
+	if (typeof manifest.client === 'string') {
+		return manifest.client
+	}
+	if (Array.isArray(manifest.client) && manifest.client.length > 0) {
+		return manifest.client[0]!
+	}
+	return 'client.html'
+}
+
 function canResolveRepoBackedSource(env: Env, artifact: UiArtifactRow) {
 	return (
 		artifact.sourceId != null &&
@@ -86,48 +100,56 @@ export async function resolveSavedAppSource(input: {
 	const cached = savedAppSourceCache.get(cacheKey)
 	if (cached) return cached
 	const sessionId = `app-source-${source.id}`
-	const session = await repoSessionRpc(input.env, sessionId).openSession({
-		sessionId,
-		sourceId: source.id,
-		userId: input.artifact.user_id,
-		baseUrl: input.baseUrl,
-		sourceRoot: source.source_root,
-	})
-	const manifestFile = await repoSessionRpc(input.env, session.id).readFile({
-		sessionId: session.id,
-		path: source.manifest_path,
-	})
-	if (!manifestFile.content) return fallback
-	const manifest = parseRepoManifest({
-		content: manifestFile.content,
-		manifestPath: source.manifest_path,
-	})
-	if (manifest.kind !== 'app') return fallback
-	const clientPath =
-		manifest.assets?.[0] ??
-		(typeof manifest.client === 'string' ? manifest.client : 'client.html')
-	const [clientFile, serverFile] = await Promise.all([
-		repoSessionRpc(input.env, session.id).readFile({
-			sessionId: session.id,
-			path: clientPath,
-		}),
-		repoSessionRpc(input.env, session.id).readFile({
-			sessionId: session.id,
-			path: manifest.server,
-		}),
-	])
-	const resolved = {
-		title: manifest.title,
-		description: manifest.description,
-		hidden: manifest.hidden ?? fallback.hidden,
-		parameters:
-			(manifest.parameters as Array<UiArtifactParameterDefinition>) ?? null,
-		clientCode: clientFile.content ?? fallback.clientCode,
-		serverCode: serverFile.content ?? fallback.serverCode,
-		serverCodeId: source.published_commit ?? fallback.serverCodeId,
-		sourceId: source.id,
-		publishedCommit: source.published_commit,
+	const session = repoSessionRpc(input.env, sessionId)
+	let openedSessionId: string | null = null
+	try {
+		const opened = await session.openSession({
+			sessionId,
+			sourceId: source.id,
+			userId: input.artifact.user_id,
+			baseUrl: input.baseUrl,
+			sourceRoot: source.source_root,
+		})
+		openedSessionId = opened.id
+		const manifestFile = await session.readFile({
+			sessionId: opened.id,
+			path: source.manifest_path,
+		})
+		if (!manifestFile.content) return fallback
+		const manifest = parseRepoManifest({
+			content: manifestFile.content,
+			manifestPath: source.manifest_path,
+		})
+		if (manifest.kind !== 'app') return fallback
+		const [clientFile, serverFile] = await Promise.all([
+			session.readFile({
+				sessionId: opened.id,
+				path: resolveManifestClientPath(manifest),
+			}),
+			session.readFile({
+				sessionId: opened.id,
+				path: manifest.server,
+			}),
+		])
+		const resolved = {
+			title: manifest.title,
+			description: manifest.description,
+			hidden: manifest.hidden ?? fallback.hidden,
+			parameters:
+				(manifest.parameters as Array<UiArtifactParameterDefinition>) ?? null,
+			clientCode: clientFile.content ?? fallback.clientCode,
+			serverCode: serverFile.content ?? fallback.serverCode,
+			serverCodeId: source.published_commit ?? fallback.serverCodeId,
+			sourceId: source.id,
+			publishedCommit: source.published_commit,
+		}
+		rememberSavedAppSource(cacheKey, resolved)
+		return resolved
+	} finally {
+		if (openedSessionId) {
+			await session.discardSession({ sessionId: openedSessionId }).catch(() => {
+				// Best effort only; source resolution should preserve the original error.
+			})
+		}
 	}
-	rememberSavedAppSource(cacheKey, resolved)
-	return resolved
 }

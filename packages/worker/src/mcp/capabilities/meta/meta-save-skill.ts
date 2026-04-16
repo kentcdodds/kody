@@ -206,7 +206,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 			} catch (cause) {
 				if (existing) {
 					await updateMcpSkill(ctx.env.APP_DB, user.userId, existing.name, {
-						source_id: existing.source_id ?? source.id,
+						source_id: existing.source_id,
 						name: existing.name,
 						title: existing.title,
 						description: existing.description,

@@ -56,9 +56,7 @@ export async function ensureEntitySource(input: {
 	if (
 		typeof (input.db as D1Database | null | undefined)?.prepare !==
 			'function' ||
-		(envHasArtifactsBinding(input.env) === false &&
-			typeof input.repoId !== 'string' &&
-			input.repoId !== undefined)
+		envHasArtifactsBinding(input.env) === false
 	) {
 		return buildEntitySourceRow({
 			userId: input.userId,

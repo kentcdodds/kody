@@ -1,5 +1,6 @@
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { repoSearchInputSchema, repoSearchOutputSchema } from './repo-shared.ts'
 
@@ -16,6 +17,7 @@ export const repoSearchCapability = defineDomainCapability(
 		inputSchema: repoSearchInputSchema,
 		outputSchema: repoSearchOutputSchema,
 		async handler(args, ctx) {
+			requireMcpUser(ctx.callerContext)
 			const session = repoSessionRpc(ctx.env, args.session_id)
 			const result = await session.search({
 				sessionId: args.session_id,

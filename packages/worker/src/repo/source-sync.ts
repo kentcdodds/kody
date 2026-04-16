@@ -31,33 +31,36 @@ export async function syncArtifactSourceSnapshot(
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source) return null
 	const sessionId = buildSyncSessionId(source.id)
-	await repoSessionRpc(input.env, sessionId).openSession({
-		sessionId,
-		sourceId: source.id,
-		userId: input.userId,
-		baseUrl: input.baseUrl,
-		sourceRoot: source.source_root,
-	})
-	await repoSessionRpc(input.env, sessionId).applyEdits({
-		sessionId,
-		edits: Object.entries(input.files).map(([path, content]) => ({
-			kind: 'write' as const,
-			path,
-			content,
-		})),
-		dryRun: false,
-		rollbackOnError: true,
-	})
-	const publishResult = await repoSessionRpc(
-		input.env,
-		sessionId,
-	).publishSession({
-		sessionId,
-		force: true,
-	})
-	if (publishResult.status !== 'ok') {
-		throw new Error(publishResult.message)
+	const session = repoSessionRpc(input.env, sessionId)
+	try {
+		await session.openSession({
+			sessionId,
+			sourceId: source.id,
+			userId: input.userId,
+			baseUrl: input.baseUrl,
+			sourceRoot: source.source_root,
+		})
+		await session.applyEdits({
+			sessionId,
+			edits: Object.entries(input.files).map(([path, content]) => ({
+				kind: 'write' as const,
+				path,
+				content,
+			})),
+			dryRun: false,
+			rollbackOnError: true,
+		})
+		const publishResult = await session.publishSession({
+			sessionId,
+			force: true,
+		})
+		if (publishResult.status !== 'ok') {
+			throw new Error(publishResult.message)
+		}
+		return publishResult.publishedCommit
+	} finally {
+		await session.discardSession({ sessionId }).catch(() => {
+			// Best effort only; publish/apply failures should preserve the root cause.
+		})
 	}
-	await repoSessionRpc(input.env, sessionId).discardSession({ sessionId })
-	return publishResult.publishedCommit
 }
