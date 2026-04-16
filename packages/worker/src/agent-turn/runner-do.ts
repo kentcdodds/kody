@@ -6,6 +6,7 @@ import {
 	type AgentTurnResult,
 	type AgentTurnStreamEvent,
 } from './types.ts'
+import { resolveConversationId } from '#mcp/tools/tool-call-context.ts'
 import { runAgentTurn } from './runner.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 
@@ -48,7 +49,9 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
-		void this.restoreState()
+		state.blockConcurrencyWhile(async () => {
+			await this.restoreState()
+		})
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -85,6 +88,7 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 
 	private async handleStart(body: StartRequestBody) {
 		const runId = crypto.randomUUID()
+		const conversationId = resolveConversationId(body.turn.conversationId)
 		const run: ActiveRunState = {
 			runId,
 			createdAt: new Date().toISOString(),
@@ -99,13 +103,16 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 		void this.executeRun({
 			runId,
 			callerContext: body.callerContext,
-			turn: body.turn,
+			turn: {
+				...body.turn,
+				conversationId,
+			},
 		})
 
 		return Response.json({
 			ok: true,
 			runId,
-			conversationId: body.turn.conversationId ?? null,
+			conversationId,
 		})
 	}
 
