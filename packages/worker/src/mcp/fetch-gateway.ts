@@ -53,6 +53,10 @@ export async function expandSecretPlaceholders(input: {
 		resolved: ResolvedSecret
 	}> = []
 	const replacements = new Map<string, string>()
+	const baseUrl = input.props.baseUrl.trim()
+	if (!baseUrl) {
+		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
+	}
 	const referencedSecrets = dedupeReferencedSecrets([
 		...collectReferencedSecrets([
 			input.request.url,
@@ -83,7 +87,10 @@ export async function expandSecretPlaceholders(input: {
 	}
 	let requestedHost = ''
 	if (hasReferencedSecrets) {
-		const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
+		const nextUrl = resolveRequestUrlForFetchGateway(
+			replaceSecretPlaceholders(input.request.url, replacements),
+			baseUrl,
+		)
 		requestedHost = readRequestedHost(nextUrl)
 		if (!requestedHost) {
 			throw new Error(
@@ -104,7 +111,10 @@ export async function expandSecretPlaceholders(input: {
 			)
 		}
 	}
-	const nextUrl = replaceSecretPlaceholders(input.request.url, replacements)
+	const nextUrl = resolveRequestUrlForFetchGateway(
+		replaceSecretPlaceholders(input.request.url, replacements),
+		baseUrl,
+	)
 	for (const [key, value] of Array.from(headers.entries())) {
 		headers.set(key, replaceSecretPlaceholders(value, replacements))
 	}
@@ -132,6 +142,28 @@ export async function expandSecretPlaceholders(input: {
 		keepalive: input.request.keepalive,
 		signal: input.request.signal,
 	})
+}
+
+/**
+ * Codemode / sandboxed fetch may emit path-only URLs (e.g. `/`, `/core/log`).
+ * Workers `Request` requires an absolute URL string; resolve against the app origin.
+ */
+function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
+	const trimmed = url.trim()
+	if (!trimmed) {
+		throw new Error('Fetch gateway received an empty request URL.')
+	}
+	try {
+		return new URL(trimmed).toString()
+	} catch {
+		try {
+			return new URL(trimmed, baseUrl).toString()
+		} catch {
+			throw new Error(
+				`Fetch gateway could not resolve request URL "${trimmed}" against baseUrl.`,
+			)
+		}
+	}
 }
 
 async function collectHostApprovalEntries(input: {

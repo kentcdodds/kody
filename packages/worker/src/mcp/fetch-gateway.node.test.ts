@@ -130,3 +130,40 @@ test('fetch gateway expands placeholders in form-urlencoded bodies', async () =>
 		resolveSpy.mockRestore()
 	}
 })
+
+test('fetch gateway resolves path-only URLs against baseUrl', async () => {
+	// Node's Request rejects path-only URLs; workerd allows them for codemode outbound fetch.
+	const request = {
+		url: '/',
+		method: 'GET',
+		headers: new Headers(),
+		redirect: 'follow',
+		credentials: 'same-origin',
+		mode: 'cors',
+		cache: 'default',
+		integrity: '',
+		keepalive: false,
+		signal: undefined,
+		text: async () => '',
+	} as unknown as Request
+	const transformed = await expandSecretPlaceholders({ request, props, env })
+	expect(transformed.url).toBe('https://example.com/')
+})
+
+test('fetch gateway resolves nested path-only URLs against baseUrl', async () => {
+	const request = {
+		url: '/core/log',
+		method: 'GET',
+		headers: new Headers(),
+		redirect: 'follow',
+		credentials: 'same-origin',
+		mode: 'cors',
+		cache: 'default',
+		integrity: '',
+		keepalive: false,
+		signal: undefined,
+		text: async () => '',
+	} as unknown as Request
+	const transformed = await expandSecretPlaceholders({ request, props, env })
+	expect(transformed.url).toBe('https://example.com/core/log')
+})
