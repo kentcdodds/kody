@@ -6,8 +6,9 @@
     "./*": "./src/*"
   },
   "dependencies": {
-    "@cloudflare/ai-chat": "^0.4.2",
+    "@cloudflare/ai-chat": "^0.4.4",
     "@cloudflare/codemode": "^0.3.4",
+    "@cloudflare/think": "^0.2.4",
     "@cloudflare/workers-oauth-provider": "^0.4.0",
     "@epic-web/invariant": "^1.0.0",
     "@kody-internal/shared": "file:../shared",
@@ -16,10 +17,10 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@sentry/cloudflare": "^10.45.0",
     "acorn": "^8.16.0",
-    "agents": "^0.10.1",
+    "agents": "^0.11.0",
     "croner": "^10.0.1",
     "remix": "3.0.0-alpha.3",
-    "workers-ai-provider": "^3.1.2",
+    "workers-ai-provider": "^3.1.11",
     "zod": "^4.3.6"
   },
   "imports": {

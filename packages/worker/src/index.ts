@@ -7,6 +7,7 @@ import { MCP } from './mcp/index.ts'
 import { AppFacetBridge, AppRunner } from './mcp/app-runner.ts'
 import { JobManager } from './jobs/manager-do.ts'
 import { StorageRunner } from './storage-runner.ts'
+import { AgentTurnRunner } from './agent-turn/runner-do.ts'
 import { chatAgentBasePath } from '@kody-internal/shared/chat-routes.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
@@ -44,6 +45,7 @@ import {
 
 export {
 	ChatAgent,
+	AgentTurnRunner,
 	CodemodeFetchGateway,
 	HomeConnectorSession,
 	HomeMCP,

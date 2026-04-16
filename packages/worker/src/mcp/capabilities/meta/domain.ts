@@ -10,6 +10,12 @@ import { metaGetHomeConnectorStatusCapability } from './meta-get-home-connector-
 import { metaListRemoteConnectorStatusCapability } from './meta-list-remote-connector-status.ts'
 import { metaGetMcpServerInstructionsCapability } from './meta-get-mcp-server-instructions.ts'
 import { metaGetSkillCapability } from './meta-get-skill.ts'
+import {
+	metaAgentChatTurnCapability,
+	metaAgentTurnCancelCapability,
+	metaAgentTurnNextCapability,
+	metaAgentTurnStartCapability,
+} from './meta-agent-turn.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 import { metaListSkillCollectionsCapability } from './meta-list-skill-collections.ts'
 import { metaRunSkillCapability } from './meta-run-skill.ts'
@@ -42,6 +48,10 @@ export const metaDomain = defineDomain({
 		metaMemoryUpsertCapability,
 		metaMemoryDeleteCapability,
 		metaListSkillCollectionsCapability,
+		metaAgentChatTurnCapability,
+		metaAgentTurnStartCapability,
+		metaAgentTurnNextCapability,
+		metaAgentTurnCancelCapability,
 		metaSaveSkillCapability,
 		metaDeleteSkillCapability,
 		metaGetSkillCapability,

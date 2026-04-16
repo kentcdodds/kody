@@ -11,6 +11,11 @@ capability call takes one **args** object that matches that capability’s
 **inputSchema** and returns data that matches its **outputSchema** when one
 exists.
 
+In addition to **`codemode.<capabilityName>(args)`**, the sandbox may expose
+small built-in helpers for common agent workflows. These helpers are not normal
+MCP capabilities; they are runtime conveniences layered on top of the same
+execute environment.
+
 **execute** also accepts optional **`params`**. When provided, Kody injects that
 JSON object as **`params`** when invoking your async function, so code like
 **`async (params) => { ... }`** can read structured inputs without manually
@@ -31,6 +36,25 @@ To read field shapes while coding, use **search** with
 To run persisted user code by name, use **`meta_run_skill`** with **`name`** and
 optional **`params`**. To inspect source, use **`meta_get_skill`**. You can also
 inline saved skill code into **execute** when that fits the workflow.
+
+## Agent turns
+
+Kody exposes two generic primitives for tool-using chat turns:
+
+- **`agentChatTurnStream(input)`** — an async iterable helper available inside
+  the execute sandbox. Use this when your code needs incremental events such as
+  reasoning deltas, tool call notifications, and a final `turn_complete`
+  message.
+- **`codemode.agent_chat_turn(args)`** — a normal final-value capability
+  wrapper. Use this when you only need the completed result and do not need to
+  process stream events manually.
+
+Typical pattern inside execute:
+
+- use **`agentChatTurnStream(...)`** for interactive controllers that need to
+  forward progress over time
+- use **`codemode.agent_chat_turn(...)`** in jobs or workflows that only need
+  the final answer
 
 ## Jobs
 
