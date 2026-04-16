@@ -52,9 +52,21 @@ test('infers capabilities from execute-time helper names', () => {
 	const src = `async () => {
     const spotifyFetch = await createAuthenticatedFetch('spotify')
     await refreshAccessToken('spotify')
+    const stream = await agentChatTurnStream({
+      sessionId: 'thread-1',
+      system: 'You are helpful.',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })
     return spotifyFetch
   }`
 	const { helperNames, inferencePartial } = inferCodemodeCapabilities(src)
 	expect(inferencePartial).toBe(false)
-	expect(helperNames).toEqual(['connector_get', 'secret_set', 'value_get'])
+	expect(helperNames).toEqual([
+		'agent_turn_cancel',
+		'agent_turn_next',
+		'agent_turn_start',
+		'connector_get',
+		'secret_set',
+		'value_get',
+	])
 })

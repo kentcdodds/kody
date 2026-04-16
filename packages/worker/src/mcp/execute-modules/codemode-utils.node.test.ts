@@ -22,6 +22,9 @@ type SandboxHelpers = {
 	) => Promise<
 		(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 	>
+	agentChatTurnStream: (
+		input: Record<string, unknown>,
+	) => Promise<AsyncIterable<unknown>>
 }
 
 const spotifyConnector = {
@@ -56,6 +59,49 @@ function createCodemode(payload: Record<string, unknown>) {
 				name: call.name,
 				scope: call.scope,
 			}
+		},
+		async agent_turn_start() {
+			return {
+				ok: true,
+				runId: 'run-123',
+				sessionId: 'session-123',
+				conversationId: 'conversation-123',
+			}
+		},
+		async agent_turn_next(args: CapabilityArgs) {
+			const cursor = Number(args.cursor ?? 0)
+			if (cursor === 0) {
+				return {
+					ok: true,
+					events: [{ type: 'assistant_delta', text: 'Hello' }],
+					nextCursor: 1,
+					done: false,
+				}
+			}
+			return {
+				ok: true,
+				events: [
+					{
+						type: 'turn_complete',
+						assistantText: 'Hello world',
+						reasoningText: '',
+						summary: null,
+						continueRecommended: false,
+						needsUserInput: false,
+						stepsUsed: 1,
+						newInformation: true,
+						stopReason: 'completed',
+						finishReason: 'stop',
+						toolCalls: [],
+						conversationId: 'conversation-123',
+					},
+				],
+				nextCursor: 2,
+				done: true,
+			}
+		},
+		async agent_turn_cancel() {
+			return { ok: true, cancelled: true }
 		},
 	} satisfies CodemodeNamespace
 
@@ -205,5 +251,51 @@ test('getExecuteHelperCapabilityNames includes secret_set for refresh persistenc
 		'connector_get',
 		'value_get',
 		'secret_set',
+		'agent_turn_start',
+		'agent_turn_next',
+		'agent_turn_cancel',
+	])
+})
+
+test('createExecuteHelperPrelude exposes agentChatTurnStream as an async iterable', async () => {
+	const { codemode } = createCodemode({
+		access_token: 'new-access-token',
+		refresh_token: 'new-refresh-token',
+	})
+	const prelude = createExecuteHelperPrelude()
+	const createSandboxHelpers = new Function(
+		'codemode',
+		`${prelude}; return { agentChatTurnStream };`,
+	) as (
+		codemodeNamespace: CodemodeNamespace,
+	) => Pick<SandboxHelpers, 'agentChatTurnStream'>
+
+	const helpers = createSandboxHelpers(codemode)
+	const stream = await helpers.agentChatTurnStream({
+		sessionId: 'session-123',
+		messages: [{ role: 'user', content: 'hello' }],
+		system: 'system',
+	})
+	const events: Array<unknown> = []
+	for await (const event of stream) {
+		events.push(event)
+	}
+
+	expect(events).toEqual([
+		{ type: 'assistant_delta', text: 'Hello' },
+		{
+			type: 'turn_complete',
+			assistantText: 'Hello world',
+			reasoningText: '',
+			summary: null,
+			continueRecommended: false,
+			needsUserInput: false,
+			stepsUsed: 1,
+			newInformation: true,
+			stopReason: 'completed',
+			finishReason: 'stop',
+			toolCalls: [],
+			conversationId: 'conversation-123',
+		},
 	])
 })

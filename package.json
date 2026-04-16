@@ -60,11 +60,11 @@
     "dev:talks": "npm --prefix docs/talks/kody-mcp-runtime run dev"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.14.7",
+    "@cloudflare/workers-types": "^4.20260415.1",
+    "@epic-web/config": "^1.24.1",
     "@kody-internal/shared": "file:packages/shared",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@cloudflare/vitest-pool-workers": "^0.14.5",
-    "@cloudflare/workers-types": "^4.20260413.1",
-    "@epic-web/config": "^1.24.1",
     "@playwright/test": "^1.58.2",
     "@sentry/cli": "^3.3.3",
     "@types/node": "^25.5.0",
@@ -81,7 +81,7 @@
     "set-cookie-parser": "^3.0.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.1",
-    "wrangler": "^4.82.1"
+    "wrangler": "^4.83.0"
   },
   "overrides": {
     "@modelcontextprotocol/sdk": "1.29.0"

@@ -51,6 +51,21 @@ rejected; defaults are applied when provided.
 Example:
 `meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })`
 
+## Agent-turn primitives
+
+Kody also provides generic agent-turn primitives for workflows that need
+tool-using inference:
+
+- **`agentChatTurnStream(...)`** — execute-time async iterable helper for
+  incremental events (reasoning, tool calls, results, final completion)
+- **`agent_chat_turn`** — final-value capability wrapper that runs one bounded
+  tool-using turn to completion
+
+Use these when you need a reusable, generic agent turn inside jobs, execute
+code, or higher-level controllers. Keep channel- or product-specific behavior
+outside core primitives; for example, Discord-specific posting and UX should
+live in saved skills or external workers, not in the generic turn runner.
+
 ## Collections
 
 Skills may include an optional **`collection`** string when saved. This is a

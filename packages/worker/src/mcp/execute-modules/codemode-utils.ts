@@ -40,6 +40,9 @@ export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'connector_get',
 	'value_get',
 	'secret_set',
+	'agent_turn_start',
+	'agent_turn_next',
+	'agent_turn_cancel',
 ] as const
 
 export async function refreshAccessToken(
@@ -464,9 +467,43 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
     );
   };
 };
+const __kodyAgentChatTurnStream = async function* (input) {
+  const start = await codemode.agent_turn_start(input);
+  if (!start || !start.ok || !start.runId || !start.sessionId) {
+    throw new Error('agent_turn_start did not return a valid run id and session id.');
+  }
+  let cursor = 0;
+  let done = false;
+  try {
+    while (!done) {
+      const next = await codemode.agent_turn_next({
+        sessionId: start.sessionId,
+        runId: start.runId,
+        cursor,
+      });
+      const events = Array.isArray(next?.events) ? next.events : [];
+      cursor = typeof next?.nextCursor === 'number' ? next.nextCursor : cursor;
+      for (const event of events) {
+        yield event;
+      }
+      done = next?.done === true;
+    }
+  } finally {
+    if (!done) {
+      try {
+        await codemode.agent_turn_cancel({
+          sessionId: start.sessionId,
+          runId: start.runId,
+        });
+      } catch (error) {}
+    }
+  }
+};
 const refreshAccessToken = async (providerName) =>
   __kodyRefreshAccessToken(providerName);
 const createAuthenticatedFetch = async (providerName) =>
   __kodyCreateAuthenticatedFetch(providerName);
+const agentChatTurnStream = (input) =>
+  __kodyAgentChatTurnStream(input);
 `.trim()
 }

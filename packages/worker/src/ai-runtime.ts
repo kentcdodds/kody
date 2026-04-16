@@ -1,8 +1,12 @@
 import {
 	convertToModelMessages,
+	type ModelMessage,
 	stepCountIs,
 	streamText,
+	type StreamTextOnChunkCallback,
 	type StreamTextOnFinishCallback,
+	type StreamTextOnStepFinishCallback,
+	type StreamTextResult,
 	type ToolSet,
 	type UIMessage,
 } from 'ai'
@@ -32,6 +36,22 @@ export type AiRuntimeResult =
 
 export type AiRuntime = {
 	streamChatReply(input: StreamChatReplyInput): Promise<AiRuntimeResult>
+}
+
+export type StreamToolLoopInput = {
+	messages: Array<UIMessage> | Array<ModelMessage>
+	system: string
+	tools: ToolSet
+	toolNames?: Array<string>
+	abortSignal?: AbortSignal
+	onFinish?: StreamTextOnFinishCallback<ToolSet>
+	onChunk?: StreamTextOnChunkCallback<ToolSet>
+	onAbort?: (event: {
+		reason?: string
+		steps: Array<unknown>
+	}) => PromiseLike<void> | void
+	onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>
+	maxSteps?: number
 }
 
 type AIEnabledEnv = Env & {
@@ -76,20 +96,44 @@ function createWorkersAiProvider(env: WorkersAiCredentialsEnv) {
 	})
 }
 
+function isUiMessageArray(
+	messages: Array<UIMessage> | Array<ModelMessage>,
+): messages is Array<UIMessage> {
+	return messages.some((message) => 'parts' in message)
+}
+
+async function toModelMessages(
+	messages: Array<UIMessage> | Array<ModelMessage>,
+): Promise<Array<ModelMessage>> {
+	if (isUiMessageArray(messages)) {
+		return (await convertToModelMessages(messages)) as Array<ModelMessage>
+	}
+	return messages as Array<ModelMessage>
+}
+
+export async function streamRemoteToolLoop(
+	env: WorkersAiCredentialsEnv,
+	input: StreamToolLoopInput,
+): Promise<StreamTextResult<ToolSet, never>> {
+	const workersai = createWorkersAiProvider(env)
+	return streamText({
+		model: workersai(env.AI_MODEL ?? defaultModel),
+		system: input.system,
+		messages: await toModelMessages(input.messages),
+		tools: input.tools,
+		stopWhen: stepCountIs(input.maxSteps ?? remoteToolLoopMaxSteps),
+		abortSignal: input.abortSignal,
+		onFinish: input.onFinish,
+		onChunk: input.onChunk,
+		onAbort: input.onAbort,
+		onStepFinish: input.onStepFinish,
+	})
+}
+
 function createRemoteAiRuntime(env: WorkersAiCredentialsEnv): AiRuntime {
 	return {
 		async streamChatReply(input) {
-			const workersai = createWorkersAiProvider(env)
-
-			const result = streamText({
-				model: workersai(env.AI_MODEL ?? defaultModel),
-				system: input.system,
-				messages: await convertToModelMessages(input.messages),
-				tools: input.tools,
-				stopWhen: stepCountIs(remoteToolLoopMaxSteps),
-				abortSignal: input.abortSignal,
-				onFinish: input.onFinish,
-			})
+			const result = await streamRemoteToolLoop(env, input)
 
 			return {
 				kind: 'response',

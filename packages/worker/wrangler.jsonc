@@ -42,6 +42,10 @@
 			"deleted_classes": ["JobRunner"],
 			"tag": "v9",
 		},
+		{
+			"new_sqlite_classes": ["AgentTurnRunner"],
+			"tag": "v10",
+		},
 	],
 
 	"observability": {
@@ -91,6 +95,10 @@
 					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
+					},
+					{
+						"class_name": "AgentTurnRunner",
+						"name": "AGENT_TURN_RUNNER",
 					},
 					{
 						"class_name": "AppRunner",
@@ -167,6 +175,10 @@
 						"name": "STORAGE_RUNNER",
 					},
 					{
+						"class_name": "AgentTurnRunner",
+						"name": "AGENT_TURN_RUNNER",
+					},
+					{
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
 					},
@@ -239,6 +251,10 @@
 					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
+					},
+					{
+						"class_name": "AgentTurnRunner",
+						"name": "AGENT_TURN_RUNNER",
 					},
 					{
 						"class_name": "AppRunner",
