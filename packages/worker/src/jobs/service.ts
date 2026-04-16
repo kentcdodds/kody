@@ -2,7 +2,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { upsertJobVector } from '#mcp/jobs-vectorize.ts'
+import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
@@ -329,6 +329,7 @@ export async function deleteJob(input: {
 		throw new Error(`Job "${input.jobId}" was not found.`)
 	}
 	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+	await deleteJobVector(input.env, input.jobId)
 	return {
 		id: input.jobId,
 		deleted: true as const,
