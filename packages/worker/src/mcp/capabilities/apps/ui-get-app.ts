@@ -4,10 +4,8 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import {
-	parseUiArtifactParameters,
-	uiArtifactParameterSchema,
-} from '#mcp/ui-artifact-parameters.ts'
+import { uiArtifactParameterSchema } from '#mcp/ui-artifact-parameters.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const outputSchema = z.object({
 	app_id: z.string(),
@@ -56,15 +54,20 @@ export const uiGetAppCapability = defineDomainCapability(
 			if (!row) {
 				throw new Error('Saved UI artifact not found for this user.')
 			}
+			const resolved = await resolveSavedAppSource({
+				env: ctx.env,
+				baseUrl: ctx.callerContext.baseUrl,
+				artifact: row,
+			})
 			return {
 				app_id: row.id,
-				title: row.title,
-				description: row.description,
-				parameters: parseUiArtifactParameters(row.parameters),
-				hidden: row.hidden,
-				client_code: row.clientCode,
-				server_code: row.serverCode,
-				server_code_id: row.serverCodeId,
+				title: resolved.title,
+				description: resolved.description,
+				parameters: resolved.parameters,
+				hidden: resolved.hidden,
+				client_code: resolved.clientCode,
+				server_code: resolved.serverCode,
+				server_code_id: resolved.serverCodeId,
 				created_at: row.created_at,
 				updated_at: row.updated_at,
 			}

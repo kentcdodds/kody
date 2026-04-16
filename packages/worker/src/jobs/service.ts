@@ -30,6 +30,8 @@ import {
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
+import { upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 
@@ -181,6 +183,17 @@ export async function createJob(input: {
 			job: toJobView(job),
 		}),
 	})
+	await upsertJobVector(input.env, {
+		jobId: job.id,
+		userId: callerContext.user.userId,
+		embedText: buildJobEmbedText({
+			name: job.name,
+			description: job.name,
+			scheduleSummary: toJobView(job).scheduleSummary,
+			sourceId: job.sourceId,
+			publishedCommit: job.publishedCommit,
+		}),
+	})
 	return toJobView(job)
 }
 
@@ -284,6 +297,17 @@ export async function updateJob(input: {
 		sourceId: updated.sourceId,
 		files: buildJobSourceFiles({
 			job: toJobView(updated),
+		}),
+	})
+	await upsertJobVector(input.env, {
+		jobId: updated.id,
+		userId: callerContext.user.userId,
+		embedText: buildJobEmbedText({
+			name: updated.name,
+			description: updated.name,
+			scheduleSummary: toJobView(updated).scheduleSummary,
+			sourceId: updated.sourceId,
+			publishedCommit: updated.publishedCommit,
 		}),
 	})
 	return toJobView(updated)

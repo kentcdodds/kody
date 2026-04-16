@@ -3,11 +3,9 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
-import {
-	parseUiArtifactParameters,
-	uiArtifactParameterSchema,
-} from '#mcp/ui-artifact-parameters.ts'
+import { uiArtifactParameterSchema } from '#mcp/ui-artifact-parameters.ts'
 import { requireMcpUser } from '../meta/require-user.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const outputSchema = z.object({
 	app_id: z.string(),
@@ -47,15 +45,20 @@ export const uiLoadAppSourceCapability = defineDomainCapability(
 			if (!row) {
 				throw new Error('Saved app not found for this user.')
 			}
+			const resolved = await resolveSavedAppSource({
+				env: ctx.env,
+				baseUrl: ctx.callerContext.baseUrl,
+				artifact: row,
+			})
 			return {
 				app_id: row.id,
-				title: row.title,
-				description: row.description,
-				client_code: row.clientCode,
-				server_code: row.serverCode,
-				server_code_id: row.serverCodeId,
-				parameters: parseUiArtifactParameters(row.parameters),
-				hidden: row.hidden,
+				title: resolved.title,
+				description: resolved.description,
+				client_code: resolved.clientCode,
+				server_code: resolved.serverCode,
+				server_code_id: resolved.serverCodeId,
+				parameters: resolved.parameters,
+				hidden: resolved.hidden,
 			}
 		},
 	},

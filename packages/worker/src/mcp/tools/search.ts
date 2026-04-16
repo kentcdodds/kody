@@ -123,10 +123,11 @@ function applyMaxResponseSize<TPayload>(
 
 const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities, Values, Connectors, Skills, Apps, and Secrets',
+	title:
+		'Search Capabilities, Values, Connectors, Skills, Apps, Jobs, and Secrets',
 	description: `
 Find **built-in capabilities**, **persisted values**, **saved connectors**,
-**saved skills**, **saved apps**, and **user secret references** (metadata only)
+**saved skills**, **saved apps**, **saved jobs**, and **user secret references** (metadata only)
 before \`execute\` or \`open_generated_ui\`.
 
 **query** — ranked markdown + structured matches (order matters). If nothing useful
@@ -134,7 +135,7 @@ returns, rephrase or call \`meta_list_capabilities\`; \`entity\` does not fix an
 empty ranked list.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
-| \`connector\` | \`skill\` | \`app\` | \`secret\`), including schemas for
+| \`connector\` | \`skill\` | \`app\` | \`job\` | \`secret\`), including schemas for
 capabilities. Types and fields: see response.
 
 Run a skill: \`meta_run_skill({ name, params })\`; source: \`meta_get_skill\`.

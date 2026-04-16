@@ -6,6 +6,7 @@ import { renderHostedSavedUiHtml } from '#app/saved-ui-hosted-html.ts'
 import { type routes } from '#app/routes.ts'
 import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import { getUiArtifactByOwnerIds } from '#mcp/ui-artifacts-repo.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 async function getSavedUiForRequest(
 	request: Request,
@@ -47,8 +48,24 @@ export function createSavedUiPageHandler(env: Env) {
 				appId: artifact.id,
 				homeConnectorId: null,
 			})
-			const html = renderHostedSavedUiHtml({
+			const resolvedArtifact = await resolveSavedAppSource({
+				env,
+				baseUrl,
 				artifact,
+			})
+			const html = renderHostedSavedUiHtml({
+				artifact: {
+					...artifact,
+					title: resolvedArtifact.title,
+					description: resolvedArtifact.description,
+					hidden: resolvedArtifact.hidden,
+					parameters: resolvedArtifact.parameters
+						? JSON.stringify(resolvedArtifact.parameters)
+						: null,
+					clientCode: resolvedArtifact.clientCode,
+					serverCode: resolvedArtifact.serverCode,
+					serverCodeId: resolvedArtifact.serverCodeId,
+				},
 				appSession,
 				appBaseUrl: baseUrl,
 			})

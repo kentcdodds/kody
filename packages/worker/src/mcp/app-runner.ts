@@ -15,6 +15,7 @@ import {
 	buildFacetName,
 } from '#mcp/app-runner-facet-names.ts'
 import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const defaultAppRateLimit = 120
 const appRunnerFacetIdPrefix = 'facet'
@@ -944,15 +945,31 @@ export async function syncSavedAppRunnerFromDb(input: {
 		})
 		return null
 	}
+	const resolved = await resolveSavedAppSource({
+		env: input.env,
+		baseUrl: input.baseUrl ?? '',
+		artifact,
+	})
 	await configureSavedAppRunner({
 		env: input.env,
 		appId: artifact.id,
 		userId: artifact.user_id,
 		baseUrl: input.baseUrl,
-		serverCode: artifact.serverCode,
-		serverCodeId: artifact.serverCodeId,
+		serverCode: resolved.serverCode,
+		serverCodeId: resolved.serverCodeId,
 	})
-	return artifact
+	return {
+		...artifact,
+		title: resolved.title,
+		description: resolved.description,
+		hidden: resolved.hidden,
+		parameters: resolved.parameters
+			? JSON.stringify(resolved.parameters)
+			: null,
+		clientCode: resolved.clientCode,
+		serverCode: resolved.serverCode,
+		serverCodeId: resolved.serverCodeId,
+	}
 }
 
 function dedupeFacetNames(facetNames: Array<string> | null | undefined) {
