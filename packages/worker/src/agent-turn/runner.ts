@@ -1,7 +1,6 @@
-import { streamText, stepCountIs, type ModelMessage } from 'ai'
-import { createWorkersAI } from 'workers-ai-provider'
 import { resolveConversationId } from '#mcp/tools/tool-call-context.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { streamRemoteToolLoop } from '#worker/ai-runtime.ts'
 import {
 	agentTurnInputSchema,
 	type AgentToolTrace,
@@ -13,7 +12,6 @@ import {
 } from './types.ts'
 import { createAgentTurnToolSet } from './tools.ts'
 
-const defaultModel = '@cf/zai-org/glm-4.7-flash'
 const defaultMaxSteps = 8
 
 type QueueEntry<T> =
@@ -74,9 +72,7 @@ function clean(value: unknown) {
 	return String(value ?? '').trim()
 }
 
-function toModelMessages(
-	messages: Array<AgentTurnMessage>,
-): Array<ModelMessage> {
+function toModelMessages(messages: Array<AgentTurnMessage>) {
 	return messages.map((message) => ({
 		role: message.role,
 		content: message.content,
@@ -172,10 +168,6 @@ export async function runAgentTurn(input: {
 	const parsed = agentTurnInputSchema.parse(input.turn)
 	const conversationId = resolveConversationId(parsed.conversationId)
 	const modelMessages = toModelMessages(parsed.messages)
-	const model = createWorkersAI({
-		binding: input.env.AI,
-		gateway: { id: input.env.AI_GATEWAY_ID ?? '' },
-	})(input.env.AI_MODEL ?? defaultModel)
 	const tools = await createAgentTurnToolSet({
 		env: input.env,
 		callerContext: input.callerContext,
@@ -189,12 +181,11 @@ export async function runAgentTurn(input: {
 	let finishReason = 'stop'
 	let stepsUsed = 0
 
-	const result = streamText({
-		model,
+	const result = await streamRemoteToolLoop(input.env, {
 		system: parsed.system,
 		messages: modelMessages,
 		tools,
-		stopWhen: stepCountIs(parsed.maxSteps ?? defaultMaxSteps),
+		maxSteps: parsed.maxSteps ?? defaultMaxSteps,
 		abortSignal: input.abortSignal,
 		onChunk: async ({ chunk }) => {
 			if (chunk.type === 'text-delta') {
