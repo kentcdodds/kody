@@ -8,7 +8,9 @@
   "dependencies": {
     "@cloudflare/ai-chat": "^0.4.4",
     "@cloudflare/codemode": "^0.3.4",
+    "@cloudflare/shell": "^0.3.2",
     "@cloudflare/think": "^0.2.4",
+    "@cloudflare/worker-bundler": "^0.1.1",
     "@cloudflare/workers-oauth-provider": "^0.4.0",
     "@epic-web/invariant": "^1.0.0",
     "@kody-internal/shared": "file:../shared",

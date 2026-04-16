@@ -128,7 +128,10 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					ctx.env.APP_DB,
 					user.userId,
 					existing.name,
-					prep.rowPayload,
+					{
+						source_id: existing.source_id,
+						...prep.rowPayload,
+					},
 				)
 				if (!updated) {
 					throw new Error('Skill not found for this user.')
@@ -138,6 +141,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					await insertMcpSkill(ctx.env.APP_DB, {
 						id: skillId,
 						user_id: user.userId,
+						source_id: null,
 						...prep.rowPayload,
 						created_at: now,
 						updated_at: now,
@@ -162,6 +166,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 			} catch (cause) {
 				if (existing) {
 					await updateMcpSkill(ctx.env.APP_DB, user.userId, existing.name, {
+						source_id: existing.source_id,
 						name: existing.name,
 						title: existing.title,
 						description: existing.description,

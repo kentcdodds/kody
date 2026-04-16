@@ -46,6 +46,10 @@
 			"new_sqlite_classes": ["AgentTurnRunner"],
 			"tag": "v10",
 		},
+		{
+			"new_sqlite_classes": ["RepoSession"],
+			"tag": "v11",
+		},
 	],
 
 	"observability": {
@@ -101,11 +105,21 @@
 						"name": "AGENT_TURN_RUNNER",
 					},
 					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
+					},
+					{
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
 					},
 				],
 			},
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "default",
+				},
+			],
 			"d1_databases": [
 				{
 					"binding": "APP_DB",
@@ -179,11 +193,21 @@
 						"name": "AGENT_TURN_RUNNER",
 					},
 					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
+					},
+					{
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
 					},
 				],
 			},
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "default",
+				},
+			],
 			"d1_databases": [
 				{
 					"binding": "APP_DB",
@@ -257,11 +281,21 @@
 						"name": "AGENT_TURN_RUNNER",
 					},
 					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
+					},
+					{
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
 					},
 				],
 			},
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "default",
+				},
+			],
 			"d1_databases": [
 				{
 					"binding": "APP_DB",

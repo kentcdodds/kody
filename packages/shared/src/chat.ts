@@ -47,6 +47,19 @@ export const mcpStorageContextSchema = object({
 	storageId: optional(nullable(string())),
 })
 
+export const mcpRepoContextSchema = object({
+	sourceId: optional(nullable(string())),
+	repoId: optional(nullable(string())),
+	sessionId: optional(nullable(string())),
+	sessionRepoId: optional(nullable(string())),
+	baseCommit: optional(nullable(string())),
+	manifestPath: optional(nullable(string())),
+	sourceRoot: optional(nullable(string())),
+	publishedCommit: optional(nullable(string())),
+	entityKind: optional(nullable(string())),
+	entityId: optional(nullable(string())),
+})
+
 const remoteConnectorRefSchema = object({
 	kind: remoteConnectorKindFieldSchema,
 	instanceId: remoteConnectorInstanceIdFieldSchema,
@@ -58,10 +71,12 @@ export const mcpCallerContextSchema = object({
 	homeConnectorId: optional(nullable(string())),
 	remoteConnectors: optional(nullable(array(remoteConnectorRefSchema))),
 	storageContext: optional(nullable(mcpStorageContextSchema)),
+	repoContext: optional(nullable(mcpRepoContextSchema)),
 })
 
 export type McpUserContext = InferOutput<typeof mcpUserContextSchema>
 export type McpStorageContext = InferOutput<typeof mcpStorageContextSchema>
+export type McpRepoContext = InferOutput<typeof mcpRepoContextSchema>
 export type McpCallerContext = InferOutput<typeof mcpCallerContextSchema>
 
 export const chatAgentPropsSchema = object({

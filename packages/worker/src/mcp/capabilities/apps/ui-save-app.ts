@@ -352,6 +352,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				await insertUiArtifact(ctx.env.APP_DB, {
 					id: appId,
 					user_id: user.userId,
+					sourceId: null,
 					title,
 					description,
 					clientCode,
