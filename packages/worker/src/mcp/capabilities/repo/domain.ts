@@ -1,10 +1,12 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { repoApplyPatchCapability } from './repo-apply-patch.ts'
 import { repoDiscardSessionCapability } from './repo-discard-session.ts'
 import { repoGetSessionCapability } from './repo-get-session.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
 import { repoReadFileCapability } from './repo-read-file.ts'
 import { repoSearchCapability } from './repo-search.ts'
+import { repoTreeCapability } from './repo-tree.ts'
 import { repoWriteFileCapability } from './repo-write-file.ts'
 
 export const repoDomain = defineDomain({
@@ -15,8 +17,10 @@ export const repoDomain = defineDomain({
 	capabilities: [
 		repoOpenSessionCapability,
 		repoGetSessionCapability,
+		repoTreeCapability,
 		repoReadFileCapability,
 		repoWriteFileCapability,
+		repoApplyPatchCapability,
 		repoSearchCapability,
 		repoDiscardSessionCapability,
 	],

@@ -1,6 +1,10 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
-import { Workspace, WorkspaceFileSystem } from '@cloudflare/shell'
+import {
+	Workspace,
+	WorkspaceFileSystem,
+	createWorkspaceStateBackend,
+} from '@cloudflare/shell'
 import { createGit } from '@cloudflare/shell/git'
 import {
 	deleteRepoSession,
@@ -39,6 +43,36 @@ export type RepoSessionSearchResult = {
 	totalMatches: number
 	outputMode: RepoSearchOutputMode
 	truncated: boolean
+}
+
+export type RepoApplyPatchResult = {
+	dryRun: boolean
+	totalChanged: number
+	edits: Array<{
+		path: string
+		changed: boolean
+		content: string
+		diff: string
+	}>
+}
+
+export type RepoSessionTreeResult = {
+	path: string
+	name: string
+	type: 'file' | 'directory' | 'symlink'
+	size: number
+	children?: Array<RepoSessionTreeResult>
+}
+
+export type RepoSessionApplyEditsResult = {
+	dryRun: boolean
+	totalChanged: number
+	edits: Array<{
+		path: string
+		changed: boolean
+		content: string
+		diff: string
+	}>
 }
 
 export type RepoSessionDiscardResult = {
@@ -117,6 +151,8 @@ class RepoSessionBase extends DurableObject<Env> {
 	})
 
 	readonly fileSystem = new WorkspaceFileSystem(this.workspace)
+
+	readonly state = createWorkspaceStateBackend(this.workspace)
 
 	readonly git = createGit(this.fileSystem, repoSessionWorkspacePrefix)
 
@@ -305,14 +341,15 @@ class RepoSessionBase extends DurableObject<Env> {
 		path: string
 		content: string
 	}): Promise<{ ok: true; path: string }> {
-		await this.getSessionInfo({ sessionId: input.sessionId })
+		const session = await this.getSessionInfo({ sessionId: input.sessionId })
 		await this.workspace.writeFile(
 			this.resolveWorkspacePath(input.path),
 			input.content,
 		)
 		await updateRepoSession(this.env.APP_DB, {
 			id: input.sessionId,
-			userId: (await this.getSessionInfo({ sessionId: input.sessionId })).id,
+			userId: session.source_id,
+			lastCheckpointAt: nowIso(),
 		})
 		return { ok: true, path: input.path }
 	}
@@ -386,6 +423,139 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
+	async applyPatch(input: {
+		sessionId: string
+		edits: Array<
+			| {
+					kind: 'write'
+					path: string
+					content: string
+			  }
+			| {
+					kind: 'replace'
+					path: string
+					search: string
+					replacement: string
+					options?: {
+						caseSensitive?: boolean
+						regex?: boolean
+						wholeWord?: boolean
+						contextBefore?: number
+						contextAfter?: number
+						maxMatches?: number
+					}
+			  }
+			| {
+					kind: 'writeJson'
+					path: string
+					value: unknown
+					options?: {
+						spaces?: number
+					}
+			  }
+		>
+		dryRun?: boolean
+		rollbackOnError?: boolean
+	}): Promise<RepoApplyPatchResult> {
+		return this.applyEdits(input)
+	}
+
+	async tree(input: {
+		sessionId: string
+		path?: string | null
+		maxDepth?: number
+	}): Promise<RepoSessionTreeResult> {
+		await this.getSessionInfo({ sessionId: input.sessionId })
+		const root = this.resolveWorkspacePath(
+			input.path?.trim() || repoSessionWorkspacePrefix,
+		)
+		const tree = await this.state.walkTree(root, {
+			maxDepth: input.maxDepth,
+		})
+		return this.toTreeResult(tree)
+	}
+
+	async applyEdits(input: {
+		sessionId: string
+		edits: Array<{
+			kind: 'write' | 'replace' | 'writeJson'
+			path: string
+			content?: string
+			search?: string
+			replacement?: string
+			value?: unknown
+			options?: {
+				caseSensitive?: boolean
+				regex?: boolean
+				wholeWord?: boolean
+				contextBefore?: number
+				contextAfter?: number
+				maxMatches?: number
+				spaces?: number
+			}
+		}>
+		dryRun?: boolean
+		rollbackOnError?: boolean
+	}): Promise<RepoSessionApplyEditsResult> {
+		const session = await this.getSessionInfo({ sessionId: input.sessionId })
+		const plan = await this.state.planEdits(
+			input.edits.map((edit) => {
+				const path = this.resolveWorkspacePath(edit.path)
+				switch (edit.kind) {
+					case 'write':
+						if (typeof edit.content !== 'string') {
+							throw new Error('repo_apply_patch write edits require content.')
+						}
+						return {
+							kind: 'write' as const,
+							path,
+							content: edit.content,
+						}
+					case 'replace':
+						if (typeof edit.search !== 'string') {
+							throw new Error('repo_apply_patch replace edits require search.')
+						}
+						return {
+							kind: 'replace' as const,
+							path,
+							search: edit.search,
+							replacement: edit.replacement ?? '',
+							options: edit.options,
+						}
+					case 'writeJson':
+						return {
+							kind: 'writeJson' as const,
+							path,
+							value: edit.value,
+							options:
+								typeof edit.options?.spaces === 'number'
+									? { spaces: edit.options.spaces }
+									: undefined,
+						}
+				}
+			}),
+		)
+		const result = await this.state.applyEditPlan(plan, {
+			dryRun: input.dryRun,
+			rollbackOnError: input.rollbackOnError,
+		})
+		await updateRepoSession(this.env.APP_DB, {
+			id: input.sessionId,
+			userId: session.source_id,
+			lastCheckpointAt: nowIso(),
+		})
+		return {
+			dryRun: result.dryRun,
+			totalChanged: result.totalChanged,
+			edits: result.edits.map((edit) => ({
+				path: this.toExternalPath(edit.path),
+				changed: edit.changed,
+				content: edit.content,
+				diff: edit.diff,
+			})),
+		}
+	}
+
 	private resolveWorkspacePath(path: string) {
 		const trimmed = path.trim()
 		if (!trimmed) {
@@ -401,6 +571,56 @@ class RepoSessionBase extends DurableObject<Env> {
 		return path.startsWith(`${repoSessionWorkspacePrefix}/`)
 			? path.slice(repoSessionWorkspacePrefix.length + 1)
 			: path
+	}
+
+	private normalizeUnknownTreeChild(
+		child: unknown,
+		parentPath: string,
+	): {
+		path: string
+		name: string
+		type: 'file' | 'directory' | 'symlink'
+		size: number
+		children?: Array<unknown>
+	} {
+		const input =
+			child && typeof child === 'object'
+				? (child as Record<string, unknown>)
+				: ({} as Record<string, unknown>)
+		return {
+			path:
+				typeof input.path === 'string' ? input.path : `${parentPath}/unknown`,
+			name: typeof input.name === 'string' ? input.name : 'unknown',
+			type:
+				input.type === 'file' ||
+				input.type === 'directory' ||
+				input.type === 'symlink'
+					? input.type
+					: 'file',
+			size: typeof input.size === 'number' ? input.size : 0,
+			children: Array.isArray(input.children)
+				? (input.children as Array<unknown>)
+				: undefined,
+		}
+	}
+
+	private toTreeResult(node: {
+		path: string
+		name: string
+		type: 'file' | 'directory' | 'symlink'
+		size: number
+		children?: Array<unknown>
+	}): RepoSessionTreeResult {
+		return {
+			path: this.toExternalPath(node.path),
+			name: node.name,
+			type: node.type,
+			size: node.size,
+			children: node.children?.map(
+				(child): RepoSessionTreeResult =>
+					this.toTreeResult(this.normalizeUnknownTreeChild(child, node.path)),
+			),
+		}
 	}
 
 	private toSessionInfo(session: RepoSessionRow, source: EntitySourceRow) {
@@ -509,6 +729,33 @@ export function repoSessionRpc(env: Env, sessionId: string) {
 			limit?: number
 			outputMode?: RepoSearchOutputMode
 		}) => Promise<RepoSessionSearchResult>
+		tree: (payload: {
+			sessionId: string
+			path?: string | null
+			maxDepth?: number
+		}) => Promise<RepoSessionTreeResult>
+		applyEdits: (payload: {
+			sessionId: string
+			edits: Array<{
+				kind: 'write' | 'replace' | 'writeJson'
+				path: string
+				content?: string
+				search?: string
+				replacement?: string
+				value?: unknown
+				options?: {
+					caseSensitive?: boolean
+					regex?: boolean
+					wholeWord?: boolean
+					contextBefore?: number
+					contextAfter?: number
+					maxMatches?: number
+					spaces?: number
+				}
+			}>
+			dryRun?: boolean
+			rollbackOnError?: boolean
+		}) => Promise<RepoSessionApplyEditsResult>
 	}
 }
 

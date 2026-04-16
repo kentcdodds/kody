@@ -73,6 +73,34 @@ export const repoReadFileOutputSchema = z.object({
 	content: z.string().nullable(),
 })
 
+export const repoTreeInputSchema = repoSessionIdSchema.extend({
+	path: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Optional repo-relative directory path. Defaults to the repo session source root.',
+		),
+	max_depth: z
+		.number()
+		.int()
+		.min(0)
+		.optional()
+		.describe('Optional maximum tree depth to include in the result.'),
+})
+
+export const repoTreeNodeSchema: z.ZodType<unknown> = z.lazy(() =>
+	z.object({
+		path: z.string(),
+		name: z.string(),
+		type: z.enum(['file', 'directory', 'symlink']),
+		size: z.number().int().min(0),
+		children: z.array(repoTreeNodeSchema).optional(),
+	}),
+)
+
+export const repoTreeOutputSchema = repoTreeNodeSchema
+
 export const repoWriteFileInputSchema = repoSessionIdSchema.extend({
 	path: z.string().min(1).describe('Repo-relative file path to write.'),
 	content: z
@@ -156,3 +184,67 @@ export const repoDiscardSessionOutputSchema = z.object({
 })
 
 export const repoDiscardSessionInputSchema = repoSessionIdSchema
+
+const repoPatchSearchOptionsSchema = z.object({
+	case_sensitive: z.boolean().optional(),
+	regex: z.boolean().optional(),
+	whole_word: z.boolean().optional(),
+	context_before: z.number().int().min(0).optional(),
+	context_after: z.number().int().min(0).optional(),
+	max_matches: z.number().int().min(1).optional(),
+})
+
+export const repoPatchInstructionSchema = z.discriminatedUnion('kind', [
+	z.object({
+		kind: z.literal('write'),
+		path: z.string().min(1),
+		content: z.string(),
+	}),
+	z.object({
+		kind: z.literal('replace'),
+		path: z.string().min(1),
+		search: z.string().min(1),
+		replacement: z.string(),
+		options: repoPatchSearchOptionsSchema.optional(),
+	}),
+	z.object({
+		kind: z.literal('writeJson'),
+		path: z.string().min(1),
+		value: z.unknown(),
+		options: z
+			.object({
+				spaces: z.number().int().min(0).optional(),
+			})
+			.optional(),
+	}),
+])
+
+export const repoApplyPatchInputSchema = repoSessionIdSchema.extend({
+	instructions: z
+		.array(repoPatchInstructionSchema)
+		.min(1)
+		.describe('Ordered structured edit instructions to apply transactionally.'),
+	dry_run: z
+		.boolean()
+		.optional()
+		.describe('Preview the edit plan without mutating the session workspace.'),
+	rollback_on_error: z
+		.boolean()
+		.optional()
+		.describe(
+			'Whether to roll back all edits when one instruction fails. Defaults to true.',
+		),
+})
+
+export const repoApplyPatchResultSchema = z.object({
+	dry_run: z.boolean(),
+	total_changed: z.number().int().min(0),
+	edits: z.array(
+		z.object({
+			path: z.string(),
+			changed: z.boolean(),
+			content: z.string(),
+			diff: z.string(),
+		}),
+	),
+})
