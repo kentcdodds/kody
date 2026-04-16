@@ -3,6 +3,7 @@ import { EXECUTE_HELPER_CAPABILITY_NAMES } from '#mcp/execute-modules/codemode-u
 const executeHelperNames = new Set([
 	'refreshAccessToken',
 	'createAuthenticatedFetch',
+	'agentChatTurnStream',
 ])
 
 export type InferCodemodeCapabilitiesResult = {

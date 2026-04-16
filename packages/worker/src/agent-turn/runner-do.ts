@@ -78,6 +78,9 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 			(await this.ctx.storage.get<PersistedState>(persistedStateKey)) ?? null
 		if (persisted) this.stateSnapshot = persisted
 		if (this.stateSnapshot.activeRun && !this.stateSnapshot.activeRun.done) {
+			this.stateSnapshot.activeRun.events = []
+			this.stateSnapshot.activeRun.finalResult = null
+			await this.persistState()
 			void this.executeRun({
 				runId: this.stateSnapshot.activeRun.runId,
 				callerContext: this.stateSnapshot.activeRun.input.callerContext,
