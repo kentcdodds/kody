@@ -16,6 +16,7 @@ import {
 import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { requireMcpUser } from './require-user.ts'
+import { ensureEntitySource } from '#worker/repo/source-service.ts'
 
 const inputSchema = z.object({
 	name: z
@@ -122,6 +123,14 @@ export const metaSaveSkillCapability = defineDomainCapability(
 
 			const skillId = existing?.id ?? crypto.randomUUID()
 			const now = new Date().toISOString()
+			const source = await ensureEntitySource({
+				db: ctx.env.APP_DB,
+				env: ctx.env,
+				userId: user.userId,
+				entityKind: 'skill',
+				entityId: skillId,
+				sourceRoot: '/',
+			})
 
 			if (existing) {
 				const updated = await updateMcpSkill(
@@ -129,7 +138,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					user.userId,
 					existing.name,
 					{
-						source_id: existing.source_id,
+						source_id: source.id,
 						...prep.rowPayload,
 					},
 				)
@@ -141,7 +150,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					await insertMcpSkill(ctx.env.APP_DB, {
 						id: skillId,
 						user_id: user.userId,
-						source_id: null,
+						source_id: source.id,
 						...prep.rowPayload,
 						created_at: now,
 						updated_at: now,
@@ -166,7 +175,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 			} catch (cause) {
 				if (existing) {
 					await updateMcpSkill(ctx.env.APP_DB, user.userId, existing.name, {
-						source_id: existing.source_id,
+						source_id: existing.source_id ?? source.id,
 						name: existing.name,
 						title: existing.title,
 						description: existing.description,
