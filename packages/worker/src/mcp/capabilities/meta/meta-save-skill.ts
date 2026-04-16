@@ -19,6 +19,7 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import { requireMcpUser } from './require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import { updateEntitySource } from '#worker/repo/entity-sources.ts'
 
 const inputSchema = z.object({
 	name: z
@@ -167,7 +168,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				}
 			}
 
-			await syncArtifactSourceSnapshot({
+			const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 				env: ctx.env,
 				userId: user.userId,
 				baseUrl: ctx.callerContext.baseUrl,
@@ -186,6 +187,14 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					code: args.code,
 				}),
 			})
+			if (syncedPublishedCommit) {
+				await updateEntitySource(ctx.env.APP_DB, {
+					id: source.id,
+					userId: user.userId,
+					publishedCommit: syncedPublishedCommit,
+					indexedCommit: syncedPublishedCommit,
+				})
+			}
 
 			try {
 				await upsertSkillVector(ctx.env, {

@@ -167,14 +167,7 @@ export async function createJob(input: {
 		errorCount: 0,
 		runHistory: [],
 	}
-	const callerContextJson = serializeCallerContext(callerContext)
-	await insertJobRow({
-		db: input.env.APP_DB,
-		userId: callerContext.user.userId,
-		job,
-		callerContextJson,
-	})
-	await syncArtifactSourceSnapshot({
+	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 		env: input.env,
 		userId: callerContext.user.userId,
 		baseUrl: callerContext.baseUrl,
@@ -182,6 +175,16 @@ export async function createJob(input: {
 		files: buildJobSourceFiles({
 			job: toJobView(job),
 		}),
+	})
+	if (syncedPublishedCommit) {
+		job.publishedCommit = syncedPublishedCommit
+	}
+	const callerContextJson = serializeCallerContext(callerContext)
+	await insertJobRow({
+		db: input.env.APP_DB,
+		userId: callerContext.user.userId,
+		job,
+		callerContextJson,
 	})
 	await upsertJobVector(input.env, {
 		jobId: job.id,
@@ -283,14 +286,7 @@ export async function updateJob(input: {
 				})
 			: existing.nextRunAt,
 	}
-	const nextCallerContextJson = serializeCallerContext(callerContext)
-	await updateJobRow({
-		db: input.env.APP_DB,
-		userId: callerContext.user.userId,
-		job: updated,
-		callerContextJson: nextCallerContextJson,
-	})
-	await syncArtifactSourceSnapshot({
+	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 		env: input.env,
 		userId: callerContext.user.userId,
 		baseUrl: callerContext.baseUrl,
@@ -298,6 +294,16 @@ export async function updateJob(input: {
 		files: buildJobSourceFiles({
 			job: toJobView(updated),
 		}),
+	})
+	if (syncedPublishedCommit) {
+		updated.publishedCommit = syncedPublishedCommit
+	}
+	const nextCallerContextJson = serializeCallerContext(callerContext)
+	await updateJobRow({
+		db: input.env.APP_DB,
+		userId: callerContext.user.userId,
+		job: updated,
+		callerContextJson: nextCallerContextJson,
 	})
 	await upsertJobVector(input.env, {
 		jobId: updated.id,

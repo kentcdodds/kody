@@ -25,11 +25,11 @@ function buildSyncSessionId(sourceId: string) {
 
 export async function syncArtifactSourceSnapshot(
 	input: SyncArtifactSourceInput,
-): Promise<void> {
-	if (!input.sourceId) return
-	if (!canSyncArtifactSource(input.env)) return
+): Promise<string | null> {
+	if (!input.sourceId) return null
+	if (!canSyncArtifactSource(input.env)) return null
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-	if (!source) return
+	if (!source) return null
 	const sessionId = buildSyncSessionId(source.id)
 	await repoSessionRpc(input.env, sessionId).openSession({
 		sessionId,
@@ -59,4 +59,5 @@ export async function syncArtifactSourceSnapshot(
 		throw new Error(publishResult.message)
 	}
 	await repoSessionRpc(input.env, sessionId).discardSession({ sessionId })
+	return publishResult.publishedCommit
 }
