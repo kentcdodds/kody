@@ -503,7 +503,7 @@ const refreshAccessToken = async (providerName) =>
   __kodyRefreshAccessToken(providerName);
 const createAuthenticatedFetch = async (providerName) =>
   __kodyCreateAuthenticatedFetch(providerName);
-const agentChatTurnStream = async (input) =>
+const agentChatTurnStream = (input) =>
   __kodyAgentChatTurnStream(input);
 `.trim()
 }

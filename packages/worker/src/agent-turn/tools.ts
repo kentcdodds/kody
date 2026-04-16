@@ -10,12 +10,14 @@ import {
 } from '#mcp/tools/search.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import { toSlimStructuredMatches } from '#mcp/tools/search-format.ts'
-import { listAppSecretsByAppIds } from '#mcp/secrets/service.ts'
+import {
+	listAppSecretsByAppIds,
+	listUserSecretsForSearch,
+} from '#mcp/secrets/service.ts'
 import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
 import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { listValues } from '#mcp/values/service.ts'
-import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 
 const defaultSearchLimit = 15

@@ -17,6 +17,7 @@ type ActiveRunState = {
 	events: Array<AgentTurnStreamEvent>
 	done: boolean
 	finalResult: AgentTurnResult | null
+	input: StartRequestBody
 }
 
 type PersistedState = {
@@ -46,6 +47,7 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 	}
 
 	private waiters = new Set<() => void>()
+	private activeAbortController: AbortController | null = null
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -75,6 +77,13 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 		const persisted =
 			(await this.ctx.storage.get<PersistedState>(persistedStateKey)) ?? null
 		if (persisted) this.stateSnapshot = persisted
+		if (this.stateSnapshot.activeRun && !this.stateSnapshot.activeRun.done) {
+			void this.executeRun({
+				runId: this.stateSnapshot.activeRun.runId,
+				callerContext: this.stateSnapshot.activeRun.input.callerContext,
+				turn: this.stateSnapshot.activeRun.input.turn,
+			})
+		}
 	}
 
 	private async persistState() {
@@ -87,6 +96,16 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 	}
 
 	private async handleStart(body: StartRequestBody) {
+		const existingRun = this.stateSnapshot.activeRun
+		if (existingRun && !existingRun.done && !existingRun.cancelled) {
+			return Response.json(
+				{
+					ok: false,
+					error: 'An agent turn is already active for this session.',
+				},
+				{ status: 409 },
+			)
+		}
 		const runId = crypto.randomUUID()
 		const conversationId = resolveConversationId(body.turn.conversationId)
 		const run: ActiveRunState = {
@@ -96,17 +115,21 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 			events: [],
 			done: false,
 			finalResult: null,
+			input: {
+				callerContext: body.callerContext,
+				turn: {
+					...body.turn,
+					conversationId,
+				},
+			},
 		}
 		this.stateSnapshot.activeRun = run
 		await this.persistState()
 
 		void this.executeRun({
 			runId,
-			callerContext: body.callerContext,
-			turn: {
-				...body.turn,
-				conversationId,
-			},
+			callerContext: run.input.callerContext,
+			turn: run.input.turn,
 		})
 
 		return Response.json({
@@ -125,6 +148,7 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 		if (!run || run.runId !== input.runId) return
 
 		const abortController = new AbortController()
+		this.activeAbortController = abortController
 
 		const recordRunError = async (error: unknown) => {
 			const currentRun = this.stateSnapshot.activeRun
@@ -137,10 +161,13 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 			currentRun.done = true
 			await this.persistState()
 			this.notifyWaiters()
+			if (this.activeAbortController === abortController) {
+				this.activeAbortController = null
+			}
 		}
 
-		let events: ReturnType<typeof runAgentTurn>['events']
-		let completion: ReturnType<typeof runAgentTurn>['completion']
+		let events: Awaited<ReturnType<typeof runAgentTurn>>['events']
+		let completion: Awaited<ReturnType<typeof runAgentTurn>>['completion']
 		try {
 			;({ events, completion } = await runAgentTurn({
 				env: this.env,
@@ -174,6 +201,9 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 				currentRun.done = true
 				await this.persistState()
 				this.notifyWaiters()
+				if (this.activeAbortController === abortController) {
+					this.activeAbortController = null
+				}
 			} catch (error) {
 				await recordRunError(error)
 			}
@@ -184,12 +214,15 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 
 	private async waitForChange(waitMs: number) {
 		if (waitMs <= 0) return
+		let resolver: (() => void) | null = null
 		await Promise.race([
 			new Promise<void>((resolve) => {
+				resolver = resolve
 				this.waiters.add(resolve)
 			}),
 			scheduler.wait(waitMs),
 		])
+		if (resolver) this.waiters.delete(resolver)
 	}
 
 	private async handleNext(body: NextRequestBody) {
@@ -233,6 +266,7 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 		}
 		run.cancelled = true
 		run.done = true
+		this.activeAbortController?.abort('cancelled')
 		await this.persistState()
 		this.notifyWaiters()
 		return Response.json({ ok: true, cancelled: true })
