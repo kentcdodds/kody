@@ -26,6 +26,7 @@ import {
 	parseUiArtifactParameters,
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
+import { ensureEntitySource } from '#worker/repo/source-service.ts'
 
 const appServerCodeExportPattern =
 	/export\s+class\s+App\s+extends\s+DurableObject\b/
@@ -158,6 +159,14 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
+			const ensuredSource = await ensureEntitySource({
+				db: ctx.env.APP_DB,
+				env: ctx.env,
+				userId: user.userId,
+				entityKind: 'app',
+				entityId: appId,
+				sourceRoot: '/',
+			})
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
 				null
@@ -197,6 +206,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							await updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
 								title: input.existingApp.title,
 								description: input.existingApp.description,
+								sourceId: input.existingApp.sourceId,
 								clientCode: input.existingApp.clientCode,
 								serverCode: input.existingApp.serverCode,
 								serverCodeId: input.existingApp.serverCodeId,
@@ -305,6 +315,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const updates: Parameters<typeof updateUiArtifact>[3] = {
 					title: args.title,
 					description: args.description,
+					sourceId: ensuredSource.id,
 					clientCode: args.clientCode,
 					hidden: args.hidden,
 				}
@@ -352,7 +363,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				await insertUiArtifact(ctx.env.APP_DB, {
 					id: appId,
 					user_id: user.userId,
-					sourceId: null,
+					sourceId: ensuredSource.id,
 					title,
 					description,
 					clientCode,
