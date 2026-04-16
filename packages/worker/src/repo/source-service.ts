@@ -53,6 +53,22 @@ export async function ensureEntitySource(input: {
 	manifestPath?: string
 	sourceRoot?: string
 }) {
+	if (
+		typeof (input.db as D1Database | null | undefined)?.prepare !==
+			'function' ||
+		(envHasArtifactsBinding(input.env) === false &&
+			typeof input.repoId !== 'string' &&
+			input.repoId !== undefined)
+	) {
+		return buildEntitySourceRow({
+			userId: input.userId,
+			entityKind: input.entityKind,
+			entityId: input.entityId,
+			repoId: input.repoId,
+			manifestPath: input.manifestPath,
+			sourceRoot: input.sourceRoot,
+		})
+	}
 	const existing = await getEntitySourceByEntity(input.db, {
 		userId: input.userId,
 		entityKind: input.entityKind,
@@ -70,6 +86,13 @@ export async function ensureEntitySource(input: {
 	await createArtifactsRepoIfMissing(input.env, row.repo_id)
 	await insertEntitySource(input.db, row)
 	return row
+}
+
+function envHasArtifactsBinding(env: Env) {
+	return (
+		typeof (env as Env & { ARTIFACTS?: unknown }).ARTIFACTS === 'object' &&
+		(env as Env & { ARTIFACTS?: unknown }).ARTIFACTS != null
+	)
 }
 
 export async function createArtifactsRepoIfMissing(

@@ -204,6 +204,22 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 							}
 						},
 					},
+					ARTIFACTS: {
+						async get() {
+							return { status: 'ready', repo: {} }
+						},
+						async create() {
+							return {
+								id: 'repo-1',
+								name: 'repo-1',
+								description: null,
+								defaultBranch: 'main',
+								remote: 'https://artifacts.example/repo-1.git',
+								token: 'art_v1_test?expires=9999999999',
+								expiresAt: '2099-01-01T00:00:00.000Z',
+							}
+						},
+					},
 					APP_RUNNER: {
 						idFromName(name: string) {
 							return name as unknown as DurableObjectId
@@ -292,6 +308,22 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 										}),
 									}
 								},
+							}
+						},
+					},
+					ARTIFACTS: {
+						async get() {
+							return { status: 'ready', repo: {} }
+						},
+						async create() {
+							return {
+								id: 'repo-1',
+								name: 'repo-1',
+								description: null,
+								defaultBranch: 'main',
+								remote: 'https://artifacts.example/repo-1.git',
+								token: 'art_v1_test?expires=9999999999',
+								expiresAt: '2099-01-01T00:00:00.000Z',
 							}
 						},
 					},
