@@ -1,5 +1,8 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { parseMcpCallerContext } from '#mcp/context.ts'
+import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
+import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
@@ -29,9 +32,8 @@ import {
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import { parseRepoManifest } from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
-import { upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 
@@ -351,8 +353,6 @@ export async function executeJobOnce(input: {
 				logs: [],
 			}
 		} else {
-			const { runCodemodeWithRegistry } =
-				await import('#mcp/run-codemode-registry.ts')
 			const runtimeCallerContext = {
 				...input.callerContext,
 				storageContext: {
@@ -414,10 +414,17 @@ async function runRepoBackedJob(input: {
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
 }): Promise<ExecuteResult> {
+	if (!input.job.sourceId) {
+		return {
+			error: 'Repo-backed job source is missing.',
+			result: null,
+			logs: [],
+		}
+	}
 	const sessionId = `job-runtime-${input.job.id}`
 	const session = await repoSessionRpc(input.env, sessionId).openSession({
 		sessionId,
-		sourceId: input.job.sourceId!,
+		sourceId: input.job.sourceId,
 		userId: input.callerContext.user.userId,
 		baseUrl: input.callerContext.baseUrl,
 		sourceRoot: '/',
@@ -435,12 +442,67 @@ async function runRepoBackedJob(input: {
 			logs: [],
 		}
 	}
-	const { runCodemodeWithRegistry } =
-		await import('#mcp/run-codemode-registry.ts')
+	const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+	const entrypoint = await repoSessionRpc(input.env, session.id).readFile({
+		sessionId: session.id,
+		path: manifestPath,
+	})
+	if (!entrypoint.content) {
+		return {
+			error: `Job manifest "${manifestPath}" was not found in repo session.`,
+			result: null,
+			logs: [],
+		}
+	}
+	let manifest: ReturnType<typeof parseRepoManifest>
+	try {
+		manifest = parseRepoManifest({
+			content: entrypoint.content,
+			manifestPath,
+		})
+	} catch (error) {
+		return {
+			error: error instanceof Error ? error.message : String(error),
+			result: null,
+			logs: [],
+		}
+	}
+	if (manifest.kind !== 'job') {
+		return {
+			error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+			result: null,
+			logs: [],
+		}
+	}
+	const moduleFile = await repoSessionRpc(input.env, session.id).readFile({
+		sessionId: session.id,
+		path: manifest.entrypoint.replace(/^\/+/, ''),
+	})
+	if (!moduleFile.content) {
+		return {
+			error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+			result: null,
+			logs: [],
+		}
+	}
 	return await runCodemodeWithRegistry(
 		input.env,
-		input.callerContext,
-		'async () => ({ ok: true, repoBacked: true })',
+		{
+			...input.callerContext,
+			repoContext: {
+				sourceId: session.source_id,
+				repoId: null,
+				sessionId: session.id,
+				sessionRepoId: session.session_repo_id,
+				baseCommit: session.base_commit,
+				manifestPath: session.manifest_path,
+				sourceRoot: session.source_root,
+				publishedCommit: session.published_commit,
+				entityKind: session.entity_type,
+				entityId: input.job.id,
+			},
+		},
+		moduleFile.content,
 		input.job.params,
 		{
 			executorExports: workerExports,

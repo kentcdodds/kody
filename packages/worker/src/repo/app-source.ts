@@ -17,6 +17,32 @@ export type ResolvedSavedAppSource = {
 	publishedCommit: string | null
 }
 
+const savedAppSourceCache = new Map<string, ResolvedSavedAppSource>()
+const savedAppSourceCacheLimit = 100
+
+function buildSavedAppSourceCacheKey(input: {
+	sourceId: string
+	publishedCommit: string | null
+}) {
+	return `${input.sourceId}:${input.publishedCommit ?? 'unpublished'}`
+}
+
+function rememberSavedAppSource(
+	cacheKey: string,
+	value: ResolvedSavedAppSource,
+) {
+	if (savedAppSourceCache.has(cacheKey)) {
+		savedAppSourceCache.delete(cacheKey)
+	}
+	savedAppSourceCache.set(cacheKey, value)
+	if (savedAppSourceCache.size > savedAppSourceCacheLimit) {
+		const oldestKey = savedAppSourceCache.keys().next().value
+		if (oldestKey) {
+			savedAppSourceCache.delete(oldestKey)
+		}
+	}
+}
+
 function fallbackFromArtifact(artifact: UiArtifactRow): ResolvedSavedAppSource {
 	return {
 		title: artifact.title,
@@ -53,6 +79,12 @@ export async function resolveSavedAppSource(input: {
 		input.artifact.sourceId!,
 	)
 	if (!source) return fallback
+	const cacheKey = buildSavedAppSourceCacheKey({
+		sourceId: source.id,
+		publishedCommit: source.published_commit,
+	})
+	const cached = savedAppSourceCache.get(cacheKey)
+	if (cached) return cached
 	const sessionId = `app-source-${source.id}`
 	const session = await repoSessionRpc(input.env, sessionId).openSession({
 		sessionId,
@@ -84,7 +116,7 @@ export async function resolveSavedAppSource(input: {
 			path: manifest.server,
 		}),
 	])
-	return {
+	const resolved = {
 		title: manifest.title,
 		description: manifest.description,
 		hidden: manifest.hidden ?? fallback.hidden,
@@ -96,4 +128,6 @@ export async function resolveSavedAppSource(input: {
 		sourceId: source.id,
 		publishedCommit: source.published_commit,
 	}
+	rememberSavedAppSource(cacheKey, resolved)
+	return resolved
 }

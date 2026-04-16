@@ -381,7 +381,7 @@ function scoreJobLexicalMatch(
 	let bonus = 0
 	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
 	bonus += scoreSkillPhraseMatch(normalizedQuery, row.scheduleSummary) * 1
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.sourceId) * 0.5
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.sourceId ?? '') * 0.5
 	return lexicalScore(query, doc) + bonus
 }
 
