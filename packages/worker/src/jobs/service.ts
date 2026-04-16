@@ -1,7 +1,6 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
@@ -360,6 +359,8 @@ export async function executeJobOnce(input: {
 					storageId: input.job.storageId,
 				},
 			}
+			const { runCodemodeWithRegistry } =
+				await import('#mcp/run-codemode-registry.ts')
 			const result = input.job.sourceId
 				? await runRepoBackedJob({
 						env: input.env,
@@ -484,6 +485,8 @@ async function runRepoBackedJob(input: {
 			logs: [],
 		}
 	}
+	const { runCodemodeWithRegistry } =
+		await import('#mcp/run-codemode-registry.ts')
 	return await runCodemodeWithRegistry(
 		input.env,
 		{
