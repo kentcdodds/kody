@@ -35,6 +35,11 @@ export const repoOpenSessionCapability = defineDomainCapability(
 							conversationId: args.conversation_id,
 						})
 			if (existingSession) {
+				if (existingSession.source_id !== args.source_id) {
+					throw new Error(
+						'Active repo session does not match the requested source. Discard the current session before opening a new source.',
+					)
+				}
 				return repoSessionRpc(ctx.env, existingSession.id).getSessionInfo({
 					sessionId: existingSession.id,
 				})

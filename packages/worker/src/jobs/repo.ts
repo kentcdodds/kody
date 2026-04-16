@@ -79,7 +79,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		id: String(row['id']),
 		userId: String(row['user_id']),
 		name: String(row['name']),
-		code: String(row['code']),
+		code: row['code'] == null ? null : String(row['code']),
 		sourceId: row['source_id'] == null ? null : String(row['source_id']),
 		publishedCommit:
 			row['published_commit'] == null ? null : String(row['published_commit']),

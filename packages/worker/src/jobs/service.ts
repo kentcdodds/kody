@@ -193,7 +193,6 @@ export async function createJob(input: {
 		userId: callerContext.user.userId,
 		embedText: buildJobEmbedText({
 			name: job.name,
-			description: job.name,
 			scheduleSummary: toJobView(job).scheduleSummary,
 			sourceId: job.sourceId,
 			publishedCommit: job.publishedCommit,
@@ -312,7 +311,6 @@ export async function updateJob(input: {
 		userId: callerContext.user.userId,
 		embedText: buildJobEmbedText({
 			name: updated.name,
-			description: updated.name,
 			scheduleSummary: toJobView(updated).scheduleSummary,
 			sourceId: updated.sourceId,
 			publishedCommit: updated.publishedCommit,

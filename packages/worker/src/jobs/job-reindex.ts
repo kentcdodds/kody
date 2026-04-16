@@ -45,7 +45,6 @@ export async function reindexJobVectors(
 		const texts = batch.map(({ job }) =>
 			buildJobEmbedText({
 				name: job.name,
-				description: job.name,
 				scheduleSummary: job.scheduleSummary,
 				sourceId: job.sourceId,
 				publishedCommit: job.publishedCommit,
