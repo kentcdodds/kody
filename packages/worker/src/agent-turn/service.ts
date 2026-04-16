@@ -39,9 +39,33 @@ function getRunnerStub(env: Env, sessionId: string) {
 	return namespace.get(namespace.idFromName(sessionId))
 }
 
+function readRunnerErrorMessage(body: unknown) {
+	if (typeof body === 'string' && body.length > 0) {
+		return body
+	}
+	if (!body || typeof body !== 'object') {
+		return null
+	}
+	const error = 'error' in body ? body.error : null
+	if (typeof error === 'string' && error.length > 0) {
+		return error
+	}
+	const message = 'message' in body ? body.message : null
+	if (typeof message === 'string' && message.length > 0) {
+		return message
+	}
+	return null
+}
+
 async function readJsonResponse<T>(response: Response): Promise<T> {
 	const body = await response.json().catch(() => null)
-	if (!response.ok || body == null) {
+	if (!response.ok) {
+		throw new Error(
+			readRunnerErrorMessage(body) ??
+				`Agent turn runner request failed with HTTP ${response.status}.`,
+		)
+	}
+	if (body == null) {
 		throw new Error(
 			`Agent turn runner request failed with HTTP ${response.status}.`,
 		)

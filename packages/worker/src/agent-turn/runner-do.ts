@@ -25,6 +25,8 @@ type PersistedState = {
 }
 
 const persistedStateKey = 'agent-turn-runner-state'
+const interruptedOnRestoreMessage =
+	'Agent turn was interrupted when the Durable Object restarted. Start a new run to continue.'
 
 type StartRequestBody = {
 	callerContext: McpCallerContext
@@ -41,7 +43,23 @@ type CancelRequestBody = {
 	runId: string
 }
 
-class AgentTurnRunnerBase extends DurableObject<Env> {
+function markRunInterruptedOnRestore(run: ActiveRunState): ActiveRunState {
+	return {
+		...run,
+		done: true,
+		finalResult: null,
+		events: [
+			...run.events,
+			{
+				type: 'error',
+				message: interruptedOnRestoreMessage,
+				phase: 'restore',
+			},
+		],
+	}
+}
+
+export class AgentTurnRunnerBase extends DurableObject<Env> {
 	private stateSnapshot: PersistedState = {
 		activeRun: null,
 	}
@@ -78,14 +96,12 @@ class AgentTurnRunnerBase extends DurableObject<Env> {
 			(await this.ctx.storage.get<PersistedState>(persistedStateKey)) ?? null
 		if (persisted) this.stateSnapshot = persisted
 		if (this.stateSnapshot.activeRun && !this.stateSnapshot.activeRun.done) {
-			this.stateSnapshot.activeRun.events = []
-			this.stateSnapshot.activeRun.finalResult = null
+			// A restarted DO cannot safely resume in-flight model/tool work without
+			// risking duplicate external side effects, so fail closed instead.
+			this.stateSnapshot.activeRun = markRunInterruptedOnRestore(
+				this.stateSnapshot.activeRun,
+			)
 			await this.persistState()
-			void this.executeRun({
-				runId: this.stateSnapshot.activeRun.runId,
-				callerContext: this.stateSnapshot.activeRun.input.callerContext,
-				turn: this.stateSnapshot.activeRun.input.turn,
-			})
 		}
 	}
 
