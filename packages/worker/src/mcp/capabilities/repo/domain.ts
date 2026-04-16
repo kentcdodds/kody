@@ -5,6 +5,7 @@ import { repoDiscardSessionCapability } from './repo-discard-session.ts'
 import { repoGetSessionCapability } from './repo-get-session.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
 import { repoReadFileCapability } from './repo-read-file.ts'
+import { repoRunChecksCapability } from './repo-run-checks.ts'
 import { repoSearchCapability } from './repo-search.ts'
 import { repoTreeCapability } from './repo-tree.ts'
 import { repoWriteFileCapability } from './repo-write-file.ts'
@@ -22,6 +23,7 @@ export const repoDomain = defineDomain({
 		repoWriteFileCapability,
 		repoApplyPatchCapability,
 		repoSearchCapability,
+		repoRunChecksCapability,
 		repoDiscardSessionCapability,
 	],
 })

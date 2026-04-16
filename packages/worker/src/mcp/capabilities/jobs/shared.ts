@@ -37,7 +37,9 @@ export const jobViewSchema = z.object({
 	version: z.literal(1),
 	id: z.string(),
 	name: z.string(),
-	code: z.string(),
+	code: z.string().nullable(),
+	sourceId: z.string().nullable(),
+	publishedCommit: z.string().nullable(),
 	storageId: z.string(),
 	params: z.record(z.string(), z.unknown()).optional(),
 	schedule: jobScheduleSchema,
@@ -96,8 +98,27 @@ export const jobUpsertInputSchema = z
 		code: z
 			.string()
 			.min(1)
+			.nullable()
 			.optional()
-			.describe('Codemode async arrow function source. Required on create.'),
+			.describe(
+				'Optional inline codemode async arrow function source. For repo-backed jobs, prefer sourceId plus publishedCommit.',
+			),
+		sourceId: z
+			.string()
+			.min(1)
+			.nullable()
+			.optional()
+			.describe(
+				'Shared source id for a repo-backed job implementation. Required on create when code is omitted.',
+			),
+		publishedCommit: z
+			.string()
+			.min(1)
+			.nullable()
+			.optional()
+			.describe(
+				'Published commit pinned for repo-backed job execution. Optional on create; updated automatically when the repo session publish flow promotes changes.',
+			),
 		params: z
 			.record(z.string(), z.unknown())
 			.nullable()
@@ -137,11 +158,11 @@ export const jobUpsertInputSchema = z
 				message: 'schedule is required when creating a job.',
 			})
 		}
-		if (value.code == null) {
+		if (value.code == null && value.sourceId == null) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['code'],
-				message: 'code is required when creating a job.',
+				message: 'code or sourceId is required when creating a job.',
 			})
 		}
 	}) satisfies z.ZodType<JobUpsertInput>

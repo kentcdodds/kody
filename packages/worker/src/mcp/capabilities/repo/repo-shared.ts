@@ -248,3 +248,37 @@ export const repoApplyPatchResultSchema = z.object({
 		}),
 	),
 })
+
+export const repoRunChecksInputSchema = repoSessionIdSchema
+
+export const repoCheckResultSchema = z.object({
+	kind: z.enum([
+		'manifest',
+		'dependencies',
+		'bundle',
+		'typecheck',
+		'lint',
+		'smoke',
+	]),
+	ok: z.boolean(),
+	message: z.string(),
+})
+
+export const repoRunChecksOutputSchema = z.object({
+	ok: z.boolean(),
+	results: z.array(repoCheckResultSchema),
+	manifest: z.object({
+		version: z.literal(1),
+		kind: z.enum(['skill', 'app', 'job']),
+		title: z.string(),
+		description: z.string(),
+	}),
+})
+
+export const repoCheckStatusOutputSchema = z.object({
+	run_id: z.string().nullable(),
+	tree_hash: z.string().nullable(),
+	checked_at: z.string().nullable(),
+	ok: z.boolean(),
+	results: z.array(repoCheckResultSchema),
+})

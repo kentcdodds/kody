@@ -80,11 +80,9 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		userId: String(row['user_id']),
 		name: String(row['name']),
 		code: String(row['code']),
-		sourceId: row['source_id'] == null ? undefined : String(row['source_id']),
+		sourceId: row['source_id'] == null ? null : String(row['source_id']),
 		publishedCommit:
-			row['published_commit'] == null
-				? undefined
-				: String(row['published_commit']),
+			row['published_commit'] == null ? null : String(row['published_commit']),
 		storageId: String(rawStorageId),
 		params: parseJson<Record<string, unknown> | undefined>(
 			row['params_json'] == null ? null : String(row['params_json']),

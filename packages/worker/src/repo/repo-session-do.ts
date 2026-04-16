@@ -12,10 +12,15 @@ import {
 	insertRepoSession,
 	updateRepoSession,
 } from './repo-sessions.ts'
-import { resolveArtifactSourceRepo, resolveSessionRepo } from './artifacts.ts'
+import {
+	buildAuthenticatedArtifactsRemote,
+	resolveArtifactSourceRepo,
+	resolveSessionRepo,
+} from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { getEntitySourceById } from './entity-sources.ts'
+import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { type EntitySourceRow, type RepoSessionRow } from './types.ts'
+import { runRepoChecks, type RepoCheckRunResult } from './checks.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const defaultRepoSearchLimit = 50
@@ -75,10 +80,57 @@ export type RepoSessionApplyEditsResult = {
 	}>
 }
 
+export type RepoSessionCheckRun = RepoCheckRunResult & {
+	runId: string
+	treeHash: string
+	checkedAt: string
+}
+
 export type RepoSessionDiscardResult = {
 	ok: true
 	sessionId: string
 	deleted: boolean
+}
+
+export type RepoSessionCheckStatus = {
+	runId: string | null
+	treeHash: string | null
+	checkedAt: string | null
+	ok: boolean | null
+	results: Array<{
+		kind: string
+		ok: boolean
+		message: string
+	}> | null
+}
+
+export type RepoSessionPublishResult =
+	| {
+			status: 'ok'
+			sessionId: string
+			publishedCommit: string
+			message: string
+	  }
+	| {
+			status: 'checks_outdated' | 'base_moved'
+			sessionId: string
+			message: string
+			publishedCommit: null
+	  }
+
+export type RepoSessionRebaseResult = {
+	ok: true
+	sessionId: string
+	baseCommit: string
+	headCommit: string | null
+	merged: boolean
+}
+
+const lastCheckStatusStorageKey = 'repo-session:last-check-status'
+const defaultSessionBranch = 'main'
+const sessionCommitAuthor = {
+	name: 'Kody Repo Session',
+	email: 'repo-session@local.invalid',
 }
 
 function buildRepoSessionWorkspaceName(sessionId: string) {
@@ -157,6 +209,142 @@ class RepoSessionBase extends DurableObject<Env> {
 	readonly git = createGit(this.fileSystem, repoSessionWorkspacePrefix)
 
 	private initializedSessionId: string | null = null
+
+	private async getSessionState(sessionId: string) {
+		const sessionRow = await getRepoSessionById(this.env.APP_DB, sessionId)
+		if (!sessionRow) {
+			throw new Error(`Repo session "${sessionId}" was not found.`)
+		}
+		const source = await getEntitySourceById(
+			this.env.APP_DB,
+			sessionRow.source_id,
+		)
+		if (!source) {
+			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
+		}
+		const sessionRepo = await resolveSessionRepo(this.env, {
+			namespace: sessionRow.session_repo_namespace,
+			name: sessionRow.session_repo_name,
+		})
+		const access = await ensureArtifactRepoRemote({
+			repo: sessionRepo,
+			scope: 'write',
+		})
+		await this.initialize({
+			sessionId: sessionRow.id,
+			sessionRepoRemote: access.remote,
+			sessionRepoToken: access.token,
+		})
+		return {
+			sessionRow,
+			source,
+			sessionRepo,
+			sessionAccess: access,
+		}
+	}
+
+	private async ensureRemote(input: { name: string; url: string }) {
+		const existing = await this.git.remote({
+			dir: repoSessionWorkspacePrefix,
+			list: true,
+		})
+		const remotes = Array.isArray(existing) ? existing : []
+		const current = remotes.find((remote) => remote.remote === input.name)
+		if (current?.url === input.url) {
+			return
+		}
+		if (current) {
+			await this.git.remote({
+				dir: repoSessionWorkspacePrefix,
+				remove: input.name,
+			})
+		}
+		await this.git.remote({
+			dir: repoSessionWorkspacePrefix,
+			add: {
+				name: input.name,
+				url: input.url,
+			},
+		})
+	}
+
+	private async getCurrentBranch(defaultBranch = defaultSessionBranch) {
+		const branchResult = await this.git.branch({
+			dir: repoSessionWorkspacePrefix,
+			list: true,
+		})
+		if ('current' in branchResult && branchResult.current) {
+			return branchResult.current
+		}
+		return defaultBranch
+	}
+
+	private async getHeadCommit() {
+		const log = await this.git.log({
+			dir: repoSessionWorkspacePrefix,
+			depth: 1,
+		})
+		return log[0]?.oid ?? null
+	}
+
+	private async commitIfDirty(message: string) {
+		const statusEntries = await this.git.status({
+			dir: repoSessionWorkspacePrefix,
+		})
+		const hasChanges = statusEntries.some(
+			(entry) => entry.status !== 'unmodified',
+		)
+		if (!hasChanges) {
+			return this.getHeadCommit()
+		}
+		await this.git.add({
+			dir: repoSessionWorkspacePrefix,
+			filepath: '.',
+		})
+		const commit = await this.git.commit({
+			dir: repoSessionWorkspacePrefix,
+			message,
+			author: sessionCommitAuthor,
+		})
+		return commit.oid
+	}
+
+	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
+		const files = (
+			await this.workspace.glob(`${root.replace(/\/+$/, '')}/**/*`)
+		)
+			.filter((entry) => entry.type === 'file')
+			.filter((entry) => !entry.path.includes('/.git/'))
+			.sort((left, right) => left.path.localeCompare(right.path))
+		const chunks: Array<string> = []
+		for (const file of files) {
+			const content = await this.workspace.readFile(file.path)
+			chunks.push(`${file.path}\n${content ?? ''}\n`)
+		}
+		const data = new TextEncoder().encode(chunks.join(''))
+		const digest = await crypto.subtle.digest('SHA-256', data)
+		return [...new Uint8Array(digest)]
+			.map((byte) => byte.toString(16).padStart(2, '0'))
+			.join('')
+	}
+
+	private async writeCheckStatus(status: RepoSessionCheckStatus) {
+		await this.ctx.storage.put(lastCheckStatusStorageKey, status)
+	}
+
+	private async readCheckStatus(): Promise<RepoSessionCheckStatus> {
+		return (
+			(await this.ctx.storage.get<RepoSessionCheckStatus>(
+				lastCheckStatusStorageKey,
+			)) ?? {
+				runId: null,
+				treeHash: null,
+				checkedAt: null,
+				ok: null,
+				results: null,
+			}
+		)
+	}
 
 	async initialize(input: {
 		sessionId: string
@@ -263,33 +451,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	async getSessionInfo(input: { sessionId: string }) {
-		const sessionRow = await getRepoSessionById(
-			this.env.APP_DB,
-			input.sessionId,
-		)
-		if (!sessionRow) {
-			throw new Error(`Repo session "${input.sessionId}" was not found.`)
-		}
-		const source = await getEntitySourceById(
-			this.env.APP_DB,
-			sessionRow.source_id,
-		)
-		if (!source) {
-			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
-		}
-		const sessionRepo = await resolveSessionRepo(this.env, {
-			namespace: sessionRow.session_repo_namespace,
-			name: sessionRow.session_repo_name,
-		})
-		const access = await ensureArtifactRepoRemote({
-			repo: sessionRepo,
-			scope: 'write',
-		})
-		await this.initialize({
-			sessionId: sessionRow.id,
-			sessionRepoRemote: access.remote,
-			sessionRepoToken: access.token,
-		})
+		const { sessionRow, source } = await this.getSessionState(input.sessionId)
 		return this.toSessionInfo(sessionRow, source)
 	}
 
@@ -327,7 +489,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		path: string
 	}): Promise<{ path: string; content: string | null }> {
-		await this.getSessionInfo({ sessionId: input.sessionId })
+		await this.getSessionState(input.sessionId)
 		return {
 			path: input.path,
 			content: await this.workspace.readFile(
@@ -341,14 +503,14 @@ class RepoSessionBase extends DurableObject<Env> {
 		path: string
 		content: string
 	}): Promise<{ ok: true; path: string }> {
-		const session = await this.getSessionInfo({ sessionId: input.sessionId })
+		const { sessionRow } = await this.getSessionState(input.sessionId)
 		await this.workspace.writeFile(
 			this.resolveWorkspacePath(input.path),
 			input.content,
 		)
 		await updateRepoSession(this.env.APP_DB, {
 			id: input.sessionId,
-			userId: session.source_id,
+			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
 		})
 		return { ok: true, path: input.path }
@@ -366,13 +528,13 @@ class RepoSessionBase extends DurableObject<Env> {
 		limit?: number
 		outputMode?: RepoSearchOutputMode
 	}): Promise<RepoSessionSearchResult> {
-		const session = await this.getSessionInfo({ sessionId: input.sessionId })
+		const { sessionRow } = await this.getSessionState(input.sessionId)
 		const search = normalizeSearchQuery({
 			pattern: input.pattern,
 			mode: input.mode,
 		})
 		const root =
-			input.path?.trim() || session.source_root || repoSessionWorkspacePrefix
+			input.path?.trim() || sessionRow.source_root || repoSessionWorkspacePrefix
 		const globPattern =
 			input.glob?.trim() ||
 			`${root.replace(/\/+$/, '')}/**/*.{ts,tsx,js,jsx,json,md,css}`
@@ -465,9 +627,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		path?: string | null
 		maxDepth?: number
 	}): Promise<RepoSessionTreeResult> {
-		await this.getSessionInfo({ sessionId: input.sessionId })
+		const { sessionRow } = await this.getSessionState(input.sessionId)
 		const root = this.resolveWorkspacePath(
-			input.path?.trim() || repoSessionWorkspacePrefix,
+			input.path?.trim() ||
+				sessionRow.source_root ||
+				repoSessionWorkspacePrefix,
 		)
 		const tree = await this.state.walkTree(root, {
 			maxDepth: input.maxDepth,
@@ -497,7 +661,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		dryRun?: boolean
 		rollbackOnError?: boolean
 	}): Promise<RepoSessionApplyEditsResult> {
-		const session = await this.getSessionInfo({ sessionId: input.sessionId })
+		const { sessionRow } = await this.getSessionState(input.sessionId)
 		const plan = await this.state.planEdits(
 			input.edits.map((edit) => {
 				const path = this.resolveWorkspacePath(edit.path)
@@ -541,7 +705,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: input.sessionId,
-			userId: session.source_id,
+			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
 		})
 		return {
@@ -553,6 +717,202 @@ class RepoSessionBase extends DurableObject<Env> {
 				content: edit.content,
 				diff: edit.diff,
 			})),
+		}
+	}
+
+	async runChecks(input: { sessionId: string }): Promise<RepoSessionCheckRun> {
+		const { sessionRow, source } = await this.getSessionState(input.sessionId)
+		const manifestPath = this.resolveWorkspacePath(source.manifest_path)
+		const result = await runRepoChecks({
+			workspace: this.workspace,
+			manifestPath,
+			sourceRoot: repoSessionWorkspacePrefix,
+		})
+		const runId = crypto.randomUUID()
+		const treeHash = await this.computeTreeHash()
+		const checkedAt = nowIso()
+		await updateRepoSession(this.env.APP_DB, {
+			id: input.sessionId,
+			userId: sessionRow.user_id,
+			lastCheckRunId: runId,
+			lastCheckTreeHash: treeHash,
+			lastCheckpointAt: checkedAt,
+		})
+		await this.writeCheckStatus({
+			runId,
+			treeHash,
+			checkedAt,
+			ok: result.ok,
+			results: result.results.map((entry) => ({
+				kind: entry.kind,
+				ok: entry.ok,
+				message: entry.message,
+			})),
+		})
+		return {
+			...result,
+			runId,
+			treeHash,
+			checkedAt,
+		}
+	}
+
+	async getCheckStatus(input: { sessionId: string }) {
+		await this.getSessionState(input.sessionId)
+		return this.readCheckStatus()
+	}
+
+	async rebaseSession(input: {
+		sessionId: string
+	}): Promise<RepoSessionRebaseResult> {
+		const { sessionRow, source } = await this.getSessionState(input.sessionId)
+		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+		const sourceInfo = await sourceRepo.info()
+		const sourceAccess = await ensureArtifactRepoRemote({
+			repo: sourceRepo,
+			scope: 'write',
+		})
+		await this.ensureRemote({
+			name: 'source',
+			url: buildAuthenticatedArtifactsRemote({
+				remote: sourceAccess.remote,
+				token: sourceAccess.token,
+			}),
+		})
+		const defaultBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
+		const pullResult = await this.git.pull({
+			dir: repoSessionWorkspacePrefix,
+			remote: 'source',
+			ref: defaultBranch,
+			author: sessionCommitAuthor,
+			token: sourceAccess.token,
+			username: 'x',
+			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+		})
+		const headCommit = await this.getHeadCommit()
+		await this.git.push({
+			dir: repoSessionWorkspacePrefix,
+			remote: 'origin',
+			ref: defaultBranch,
+			token: sourceAccess.token,
+			username: 'x',
+			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+		})
+		await updateRepoSession(this.env.APP_DB, {
+			id: sessionRow.id,
+			userId: sessionRow.user_id,
+			baseCommit: source.published_commit ?? '',
+			lastCheckpointCommit: headCommit,
+			lastCheckpointAt: nowIso(),
+		})
+		return {
+			ok: true,
+			sessionId: sessionRow.id,
+			baseCommit: source.published_commit ?? '',
+			headCommit,
+			merged: pullResult.pulled,
+		}
+	}
+
+	async publishSession(input: {
+		sessionId: string
+	}): Promise<RepoSessionPublishResult> {
+		const { sessionRow, source } = await this.getSessionState(input.sessionId)
+		const checkStatus = await this.readCheckStatus()
+		const currentTreeHash = await this.computeTreeHash()
+		if (
+			!checkStatus.runId ||
+			!checkStatus.ok ||
+			checkStatus.treeHash !== currentTreeHash
+		) {
+			return {
+				status: 'checks_outdated',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				message:
+					'Run repo_run_checks on the current session state before publishing.',
+			}
+		}
+		if ((source.published_commit ?? '') !== sessionRow.base_commit) {
+			return {
+				status: 'base_moved',
+				sessionId: input.sessionId,
+				publishedCommit: null,
+				message:
+					'The source repo has moved since this session opened. Rebase the session before publishing.',
+			}
+		}
+		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+		const sourceInfo = await sourceRepo.info()
+		const sourceAccess = await ensureArtifactRepoRemote({
+			repo: sourceRepo,
+			scope: 'write',
+		})
+		const sessionHeadCommit =
+			(await this.commitIfDirty(`Publish repo session ${input.sessionId}`)) ??
+			(await this.getHeadCommit())
+		await this.git.push({
+			dir: repoSessionWorkspacePrefix,
+			remote: 'origin',
+			ref: await this.getCurrentBranch(
+				sourceInfo?.defaultBranch ?? defaultSessionBranch,
+			),
+			token: sourceAccess.token,
+			username: 'x',
+			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+		})
+		await this.ensureRemote({
+			name: 'source',
+			url: buildAuthenticatedArtifactsRemote({
+				remote: sourceAccess.remote,
+				token: sourceAccess.token,
+			}),
+		})
+		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
+		await this.git.push({
+			dir: repoSessionWorkspacePrefix,
+			remote: 'source',
+			ref: targetBranch,
+			token: sourceAccess.token,
+			username: 'x',
+			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+		})
+		const manifestContent = await this.workspace.readFile(
+			this.resolveWorkspacePath(source.manifest_path),
+		)
+		if (manifestContent == null) {
+			throw new Error(`Manifest "${source.manifest_path}" was not found.`)
+		}
+		const manifest = await import('./manifest.ts').then((module) =>
+			module.parseRepoManifest({
+				content: manifestContent,
+				manifestPath: source.manifest_path,
+			}),
+		)
+		await updateEntitySource(this.env.APP_DB, {
+			id: source.id,
+			userId: source.user_id,
+			publishedCommit: sessionHeadCommit,
+			manifestPath: source.manifest_path,
+			sourceRoot: manifest.sourceRoot?.startsWith('/')
+				? manifest.sourceRoot
+				: manifest.sourceRoot
+					? `/${manifest.sourceRoot}`
+					: source.source_root,
+		})
+		await updateRepoSession(this.env.APP_DB, {
+			id: sessionRow.id,
+			userId: sessionRow.user_id,
+			status: 'published',
+			baseCommit: sessionHeadCommit ?? sessionRow.base_commit,
+			lastCheckpointCommit: sessionHeadCommit,
+			lastCheckpointAt: nowIso(),
+		})
+		return {
+			status: 'ok',
+			sessionId: sessionRow.id,
+			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
+			message: `Published session ${sessionRow.id} to ${source.repo_id}.`,
 		}
 	}
 
@@ -756,6 +1116,16 @@ export function repoSessionRpc(env: Env, sessionId: string) {
 			dryRun?: boolean
 			rollbackOnError?: boolean
 		}) => Promise<RepoSessionApplyEditsResult>
+		runChecks: (payload: { sessionId: string }) => Promise<RepoSessionCheckRun>
+		getCheckStatus: (payload: {
+			sessionId: string
+		}) => Promise<ReturnType<RepoSessionBase['readCheckStatus']>>
+		rebaseSession: (payload: {
+			sessionId: string
+		}) => Promise<RepoSessionRebaseResult>
+		publishSession: (payload: {
+			sessionId: string
+		}) => Promise<RepoSessionPublishResult>
 	}
 }
 

@@ -1,5 +1,6 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { parseMcpCallerContext } from '#mcp/context.ts'
+import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import {
@@ -27,6 +28,15 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
+import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+
+function hasRepoBackedJobSource(input: {
+	sourceId?: string | null
+	publishedCommit?: string | null
+}) {
+	return typeof input.sourceId === 'string' && input.sourceId.length > 0
+}
 
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
@@ -65,8 +75,17 @@ function normalizeOptionalParams(
 }
 
 function resolveCreateShape(input: JobCreateInput) {
+	if (hasRepoBackedJobSource(input)) {
+		return {
+			code: input.code == null ? null : normalizeJobCode(input.code),
+			sourceId: input.sourceId ?? null,
+			publishedCommit: input.publishedCommit ?? null,
+		}
+	}
 	return {
-		code: normalizeJobCode(input.code),
+		code: normalizeJobCode(input.code ?? ''),
+		sourceId: null,
+		publishedCommit: null,
 	}
 }
 
@@ -80,11 +99,21 @@ function resolveUpdatedShape(input: {
 			: input.body.code === null
 				? undefined
 				: normalizeJobCode(input.body.code)
-	if (!nextCode) {
+	const nextSourceId =
+		input.body.sourceId === undefined
+			? input.existing.sourceId
+			: input.body.sourceId
+	const nextPublishedCommit =
+		input.body.publishedCommit === undefined
+			? input.existing.publishedCommit
+			: input.body.publishedCommit
+	if (!nextCode && !nextSourceId) {
 		throw new Error('Jobs require code.')
 	}
 	return {
 		code: nextCode,
+		sourceId: nextSourceId ?? null,
+		publishedCommit: nextPublishedCommit ?? null,
 	}
 }
 
@@ -99,12 +128,24 @@ export async function createJob(input: {
 	const now = new Date().toISOString()
 	const shape = resolveCreateShape(input.body)
 	const jobId = crypto.randomUUID()
+	const ensuredSource = shape.sourceId
+		? await ensureEntitySource({
+				db: input.env.APP_DB,
+				env: input.env,
+				userId: callerContext.user.userId,
+				entityKind: 'job',
+				entityId: jobId,
+				sourceRoot: '/',
+			})
+		: null
 	const job: JobRecord = {
 		version: 1,
 		id: jobId,
 		userId: callerContext.user.userId,
 		name: normalizeJobName(input.body.name),
 		code: shape.code,
+		sourceId: ensuredSource?.id ?? shape.sourceId ?? null,
+		publishedCommit: shape.publishedCommit ?? null,
 		storageId: createJobStorageId(jobId),
 		params: normalizeOptionalParams(input.body.params),
 		schedule,
@@ -181,13 +222,26 @@ export async function updateJob(input: {
 		existing,
 		body: input.body,
 	})
+	const ensuredSource =
+		shape.sourceId && !existing.sourceId
+			? await ensureEntitySource({
+					db: input.env.APP_DB,
+					env: input.env,
+					userId: callerContext.user.userId,
+					entityKind: 'job',
+					entityId: existing.id,
+					sourceRoot: '/',
+				})
+			: null
 	const updated: JobRecord = {
 		...existing,
 		name:
 			input.body.name === undefined
 				? existing.name
 				: normalizeJobName(input.body.name),
-		code: shape.code,
+		code: shape.code ?? null,
+		sourceId: ensuredSource?.id ?? shape.sourceId ?? null,
+		publishedCommit: shape.publishedCommit ?? null,
 		params:
 			input.body.params === undefined
 				? existing.params
@@ -249,27 +303,34 @@ export async function executeJobOnce(input: {
 		} else {
 			const { runCodemodeWithRegistry } =
 				await import('#mcp/run-codemode-registry.ts')
-			const result = await runCodemodeWithRegistry(
-				input.env,
-				{
-					...input.callerContext,
-					storageContext: {
-						sessionId: input.callerContext.storageContext?.sessionId ?? null,
-						appId: input.callerContext.storageContext?.appId ?? null,
-						storageId: input.job.storageId,
-					},
+			const runtimeCallerContext = {
+				...input.callerContext,
+				storageContext: {
+					sessionId: input.callerContext.storageContext?.sessionId ?? null,
+					appId: input.callerContext.storageContext?.appId ?? null,
+					storageId: input.job.storageId,
 				},
-				input.job.code,
-				input.job.params,
-				{
-					executorExports: workerExports,
-					storageTools: {
-						userId: input.callerContext.user.userId,
-						storageId: input.job.storageId,
-						writable: true,
-					},
-				},
-			)
+			}
+			const result = input.job.sourceId
+				? await runRepoBackedJob({
+						env: input.env,
+						job: input.job,
+						callerContext: runtimeCallerContext,
+					})
+				: await runCodemodeWithRegistry(
+						input.env,
+						runtimeCallerContext,
+						input.job.code ?? '',
+						input.job.params,
+						{
+							executorExports: workerExports,
+							storageTools: {
+								userId: input.callerContext.user.userId,
+								storageId: input.job.storageId,
+								writable: true,
+							},
+						},
+					)
 			execution = result.error
 				? {
 						ok: false,
@@ -296,6 +357,50 @@ export async function executeJobOnce(input: {
 		finishedAt: finished.toISOString(),
 		durationMs: Math.max(0, finished.valueOf() - started.valueOf()),
 	}
+}
+
+async function runRepoBackedJob(input: {
+	env: Env
+	job: JobRecord
+	callerContext: PersistedJobCallerContext
+}): Promise<ExecuteResult> {
+	const sessionId = `job-runtime-${input.job.id}`
+	const session = await repoSessionRpc(input.env, sessionId).openSession({
+		sessionId,
+		sourceId: input.job.sourceId!,
+		userId: input.callerContext.user.userId,
+		baseUrl: input.callerContext.baseUrl,
+		sourceRoot: '/',
+	})
+	const result = await repoSessionRpc(input.env, session.id).runChecks({
+		sessionId: session.id,
+	})
+	if (!result.ok) {
+		return {
+			error: result.results
+				.filter((entry) => !entry.ok)
+				.map((entry) => entry.message)
+				.join('\n'),
+			result: null,
+			logs: [],
+		}
+	}
+	const { runCodemodeWithRegistry } =
+		await import('#mcp/run-codemode-registry.ts')
+	return await runCodemodeWithRegistry(
+		input.env,
+		input.callerContext,
+		'async () => ({ ok: true, repoBacked: true })',
+		input.job.params,
+		{
+			executorExports: workerExports,
+			storageTools: {
+				userId: input.callerContext.user.userId,
+				storageId: input.job.storageId,
+				writable: true,
+			},
+		},
+	)
 }
 
 export async function runJobNow(input: {

@@ -32,9 +32,9 @@ export type JobRecord = {
 	id: string
 	userId: string
 	name: string
-	code: string
-	sourceId?: string
-	publishedCommit?: string
+	code: string | null
+	sourceId: string | null
+	publishedCommit: string | null
 	storageId: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
@@ -90,9 +90,9 @@ export type PersistedJobCallerContext = Pick<
 
 export type JobCreateInput = {
 	name: string
-	code: string
-	sourceId?: string
-	publishedCommit?: string
+	code?: string | null
+	sourceId?: string | null
+	publishedCommit?: string | null
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone?: string | null
@@ -103,7 +103,7 @@ export type JobCreateInput = {
 export type JobUpdateInput = {
 	id: string
 	name?: string
-	code?: string
+	code?: string | null
 	sourceId?: string | null
 	publishedCommit?: string | null
 	params?: Record<string, unknown> | null
@@ -116,7 +116,7 @@ export type JobUpdateInput = {
 export type JobUpsertInput = {
 	id?: string
 	name?: string
-	code?: string
+	code?: string | null
 	sourceId?: string | null
 	publishedCommit?: string | null
 	params?: Record<string, unknown> | null
