@@ -1,5 +1,3 @@
-import { createFileSystemSnapshot } from '@cloudflare/worker-bundler'
-import { createTypescriptLanguageService } from '@cloudflare/worker-bundler/typescript'
 import { parseRepoManifest } from './manifest.ts'
 import { type RepoManifest } from './types.ts'
 
@@ -100,6 +98,8 @@ export async function runRepoChecks(input: {
 	]
 
 	const sourceRoot = input.sourceRoot.replace(/^\/+/, '').replace(/\/+$/, '')
+	const { createFileSystemSnapshot } =
+		await import('@cloudflare/worker-bundler')
 	const snapshot = await createFileSystemSnapshot(
 		workspaceFilesForSnapshot({
 			workspace: input.workspace,
@@ -128,6 +128,8 @@ export async function runRepoChecks(input: {
 				: `Entrypoint "${entryPoint}" is missing from the repo session snapshot.`,
 	})
 
+	const { createTypescriptLanguageService } =
+		await import('@cloudflare/worker-bundler/typescript')
 	const { languageService } = await createTypescriptLanguageService({
 		fileSystem: snapshot,
 	})
