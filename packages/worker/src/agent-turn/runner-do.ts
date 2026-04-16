@@ -200,11 +200,18 @@ export class AgentTurnRunnerBase extends DurableObject<Env> {
 		}
 
 		const consume = (async () => {
+			const suppressCompletionRejection = () => {
+				void completion.catch(() => {})
+			}
 			try {
 				for await (const event of events) {
 					const currentRun = this.stateSnapshot.activeRun
-					if (!currentRun || currentRun.runId !== input.runId) return
+					if (!currentRun || currentRun.runId !== input.runId) {
+						suppressCompletionRejection()
+						return
+					}
 					if (currentRun.cancelled) {
+						suppressCompletionRejection()
 						abortController.abort('cancelled')
 						return
 					}
@@ -220,11 +227,12 @@ export class AgentTurnRunnerBase extends DurableObject<Env> {
 				currentRun.done = true
 				await this.persistState()
 				this.notifyWaiters()
+			} catch (error) {
+				await recordRunError(error)
+			} finally {
 				if (this.activeAbortController === abortController) {
 					this.activeAbortController = null
 				}
-			} catch (error) {
-				await recordRunError(error)
 			}
 		})()
 
