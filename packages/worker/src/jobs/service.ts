@@ -30,6 +30,8 @@ import {
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 
 function hasRepoBackedJobSource(input: {
 	sourceId?: string | null
@@ -170,6 +172,15 @@ export async function createJob(input: {
 		job,
 		callerContextJson,
 	})
+	await syncArtifactSourceSnapshot({
+		env: input.env,
+		userId: callerContext.user.userId,
+		baseUrl: callerContext.baseUrl,
+		sourceId: job.sourceId,
+		files: buildJobSourceFiles({
+			job: toJobView(job),
+		}),
+	})
 	return toJobView(job)
 }
 
@@ -265,6 +276,15 @@ export async function updateJob(input: {
 		userId: callerContext.user.userId,
 		job: updated,
 		callerContextJson: nextCallerContextJson,
+	})
+	await syncArtifactSourceSnapshot({
+		env: input.env,
+		userId: callerContext.user.userId,
+		baseUrl: callerContext.baseUrl,
+		sourceId: updated.sourceId,
+		files: buildJobSourceFiles({
+			job: toJobView(updated),
+		}),
 	})
 	return toJobView(updated)
 }

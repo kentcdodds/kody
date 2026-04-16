@@ -15,6 +15,8 @@ import {
 } from '#mcp/skills/skill-mutation.ts'
 import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
+import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import { requireMcpUser } from './require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 
@@ -164,6 +166,26 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					throw error
 				}
 			}
+
+			await syncArtifactSourceSnapshot({
+				env: ctx.env,
+				userId: user.userId,
+				baseUrl: ctx.callerContext.baseUrl,
+				sourceId: source.id,
+				files: buildSkillSourceFiles({
+					title: args.title,
+					description: args.description,
+					keywords: args.keywords,
+					searchText: args.search_text ?? null,
+					collection: prep.rowPayload.collection_name,
+					readOnly: args.read_only,
+					idempotent: args.idempotent,
+					destructive: args.destructive,
+					usesCapabilities: args.uses_capabilities ?? null,
+					parameters: args.parameters ?? null,
+					code: args.code,
+				}),
+			})
 
 			try {
 				await upsertSkillVector(ctx.env, {

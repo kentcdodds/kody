@@ -25,7 +25,7 @@ export async function insertUiArtifact(
 			row.title,
 			row.description,
 			row.sourceId ?? null,
-			row.clientCode,
+			row.clientCode ?? null,
 			row.serverCode ?? null,
 			row.serverCodeId,
 			row.parameters ?? null,
@@ -123,7 +123,7 @@ export async function updateUiArtifact(
 		addAssignment('source_id', updates.sourceId ?? null)
 	}
 	if (updates.clientCode !== undefined) {
-		addAssignment('client_code', updates.clientCode)
+		addAssignment('client_code', updates.clientCode ?? null)
 	}
 	if (updates.serverCode !== undefined) {
 		addAssignment('server_code', updates.serverCode ?? null)
@@ -175,7 +175,7 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		title: String(row['title']),
 		description: String(row['description']),
 		sourceId: row['source_id'] == null ? null : String(row['source_id']),
-		clientCode: String(row['client_code']),
+		clientCode: String(row['client_code'] ?? ''),
 		serverCode: row['server_code'] == null ? null : String(row['server_code']),
 		serverCodeId: String(row['server_code_id']),
 		parameters: row['parameters'] == null ? null : String(row['parameters']),

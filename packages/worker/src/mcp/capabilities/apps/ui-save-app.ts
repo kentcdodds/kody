@@ -26,6 +26,8 @@ import {
 	parseUiArtifactParameters,
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
+import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import { buildAppSourceFiles } from '#worker/repo/source-templates.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 
 const appServerCodeExportPattern =
@@ -335,6 +337,20 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				await syncArtifactSourceSnapshot({
+					env: ctx.env,
+					userId: user.userId,
+					baseUrl: ctx.callerContext.baseUrl,
+					sourceId: ensuredSource.id,
+					files: buildAppSourceFiles({
+						title,
+						description,
+						parameters,
+						hidden: args.hidden ?? existingApp.hidden,
+						clientCode,
+						serverCode,
+					}),
+				})
 				hidden = args.hidden ?? existingApp.hidden
 				return await saveAndIndexApp({
 					appId,
@@ -373,6 +389,20 @@ export const uiSaveAppCapability = defineDomainCapability(
 					hidden,
 					created_at: now,
 					updated_at: now,
+				})
+				await syncArtifactSourceSnapshot({
+					env: ctx.env,
+					userId: user.userId,
+					baseUrl: ctx.callerContext.baseUrl,
+					sourceId: ensuredSource.id,
+					files: buildAppSourceFiles({
+						title,
+						description,
+						parameters,
+						hidden,
+						clientCode,
+						serverCode,
+					}),
 				})
 				return await saveAndIndexApp({
 					appId,

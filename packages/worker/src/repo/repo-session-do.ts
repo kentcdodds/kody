@@ -816,13 +816,14 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async publishSession(input: {
 		sessionId: string
+		force?: boolean
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source } = await this.getSessionState(input.sessionId)
 		const checkStatus = await this.readCheckStatus()
 		const currentTreeHash = await this.computeTreeHash()
 		if (
-			!checkStatus.runId ||
-			!checkStatus.ok ||
+			(!input.force && !checkStatus.runId) ||
+			(!input.force && !checkStatus.ok) ||
 			checkStatus.treeHash !== currentTreeHash
 		) {
 			return {
@@ -1125,6 +1126,7 @@ export function repoSessionRpc(env: Env, sessionId: string) {
 		}) => Promise<RepoSessionRebaseResult>
 		publishSession: (payload: {
 			sessionId: string
+			force?: boolean
 		}) => Promise<RepoSessionPublishResult>
 	}
 }
