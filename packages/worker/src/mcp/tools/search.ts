@@ -40,6 +40,8 @@ import {
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
+import { listJobs, getJob } from '#worker/jobs/service.ts'
+import { type JobView } from '#worker/jobs/types.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -175,6 +177,7 @@ https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 type OptionalSearchRowsResult = {
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
+	jobRows: Array<JobView>
 	userSecretRows: Array<SecretSearchRow>
 	userValueRows: Array<ValueMetadata>
 	warnings: Array<string>
@@ -235,6 +238,7 @@ export async function loadOptionalSearchRows(input: {
 	userId: string | null
 	loadSkills: () => Promise<Array<McpSkillRow>>
 	loadUiArtifacts: () => Promise<Array<UiArtifactRow>>
+	loadJobs?: () => Promise<Array<JobView>>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
 	loadUserValues: () => Promise<Array<ValueMetadata>>
 }): Promise<OptionalSearchRowsResult> {
@@ -242,6 +246,7 @@ export async function loadOptionalSearchRows(input: {
 		return {
 			skillRows: [],
 			uiArtifactRows: [],
+			jobRows: [],
 			userSecretRows: [],
 			userValueRows: [],
 			warnings: [],
@@ -252,11 +257,13 @@ export async function loadOptionalSearchRows(input: {
 	const [
 		skillRowsResult,
 		uiArtifactRowsResult,
+		jobRowsResult,
 		userSecretRowsResult,
 		userValueRowsResult,
 	] = await Promise.allSettled([
 		input.loadSkills(),
 		input.loadUiArtifacts(),
+		input.loadJobs ? input.loadJobs() : Promise.resolve([]),
 		input.loadUserSecrets(),
 		input.loadUserValues(),
 	])
@@ -281,6 +288,16 @@ export async function loadOptionalSearchRows(input: {
 				? uiArtifactRowsResult.reason.message
 				: String(uiArtifactRowsResult.reason)
 		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
+	}
+
+	const jobRows =
+		jobRowsResult.status === 'fulfilled' ? jobRowsResult.value : []
+	if (jobRowsResult.status === 'rejected') {
+		const message =
+			jobRowsResult.reason instanceof Error
+				? jobRowsResult.reason.message
+				: String(jobRowsResult.reason)
+		warnings.push(`Saved jobs are temporarily unavailable: ${message}`)
 	}
 
 	const userSecretRows =
@@ -308,6 +325,7 @@ export async function loadOptionalSearchRows(input: {
 	return {
 		skillRows,
 		uiArtifactRows,
+		jobRows,
 		userSecretRows,
 		userValueRows,
 		warnings,
@@ -332,6 +350,11 @@ async function loadSearchRowsAndRegistry(input: {
 			loadUiArtifacts: () =>
 				listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
 					hidden: false,
+				}),
+			loadJobs: () =>
+				listJobs({
+					env: input.agent.getEnv(),
+					userId: input.userId!,
 				}),
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({
@@ -443,6 +466,21 @@ async function resolveEntityDetail(input: {
 			description: row.description,
 			row,
 			hostedUrl: buildSavedUiUrl(input.callerContext.baseUrl, row.id),
+		}
+	}
+
+	if (ref.type === 'job') {
+		const row = await getJob({
+			env: input.agent.getEnv(),
+			userId: input.userId,
+			jobId: ref.id,
+		})
+		return {
+			type: 'job' as const,
+			id: row.id,
+			title: row.name,
+			description: row.name,
+			row,
 		}
 	}
 
@@ -602,6 +640,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 								registry: searchRows.registry,
 								skillRows: searchRows.skillRows,
 								uiArtifactRows: searchRows.uiArtifactRows,
+								jobRows: searchRows.jobRows,
 								userSecretRows: searchRows.userSecretRows,
 								userValueRows: searchRows.userValueRows,
 								warnings: searchRows.warnings,
@@ -623,6 +662,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						userId,
 						skillRows: searchRows.skillRows,
 						uiArtifactRows: searchRows.uiArtifactRows,
+						jobRows: searchRows.jobRows,
 						userSecretRows: searchRows.userSecretRows,
 						userValueRows: searchRows.userValueRows,
 						appSecretsByAppId: searchRows.appSecretsByAppId,

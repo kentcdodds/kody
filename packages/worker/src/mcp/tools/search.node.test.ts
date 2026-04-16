@@ -131,6 +131,7 @@ test('optional search rows skip D1 access without a user', async () => {
 	})
 
 	expect(result).toEqual({
+		jobRows: [],
 		skillRows: [],
 		uiArtifactRows: [],
 		userSecretRows: [],

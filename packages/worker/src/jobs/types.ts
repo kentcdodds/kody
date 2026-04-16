@@ -58,6 +58,17 @@ export type JobView = Omit<JobRecord, 'userId'> & {
 	scheduleSummary: string
 }
 
+export type JobSearchProjection = {
+	id: string
+	name: string
+	description: string
+	scheduleSummary: string
+	sourceId: string | null
+	publishedCommit: string | null
+	storageId: string
+	updatedAt: string
+}
+
 export type JobExecutionResult =
 	| {
 			ok: true
