@@ -15,7 +15,9 @@ function canSyncArtifactSource(env: Env) {
 		(env as Env & { ARTIFACTS?: unknown }).ARTIFACTS != null &&
 		typeof (env as Env & { REPO_SESSION?: unknown }).REPO_SESSION ===
 			'object' &&
-		(env as Env & { REPO_SESSION?: unknown }).REPO_SESSION != null
+		(env as Env & { REPO_SESSION?: unknown }).REPO_SESSION != null &&
+		typeof (env as Env & { APP_DB?: unknown }).APP_DB === 'object' &&
+		(env as Env & { APP_DB?: unknown }).APP_DB != null
 	)
 }
 

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import {
 	deleteMcpSkill,
 	getMcpSkillByName,
@@ -231,6 +232,10 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						collectionSlug: existing.collection_slug,
 					})
 				} else {
+					await deleteEntitySource(ctx.env.APP_DB, {
+						id: source.id,
+						userId: user.userId,
+					})
 					await deleteMcpSkill(
 						ctx.env.APP_DB,
 						user.userId,

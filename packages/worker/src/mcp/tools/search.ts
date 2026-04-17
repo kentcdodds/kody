@@ -554,7 +554,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						'Optional exact entity reference in the format "{id}:{type}" where type is capability, skill, app, secret, value, or connector.',
+						'Optional exact entity reference in the format "{id}:{type}" where type is capability, skill, app, job, secret, value, or connector.',
 					),
 				skill_collection: z
 					.string()

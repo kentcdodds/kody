@@ -113,7 +113,7 @@ function resolveUpdatedShape(input: {
 			? input.existing.publishedCommit
 			: input.body.publishedCommit
 	if (!nextCode && !nextSourceId) {
-		throw new Error('Jobs require code.')
+		throw new Error('Jobs require either code or sourceId.')
 	}
 	return {
 		code: nextCode,

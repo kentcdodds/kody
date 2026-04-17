@@ -14,7 +14,7 @@ export const repoRunChecksCapability = defineDomainCapability(
 		description:
 			'Run the Worker-native validation pipeline for an active repo session so edits can be checked before publish.',
 		keywords: ['repo', 'checks', 'validate', 'typecheck', 'bundle', 'manifest'],
-		readOnly: true,
+		readOnly: false,
 		idempotent: true,
 		destructive: false,
 		inputSchema: repoSessionIdSchema,

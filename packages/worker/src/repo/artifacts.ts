@@ -127,7 +127,13 @@ export function buildAuthenticatedArtifactsRemote(input: {
 	token: string
 }) {
 	const tokenSecret = parseArtifactTokenSecret(input.token)
-	return `https://x:${tokenSecret}@${input.remote.slice('https://'.length)}`
+	const remoteUrl = new URL(input.remote)
+	if (remoteUrl.protocol !== 'https:') {
+		throw new Error(`Artifact remote must use https://, got: ${input.remote}`)
+	}
+	remoteUrl.username = 'x'
+	remoteUrl.password = tokenSecret
+	return remoteUrl.toString()
 }
 
 export async function resolveArtifactSourceRepo(env: Env, repoId: string) {

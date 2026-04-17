@@ -83,10 +83,10 @@ function summarizeTree(node: {
 		depth: number,
 	) {
 		totals.max_depth = Math.max(totals.max_depth, depth)
-		totals.total_bytes += current.size
 		switch (current.type) {
 			case 'file':
 				totals.files += 1
+				totals.total_bytes += current.size
 				break
 			case 'directory':
 				totals.directories += 1
