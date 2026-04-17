@@ -236,6 +236,7 @@ export type SearchEntityDetail =
 			description: string
 			row: UiArtifactRow
 			hostedUrl: string
+			hasServerCode: boolean
 	  }
 	| {
 			type: 'job'
@@ -651,7 +652,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 
 	if (detail.type === 'app') {
 		const parameters = parseUiArtifactParameters(detail.row.parameters)
-		const hasServerCode = true
+		const hasServerCode = detail.hasServerCode
 		const lines = [
 			`# App — ${detail.row.title}`,
 			'',

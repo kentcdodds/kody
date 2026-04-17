@@ -75,7 +75,9 @@ SELECT
 	success_count,
 	error_count,
 	run_history_json
-FROM jobs;
+FROM jobs
+WHERE source_id IS NOT NULL
+  AND published_commit IS NOT NULL;
 
 DROP TABLE jobs;
 

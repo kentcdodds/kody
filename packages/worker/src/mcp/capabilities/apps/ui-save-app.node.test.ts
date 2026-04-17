@@ -270,7 +270,7 @@ test('ui_save_app updates an existing app by reusing repo-backed source content'
 	expect(result).toEqual({
 		app_id: 'app-1',
 		server_code_id: 'commit-1',
-		has_server_code: true,
+		has_server_code: false,
 		hosted_url: 'https://heykody.dev/ui/app-1',
 		parameters: [
 			{

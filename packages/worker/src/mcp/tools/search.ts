@@ -25,6 +25,7 @@ import {
 } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
+import { hasSavedAppBackend, resolveSavedAppSource } from '#worker/repo/app-source.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import {
 	buildValueEntityId,
@@ -460,6 +461,12 @@ async function resolveEntityDetail(input: {
 		if (!row || row.hidden) {
 			throw new Error('Saved app not found for this user.')
 		}
+		const resolvedSource = await resolveSavedAppSource({
+			env: input.agent.getEnv(),
+			baseUrl: input.callerContext.baseUrl,
+			artifact: row,
+		})
+		const hasServerCode = hasSavedAppBackend(resolvedSource)
 		return {
 			type: 'app' as const,
 			id: row.id,
@@ -467,6 +474,7 @@ async function resolveEntityDetail(input: {
 			description: row.description,
 			row,
 			hostedUrl: buildSavedUiUrl(input.callerContext.baseUrl, row.id),
+			hasServerCode,
 		}
 	}
 

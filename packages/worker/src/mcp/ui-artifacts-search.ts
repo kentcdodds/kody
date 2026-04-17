@@ -14,8 +14,16 @@ import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { parseRepoManifest } from '#worker/repo/manifest.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { resolveSavedAppServerCode } from '#worker/repo/app-source.ts'
 
-function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
+function rowToEmbedDoc(
+	row: UiArtifactRow,
+	appSecrets: Array<SecretMetadata>,
+	hasServerCode: boolean,
+) {
 	const secretText =
 		appSecrets.length > 0
 			? `\nAvailable app secrets:\n${appSecrets
@@ -25,7 +33,7 @@ function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 	return `${buildUiArtifactEmbedText({
 		title: row.title,
 		description: row.description,
-		hasServerCode: true,
+		hasServerCode,
 		parameters: parseUiArtifactParameters(row.parameters),
 	})}${secretText}`
 }
@@ -92,6 +100,7 @@ function rowToUiArtifactHit(
 	lexicalRank?: number,
 	vectorRank?: number,
 	appSecrets: Array<SecretMetadata> = [],
+	hasServerCode: boolean = false,
 ): UiArtifactSearchHit {
 	const parameters = parseUiArtifactParameters(row.parameters)
 	const base: UiArtifactSearchHitSummary = {
@@ -101,7 +110,7 @@ function rowToUiArtifactHit(
 		title: row.title,
 		description: row.description,
 		hostedUrl: buildSavedUiUrl(baseUrl, row.id),
-		hasServerCode: true,
+		hasServerCode,
 		parameters,
 		usage: buildUsage(row),
 		availableSecrets: appSecrets.map((secret) => ({
@@ -113,6 +122,79 @@ function rowToUiArtifactHit(
 		vectorRank,
 	}
 	return base
+}
+
+async function resolveUiArtifactBackendStatus(input: {
+	baseUrl: string
+	env: Env
+	row: UiArtifactRow
+}): Promise<boolean> {
+	try {
+		const anyEnv = input.env as Env & {
+			APP_DB?: unknown
+			REPO_SESSION?: unknown
+		}
+		if (
+			anyEnv.APP_DB == null ||
+			typeof anyEnv.APP_DB !== 'object' ||
+			anyEnv.REPO_SESSION == null ||
+			typeof anyEnv.REPO_SESSION !== 'object'
+		) {
+			return false
+		}
+		if (!input.row.sourceId) {
+			return false
+		}
+		const source = await getEntitySourceById(
+			input.env.APP_DB,
+			input.row.sourceId,
+		)
+		if (!source?.published_commit) {
+			return false
+		}
+		const sessionId = `app-search-${input.row.id}-${crypto.randomUUID()}`
+		const sessionClient = repoSessionRpc(input.env, sessionId)
+		const session = await sessionClient.openSession({
+			sessionId,
+			sourceId: input.row.sourceId,
+			userId: input.row.user_id,
+			baseUrl: input.baseUrl,
+			sourceRoot: source.source_root,
+		})
+		try {
+			const manifestPath =
+				session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+			const manifestFile = await sessionClient.readFile({
+				sessionId: session.id,
+				userId: input.row.user_id,
+				path: manifestPath,
+			})
+			if (!manifestFile.content) return false
+			const manifest = parseRepoManifest({
+				content: manifestFile.content,
+				manifestPath,
+			})
+			if (manifest.kind !== 'app') return false
+			const serverFile = await sessionClient.readFile({
+				sessionId: session.id,
+				userId: input.row.user_id,
+				path: manifest.server.replace(/^\/+/, ''),
+			})
+			if (!serverFile.content) return false
+			return resolveSavedAppServerCode(serverFile.content) != null
+		} finally {
+			await sessionClient
+				.discardSession({
+					sessionId: session.id,
+					userId: input.row.user_id,
+				})
+				.catch(() => {
+					// Best effort; search can tolerate missing cleanup.
+				})
+		}
+	} catch {
+		return false
+	}
 }
 
 export async function searchUiArtifactsForUser(input: {
@@ -133,12 +215,28 @@ export async function searchUiArtifactsForUser(input: {
 		return { matches: [], offline }
 	}
 
+	const backendStatusById = new Map(
+		await Promise.all(
+			input.rows.map(async (row) => [
+				row.id,
+				await resolveUiArtifactBackendStatus({
+					baseUrl: input.baseUrl,
+					env: input.env,
+					row,
+				}),
+			]),
+		),
+	)
 	const docsById = Object.fromEntries(
 		input.rows.map(
 			(row) =>
 				[
 					row.id,
-					rowToEmbedDoc(row, input.appSecretsByAppId?.get(row.id) ?? []),
+					rowToEmbedDoc(
+						row,
+						input.appSecretsByAppId?.get(row.id) ?? [],
+						backendStatusById.get(row.id) ?? false,
+					),
 				] as const,
 		),
 	)
@@ -221,6 +319,7 @@ export async function searchUiArtifactsForUser(input: {
 				lexicalRankById.get(id),
 				vectorRankById.get(id),
 				input.appSecretsByAppId?.get(id) ?? [],
+				backendStatusById.get(id) ?? false,
 			),
 		),
 		offline,

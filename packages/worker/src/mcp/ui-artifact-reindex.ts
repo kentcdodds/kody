@@ -9,7 +9,9 @@ import {
 	listUiArtifactsByUserId,
 	uiArtifactVectorId,
 } from '#mcp/ui-artifacts-repo.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { listAppSecretsByAppIds } from '#mcp/secrets/service.ts'
+import { hasSavedAppBackend, resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const upsertBatchSize = 16
 
@@ -28,6 +30,23 @@ async function listAllVisibleUiArtifacts(env: Env) {
 	return artifacts.flat()
 }
 
+async function resolveUiArtifactBackendStatus(input: {
+	baseUrl: string
+	env: Env
+	row: UiArtifactRow
+}) {
+	try {
+		const source = await resolveSavedAppSource({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			artifact: input.row,
+		})
+		return hasSavedAppBackend(source)
+	} catch {
+		return false
+	}
+}
+
 export async function reindexUiArtifactVectors(env: Env): Promise<{
 	upserted: number
 }> {
@@ -44,6 +63,19 @@ export async function reindexUiArtifactVectors(env: Env): Promise<{
 		return { upserted: 0 }
 	}
 
+	const baseUrl = env.APP_BASE_URL?.trim() || 'http://internal.invalid'
+	const backendStatusById = new Map(
+		await Promise.all(
+			rows.map(async (row) => [
+				row.id,
+				await resolveUiArtifactBackendStatus({
+					baseUrl,
+					env,
+					row,
+				}),
+			]),
+		),
+	)
 	const appSecretsByAppId = new Map<
 		string,
 		Array<{ name: string; description: string }>
@@ -85,7 +117,7 @@ export async function reindexUiArtifactVectors(env: Env): Promise<{
 			return `${buildUiArtifactEmbedText({
 				title: row.title,
 				description: row.description,
-				hasServerCode: true,
+				hasServerCode: backendStatusById.get(row.id) ?? false,
 				parameters: parseUiArtifactParameters(row.parameters),
 			})}${secretText}`
 		})

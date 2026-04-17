@@ -3,6 +3,7 @@ import { normalizeUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { getEntitySourceById } from './entity-sources.ts'
 import { parseRepoManifest } from './manifest.ts'
+import { defaultSavedAppServerCode } from './source-templates.ts'
 import { type AppManifest } from './types.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
@@ -16,6 +17,12 @@ export type ResolvedSavedAppSource = {
 	serverCodeId: string
 	sourceId: string
 	publishedCommit: string
+}
+
+const normalizedDefaultServerCode = defaultSavedAppServerCode.trim()
+
+export function resolveSavedAppServerCode(code: string) {
+	return code.trim() === normalizedDefaultServerCode ? null : code
 }
 
 function resolveManifestClientPath(manifest: AppManifest) {
@@ -119,6 +126,7 @@ export async function resolveSavedAppSource(input: {
 				`Saved app server entry "${manifest.server}" was not found in repo source "${source.id}".`,
 			)
 		}
+		const serverCode = resolveSavedAppServerCode(serverFile.content)
 		const resolved: ResolvedSavedAppSource = {
 			title: manifest.title,
 			description: manifest.description,
@@ -127,7 +135,7 @@ export async function resolveSavedAppSource(input: {
 				? normalizeUiArtifactParameters(manifest.parameters)
 				: null,
 			clientCode: clientFile.content,
-			serverCode: serverFile.content,
+			serverCode,
 			serverCodeId: source.published_commit,
 			sourceId: source.id,
 			publishedCommit: source.published_commit,

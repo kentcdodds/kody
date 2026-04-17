@@ -30,7 +30,7 @@ import {
 	ensureEntitySource,
 	getRepoSourceSupportStatus,
 } from '#worker/repo/source-service.ts'
-import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
+import { hasSavedAppBackend, resolveSavedAppSource } from '#worker/repo/app-source.ts'
 import {
 	getEntitySourceById,
 	updateEntitySource,
@@ -219,9 +219,12 @@ export const uiSaveAppCapability = defineDomainCapability(
 				parameters: ReturnType<typeof normalizeUiArtifactParameters>
 				hidden: boolean
 				sourceId: string
+				serverCode: string | null
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
-				const hasBackend = true
+				const hasBackend = hasSavedAppBackend({
+					serverCode: input.serverCode,
+				})
 				const serializedParameters = input.parameters
 					? JSON.stringify(input.parameters)
 					: null
@@ -440,6 +443,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					parameters: draft.parameters,
 					hidden,
 					sourceId: ensuredSource.id,
+					serverCode: draft.serverCode,
 					existingApp,
 				})
 			}
@@ -457,6 +461,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				parameters: draft.parameters,
 				hidden: draft.hidden,
 				sourceId: ensuredSource.id,
+				serverCode: draft.serverCode,
 				existingApp,
 			})
 		},

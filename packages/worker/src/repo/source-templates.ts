@@ -6,6 +6,12 @@ function stringifyManifest(value: unknown) {
 	return `${JSON.stringify(value, null, 2)}\n`
 }
 
+export const defaultSavedAppServerCode = `export default {
+  async fetch() {
+    return new Response('Saved app backend not configured.', { status: 404 })
+  },
+}`
+
 export function buildSkillSourceFiles(input: {
 	title: string
 	description: string
@@ -84,12 +90,7 @@ export function buildAppSourceFiles(input: {
 		'kody.json': stringifyManifest(manifest),
 		'client.html': `${input.clientCode.trim()}\n`,
 		'src/server.ts': `${(
-			input.serverCode ??
-			`export default {
-  async fetch() {
-    return new Response('Saved app backend not configured.', { status: 404 })
-  },
-}`
+			input.serverCode ?? defaultSavedAppServerCode
 		).trim()}\n`,
 	}
 }

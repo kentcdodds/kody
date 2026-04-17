@@ -22,6 +22,7 @@ import {
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
+import { hasSavedAppBackend, resolveSavedAppSource } from '#worker/repo/app-source.ts'
 import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import {
 	appendToolContent,
@@ -155,6 +156,15 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 							params: resolvedParams,
 						})
 					: null
+			const hasBackend = savedApp
+				? hasSavedAppBackend(
+						await resolveSavedAppSource({
+							env: agent.getEnv(),
+							baseUrl: callerContext.baseUrl,
+							artifact: savedApp,
+						}),
+					)
+				: false
 			const structuredContent = {
 				conversationId,
 				widget: 'generated_ui' as const,
@@ -168,7 +178,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				params: resolvedParams,
 				hostedUrl,
 				appSession,
-				appBackend: savedApp
+				appBackend: hasBackend
 					? {
 							basePath: buildSavedAppBackendBasePath(savedApp.id),
 							facetNames: ['main'],

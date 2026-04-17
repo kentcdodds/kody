@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
+import {
+	deleteEntitySource,
+	getEntitySourceById,
+} from '#worker/repo/entity-sources.ts'
 import {
 	deleteMcpSkill,
 	getMcpSkillByName,
@@ -22,6 +25,8 @@ import {
 	ensureEntitySource,
 	setEntityPublishedCommit,
 } from '#worker/repo/source-service.ts'
+import { parseRepoManifest } from '#worker/repo/manifest.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { requireMcpUser } from './require-user.ts'
 
 function parseJsonStringArray(raw: string | null): Array<string> {
@@ -33,6 +38,66 @@ function parseJsonStringArray(raw: string | null): Array<string> {
 			: []
 	} catch {
 		return []
+	}
+}
+
+async function resolveRepoSkillCode(input: {
+	env: Env
+	userId: string
+	baseUrl: string
+	sourceId: string
+	skillId: string
+	sessionPrefix?: string
+}) {
+	const sessionId = `${input.sessionPrefix ?? 'skill-rollback'}-${input.skillId}-${crypto.randomUUID()}`
+	const sessionClient = repoSessionRpc(input.env, sessionId)
+	const session = await sessionClient.openSession({
+		sessionId,
+		sourceId: input.sourceId,
+		userId: input.userId,
+		baseUrl: input.baseUrl,
+		sourceRoot: '/',
+	})
+	try {
+		const manifestPath =
+			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+		const manifestFile = await sessionClient.readFile({
+			sessionId: session.id,
+			userId: input.userId,
+			path: manifestPath,
+		})
+		if (!manifestFile.content) {
+			throw new Error(
+				`Skill manifest "${manifestPath}" was not found in repo session.`,
+			)
+		}
+		const manifest = parseRepoManifest({
+			content: manifestFile.content,
+			manifestPath,
+		})
+		if (manifest.kind !== 'skill') {
+			throw new Error(`Repo source "${input.sourceId}" is not a skill manifest.`)
+		}
+		const entrypointFile = await sessionClient.readFile({
+			sessionId: session.id,
+			userId: input.userId,
+			path: manifest.entrypoint.replace(/^\/+/, ''),
+		})
+		if (!entrypointFile.content) {
+			throw new Error(
+				`Skill entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+			)
+		}
+		return entrypointFile.content
+	} finally {
+		await sessionClient
+			.discardSession({
+				sessionId: session.id,
+				userId: input.userId,
+			})
+			.catch(() => {
+				// Best effort; preserve the original error.
+			})
 	}
 }
 
@@ -149,6 +214,17 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				entityId: skillId,
 				sourceRoot: '/',
 			})
+			const existingCode =
+				existing?.source_id
+					? await resolveRepoSkillCode({
+							env: ctx.env,
+							userId: user.userId,
+							baseUrl: ctx.callerContext.baseUrl,
+							sourceId: existing.source_id,
+							skillId: existing.id,
+							sessionPrefix: 'skill-source',
+						})
+					: null
 			const previousPublishedCommit = source.published_commit
 			const nextSourceId = source.id
 
@@ -210,13 +286,13 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						'Saved skill source sync did not publish a repo-backed commit.',
 					)
 				}
-			await setEntityPublishedCommit({
-				db: ctx.env.APP_DB,
-				userId: user.userId,
-				sourceId: source.id,
-				publishedCommit: syncedPublishedCommit,
-				indexedCommit: syncedPublishedCommit,
-			})
+				await setEntityPublishedCommit({
+					db: ctx.env.APP_DB,
+					userId: user.userId,
+					sourceId: source.id,
+					publishedCommit: syncedPublishedCommit,
+					indexedCommit: syncedPublishedCommit,
+				})
 			}
 
 			try {
@@ -287,24 +363,24 @@ export const metaSaveSkillCapability = defineDomainCapability(
 												default?: unknown
 											}>)
 									: null,
-							code: args.code,
+								code: existingCode ?? args.code,
 							}),
 						})
-					await setEntityPublishedCommit({
-						db: ctx.env.APP_DB,
-						userId: user.userId,
-						sourceId: source.id,
-						publishedCommit:
-							restoredPublishedCommit ?? previousPublishedCommit ?? null,
-						indexedCommit:
-							restoredPublishedCommit ?? previousPublishedCommit ?? null,
-					})
+						await setEntityPublishedCommit({
+							db: ctx.env.APP_DB,
+							userId: user.userId,
+							sourceId: source.id,
+							publishedCommit:
+								restoredPublishedCommit ?? previousPublishedCommit ?? null,
+							indexedCommit:
+								restoredPublishedCommit ?? previousPublishedCommit ?? null,
+						})
 					}
 				} else {
-				await deleteEntitySource(ctx.env.APP_DB, {
-					id: source.id,
-					userId: user.userId,
-				})
+					await deleteEntitySource(ctx.env.APP_DB, {
+						id: source.id,
+						userId: user.userId,
+					})
 					await deleteMcpSkill(
 						ctx.env.APP_DB,
 						user.userId,
