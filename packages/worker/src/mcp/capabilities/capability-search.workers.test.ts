@@ -7,15 +7,29 @@ import {
 	searchCapabilities,
 } from './capability-search.ts'
 import { type CapabilitySpec } from './types.ts'
-import { capabilitySpecs } from './registry.ts'
 
-test('buildCapabilityEmbedText includes name domain description keywords fields', () => {
-	const spec = capabilitySpecs.ui_save_app!
-	const text = buildCapabilityEmbedText(spec)
-	expect(text).toContain('ui_save_app')
-	expect(text).toContain('apps')
-	expect(text).toContain('source')
-	expect(text.length).toBeGreaterThan(10)
+test('buildCapabilityEmbedText folds searchable capability fields into one document', () => {
+	const spec = {
+		name: 'deploy_worker',
+		domain: 'apps',
+		description: 'Deploy a Worker from saved source.',
+		keywords: ['deploy', 'worker', 'wrangler'],
+		readOnly: false,
+		idempotent: true,
+		destructive: false,
+		inputFields: ['sourceId', 'environment'],
+		requiredInputFields: ['sourceId'],
+		outputFields: ['deploymentId'],
+		inputSchema: {},
+	} satisfies CapabilitySpec
+
+	expect(buildCapabilityEmbedText(spec).split('\n')).toEqual([
+		'deploy_worker',
+		'apps',
+		'Deploy a Worker from saved source.',
+		'deploy worker wrangler',
+		'sourceId environment deploymentId',
+	])
 })
 
 test('deterministicEmbedding has fixed dimension and unit norm', () => {

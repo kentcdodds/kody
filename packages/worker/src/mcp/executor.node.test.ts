@@ -38,30 +38,25 @@ test('getExecutionErrorDetails returns concrete guidance for capability access d
 	})
 })
 
-test('formatExecutionOutput includes capability access next step', () => {
-	const result = {
-		error: new Error(
+test('formatExecutionOutput appends next steps from structured execution errors', () => {
+	const errors = [
+		new Error(
 			createCapabilitySecretAccessDeniedMessage(
 				'cloudflareToken',
 				'secret_set',
 				'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 			),
 		),
-	} as const
+		new Error(createMissingSecretMessage('missingToken')),
+	]
 
-	expect(formatExecutionOutput(result)).toContain(
-		"Next step: Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
-	)
-})
-
-test('formatExecutionOutput keeps missing secret guidance intact', () => {
-	const result = {
-		error: new Error(createMissingSecretMessage('missingToken')),
-	} as const
-
-	expect(formatExecutionOutput(result)).toContain(
-		'Open a generated UI so the user can provide and save this secret',
-	)
+	for (const error of errors) {
+		const details = getExecutionErrorDetails(error)
+		expect(details).not.toBeNull()
+		expect(formatExecutionOutput({ error } as const)).toBe(
+			`Error: ${error.message}\n\nNext step: ${details!.nextStep}`,
+		)
+	}
 })
 
 test('extractRawContent returns MCP content blocks from sentinel result', () => {

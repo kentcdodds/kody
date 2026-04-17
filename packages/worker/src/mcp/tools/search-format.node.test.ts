@@ -17,7 +17,7 @@ test('parseEntityRef accepts value and connector entity types', () => {
 	})
 })
 
-test('search markdown includes value and connector run hints', () => {
+test('search markdown surfaces entity identifiers and match-specific details', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
 		warnings: [],
@@ -54,10 +54,10 @@ test('search markdown includes value and connector run hints', () => {
 		],
 	})
 
-	expect(markdown).toContain('Persisted values')
-	expect(markdown).toContain('Saved connectors')
-	expect(markdown).toContain('## Value — `preferred_repo` (`user` scope)')
-	expect(markdown).toContain('## Connector — `github`')
+	expect(markdown).toContain('**Entity:** `user:preferred_repo:value`')
+	expect(markdown).toContain('Preferred repository owner/name.')
+	expect(markdown).toContain('**Flow:** `confidential`')
+	expect(markdown).toContain('**API base URL:** `https://api.github.com`')
 })
 
 test('slim structured matches include value and connector fields', () => {
