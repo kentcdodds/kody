@@ -1,6 +1,7 @@
 import {
 	buildEntityRepoId,
 	getArtifactsBinding,
+	hasArtifactsAccess,
 	type ArtifactNamespaceBinding,
 } from './artifacts.ts'
 import {
@@ -56,13 +57,13 @@ export async function ensureEntitySource(input: {
 	requirePersistence?: boolean
 }) {
 	const hasDbPrepare = hasAppDbBinding(input.db)
-	const hasArtifactsAccess = hasArtifactsAccessConfig(input.env)
-	if (!hasDbPrepare || hasArtifactsAccess === false) {
+	const hasArtifactsAccessResult = hasArtifactsAccess(input.env)
+	if (!hasDbPrepare || hasArtifactsAccessResult === false) {
 		if (input.requirePersistence) {
 			throw new Error(
 				`Repo-backed source persistence requires ${missingPersistenceRequirements({
 					hasDbPrepare,
-					hasArtifactsAccess,
+					hasArtifactsAccess: hasArtifactsAccessResult,
 				}).join(' and ')}.`,
 			)
 		}
@@ -98,15 +99,6 @@ export async function ensureEntitySource(input: {
 
 function hasAppDbBinding(db: D1Database | null | undefined) {
 	return typeof db?.prepare === 'function'
-}
-
-function hasArtifactsAccessConfig(env: Env) {
-	try {
-		void getArtifactsBinding(env)
-		return true
-	} catch {
-		return false
-	}
 }
 
 function missingPersistenceRequirements(input: {

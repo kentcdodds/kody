@@ -1,4 +1,4 @@
-import { getArtifactsBinding } from './artifacts.ts'
+import { hasArtifactsAccess } from './artifacts.ts'
 import { getEntitySourceById } from './entity-sources.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
@@ -68,14 +68,5 @@ export async function syncArtifactSourceSnapshot(
 			.catch(() => {
 				// Best effort only; publish/apply failures should preserve the root cause.
 			})
-	}
-}
-
-function hasArtifactsAccess(env: Env) {
-	try {
-		void getArtifactsBinding(env)
-		return true
-	} catch {
-		return false
 	}
 }

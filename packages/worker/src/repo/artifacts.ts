@@ -86,6 +86,15 @@ export function getArtifactsBinding(
 	return restBinding
 }
 
+export function hasArtifactsAccess(env: Env) {
+	try {
+		void getArtifactsBinding(env)
+		return true
+	} catch {
+		return false
+	}
+}
+
 export function getArtifactsNamespace(env: Env) {
 	return (
 		(env as Env & { ARTIFACTS_NAMESPACE?: string | undefined })

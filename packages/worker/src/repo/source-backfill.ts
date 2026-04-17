@@ -485,14 +485,6 @@ async function backfillJob(input: {
 			publishedCommit,
 			indexedCommit: publishedCommit,
 		})
-		if (input.row.record.sourceId !== ensuredSource.id) {
-			await updateJobRow({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				job: nextRecord,
-				callerContextJson: input.row.callerContextJson,
-			})
-		}
 		await updateJobRow({
 			db: input.env.APP_DB,
 			userId: input.userId,
