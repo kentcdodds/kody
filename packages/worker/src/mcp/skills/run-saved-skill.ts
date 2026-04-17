@@ -104,71 +104,79 @@ async function runRepoBackedSkill(input: {
 		}
 	}
 	const sessionId = `skill-runtime-${input.row.id}`
-	const session = await repoSessionRpc(input.env, sessionId).openSession({
+	const sessionClient = repoSessionRpc(input.env, sessionId)
+	const session = await sessionClient.openSession({
 		sessionId,
 		sourceId: input.row.source_id,
 		userId: input.callerContext.user?.userId ?? '',
 		baseUrl: input.callerContext.baseUrl,
 		sourceRoot: '/',
 	})
-	const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-	const entrypoint = await repoSessionRpc(input.env, session.id).readFile({
-		sessionId: session.id,
-		path: manifestPath,
-	})
-	if (!entrypoint.content) {
-		return {
-			result: undefined,
-			error: `Skill manifest "${manifestPath}" was not found in repo session.`,
-			logs: [],
+	try {
+		const manifestPath =
+			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+		const entrypoint = await sessionClient.readFile({
+			sessionId: session.id,
+			path: manifestPath,
+		})
+		if (!entrypoint.content) {
+			return {
+				result: undefined,
+				error: `Skill manifest "${manifestPath}" was not found in repo session.`,
+				logs: [],
+			}
 		}
-	}
-	const { parseRepoManifest } = await import('#worker/repo/manifest.ts')
-	const manifest = parseRepoManifest({
-		content: entrypoint.content,
-		manifestPath,
-	})
-	if (manifest.kind !== 'skill') {
-		return {
-			result: undefined,
-			error: `Repo source "${input.row.source_id}" is not a skill manifest.`,
-			logs: [],
+		const { parseRepoManifest } = await import('#worker/repo/manifest.ts')
+		const manifest = parseRepoManifest({
+			content: entrypoint.content,
+			manifestPath,
+		})
+		if (manifest.kind !== 'skill') {
+			return {
+				result: undefined,
+				error: `Repo source "${input.row.source_id}" is not a skill manifest.`,
+				logs: [],
+			}
 		}
-	}
-	const moduleFile = await repoSessionRpc(input.env, session.id).readFile({
-		sessionId: session.id,
-		path: manifest.entrypoint.replace(/^\/+/, ''),
-	})
-	if (!moduleFile.content) {
-		return {
-			result: undefined,
-			error: `Skill entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-			logs: [],
+		const moduleFile = await sessionClient.readFile({
+			sessionId: session.id,
+			path: manifest.entrypoint.replace(/^\/+/, ''),
+		})
+		if (!moduleFile.content) {
+			return {
+				result: undefined,
+				error: `Skill entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+				logs: [],
+			}
 		}
-	}
-	const { runCodemodeWithRegistry } =
-		await import('#mcp/run-codemode-registry.ts')
-	return runCodemodeWithRegistry(
-		input.env,
-		{
-			...input.callerContext,
-			repoContext: {
-				sourceId: session.source_id,
-				repoId: null,
-				sessionId: session.id,
-				sessionRepoId: session.session_repo_id,
-				baseCommit: session.base_commit,
-				manifestPath: session.manifest_path,
-				sourceRoot: session.source_root,
-				publishedCommit: session.published_commit,
-				entityKind: session.entity_type,
-				entityId: input.row.id,
+		const { runCodemodeWithRegistry } =
+			await import('#mcp/run-codemode-registry.ts')
+		return runCodemodeWithRegistry(
+			input.env,
+			{
+				...input.callerContext,
+				repoContext: {
+					sourceId: session.source_id,
+					repoId: null,
+					sessionId: session.id,
+					sessionRepoId: session.session_repo_id,
+					baseCommit: session.base_commit,
+					manifestPath: session.manifest_path,
+					sourceRoot: session.source_root,
+					publishedCommit: session.published_commit,
+					entityKind: session.entity_type,
+					entityId: input.row.id,
+				},
 			},
-		},
-		moduleFile.content,
-		input.params,
-		{
-			executorExports: workerExports,
-		},
-	)
+			moduleFile.content,
+			input.params,
+			{
+				executorExports: workerExports,
+			},
+		)
+	} finally {
+		await sessionClient.discardSession({ sessionId: session.id }).catch(() => {
+			// Best effort only; preserve the original execution failure.
+		})
+	}
 }

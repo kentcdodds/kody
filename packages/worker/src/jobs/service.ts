@@ -422,99 +422,107 @@ async function runRepoBackedJob(input: {
 		}
 	}
 	const sessionId = `job-runtime-${input.job.id}`
-	const session = await repoSessionRpc(input.env, sessionId).openSession({
+	const sessionClient = repoSessionRpc(input.env, sessionId)
+	const session = await sessionClient.openSession({
 		sessionId,
 		sourceId: input.job.sourceId,
 		userId: input.callerContext.user.userId,
 		baseUrl: input.callerContext.baseUrl,
 		sourceRoot: '/',
 	})
-	const result = await repoSessionRpc(input.env, session.id).runChecks({
-		sessionId: session.id,
-	})
-	if (!result.ok) {
-		return {
-			error: result.results
-				.filter((entry) => !entry.ok)
-				.map((entry) => entry.message)
-				.join('\n'),
-			result: null,
-			logs: [],
-		}
-	}
-	const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-	const entrypoint = await repoSessionRpc(input.env, session.id).readFile({
-		sessionId: session.id,
-		path: manifestPath,
-	})
-	if (!entrypoint.content) {
-		return {
-			error: `Job manifest "${manifestPath}" was not found in repo session.`,
-			result: null,
-			logs: [],
-		}
-	}
-	let manifest: ReturnType<typeof parseRepoManifest>
 	try {
-		manifest = parseRepoManifest({
-			content: entrypoint.content,
-			manifestPath,
+		const result = await sessionClient.runChecks({
+			sessionId: session.id,
 		})
-	} catch (error) {
-		return {
-			error: error instanceof Error ? error.message : String(error),
-			result: null,
-			logs: [],
+		if (!result.ok) {
+			return {
+				error: result.results
+					.filter((entry) => !entry.ok)
+					.map((entry) => entry.message)
+					.join('\n'),
+				result: null,
+				logs: [],
+			}
 		}
-	}
-	if (manifest.kind !== 'job') {
-		return {
-			error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
-			result: null,
-			logs: [],
+		const manifestPath =
+			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+		const entrypoint = await sessionClient.readFile({
+			sessionId: session.id,
+			path: manifestPath,
+		})
+		if (!entrypoint.content) {
+			return {
+				error: `Job manifest "${manifestPath}" was not found in repo session.`,
+				result: null,
+				logs: [],
+			}
 		}
-	}
-	const moduleFile = await repoSessionRpc(input.env, session.id).readFile({
-		sessionId: session.id,
-		path: manifest.entrypoint.replace(/^\/+/, ''),
-	})
-	if (!moduleFile.content) {
-		return {
-			error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-			result: null,
-			logs: [],
+		let manifest: ReturnType<typeof parseRepoManifest>
+		try {
+			manifest = parseRepoManifest({
+				content: entrypoint.content,
+				manifestPath,
+			})
+		} catch (error) {
+			return {
+				error: error instanceof Error ? error.message : String(error),
+				result: null,
+				logs: [],
+			}
 		}
-	}
-	const { runCodemodeWithRegistry } =
-		await import('#mcp/run-codemode-registry.ts')
-	return await runCodemodeWithRegistry(
-		input.env,
-		{
-			...input.callerContext,
-			repoContext: {
-				sourceId: session.source_id,
-				repoId: null,
-				sessionId: session.id,
-				sessionRepoId: session.session_repo_id,
-				baseCommit: session.base_commit,
-				manifestPath: session.manifest_path,
-				sourceRoot: session.source_root,
-				publishedCommit: session.published_commit,
-				entityKind: session.entity_type,
-				entityId: input.job.id,
+		if (manifest.kind !== 'job') {
+			return {
+				error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+				result: null,
+				logs: [],
+			}
+		}
+		const moduleFile = await sessionClient.readFile({
+			sessionId: session.id,
+			path: manifest.entrypoint.replace(/^\/+/, ''),
+		})
+		if (!moduleFile.content) {
+			return {
+				error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+				result: null,
+				logs: [],
+			}
+		}
+		const { runCodemodeWithRegistry } =
+			await import('#mcp/run-codemode-registry.ts')
+		return await runCodemodeWithRegistry(
+			input.env,
+			{
+				...input.callerContext,
+				repoContext: {
+					sourceId: session.source_id,
+					repoId: null,
+					sessionId: session.id,
+					sessionRepoId: session.session_repo_id,
+					baseCommit: session.base_commit,
+					manifestPath: session.manifest_path,
+					sourceRoot: session.source_root,
+					publishedCommit: session.published_commit,
+					entityKind: session.entity_type,
+					entityId: input.job.id,
+				},
 			},
-		},
-		moduleFile.content,
-		input.job.params,
-		{
-			executorExports: workerExports,
-			storageTools: {
-				userId: input.callerContext.user.userId,
-				storageId: input.job.storageId,
-				writable: true,
+			moduleFile.content,
+			input.job.params,
+			{
+				executorExports: workerExports,
+				storageTools: {
+					userId: input.callerContext.user.userId,
+					storageId: input.job.storageId,
+					writable: true,
+				},
 			},
-		},
-	)
+		)
+	} finally {
+		await sessionClient.discardSession({ sessionId: session.id }).catch(() => {
+			// Best effort only; preserve the original execution failure.
+		})
+	}
 }
 
 export async function runJobNow(input: {

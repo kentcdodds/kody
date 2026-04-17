@@ -644,6 +644,123 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 	}
 })
 
+test('executeJobOnce discards repo sessions after repo-backed execution', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-1',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed job',
+		code: null,
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		storageId: 'job:job-repo-1',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-1',
+			source_id: 'source-1',
+			source_root: '/',
+			base_commit: 'base-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-1',
+			manifest_path: 'kody.json',
+			entity_type: 'job',
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: true,
+			results: [],
+			manifest: {
+				version: 1,
+				kind: 'job',
+				title: 'Repo-backed job',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo-backed job',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'async () => ({ ok: true, repoBacked: true })',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'job-runtime-job-repo-1',
+			deleted: true,
+		})),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true, repoBacked: true },
+			logs: ['repo-backed codemode executed'],
+		})
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: { ok: true, repoBacked: true },
+			logs: ['repo-backed codemode executed'],
+		})
+		expect(sessionClient.discardSession).toHaveBeenCalledWith({
+			sessionId: 'job-runtime-job-repo-1',
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
 test('executeJobOnce returns an error when codemode secret policy would reject execution', async () => {
 	const env = {
 		APP_DB: createDatabase(),
