@@ -8,6 +8,7 @@ CREATE TABLE ui_artifacts_v3 (
 	source_id TEXT NOT NULL,
 	parameters TEXT,
 	hidden INTEGER NOT NULL DEFAULT 1,
+	has_server_code INTEGER,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
@@ -20,6 +21,7 @@ INSERT INTO ui_artifacts_v3 (
 	source_id,
 	parameters,
 	hidden,
+	has_server_code,
 	created_at,
 	updated_at
 )
@@ -31,6 +33,7 @@ SELECT
 	source_id,
 	parameters,
 	hidden,
+	NULL AS has_server_code,
 	created_at,
 	updated_at
 FROM ui_artifacts

@@ -16,8 +16,8 @@ export async function insertUiArtifact(
 		.prepare(
 			`INSERT INTO ui_artifacts (
 				id, user_id, title, description, source_id, parameters, hidden,
-				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				has_server_code, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -27,6 +27,7 @@ export async function insertUiArtifact(
 			row.sourceId ?? null,
 			row.parameters ?? null,
 			row.hidden ? 1 : 0,
+			row.hasServerCode == null ? null : row.hasServerCode ? 1 : 0,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
@@ -41,7 +42,7 @@ export async function getUiArtifactById(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_id, parameters, hidden,
-				created_at, updated_at
+				has_server_code, created_at, updated_at
 			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
 		)
 		.bind(artifactId, userId)
@@ -62,7 +63,7 @@ export async function getUiArtifactByOwnerIds(
 	const result = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_id, parameters, hidden,
-				created_at, updated_at
+				has_server_code, created_at, updated_at
 			FROM ui_artifacts
 			WHERE id = ? AND user_id IN (${placeholders})
 			LIMIT 1`,
@@ -97,6 +98,7 @@ export async function updateUiArtifact(
 			| 'sourceId'
 			| 'parameters'
 			| 'hidden'
+			| 'hasServerCode'
 		>
 	>,
 ): Promise<boolean> {
@@ -122,6 +124,12 @@ export async function updateUiArtifact(
 	if (updates.hidden !== undefined) {
 		addAssignment('hidden', updates.hidden ? 1 : 0)
 	}
+	if (updates.hasServerCode !== undefined) {
+		addAssignment(
+			'has_server_code',
+			updates.hasServerCode == null ? null : updates.hasServerCode ? 1 : 0,
+		)
+	}
 
 	addAssignment('updated_at', new Date().toISOString())
 
@@ -143,7 +151,7 @@ export async function listUiArtifactsByUserId(
 	const { results } = await db
 		.prepare(
 			`SELECT id, user_id, title, description, source_id, parameters, hidden,
-				created_at, updated_at
+				has_server_code, created_at, updated_at
 			FROM ui_artifacts
 			WHERE user_id = ?
 				${hidden === undefined ? '' : 'AND hidden = ?'}`,
@@ -166,6 +174,12 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		parameters: row['parameters'] == null ? null : String(row['parameters']),
 		hidden:
 			row['hidden'] === 1 || row['hidden'] === '1' || row['hidden'] === true,
+		hasServerCode:
+			row['has_server_code'] == null
+				? null
+				: row['has_server_code'] === 1 ||
+					row['has_server_code'] === '1' ||
+					row['has_server_code'] === true,
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	}

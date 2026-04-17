@@ -47,6 +47,7 @@ type SavedAppDraft = {
 	serverCodeId: string
 	parameters: ReturnType<typeof normalizeUiArtifactParameters>
 	hidden: boolean
+	hasServerCode: boolean
 }
 
 function assertValidSavedAppServerCode(serverCode: string | null | undefined) {
@@ -220,11 +221,10 @@ export const uiSaveAppCapability = defineDomainCapability(
 				hidden: boolean
 				sourceId: string
 				serverCode: string | null
+				hasServerCode: boolean
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
-				const hasBackend = hasSavedAppBackend({
-					serverCode: input.serverCode,
-				})
+				const hasBackend = input.hasServerCode
 				const serializedParameters = input.parameters
 					? JSON.stringify(input.parameters)
 					: null
@@ -235,6 +235,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							sourceId: input.sourceId,
 							parameters: serializedParameters,
 							hidden: input.hidden,
+							hasServerCode: hasBackend,
 						})
 					: await insertUiArtifact(ctx.env.APP_DB, {
 							id: input.appId,
@@ -244,6 +245,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							sourceId: input.sourceId,
 							parameters: serializedParameters,
 							hidden: input.hidden,
+							hasServerCode: hasBackend,
 							created_at: new Date().toISOString(),
 							updated_at: new Date().toISOString(),
 						})
@@ -263,7 +265,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						appId: input.appId,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
-						serverCode: null,
+						serverCode: input.serverCode,
 						serverCodeId,
 					})
 					if (!input.hidden) {
@@ -339,9 +341,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 				}
 			}
 
-				const buildDraft = (
-					current: Awaited<ReturnType<typeof getUiArtifactById>> | null,
-				): SavedAppDraft => {
+			const buildDraft = (
+				current: Awaited<ReturnType<typeof getUiArtifactById>> | null,
+			): SavedAppDraft => {
 				const title = args.title ?? current?.title
 				const description = args.description ?? current?.description
 				if (!title || !description) {
@@ -364,6 +366,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						? null
 						: args.serverCode
 				assertValidSavedAppServerCode(serverCode)
+				const hasBackend = hasSavedAppBackend({ serverCode })
 				return {
 					title,
 					description,
@@ -377,6 +380,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 								: null
 							: normalizeUiArtifactParameters(args.parameters),
 					hidden: args.hidden ?? current?.hidden ?? true,
+					hasServerCode: hasBackend,
 				}
 			}
 
@@ -403,25 +407,25 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!resolvedCurrent?.published_commit) {
 					throw new Error('Saved app does not have a published repo-backed source.')
 				}
+				const resolvedSource =
+					args.clientCode === undefined || args.serverCode === undefined
+						? await resolveSavedAppSource({
+								env: ctx.env,
+								baseUrl: ctx.callerContext.baseUrl,
+								artifact: existingApp,
+							})
+						: null
+				const clientCode = args.clientCode ?? resolvedSource?.clientCode
+				if (!clientCode) {
+					throw new Error('Saved app source is missing client code.')
+				}
 				const draft: SavedAppDraft = {
 					title: args.title ?? existingApp.title,
 					description: args.description ?? existingApp.description,
-					clientCode:
-						args.clientCode ??
-						(await resolveSavedAppSource({
-							env: ctx.env,
-							baseUrl: ctx.callerContext.baseUrl,
-							artifact: existingApp,
-						})).clientCode,
+					clientCode,
 					serverCode:
 						args.serverCode === undefined
-							? (
-									await resolveSavedAppSource({
-										env: ctx.env,
-										baseUrl: ctx.callerContext.baseUrl,
-										artifact: existingApp,
-									})
-								).serverCode
+							? resolvedSource?.serverCode ?? null
 							: args.serverCode,
 					serverCodeId: crypto.randomUUID(),
 					parameters:
@@ -429,6 +433,12 @@ export const uiSaveAppCapability = defineDomainCapability(
 							? parseUiArtifactParameters(existingApp.parameters)
 							: normalizeUiArtifactParameters(args.parameters),
 					hidden: args.hidden ?? existingApp.hidden,
+					hasServerCode: hasSavedAppBackend({
+						serverCode:
+							args.serverCode === undefined
+								? resolvedSource?.serverCode ?? null
+								: args.serverCode,
+					}),
 				}
 				assertValidSavedAppServerCode(draft.serverCode)
 				await persistRepoSource({
@@ -444,6 +454,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					hidden,
 					sourceId: ensuredSource.id,
 					serverCode: draft.serverCode,
+					hasServerCode: draft.hasServerCode,
 					existingApp,
 				})
 			}
@@ -462,6 +473,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				hidden: draft.hidden,
 				sourceId: ensuredSource.id,
 				serverCode: draft.serverCode,
+				hasServerCode: draft.hasServerCode,
 				existingApp,
 			})
 		},

@@ -6,6 +6,7 @@ export type UiArtifactRow = {
 	sourceId: string
 	parameters: string | null
 	hidden: boolean
+	hasServerCode?: boolean | null
 	created_at: string
 	updated_at: string
 }

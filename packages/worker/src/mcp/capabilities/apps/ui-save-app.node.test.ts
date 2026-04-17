@@ -163,7 +163,7 @@ test('ui_save_app creates a repo-backed saved app and stores metadata projection
 	expect(mockModule.configureSavedAppRunner).toHaveBeenCalledWith(
 		expect.objectContaining({
 			appId: expect.any(String),
-			serverCode: null,
+			serverCode: expect.stringContaining('class App extends DurableObject'),
 			serverCodeId: 'commit-1',
 		}),
 	)

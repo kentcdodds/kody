@@ -8,6 +8,7 @@ import {
 } from '#mcp/ui-artifact-parameters.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 
 const outputSchema = z.object({
@@ -42,27 +43,50 @@ export const uiListAppsCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const rows = await listUiArtifactsByUserId(ctx.env.APP_DB, user.userId)
 			const resolvedApps = await Promise.all(
-				rows.map(async (row) => ({
-					row,
-					resolved: await resolveSavedAppSource({
-						env: ctx.env,
-						baseUrl: ctx.callerContext.baseUrl,
-						artifact: row,
-					}),
-				})),
+				rows.map(async (row) => {
+					if (row.hasServerCode == null) {
+						const resolved = await resolveSavedAppSource({
+							env: ctx.env,
+							baseUrl: ctx.callerContext.baseUrl,
+							artifact: row,
+						})
+						return {
+							row,
+							title: resolved.title,
+							description: resolved.description,
+							hidden: resolved.hidden,
+							hasServerCode: resolved.serverCode != null,
+							serverCodeId: resolved.serverCodeId,
+						}
+					}
+					const source = await getEntitySourceById(
+						ctx.env.APP_DB,
+						row.sourceId,
+					)
+					return {
+						row,
+						title: row.title,
+						description: row.description,
+						hidden: row.hidden,
+						hasServerCode: row.hasServerCode,
+						serverCodeId: source?.published_commit ?? row.sourceId,
+					}
+				}),
 			)
 			return {
-				apps: resolvedApps.map(({ row, resolved }) => ({
-					app_id: row.id,
-					title: resolved.title,
-					description: resolved.description,
-					has_server_code: resolved.serverCode != null,
-					server_code_id: resolved.serverCodeId,
-					parameters: parseUiArtifactParameters(row.parameters),
-					hidden: resolved.hidden,
-					created_at: row.created_at,
-					updated_at: row.updated_at,
-				})),
+				apps: resolvedApps.map(
+					({ row, title, description, hidden, hasServerCode, serverCodeId }) => ({
+						app_id: row.id,
+						title,
+						description,
+						has_server_code: hasServerCode ?? false,
+						server_code_id: serverCodeId,
+						parameters: parseUiArtifactParameters(row.parameters),
+						hidden,
+						created_at: row.created_at,
+						updated_at: row.updated_at,
+					}),
+				),
 			}
 		},
 	},
