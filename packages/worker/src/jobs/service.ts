@@ -442,124 +442,128 @@ async function runRepoBackedJob(input: {
 			logs: [],
 		}
 	}
-	const sessionId = `job-runtime-${input.job.id}-${crypto.randomUUID()}`
+	const sessionId = `job-runtime-${input.job.id}`
 	const sessionClient = repoSessionRpc(input.env, sessionId)
-	const session = await sessionClient.openSession({
+	const openSessionInput = {
 		sessionId,
 		sourceId: input.job.sourceId,
 		userId: input.callerContext.user.userId,
 		baseUrl: input.callerContext.baseUrl,
 		sourceRoot: '/',
-	})
-	try {
-		const result = await sessionClient.runChecks({
-			sessionId: session.id,
-			userId: input.callerContext.user.userId,
-		})
-		if (!result.ok) {
-			return {
-				error: result.results
-					.filter((entry) => !entry.ok)
-					.map((entry) => entry.message)
-					.join('\n'),
-				result: null,
-				logs: [],
-			}
-		}
-		const manifestPath =
-			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-		const entrypoint = await sessionClient.readFile({
-			sessionId: session.id,
-			userId: input.callerContext.user.userId,
-			path: manifestPath,
-		})
-		if (!entrypoint.content) {
-			return {
-				error: `Job manifest "${manifestPath}" was not found in repo session.`,
-				result: null,
-				logs: [],
-			}
-		}
-		let manifest: ReturnType<typeof parseRepoManifest>
-		try {
-			manifest = parseRepoManifest({
-				content: entrypoint.content,
-				manifestPath,
-			})
-		} catch (error) {
-			return {
-				error: error instanceof Error ? error.message : String(error),
-				result: null,
-				logs: [],
-			}
-		}
-		if (manifest.kind !== 'job') {
-			return {
-				error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
-				result: null,
-				logs: [],
-			}
-		}
-		const moduleFile = await sessionClient.readFile({
-			sessionId: session.id,
-			userId: input.callerContext.user.userId,
-			path: manifest.entrypoint.replace(/^\/+/, ''),
-		})
-		if (!moduleFile.content) {
-			return {
-				error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-				result: null,
-				logs: [],
-			}
-		}
-		if (hasModuleStyleCodemodeEntrypoint(moduleFile.content)) {
-			return {
-				error:
-					'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
-				result: null,
-				logs: [],
-			}
-		}
-		const { runCodemodeWithRegistry } =
-			await import('#mcp/run-codemode-registry.ts')
-		return await runCodemodeWithRegistry(
-			input.env,
-			{
-				...input.callerContext,
-				repoContext: {
-					sourceId: session.source_id,
-					repoId: null,
-					sessionId: session.id,
-					sessionRepoId: session.session_repo_id,
-					baseCommit: session.base_commit,
-					manifestPath: session.manifest_path,
-					sourceRoot: session.source_root,
-					publishedCommit: session.published_commit,
-					entityKind: session.entity_type,
-					entityId: input.job.id,
-				},
-			},
-			moduleFile.content,
-			input.job.params,
-			{
-				executorExports: workerExports,
-				storageTools: {
-					userId: input.callerContext.user.userId,
-					storageId: input.job.storageId,
-					writable: true,
-				},
-			},
-		)
-	} finally {
+	}
+	let session = await sessionClient.openSession(openSessionInput)
+	if (
+		session.published_commit &&
+		session.base_commit !== session.published_commit
+	) {
 		await sessionClient
 			.discardSession({
 				sessionId: session.id,
 				userId: input.callerContext.user.userId,
 			})
 			.catch(() => {
-				// Best effort only; preserve the original execution failure.
+				// Best effort only; ensure new sessions pick up the latest commit.
 			})
+		session = await sessionClient.openSession(openSessionInput)
 	}
+	const result = await sessionClient.runChecks({
+		sessionId: session.id,
+		userId: input.callerContext.user.userId,
+	})
+	if (!result.ok) {
+		return {
+			error: result.results
+				.filter((entry) => !entry.ok)
+				.map((entry) => entry.message)
+				.join('\n'),
+			result: null,
+			logs: [],
+		}
+	}
+	const manifestPath =
+		session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+	const entrypoint = await sessionClient.readFile({
+		sessionId: session.id,
+		userId: input.callerContext.user.userId,
+		path: manifestPath,
+	})
+	if (!entrypoint.content) {
+		return {
+			error: `Job manifest "${manifestPath}" was not found in repo session.`,
+			result: null,
+			logs: [],
+		}
+	}
+	let manifest: ReturnType<typeof parseRepoManifest>
+	try {
+		manifest = parseRepoManifest({
+			content: entrypoint.content,
+			manifestPath,
+		})
+	} catch (error) {
+		return {
+			error: error instanceof Error ? error.message : String(error),
+			result: null,
+			logs: [],
+		}
+	}
+	if (manifest.kind !== 'job') {
+		return {
+			error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+			result: null,
+			logs: [],
+		}
+	}
+	const moduleFile = await sessionClient.readFile({
+		sessionId: session.id,
+		userId: input.callerContext.user.userId,
+		path: manifest.entrypoint.replace(/^\/+/, ''),
+	})
+	if (!moduleFile.content) {
+		return {
+			error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+			result: null,
+			logs: [],
+		}
+	}
+	if (hasModuleStyleCodemodeEntrypoint(moduleFile.content)) {
+		return {
+			error:
+				'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
+			result: null,
+			logs: [],
+		}
+	}
+	const { runCodemodeWithRegistry } =
+		await import('#mcp/run-codemode-registry.ts')
+	return await runCodemodeWithRegistry(
+		input.env,
+		{
+			...input.callerContext,
+			repoContext: {
+				sourceId: session.source_id,
+				repoId: null,
+				sessionId: session.id,
+				sessionRepoId: session.session_repo_id,
+				baseCommit: session.base_commit,
+				manifestPath: session.manifest_path,
+				sourceRoot: session.source_root,
+				publishedCommit: session.published_commit,
+				entityKind: session.entity_type,
+				entityId: input.job.id,
+			},
+		},
+		moduleFile.content,
+		input.job.params,
+		{
+			executorExports: workerExports,
+			storageTools: {
+				userId: input.callerContext.user.userId,
+				storageId: input.job.storageId,
+				writable: true,
+			},
+		},
+	)
 }
 
 export async function runJobNow(input: {

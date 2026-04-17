@@ -644,7 +644,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 	}
 })
 
-test('executeJobOnce discards repo sessions after repo-backed execution', async () => {
+test('executeJobOnce refreshes repo sessions when base commit moves', async () => {
 	const env = {
 		APP_DB: createDatabase(),
 		LOADER: {} as WorkerLoader,
@@ -751,6 +751,7 @@ test('executeJobOnce discards repo sessions after repo-backed execution', async 
 			result: { ok: true, repoBacked: true },
 			logs: ['repo-backed codemode executed'],
 		})
+		expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
 		expect(sessionClient.discardSession).toHaveBeenCalledWith({
 			sessionId: 'job-runtime-job-repo-1',
 			userId: 'user-123',
@@ -866,10 +867,7 @@ test('executeJobOnce returns a clear error for module-style repo-backed job entr
 			logs: [],
 		})
 		expect(executeSpy).not.toHaveBeenCalled()
-		expect(sessionClient.discardSession).toHaveBeenCalledWith({
-			sessionId: 'job-runtime-job-repo-module',
-			userId: 'user-123',
-		})
+		expect(sessionClient.discardSession).not.toHaveBeenCalled()
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()

@@ -22,7 +22,7 @@ function canSyncArtifactSource(env: Env) {
 }
 
 function buildSyncSessionId(sourceId: string) {
-	return `source-sync-${sourceId}`
+	return `source-sync-${sourceId}-${crypto.randomUUID()}`
 }
 
 export async function syncArtifactSourceSnapshot(

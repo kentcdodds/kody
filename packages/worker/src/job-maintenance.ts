@@ -8,7 +8,7 @@ export async function handleJobReindexRequest(
 		return new Response('Method Not Allowed', { status: 405 })
 	}
 
-	const secret = env.CAPABILITY_REINDEX_SECRET?.trim()
+	const secret = env.JOB_REINDEX_SECRET?.trim()
 	if (!secret) {
 		return new Response('Job reindex is not configured', { status: 503 })
 	}
