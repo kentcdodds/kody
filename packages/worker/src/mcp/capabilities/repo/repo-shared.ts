@@ -208,14 +208,10 @@ export const repoPatchInstructionSchema = z.discriminatedUnion('kind', [
 		options: repoPatchSearchOptionsSchema.optional(),
 	}),
 	z.object({
-		kind: z.literal('writeJson'),
+		kind: z.literal('write_json'),
 		path: z.string().min(1),
 		value: z.unknown(),
-		options: z
-			.object({
-				spaces: z.number().int().min(0).optional(),
-			})
-			.optional(),
+		spaces: z.number().int().min(0).optional(),
 	}),
 ])
 

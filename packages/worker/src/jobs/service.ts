@@ -555,6 +555,7 @@ export async function runJobNow(input: {
 				})
 	if (row.record.schedule.type === 'once') {
 		await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+		await deleteJobVector(input.env, input.jobId)
 	} else {
 		await updateJobRow({
 			db: input.env.APP_DB,

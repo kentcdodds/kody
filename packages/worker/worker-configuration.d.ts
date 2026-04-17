@@ -9507,6 +9507,7 @@ interface AiModels {
     "@cf/deepgram/aura-1": Base_Ai_Cf_Deepgram_Aura_1;
     "@cf/ai4bharat/indictrans2-en-indic-1B": Base_Ai_Cf_Ai4Bharat_Indictrans2_En_Indic_1B;
     "@cf/aisingapore/gemma-sea-lion-v4-27b-it": Base_Ai_Cf_Aisingapore_Gemma_Sea_Lion_V4_27B_It;
+    "@cf/google/gemma-4-26b-a4b-it": Base_Ai_Cf_Google_Gemma_4_26B_A4B_IT;
     "@cf/pfnet/plamo-embedding-1b": Base_Ai_Cf_Pfnet_Plamo_Embedding_1B;
     "@cf/deepgram/flux": Base_Ai_Cf_Deepgram_Flux;
     "@cf/deepgram/aura-2-en": Base_Ai_Cf_Deepgram_Aura_2_En;

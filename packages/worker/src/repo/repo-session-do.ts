@@ -24,6 +24,10 @@ import { runRepoChecks, type RepoCheckRunResult } from './checks.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const defaultRepoSearchLimit = 50
+const maxRepoSearchBytes = 200_000
+const maxRepoSearchRegexLength = 512
+const obviousNestedQuantifierPattern =
+	/\((?:[^()\\]|\\.)*[+*{][^)]*\)(?:[+*]|\{\d+(?:,\d*)?\})/
 
 export type RepoSearchMode = 'literal' | 'regex'
 export type RepoSearchOutputMode = 'content' | 'files'
@@ -148,6 +152,19 @@ function normalizeSearchLimit(limit: number | undefined) {
 
 function escapeRegex(source: string) {
 	return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function assertSafeRepoSearchRegex(pattern: string) {
+	if (pattern.length > maxRepoSearchRegexLength) {
+		throw new Error(
+			`repo_search regex patterns must be ${maxRepoSearchRegexLength} characters or fewer.`,
+		)
+	}
+	if (obviousNestedQuantifierPattern.test(pattern)) {
+		throw new Error(
+			'repo_search rejected an unsafe regex pattern with nested quantifiers.',
+		)
+	}
 }
 
 function normalizeSearchQuery(input: {
@@ -1143,10 +1160,26 @@ function searchInText(input: {
 	contextAfter: number
 	maxMatches: number
 }) {
-	const source = input.content
+	const inputTruncated = input.content.length > maxRepoSearchBytes
+	// Bound regex work so a single pathological search cannot monopolize the DO.
+	const source = inputTruncated
+		? input.content.slice(0, maxRepoSearchBytes)
+		: input.content
 	const flags = input.caseSensitive ? 'g' : 'gi'
 	const pattern = input.regex ? input.query : escapeRegex(input.query)
-	const matcher = new RegExp(pattern, flags)
+	if (input.regex) {
+		assertSafeRepoSearchRegex(pattern)
+	}
+	let matcher: RegExp
+	try {
+		matcher = new RegExp(pattern, flags)
+	} catch (error) {
+		const message =
+			error instanceof Error
+				? error.message
+				: 'Unknown regex compilation error.'
+		throw new Error(`repo_search received an invalid regex: ${message}`)
+	}
 	const lines = source.split('\n')
 	const lineOffsets: number[] = []
 	let offset = 0
@@ -1192,6 +1225,6 @@ function searchInText(input: {
 	}
 	return {
 		matches,
-		truncated,
+		truncated: truncated || inputTruncated,
 	}
 }

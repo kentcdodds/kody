@@ -3,7 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
-import { createJob, executeJobOnce, updateJob } from './service.ts'
+import { createJob, executeJobOnce, runJobNow } from './service.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -816,6 +816,61 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 				'Secret "apiToken" is not allowed for capability "secret_set". If this capability should be able to use the secret, ask the user whether to add "secret_set" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://example.com/account/secrets/user/apiToken?capability=secret_set',
 			logs: [],
 		})
+	} finally {
+		executeSpy.mockRestore()
+	}
+})
+
+test('runJobNow deletes vectors for once jobs', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		LOADER: {} as WorkerLoader,
+	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
+	const callerContext = createBaseCallerContext()
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Run once and delete vector',
+			code: 'async () => ({ ok: true })',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+	const deleteByIds = vi.fn(async () => {})
+	env.CAPABILITY_VECTOR_INDEX = {
+		deleteByIds,
+	}
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true },
+			logs: [],
+		})
+
+	try {
+		const result = await runJobNow({
+			env: env as Env,
+			userId: callerContext.user.userId,
+			jobId: jobView.id,
+			callerContext,
+		})
+		expect(result.execution).toEqual({
+			ok: true,
+			result: { ok: true },
+			logs: [],
+		})
+		expect(deleteByIds).toHaveBeenCalledWith([`job_${jobView.id}`])
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
+		expect(row).toBeNull()
 	} finally {
 		executeSpy.mockRestore()
 	}
