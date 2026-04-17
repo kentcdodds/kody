@@ -50,7 +50,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				return {
 					status: 'ok' as const,
 					session_id: result.sessionId,
-					published_commit: result.publishedCommit ?? '',
+					published_commit: result.publishedCommit,
 					message: result.message,
 				}
 			}

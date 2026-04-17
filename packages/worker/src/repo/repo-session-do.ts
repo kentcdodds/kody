@@ -543,11 +543,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		const outputMode = input.outputMode ?? 'content'
 		const maxMatches = normalizeSearchLimit(input.limit)
 		let totalMatches = 0
+		let truncated = false
 		for (const file of files) {
 			if (file.type !== 'file') continue
 			const content = await this.workspace.readFile(file.path)
 			if (content == null) continue
-			const matches = searchInText({
+			const result = searchInText({
 				content,
 				query: search.query,
 				regex: search.regex,
@@ -556,7 +557,9 @@ class RepoSessionBase extends DurableObject<Env> {
 				contextAfter: input.after ?? 0,
 				maxMatches,
 			})
+			const matches = result.matches
 			if (matches.length === 0) continue
+			truncated ||= result.truncated
 			matchMap.set(file.path, {
 				path: this.toExternalPath(file.path),
 				matches:
@@ -581,7 +584,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			totalFiles: filesWithMatches.length,
 			totalMatches,
 			outputMode,
-			truncated: totalMatches > maxMatches,
+			truncated,
 		}
 	}
 
@@ -1159,8 +1162,12 @@ function searchInText(input: {
 		beforeLines?: string[]
 		afterLines?: string[]
 	}> = []
+	let truncated = false
 	for (const match of source.matchAll(matcher)) {
-		if (matches.length >= input.maxMatches) break
+		if (matches.length >= input.maxMatches) {
+			truncated = true
+			break
+		}
 		const index = match.index ?? 0
 		let lineIndex = 0
 		for (let candidate = 0; candidate < lineOffsets.length; candidate += 1) {
@@ -1183,5 +1190,8 @@ function searchInText(input: {
 			afterLines: lines.slice(lineIndex + 1, afterEnd),
 		})
 	}
-	return matches
+	return {
+		matches,
+		truncated,
+	}
 }
