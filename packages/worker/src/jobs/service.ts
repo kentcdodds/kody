@@ -30,7 +30,11 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
-import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import {
+	ensureEntitySource,
+	getRepoSourceSupportStatus,
+	setEntityPublishedCommit,
+} from '#worker/repo/source-service.ts'
 import { parseRepoManifest } from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
@@ -145,10 +149,17 @@ export async function createJob(input: {
 	body: JobCreateInput
 }) {
 	const callerContext = requirePersistableJobCallerContext(input.callerContext)
+	const repoSourceSupport = getRepoSourceSupportStatus({
+		db: input.env.APP_DB,
+		env: input.env,
+	})
 	const schedule = normalizeJobSchedule(input.body.schedule)
 	const timezone = normalizeJobTimezone(input.body.timezone)
 	const now = new Date().toISOString()
 	const shape = resolveCreateShape(input.body)
+	if (shape.sourceId && !repoSourceSupport.ok) {
+		throw new Error(repoSourceSupport.reason)
+	}
 	const jobId = crypto.randomUUID()
 	const ensuredSource = shape.sourceId
 		? await ensureEntitySource({
@@ -195,8 +206,18 @@ export async function createJob(input: {
 			job: toJobView(job),
 		}),
 	})
+	if (job.sourceId && syncedPublishedCommit == null) {
+		throw new Error('Saved job source sync did not publish a repo-backed commit.')
+	}
 	if (syncedPublishedCommit) {
 		job.publishedCommit = syncedPublishedCommit
+		await setEntityPublishedCommit({
+			db: input.env.APP_DB,
+			userId: callerContext.user.userId,
+			sourceId: job.sourceId!,
+			publishedCommit: syncedPublishedCommit,
+			indexedCommit: syncedPublishedCommit,
+		})
 	}
 	const callerContextJson = serializeCallerContext(callerContext)
 	await insertJobRow({
@@ -241,6 +262,10 @@ export async function updateJob(input: {
 	body: JobUpdateInput
 }) {
 	const callerContext = requirePersistableJobCallerContext(input.callerContext)
+	const repoSourceSupport = getRepoSourceSupportStatus({
+		db: input.env.APP_DB,
+		env: input.env,
+	})
 	const existingRow = await getJobRowById(
 		input.env.APP_DB,
 		callerContext.user.userId,
@@ -267,6 +292,9 @@ export async function updateJob(input: {
 		existing,
 		body: input.body,
 	})
+	if ((shape.sourceId ?? existing.sourceId) != null && !repoSourceSupport.ok) {
+		throw new Error(repoSourceSupport.reason)
+	}
 	if (
 		input.body.sourceId !== undefined &&
 		existing.sourceId != null &&
@@ -323,8 +351,18 @@ export async function updateJob(input: {
 			job: toJobView(updated),
 		}),
 	})
+	if (updated.sourceId && syncedPublishedCommit == null) {
+		throw new Error('Saved job source sync did not publish a repo-backed commit.')
+	}
 	if (syncedPublishedCommit) {
 		updated.publishedCommit = syncedPublishedCommit
+		await setEntityPublishedCommit({
+			db: input.env.APP_DB,
+			userId: callerContext.user.userId,
+			sourceId: updated.sourceId!,
+			publishedCommit: syncedPublishedCommit,
+			indexedCommit: syncedPublishedCommit,
+		})
 	}
 	const nextCallerContextJson = serializeCallerContext(callerContext)
 	await updateJobRow({

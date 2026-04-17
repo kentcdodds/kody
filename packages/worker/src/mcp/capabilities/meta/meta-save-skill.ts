@@ -21,8 +21,11 @@ import { skillParameterSchema } from '#mcp/skills/skill-parameters.ts'
 import { upsertSkillVector } from '#mcp/skills/skill-vectorize.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
+import {
+	ensureEntitySource,
+	getRepoSourceSupportStatus,
+} from '#worker/repo/source-service.ts'
 import { requireMcpUser } from './require-user.ts'
-import { ensureEntitySource } from '#worker/repo/source-service.ts'
 
 function parseJsonStringArray(raw: string | null): Array<string> {
 	if (raw == null) return []
@@ -141,15 +144,25 @@ export const metaSaveSkillCapability = defineDomainCapability(
 
 			const skillId = existing?.id ?? crypto.randomUUID()
 			const now = new Date().toISOString()
-			const source = await ensureEntitySource({
+			const repoSourceSupport = getRepoSourceSupportStatus({
 				db: ctx.env.APP_DB,
 				env: ctx.env,
-				userId: user.userId,
-				entityKind: 'skill',
-				entityId: skillId,
-				sourceRoot: '/',
 			})
-			const previousPublishedCommit = source.published_commit
+			if (existing?.source_id != null && !repoSourceSupport.ok) {
+				throw new Error(repoSourceSupport.reason)
+			}
+			const source = repoSourceSupport.ok
+				? await ensureEntitySource({
+						db: ctx.env.APP_DB,
+						env: ctx.env,
+						userId: user.userId,
+						entityKind: 'skill',
+						entityId: skillId,
+						sourceRoot: '/',
+					})
+				: null
+			const previousPublishedCommit = source?.published_commit ?? null
+			const nextSourceId = source?.id ?? existing?.source_id ?? null
 
 			if (existing) {
 				const updated = await updateMcpSkill(
@@ -157,7 +170,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					user.userId,
 					existing.name,
 					{
-						source_id: source.id,
+						source_id: nextSourceId,
 						...prep.rowPayload,
 					},
 				)
@@ -169,7 +182,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 					await insertMcpSkill(ctx.env.APP_DB, {
 						id: skillId,
 						user_id: user.userId,
-						source_id: source.id,
+						source_id: nextSourceId,
 						...prep.rowPayload,
 						created_at: now,
 						updated_at: now,
@@ -184,26 +197,31 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				}
 			}
 
-			const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-				env: ctx.env,
-				userId: user.userId,
-				baseUrl: ctx.callerContext.baseUrl,
-				sourceId: source.id,
-				files: buildSkillSourceFiles({
-					title: args.title,
-					description: args.description,
-					keywords: args.keywords,
-					searchText: args.search_text ?? null,
-					collection: prep.rowPayload.collection_name,
-					readOnly: args.read_only,
-					idempotent: args.idempotent,
-					destructive: args.destructive,
-					usesCapabilities: args.uses_capabilities ?? null,
-					parameters: args.parameters ?? null,
-					code: args.code,
-				}),
-			})
-			if (syncedPublishedCommit) {
+			if (source) {
+				const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+					env: ctx.env,
+					userId: user.userId,
+					baseUrl: ctx.callerContext.baseUrl,
+					sourceId: source.id,
+					files: buildSkillSourceFiles({
+						title: args.title,
+						description: args.description,
+						keywords: args.keywords,
+						searchText: args.search_text ?? null,
+						collection: prep.rowPayload.collection_name,
+						readOnly: args.read_only,
+						idempotent: args.idempotent,
+						destructive: args.destructive,
+						usesCapabilities: args.uses_capabilities ?? null,
+						parameters: args.parameters ?? null,
+						code: args.code,
+					}),
+				})
+				if (syncedPublishedCommit == null) {
+					throw new Error(
+						'Saved skill source sync did not publish a repo-backed commit.',
+					)
+				}
 				await updateEntitySource(ctx.env.APP_DB, {
 					id: source.id,
 					userId: user.userId,
@@ -246,56 +264,60 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						embedText: oldEmbed,
 						collectionSlug: existing.collection_slug,
 					})
-					const restoredPublishedCommit = await syncArtifactSourceSnapshot({
-						env: ctx.env,
-						userId: user.userId,
-						baseUrl: ctx.callerContext.baseUrl,
-						sourceId: source.id,
-						files: buildSkillSourceFiles({
-							title: existing.title,
-							description: existing.description,
-							keywords: parseJsonStringArray(existing.keywords),
-							searchText: existing.search_text ?? null,
-							collection: existing.collection_name,
-							readOnly: existing.read_only === 1,
-							idempotent: existing.idempotent === 1,
-							destructive: existing.destructive === 1,
-							usesCapabilities: parseJsonStringArray(
-								existing.uses_capabilities,
-							),
-							parameters: skillParameterSchema
-								.array()
-								.safeParse(
-									existing.parameters == null
+					if (source) {
+						const restoredPublishedCommit = await syncArtifactSourceSnapshot({
+							env: ctx.env,
+							userId: user.userId,
+							baseUrl: ctx.callerContext.baseUrl,
+							sourceId: source.id,
+							files: buildSkillSourceFiles({
+								title: existing.title,
+								description: existing.description,
+								keywords: parseJsonStringArray(existing.keywords),
+								searchText: existing.search_text ?? null,
+								collection: existing.collection_name,
+								readOnly: existing.read_only === 1,
+								idempotent: existing.idempotent === 1,
+								destructive: existing.destructive === 1,
+								usesCapabilities: parseJsonStringArray(
+									existing.uses_capabilities,
+								),
+								parameters: skillParameterSchema
+									.array()
+									.safeParse(
+										existing.parameters == null
+											? null
+											: JSON.parse(existing.parameters),
+									).success
+									? existing.parameters == null
 										? null
-										: JSON.parse(existing.parameters),
-								).success
-								? existing.parameters == null
-									? null
-									: (JSON.parse(existing.parameters) as Array<{
-											name: string
-											description: string
-											type: 'string' | 'number' | 'boolean' | 'json'
-											required?: boolean
-											default?: unknown
-										}>)
-								: null,
-							code: existing.code,
-						}),
-					})
-					await updateEntitySource(ctx.env.APP_DB, {
-						id: source.id,
-						userId: user.userId,
-						publishedCommit:
-							restoredPublishedCommit ?? previousPublishedCommit ?? null,
-						indexedCommit:
-							restoredPublishedCommit ?? previousPublishedCommit ?? null,
-					})
+										: (JSON.parse(existing.parameters) as Array<{
+												name: string
+												description: string
+												type: 'string' | 'number' | 'boolean' | 'json'
+												required?: boolean
+												default?: unknown
+											}>)
+									: null,
+								code: existing.code,
+							}),
+						})
+						await updateEntitySource(ctx.env.APP_DB, {
+							id: source.id,
+							userId: user.userId,
+							publishedCommit:
+								restoredPublishedCommit ?? previousPublishedCommit ?? null,
+							indexedCommit:
+								restoredPublishedCommit ?? previousPublishedCommit ?? null,
+						})
+					}
 				} else {
-					await deleteEntitySource(ctx.env.APP_DB, {
-						id: source.id,
-						userId: user.userId,
-					})
+					if (source) {
+						await deleteEntitySource(ctx.env.APP_DB, {
+							id: source.id,
+							userId: user.userId,
+						})
+					}
 					await deleteMcpSkill(
 						ctx.env.APP_DB,
 						user.userId,

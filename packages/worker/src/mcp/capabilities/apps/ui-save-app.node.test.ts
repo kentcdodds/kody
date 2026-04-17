@@ -59,6 +59,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		user_id: 'user-1',
 		title: 'Patchable App',
 		description: 'Saved app used to verify partial ui_save_app updates.',
+		sourceId: null,
 		clientCode: '<main><h1>Patchable v1</h1></main>',
 		serverCode: initialServerCode,
 		serverCodeId: 'server-code-v1',
@@ -90,6 +91,9 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 					: {}),
 				...(updates['description'] !== undefined
 					? { description: updates['description'] as string }
+					: {}),
+				...(updates['sourceId'] !== undefined
+					? { sourceId: updates['sourceId'] as string | null }
 					: {}),
 				...(updates['clientCode'] !== undefined
 					? { clientCode: updates['clientCode'] as string }
@@ -149,7 +153,6 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		expect(mockModule.updateUiArtifact.mock.calls[0]?.[3]).toEqual({
 			title: undefined,
 			description: undefined,
-			sourceId: 'server-code-v2',
 			clientCode: '<main><h1>Patchable v2</h1></main>',
 			hidden: undefined,
 		})
@@ -190,7 +193,6 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			expect.objectContaining({
 				title: undefined,
 				description: undefined,
-				sourceId: 'server-code-v3',
 				clientCode: undefined,
 				hidden: undefined,
 				serverCode: null,
@@ -234,7 +236,6 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			expect.objectContaining({
 				title: undefined,
 				description: undefined,
-				sourceId: expect.any(String),
 				clientCode: undefined,
 				hidden: undefined,
 				serverCode: replacementServerCode,
@@ -253,4 +254,91 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 	} finally {
 		randomUuidSpy.mockRestore()
 	}
+})
+
+test('ui_save_app creates inline-only apps when repo source support is unavailable', async () => {
+	mockModule.getUiArtifactById.mockReset()
+	mockModule.updateUiArtifact.mockReset()
+	mockModule.insertUiArtifact.mockReset()
+	mockModule.deleteUiArtifact.mockReset()
+	mockModule.configureSavedAppRunner.mockReset()
+	mockModule.deleteSavedAppRunner.mockReset()
+	mockModule.upsertUiArtifactVector.mockReset()
+	mockModule.deleteUiArtifactVector.mockReset()
+
+	mockModule.insertUiArtifact.mockResolvedValue(undefined)
+
+	const result = await uiSaveAppCapability.handler(
+		{
+			title: 'Inline only app',
+			description: 'Stays inline until repo source support exists.',
+			clientCode: '<main><h1>Inline</h1></main>',
+		},
+		{
+			env: { APP_DB: {} } as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-1', email: 'user@example.com' },
+			}),
+		},
+	)
+
+	expect(result).toEqual({
+		app_id: expect.any(String),
+		server_code_id: expect.any(String),
+		has_server_code: false,
+		hosted_url: expect.stringMatching(/^https:\/\/heykody\.dev\/ui\//),
+		parameters: null,
+		hidden: true,
+	})
+	expect(mockModule.insertUiArtifact).toHaveBeenCalledWith(
+		{},
+		expect.objectContaining({
+			sourceId: null,
+			title: 'Inline only app',
+		}),
+	)
+})
+
+test('ui_save_app refuses to update repo-backed apps when repo source support is unavailable', async () => {
+	mockModule.getUiArtifactById.mockReset()
+	mockModule.updateUiArtifact.mockReset()
+	mockModule.insertUiArtifact.mockReset()
+	mockModule.deleteUiArtifact.mockReset()
+	mockModule.configureSavedAppRunner.mockReset()
+	mockModule.deleteSavedAppRunner.mockReset()
+	mockModule.upsertUiArtifactVector.mockReset()
+	mockModule.deleteUiArtifactVector.mockReset()
+
+	mockModule.getUiArtifactById.mockResolvedValue({
+		id: 'app-1',
+		user_id: 'user-1',
+		title: 'Repo-backed app',
+		description: 'Requires repo publish support.',
+		sourceId: 'source-1',
+		clientCode: '<main><h1>Repo</h1></main>',
+		serverCode: null,
+		serverCodeId: 'server-code-v1',
+		parameters: null,
+		hidden: true,
+	})
+
+	await expect(
+		uiSaveAppCapability.handler(
+			{
+				app_id: 'app-1',
+				description: 'Updated description',
+			},
+			{
+				env: { APP_DB: {} } as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://heykody.dev',
+					user: { userId: 'user-1', email: 'user@example.com' },
+				}),
+			},
+		),
+	).rejects.toThrow(
+		'Repo-backed source support is unavailable in this environment. Missing required bindings: APP_DB, ARTIFACTS, REPO_SESSION.',
+	)
+	expect(mockModule.updateUiArtifact).not.toHaveBeenCalled()
 })

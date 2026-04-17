@@ -1,5 +1,6 @@
 import { repoSessionRpc } from './repo-session-do.ts'
 import { getEntitySourceById } from './entity-sources.ts'
+import { getRepoSourceSupportStatus } from './source-service.ts'
 
 type SyncArtifactSourceInput = {
 	env: Env
@@ -29,9 +30,24 @@ export async function syncArtifactSourceSnapshot(
 	input: SyncArtifactSourceInput,
 ): Promise<string | null> {
 	if (!input.sourceId) return null
-	if (!canSyncArtifactSource(input.env)) return null
+	const repoSourceSupport = getRepoSourceSupportStatus({
+		db: input.env.APP_DB,
+		env: input.env,
+	})
+	if (!repoSourceSupport.ok) {
+		throw new Error(repoSourceSupport.reason)
+	}
+	if (!canSyncArtifactSource(input.env)) {
+		throw new Error(
+			'Repo-backed source support is unavailable in this environment.',
+		)
+	}
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-	if (!source) return null
+	if (!source) {
+		throw new Error(
+			`Repo source "${input.sourceId}" was not found in entity_sources for this environment.`,
+		)
+	}
 	const sessionId = buildSyncSessionId(source.id)
 	const session = repoSessionRpc(input.env, sessionId)
 	try {

@@ -450,6 +450,31 @@ test('createJob assigns a stable job storage id', async () => {
 	expect(created.storageId).toBe(`job:${created.id}`)
 })
 
+test('createJob rejects repo-backed jobs when repo source support is unavailable', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	const callerContext = createBaseCallerContext()
+
+	await expect(
+		createJob({
+			env,
+			callerContext,
+			body: {
+				name: 'Repo-backed job without bindings',
+				code: 'async () => ({ ok: true })',
+				sourceId: 'source-1',
+				schedule: {
+					type: 'once',
+					runAt: '2026-04-17T15:00:00Z',
+				},
+			},
+		}),
+	).rejects.toThrow(
+		'Repo-backed source support is unavailable in this environment. Missing required bindings: ARTIFACTS, REPO_SESSION.',
+	)
+})
+
 test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	const db = createDatabase()
 	const env = {

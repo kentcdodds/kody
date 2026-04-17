@@ -22,7 +22,10 @@ import {
 	updateEntitySource,
 } from './entity-sources.ts'
 import { buildAppSourceFiles, buildJobSourceFiles, buildSkillSourceFiles } from './source-templates.ts'
-import { ensureEntitySource } from './source-service.ts'
+import {
+	ensureEntitySource,
+	getRepoSourceSupportStatus,
+} from './source-service.ts'
 import { syncArtifactSourceSnapshot } from './source-sync.ts'
 
 type BackfillStatus = 'planned' | 'migrated' | 'skipped' | 'error'
@@ -80,6 +83,38 @@ export async function backfillRepoSources(input: {
 		input.includeJobs === false
 			? []
 			: await listJobRowsByUserId(input.env.APP_DB, input.userId)
+
+	const repoSourceSupport = getRepoSourceSupportStatus({
+		db: input.env.APP_DB,
+		env: input.env,
+	})
+	if (!dryRun && !repoSourceSupport.ok) {
+		return {
+			dryRun,
+			apps: buildUnavailableGroup(appRows, repoSourceSupport.reason, (row) => ({
+				kind: 'app',
+				id: row.id,
+				title: row.title,
+				sourceId: row.sourceId,
+				publishedCommit: null,
+			})),
+			skills: buildUnavailableGroup(skillRows, repoSourceSupport.reason, (row) => ({
+				kind: 'skill',
+				id: row.id,
+				title: row.title,
+				sourceId: row.source_id,
+				publishedCommit: null,
+			})),
+			jobs: buildUnavailableGroup(jobRows, repoSourceSupport.reason, (row) => ({
+				kind: 'job',
+				id: row.record.id,
+				title: row.record.name,
+				sourceId: row.record.sourceId,
+				publishedCommit: row.record.publishedCommit,
+			})),
+			reindex: null,
+		} satisfies SourceBackfillSummary
+	}
 
 	const apps = await backfillGroup(appRows, (row) =>
 		backfillApp({
@@ -140,6 +175,31 @@ async function backfillGroup<T>(
 		migrated: results.filter((result) => result.status === 'migrated').length,
 		skipped: results.filter((result) => result.status === 'skipped').length,
 		errors: results.filter((result) => result.status === 'error').length,
+		results,
+	}
+}
+
+function buildUnavailableGroup<T>(
+	rows: Array<T>,
+	reason: string,
+	getResult: (
+		row: T,
+	) => Pick<
+		SourceBackfillEntityResult,
+		'kind' | 'id' | 'title' | 'sourceId' | 'publishedCommit'
+	>,
+): SourceBackfillGroupResult {
+	const results = rows.map((row) => ({
+		...getResult(row),
+		status: 'error' as const,
+		reason,
+	}))
+	return {
+		total: results.length,
+		planned: 0,
+		migrated: 0,
+		skipped: 0,
+		errors: results.length,
 		results,
 	}
 }

@@ -28,7 +28,10 @@ import {
 } from '#mcp/ui-artifact-parameters.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildAppSourceFiles } from '#worker/repo/source-templates.ts'
-import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import {
+	ensureEntitySource,
+	getRepoSourceSupportStatus,
+} from '#worker/repo/source-service.ts'
 import {
 	getEntitySourceById,
 	updateEntitySource,
@@ -169,15 +172,21 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
+			const repoSourceSupport = getRepoSourceSupportStatus({
+				db: ctx.env.APP_DB,
+				env: ctx.env,
+			})
 			const ensureSource = () =>
-				ensureEntitySource({
-					db: ctx.env.APP_DB,
-					env: ctx.env,
-					userId: user.userId,
-					entityKind: 'app',
-					entityId: appId,
-					sourceRoot: '/',
-				})
+				repoSourceSupport.ok
+					? ensureEntitySource({
+							db: ctx.env.APP_DB,
+							env: ctx.env,
+							userId: user.userId,
+							entityKind: 'app',
+							entityId: appId,
+							sourceRoot: '/',
+						})
+					: null
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
 				null
@@ -195,9 +204,12 @@ export const uiSaveAppCapability = defineDomainCapability(
 			}
 
 			const restorePublishedCommit = async (
-				sourceId: string,
+				sourceId: string | null,
 				publishedCommit: string | null,
 			) => {
+				if (!sourceId) {
+					return
+				}
 				if (!hasAppDbBinding(ctx.env.APP_DB)) {
 					return
 				}
@@ -217,7 +229,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				serverCodeId: string
 				parameters: ReturnType<typeof normalizeUiArtifactParameters>
 				hidden: boolean
-				sourceId: string
+				sourceId: string | null
 				previousPublishedCommit: string | null
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
@@ -343,6 +355,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!existingApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				if (existingApp.sourceId != null && !repoSourceSupport.ok) {
+					throw new Error(repoSourceSupport.reason)
+				}
 				const ensuredSource = await ensureSource()
 				const title = args.title ?? existingApp.title
 				const description = args.description ?? existingApp.description
@@ -369,9 +384,11 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const updates: Parameters<typeof updateUiArtifact>[3] = {
 					title: args.title,
 					description: args.description,
-					sourceId: ensuredSource.id,
 					clientCode: args.clientCode,
 					hidden: args.hidden,
+				}
+				if (ensuredSource) {
+					updates.sourceId = ensuredSource.id
 				}
 				if (args.parameters !== undefined) {
 					updates.parameters = serializedParameters
@@ -389,24 +406,37 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
-				const previousPublishedCommit = await readPublishedCommit(
-					ensuredSource.id,
-				)
+				const previousPublishedCommit = ensuredSource
+					? await readPublishedCommit(ensuredSource.id)
+					: null
 				try {
-					await syncArtifactSourceSnapshot({
-						env: ctx.env,
-						userId: user.userId,
-						baseUrl: ctx.callerContext.baseUrl,
-						sourceId: ensuredSource.id,
-						files: buildAppSourceFiles({
-							title,
-							description,
-							parameters,
-							hidden: args.hidden ?? existingApp.hidden,
-							clientCode,
-							serverCode,
-						}),
-					})
+					if (ensuredSource) {
+						const publishedCommit = await syncArtifactSourceSnapshot({
+							env: ctx.env,
+							userId: user.userId,
+							baseUrl: ctx.callerContext.baseUrl,
+							sourceId: ensuredSource.id,
+							files: buildAppSourceFiles({
+								title,
+								description,
+								parameters,
+								hidden: args.hidden ?? existingApp.hidden,
+								clientCode,
+								serverCode,
+							}),
+						})
+						if (publishedCommit == null) {
+							throw new Error(
+								'Saved app source sync did not publish a repo-backed commit.',
+							)
+						}
+						await updateEntitySource(ctx.env.APP_DB, {
+							id: ensuredSource.id,
+							userId: user.userId,
+							publishedCommit,
+							indexedCommit: publishedCommit,
+						})
+					}
 				} catch (cause) {
 					await Promise.allSettled([
 						updateUiArtifact(ctx.env.APP_DB, user.userId, appId, {
@@ -420,7 +450,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							hidden: existingApp.hidden,
 						}),
 						restorePublishedCommit(
-							ensuredSource.id,
+							ensuredSource?.id ?? null,
 							previousPublishedCommit,
 						),
 					])
@@ -436,7 +466,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					serverCodeId,
 					parameters,
 					hidden,
-					sourceId: ensuredSource.id,
+					sourceId: ensuredSource?.id ?? existingApp.sourceId,
 					previousPublishedCommit,
 					existingApp,
 				})
@@ -457,7 +487,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				await insertUiArtifact(ctx.env.APP_DB, {
 					id: appId,
 					user_id: user.userId,
-					sourceId: ensuredSource.id,
+					sourceId: ensuredSource?.id ?? null,
 					title,
 					description,
 					clientCode,
@@ -468,29 +498,42 @@ export const uiSaveAppCapability = defineDomainCapability(
 					created_at: now,
 					updated_at: now,
 				})
-				const previousPublishedCommit = await readPublishedCommit(
-					ensuredSource.id,
-				)
+				const previousPublishedCommit = ensuredSource
+					? await readPublishedCommit(ensuredSource.id)
+					: null
 				try {
-					await syncArtifactSourceSnapshot({
-						env: ctx.env,
-						userId: user.userId,
-						baseUrl: ctx.callerContext.baseUrl,
-						sourceId: ensuredSource.id,
-						files: buildAppSourceFiles({
-							title,
-							description,
-							parameters,
-							hidden,
-							clientCode,
-							serverCode,
-						}),
-					})
+					if (ensuredSource) {
+						const publishedCommit = await syncArtifactSourceSnapshot({
+							env: ctx.env,
+							userId: user.userId,
+							baseUrl: ctx.callerContext.baseUrl,
+							sourceId: ensuredSource.id,
+							files: buildAppSourceFiles({
+								title,
+								description,
+								parameters,
+								hidden,
+								clientCode,
+								serverCode,
+							}),
+						})
+						if (publishedCommit == null) {
+							throw new Error(
+								'Saved app source sync did not publish a repo-backed commit.',
+							)
+						}
+						await updateEntitySource(ctx.env.APP_DB, {
+							id: ensuredSource.id,
+							userId: user.userId,
+							publishedCommit,
+							indexedCommit: publishedCommit,
+						})
+					}
 				} catch (cause) {
 					await Promise.allSettled([
 						deleteUiArtifact(ctx.env.APP_DB, user.userId, appId),
 						restorePublishedCommit(
-							ensuredSource.id,
+							ensuredSource?.id ?? null,
 							previousPublishedCommit,
 						),
 					])
@@ -505,7 +548,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					serverCodeId,
 					parameters,
 					hidden,
-					sourceId: ensuredSource.id,
+					sourceId: ensuredSource?.id ?? null,
 					previousPublishedCommit,
 					existingApp,
 				})

@@ -10,6 +10,20 @@ import {
 } from './entity-sources.ts'
 import { type EntityKind, type EntitySourceRow } from './types.ts'
 
+type RepoSourceSupportBinding = 'APP_DB' | 'ARTIFACTS' | 'REPO_SESSION'
+
+export type RepoSourceSupportStatus =
+	| {
+			ok: true
+			missingBindings: Array<RepoSourceSupportBinding>
+			reason: null
+	  }
+	| {
+			ok: false
+			missingBindings: Array<RepoSourceSupportBinding>
+			reason: string
+	  }
+
 function buildEntitySourceRow(input: {
 	id?: string
 	userId: string
@@ -54,11 +68,7 @@ export async function ensureEntitySource(input: {
 	manifestPath?: string
 	sourceRoot?: string
 }) {
-	if (
-		typeof (input.db as D1Database | null | undefined)?.prepare !==
-			'function' ||
-		envHasArtifactsBinding(input.env) === false
-	) {
+	if (!getRepoSourceSupportStatus({ db: input.db, env: input.env }).ok) {
 		return buildEntitySourceRow({
 			id: input.id,
 			userId: input.userId,
@@ -89,10 +99,47 @@ export async function ensureEntitySource(input: {
 	return row
 }
 
+export function getRepoSourceSupportStatus(input: {
+	db: D1Database | null | undefined
+	env: Env
+}): RepoSourceSupportStatus {
+	const missingBindings: Array<RepoSourceSupportBinding> = []
+	if (typeof input.db?.prepare !== 'function') {
+		missingBindings.push('APP_DB')
+	}
+	if (!envHasArtifactsBinding(input.env)) {
+		missingBindings.push('ARTIFACTS')
+	}
+	if (!envHasRepoSessionBinding(input.env)) {
+		missingBindings.push('REPO_SESSION')
+	}
+	if (missingBindings.length === 0) {
+		return {
+			ok: true,
+			missingBindings,
+			reason: null,
+		}
+	}
+	const bindingLabel = missingBindings.length === 1 ? 'binding' : 'bindings'
+	return {
+		ok: false,
+		missingBindings,
+		reason: `Repo-backed source support is unavailable in this environment. Missing required ${bindingLabel}: ${missingBindings.join(', ')}.`,
+	}
+}
+
 function envHasArtifactsBinding(env: Env) {
 	return (
 		typeof (env as Env & { ARTIFACTS?: unknown }).ARTIFACTS === 'object' &&
 		(env as Env & { ARTIFACTS?: unknown }).ARTIFACTS != null
+	)
+}
+
+function envHasRepoSessionBinding(env: Env) {
+	return (
+		typeof (env as Env & { REPO_SESSION?: unknown }).REPO_SESSION ===
+			'object' &&
+		(env as Env & { REPO_SESSION?: unknown }).REPO_SESSION != null
 	)
 }
 
