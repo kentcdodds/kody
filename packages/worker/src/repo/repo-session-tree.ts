@@ -43,7 +43,10 @@ export function resolveRepoWorkspacePath(
 	if (!trimmed) {
 		throw new Error('A non-empty repo path is required.')
 	}
-	if (trimmed.startsWith(workspacePrefix)) {
+	if (
+		trimmed === workspacePrefix ||
+		trimmed.startsWith(`${workspacePrefix}/`)
+	) {
 		return trimmed
 	}
 	return `${workspacePrefix}/${trimmed.replace(/^\/+/, '')}`

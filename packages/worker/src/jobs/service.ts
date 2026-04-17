@@ -250,8 +250,17 @@ export async function updateJob(input: {
 		existing,
 		body: input.body,
 	})
+	if (
+		input.body.sourceId !== undefined &&
+		existing.sourceId != null &&
+		input.body.sourceId !== existing.sourceId
+	) {
+		throw new Error(
+			`Job "${existing.id}" cannot change sourceId after it is assigned.`,
+		)
+	}
 	const ensuredSource =
-		shape.sourceId && !existing.sourceId
+		shape.sourceId && shape.sourceId !== existing.sourceId
 			? await ensureEntitySource({
 					db: input.env.APP_DB,
 					env: input.env,

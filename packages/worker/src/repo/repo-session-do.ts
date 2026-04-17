@@ -286,6 +286,11 @@ class RepoSessionBase extends DurableObject<Env> {
 			if (!source) {
 				throw new Error(`Source "${input.sourceId}" was not found.`)
 			}
+			if (source.user_id !== input.userId) {
+				throw new Error(
+					`Source "${input.sourceId}" was not found for this user.`,
+				)
+			}
 			const sourceRepo = await resolveArtifactSourceRepo(
 				this.env,
 				source.repo_id,
@@ -327,6 +332,11 @@ class RepoSessionBase extends DurableObject<Env> {
 				sessionRepoToken: forked.token,
 			})
 		} else {
+			if (sessionRow.user_id !== input.userId) {
+				throw new Error(
+					`Repo session "${input.sessionId}" was not found for this user.`,
+				)
+			}
 			const sessionRepo = await resolveSessionRepo(this.env, {
 				namespace: sessionRow.session_repo_namespace,
 				name: sessionRow.session_repo_name,
@@ -633,10 +643,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			source.manifest_path,
 			repoSessionWorkspacePrefix,
 		)
+		const sourceRoot = resolveRepoWorkspacePath(
+			source.source_root || repoSessionWorkspacePrefix,
+			repoSessionWorkspacePrefix,
+		)
 		const result = await runRepoChecks({
 			workspace: this.workspace,
 			manifestPath,
-			sourceRoot: repoSessionWorkspacePrefix,
+			sourceRoot,
 		})
 		const runId = crypto.randomUUID()
 		const treeHash = await this.computeTreeHash()

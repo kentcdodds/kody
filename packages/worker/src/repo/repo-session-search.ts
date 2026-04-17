@@ -152,10 +152,11 @@ export async function searchRepoWorkspace(input: {
 	const files = await input.workspace.glob(globPattern)
 	const matchMap = new Map<string, RepoSearchFileMatch>()
 	const outputMode = input.outputMode ?? 'content'
-	const maxMatches = normalizeSearchLimit(input.limit)
+	let remaining = normalizeSearchLimit(input.limit)
 	let totalMatches = 0
 	let truncated = false
 	for (const file of files) {
+		if (remaining <= 0) break
 		if (file.type !== 'file') continue
 		const content = await input.workspace.readFile(file.path)
 		if (content == null) continue
@@ -166,11 +167,13 @@ export async function searchRepoWorkspace(input: {
 			caseSensitive: input.caseSensitive ?? false,
 			contextBefore: input.before ?? 0,
 			contextAfter: input.after ?? 0,
-			maxMatches,
+			maxMatches: remaining,
 		})
 		const matches = result.matches
 		if (matches.length === 0) continue
-		truncated ||= result.truncated
+		totalMatches += matches.length
+		remaining = Math.max(0, remaining - matches.length)
+		truncated ||= result.truncated || remaining === 0
 		matchMap.set(file.path, {
 			path: input.toExternalPath(file.path),
 			matches:
@@ -185,7 +188,6 @@ export async function searchRepoWorkspace(input: {
 							afterLines: match.afterLines ?? [],
 						})),
 		})
-		totalMatches += matches.length
 	}
 	const filesWithMatches = [...matchMap.values()].sort((left, right) =>
 		left.path.localeCompare(right.path),
