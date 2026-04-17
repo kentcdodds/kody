@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 
 const { ensureEntitySource } = await import('./source-service.ts')
 
-test('ensureEntitySource fails closed when durable persistence is required without artifacts binding', async () => {
+test('ensureEntitySource fails closed when durable persistence is required without Artifacts REST credentials', async () => {
 	const db = {
 		prepare() {
 			return {
@@ -28,6 +28,6 @@ test('ensureEntitySource fails closed when durable persistence is required witho
 			requirePersistence: true,
 		}),
 	).rejects.toThrow(
-		'Repo-backed source persistence requires ARTIFACTS bindings.',
+		'Repo-backed source persistence requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
 	)
 })

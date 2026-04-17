@@ -12,7 +12,7 @@ type SyncArtifactSourceInput = {
 
 function canSyncArtifactSource(env: Env) {
 	return (
-		hasArtifactsBinding(env) &&
+		hasArtifactsAccess(env) &&
 		(env as Env & { REPO_SESSION?: DurableObjectNamespace | undefined })
 			.REPO_SESSION != null &&
 		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB?.prepare ===
@@ -71,7 +71,7 @@ export async function syncArtifactSourceSnapshot(
 	}
 }
 
-function hasArtifactsBinding(env: Env) {
+function hasArtifactsAccess(env: Env) {
 	try {
 		void getArtifactsBinding(env)
 		return true

@@ -9,7 +9,7 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-test('artifacts REST fallback supports get, create, token, and fork operations', async () => {
+test('artifacts REST client supports get, create, token, and fork operations', async () => {
 	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
 		async (input, init) => {
 			const url = new URL(String(input))

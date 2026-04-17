@@ -56,7 +56,7 @@ vi.mock('#worker/jobs/job-reindex.ts', () => ({
 
 const { backfillRepoSources } = await import('./source-backfill.ts')
 
-test('backfill leaves app sourceId unchanged when repo source persistence is unavailable', async () => {
+test('backfill leaves app sourceId unchanged when Artifacts REST credentials are unavailable', async () => {
 	mockModule.listUiArtifactsByUserId.mockReset()
 	mockModule.updateUiArtifact.mockReset()
 	mockModule.listMcpSkillsByUserId.mockReset()
@@ -121,7 +121,8 @@ test('backfill leaves app sourceId unchanged when repo source persistence is una
 		id: 'app-1',
 		title: 'Investigate orphaned source ids',
 		status: 'error',
-		reason: 'Repo-backed source persistence requires ARTIFACTS bindings.',
+		reason:
+			'Repo-backed source persistence requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
 		sourceId: null,
 		publishedCommit: null,
 	})

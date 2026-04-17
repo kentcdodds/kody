@@ -77,18 +77,13 @@ export type ArtifactNamespaceBinding = {
 export function getArtifactsBinding(
 	env: Env,
 ): ArtifactNamespaceBinding & Record<string, unknown> {
-	const binding = (env as Env & { ARTIFACTS?: unknown }).ARTIFACTS
-	if (hasArtifactBindingShape(binding)) {
-		return binding as ArtifactNamespaceBinding & Record<string, unknown>
-	}
 	const restBinding = createArtifactsRestBinding(env)
-	if (restBinding) {
-		return restBinding
+	if (!restBinding) {
+		throw new Error(
+			'Cloudflare Artifacts REST access requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
+		)
 	}
-	if (!binding) {
-		throw new Error('ARTIFACTS binding is not configured.')
-	}
-	throw new Error('ARTIFACTS binding is not usable in this runtime.')
+	return restBinding
 }
 
 export function getArtifactsNamespace(env: Env) {
@@ -147,22 +142,6 @@ type ArtifactRestCreateTokenResult = {
 
 type ArtifactRestForkRepoResult = ArtifactRestCreateRepoResult & {
 	objects?: number
-}
-
-function hasArtifactBindingShape(value: unknown): value is ArtifactNamespaceBinding {
-	if (!value || typeof value !== 'object') {
-		return false
-	}
-	const binding = value as {
-		create?: unknown
-		get?: unknown
-		list?: unknown
-	}
-	return (
-		typeof binding.create === 'function' &&
-		typeof binding.get === 'function' &&
-		typeof binding.list === 'function'
-	)
 }
 
 function createArtifactsRestBinding(env: Env) {

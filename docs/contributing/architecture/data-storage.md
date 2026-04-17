@@ -97,15 +97,16 @@ Artifacts repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 Production note:
 
-- `packages/worker/wrangler.jsonc` declares a top-level `artifacts` binding for
-  `ARTIFACTS`, but released `wrangler` `4.83.0` still warns that this config is
-  unexpected and production deploy logs show no `env.ARTIFACTS` binding in the
-  deployed Worker binding summary.
-- Because of that deploy-time gap, repo source code must not assume the Worker
-  binding exists in production today.
-- `packages/worker/src/repo/artifacts.ts` now treats the Worker binding as the
-  preferred path and falls back to the documented Artifacts REST API when
-  `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are available.
+- Released `wrangler` `4.83.0` still warns that the documented Artifacts Worker
+  binding config is unexpected, and production deploy logs show no
+  `env.ARTIFACTS` binding in the deployed Worker binding summary.
+- Because of that deploy-time gap, repo source code uses the documented
+  Artifacts REST API as the single integration path for create/get/token/fork
+  operations.
+- `packages/worker/src/repo/artifacts.ts` builds that REST client from
+  `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and optional
+  `CLOUDFLARE_API_BASE_URL` / `ARTIFACTS_NAMESPACE`, which also makes local dev
+  mocking straightforward.
 - Durable repo-source creation paths (`ensureEntitySource(...,
   requirePersistence: true)`) fail closed when persistence bindings are
   unavailable so callers do not write orphaned `source_id` references into D1.
