@@ -674,8 +674,6 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		errorCount: 0,
 		runHistory: [],
 	}
-
-	const discardFailure = new Error('D1 delete failed')
 	const sessionClient = {
 		openSession: vi
 			.fn()
