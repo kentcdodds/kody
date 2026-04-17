@@ -389,6 +389,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!updated) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				const previousPublishedCommit = await readPublishedCommit(
+					ensuredSource.id,
+				)
 				await syncArtifactSourceSnapshot({
 					env: ctx.env,
 					userId: user.userId,
@@ -414,7 +417,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					parameters,
 					hidden,
 					sourceId: ensuredSource.id,
-					previousPublishedCommit: await readPublishedCommit(ensuredSource.id),
+					previousPublishedCommit,
 					existingApp,
 				})
 			} else {
@@ -445,6 +448,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 					created_at: now,
 					updated_at: now,
 				})
+				const previousPublishedCommit = await readPublishedCommit(
+					ensuredSource.id,
+				)
 				await syncArtifactSourceSnapshot({
 					env: ctx.env,
 					userId: user.userId,
@@ -469,7 +475,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					parameters,
 					hidden,
 					sourceId: ensuredSource.id,
-					previousPublishedCommit: await readPublishedCommit(ensuredSource.id),
+					previousPublishedCommit,
 					existingApp,
 				})
 			}
