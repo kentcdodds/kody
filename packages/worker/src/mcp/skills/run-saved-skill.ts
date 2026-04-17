@@ -103,7 +103,7 @@ async function runRepoBackedSkill(input: {
 			logs: [],
 		}
 	}
-	const sessionId = `skill-runtime-${input.row.id}`
+	const sessionId = `skill-runtime-${input.row.id}-${crypto.randomUUID()}`
 	const sessionClient = repoSessionRpc(input.env, sessionId)
 	const session = await sessionClient.openSession({
 		sessionId,

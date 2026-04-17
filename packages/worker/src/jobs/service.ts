@@ -421,7 +421,7 @@ async function runRepoBackedJob(input: {
 			logs: [],
 		}
 	}
-	const sessionId = `job-runtime-${input.job.id}`
+	const sessionId = `job-runtime-${input.job.id}-${crypto.randomUUID()}`
 	const sessionClient = repoSessionRpc(input.env, sessionId)
 	const session = await sessionClient.openSession({
 		sessionId,
