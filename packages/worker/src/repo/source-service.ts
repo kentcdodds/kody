@@ -53,12 +53,19 @@ export async function ensureEntitySource(input: {
 	repoId?: string
 	manifestPath?: string
 	sourceRoot?: string
+	requirePersistence?: boolean
 }) {
-	if (
-		typeof (input.db as D1Database | null | undefined)?.prepare !==
-			'function' ||
-		envHasArtifactsBinding(input.env) === false
-	) {
+	const hasDbPrepare = hasAppDbBinding(input.db)
+	const hasArtifactsBinding = envHasArtifactsBinding(input.env)
+	if (!hasDbPrepare || hasArtifactsBinding === false) {
+		if (input.requirePersistence) {
+			throw new Error(
+				`Repo-backed source persistence requires ${missingPersistenceBindings({
+					hasDbPrepare,
+					hasArtifactsBinding,
+				}).join(' and ')} bindings.`,
+			)
+		}
 		return buildEntitySourceRow({
 			id: input.id,
 			userId: input.userId,
@@ -89,11 +96,31 @@ export async function ensureEntitySource(input: {
 	return row
 }
 
+function hasAppDbBinding(db: D1Database | null | undefined) {
+	return typeof db?.prepare === 'function'
+}
+
 function envHasArtifactsBinding(env: Env) {
-	return (
-		typeof (env as Env & { ARTIFACTS?: unknown }).ARTIFACTS === 'object' &&
-		(env as Env & { ARTIFACTS?: unknown }).ARTIFACTS != null
-	)
+	try {
+		void getArtifactsBinding(env)
+		return true
+	} catch {
+		return false
+	}
+}
+
+function missingPersistenceBindings(input: {
+	hasDbPrepare: boolean
+	hasArtifactsBinding: boolean
+}) {
+	const missing: Array<string> = []
+	if (!input.hasDbPrepare) {
+		missing.push('APP_DB')
+	}
+	if (!input.hasArtifactsBinding) {
+		missing.push('ARTIFACTS')
+	}
+	return missing
 }
 
 export async function createArtifactsRepoIfMissing(

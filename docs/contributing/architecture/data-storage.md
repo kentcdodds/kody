@@ -84,3 +84,28 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `JOB_MANAGER` (Durable Objects)
 - `STORAGE_RUNNER` (Durable Objects)
 - `ASSETS` (static assets bucket)
+
+## Repo-backed sources and Artifacts
+
+Repo-backed saved apps, skills, jobs, and repo editing sessions use Cloudflare
+Artifacts repos plus D1 `entity_sources` / `repo_sessions` rows.
+
+- Primary code lives under `packages/worker/src/repo/`.
+- `entity_sources` stores the durable mapping from `(user_id, entity_kind,
+  entity_id)` to the repo identity and last published commit.
+- `repo_sessions` stores mutable editing forks for repo session Durable Objects.
+
+Production note:
+
+- `packages/worker/wrangler.jsonc` declares a top-level `artifacts` binding for
+  `ARTIFACTS`, but released `wrangler` `4.83.0` still warns that this config is
+  unexpected and production deploy logs show no `env.ARTIFACTS` binding in the
+  deployed Worker binding summary.
+- Because of that deploy-time gap, repo source code must not assume the Worker
+  binding exists in production today.
+- `packages/worker/src/repo/artifacts.ts` now treats the Worker binding as the
+  preferred path and falls back to the documented Artifacts REST API when
+  `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are available.
+- Durable repo-source creation paths (`ensureEntitySource(...,
+  requirePersistence: true)`) fail closed when persistence bindings are
+  unavailable so callers do not write orphaned `source_id` references into D1.

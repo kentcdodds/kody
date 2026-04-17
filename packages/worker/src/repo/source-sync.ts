@@ -1,5 +1,6 @@
-import { repoSessionRpc } from './repo-session-do.ts'
+import { getArtifactsBinding } from './artifacts.ts'
 import { getEntitySourceById } from './entity-sources.ts'
+import { repoSessionRpc } from './repo-session-do.ts'
 
 type SyncArtifactSourceInput = {
 	env: Env
@@ -11,13 +12,11 @@ type SyncArtifactSourceInput = {
 
 function canSyncArtifactSource(env: Env) {
 	return (
-		typeof (env as Env & { ARTIFACTS?: unknown }).ARTIFACTS === 'object' &&
-		(env as Env & { ARTIFACTS?: unknown }).ARTIFACTS != null &&
-		typeof (env as Env & { REPO_SESSION?: unknown }).REPO_SESSION ===
-			'object' &&
-		(env as Env & { REPO_SESSION?: unknown }).REPO_SESSION != null &&
-		typeof (env as Env & { APP_DB?: unknown }).APP_DB === 'object' &&
-		(env as Env & { APP_DB?: unknown }).APP_DB != null
+		hasArtifactsBinding(env) &&
+		(env as Env & { REPO_SESSION?: DurableObjectNamespace | undefined })
+			.REPO_SESSION != null &&
+		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB?.prepare ===
+			'function'
 	)
 }
 
@@ -28,8 +27,9 @@ function buildSyncSessionId(sourceId: string) {
 export async function syncArtifactSourceSnapshot(
 	input: SyncArtifactSourceInput,
 ): Promise<string | null> {
-	if (!input.sourceId) return null
-	if (!canSyncArtifactSource(input.env)) return null
+	if (!input.sourceId || !canSyncArtifactSource(input.env)) {
+		return null
+	}
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source) return null
 	const sessionId = buildSyncSessionId(source.id)
@@ -68,5 +68,14 @@ export async function syncArtifactSourceSnapshot(
 			.catch(() => {
 				// Best effort only; publish/apply failures should preserve the root cause.
 			})
+	}
+}
+
+function hasArtifactsBinding(env: Env) {
+	try {
+		void getArtifactsBinding(env)
+		return true
+	} catch {
+		return false
 	}
 }
