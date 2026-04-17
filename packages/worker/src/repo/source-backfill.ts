@@ -236,6 +236,12 @@ async function backfillApp(input: {
 		if (!publishedCommit) {
 			throw new Error('App backfill could not publish a repo-backed source snapshot.')
 		}
+		await updateEntitySource(input.env.APP_DB, {
+			id: ensuredSource.id,
+			userId: input.userId,
+			publishedCommit,
+			indexedCommit: publishedCommit,
+		})
 		if (input.syncAppRunner) {
 			await syncSavedAppRunnerFromDb({
 				env: input.env,
@@ -478,6 +484,12 @@ async function backfillJob(input: {
 		if (!publishedCommit) {
 			throw new Error('Job backfill could not publish a repo-backed source snapshot.')
 		}
+		await updateEntitySource(input.env.APP_DB, {
+			id: ensuredSource.id,
+			userId: input.userId,
+			publishedCommit,
+			indexedCommit: publishedCommit,
+		})
 		await updateJobRow({
 			db: input.env.APP_DB,
 			userId: input.userId,
