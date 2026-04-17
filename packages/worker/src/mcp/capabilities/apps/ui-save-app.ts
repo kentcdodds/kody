@@ -29,6 +29,10 @@ import {
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildAppSourceFiles } from '#worker/repo/source-templates.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import {
+	getEntitySourceById,
+	updateEntitySource,
+} from '#worker/repo/entity-sources.ts'
 
 const appServerCodeExportPattern =
 	/export\s+class\s+App\s+extends\s+DurableObject\b/
@@ -38,6 +42,10 @@ function assertValidSavedAppServerCode(serverCode: string | null | undefined) {
 	if (!appServerCodeExportPattern.test(serverCode)) {
 		throw new Error('serverCode must export class App extends DurableObject')
 	}
+}
+
+function hasAppDbBinding(db: D1Database | null | undefined) {
+	return typeof db?.prepare === 'function'
 }
 
 const inputSchema = z
@@ -174,6 +182,32 @@ export const uiSaveAppCapability = defineDomainCapability(
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
 				null
 
+			const readPublishedCommit = async (
+				sourceId: string,
+			): Promise<string | null> => {
+				if (!hasAppDbBinding(ctx.env.APP_DB)) {
+					return null
+				}
+				return (
+					(await getEntitySourceById(ctx.env.APP_DB, sourceId))
+						?.published_commit ?? null
+				)
+			}
+
+			const restorePublishedCommit = async (
+				sourceId: string,
+				publishedCommit: string | null,
+			) => {
+				if (!hasAppDbBinding(ctx.env.APP_DB)) {
+					return
+				}
+				await updateEntitySource(ctx.env.APP_DB, {
+					id: sourceId,
+					userId: user.userId,
+					publishedCommit,
+				})
+			}
+
 			async function saveAndIndexApp(input: {
 				appId: string
 				title: string
@@ -183,6 +217,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 				serverCodeId: string
 				parameters: ReturnType<typeof normalizeUiArtifactParameters>
 				hidden: boolean
+				sourceId: string
+				previousPublishedCommit: string | null
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
 				const hasBackend = hasUiArtifactServerCode(input.serverCode)
@@ -203,19 +239,29 @@ export const uiSaveAppCapability = defineDomainCapability(
 								appId: input.appId,
 							}),
 							deleteUiArtifact(ctx.env.APP_DB, user.userId, input.appId),
+							restorePublishedCommit(
+								input.sourceId,
+								input.previousPublishedCommit,
+							),
 						])
 					} else if (input.existingApp) {
 						try {
-							await updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
-								title: input.existingApp.title,
-								description: input.existingApp.description,
-								sourceId: input.existingApp.sourceId,
-								clientCode: input.existingApp.clientCode,
-								serverCode: input.existingApp.serverCode,
-								serverCodeId: input.existingApp.serverCodeId,
-								parameters: input.existingApp.parameters,
-								hidden: input.existingApp.hidden,
-							})
+							await Promise.allSettled([
+								updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
+									title: input.existingApp.title,
+									description: input.existingApp.description,
+									sourceId: input.existingApp.sourceId,
+									clientCode: input.existingApp.clientCode,
+									serverCode: input.existingApp.serverCode,
+									serverCodeId: input.existingApp.serverCodeId,
+									parameters: input.existingApp.parameters,
+									hidden: input.existingApp.hidden,
+								}),
+								restorePublishedCommit(
+									input.sourceId,
+									input.previousPublishedCommit,
+								),
+							])
 						} catch {
 							// Preserve the original runner configuration failure.
 						}
@@ -246,6 +292,10 @@ export const uiSaveAppCapability = defineDomainCapability(
 								appId: input.appId,
 							}),
 							deleteUiArtifact(ctx.env.APP_DB, user.userId, input.appId),
+							restorePublishedCommit(
+								input.sourceId,
+								input.previousPublishedCommit,
+							),
 						])
 						throw cause
 					}
@@ -363,6 +413,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 					serverCodeId,
 					parameters,
 					hidden,
+					sourceId: ensuredSource.id,
+					previousPublishedCommit: await readPublishedCommit(ensuredSource.id),
 					existingApp,
 				})
 			} else {
@@ -416,6 +468,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 					serverCodeId,
 					parameters,
 					hidden,
+					sourceId: ensuredSource.id,
+					previousPublishedCommit: await readPublishedCommit(ensuredSource.id),
 					existingApp,
 				})
 			}
