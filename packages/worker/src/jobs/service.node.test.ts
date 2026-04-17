@@ -675,6 +675,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		runHistory: [],
 	}
 
+	const discardFailure = new Error('D1 delete failed')
 	const sessionClient = {
 		openSession: vi
 			.fn()
@@ -838,13 +839,17 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		runChecks: vi.fn(),
 		readFile: vi.fn(),
 		discardSession: vi.fn(async () => {
-			throw new Error('D1 delete failed')
+			throw discardFailure
 		}),
 	}
 
 	const repoSessionRpcSpy = vi
 		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 		.mockReturnValue(sessionClient as never)
+	const formatJobErrorSpy = vi.spyOn(
+		await import('./schedule.ts'),
+		'formatJobError',
+	)
 	const executeSpy = vi.spyOn(
 		await import('#mcp/run-codemode-registry.ts'),
 		'runCodemodeWithRegistry',
@@ -866,8 +871,15 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		expect(sessionClient.openSession).toHaveBeenCalledTimes(1)
 		expect(sessionClient.runChecks).not.toHaveBeenCalled()
 		expect(executeSpy).not.toHaveBeenCalled()
+		expect(formatJobErrorSpy).toHaveBeenCalledTimes(1)
+		expect(formatJobErrorSpy.mock.calls[0]?.[0]).toMatchObject({
+			message:
+				'Failed to discard stale repo session "job-runtime-job-repo-discard-failure" before refreshing to published commit "commit-1".',
+			cause: discardFailure,
+		})
 	} finally {
 		repoSessionRpcSpy.mockRestore()
+		formatJobErrorSpy.mockRestore()
 		executeSpy.mockRestore()
 	}
 })
