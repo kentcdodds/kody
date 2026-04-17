@@ -388,6 +388,7 @@ function scoreJobLexicalMatch(
 function buildJobEmbedDoc(row: JobView): string {
 	return buildJobEmbedText({
 		name: row.name,
+		description: row.scheduleSummary,
 		scheduleSummary: row.scheduleSummary,
 		sourceId: row.sourceId,
 		publishedCommit: row.publishedCommit,
@@ -512,7 +513,7 @@ function rowToJobHit(
 		jobId: row.id,
 		domain: 'jobs',
 		title: row.name,
-		description: row.name,
+		description: row.scheduleSummary,
 		scheduleSummary: row.scheduleSummary,
 		sourceId: row.sourceId ?? null,
 		publishedCommit: row.publishedCommit ?? null,

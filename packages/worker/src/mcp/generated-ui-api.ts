@@ -142,11 +142,24 @@ function createGeneratedUiSourceHandler(env: Env) {
 			if (!app) {
 				return jsonResponse({ error: 'Saved UI not found.' }, 404)
 			}
-			const resolvedApp = await resolveSavedAppSource({
-				env,
-				baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
-				artifact: app,
-			})
+			let resolvedApp
+			try {
+				resolvedApp = await resolveSavedAppSource({
+					env,
+					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
+					artifact: app,
+				})
+			} catch (error) {
+				return jsonResponse(
+					{
+						error:
+							error instanceof Error
+								? error.message
+								: 'Unable to load saved UI source.',
+					},
+					502,
+				)
+			}
 			let resolvedParams: Record<string, unknown>
 			try {
 				resolvedParams =

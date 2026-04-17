@@ -161,14 +161,15 @@ export const uiSaveAppCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const isUpdate = args.app_id !== undefined
 			const appId = args.app_id ?? crypto.randomUUID()
-			const ensuredSource = await ensureEntitySource({
-				db: ctx.env.APP_DB,
-				env: ctx.env,
-				userId: user.userId,
-				entityKind: 'app',
-				entityId: appId,
-				sourceRoot: '/',
-			})
+			const ensureSource = () =>
+				ensureEntitySource({
+					db: ctx.env.APP_DB,
+					env: ctx.env,
+					userId: user.userId,
+					entityKind: 'app',
+					entityId: appId,
+					sourceRoot: '/',
+				})
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
 				null
@@ -292,6 +293,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!existingApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				const ensuredSource = await ensureSource()
 				const title = args.title ?? existingApp.title
 				const description = args.description ?? existingApp.description
 				const clientCode = args.clientCode ?? existingApp.clientCode
@@ -375,6 +377,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					: null
 				const serverCodeId = crypto.randomUUID()
 				hidden = args.hidden ?? true
+				const ensuredSource = await ensureSource()
 				const now = new Date().toISOString()
 				await insertUiArtifact(ctx.env.APP_DB, {
 					id: appId,

@@ -480,7 +480,7 @@ async function resolveEntityDetail(input: {
 			type: 'job' as const,
 			id: row.id,
 			title: row.name,
-			description: row.name,
+			description: row.scheduleSummary,
 			row,
 		}
 	}

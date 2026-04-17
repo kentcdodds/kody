@@ -48,7 +48,7 @@ export function buildJobSourceFiles(input: {
 		version: 1 as const,
 		kind: 'job' as const,
 		title: input.job.name,
-		description: input.job.name,
+		description: input.job.scheduleSummary,
 		keywords: ['job', 'scheduled'],
 		searchText: input.job.scheduleSummary,
 		sourceRoot: '/',
