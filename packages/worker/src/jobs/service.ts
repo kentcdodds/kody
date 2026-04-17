@@ -622,6 +622,7 @@ export async function runDueJobsForUser(input: {
 	}
 	for (const jobId of result.deleteJobIds) {
 		await deleteJobRow(input.env.APP_DB, input.userId, jobId)
+		await deleteJobVector(input.env, jobId)
 	}
 	return dueRows.length
 }
