@@ -60,28 +60,19 @@ test('kody_official_guide wraps network failures', async () => {
 	}
 })
 
-test('kody_official_guide distinguishes PKCE and server-side helpers in repo-shaped body', async () => {
+test('kody_official_guide rejects oversized guide responses', async () => {
 	const originalFetch = globalThis.fetch
-	const body = [
-		'# Generated UI OAuth guide',
-		'exchangePkceOAuthCode({ tokenUrl, code, redirectUri, clientId, codeVerifier, extraParams? })',
-		'exchangeOAuthCodeWithSecrets({ tokenUrl, code, redirectUri, clientId, clientSecretSecretName, scope?, extraParams? })',
-		'Choosing the exchange helper',
-		'prefer `exchangePkceOAuthCode(...)` when the provider supports PKCE',
-		'`exchangeOAuthCodeWithSecrets(...)`',
-		'run server-side',
-	].join('\n')
 	globalThis.fetch = (async () =>
-		new Response(body, { status: 200 })) as typeof fetch
+		new Response('x'.repeat(2_000_001), {
+			status: 200,
+		})) as typeof fetch
 	try {
-		const result = await kodyOfficialGuideCapability.handler(
-			{ guide: 'generated_ui_oauth' },
-			ctx,
-		)
-		expect(result.body).toContain(
-			'exchangePkceOAuthCode({ tokenUrl, code, redirectUri, clientId, codeVerifier, extraParams? })',
-		)
-		expect(result.body).toContain('Choosing the exchange helper')
+		await expect(
+			kodyOfficialGuideCapability.handler(
+				{ guide: 'generated_ui_oauth' },
+				ctx,
+			),
+		).rejects.toThrow(/response exceeds 2000000 characters/)
 	} finally {
 		globalThis.fetch = originalFetch
 	}

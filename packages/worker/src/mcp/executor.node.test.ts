@@ -38,30 +38,31 @@ test('getExecutionErrorDetails returns concrete guidance for capability access d
 	})
 })
 
-test('formatExecutionOutput includes capability access next step', () => {
-	const result = {
-		error: new Error(
-			createCapabilitySecretAccessDeniedMessage(
-				'cloudflareToken',
-				'secret_set',
-				'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
+test('formatExecutionOutput appends next steps from structured execution errors', () => {
+	const expectedOutputs = [
+		{
+			error: new Error(
+				createCapabilitySecretAccessDeniedMessage(
+					'cloudflareToken',
+					'secret_set',
+					'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
+				),
 			),
-		),
-	} as const
+			nextStep:
+				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
+		},
+		{
+			error: new Error(createMissingSecretMessage('missingToken')),
+			nextStep:
+				'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
+		},
+	]
 
-	expect(formatExecutionOutput(result)).toContain(
-		"Next step: Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
-	)
-})
-
-test('formatExecutionOutput keeps missing secret guidance intact', () => {
-	const result = {
-		error: new Error(createMissingSecretMessage('missingToken')),
-	} as const
-
-	expect(formatExecutionOutput(result)).toContain(
-		'Open a generated UI so the user can provide and save this secret',
-	)
+	for (const { error, nextStep } of expectedOutputs) {
+		expect(formatExecutionOutput({ error } as const)).toBe(
+			`Error: ${error.message}\n\nNext step: ${nextStep}`,
+		)
+	}
 })
 
 test('extractRawContent returns MCP content blocks from sentinel result', () => {

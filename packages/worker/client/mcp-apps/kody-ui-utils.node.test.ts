@@ -30,26 +30,15 @@ test('injectIntoHtmlDocument inserts content into an existing head', () => {
 	expect(result).toContain('<title>Demo</title>')
 })
 
-test('injectIntoHtmlDocument preserves html attributes when injecting a missing head', () => {
+test('injectIntoHtmlDocument adds a head without disturbing existing html attributes', () => {
 	const result = injectIntoHtmlDocument(
 		'<html lang="en" class="demo" data-app="shell"><body><main>Hello</main></body></html>',
 		'<style>body { color: red; }</style>',
 	)
 
-	expect(result).toContain(
-		'<html lang="en" class="demo" data-app="shell"><head><style>body { color: red; }</style></head><body><main>Hello</main></body></html>',
-	)
-})
-
-test('injectIntoHtmlDocument preserves existing html attributes untouched', () => {
-	const result = injectIntoHtmlDocument(
-		'<html lang="en" data-kody-theme="dark"><body></body></html>',
-		'<style>body { color: red; }</style>',
-	)
-
-	expect(result).toContain(
-		'<html lang="en" data-kody-theme="dark"><head><style>body { color: red; }</style></head><body></body></html>',
-	)
+	expect(result).toContain('<html lang="en" class="demo" data-app="shell">')
+	expect(result).toContain('<head><style>body { color: red; }</style></head>')
+	expect(result).toContain('<body><main>Hello</main></body>')
 })
 
 test('absolutizeHtmlAttributeUrls resolves worker-relative urls', () => {

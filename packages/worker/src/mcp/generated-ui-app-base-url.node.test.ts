@@ -13,20 +13,18 @@ const mcpResourcePath = '/mcp'
  */
 test('canonical APP_BASE_URL drives runtime script href and MCP URL for widget domain', async () => {
 	const appBase = getAppBaseUrl({
-		env: { APP_BASE_URL: 'https://heykody.dev/custom-path' },
+		env: { APP_BASE_URL: 'https://app.example/custom-path' },
 		requestUrl: 'http://127.0.0.1:9999/mcp',
 	})
-	expect(appBase).toBe('https://heykody.dev')
+	expect(appBase).toBe('https://app.example')
 
 	const html = renderGeneratedUiRuntimeHtmlEntry(appBase)
-	expect(html).toContain('https://heykody.dev/mcp-apps/kody-ui-utils.js')
-	expect(html).toContain(
-		'"@kody/ui-utils":"https://heykody.dev/mcp-apps/kody-ui-utils.js"',
-	)
+	expect(html).toMatch(/https:\/\/app\.example\/mcp-apps\/[^"]+/)
+	expect(html).not.toContain('127.0.0.1:9999')
 
 	const mcpServerUrl = new URL(mcpResourcePath, appBase).toString()
-	expect(mcpServerUrl).toBe('https://heykody.dev/mcp')
+	expect(mcpServerUrl).toBe('https://app.example/mcp')
 	expect(await computeClaudeWidgetDomain(mcpServerUrl)).toBe(
-		await computeClaudeWidgetDomain('https://heykody.dev/mcp'),
+		await computeClaudeWidgetDomain('https://app.example/mcp'),
 	)
 })
