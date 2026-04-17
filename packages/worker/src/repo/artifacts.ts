@@ -29,7 +29,6 @@ export type ArtifactRepoHandle = {
 	createToken(scope?: 'write' | 'read', ttl?: number): Promise<ArtifactToken>
 	fork(target: {
 		name: string
-		namespace?: string
 		readOnly?: boolean
 	}): Promise<{
 		id: string
@@ -331,7 +330,7 @@ async function requestArtifactsEnvelope<T>(
 		const envelope = response.body as ArtifactApiEnvelope<T> | null
 		if (!envelope?.success) {
 			const message =
-				envelope?.errors[0]?.message ??
+				envelope?.errors?.[0]?.message ??
 				`Artifacts API request failed (${response.status}).`
 			if (input.treat404AsNull && response.status === 404) {
 				return {
@@ -384,7 +383,7 @@ function parseArtifactTokenExpiry(token: string) {
 	if (Number.isFinite(expiresAtSeconds)) {
 		return new Date(expiresAtSeconds * 1000).toISOString()
 	}
-	return new Date(Date.now() + 3600 * 1000).toISOString()
+	throw new Error('Artifacts token is missing a parseable expires timestamp.')
 }
 
 function normalizeRepoNamePart(value: string) {
