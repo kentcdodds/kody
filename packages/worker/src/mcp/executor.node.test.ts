@@ -39,22 +39,28 @@ test('getExecutionErrorDetails returns concrete guidance for capability access d
 })
 
 test('formatExecutionOutput appends next steps from structured execution errors', () => {
-	const errors = [
-		new Error(
-			createCapabilitySecretAccessDeniedMessage(
-				'cloudflareToken',
-				'secret_set',
-				'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
+	const expectedOutputs = [
+		{
+			error: new Error(
+				createCapabilitySecretAccessDeniedMessage(
+					'cloudflareToken',
+					'secret_set',
+					'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
+				),
 			),
-		),
-		new Error(createMissingSecretMessage('missingToken')),
+			nextStep:
+				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
+		},
+		{
+			error: new Error(createMissingSecretMessage('missingToken')),
+			nextStep:
+				'Open a generated UI so the user can provide and save this secret, then retry the workflow. Do not ask the user to paste the secret into chat.',
+		},
 	]
 
-	for (const error of errors) {
-		const details = getExecutionErrorDetails(error)
-		expect(details).not.toBeNull()
+	for (const { error, nextStep } of expectedOutputs) {
 		expect(formatExecutionOutput({ error } as const)).toBe(
-			`Error: ${error.message}\n\nNext step: ${details!.nextStep}`,
+			`Error: ${error.message}\n\nNext step: ${nextStep}`,
 		)
 	}
 })
