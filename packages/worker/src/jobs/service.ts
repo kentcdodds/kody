@@ -86,6 +86,16 @@ function normalizeOptionalParams(
 	return params === null || params === undefined ? undefined : params
 }
 
+function repoSessionNeedsRefresh(session: {
+	base_commit: string | null
+	published_commit: string | null
+}) {
+	return (
+		session.published_commit != null &&
+		session.base_commit !== session.published_commit
+	)
+}
+
 function resolveCreateShape(input: JobCreateInput) {
 	if (hasRepoBackedJobSource(input)) {
 		return {
@@ -452,19 +462,24 @@ async function runRepoBackedJob(input: {
 		sourceRoot: '/',
 	}
 	let session = await sessionClient.openSession(openSessionInput)
-	if (
-		session.published_commit &&
-		session.base_commit !== session.published_commit
-	) {
-		await sessionClient
-			.discardSession({
+	if (repoSessionNeedsRefresh(session)) {
+		const stalePublishedCommit = session.published_commit
+		try {
+			await sessionClient.discardSession({
 				sessionId: session.id,
 				userId: input.callerContext.user.userId,
 			})
-			.catch(() => {
-				// Best effort only; ensure new sessions pick up the latest commit.
-			})
+		} catch {
+			throw new Error(
+				`Failed to discard stale repo session "${session.id}" before refreshing to published commit "${stalePublishedCommit}".`,
+			)
+		}
 		session = await sessionClient.openSession(openSessionInput)
+		if (repoSessionNeedsRefresh(session)) {
+			throw new Error(
+				`Repo session "${session.id}" still points at base commit "${session.base_commit}" instead of published commit "${session.published_commit}".`,
+			)
+		}
 	}
 	const result = await sessionClient.runChecks({
 		sessionId: session.id,

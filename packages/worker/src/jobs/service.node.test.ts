@@ -676,25 +676,46 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 	}
 
 	const sessionClient = {
-		openSession: vi.fn(async () => ({
-			id: 'job-runtime-job-repo-1',
-			source_id: 'source-1',
-			source_root: '/',
-			base_commit: 'base-1',
-			session_repo_id: 'session-repo-1',
-			session_repo_name: 'session-repo-name',
-			session_repo_namespace: 'default',
-			conversation_id: null,
-			last_checkpoint_commit: null,
-			last_check_run_id: null,
-			last_check_tree_hash: null,
-			expires_at: null,
-			created_at: '2026-04-16T00:00:00.000Z',
-			updated_at: '2026-04-16T00:00:00.000Z',
-			published_commit: 'commit-1',
-			manifest_path: 'kody.json',
-			entity_type: 'job',
-		})),
+		openSession: vi
+			.fn()
+			.mockResolvedValueOnce({
+				id: 'job-runtime-job-repo-1',
+				source_id: 'source-1',
+				source_root: '/',
+				base_commit: 'base-1',
+				session_repo_id: 'session-repo-1',
+				session_repo_name: 'session-repo-name',
+				session_repo_namespace: 'default',
+				conversation_id: null,
+				last_checkpoint_commit: null,
+				last_check_run_id: null,
+				last_check_tree_hash: null,
+				expires_at: null,
+				created_at: '2026-04-16T00:00:00.000Z',
+				updated_at: '2026-04-16T00:00:00.000Z',
+				published_commit: 'commit-1',
+				manifest_path: 'kody.json',
+				entity_type: 'job',
+			})
+			.mockResolvedValueOnce({
+				id: 'job-runtime-job-repo-1',
+				source_id: 'source-1',
+				source_root: '/',
+				base_commit: 'commit-1',
+				session_repo_id: 'session-repo-1',
+				session_repo_name: 'session-repo-name',
+				session_repo_namespace: 'default',
+				conversation_id: null,
+				last_checkpoint_commit: null,
+				last_check_run_id: null,
+				last_check_tree_hash: null,
+				expires_at: null,
+				created_at: '2026-04-16T00:00:00.000Z',
+				updated_at: '2026-04-16T00:00:00.000Z',
+				published_commit: 'commit-1',
+				manifest_path: 'kody.json',
+				entity_type: 'job',
+			}),
 		runChecks: vi.fn(async () => ({
 			ok: true,
 			results: [],
@@ -757,6 +778,94 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 			userId: 'user-123',
 		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
+test('executeJobOnce fails instead of reusing a stale repo session when discard fails', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-discard-failure',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed job discard failure',
+		code: null,
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		storageId: 'job:job-repo-discard-failure',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-discard-failure',
+			source_id: 'source-1',
+			source_root: '/',
+			base_commit: 'base-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-1',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(),
+		readFile: vi.fn(),
+		discardSession: vi.fn(async () => {
+			throw new Error('D1 delete failed')
+		}),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi.spyOn(
+		await import('#mcp/run-codemode-registry.ts'),
+		'runCodemodeWithRegistry',
+	)
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: false,
+			error:
+				'Failed to discard stale repo session "job-runtime-job-repo-discard-failure" before refreshing to published commit "commit-1".',
+			logs: [],
+		})
+		expect(sessionClient.openSession).toHaveBeenCalledTimes(1)
+		expect(sessionClient.runChecks).not.toHaveBeenCalled()
+		expect(executeSpy).not.toHaveBeenCalled()
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
