@@ -161,6 +161,26 @@ async function backfillApp(input: {
 			sourceId: input.row.sourceId,
 		})
 		if (existingSource?.published_commit) {
+			if (!input.dryRun && input.syncAppRunner) {
+				try {
+					await syncSavedAppRunnerFromDb({
+						env: input.env,
+						appId: input.row.id,
+						userId: input.userId,
+						baseUrl: input.baseUrl,
+					})
+				} catch (error) {
+					return {
+						kind: 'app',
+						id: input.row.id,
+						title: input.row.title,
+						status: 'error',
+						reason: formatBackfillError(error),
+						sourceId: existingSource.id,
+						publishedCommit: existingSource.published_commit,
+					}
+				}
+			}
 			return {
 				kind: 'app',
 				id: input.row.id,
