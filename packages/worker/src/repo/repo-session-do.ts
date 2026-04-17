@@ -22,9 +22,14 @@ import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseRepoManifest } from './manifest.ts'
 import { searchRepoWorkspace } from './repo-session-search.ts'
 import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
+import {
+	resolveRepoWorkspacePath,
+	toExternalRepoPath,
+	toRepoSessionInfoResult,
+	toRepoSessionTreeResult,
+} from './repo-session-tree.ts'
 import { runRepoChecks } from './checks.ts'
 import {
-	type EntitySourceRow,
 	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -343,7 +348,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}
-		return this.toSessionInfo(sessionRow, source)
+		return toRepoSessionInfoResult(sessionRow, source)
 	}
 
 	async getSessionInfo(input: { sessionId: string; userId: string }) {
@@ -351,7 +356,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		return this.toSessionInfo(sessionRow, source)
+		return toRepoSessionInfoResult(sessionRow, source)
 	}
 
 	async discardSession(input: {
@@ -399,7 +404,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		return {
 			path: input.path,
 			content: await this.workspace.readFile(
-				this.resolveWorkspacePath(input.path),
+				resolveRepoWorkspacePath(input.path, repoSessionWorkspacePrefix),
 			),
 		}
 	}
@@ -415,7 +420,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.userId,
 		)
 		await this.workspace.writeFile(
-			this.resolveWorkspacePath(input.path),
+			resolveRepoWorkspacePath(input.path, repoSessionWorkspacePrefix),
 			input.content,
 		)
 		await updateRepoSession(this.env.APP_DB, {
@@ -443,10 +448,11 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		const root = this.resolveWorkspacePath(
+		const root = resolveRepoWorkspacePath(
 			input.path?.trim() ||
 				sessionRow.source_root ||
 				repoSessionWorkspacePrefix,
+			repoSessionWorkspacePrefix,
 		)
 		return searchRepoWorkspace({
 			workspace: this.workspace,
@@ -459,7 +465,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			after: input.after,
 			limit: input.limit,
 			outputMode: input.outputMode,
-			toExternalPath: (path) => this.toExternalPath(path),
+			toExternalPath: (path) =>
+				toExternalRepoPath(path, repoSessionWorkspacePrefix),
 		})
 	}
 
@@ -511,15 +518,19 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		const root = this.resolveWorkspacePath(
+		const root = resolveRepoWorkspacePath(
 			input.path?.trim() ||
 				sessionRow.source_root ||
 				repoSessionWorkspacePrefix,
+			repoSessionWorkspacePrefix,
 		)
 		const tree = await this.state.walkTree(root, {
 			maxDepth: input.maxDepth,
 		})
-		return this.toTreeResult(tree)
+		return toRepoSessionTreeResult({
+			node: tree,
+			workspacePrefix: repoSessionWorkspacePrefix,
+		})
 	}
 
 	async applyEdits(input: {
@@ -551,7 +562,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		)
 		const plan = await this.state.planEdits(
 			input.edits.map((edit) => {
-				const path = this.resolveWorkspacePath(edit.path)
+				const path = resolveRepoWorkspacePath(
+					edit.path,
+					repoSessionWorkspacePrefix,
+				)
 				switch (edit.kind) {
 					case 'write':
 						if (typeof edit.content !== 'string') {
@@ -599,7 +613,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			dryRun: result.dryRun,
 			totalChanged: result.totalChanged,
 			edits: result.edits.map((edit) => ({
-				path: this.toExternalPath(edit.path),
+				path: toExternalRepoPath(edit.path, repoSessionWorkspacePrefix),
 				changed: edit.changed,
 				content: edit.content,
 				diff: edit.diff,
@@ -615,7 +629,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		const manifestPath = this.resolveWorkspacePath(source.manifest_path)
+		const manifestPath = resolveRepoWorkspacePath(
+			source.manifest_path,
+			repoSessionWorkspacePrefix,
+		)
 		const result = await runRepoChecks({
 			workspace: this.workspace,
 			manifestPath,
@@ -782,7 +799,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
 		})
 		const manifestContent = await this.workspace.readFile(
-			this.resolveWorkspacePath(source.manifest_path),
+			resolveRepoWorkspacePath(
+				source.manifest_path,
+				repoSessionWorkspacePrefix,
+			),
 		)
 		if (manifestContent == null) {
 			throw new Error(`Manifest "${source.manifest_path}" was not found.`)
@@ -815,95 +835,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionId: sessionRow.id,
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
 			message: `Published session ${sessionRow.id} to ${source.repo_id}.`,
-		}
-	}
-
-	private resolveWorkspacePath(path: string) {
-		const trimmed = path.trim()
-		if (!trimmed) {
-			throw new Error('A non-empty repo path is required.')
-		}
-		if (trimmed.startsWith(repoSessionWorkspacePrefix)) {
-			return trimmed
-		}
-		return `${repoSessionWorkspacePrefix}/${trimmed.replace(/^\/+/, '')}`
-	}
-
-	private toExternalPath(path: string) {
-		return path.startsWith(`${repoSessionWorkspacePrefix}/`)
-			? path.slice(repoSessionWorkspacePrefix.length + 1)
-			: path
-	}
-
-	private normalizeUnknownTreeChild(
-		child: unknown,
-		parentPath: string,
-	): {
-		path: string
-		name: string
-		type: 'file' | 'directory' | 'symlink'
-		size: number
-		children?: Array<unknown>
-	} {
-		const input =
-			child && typeof child === 'object'
-				? (child as Record<string, unknown>)
-				: ({} as Record<string, unknown>)
-		return {
-			path:
-				typeof input.path === 'string' ? input.path : `${parentPath}/unknown`,
-			name: typeof input.name === 'string' ? input.name : 'unknown',
-			type:
-				input.type === 'file' ||
-				input.type === 'directory' ||
-				input.type === 'symlink'
-					? input.type
-					: 'file',
-			size: typeof input.size === 'number' ? input.size : 0,
-			children: Array.isArray(input.children)
-				? (input.children as Array<unknown>)
-				: undefined,
-		}
-	}
-
-	private toTreeResult(node: {
-		path: string
-		name: string
-		type: 'file' | 'directory' | 'symlink'
-		size: number
-		children?: Array<unknown>
-	}): RepoSessionTreeResult {
-		return {
-			path: this.toExternalPath(node.path),
-			name: node.name,
-			type: node.type,
-			size: node.size,
-			children: node.children?.map(
-				(child): RepoSessionTreeResult =>
-					this.toTreeResult(this.normalizeUnknownTreeChild(child, node.path)),
-			),
-		}
-	}
-
-	private toSessionInfo(session: RepoSessionRow, source: EntitySourceRow) {
-		return {
-			id: session.id,
-			source_id: session.source_id,
-			source_root: session.source_root,
-			base_commit: session.base_commit,
-			session_repo_id: session.session_repo_id,
-			session_repo_name: session.session_repo_name,
-			session_repo_namespace: session.session_repo_namespace,
-			conversation_id: session.conversation_id,
-			last_checkpoint_commit: session.last_checkpoint_commit,
-			last_check_run_id: session.last_check_run_id,
-			last_check_tree_hash: session.last_check_tree_hash,
-			expires_at: session.expires_at,
-			created_at: session.created_at,
-			updated_at: session.updated_at,
-			published_commit: source.published_commit,
-			manifest_path: source.manifest_path,
-			entity_type: source.entity_kind,
 		}
 	}
 }
