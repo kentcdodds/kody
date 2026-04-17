@@ -9579,6 +9579,16 @@ interface InferenceUpstreamError extends Error {
 interface AiInternalError extends Error {
 }
 type AiModelListType = Record<string, any>;
+type ModelsWithRequests<M extends AiModelListType> = {
+    [K in keyof M]: Extract<M[K]['inputs'], {
+        requests: unknown[];
+    }> extends never ? never : K;
+}[keyof M];
+type ModelsWithStream<M extends AiModelListType> = {
+    [K in keyof M]: Extract<M[K]['inputs'], {
+        stream?: boolean;
+    }> extends never ? never : K;
+}[keyof M];
 type AiAsyncBatchResponse = {
     request_id: string;
 };
@@ -9599,9 +9609,9 @@ declare abstract class Ai<AiModelList extends AiModelListType = AiModels> {
      */
     autorag(autoragId: string): AutoRAG;
     // Batch request
-    run<Name extends keyof AiModelList>(model: Name, inputs: {
-        requests: AiModelList[Name]['inputs'][];
-    }, options: AiOptions & {
+    run<Name extends ModelsWithRequests<AiModelList>>(model: Name, inputs: Extract<AiModelList[Name]['inputs'], {
+        requests: unknown[];
+    }>, options: AiOptions & {
         queueRequest: true;
     }): Promise<AiAsyncBatchResponse>;
     // Raw response
@@ -9613,7 +9623,9 @@ declare abstract class Ai<AiModelList extends AiModelListType = AiModels> {
         websocket: true;
     }): Promise<Response>;
     // Streaming
-    run<Name extends keyof AiModelList>(model: Name, inputs: AiModelList[Name]['inputs'] & {
+    run<Name extends ModelsWithStream<AiModelList>>(model: Name, inputs: Extract<AiModelList[Name]['inputs'], {
+        stream?: boolean;
+    }> & {
         stream: true;
     }, options?: AiOptions): Promise<ReadableStream>;
     // Normal (default) - known model

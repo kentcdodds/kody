@@ -296,10 +296,9 @@ class RepoSessionBase extends DurableObject<Env> {
 				source.repo_id,
 			)
 			const baseCommit = source.published_commit
-			const sessionRepoName = `${source.repo_id}-${input.sessionId}`.slice(
-				0,
-				63,
-			)
+			const compactSessionId = input.sessionId.replace(/-/g, '')
+			const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
+			const sessionRepoName = `${source.repo_id.slice(0, repoPrefixLength)}-${compactSessionId}`
 			const forked = await sourceRepo.fork({
 				name: sessionRepoName,
 				readOnly: false,
