@@ -1,3 +1,4 @@
+import { createJobStorageId } from '#worker/storage-runner.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 
 type JobRowRecord = {
@@ -70,20 +71,20 @@ function parseJson<T>(value: string | null, fallback: T): T {
 }
 
 function mapRow(row: Record<string, unknown>): JobRow {
+	const jobId = String(row['id'])
 	const rawStorageId = row['storage_id']
-	if (rawStorageId == null) {
-		throw new Error('Job row is missing storage_id.')
-	}
+	const storageId =
+		rawStorageId == null ? createJobStorageId(jobId) : String(rawStorageId)
 	const record: JobRecord = {
 		version: 1,
-		id: String(row['id']),
+		id: jobId,
 		userId: String(row['user_id']),
 		name: String(row['name']),
 		code: row['code'] == null ? null : String(row['code']),
 		sourceId: row['source_id'] == null ? null : String(row['source_id']),
 		publishedCommit:
 			row['published_commit'] == null ? null : String(row['published_commit']),
-		storageId: String(rawStorageId),
+		storageId,
 		params: parseJson<Record<string, unknown> | undefined>(
 			row['params_json'] == null ? null : String(row['params_json']),
 			undefined,

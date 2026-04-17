@@ -104,7 +104,7 @@ export async function resolveSavedAppSource(input: {
 		: null
 	const cached = cacheKey ? savedAppSourceCache.get(cacheKey) : null
 	if (cached) return cached
-	const sessionId = `app-source-${source.id}`
+	const sessionId = `app-source-${source.id}-${crypto.randomUUID()}`
 	const session = repoSessionRpc(input.env, sessionId)
 	let openedSessionId: string | null = null
 	try {
