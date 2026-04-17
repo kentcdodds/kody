@@ -1,5 +1,8 @@
 import { type UiArtifactParameterDefinition } from '@kody-internal/shared/ui-artifact-parameters.ts'
-import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
+import {
+	normalizeUiArtifactParameters,
+	parseUiArtifactParameters,
+} from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { getEntitySourceById } from './entity-sources.ts'
 import { parseRepoManifest } from './manifest.ts'
@@ -135,8 +138,9 @@ export async function resolveSavedAppSource(input: {
 			title: manifest.title,
 			description: manifest.description,
 			hidden: manifest.hidden ?? fallback.hidden,
-			parameters:
-				(manifest.parameters as Array<UiArtifactParameterDefinition>) ?? null,
+			parameters: manifest.parameters
+				? normalizeUiArtifactParameters(manifest.parameters)
+				: null,
 			clientCode: clientFile.content ?? fallback.clientCode,
 			serverCode: serverFile.content ?? fallback.serverCode,
 			serverCodeId: source.published_commit ?? fallback.serverCodeId,

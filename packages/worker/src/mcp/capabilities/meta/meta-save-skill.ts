@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
+import {
+	deleteEntitySource,
+	updateEntitySource,
+} from '#worker/repo/entity-sources.ts'
 import {
 	deleteMcpSkill,
 	getMcpSkillByName,
@@ -20,7 +23,6 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import { requireMcpUser } from './require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
-import { updateEntitySource } from '#worker/repo/entity-sources.ts'
 
 const inputSchema = z.object({
 	name: z
