@@ -35,8 +35,7 @@ import {
 	getRepoSourceSupportStatus,
 	setEntityPublishedCommit,
 } from '#worker/repo/source-service.ts'
-import { parseRepoManifest } from '#worker/repo/manifest.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { resolveRepoBackedCode } from '#worker/repo/repo-backed-code.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 
@@ -88,89 +87,6 @@ function normalizeOptionalParams(
 	params: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | undefined {
 	return params === null || params === undefined ? undefined : params
-}
-
-function repoSessionNeedsRefresh(session: {
-	base_commit: string | null
-	published_commit: string | null
-}) {
-	return (
-		session.published_commit != null &&
-		session.base_commit !== session.published_commit
-	)
-}
-
-async function resolveRepoBackedJobCode(input: {
-	env: Env
-	callerContext: PersistedJobCallerContext
-	job: Pick<JobRecord, 'id' | 'sourceId'>
-}) {
-	if (!input.job.sourceId) {
-		throw new Error('Repo-backed job source is missing.')
-	}
-	const sessionId = `job-source-${input.job.id}-${crypto.randomUUID()}`
-	const sessionClient = repoSessionRpc(input.env, sessionId)
-	const openSessionInput = {
-		sessionId,
-		sourceId: input.job.sourceId,
-		userId: input.callerContext.user.userId,
-		baseUrl: input.callerContext.baseUrl,
-		sourceRoot: '/',
-	}
-	let session = await sessionClient.openSession(openSessionInput)
-	if (repoSessionNeedsRefresh(session)) {
-		await sessionClient.discardSession({
-			sessionId: session.id,
-			userId: input.callerContext.user.userId,
-		})
-		session = await sessionClient.openSession(openSessionInput)
-		if (repoSessionNeedsRefresh(session)) {
-			throw new Error(
-				`Repo session "${session.id}" still points at base commit "${session.base_commit}" instead of published commit "${session.published_commit}".`,
-			)
-		}
-	}
-	try {
-		const manifestPath =
-			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-		const manifestFile = await sessionClient.readFile({
-			sessionId: session.id,
-			userId: input.callerContext.user.userId,
-			path: manifestPath,
-		})
-		if (!manifestFile.content) {
-			throw new Error(
-				`Job manifest "${manifestPath}" was not found in repo session.`,
-			)
-		}
-		const manifest = parseRepoManifest({
-			content: manifestFile.content,
-			manifestPath,
-		})
-		if (manifest.kind !== 'job') {
-			throw new Error(`Repo source "${input.job.sourceId}" is not a job manifest.`)
-		}
-		const moduleFile = await sessionClient.readFile({
-			sessionId: session.id,
-			userId: input.callerContext.user.userId,
-			path: manifest.entrypoint.replace(/^\/+/, ''),
-		})
-		if (!moduleFile.content) {
-			throw new Error(
-				`Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-			)
-		}
-		return moduleFile.content
-	} finally {
-		await sessionClient
-			.discardSession({
-				sessionId: session.id,
-				userId: input.callerContext.user.userId,
-			})
-			.catch(() => {
-				// Best effort; allow the original error to surface.
-			})
-	}
 }
 
 function resolveCreateShape(input: JobCreateInput) {
@@ -403,37 +319,52 @@ export async function updateJob(input: {
 				})
 			: existing.nextRunAt,
 	}
-	const resolvedJobCode =
-		shape.jobCode ??
-		(await resolveRepoBackedJobCode({
+	const existingScheduleSummary = toJobView(existing).scheduleSummary
+	const nextScheduleSummary = toJobView(updated).scheduleSummary
+	const shouldSyncSource =
+		shape.jobCode !== undefined ||
+		updated.name !== existing.name ||
+		nextScheduleSummary !== existingScheduleSummary
+	if (shouldSyncSource) {
+		const resolvedJobCode =
+			shape.jobCode ??
+			(await resolveRepoBackedCode({
+				env: input.env,
+				userId: callerContext.user.userId,
+				baseUrl: callerContext.baseUrl,
+				sourceId: updated.sourceId!,
+				entityId: updated.id,
+				expectedKind: 'job',
+				entityLabel: 'Job',
+				sessionPrefix: 'job-source',
+			}))
+		const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 			env: input.env,
-			callerContext,
-			job: updated,
-		}))
-	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-		env: input.env,
-		userId: callerContext.user.userId,
-		baseUrl: callerContext.baseUrl,
-		sourceId: updated.sourceId,
-		files: buildJobSourceFiles({
-			job: {
-				name: updated.name,
-				scheduleSummary: toJobView(updated).scheduleSummary,
-			},
-			code: resolvedJobCode,
-		}),
-	})
-	if (syncedPublishedCommit == null) {
-		throw new Error('Saved job source sync did not publish a repo-backed commit.')
+			userId: callerContext.user.userId,
+			baseUrl: callerContext.baseUrl,
+			sourceId: updated.sourceId,
+			files: buildJobSourceFiles({
+				job: {
+					name: updated.name,
+					scheduleSummary: nextScheduleSummary,
+				},
+				code: resolvedJobCode,
+			}),
+		})
+		if (syncedPublishedCommit == null) {
+			throw new Error(
+				'Saved job source sync did not publish a repo-backed commit.',
+			)
+		}
+		updated.publishedCommit = syncedPublishedCommit
+		await setEntityPublishedCommit({
+			db: input.env.APP_DB,
+			userId: callerContext.user.userId,
+			sourceId: updated.sourceId!,
+			publishedCommit: syncedPublishedCommit,
+			indexedCommit: syncedPublishedCommit,
+		})
 	}
-	updated.publishedCommit = syncedPublishedCommit
-	await setEntityPublishedCommit({
-		db: input.env.APP_DB,
-		userId: callerContext.user.userId,
-		sourceId: updated.sourceId!,
-		publishedCommit: syncedPublishedCommit,
-		indexedCommit: syncedPublishedCommit,
-	})
 	const nextCallerContextJson = serializeCallerContext(callerContext)
 	await updateJobRow({
 		db: input.env.APP_DB,

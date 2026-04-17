@@ -4,7 +4,6 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	deleteEntitySource,
-	getEntitySourceById,
 } from '#worker/repo/entity-sources.ts'
 import {
 	deleteMcpSkill,
@@ -23,10 +22,10 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import {
 	ensureEntitySource,
+	getRepoSourceSupportStatus,
 	setEntityPublishedCommit,
 } from '#worker/repo/source-service.ts'
-import { parseRepoManifest } from '#worker/repo/manifest.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { resolveRepoBackedCode } from '#worker/repo/repo-backed-code.ts'
 import { requireMcpUser } from './require-user.ts'
 
 function parseJsonStringArray(raw: string | null): Array<string> {
@@ -38,66 +37,6 @@ function parseJsonStringArray(raw: string | null): Array<string> {
 			: []
 	} catch {
 		return []
-	}
-}
-
-async function resolveRepoSkillCode(input: {
-	env: Env
-	userId: string
-	baseUrl: string
-	sourceId: string
-	skillId: string
-	sessionPrefix?: string
-}) {
-	const sessionId = `${input.sessionPrefix ?? 'skill-rollback'}-${input.skillId}-${crypto.randomUUID()}`
-	const sessionClient = repoSessionRpc(input.env, sessionId)
-	const session = await sessionClient.openSession({
-		sessionId,
-		sourceId: input.sourceId,
-		userId: input.userId,
-		baseUrl: input.baseUrl,
-		sourceRoot: '/',
-	})
-	try {
-		const manifestPath =
-			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-		const manifestFile = await sessionClient.readFile({
-			sessionId: session.id,
-			userId: input.userId,
-			path: manifestPath,
-		})
-		if (!manifestFile.content) {
-			throw new Error(
-				`Skill manifest "${manifestPath}" was not found in repo session.`,
-			)
-		}
-		const manifest = parseRepoManifest({
-			content: manifestFile.content,
-			manifestPath,
-		})
-		if (manifest.kind !== 'skill') {
-			throw new Error(`Repo source "${input.sourceId}" is not a skill manifest.`)
-		}
-		const entrypointFile = await sessionClient.readFile({
-			sessionId: session.id,
-			userId: input.userId,
-			path: manifest.entrypoint.replace(/^\/+/, ''),
-		})
-		if (!entrypointFile.content) {
-			throw new Error(
-				`Skill entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-			)
-		}
-		return entrypointFile.content
-	} finally {
-		await sessionClient
-			.discardSession({
-				sessionId: session.id,
-				userId: input.userId,
-			})
-			.catch(() => {
-				// Best effort; preserve the original error.
-			})
 	}
 }
 
@@ -198,6 +137,13 @@ export const metaSaveSkillCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const prep = await prepareSkillPersistence(args)
+			const repoSourceSupport = getRepoSourceSupportStatus({
+				db: ctx.env.APP_DB,
+				env: ctx.env,
+			})
+			if (!repoSourceSupport.ok) {
+				throw new Error(repoSourceSupport.reason)
+			}
 			const existing = await getMcpSkillByName(
 				ctx.env.APP_DB,
 				user.userId,
@@ -216,12 +162,14 @@ export const metaSaveSkillCapability = defineDomainCapability(
 			})
 			const existingCode =
 				existing?.source_id
-					? await resolveRepoSkillCode({
+					? await resolveRepoBackedCode({
 							env: ctx.env,
 							userId: user.userId,
 							baseUrl: ctx.callerContext.baseUrl,
 							sourceId: existing.source_id,
-							skillId: existing.id,
+							entityId: existing.id,
+							expectedKind: 'skill',
+							entityLabel: 'Skill',
 							sessionPrefix: 'skill-source',
 						})
 					: null
@@ -261,39 +209,37 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				}
 			}
 
-			if (source) {
-				const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-					env: ctx.env,
-					userId: user.userId,
-					baseUrl: ctx.callerContext.baseUrl,
-					sourceId: source.id,
-					files: buildSkillSourceFiles({
-						title: args.title,
-						description: args.description,
-						keywords: args.keywords,
-						searchText: args.search_text ?? null,
-						collection: prep.rowPayload.collection_name,
-						readOnly: args.read_only,
-						idempotent: args.idempotent,
-						destructive: args.destructive,
-						usesCapabilities: args.uses_capabilities ?? null,
-						parameters: args.parameters ?? null,
-						code: args.code,
-					}),
-				})
-				if (syncedPublishedCommit == null) {
-					throw new Error(
-						'Saved skill source sync did not publish a repo-backed commit.',
-					)
-				}
-				await setEntityPublishedCommit({
-					db: ctx.env.APP_DB,
-					userId: user.userId,
-					sourceId: source.id,
-					publishedCommit: syncedPublishedCommit,
-					indexedCommit: syncedPublishedCommit,
-				})
+			const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+				env: ctx.env,
+				userId: user.userId,
+				baseUrl: ctx.callerContext.baseUrl,
+				sourceId: source.id,
+				files: buildSkillSourceFiles({
+					title: args.title,
+					description: args.description,
+					keywords: args.keywords,
+					searchText: args.search_text ?? null,
+					collection: prep.rowPayload.collection_name,
+					readOnly: args.read_only,
+					idempotent: args.idempotent,
+					destructive: args.destructive,
+					usesCapabilities: args.uses_capabilities ?? null,
+					parameters: args.parameters ?? null,
+					code: args.code,
+				}),
+			})
+			if (syncedPublishedCommit == null) {
+				throw new Error(
+					'Saved skill source sync did not publish a repo-backed commit.',
+				)
 			}
+			await setEntityPublishedCommit({
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				sourceId: source.id,
+				publishedCommit: syncedPublishedCommit,
+				indexedCommit: syncedPublishedCommit,
+			})
 
 			try {
 				await upsertSkillVector(ctx.env, {
@@ -328,54 +274,52 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						embedText: oldEmbed,
 						collectionSlug: existing.collection_slug,
 					})
-					if (source) {
-						const restoredPublishedCommit = await syncArtifactSourceSnapshot({
-							env: ctx.env,
-							userId: user.userId,
-							baseUrl: ctx.callerContext.baseUrl,
-							sourceId: source.id,
-							files: buildSkillSourceFiles({
-								title: existing.title,
-								description: existing.description,
-								keywords: parseJsonStringArray(existing.keywords),
-								searchText: existing.search_text ?? null,
-								collection: existing.collection_name,
-								readOnly: existing.read_only === 1,
-								idempotent: existing.idempotent === 1,
-								destructive: existing.destructive === 1,
-								usesCapabilities: parseJsonStringArray(
-									existing.uses_capabilities,
-								),
-								parameters: skillParameterSchema
-									.array()
-									.safeParse(
-										existing.parameters == null
-											? null
-											: JSON.parse(existing.parameters),
-									).success
-									? existing.parameters == null
+					const restoredPublishedCommit = await syncArtifactSourceSnapshot({
+						env: ctx.env,
+						userId: user.userId,
+						baseUrl: ctx.callerContext.baseUrl,
+						sourceId: source.id,
+						files: buildSkillSourceFiles({
+							title: existing.title,
+							description: existing.description,
+							keywords: parseJsonStringArray(existing.keywords),
+							searchText: existing.search_text ?? null,
+							collection: existing.collection_name,
+							readOnly: existing.read_only === 1,
+							idempotent: existing.idempotent === 1,
+							destructive: existing.destructive === 1,
+							usesCapabilities: parseJsonStringArray(
+								existing.uses_capabilities,
+							),
+							parameters: skillParameterSchema
+								.array()
+								.safeParse(
+									existing.parameters == null
 										? null
-										: (JSON.parse(existing.parameters) as Array<{
-												name: string
-												description: string
-												type: 'string' | 'number' | 'boolean' | 'json'
-												required?: boolean
-												default?: unknown
-											}>)
-									: null,
-								code: existingCode ?? args.code,
-							}),
-						})
-						await setEntityPublishedCommit({
-							db: ctx.env.APP_DB,
-							userId: user.userId,
-							sourceId: source.id,
-							publishedCommit:
-								restoredPublishedCommit ?? previousPublishedCommit ?? null,
-							indexedCommit:
-								restoredPublishedCommit ?? previousPublishedCommit ?? null,
-						})
-					}
+										: JSON.parse(existing.parameters),
+								).success
+								? existing.parameters == null
+									? null
+									: (JSON.parse(existing.parameters) as Array<{
+											name: string
+											description: string
+											type: 'string' | 'number' | 'boolean' | 'json'
+											required?: boolean
+											default?: unknown
+										}>)
+								: null,
+							code: existingCode ?? args.code,
+						}),
+					})
+					await setEntityPublishedCommit({
+						db: ctx.env.APP_DB,
+						userId: user.userId,
+						sourceId: source.id,
+						publishedCommit:
+							restoredPublishedCommit ?? previousPublishedCommit ?? null,
+						indexedCommit:
+							restoredPublishedCommit ?? previousPublishedCommit ?? null,
+					})
 				} else {
 					await deleteEntitySource(ctx.env.APP_DB, {
 						id: source.id,
