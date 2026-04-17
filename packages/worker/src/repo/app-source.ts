@@ -21,32 +21,6 @@ export type ResolvedSavedAppSource = {
 	publishedCommit: string | null
 }
 
-const savedAppSourceCache = new Map<string, ResolvedSavedAppSource>()
-const savedAppSourceCacheLimit = 100
-
-function buildSavedAppSourceCacheKey(input: {
-	sourceId: string
-	publishedCommit: string
-}) {
-	return `${input.sourceId}:${input.publishedCommit}`
-}
-
-function rememberSavedAppSource(
-	cacheKey: string,
-	value: ResolvedSavedAppSource,
-) {
-	if (savedAppSourceCache.has(cacheKey)) {
-		savedAppSourceCache.delete(cacheKey)
-	}
-	savedAppSourceCache.set(cacheKey, value)
-	if (savedAppSourceCache.size > savedAppSourceCacheLimit) {
-		const oldestKey = savedAppSourceCache.keys().next().value
-		if (oldestKey) {
-			savedAppSourceCache.delete(oldestKey)
-		}
-	}
-}
-
 function fallbackFromArtifact(artifact: UiArtifactRow): ResolvedSavedAppSource {
 	return {
 		title: artifact.title,
@@ -99,14 +73,6 @@ export async function resolveSavedAppSource(input: {
 		input.artifact.sourceId!,
 	)
 	if (!source) return fallback
-	const cacheKey = source.published_commit
-		? buildSavedAppSourceCacheKey({
-				sourceId: source.id,
-				publishedCommit: source.published_commit,
-			})
-		: null
-	const cached = cacheKey ? savedAppSourceCache.get(cacheKey) : null
-	if (cached) return cached
 	const sessionId = `app-source-${source.id}-${crypto.randomUUID()}`
 	const session = repoSessionRpc(input.env, sessionId)
 	let openedSessionId: string | null = null
@@ -154,9 +120,6 @@ export async function resolveSavedAppSource(input: {
 			serverCodeId: source.published_commit ?? fallback.serverCodeId,
 			sourceId: source.id,
 			publishedCommit: source.published_commit,
-		}
-		if (cacheKey) {
-			rememberSavedAppSource(cacheKey, resolved)
 		}
 		return resolved
 	} finally {
