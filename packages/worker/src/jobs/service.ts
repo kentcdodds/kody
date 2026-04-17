@@ -469,9 +469,10 @@ async function runRepoBackedJob(input: {
 				sessionId: session.id,
 				userId: input.callerContext.user.userId,
 			})
-		} catch {
+		} catch (error) {
 			throw new Error(
 				`Failed to discard stale repo session "${session.id}" before refreshing to published commit "${stalePublishedCommit}".`,
+				{ cause: error },
 			)
 		}
 		session = await sessionClient.openSession(openSessionInput)
