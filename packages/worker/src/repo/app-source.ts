@@ -75,10 +75,13 @@ function resolveManifestClientPath(manifest: AppManifest) {
 }
 
 function canResolveRepoBackedSource(env: Env, artifact: UiArtifactRow) {
+	const anyEnv = env as Env & { APP_DB?: unknown; REPO_SESSION?: unknown }
 	return (
 		artifact.sourceId != null &&
-		typeof (env as Env & { APP_DB?: unknown }).APP_DB === 'object' &&
-		typeof (env as Env & { REPO_SESSION?: unknown }).REPO_SESSION === 'object'
+		anyEnv.APP_DB != null &&
+		typeof anyEnv.APP_DB === 'object' &&
+		anyEnv.REPO_SESSION != null &&
+		typeof anyEnv.REPO_SESSION === 'object'
 	)
 }
 

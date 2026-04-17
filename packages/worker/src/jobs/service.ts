@@ -73,6 +73,14 @@ function normalizeJobCode(code: string) {
 	return trimmed
 }
 
+function hasModuleStyleCodemodeEntrypoint(code: string) {
+	return (
+		/^\s*export\s+/m.test(code) ||
+		/\bmodule\.exports\b/.test(code) ||
+		/\bexports\.[A-Za-z_$][\w$]*/.test(code)
+	)
+}
+
 function normalizeOptionalParams(
 	params: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | undefined {
@@ -501,6 +509,14 @@ async function runRepoBackedJob(input: {
 		if (!moduleFile.content) {
 			return {
 				error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+				result: null,
+				logs: [],
+			}
+		}
+		if (hasModuleStyleCodemodeEntrypoint(moduleFile.content)) {
+			return {
+				error:
+					'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
 				result: null,
 				logs: [],
 			}
