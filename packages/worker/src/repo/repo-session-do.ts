@@ -824,7 +824,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (
 			(!input.force && !checkStatus.runId) ||
 			(!input.force && !checkStatus.ok) ||
-			checkStatus.treeHash !== currentTreeHash
+			(!input.force && checkStatus.treeHash !== currentTreeHash)
 		) {
 			return {
 				status: 'checks_outdated',
