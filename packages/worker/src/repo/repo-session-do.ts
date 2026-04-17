@@ -227,10 +227,15 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private initializedSessionId: string | null = null
 
-	private async getSessionState(sessionId: string) {
+	private async getSessionState(sessionId: string, userId: string) {
 		const sessionRow = await getRepoSessionById(this.env.APP_DB, sessionId)
 		if (!sessionRow) {
 			throw new Error(`Repo session "${sessionId}" was not found.`)
+		}
+		if (sessionRow.user_id !== userId) {
+			throw new Error(
+				`Repo session "${sessionId}" was not found for this user.`,
+			)
 		}
 		const source = await getEntitySourceById(
 			this.env.APP_DB,
@@ -467,13 +472,17 @@ class RepoSessionBase extends DurableObject<Env> {
 		return this.toSessionInfo(sessionRow, source)
 	}
 
-	async getSessionInfo(input: { sessionId: string }) {
-		const { sessionRow, source } = await this.getSessionState(input.sessionId)
+	async getSessionInfo(input: { sessionId: string; userId: string }) {
+		const { sessionRow, source } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		return this.toSessionInfo(sessionRow, source)
 	}
 
 	async discardSession(input: {
 		sessionId: string
+		userId: string
 	}): Promise<RepoSessionDiscardResult> {
 		const sessionRow = await getRepoSessionById(
 			this.env.APP_DB,
@@ -485,6 +494,11 @@ class RepoSessionBase extends DurableObject<Env> {
 				sessionId: input.sessionId,
 				deleted: false,
 			}
+		}
+		if (sessionRow.user_id !== input.userId) {
+			throw new Error(
+				`Repo session "${input.sessionId}" was not found for this user.`,
+			)
 		}
 		await deleteRepoSession(this.env.APP_DB, input.sessionId)
 		try {
@@ -504,9 +518,10 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async readFile(input: {
 		sessionId: string
+		userId: string
 		path: string
 	}): Promise<{ path: string; content: string | null }> {
-		await this.getSessionState(input.sessionId)
+		await this.getSessionState(input.sessionId, input.userId)
 		return {
 			path: input.path,
 			content: await this.workspace.readFile(
@@ -517,10 +532,14 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async writeFile(input: {
 		sessionId: string
+		userId: string
 		path: string
 		content: string
 	}): Promise<{ ok: true; path: string }> {
-		const { sessionRow } = await this.getSessionState(input.sessionId)
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		await this.workspace.writeFile(
 			this.resolveWorkspacePath(input.path),
 			input.content,
@@ -535,6 +554,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async search(input: {
 		sessionId: string
+		userId: string
 		pattern: string
 		mode?: RepoSearchMode
 		glob?: string | null
@@ -545,7 +565,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		limit?: number
 		outputMode?: RepoSearchOutputMode
 	}): Promise<RepoSessionSearchResult> {
-		const { sessionRow } = await this.getSessionState(input.sessionId)
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		const search = normalizeSearchQuery({
 			pattern: input.pattern,
 			mode: input.mode,
@@ -607,6 +630,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async applyPatch(input: {
 		sessionId: string
+		userId: string
 		edits: Array<
 			| {
 					kind: 'write'
@@ -644,10 +668,14 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async tree(input: {
 		sessionId: string
+		userId: string
 		path?: string | null
 		maxDepth?: number
 	}): Promise<RepoSessionTreeResult> {
-		const { sessionRow } = await this.getSessionState(input.sessionId)
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		const root = this.resolveWorkspacePath(
 			input.path?.trim() ||
 				sessionRow.source_root ||
@@ -661,6 +689,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async applyEdits(input: {
 		sessionId: string
+		userId: string
 		edits: Array<{
 			kind: 'write' | 'replace' | 'writeJson'
 			path: string
@@ -681,7 +710,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		dryRun?: boolean
 		rollbackOnError?: boolean
 	}): Promise<RepoSessionApplyEditsResult> {
-		const { sessionRow } = await this.getSessionState(input.sessionId)
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		const plan = await this.state.planEdits(
 			input.edits.map((edit) => {
 				const path = this.resolveWorkspacePath(edit.path)
@@ -740,8 +772,14 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	async runChecks(input: { sessionId: string }): Promise<RepoSessionCheckRun> {
-		const { sessionRow, source } = await this.getSessionState(input.sessionId)
+	async runChecks(input: {
+		sessionId: string
+		userId: string
+	}): Promise<RepoSessionCheckRun> {
+		const { sessionRow, source } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		const manifestPath = this.resolveWorkspacePath(source.manifest_path)
 		const result = await runRepoChecks({
 			workspace: this.workspace,
@@ -777,15 +815,19 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	async getCheckStatus(input: { sessionId: string }) {
-		await this.getSessionState(input.sessionId)
+	async getCheckStatus(input: { sessionId: string; userId: string }) {
+		await this.getSessionState(input.sessionId, input.userId)
 		return this.readCheckStatus()
 	}
 
 	async rebaseSession(input: {
 		sessionId: string
+		userId: string
 	}): Promise<RepoSessionRebaseResult> {
-		const { sessionRow, source } = await this.getSessionState(input.sessionId)
+		const { sessionRow, source } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
 		const sourceInfo = await sourceRepo.info()
 		const sourceAccess = await ensureArtifactRepoRemote({
@@ -836,9 +878,13 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async publishSession(input: {
 		sessionId: string
+		userId: string
 		force?: boolean
 	}): Promise<RepoSessionPublishResult> {
-		const { sessionRow, source } = await this.getSessionState(input.sessionId)
+		const { sessionRow, source } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
 		const checkStatus = await this.readCheckStatus()
 		const currentTreeHash = await this.computeTreeHash()
 		if (
@@ -1067,7 +1113,10 @@ export function repoSessionRpc(env: Env, sessionId: string) {
 			manifest_path: string
 			entity_type: 'skill' | 'app' | 'job'
 		}>
-		getSessionInfo: (payload: { sessionId: string }) => Promise<{
+		getSessionInfo: (payload: {
+			sessionId: string
+			userId: string
+		}) => Promise<{
 			id: string
 			source_id: string
 			source_root: string
@@ -1088,18 +1137,22 @@ export function repoSessionRpc(env: Env, sessionId: string) {
 		}>
 		discardSession: (payload: {
 			sessionId: string
+			userId: string
 		}) => Promise<RepoSessionDiscardResult>
 		readFile: (payload: {
 			sessionId: string
+			userId: string
 			path: string
 		}) => Promise<{ path: string; content: string | null }>
 		writeFile: (payload: {
 			sessionId: string
+			userId: string
 			path: string
 			content: string
 		}) => Promise<{ ok: true; path: string }>
 		search: (payload: {
 			sessionId: string
+			userId: string
 			pattern: string
 			mode?: RepoSearchMode
 			glob?: string | null
@@ -1112,11 +1165,13 @@ export function repoSessionRpc(env: Env, sessionId: string) {
 		}) => Promise<RepoSessionSearchResult>
 		tree: (payload: {
 			sessionId: string
+			userId: string
 			path?: string | null
 			maxDepth?: number
 		}) => Promise<RepoSessionTreeResult>
 		applyEdits: (payload: {
 			sessionId: string
+			userId: string
 			edits: Array<{
 				kind: 'write' | 'replace' | 'writeJson'
 				path: string
@@ -1137,15 +1192,21 @@ export function repoSessionRpc(env: Env, sessionId: string) {
 			dryRun?: boolean
 			rollbackOnError?: boolean
 		}) => Promise<RepoSessionApplyEditsResult>
-		runChecks: (payload: { sessionId: string }) => Promise<RepoSessionCheckRun>
+		runChecks: (payload: {
+			sessionId: string
+			userId: string
+		}) => Promise<RepoSessionCheckRun>
 		getCheckStatus: (payload: {
 			sessionId: string
+			userId: string
 		}) => Promise<ReturnType<RepoSessionBase['readCheckStatus']>>
 		rebaseSession: (payload: {
 			sessionId: string
+			userId: string
 		}) => Promise<RepoSessionRebaseResult>
 		publishSession: (payload: {
 			sessionId: string
+			userId: string
 			force?: boolean
 		}) => Promise<RepoSessionPublishResult>
 	}

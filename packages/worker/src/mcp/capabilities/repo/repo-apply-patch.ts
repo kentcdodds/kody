@@ -20,9 +20,10 @@ export const repoApplyPatchCapability = defineDomainCapability(
 		inputSchema: repoApplyPatchInputSchema,
 		outputSchema: repoApplyPatchResultSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const result = await repoSessionRpc(ctx.env, args.session_id).applyEdits({
 				sessionId: args.session_id,
+				userId: user.userId,
 				edits: args.instructions.map((instruction) => {
 					switch (instruction.kind) {
 						case 'write':

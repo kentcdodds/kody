@@ -21,9 +21,10 @@ export const repoReadFileCapability = defineDomainCapability(
 		inputSchema: repoReadFileInputSchema,
 		outputSchema: repoReadFileOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			return repoSessionRpc(ctx.env, args.session_id).readFile({
 				sessionId: args.session_id,
+				userId: user.userId,
 				path: args.path,
 			})
 		},

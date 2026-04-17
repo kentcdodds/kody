@@ -45,9 +45,10 @@ export const repoTreeCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const result = await repoSessionRpc(ctx.env, args.session_id).tree({
 				sessionId: args.session_id,
+				userId: user.userId,
 				path: args.path ?? null,
 				maxDepth: args.max_depth,
 			})

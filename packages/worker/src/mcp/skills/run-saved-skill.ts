@@ -117,6 +117,7 @@ async function runRepoBackedSkill(input: {
 			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
 		const entrypoint = await sessionClient.readFile({
 			sessionId: session.id,
+			userId: input.callerContext.user?.userId ?? '',
 			path: manifestPath,
 		})
 		if (!entrypoint.content) {
@@ -140,6 +141,7 @@ async function runRepoBackedSkill(input: {
 		}
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
+			userId: input.callerContext.user?.userId ?? '',
 			path: manifest.entrypoint.replace(/^\/+/, ''),
 		})
 		if (!moduleFile.content) {
@@ -175,8 +177,13 @@ async function runRepoBackedSkill(input: {
 			},
 		)
 	} finally {
-		await sessionClient.discardSession({ sessionId: session.id }).catch(() => {
-			// Best effort only; preserve the original execution failure.
-		})
+		await sessionClient
+			.discardSession({
+				sessionId: session.id,
+				userId: input.callerContext.user?.userId ?? '',
+			})
+			.catch(() => {
+				// Best effort only; preserve the original execution failure.
+			})
 	}
 }

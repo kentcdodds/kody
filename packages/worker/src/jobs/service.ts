@@ -137,6 +137,7 @@ export async function createJob(input: {
 		? await ensureEntitySource({
 				db: input.env.APP_DB,
 				env: input.env,
+				id: shape.sourceId,
 				userId: callerContext.user.userId,
 				entityKind: 'job',
 				entityId: jobId,
@@ -254,6 +255,7 @@ export async function updateJob(input: {
 			? await ensureEntitySource({
 					db: input.env.APP_DB,
 					env: input.env,
+					id: shape.sourceId,
 					userId: callerContext.user.userId,
 					entityKind: 'job',
 					entityId: existing.id,
@@ -436,6 +438,7 @@ async function runRepoBackedJob(input: {
 	try {
 		const result = await sessionClient.runChecks({
 			sessionId: session.id,
+			userId: input.callerContext.user.userId,
 		})
 		if (!result.ok) {
 			return {
@@ -451,6 +454,7 @@ async function runRepoBackedJob(input: {
 			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
 		const entrypoint = await sessionClient.readFile({
 			sessionId: session.id,
+			userId: input.callerContext.user.userId,
 			path: manifestPath,
 		})
 		if (!entrypoint.content) {
@@ -482,6 +486,7 @@ async function runRepoBackedJob(input: {
 		}
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
+			userId: input.callerContext.user.userId,
 			path: manifest.entrypoint.replace(/^\/+/, ''),
 		})
 		if (!moduleFile.content) {
@@ -522,9 +527,14 @@ async function runRepoBackedJob(input: {
 			},
 		)
 	} finally {
-		await sessionClient.discardSession({ sessionId: session.id }).catch(() => {
-			// Best effort only; preserve the original execution failure.
-		})
+		await sessionClient
+			.discardSession({
+				sessionId: session.id,
+				userId: input.callerContext.user.userId,
+			})
+			.catch(() => {
+				// Best effort only; preserve the original execution failure.
+			})
 	}
 }
 

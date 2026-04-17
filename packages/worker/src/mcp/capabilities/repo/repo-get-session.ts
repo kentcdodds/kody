@@ -17,9 +17,10 @@ export const repoGetSessionCapability = defineDomainCapability(
 		inputSchema: repoSessionIdSchema,
 		outputSchema: repoSessionInfoSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			return await repoSessionRpc(ctx.env, args.session_id).getSessionInfo({
 				sessionId: args.session_id,
+				userId: user.userId,
 			})
 		},
 	},

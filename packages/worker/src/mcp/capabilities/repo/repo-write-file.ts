@@ -22,9 +22,9 @@ export const repoWriteFileCapability = defineDomainCapability(
 		outputSchema: repoWriteFileOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			void user
 			return await repoSessionRpc(ctx.env, args.session_id).writeFile({
 				sessionId: args.session_id,
+				userId: user.userId,
 				path: args.path,
 				content: args.content,
 			})

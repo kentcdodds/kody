@@ -46,6 +46,7 @@ function buildEntitySourceRow(input: {
 export async function ensureEntitySource(input: {
 	db: D1Database
 	env: Env
+	id?: string
 	userId: string
 	entityKind: EntityKind
 	entityId: string
@@ -59,6 +60,7 @@ export async function ensureEntitySource(input: {
 		envHasArtifactsBinding(input.env) === false
 	) {
 		return buildEntitySourceRow({
+			id: input.id,
 			userId: input.userId,
 			entityKind: input.entityKind,
 			entityId: input.entityId,
@@ -74,6 +76,7 @@ export async function ensureEntitySource(input: {
 	})
 	if (existing) return existing
 	const row = buildEntitySourceRow({
+		id: input.id,
 		userId: input.userId,
 		entityKind: input.entityKind,
 		entityId: input.entityId,

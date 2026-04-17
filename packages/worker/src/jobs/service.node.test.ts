@@ -753,6 +753,7 @@ test('executeJobOnce discards repo sessions after repo-backed execution', async 
 		})
 		expect(sessionClient.discardSession).toHaveBeenCalledWith({
 			sessionId: 'job-runtime-job-repo-1',
+			userId: 'user-123',
 		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 	} finally {

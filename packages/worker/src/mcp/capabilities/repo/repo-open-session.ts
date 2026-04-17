@@ -42,6 +42,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				}
 				return repoSessionRpc(ctx.env, existingSession.id).getSessionInfo({
 					sessionId: existingSession.id,
+					userId: user.userId,
 				})
 			}
 

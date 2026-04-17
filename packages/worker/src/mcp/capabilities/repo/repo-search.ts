@@ -17,10 +17,11 @@ export const repoSearchCapability = defineDomainCapability(
 		inputSchema: repoSearchInputSchema,
 		outputSchema: repoSearchOutputSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const session = repoSessionRpc(ctx.env, args.session_id)
 			const result = await session.search({
 				sessionId: args.session_id,
+				userId: user.userId,
 				pattern: args.pattern,
 				mode: args.mode,
 				glob: args.glob,

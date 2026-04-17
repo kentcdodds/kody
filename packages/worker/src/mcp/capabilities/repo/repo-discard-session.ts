@@ -20,12 +20,13 @@ export const repoDiscardSessionCapability = defineDomainCapability(
 		inputSchema: repoSessionIdSchema,
 		outputSchema: repoDiscardSessionOutputSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const result = await repoSessionRpc(
 				ctx.env,
 				args.session_id,
 			).discardSession({
 				sessionId: args.session_id,
+				userId: user.userId,
 			})
 			return {
 				ok: true as const,

@@ -26,12 +26,13 @@ export const repoRebaseSessionCapability = defineDomainCapability(
 		inputSchema: repoSessionIdSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const result = await repoSessionRpc(
 				ctx.env,
 				args.session_id,
 			).rebaseSession({
 				sessionId: args.session_id,
+				userId: user.userId,
 			})
 			return {
 				ok: result.ok,

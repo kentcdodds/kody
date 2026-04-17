@@ -118,6 +118,7 @@ export async function resolveSavedAppSource(input: {
 		openedSessionId = opened.id
 		const manifestFile = await session.readFile({
 			sessionId: opened.id,
+			userId: input.artifact.user_id,
 			path: source.manifest_path,
 		})
 		if (!manifestFile.content) return fallback
@@ -129,10 +130,12 @@ export async function resolveSavedAppSource(input: {
 		const [clientFile, serverFile] = await Promise.all([
 			session.readFile({
 				sessionId: opened.id,
+				userId: input.artifact.user_id,
 				path: resolveManifestClientPath(manifest),
 			}),
 			session.readFile({
 				sessionId: opened.id,
+				userId: input.artifact.user_id,
 				path: manifest.server,
 			}),
 		])
@@ -155,9 +158,14 @@ export async function resolveSavedAppSource(input: {
 		return resolved
 	} finally {
 		if (openedSessionId) {
-			await session.discardSession({ sessionId: openedSessionId }).catch(() => {
-				// Best effort only; source resolution should preserve the original error.
-			})
+			await session
+				.discardSession({
+					sessionId: openedSessionId,
+					userId: input.artifact.user_id,
+				})
+				.catch(() => {
+					// Best effort only; source resolution should preserve the original error.
+				})
 		}
 	}
 }

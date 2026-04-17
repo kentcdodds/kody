@@ -39,12 +39,13 @@ export const repoPublishSessionCapability = defineDomainCapability(
 		inputSchema: repoSessionIdSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const result = await repoSessionRpc(
 				ctx.env,
 				args.session_id,
 			).publishSession({
 				sessionId: args.session_id,
+				userId: user.userId,
 			})
 			if (result.status === 'ok') {
 				return {

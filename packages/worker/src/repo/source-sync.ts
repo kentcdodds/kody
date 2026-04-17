@@ -44,6 +44,7 @@ export async function syncArtifactSourceSnapshot(
 		})
 		await session.applyEdits({
 			sessionId,
+			userId: input.userId,
 			edits: Object.entries(input.files).map(([path, content]) => ({
 				kind: 'write' as const,
 				path,
@@ -54,6 +55,7 @@ export async function syncArtifactSourceSnapshot(
 		})
 		const publishResult = await session.publishSession({
 			sessionId,
+			userId: input.userId,
 			force: true,
 		})
 		if (publishResult.status !== 'ok') {
@@ -61,8 +63,10 @@ export async function syncArtifactSourceSnapshot(
 		}
 		return publishResult.publishedCommit
 	} finally {
-		await session.discardSession({ sessionId }).catch(() => {
-			// Best effort only; publish/apply failures should preserve the root cause.
-		})
+		await session
+			.discardSession({ sessionId, userId: input.userId })
+			.catch(() => {
+				// Best effort only; publish/apply failures should preserve the root cause.
+			})
 	}
 }

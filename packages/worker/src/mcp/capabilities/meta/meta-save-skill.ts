@@ -24,6 +24,18 @@ import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import { requireMcpUser } from './require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 
+function parseJsonStringArray(raw: string | null): Array<string> {
+	if (raw == null) return []
+	try {
+		const parsed = JSON.parse(raw) as unknown
+		return Array.isArray(parsed)
+			? parsed.filter((value): value is string => typeof value === 'string')
+			: []
+	} catch {
+		return []
+	}
+}
+
 const inputSchema = z.object({
 	name: z
 		.string()
@@ -137,6 +149,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				entityId: skillId,
 				sourceRoot: '/',
 			})
+			const previousPublishedCommit = source.published_commit
 
 			if (existing) {
 				const updated = await updateMcpSkill(
@@ -232,6 +245,51 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						userId: user.userId,
 						embedText: oldEmbed,
 						collectionSlug: existing.collection_slug,
+					})
+					const restoredPublishedCommit = await syncArtifactSourceSnapshot({
+						env: ctx.env,
+						userId: user.userId,
+						baseUrl: ctx.callerContext.baseUrl,
+						sourceId: source.id,
+						files: buildSkillSourceFiles({
+							title: existing.title,
+							description: existing.description,
+							keywords: parseJsonStringArray(existing.keywords),
+							searchText: existing.search_text ?? null,
+							collection: existing.collection_name,
+							readOnly: existing.read_only === 1,
+							idempotent: existing.idempotent === 1,
+							destructive: existing.destructive === 1,
+							usesCapabilities: parseJsonStringArray(
+								existing.uses_capabilities,
+							),
+							parameters: skillParameterSchema
+								.array()
+								.safeParse(
+									existing.parameters == null
+										? null
+										: JSON.parse(existing.parameters),
+								).success
+								? existing.parameters == null
+									? null
+									: (JSON.parse(existing.parameters) as Array<{
+											name: string
+											description: string
+											type: 'string' | 'number' | 'boolean' | 'json'
+											required?: boolean
+											default?: unknown
+										}>)
+								: null,
+							code: existing.code,
+						}),
+					})
+					await updateEntitySource(ctx.env.APP_DB, {
+						id: source.id,
+						userId: user.userId,
+						publishedCommit:
+							restoredPublishedCommit ?? previousPublishedCommit ?? null,
+						indexedCommit:
+							restoredPublishedCommit ?? previousPublishedCommit ?? null,
 					})
 				} else {
 					await deleteEntitySource(ctx.env.APP_DB, {

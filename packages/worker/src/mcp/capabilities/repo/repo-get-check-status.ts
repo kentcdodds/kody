@@ -21,12 +21,13 @@ export const repoGetCheckStatusCapability = defineDomainCapability(
 		inputSchema: repoSessionIdSchema,
 		outputSchema: repoCheckStatusOutputSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const status = await repoSessionRpc(
 				ctx.env,
 				args.session_id,
 			).getCheckStatus({
 				sessionId: args.session_id,
+				userId: user.userId,
 			})
 			return {
 				run_id: status.runId,

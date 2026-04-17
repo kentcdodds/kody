@@ -20,9 +20,10 @@ export const repoRunChecksCapability = defineDomainCapability(
 		inputSchema: repoSessionIdSchema,
 		outputSchema: repoRunChecksOutputSchema,
 		async handler(args, ctx) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const result = await repoSessionRpc(ctx.env, args.session_id).runChecks({
 				sessionId: args.session_id,
+				userId: user.userId,
 			})
 			return {
 				ok: result.ok,
