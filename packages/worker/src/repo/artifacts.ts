@@ -334,7 +334,12 @@ async function requestArtifactsEnvelope<T>(
 				envelope?.errors[0]?.message ??
 				`Artifacts API request failed (${response.status}).`
 			if (input.treat404AsNull && response.status === 404) {
-				return { ...envelope, result: null } as ArtifactApiEnvelope<T>
+				return {
+					result: null,
+					success: true,
+					errors: [],
+					messages: [],
+				} satisfies ArtifactApiEnvelope<T>
 			}
 			throw new Error(message)
 		}
