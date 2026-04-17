@@ -5,12 +5,6 @@
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": "./src/index.ts",
 	"upload_source_maps": true,
-	"artifacts": [
-		{
-			"binding": "ARTIFACTS",
-			"namespace": "default",
-		},
-	],
 	"migrations": [
 		{
 			"new_sqlite_classes": ["MCP"],

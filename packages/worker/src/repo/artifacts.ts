@@ -1,3 +1,7 @@
+import {
+	CloudflareApiError,
+	createCloudflareRestClient,
+} from '#mcp/cloudflare/cloudflare-rest-client.ts'
 import { type EntityKind } from './types.ts'
 
 export type ArtifactToken = {
@@ -25,7 +29,6 @@ export type ArtifactRepoHandle = {
 	createToken(scope?: 'write' | 'read', ttl?: number): Promise<ArtifactToken>
 	fork(target: {
 		name: string
-		namespace?: string
 		readOnly?: boolean
 	}): Promise<{
 		id: string
@@ -48,7 +51,11 @@ export type ArtifactGetRepoResult =
 export type ArtifactNamespaceBinding = {
 	create(
 		name: string,
-		opts?: { readOnly?: boolean },
+		opts?: {
+			description?: string
+			readOnly?: boolean
+			setDefaultBranch?: string
+		},
 	): Promise<{
 		id: string
 		name: string
@@ -69,12 +76,22 @@ export type ArtifactNamespaceBinding = {
 export function getArtifactsBinding(
 	env: Env,
 ): ArtifactNamespaceBinding & Record<string, unknown> {
-	const binding = (env as Env & { ARTIFACTS?: ArtifactNamespaceBinding })
-		.ARTIFACTS
-	if (!binding) {
-		throw new Error('ARTIFACTS binding is not configured.')
+	const restBinding = createArtifactsRestBinding(env)
+	if (!restBinding) {
+		throw new Error(
+			'Cloudflare Artifacts REST access requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
+		)
 	}
-	return binding
+	return restBinding
+}
+
+export function hasArtifactsAccess(env: Env) {
+	try {
+		void getArtifactsBinding(env)
+		return true
+	} catch {
+		return false
+	}
 }
 
 export function getArtifactsNamespace(env: Env) {
@@ -82,6 +99,291 @@ export function getArtifactsNamespace(env: Env) {
 		(env as Env & { ARTIFACTS_NAMESPACE?: string | undefined })
 			.ARTIFACTS_NAMESPACE ?? 'default'
 	)
+}
+
+type ArtifactApiEnvelope<T> = {
+	result: T | null
+	success: boolean
+	errors: Array<{
+		code: number
+		message: string
+	}>
+	messages: Array<{
+		code: number
+		message: string
+	}>
+	result_info?: {
+		cursor?: string
+		count?: number
+		total_count?: number
+	}
+}
+
+type ArtifactRestRepoInfo = {
+	id: string
+	name: string
+	description: string | null
+	default_branch: string
+	created_at: string
+	updated_at: string
+	last_push_at: string | null
+	source: string | null
+	read_only: boolean
+	remote: string
+}
+
+type ArtifactRestCreateRepoResult = {
+	id: string
+	name: string
+	description: string | null
+	default_branch: string
+	remote: string
+	token: string
+}
+
+type ArtifactRestCreateTokenResult = {
+	id: string
+	plaintext: string
+	scope: string
+	expires_at: string
+}
+
+type ArtifactRestForkRepoResult = ArtifactRestCreateRepoResult & {
+	objects?: number
+}
+
+function createArtifactsRestBinding(env: Env) {
+	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
+	if (!accountId || !apiToken) {
+		return null
+	}
+	const client = createCloudflareRestClient(env)
+	const namespace = getArtifactsNamespace(env)
+	const basePath = `/client/v4/accounts/${accountId}/artifacts/namespaces/${namespace}`
+	const getRepoInfo = async (name: string): Promise<ArtifactRepoInfo | null> => {
+		const response = await requestArtifactsEnvelope<ArtifactRestRepoInfo>(client, {
+			method: 'GET',
+			path: `${basePath}/repos/${encodeURIComponent(name)}`,
+			treat404AsNull: true,
+		})
+		return response.result ? normalizeArtifactRepoInfo(response.result) : null
+	}
+	const repoHandle = (name: string): ArtifactRepoHandle => ({
+		info: async () => await getRepoInfo(name),
+		createToken: async (scope = 'write', ttl = 3600) => {
+			const result = await requestArtifactsApi<ArtifactRestCreateTokenResult>(
+				client,
+				{
+					method: 'POST',
+					path: `${basePath}/tokens`,
+					body: {
+						repo: name,
+						scope,
+						ttl,
+					},
+				},
+			)
+			return {
+				id: result.id,
+				plaintext: result.plaintext,
+				scope: result.scope,
+				expiresAt: result.expires_at,
+			}
+		},
+		fork: async (target) => {
+			const result = await requestArtifactsApi<ArtifactRestForkRepoResult>(
+				client,
+				{
+					method: 'POST',
+					path: `${basePath}/repos/${encodeURIComponent(name)}/fork`,
+					body: {
+						name: target.name,
+						read_only: target.readOnly ?? false,
+					},
+				},
+			)
+			return {
+				id: result.id,
+				name: result.name,
+				description: result.description,
+				defaultBranch: result.default_branch,
+				remote: result.remote,
+				token: result.token,
+				expiresAt: parseArtifactTokenExpiry(result.token),
+				repo: repoHandle(result.name),
+			}
+		},
+	})
+	return {
+		create: async (name, opts) => {
+			const result = await requestArtifactsApi<ArtifactRestCreateRepoResult>(
+				client,
+				{
+					method: 'POST',
+					path: `${basePath}/repos`,
+					body: {
+						name,
+						...(opts?.description ? { description: opts.description } : {}),
+						...(opts?.setDefaultBranch
+							? { default_branch: opts.setDefaultBranch }
+							: {}),
+						...(opts?.readOnly !== undefined
+							? { read_only: opts.readOnly }
+							: {}),
+					},
+				},
+			)
+			return {
+				id: result.id,
+				name: result.name,
+				description: result.description,
+				defaultBranch: result.default_branch,
+				remote: result.remote,
+				token: result.token,
+				expiresAt: parseArtifactTokenExpiry(result.token),
+			}
+		},
+		get: async (name) => {
+			const info = await getRepoInfo(name)
+			if (!info) {
+				return { status: 'not_found' as const }
+			}
+			return {
+				status: 'ready' as const,
+				repo: repoHandle(name),
+			}
+		},
+		list: async (opts) => {
+			const query: Record<string, string> = {}
+			if (opts?.limit !== undefined) {
+				query['limit'] = String(opts.limit)
+			}
+			if (opts?.cursor) {
+				query['cursor'] = opts.cursor
+			}
+			const envelope = await requestArtifactsEnvelope<Array<ArtifactRestRepoInfo>>(
+				client,
+				{
+					method: 'GET',
+					path: `${basePath}/repos`,
+					query,
+				},
+			)
+			const repos = (envelope.result ?? []).map((repo) => {
+				const normalized = normalizeArtifactRepoInfo(repo)
+				return {
+					id: normalized.id,
+					name: normalized.name,
+					description: normalized.description,
+					defaultBranch: normalized.defaultBranch,
+					createdAt: normalized.createdAt,
+					updatedAt: normalized.updatedAt,
+					lastPushAt: normalized.lastPushAt,
+					source: normalized.source,
+					readOnly: normalized.readOnly,
+				}
+			})
+			return {
+				repos,
+				total: envelope.result_info?.total_count ?? repos.length,
+				cursor: envelope.result_info?.cursor,
+			}
+		},
+	} satisfies ArtifactNamespaceBinding & Record<string, unknown>
+}
+
+async function requestArtifactsApi<T>(
+	client: ReturnType<typeof createCloudflareRestClient>,
+	input: {
+		method: 'GET' | 'POST' | 'DELETE'
+		path: string
+		query?: Record<string, string>
+		body?: unknown
+		treat404AsNull?: boolean
+	},
+) {
+	const envelope = await requestArtifactsEnvelope<T>(client, input)
+	if (envelope.result == null) {
+		throw new Error(`Artifacts API returned no result for ${input.path}.`)
+	}
+	return envelope.result
+}
+
+async function requestArtifactsEnvelope<T>(
+	client: ReturnType<typeof createCloudflareRestClient>,
+	input: {
+		method: 'GET' | 'POST' | 'DELETE'
+		path: string
+		query?: Record<string, string>
+		body?: unknown
+		treat404AsNull?: boolean
+	},
+) {
+	try {
+		const response = await client.rawRequest({
+			method: input.method,
+			path: input.path,
+			query: input.query,
+			body: input.body,
+		})
+		const envelope = response.body as ArtifactApiEnvelope<T> | null
+		if (!envelope?.success) {
+			const message =
+				envelope?.errors?.[0]?.message ??
+				`Artifacts API request failed (${response.status}).`
+			if (input.treat404AsNull && response.status === 404) {
+				return {
+					result: null,
+					success: true,
+					errors: [],
+					messages: [],
+				} satisfies ArtifactApiEnvelope<T>
+			}
+			throw new Error(message)
+		}
+		return envelope
+	} catch (error) {
+		if (
+			input.treat404AsNull &&
+			error instanceof CloudflareApiError &&
+			error.status === 404
+		) {
+			return {
+				result: null,
+				success: true,
+				errors: [],
+				messages: [],
+			} satisfies ArtifactApiEnvelope<T>
+		}
+		throw error
+	}
+}
+
+function normalizeArtifactRepoInfo(repo: ArtifactRestRepoInfo): ArtifactRepoInfo {
+	return {
+		id: repo.id,
+		name: repo.name,
+		description: repo.description,
+		defaultBranch: repo.default_branch,
+		createdAt: repo.created_at,
+		updatedAt: repo.updated_at,
+		lastPushAt: repo.last_push_at,
+		source: repo.source,
+		readOnly: repo.read_only,
+		remote: repo.remote,
+	}
+}
+
+function parseArtifactTokenExpiry(token: string) {
+	const expiresAtSeconds = Number.parseInt(
+		token.split('?expires=')[1] ?? '',
+		10,
+	)
+	if (Number.isFinite(expiresAtSeconds)) {
+		return new Date(expiresAtSeconds * 1000).toISOString()
+	}
+	throw new Error('Artifacts token is missing a parseable expires timestamp.')
 }
 
 function normalizeRepoNamePart(value: string) {

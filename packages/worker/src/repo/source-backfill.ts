@@ -213,12 +213,8 @@ async function backfillApp(input: {
 			entityKind: 'app',
 			entityId: input.row.id,
 			sourceRoot: '/',
+			requirePersistence: true,
 		})
-		if (input.row.sourceId !== ensuredSource.id) {
-			await updateUiArtifact(input.env.APP_DB, input.userId, input.row.id, {
-				sourceId: ensuredSource.id,
-			})
-		}
 		const publishedCommit = await syncArtifactSourceSnapshot({
 			env: input.env,
 			userId: input.userId,
@@ -242,6 +238,11 @@ async function backfillApp(input: {
 			publishedCommit,
 			indexedCommit: publishedCommit,
 		})
+		if (input.row.sourceId !== ensuredSource.id) {
+			await updateUiArtifact(input.env.APP_DB, input.userId, input.row.id, {
+				sourceId: ensuredSource.id,
+			})
+		}
 		if (input.syncAppRunner) {
 			await syncSavedAppRunnerFromDb({
 				env: input.env,
@@ -319,27 +320,8 @@ async function backfillSkill(input: {
 			entityKind: 'skill',
 			entityId: input.row.id,
 			sourceRoot: '/',
+			requirePersistence: true,
 		})
-		if (input.row.source_id !== ensuredSource.id) {
-			await updateMcpSkill(input.env.APP_DB, input.userId, input.row.name, {
-				name: input.row.name,
-				title: input.row.title,
-				description: input.row.description,
-				source_id: ensuredSource.id,
-				keywords: input.row.keywords,
-				code: input.row.code,
-				search_text: input.row.search_text,
-				uses_capabilities: input.row.uses_capabilities,
-				parameters: input.row.parameters,
-				collection_name: input.row.collection_name,
-				collection_slug: input.row.collection_slug,
-				inferred_capabilities: input.row.inferred_capabilities,
-				inference_partial: input.row.inference_partial,
-				read_only: input.row.read_only,
-				idempotent: input.row.idempotent,
-				destructive: input.row.destructive,
-			})
-		}
 		const publishedCommit = await syncArtifactSourceSnapshot({
 			env: input.env,
 			userId: input.userId,
@@ -370,6 +352,26 @@ async function backfillSkill(input: {
 			publishedCommit,
 			indexedCommit: publishedCommit,
 		})
+		if (input.row.source_id !== ensuredSource.id) {
+			await updateMcpSkill(input.env.APP_DB, input.userId, input.row.name, {
+				name: input.row.name,
+				title: input.row.title,
+				description: input.row.description,
+				source_id: ensuredSource.id,
+				keywords: input.row.keywords,
+				code: input.row.code,
+				search_text: input.row.search_text,
+				uses_capabilities: input.row.uses_capabilities,
+				parameters: input.row.parameters,
+				collection_name: input.row.collection_name,
+				collection_slug: input.row.collection_slug,
+				inferred_capabilities: input.row.inferred_capabilities,
+				inference_partial: input.row.inference_partial,
+				read_only: input.row.read_only,
+				idempotent: input.row.idempotent,
+				destructive: input.row.destructive,
+			})
+		}
 		return {
 			kind: 'skill',
 			id: input.row.id,
@@ -459,18 +461,11 @@ async function backfillJob(input: {
 			entityKind: 'job',
 			entityId: input.row.record.id,
 			sourceRoot: '/',
+			requirePersistence: true,
 		})
 		const nextRecord = {
 			...input.row.record,
 			sourceId: ensuredSource.id,
-		}
-		if (input.row.record.sourceId !== ensuredSource.id) {
-			await updateJobRow({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				job: nextRecord,
-				callerContextJson: input.row.callerContextJson,
-			})
 		}
 		const publishedCommit = await syncArtifactSourceSnapshot({
 			env: input.env,

@@ -1,6 +1,7 @@
 import {
 	buildEntityRepoId,
 	getArtifactsBinding,
+	hasArtifactsAccess,
 	type ArtifactNamespaceBinding,
 } from './artifacts.ts'
 import {
@@ -53,12 +54,19 @@ export async function ensureEntitySource(input: {
 	repoId?: string
 	manifestPath?: string
 	sourceRoot?: string
+	requirePersistence?: boolean
 }) {
-	if (
-		typeof (input.db as D1Database | null | undefined)?.prepare !==
-			'function' ||
-		envHasArtifactsBinding(input.env) === false
-	) {
+	const hasDbPrepare = hasAppDbBinding(input.db)
+	const hasArtifactsAccessResult = hasArtifactsAccess(input.env)
+	if (!hasDbPrepare || hasArtifactsAccessResult === false) {
+		if (input.requirePersistence) {
+			throw new Error(
+				`Repo-backed source persistence requires ${missingPersistenceRequirements({
+					hasDbPrepare,
+					hasArtifactsAccess: hasArtifactsAccessResult,
+				}).join(' and ')}.`,
+			)
+		}
 		return buildEntitySourceRow({
 			id: input.id,
 			userId: input.userId,
@@ -89,11 +97,22 @@ export async function ensureEntitySource(input: {
 	return row
 }
 
-function envHasArtifactsBinding(env: Env) {
-	return (
-		typeof (env as Env & { ARTIFACTS?: unknown }).ARTIFACTS === 'object' &&
-		(env as Env & { ARTIFACTS?: unknown }).ARTIFACTS != null
-	)
+function hasAppDbBinding(db: D1Database | null | undefined) {
+	return typeof db?.prepare === 'function'
+}
+
+function missingPersistenceRequirements(input: {
+	hasDbPrepare: boolean
+	hasArtifactsAccess: boolean
+}) {
+	const missing: Array<string> = []
+	if (!input.hasDbPrepare) {
+		missing.push('APP_DB')
+	}
+	if (!input.hasArtifactsAccess) {
+		missing.push('CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN')
+	}
+	return missing
 }
 
 export async function createArtifactsRepoIfMissing(
