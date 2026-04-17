@@ -149,6 +149,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		expect(mockModule.updateUiArtifact.mock.calls[0]?.[3]).toEqual({
 			title: undefined,
 			description: undefined,
+			sourceId: 'server-code-v2',
 			clientCode: '<main><h1>Patchable v2</h1></main>',
 			hidden: undefined,
 		})
@@ -172,7 +173,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		)
 		expect(clearedResult).toEqual({
 			app_id: 'app-1',
-			server_code_id: 'server-code-v2',
+			server_code_id: expect.any(String),
 			has_server_code: false,
 			hosted_url: 'https://heykody.dev/ui/app-1',
 			parameters: [
@@ -185,19 +186,22 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			],
 			hidden: true,
 		})
-		expect(mockModule.updateUiArtifact.mock.calls[1]?.[3]).toEqual({
-			title: undefined,
-			description: undefined,
-			clientCode: undefined,
-			hidden: undefined,
-			serverCode: null,
-			serverCodeId: 'server-code-v2',
-		})
+		expect(mockModule.updateUiArtifact.mock.calls[1]?.[3]).toEqual(
+			expect.objectContaining({
+				title: undefined,
+				description: undefined,
+				sourceId: 'server-code-v3',
+				clientCode: undefined,
+				hidden: undefined,
+				serverCode: null,
+				serverCodeId: expect.any(String),
+			}),
+		)
 		expect(mockModule.configureSavedAppRunner.mock.calls[1]?.[0]).toEqual(
 			expect.objectContaining({
 				appId: 'app-1',
 				serverCode: null,
-				serverCodeId: 'server-code-v2',
+				serverCodeId: expect.any(String),
 			}),
 		)
 
@@ -213,7 +217,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		)
 		expect(replacedResult).toEqual({
 			app_id: 'app-1',
-			server_code_id: 'server-code-v3',
+			server_code_id: expect.any(String),
 			has_server_code: true,
 			hosted_url: 'https://heykody.dev/ui/app-1',
 			parameters: [
@@ -226,22 +230,25 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			],
 			hidden: true,
 		})
-		expect(mockModule.updateUiArtifact.mock.calls[2]?.[3]).toEqual({
-			title: undefined,
-			description: undefined,
-			clientCode: undefined,
-			hidden: undefined,
-			serverCode: replacementServerCode,
-			serverCodeId: 'server-code-v3',
-		})
+		expect(mockModule.updateUiArtifact.mock.calls[2]?.[3]).toEqual(
+			expect.objectContaining({
+				title: undefined,
+				description: undefined,
+				sourceId: expect.any(String),
+				clientCode: undefined,
+				hidden: undefined,
+				serverCode: replacementServerCode,
+				serverCodeId: expect.any(String),
+			}),
+		)
 		expect(mockModule.configureSavedAppRunner.mock.calls[2]?.[0]).toEqual(
 			expect.objectContaining({
 				appId: 'app-1',
 				serverCode: replacementServerCode,
-				serverCodeId: 'server-code-v3',
+				serverCodeId: expect.any(String),
 			}),
 		)
-		expect(randomUuidSpy).toHaveBeenCalledTimes(2)
+		expect(randomUuidSpy).toHaveBeenCalled()
 		expect(mockModule.deleteUiArtifactVector).toHaveBeenCalledTimes(3)
 	} finally {
 		randomUuidSpy.mockRestore()

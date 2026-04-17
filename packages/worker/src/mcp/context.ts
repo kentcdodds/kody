@@ -2,6 +2,7 @@ import { parseSafe } from 'remix/data-schema'
 import {
 	mcpCallerContextSchema,
 	type McpCallerContext,
+	type McpRepoContext,
 	type McpStorageContext,
 	type McpUserContext,
 } from '@kody-internal/shared/chat.ts'
@@ -15,6 +16,7 @@ export function createMcpCallerContext(input: {
 	homeConnectorId?: string | null
 	remoteConnectors?: Array<RemoteConnectorRef> | null
 	storageContext?: McpStorageContext | null
+	repoContext?: McpRepoContext | null
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
@@ -22,6 +24,7 @@ export function createMcpCallerContext(input: {
 		homeConnectorId: input.homeConnectorId ?? null,
 		remoteConnectors: input.remoteConnectors ?? null,
 		storageContext: input.storageContext ?? null,
+		repoContext: input.repoContext ?? null,
 	}
 }
 

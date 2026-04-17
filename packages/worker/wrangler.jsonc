@@ -5,6 +5,12 @@
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": "./src/index.ts",
 	"upload_source_maps": true,
+	"artifacts": [
+		{
+			"binding": "ARTIFACTS",
+			"namespace": "default",
+		},
+	],
 	"migrations": [
 		{
 			"new_sqlite_classes": ["MCP"],
@@ -45,6 +51,10 @@
 		{
 			"new_sqlite_classes": ["AgentTurnRunner"],
 			"tag": "v10",
+		},
+		{
+			"new_sqlite_classes": ["RepoSession"],
+			"tag": "v11",
 		},
 	],
 
@@ -99,6 +109,10 @@
 					{
 						"class_name": "AgentTurnRunner",
 						"name": "AGENT_TURN_RUNNER",
+					},
+					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
 					},
 					{
 						"class_name": "AppRunner",
@@ -179,6 +193,10 @@
 						"name": "AGENT_TURN_RUNNER",
 					},
 					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
+					},
+					{
 						"class_name": "AppRunner",
 						"name": "APP_RUNNER",
 					},
@@ -255,6 +273,10 @@
 					{
 						"class_name": "AgentTurnRunner",
 						"name": "AGENT_TURN_RUNNER",
+					},
+					{
+						"class_name": "RepoSession",
+						"name": "REPO_SESSION",
 					},
 					{
 						"class_name": "AppRunner",

@@ -35,6 +35,8 @@ import {
 } from '#mcp/ui-artifacts-search.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type ValueMetadata, type ValueScope } from '#mcp/values/types.ts'
+import { type JobView } from '#worker/jobs/types.ts'
+import { buildJobEmbedText, buildJobUsage } from '#mcp/jobs-embed.ts'
 
 function parseJsonStringArray(raw: string): Array<string> {
 	try {
@@ -352,12 +354,53 @@ export type ConnectorSearchHitSummary = {
 
 export type ConnectorSearchHit = ConnectorSearchHitSummary
 
+export type JobSearchHitSummary = {
+	type: 'job'
+	jobId: string
+	domain: 'jobs'
+	title: string
+	description: string
+	scheduleSummary: string
+	sourceId: string | null
+	publishedCommit: string | null
+	storageId: string
+	usage: string
+	fusedScore: number
+	lexicalRank?: number
+	vectorRank?: number
+}
+
+export type JobSearchHit = JobSearchHitSummary
+
+function scoreJobLexicalMatch(
+	query: string,
+	row: JobView,
+	doc: string,
+): number {
+	const normalizedQuery = normalizeSearchPhrase(query)
+	let bonus = 0
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.scheduleSummary) * 1
+	bonus += scoreSkillPhraseMatch(normalizedQuery, row.sourceId ?? '') * 0.5
+	return lexicalScore(query, doc) + bonus
+}
+
+function buildJobEmbedDoc(row: JobView): string {
+	return buildJobEmbedText({
+		name: row.name,
+		scheduleSummary: row.scheduleSummary,
+		sourceId: row.sourceId,
+		publishedCommit: row.publishedCommit,
+	})
+}
+
 export type UnifiedSearchMatch =
 	| CapabilitySearchHitTyped
 	| SkillSearchHit
 	| SecretSearchHit
 	| ValueSearchHit
 	| ConnectorSearchHit
+	| JobSearchHit
 	| UiArtifactSearchHit
 
 function buildSecretUsage(name: string) {
@@ -455,6 +498,117 @@ function rowToSkillHit(
 		fusedScore,
 		lexicalRank,
 		vectorRank,
+	}
+}
+
+function rowToJobHit(
+	row: JobView,
+	fusedScore: number,
+	lexicalRank?: number,
+	vectorRank?: number,
+): JobSearchHit {
+	return {
+		type: 'job',
+		jobId: row.id,
+		domain: 'jobs',
+		title: row.name,
+		description: row.scheduleSummary,
+		scheduleSummary: row.scheduleSummary,
+		sourceId: row.sourceId ?? null,
+		publishedCommit: row.publishedCommit ?? null,
+		storageId: row.storageId,
+		usage: buildJobUsage(row),
+		fusedScore,
+		lexicalRank,
+		vectorRank,
+	}
+}
+
+async function searchJobsForUser(input: {
+	env: Env
+	query: string
+	limit: number
+	userId: string
+	rows: Array<JobView>
+}): Promise<{ matches: Array<JobSearchHit>; offline: boolean }> {
+	const q = input.query.trim()
+	const rowById = new Map(input.rows.map((row) => [row.id, row] as const))
+	const ids = [...rowById.keys()]
+	const offline = isCapabilitySearchOffline(input.env)
+
+	if (ids.length === 0) {
+		return { matches: [], offline }
+	}
+
+	const docsById = Object.fromEntries(
+		input.rows.map((row) => [row.id, buildJobEmbedDoc(row)] as const),
+	)
+	const lexicalOrder = sortIdsByScore(ids, (id) =>
+		scoreJobLexicalMatch(q, rowById.get(id)!, docsById[id]!),
+	)
+
+	let vectorOrder: Array<string>
+	if (offline) {
+		const qVec = deterministicEmbedding(q)
+		const simById = Object.fromEntries(
+			ids.map((id) => {
+				const cVec = deterministicEmbedding(docsById[id]!)
+				return [id, cosineSimilarity(qVec, cVec)] as const
+			}),
+		)
+		vectorOrder = sortIdsByScore(ids, (id) => simById[id]!)
+	} else {
+		const index = getCapabilityVectorIndex(input.env)!
+		const qVec = await embedTextForVectorize(input.env, q)
+		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
+		const matches = await index.query(qVec, {
+			topK,
+			returnMetadata: 'none',
+			filter: {
+				kind: { $eq: 'job' },
+				userId: { $eq: input.userId },
+			},
+		})
+		const seen = new Set<string>()
+		const fromIndex: Array<string> = []
+		for (const match of matches.matches) {
+			if (typeof match.id !== 'string' || seen.has(match.id)) continue
+			if (!match.id.startsWith('job_')) continue
+			const jobId = match.id.slice('job_'.length)
+			if (!rowById.has(jobId)) continue
+			seen.add(match.id)
+			fromIndex.push(jobId)
+		}
+		vectorOrder = [...fromIndex, ...ids.filter((id) => !seen.has(`job_${id}`))]
+	}
+
+	const lexicalRankById = new Map<string, number>()
+	for (let index = 0; index < lexicalOrder.length; index += 1) {
+		lexicalRankById.set(lexicalOrder[index]!, index + 1)
+	}
+	const vectorRankById = new Map<string, number>()
+	for (let index = 0; index < vectorOrder.length; index += 1) {
+		vectorRankById.set(vectorOrder[index]!, index + 1)
+	}
+
+	const fused = reciprocalRankFusion(
+		[lexicalOrder, vectorOrder],
+		CAPABILITY_SEARCH_RRF_K,
+	)
+	const ordered = [...ids]
+		.sort((a, b) => (fused.get(b) ?? 0) - (fused.get(a) ?? 0))
+		.slice(0, Math.max(1, Math.min(input.limit, ids.length)))
+
+	return {
+		matches: ordered.map((id) =>
+			rowToJobHit(
+				rowById.get(id)!,
+				fused.get(id) ?? 0,
+				lexicalRankById.get(id),
+				vectorRankById.get(id),
+			),
+		),
+		offline,
 	}
 }
 
@@ -799,6 +953,7 @@ export async function searchUnified(input: {
 	skillCollectionSlug?: string | null
 	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
+	jobRows?: Array<JobView>
 	userSecretRows: Array<SecretSearchRow>
 	userValueRows: Array<ValueMetadata>
 	appSecretsByAppId: Map<string, Array<SecretMetadata>>
@@ -827,6 +982,13 @@ export async function searchUnified(input: {
 	}
 	let uiArtifactResult: {
 		matches: Array<UiArtifactSearchHit>
+		offline: boolean
+	} = {
+		matches: [],
+		offline: offlineByEnv,
+	}
+	let jobResult: {
+		matches: Array<JobSearchHit>
 		offline: boolean
 	} = {
 		matches: [],
@@ -861,6 +1023,7 @@ export async function searchUnified(input: {
 			connectorResult,
 			skillResult,
 			uiArtifactResult,
+			jobResult,
 		] = await Promise.all([
 			capResultPromise,
 			searchSecretsForUser({
@@ -896,6 +1059,13 @@ export async function searchUnified(input: {
 				rows: input.uiArtifactRows,
 				appSecretsByAppId: input.appSecretsByAppId,
 			}),
+			searchJobsForUser({
+				env: input.env,
+				query: input.query,
+				limit: candidateLimit,
+				userId: input.userId,
+				rows: input.jobRows ?? [],
+			}),
 		])
 	} else {
 		capResult = await capResultPromise
@@ -914,6 +1084,7 @@ export async function searchUnified(input: {
 	const connectorByName = new Map(
 		connectorResult.matches.map((m) => [m.connectorName, m] as const),
 	)
+	const jobById = new Map(jobResult.matches.map((m) => [m.jobId, m] as const))
 	const uiArtifactById = new Map(
 		uiArtifactResult.matches.map((m) => [m.appId, m] as const),
 	)
@@ -924,9 +1095,18 @@ export async function searchUnified(input: {
 	const connectorKeys = connectorResult.matches.map(
 		(m) => `n:${m.connectorName}`,
 	)
+	const jobKeys = jobResult.matches.map((m) => `j:${m.jobId}`)
 	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
 	const fusedCross = reciprocalRankFusion(
-		[capKeys, skillKeys, secretKeys, valueKeys, connectorKeys, uiArtifactKeys],
+		[
+			capKeys,
+			skillKeys,
+			secretKeys,
+			valueKeys,
+			connectorKeys,
+			jobKeys,
+			uiArtifactKeys,
+		],
 		CAPABILITY_SEARCH_RRF_K,
 	)
 	const allKeys = [
@@ -936,6 +1116,7 @@ export async function searchUnified(input: {
 			...secretKeys,
 			...valueKeys,
 			...connectorKeys,
+			...jobKeys,
 			...uiArtifactKeys,
 		]),
 	]
@@ -957,6 +1138,9 @@ export async function searchUnified(input: {
 		}
 		if (key.startsWith('a:')) {
 			return uiArtifactById.get(key.slice(2))?.fusedScore ?? 0
+		}
+		if (key.startsWith('j:')) {
+			return jobById.get(key.slice(2))?.fusedScore ?? 0
 		}
 		return 0
 	}
@@ -1037,6 +1221,20 @@ export async function searchUnified(input: {
 			const hit = uiArtifactById.get(key.slice(2))
 			return hit ? scoreUiArtifactLexicalMatch(input.query, hit) : 0
 		}
+		if (key.startsWith('j:')) {
+			const hit = jobById.get(key.slice(2))
+			if (!hit) return 0
+			return lexicalScore(
+				input.query,
+				[
+					hit.title,
+					hit.description,
+					hit.scheduleSummary,
+					hit.sourceId ?? '',
+					hit.publishedCommit ?? '',
+				].join('\n'),
+			)
+		}
 		return 0
 	}
 	const lexicalScoreByKey = new Map(
@@ -1088,6 +1286,12 @@ export async function searchUnified(input: {
 			if (hit) {
 				matches.push({ ...hit, fusedScore: score })
 			}
+		} else if (key.startsWith('j:')) {
+			const id = key.slice(2)
+			const hit = jobById.get(id)
+			if (hit) {
+				matches.push({ ...hit, fusedScore: score })
+			}
 		} else if (key.startsWith('a:')) {
 			const id = key.slice(2)
 			const hit = uiArtifactById.get(id)
@@ -1103,6 +1307,7 @@ export async function searchUnified(input: {
 		secretResult.offline ||
 		valueResult.offline ||
 		connectorResult.offline ||
+		jobResult.offline ||
 		uiArtifactResult.offline
 	return { matches, offline }
 }

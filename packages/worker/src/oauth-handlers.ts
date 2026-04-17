@@ -820,6 +820,7 @@ async function handleSkillRunnerRequest(request: Request, env: Env) {
 				homeConnectorId: null,
 				remoteConnectors: null,
 				storageContext: null,
+				repoContext: null,
 			},
 			name,
 			params,

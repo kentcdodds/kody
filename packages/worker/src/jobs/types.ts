@@ -32,7 +32,9 @@ export type JobRecord = {
 	id: string
 	userId: string
 	name: string
-	code: string
+	code: string | null
+	sourceId: string | null
+	publishedCommit: string | null
 	storageId: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
@@ -56,6 +58,17 @@ export type JobView = Omit<JobRecord, 'userId'> & {
 	scheduleSummary: string
 }
 
+export type JobSearchProjection = {
+	id: string
+	name: string
+	description: string
+	scheduleSummary: string
+	sourceId: string | null
+	publishedCommit: string | null
+	storageId: string
+	updatedAt: string
+}
+
 export type JobExecutionResult =
 	| {
 			ok: true
@@ -77,14 +90,20 @@ export type JobExecutionOutcome = {
 
 export type PersistedJobCallerContext = Pick<
 	McpCallerContext,
-	'baseUrl' | 'homeConnectorId' | 'remoteConnectors' | 'storageContext'
+	| 'baseUrl'
+	| 'homeConnectorId'
+	| 'remoteConnectors'
+	| 'storageContext'
+	| 'repoContext'
 > & {
 	user: McpUserContext
 }
 
 export type JobCreateInput = {
 	name: string
-	code: string
+	code?: string | null
+	sourceId?: string | null
+	publishedCommit?: string | null
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone?: string | null
@@ -95,7 +114,9 @@ export type JobCreateInput = {
 export type JobUpdateInput = {
 	id: string
 	name?: string
-	code?: string
+	code?: string | null
+	sourceId?: string | null
+	publishedCommit?: string | null
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
@@ -106,7 +127,9 @@ export type JobUpdateInput = {
 export type JobUpsertInput = {
 	id?: string
 	name?: string
-	code?: string
+	code?: string | null
+	sourceId?: string | null
+	publishedCommit?: string | null
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null

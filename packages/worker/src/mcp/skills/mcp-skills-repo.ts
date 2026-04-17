@@ -25,11 +25,11 @@ export async function insertMcpSkill(
 	await db
 		.prepare(
 			`INSERT INTO mcp_skills (
-				id, user_id, name, title, description, keywords, code, search_text,
+				id, user_id, name, title, description, source_id, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -37,6 +37,7 @@ export async function insertMcpSkill(
 			row.name,
 			row.title,
 			row.description,
+			row.source_id ?? null,
 			row.keywords,
 			row.code,
 			row.search_text ?? null,
@@ -63,7 +64,7 @@ export async function getMcpSkillByName(
 	const normalizedSkillName = normalizeSkillName(skillName)
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, name, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, source_id, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -84,7 +85,7 @@ export async function getMcpSkillByNameCandidates(
 	const placeholders = skillNames.map(() => '?').join(', ')
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, name, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, source_id, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -146,6 +147,7 @@ export async function updateMcpSkill(
 		name: string
 		title: string
 		description: string
+		source_id: string | null
 		keywords: string
 		code: string
 		search_text: string | null
@@ -165,7 +167,7 @@ export async function updateMcpSkill(
 	const out = await db
 		.prepare(
 			`UPDATE mcp_skills SET
-				name = ?, title = ?, description = ?, keywords = ?, code = ?, search_text = ?,
+				name = ?, title = ?, description = ?, source_id = ?, keywords = ?, code = ?, search_text = ?,
 				uses_capabilities = ?, parameters = ?, collection_name = ?, collection_slug = ?,
 				inferred_capabilities = ?, inference_partial = ?, read_only = ?, idempotent = ?,
 				destructive = ?, updated_at = ?
@@ -175,6 +177,7 @@ export async function updateMcpSkill(
 			fields.name,
 			fields.title,
 			fields.description,
+			fields.source_id,
 			fields.keywords,
 			fields.code,
 			fields.search_text,
@@ -213,7 +216,7 @@ export async function listMcpSkillsByUserId(
 ): Promise<Array<McpSkillRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, name, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, source_id, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -260,7 +263,7 @@ export async function listAllMcpSkills(
 ): Promise<Array<McpSkillRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, name, title, description, keywords, code, search_text,
+			`SELECT id, user_id, name, title, description, source_id, keywords, code, search_text,
 				uses_capabilities, parameters, collection_name, collection_slug,
 				inferred_capabilities, inference_partial, read_only, idempotent,
 				destructive, created_at, updated_at
@@ -277,6 +280,7 @@ function mapRow(r: Record<string, unknown>): McpSkillRow {
 		name: String(r['name']),
 		title: String(r['title']),
 		description: String(r['description']),
+		source_id: r['source_id'] == null ? null : String(r['source_id']),
 		keywords: String(r['keywords']),
 		code: String(r['code']),
 		search_text: r['search_text'] == null ? null : String(r['search_text']),

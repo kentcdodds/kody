@@ -20,6 +20,7 @@ export function createExecuteExecutor(input: {
 	env: Env
 	exports?: WorkerLoopbackExports
 	gatewayProps: FetchGatewayProps
+	modules?: Record<string, string>
 }) {
 	const loopbackExports = input.exports ?? workerExports
 	if (!loopbackExports?.CodemodeFetchGateway) {
@@ -33,6 +34,7 @@ export function createExecuteExecutor(input: {
 		globalOutbound: loopbackExports.CodemodeFetchGateway({
 			props: input.gatewayProps,
 		}),
+		modules: input.modules,
 	})
 }
 

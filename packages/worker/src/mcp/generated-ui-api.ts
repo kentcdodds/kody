@@ -18,15 +18,13 @@ import { createGeneratedUiAppBackendCookieHeader } from '#mcp/generated-ui-app-a
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { deleteSecret, listSecrets, saveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
-import {
-	applyUiArtifactParameters,
-	parseUiArtifactParameters,
-} from '#mcp/ui-artifact-parameters.ts'
+import { applyUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import {
 	getUiArtifactById,
 	getUiArtifactByOwnerIds,
 } from '#mcp/ui-artifacts-repo.ts'
 import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const executeRequestSchema = z.object({
 	code: z.string().min(1),
@@ -144,13 +142,31 @@ function createGeneratedUiSourceHandler(env: Env) {
 			if (!app) {
 				return jsonResponse({ error: 'Saved UI not found.' }, 404)
 			}
+			let resolvedApp
+			try {
+				resolvedApp = await resolveSavedAppSource({
+					env,
+					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
+					artifact: app,
+				})
+			} catch (error) {
+				return jsonResponse(
+					{
+						error:
+							error instanceof Error
+								? error.message
+								: 'Unable to load saved UI source.',
+					},
+					502,
+				)
+			}
 			let resolvedParams: Record<string, unknown>
 			try {
 				resolvedParams =
 					sourceContext.type === 'session'
 						? sourceContext.params
 						: applyUiArtifactParameters({
-								definitions: parseUiArtifactParameters(app.parameters),
+								definitions: resolvedApp.parameters,
 								values: readSavedAppParamsFromUrl(new URL(request.url)),
 							})
 			} catch (error) {
@@ -186,15 +202,15 @@ function createGeneratedUiSourceHandler(env: Env) {
 				ok: true,
 				app: {
 					app_id: app.id,
-					title: app.title,
-					description: app.description,
-					hidden: app.hidden,
-					parameters: parseUiArtifactParameters(app.parameters),
+					title: resolvedApp.title,
+					description: resolvedApp.description,
+					hidden: resolvedApp.hidden,
+					parameters: resolvedApp.parameters,
 					params: resolvedParams,
-					client_code: app.clientCode,
-					server_code: app.serverCode,
-					server_code_id: app.serverCodeId,
-					...(hasUiArtifactServerCode(app.serverCode)
+					client_code: resolvedApp.clientCode,
+					server_code: resolvedApp.serverCode,
+					server_code_id: resolvedApp.serverCodeId,
+					...(hasUiArtifactServerCode(resolvedApp.serverCode)
 						? {
 								app_backend: {
 									basePath: buildSavedAppBackendBasePath(app.id),
@@ -207,7 +223,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 				},
 				appSession,
 			})
-			if (hasUiArtifactServerCode(app.serverCode)) {
+			if (hasUiArtifactServerCode(resolvedApp.serverCode)) {
 				response.headers.append(
 					'Set-Cookie',
 					await createGeneratedUiAppBackendCookieHeader({

@@ -19,6 +19,7 @@ import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { listJobs } from '#worker/jobs/service.ts'
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -61,6 +62,11 @@ export async function createAgentTurnToolSet(input: {
 						listUiArtifactsByUserId(input.env.APP_DB, userId!, {
 							hidden: false,
 						}),
+					loadJobs: () =>
+						listJobs({
+							env: input.env,
+							userId: userId!,
+						}),
 					loadUserSecrets: () =>
 						listUserSecretsForSearch({
 							env: input.env,
@@ -97,6 +103,7 @@ export async function createAgentTurnToolSet(input: {
 					userId,
 					skillRows: optionalRows.skillRows,
 					uiArtifactRows: optionalRows.uiArtifactRows,
+					jobRows: optionalRows.jobRows,
 					userSecretRows: optionalRows.userSecretRows,
 					userValueRows: optionalRows.userValueRows,
 					appSecretsByAppId,

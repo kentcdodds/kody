@@ -15,16 +15,17 @@ export async function insertUiArtifact(
 	await db
 		.prepare(
 			`INSERT INTO ui_artifacts (
-				id, user_id, title, description, client_code, server_code,
+				id, user_id, title, description, source_id, client_code, server_code,
 				server_code_id, parameters, hidden, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
 			row.title,
 			row.description,
-			row.clientCode,
+			row.sourceId ?? null,
+			row.clientCode ?? null,
 			row.serverCode ?? null,
 			row.serverCodeId,
 			row.parameters ?? null,
@@ -42,7 +43,7 @@ export async function getUiArtifactById(
 ): Promise<UiArtifactRow | null> {
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, client_code, server_code,
+			`SELECT id, user_id, title, description, source_id, client_code, server_code,
 				server_code_id, parameters, hidden, created_at, updated_at
 			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
 		)
@@ -63,7 +64,7 @@ export async function getUiArtifactByOwnerIds(
 	const placeholders = ownerIds.map(() => '?').join(', ')
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, title, description, client_code, server_code,
+			`SELECT id, user_id, title, description, source_id, client_code, server_code,
 				server_code_id, parameters, hidden, created_at, updated_at
 			FROM ui_artifacts
 			WHERE id = ? AND user_id IN (${placeholders})
@@ -96,6 +97,7 @@ export async function updateUiArtifact(
 			UiArtifactRow,
 			| 'title'
 			| 'description'
+			| 'sourceId'
 			| 'clientCode'
 			| 'serverCode'
 			| 'serverCodeId'
@@ -117,8 +119,11 @@ export async function updateUiArtifact(
 	if (updates.description !== undefined) {
 		addAssignment('description', updates.description)
 	}
+	if (updates.sourceId !== undefined) {
+		addAssignment('source_id', updates.sourceId ?? null)
+	}
 	if (updates.clientCode !== undefined) {
-		addAssignment('client_code', updates.clientCode)
+		addAssignment('client_code', updates.clientCode ?? null)
 	}
 	if (updates.serverCode !== undefined) {
 		addAssignment('server_code', updates.serverCode ?? null)
@@ -152,7 +157,7 @@ export async function listUiArtifactsByUserId(
 	const hidden = options?.hidden
 	const { results } = await db
 		.prepare(
-			`SELECT id, user_id, title, description, client_code, server_code,
+			`SELECT id, user_id, title, description, source_id, client_code, server_code,
 				server_code_id, parameters, hidden, created_at, updated_at
 			FROM ui_artifacts
 			WHERE user_id = ?
@@ -169,7 +174,8 @@ function mapRow(row: Record<string, unknown>): UiArtifactRow {
 		user_id: String(row['user_id']),
 		title: String(row['title']),
 		description: String(row['description']),
-		clientCode: String(row['client_code']),
+		sourceId: row['source_id'] == null ? null : String(row['source_id']),
+		clientCode: String(row['client_code'] ?? ''),
 		serverCode: row['server_code'] == null ? null : String(row['server_code']),
 		serverCodeId: String(row['server_code_id']),
 		parameters: row['parameters'] == null ? null : String(row['parameters']),

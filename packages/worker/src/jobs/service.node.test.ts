@@ -3,7 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
-import { createJob, executeJobOnce, updateJob } from './service.ts'
+import { createJob, executeJobOnce, runJobNow } from './service.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -294,24 +294,26 @@ function createDatabase() {
 									user_id: params[1],
 									name: params[2],
 									code: params[3],
-									storage_id: params[4],
-									params_json: params[5],
-									schedule_json: params[6],
-									timezone: params[7],
-									enabled: params[8],
-									kill_switch_enabled: params[9],
-									caller_context_json: params[10],
-									created_at: params[11],
-									updated_at: params[12],
-									last_run_at: params[13],
-									last_run_status: params[14],
-									last_run_error: params[15],
-									last_duration_ms: params[16],
-									next_run_at: params[17],
-									run_count: params[18],
-									success_count: params[19],
-									error_count: params[20],
-									run_history_json: params[21],
+									source_id: params[4],
+									published_commit: params[5],
+									storage_id: params[6],
+									params_json: params[7],
+									schedule_json: params[8],
+									timezone: params[9],
+									enabled: params[10],
+									kill_switch_enabled: params[11],
+									caller_context_json: params[12],
+									created_at: params[13],
+									updated_at: params[14],
+									last_run_at: params[15],
+									last_run_status: params[16],
+									last_run_error: params[17],
+									last_duration_ms: params[18],
+									next_run_at: params[19],
+									run_count: params[20],
+									success_count: params[21],
+									error_count: params[22],
+									run_history_json: params[23],
 								}
 								upsert(
 									'jobs',
@@ -324,34 +326,36 @@ function createDatabase() {
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const row = {
-									id: params[19],
-									user_id: params[20],
+									id: params[21],
+									user_id: params[22],
 									name: params[0],
 									code: params[1],
-									storage_id: params[2],
-									params_json: params[3],
-									schedule_json: params[4],
-									timezone: params[5],
-									enabled: params[6],
-									kill_switch_enabled: params[7],
-									caller_context_json: params[8],
-									updated_at: params[9],
-									last_run_at: params[10],
-									last_run_status: params[11],
-									last_run_error: params[12],
-									last_duration_ms: params[13],
-									next_run_at: params[14],
-									run_count: params[15],
-									success_count: params[16],
-									error_count: params[17],
-									run_history_json: params[18],
+									source_id: params[2],
+									published_commit: params[3],
+									storage_id: params[4],
+									params_json: params[5],
+									schedule_json: params[6],
+									timezone: params[7],
+									enabled: params[8],
+									kill_switch_enabled: params[9],
+									caller_context_json: params[10],
+									updated_at: params[11],
+									last_run_at: params[12],
+									last_run_status: params[13],
+									last_run_error: params[14],
+									last_duration_ms: params[15],
+									next_run_at: params[16],
+									run_count: params[17],
+									success_count: params[18],
+									error_count: params[19],
+									run_history_json: params[20],
 									created_at:
 										selectOne(
 											'jobs',
 											(existing) =>
-												existing['id'] === params[19] &&
-												existing['user_id'] === params[20],
-										)?.['created_at'] ?? params[9],
+												existing['id'] === params[21] &&
+												existing['user_id'] === params[22],
+										)?.['created_at'] ?? params[11],
 								}
 								upsert(
 									'jobs',
@@ -504,12 +508,6 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 		},
 	})
 
-	const createdJob = (await import('./repo.ts')).getJobRowById(
-		db,
-		callerContext.user.userId,
-		jobView.id,
-	)
-
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
@@ -523,10 +521,13 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 		})
 
 	try {
-		const row = await createdJob
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		if (!row) {
 			throw new Error('Expected created job row.')
 		}
+		expect(row.record.storageId).toBe(`job:${jobView.id}`)
 		const outcome = await executeJobOnce({
 			env,
 			job: row.record,
@@ -587,36 +588,25 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		},
 	})
 
-	const createdJob = (await import('./repo.ts')).getJobRowById(
-		db,
-		callerContext.user.userId,
-		jobView.id,
-	)
-
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
 			'runCodemodeWithRegistry',
 		)
-		.mockImplementation(async (_env, persistedContext) => {
-			expect(persistedContext.storageContext).toEqual({
-				sessionId: null,
-				appId: 'app-123',
+		.mockResolvedValue({
+			result: {
+				secretValue: 'very-secret-token',
+				value: 'alpha-project',
+				userId: 'user-123',
 				storageId: `job:${jobView.id}`,
-			})
-			return {
-				result: {
-					secretValue: 'very-secret-token',
-					value: 'alpha-project',
-					userId: 'user-123',
-					storageId: `job:${jobView.id}`,
-				},
-				logs: ['codemode executed'],
-			}
+			},
+			logs: ['codemode executed'],
 		})
 
 	try {
-		const row = await createdJob
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		if (!row) {
 			throw new Error('Expected created job row.')
 		}
@@ -625,6 +615,19 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			job: row.record,
 			callerContext,
 		})
+
+		const [spyEnv, spyCallerContext] = executeSpy.mock.calls[0] ?? []
+		expect(spyEnv).toBe(env)
+		expect(spyCallerContext).toMatchObject({
+			baseUrl: 'https://example.com',
+			repoContext: null,
+		})
+		expect(spyCallerContext).toHaveProperty('storageContext.sessionId', null)
+		expect(spyCallerContext).toHaveProperty('storageContext.appId', 'app-123')
+		expect(spyCallerContext).toHaveProperty(
+			'storageContext.storageId',
+			`job:${jobView.id}`,
+		)
 
 		expect(outcome.execution).toEqual({
 			ok: true,
@@ -641,6 +644,236 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 	}
 })
 
+test('executeJobOnce refreshes repo sessions when base commit moves', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-1',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed job',
+		code: null,
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		storageId: 'job:job-repo-1',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-1',
+			source_id: 'source-1',
+			source_root: '/',
+			base_commit: 'base-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-1',
+			manifest_path: 'kody.json',
+			entity_type: 'job',
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: true,
+			results: [],
+			manifest: {
+				version: 1,
+				kind: 'job',
+				title: 'Repo-backed job',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo-backed job',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'async () => ({ ok: true, repoBacked: true })',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'job-runtime-job-repo-1',
+			deleted: true,
+		})),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true, repoBacked: true },
+			logs: ['repo-backed codemode executed'],
+		})
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: { ok: true, repoBacked: true },
+			logs: ['repo-backed codemode executed'],
+		})
+		expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
+		expect(sessionClient.discardSession).toHaveBeenCalledWith({
+			sessionId: 'job-runtime-job-repo-1',
+			userId: 'user-123',
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
+test('executeJobOnce returns a clear error for module-style repo-backed job entrypoints', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-module',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed module job',
+		code: null,
+		sourceId: 'source-job-repo-module',
+		publishedCommit: 'commit-abc',
+		storageId: 'job:job-repo-module',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-module',
+			source_id: 'source-job-repo-module',
+			source_root: '/',
+			base_commit: 'commit-abc',
+			session_repo_id: 'session-repo-id',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-abc',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: true,
+			results: [],
+			manifest: {
+				version: 1,
+				kind: 'job',
+				title: 'Repo-backed module job',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo-backed module job',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'export default async () => ({ ok: true })',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'job-runtime-job-repo-module',
+			deleted: true,
+		})),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi.spyOn(
+		await import('#mcp/run-codemode-registry.ts'),
+		'runCodemodeWithRegistry',
+	)
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: false,
+			error:
+				'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
+			logs: [],
+		})
+		expect(executeSpy).not.toHaveBeenCalled()
+		expect(sessionClient.discardSession).not.toHaveBeenCalled()
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
 test('executeJobOnce returns an error when codemode secret policy would reject execution', async () => {
 	const env = {
 		APP_DB: createDatabase(),
@@ -653,6 +886,7 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 		userId: callerContext.user.userId,
 		name: 'Forbidden secret access',
 		code: 'async () => null',
+		storageId: 'job:job-1',
 		schedule: {
 			type: 'once',
 			runAt: '2026-04-17T15:00:00Z',
@@ -695,6 +929,61 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 				'Secret "apiToken" is not allowed for capability "secret_set". If this capability should be able to use the secret, ask the user whether to add "secret_set" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://example.com/account/secrets/user/apiToken?capability=secret_set',
 			logs: [],
 		})
+	} finally {
+		executeSpy.mockRestore()
+	}
+})
+
+test('runJobNow deletes vectors for once jobs', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		LOADER: {} as WorkerLoader,
+	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
+	const callerContext = createBaseCallerContext()
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Run once and delete vector',
+			code: 'async () => ({ ok: true })',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+	const deleteByIds = vi.fn(async () => {})
+	env.CAPABILITY_VECTOR_INDEX = {
+		deleteByIds,
+	}
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true },
+			logs: [],
+		})
+
+	try {
+		const result = await runJobNow({
+			env: env as Env,
+			userId: callerContext.user.userId,
+			jobId: jobView.id,
+			callerContext,
+		})
+		expect(result.execution).toEqual({
+			ok: true,
+			result: { ok: true },
+			logs: [],
+		})
+		expect(deleteByIds).toHaveBeenCalledWith([`job_${jobView.id}`])
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
+		expect(row).toBeNull()
 	} finally {
 		executeSpy.mockRestore()
 	}

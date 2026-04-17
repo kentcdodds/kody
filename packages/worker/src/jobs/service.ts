@@ -1,5 +1,8 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { parseMcpCallerContext } from '#mcp/context.ts'
+import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
+import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
+import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import {
@@ -27,6 +30,17 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
+import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import { parseRepoManifest } from '#worker/repo/manifest.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
+import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
+
+function hasRepoBackedJobSource(input: {
+	sourceId?: string | null
+}) {
+	return typeof input.sourceId === 'string' && input.sourceId.length > 0
+}
 
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
@@ -58,6 +72,14 @@ function normalizeJobCode(code: string) {
 	return trimmed
 }
 
+function hasModuleStyleCodemodeEntrypoint(code: string) {
+	return (
+		/^\s*export\s+/m.test(code) ||
+		/\bmodule\.exports\b/.test(code) ||
+		/\bexports\.[A-Za-z_$][\w$]*/.test(code)
+	)
+}
+
 function normalizeOptionalParams(
 	params: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | undefined {
@@ -65,8 +87,17 @@ function normalizeOptionalParams(
 }
 
 function resolveCreateShape(input: JobCreateInput) {
+	if (hasRepoBackedJobSource(input)) {
+		return {
+			code: input.code == null ? null : normalizeJobCode(input.code),
+			sourceId: input.sourceId ?? null,
+			publishedCommit: input.publishedCommit ?? null,
+		}
+	}
 	return {
-		code: normalizeJobCode(input.code),
+		code: normalizeJobCode(input.code ?? ''),
+		sourceId: null,
+		publishedCommit: null,
 	}
 }
 
@@ -80,11 +111,21 @@ function resolveUpdatedShape(input: {
 			: input.body.code === null
 				? undefined
 				: normalizeJobCode(input.body.code)
-	if (!nextCode) {
-		throw new Error('Jobs require code.')
+	const nextSourceId =
+		input.body.sourceId === undefined
+			? input.existing.sourceId
+			: input.body.sourceId
+	const nextPublishedCommit =
+		input.body.publishedCommit === undefined
+			? input.existing.publishedCommit
+			: input.body.publishedCommit
+	if (!nextCode && !nextSourceId) {
+		throw new Error('Jobs require either code or sourceId.')
 	}
 	return {
 		code: nextCode,
+		sourceId: nextSourceId ?? null,
+		publishedCommit: nextPublishedCommit ?? null,
 	}
 }
 
@@ -99,12 +140,25 @@ export async function createJob(input: {
 	const now = new Date().toISOString()
 	const shape = resolveCreateShape(input.body)
 	const jobId = crypto.randomUUID()
+	const ensuredSource = shape.sourceId
+		? await ensureEntitySource({
+				db: input.env.APP_DB,
+				env: input.env,
+				id: shape.sourceId,
+				userId: callerContext.user.userId,
+				entityKind: 'job',
+				entityId: jobId,
+				sourceRoot: '/',
+			})
+		: null
 	const job: JobRecord = {
 		version: 1,
 		id: jobId,
 		userId: callerContext.user.userId,
 		name: normalizeJobName(input.body.name),
 		code: shape.code,
+		sourceId: ensuredSource?.id ?? shape.sourceId ?? null,
+		publishedCommit: shape.publishedCommit ?? null,
 		storageId: createJobStorageId(jobId),
 		params: normalizeOptionalParams(input.body.params),
 		schedule,
@@ -122,12 +176,34 @@ export async function createJob(input: {
 		errorCount: 0,
 		runHistory: [],
 	}
+	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+		env: input.env,
+		userId: callerContext.user.userId,
+		baseUrl: callerContext.baseUrl,
+		sourceId: job.sourceId,
+		files: buildJobSourceFiles({
+			job: toJobView(job),
+		}),
+	})
+	if (syncedPublishedCommit) {
+		job.publishedCommit = syncedPublishedCommit
+	}
 	const callerContextJson = serializeCallerContext(callerContext)
 	await insertJobRow({
 		db: input.env.APP_DB,
 		userId: callerContext.user.userId,
 		job,
 		callerContextJson,
+	})
+	await upsertJobVector(input.env, {
+		jobId: job.id,
+		userId: callerContext.user.userId,
+		embedText: buildJobEmbedText({
+			name: job.name,
+			scheduleSummary: toJobView(job).scheduleSummary,
+			sourceId: job.sourceId,
+			publishedCommit: job.publishedCommit,
+		}),
 	})
 	return toJobView(job)
 }
@@ -181,13 +257,36 @@ export async function updateJob(input: {
 		existing,
 		body: input.body,
 	})
+	if (
+		input.body.sourceId !== undefined &&
+		existing.sourceId != null &&
+		input.body.sourceId !== existing.sourceId
+	) {
+		throw new Error(
+			`Job "${existing.id}" cannot change sourceId after it is assigned.`,
+		)
+	}
+	const ensuredSource =
+		shape.sourceId && shape.sourceId !== existing.sourceId
+			? await ensureEntitySource({
+					db: input.env.APP_DB,
+					env: input.env,
+					id: shape.sourceId,
+					userId: callerContext.user.userId,
+					entityKind: 'job',
+					entityId: existing.id,
+					sourceRoot: '/',
+				})
+			: null
 	const updated: JobRecord = {
 		...existing,
 		name:
 			input.body.name === undefined
 				? existing.name
 				: normalizeJobName(input.body.name),
-		code: shape.code,
+		code: shape.code ?? null,
+		sourceId: ensuredSource?.id ?? shape.sourceId ?? null,
+		publishedCommit: shape.publishedCommit ?? null,
 		params:
 			input.body.params === undefined
 				? existing.params
@@ -205,12 +304,34 @@ export async function updateJob(input: {
 				})
 			: existing.nextRunAt,
 	}
+	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+		env: input.env,
+		userId: callerContext.user.userId,
+		baseUrl: callerContext.baseUrl,
+		sourceId: updated.sourceId,
+		files: buildJobSourceFiles({
+			job: toJobView(updated),
+		}),
+	})
+	if (syncedPublishedCommit) {
+		updated.publishedCommit = syncedPublishedCommit
+	}
 	const nextCallerContextJson = serializeCallerContext(callerContext)
 	await updateJobRow({
 		db: input.env.APP_DB,
 		userId: callerContext.user.userId,
 		job: updated,
 		callerContextJson: nextCallerContextJson,
+	})
+	await upsertJobVector(input.env, {
+		jobId: updated.id,
+		userId: callerContext.user.userId,
+		embedText: buildJobEmbedText({
+			name: updated.name,
+			scheduleSummary: toJobView(updated).scheduleSummary,
+			sourceId: updated.sourceId,
+			publishedCommit: updated.publishedCommit,
+		}),
 	})
 	return toJobView(updated)
 }
@@ -225,6 +346,7 @@ export async function deleteJob(input: {
 		throw new Error(`Job "${input.jobId}" was not found.`)
 	}
 	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+	await deleteJobVector(input.env, input.jobId)
 	return {
 		id: input.jobId,
 		deleted: true as const,
@@ -247,29 +369,39 @@ export async function executeJobOnce(input: {
 				logs: [],
 			}
 		} else {
+			const runtimeCallerContext = {
+				...input.callerContext,
+				storageContext: {
+					sessionId: input.callerContext.storageContext?.sessionId ?? null,
+					appId: input.callerContext.storageContext?.appId ?? null,
+					storageId: input.job.storageId,
+				},
+				repoContext: input.job.sourceId
+					? (input.callerContext.repoContext ?? null)
+					: null,
+			}
 			const { runCodemodeWithRegistry } =
 				await import('#mcp/run-codemode-registry.ts')
-			const result = await runCodemodeWithRegistry(
-				input.env,
-				{
-					...input.callerContext,
-					storageContext: {
-						sessionId: input.callerContext.storageContext?.sessionId ?? null,
-						appId: input.callerContext.storageContext?.appId ?? null,
-						storageId: input.job.storageId,
-					},
-				},
-				input.job.code,
-				input.job.params,
-				{
-					executorExports: workerExports,
-					storageTools: {
-						userId: input.callerContext.user.userId,
-						storageId: input.job.storageId,
-						writable: true,
-					},
-				},
-			)
+			const result = input.job.sourceId
+				? await runRepoBackedJob({
+						env: input.env,
+						job: input.job,
+						callerContext: runtimeCallerContext,
+					})
+				: await runCodemodeWithRegistry(
+						input.env,
+						runtimeCallerContext,
+						input.job.code ?? '',
+						input.job.params,
+						{
+							executorExports: workerExports,
+							storageTools: {
+								userId: input.callerContext.user.userId,
+								storageId: input.job.storageId,
+								writable: true,
+							},
+						},
+					)
 			execution = result.error
 				? {
 						ok: false,
@@ -296,6 +428,142 @@ export async function executeJobOnce(input: {
 		finishedAt: finished.toISOString(),
 		durationMs: Math.max(0, finished.valueOf() - started.valueOf()),
 	}
+}
+
+async function runRepoBackedJob(input: {
+	env: Env
+	job: JobRecord
+	callerContext: PersistedJobCallerContext
+}): Promise<ExecuteResult> {
+	if (!input.job.sourceId) {
+		return {
+			error: 'Repo-backed job source is missing.',
+			result: null,
+			logs: [],
+		}
+	}
+	const sessionId = `job-runtime-${input.job.id}`
+	const sessionClient = repoSessionRpc(input.env, sessionId)
+	const openSessionInput = {
+		sessionId,
+		sourceId: input.job.sourceId,
+		userId: input.callerContext.user.userId,
+		baseUrl: input.callerContext.baseUrl,
+		sourceRoot: '/',
+	}
+	let session = await sessionClient.openSession(openSessionInput)
+	if (
+		session.published_commit &&
+		session.base_commit !== session.published_commit
+	) {
+		await sessionClient
+			.discardSession({
+				sessionId: session.id,
+				userId: input.callerContext.user.userId,
+			})
+			.catch(() => {
+				// Best effort only; ensure new sessions pick up the latest commit.
+			})
+		session = await sessionClient.openSession(openSessionInput)
+	}
+	const result = await sessionClient.runChecks({
+		sessionId: session.id,
+		userId: input.callerContext.user.userId,
+	})
+	if (!result.ok) {
+		return {
+			error: result.results
+				.filter((entry) => !entry.ok)
+				.map((entry) => entry.message)
+				.join('\n'),
+			result: null,
+			logs: [],
+		}
+	}
+	const manifestPath =
+		session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+	const entrypoint = await sessionClient.readFile({
+		sessionId: session.id,
+		userId: input.callerContext.user.userId,
+		path: manifestPath,
+	})
+	if (!entrypoint.content) {
+		return {
+			error: `Job manifest "${manifestPath}" was not found in repo session.`,
+			result: null,
+			logs: [],
+		}
+	}
+	let manifest: ReturnType<typeof parseRepoManifest>
+	try {
+		manifest = parseRepoManifest({
+			content: entrypoint.content,
+			manifestPath,
+		})
+	} catch (error) {
+		return {
+			error: error instanceof Error ? error.message : String(error),
+			result: null,
+			logs: [],
+		}
+	}
+	if (manifest.kind !== 'job') {
+		return {
+			error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+			result: null,
+			logs: [],
+		}
+	}
+	const moduleFile = await sessionClient.readFile({
+		sessionId: session.id,
+		userId: input.callerContext.user.userId,
+		path: manifest.entrypoint.replace(/^\/+/, ''),
+	})
+	if (!moduleFile.content) {
+		return {
+			error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+			result: null,
+			logs: [],
+		}
+	}
+	if (hasModuleStyleCodemodeEntrypoint(moduleFile.content)) {
+		return {
+			error:
+				'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
+			result: null,
+			logs: [],
+		}
+	}
+	const { runCodemodeWithRegistry } =
+		await import('#mcp/run-codemode-registry.ts')
+	return await runCodemodeWithRegistry(
+		input.env,
+		{
+			...input.callerContext,
+			repoContext: {
+				sourceId: session.source_id,
+				repoId: null,
+				sessionId: session.id,
+				sessionRepoId: session.session_repo_id,
+				baseCommit: session.base_commit,
+				manifestPath: session.manifest_path,
+				sourceRoot: session.source_root,
+				publishedCommit: session.published_commit,
+				entityKind: session.entity_type,
+				entityId: input.job.id,
+			},
+		},
+		moduleFile.content,
+		input.job.params,
+		{
+			executorExports: workerExports,
+			storageTools: {
+				userId: input.callerContext.user.userId,
+				storageId: input.job.storageId,
+				writable: true,
+			},
+		},
+	)
 }
 
 export async function runJobNow(input: {
@@ -328,6 +596,7 @@ export async function runJobNow(input: {
 				})
 	if (row.record.schedule.type === 'once') {
 		await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+		await deleteJobVector(input.env, input.jobId)
 	} else {
 		await updateJobRow({
 			db: input.env.APP_DB,
@@ -381,6 +650,7 @@ export async function runDueJobsForUser(input: {
 	}
 	for (const jobId of result.deleteJobIds) {
 		await deleteJobRow(input.env.APP_DB, input.userId, jobId)
+		await deleteJobVector(input.env, jobId)
 	}
 	return dueRows.length
 }

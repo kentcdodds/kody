@@ -17,6 +17,7 @@ export type SearchEntityType =
 	| 'capability'
 	| 'skill'
 	| 'app'
+	| 'job'
 	| 'secret'
 	| 'value'
 	| 'connector'
@@ -80,6 +81,15 @@ export type SlimSearchMatch =
 			description: string
 			usage: string
 			hostedUrl: string
+	  }
+	| {
+			type: 'job'
+			id: string
+			title: string
+			description: string
+			usage: string
+			scheduleSummary: string
+			sourceId: string | null
 	  }
 	| {
 			type: 'secret'
@@ -156,6 +166,18 @@ export type SearchEntityDetailStructured =
 	  }
 	| {
 			kind: 'entity'
+			type: 'job'
+			id: string
+			title: string
+			description: string
+			usage: string
+			scheduleSummary: string
+			sourceId: string | null
+			publishedCommit: string | null
+			storageId: string
+	  }
+	| {
+			kind: 'entity'
 			type: 'secret'
 			id: string
 			title: string
@@ -218,6 +240,13 @@ export type SearchEntityDetail =
 			hostedUrl: string
 	  }
 	| {
+			type: 'job'
+			id: string
+			title: string
+			description: string
+			row: import('#worker/jobs/types.ts').JobView
+	  }
+	| {
 			type: 'secret'
 			id: string
 			title: string
@@ -248,7 +277,7 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new Error(
-			'Entity must use the format "{id}:{type}" where type is capability, skill, app, secret, value, or connector.',
+			'Entity must use the format "{id}:{type}" where type is capability, skill, app, job, secret, value, or connector.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
@@ -257,12 +286,13 @@ export function parseEntityRef(entity: string): {
 		type !== 'capability' &&
 		type !== 'skill' &&
 		type !== 'app' &&
+		type !== 'job' &&
 		type !== 'secret' &&
 		type !== 'value' &&
 		type !== 'connector'
 	) {
 		throw new Error(
-			'Entity type must be one of: capability, skill, app, secret, value, or connector.',
+			'Entity type must be one of: capability, skill, app, job, secret, value, or connector.',
 		)
 	}
 	if (!id) {
@@ -370,6 +400,16 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 			`**Hosted URL:** \`${hostedUrl}\``,
 		]
 	}
+	if (match.type === 'job') {
+		return [
+			`## Job — ${match.title}`,
+			'',
+			match.description,
+			'',
+			`**Schedule:** ${match.scheduleSummary}`,
+			...(match.sourceId ? [`**Source ID:** \`${match.sourceId}\``] : []),
+		]
+	}
 	if (match.type === 'value') {
 		return [
 			`## Value — \`${match.name}\` (\`${match.scope}\` scope)`,
@@ -429,6 +469,17 @@ export function toSlimStructuredMatches(input: {
 				description: match.description,
 				usage: `open_generated_ui({ app_id: "${match.appId}" })`,
 				hostedUrl: buildSavedUiUrl(input.baseUrl, match.appId),
+			}
+		}
+		if (match.type === 'job') {
+			return {
+				type: 'job',
+				id: match.jobId,
+				title: match.title,
+				description: match.description,
+				usage: `codemode.job_get({ id: "${match.jobId}" })`,
+				scheduleSummary: match.scheduleSummary,
+				sourceId: match.sourceId,
 			}
 		}
 		if (match.type === 'value') {
@@ -640,6 +691,45 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				hasServerCode,
 				parameters,
 				hidden: detail.row.hidden,
+			} satisfies SearchEntityDetailStructured,
+		}
+	}
+
+	if (detail.type === 'job') {
+		const lines = [
+			`# Job — ${detail.row.name}`,
+			'',
+			detail.description,
+			'',
+			'## Summary',
+			'',
+			`- Id: \`${detail.row.id}\``,
+			`- Schedule: ${detail.row.scheduleSummary}`,
+			`- Enabled: ${detail.row.enabled ? 'yes' : 'no'}`,
+			`- Kill switch: ${detail.row.killSwitchEnabled ? 'on' : 'off'}`,
+			`- Source id: ${detail.row.sourceId ?? 'none'}`,
+			`- Published commit: ${detail.row.publishedCommit ?? 'none'}`,
+			`- Storage id: \`${detail.row.storageId}\``,
+			'',
+			'## Operate on this job',
+			'',
+			`- \`codemode.job_get({ id: "${detail.row.id}" })\``,
+			`- \`codemode.job_run_now({ id: "${detail.row.id}" })\``,
+			`- \`codemode.job_upsert({ id: "${detail.row.id}", ... })\``,
+		]
+		return {
+			markdown: lines.join('\n'),
+			structured: {
+				kind: 'entity',
+				type: 'job',
+				id: detail.id,
+				title: detail.title,
+				description: detail.description,
+				usage: `codemode.job_get({ id: "${detail.row.id}" })`,
+				scheduleSummary: detail.row.scheduleSummary,
+				sourceId: detail.row.sourceId,
+				publishedCommit: detail.row.publishedCommit,
+				storageId: detail.row.storageId,
 			} satisfies SearchEntityDetailStructured,
 		}
 	}

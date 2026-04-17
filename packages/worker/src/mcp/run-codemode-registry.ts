@@ -195,6 +195,7 @@ export async function runCodemodeWithRegistry(
 		additionalTools?: AdditionalCodemodeTools
 		helperPrelude?: string
 		storageTools?: StorageToolOptions
+		executorModules?: Record<string, string>
 	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
@@ -211,6 +212,7 @@ export async function runCodemodeWithRegistry(
 			userId: callerContext.user?.userId ?? null,
 			storageContext: normalizedStorageContext,
 		},
+		modules: options?.executorModules,
 	})
 	const provider = await buildCodemodeProvider(env, callerContext, {
 		trackSecretInputValue: (value) => {
