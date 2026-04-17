@@ -17,8 +17,8 @@ Worker package so it can also be deployed alongside the main app.
    and set `ACME_API_BASE_URL` to the mock Worker origin.
 
 See `packages/mock-servers/cloudflare/` for a small Cloudflare API v4 subset
-mock used by tests and `page_to_markdown` / internal API client (started by
-`npm run dev` unless `SKIP_CLOUDFLARE_MOCK=1`).
+mock used by tests and the internal API client (started by `npm run dev`
+unless `SKIP_CLOUDFLARE_MOCK=1`).
 
 ### Tips
 

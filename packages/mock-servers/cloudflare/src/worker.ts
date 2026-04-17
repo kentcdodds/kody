@@ -30,14 +30,6 @@ type DnsRecord = {
 	ttl: number
 }
 
-type BrowserRenderingMarkdownBody = {
-	url?: unknown
-	html?: unknown
-	userAgent?: unknown
-	rejectRequestPattern?: unknown
-	gotoOptions?: unknown
-}
-
 type DashboardEndpoint = {
 	method: string
 	path: string
@@ -96,12 +88,6 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 		method: 'POST',
 		path: `/client/v4/zones/${fixtureZone.id}/dns_records`,
 		description: 'Create DNS record',
-		requiresAuth: true,
-	},
-	{
-		method: 'POST',
-		path: `/client/v4/accounts/${fixtureAccount.id}/browser-rendering/markdown`,
-		description: 'Convert a page or HTML snippet to markdown',
 		requiresAuth: true,
 	},
 	{
@@ -532,24 +518,6 @@ async function handleEmailSend(
 }
 
 async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
-	if (request.method === 'GET' && url.pathname === '/__mocks/markdown') {
-		return new Response('# Mock markdown\n\nServed as markdown.\n', {
-			headers: {
-				'content-type': 'text/markdown; charset=utf-8',
-				'x-markdown-tokens': '8',
-			},
-		})
-	}
-	if (request.method === 'GET' && url.pathname === '/__mocks/markdown-error') {
-		return new Response('# Mock markdown error\n\nServer error page.\n', {
-			status: 500,
-			headers: {
-				'content-type': 'text/markdown; charset=utf-8',
-				'x-markdown-tokens': '9',
-			},
-		})
-	}
-
 	if (!isAuthorized(request, env, url)) {
 		return errorEnvelope(401, 10000, 'Authentication error')
 	}
@@ -594,43 +562,6 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 			},
 			{ status: 200 },
 		)
-	}
-
-	const markdownMatch = url.pathname.match(
-		/^\/client\/v4\/accounts\/([^/]+)\/browser-rendering\/markdown\/?$/,
-	)
-	if (markdownMatch && request.method === 'POST') {
-		const accountId = markdownMatch[1]!
-		const payload = (await readJsonBody(
-			request,
-		)) as BrowserRenderingMarkdownBody | null
-		if (payload === null) {
-			return errorEnvelope(400, 1001, 'invalid JSON body')
-		}
-		if (accountId !== fixtureAccount.id) {
-			return errorEnvelope(404, 1002, 'account not found')
-		}
-		const hasUrl =
-			typeof payload.url === 'string' && payload.url.trim().length > 0
-		const hasHtml =
-			typeof payload.html === 'string' && payload.html.trim().length > 0
-		if (!hasUrl && !hasHtml) {
-			return errorEnvelope(400, 1003, 'Either url or html is required.')
-		}
-		const mode = hasHtml ? 'html' : 'url'
-		const sourceValue = hasHtml
-			? String(payload.html).trim()
-			: String(payload.url).trim()
-		const markdown = [
-			'# Mock Browser Rendering',
-			'',
-			`mode: ${mode}`,
-			`source: ${sourceValue}`,
-			...(typeof payload.userAgent === 'string' && payload.userAgent.length > 0
-				? [`userAgent: ${payload.userAgent}`]
-				: []),
-		].join('\n')
-		return envelope(markdown, { status: 200 })
 	}
 
 	const emailMatch = url.pathname.match(

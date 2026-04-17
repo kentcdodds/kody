@@ -25,8 +25,6 @@ Capability **allowlists** on secrets apply to **capability inputs** that use
 
 All API paths must be under **`/client/v4/`** (see
 [Cloudflare API docs](https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/)).
-The internal `CloudflareRestClient` used for Browser Rendering enforces the same
-shape.
 
 ## Example skill (save via `meta_save_skill`)
 
@@ -61,7 +59,5 @@ For **POST / PUT / PATCH / DELETE**, set `Content-Type: application/json` and
 
 ## Related
 
-- Browser Rendering billing path still uses the Worker’s internal client for
-  `page_to_markdown` — that is unchanged.
 - Developer docs (read-only) pattern:
   [cloudflare-developer-docs.md](./cloudflare-developer-docs.md).

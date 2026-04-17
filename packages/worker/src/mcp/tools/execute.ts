@@ -62,10 +62,9 @@ Prefer one \`execute\` when the workflow is clear; split calls when you need new
 Example:
 
 \`async () => {
-  const page = await codemode.page_to_markdown({
-    url: 'https://developers.cloudflare.com/api/resources/accounts/',
+  return await codemode.kody_official_guide({
+    guide: 'integration_bootstrap',
   });
-  return { source: page.source, preview: page.markdown.slice(0, 120) };
 }\`
 
 To return non-text MCP content blocks (e.g. images), see: https://github.com/kentcdodds/kody/blob/main/docs/use/raw-content-blocks.md
