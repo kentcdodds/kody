@@ -816,6 +816,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		runHistory: [],
 	}
 
+	const discardFailure = new Error('D1 delete failed')
 	const sessionClient = {
 		openSession: vi.fn(async () => ({
 			id: 'job-runtime-job-repo-discard-failure',
