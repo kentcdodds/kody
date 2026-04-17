@@ -573,8 +573,11 @@ class RepoSessionBase extends DurableObject<Env> {
 			pattern: input.pattern,
 			mode: input.mode,
 		})
-		const root =
-			input.path?.trim() || sessionRow.source_root || repoSessionWorkspacePrefix
+		const root = this.resolveWorkspacePath(
+			input.path?.trim() ||
+				sessionRow.source_root ||
+				repoSessionWorkspacePrefix,
+		)
 		const globPattern =
 			input.glob?.trim() ||
 			`${root.replace(/\/+$/, '')}/**/*.{ts,tsx,js,jsx,json,md,css}`
@@ -824,7 +827,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		userId: string
 	}): Promise<RepoSessionRebaseResult> {
-		const { sessionRow, source } = await this.getSessionState(
+		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
 			input.userId,
 		)
@@ -856,9 +859,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: defaultBranch,
-			token: sourceAccess.token,
+			token: sessionAccess.token,
 			username: 'x',
-			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+			password:
+				sessionAccess.token.split('?expires=')[0] ?? sessionAccess.token,
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
@@ -881,7 +885,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 		force?: boolean
 	}): Promise<RepoSessionPublishResult> {
-		const { sessionRow, source } = await this.getSessionState(
+		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
 			input.userId,
 		)
@@ -924,9 +928,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: await this.getCurrentBranch(
 				sourceInfo?.defaultBranch ?? defaultSessionBranch,
 			),
-			token: sourceAccess.token,
+			token: sessionAccess.token,
 			username: 'x',
-			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+			password:
+				sessionAccess.token.split('?expires=')[0] ?? sessionAccess.token,
 		})
 		await this.ensureRemote({
 			name: 'source',
