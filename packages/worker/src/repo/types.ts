@@ -194,3 +194,142 @@ export type RepoSessionDiscardResult = {
 	sessionId: string
 	deleted: boolean
 }
+
+export type RepoSessionInfoResult = {
+	id: string
+	source_id: string
+	source_root: string
+	base_commit: string
+	session_repo_id: string
+	session_repo_name: string
+	session_repo_namespace: string
+	conversation_id: string | null
+	last_checkpoint_commit: string | null
+	last_check_run_id: string | null
+	last_check_tree_hash: string | null
+	expires_at: string | null
+	created_at: string
+	updated_at: string
+	published_commit: string | null
+	manifest_path: string
+	entity_type: EntityKind
+}
+
+export type RepoSessionTreeResult = {
+	path: string
+	name: string
+	type: 'file' | 'directory' | 'symlink'
+	size: number
+	children?: Array<RepoSessionTreeResult>
+}
+
+export type RepoSessionReplaceOptions = {
+	caseSensitive?: boolean
+	regex?: boolean
+	wholeWord?: boolean
+	contextBefore?: number
+	contextAfter?: number
+	maxMatches?: number
+}
+
+export type RepoSessionWriteJsonOptions = {
+	spaces?: number
+}
+
+export type RepoSessionWriteEdit = {
+	kind: 'write'
+	path: string
+	content: string
+}
+
+export type RepoSessionReplaceEdit = {
+	kind: 'replace'
+	path: string
+	search: string
+	replacement?: string
+	options?: RepoSessionReplaceOptions
+}
+
+export type RepoSessionWriteJsonEdit = {
+	kind: 'writeJson'
+	path: string
+	value: unknown
+	options?: RepoSessionWriteJsonOptions
+}
+
+export type RepoSessionEdit =
+	| RepoSessionWriteEdit
+	| RepoSessionReplaceEdit
+	| RepoSessionWriteJsonEdit
+
+export type RepoSessionApplyEditsResult = {
+	dryRun: boolean
+	totalChanged: number
+	edits: Array<{
+		path: string
+		changed: boolean
+		content: string
+		diff: string
+	}>
+}
+
+export type RepoApplyPatchResult = RepoSessionApplyEditsResult
+
+export type RepoSessionCheckStatus = {
+	runId: string | null
+	treeHash: string | null
+	checkedAt: string | null
+	ok: boolean | null
+	results: Array<{
+		kind:
+			| 'manifest'
+			| 'dependencies'
+			| 'bundle'
+			| 'typecheck'
+			| 'lint'
+			| 'smoke'
+		ok: boolean
+		message: string
+	}> | null
+}
+
+export type RepoSessionCheckRun = {
+	ok: boolean
+	results: Array<{
+		kind:
+			| 'manifest'
+			| 'dependencies'
+			| 'bundle'
+			| 'typecheck'
+			| 'lint'
+			| 'smoke'
+		ok: boolean
+		message: string
+	}>
+	manifest: RepoManifest
+	runId: string
+	treeHash: string
+	checkedAt: string
+}
+
+export type RepoSessionPublishResult =
+	| {
+			status: 'ok'
+			sessionId: string
+			publishedCommit: string
+			message: string
+	  }
+	| {
+			status: 'checks_outdated' | 'base_moved'
+			sessionId: string
+			message: string
+			publishedCommit: null
+	  }
+
+export type RepoSessionRebaseResult = {
+	ok: true
+	sessionId: string
+	baseCommit: string
+	headCommit: string | null
+	merged: boolean
+}

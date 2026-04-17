@@ -19,117 +19,27 @@ import {
 } from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
-import { type EntitySourceRow, type RepoSessionRow } from './types.ts'
-import { runRepoChecks, type RepoCheckRunResult } from './checks.ts'
+import { parseRepoManifest } from './manifest.ts'
+import { searchRepoWorkspace } from './repo-session-search.ts'
+import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
+import { runRepoChecks } from './checks.ts'
+import {
+	type EntitySourceRow,
+	type RepoApplyPatchResult,
+	type RepoSearchMode,
+	type RepoSearchOutputMode,
+	type RepoSessionApplyEditsResult,
+	type RepoSessionCheckRun,
+	type RepoSessionCheckStatus,
+	type RepoSessionDiscardResult,
+	type RepoSessionPublishResult,
+	type RepoSessionRebaseResult,
+	type RepoSessionRow,
+	type RepoSessionSearchResult,
+	type RepoSessionTreeResult,
+} from './types.ts'
 
 const repoSessionWorkspacePrefix = '/session'
-const defaultRepoSearchLimit = 50
-const maxRepoSearchBytes = 200_000
-const maxRepoSearchRegexLength = 512
-const obviousNestedQuantifierPattern =
-	/\((?:[^()\\]|\\.)*[+*{][^)]*\)(?:[+*]|\{\d+(?:,\d*)?\})/
-
-export type RepoSearchMode = 'literal' | 'regex'
-export type RepoSearchOutputMode = 'content' | 'files'
-
-export type RepoSearchMatch = {
-	line: number
-	column: number
-	match: string
-	lineText: string
-	beforeLines: Array<string>
-	afterLines: Array<string>
-}
-
-export type RepoSearchFileMatch = {
-	path: string
-	matches: Array<RepoSearchMatch>
-}
-
-export type RepoSessionSearchResult = {
-	files: Array<RepoSearchFileMatch>
-	totalFiles: number
-	totalMatches: number
-	outputMode: RepoSearchOutputMode
-	truncated: boolean
-}
-
-export type RepoApplyPatchResult = {
-	dryRun: boolean
-	totalChanged: number
-	edits: Array<{
-		path: string
-		changed: boolean
-		content: string
-		diff: string
-	}>
-}
-
-export type RepoSessionTreeResult = {
-	path: string
-	name: string
-	type: 'file' | 'directory' | 'symlink'
-	size: number
-	children?: Array<RepoSessionTreeResult>
-}
-
-export type RepoSessionApplyEditsResult = {
-	dryRun: boolean
-	totalChanged: number
-	edits: Array<{
-		path: string
-		changed: boolean
-		content: string
-		diff: string
-	}>
-}
-
-export type RepoSessionCheckRun = RepoCheckRunResult & {
-	runId: string
-	treeHash: string
-	checkedAt: string
-}
-
-export type RepoSessionDiscardResult = {
-	ok: true
-	sessionId: string
-	deleted: boolean
-}
-
-export type RepoSessionCheckStatus = {
-	runId: string | null
-	treeHash: string | null
-	checkedAt: string | null
-	ok: boolean | null
-	results: Array<{
-		kind: string
-		ok: boolean
-		message: string
-	}> | null
-}
-
-export type RepoSessionPublishResult =
-	| {
-			status: 'ok'
-			sessionId: string
-			publishedCommit: string
-			message: string
-	  }
-	| {
-			status: 'checks_outdated' | 'base_moved'
-			sessionId: string
-			message: string
-			publishedCommit: null
-	  }
-
-export type RepoSessionRebaseResult = {
-	ok: true
-	sessionId: string
-	baseCommit: string
-	headCommit: string | null
-	merged: boolean
-}
-
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
 const defaultSessionBranch = 'main'
 const sessionCommitAuthor = {
@@ -143,42 +53,6 @@ function buildRepoSessionWorkspaceName(sessionId: string) {
 
 function nowIso() {
 	return new Date().toISOString()
-}
-
-function normalizeSearchLimit(limit: number | undefined) {
-	if (!Number.isFinite(limit)) return defaultRepoSearchLimit
-	return Math.min(Math.max(Math.trunc(limit as number), 1), 200)
-}
-
-function escapeRegex(source: string) {
-	return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function assertSafeRepoSearchRegex(pattern: string) {
-	if (pattern.length > maxRepoSearchRegexLength) {
-		throw new Error(
-			`repo_search regex patterns must be ${maxRepoSearchRegexLength} characters or fewer.`,
-		)
-	}
-	if (obviousNestedQuantifierPattern.test(pattern)) {
-		throw new Error(
-			'repo_search rejected an unsafe regex pattern with nested quantifiers.',
-		)
-	}
-}
-
-function normalizeSearchQuery(input: {
-	pattern: string
-	mode?: RepoSearchMode
-}) {
-	const pattern = input.pattern.trim()
-	if (!pattern) {
-		throw new Error('repo_search requires a non-empty pattern.')
-	}
-	return {
-		query: pattern,
-		regex: input.mode === 'regex',
-	}
 }
 
 async function ensureArtifactRepoRemote(input: {
@@ -569,66 +443,24 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		const search = normalizeSearchQuery({
-			pattern: input.pattern,
-			mode: input.mode,
-		})
 		const root = this.resolveWorkspacePath(
 			input.path?.trim() ||
 				sessionRow.source_root ||
 				repoSessionWorkspacePrefix,
 		)
-		const globPattern =
-			input.glob?.trim() ||
-			`${root.replace(/\/+$/, '')}/**/*.{ts,tsx,js,jsx,json,md,css}`
-		const files = await this.workspace.glob(globPattern)
-		const matchMap = new Map<string, RepoSearchFileMatch>()
-		const outputMode = input.outputMode ?? 'content'
-		const maxMatches = normalizeSearchLimit(input.limit)
-		let totalMatches = 0
-		let truncated = false
-		for (const file of files) {
-			if (file.type !== 'file') continue
-			const content = await this.workspace.readFile(file.path)
-			if (content == null) continue
-			const result = searchInText({
-				content,
-				query: search.query,
-				regex: search.regex,
-				caseSensitive: input.caseSensitive ?? false,
-				contextBefore: input.before ?? 0,
-				contextAfter: input.after ?? 0,
-				maxMatches,
-			})
-			const matches = result.matches
-			if (matches.length === 0) continue
-			truncated ||= result.truncated
-			matchMap.set(file.path, {
-				path: this.toExternalPath(file.path),
-				matches:
-					outputMode === 'files'
-						? []
-						: matches.map<RepoSearchMatch>((match) => ({
-								line: match.line,
-								column: match.column,
-								match: match.match,
-								lineText: match.lineText,
-								beforeLines: match.beforeLines ?? [],
-								afterLines: match.afterLines ?? [],
-							})),
-			})
-			totalMatches += matches.length
-		}
-		const filesWithMatches = [...matchMap.values()].sort((left, right) =>
-			left.path.localeCompare(right.path),
-		)
-		return {
-			files: filesWithMatches,
-			totalFiles: filesWithMatches.length,
-			totalMatches,
-			outputMode,
-			truncated,
-		}
+		return searchRepoWorkspace({
+			workspace: this.workspace,
+			root,
+			pattern: input.pattern,
+			mode: input.mode,
+			glob: input.glob,
+			caseSensitive: input.caseSensitive,
+			before: input.before,
+			after: input.after,
+			limit: input.limit,
+			outputMode: input.outputMode,
+			toExternalPath: (path) => this.toExternalPath(path),
+		})
 	}
 
 	async applyPatch(input: {
@@ -955,12 +787,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (manifestContent == null) {
 			throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 		}
-		const manifest = await import('./manifest.ts').then((module) =>
-			module.parseRepoManifest({
-				content: manifestContent,
-				manifestPath: source.manifest_path,
-			}),
-		)
+		const manifest = parseRepoManifest({
+			content: manifestContent,
+			manifestPath: source.manifest_path,
+		})
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
 			userId: source.user_id,
@@ -1084,213 +914,5 @@ export const RepoSession = Sentry.instrumentDurableObjectWithSentry(
 )
 
 export function repoSessionRpc(env: Env, sessionId: string) {
-	const namespace = (
-		env as Env & { REPO_SESSION?: DurableObjectNamespace | undefined }
-	).REPO_SESSION
-	if (!namespace) {
-		throw new Error('REPO_SESSION binding is not configured.')
-	}
-	return namespace.get(namespace.idFromName(sessionId)) as unknown as {
-		openSession: (payload: {
-			sessionId: string
-			sourceId: string
-			userId: string
-			baseUrl: string
-			conversationId?: string | null
-			sourceRoot?: string | null
-			defaultBranch?: string | null
-		}) => Promise<{
-			id: string
-			source_id: string
-			source_root: string
-			base_commit: string
-			session_repo_id: string
-			session_repo_name: string
-			session_repo_namespace: string
-			conversation_id: string | null
-			last_checkpoint_commit: string | null
-			last_check_run_id: string | null
-			last_check_tree_hash: string | null
-			expires_at: string | null
-			created_at: string
-			updated_at: string
-			published_commit: string | null
-			manifest_path: string
-			entity_type: 'skill' | 'app' | 'job'
-		}>
-		getSessionInfo: (payload: {
-			sessionId: string
-			userId: string
-		}) => Promise<{
-			id: string
-			source_id: string
-			source_root: string
-			base_commit: string
-			session_repo_id: string
-			session_repo_name: string
-			session_repo_namespace: string
-			conversation_id: string | null
-			last_checkpoint_commit: string | null
-			last_check_run_id: string | null
-			last_check_tree_hash: string | null
-			expires_at: string | null
-			created_at: string
-			updated_at: string
-			published_commit: string | null
-			manifest_path: string
-			entity_type: 'skill' | 'app' | 'job'
-		}>
-		discardSession: (payload: {
-			sessionId: string
-			userId: string
-		}) => Promise<RepoSessionDiscardResult>
-		readFile: (payload: {
-			sessionId: string
-			userId: string
-			path: string
-		}) => Promise<{ path: string; content: string | null }>
-		writeFile: (payload: {
-			sessionId: string
-			userId: string
-			path: string
-			content: string
-		}) => Promise<{ ok: true; path: string }>
-		search: (payload: {
-			sessionId: string
-			userId: string
-			pattern: string
-			mode?: RepoSearchMode
-			glob?: string | null
-			path?: string | null
-			caseSensitive?: boolean
-			before?: number
-			after?: number
-			limit?: number
-			outputMode?: RepoSearchOutputMode
-		}) => Promise<RepoSessionSearchResult>
-		tree: (payload: {
-			sessionId: string
-			userId: string
-			path?: string | null
-			maxDepth?: number
-		}) => Promise<RepoSessionTreeResult>
-		applyEdits: (payload: {
-			sessionId: string
-			userId: string
-			edits: Array<{
-				kind: 'write' | 'replace' | 'writeJson'
-				path: string
-				content?: string
-				search?: string
-				replacement?: string
-				value?: unknown
-				options?: {
-					caseSensitive?: boolean
-					regex?: boolean
-					wholeWord?: boolean
-					contextBefore?: number
-					contextAfter?: number
-					maxMatches?: number
-					spaces?: number
-				}
-			}>
-			dryRun?: boolean
-			rollbackOnError?: boolean
-		}) => Promise<RepoSessionApplyEditsResult>
-		runChecks: (payload: {
-			sessionId: string
-			userId: string
-		}) => Promise<RepoSessionCheckRun>
-		getCheckStatus: (payload: {
-			sessionId: string
-			userId: string
-		}) => Promise<ReturnType<RepoSessionBase['readCheckStatus']>>
-		rebaseSession: (payload: {
-			sessionId: string
-			userId: string
-		}) => Promise<RepoSessionRebaseResult>
-		publishSession: (payload: {
-			sessionId: string
-			userId: string
-			force?: boolean
-		}) => Promise<RepoSessionPublishResult>
-	}
-}
-
-function searchInText(input: {
-	content: string
-	query: string
-	regex: boolean
-	caseSensitive: boolean
-	contextBefore: number
-	contextAfter: number
-	maxMatches: number
-}) {
-	const inputTruncated = input.content.length > maxRepoSearchBytes
-	// Bound regex work so a single pathological search cannot monopolize the DO.
-	const source = inputTruncated
-		? input.content.slice(0, maxRepoSearchBytes)
-		: input.content
-	const flags = input.caseSensitive ? 'g' : 'gi'
-	const pattern = input.regex ? input.query : escapeRegex(input.query)
-	if (input.regex) {
-		assertSafeRepoSearchRegex(pattern)
-	}
-	let matcher: RegExp
-	try {
-		matcher = new RegExp(pattern, flags)
-	} catch (error) {
-		const message =
-			error instanceof Error
-				? error.message
-				: 'Unknown regex compilation error.'
-		throw new Error(`repo_search received an invalid regex: ${message}`)
-	}
-	const lines = source.split('\n')
-	const lineOffsets: number[] = []
-	let offset = 0
-	for (const line of lines) {
-		lineOffsets.push(offset)
-		offset += line.length + 1
-	}
-	const matches: Array<{
-		line: number
-		column: number
-		match: string
-		lineText: string
-		beforeLines?: string[]
-		afterLines?: string[]
-	}> = []
-	let truncated = false
-	for (const match of source.matchAll(matcher)) {
-		if (matches.length >= input.maxMatches) {
-			truncated = true
-			break
-		}
-		const index = match.index ?? 0
-		let lineIndex = 0
-		for (let candidate = 0; candidate < lineOffsets.length; candidate += 1) {
-			const candidateOffset = lineOffsets[candidate]
-			if (candidateOffset === undefined) break
-			if (candidateOffset > index) break
-			lineIndex = candidate
-		}
-		const lineStart = lineOffsets[lineIndex] ?? 0
-		const column = index - lineStart + 1
-		const lineText = lines[lineIndex] ?? ''
-		const beforeStart = Math.max(0, lineIndex - input.contextBefore)
-		const afterEnd = Math.min(lines.length, lineIndex + input.contextAfter + 1)
-		matches.push({
-			line: lineIndex + 1,
-			column,
-			match: match[0] ?? '',
-			lineText,
-			beforeLines: lines.slice(beforeStart, lineIndex),
-			afterLines: lines.slice(lineIndex + 1, afterEnd),
-		})
-	}
-	return {
-		matches,
-		truncated: truncated || inputTruncated,
-	}
+	return createRepoSessionRpc(env, sessionId)
 }
