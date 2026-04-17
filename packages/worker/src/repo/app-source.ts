@@ -26,9 +26,9 @@ const savedAppSourceCacheLimit = 100
 
 function buildSavedAppSourceCacheKey(input: {
 	sourceId: string
-	publishedCommit: string | null
+	publishedCommit: string
 }) {
-	return `${input.sourceId}:${input.publishedCommit ?? 'unpublished'}`
+	return `${input.sourceId}:${input.publishedCommit}`
 }
 
 function rememberSavedAppSource(
@@ -96,11 +96,13 @@ export async function resolveSavedAppSource(input: {
 		input.artifact.sourceId!,
 	)
 	if (!source) return fallback
-	const cacheKey = buildSavedAppSourceCacheKey({
-		sourceId: source.id,
-		publishedCommit: source.published_commit,
-	})
-	const cached = savedAppSourceCache.get(cacheKey)
+	const cacheKey = source.published_commit
+		? buildSavedAppSourceCacheKey({
+				sourceId: source.id,
+				publishedCommit: source.published_commit,
+			})
+		: null
+	const cached = cacheKey ? savedAppSourceCache.get(cacheKey) : null
 	if (cached) return cached
 	const sessionId = `app-source-${source.id}`
 	const session = repoSessionRpc(input.env, sessionId)
@@ -147,7 +149,9 @@ export async function resolveSavedAppSource(input: {
 			sourceId: source.id,
 			publishedCommit: source.published_commit,
 		}
-		rememberSavedAppSource(cacheKey, resolved)
+		if (cacheKey) {
+			rememberSavedAppSource(cacheKey, resolved)
+		}
 		return resolved
 	} finally {
 		if (openedSessionId) {

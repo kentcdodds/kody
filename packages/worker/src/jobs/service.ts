@@ -358,6 +358,9 @@ export async function executeJobOnce(input: {
 					appId: input.callerContext.storageContext?.appId ?? null,
 					storageId: input.job.storageId,
 				},
+				repoContext: input.job.sourceId
+					? (input.callerContext.repoContext ?? null)
+					: null,
 			}
 			const { runCodemodeWithRegistry } =
 				await import('#mcp/run-codemode-registry.ts')
