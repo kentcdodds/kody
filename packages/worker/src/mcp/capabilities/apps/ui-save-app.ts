@@ -392,20 +392,40 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const previousPublishedCommit = await readPublishedCommit(
 					ensuredSource.id,
 				)
-				await syncArtifactSourceSnapshot({
-					env: ctx.env,
-					userId: user.userId,
-					baseUrl: ctx.callerContext.baseUrl,
-					sourceId: ensuredSource.id,
-					files: buildAppSourceFiles({
-						title,
-						description,
-						parameters,
-						hidden: args.hidden ?? existingApp.hidden,
-						clientCode,
-						serverCode,
-					}),
-				})
+				try {
+					await syncArtifactSourceSnapshot({
+						env: ctx.env,
+						userId: user.userId,
+						baseUrl: ctx.callerContext.baseUrl,
+						sourceId: ensuredSource.id,
+						files: buildAppSourceFiles({
+							title,
+							description,
+							parameters,
+							hidden: args.hidden ?? existingApp.hidden,
+							clientCode,
+							serverCode,
+						}),
+					})
+				} catch (cause) {
+					await Promise.allSettled([
+						updateUiArtifact(ctx.env.APP_DB, user.userId, appId, {
+							title: existingApp.title,
+							description: existingApp.description,
+							sourceId: existingApp.sourceId,
+							clientCode: existingApp.clientCode,
+							serverCode: existingApp.serverCode,
+							serverCodeId: existingApp.serverCodeId,
+							parameters: existingApp.parameters,
+							hidden: existingApp.hidden,
+						}),
+						restorePublishedCommit(
+							ensuredSource.id,
+							previousPublishedCommit,
+						),
+					])
+					throw cause
+				}
 				hidden = args.hidden ?? existingApp.hidden
 				return await saveAndIndexApp({
 					appId,
@@ -451,20 +471,31 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const previousPublishedCommit = await readPublishedCommit(
 					ensuredSource.id,
 				)
-				await syncArtifactSourceSnapshot({
-					env: ctx.env,
-					userId: user.userId,
-					baseUrl: ctx.callerContext.baseUrl,
-					sourceId: ensuredSource.id,
-					files: buildAppSourceFiles({
-						title,
-						description,
-						parameters,
-						hidden,
-						clientCode,
-						serverCode,
-					}),
-				})
+				try {
+					await syncArtifactSourceSnapshot({
+						env: ctx.env,
+						userId: user.userId,
+						baseUrl: ctx.callerContext.baseUrl,
+						sourceId: ensuredSource.id,
+						files: buildAppSourceFiles({
+							title,
+							description,
+							parameters,
+							hidden,
+							clientCode,
+							serverCode,
+						}),
+					})
+				} catch (cause) {
+					await Promise.allSettled([
+						deleteUiArtifact(ctx.env.APP_DB, user.userId, appId),
+						restorePublishedCommit(
+							ensuredSource.id,
+							previousPublishedCommit,
+						),
+					])
+					throw cause
+				}
 				return await saveAndIndexApp({
 					appId,
 					title,

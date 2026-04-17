@@ -38,7 +38,6 @@ import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 
 function hasRepoBackedJobSource(input: {
 	sourceId?: string | null
-	publishedCommit?: string | null
 }) {
 	return typeof input.sourceId === 'string' && input.sourceId.length > 0
 }
