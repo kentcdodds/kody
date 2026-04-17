@@ -6,9 +6,8 @@ export type McpSkillRow = {
 	description: string
 	collection_name: string | null
 	collection_slug: string | null
-	source_id: string | null
+	source_id: string
 	keywords: string
-	code: string
 	search_text: string | null
 	uses_capabilities: string | null
 	parameters: string | null

@@ -24,7 +24,9 @@ export async function reindexSkillVectors(env: Env): Promise<{
 		return { upserted: 0 }
 	}
 
-	const rows = await listAllMcpSkills(env.APP_DB)
+	const rows = (await listAllMcpSkills(env.APP_DB)).filter(
+		(row) => row.source_id != null,
+	)
 	if (rows.length === 0) {
 		return { upserted: 0 }
 	}

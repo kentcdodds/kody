@@ -16,6 +16,8 @@ const outputSchema = z.object({
 	server_code_id: z.string(),
 	parameters: z.array(uiArtifactParameterSchema).nullable(),
 	hidden: z.boolean(),
+	source_id: z.string(),
+	published_commit: z.string(),
 })
 
 export const uiLoadAppSourceCapability = defineDomainCapability(
@@ -59,6 +61,8 @@ export const uiLoadAppSourceCapability = defineDomainCapability(
 				server_code_id: resolved.serverCodeId,
 				parameters: resolved.parameters,
 				hidden: resolved.hidden,
+				source_id: resolved.sourceId,
+				published_commit: resolved.publishedCommit,
 			}
 		},
 	},

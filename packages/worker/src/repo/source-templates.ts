@@ -42,7 +42,8 @@ export function buildSkillSourceFiles(input: {
 }
 
 export function buildJobSourceFiles(input: {
-	job: Pick<JobView, 'name' | 'scheduleSummary' | 'code'>
+	job: Pick<JobView, 'name' | 'scheduleSummary'>
+	code: string
 }) {
 	const manifest = {
 		version: 1 as const,
@@ -56,7 +57,7 @@ export function buildJobSourceFiles(input: {
 	}
 	return {
 		'kody.json': stringifyManifest(manifest),
-		'src/job.ts': `${(input.job.code ?? 'async () => null').trim()}\n`,
+		'src/job.ts': `${input.code.trim()}\n`,
 	}
 }
 
@@ -65,7 +66,7 @@ export function buildAppSourceFiles(input: {
 	description: string
 	parameters?: Array<UiArtifactParameterInput> | null
 	hidden: boolean
-	clientCode: string | null
+	clientCode: string
 	serverCode: string | null
 }) {
 	const manifest = {
@@ -81,7 +82,7 @@ export function buildAppSourceFiles(input: {
 	}
 	return {
 		'kody.json': stringifyManifest(manifest),
-		'client.html': `${(input.clientCode ?? '<main></main>').trim()}\n`,
+		'client.html': `${input.clientCode.trim()}\n`,
 		'src/server.ts': `${(
 			input.serverCode ??
 			`export default {

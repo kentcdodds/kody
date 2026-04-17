@@ -32,9 +32,8 @@ export type JobRecord = {
 	id: string
 	userId: string
 	name: string
-	code: string | null
-	sourceId: string | null
-	publishedCommit: string | null
+	sourceId: string
+	publishedCommit: string
 	storageId: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
@@ -63,8 +62,8 @@ export type JobSearchProjection = {
 	name: string
 	description: string
 	scheduleSummary: string
-	sourceId: string | null
-	publishedCommit: string | null
+	sourceId: string
+	publishedCommit: string
 	storageId: string
 	updatedAt: string
 }
@@ -101,9 +100,8 @@ export type PersistedJobCallerContext = Pick<
 
 export type JobCreateInput = {
 	name: string
-	code?: string | null
-	sourceId?: string | null
-	publishedCommit?: string | null
+	code: string
+	sourceId: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone?: string | null
@@ -114,9 +112,8 @@ export type JobCreateInput = {
 export type JobUpdateInput = {
 	id: string
 	name?: string
-	code?: string | null
-	sourceId?: string | null
-	publishedCommit?: string | null
+	code?: string
+	sourceId?: string
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
@@ -127,9 +124,8 @@ export type JobUpdateInput = {
 export type JobUpsertInput = {
 	id?: string
 	name?: string
-	code?: string | null
-	sourceId?: string | null
-	publishedCommit?: string | null
+	code?: string
+	sourceId?: string
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null

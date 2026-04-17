@@ -54,18 +54,8 @@ export function createSavedUiPageHandler(env: Env) {
 				artifact,
 			})
 			const html = renderHostedSavedUiHtml({
-				artifact: {
-					...artifact,
-					title: resolvedArtifact.title,
-					description: resolvedArtifact.description,
-					hidden: resolvedArtifact.hidden,
-					parameters: resolvedArtifact.parameters
-						? JSON.stringify(resolvedArtifact.parameters)
-						: null,
-					clientCode: resolvedArtifact.clientCode,
-					serverCode: resolvedArtifact.serverCode,
-					serverCodeId: resolvedArtifact.serverCodeId,
-				},
+				artifact,
+				resolvedArtifact,
 				appSession,
 				appBaseUrl: baseUrl,
 			})

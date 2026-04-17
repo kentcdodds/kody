@@ -30,13 +30,8 @@ export const jobUpsertCapability = defineDomainCapability(
 							callerContext: ctx.callerContext,
 							body: {
 								name: args.name ?? '',
-								code: args.code === undefined ? '' : args.code,
-								...(args.sourceId !== undefined
-									? { sourceId: args.sourceId }
-									: {}),
-								...(args.publishedCommit !== undefined
-									? { publishedCommit: args.publishedCommit }
-									: {}),
+								code: args.code ?? '',
+								sourceId: args.sourceId ?? '',
 								...(args.params !== undefined && args.params !== null
 									? { params: args.params }
 									: {}),
@@ -58,13 +53,9 @@ export const jobUpsertCapability = defineDomainCapability(
 							body: {
 								id: args.id,
 								...(args.name !== undefined ? { name: args.name } : {}),
-								...(typeof args.code === 'string' ? { code: args.code } : {}),
-								...(args.code === null ? { code: null } : {}),
+								...(args.code !== undefined ? { code: args.code } : {}),
 								...(args.sourceId !== undefined
 									? { sourceId: args.sourceId }
-									: {}),
-								...(args.publishedCommit !== undefined
-									? { publishedCommit: args.publishedCommit }
 									: {}),
 								...(args.params !== undefined ? { params: args.params } : {}),
 								...(args.schedule !== undefined

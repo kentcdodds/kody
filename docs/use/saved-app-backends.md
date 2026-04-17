@@ -1,14 +1,18 @@
 # Saved app backends
 
-Saved apps persist **two** code artifacts:
+Saved apps are repo-backed applications with:
 
-- **`clientCode`** — HTML for the generic MCP app shell
+- **`clientCode`** — HTML rendered inside the generic MCP app shell
 - **`serverCode`** — optional Durable Object code that runs behind
   **`/app/:appId/*`**
 
+Saving an app publishes those source files into the app's repo-backed source and
+projects metadata into D1. Reads load the current published source from the repo
+state.
+
 Every saved app gets its own **`AppRunner`** supervisor Durable Object. When the
-app defines **`serverCode`**, the supervisor loads the saved code as a **Durable
-Object Facet** and gives it an isolated SQLite database.
+app defines **`serverCode`**, the supervisor loads the published code as a
+**Durable Object Facet** and gives it an isolated SQLite database.
 
 ## Save input shape
 
@@ -35,7 +39,6 @@ their current saved values:
 
 - omit `serverCode` to keep the current backend
 - pass **`serverCode: null`** to clear the backend explicitly
-- `server_code_id` only rotates when the saved backend actually changes
 
 ## Read shape
 
@@ -46,8 +49,7 @@ return snake_case fields:
 {
 	"app_id": "app-123",
 	"client_code": "<main>...</main>",
-	"server_code": "import { DurableObject } from 'cloudflare:workers'; ...",
-	"server_code_id": "uuid"
+	"server_code": "import { DurableObject } from 'cloudflare:workers'; ..."
 }
 ```
 
@@ -118,7 +120,7 @@ global `fetch()` capability.
 
 ## Lifecycle capabilities
 
-Kody now exposes saved app backend lifecycle operations:
+Kody exposes saved app backend lifecycle operations:
 
 - `app_storage_reset({ app_id, facet_name? })`
 - `app_storage_export({ app_id, facet_name? })`
@@ -130,9 +132,9 @@ Facet names default to `main`. Kody reserves named facets such as `jobs` and
 
 ## `app_server_exec` contract
 
-`app_server_exec` does **not** eval source inside the running facet. Instead,
-Kody compiles the provided `code` into a **throwaway Dynamic Worker** and binds
-an explicit RPC bridge for the saved app facet.
+`app_server_exec` does not eval source inside the running facet. Kody compiles
+the provided `code` into a throwaway Dynamic Worker and binds an explicit RPC
+bridge for the saved app facet.
 
 Inside the snippet body you can access:
 
@@ -202,22 +204,22 @@ await codemode.ui_save_app({
 				const resetButton = document.querySelector('#reset')
 				const backendBase = kodyWidget.appBackend?.basePath
 
-			function requireBackendBase() {
-				if (!backendBase) {
-					output.textContent = 'Backend unavailable'
-					throw new Error('Saved app backend is not available.')
+				function requireBackendBase() {
+					if (!backendBase) {
+						output.textContent = 'Backend unavailable'
+						throw new Error('Saved app backend is not available.')
+					}
+					return backendBase
 				}
-				return backendBase
-			}
 
 				async function refresh() {
-				const response = await fetch(\`\${requireBackendBase()}/api/state\`)
+					const response = await fetch(\`\${requireBackendBase()}/api/state\`)
 					const payload = await response.json()
 					output.textContent = String(payload.count)
 				}
 
 				async function runAction(action) {
-				await fetch(\`\${requireBackendBase()}/api/action\`, {
+					await fetch(\`\${requireBackendBase()}/api/action\`, {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
 						body: JSON.stringify({ action }),

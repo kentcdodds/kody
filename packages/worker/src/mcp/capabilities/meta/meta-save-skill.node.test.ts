@@ -9,6 +9,10 @@ const mockModule = vi.hoisted(() => ({
 	upsertSkillVector: vi.fn(),
 	prepareSkillPersistence: vi.fn(),
 	buildSkillEmbedTextFromStoredRow: vi.fn(),
+	ensureEntitySource: vi.fn(),
+	syncArtifactSourceSnapshot: vi.fn(),
+	setEntityPublishedCommit: vi.fn(),
+	deleteEntitySource: vi.fn(),
 }))
 
 vi.mock('#mcp/skills/mcp-skills-repo.ts', () => ({
@@ -35,19 +39,27 @@ vi.mock('#mcp/skills/skill-mutation.ts', () => ({
 		mockModule.buildSkillEmbedTextFromStoredRow(...args),
 }))
 
+vi.mock('#worker/repo/source-service.ts', () => ({
+	ensureEntitySource: (...args: Array<unknown>) =>
+		mockModule.ensureEntitySource(...args),
+	setEntityPublishedCommit: (...args: Array<unknown>) =>
+		mockModule.setEntityPublishedCommit(...args),
+}))
+
+vi.mock('#worker/repo/source-sync.ts', () => ({
+	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.syncArtifactSourceSnapshot(...args),
+}))
+
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	deleteEntitySource: (...args: Array<unknown>) =>
+		mockModule.deleteEntitySource(...args),
+}))
+
 const { metaSaveSkillCapability } = await import('./meta-save-skill.ts')
 
-test('meta_save_skill keeps new skills inline-only when repo source support is unavailable', async () => {
-	mockModule.getMcpSkillByName.mockReset()
-	mockModule.insertMcpSkill.mockReset()
-	mockModule.updateMcpSkill.mockReset()
-	mockModule.deleteMcpSkill.mockReset()
-	mockModule.upsertSkillVector.mockReset()
-	mockModule.prepareSkillPersistence.mockReset()
-	mockModule.buildSkillEmbedTextFromStoredRow.mockReset()
-
-	mockModule.getMcpSkillByName.mockResolvedValue(null)
-	mockModule.prepareSkillPersistence.mockResolvedValue({
+function createPreparedPersistence() {
+	return {
 		rowPayload: {
 			name: 'deploy-worker',
 			title: 'Deploy Worker',
@@ -55,7 +67,6 @@ test('meta_save_skill keeps new skills inline-only when repo source support is u
 			collection_name: null,
 			collection_slug: null,
 			keywords: '["deploy"]',
-			code: 'async () => ({ ok: true })',
 			search_text: null,
 			uses_capabilities: null,
 			parameters: null,
@@ -74,7 +85,27 @@ test('meta_save_skill keeps new skills inline-only when repo source support is u
 			idempotentDerived: true,
 		},
 		warnings: [],
+	}
+}
+
+test('meta_save_skill stores metadata and publishes repo-backed source', async () => {
+	mockModule.getMcpSkillByName.mockReset()
+	mockModule.insertMcpSkill.mockReset()
+	mockModule.updateMcpSkill.mockReset()
+	mockModule.deleteMcpSkill.mockReset()
+	mockModule.upsertSkillVector.mockReset()
+	mockModule.prepareSkillPersistence.mockReset()
+	mockModule.ensureEntitySource.mockReset()
+	mockModule.syncArtifactSourceSnapshot.mockReset()
+	mockModule.setEntityPublishedCommit.mockReset()
+
+	mockModule.getMcpSkillByName.mockResolvedValue(null)
+	mockModule.prepareSkillPersistence.mockResolvedValue(createPreparedPersistence())
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'source-1',
+		published_commit: null,
 	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-1')
 	mockModule.insertMcpSkill.mockResolvedValue(undefined)
 	mockModule.upsertSkillVector.mockResolvedValue(undefined)
 
@@ -111,94 +142,15 @@ test('meta_save_skill keeps new skills inline-only when repo source support is u
 	expect(mockModule.insertMcpSkill).toHaveBeenCalledWith(
 		{},
 		expect.objectContaining({
-			source_id: null,
+			source_id: 'source-1',
 			name: 'deploy-worker',
 		}),
 	)
-})
-
-test('meta_save_skill refuses to update repo-backed skills when repo source support is unavailable', async () => {
-	mockModule.getMcpSkillByName.mockReset()
-	mockModule.insertMcpSkill.mockReset()
-	mockModule.updateMcpSkill.mockReset()
-	mockModule.deleteMcpSkill.mockReset()
-	mockModule.upsertSkillVector.mockReset()
-	mockModule.prepareSkillPersistence.mockReset()
-	mockModule.buildSkillEmbedTextFromStoredRow.mockReset()
-
-	mockModule.prepareSkillPersistence.mockResolvedValue({
-		rowPayload: {
-			name: 'deploy-worker',
-			title: 'Deploy Worker',
-			description: 'Deploys the worker',
-			collection_name: null,
-			collection_slug: null,
-			keywords: '["deploy"]',
-			code: 'async () => ({ ok: true })',
-			search_text: null,
-			uses_capabilities: null,
-			parameters: null,
-			inferred_capabilities: '[]',
-			inference_partial: 0,
-			read_only: 1,
-			idempotent: 1,
-			destructive: 0,
-		},
-		embedText: 'Deploy Worker\nDeploys the worker',
-		merged: [],
-		inferencePartial: false,
-		derived: {
-			destructiveDerived: false,
-			readOnlyDerived: true,
-			idempotentDerived: true,
-		},
-		warnings: [],
+	expect(mockModule.setEntityPublishedCommit).toHaveBeenCalledWith({
+		db: {},
+		userId: 'user-1',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		indexedCommit: 'commit-1',
 	})
-	mockModule.getMcpSkillByName.mockResolvedValue({
-		id: 'skill-1',
-		user_id: 'user-1',
-		name: 'deploy-worker',
-		title: 'Deploy Worker',
-		description: 'Deploys the worker',
-		collection_name: null,
-		collection_slug: null,
-		source_id: 'source-1',
-		keywords: '["deploy"]',
-		code: 'async () => ({ ok: true })',
-		search_text: null,
-		uses_capabilities: null,
-		parameters: null,
-		inferred_capabilities: '[]',
-		inference_partial: 0,
-		read_only: 1,
-		idempotent: 1,
-		destructive: 0,
-		created_at: '2026-04-17T00:00:00.000Z',
-		updated_at: '2026-04-17T00:00:00.000Z',
-	})
-
-	await expect(
-		metaSaveSkillCapability.handler(
-			{
-				name: 'deploy-worker',
-				title: 'Deploy Worker',
-				description: 'Deploys the worker',
-				keywords: ['deploy'],
-				code: 'async () => ({ ok: true })',
-				read_only: true,
-				idempotent: true,
-				destructive: false,
-			},
-			{
-				env: { APP_DB: {} } as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-1', email: 'user@example.com' },
-				}),
-			},
-		),
-	).rejects.toThrow(
-		'Repo-backed source support is unavailable in this environment. Missing required bindings: APP_DB, ARTIFACTS, REPO_SESSION.',
-	)
-	expect(mockModule.updateMcpSkill).not.toHaveBeenCalled()
 })

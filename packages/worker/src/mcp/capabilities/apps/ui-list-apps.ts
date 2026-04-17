@@ -7,7 +7,7 @@ import {
 	uiArtifactParameterSchema,
 } from '#mcp/ui-artifact-parameters.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
-import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 
 const outputSchema = z.object({
@@ -41,15 +41,25 @@ export const uiListAppsCapability = defineDomainCapability(
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const rows = await listUiArtifactsByUserId(ctx.env.APP_DB, user.userId)
+			const resolvedApps = await Promise.all(
+				rows.map(async (row) => ({
+					row,
+					resolved: await resolveSavedAppSource({
+						env: ctx.env,
+						baseUrl: ctx.callerContext.baseUrl,
+						artifact: row,
+					}),
+				})),
+			)
 			return {
-				apps: rows.map((row) => ({
+				apps: resolvedApps.map(({ row, resolved }) => ({
 					app_id: row.id,
-					title: row.title,
-					description: row.description,
-					has_server_code: hasUiArtifactServerCode(row.serverCode),
-					server_code_id: row.serverCodeId,
+					title: resolved.title,
+					description: resolved.description,
+					has_server_code: resolved.serverCode != null,
+					server_code_id: resolved.serverCodeId,
 					parameters: parseUiArtifactParameters(row.parameters),
-					hidden: row.hidden,
+					hidden: resolved.hidden,
 					created_at: row.created_at,
 					updated_at: row.updated_at,
 				})),

@@ -2,10 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import {
-	deleteEntitySource,
-	updateEntitySource,
-} from '#worker/repo/entity-sources.ts'
+import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import {
 	deleteMcpSkill,
 	getMcpSkillByName,
@@ -23,7 +20,7 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import {
 	ensureEntitySource,
-	getRepoSourceSupportStatus,
+	setEntityPublishedCommit,
 } from '#worker/repo/source-service.ts'
 import { requireMcpUser } from './require-user.ts'
 
@@ -144,25 +141,16 @@ export const metaSaveSkillCapability = defineDomainCapability(
 
 			const skillId = existing?.id ?? crypto.randomUUID()
 			const now = new Date().toISOString()
-			const repoSourceSupport = getRepoSourceSupportStatus({
+			const source = await ensureEntitySource({
 				db: ctx.env.APP_DB,
 				env: ctx.env,
+				userId: user.userId,
+				entityKind: 'skill',
+				entityId: skillId,
+				sourceRoot: '/',
 			})
-			if (existing?.source_id != null && !repoSourceSupport.ok) {
-				throw new Error(repoSourceSupport.reason)
-			}
-			const source = repoSourceSupport.ok
-				? await ensureEntitySource({
-						db: ctx.env.APP_DB,
-						env: ctx.env,
-						userId: user.userId,
-						entityKind: 'skill',
-						entityId: skillId,
-						sourceRoot: '/',
-					})
-				: null
-			const previousPublishedCommit = source?.published_commit ?? null
-			const nextSourceId = source?.id ?? existing?.source_id ?? null
+			const previousPublishedCommit = source.published_commit
+			const nextSourceId = source.id
 
 			if (existing) {
 				const updated = await updateMcpSkill(
@@ -222,12 +210,13 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						'Saved skill source sync did not publish a repo-backed commit.',
 					)
 				}
-				await updateEntitySource(ctx.env.APP_DB, {
-					id: source.id,
-					userId: user.userId,
-					publishedCommit: syncedPublishedCommit,
-					indexedCommit: syncedPublishedCommit,
-				})
+			await setEntityPublishedCommit({
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				sourceId: source.id,
+				publishedCommit: syncedPublishedCommit,
+				indexedCommit: syncedPublishedCommit,
+			})
 			}
 
 			try {
@@ -247,7 +236,6 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						collection_name: existing.collection_name,
 						collection_slug: existing.collection_slug,
 						keywords: existing.keywords,
-						code: existing.code,
 						search_text: existing.search_text,
 						uses_capabilities: existing.uses_capabilities,
 						parameters: existing.parameters,
@@ -299,25 +287,24 @@ export const metaSaveSkillCapability = defineDomainCapability(
 												default?: unknown
 											}>)
 									: null,
-								code: existing.code,
+							code: args.code,
 							}),
 						})
-						await updateEntitySource(ctx.env.APP_DB, {
-							id: source.id,
-							userId: user.userId,
-							publishedCommit:
-								restoredPublishedCommit ?? previousPublishedCommit ?? null,
-							indexedCommit:
-								restoredPublishedCommit ?? previousPublishedCommit ?? null,
-						})
+					await setEntityPublishedCommit({
+						db: ctx.env.APP_DB,
+						userId: user.userId,
+						sourceId: source.id,
+						publishedCommit:
+							restoredPublishedCommit ?? previousPublishedCommit ?? null,
+						indexedCommit:
+							restoredPublishedCommit ?? previousPublishedCommit ?? null,
+					})
 					}
 				} else {
-					if (source) {
-						await deleteEntitySource(ctx.env.APP_DB, {
-							id: source.id,
-							userId: user.userId,
-						})
-					}
+				await deleteEntitySource(ctx.env.APP_DB, {
+					id: source.id,
+					userId: user.userId,
+				})
 					await deleteMcpSkill(
 						ctx.env.APP_DB,
 						user.userId,

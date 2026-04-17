@@ -25,6 +25,8 @@ const outputSchema = z.object({
 		.describe('Dynamic worker cache key for the current server code revision.'),
 	created_at: z.string(),
 	updated_at: z.string(),
+	source_id: z.string(),
+	published_commit: z.string(),
 })
 
 export const uiGetAppCapability = defineDomainCapability(
@@ -70,6 +72,8 @@ export const uiGetAppCapability = defineDomainCapability(
 				server_code_id: resolved.serverCodeId,
 				created_at: row.created_at,
 				updated_at: row.updated_at,
+				source_id: resolved.sourceId,
+				published_commit: resolved.publishedCommit,
 			}
 		},
 	},

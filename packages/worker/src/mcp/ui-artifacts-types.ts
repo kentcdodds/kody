@@ -3,10 +3,7 @@ export type UiArtifactRow = {
 	user_id: string
 	title: string
 	description: string
-	sourceId: string | null
-	clientCode: string
-	serverCode: string | null
-	serverCodeId: string
+	sourceId: string
 	parameters: string | null
 	hidden: boolean
 	created_at: string

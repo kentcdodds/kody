@@ -19,7 +19,7 @@ vi.mock('#worker/jobs/manager-do.ts', () => ({
 
 const { jobUpsertCapability } = await import('./job-upsert.ts')
 
-test('job_upsert forwards repo-backed fields on create', async () => {
+test('job_upsert forwards repo-backed create inputs', async () => {
 	mockModule.createJob.mockReset()
 	mockModule.updateJob.mockReset()
 	mockModule.syncJobManagerAlarm.mockReset()
@@ -27,7 +27,6 @@ test('job_upsert forwards repo-backed fields on create', async () => {
 		version: 1,
 		id: 'job-1',
 		name: 'Repo-backed create',
-		code: null,
 		sourceId: 'source-1',
 		publishedCommit: 'commit-1',
 		storageId: 'job:job-1',
@@ -48,9 +47,8 @@ test('job_upsert forwards repo-backed fields on create', async () => {
 	await jobUpsertCapability.handler(
 		{
 			name: 'Repo-backed create',
-			code: null,
+			code: 'async () => ({ ok: true })',
 			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
 			schedule: { type: 'interval', every: '15m' },
 		},
 		{
@@ -69,14 +67,14 @@ test('job_upsert forwards repo-backed fields on create', async () => {
 		}),
 		body: expect.objectContaining({
 			name: 'Repo-backed create',
+			code: 'async () => ({ ok: true })',
 			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
 			schedule: { type: 'interval', every: '15m' },
 		}),
 	})
 })
 
-test('job_upsert forwards repo-backed fields on update', async () => {
+test('job_upsert forwards repo-backed update inputs', async () => {
 	mockModule.createJob.mockReset()
 	mockModule.updateJob.mockReset()
 	mockModule.syncJobManagerAlarm.mockReset()
@@ -84,7 +82,6 @@ test('job_upsert forwards repo-backed fields on update', async () => {
 		version: 1,
 		id: 'job-1',
 		name: 'Repo-backed update',
-		code: null,
 		sourceId: 'source-1',
 		publishedCommit: 'commit-2',
 		storageId: 'job:job-1',
@@ -105,9 +102,7 @@ test('job_upsert forwards repo-backed fields on update', async () => {
 	await jobUpsertCapability.handler(
 		{
 			id: 'job-1',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-2',
-			code: null,
+			code: 'async () => ({ ok: "updated" })',
 		},
 		{
 			env: {} as Env,
@@ -125,9 +120,7 @@ test('job_upsert forwards repo-backed fields on update', async () => {
 		}),
 		body: {
 			id: 'job-1',
-			code: null,
-			sourceId: 'source-1',
-			publishedCommit: 'commit-2',
+			code: 'async () => ({ ok: "updated" })',
 		},
 	})
 })

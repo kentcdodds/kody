@@ -82,7 +82,6 @@ export type PreparedSkillPersistence = {
 		collection_name: string | null
 		collection_slug: string | null
 		keywords: string
-		code: string
 		search_text: string | null
 		uses_capabilities: string | null
 		parameters: string | null
@@ -155,7 +154,6 @@ export async function prepareSkillPersistence(
 		collection_name: collection?.name ?? null,
 		collection_slug: collection?.slug ?? null,
 		keywords: JSON.stringify(args.keywords),
-		code: args.code,
 		search_text: args.search_text ?? null,
 		uses_capabilities: args.uses_capabilities
 			? JSON.stringify(args.uses_capabilities)

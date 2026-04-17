@@ -14,23 +14,23 @@ import {
 	buildSavedAppBackendBasePath,
 	type GeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
-import {
-	hasUiArtifactServerCode,
-	type UiArtifactRow,
-} from '#mcp/ui-artifacts-types.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import { type ResolvedSavedAppSource } from '#worker/repo/app-source.ts'
 
 type HostedSavedUiInput = {
 	artifact: UiArtifactRow
+	resolvedArtifact: Pick<ResolvedSavedAppSource, 'clientCode' | 'serverCode'>
 	appSession: GeneratedUiAppSession
 	appBaseUrl: string
 }
 
 export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
 	return renderGeneratedUiDocument({
-		code: input.artifact.clientCode,
+		code: input.resolvedArtifact.clientCode,
 		runtime: 'html',
 		headInjection: buildHeadInjection(
-			input.artifact,
+			input.artifact.id,
+			input.resolvedArtifact,
 			input.appSession,
 			input.appBaseUrl,
 		),
@@ -39,7 +39,8 @@ export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
 }
 
 function buildHeadInjection(
-	artifact: UiArtifactRow,
+	appId: string,
+	resolvedArtifact: Pick<ResolvedSavedAppSource, 'clientCode' | 'serverCode'>,
 	appSession: GeneratedUiAppSession,
 	appBaseUrl: string,
 ) {
@@ -49,7 +50,10 @@ function buildHeadInjection(
 			token: appSession.token,
 			endpoints: appSession.endpoints,
 		},
-		appBackend: buildAppBackendBootstrap(artifact),
+		appBackend: buildAppBackendBootstrap({
+			appId,
+			resolvedArtifact,
+		}),
 	}
 	const stylesheetHref = resolveGeneratedUiAssetUrl(
 		generatedUiRuntimeStylesheetPath,
@@ -67,14 +71,15 @@ ${buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
 	`.trim()
 }
 
-function buildAppBackendBootstrap(
-	artifact: UiArtifactRow,
-): GeneratedUiAppBackendBootstrap | null {
-	if (!hasUiArtifactServerCode(artifact.serverCode)) {
+function buildAppBackendBootstrap(input: {
+	appId: string
+	resolvedArtifact: Pick<ResolvedSavedAppSource, 'serverCode'>
+}): GeneratedUiAppBackendBootstrap | null {
+	if (input.resolvedArtifact.serverCode == null) {
 		return null
 	}
 	return {
-		basePath: buildSavedAppBackendBasePath(artifact.id),
+		basePath: buildSavedAppBackendBasePath(input.appId),
 		facetNames: ['main'],
 	}
 }

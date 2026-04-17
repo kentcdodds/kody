@@ -55,25 +55,12 @@ export async function runSavedSkill(input: {
 		values: input.params,
 	})
 	const shouldPassParams = definitions != null || input.params !== undefined
-	const { runCodemodeWithRegistry } =
-		await import('#mcp/run-codemode-registry.ts')
-	const exec =
-		row.source_id != null
-			? await runRepoBackedSkill({
-					env: input.env,
-					row,
-					callerContext: input.callerContext,
-					params: shouldPassParams ? params : undefined,
-				})
-			: await runCodemodeWithRegistry(
-					input.env,
-					input.callerContext,
-					row.code,
-					shouldPassParams ? params : undefined,
-					{
-						executorExports: workerExports,
-					},
-				)
+	const exec = await runRepoBackedSkill({
+		env: input.env,
+		row,
+		callerContext: input.callerContext,
+		params: shouldPassParams ? params : undefined,
+	})
 	if (exec.error) {
 		return {
 			ok: false,

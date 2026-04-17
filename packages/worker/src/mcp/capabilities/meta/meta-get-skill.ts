@@ -7,6 +7,8 @@ import {
 	parseSkillParameters,
 	skillParameterSchema,
 } from '#mcp/skills/skill-parameters.ts'
+import { parseRepoManifest } from '#worker/repo/manifest.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { requireMcpUser } from './require-user.ts'
 
 function parseStringArray(raw: string | null): Array<string> | null {
@@ -68,24 +70,76 @@ export const metaGetSkillCapability = defineDomainCapability(
 			const inferred = parseStringArray(row.inferred_capabilities) ?? []
 			const uses = parseStringArray(row.uses_capabilities)
 			const parameters = parseSkillParameters(row.parameters)
-			return {
-				name: row.name,
-				title: row.title,
-				description: row.description,
-				collection: row.collection_name,
-				collection_slug: row.collection_slug,
-				keywords,
-				code: row.code,
-				search_text: row.search_text,
-				uses_capabilities: uses,
-				parameters,
-				inferred_capabilities: inferred,
-				inference_partial: row.inference_partial === 1,
-				read_only: row.read_only === 1,
-				idempotent: row.idempotent === 1,
-				destructive: row.destructive === 1,
-				created_at: row.created_at,
-				updated_at: row.updated_at,
+			if (!row.source_id) {
+				throw new Error(`Saved skill "${row.name}" is missing a repo-backed source.`)
+			}
+			const sessionId = `skill-inspect-${row.id}-${crypto.randomUUID()}`
+			const sessionClient = repoSessionRpc(ctx.env, sessionId)
+			const session = await sessionClient.openSession({
+				sessionId,
+				sourceId: row.source_id,
+				userId: user.userId,
+				baseUrl: ctx.callerContext.baseUrl,
+				sourceRoot: '/',
+			})
+			try {
+				const manifestPath =
+					session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+				const manifestFile = await sessionClient.readFile({
+					sessionId: session.id,
+					userId: user.userId,
+					path: manifestPath,
+				})
+				if (!manifestFile.content) {
+					throw new Error(
+						`Skill manifest "${manifestPath}" was not found in repo session.`,
+					)
+				}
+				const manifest = parseRepoManifest({
+					content: manifestFile.content,
+					manifestPath,
+				})
+				if (manifest.kind !== 'skill') {
+					throw new Error(`Repo source "${row.source_id}" is not a skill manifest.`)
+				}
+				const entrypointFile = await sessionClient.readFile({
+					sessionId: session.id,
+					userId: user.userId,
+					path: manifest.entrypoint.replace(/^\/+/, ''),
+				})
+				if (!entrypointFile.content) {
+					throw new Error(
+						`Skill entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+					)
+				}
+				return {
+					name: row.name,
+					title: row.title,
+					description: row.description,
+					collection: row.collection_name,
+					collection_slug: row.collection_slug,
+					keywords,
+					code: entrypointFile.content,
+					search_text: row.search_text,
+					uses_capabilities: uses,
+					parameters,
+					inferred_capabilities: inferred,
+					inference_partial: row.inference_partial === 1,
+					read_only: row.read_only === 1,
+					idempotent: row.idempotent === 1,
+					destructive: row.destructive === 1,
+					created_at: row.created_at,
+					updated_at: row.updated_at,
+				}
+			} finally {
+				await sessionClient
+					.discardSession({
+						sessionId: session.id,
+						userId: user.userId,
+					})
+					.catch(() => {
+						// Best effort only; preserve the original inspection failure.
+					})
 			}
 		},
 	},

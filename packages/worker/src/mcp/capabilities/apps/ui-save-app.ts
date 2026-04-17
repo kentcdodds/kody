@@ -3,7 +3,6 @@ import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { errorFields, logMcpEvent } from '#mcp/observability.ts'
 import {
 	deleteUiArtifact,
 	getUiArtifactById,
@@ -19,7 +18,6 @@ import {
 	configureSavedAppRunner,
 	deleteSavedAppRunner,
 } from '#mcp/app-runner.ts'
-import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -32,6 +30,7 @@ import {
 	ensureEntitySource,
 	getRepoSourceSupportStatus,
 } from '#worker/repo/source-service.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 import {
 	getEntitySourceById,
 	updateEntitySource,
@@ -40,15 +39,21 @@ import {
 const appServerCodeExportPattern =
 	/export\s+class\s+App\s+extends\s+DurableObject\b/
 
+type SavedAppDraft = {
+	title: string
+	description: string
+	clientCode: string
+	serverCode: string | null
+	serverCodeId: string
+	parameters: ReturnType<typeof normalizeUiArtifactParameters>
+	hidden: boolean
+}
+
 function assertValidSavedAppServerCode(serverCode: string | null | undefined) {
 	if (serverCode == null) return
 	if (!appServerCodeExportPattern.test(serverCode)) {
 		throw new Error('serverCode must export class App extends DurableObject')
 	}
-}
-
-function hasAppDbBinding(db: D1Database | null | undefined) {
-	return typeof db?.prepare === 'function'
 }
 
 const inputSchema = z
@@ -176,43 +181,30 @@ export const uiSaveAppCapability = defineDomainCapability(
 				db: ctx.env.APP_DB,
 				env: ctx.env,
 			})
+			if (!repoSourceSupport.ok) {
+				throw new Error(repoSourceSupport.reason)
+			}
 			const ensureSource = () =>
-				repoSourceSupport.ok
-					? ensureEntitySource({
-							db: ctx.env.APP_DB,
-							env: ctx.env,
-							userId: user.userId,
-							entityKind: 'app',
-							entityId: appId,
-							sourceRoot: '/',
-						})
-					: null
+				ensureEntitySource({
+					db: ctx.env.APP_DB,
+					env: ctx.env,
+					userId: user.userId,
+					entityKind: 'app',
+					entityId: appId,
+					sourceRoot: '/',
+				})
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
 				null
 
-			const readPublishedCommit = async (
-				sourceId: string,
-			): Promise<string | null> => {
-				if (!hasAppDbBinding(ctx.env.APP_DB)) {
-					return null
-				}
-				return (
-					(await getEntitySourceById(ctx.env.APP_DB, sourceId))
-						?.published_commit ?? null
-				)
-			}
+			const readPublishedCommit = async (sourceId: string): Promise<string | null> =>
+				(await getEntitySourceById(ctx.env.APP_DB, sourceId))?.published_commit ??
+				null
 
 			const restorePublishedCommit = async (
-				sourceId: string | null,
+				sourceId: string,
 				publishedCommit: string | null,
 			) => {
-				if (!sourceId) {
-					return
-				}
-				if (!hasAppDbBinding(ctx.env.APP_DB)) {
-					return
-				}
 				await updateEntitySource(ctx.env.APP_DB, {
 					id: sourceId,
 					userId: user.userId,
@@ -220,68 +212,57 @@ export const uiSaveAppCapability = defineDomainCapability(
 				})
 			}
 
-			async function saveAndIndexApp(input: {
+			async function saveMetadataProjection(input: {
 				appId: string
 				title: string
 				description: string
-				clientCode: string
-				serverCode: string | null
-				serverCodeId: string
 				parameters: ReturnType<typeof normalizeUiArtifactParameters>
 				hidden: boolean
-				sourceId: string | null
-				previousPublishedCommit: string | null
+				sourceId: string
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
-				const hasBackend = hasUiArtifactServerCode(input.serverCode)
+				const hasBackend = true
+				const serializedParameters = input.parameters
+					? JSON.stringify(input.parameters)
+					: null
+				const updated = input.existingApp
+					? await updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
+							title: input.title,
+							description: input.description,
+							sourceId: input.sourceId,
+							parameters: serializedParameters,
+							hidden: input.hidden,
+						})
+					: await insertUiArtifact(ctx.env.APP_DB, {
+							id: input.appId,
+							user_id: user.userId,
+							title: input.title,
+							description: input.description,
+							sourceId: input.sourceId,
+							parameters: serializedParameters,
+							hidden: input.hidden,
+							created_at: new Date().toISOString(),
+							updated_at: new Date().toISOString(),
+						})
+				if (input.existingApp && !updated) {
+					throw new Error('Saved UI artifact not found for this user.')
+				}
 				try {
+					const resolvedSource = await getEntitySourceById(
+						ctx.env.APP_DB,
+						input.sourceId,
+					)
+					const serverCodeId =
+						resolvedSource?.published_commit ??
+						crypto.randomUUID()
 					await configureSavedAppRunner({
 						env: ctx.env,
 						appId: input.appId,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
-						serverCode: input.serverCode,
-						serverCodeId: input.serverCodeId,
+						serverCode: null,
+						serverCodeId,
 					})
-				} catch (cause) {
-					if (!isUpdate) {
-						await Promise.allSettled([
-							deleteSavedAppRunner({
-								env: ctx.env,
-								appId: input.appId,
-							}),
-							deleteUiArtifact(ctx.env.APP_DB, user.userId, input.appId),
-							restorePublishedCommit(
-								input.sourceId,
-								input.previousPublishedCommit,
-							),
-						])
-					} else if (input.existingApp) {
-						try {
-							await Promise.allSettled([
-								updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
-									title: input.existingApp.title,
-									description: input.existingApp.description,
-									sourceId: input.existingApp.sourceId,
-									clientCode: input.existingApp.clientCode,
-									serverCode: input.existingApp.serverCode,
-									serverCodeId: input.existingApp.serverCodeId,
-									parameters: input.existingApp.parameters,
-									hidden: input.existingApp.hidden,
-								}),
-								restorePublishedCommit(
-									input.sourceId,
-									input.previousPublishedCommit,
-								),
-							])
-						} catch {
-							// Preserve the original runner configuration failure.
-						}
-					}
-					throw cause
-				}
-
-				try {
 					if (!input.hidden) {
 						await upsertUiArtifactVector(ctx.env, {
 							appId: input.appId,
@@ -296,53 +277,103 @@ export const uiSaveAppCapability = defineDomainCapability(
 					} else if (isUpdate) {
 						await deleteUiArtifactVector(ctx.env, input.appId)
 					}
+					return {
+						app_id: input.appId,
+						server_code_id: serverCodeId,
+						has_server_code: hasBackend,
+						hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, input.appId),
+						parameters: input.parameters,
+						hidden: input.hidden,
+					}
 				} catch (cause) {
-					if (!isUpdate) {
+					if (!input.existingApp) {
 						await Promise.allSettled([
 							deleteSavedAppRunner({
 								env: ctx.env,
 								appId: input.appId,
 							}),
 							deleteUiArtifact(ctx.env.APP_DB, user.userId, input.appId),
-							restorePublishedCommit(
-								input.sourceId,
-								input.previousPublishedCommit,
-							),
 						])
-						throw cause
 					}
-
-					const { errorName, errorMessage } = errorFields(cause)
-					logMcpEvent({
-						category: 'mcp',
-						tool: 'capability',
-						capabilityName: 'ui_save_app',
-						domain: capabilityDomainNames.apps,
-						outcome: 'failure',
-						durationMs: 0,
-						baseUrl: ctx.callerContext.baseUrl,
-						hasUser: true,
-						failurePhase: 'handler',
-						message:
-							'Failed to refresh saved app vector index after in-place update.',
-						errorName,
-						errorMessage,
-						cause,
-						context: {
-							userId: user.userId,
-							appId: input.appId,
-							isUpdate,
-						},
-					})
+					throw cause
 				}
+			}
 
+			const persistRepoSource = async (input: {
+				sourceId: string
+				draft: SavedAppDraft
+			}) => {
+				const previousPublishedCommit = await readPublishedCommit(input.sourceId)
+				try {
+					const publishedCommit = await syncArtifactSourceSnapshot({
+						env: ctx.env,
+						userId: user.userId,
+						baseUrl: ctx.callerContext.baseUrl,
+						sourceId: input.sourceId,
+						files: buildAppSourceFiles({
+							title: input.draft.title,
+							description: input.draft.description,
+							parameters: input.draft.parameters,
+							hidden: input.draft.hidden,
+							clientCode: input.draft.clientCode,
+							serverCode: input.draft.serverCode,
+						}),
+					})
+					if (publishedCommit == null) {
+						throw new Error(
+							'Saved app source sync did not publish a repo-backed commit.',
+						)
+					}
+					await updateEntitySource(ctx.env.APP_DB, {
+						id: input.sourceId,
+						userId: user.userId,
+						publishedCommit,
+						indexedCommit: publishedCommit,
+					})
+				} catch (cause) {
+					await restorePublishedCommit(input.sourceId, previousPublishedCommit)
+					throw cause
+				}
+			}
+
+				const buildDraft = (
+					current: Awaited<ReturnType<typeof getUiArtifactById>> | null,
+				): SavedAppDraft => {
+				const title = args.title ?? current?.title
+				const description = args.description ?? current?.description
+				if (!title || !description) {
+					throw new Error('Saved apps require title and description.')
+				}
+				const clientCode =
+					args.clientCode ??
+					(current
+						? (() => {
+								throw new Error(
+									'Existing saved apps must be reopened from repo-backed source before updating.',
+								)
+							})()
+						: undefined)
+				if (!clientCode) {
+					throw new Error('clientCode is required when creating a saved app.')
+				}
+				const serverCode =
+					args.serverCode === undefined
+						? null
+						: args.serverCode
+				assertValidSavedAppServerCode(serverCode)
 				return {
-					app_id: input.appId,
-					server_code_id: input.serverCodeId,
-					has_server_code: hasBackend,
-					hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, input.appId),
-					parameters: input.parameters,
-					hidden: input.hidden,
+					title,
+					description,
+					clientCode,
+					serverCode,
+					serverCodeId: crypto.randomUUID(),
+					parameters:
+						args.parameters === undefined
+							? current
+								? parseUiArtifactParameters(current.parameters)
+								: null
+							: normalizeUiArtifactParameters(args.parameters),
+					hidden: args.hidden ?? current?.hidden ?? true,
 				}
 			}
 
@@ -355,204 +386,79 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!existingApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
-				if (existingApp.sourceId != null && !repoSourceSupport.ok) {
-					throw new Error(repoSourceSupport.reason)
+				if (existingApp.sourceId == null) {
+					throw new Error('Saved app is missing its repo-backed source reference.')
 				}
 				const ensuredSource = await ensureSource()
-				const title = args.title ?? existingApp.title
-				const description = args.description ?? existingApp.description
-				const clientCode = args.clientCode ?? existingApp.clientCode
-				const serverCode =
-					args.serverCode === undefined
-						? existingApp.serverCode
-						: args.serverCode
-				assertValidSavedAppServerCode(serverCode)
-				const parameters =
-					args.parameters === undefined
-						? parseUiArtifactParameters(existingApp.parameters)
-						: normalizeUiArtifactParameters(args.parameters)
-				const serializedParameters =
-					args.parameters === undefined
-						? undefined
-						: parameters
-							? JSON.stringify(parameters)
-							: null
-				const serverCodeChanged = serverCode !== existingApp.serverCode
-				const serverCodeId = serverCodeChanged
-					? crypto.randomUUID()
-					: existingApp.serverCodeId
-				const updates: Parameters<typeof updateUiArtifact>[3] = {
-					title: args.title,
-					description: args.description,
-					clientCode: args.clientCode,
-					hidden: args.hidden,
+				if (existingApp.sourceId !== ensuredSource.id) {
+					throw new Error('Saved app source reference does not match the entity source.')
 				}
-				if (ensuredSource) {
-					updates.sourceId = ensuredSource.id
-				}
-				if (args.parameters !== undefined) {
-					updates.parameters = serializedParameters
-				}
-				if (args.serverCode !== undefined) {
-					updates.serverCode = serverCode
-					updates.serverCodeId = serverCodeId
-				}
-				const updated = await updateUiArtifact(
+				const resolvedCurrent = await getEntitySourceById(
 					ctx.env.APP_DB,
-					user.userId,
-					appId,
-					updates,
+					existingApp.sourceId,
 				)
-				if (!updated) {
-					throw new Error('Saved UI artifact not found for this user.')
+				if (!resolvedCurrent?.published_commit) {
+					throw new Error('Saved app does not have a published repo-backed source.')
 				}
-				const previousPublishedCommit = ensuredSource
-					? await readPublishedCommit(ensuredSource.id)
-					: null
-				try {
-					if (ensuredSource) {
-						const publishedCommit = await syncArtifactSourceSnapshot({
+				const draft: SavedAppDraft = {
+					title: args.title ?? existingApp.title,
+					description: args.description ?? existingApp.description,
+					clientCode:
+						args.clientCode ??
+						(await resolveSavedAppSource({
 							env: ctx.env,
-							userId: user.userId,
 							baseUrl: ctx.callerContext.baseUrl,
-							sourceId: ensuredSource.id,
-							files: buildAppSourceFiles({
-								title,
-								description,
-								parameters,
-								hidden: args.hidden ?? existingApp.hidden,
-								clientCode,
-								serverCode,
-							}),
-						})
-						if (publishedCommit == null) {
-							throw new Error(
-								'Saved app source sync did not publish a repo-backed commit.',
-							)
-						}
-						await updateEntitySource(ctx.env.APP_DB, {
-							id: ensuredSource.id,
-							userId: user.userId,
-							publishedCommit,
-							indexedCommit: publishedCommit,
-						})
-					}
-				} catch (cause) {
-					await Promise.allSettled([
-						updateUiArtifact(ctx.env.APP_DB, user.userId, appId, {
-							title: existingApp.title,
-							description: existingApp.description,
-							sourceId: existingApp.sourceId,
-							clientCode: existingApp.clientCode,
-							serverCode: existingApp.serverCode,
-							serverCodeId: existingApp.serverCodeId,
-							parameters: existingApp.parameters,
-							hidden: existingApp.hidden,
-						}),
-						restorePublishedCommit(
-							ensuredSource?.id ?? null,
-							previousPublishedCommit,
-						),
-					])
-					throw cause
+							artifact: existingApp,
+						})).clientCode,
+					serverCode:
+						args.serverCode === undefined
+							? (
+									await resolveSavedAppSource({
+										env: ctx.env,
+										baseUrl: ctx.callerContext.baseUrl,
+										artifact: existingApp,
+									})
+								).serverCode
+							: args.serverCode,
+					serverCodeId: crypto.randomUUID(),
+					parameters:
+						args.parameters === undefined
+							? parseUiArtifactParameters(existingApp.parameters)
+							: normalizeUiArtifactParameters(args.parameters),
+					hidden: args.hidden ?? existingApp.hidden,
 				}
-				hidden = args.hidden ?? existingApp.hidden
-				return await saveAndIndexApp({
-					appId,
-					title,
-					description,
-					clientCode,
-					serverCode,
-					serverCodeId,
-					parameters,
-					hidden,
-					sourceId: ensuredSource?.id ?? existingApp.sourceId,
-					previousPublishedCommit,
-					existingApp,
+				assertValidSavedAppServerCode(draft.serverCode)
+				await persistRepoSource({
+					sourceId: ensuredSource.id,
+					draft,
 				})
-			} else {
-				const title = args.title!
-				const description = args.description!
-				const clientCode = args.clientCode!
-				const serverCode = args.serverCode ?? null
-				assertValidSavedAppServerCode(serverCode)
-				const parameters = normalizeUiArtifactParameters(args.parameters)
-				const serializedParameters = parameters
-					? JSON.stringify(parameters)
-					: null
-				const serverCodeId = crypto.randomUUID()
-				hidden = args.hidden ?? true
-				const ensuredSource = await ensureSource()
-				const now = new Date().toISOString()
-				await insertUiArtifact(ctx.env.APP_DB, {
-					id: appId,
-					user_id: user.userId,
-					sourceId: ensuredSource?.id ?? null,
-					title,
-					description,
-					clientCode,
-					serverCode,
-					serverCodeId,
-					parameters: serializedParameters,
-					hidden,
-					created_at: now,
-					updated_at: now,
-				})
-				const previousPublishedCommit = ensuredSource
-					? await readPublishedCommit(ensuredSource.id)
-					: null
-				try {
-					if (ensuredSource) {
-						const publishedCommit = await syncArtifactSourceSnapshot({
-							env: ctx.env,
-							userId: user.userId,
-							baseUrl: ctx.callerContext.baseUrl,
-							sourceId: ensuredSource.id,
-							files: buildAppSourceFiles({
-								title,
-								description,
-								parameters,
-								hidden,
-								clientCode,
-								serverCode,
-							}),
-						})
-						if (publishedCommit == null) {
-							throw new Error(
-								'Saved app source sync did not publish a repo-backed commit.',
-							)
-						}
-						await updateEntitySource(ctx.env.APP_DB, {
-							id: ensuredSource.id,
-							userId: user.userId,
-							publishedCommit,
-							indexedCommit: publishedCommit,
-						})
-					}
-				} catch (cause) {
-					await Promise.allSettled([
-						deleteUiArtifact(ctx.env.APP_DB, user.userId, appId),
-						restorePublishedCommit(
-							ensuredSource?.id ?? null,
-							previousPublishedCommit,
-						),
-					])
-					throw cause
-				}
-				return await saveAndIndexApp({
+				hidden = draft.hidden
+				return await saveMetadataProjection({
 					appId,
-					title,
-					description,
-					clientCode,
-					serverCode,
-					serverCodeId,
-					parameters,
+					title: draft.title,
+					description: draft.description,
+					parameters: draft.parameters,
 					hidden,
-					sourceId: ensuredSource?.id ?? null,
-					previousPublishedCommit,
+					sourceId: ensuredSource.id,
 					existingApp,
 				})
 			}
+
+			const draft = buildDraft(null)
+			const ensuredSource = await ensureSource()
+			await persistRepoSource({
+				sourceId: ensuredSource.id,
+				draft,
+			})
+			return await saveMetadataProjection({
+				appId,
+				title: draft.title,
+				description: draft.description,
+				parameters: draft.parameters,
+				hidden: draft.hidden,
+				sourceId: ensuredSource.id,
+				existingApp,
+			})
 		},
 	},
 )

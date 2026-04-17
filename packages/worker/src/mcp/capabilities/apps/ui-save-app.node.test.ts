@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as AppSourceModule from '#worker/repo/app-source.ts'
+import type * as EntitySourcesModule from '#worker/repo/entity-sources.ts'
+import type * as SourceServiceModule from '#worker/repo/source-service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getUiArtifactById: vi.fn(),
@@ -10,6 +13,11 @@ const mockModule = vi.hoisted(() => ({
 	deleteSavedAppRunner: vi.fn(),
 	upsertUiArtifactVector: vi.fn(),
 	deleteUiArtifactVector: vi.fn(),
+	ensureEntitySource: vi.fn(),
+	syncArtifactSourceSnapshot: vi.fn(),
+	getEntitySourceById: vi.fn(),
+	updateEntitySource: vi.fn(),
+	resolveSavedAppSource: vi.fn(),
 }))
 
 vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
@@ -37,9 +45,52 @@ vi.mock('#mcp/ui-artifacts-vectorize.ts', () => ({
 		mockModule.deleteUiArtifactVector(...args),
 }))
 
+vi.mock('#worker/repo/source-service.ts', async () => {
+	const actual =
+		await vi.importActual<typeof SourceServiceModule>(
+			'#worker/repo/source-service.ts',
+		)
+	return {
+		...actual,
+		ensureEntitySource: (...args: Array<unknown>) =>
+			mockModule.ensureEntitySource(...args),
+	}
+})
+
+vi.mock('#worker/repo/source-sync.ts', () => ({
+	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.syncArtifactSourceSnapshot(...args),
+}))
+
+vi.mock('#worker/repo/entity-sources.ts', async () => {
+	const actual =
+		await vi.importActual<typeof EntitySourcesModule>(
+			'#worker/repo/entity-sources.ts',
+		)
+	return {
+		...actual,
+		getEntitySourceById: (...args: Array<unknown>) =>
+			mockModule.getEntitySourceById(...args),
+		updateEntitySource: (...args: Array<unknown>) =>
+			mockModule.updateEntitySource(...args),
+	}
+})
+
+vi.mock('#worker/repo/app-source.ts', async () => {
+	const actual =
+		await vi.importActual<typeof AppSourceModule>(
+			'#worker/repo/app-source.ts',
+		)
+	return {
+		...actual,
+		resolveSavedAppSource: (...args: Array<unknown>) =>
+			mockModule.resolveSavedAppSource(...args),
+	}
+})
+
 const { uiSaveAppCapability } = await import('./ui-save-app.ts')
 
-test('ui_save_app updates preserve backend code unless the caller clears or replaces it', async () => {
+function resetMocks() {
 	mockModule.getUiArtifactById.mockReset()
 	mockModule.updateUiArtifact.mockReset()
 	mockModule.insertUiArtifact.mockReset()
@@ -48,21 +99,93 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 	mockModule.deleteSavedAppRunner.mockReset()
 	mockModule.upsertUiArtifactVector.mockReset()
 	mockModule.deleteUiArtifactVector.mockReset()
+	mockModule.ensureEntitySource.mockReset()
+	mockModule.syncArtifactSourceSnapshot.mockReset()
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.updateEntitySource.mockReset()
+	mockModule.resolveSavedAppSource.mockReset()
+}
 
-	const initialServerCode =
-		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v1" } }'
-	const replacementServerCode =
-		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v2" } }'
+test('ui_save_app creates a repo-backed saved app and stores metadata projection only', async () => {
+	resetMocks()
 
-	let currentApp = {
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'source-1',
+		published_commit: null,
+	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-1')
+	mockModule.insertUiArtifact.mockResolvedValue(undefined)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		published_commit: 'commit-1',
+	})
+	mockModule.configureSavedAppRunner.mockResolvedValue(undefined)
+	mockModule.upsertUiArtifactVector.mockResolvedValue(undefined)
+
+	const result = await uiSaveAppCapability.handler(
+		{
+			title: 'Counter app',
+			description: 'Counts things',
+			clientCode: '<main>counter</main>',
+			serverCode:
+				'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject {}',
+			hidden: false,
+		},
+		{
+			env: {
+				APP_DB: {
+					prepare: vi.fn(),
+				},
+				ARTIFACTS: {},
+				REPO_SESSION: {},
+			} as unknown as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-1', email: 'user@example.com' },
+			}),
+		},
+	)
+
+	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceId: 'source-1',
+		}),
+	)
+	expect(mockModule.insertUiArtifact).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			title: 'Counter app',
+			description: 'Counts things',
+			sourceId: 'source-1',
+			hidden: false,
+		}),
+	)
+	expect(mockModule.configureSavedAppRunner).toHaveBeenCalledWith(
+		expect.objectContaining({
+			appId: expect.any(String),
+			serverCode: null,
+			serverCodeId: 'commit-1',
+		}),
+	)
+	expect(result).toEqual({
+		app_id: expect.any(String),
+		server_code_id: 'commit-1',
+		has_server_code: true,
+		hosted_url: expect.stringMatching(/^https:\/\/heykody\.dev\/ui\//),
+		parameters: null,
+		hidden: false,
+	})
+})
+
+test('ui_save_app updates an existing app by reusing repo-backed source content', async () => {
+	resetMocks()
+
+	mockModule.getUiArtifactById.mockResolvedValue({
 		id: 'app-1',
 		user_id: 'user-1',
-		title: 'Patchable App',
-		description: 'Saved app used to verify partial ui_save_app updates.',
-		sourceId: null,
-		clientCode: '<main><h1>Patchable v1</h1></main>',
-		serverCode: initialServerCode,
-		serverCodeId: 'server-code-v1',
+		title: 'Existing app',
+		description: 'Existing description',
+		sourceId: 'source-1',
 		parameters: JSON.stringify([
 			{
 				name: 'team',
@@ -72,210 +195,55 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			},
 		]),
 		hidden: true,
-	}
-
-	mockModule.getUiArtifactById.mockImplementation(async () => ({
-		...currentApp,
-	}))
-	mockModule.updateUiArtifact.mockImplementation(
-		async (
-			_db: unknown,
-			_userId: string,
-			_appId: string,
-			updates: Record<string, unknown>,
-		) => {
-			currentApp = {
-				...currentApp,
-				...(updates['title'] !== undefined
-					? { title: updates['title'] as string }
-					: {}),
-				...(updates['description'] !== undefined
-					? { description: updates['description'] as string }
-					: {}),
-				...(updates['sourceId'] !== undefined
-					? { sourceId: updates['sourceId'] as string | null }
-					: {}),
-				...(updates['clientCode'] !== undefined
-					? { clientCode: updates['clientCode'] as string }
-					: {}),
-				...(updates['hidden'] !== undefined
-					? { hidden: updates['hidden'] as boolean }
-					: {}),
-				...(updates['parameters'] !== undefined
-					? { parameters: updates['parameters'] as string | null }
-					: {}),
-				...(updates['serverCode'] !== undefined
-					? { serverCode: updates['serverCode'] as string | null }
-					: {}),
-				...(updates['serverCodeId'] !== undefined
-					? { serverCodeId: updates['serverCodeId'] as string }
-					: {}),
-			}
-			return { ...currentApp }
-		},
-	)
-
-	const randomUuidSpy = vi.spyOn(crypto, 'randomUUID')
-	randomUuidSpy.mockReturnValueOnce('server-code-v2')
-	randomUuidSpy.mockReturnValueOnce('server-code-v3')
-
-	try {
-		const callerContext = createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: { userId: 'user-1', email: 'user@example.com' },
-		})
-
-		const preservedResult = await uiSaveAppCapability.handler(
+		created_at: '2026-04-17T00:00:00.000Z',
+		updated_at: '2026-04-17T00:00:00.000Z',
+	})
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'source-1',
+		published_commit: 'commit-1',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		published_commit: 'commit-1',
+	})
+	mockModule.resolveSavedAppSource.mockResolvedValue({
+		title: 'Existing app',
+		description: 'Existing description',
+		hidden: true,
+		parameters: [
 			{
-				app_id: 'app-1',
-				clientCode: '<main><h1>Patchable v2</h1></main>',
+				name: 'team',
+				description: 'Team slug',
+				type: 'string',
+				required: true,
 			},
-			{
-				env: { APP_DB: {} } as Env,
-				callerContext,
-			},
-		)
-		expect(preservedResult).toEqual({
-			app_id: 'app-1',
-			server_code_id: 'server-code-v1',
-			has_server_code: true,
-			hosted_url: 'https://heykody.dev/ui/app-1',
-			parameters: [
-				{
-					name: 'team',
-					description: 'Team slug',
-					type: 'string',
-					required: true,
-				},
-			],
-			hidden: true,
-		})
-		expect(mockModule.updateUiArtifact.mock.calls[0]?.[3]).toEqual({
-			title: undefined,
-			description: undefined,
-			clientCode: '<main><h1>Patchable v2</h1></main>',
-			hidden: undefined,
-		})
-		expect(mockModule.configureSavedAppRunner.mock.calls[0]?.[0]).toEqual(
-			expect.objectContaining({
-				appId: 'app-1',
-				serverCode: initialServerCode,
-				serverCodeId: 'server-code-v1',
-			}),
-		)
-
-		const clearedResult = await uiSaveAppCapability.handler(
-			{
-				app_id: 'app-1',
-				serverCode: null,
-			},
-			{
-				env: { APP_DB: {} } as Env,
-				callerContext,
-			},
-		)
-		expect(clearedResult).toEqual({
-			app_id: 'app-1',
-			server_code_id: expect.any(String),
-			has_server_code: false,
-			hosted_url: 'https://heykody.dev/ui/app-1',
-			parameters: [
-				{
-					name: 'team',
-					description: 'Team slug',
-					type: 'string',
-					required: true,
-				},
-			],
-			hidden: true,
-		})
-		expect(mockModule.updateUiArtifact.mock.calls[1]?.[3]).toEqual(
-			expect.objectContaining({
-				title: undefined,
-				description: undefined,
-				clientCode: undefined,
-				hidden: undefined,
-				serverCode: null,
-				serverCodeId: expect.any(String),
-			}),
-		)
-		expect(mockModule.configureSavedAppRunner.mock.calls[1]?.[0]).toEqual(
-			expect.objectContaining({
-				appId: 'app-1',
-				serverCode: null,
-				serverCodeId: expect.any(String),
-			}),
-		)
-
-		const replacedResult = await uiSaveAppCapability.handler(
-			{
-				app_id: 'app-1',
-				serverCode: replacementServerCode,
-			},
-			{
-				env: { APP_DB: {} } as Env,
-				callerContext,
-			},
-		)
-		expect(replacedResult).toEqual({
-			app_id: 'app-1',
-			server_code_id: expect.any(String),
-			has_server_code: true,
-			hosted_url: 'https://heykody.dev/ui/app-1',
-			parameters: [
-				{
-					name: 'team',
-					description: 'Team slug',
-					type: 'string',
-					required: true,
-				},
-			],
-			hidden: true,
-		})
-		expect(mockModule.updateUiArtifact.mock.calls[2]?.[3]).toEqual(
-			expect.objectContaining({
-				title: undefined,
-				description: undefined,
-				clientCode: undefined,
-				hidden: undefined,
-				serverCode: replacementServerCode,
-				serverCodeId: expect.any(String),
-			}),
-		)
-		expect(mockModule.configureSavedAppRunner.mock.calls[2]?.[0]).toEqual(
-			expect.objectContaining({
-				appId: 'app-1',
-				serverCode: replacementServerCode,
-				serverCodeId: expect.any(String),
-			}),
-		)
-		expect(randomUuidSpy).toHaveBeenCalled()
-		expect(mockModule.deleteUiArtifactVector).toHaveBeenCalledTimes(3)
-	} finally {
-		randomUuidSpy.mockRestore()
-	}
-})
-
-test('ui_save_app creates inline-only apps when repo source support is unavailable', async () => {
-	mockModule.getUiArtifactById.mockReset()
-	mockModule.updateUiArtifact.mockReset()
-	mockModule.insertUiArtifact.mockReset()
-	mockModule.deleteUiArtifact.mockReset()
-	mockModule.configureSavedAppRunner.mockReset()
-	mockModule.deleteSavedAppRunner.mockReset()
-	mockModule.upsertUiArtifactVector.mockReset()
-	mockModule.deleteUiArtifactVector.mockReset()
-
-	mockModule.insertUiArtifact.mockResolvedValue(undefined)
+		],
+		clientCode: '<main>existing</main>',
+		serverCode:
+			'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject {}',
+		serverCodeId: 'commit-1',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-2')
+	mockModule.updateUiArtifact.mockResolvedValue(true)
+	mockModule.configureSavedAppRunner.mockResolvedValue(undefined)
+	mockModule.deleteUiArtifactVector.mockResolvedValue(undefined)
 
 	const result = await uiSaveAppCapability.handler(
 		{
-			title: 'Inline only app',
-			description: 'Stays inline until repo source support exists.',
-			clientCode: '<main><h1>Inline</h1></main>',
+			app_id: 'app-1',
+			description: 'Updated description',
+			serverCode: null,
 		},
 		{
-			env: { APP_DB: {} } as Env,
+			env: {
+				APP_DB: {
+					prepare: vi.fn(),
+				},
+				ARTIFACTS: {},
+				REPO_SESSION: {},
+			} as unknown as Env,
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: { userId: 'user-1', email: 'user@example.com' },
@@ -283,62 +251,35 @@ test('ui_save_app creates inline-only apps when repo source support is unavailab
 		},
 	)
 
-	expect(result).toEqual({
-		app_id: expect.any(String),
-		server_code_id: expect.any(String),
-		has_server_code: false,
-		hosted_url: expect.stringMatching(/^https:\/\/heykody\.dev\/ui\//),
-		parameters: null,
-		hidden: true,
-	})
-	expect(mockModule.insertUiArtifact).toHaveBeenCalledWith(
-		{},
+	expect(mockModule.resolveSavedAppSource).toHaveBeenCalled()
+	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
-			sourceId: null,
-			title: 'Inline only app',
+			sourceId: 'source-1',
 		}),
 	)
-})
-
-test('ui_save_app refuses to update repo-backed apps when repo source support is unavailable', async () => {
-	mockModule.getUiArtifactById.mockReset()
-	mockModule.updateUiArtifact.mockReset()
-	mockModule.insertUiArtifact.mockReset()
-	mockModule.deleteUiArtifact.mockReset()
-	mockModule.configureSavedAppRunner.mockReset()
-	mockModule.deleteSavedAppRunner.mockReset()
-	mockModule.upsertUiArtifactVector.mockReset()
-	mockModule.deleteUiArtifactVector.mockReset()
-
-	mockModule.getUiArtifactById.mockResolvedValue({
-		id: 'app-1',
-		user_id: 'user-1',
-		title: 'Repo-backed app',
-		description: 'Requires repo publish support.',
-		sourceId: 'source-1',
-		clientCode: '<main><h1>Repo</h1></main>',
-		serverCode: null,
-		serverCodeId: 'server-code-v1',
-		parameters: null,
+	expect(mockModule.updateUiArtifact).toHaveBeenCalledWith(
+		expect.anything(),
+		'user-1',
+		'app-1',
+		expect.objectContaining({
+			description: 'Updated description',
+			sourceId: 'source-1',
+			hidden: true,
+		}),
+	)
+	expect(result).toEqual({
+		app_id: 'app-1',
+		server_code_id: 'commit-1',
+		has_server_code: true,
+		hosted_url: 'https://heykody.dev/ui/app-1',
+		parameters: [
+			{
+				name: 'team',
+				description: 'Team slug',
+				type: 'string',
+				required: true,
+			},
+		],
 		hidden: true,
 	})
-
-	await expect(
-		uiSaveAppCapability.handler(
-			{
-				app_id: 'app-1',
-				description: 'Updated description',
-			},
-			{
-				env: { APP_DB: {} } as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-1', email: 'user@example.com' },
-				}),
-			},
-		),
-	).rejects.toThrow(
-		'Repo-backed source support is unavailable in this environment. Missing required bindings: APP_DB, ARTIFACTS, REPO_SESSION.',
-	)
-	expect(mockModule.updateUiArtifact).not.toHaveBeenCalled()
 })
