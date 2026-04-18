@@ -196,9 +196,11 @@ function resolveUpdatedShape(input: {
 			? input.existing.publishedCommit
 			: input.body.publishedCommit
 	const nextRepoCheckPolicy =
-		input.body.repoCheckPolicy === undefined
-			? input.existing.repoCheckPolicy
-			: normalizeJobRepoCheckPolicy(input.body.repoCheckPolicy)
+		nextSourceId == null
+			? undefined
+			: input.body.repoCheckPolicy === undefined
+				? input.existing.repoCheckPolicy
+				: normalizeJobRepoCheckPolicy(input.body.repoCheckPolicy)
 	if (!nextCode && !nextSourceId) {
 		throw new Error('Jobs require either code or sourceId.')
 	}
@@ -580,6 +582,7 @@ async function runRepoBackedJob(input: {
 			logs: gate.logs,
 		}
 	}
+	const bypassLogs = [...gate.logs]
 	const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
 	const entrypoint = await sessionClient.readFile({
 		sessionId: session.id,
@@ -590,7 +593,7 @@ async function runRepoBackedJob(input: {
 		return {
 			error: `Job manifest "${manifestPath}" was not found in repo session.`,
 			result: null,
-			logs: gate.logs,
+			logs: bypassLogs,
 		}
 	}
 	let manifest: ReturnType<typeof parseRepoManifest>
@@ -603,14 +606,14 @@ async function runRepoBackedJob(input: {
 		return {
 			error: error instanceof Error ? error.message : String(error),
 			result: null,
-			logs: gate.logs,
+			logs: bypassLogs,
 		}
 	}
 	if (manifest.kind !== 'job') {
 		return {
 			error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
 			result: null,
-			logs: gate.logs,
+			logs: bypassLogs,
 		}
 	}
 	const moduleFile = await sessionClient.readFile({
@@ -622,7 +625,7 @@ async function runRepoBackedJob(input: {
 		return {
 			error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
 			result: null,
-			logs: gate.logs,
+			logs: bypassLogs,
 		}
 	}
 	if (hasModuleStyleCodemodeEntrypoint(moduleFile.content)) {
@@ -630,42 +633,50 @@ async function runRepoBackedJob(input: {
 			error:
 				'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
 			result: null,
-			logs: gate.logs,
+			logs: bypassLogs,
 		}
 	}
-	const { runCodemodeWithRegistry } =
-		await import('#mcp/run-codemode-registry.ts')
-	const executionResult = await runCodemodeWithRegistry(
-		input.env,
-		{
-			...input.callerContext,
-			repoContext: {
-				sourceId: session.source_id,
-				repoId: null,
-				sessionId: session.id,
-				sessionRepoId: session.session_repo_id,
-				baseCommit: session.base_commit,
-				manifestPath: session.manifest_path,
-				sourceRoot: session.source_root,
-				publishedCommit: session.published_commit,
-				entityKind: session.entity_type,
-				entityId: input.job.id,
+	try {
+		const { runCodemodeWithRegistry } =
+			await import('#mcp/run-codemode-registry.ts')
+		const executionResult = await runCodemodeWithRegistry(
+			input.env,
+			{
+				...input.callerContext,
+				repoContext: {
+					sourceId: session.source_id,
+					repoId: null,
+					sessionId: session.id,
+					sessionRepoId: session.session_repo_id,
+					baseCommit: session.base_commit,
+					manifestPath: session.manifest_path,
+					sourceRoot: session.source_root,
+					publishedCommit: session.published_commit,
+					entityKind: session.entity_type,
+					entityId: input.job.id,
+				},
 			},
-		},
-		moduleFile.content,
-		input.job.params,
-		{
-			executorExports: workerExports,
-			storageTools: {
-				userId: input.callerContext.user.userId,
-				storageId: input.job.storageId,
-				writable: true,
+			moduleFile.content,
+			input.job.params,
+			{
+				executorExports: workerExports,
+				storageTools: {
+					userId: input.callerContext.user.userId,
+					storageId: input.job.storageId,
+					writable: true,
+				},
 			},
-		},
-	)
-	return {
-		...executionResult,
-		logs: [...gate.logs, ...(executionResult.logs ?? [])],
+		)
+		return {
+			...executionResult,
+			logs: [...bypassLogs, ...(executionResult.logs ?? [])],
+		}
+	} catch (error) {
+		return {
+			error: formatJobError(error),
+			result: null,
+			logs: bypassLogs,
+		}
 	}
 }
 

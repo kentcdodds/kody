@@ -129,9 +129,15 @@ test('job_upsert forwards repo-backed fields on update', async () => {
 			code: null,
 			sourceId: 'source-1',
 			publishedCommit: 'commit-2',
-			repoCheckPolicy: undefined,
 		},
 	})
+	expect(mockModule.updateJob.mock.calls[0]?.[0]).toEqual(
+		expect.not.objectContaining({
+			body: expect.objectContaining({
+				repoCheckPolicy: expect.anything(),
+			}),
+		}),
+	)
 })
 
 test('job_upsert forwards repo check policy on create', async () => {

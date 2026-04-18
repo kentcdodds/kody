@@ -1049,6 +1049,131 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 	}
 })
 
+test('executeJobOnce preserves bypass audit logs when execution fails after a typecheck-only bypass', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-typecheck-bypass-failure',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed bypass failure job',
+		code: null,
+		sourceId: 'source-bypass-failure',
+		publishedCommit: 'commit-bypass-failure',
+		repoCheckPolicy: {
+			allowTypecheckFailures: true,
+		},
+		storageId: 'job:job-repo-typecheck-bypass-failure',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-typecheck-bypass-failure',
+			source_id: 'source-bypass-failure',
+			source_root: '/',
+			base_commit: 'commit-bypass-failure',
+			session_repo_id: 'session-repo-bypass-failure',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-bypass-failure',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: false,
+			results: [
+				{
+					kind: 'typecheck' as const,
+					ok: false,
+					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
+				},
+			],
+			manifest: {
+				version: 1,
+				kind: 'job' as const,
+				title: 'Repo-backed bypass failure job',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+			runId: 'check-run-bypass-failure',
+			treeHash: 'tree-hash-bypass-failure',
+			checkedAt: '2026-04-16T00:00:00.000Z',
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo-backed bypass failure job',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'async () => ({ ok: true, bypassed: true })',
+		})),
+		discardSession: vi.fn(),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi.spyOn(
+		await import('#mcp/run-codemode-registry.ts'),
+		'runCodemodeWithRegistry',
+	)
+	const formatJobErrorSpy = vi.spyOn(
+		await import('./schedule.ts'),
+		'formatJobError',
+	)
+
+	try {
+		executeSpy.mockRejectedValueOnce(new Error('Executor import failed'))
+
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: false,
+			error: 'Executor import failed',
+			logs: [
+				'Bypassed repo typecheck-only check failures for job "job-repo-typecheck-bypass-failure" (source "source-bypass-failure", check run check-run-bypass-failure).',
+			],
+		})
+		expect(formatJobErrorSpy).toHaveBeenCalled()
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+		formatJobErrorSpy.mockRestore()
+	}
+})
+
 test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute paths and migrated entrypoints', async () => {
 	const env = {
 		APP_DB: createDatabase(),
@@ -1648,3 +1773,4 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		executeSpy.mockRestore()
 	}
 })
+
