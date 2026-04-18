@@ -326,6 +326,12 @@ export type RepoSessionPublishResult =
 			publishedCommit: null
 	  }
 
+export type RepoSourceBootstrapResult = {
+	sessionId: string
+	publishedCommit: string
+	message: string
+}
+
 export type RepoSessionRebaseResult = {
 	ok: true
 	sessionId: string

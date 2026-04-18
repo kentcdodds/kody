@@ -1,4 +1,5 @@
 import {
+	type RepoSourceBootstrapResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
 	type RepoSessionApplyEditsResult,
@@ -68,6 +69,12 @@ export type RepoSessionRpc = {
 		dryRun?: boolean
 		rollbackOnError?: boolean
 	}) => Promise<RepoSessionApplyEditsResult>
+	bootstrapSource: (payload: {
+		sessionId: string
+		sourceId: string
+		userId: string
+		edits: Array<RepoSessionEdit>
+	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
 		sessionId: string
 		userId: string
