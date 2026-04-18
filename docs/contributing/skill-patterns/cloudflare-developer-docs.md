@@ -79,6 +79,10 @@ Adjust `name`, `title`, `description`, and trust flags when saving.
 }
 ```
 
+Callers should inspect `contentType` before treating `body` as Markdown. This
+helper returns the raw sliced response body plus `markdownTokenEstimate`; HTML
+responses are not auto-converted.
+
 For parameterized skills, use **`meta_save_skill`** **`parameters`** (e.g. a
 required `path` string) and read **`params.path`** instead of a hard-coded path.
 

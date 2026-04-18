@@ -159,7 +159,7 @@ Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
 - \`{ "query": "preferred org value or saved connector", "limit": 10 }\`
 - \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
- - \`{ "entity": "kody_official_guide:capability" }\`
+- \`{ "entity": "kody_official_guide:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:connector" }\`
 - To run a skill: \`meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })\`

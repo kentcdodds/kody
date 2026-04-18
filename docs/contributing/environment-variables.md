@@ -97,7 +97,8 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/mcp/cloudflare/cloudflare-rest-client.ts`):
 
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the internal API client
-  (`Authorization: Bearer ...`) for the Cloudflare Email sender. User
+  (`Authorization: Bearer ...`) for Worker-side Cloudflare REST calls such as
+  the Cloudflare Email sender. User
   Cloudflare API calls from codemode use saved secrets and secret-aware `fetch`
   (see `docs/contributing/skill-patterns/cloudflare-api-v4.md`). Local
   `npm run dev` sets this to the Cloudflare mock token unless
