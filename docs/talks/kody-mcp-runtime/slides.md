@@ -13,98 +13,282 @@ defaults:
 favicon: /favicon.ico
 ---
 
-# Kody
+# Build a Free Agent 🐨
 
-## Practical building blocks for personal assistants
-
-### Built to solve my problems, maybe yours too.
+## Personal assistant, your stack
 
 <!--
-Open with the product and the emotional context for why it exists.
+Open with the product and emotional context: practical building blocks for
+personal assistants — built to solve my problems, maybe yours too.
+-->
+
+---
+
+# I love my view
+
+<figure class="kody-hero-photo">
+  <img
+    src="/images/office-shades-mountains.jpeg"
+    alt="Home office window with a roller shade, looking out at snow-capped mountains."
+  />
+</figure>
+
+<!--
+Establish the home office and the view — the "why automate the window" hook.
+-->
+
+---
+
+# I don't love sun glare
+
+<figure class="kody-hero-photo">
+  <img
+    src="/images/glare.png"
+    alt="A bright, upscale kitchen with a large window blasting direct sunlight across a white marble countertop, creating intense glare and starburst reflections. Woven pendant lights, pale cabinetry, potted plants, and a bowl of lemons add warmth, but the harsh sun makes the counter look uncomfortably bright."
+  />
+</figure>
+
+<!--
+Same space, harsh glare — the problem you feel in real rooms, not abstract "IoT."
+-->
+
+---
+
+# Kody controls my shades
+
+<figure class="kody-hero-photo">
+  <img
+    src="/images/no-glare.png"
+    alt="The same elegant kitchen with a light, slightly translucent window shade pulled down, diffusing the sunlight and removing the harsh glare from the white marble countertop. Soft daylight still fills the room, with woven pendant lights, pale cabinetry, potted plants, and a bowl of lemons visible in a calmer, more comfortable scene."
+  />
+</figure>
+
+<!--
+Shade down — comfortable again. Kody actually runs the integration, not a slide joke.
+-->
+
+---
+
+# Kody built and deployed this app
+
+<figure class="kody-hero-photo">
+  <a
+    href="https://x.com/kentcdodds/status/2042986615904309388"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <img
+      src="/images/shape-and-color-match.png"
+      alt="Shape & Color Match — open the post on X for the live game and context."
+    />
+  </a>
+</figure>
+
+<!--
+Shape & Color Match — link goes to X post for live game and fuller story.
+-->
+
+---
+
+# Kody built this app
+
+<figure class="kody-hero-photo">
+  <a
+    href="https://x.com/kentcdodds/status/2037692899308314869"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <img
+      src="/images/excited-kent-spotify.png"
+      alt="Browser showing a StreamBeats Spotify-style player with Chrome DevTools Network open, and a small excited picture-in-picture video of Kent in the corner — open the post on X for context."
+    />
+  </a>
+</figure>
+
+<!--
+StreamBeats-style player + DevTools Network + little PiP excitement — X post has context.
+-->
+
+---
+
+# Kody setup a Cloudflare tunnel to my home network
+
+<figure class="kody-hero-photo">
+  <a
+    href="https://x.com/kentcdodds/status/2041982989580832945"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <img
+      src="/images/cloudflare-control.png"
+      alt="Screenshot related to Cloudflare tunnel setup — open the post on X for context."
+    />
+  </a>
+</figure>
+
+<!--
+Cloudflare tunnel into home network — practical "reach my stuff safely" moment; X post for details.
+-->
+
+---
+
+# Kody shipped a landing page on epic.engineer
+
+<figure class="kody-hero-photo">
+  <a
+    href="https://x.com/kentcdodds/status/2041986440972914912"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <img
+      src="/images/epic-engineer.png"
+      alt="X post with a preview of the Epic Engineer coming soon site: dark gradient hero, Epic Engineer headline, and a subscribe for updates button — open the post on X for context."
+    />
+  </a>
+</figure>
+
+<!--
+Epic Engineer landing — shipped from the same assistant story arc; X post for preview.
+-->
+
+---
+
+# And it did all of this for free
+
+<h2 v-click>Because I did it here:</h2>
+
+<figure class="kody-hero-photo kody-hero-triptych">
+  <v-click>
+    <div class="kody-hero-triptych__cell">
+      <img
+        src="/images/claude-disneyland-fly.png"
+        alt="Claude on mobile at Disneyland: Kody checks Fly machine memory and scales a workshop VM from 256 MB to 512 MB after an OOM."
+      />
+    </div>
+  </v-click>
+  <v-click>
+    <div class="kody-hero-triptych__cell">
+      <img
+        src="/images/chatgpt-shades.png"
+        alt="ChatGPT 5.4 Thinking: user asks Kody to open all office shades; the model retries skill parameters and finishes with a list of opened shade groups."
+      />
+    </div>
+  </v-click>
+  <v-click>
+    <div class="kody-hero-triptych__cell">
+      <img
+        src="/images/cursor-shades.png"
+        alt="Cursor Composer: detailed answer on when office sheers will open and close tomorrow, with a schedule table from sunrise-sunset data and automation config."
+      />
+    </div>
+  </v-click>
+</figure>
+
+<!--
+Triptych: Claude at Disneyland (Fly VM / OOM), ChatGPT opening shades, Cursor
+on sheers schedule — same Kody, different hosts. "Because it did this here" is
+the punchline: not tied to one chat app or one machine.
 -->
 
 ---
 
 # Why I needed this
 
-- Open Claw was useful, but the **cost model** made experimentation stressful
-- I was never fully confident I had everything **configured correctly**
-- **Secrets management** felt risky and fragile
-- I did not want to run a personal assistant on a computer in **my house**
-- Deploying it to external infra like **Fly** felt more complicated than it should
+- **Open Claw** → **cost** stress
+- **Config** never felt "done"
+- **Secrets** felt fragile
+- No **home server**
+- **Fly** deploy felt heavy
 
-**I wanted the benefits of a personal assistant without turning my life into an ops project.**
+<!--
+Open Claw was useful, but the cost model made experimentation stressful. I was
+never fully confident everything was configured correctly. Secrets management
+felt risky and fragile. I did not want a personal assistant on a computer in my
+house. Deploying to external infra like Fly felt more complicated than it should.
+
+Punchline: I wanted the benefits of a personal assistant without turning my
+life into an ops project.
+-->
 
 ---
 
 # What I actually wanted
 
-- Use whatever **agent host** and **model** I want (with my existing subscription)
-- Keep secrets constrained, auditable, and out of the model prompt
-- Add integrations without needing code changes to the agent
-- Generate and save UI apps that can be reused as real software
-- Avoid self-hosting at home and avoid bespoke deploy complexity
-- Build once and have it work anywhere MCP works (all without context bloat)
-
-**Kody is my answer to those constraints.**
+- **BYO** host + model (existing sub)
+- **Secrets** out of prompt, bounded
+- **Integrations** without forking the agent
+- **UI** you can save as real apps
+- **No** home hosting / bespoke deploy
+- **MCP** everywhere, no context bloat
 
 <!--
-Now the rest of the talk can explain how Kody solves those real problems.
+Kody is my answer to those constraints. Use whatever agent host and model you
+want with your existing subscription. Keep secrets constrained, auditable, and
+out of the model prompt. Add integrations without code changes to the agent.
+Generate and save UI apps as reusable software. Avoid self-hosting at home and
+bespoke deploy complexity. Build once; works anywhere MCP works.
+
+Now the rest of the talk explains how Kody solves those problems.
 -->
 
 ---
 
 # The 3 MCP tools
 
-- **`search`** finds capabilities, saved skills, saved apps, and secret references
-- **`execute`** runs an async function in Codemode to compose capability
-  calls
-- **`open_generated_ui`** opens dynamically generated MCP Apps
+<v-clicks>
 
-**Search first. Execute when the plan is clear. Open UI when chat is the wrong surface.**
+- **`search`** — discover
+- **`execute`** — run (Codemode)
+- **`open_generated_ui`** — ship UI
+
+</v-clicks>
 
 <!--
-This is the map for the rest of the talk: discovery, execution, and a UI escape
-hatch when chat is not enough.
+Map for the rest of the talk: discovery, execution, UI escape hatch.
+
+`search` finds capabilities, saved skills, saved apps, and secret references.
+`execute` runs an async function in Codemode to compose capability calls.
+`open_generated_ui` opens dynamically generated MCP Apps.
+
+Cadence: search first, execute when the plan is clear, open UI when chat is the
+wrong surface.
 -->
 
 ---
 
 # `execute` runs Codemode
 
-## Central to how Kody works
+## One function, not 50 tool calls
 
-- Cloudflare Codemode lets the model write a short **JavaScript function**
-  instead of making one tool call at a time
-- That code gets a **`codemode`** object whose methods are the tools you expose (I call these "capabilities")
-- The function runs in an isolated **Worker sandbox**
-- This works well because models are often better at writing small programs than
-  at managing long tool-call chains
+- Model writes **JS** once
+- **`codemode`** methods = your capabilities
+- **Worker** sandbox
 
-**Kody's `execute` tool uses this exact idea.**
-
-<span style="font-size: 0.9em; color: #888;">Using `@cloudflare/codemode`</span>
+<span style="font-size: 0.9em; color: #888;">`@cloudflare/codemode`</span>
 
 <!--
-This is the conceptual bridge: one "write code" tool, not a giant bag of
-disconnected tool calls.
+Central to how Kody works. Cloudflare Codemode lets the model write a short
+JavaScript function instead of one tool call at a time. The code gets a
+`codemode` object whose methods are the tools you expose — I call those
+"capabilities". It runs in an isolated Worker sandbox. Models are often better at
+small programs than long tool-call chains. Kody's `execute` tool is exactly this:
+one "write code" tool, not a giant bag of disconnected tool calls.
 -->
 
 ---
 
 # Search is the discovery layer
 
-- **`search`** returns ranked hits across capabilities, saved skills, saved
-  apps, and secret references
-- The order matters because the top hits are what the agent should inspect first
-- Use **`entity: "{id}:{type}"`** to get full markdown and schema for one result
-- If results look thin, rephrase the query or read the live capability registry
-
-**Without `search`, `execute` is just guessing names and input shapes.**
+- **Ranked** hits (order matters)
+- **`entity: "{id}:{type}"`** → full doc + schema
+- Thin results → **rephrase** or check registry
 
 <!--
-This slide answers "how does the model know what tools exist?" before we move
-back into execution.
+`search` returns ranked hits across capabilities, saved skills, saved apps, and
+secret references. Top hits are what the agent should inspect first. Without
+`search`, `execute` is just guessing names and input shapes.
+
+Answers "how does the model know what tools exist?" before execution.
 -->
 
 ---
@@ -119,52 +303,76 @@ flowchart LR
   sandbox --> result[Return small result]
 ```
 
-- **`search`** finds names and schemas; **`execute`** runs the plan
+- **search** → names/schemas · **execute** → plan
 
 <!--
-This ties discovery and execution together before the value-prop section.
+Ties discovery and execution before the value-prop section. `search` finds names
+and schemas; `execute` runs the plan.
+-->
+
+---
+
+# Memory stays lean
+
+- **`conversationId`**
+- **`memoryContext`** — **few** hits, **on demand**
+- Same **payload** as search / execute — no side channel
+- **`meta_memory_verify`** → upsert / delete / skip
+
+<!--
+Reuse conversationId from prior tool responses in the same conversation (omit on
+first call; use the id Kody returns after). That ties calls together and lets Kody
+avoid surfacing the same long-term memory repeatedly in one thread.
+
+memoryContext is an optional, short, task-focused hint (task, query, important
+entities, constraints). When the agent includes it, Kody may return a small
+conservative set of relevant memories alongside the normal tool payload — same
+pattern for search and execute — rather than a separate wall of context.
+
+Mutating durable memory is verify-first: call meta_memory_verify, review the
+related memories Kody returns, then decide meta_memory_upsert, meta_memory_delete,
+both, or nothing. Kody retrieves and suggests; the consuming agent decides meaning.
+
+docs/use/memory.md
 -->
 
 ---
 
 # 1. No inference bill
 
-- Kody is the **runtime**, integration layer, and persistence layer
-- Your agent host still chooses the **model** (Claude, GPT, Cursor, etc...)
-- The value is in **search, capabilities, execution, policy, apps, and OAuth**
-- Use Kody on top of existing AI subscriptions instead of buying "just one more, bro"
-
-**Your agents already do inference well. Kody gives them hands.**
+- Kody = **runtime** + integrations + persistence
+- Host picks the **model**
+- Value = **search, execute, policy, apps, OAuth**
+- Stack on subs you **already** pay for
 
 <!--
-Emphasize that the product value is not "Kody has the smartest model."
+Your agents already do inference well; Kody gives them hands. Product value is
+not "Kody has the smartest model." Use Kody on existing subscriptions instead of
+"just one more, bro."
 -->
 
 ---
 
 # 2. It runs anywhere MCP runs
 
-- Kody is an **MCP server**, not a bespoke chat surface
-- If the host speaks MCP, the host can use Kody
-- Your investment compounds in **capabilities, saved apps, secrets, and skills**
-
-**Bring your own agent. Keep the same runtime.**
+- **MCP server**, not a chat app
+- Any **MCP host** works
+- Compounds in **capabilities, apps, secrets, skills**
 
 <!--
-This is the portability slide. The thing that persists is the runtime layer, not
-the current chat client.
+Portability: investment is the runtime layer — capabilities, saved apps,
+secrets, skills — not the current chat client. Bring your own agent, same runtime.
 -->
 
 ---
 
 # 3. Secrets with real boundaries
 
-- When Kody needs a secret, it gives you a secure UI instead of putting it in
-  context
-- The agent can inspect **secret metadata**, but not plaintext values
-- Secret placeholders resolve only in **secret-aware** paths
-- Secrets are only available to **approved** capabilities and hosts
-- Only the account admin UI can approve which hosts may receive that secret
+- **UI** to capture — not in context
+- Agent sees **metadata** only
+- Placeholders → **secret-aware** paths only
+- **Approved** capabilities + hosts
+- Admin **approves** which hosts get access
 
 ```mermaid
 flowchart LR
@@ -174,106 +382,66 @@ flowchart LR
   retry --> success[Success]
 ```
 
-**The agent never needs the raw secret, and unapproved egress stays blocked.**
-
 <!--
-This is a major differentiator. Be explicit that save and approve are different
-steps.
+Major differentiator: save vs approve are different steps. Agent never needs raw
+secret; unapproved egress stays blocked.
 -->
 
 ---
 
 # 4. `open_generated_ui` turns chats into apps
 
-- Chat is not always the right interface
-- The model can generate UI to display inline
-- If the user likes it, they can save it as a saved app and open it again later
-- The UI can call back into server-side code for secrets, OAuth, and approved
-  API access
+- Chat ≠ only UI
+- **Generate** + show inline
+- **Save** → reopen later
+- UI → **server** for secrets / OAuth / APIs
 
-**Chat can launch the app, but the app becomes durable software.**
+<!--
+Chat can launch the app; the app becomes durable software. Model generates UI;
+user can save as saved app. UI calls back for secrets, OAuth, approved API access.
+-->
 
 ---
 
 # 5. OAuth is built in
 
-- When regular access-token secrets aren't enough, Kody can build a full OAuth
-  flow for you
-- When Kody needs OAuth for a provider, it tells you how to set it up
-- Kody handles **authorize -> callback -> token exchange -> persistence ->
-  refresh**
-
-**Building integrations becomes configuration work, not auth plumbing.**
+- Beyond raw tokens → **full OAuth** when needed
+- Kody **guides** provider setup
+- **authorize → callback → exchange → persist → refresh**
 
 <!--
-Mention that the standard path is almost always enough; generated UI OAuth is
-the exception, not the default.
--->
-
----
-
-# Not toy examples
-
-These are **production-shaped** artifacts in my Kody account:
-
-- **Cursor Agent PR dashboard** — Cursor + GitHub, polling, CI context
-- **Tesla Energy Live** — OAuth, live energy data
-- **Skills** — agent status, open PRs, follow-up on an agent, Cloudflare API v4
-
-Add `public/demo/cursor-pr-dashboard.png` (and optionally `tesla-energy.png`)
-after export.
-
-![](/demo/cursor-pr-dashboard.png)
-
-<!--
-Repo ships a 1×1 placeholder PNG so production builds succeed; swap in a real screenshot before presenting.
--->
-
----
-
-# Walkthrough — PR dashboard
-
-1. **Search** finds the saved app and related capabilities
-2. **`open_generated_ui`** reopens the saved app instead of rebuilding the UI
-   each time
-3. The app executes server-side code with **secret-backed** API calls
-4. If a host is not approved, the flow stops and sends the user to approval
-5. The same integration can also power repeatable skills and scripts
-
-**Same runtime, multiple surfaces: app, skill, or agent command.**
-
-<!--
-This is the concrete demo story that proves the earlier claims.
+Integrations become configuration, not auth plumbing. Standard path is usually
+enough; generated UI OAuth is the exception, not the default.
 -->
 
 ---
 
 # Why this compounds
 
-- A connected account can power both **automation** and **saved apps**
-- One OAuth connection can feed many workflows
-- One saved app can become a durable internal tool
-- One capability can work across many MCP hosts
-- That is how Kody turns agent experiments into personal infrastructure
+- One account → **automation** + **apps**
+- One **OAuth** → many workflows
+- One **app** → durable internal tool
+- One **capability** → many hosts
+- Experiments → **personal infra**
 
 <!--
-This is the "why it sticks" slide.
+Why it sticks: connected account powers automation and saved apps; OAuth fans out;
+saved app becomes internal tool; capability portable across MCP hosts.
 -->
 
 ---
 
 # Takeaway
 
-- No inference bill
-- Any MCP host can use it
-- Secrets stay out of the agent and off unapproved domains
-- Generated UI can be saved and reopened as real software
-- OAuth is built in, so integrations are straightforward
-
-**That is MCP as runtime, not just chat.**
+- No **inference** bill
+- **Any** MCP host
+- **Secrets** bounded
+- **UI** → saved software
+- **OAuth** in the box
 
 <!--
-Thank you / Q&A. Offer links: heykody.dev, docs/use/index.md, this repo.
+MCP as runtime, not just chat. Thank you / Q&A: heykody.dev, docs/use/index.md,
+this repo.
 -->
 
 ---
@@ -282,13 +450,14 @@ layout: center
 
 # Live demo cheat sheet
 
-1. **`search`** — show capabilities or a saved app without needing credentials
-2. **`execute`** — do one public-safe read-only workflow
-3. **`open_generated_ui`** — reopen the saved app if you want the "software, not
-   chat" moment
-4. **Stop before secrets** — show **`/connect/secret`** or **`/connect/oauth`** in
-   the deck, not live credentials
+1. **`search`** — no creds needed
+2. **`execute`** — one safe read-only path
+3. **`open_generated_ui`** — "software, not chat"
+4. **Secrets** — slide only (`/connect/secret`, `/connect/oauth`), not live
 
 <!--
-Appendix slide — use if you have extra time; keeps the main deck at 12 slides + this optional 13th.
+Appendix if extra time. `search`: show capabilities or saved app without
+credentials. `execute`: one public-safe read-only workflow. `open_generated_ui`:
+reopen saved app for the software moment. Stop before live secrets — show URLs in
+deck only.
 -->
