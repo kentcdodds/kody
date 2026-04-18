@@ -14,6 +14,7 @@ import {
 } from './repo-sessions.ts'
 import {
 	buildAuthenticatedArtifactsRemote,
+	getArtifactsBinding,
 	getArtifactsNamespace,
 	parseArtifactTokenSecret,
 	resolveArtifactSourceRepo,
@@ -92,6 +93,60 @@ function buildGitCloneAuth(input: { remote: string; token: string }) {
 		username: 'x',
 		password: tokenSecret,
 	}
+}
+
+type RepoSessionBootstrapResult = {
+	sessionRepoId: string
+	sessionRepoName: string
+	sessionRepoRemote: string
+	sessionRepoToken: string
+	baseCommit: string | null
+}
+
+export async function createSessionRepoForSource(input: {
+	env: Env
+	source: {
+		repo_id: string
+		published_commit: string | null
+	}
+	sessionId: string
+	defaultBranch?: string | null
+}) {
+	const compactSessionId = input.sessionId.replace(/-/g, '')
+	const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
+	const sessionRepoName = `${input.source.repo_id.slice(0, repoPrefixLength)}-${compactSessionId}`
+	if (input.source.published_commit) {
+		const sourceRepo = await resolveArtifactSourceRepo(
+			input.env,
+			input.source.repo_id,
+		)
+		const forked = await sourceRepo.fork({
+			name: sessionRepoName,
+			readOnly: false,
+		})
+		return {
+			sessionRepoId: forked.id,
+			sessionRepoName: forked.name,
+			sessionRepoRemote: forked.remote,
+			sessionRepoToken: forked.token,
+			baseCommit: input.source.published_commit,
+		} satisfies RepoSessionBootstrapResult
+	}
+	const created = await getArtifactsBinding(input.env).create(sessionRepoName, {
+		readOnly: false,
+		setDefaultBranch: input.defaultBranch ?? defaultSessionBranch,
+	})
+	return {
+		sessionRepoId: created.id,
+		sessionRepoName: created.name,
+		sessionRepoRemote: created.remote,
+		sessionRepoToken: created.token,
+		baseCommit: null,
+	} satisfies RepoSessionBootstrapResult
+}
+
+export const __test_only__ = {
+	createSessionRepoForSource,
 }
 
 class RepoSessionBase extends DurableObject<Env> {
@@ -293,33 +348,27 @@ class RepoSessionBase extends DurableObject<Env> {
 					`Source "${input.sourceId}" was not found for this user.`,
 				)
 			}
-			const sourceRepo = await resolveArtifactSourceRepo(
-				this.env,
-				source.repo_id,
-			)
-			const baseCommit = source.published_commit
-			const compactSessionId = input.sessionId.replace(/-/g, '')
-			const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
-			const sessionRepoName = `${source.repo_id.slice(0, repoPrefixLength)}-${compactSessionId}`
-			const forked = await sourceRepo.fork({
-				name: sessionRepoName,
-				readOnly: false,
+			const bootstrap = await createSessionRepoForSource({
+				env: this.env,
+				source,
+				sessionId: input.sessionId,
+				defaultBranch: input.defaultBranch,
 			})
 			const now = nowIso()
 			const newSessionRow: RepoSessionRow = {
 				id: input.sessionId,
 				user_id: input.userId,
 				source_id: input.sourceId,
-				session_repo_id: forked.id,
-				session_repo_name: forked.name,
+				session_repo_id: bootstrap.sessionRepoId,
+				session_repo_name: bootstrap.sessionRepoName,
 				session_repo_namespace: getArtifactsNamespace(this.env),
-				base_commit: baseCommit ?? '',
+				base_commit: bootstrap.baseCommit ?? '',
 				source_root: input.sourceRoot ?? source.source_root,
 				conversation_id: input.conversationId ?? null,
 				status: 'active',
 				expires_at: null,
 				last_checkpoint_at: null,
-				last_checkpoint_commit: baseCommit,
+				last_checkpoint_commit: bootstrap.baseCommit,
 				last_check_run_id: null,
 				last_check_tree_hash: null,
 				created_at: now,
@@ -329,8 +378,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionRow = newSessionRow
 			await this.initialize({
 				sessionId: sessionRow.id,
-				sessionRepoRemote: forked.remote,
-				sessionRepoToken: forked.token,
+				sessionRepoRemote: bootstrap.sessionRepoRemote,
+				sessionRepoToken: bootstrap.sessionRepoToken,
 			})
 		} else {
 			if (sessionRow.user_id !== input.userId) {
@@ -859,4 +908,8 @@ export const RepoSession = Sentry.instrumentDurableObjectWithSentry(
 
 export function repoSessionRpc(env: Env, sessionId: string) {
 	return createRepoSessionRpc(env, sessionId)
+}
+
+export const __testOnly = {
+	createSessionRepoForSource,
 }
