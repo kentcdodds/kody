@@ -1,7 +1,9 @@
-import { hasArtifactsAccess } from './artifacts.ts'
+import {
+	hasArtifactsAccess,
+	type ArtifactBootstrapAccess,
+} from './artifacts.ts'
 import { getEntitySourceById } from './entity-sources.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
-import { type ArtifactBootstrapAccess } from './artifacts.ts'
 
 type SyncArtifactSourceInput = {
 	env: Env
