@@ -171,15 +171,55 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async resetWorkspace() {
-		await this.workspace
-			.rm(repoSessionWorkspacePrefix, {
+		const gitConfigPath = `${repoSessionWorkspacePrefix}/.git/config`
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			await this.workspace.rm(repoSessionWorkspacePrefix, {
 				force: true,
 				recursive: true,
 			})
-			.catch(() => {
-				// Best effort only; the session row is the source of truth.
+			const [workspaceExists, gitConfigExists] = await Promise.all([
+				this.workspace.exists(repoSessionWorkspacePrefix),
+				this.workspace.exists(gitConfigPath),
+			])
+			if (!workspaceExists && !gitConfigExists) {
+				this.initializedSessionId = null
+				return
+			}
+		}
+		throw new Error(
+			`Failed to remove repo session workspace "${repoSessionWorkspacePrefix}" cleanly.`,
+		)
+	}
+
+	private async hasExpectedOriginRemote(expectedUrl: string) {
+		try {
+			const remotes = await this.git.remote({
+				dir: repoSessionWorkspacePrefix,
+				list: true,
 			})
-		this.initializedSessionId = null
+			if (!Array.isArray(remotes)) {
+				return false
+			}
+			return remotes.some(
+				(remote) =>
+					remote.remote === 'origin' && remote.url === expectedUrl,
+			)
+		} catch {
+			return false
+		}
+	}
+
+	private async readManifestFromWorkspace(manifestPath: string) {
+		const manifestContent = await this.workspace.readFile(
+			resolveRepoWorkspacePath(manifestPath, repoSessionWorkspacePrefix),
+		)
+		if (manifestContent == null) {
+			throw new Error(`Manifest "${manifestPath}" was not found.`)
+		}
+		return parseRepoManifest({
+			content: manifestContent,
+			manifestPath,
+		})
 	}
 
 	private async getCurrentBranch(defaultBranch = defaultSessionBranch) {
@@ -266,10 +306,18 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionRepoToken: string
 	}): Promise<void> {
 		if (this.initializedSessionId === input.sessionId) return
-		const hasGitDir = await this.workspace.exists(
-			`${repoSessionWorkspacePrefix}/.git/config`,
-		)
-		if (!hasGitDir) {
+		const gitConfigPath = `${repoSessionWorkspacePrefix}/.git/config`
+		const hasGitDir = await this.workspace.exists(gitConfigPath)
+		if (hasGitDir) {
+			const hasExpectedOrigin = await this.hasExpectedOriginRemote(
+				input.sessionRepoRemote,
+			)
+			if (!hasExpectedOrigin) {
+				await this.resetWorkspace()
+			}
+		}
+		const hasCleanGitDir = await this.workspace.exists(gitConfigPath)
+		if (!hasCleanGitDir) {
 			await this.workspace.mkdir(repoSessionWorkspacePrefix, {
 				recursive: true,
 			})
@@ -519,6 +567,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!publishedCommit) {
 			throw new Error(`Source "${source.id}" bootstrap produced no commit.`)
 		}
+		const manifest = await this.readManifestFromWorkspace(source.manifest_path)
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'source',
@@ -526,16 +575,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			token: sourceAccess.token,
 			username: 'x',
 			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
-		})
-		const manifestContent = await this.workspace.readFile(
-			resolveRepoWorkspacePath(source.manifest_path, repoSessionWorkspacePrefix),
-		)
-		if (manifestContent == null) {
-			throw new Error(`Manifest "${source.manifest_path}" was not found.`)
-		}
-		const manifest = parseRepoManifest({
-			content: manifestContent,
-			manifestPath: source.manifest_path,
 		})
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
@@ -948,19 +987,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			username: 'x',
 			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
 		})
-		const manifestContent = await this.workspace.readFile(
-			resolveRepoWorkspacePath(
-				source.manifest_path,
-				repoSessionWorkspacePrefix,
-			),
-		)
-		if (manifestContent == null) {
-			throw new Error(`Manifest "${source.manifest_path}" was not found.`)
-		}
-		const manifest = parseRepoManifest({
-			content: manifestContent,
-			manifestPath: source.manifest_path,
-		})
+		const manifest = await this.readManifestFromWorkspace(source.manifest_path)
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
 			userId: source.user_id,
