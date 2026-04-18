@@ -2,7 +2,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { runJobNowViaManager } from '#worker/jobs/manager-do.ts'
 import {
-	jobIdInputSchema,
+	jobRunNowInputSchema,
 	jobRunNowOutputSchema,
 	requireJobsUser,
 } from './shared.ts'
@@ -17,7 +17,7 @@ export const jobRunNowCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: jobIdInputSchema,
+		inputSchema: jobRunNowInputSchema,
 		outputSchema: jobRunNowOutputSchema,
 		async handler(args, ctx) {
 			const user = requireJobsUser(ctx)
@@ -26,6 +26,7 @@ export const jobRunNowCapability = defineDomainCapability(
 				userId: user.userId,
 				jobId: args.id,
 				callerContext: ctx.callerContext,
+				repoCheckPolicyOverride: args.repoCheckPolicy,
 			})
 		},
 	},

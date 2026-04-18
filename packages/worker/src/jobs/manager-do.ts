@@ -3,6 +3,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getNextRunnableJob, runDueJobsForUser, runJobNow } from './service.ts'
+import { type JobRepoCheckPolicy } from './types.ts'
 
 const userIdStorageKey = 'user-id'
 
@@ -50,6 +51,7 @@ class JobManagerBase extends DurableObject<Env> {
 		userId: string
 		jobId: string
 		callerContext?: McpCallerContext | null
+		repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	}) {
 		let result: Awaited<ReturnType<typeof runJobNow>> | undefined
 		let originalError: unknown
@@ -59,6 +61,7 @@ class JobManagerBase extends DurableObject<Env> {
 				userId: input.userId,
 				jobId: input.jobId,
 				callerContext: input.callerContext ?? null,
+				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 			})
 		} catch (error) {
 			originalError = error
@@ -95,6 +98,7 @@ export function jobManagerRpc(env: Env, userId: string) {
 			userId: string
 			jobId: string
 			callerContext?: McpCallerContext | null
+			repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 		}) => Promise<Awaited<ReturnType<typeof runJobNow>>>
 	}
 }
@@ -110,10 +114,12 @@ export async function runJobNowViaManager(input: {
 	userId: string
 	jobId: string
 	callerContext?: McpCallerContext | null
+	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }) {
 	return jobManagerRpc(input.env, input.userId).runNow({
 		userId: input.userId,
 		jobId: input.jobId,
 		callerContext: input.callerContext ?? null,
+		repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 	})
 }

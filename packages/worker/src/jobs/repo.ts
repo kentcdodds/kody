@@ -8,6 +8,7 @@ type JobRowRecord = {
 	code: string | null
 	source_id: string | null
 	published_commit: string | null
+	repo_check_policy_json: string | null
 	storage_id: string | null
 	params_json: string | null
 	schedule_json: string
@@ -41,6 +42,9 @@ function serializeJob(job: JobRecord) {
 		code: job.code,
 		source_id: job.sourceId ?? null,
 		published_commit: job.publishedCommit ?? null,
+		repo_check_policy_json: job.repoCheckPolicy
+			? JSON.stringify(job.repoCheckPolicy)
+			: null,
 		storage_id: job.storageId,
 		params_json: job.params ? JSON.stringify(job.params) : null,
 		schedule_json: JSON.stringify(job.schedule),
@@ -84,6 +88,12 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		sourceId: row['source_id'] == null ? null : String(row['source_id']),
 		publishedCommit:
 			row['published_commit'] == null ? null : String(row['published_commit']),
+		repoCheckPolicy: parseJson<JobRecord['repoCheckPolicy'] | undefined>(
+			row['repo_check_policy_json'] == null
+				? null
+				: String(row['repo_check_policy_json']),
+			undefined,
+		),
 		storageId,
 		params: parseJson<Record<string, unknown> | undefined>(
 			row['params_json'] == null ? null : String(row['params_json']),
@@ -126,6 +136,10 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		code: record.code,
 		source_id: record.sourceId ?? null,
 		published_commit: record.publishedCommit ?? null,
+		repo_check_policy_json:
+			row['repo_check_policy_json'] == null
+				? null
+				: String(row['repo_check_policy_json']),
 		storage_id: record.storageId,
 		params_json: row['params_json'] == null ? null : String(row['params_json']),
 		schedule_json: String(row['schedule_json']),
@@ -165,11 +179,11 @@ export async function insertJobRow(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO jobs (
-				id, user_id, name, code, source_id, published_commit, storage_id, params_json, schedule_json, timezone, enabled,
+				id, user_id, name, code, source_id, published_commit, repo_check_policy_json, storage_id, params_json, schedule_json, timezone, enabled,
 				kill_switch_enabled, caller_context_json, created_at, updated_at,
 				last_run_at, last_run_status, last_run_error, last_duration_ms,
 				next_run_at, run_count, success_count, error_count, run_history_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			serialized.id,
@@ -178,6 +192,7 @@ export async function insertJobRow(input: {
 			serialized.code,
 			serialized.source_id,
 			serialized.published_commit,
+			serialized.repo_check_policy_json,
 			serialized.storage_id,
 			serialized.params_json,
 			serialized.schedule_json,
@@ -210,7 +225,7 @@ export async function updateJobRow(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE jobs SET
-				name = ?, code = ?, source_id = ?, published_commit = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
+				name = ?, code = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
 				enabled = ?, kill_switch_enabled = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
 				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?, run_history_json = ?
@@ -221,6 +236,7 @@ export async function updateJobRow(input: {
 			serialized.code,
 			serialized.source_id,
 			serialized.published_commit,
+			serialized.repo_check_policy_json,
 			serialized.storage_id,
 			serialized.params_json,
 			serialized.schedule_json,

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
 	type JobExecutionResult,
+	type JobRepoCheckPolicy,
 	type JobUpsertInput,
 	type JobView,
 } from '#worker/jobs/types.ts'
@@ -40,6 +41,11 @@ export const jobViewSchema = z.object({
 	code: z.string().nullable(),
 	sourceId: z.string().nullable(),
 	publishedCommit: z.string().nullable(),
+	repoCheckPolicy: z
+		.object({
+			allowTypecheckFailures: z.boolean().optional(),
+		})
+		.optional(),
 	storageId: z.string(),
 	params: z.record(z.string(), z.unknown()).optional(),
 	schedule: jobScheduleSchema,
@@ -81,6 +87,17 @@ export const jobIdInputSchema = z.object({
 	id: z.string().min(1).describe('Identifier of the job.'),
 })
 
+export const jobRepoCheckPolicySchema = z
+	.object({
+		allowTypecheckFailures: z
+			.boolean()
+			.optional()
+			.describe(
+				'For repo-backed jobs only, allow execution to continue when Worker-native checks fail only in the typecheck category. Missing manifest, entrypoint, dependency, lint, and smoke checks still block execution.',
+			),
+	})
+	.strict() satisfies z.ZodType<JobRepoCheckPolicy>
+
 export const jobUpsertInputSchema = z
 	.object({
 		id: z
@@ -118,6 +135,12 @@ export const jobUpsertInputSchema = z
 			.optional()
 			.describe(
 				'Published commit pinned for repo-backed job execution. Optional on create; updated automatically when the repo session publish flow promotes changes.',
+			),
+		repoCheckPolicy: jobRepoCheckPolicySchema
+			.nullable()
+			.optional()
+			.describe(
+				'Optional repo-backed execution policy. This is opt-in and does not change publish-time repo checks.',
 			),
 		params: z
 			.record(z.string(), z.unknown())
@@ -166,6 +189,16 @@ export const jobUpsertInputSchema = z
 			})
 		}
 	}) satisfies z.ZodType<JobUpsertInput>
+
+export const jobRunNowInputSchema = z.object({
+	id: z.string().min(1).describe('Identifier of the job.'),
+	repoCheckPolicy: jobRepoCheckPolicySchema
+		.nullable()
+		.optional()
+		.describe(
+			'Optional one-off repo-backed execution policy override for this immediate run only.',
+		),
+})
 
 export const jobExecutionResultSchema = z.discriminatedUnion('ok', [
 	z.object({

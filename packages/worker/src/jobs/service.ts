@@ -25,6 +25,7 @@ import {
 	type JobCreateInput,
 	type JobExecutionOutcome,
 	type JobExecutionResult,
+	type JobRepoCheckPolicy,
 	type JobRecord,
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
@@ -39,9 +40,7 @@ import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 
-function hasRepoBackedJobSource(input: {
-	sourceId?: string | null
-}) {
+function hasRepoBackedJobSource(input: { sourceId?: string | null }) {
 	return typeof input.sourceId === 'string' && input.sourceId.length > 0
 }
 
@@ -89,6 +88,68 @@ function normalizeOptionalParams(
 	return params === null || params === undefined ? undefined : params
 }
 
+function normalizeJobRepoCheckPolicy(
+	policy: JobRepoCheckPolicy | null | undefined,
+): JobRepoCheckPolicy | undefined {
+	if (!policy) {
+		return undefined
+	}
+	if (policy.allowTypecheckFailures === true) {
+		return {
+			allowTypecheckFailures: true,
+		}
+	}
+	return undefined
+}
+
+function resolveJobRepoCheckPolicy(input: {
+	stored: JobRepoCheckPolicy | undefined
+	override?: JobRepoCheckPolicy | null
+}) {
+	if (input.override !== undefined) {
+		return normalizeJobRepoCheckPolicy(input.override)
+	}
+	return normalizeJobRepoCheckPolicy(input.stored)
+}
+
+function evaluateRepoCheckGate(input: {
+	result: Awaited<ReturnType<ReturnType<typeof repoSessionRpc>['runChecks']>>
+	policy: JobRepoCheckPolicy | undefined
+	jobId: string
+	sourceId: string
+}) {
+	if (input.result.ok) {
+		return {
+			proceed: true,
+			logs: [] as Array<string>,
+		}
+	}
+	const failingResults = input.result.results.filter((entry) => !entry.ok)
+	const onlyTypecheckFailures =
+		failingResults.length > 0 &&
+		failingResults.every((entry) => entry.kind === 'typecheck')
+	if (input.policy?.allowTypecheckFailures === true && onlyTypecheckFailures) {
+		console.info('[runRepoBackedJob] bypassing repo typecheck failures', {
+			jobId: input.jobId,
+			sourceId: input.sourceId,
+			runId: input.result.runId,
+			treeHash: input.result.treeHash,
+			failingKinds: failingResults.map((entry) => entry.kind),
+		})
+		return {
+			proceed: true,
+			logs: [
+				`Bypassed repo typecheck-only check failures for job "${input.jobId}" (source "${input.sourceId}", check run ${input.result.runId}).`,
+			],
+		}
+	}
+	return {
+		proceed: false,
+		error: failingResults.map((entry) => entry.message).join('\n'),
+		logs: [] as Array<string>,
+	}
+}
+
 function repoSessionNeedsRefresh(session: {
 	base_commit: string | null
 	published_commit: string | null
@@ -105,12 +166,14 @@ function resolveCreateShape(input: JobCreateInput) {
 			code: input.code == null ? null : normalizeJobCode(input.code),
 			sourceId: input.sourceId ?? null,
 			publishedCommit: input.publishedCommit ?? null,
+			repoCheckPolicy: normalizeJobRepoCheckPolicy(input.repoCheckPolicy),
 		}
 	}
 	return {
 		code: normalizeJobCode(input.code ?? ''),
 		sourceId: null,
 		publishedCommit: null,
+		repoCheckPolicy: undefined,
 	}
 }
 
@@ -132,6 +195,10 @@ function resolveUpdatedShape(input: {
 		input.body.publishedCommit === undefined
 			? input.existing.publishedCommit
 			: input.body.publishedCommit
+	const nextRepoCheckPolicy =
+		input.body.repoCheckPolicy === undefined
+			? input.existing.repoCheckPolicy
+			: normalizeJobRepoCheckPolicy(input.body.repoCheckPolicy)
 	if (!nextCode && !nextSourceId) {
 		throw new Error('Jobs require either code or sourceId.')
 	}
@@ -139,6 +206,7 @@ function resolveUpdatedShape(input: {
 		code: nextCode,
 		sourceId: nextSourceId ?? null,
 		publishedCommit: nextPublishedCommit ?? null,
+		repoCheckPolicy: nextRepoCheckPolicy,
 	}
 }
 
@@ -172,6 +240,7 @@ export async function createJob(input: {
 		code: shape.code,
 		sourceId: ensuredSource?.id ?? shape.sourceId ?? null,
 		publishedCommit: shape.publishedCommit ?? null,
+		repoCheckPolicy: shape.repoCheckPolicy,
 		storageId: createJobStorageId(jobId),
 		params: normalizeOptionalParams(input.body.params),
 		schedule,
@@ -301,6 +370,7 @@ export async function updateJob(input: {
 		code: shape.code ?? null,
 		sourceId: ensuredSource?.id ?? shape.sourceId ?? null,
 		publishedCommit: shape.publishedCommit ?? null,
+		repoCheckPolicy: shape.repoCheckPolicy,
 		params:
 			input.body.params === undefined
 				? existing.params
@@ -372,6 +442,7 @@ export async function executeJobOnce(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext | null
+	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }): Promise<JobExecutionOutcome> {
 	const started = new Date()
 	let execution: JobExecutionResult
@@ -402,6 +473,7 @@ export async function executeJobOnce(input: {
 						env: input.env,
 						job: input.job,
 						callerContext: runtimeCallerContext,
+						repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 					})
 				: await runCodemodeWithRegistry(
 						input.env,
@@ -449,6 +521,7 @@ async function runRepoBackedJob(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
+	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }): Promise<ExecuteResult> {
 	if (!input.job.sourceId) {
 		return {
@@ -491,18 +564,23 @@ async function runRepoBackedJob(input: {
 		sessionId: session.id,
 		userId: input.callerContext.user.userId,
 	})
-	if (!result.ok) {
+	const gate = evaluateRepoCheckGate({
+		result,
+		policy: resolveJobRepoCheckPolicy({
+			stored: input.job.repoCheckPolicy,
+			override: input.repoCheckPolicyOverride,
+		}),
+		jobId: input.job.id,
+		sourceId: input.job.sourceId,
+	})
+	if (!gate.proceed) {
 		return {
-			error: result.results
-				.filter((entry) => !entry.ok)
-				.map((entry) => entry.message)
-				.join('\n'),
+			error: gate.error ?? 'Repo checks failed.',
 			result: null,
-			logs: [],
+			logs: gate.logs,
 		}
 	}
-	const manifestPath =
-		session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+	const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
 	const entrypoint = await sessionClient.readFile({
 		sessionId: session.id,
 		userId: input.callerContext.user.userId,
@@ -557,7 +635,7 @@ async function runRepoBackedJob(input: {
 	}
 	const { runCodemodeWithRegistry } =
 		await import('#mcp/run-codemode-registry.ts')
-	return await runCodemodeWithRegistry(
+	const executionResult = await runCodemodeWithRegistry(
 		input.env,
 		{
 			...input.callerContext,
@@ -585,6 +663,10 @@ async function runRepoBackedJob(input: {
 			},
 		},
 	)
+	return {
+		...executionResult,
+		logs: [...gate.logs, ...(executionResult.logs ?? [])],
+	}
 }
 
 export async function runJobNow(input: {
@@ -592,6 +674,7 @@ export async function runJobNow(input: {
 	userId: string
 	jobId: string
 	callerContext?: McpCallerContext | null
+	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }) {
 	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
 	if (!row) {
@@ -604,6 +687,7 @@ export async function runJobNow(input: {
 		env: input.env,
 		job: row.record,
 		callerContext: activeCallerContext,
+		repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 	})
 	const updated =
 		row.record.schedule.type === 'once'

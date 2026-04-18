@@ -11,24 +11,28 @@ import {
 } from './types.ts'
 
 vi.mock('@cloudflare/worker-bundler', () => ({
-	createFileSystemSnapshot: vi.fn(async (files: AsyncIterable<[string, string]>) => {
-		const snapshotFiles = new Map<string, string>()
-		for await (const [path, content] of files) {
-			snapshotFiles.set(path, content)
-		}
-		return {
-			read(path: string) {
-				return snapshotFiles.get(path) ?? null
-			},
-		}
-	}),
+	createFileSystemSnapshot: vi.fn(
+		async (files: AsyncIterable<[string, string]>) => {
+			const snapshotFiles = new Map<string, string>()
+			for await (const [path, content] of files) {
+				snapshotFiles.set(path, content)
+			}
+			return {
+				read(path: string) {
+					return snapshotFiles.get(path) ?? null
+				},
+			}
+		},
+	),
 }))
 
 vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 	createTypescriptLanguageService: vi.fn(async () => ({
 		languageService: {
 			getSemanticDiagnostics: vi.fn((entryPoint: string) =>
-				entryPoint === 'src/job.ts' ? [] : [{ messageText: `missing ${entryPoint}` }],
+				entryPoint === 'src/job.ts'
+					? []
+					: [{ messageText: `missing ${entryPoint}` }],
 			),
 		},
 	})),
@@ -320,24 +324,25 @@ function createDatabase() {
 									code: params[3],
 									source_id: params[4],
 									published_commit: params[5],
-									storage_id: params[6],
-									params_json: params[7],
-									schedule_json: params[8],
-									timezone: params[9],
-									enabled: params[10],
-									kill_switch_enabled: params[11],
-									caller_context_json: params[12],
-									created_at: params[13],
-									updated_at: params[14],
-									last_run_at: params[15],
-									last_run_status: params[16],
-									last_run_error: params[17],
-									last_duration_ms: params[18],
-									next_run_at: params[19],
-									run_count: params[20],
-									success_count: params[21],
-									error_count: params[22],
-									run_history_json: params[23],
+									repo_check_policy_json: params[6],
+									storage_id: params[7],
+									params_json: params[8],
+									schedule_json: params[9],
+									timezone: params[10],
+									enabled: params[11],
+									kill_switch_enabled: params[12],
+									caller_context_json: params[13],
+									created_at: params[14],
+									updated_at: params[15],
+									last_run_at: params[16],
+									last_run_status: params[17],
+									last_run_error: params[18],
+									last_duration_ms: params[19],
+									next_run_at: params[20],
+									run_count: params[21],
+									success_count: params[22],
+									error_count: params[23],
+									run_history_json: params[24],
 								}
 								upsert(
 									'jobs',
@@ -350,36 +355,37 @@ function createDatabase() {
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const row = {
-									id: params[21],
-									user_id: params[22],
+									id: params[22],
+									user_id: params[23],
 									name: params[0],
 									code: params[1],
 									source_id: params[2],
 									published_commit: params[3],
-									storage_id: params[4],
-									params_json: params[5],
-									schedule_json: params[6],
-									timezone: params[7],
-									enabled: params[8],
-									kill_switch_enabled: params[9],
-									caller_context_json: params[10],
-									updated_at: params[11],
-									last_run_at: params[12],
-									last_run_status: params[13],
-									last_run_error: params[14],
-									last_duration_ms: params[15],
-									next_run_at: params[16],
-									run_count: params[17],
-									success_count: params[18],
-									error_count: params[19],
-									run_history_json: params[20],
+									repo_check_policy_json: params[4],
+									storage_id: params[5],
+									params_json: params[6],
+									schedule_json: params[7],
+									timezone: params[8],
+									enabled: params[9],
+									kill_switch_enabled: params[10],
+									caller_context_json: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									last_run_error: params[15],
+									last_duration_ms: params[16],
+									next_run_at: params[17],
+									run_count: params[18],
+									success_count: params[19],
+									error_count: params[20],
+									run_history_json: params[21],
 									created_at:
 										selectOne(
 											'jobs',
 											(existing) =>
-												existing['id'] === params[21] &&
-												existing['user_id'] === params[22],
-										)?.['created_at'] ?? params[11],
+												existing['id'] === params[22] &&
+												existing['user_id'] === params[23],
+										)?.['created_at'] ?? params[12],
 								}
 								upsert(
 									'jobs',
@@ -802,6 +808,237 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		})
 		expect(sessionClient.readFile).toHaveBeenCalledWith({
 			sessionId: 'job-runtime-job-repo-1',
+			userId: 'user-123',
+			path: 'src/job.ts',
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
+test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-typecheck-strict',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed strict typecheck job',
+		code: null,
+		sourceId: 'source-strict',
+		publishedCommit: 'commit-strict',
+		storageId: 'job:job-repo-typecheck-strict',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-typecheck-strict',
+			source_id: 'source-strict',
+			source_root: '/',
+			base_commit: 'commit-strict',
+			session_repo_id: 'session-repo-strict',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-strict',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: false,
+			results: [
+				{
+					kind: 'typecheck' as const,
+					ok: false,
+					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
+				},
+			],
+			manifest: {
+				version: 1,
+				kind: 'job' as const,
+				title: 'Repo-backed strict typecheck job',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+			runId: 'check-run-strict',
+			treeHash: 'tree-hash-strict',
+			checkedAt: '2026-04-16T00:00:00.000Z',
+		})),
+		readFile: vi.fn(),
+		discardSession: vi.fn(),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi.spyOn(
+		await import('#mcp/run-codemode-registry.ts'),
+		'runCodemodeWithRegistry',
+	)
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: false,
+			error: "src/job.ts:1:28 Cannot find name 'codemode'.",
+			logs: [],
+		})
+		expect(sessionClient.readFile).not.toHaveBeenCalled()
+		expect(executeSpy).not.toHaveBeenCalled()
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
+test('executeJobOnce bypasses typecheck-only failures when the stored repo policy allows it', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-typecheck-bypass',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed bypass typecheck job',
+		code: null,
+		sourceId: 'source-bypass',
+		publishedCommit: 'commit-bypass',
+		repoCheckPolicy: {
+			allowTypecheckFailures: true,
+		},
+		storageId: 'job:job-repo-typecheck-bypass',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-typecheck-bypass',
+			source_id: 'source-bypass',
+			source_root: '/',
+			base_commit: 'commit-bypass',
+			session_repo_id: 'session-repo-bypass',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-bypass',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: false,
+			results: [
+				{
+					kind: 'typecheck' as const,
+					ok: false,
+					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
+				},
+			],
+			manifest: {
+				version: 1,
+				kind: 'job' as const,
+				title: 'Repo-backed bypass typecheck job',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+			runId: 'check-run-bypass',
+			treeHash: 'tree-hash-bypass',
+			checkedAt: '2026-04-16T00:00:00.000Z',
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo-backed bypass typecheck job',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'async () => ({ ok: true, bypassed: true })',
+		})),
+		discardSession: vi.fn(),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true, bypassed: true },
+			logs: ['repo-backed codemode executed'],
+		})
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: { ok: true, bypassed: true },
+			logs: [
+				'Bypassed repo typecheck-only check failures for job "job-repo-typecheck-bypass" (source "source-bypass", check run check-run-bypass).',
+				'repo-backed codemode executed',
+			],
+		})
+		expect(sessionClient.readFile).toHaveBeenCalledWith({
+			sessionId: 'job-runtime-job-repo-typecheck-bypass',
 			userId: 'user-123',
 			path: 'src/job.ts',
 		})
@@ -1287,6 +1524,127 @@ test('runJobNow deletes vectors for once jobs', async () => {
 		).getJobRowById(db, callerContext.user.userId, jobView.id)
 		expect(row).toBeNull()
 	} finally {
+		executeSpy.mockRestore()
+	}
+})
+
+test('runJobNow can use a one-off repo check policy override without changing the stored job', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Repo-backed run-now override',
+			code: null,
+			sourceId: 'source-run-now-override',
+			publishedCommit: 'commit-run-now-override',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: `job-runtime-${jobView.id}`,
+			source_id: 'source-run-now-override',
+			source_root: '/',
+			base_commit: 'commit-run-now-override',
+			session_repo_id: 'session-repo-run-now-override',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-run-now-override',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: false,
+			results: [
+				{
+					kind: 'typecheck' as const,
+					ok: false,
+					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
+				},
+			],
+			manifest: {
+				version: 1,
+				kind: 'job' as const,
+				title: 'Repo-backed run-now override',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+			runId: 'check-run-run-now-override',
+			treeHash: 'tree-hash-run-now-override',
+			checkedAt: '2026-04-16T00:00:00.000Z',
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo-backed run-now override',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'async () => ({ ok: true, override: true })',
+		})),
+		discardSession: vi.fn(),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true, override: true },
+			logs: ['repo-backed codemode executed'],
+		})
+
+	try {
+		const result = await runJobNow({
+			env,
+			userId: callerContext.user.userId,
+			jobId: jobView.id,
+			callerContext,
+			repoCheckPolicyOverride: {
+				allowTypecheckFailures: true,
+			},
+		})
+
+		expect(result.execution).toEqual({
+			ok: true,
+			result: { ok: true, override: true },
+			logs: [
+				`Bypassed repo typecheck-only check failures for job "${jobView.id}" (source "source-run-now-override", check run check-run-run-now-override).`,
+				'repo-backed codemode executed',
+			],
+		})
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
+		expect(row?.record.repoCheckPolicy).toBeUndefined()
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+	} finally {
+		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
 	}
 })
