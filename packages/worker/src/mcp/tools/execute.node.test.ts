@@ -5,7 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	runCodemodeWithRegistry: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(async () => ({
 		capabilityHandlers: {
-			page_to_markdown: true,
+			kody_official_guide: true,
 		},
 	})),
 }))

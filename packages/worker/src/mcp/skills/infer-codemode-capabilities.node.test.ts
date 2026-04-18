@@ -19,9 +19,9 @@ test('infers static codemode member names', () => {
 })
 
 test('infers bracket string literal access', () => {
-	const src = `async () => await codemode['page_to_markdown']({ url: 'https://example.com/doc' })`
+	const src = `async () => await codemode['kody_official_guide']({ guide: 'oauth' })`
 	const { staticNames } = inferCodemodeCapabilities(src)
-	expect(staticNames).toContain('page_to_markdown')
+	expect(staticNames).toContain('kody_official_guide')
 })
 
 test('infers secret_set member access', () => {

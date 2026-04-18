@@ -35,8 +35,8 @@ Quick notes for getting a local kody environment running.
 - `npm run dev` (starts mock API servers automatically, the main worker, and the
   local home connector; it sets `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and
   `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
-  to the local Cloudflare API mock Worker for `page_to_markdown`, the internal
-  Cloudflare API client, and local email sending. Unless you already set
+  to the local Cloudflare API mock Worker for the internal Cloudflare API client
+  and local email sending. Unless you already set
   `CLOUDFLARE_EMAIL_FROM`, the launcher also defaults it to `reset@kody.dev`.
   Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The
   home connector receives the resolved worker origin via `WORKER_BASE_URL`. When

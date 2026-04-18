@@ -72,9 +72,8 @@ automatically:
   Cloudflare AI Gateway)
 - `CLOUDFLARE_ACCOUNT_ID` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests against the correct account;
-  also required when using the `page_to_markdown` capability's Cloudflare
-  Browser Rendering fallback against the live API and for the Cloudflare Email
-  Service REST API fallback used by local mocks and preview deploys)
+  also required for the Cloudflare Email Service REST API fallback used by
+  local mocks and preview deploys)
 - `CLOUDFLARE_API_TOKEN` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests; also reused by the
   Cloudflare Email Service REST API fallback when local/preview email is routed
@@ -106,7 +105,8 @@ secrets from `packages/worker/.env`.
 Configure these GitHub Actions secrets and variables for workflows:
 
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
-  account)
+  account; also reused for remote AI and Cloudflare API workflows that run with
+  account secrets + skills)
 - `COOKIE_SECRET` (same format as local)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
   deploy as the canonical public app origin and written into the generated
@@ -136,7 +136,10 @@ How to get/set each value:
 
 - `CLOUDFLARE_API_TOKEN`
   - In Cloudflare Dashboard, create an API Token with permissions to deploy
-    Workers and edit D1 on the target account.
+    Workers and edit D1 on the target account. This is the same token to reuse
+    for remote AI and Cloudflare API workflows that run with account secrets +
+    skills; when you do, also include the product permissions needed for those
+    APIs.
   - In GitHub: `Settings` → `Secrets and variables` → `Actions` →
     `New repository secret`.
 - `COOKIE_SECRET`
@@ -174,13 +177,6 @@ How to get/set each value:
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
     `npx @sentry/wizard@latest -i sourcemaps`).
-- `CLOUDFLARE_API_TOKEN` (required for remote AI; used by the Worker for
-  `page_to_markdown` Browser Rendering; user API calls use account secrets +
-  skills)
-  - Create a Cloudflare API token with the account permissions needed for the
-    product APIs you want to call. This same secret already powers production
-    deploys and the `page_to_markdown` Browser Rendering path. For Browser
-    Rendering fallback, include the **Browser Rendering - Edit** permission.
 - `CAPABILITY_REINDEX_SECRET` (optional)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy

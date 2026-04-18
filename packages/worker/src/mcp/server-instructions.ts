@@ -42,7 +42,7 @@ search
 - Examples:
   - search({ query: 'saved dashboard app or generated UI runtime' })
   - search({ query: 'Cloudflare API zones dns workers d1' })
-  - search({ entity: 'page_to_markdown:capability' })
+  - search({ entity: 'kody_official_guide:capability' })
 
 execute
 - Async arrow function; \`codemode\` + OAuth helpers \`refreshAccessToken\` / \`createAuthenticatedFetch\`. Prefer one \`execute\` when the plan is clear. Full rules for \`fetch\`, placeholders, \`secret_list\` / \`value_get\`, and \`x-kody-secret\`: see the \`execute\` tool description.

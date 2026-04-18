@@ -31,7 +31,7 @@ To get **full markdown and schemas for one hit** (for example a capability’s
 
 Examples:
 
-- `page_to_markdown:capability`
+- `kody_official_guide:capability`
 - `user:preferred_org:value`
 - `github:connector`
 - `my-skill-name:skill`

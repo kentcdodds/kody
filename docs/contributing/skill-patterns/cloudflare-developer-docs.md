@@ -1,22 +1,15 @@
 # Skill pattern: Cloudflare Developer Docs (`developers.cloudflare.com`)
 
-The **`cloudflare_api_docs`** builtin capability was removed in favor of **saved
-skills** (or one-off **`execute`** code) so Cloudflare-specific doc reading can
-evolve without shipping Worker changes.
-
 Use this pattern when you need API or product documentation from
 [developers.cloudflare.com](https://developers.cloudflare.com).
 
-## Prefer cheaper steps first
+## Preferred approach
 
-1. **Markdown-preferred `fetch`** against a path under the docs site (see
-   allowlist below). Matches what the old builtin did before any billed
-   fallback.
-2. If the response is still hard to use (heavy HTML, etc.), call
-   **`codemode.page_to_markdown`** with the same URL so Browser Rendering runs
-   only when needed (billed).
+Use **markdown-preferred `fetch`** against a path under the docs site (see
+allowlist below). Keep the skill focused on direct docs retrieval instead of
+adding site-specific fallback machinery.
 
-## Path allowlist (same policy as the former builtin)
+## Path allowlist
 
 Paths must:
 
@@ -77,26 +70,23 @@ Adjust `name`, `title`, `description`, and trust flags when saving.
 	const url = new URL(path, ORIGIN).toString()
 	const res = await fetch(url, { headers: { Accept: MARKDOWN_ACCEPT } })
 	const body = await res.text()
-	const contentType = res.headers.get('content-type')
-	const needsFallback =
-		contentType?.includes('text/html') && body.trimStart().startsWith('<')
-	if (needsFallback) {
-		return await codemode.page_to_markdown({ url })
-	}
 	return {
 		status: res.status,
-		contentType,
+		contentType: res.headers.get('content-type'),
 		markdownTokenEstimate: res.headers.get('x-markdown-tokens'),
 		body: body.slice(0, 500_000),
 	}
 }
 ```
 
+Callers should inspect `contentType` before treating `body` as Markdown. This
+helper returns the raw sliced response body plus `markdownTokenEstimate`; HTML
+responses are not auto-converted.
+
 For parameterized skills, use **`meta_save_skill`** **`parameters`** (e.g. a
 required `path` string) and read **`params.path`** instead of a hard-coded path.
 
 ## Related
 
-- Billed fallback: **`page_to_markdown`** (`packages/worker` coding domain).
 - Tracking: [issue #120](https://github.com/kentcdodds/kody/issues/120) (broader
   official patterns folder).
