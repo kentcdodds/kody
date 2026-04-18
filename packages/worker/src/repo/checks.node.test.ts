@@ -74,9 +74,7 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 		...snapshot,
 		write: vi.fn(),
 	}
-	const getSemanticDiagnostics = vi.fn((path: string) =>
-		path === '__kody_job_typecheck__.ts' ? [] : [],
-	)
+	const getSemanticDiagnostics = vi.fn(() => [])
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
