@@ -39,6 +39,10 @@ import {
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
+import {
+	hasModuleStyleRepoBackedJobEntrypoint,
+	repoBackedJobModuleStyleErrorMessage,
+} from './repo-backed-job-entrypoint.ts'
 
 function hasRepoBackedJobSource(input: { sourceId?: string | null }) {
 	return typeof input.sourceId === 'string' && input.sourceId.length > 0
@@ -72,14 +76,6 @@ function normalizeJobCode(code: string) {
 		throw new Error('Jobs require non-empty code.')
 	}
 	return trimmed
-}
-
-function hasModuleStyleCodemodeEntrypoint(code: string) {
-	return (
-		/^\s*export\s+/m.test(code) ||
-		/\bmodule\.exports\b/.test(code) ||
-		/\bexports\.[A-Za-z_$][\w$]*/.test(code)
-	)
 }
 
 function normalizeOptionalParams(
@@ -628,10 +624,9 @@ async function runRepoBackedJob(input: {
 			logs: bypassLogs,
 		}
 	}
-	if (hasModuleStyleCodemodeEntrypoint(moduleFile.content)) {
+	if (hasModuleStyleRepoBackedJobEntrypoint(moduleFile.content)) {
 		return {
-			error:
-				'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
+			error: repoBackedJobModuleStyleErrorMessage,
 			result: null,
 			logs: bypassLogs,
 		}

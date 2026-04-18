@@ -28,9 +28,13 @@ vi.mock('@cloudflare/worker-bundler', () => ({
 
 vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 	createTypescriptLanguageService: vi.fn(async () => ({
+		fileSystem: {
+			read: vi.fn(() => null),
+			write: vi.fn(),
+		},
 		languageService: {
 			getSemanticDiagnostics: vi.fn((entryPoint: string) =>
-				entryPoint === 'src/job.ts'
+				entryPoint === '.__kody_repo_check__.ts' || entryPoint === 'src/job.ts'
 					? []
 					: [{ messageText: `missing ${entryPoint}` }],
 			),
@@ -1278,7 +1282,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 		],
 		[
 			'/session/src/job.ts',
-			'const run = async () => ({ ok: true })\nvoid run\n',
+			'async () => ({ ok: true })\n',
 		],
 		[
 			'/session/package.json',
