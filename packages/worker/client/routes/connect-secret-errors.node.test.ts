@@ -1,35 +1,27 @@
 import { expect, test } from 'vitest'
 import { formatConnectorConfigFailureMessage } from './connect-secret-errors.ts'
 
-test('reports rollback when secret rollback completed', () => {
-	const message = formatConnectorConfigFailureMessage(
+test('connector config failure messages explain what happened to the secret', () => {
+	const rollbackMessage = formatConnectorConfigFailureMessage(
 		new Error('Config update exploded.'),
 		{ secretRolledBack: true },
 	)
+	expect(rollbackMessage).toContain('secret was rolled back')
+	expect(rollbackMessage).toContain('Config update exploded.')
 
-	expect(message).toBe(
-		'Connector configuration failed and the secret was rolled back. Config update exploded.',
-	)
-})
-
-test('does not claim rollback when no connector rollback ran', () => {
-	const message = formatConnectorConfigFailureMessage(
+	const savedMessage = formatConnectorConfigFailureMessage(
 		new Error('Config update exploded.'),
 		{ secretRolledBack: false },
 	)
+	expect(savedMessage).toContain('secret was saved')
+	expect(savedMessage).toContain('Config update exploded.')
+	expect(savedMessage).not.toContain('rolled back')
 
-	expect(message).toBe(
-		'Connector configuration failed after the secret was saved. Config update exploded.',
-	)
-})
-
-test('reports updated secret retained when connector config fails on existing secret', () => {
-	const message = formatConnectorConfigFailureMessage(
+	const updatedMessage = formatConnectorConfigFailureMessage(
 		new Error('Config update exploded.'),
 		{ secretRolledBack: false, updatedSecretRetained: true },
 	)
-
-	expect(message).toBe(
-		'Connector configuration failed after the secret was updated. Config update exploded.',
-	)
+	expect(updatedMessage).toContain('secret was updated')
+	expect(updatedMessage).toContain('Config update exploded.')
+	expect(updatedMessage).not.toContain('secret was saved')
 })

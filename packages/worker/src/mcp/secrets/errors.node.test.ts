@@ -14,57 +14,31 @@ import {
 	parseMissingSecretMessage,
 } from './errors.ts'
 
-test('isSecretAuthRequiredMessage recognizes shared auth-required messages', () => {
+test('shared secret message helpers recognize auth and missing-secret cases', () => {
 	expect(isSecretAuthRequiredMessage(fetchSecretAuthRequiredMessage)).toBe(true)
 	expect(
 		isSecretAuthRequiredMessage(capabilityInputSecretAuthRequiredMessage),
 	).toBe(true)
 	expect(isSecretAuthRequiredMessage('Something else entirely.')).toBe(false)
-})
-
-test('parseMissingSecretMessage recognizes shared missing-secret messages', () => {
-	const message = createMissingSecretMessage('lutronPassword')
-	expect(parseMissingSecretMessage(message)).toEqual({
+	expect(
+		parseMissingSecretMessage(createMissingSecretMessage('lutronPassword')),
+	).toEqual({
 		secretName: 'lutronPassword',
 	})
 	expect(parseMissingSecretMessage('Secret missing')).toBeNull()
 })
 
-test('parseHostApprovalRequiredMessage extracts secret name and host', () => {
+test('approval message parsers extract host and capability metadata', () => {
 	expect(
 		parseHostApprovalRequiredMessage(
-			'Secret "cloudflareToken" is not allowed for host "api.cloudflare.com". If this request is expected, ask the user whether this host should be added to the secret\'s allowed hosts: https://example.com/account/secrets/approve',
+			'Secret "cloudflareToken" is not allowed for host "api.cloudflare.com". Retry after approval.',
 		),
 	).toEqual({
 		secretName: 'cloudflareToken',
 		host: 'api.cloudflare.com',
 	})
 	expect(parseHostApprovalRequiredMessage('Host approval failed')).toBeNull()
-})
 
-test('parseHostApprovalRequiredBatchMessage returns approval entries', () => {
-	const entries = [
-		{
-			secretName: 'cloudflareToken',
-			host: 'api.cloudflare.com',
-			approvalUrl:
-				'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com&request=token',
-		},
-		{
-			secretName: 'slackToken',
-			host: 'slack.com',
-			approvalUrl:
-				'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com&request=token',
-		},
-	]
-	const message = createHostSecretAccessDeniedBatchMessage(entries)
-	expect(parseHostApprovalRequiredBatchMessage(message)).toEqual(entries)
-	expect(
-		parseHostApprovalRequiredBatchMessage('Host approval failed'),
-	).toBeNull()
-})
-
-test('parseCapabilitySecretAccessDeniedMessage extracts secret and capability', () => {
 	const message = createCapabilitySecretAccessDeniedMessage(
 		'cloudflareToken',
 		'secret_set',
@@ -79,8 +53,8 @@ test('parseCapabilitySecretAccessDeniedMessage extracts secret and capability', 
 	).toBeNull()
 })
 
-test('parseCapabilityAccessRequiredBatchMessage returns approval entries', () => {
-	const entries = [
+test('batch approval parsers round-trip entries and reject invalid payloads', () => {
+	const capabilityEntries = [
 		{
 			secretName: 'lutronUsername',
 			capabilityName: 'home_lutron_set_credentials',
@@ -94,8 +68,11 @@ test('parseCapabilityAccessRequiredBatchMessage returns approval entries', () =>
 				'https://example.com/account/secrets/user/lutronPassword?capability=home_lutron_set_credentials',
 		},
 	]
-	const message = createCapabilitySecretAccessDeniedBatchMessage(entries)
-	expect(parseCapabilityAccessRequiredBatchMessage(message)).toEqual(entries)
+	expect(
+		parseCapabilityAccessRequiredBatchMessage(
+			createCapabilitySecretAccessDeniedBatchMessage(capabilityEntries),
+		),
+	).toEqual(capabilityEntries)
 	expect(
 		parseCapabilityAccessRequiredBatchMessage(
 			createCapabilitySecretAccessDeniedBatchMessage([]),
@@ -104,10 +81,13 @@ test('parseCapabilityAccessRequiredBatchMessage returns approval entries', () =>
 	expect(
 		parseCapabilityAccessRequiredBatchMessage('Capability approval failed'),
 	).toBeNull()
-})
+	expect(
+		parseCapabilityAccessRequiredBatchMessage(
+			'Secrets require capability approval: {"not":"an array"}',
+		),
+	).toBeNull()
 
-test('parseHostApprovalRequiredBatchMessage returns approval entries', () => {
-	const entries = [
+	const hostEntries = [
 		{
 			secretName: 'cloudflareToken',
 			host: 'api.cloudflare.com',
@@ -121,8 +101,11 @@ test('parseHostApprovalRequiredBatchMessage returns approval entries', () => {
 				'https://example.com/account/secrets/user/githubToken?allowed-host=api.github.com&request=token',
 		},
 	]
-	const message = createHostSecretAccessDeniedBatchMessage(entries)
-	expect(parseHostApprovalRequiredBatchMessage(message)).toEqual(entries)
+	expect(
+		parseHostApprovalRequiredBatchMessage(
+			createHostSecretAccessDeniedBatchMessage(hostEntries),
+		),
+	).toEqual(hostEntries)
 	expect(
 		parseHostApprovalRequiredBatchMessage(
 			createHostSecretAccessDeniedBatchMessage([]),
@@ -130,5 +113,10 @@ test('parseHostApprovalRequiredBatchMessage returns approval entries', () => {
 	).toBeNull()
 	expect(
 		parseHostApprovalRequiredBatchMessage('Host approval failed'),
+	).toBeNull()
+	expect(
+		parseHostApprovalRequiredBatchMessage(
+			'Secrets require host approval: {"not":"an array"}',
+		),
 	).toBeNull()
 })
