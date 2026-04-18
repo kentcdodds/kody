@@ -220,6 +220,7 @@ async function backfillApp(input: {
 			userId: input.userId,
 			baseUrl: input.baseUrl,
 			sourceId: ensuredSource.id,
+			bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 			files: buildAppSourceFiles({
 				title: input.row.title,
 				description: input.row.description,
@@ -327,6 +328,7 @@ async function backfillSkill(input: {
 			userId: input.userId,
 			baseUrl: input.baseUrl,
 			sourceId: ensuredSource.id,
+			bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 			files: buildSkillSourceFiles({
 				title: input.row.title,
 				description: input.row.description,
@@ -472,6 +474,7 @@ async function backfillJob(input: {
 			userId: input.userId,
 			baseUrl: input.baseUrl,
 			sourceId: ensuredSource.id,
+			bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 			files: buildJobSourceFiles({
 				job: toJobView(nextRecord),
 			}),

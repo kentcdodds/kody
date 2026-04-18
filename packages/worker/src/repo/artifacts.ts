@@ -11,6 +11,13 @@ export type ArtifactToken = {
 	expiresAt: string
 }
 
+export type ArtifactBootstrapAccess = {
+	defaultBranch: string
+	remote: string
+	token: string
+	expiresAt: string
+}
+
 export type ArtifactRepoInfo = {
 	id: string
 	name: string

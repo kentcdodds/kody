@@ -1,4 +1,7 @@
-import { hasArtifactsAccess } from './artifacts.ts'
+import {
+	hasArtifactsAccess,
+	type ArtifactBootstrapAccess,
+} from './artifacts.ts'
 import { getEntitySourceById } from './entity-sources.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
@@ -8,6 +11,7 @@ type SyncArtifactSourceInput = {
 	baseUrl: string
 	sourceId: string | null
 	files: Record<string, string>
+	bootstrapAccess?: ArtifactBootstrapAccess | null
 }
 
 function canSyncArtifactSource(env: Env) {
@@ -46,6 +50,7 @@ export async function syncArtifactSourceSnapshot(
 				sourceId: source.id,
 				userId: input.userId,
 				edits,
+				bootstrapAccess: input.bootstrapAccess ?? null,
 			})
 			return bootstrapResult.publishedCommit
 		}
