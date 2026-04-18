@@ -75,6 +75,22 @@ const mockModule = vi.hoisted(() => {
 	}
 })
 
+vi.mock('cloudflare:workers', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('cloudflare:workers')>()
+	return {
+		...actual,
+		DurableObject: class {
+			protected readonly ctx: DurableObjectState
+			protected readonly env: Env
+
+			constructor(ctx: DurableObjectState, env: Env) {
+				this.ctx = ctx
+				this.env = env
+			}
+		},
+	}
+})
+
 vi.mock('@cloudflare/shell', () => ({
 	Workspace: class {
 		constructor(_options: unknown) {}
@@ -253,6 +269,7 @@ test('publishSession uses Artifacts username/password auth for both origin and s
 	await repoSession.publishSession({
 		sessionId: 'session-1',
 		userId: 'user-1',
+		force: true,
 	})
 
 	expect(mockModule.git.push).toHaveBeenCalledTimes(2)
