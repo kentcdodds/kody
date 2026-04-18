@@ -13,6 +13,7 @@ export const repoBackedModuleEntrypointExportErrorMessage =
 	'Repo-backed job and skill entrypoints that use ESM syntax must default export a function so Kody can invoke them with execute semantics.'
 
 const syntheticRepoEntrypointPath = '.__kody_repo_user_entry__.ts'
+const repoCodemodeBundleCacheLimit = 50
 const repoCodemodeBundleCache = new Map<
 	string,
 	Promise<{
@@ -21,6 +22,16 @@ const repoCodemodeBundleCache = new Map<
 		modules: Modules
 	}>
 >()
+
+function enforceRepoCodemodeBundleCacheLimit() {
+	while (repoCodemodeBundleCache.size > repoCodemodeBundleCacheLimit) {
+		const oldestKey = repoCodemodeBundleCache.keys().next().value
+		if (oldestKey === undefined) {
+			break
+		}
+		repoCodemodeBundleCache.delete(oldestKey)
+	}
+}
 
 function stripTrailingSlashes(value: string) {
 	return value.replace(/\/+$/, '')
@@ -148,6 +159,7 @@ export async function buildRepoCodemodeBundle(input: {
 		throw error
 	})
 	repoCodemodeBundleCache.set(cacheKey, pending)
+	enforceRepoCodemodeBundleCacheLimit()
 	return pending
 }
 
@@ -157,7 +169,7 @@ export function createRepoCodemodeWrapper(input: {
 }) {
 	const storagePrelude =
 		input.includeStorage === true
-			? '// storage helper is installed by runCodemodeWithRegistry'
+			? 'globalThis.storage = storage;'
 			: 'delete globalThis.storage;'
 	return `async (params) => {
   const __previousGlobals = {
