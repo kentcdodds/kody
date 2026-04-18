@@ -54,3 +54,13 @@ export function getManifestPath(manifest: RepoManifest) {
 		? manifestPath
 		: defaultManifestPath
 }
+
+export function normalizeRepoWorkspacePath(path: string) {
+	return path.trim().replace(/^\/+/, '')
+}
+
+export function getManifestEntrypointPath(manifest: RepoManifest) {
+	return normalizeRepoWorkspacePath(
+		manifest.kind === 'app' ? manifest.server : manifest.entrypoint,
+	)
+}
