@@ -54,8 +54,7 @@ jobs:
     name: 🔎 Deploy Preview Resources
     timeout-minutes: 4
     environment:
-      name:
-        preview-${{ github.event.pull_request.number || inputs.pr_number ||
+      name: preview-${{ github.event.pull_request.number || inputs.pr_number ||
         github.run_id }}
       url: ${{ steps.deploy_preview.outputs.url }}
     if: >-
@@ -143,8 +142,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
-        run:
-          node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
+        run: node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
           "$WRANGLER_CONFIG"
 
       - name: 🧪 Deploy preview mock Workers
@@ -344,8 +342,7 @@ jobs:
         if: steps.deploy_preview.outputs.url != ''
         env:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
-          PREVIEW_VERSION_URL:
-            '${{ steps.deploy_preview.outputs.version_preview_url }}'
+          PREVIEW_VERSION_URL: "${{ steps.deploy_preview.outputs.version_preview_url }}"
           WORKER_NAME: ${{ steps.deploy_preview.outputs.worker_name }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
@@ -380,8 +377,7 @@ jobs:
         uses: actions/github-script@v8.0.0
         env:
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
-          PREVIEW_VERSION_URL:
-            '${{ steps.deploy_preview.outputs.version_preview_url }}'
+          PREVIEW_VERSION_URL: "${{ steps.deploy_preview.outputs.version_preview_url }}"
           WORKER_NAME: ${{ steps.deploy_preview.outputs.worker_name }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_comment_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
@@ -445,15 +441,15 @@ jobs:
     runs-on: ubuntu-latest
     name: 🧹 Cleanup Preview Resources
     timeout-minutes: 4
+    permissions:
+      contents: read
+      deployments: write
     if: >-
       (github.event_name == 'pull_request' &&
         github.event.action == 'closed' &&
         github.event.pull_request.head.repo.fork == false) ||
       (github.event_name == 'workflow_dispatch' &&
         inputs.action == 'cleanup')
-    env:
-      PREVIEW_ENVIRONMENT_GITHUB_TOKEN:
-        ${{ secrets.PREVIEW_ENVIRONMENT_GITHUB_TOKEN }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -568,16 +564,8 @@ jobs:
           set -euo pipefail
           node tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"
 
-      - name: ℹ️ Skip GitHub preview environment delete
-        if: >-
-          always() && env.PREVIEW_ENVIRONMENT_GITHUB_TOKEN == ''
-        run: >
-          echo "Skipping GitHub preview environment delete;
-          PREVIEW_ENVIRONMENT_GITHUB_TOKEN is not configured."
-
       - name: 🏷️ Delete GitHub preview environment
-        if: >-
-          always() && env.PREVIEW_ENVIRONMENT_GITHUB_TOKEN != ''
+        if: always()
         uses: actions/github-script@v8.0.0
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -585,7 +573,7 @@ jobs:
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         with:
-          github-token: ${{ env.PREVIEW_ENVIRONMENT_GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             const eventName = process.env.EVENT_NAME;
             let envName;

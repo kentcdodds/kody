@@ -104,6 +104,10 @@ secrets from `packages/worker/.env`.
 
 Configure these GitHub Actions secrets and variables for workflows:
 
+- No dedicated GitHub secret is required for preview-environment cleanup. The
+  preview workflow deletes GitHub preview environments with the built-in
+  `GITHUB_TOKEN` and job-scoped `deployments: write` permission.
+
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account; also reused for remote AI and Cloudflare API workflows that run with
   account secrets + skills)
@@ -131,6 +135,10 @@ Configure these GitHub Actions secrets and variables for workflows:
 - **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
   organization and project **slugs** for source map upload — same values as in
   the Sentry wizard’s `--org` / `--project` flags)
+
+The preview cleanup job deletes the matching GitHub deployment environment with
+the built-in GitHub Actions token. No separate GitHub repository secret is
+required for that step.
 
 How to get/set each value:
 
@@ -215,3 +223,6 @@ Preview deploys for pull requests create a separate Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock
 service named `<app-name>-pr-<number>-mock-<service>`. The same
 `CLOUDFLARE_API_TOKEN` must be able to create/update and delete those Workers.
+The preview cleanup job also deletes the matching GitHub environment
+(`preview-<pr-number>`) with the workflow's built-in `GITHUB_TOKEN`, so no
+extra GitHub repository secret is needed for that step.
