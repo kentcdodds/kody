@@ -64,7 +64,7 @@ export class CloudflareRestClient {
 		path: string
 		query?: Record<string, string>
 		body?: unknown
-	}): Promise<{ status: number; body: unknown | null }> {
+	}): Promise<{ status: number; body: unknown | null; headers: Headers }> {
 		assertSafeCloudflareApiV4Path(input.path)
 		const pathPart = input.path.startsWith('/') ? input.path : `/${input.path}`
 		const url = new URL(`${this.baseUrl}${pathPart}`)
@@ -100,11 +100,15 @@ export class CloudflareRestClient {
 		const text = await response.text()
 
 		if (response.status === 204 || !text.trim()) {
-			return { status: response.status, body: null }
+			return { status: response.status, body: null, headers: response.headers }
 		}
 
 		try {
-			return { status: response.status, body: JSON.parse(text) as unknown }
+			return {
+				status: response.status,
+				body: JSON.parse(text) as unknown,
+				headers: response.headers,
+			}
 		} catch {
 			throw new CloudflareApiError(
 				`Cloudflare API returned non-JSON (${response.status}).`,

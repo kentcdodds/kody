@@ -14,6 +14,8 @@ import {
 } from './repo-sessions.ts'
 import {
 	buildAuthenticatedArtifactsRemote,
+	getArtifactsNamespace,
+	parseArtifactTokenSecret,
 	resolveArtifactSourceRepo,
 	resolveSessionRepo,
 } from './artifacts.ts'
@@ -84,7 +86,7 @@ async function ensureArtifactRepoRemote(input: {
 }
 
 function buildGitCloneAuth(input: { remote: string; token: string }) {
-	const tokenSecret = input.token.split('?expires=')[0] ?? input.token
+	const tokenSecret = parseArtifactTokenSecret(input.token)
 	return {
 		url: input.remote,
 		username: 'x',
@@ -310,7 +312,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				source_id: input.sourceId,
 				session_repo_id: forked.id,
 				session_repo_name: forked.name,
-				session_repo_namespace: 'default',
+				session_repo_namespace: getArtifactsNamespace(this.env),
 				base_commit: baseCommit ?? '',
 				source_root: input.sourceRoot ?? source.source_root,
 				conversation_id: input.conversationId ?? null,
@@ -714,7 +716,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			author: sessionCommitAuthor,
 			token: sourceAccess.token,
 			username: 'x',
-			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+			password: parseArtifactTokenSecret(sourceAccess.token),
 		})
 		const headCommit = await this.getHeadCommit()
 		await this.git.push({
@@ -723,8 +725,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: defaultBranch,
 			token: sessionAccess.token,
 			username: 'x',
-			password:
-				sessionAccess.token.split('?expires=')[0] ?? sessionAccess.token,
+			password: parseArtifactTokenSecret(sessionAccess.token),
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
@@ -792,8 +793,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			),
 			token: sessionAccess.token,
 			username: 'x',
-			password:
-				sessionAccess.token.split('?expires=')[0] ?? sessionAccess.token,
+			password: parseArtifactTokenSecret(sessionAccess.token),
 		})
 		await this.ensureRemote({
 			name: 'source',
@@ -809,7 +809,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: targetBranch,
 			token: sourceAccess.token,
 			username: 'x',
-			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+			password: parseArtifactTokenSecret(sourceAccess.token),
 		})
 		const manifestContent = await this.workspace.readFile(
 			resolveRepoWorkspacePath(

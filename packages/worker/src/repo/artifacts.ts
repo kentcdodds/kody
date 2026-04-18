@@ -37,7 +37,7 @@ export type ArtifactRepoHandle = {
 		defaultBranch: string
 		remote: string
 		token: string
-		expiresAt: string
+		expiresAt: string | null
 		repo: ArtifactRepoHandle
 	}>
 }
@@ -63,7 +63,7 @@ export type ArtifactNamespaceBinding = {
 		defaultBranch: string
 		remote: string
 		token: string
-		expiresAt: string
+		expiresAt: string | null
 	}>
 	get(name: string): Promise<ArtifactGetRepoResult>
 	list(opts?: { limit?: number; cursor?: string }): Promise<{
@@ -75,8 +75,9 @@ export type ArtifactNamespaceBinding = {
 
 export function getArtifactsBinding(
 	env: Env,
+	namespaceOverride?: string | null,
 ): ArtifactNamespaceBinding & Record<string, unknown> {
-	const restBinding = createArtifactsRestBinding(env)
+	const restBinding = createArtifactsRestBinding(env, namespaceOverride)
 	if (!restBinding) {
 		throw new Error(
 			'Cloudflare Artifacts REST access requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
@@ -95,10 +96,10 @@ export function hasArtifactsAccess(env: Env) {
 }
 
 export function getArtifactsNamespace(env: Env) {
-	return (
-		(env as Env & { ARTIFACTS_NAMESPACE?: string | undefined })
-			.ARTIFACTS_NAMESPACE ?? 'default'
-	)
+	const namespace = (
+		env as Env & { ARTIFACTS_NAMESPACE?: string | undefined }
+	).ARTIFACTS_NAMESPACE?.trim()
+	return namespace || 'default'
 }
 
 type ArtifactApiEnvelope<T> = {
@@ -152,22 +153,65 @@ type ArtifactRestForkRepoResult = ArtifactRestCreateRepoResult & {
 	objects?: number
 }
 
-function createArtifactsRestBinding(env: Env) {
+type ArtifactPendingRepoResponse = {
+	status: 'importing' | 'forking'
+	retryAfter: number
+}
+
+type ArtifactPendingStatusPayload = {
+	status?: string
+	retry_after?: number
+	retryAfter?: number
+}
+
+type ArtifactEnvelopeResponse<T> = {
+	status: number
+	headers: Headers
+	envelope: ArtifactApiEnvelope<T>
+}
+
+const defaultArtifactRetryAfterSeconds = 2
+const maxArtifactRetryAfterSeconds = 2
+
+function createArtifactsRestBinding(env: Env, namespaceOverride?: string | null) {
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) {
 		return null
 	}
 	const client = createCloudflareRestClient(env)
-	const namespace = getArtifactsNamespace(env)
+	const namespace = namespaceOverride?.trim() || getArtifactsNamespace(env)
 	const basePath = `/client/v4/accounts/${accountId}/artifacts/namespaces/${namespace}`
+	const getRepo = async (name: string): Promise<ArtifactGetRepoResult> => {
+		const response = await requestArtifactsEnvelope<ArtifactRestRepoInfo>(client, {
+			method: 'GET',
+			path: `${basePath}/repos/${encodeURIComponent(name)}`,
+			treat404AsNull: true,
+		})
+		const pending = parsePendingArtifactRepoResponse(response)
+		if (pending) {
+			return pending
+		}
+		if (response.status === 404 || response.envelope.result == null) {
+			return { status: 'not_found' as const }
+		}
+		return {
+			status: 'ready' as const,
+			repo: repoHandle(name),
+		}
+	}
 	const getRepoInfo = async (name: string): Promise<ArtifactRepoInfo | null> => {
 		const response = await requestArtifactsEnvelope<ArtifactRestRepoInfo>(client, {
 			method: 'GET',
 			path: `${basePath}/repos/${encodeURIComponent(name)}`,
 			treat404AsNull: true,
 		})
-		return response.result ? normalizeArtifactRepoInfo(response.result) : null
+		if (response.status === 202 || response.status === 404) {
+			return null
+		}
+		return response.envelope.result
+			? normalizeArtifactRepoInfo(response.envelope.result)
+			: null
 	}
 	const repoHandle = (name: string): ArtifactRepoHandle => ({
 		info: async () => await getRepoInfo(name),
@@ -244,16 +288,7 @@ function createArtifactsRestBinding(env: Env) {
 				expiresAt: parseArtifactTokenExpiry(result.token),
 			}
 		},
-		get: async (name) => {
-			const info = await getRepoInfo(name)
-			if (!info) {
-				return { status: 'not_found' as const }
-			}
-			return {
-				status: 'ready' as const,
-				repo: repoHandle(name),
-			}
-		},
+		get: getRepo,
 		list: async (opts) => {
 			const query: Record<string, string> = {}
 			if (opts?.limit !== undefined) {
@@ -270,7 +305,7 @@ function createArtifactsRestBinding(env: Env) {
 					query,
 				},
 			)
-			const repos = (envelope.result ?? []).map((repo) => {
+			const repos = (envelope.envelope.result ?? []).map((repo) => {
 				const normalized = normalizeArtifactRepoInfo(repo)
 				return {
 					id: normalized.id,
@@ -286,8 +321,8 @@ function createArtifactsRestBinding(env: Env) {
 			})
 			return {
 				repos,
-				total: envelope.result_info?.total_count ?? repos.length,
-				cursor: envelope.result_info?.cursor,
+				total: envelope.envelope.result_info?.total_count ?? repos.length,
+				cursor: envelope.envelope.result_info?.cursor,
 			}
 		},
 	} satisfies ArtifactNamespaceBinding & Record<string, unknown>
@@ -304,10 +339,10 @@ async function requestArtifactsApi<T>(
 	},
 ) {
 	const envelope = await requestArtifactsEnvelope<T>(client, input)
-	if (envelope.result == null) {
+	if (envelope.envelope.result == null) {
 		throw new Error(`Artifacts API returned no result for ${input.path}.`)
 	}
-	return envelope.result
+	return envelope.envelope.result
 }
 
 async function requestArtifactsEnvelope<T>(
@@ -319,7 +354,7 @@ async function requestArtifactsEnvelope<T>(
 		body?: unknown
 		treat404AsNull?: boolean
 	},
-) {
+): Promise<ArtifactEnvelopeResponse<T>> {
 	try {
 		const response = await client.rawRequest({
 			method: input.method,
@@ -328,21 +363,43 @@ async function requestArtifactsEnvelope<T>(
 			body: input.body,
 		})
 		const envelope = response.body as ArtifactApiEnvelope<T> | null
-		if (!envelope?.success) {
-			const message =
-				envelope?.errors?.[0]?.message ??
-				`Artifacts API request failed (${response.status}).`
-			if (input.treat404AsNull && response.status === 404) {
-				return {
+		if (input.treat404AsNull && response.status === 404) {
+			return {
+				status: response.status,
+				headers: response.headers,
+				envelope: {
 					result: null,
 					success: true,
 					errors: [],
 					messages: [],
-				} satisfies ArtifactApiEnvelope<T>
+				} satisfies ArtifactApiEnvelope<T>,
 			}
+		}
+		if (response.status === 202) {
+			return {
+				status: response.status,
+				headers: response.headers,
+				envelope:
+					envelope ??
+					({
+						result: null,
+						success: true,
+						errors: [],
+						messages: [],
+					} satisfies ArtifactApiEnvelope<T>),
+			}
+		}
+		if (!envelope?.success) {
+			const message =
+				envelope?.errors?.[0]?.message ??
+				`Artifacts API request failed (${response.status}).`
 			throw new Error(message)
 		}
-		return envelope
+		return {
+			status: response.status,
+			headers: response.headers,
+			envelope,
+		}
 	} catch (error) {
 		if (
 			input.treat404AsNull &&
@@ -350,11 +407,15 @@ async function requestArtifactsEnvelope<T>(
 			error.status === 404
 		) {
 			return {
-				result: null,
-				success: true,
-				errors: [],
-				messages: [],
-			} satisfies ArtifactApiEnvelope<T>
+				status: 404,
+				headers: new Headers(),
+				envelope: {
+					result: null,
+					success: true,
+					errors: [],
+					messages: [],
+				} satisfies ArtifactApiEnvelope<T>,
+			}
 		}
 		throw error
 	}
@@ -377,13 +438,13 @@ function normalizeArtifactRepoInfo(repo: ArtifactRestRepoInfo): ArtifactRepoInfo
 
 function parseArtifactTokenExpiry(token: string) {
 	const expiresAtSeconds = Number.parseInt(
-		token.split('?expires=')[1] ?? '',
+		new URLSearchParams(token.split('?')[1] ?? '').get('expires') ?? '',
 		10,
 	)
 	if (Number.isFinite(expiresAtSeconds)) {
 		return new Date(expiresAtSeconds * 1000).toISOString()
 	}
-	throw new Error('Artifacts token is missing a parseable expires timestamp.')
+	return null
 }
 
 function normalizeRepoNamePart(value: string) {
@@ -421,7 +482,7 @@ export function buildSessionRepoId(input: {
 }
 
 export function parseArtifactTokenSecret(token: string) {
-	return token.split('?expires=')[0] ?? token
+	return token.split('?')[0] ?? token
 }
 
 export function buildAuthenticatedArtifactsRemote(input: {
@@ -440,30 +501,96 @@ export function buildAuthenticatedArtifactsRemote(input: {
 
 export async function resolveArtifactSourceRepo(env: Env, repoId: string) {
 	const binding = getArtifactsBinding(env)
-	const result = await binding.get(repoId)
-	if (result.status !== 'ready') {
-		throw new Error(
-			`Artifacts repo "${repoId}" is ${result.status}${
-				'retryAfter' in result ? ` (retry after ${result.retryAfter}s)` : ''
-			}.`,
-		)
-	}
-	return result.repo
+	return await waitForArtifactRepoReady(binding, repoId)
 }
 
 export async function resolveSessionRepo(
 	env: Env,
 	input: { namespace?: string | null; name: string },
 ) {
-	const binding = getArtifactsBinding(env)
-	void input.namespace
-	const result = await binding.get(input.name)
-	if (result.status !== 'ready') {
-		throw new Error(
-			`Artifacts repo "${input.name}" is ${result.status}${
-				'retryAfter' in result ? ` (retry after ${result.retryAfter}s)` : ''
-			}.`,
-		)
+	const binding = getArtifactsBinding(env, input.namespace)
+	return await waitForArtifactRepoReady(binding, input.name)
+}
+
+export async function waitForArtifactRepoReady(
+	binding: ArtifactNamespaceBinding,
+	repoName: string,
+	maxAttempts = 5,
+) {
+	let lastPending: ArtifactPendingRepoResponse | null = null
+	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+		const result = await binding.get(repoName)
+		if (result.status === 'ready') {
+			return result.repo
+		}
+		if (result.status === 'not_found') {
+			throw new Error(`Artifacts repo "${repoName}" was not found.`)
+		}
+		lastPending = result
+		if (attempt < maxAttempts) {
+			await sleep(result.retryAfter * 1000)
+		}
 	}
-	return result.repo
+	throw new Error(
+		`Artifacts repo "${repoName}" is ${lastPending?.status ?? 'unavailable'}${
+			lastPending ? ` (retry after ${lastPending.retryAfter}s)` : ''
+		}.`,
+	)
+}
+
+function parsePendingArtifactRepoResponse(
+	response: ArtifactEnvelopeResponse<ArtifactRestRepoInfo>,
+) {
+	if (response.status !== 202) {
+		return null
+	}
+	const payload = response.envelope.result as ArtifactPendingStatusPayload | null
+	const status = normalizePendingArtifactStatus(
+		payload?.status ??
+			response.envelope.messages[0]?.message ??
+			response.envelope.errors[0]?.message,
+	)
+	return {
+		status,
+		retryAfter: parseRetryAfterSeconds(response, payload),
+	} satisfies ArtifactPendingRepoResponse
+}
+
+function normalizePendingArtifactStatus(value: string | undefined) {
+	return value?.toLowerCase().includes('fork') ? 'forking' : 'importing'
+}
+
+function parseRetryAfterSeconds(
+	response: ArtifactEnvelopeResponse<unknown>,
+	payload?: ArtifactPendingStatusPayload | null,
+) {
+	const retryAfterHeader = response.headers.get('retry-after')
+	const retryAfterValue =
+		Number.parseInt(retryAfterHeader ?? '', 10) ||
+		payload?.retry_after ||
+		payload?.retryAfter ||
+		parseRetryAfterFromMessages(response.envelope)
+	return clampRetryAfterSeconds(retryAfterValue)
+}
+
+function parseRetryAfterFromMessages(envelope: ArtifactApiEnvelope<unknown>) {
+	const combinedMessages = [
+		...envelope.messages.map((message) => message.message),
+		...envelope.errors.map((error) => error.message),
+	].join(' ')
+	const match = /retry after (\d+)/i.exec(combinedMessages)
+	return match ? Number.parseInt(match[1] ?? '', 10) : undefined
+}
+
+function clampRetryAfterSeconds(value: number | undefined) {
+	if (!value || !Number.isFinite(value) || value < 0) {
+		return defaultArtifactRetryAfterSeconds
+	}
+	return Math.min(Math.max(1, Math.ceil(value)), maxArtifactRetryAfterSeconds)
+}
+
+function sleep(ms: number) {
+	return new Promise<void>((resolve) => {
+		setTimeout(resolve, ms)
+	})
 }

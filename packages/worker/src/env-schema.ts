@@ -201,6 +201,7 @@ export const EnvSchema = object({
 	CLOUDFLARE_ACCOUNT_ID: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_TOKEN: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
+	ARTIFACTS_NAMESPACE: optionalNonEmptyStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	JOB_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	HOME_CONNECTOR_SHARED_SECRET: optionalNonEmptyStringSchema,

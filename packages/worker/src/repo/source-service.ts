@@ -3,6 +3,7 @@ import {
 	getArtifactsBinding,
 	hasArtifactsAccess,
 	type ArtifactNamespaceBinding,
+	waitForArtifactRepoReady,
 } from './artifacts.ts'
 import {
 	getEntitySourceByEntity,
@@ -123,18 +124,10 @@ export async function createArtifactsRepoIfMissing(
 	const existing = await binding.get(repoId)
 	if (existing.status === 'ready') return existing.repo
 	if (existing.status === 'importing' || existing.status === 'forking') {
-		throw new Error(
-			`Artifacts repo "${repoId}" is ${existing.status}. Retry after ${existing.retryAfter}s.`,
-		)
+		return await waitForArtifactRepoReady(binding, repoId)
 	}
 	const created = await binding.create(repoId, { readOnly: false })
-	const getResult = await binding.get(created.name)
-	if (getResult.status !== 'ready') {
-		throw new Error(
-			`Artifacts repo "${created.name}" is ${getResult.status} after create.`,
-		)
-	}
-	return getResult.repo
+	return await waitForArtifactRepoReady(binding, created.name)
 }
 
 export async function setEntityPublishedCommit(input: {
