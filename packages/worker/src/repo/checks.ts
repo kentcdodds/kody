@@ -189,7 +189,7 @@ function getRepoTypecheckDiagnostics(input: {
 					fileName: input.entryPoint,
 					diagnostics: [
 						{
-							messageText: repoBackedJobModuleStyleErrorMessage,
+							messageText: repoBackedSkillModuleStyleErrorMessage,
 						},
 					],
 				}
