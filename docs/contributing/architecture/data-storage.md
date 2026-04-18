@@ -107,6 +107,11 @@ Production note:
   `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and optional
   `CLOUDFLARE_API_BASE_URL` / `ARTIFACTS_NAMESPACE`, which also makes local dev
   mocking straightforward.
+- During `npm run dev`, those REST calls go to the local Cloudflare mock Worker,
+  which now implements the Artifacts repo metadata endpoints used by the app
+  (`create`, `get`, `list`, `createToken`, and `fork`). The mock only covers the
+  REST control plane; repo session Durable Objects still need a Git-capable
+  remote for clone/pull/push flows.
 - Durable repo-source creation paths (`ensureEntitySource(...,
   requirePersistence: true)`) fail closed when persistence bindings are
   unavailable so callers do not write orphaned `source_id` references into D1.

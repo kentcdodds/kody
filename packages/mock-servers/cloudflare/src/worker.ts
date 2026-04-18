@@ -7,10 +7,12 @@ import {
 	outboundEmailSchema,
 	type OutboundEmail,
 } from '@kody-internal/shared/outbound-email.ts'
+import { createMockCloudflareArtifactsState } from './mock-artifacts-do.ts'
 import { createMockCloudflareEmailState } from './mock-email-messages-do.ts'
 
 type MockCloudflareEnv = {
 	MOCK_API_TOKEN?: string
+	MOCK_CLOUDFLARE_ARTIFACTS_STATE: DurableObjectNamespace
 	MOCK_CLOUDFLARE_EMAIL_STATE: DurableObjectNamespace
 }
 
@@ -41,6 +43,7 @@ const fixtureAccount = {
 	id: 'cf_account_mock_123',
 	name: 'Mock Account',
 }
+const fixtureArtifactsNamespace = 'default'
 
 const fixtureZone: ZoneRecord = {
 	id: 'zone-123',
@@ -94,6 +97,36 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 		method: 'POST',
 		path: `/client/v4/accounts/${fixtureAccount.id}/email/sending/send`,
 		description: 'Send an outbound email',
+		requiresAuth: true,
+	},
+	{
+		method: 'GET',
+		path: `/client/v4/accounts/${fixtureAccount.id}/artifacts/namespaces/${fixtureArtifactsNamespace}/repos`,
+		description: 'List Artifacts repos',
+		requiresAuth: true,
+	},
+	{
+		method: 'POST',
+		path: `/client/v4/accounts/${fixtureAccount.id}/artifacts/namespaces/${fixtureArtifactsNamespace}/repos`,
+		description: 'Create an Artifacts repo',
+		requiresAuth: true,
+	},
+	{
+		method: 'GET',
+		path: `/client/v4/accounts/${fixtureAccount.id}/artifacts/namespaces/${fixtureArtifactsNamespace}/repos/example-repo`,
+		description: 'Read Artifacts repo metadata',
+		requiresAuth: true,
+	},
+	{
+		method: 'POST',
+		path: `/client/v4/accounts/${fixtureAccount.id}/artifacts/namespaces/${fixtureArtifactsNamespace}/tokens`,
+		description: 'Create an Artifacts repo token',
+		requiresAuth: true,
+	},
+	{
+		method: 'POST',
+		path: `/client/v4/accounts/${fixtureAccount.id}/artifacts/namespaces/${fixtureArtifactsNamespace}/repos/example-repo/fork`,
+		description: 'Fork an Artifacts repo',
 		requiresAuth: true,
 	},
 	{
@@ -241,6 +274,30 @@ function getMockEmailState(env: MockCloudflareEnv, tokenHash: string) {
 	return createMockCloudflareEmailState(env.MOCK_CLOUDFLARE_EMAIL_STATE.get(id))
 }
 
+function getMockArtifactsState(
+	env: MockCloudflareEnv,
+	input: {
+		tokenHash: string
+		accountId: string
+		namespace: string
+	},
+) {
+	const id = env.MOCK_CLOUDFLARE_ARTIFACTS_STATE.idFromName(
+		`${input.tokenHash}:${input.accountId}:${input.namespace}`,
+	)
+	return createMockCloudflareArtifactsState(
+		env.MOCK_CLOUDFLARE_ARTIFACTS_STATE.get(id),
+	)
+}
+
+function buildMockArtifactsRemote(input: {
+	accountId: string
+	namespace: string
+	repoName: string
+}) {
+	return `https://${input.accountId}.artifacts.mock.local/git/${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.repoName)}.git`
+}
+
 async function readJsonBody(request: Request) {
 	try {
 		const text = await request.text()
@@ -254,6 +311,14 @@ async function readJsonBody(request: Request) {
 async function handleMeta(request: Request, env: MockCloudflareEnv, url: URL) {
 	const authorized = isAuthorized(request, env, url)
 	const tokenHash = authorized ? await getTokenPartition(env) : null
+	const artifactRepoCount =
+		tokenHash == null
+			? null
+			: await getMockArtifactsState(env, {
+					tokenHash,
+					accountId: fixtureAccount.id,
+					namespace: fixtureArtifactsNamespace,
+				}).countRepos()
 	return json({
 		service: 'cloudflare',
 		authorized,
@@ -263,6 +328,7 @@ async function handleMeta(request: Request, env: MockCloudflareEnv, url: URL) {
 		...(tokenHash
 			? {
 					messageCount: await getMockEmailState(env, tokenHash).countMessages(),
+					artifactRepoCount,
 				}
 			: {}),
 	})
@@ -316,6 +382,7 @@ async function handleDashboard(
 		response.json(),
 	)) as {
 		authorized: boolean
+		artifactRepoCount?: number
 		messageCount?: number
 	}
 
@@ -349,6 +416,9 @@ async function handleDashboard(
 
 	const messageCountLine = meta.authorized
 		? `<span class="stat-value">${meta.messageCount ?? 0}</span>`
+		: '<span class="stat-value muted">hidden</span>'
+	const artifactRepoCountLine = meta.authorized
+		? `<span class="stat-value">${meta.artifactRepoCount ?? 0}</span>`
 		: '<span class="stat-value muted">hidden</span>'
 
 	const body = `<!doctype html>
@@ -404,7 +474,7 @@ async function handleDashboard(
 			.container { max-width: 960px; margin: 0 auto; }
 			h1 { margin: 0 0 8px; font-size: 22px; }
 			.subtitle { margin: 0 0 24px; color: var(--muted); }
-			.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0 24px; }
+			.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0 24px; }
 			.card { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: var(--card-bg); }
 			.stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 			.stat-value { font-size: 18px; font-weight: 600; }
@@ -442,6 +512,10 @@ async function handleDashboard(
 				<div class="card">
 					<div class="stat-label">Stored emails</div>
 					<div class="stat-value">${messageCountLine}</div>
+				</div>
+				<div class="card">
+					<div class="stat-label">Artifacts repos</div>
+					<div class="stat-value">${artifactRepoCountLine}</div>
 				</div>
 			</div>
 			<div class="card">
@@ -517,6 +591,215 @@ async function handleEmailSend(
 	)
 }
 
+async function handleArtifactsRepos(
+	request: Request,
+	env: MockCloudflareEnv,
+	input: {
+		accountId: string
+		namespace: string
+		url: URL
+	},
+) {
+	if (input.accountId !== fixtureAccount.id) {
+		return errorEnvelope(404, 1002, 'account not found')
+	}
+	const tokenHash = await getTokenPartition(env)
+	const state = getMockArtifactsState(env, {
+		tokenHash,
+		accountId: input.accountId,
+		namespace: input.namespace,
+	})
+	if (request.method === 'GET') {
+		const limit = Math.min(
+			100,
+			Math.max(
+				1,
+				Number.parseInt(input.url.searchParams.get('limit')?.trim() || '50', 10),
+			),
+		)
+		const cursor = input.url.searchParams.get('cursor')?.trim() || null
+		const result = await state.listRepos(limit, cursor)
+		return envelope(
+			result.repos,
+			{ status: 200 },
+			{
+				count: result.repos.length,
+				total_count: result.total,
+				...(result.cursor ? { cursor: result.cursor } : {}),
+			},
+		)
+	}
+	const body = await readJsonBody(request)
+	if (body === null) {
+		return errorEnvelope(400, 1001, 'invalid JSON body')
+	}
+	const repoName = typeof body.name === 'string' ? body.name.trim() : ''
+	if (!repoName) {
+		return errorEnvelope(400, 1001, 'repo name is required')
+	}
+	const existing = await state.getRepo(repoName)
+	if (existing) {
+		return errorEnvelope(409, 1003, 'repo already exists')
+	}
+	const repo = await state.createRepo({
+		name: repoName,
+		description:
+			typeof body.description === 'string' ? body.description : null,
+		defaultBranch:
+			typeof body.default_branch === 'string' && body.default_branch.trim()
+				? body.default_branch.trim()
+				: 'main',
+		readOnly: body.read_only === true,
+		remote: buildMockArtifactsRemote({
+			accountId: input.accountId,
+			namespace: input.namespace,
+			repoName,
+		}),
+	})
+	const token = await state.createToken({
+		repo: repo.name,
+		scope: 'write',
+		ttl: 3600,
+	})
+	return envelope(
+		{
+			id: repo.id,
+			name: repo.name,
+			description: repo.description,
+			default_branch: repo.default_branch,
+			remote: repo.remote,
+			token: token.plaintext,
+		},
+		{ status: 200 },
+	)
+}
+
+async function handleArtifactsRepoInfo(
+	env: MockCloudflareEnv,
+	input: {
+		accountId: string
+		namespace: string
+		repoName: string
+	},
+) {
+	if (input.accountId !== fixtureAccount.id) {
+		return errorEnvelope(404, 1002, 'account not found')
+	}
+	const tokenHash = await getTokenPartition(env)
+	const state = getMockArtifactsState(env, {
+		tokenHash,
+		accountId: input.accountId,
+		namespace: input.namespace,
+	})
+	const repo = await state.getRepo(input.repoName)
+	if (!repo) {
+		return errorEnvelope(404, 1002, 'repo not found')
+	}
+	return envelope(repo, { status: 200 })
+}
+
+async function handleArtifactsTokens(
+	request: Request,
+	env: MockCloudflareEnv,
+	input: {
+		accountId: string
+		namespace: string
+	},
+) {
+	if (input.accountId !== fixtureAccount.id) {
+		return errorEnvelope(404, 1002, 'account not found')
+	}
+	const body = await readJsonBody(request)
+	if (body === null) {
+		return errorEnvelope(400, 1001, 'invalid JSON body')
+	}
+	const repoName = typeof body.repo === 'string' ? body.repo.trim() : ''
+	if (!repoName) {
+		return errorEnvelope(400, 1001, 'repo is required')
+	}
+	const tokenHash = await getTokenPartition(env)
+	const state = getMockArtifactsState(env, {
+		tokenHash,
+		accountId: input.accountId,
+		namespace: input.namespace,
+	})
+	const repo = await state.getRepo(repoName)
+	if (!repo) {
+		return errorEnvelope(404, 1002, 'repo not found')
+	}
+	const token = await state.createToken({
+		repo: repo.name,
+		scope: typeof body.scope === 'string' ? body.scope : 'write',
+		ttl:
+			typeof body.ttl === 'number' && Number.isFinite(body.ttl)
+				? Math.max(1, Math.floor(body.ttl))
+				: 3600,
+	})
+	return envelope(token, { status: 200 })
+}
+
+async function handleArtifactsFork(
+	request: Request,
+	env: MockCloudflareEnv,
+	input: {
+		accountId: string
+		namespace: string
+		repoName: string
+	},
+) {
+	if (input.accountId !== fixtureAccount.id) {
+		return errorEnvelope(404, 1002, 'account not found')
+	}
+	const body = await readJsonBody(request)
+	if (body === null) {
+		return errorEnvelope(400, 1001, 'invalid JSON body')
+	}
+	const targetName = typeof body.name === 'string' ? body.name.trim() : ''
+	if (!targetName) {
+		return errorEnvelope(400, 1001, 'target repo name is required')
+	}
+	const tokenHash = await getTokenPartition(env)
+	const state = getMockArtifactsState(env, {
+		tokenHash,
+		accountId: input.accountId,
+		namespace: input.namespace,
+	})
+	const source = await state.getRepo(input.repoName)
+	if (!source) {
+		return errorEnvelope(404, 1002, 'repo not found')
+	}
+	const existingTarget = await state.getRepo(targetName)
+	if (existingTarget) {
+		return errorEnvelope(409, 1003, 'repo already exists')
+	}
+	const forked = await state.forkRepo({
+		sourceName: source.name,
+		targetName,
+		readOnly: body.read_only === true,
+		remote: buildMockArtifactsRemote({
+			accountId: input.accountId,
+			namespace: input.namespace,
+			repoName: targetName,
+		}),
+	})
+	const token = await state.createToken({
+		repo: forked.name,
+		scope: 'write',
+		ttl: 3600,
+	})
+	return envelope(
+		{
+			id: forked.id,
+			name: forked.name,
+			description: forked.description,
+			default_branch: forked.default_branch,
+			remote: forked.remote,
+			token: token.plaintext,
+		},
+		{ status: 200 },
+	)
+}
+
 async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 	if (!isAuthorized(request, env, url)) {
 		return errorEnvelope(401, 10000, 'Authentication error')
@@ -569,6 +852,52 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 	)
 	if (emailMatch && request.method === 'POST') {
 		return handleEmailSend(request, env, emailMatch[1]!)
+	}
+
+	const artifactsReposMatch = url.pathname.match(
+		/^\/client\/v4\/accounts\/([^/]+)\/artifacts\/namespaces\/([^/]+)\/repos\/?$/,
+	)
+	if (
+		artifactsReposMatch &&
+		(request.method === 'GET' || request.method === 'POST')
+	) {
+		return handleArtifactsRepos(request, env, {
+			accountId: artifactsReposMatch[1]!,
+			namespace: decodeURIComponent(artifactsReposMatch[2]!),
+			url,
+		})
+	}
+
+	const artifactsRepoInfoMatch = url.pathname.match(
+		/^\/client\/v4\/accounts\/([^/]+)\/artifacts\/namespaces\/([^/]+)\/repos\/([^/]+)\/?$/,
+	)
+	if (artifactsRepoInfoMatch && request.method === 'GET') {
+		return handleArtifactsRepoInfo(env, {
+			accountId: artifactsRepoInfoMatch[1]!,
+			namespace: decodeURIComponent(artifactsRepoInfoMatch[2]!),
+			repoName: decodeURIComponent(artifactsRepoInfoMatch[3]!),
+		})
+	}
+
+	const artifactsTokensMatch = url.pathname.match(
+		/^\/client\/v4\/accounts\/([^/]+)\/artifacts\/namespaces\/([^/]+)\/tokens\/?$/,
+	)
+	if (artifactsTokensMatch && request.method === 'POST') {
+		return handleArtifactsTokens(request, env, {
+			accountId: artifactsTokensMatch[1]!,
+			namespace: decodeURIComponent(artifactsTokensMatch[2]!),
+		})
+	}
+
+	const artifactsForkMatch = url.pathname.match(
+		/^\/client\/v4\/accounts\/([^/]+)\/artifacts\/namespaces\/([^/]+)\/repos\/([^/]+)\/fork\/?$/,
+	)
+	if (artifactsForkMatch && request.method === 'POST') {
+		return handleArtifactsFork(request, env, {
+			accountId: artifactsForkMatch[1]!,
+			namespace: decodeURIComponent(artifactsForkMatch[2]!),
+			repoName: decodeURIComponent(artifactsForkMatch[3]!),
+		})
 	}
 
 	const dnsListMatch = url.pathname.match(
@@ -657,6 +986,10 @@ export default {
 	},
 } satisfies ExportedHandler<MockCloudflareEnv>
 
+export {
+	MockCloudflareArtifactsDurableObject,
+	createMockCloudflareArtifactsState,
+} from './mock-artifacts-do.ts'
 export {
 	MockCloudflareEmailMessagesDurableObject,
 	createMockCloudflareEmailState,

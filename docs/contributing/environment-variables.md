@@ -110,7 +110,11 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
   `https://api.cloudflare.com` when unset, including for outbound email sending.
   Local `npm run dev` sets this to the Cloudflare mock Worker unless
-  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`.
+  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`. That same local mock now also
+  serves the Artifacts REST control-plane endpoints used by
+  `packages/worker/src/repo/artifacts.ts` (`repos`, `tokens`, and `fork`), so
+  local repo create/get/list/token/fork calls do not need the live Artifacts
+  REST API.
 
 ## Home connector bridge
 
