@@ -37,6 +37,9 @@ export const jobUpsertCapability = defineDomainCapability(
 								...(args.publishedCommit !== undefined
 									? { publishedCommit: args.publishedCommit }
 									: {}),
+								...(args.repoCheckPolicy !== undefined
+									? { repoCheckPolicy: args.repoCheckPolicy }
+									: {}),
 								...(args.params !== undefined && args.params !== null
 									? { params: args.params }
 									: {}),
@@ -65,6 +68,9 @@ export const jobUpsertCapability = defineDomainCapability(
 									: {}),
 								...(args.publishedCommit !== undefined
 									? { publishedCommit: args.publishedCommit }
+									: {}),
+								...(args.repoCheckPolicy !== undefined
+									? { repoCheckPolicy: args.repoCheckPolicy }
 									: {}),
 								...(args.params !== undefined ? { params: args.params } : {}),
 								...(args.schedule !== undefined

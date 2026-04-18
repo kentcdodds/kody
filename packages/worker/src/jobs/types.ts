@@ -27,6 +27,10 @@ export type JobRunHistoryEntry = {
 	error?: string
 }
 
+export type JobRepoCheckPolicy = {
+	allowTypecheckFailures?: boolean
+}
+
 export type JobRecord = {
 	version: 1
 	id: string
@@ -35,6 +39,7 @@ export type JobRecord = {
 	code: string | null
 	sourceId: string | null
 	publishedCommit: string | null
+	repoCheckPolicy?: JobRepoCheckPolicy
 	storageId: string
 	params?: Record<string, unknown>
 	schedule: JobSchedule
@@ -104,6 +109,7 @@ export type JobCreateInput = {
 	code?: string | null
 	sourceId?: string | null
 	publishedCommit?: string | null
+	repoCheckPolicy?: JobRepoCheckPolicy | null
 	params?: Record<string, unknown>
 	schedule: JobSchedule
 	timezone?: string | null
@@ -117,6 +123,7 @@ export type JobUpdateInput = {
 	code?: string | null
 	sourceId?: string | null
 	publishedCommit?: string | null
+	repoCheckPolicy?: JobRepoCheckPolicy | null
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
@@ -130,6 +137,7 @@ export type JobUpsertInput = {
 	code?: string | null
 	sourceId?: string | null
 	publishedCommit?: string | null
+	repoCheckPolicy?: JobRepoCheckPolicy | null
 	params?: Record<string, unknown> | null
 	schedule?: JobSchedule
 	timezone?: string | null
