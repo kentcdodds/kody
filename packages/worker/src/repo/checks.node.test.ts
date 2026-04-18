@@ -379,7 +379,7 @@ test('runRepoChecks still reports unknown globals for repo-backed jobs', async (
 						file: {
 							getLineAndCharacterOfPosition() {
 								return {
-									line: 0,
+									line: 1,
 									character: 11,
 								}
 							},

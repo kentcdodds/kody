@@ -30,7 +30,7 @@ export type RepoCheckRunResult = {
 }
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
-const jobTypecheckHarnessPath = '.__kody_repo_check__.ts'
+const executeSnippetTypecheckHarnessPath = '.__kody_repo_check__.ts'
 const repoBackedSkillModuleStyleErrorMessage =
 	'Repo-backed skill entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.'
 
@@ -199,7 +199,7 @@ function getRepoTypecheckDiagnostics(input: {
 				createExecuteTypecheckPrelude(),
 			)
 			input.fileSystem.write(
-				jobTypecheckHarnessPath,
+				executeSnippetTypecheckHarnessPath,
 				createExecuteSnippetTypecheckHarness({
 					fnName: '__kodyTypecheckSkill',
 					source: input.entryPointSource,
@@ -208,7 +208,9 @@ function getRepoTypecheckDiagnostics(input: {
 			return {
 				fileName: input.entryPoint,
 				diagnostics:
-					input.languageService.getSemanticDiagnostics(jobTypecheckHarnessPath),
+					input.languageService.getSemanticDiagnostics(
+						executeSnippetTypecheckHarnessPath,
+					),
 				lineOffset: 2,
 			}
 		}
@@ -230,7 +232,7 @@ function getRepoTypecheckDiagnostics(input: {
 				}),
 			)
 			input.fileSystem.write(
-				jobTypecheckHarnessPath,
+				executeSnippetTypecheckHarnessPath,
 				createExecuteSnippetTypecheckHarness({
 					fnName: '__kodyTypecheckJob',
 					source: input.entryPointSource,
@@ -239,7 +241,9 @@ function getRepoTypecheckDiagnostics(input: {
 			return {
 				fileName: input.entryPoint,
 				diagnostics:
-					input.languageService.getSemanticDiagnostics(jobTypecheckHarnessPath),
+					input.languageService.getSemanticDiagnostics(
+						executeSnippetTypecheckHarnessPath,
+					),
 				lineOffset: 2,
 			}
 		}

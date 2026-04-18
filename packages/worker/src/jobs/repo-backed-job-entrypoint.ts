@@ -3,8 +3,9 @@ export const repoBackedJobModuleStyleErrorMessage =
 
 export function hasModuleStyleRepoBackedJobEntrypoint(code: string) {
 	return (
-		/^\s*export\s+/m.test(code) ||
+		/^\s*export\b/m.test(code) ||
 		/\bmodule\.exports\b/.test(code) ||
-		/\bexports\.[A-Za-z_$][\w$]*/.test(code)
+		/\bexports\.[A-Za-z_$][\w$]*/.test(code) ||
+		/\bexports\[['"`][A-Za-z_$][\w$]*['"`]\]/.test(code)
 	)
 }
