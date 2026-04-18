@@ -10,6 +10,30 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 
+vi.mock('@cloudflare/worker-bundler', () => ({
+	createFileSystemSnapshot: vi.fn(async (files: AsyncIterable<[string, string]>) => {
+		const snapshotFiles = new Map<string, string>()
+		for await (const [path, content] of files) {
+			snapshotFiles.set(path, content)
+		}
+		return {
+			read(path: string) {
+				return snapshotFiles.get(path) ?? null
+			},
+		}
+	}),
+}))
+
+vi.mock('@cloudflare/worker-bundler/typescript', () => ({
+	createTypescriptLanguageService: vi.fn(async () => ({
+		languageService: {
+			getSemanticDiagnostics: vi.fn((entryPoint: string) =>
+				entryPoint === 'src/job.ts' ? [] : [{ messageText: `missing ${entryPoint}` }],
+			),
+		},
+	})),
+}))
+
 function createDatabase() {
 	const tables = new Map<string, Array<Record<string, unknown>>>([
 		['secret_buckets', []],
@@ -778,6 +802,159 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		})
 		expect(sessionClient.readFile).toHaveBeenCalledWith({
 			sessionId: 'job-runtime-job-repo-1',
+			userId: 'user-123',
+			path: 'src/job.ts',
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+	} finally {
+		repoSessionRpcSpy.mockRestore()
+		executeSpy.mockRestore()
+	}
+})
+
+test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute paths and migrated entrypoints', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+		LOADER: {} as WorkerLoader,
+	} as Env
+	const callerContext = createBaseCallerContext()
+	const job: JobRecord = {
+		version: 1,
+		id: 'job-repo-absolute-paths',
+		userId: callerContext.user.userId,
+		name: 'Repo-backed absolute path job',
+		code: null,
+		sourceId: 'source-absolute-paths',
+		publishedCommit: 'commit-absolute',
+		storageId: 'job:job-repo-absolute-paths',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-17T15:00:00Z',
+		},
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-16T00:00:00.000Z',
+		updatedAt: '2026-04-16T00:00:00.000Z',
+		nextRunAt: '2026-04-17T15:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	}
+
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-repo-absolute-paths',
+			source_id: 'source-absolute-paths',
+			source_root: '/',
+			base_commit: 'commit-absolute',
+			session_repo_id: 'session-repo-absolute',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-absolute',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(async () => {
+			const { runRepoChecks } = await import('#worker/repo/checks.ts')
+			return runRepoChecks({
+				workspace: {
+					async readFile(path: string) {
+						const file = workspaceFiles.get(path)
+						return file ?? workspaceFiles.get(path.replace(/^\/+/, '')) ?? null
+					},
+					async glob() {
+						return Array.from(workspaceFiles.keys()).map((path) => ({
+							path,
+							type: 'file',
+						}))
+					},
+				},
+				manifestPath: '/session/kody.json',
+				sourceRoot: '/session/',
+			})
+		}),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo absolute path job',
+							description: 'Runs from repo session files',
+							sourceRoot: '/',
+							entrypoint: '/src/job.ts',
+						})
+					: 'async () => ({ ok: true, normalized: true })',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'job-runtime-job-repo-absolute-paths',
+			deleted: true,
+		})),
+	}
+	const workspaceFiles = new Map<string, string>([
+		[
+			'/session/kody.json',
+			JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Repo absolute path job',
+				description: 'Runs from repo session files',
+				sourceRoot: '/',
+				entrypoint: '/src/job.ts',
+			}),
+		],
+		[
+			'/session/src/job.ts',
+			'const run = async () => ({ ok: true })\nvoid run\n',
+		],
+		[
+			'/session/package.json',
+			JSON.stringify({
+				name: 'repo-absolute-path-job',
+				private: true,
+			}),
+		],
+	])
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runCodemodeWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true, normalized: true },
+			logs: ['repo-backed codemode executed'],
+		})
+
+	try {
+		const outcome = await executeJobOnce({
+			env,
+			job,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: { ok: true, normalized: true },
+			logs: ['repo-backed codemode executed'],
+		})
+		expect(sessionClient.runChecks).toHaveBeenCalledTimes(1)
+		expect(sessionClient.readFile).toHaveBeenCalledWith({
+			sessionId: 'job-runtime-job-repo-absolute-paths',
 			userId: 'user-123',
 			path: 'src/job.ts',
 		})

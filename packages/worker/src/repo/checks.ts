@@ -1,4 +1,8 @@
-import { getManifestEntrypointPath, parseRepoManifest } from './manifest.ts'
+import {
+	getManifestEntrypointPath,
+	normalizeRepoWorkspacePath,
+	parseRepoManifest,
+} from './manifest.ts'
 import { type RepoManifest } from './types.ts'
 
 export type RepoCheckKind =
@@ -28,7 +32,10 @@ async function* workspaceFilesForSnapshot(input: {
 	}
 	root: string
 }) {
-	const normalizedRoot = input.root.replace(/\/+$/, '')
+	const normalizedRoot = normalizeRepoWorkspacePath(input.root).replace(
+		/\/+$/,
+		'',
+	)
 	const pattern =
 		normalizedRoot === ''
 			? '**/*.{ts,tsx,js,jsx,json}'
@@ -38,9 +45,11 @@ async function* workspaceFilesForSnapshot(input: {
 		if (file.type !== 'file') continue
 		const content = await input.workspace.readFile(file.path)
 		if (content == null) continue
-		const relativePath = normalizedRoot
-			? file.path.slice(normalizedRoot.length + 1)
-			: file.path
+		const normalizedPath = normalizeRepoWorkspacePath(file.path)
+		const relativePath =
+			normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
+				? normalizedPath.slice(normalizedRoot.length + 1)
+				: normalizedPath
 		yield [relativePath, content] as const
 	}
 }
@@ -97,7 +106,10 @@ export async function runRepoChecks(input: {
 		},
 	]
 
-	const sourceRoot = input.sourceRoot.replace(/^\/+/, '').replace(/\/+$/, '')
+	const sourceRoot = normalizeRepoWorkspacePath(input.sourceRoot).replace(
+		/\/+$/,
+		'',
+	)
 	const { createFileSystemSnapshot } =
 		await import('@cloudflare/worker-bundler')
 	const snapshot = await createFileSystemSnapshot(
