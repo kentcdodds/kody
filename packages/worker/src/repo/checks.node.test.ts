@@ -1,7 +1,25 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+
+const mockModule = vi.hoisted(() => ({
+	createFileSystemSnapshot: vi.fn(),
+	createTypescriptLanguageService: vi.fn(),
+}))
+
+vi.mock('@cloudflare/worker-bundler', () => ({
+	createFileSystemSnapshot: (...args: Array<unknown>) =>
+		mockModule.createFileSystemSnapshot(...args),
+}))
+
+vi.mock('@cloudflare/worker-bundler/typescript', () => ({
+	createTypescriptLanguageService: (...args: Array<unknown>) =>
+		mockModule.createTypescriptLanguageService(...args),
+}))
+
 import { runRepoChecks } from './checks.ts'
 
 test('runRepoChecks normalizes leading slashes in manifest entrypoints', async () => {
+	mockModule.createFileSystemSnapshot.mockReset()
+	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'kody.json',
@@ -18,7 +36,24 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 			'src/job.ts',
 			'const run = async () => ({ ok: true })\nvoid run\n',
 		],
+		[
+			'package.json',
+			JSON.stringify({
+				name: 'migrated-job',
+				private: true,
+			}),
+		],
 	])
+	const snapshot = {
+		read: vi.fn((path: string) => files.get(path) ?? null),
+	}
+	const getSemanticDiagnostics = vi.fn(() => [])
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		languageService: {
+			getSemanticDiagnostics,
+		},
+	})
 
 	const result = await runRepoChecks({
 		workspace: {
@@ -48,4 +83,6 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 			}),
 		]),
 	)
+	expect(snapshot.read).toHaveBeenCalledWith('src/job.ts')
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith('src/job.ts')
 })
