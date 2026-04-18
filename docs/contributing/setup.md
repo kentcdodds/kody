@@ -36,10 +36,10 @@ Quick notes for getting a local kody environment running.
   local home connector; it sets `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and
   `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
   to the local Cloudflare API mock Worker for the internal Cloudflare API client
-  and local email sending. Unless you already set
-  `CLOUDFLARE_EMAIL_FROM`, the launcher also defaults it to `reset@kody.dev`.
-  Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The
-  home connector receives the resolved worker origin via `WORKER_BASE_URL`. When
+  and local email sending. Unless you already set `CLOUDFLARE_EMAIL_FROM`, the
+  launcher also defaults it to `reset@kody.dev`. Set `SKIP_CLOUDFLARE_MOCK=1` to
+  skip the local Cloudflare mock entirely. The home connector receives the
+  resolved worker origin via `WORKER_BASE_URL`. When
   `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
   it to both the worker and the connector so the outbound registration handshake
   succeeds in local development. The main worker and home connector stream logs
@@ -262,6 +262,12 @@ that workflow.
 
 Preview deploys also run `node tools/seed-test-data.ts` after deploy to create
 or verify the shared test account credentials listed above.
+
+Preview cleanup also deletes the matching GitHub environment
+(`preview-<pr-number>`). That API requires repository administration write
+access, so the repo must define a `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` Actions
+secret with a token that has that permission. Cleanup intentionally fails when
+that secret is missing or under-scoped so permission regressions are visible.
 
 The production deploy workflow can also be started manually from GitHub Actions
 via **Run workflow** on `main`. The manual path still verifies that the selected
