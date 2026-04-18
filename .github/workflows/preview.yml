@@ -565,7 +565,7 @@ jobs:
           node tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"
 
       - name: 🏷️ Delete GitHub preview environment
-        if: always() && secrets.PREVIEW_ENVIRONMENT_GITHUB_TOKEN != ''
+        if: always()
         uses: actions/github-script@v8.0.0
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -573,7 +573,7 @@ jobs:
           INPUT_TARGET: ${{ inputs.target }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         with:
-          github-token: ${{ secrets.PREVIEW_ENVIRONMENT_GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             const eventName = process.env.EVENT_NAME;
             let envName;
