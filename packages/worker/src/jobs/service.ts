@@ -590,7 +590,7 @@ async function runRepoBackedJob(input: {
 		return {
 			error: `Job manifest "${manifestPath}" was not found in repo session.`,
 			result: null,
-			logs: [],
+			logs: gate.logs,
 		}
 	}
 	let manifest: ReturnType<typeof parseRepoManifest>
@@ -603,14 +603,14 @@ async function runRepoBackedJob(input: {
 		return {
 			error: error instanceof Error ? error.message : String(error),
 			result: null,
-			logs: [],
+			logs: gate.logs,
 		}
 	}
 	if (manifest.kind !== 'job') {
 		return {
 			error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
 			result: null,
-			logs: [],
+			logs: gate.logs,
 		}
 	}
 	const moduleFile = await sessionClient.readFile({
@@ -622,7 +622,7 @@ async function runRepoBackedJob(input: {
 		return {
 			error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
 			result: null,
-			logs: [],
+			logs: gate.logs,
 		}
 	}
 	if (hasModuleStyleCodemodeEntrypoint(moduleFile.content)) {
@@ -630,7 +630,7 @@ async function runRepoBackedJob(input: {
 			error:
 				'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
 			result: null,
-			logs: [],
+			logs: gate.logs,
 		}
 	}
 	const { runCodemodeWithRegistry } =
