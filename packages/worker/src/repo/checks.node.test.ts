@@ -480,7 +480,7 @@ test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/job.ts"'),
+		expect.stringContaining('import userEntrypoint from "./src/job"'),
 	)
 	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',

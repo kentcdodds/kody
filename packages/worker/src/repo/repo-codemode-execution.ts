@@ -17,6 +17,7 @@ const repoCodemodeBundleCacheLimit = 50
 const repoCodemodeSourceReadConcurrency = 8
 const repoCodemodeSourceMaxFiles = 250
 const repoCodemodeSourceMaxBytes = 2 * 1024 * 1024
+const repoCodemodeImportExtensionPattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const repoCodemodeBundleCache = new Map<
 	string,
 	Promise<{
@@ -49,7 +50,11 @@ export function hasModuleStyleRepoBackedEntrypoint(code: string) {
 }
 
 function createRelativeImportSpecifier(path: string) {
-	return JSON.stringify(`./${path}`)
+	const normalizedPath = normalizeRepoWorkspacePath(path).replace(
+		repoCodemodeImportExtensionPattern,
+		'',
+	)
+	return JSON.stringify(`./${normalizedPath}`)
 }
 
 function toRelativeSourcePath(path: string, sourceRoot: string) {
