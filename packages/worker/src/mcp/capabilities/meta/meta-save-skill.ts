@@ -189,6 +189,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				userId: user.userId,
 				baseUrl: ctx.callerContext.baseUrl,
 				sourceId: source.id,
+				bootstrapAccess: source.bootstrapAccess ?? null,
 				files: buildSkillSourceFiles({
 					title: args.title,
 					description: args.description,

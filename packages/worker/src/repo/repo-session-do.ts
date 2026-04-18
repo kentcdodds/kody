@@ -13,6 +13,7 @@ import {
 	updateRepoSession,
 } from './repo-sessions.ts'
 import {
+	type ArtifactBootstrapAccess,
 	buildAuthenticatedArtifactsRemote,
 	resolveArtifactSourceRepo,
 	resolveSessionRepo,
@@ -507,6 +508,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		sourceId: string
 		userId: string
+		bootstrapAccess?: ArtifactBootstrapAccess | null
 		edits: Array<{
 			kind: 'write' | 'replace' | 'writeJson'
 			path: string
@@ -540,12 +542,22 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
-		const sourceInfo = await sourceRepo.info()
-		const sourceAccess = await ensureArtifactRepoRemote({
-			repo: sourceRepo,
-			scope: 'write',
-		})
-		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
+		const sourceInfo = input.bootstrapAccess
+			? null
+			: await sourceRepo.info()
+		const sourceAccess = input.bootstrapAccess
+			? {
+					remote: input.bootstrapAccess.remote,
+					token: input.bootstrapAccess.token,
+				}
+			: await ensureArtifactRepoRemote({
+					repo: sourceRepo,
+					scope: 'write',
+				})
+		const targetBranch =
+			input.bootstrapAccess?.defaultBranch ??
+			sourceInfo?.defaultBranch ??
+			defaultSessionBranch
 		await this.resetWorkspace()
 		await this.workspace.mkdir(repoSessionWorkspacePrefix, {
 			recursive: true,

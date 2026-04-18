@@ -2,6 +2,7 @@ import {
 	buildEntityRepoId,
 	getArtifactsBinding,
 	hasArtifactsAccess,
+	type ArtifactBootstrapAccess,
 	type ArtifactNamespaceBinding,
 } from './artifacts.ts'
 import {
@@ -10,6 +11,10 @@ import {
 	updateEntitySource,
 } from './entity-sources.ts'
 import { type EntityKind, type EntitySourceRow } from './types.ts'
+
+export type EnsuredEntitySource = EntitySourceRow & {
+	bootstrapAccess?: ArtifactBootstrapAccess | null
+}
 
 function buildEntitySourceRow(input: {
 	id?: string
@@ -55,7 +60,7 @@ export async function ensureEntitySource(input: {
 	manifestPath?: string
 	sourceRoot?: string
 	requirePersistence?: boolean
-}) {
+}): Promise<EnsuredEntitySource> {
 	const hasDbPrepare = hasAppDbBinding(input.db)
 	const hasArtifactsAccessResult = hasArtifactsAccess(input.env)
 	if (!hasDbPrepare || hasArtifactsAccessResult === false) {
@@ -92,9 +97,15 @@ export async function ensureEntitySource(input: {
 		manifestPath: input.manifestPath,
 		sourceRoot: input.sourceRoot,
 	})
-	await createArtifactsRepoIfMissing(input.env, row.repo_id)
+	const bootstrapAccess = await createArtifactsRepoIfMissing(
+		input.env,
+		row.repo_id,
+	)
 	await insertEntitySource(input.db, row)
-	return row
+	return {
+		...row,
+		bootstrapAccess,
+	}
 }
 
 function hasAppDbBinding(db: D1Database | null | undefined) {
@@ -119,9 +130,9 @@ export async function createArtifactsRepoIfMissing(
 	env: Env,
 	repoId: string,
 	binding: ArtifactNamespaceBinding = getArtifactsBinding(env),
-) {
+): Promise<ArtifactBootstrapAccess | null> {
 	const existing = await binding.get(repoId)
-	if (existing.status === 'ready') return existing.repo
+	if (existing.status === 'ready') return null
 	if (existing.status === 'importing' || existing.status === 'forking') {
 		throw new Error(
 			`Artifacts repo "${repoId}" is ${existing.status}. Retry after ${existing.retryAfter}s.`,
@@ -134,7 +145,12 @@ export async function createArtifactsRepoIfMissing(
 			`Artifacts repo "${created.name}" is ${getResult.status} after create.`,
 		)
 	}
-	return getResult.repo
+	return {
+		defaultBranch: created.defaultBranch,
+		remote: created.remote,
+		token: created.token,
+		expiresAt: created.expiresAt,
+	}
 }
 
 export async function setEntityPublishedCommit(input: {

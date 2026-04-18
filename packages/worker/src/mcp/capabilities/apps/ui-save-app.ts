@@ -398,6 +398,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
 						sourceId: ensuredSource.id,
+						bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 						files: buildAppSourceFiles({
 							title,
 							description,
@@ -477,6 +478,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
 						sourceId: ensuredSource.id,
+						bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 						files: buildAppSourceFiles({
 							title,
 							description,

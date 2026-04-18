@@ -1,3 +1,4 @@
+import { type ArtifactBootstrapAccess } from './artifacts.ts'
 import {
 	type RepoSourceBootstrapResult,
 	type RepoSearchMode,
@@ -74,6 +75,7 @@ export type RepoSessionRpc = {
 		sourceId: string
 		userId: string
 		edits: Array<RepoSessionEdit>
+		bootstrapAccess?: ArtifactBootstrapAccess | null
 	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
 		sessionId: string

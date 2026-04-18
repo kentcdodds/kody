@@ -194,6 +194,7 @@ export async function createJob(input: {
 		userId: callerContext.user.userId,
 		baseUrl: callerContext.baseUrl,
 		sourceId: job.sourceId,
+		bootstrapAccess: ensuredSource?.bootstrapAccess ?? null,
 		files: buildJobSourceFiles({
 			job: toJobView(job),
 		}),
@@ -322,6 +323,7 @@ export async function updateJob(input: {
 		userId: callerContext.user.userId,
 		baseUrl: callerContext.baseUrl,
 		sourceId: updated.sourceId,
+		bootstrapAccess: ensuredSource?.bootstrapAccess ?? null,
 		files: buildJobSourceFiles({
 			job: toJobView(updated),
 		}),
