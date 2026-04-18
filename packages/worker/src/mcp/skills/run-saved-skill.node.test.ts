@@ -28,6 +28,15 @@ vi.mock('#worker/repo/repo-codemode-execution.ts', () => ({
 		mockModule.buildRepoCodemodeBundle(...args),
 	loadRepoSourceFilesFromSession: (...args: Array<unknown>) =>
 		mockModule.loadRepoSourceFilesFromSession(...args),
+	getRepoSourceRelativePath: (path: string, sourceRoot: string) => {
+		const normalizedPath = path.replace(/^\/+/, '')
+		const normalizedSourceRoot = sourceRoot.replace(/^\/+/, '').replace(/\/+$/, '')
+		if (!normalizedSourceRoot) return normalizedPath
+		if (normalizedPath === normalizedSourceRoot) return ''
+		return normalizedPath.startsWith(`${normalizedSourceRoot}/`)
+			? normalizedPath.slice(normalizedSourceRoot.length + 1)
+			: normalizedPath
+	},
 	createRepoCodemodeWrapper: ({
 		mainModule,
 		includeStorage,
@@ -202,6 +211,148 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 	})
 	expect(sessionClient.discardSession).toHaveBeenCalledWith({
 		sessionId: 'skill-runtime-skill-1-session',
+		userId: 'user-1',
+	})
+})
+
+test('runSavedSkill bundles repo-backed skills relative to manifest sourceRoot', async () => {
+	mockModule.getMcpSkillByNameInput.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.runCodemodeWithRegistry.mockReset()
+	mockModule.buildRepoCodemodeBundle.mockReset()
+	mockModule.loadRepoSourceFilesFromSession.mockReset()
+
+	mockModule.getMcpSkillByNameInput.mockResolvedValue({
+		id: 'skill-2',
+		user_id: 'user-1',
+		name: 'nested-skill',
+		title: 'Nested skill',
+		description: 'Runs from nested repo root',
+		collection_name: null,
+		collection_slug: null,
+		source_id: 'source-2',
+		keywords: '[]',
+		code: 'async () => ({ inline: false })',
+		search_text: null,
+		uses_capabilities: null,
+		parameters: null,
+		inferred_capabilities: '[]',
+		inference_partial: 0,
+		read_only: 1,
+		idempotent: 1,
+		destructive: 0,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'skill-runtime-skill-2-session',
+			source_id: 'source-2',
+			source_root: '/',
+			base_commit: 'commit-2',
+			session_repo_id: 'session-repo-2',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-18T00:00:00.000Z',
+			updated_at: '2026-04-18T00:00:00.000Z',
+			published_commit: 'commit-2',
+			manifest_path: 'kody.json',
+			entity_type: 'skill' as const,
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'skill',
+							title: 'Nested skill',
+							description: 'Runs from nested repo root',
+							sourceRoot: '/src',
+							entrypoint: 'src/skill.ts',
+						})
+					: 'export default async () => ({ ok: true, nested: true })',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'skill-runtime-skill-2-session',
+			deleted: true,
+		})),
+	}
+	mockModule.repoSessionRpc.mockReturnValue(sessionClient)
+	mockModule.loadRepoSourceFilesFromSession.mockResolvedValue({
+		'skill.ts': 'export default async () => ({ ok: true, nested: true })',
+		'helper.ts': 'export const value = 1',
+	})
+	mockModule.buildRepoCodemodeBundle.mockResolvedValue({
+		entrypointMode: 'module',
+		mainModule: 'dist/nested-entry.js',
+		modules: {
+			'dist/nested-entry.js':
+				'export default async () => ({ ok: true, nested: true })',
+		},
+	})
+	mockModule.runCodemodeWithRegistry.mockResolvedValue({
+		result: { ok: true, nested: true },
+		logs: ['repo-backed nested skill executed'],
+	})
+
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-1', email: 'user@example.com' },
+	})
+
+	const result = await runSavedSkill({
+		env: {} as Env,
+		callerContext,
+		name: 'nested-skill',
+	})
+
+	expect(result).toEqual({
+		ok: true,
+		result: { ok: true, nested: true },
+		logs: ['repo-backed nested skill executed'],
+	})
+	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledWith({
+		sessionClient,
+		sessionId: 'skill-runtime-skill-2-session',
+		userId: 'user-1',
+		sourceRoot: '/src',
+	})
+	expect(mockModule.buildRepoCodemodeBundle).toHaveBeenCalledWith({
+		sourceFiles: {
+			'skill.ts': 'export default async () => ({ ok: true, nested: true })',
+			'helper.ts': 'export const value = 1',
+		},
+		entryPoint: 'skill.ts',
+		entryPointSource: 'export default async () => ({ ok: true, nested: true })',
+		cacheKey: 'source-2:commit-2',
+	})
+	expect(mockModule.runCodemodeWithRegistry).toHaveBeenCalledWith(
+		{} as Env,
+		expect.objectContaining({
+			repoContext: expect.objectContaining({
+				sourceId: 'source-2',
+				sessionId: 'skill-runtime-skill-2-session',
+			}),
+		}),
+		'repo-wrapper:dist/nested-entry.js:no-storage',
+		undefined,
+		expect.objectContaining({
+			executorModules: {
+				'dist/nested-entry.js':
+					'export default async () => ({ ok: true, nested: true })',
+			},
+		}),
+	)
+	expect(sessionClient.discardSession).toHaveBeenCalledWith({
+		sessionId: 'skill-runtime-skill-2-session',
 		userId: 'user-1',
 	})
 })

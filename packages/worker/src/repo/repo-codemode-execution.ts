@@ -14,6 +14,9 @@ export const repoBackedModuleEntrypointExportErrorMessage =
 
 const syntheticRepoEntrypointPath = '.__kody_repo_user_entry__.ts'
 const repoCodemodeBundleCacheLimit = 50
+const repoCodemodeSourceReadConcurrency = 8
+const repoCodemodeSourceMaxFiles = 250
+const repoCodemodeSourceMaxBytes = 2 * 1024 * 1024
 const repoCodemodeBundleCache = new Map<
 	string,
 	Promise<{
@@ -45,6 +48,10 @@ export function hasModuleStyleRepoBackedEntrypoint(code: string) {
 	return usesModuleSyntax(code)
 }
 
+function createRelativeImportSpecifier(path: string) {
+	return JSON.stringify(`./${path}`)
+}
+
 function toRelativeSourcePath(path: string, sourceRoot: string) {
 	const normalizedPath = normalizeRepoWorkspacePath(path)
 	const normalizedSourceRoot = stripTrailingSlashes(
@@ -67,6 +74,10 @@ function collectTreeFilePaths(node: RepoSessionTreeResult): Array<string> {
 	)
 }
 
+export function getRepoSourceRelativePath(path: string, sourceRoot: string) {
+	return toRelativeSourcePath(path, sourceRoot)
+}
+
 function buildSyntheticEntrypointSource(input: {
 	entryPoint: string
 	entryPointSource: string
@@ -77,7 +88,7 @@ function buildSyntheticEntrypointSource(input: {
 export default __kodyUserCode;
 `
 	}
-	return `export { default } from './${input.entryPoint}';
+	return `export { default } from ${createRelativeImportSpecifier(input.entryPoint)};
 `
 }
 
@@ -99,21 +110,59 @@ export async function loadRepoSourceFilesFromSession(input: {
 		path: input.sourceRoot,
 	})
 	const filePaths = collectTreeFilePaths(tree)
-	const files = await Promise.all(
-		filePaths.map(async (path) => {
+	const files: Array<readonly [string, string]> = []
+	const encoder = new TextEncoder()
+	let nextIndex = 0
+	let totalBytes = 0
+	let limitError: string | null = null
+	let shouldStop = false
+
+	const readNextFile = async () => {
+		while (!shouldStop) {
+			const fileIndex = nextIndex
+			nextIndex += 1
+			if (fileIndex >= filePaths.length) return
+			const path = filePaths[fileIndex]!
 			const file = await input.sessionClient.readFile({
 				sessionId: input.sessionId,
 				userId: input.userId,
 				path,
 			})
-			if (file.content == null) return null
+			if (shouldStop || file.content == null) continue
 			const relativePath = toRelativeSourcePath(path, input.sourceRoot)
-			if (!relativePath) return null
-			return [relativePath, file.content] as const
-		}),
+			if (!relativePath) continue
+			if (files.length >= repoCodemodeSourceMaxFiles) {
+				limitError = `Repo-backed source root "${input.sourceRoot}" exceeded the ${repoCodemodeSourceMaxFiles}-file bundle limit.`
+				shouldStop = true
+				return
+			}
+			const fileBytes = encoder.encode(file.content).byteLength
+			if (totalBytes + fileBytes > repoCodemodeSourceMaxBytes) {
+				limitError = `Repo-backed source root "${input.sourceRoot}" exceeded the ${repoCodemodeSourceMaxBytes}-byte bundle limit.`
+				shouldStop = true
+				return
+			}
+			totalBytes += fileBytes
+			files.push([relativePath, file.content] as const)
+		}
+	}
+
+	await Promise.all(
+		Array.from(
+			{
+				length: Math.max(
+					1,
+					Math.min(repoCodemodeSourceReadConcurrency, filePaths.length),
+				),
+			},
+			() => readNextFile(),
+		),
 	)
+	if (limitError) {
+		throw new Error(limitError)
+	}
 	return Object.fromEntries(
-		files.filter((file): file is NonNullable<typeof file> => file != null),
+		files,
 	)
 }
 
@@ -219,7 +268,7 @@ export function createRepoCodemodeModuleTypecheckHarness(input: {
 	entryPoint: string
 }) {
 	return `/// <reference path="./.__kody_repo_runtime__.d.ts" />
-import userEntrypoint from './${input.entryPoint}';
+import userEntrypoint from ${createRelativeImportSpecifier(input.entryPoint)};
 
 declare function __kodyTypecheckModule(
   fn: (params?: Record<string, unknown>) => Promise<unknown> | unknown,

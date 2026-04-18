@@ -14,6 +14,7 @@ import {
 import {
 	buildRepoCodemodeBundle,
 	createRepoCodemodeWrapper,
+	getRepoSourceRelativePath,
 	loadRepoSourceFilesFromSession,
 } from '#worker/repo/repo-codemode-execution.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
@@ -149,10 +150,11 @@ async function runRepoBackedSkill(input: {
 			}
 		}
 		const sourceRoot = getManifestSourceRoot(manifest)
+		const workspaceEntrypoint = getManifestEntrypointPath(manifest)
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user?.userId ?? '',
-			path: getManifestEntrypointPath(manifest),
+			path: workspaceEntrypoint,
 		})
 		if (!moduleFile.content) {
 			return {
@@ -169,7 +171,7 @@ async function runRepoBackedSkill(input: {
 		})
 		const bundle = await buildRepoCodemodeBundle({
 			sourceFiles,
-			entryPoint: getManifestEntrypointPath(manifest),
+			entryPoint: getRepoSourceRelativePath(workspaceEntrypoint, sourceRoot),
 			entryPointSource: moduleFile.content,
 			sourceRoot,
 			cacheKey:

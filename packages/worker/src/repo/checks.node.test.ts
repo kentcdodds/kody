@@ -443,7 +443,9 @@ test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 		write: vi.fn(),
 	}
 	const getSemanticDiagnostics = vi.fn((path: string) =>
-		path === '.__kody_repo_module_check__.ts' ? [] : [],
+		path === '.__kody_repo_module_check__.ts'
+			? []
+			: [{ messageText: `unexpected diagnostics for ${path}` }],
 	)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
@@ -478,7 +480,7 @@ test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
-		expect.stringContaining("import userEntrypoint from './src/job.ts'"),
+		expect.stringContaining('import userEntrypoint from "./src/job.ts"'),
 	)
 	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
