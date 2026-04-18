@@ -580,7 +580,8 @@ jobs:
             ${{ secrets.PREVIEW_ENVIRONMENT_ADMIN_TOKEN != '' && 'true' ||
             'false' }}
         with:
-          github-token: ${{ secrets.PREVIEW_ENVIRONMENT_ADMIN_TOKEN }}
+          github-token:
+            ${{ secrets.PREVIEW_ENVIRONMENT_ADMIN_TOKEN || github.token }}
           script: |
             const eventName = process.env.EVENT_NAME;
             const hasAdminToken =
