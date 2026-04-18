@@ -1,14 +1,16 @@
 # Saved app backends
 
-Saved apps persist **two** code artifacts:
+Saved apps persist **repo-backed source** with two authored files:
 
 - **`clientCode`** — HTML for the generic MCP app shell
 - **`serverCode`** — optional Durable Object code that runs behind
   **`/app/:appId/*`**
 
-Every saved app gets its own **`AppRunner`** supervisor Durable Object. When the
-app defines **`serverCode`**, the supervisor loads the saved code as a **Durable
-Object Facet** and gives it an isolated SQLite database.
+Every saved app gets its own **`AppRunner`** supervisor Durable Object. The save
+flow writes `clientCode` and `serverCode` into the saved app's repo-backed
+source, bootstraps the first publish directly into the source repo, and then
+loads the current published backend as a **Durable Object Facet** with isolated
+SQLite storage when `serverCode` is present.
 
 ## Save input shape
 
@@ -51,7 +53,8 @@ return snake_case fields:
 }
 ```
 
-`client_code` contains HTML. `server_code` contains Workers JavaScript.
+`client_code` contains the current published HTML. `server_code` contains the
+current published Workers JavaScript.
 
 For non-trivial or integration-backed apps, prefer a saved app with:
 

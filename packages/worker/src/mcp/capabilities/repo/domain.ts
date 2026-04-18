@@ -1,7 +1,6 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { repoApplyPatchCapability } from './repo-apply-patch.ts'
-import { repoBackfillSourcesCapability } from './repo-backfill-sources.ts'
 import { repoDiscardSessionCapability } from './repo-discard-session.ts'
 import { repoGetCheckStatusCapability } from './repo-get-check-status.ts'
 import { repoGetSessionCapability } from './repo-get-session.ts'
@@ -20,7 +19,6 @@ export const repoDomain = defineDomain({
 		'Repo-backed source sessions for opening entity workspaces, reading files, applying edits, and searching code inside live session overlays.',
 	keywords: ['repo', 'artifact', 'session', 'workspace', 'edit', 'search'],
 	capabilities: [
-		repoBackfillSourcesCapability,
 		repoOpenSessionCapability,
 		repoGetSessionCapability,
 		repoTreeCapability,

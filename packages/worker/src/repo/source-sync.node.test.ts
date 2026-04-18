@@ -191,3 +191,25 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 		userId: 'user-1',
 	})
 })
+
+test('syncArtifactSourceSnapshot fails closed when durable repo sync bindings are unavailable', async () => {
+	await expect(
+		syncArtifactSourceSnapshot({
+			env: {
+				APP_DB: {
+					prepare() {
+						return {} as D1PreparedStatement
+					},
+				},
+			} as unknown as Env,
+			userId: 'user-1',
+			baseUrl: 'https://heykody.dev',
+			sourceId: 'source-1',
+			files: {
+				'kody.json': '{"version":1,"kind":"app"}',
+			},
+		}),
+	).rejects.toThrow(
+		'Repo-backed source sync requires APP_DB, REPO_SESSION, CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_API_TOKEN.',
+	)
+})

@@ -4,7 +4,9 @@
 
 **meta_save_skill** stores repeatable **codemode** workflows. Save patterns you
 expect to run again with similar structure; run one-off work with **execute**
-instead.
+instead. Kody persists the skill code in its repo-backed source automatically,
+so `meta_get_skill` and `meta_run_skill` always operate on the saved source of
+truth.
 
 Skills can declare **parameters**; pass values through **meta_run_skill**
 **`params`** and read them as **`params`** inside the skill code.
@@ -36,7 +38,9 @@ For non-trivial saved apps, treat **`serverCode`** plus
 
 When updating an existing saved app with `app_id`, omitted fields preserve the
 current saved value. Omit `serverCode` to keep the existing backend, or pass
-`serverCode: null` to clear it explicitly.
+`serverCode: null` to clear it explicitly. Kody stores the saved app source in
+its repo-backed source automatically and reads reopened apps from that saved
+source.
 
 Reopen with **open_generated_ui** using **`app_id`**, or discover apps via
 **search**.

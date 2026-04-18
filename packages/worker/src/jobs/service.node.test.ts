@@ -10,12 +10,66 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 
+const artifactsFetchResponse = {
+	success: true,
+	errors: [],
+	messages: [],
+	result: {
+		id: 'repo-1',
+		name: 'repo-1',
+		description: null,
+		default_branch: 'main',
+		created_at: '2026-04-17T00:00:00.000Z',
+		updated_at: '2026-04-17T00:00:00.000Z',
+		last_push_at: null,
+		source: null,
+		read_only: false,
+		remote: 'https://artifacts.example/repo-1.git',
+	},
+}
+
+function createArtifactsFetchStub() {
+	return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+		const method = init?.method ?? 'GET'
+		if (url.includes('/artifacts/namespaces/default/repos/') && method === 'GET') {
+			return new Response(JSON.stringify(artifactsFetchResponse), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			})
+		}
+		if (url.endsWith('/artifacts/namespaces/default/repos') && method === 'POST') {
+			return new Response(
+				JSON.stringify({
+					success: true,
+					errors: [],
+					messages: [],
+					result: {
+						id: 'repo-1',
+						name: 'repo-1',
+						description: null,
+						default_branch: 'main',
+						remote: 'https://artifacts.example/repo-1.git',
+						token: 'art_v1_test?expires=9999999999',
+					},
+				}),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				},
+			)
+		}
+		throw new Error(`Unexpected artifacts fetch: ${method} ${url}`)
+	})
+}
+
 function createDatabase() {
 	const tables = new Map<string, Array<Record<string, unknown>>>([
 		['secret_buckets', []],
 		['secret_entries', []],
 		['value_buckets', []],
 		['value_entries', []],
+		['entity_sources', []],
 		['jobs', []],
 	])
 
@@ -103,11 +157,29 @@ function createDatabase() {
 										row['bucket_id'] === params[0] && row['name'] === params[1],
 								) as T | null
 							}
+							if (query.includes('FROM entity_sources WHERE id = ?')) {
+								return selectOne(
+									'entity_sources',
+									(row) => row['id'] === params[0],
+								) as T | null
+							}
 							if (query.includes('FROM jobs WHERE id = ? AND user_id = ?')) {
 								return selectOne(
 									'jobs',
 									(row) =>
 										row['id'] === params[0] && row['user_id'] === params[1],
+								) as T | null
+							}
+							if (
+								query.includes('FROM entity_sources') &&
+								query.includes('WHERE user_id = ? AND entity_kind = ? AND entity_id = ?')
+							) {
+								return selectOne(
+									'entity_sources',
+									(row) =>
+										row['user_id'] === params[0] &&
+										row['entity_kind'] === params[1] &&
+										row['entity_id'] === params[2],
 								) as T | null
 							}
 							if (query.includes('FROM jobs') && query.includes('LIMIT 1')) {
@@ -288,6 +360,58 @@ function createDatabase() {
 								)
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
+							if (query.startsWith('INSERT INTO entity_sources')) {
+								const row = {
+									id: params[0],
+									user_id: params[1],
+									entity_kind: params[2],
+									entity_id: params[3],
+									repo_id: params[4],
+									published_commit: params[5],
+									indexed_commit: params[6],
+									manifest_path: params[7],
+									source_root: params[8],
+									created_at: params[9],
+									updated_at: params[10],
+								}
+								upsert(
+									'entity_sources',
+									(existing) =>
+										existing['id'] === row.id &&
+										existing['user_id'] === row.user_id,
+									row,
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (query.startsWith('UPDATE entity_sources')) {
+								const sourceId = params.at(-2)
+								const userId = params.at(-1)
+								const existing = selectOne(
+									'entity_sources',
+									(row) =>
+										row['id'] === sourceId && row['user_id'] === userId,
+								)
+								if (!existing) {
+									return { meta: { changes: 0, last_row_id: 0 } }
+								}
+								const assignments = query
+									.slice(query.indexOf('SET') + 3, query.indexOf('WHERE'))
+									.split(',')
+									.map((assignment) => assignment.trim().split(' = ')[0])
+								const next = {
+									...existing,
+								}
+								assignments.forEach((column, index) => {
+									next[column] = params[index]
+								})
+								upsert(
+									'entity_sources',
+									(row) =>
+										row['id'] === sourceId && row['user_id'] === userId,
+									next,
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
 							if (query.startsWith('INSERT INTO jobs')) {
 								const row = {
 									id: params[0],
@@ -387,6 +511,104 @@ function createDatabase() {
 	} as unknown as D1Database
 }
 
+function createRepoBackedEnv(
+	db: D1Database,
+	extra: Partial<Env> = {},
+): Env {
+	const sessionClient = {
+		bootstrapSource: vi.fn(async () => ({
+			sessionId: 'source-sync-session',
+			publishedCommit: 'commit-bootstrap-1',
+			message: 'Bootstrapped source repo-1.',
+		})),
+		openSession: vi.fn(async ({ sourceId }: { sourceId: string }) => ({
+			id: `job-runtime-${sourceId}`,
+			source_id: sourceId,
+			source_root: '/',
+			base_commit: 'commit-bootstrap-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-17T00:00:00.000Z',
+			updated_at: '2026-04-17T00:00:00.000Z',
+			published_commit: 'commit-bootstrap-1',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		applyEdits: vi.fn(async () => ({
+			dryRun: false,
+			totalChanged: 1,
+			edits: [],
+		})),
+		publishSession: vi.fn(async () => ({
+			status: 'ok' as const,
+			sessionId: 'source-sync-session',
+			publishedCommit: 'commit-bootstrap-1',
+			message: 'Published source repo-1.',
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: true,
+			results: [],
+			manifest: {
+				version: 1,
+				kind: 'job' as const,
+				title: 'Repo-backed job',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Repo-backed job',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'async () => ({ ok: true })',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'source-sync-session',
+			deleted: true,
+		})),
+	}
+
+	return {
+		APP_DB: db,
+		REPO_SESSION: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return sessionClient
+			},
+		} as unknown as DurableObjectNamespace,
+		CLOUDFLARE_ACCOUNT_ID: 'account-1',
+		CLOUDFLARE_API_TOKEN: 'token-1',
+		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+		...(extra as Env),
+	} as Env
+}
+
+async function withArtifactsFetchStub<T>(run: () => Promise<T>) {
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = createArtifactsFetchStub() as typeof fetch
+	try {
+		return await run()
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+}
+
 function createBaseCallerContext(): PersistedJobCallerContext {
 	return createMcpCallerContext({
 		baseUrl: 'https://example.com',
@@ -403,22 +625,22 @@ function createBaseCallerContext(): PersistedJobCallerContext {
 }
 
 test('createJob stores a codemode job with interval support', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-	} as Env
+	const env = createRepoBackedEnv(createDatabase())
 	const callerContext = createBaseCallerContext()
 
-	const result = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Deploy Worker',
-			code: 'async () => ({ ok: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		} satisfies JobCreateInput,
+	const result = await withArtifactsFetchStub(async () => {
+		return await createJob({
+			env,
+			callerContext,
+			body: {
+				name: 'Deploy Worker',
+				code: 'async () => ({ ok: true })',
+				schedule: {
+					type: 'interval',
+					every: '15m',
+				},
+			} satisfies JobCreateInput,
+		})
 	})
 
 	expect(result.schedule).toEqual({
@@ -429,22 +651,22 @@ test('createJob stores a codemode job with interval support', async () => {
 })
 
 test('createJob assigns a stable job storage id', async () => {
-	const env = {
-		APP_DB: createDatabase(),
-	} as Env
+	const env = createRepoBackedEnv(createDatabase())
 	const callerContext = createBaseCallerContext()
 
-	const created = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Storage-backed job',
-			code: 'async () => ({ ok: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
+	const created = await withArtifactsFetchStub(async () => {
+		return await createJob({
+			env,
+			callerContext,
+			body: {
+				name: 'Storage-backed job',
+				code: 'async () => ({ ok: true })',
+				schedule: {
+					type: 'interval',
+					every: '15m',
+				},
 			},
-		},
+		})
 	})
 
 	expect(created.storageId).toBe(`job:${created.id}`)
@@ -452,8 +674,7 @@ test('createJob assigns a stable job storage id', async () => {
 
 test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	const db = createDatabase()
-	const env = {
-		APP_DB: db,
+	const env = createRepoBackedEnv(db, {
 		LOADER: {} as WorkerLoader,
 		STORAGE_RUNNER: {
 			idFromName(name: string) {
@@ -489,23 +710,25 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 				}
 			},
 		},
-	} as unknown as Env
+	} as Partial<Env>)
 	const callerContext = createBaseCallerContext()
 
-	const jobView = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Storage bridge',
-			code: 'async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
-			params: {
-				stepCount: 2,
+	const jobView = await withArtifactsFetchStub(async () => {
+		return await createJob({
+			env,
+			callerContext,
+			body: {
+				name: 'Storage bridge',
+				code: 'async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
+				params: {
+					stepCount: 2,
+				},
+				schedule: {
+					type: 'once',
+					runAt: '2026-04-17T15:00:00Z',
+				},
 			},
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-17T15:00:00Z',
-			},
-		},
+		})
 	})
 
 	const executeSpy = vi
@@ -548,11 +771,10 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 
 test('executeJobOnce preserves codemode secret and value semantics', async () => {
 	const db = createDatabase()
-	const env = {
-		APP_DB: db,
+	const env = createRepoBackedEnv(db, {
 		COOKIE_SECRET: 'test-secret-0123456789abcdef0123456789',
 		LOADER: {} as WorkerLoader,
-	} as unknown as Env
+	} as Partial<Env>)
 	const callerContext = createBaseCallerContext()
 
 	await saveSecret({
@@ -572,20 +794,22 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		storageContext: callerContext.storageContext,
 	})
 
-	const jobView = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Use codemode semantics',
-			code: 'async () => ({ ok: true })',
-			params: {
-				step: 'deploy',
+	const jobView = await withArtifactsFetchStub(async () => {
+		return await createJob({
+			env,
+			callerContext,
+			body: {
+				name: 'Use codemode semantics',
+				code: 'async () => ({ ok: true })',
+				params: {
+					step: 'deploy',
+				},
+				schedule: {
+					type: 'once',
+					runAt: '2026-04-17T15:00:00Z',
+				},
 			},
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-17T15:00:00Z',
-			},
-		},
+		})
 	})
 
 	const executeSpy = vi
@@ -620,7 +844,11 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		expect(spyEnv).toBe(env)
 		expect(spyCallerContext).toMatchObject({
 			baseUrl: 'https://example.com',
-			repoContext: null,
+			repoContext: expect.objectContaining({
+				entityKind: 'job',
+				manifestPath: 'kody.json',
+				sourceRoot: '/',
+			}),
 		})
 		expect(spyCallerContext).toHaveProperty('storageContext.sessionId', null)
 		expect(spyCallerContext).toHaveProperty('storageContext.appId', 'app-123')
@@ -1005,7 +1233,9 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 		id: 'job-1',
 		userId: callerContext.user.userId,
 		name: 'Forbidden secret access',
-		code: 'async () => null',
+		code: null,
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
 		storageId: 'job:job-1',
 		schedule: {
 			type: 'once',
@@ -1023,6 +1253,60 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 		runHistory: [],
 	}
 
+	const sessionClient = {
+		openSession: vi.fn(async () => ({
+			id: 'job-runtime-job-1',
+			source_id: 'source-1',
+			source_root: '/',
+			base_commit: 'commit-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'session-repo-name',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: null,
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-16T00:00:00.000Z',
+			updated_at: '2026-04-16T00:00:00.000Z',
+			published_commit: 'commit-1',
+			manifest_path: 'kody.json',
+			entity_type: 'job' as const,
+		})),
+		runChecks: vi.fn(async () => ({
+			ok: true,
+			results: [],
+			manifest: {
+				version: 1,
+				kind: 'job',
+				title: 'Forbidden secret access',
+				description: 'Runs from repo',
+				entrypoint: 'src/job.ts',
+			},
+		})),
+		readFile: vi.fn(async ({ path }: { path: string }) => ({
+			path,
+			content:
+				path === 'kody.json'
+					? JSON.stringify({
+							version: 1,
+							kind: 'job',
+							title: 'Forbidden secret access',
+							description: 'Runs from repo',
+							entrypoint: 'src/job.ts',
+						})
+					: 'async () => null',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'job-runtime-job-1',
+			deleted: true,
+		})),
+	}
+
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
@@ -1050,28 +1334,32 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 			logs: [],
 		})
 	} finally {
+		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
 	}
 })
 
 test('runJobNow deletes vectors for once jobs', async () => {
 	const db = createDatabase()
-	const env = {
-		APP_DB: db,
+	const env = createRepoBackedEnv(db, {
 		LOADER: {} as WorkerLoader,
-	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
+	} as Partial<Env>) as Env & {
+		CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'>
+	}
 	const callerContext = createBaseCallerContext()
-	const jobView = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Run once and delete vector',
-			code: 'async () => ({ ok: true })',
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-17T15:00:00Z',
+	const jobView = await withArtifactsFetchStub(async () => {
+		return await createJob({
+			env,
+			callerContext,
+			body: {
+				name: 'Run once and delete vector',
+				code: 'async () => ({ ok: true })',
+				schedule: {
+					type: 'once',
+					runAt: '2026-04-17T15:00:00Z',
+				},
 			},
-		},
+		})
 	})
 	const deleteByIds = vi.fn(async () => {})
 	env.CAPABILITY_VECTOR_INDEX = {

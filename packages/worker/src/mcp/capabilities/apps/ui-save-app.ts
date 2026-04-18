@@ -177,6 +177,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					entityKind: 'app',
 					entityId: appId,
 					sourceRoot: '/',
+					requirePersistence: true,
 				})
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =

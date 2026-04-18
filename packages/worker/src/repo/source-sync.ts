@@ -6,7 +6,7 @@ type SyncArtifactSourceInput = {
 	env: Env
 	userId: string
 	baseUrl: string
-	sourceId: string | null
+	sourceId: string
 	files: Record<string, string>
 }
 
@@ -26,12 +26,16 @@ function buildSyncSessionId(sourceId: string) {
 
 export async function syncArtifactSourceSnapshot(
 	input: SyncArtifactSourceInput,
-): Promise<string | null> {
-	if (!input.sourceId || !canSyncArtifactSource(input.env)) {
-		return null
+): Promise<string> {
+	if (!canSyncArtifactSource(input.env)) {
+		throw new Error(
+			'Repo-backed source sync requires APP_DB, REPO_SESSION, CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_API_TOKEN.',
+		)
 	}
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-	if (!source) return null
+	if (!source) {
+		throw new Error(`Source "${input.sourceId}" was not found.`)
+	}
 	const sessionId = buildSyncSessionId(source.id)
 	const session = repoSessionRpc(input.env, sessionId)
 	const edits = Object.entries(input.files).map(([path, content]) => ({

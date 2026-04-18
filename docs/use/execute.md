@@ -71,8 +71,9 @@ Kody has one persisted jobs system per user:
 
 Jobs have:
 
-- **`code`** stores the async arrow function source and runs through the same
-  execute/capability runtime as normal `execute`
+- **`code`** stores the async arrow function source, which Kody persists into the
+  job's repo-backed source and then runs through the same execute/capability
+  runtime as normal `execute`
 - Each job has a stable **`storageId`** that identifies its durable storage
   bucket
 - Scheduled jobs run with writable storage access

@@ -21,12 +21,12 @@ function createArtifact(): UiArtifactRow {
 	return {
 		id: 'app-1',
 		user_id: 'user-1',
-		title: 'Fallback app',
-		description: 'Fallback source',
+		title: 'Repo-backed app',
+		description: 'Source resolves from the repo.',
 		sourceId: 'source-1',
-		clientCode: '<main>fallback</main>',
-		serverCode: 'export const fallback = true',
-		serverCodeId: 'server-code-fallback',
+		clientCode: '<main>stale duplicate</main>',
+		serverCode: 'export const stale = true',
+		serverCodeId: 'stale-server-code-id',
 		parameters: null,
 		hidden: false,
 		created_at: '2026-04-16T00:00:00.000Z',
@@ -100,7 +100,11 @@ test('resolveSavedAppSource rereads repo-backed sources instead of reusing modul
 
 	const input = {
 		env: {
-			APP_DB: {},
+			APP_DB: {
+				prepare() {
+					return {} as D1PreparedStatement
+				},
+			},
 			REPO_SESSION: {},
 		} as Env,
 		baseUrl: 'https://heykody.dev',
@@ -132,4 +136,43 @@ test('resolveSavedAppSource rereads repo-backed sources instead of reusing modul
 	})
 	expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
 	expect(sessionClient.discardSession).toHaveBeenCalledTimes(2)
+})
+
+test('resolveSavedAppSource fails when repo bindings are unavailable', async () => {
+	await expect(
+		resolveSavedAppSource({
+			env: {
+				APP_DB: {
+					prepare() {
+						return {} as D1PreparedStatement
+					},
+				},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			artifact: createArtifact(),
+		}),
+	).rejects.toThrow(
+		'REPO_SESSION binding is required to load saved app source.',
+	)
+})
+
+test('resolveSavedAppSource fails when the entity source row is missing', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.getEntitySourceById.mockResolvedValue(null)
+
+	await expect(
+		resolveSavedAppSource({
+			env: {
+				APP_DB: {
+					prepare() {
+						return {} as D1PreparedStatement
+					},
+				} as D1Database,
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			artifact: createArtifact(),
+		}),
+	).rejects.toThrow('Saved app source "source-1" was not found.')
 })

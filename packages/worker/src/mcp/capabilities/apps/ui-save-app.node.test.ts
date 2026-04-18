@@ -10,6 +10,8 @@ const mockModule = vi.hoisted(() => ({
 	deleteSavedAppRunner: vi.fn(),
 	upsertUiArtifactVector: vi.fn(),
 	deleteUiArtifactVector: vi.fn(),
+	ensureEntitySource: vi.fn(),
+	syncArtifactSourceSnapshot: vi.fn(),
 }))
 
 vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
@@ -37,6 +39,16 @@ vi.mock('#mcp/ui-artifacts-vectorize.ts', () => ({
 		mockModule.deleteUiArtifactVector(...args),
 }))
 
+vi.mock('#worker/repo/source-service.ts', () => ({
+	ensureEntitySource: (...args: Array<unknown>) =>
+		mockModule.ensureEntitySource(...args),
+}))
+
+vi.mock('#worker/repo/source-sync.ts', () => ({
+	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.syncArtifactSourceSnapshot(...args),
+}))
+
 const { uiSaveAppCapability } = await import('./ui-save-app.ts')
 
 test('ui_save_app updates preserve backend code unless the caller clears or replaces it', async () => {
@@ -48,6 +60,25 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 	mockModule.deleteSavedAppRunner.mockReset()
 	mockModule.upsertUiArtifactVector.mockReset()
 	mockModule.deleteUiArtifactVector.mockReset()
+	mockModule.ensureEntitySource.mockReset()
+	mockModule.syncArtifactSourceSnapshot.mockReset()
+
+	mockModule.ensureEntitySource.mockImplementation(
+		async ({ entityId }: { entityId: string }) => ({
+			id: `source-${entityId}`,
+			user_id: 'user-1',
+			entity_kind: 'app',
+			entity_id: entityId,
+			repo_id: `app-${entityId}`,
+			published_commit: null,
+			indexed_commit: null,
+			manifest_path: 'kody.json',
+			source_root: '/',
+			created_at: '2026-04-18T00:00:00.000Z',
+			updated_at: '2026-04-18T00:00:00.000Z',
+		}),
+	)
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-1')
 
 	const initialServerCode =
 		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v1" } }'
@@ -149,7 +180,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		expect(mockModule.updateUiArtifact.mock.calls[0]?.[3]).toEqual({
 			title: undefined,
 			description: undefined,
-			sourceId: 'server-code-v2',
+			sourceId: 'source-app-1',
 			clientCode: '<main><h1>Patchable v2</h1></main>',
 			hidden: undefined,
 		})
@@ -190,7 +221,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			expect.objectContaining({
 				title: undefined,
 				description: undefined,
-				sourceId: 'server-code-v3',
+				sourceId: 'source-app-1',
 				clientCode: undefined,
 				hidden: undefined,
 				serverCode: null,

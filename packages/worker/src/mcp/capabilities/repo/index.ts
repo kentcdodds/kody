@@ -2,7 +2,6 @@ import { repoDomain } from './domain.ts'
 
 export { repoDomain } from './domain.ts'
 export { repoApplyPatchCapability } from './repo-apply-patch.ts'
-export { repoBackfillSourcesCapability } from './repo-backfill-sources.ts'
 export { repoDiscardSessionCapability } from './repo-discard-session.ts'
 export { repoGetCheckStatusCapability } from './repo-get-check-status.ts'
 export { repoGetSessionCapability } from './repo-get-session.ts'

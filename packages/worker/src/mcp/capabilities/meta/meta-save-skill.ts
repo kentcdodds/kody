@@ -148,6 +148,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				entityKind: 'skill',
 				entityId: skillId,
 				sourceRoot: '/',
+			requirePersistence: true,
 			})
 			const previousPublishedCommit = source.published_commit
 

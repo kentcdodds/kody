@@ -31,12 +31,6 @@ export const jobUpsertCapability = defineDomainCapability(
 							body: {
 								name: args.name ?? '',
 								code: args.code === undefined ? '' : args.code,
-								...(args.sourceId !== undefined
-									? { sourceId: args.sourceId }
-									: {}),
-								...(args.publishedCommit !== undefined
-									? { publishedCommit: args.publishedCommit }
-									: {}),
 								...(args.params !== undefined && args.params !== null
 									? { params: args.params }
 									: {}),
@@ -60,12 +54,6 @@ export const jobUpsertCapability = defineDomainCapability(
 								...(args.name !== undefined ? { name: args.name } : {}),
 								...(typeof args.code === 'string' ? { code: args.code } : {}),
 								...(args.code === null ? { code: null } : {}),
-								...(args.sourceId !== undefined
-									? { sourceId: args.sourceId }
-									: {}),
-								...(args.publishedCommit !== undefined
-									? { publishedCommit: args.publishedCommit }
-									: {}),
 								...(args.params !== undefined ? { params: args.params } : {}),
 								...(args.schedule !== undefined
 									? { schedule: args.schedule }

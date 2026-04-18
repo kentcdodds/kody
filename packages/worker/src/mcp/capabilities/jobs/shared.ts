@@ -98,26 +98,9 @@ export const jobUpsertInputSchema = z
 		code: z
 			.string()
 			.min(1)
-			.nullable()
 			.optional()
 			.describe(
-				'Optional inline codemode async arrow function source. For repo-backed jobs, prefer sourceId plus publishedCommit.',
-			),
-		sourceId: z
-			.string()
-			.min(1)
-			.nullable()
-			.optional()
-			.describe(
-				'Shared source id for a repo-backed job implementation. Required on create when code is omitted.',
-			),
-		publishedCommit: z
-			.string()
-			.min(1)
-			.nullable()
-			.optional()
-			.describe(
-				'Published commit pinned for repo-backed job execution. Optional on create; updated automatically when the repo session publish flow promotes changes.',
+				'Codemode async arrow function source for the job. Required when creating a new job; omit on updates to keep the current implementation.',
 			),
 		params: z
 			.record(z.string(), z.unknown())
@@ -158,11 +141,11 @@ export const jobUpsertInputSchema = z
 				message: 'schedule is required when creating a job.',
 			})
 		}
-		if (value.code == null && value.sourceId == null) {
+		if (value.code === undefined) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['code'],
-				message: 'code or sourceId is required when creating a job.',
+				message: 'code is required when creating a job.',
 			})
 		}
 	}) satisfies z.ZodType<JobUpsertInput>

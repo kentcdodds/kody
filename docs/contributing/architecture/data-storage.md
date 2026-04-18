@@ -66,8 +66,8 @@ Jobs use two Durable Object roles:
 Storage split:
 
 - D1 `jobs` table: job metadata, persisted caller context, schedule, run
-  counters, last error, last duration, run history, codemode source, and stable
-  `storage_id`
+  counters, last error, last duration, run history, repo-backed source
+  references, and stable `storage_id`
 - `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`
@@ -94,6 +94,8 @@ Artifacts repos plus D1 `entity_sources` / `repo_sessions` rows.
 - `entity_sources` stores the durable mapping from `(user_id, entity_kind,
   entity_id)` to the repo identity and last published commit.
 - `repo_sessions` stores mutable editing forks for repo session Durable Objects.
+- Saved apps, skills, and jobs all create their `entity_sources` rows through
+  the normal save/upsert flows; there is no separate migration or fallback path.
 
 Production note:
 
@@ -107,6 +109,8 @@ Production note:
   `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and optional
   `CLOUDFLARE_API_BASE_URL` / `ARTIFACTS_NAMESPACE`, which also makes local dev
   mocking straightforward.
-- Durable repo-source creation paths (`ensureEntitySource(...,
-  requirePersistence: true)`) fail closed when persistence bindings are
-  unavailable so callers do not write orphaned `source_id` references into D1.
+- Save/create flows fail closed when repo persistence bindings are unavailable
+  so callers do not write orphaned `source_id` references into D1.
+- First publish still uses a direct bootstrap into the source repo when an
+  `entity_sources` row exists but no published commit exists yet; later edits go
+  through normal repo sessions.
