@@ -33,6 +33,7 @@ import {
 	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
+	type RepoSourceBootstrapResult,
 	type RepoSessionApplyEditsResult,
 	type RepoSessionCheckRun,
 	type RepoSessionCheckStatus,
@@ -169,6 +170,18 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 	}
 
+	private async resetWorkspace() {
+		await this.workspace
+			.rm(repoSessionWorkspacePrefix, {
+				force: true,
+				recursive: true,
+			})
+			.catch(() => {
+				// Best effort only; the session row is the source of truth.
+			})
+		this.initializedSessionId = null
+	}
+
 	private async getCurrentBranch(defaultBranch = defaultSessionBranch) {
 		const branchResult = await this.git.branch({
 			dir: repoSessionWorkspacePrefix,
@@ -271,6 +284,83 @@ class RepoSessionBase extends DurableObject<Env> {
 		this.initializedSessionId = input.sessionId
 	}
 
+	private async applyWorkspaceEdits(input: {
+		edits: Array<{
+			kind: 'write' | 'replace' | 'writeJson'
+			path: string
+			content?: string
+			search?: string
+			replacement?: string
+			value?: unknown
+			options?: {
+				caseSensitive?: boolean
+				regex?: boolean
+				wholeWord?: boolean
+				contextBefore?: number
+				contextAfter?: number
+				maxMatches?: number
+				spaces?: number
+			}
+		}>
+		dryRun?: boolean
+		rollbackOnError?: boolean
+	}): Promise<RepoSessionApplyEditsResult> {
+		const plan = await this.state.planEdits(
+			input.edits.map((edit) => {
+				const path = resolveRepoWorkspacePath(
+					edit.path,
+					repoSessionWorkspacePrefix,
+				)
+				switch (edit.kind) {
+					case 'write':
+						if (typeof edit.content !== 'string') {
+							throw new Error('repo_apply_patch write edits require content.')
+						}
+						return {
+							kind: 'write' as const,
+							path,
+							content: edit.content,
+						}
+					case 'replace':
+						if (typeof edit.search !== 'string') {
+							throw new Error('repo_apply_patch replace edits require search.')
+						}
+						return {
+							kind: 'replace' as const,
+							path,
+							search: edit.search,
+							replacement: edit.replacement ?? '',
+							options: edit.options,
+						}
+					case 'writeJson':
+						return {
+							kind: 'writeJson' as const,
+							path,
+							value: edit.value,
+							options:
+								typeof edit.options?.spaces === 'number'
+									? { spaces: edit.options.spaces }
+									: undefined,
+						}
+				}
+			}),
+		)
+		const result = await this.state.applyEditPlan(plan, {
+			dryRun: input.dryRun,
+			rollbackOnError: input.rollbackOnError,
+		})
+		return {
+			dryRun: result.dryRun,
+			totalChanged: result.totalChanged,
+			edits: result.edits.map((edit) => ({
+				path: toExternalRepoPath(edit.path, repoSessionWorkspacePrefix),
+				changed: edit.changed,
+				content: edit.content,
+				diff: edit.diff,
+			})),
+		}
+	}
+
 	async openSession(input: {
 		sessionId: string
 		sourceId: string
@@ -296,6 +386,11 @@ class RepoSessionBase extends DurableObject<Env> {
 				source.repo_id,
 			)
 			const baseCommit = source.published_commit
+			if (!baseCommit) {
+				throw new Error(
+					`Source "${source.id}" has no published commit yet. Bootstrap the source repo before opening a repo session.`,
+				)
+			}
 			const compactSessionId = input.sessionId.replace(/-/g, '')
 			const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
 			const sessionRepoName = `${source.repo_id.slice(0, repoPrefixLength)}-${compactSessionId}`
@@ -360,6 +455,111 @@ class RepoSessionBase extends DurableObject<Env> {
 		return toRepoSessionInfoResult(sessionRow, source)
 	}
 
+	async bootstrapSource(input: {
+		sessionId: string
+		sourceId: string
+		userId: string
+		edits: Array<{
+			kind: 'write' | 'replace' | 'writeJson'
+			path: string
+			content?: string
+			search?: string
+			replacement?: string
+			value?: unknown
+			options?: {
+				caseSensitive?: boolean
+				regex?: boolean
+				wholeWord?: boolean
+				contextBefore?: number
+				contextAfter?: number
+				maxMatches?: number
+				spaces?: number
+			}
+		}>
+	}): Promise<RepoSourceBootstrapResult> {
+		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
+		if (!source) {
+			throw new Error(`Source "${input.sourceId}" was not found.`)
+		}
+		if (source.user_id !== input.userId) {
+			throw new Error(
+				`Source "${input.sourceId}" was not found for this user.`,
+			)
+		}
+		if (source.published_commit) {
+			throw new Error(
+				`Source "${source.id}" already has a published commit. Use repo sessions for later edits.`,
+			)
+		}
+		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+		const sourceInfo = await sourceRepo.info()
+		const sourceAccess = await ensureArtifactRepoRemote({
+			repo: sourceRepo,
+			scope: 'write',
+		})
+		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
+		await this.resetWorkspace()
+		await this.workspace.mkdir(repoSessionWorkspacePrefix, {
+			recursive: true,
+		})
+		await this.git.init({
+			dir: repoSessionWorkspacePrefix,
+			defaultBranch: targetBranch,
+		})
+		await this.ensureRemote({
+			name: 'source',
+			url: buildAuthenticatedArtifactsRemote({
+				remote: sourceAccess.remote,
+				token: sourceAccess.token,
+			}),
+		})
+		await this.applyWorkspaceEdits({
+			edits: input.edits,
+			dryRun: false,
+			rollbackOnError: true,
+		})
+		const publishedCommit = await this.commitIfDirty(
+			`Bootstrap source repo ${source.id}`,
+		)
+		if (!publishedCommit) {
+			throw new Error(`Source "${source.id}" bootstrap produced no commit.`)
+		}
+		await this.git.push({
+			dir: repoSessionWorkspacePrefix,
+			remote: 'source',
+			ref: targetBranch,
+			token: sourceAccess.token,
+			username: 'x',
+			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+		})
+		const manifestContent = await this.workspace.readFile(
+			resolveRepoWorkspacePath(source.manifest_path, repoSessionWorkspacePrefix),
+		)
+		if (manifestContent == null) {
+			throw new Error(`Manifest "${source.manifest_path}" was not found.`)
+		}
+		const manifest = parseRepoManifest({
+			content: manifestContent,
+			manifestPath: source.manifest_path,
+		})
+		await updateEntitySource(this.env.APP_DB, {
+			id: source.id,
+			userId: source.user_id,
+			publishedCommit,
+			manifestPath: source.manifest_path,
+			sourceRoot: manifest.sourceRoot?.startsWith('/')
+				? manifest.sourceRoot
+				: manifest.sourceRoot
+					? `/${manifest.sourceRoot}`
+					: source.source_root,
+		})
+		return {
+			sessionId: input.sessionId,
+			publishedCommit,
+			message: `Bootstrapped source ${source.id} in ${source.repo_id}.`,
+		}
+	}
+
 	async getSessionInfo(input: { sessionId: string; userId: string }) {
 		const { sessionRow, source } = await this.getSessionState(
 			input.sessionId,
@@ -377,6 +577,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 		)
 		if (!sessionRow) {
+			await this.resetWorkspace()
 			return {
 				ok: true,
 				sessionId: input.sessionId,
@@ -389,14 +590,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		await deleteRepoSession(this.env.APP_DB, input.sessionId)
-		try {
-			await this.workspace.rm(repoSessionWorkspacePrefix, {
-				force: true,
-				recursive: true,
-			})
-		} catch {
-			// Best effort only; the session row is the source of truth.
-		}
+		await this.resetWorkspace()
 		return {
 			ok: true,
 			sessionId: input.sessionId,
@@ -569,65 +763,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
-		const plan = await this.state.planEdits(
-			input.edits.map((edit) => {
-				const path = resolveRepoWorkspacePath(
-					edit.path,
-					repoSessionWorkspacePrefix,
-				)
-				switch (edit.kind) {
-					case 'write':
-						if (typeof edit.content !== 'string') {
-							throw new Error('repo_apply_patch write edits require content.')
-						}
-						return {
-							kind: 'write' as const,
-							path,
-							content: edit.content,
-						}
-					case 'replace':
-						if (typeof edit.search !== 'string') {
-							throw new Error('repo_apply_patch replace edits require search.')
-						}
-						return {
-							kind: 'replace' as const,
-							path,
-							search: edit.search,
-							replacement: edit.replacement ?? '',
-							options: edit.options,
-						}
-					case 'writeJson':
-						return {
-							kind: 'writeJson' as const,
-							path,
-							value: edit.value,
-							options:
-								typeof edit.options?.spaces === 'number'
-									? { spaces: edit.options.spaces }
-									: undefined,
-						}
-				}
-			}),
-		)
-		const result = await this.state.applyEditPlan(plan, {
-			dryRun: input.dryRun,
-			rollbackOnError: input.rollbackOnError,
-		})
+		const result = await this.applyWorkspaceEdits(input)
 		await updateRepoSession(this.env.APP_DB, {
 			id: input.sessionId,
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
 		})
-		return {
-			dryRun: result.dryRun,
-			totalChanged: result.totalChanged,
-			edits: result.edits.map((edit) => ({
-				path: toExternalRepoPath(edit.path, repoSessionWorkspacePrefix),
-				changed: edit.changed,
-				content: edit.content,
-				diff: edit.diff,
-			})),
-		}
+		return result
 	}
 
 	async runChecks(input: {

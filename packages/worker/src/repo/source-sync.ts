@@ -34,7 +34,21 @@ export async function syncArtifactSourceSnapshot(
 	if (!source) return null
 	const sessionId = buildSyncSessionId(source.id)
 	const session = repoSessionRpc(input.env, sessionId)
+	const edits = Object.entries(input.files).map(([path, content]) => ({
+		kind: 'write' as const,
+		path,
+		content,
+	}))
 	try {
+		if (!source.published_commit) {
+			const bootstrapResult = await session.bootstrapSource({
+				sessionId,
+				sourceId: source.id,
+				userId: input.userId,
+				edits,
+			})
+			return bootstrapResult.publishedCommit
+		}
 		await session.openSession({
 			sessionId,
 			sourceId: source.id,
@@ -45,11 +59,7 @@ export async function syncArtifactSourceSnapshot(
 		await session.applyEdits({
 			sessionId,
 			userId: input.userId,
-			edits: Object.entries(input.files).map(([path, content]) => ({
-				kind: 'write' as const,
-				path,
-				content,
-			})),
+			edits,
 			dryRun: false,
 			rollbackOnError: true,
 		})
