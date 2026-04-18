@@ -136,8 +136,10 @@ How to get/set each value:
 
 - `CLOUDFLARE_API_TOKEN`
   - In Cloudflare Dashboard, create an API Token with permissions to deploy
-    Workers and edit D1 on the target account. Reuse that token for remote AI
-    and Cloudflare API workflows that run with account secrets + skills.
+    Workers and edit D1 on the target account. This is the same token to reuse
+    for remote AI and Cloudflare API workflows that run with account secrets +
+    skills; when you do, also include the product permissions needed for those
+    APIs.
   - In GitHub: `Settings` → `Secrets and variables` → `Actions` →
     `New repository secret`.
 - `COOKIE_SECRET`
@@ -175,11 +177,6 @@ How to get/set each value:
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
     `npx @sentry/wizard@latest -i sourcemaps`).
-- `CLOUDFLARE_API_TOKEN` (required for remote AI and for Cloudflare API
-  workflows that run with account secrets + skills)
-  - This is the same token described earlier for Workers deploy + D1 access.
-    When you reuse it for remote AI or Cloudflare API workflows, also include
-    the product permissions needed for those APIs.
 - `CAPABILITY_REINDEX_SECRET` (optional)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
