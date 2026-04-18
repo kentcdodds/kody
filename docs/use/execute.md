@@ -40,7 +40,7 @@ inline saved skill code into **execute** when that fits the workflow.
 Repo-backed saved skills and jobs now execute through the same codemode runtime
 as **`execute`**, including helper globals such as **`refreshAccessToken(...)`**,
 **`createAuthenticatedFetch(...)`**, **`agentChatTurnStream(...)`**, and job
-storage helpers. Repo-backed sources can use module imports and package
+storage helpers. Repo-backed sources can use ES module imports and package
 dependencies instead of being limited to one file.
 
 ## Agent turns

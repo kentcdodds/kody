@@ -28,7 +28,7 @@ Developer Docs without a dedicated builtin capability).
   `collection` assigns the skill to a first-class user-defined grouping.
   Optional `uses_capabilities` merges explicit names when inference is
   incomplete. Repo-backed skills now run through the same execute sandbox as ad
-  hoc `execute`, but their entrypoint may import sibling modules and package
+  hoc `execute`, but their entrypoint may import sibling ES modules and package
   dependencies from the saved artifact repo.
 - **`meta_get_skill`**, **`meta_run_skill`**, **`meta_delete_skill`** — load,
   execute (same sandbox path as `execute`), or remove skill + vector row.

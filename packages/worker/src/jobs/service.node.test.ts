@@ -1504,7 +1504,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 	}
 })
 
-test('executeJobOnce bundles and runs module-style repo-backed job entrypoints', async () => {
+test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async () => {
 	const env = {
 		APP_DB: createDatabase(),
 		LOADER: {} as WorkerLoader,

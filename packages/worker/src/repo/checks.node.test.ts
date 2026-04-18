@@ -420,7 +420,7 @@ test('runRepoChecks still reports unknown globals for repo-backed jobs', async (
 	)
 })
 
-test('runRepoChecks typechecks module-style repo-backed job entrypoints', async () => {
+test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
@@ -429,7 +429,7 @@ test('runRepoChecks typechecks module-style repo-backed job entrypoints', async 
 			JSON.stringify({
 				version: 1,
 				kind: 'job',
-				title: 'Module job',
+				title: 'ESM job',
 				description: 'Uses exports',
 				sourceRoot: '/',
 				entrypoint: 'src/job.ts',

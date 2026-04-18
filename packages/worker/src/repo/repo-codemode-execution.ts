@@ -10,7 +10,7 @@ export const repoCodemodeModuleTypecheckHarnessPath =
 	'.__kody_repo_module_check__.ts'
 
 export const repoBackedModuleEntrypointExportErrorMessage =
-	'Repo-backed job and skill entrypoints that use module syntax must default export a function so Kody can invoke them with execute semantics.'
+	'Repo-backed job and skill entrypoints that use ESM syntax must default export a function so Kody can invoke them with execute semantics.'
 
 const syntheticRepoEntrypointPath = '.__kody_repo_user_entry__.ts'
 const repoCodemodeBundleCache = new Map<
@@ -27,13 +27,7 @@ function stripTrailingSlashes(value: string) {
 }
 
 function usesModuleSyntax(code: string) {
-	return (
-		/^\s*import\b/m.test(code) ||
-		/^\s*export\b/m.test(code) ||
-		/\bmodule\.exports\b/.test(code) ||
-		/\bexports\.[A-Za-z_$][\w$]*/.test(code) ||
-		/\bexports\[['"`][A-Za-z_$][\w$]*['"`]\]/.test(code)
-	)
+	return /^\s*import\b/m.test(code) || /^\s*export\b/m.test(code)
 }
 
 export function hasModuleStyleRepoBackedEntrypoint(code: string) {
