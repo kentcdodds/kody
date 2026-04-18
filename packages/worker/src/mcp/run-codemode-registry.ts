@@ -30,6 +30,7 @@ import {
 	createStorageCodemodeTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
+import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 type AdditionalCodemodeTools = Record<
 	string,
@@ -195,7 +196,7 @@ export async function runCodemodeWithRegistry(
 		additionalTools?: AdditionalCodemodeTools
 		helperPrelude?: string
 		storageTools?: StorageToolOptions
-		executorModules?: Record<string, string>
+		executorModules?: WorkerLoaderModules
 	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')

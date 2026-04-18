@@ -34,15 +34,17 @@ import { createJobStorageId } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
 	getManifestEntrypointPath,
+	getManifestSourceRoot,
 	parseRepoManifest,
 } from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import {
-	hasModuleStyleRepoBackedJobEntrypoint,
-	repoBackedJobModuleStyleErrorMessage,
-} from './repo-backed-job-entrypoint.ts'
+	buildRepoCodemodeBundle,
+	createRepoCodemodeWrapper,
+	loadRepoSourceFilesFromSession,
+} from '#worker/repo/repo-codemode-execution.ts'
 
 function hasRepoBackedJobSource(input: { sourceId?: string | null }) {
 	return typeof input.sourceId === 'string' && input.sourceId.length > 0
@@ -535,7 +537,7 @@ async function runRepoBackedJob(input: {
 		sourceId: input.job.sourceId,
 		userId: input.callerContext.user.userId,
 		baseUrl: input.callerContext.baseUrl,
-		sourceRoot: '/',
+		sourceRoot: null,
 	}
 	let session = await sessionClient.openSession(openSessionInput)
 	if (repoSessionNeedsRefresh(session)) {
@@ -624,16 +626,26 @@ async function runRepoBackedJob(input: {
 			logs: bypassLogs,
 		}
 	}
-	if (hasModuleStyleRepoBackedJobEntrypoint(moduleFile.content)) {
-		return {
-			error: repoBackedJobModuleStyleErrorMessage,
-			result: null,
-			logs: bypassLogs,
-		}
-	}
 	try {
 		const { runCodemodeWithRegistry } =
 			await import('#mcp/run-codemode-registry.ts')
+		const sourceRoot = getManifestSourceRoot(manifest)
+		const sourceFiles = await loadRepoSourceFilesFromSession({
+			sessionClient,
+			sessionId: session.id,
+			userId: input.callerContext.user.userId,
+			sourceRoot,
+		})
+		const bundled = await buildRepoCodemodeBundle({
+			sourceFiles,
+			entryPoint: getManifestEntrypointPath(manifest),
+			entryPointSource: moduleFile.content,
+			sourceRoot,
+			cacheKey:
+				session.published_commit != null
+					? `${input.job.sourceId}:${session.published_commit}`
+					: null,
+		})
 		const executionResult = await runCodemodeWithRegistry(
 			input.env,
 			{
@@ -651,7 +663,10 @@ async function runRepoBackedJob(input: {
 					entityId: input.job.id,
 				},
 			},
-			moduleFile.content,
+			createRepoCodemodeWrapper({
+				mainModule: bundled.mainModule,
+				includeStorage: true,
+			}),
 			input.job.params,
 			{
 				executorExports: workerExports,
@@ -660,6 +675,7 @@ async function runRepoBackedJob(input: {
 					storageId: input.job.storageId,
 					writable: true,
 				},
+				executorModules: bundled.modules,
 			},
 		)
 		return {

@@ -9,6 +9,11 @@ instead.
 Skills can declare **parameters**; pass values through **meta_run_skill**
 **`params`** and read them as **`params`** inside the skill code.
 
+Repo-backed saved skills can also span multiple files. When a skill is backed by
+an artifact repo, Kody now bundles that repo on demand and executes the bundled
+ES module entrypoint with the same **execute** runtime semantics as inline
+codemode (including `codemode`, OAuth helpers, and skill params).
+
 Optional **collection** groups related skills. Use **meta_get_skill**,
 **meta_list_skill_collections**, and **meta_delete_skill** for lifecycle tasks.
 

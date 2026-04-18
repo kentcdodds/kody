@@ -1,6 +1,6 @@
 # MCP user skills (meta domain)
 
-Authenticated users can save **codemode** snippets as **skills**: D1 row +
+Authenticated users can save **codemode** workflows as **skills**: D1 row +
 Vectorize embedding keyed by `skill_<uuid>` with metadata
 `{ kind: 'skill', userId, collectionSlug? }`.
 
@@ -27,7 +27,9 @@ Developer Docs without a dedicated builtin capability).
   `normalizeCode` from `@cloudflare/codemode`, matching execute). Optional
   `collection` assigns the skill to a first-class user-defined grouping.
   Optional `uses_capabilities` merges explicit names when inference is
-  incomplete.
+  incomplete. Repo-backed skills now run through the same execute sandbox as ad
+  hoc `execute`, but their entrypoint may import sibling ES modules and package
+  dependencies from the saved artifact repo.
 - **`meta_get_skill`**, **`meta_run_skill`**, **`meta_delete_skill`** — load,
   execute (same sandbox path as `execute`), or remove skill + vector row.
 - **`meta_list_skill_collections`** — returns normalized collection names/slugs
