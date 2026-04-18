@@ -1,8 +1,8 @@
 import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
-type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
+import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	isSecretAuthRequiredMessage,
 	parseCapabilityAccessRequiredBatchMessage,
@@ -12,21 +12,11 @@ import {
 	parseMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
 
+type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
+
 const charsPerToken = 4
 const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
-
-type WorkerLoaderModule =
-	| string
-	| {
-			js?: string
-			cjs?: string
-			text?: string
-			data?: ArrayBuffer
-			json?: object
-	  }
-
-type WorkerLoaderModules = Record<string, WorkerLoaderModule>
 
 export function createExecuteExecutor(input: {
 	env: Env

@@ -171,6 +171,7 @@ async function runRepoBackedSkill(input: {
 			sourceFiles,
 			entryPoint: getManifestEntrypointPath(manifest),
 			entryPointSource: moduleFile.content,
+			sourceRoot,
 			cacheKey:
 				input.row.source_id && session.published_commit
 					? `${input.row.source_id}:${session.published_commit}`

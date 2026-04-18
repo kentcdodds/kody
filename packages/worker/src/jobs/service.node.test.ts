@@ -1677,6 +1677,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 			},
 			entryPoint: 'src/job.ts',
 			entryPointSource: 'export default async () => ({ ok: true })',
+			sourceRoot: '/',
 			cacheKey: 'source-job-repo-module:commit-abc',
 		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)

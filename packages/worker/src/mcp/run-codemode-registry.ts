@@ -30,17 +30,7 @@ import {
 	createStorageCodemodeTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
-type WorkerLoaderModule =
-	| string
-	| {
-			js?: string
-			cjs?: string
-			text?: string
-			data?: ArrayBuffer
-			json?: object
-	  }
-
-type WorkerLoaderModules = Record<string, WorkerLoaderModule>
+import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 type AdditionalCodemodeTools = Record<
 	string,

@@ -1,19 +1,8 @@
 import { normalizeCode } from '@cloudflare/codemode'
 import { type RepoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
+import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 import { type RepoSessionTreeResult } from './types.ts'
-
-type RepoCodemodeLoaderModule =
-	| string
-	| {
-			js?: string
-			cjs?: string
-			text?: string
-			data?: ArrayBuffer
-			json?: object
-	  }
-
-type RepoCodemodeLoaderModules = Record<string, RepoCodemodeLoaderModule>
 
 export type RepoCodemodeEntrypointMode = 'snippet' | 'module'
 
@@ -30,7 +19,7 @@ const repoCodemodeBundleCache = new Map<
 	Promise<{
 		entrypointMode: RepoCodemodeEntrypointMode
 		mainModule: string
-		modules: RepoCodemodeLoaderModules
+		modules: WorkerLoaderModules
 	}>
 >()
 
@@ -132,11 +121,12 @@ export async function buildRepoCodemodeBundle(input: {
 	sourceFiles: Record<string, string>
 	entryPoint: string
 	entryPointSource: string
+	sourceRoot?: string | null
 	cacheKey?: string | null
 }): Promise<{
 	entrypointMode: RepoCodemodeEntrypointMode
 	mainModule: string
-	modules: RepoCodemodeLoaderModules
+	modules: WorkerLoaderModules
 }> {
 	const buildBundle = async () => {
 		const { createWorker } = await import('@cloudflare/worker-bundler')
@@ -145,7 +135,10 @@ export async function buildRepoCodemodeBundle(input: {
 			files: {
 				...input.sourceFiles,
 				[syntheticRepoEntrypointPath]: buildSyntheticEntrypointSource({
-					entryPoint: input.entryPoint,
+					entryPoint: toRelativeSourcePath(
+						input.entryPoint,
+						input.sourceRoot ?? '/',
+					),
 					entryPointSource: input.entryPointSource,
 					entrypointMode,
 				}),

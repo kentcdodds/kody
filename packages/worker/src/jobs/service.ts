@@ -640,6 +640,7 @@ async function runRepoBackedJob(input: {
 			sourceFiles,
 			entryPoint: getManifestEntrypointPath(manifest),
 			entryPointSource: moduleFile.content,
+			sourceRoot,
 			cacheKey:
 				session.published_commit != null
 					? `${input.job.sourceId}:${session.published_commit}`

@@ -190,6 +190,16 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 			},
 		}),
 	)
+	expect(mockModule.buildRepoCodemodeBundle).toHaveBeenCalledWith({
+		sourceFiles: {
+			'skill.ts': 'export default async () => ({ ok: true, repoBacked: true })',
+			'util.ts': 'export const ok = true',
+		},
+		entryPoint: 'skill.ts',
+		entryPointSource: 'async () => ({ ok: true, repoBacked: true })',
+		sourceRoot: '/',
+		cacheKey: 'source-1:commit-1',
+	})
 	expect(sessionClient.discardSession).toHaveBeenCalledWith({
 		sessionId: 'skill-runtime-skill-1-session',
 		userId: 'user-1',
