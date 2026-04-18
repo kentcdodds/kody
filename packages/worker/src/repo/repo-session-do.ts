@@ -434,6 +434,11 @@ class RepoSessionBase extends DurableObject<Env> {
 				source.repo_id,
 			)
 			const baseCommit = source.published_commit
+			if (!baseCommit) {
+				throw new Error(
+					`Source "${source.id}" has no published commit yet. Bootstrap the source repo before opening a repo session.`,
+				)
+			}
 			const compactSessionId = input.sessionId.replace(/-/g, '')
 			const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
 			const sessionRepoName = `${source.repo_id.slice(0, repoPrefixLength)}-${compactSessionId}`
