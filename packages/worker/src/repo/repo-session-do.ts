@@ -291,6 +291,11 @@ class RepoSessionBase extends DurableObject<Env> {
 					`Source "${input.sourceId}" was not found for this user.`,
 				)
 			}
+			if (!source.published_commit) {
+				throw new Error(
+					`Source "${input.sourceId}" has not been published yet. Bootstrap the first publish directly to the source repo before opening a repo session.`,
+				)
+			}
 			const sourceRepo = await resolveArtifactSourceRepo(
 				this.env,
 				source.repo_id,
@@ -751,6 +756,11 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
+		if (!source.published_commit) {
+			throw new Error(
+				`Source "${source.id}" has not been published yet. Bootstrap the first publish directly to the source repo before using repo sessions.`,
+			)
+		}
 		const checkStatus = await this.readCheckStatus()
 		const currentTreeHash = await this.computeTreeHash()
 		if (

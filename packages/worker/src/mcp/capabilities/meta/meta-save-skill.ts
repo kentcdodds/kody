@@ -184,32 +184,74 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				}
 			}
 
-			const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-				env: ctx.env,
-				userId: user.userId,
-				baseUrl: ctx.callerContext.baseUrl,
-				sourceId: source.id,
-				files: buildSkillSourceFiles({
-					title: args.title,
-					description: args.description,
-					keywords: args.keywords,
-					searchText: args.search_text ?? null,
-					collection: prep.rowPayload.collection_name,
-					readOnly: args.read_only,
-					idempotent: args.idempotent,
-					destructive: args.destructive,
-					usesCapabilities: args.uses_capabilities ?? null,
-					parameters: args.parameters ?? null,
-					code: args.code,
-				}),
-			})
-			if (syncedPublishedCommit) {
-				await updateEntitySource(ctx.env.APP_DB, {
-					id: source.id,
+			try {
+				const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+					env: ctx.env,
 					userId: user.userId,
-					publishedCommit: syncedPublishedCommit,
-					indexedCommit: syncedPublishedCommit,
+					baseUrl: ctx.callerContext.baseUrl,
+					sourceId: source.id,
+					files: buildSkillSourceFiles({
+						title: args.title,
+						description: args.description,
+						keywords: args.keywords,
+						searchText: args.search_text ?? null,
+						collection: prep.rowPayload.collection_name,
+						readOnly: args.read_only,
+						idempotent: args.idempotent,
+						destructive: args.destructive,
+						usesCapabilities: args.uses_capabilities ?? null,
+						parameters: args.parameters ?? null,
+						code: args.code,
+					}),
 				})
+				if (syncedPublishedCommit) {
+					await updateEntitySource(ctx.env.APP_DB, {
+						id: source.id,
+						userId: user.userId,
+						publishedCommit: syncedPublishedCommit,
+						indexedCommit: syncedPublishedCommit,
+					})
+				}
+			} catch (cause) {
+				if (existing) {
+					await updateMcpSkill(ctx.env.APP_DB, user.userId, existing.name, {
+						source_id: existing.source_id,
+						name: existing.name,
+						title: existing.title,
+						description: existing.description,
+						collection_name: existing.collection_name,
+						collection_slug: existing.collection_slug,
+						keywords: existing.keywords,
+						code: existing.code,
+						search_text: existing.search_text,
+						uses_capabilities: existing.uses_capabilities,
+						parameters: existing.parameters,
+						inferred_capabilities: existing.inferred_capabilities,
+						inference_partial: existing.inference_partial,
+						read_only: existing.read_only,
+						idempotent: existing.idempotent,
+						destructive: existing.destructive,
+					})
+					await updateEntitySource(ctx.env.APP_DB, {
+						id: source.id,
+						userId: user.userId,
+						publishedCommit: previousPublishedCommit,
+						indexedCommit: previousPublishedCommit,
+					})
+				} else {
+					await Promise.allSettled([
+						deleteMcpSkill(
+							ctx.env.APP_DB,
+							user.userId,
+							prep.rowPayload.name,
+						),
+						deleteEntitySource(ctx.env.APP_DB, {
+							id: source.id,
+							userId: user.userId,
+						}),
+					])
+				}
+				throw cause
 			}
 
 			try {
