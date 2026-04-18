@@ -32,6 +32,87 @@ export type RepoCheckRunResult = {
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
 const executeSnippetTypecheckHarnessPath = '.__kody_repo_check__.ts'
+const repoChecksSyntheticTsconfigPath = 'tsconfig.json'
+const repoChecksSyntheticTsconfigExtendsPath = './.__kody_repo_tsconfig_base__.json'
+
+type RepoChecksFileSystem = {
+	read(path: string): string | null
+	write(path: string, content: string): void
+	delete(path: string): void
+	list(prefix?: string): Array<string>
+	flush(): Promise<void>
+}
+
+function normalizeRepoChecksFileSystemPath(path: string) {
+	return path.replace(/^\.?\//, '')
+}
+
+function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem }) {
+	const overlay = new Map<string, string>()
+	const deleted = new Set<string>()
+
+	return {
+		read(path: string) {
+			const normalizedPath = normalizeRepoChecksFileSystemPath(path)
+			if (overlay.has(normalizedPath)) {
+				return overlay.get(normalizedPath) ?? null
+			}
+			if (deleted.has(normalizedPath)) {
+				return null
+			}
+			return input.fileSystem.read(normalizedPath)
+		},
+		write(path: string, content: string) {
+			const normalizedPath = normalizeRepoChecksFileSystemPath(path)
+			overlay.set(normalizedPath, content)
+			deleted.delete(normalizedPath)
+		},
+		delete(path: string) {
+			const normalizedPath = normalizeRepoChecksFileSystemPath(path)
+			overlay.delete(normalizedPath)
+			deleted.add(normalizedPath)
+		},
+		list(prefix?: string) {
+			const normalizedPrefix =
+				prefix === undefined
+					? undefined
+					: normalizeRepoChecksFileSystemPath(prefix)
+			const listed = new Set(
+				input.fileSystem
+					.list(normalizedPrefix)
+					.map((path) => normalizeRepoChecksFileSystemPath(path))
+					.filter((path) => !deleted.has(path)),
+			)
+			for (const path of overlay.keys()) {
+				if (normalizedPrefix === undefined || path.startsWith(normalizedPrefix)) {
+					listed.add(path)
+				}
+			}
+			return Array.from(listed)
+		},
+		async flush() {},
+	} satisfies RepoChecksFileSystem
+}
+
+function buildRepoChecksTsconfig(
+	baseConfigContent: string | null,
+) {
+	if (baseConfigContent == null) {
+		return JSON.stringify({
+			compilerOptions: {
+				allowImportingTsExtensions: true,
+				noEmit: true,
+			},
+		})
+	}
+	return JSON.stringify({
+		extends: repoChecksSyntheticTsconfigExtendsPath,
+		compilerOptions: {
+			allowImportingTsExtensions: true,
+			noEmit: true,
+		},
+	})
+}
 
 async function* workspaceFilesForSnapshot(input: {
 	workspace: {
@@ -333,8 +414,22 @@ export async function runRepoChecks(input: {
 
 	const { createTypescriptLanguageService } =
 		await import('@cloudflare/worker-bundler/typescript')
-	const { fileSystem, languageService } = await createTypescriptLanguageService({
+	const typecheckFileSystem = createRepoChecksFileSystem({
 		fileSystem: snapshot,
+	})
+	const baseTsconfig = snapshot.read(repoChecksSyntheticTsconfigPath)
+	if (baseTsconfig != null) {
+		typecheckFileSystem.write(
+			repoChecksSyntheticTsconfigExtendsPath.slice('./'.length),
+			baseTsconfig,
+		)
+	}
+	typecheckFileSystem.write(
+		repoChecksSyntheticTsconfigPath,
+		buildRepoChecksTsconfig(baseTsconfig),
+	)
+	const { fileSystem, languageService } = await createTypescriptLanguageService({
+		fileSystem: typecheckFileSystem,
 	})
 	const { fileName, diagnostics, lineOffset } = getRepoTypecheckDiagnostics({
 		manifest,
