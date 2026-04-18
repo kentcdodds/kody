@@ -431,17 +431,24 @@ export function parseArtifactTokenSecret(token: string) {
 	return token.split('?expires=')[0] ?? token
 }
 
+export function buildArtifactsGitAuth(input: { token: string }) {
+	return {
+		username: 'x',
+		password: parseArtifactTokenSecret(input.token),
+	}
+}
+
 export function buildAuthenticatedArtifactsRemote(input: {
 	remote: string
 	token: string
 }) {
-	const tokenSecret = parseArtifactTokenSecret(input.token)
 	const remoteUrl = new URL(input.remote)
 	if (remoteUrl.protocol !== 'https:') {
 		throw new Error(`Artifact remote must use https://, got: ${input.remote}`)
 	}
-	remoteUrl.username = 'x'
-	remoteUrl.password = tokenSecret
+	const auth = buildArtifactsGitAuth({ token: input.token })
+	remoteUrl.username = auth.username
+	remoteUrl.password = auth.password
 	return remoteUrl.toString()
 }
 
