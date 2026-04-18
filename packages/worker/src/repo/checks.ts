@@ -190,9 +190,11 @@ function getRepoTypecheckDiagnostics(input: {
 			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
 				? repoCodemodeModuleTypecheckHarnessPath
 				: executeSnippetTypecheckHarnessPath
+			const isModuleHarness =
+				harnessPath === repoCodemodeModuleTypecheckHarnessPath
 			input.fileSystem.write(
 				harnessPath,
-				hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
+				isModuleHarness
 					? createRepoCodemodeModuleTypecheckHarness({
 							entryPoint: input.entryPoint,
 						})
@@ -217,9 +219,11 @@ function getRepoTypecheckDiagnostics(input: {
 			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
 				? repoCodemodeModuleTypecheckHarnessPath
 				: executeSnippetTypecheckHarnessPath
+			const isModuleHarness =
+				harnessPath === repoCodemodeModuleTypecheckHarnessPath
 			input.fileSystem.write(
 				harnessPath,
-				hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
+				isModuleHarness
 					? createRepoCodemodeModuleTypecheckHarness({
 							entryPoint: input.entryPoint,
 						})

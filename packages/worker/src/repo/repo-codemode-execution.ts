@@ -92,7 +92,7 @@ export default __kodyUserCode;
 `
 }
 
-export function getRepoBackedEntrypointMode(
+function getRepoBackedEntrypointMode(
 	code: string,
 ): RepoCodemodeEntrypointMode {
 	return usesModuleSyntax(code) ? 'module' : 'snippet'
