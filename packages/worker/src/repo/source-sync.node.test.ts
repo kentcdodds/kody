@@ -21,7 +21,7 @@ const bootstrapAccess: ArtifactBootstrapAccess = {
 	defaultBranch: 'main',
 	remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
 	token: 'art_v1_bootstrap?expires=1760000000',
-	expiresAt: '2026-10-09T08:53:20.000Z',
+	expiresAt: '2025-10-09T08:53:20.000Z',
 }
 
 test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into the source repo', async () => {

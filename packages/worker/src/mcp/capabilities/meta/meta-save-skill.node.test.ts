@@ -113,7 +113,7 @@ test('meta_save_skill forwards bootstrap access for a brand-new repo-backed skil
 			remote:
 				'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
 			token: 'art_v1_bootstrap?expires=1760000000',
-			expiresAt: '2026-10-09T08:53:20.000Z',
+			expiresAt: '2025-10-09T08:53:20.000Z',
 		},
 	})
 	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-bootstrap-1')
@@ -162,7 +162,7 @@ test('meta_save_skill forwards bootstrap access for a brand-new repo-backed skil
 				remote:
 					'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
 				token: 'art_v1_bootstrap?expires=1760000000',
-				expiresAt: '2026-10-09T08:53:20.000Z',
+				expiresAt: '2025-10-09T08:53:20.000Z',
 			},
 			files: expect.objectContaining({
 				'kody.json': expect.stringContaining('"kind": "skill"'),
