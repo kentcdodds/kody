@@ -641,6 +641,9 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 	expect(
 		typecheckInput.fileSystem.read('.__kody_repo_tsconfig_base__.json'),
 	).toBe(repoTsconfig)
+	expect(
+		typecheckInput.fileSystem.read('/.__kody_repo_tsconfig_base__.json'),
+	).toBe(repoTsconfig)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
 		expect.stringContaining('import userEntrypoint from "./src/job"'),

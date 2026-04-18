@@ -43,34 +43,48 @@ type RepoChecksFileSystem = {
 	flush(): Promise<void>
 }
 
+function normalizeRepoChecksFileSystemPath(path: string) {
+	return path.replace(/^\.?\//, '')
+}
+
 function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem }) {
 	const overlay = new Map<string, string>()
 	const deleted = new Set<string>()
 
 	return {
 		read(path: string) {
-			if (overlay.has(path)) {
-				return overlay.get(path) ?? null
+			const normalizedPath = normalizeRepoChecksFileSystemPath(path)
+			if (overlay.has(normalizedPath)) {
+				return overlay.get(normalizedPath) ?? null
 			}
-			if (deleted.has(path)) {
+			if (deleted.has(normalizedPath)) {
 				return null
 			}
-			return input.fileSystem.read(path)
+			return input.fileSystem.read(normalizedPath)
 		},
 		write(path: string, content: string) {
-			overlay.set(path, content)
-			deleted.delete(path)
+			const normalizedPath = normalizeRepoChecksFileSystemPath(path)
+			overlay.set(normalizedPath, content)
+			deleted.delete(normalizedPath)
 		},
 		delete(path: string) {
-			overlay.delete(path)
-			deleted.add(path)
+			const normalizedPath = normalizeRepoChecksFileSystemPath(path)
+			overlay.delete(normalizedPath)
+			deleted.add(normalizedPath)
 		},
 		list(prefix?: string) {
+			const normalizedPrefix =
+				prefix === undefined
+					? undefined
+					: normalizeRepoChecksFileSystemPath(prefix)
 			const listed = new Set(
-				input.fileSystem.list(prefix).filter((path) => !deleted.has(path)),
+				input.fileSystem
+					.list(normalizedPrefix)
+					.map((path) => normalizeRepoChecksFileSystemPath(path))
+					.filter((path) => !deleted.has(path)),
 			)
 			for (const path of overlay.keys()) {
-				if (prefix === undefined || path.startsWith(prefix)) {
+				if (normalizedPrefix === undefined || path.startsWith(normalizedPrefix)) {
 					listed.add(path)
 				}
 			}
