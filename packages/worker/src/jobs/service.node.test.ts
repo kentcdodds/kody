@@ -772,6 +772,24 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 			logs: ['repo-backed codemode executed'],
 		})
 		expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
+		expect(sessionClient.openSession).toHaveBeenNthCalledWith(1, {
+			sessionId: 'job-runtime-job-repo-1',
+			sourceId: 'source-1',
+			userId: 'user-123',
+			baseUrl: 'https://example.com',
+			sourceRoot: '/',
+		})
+		expect(sessionClient.openSession).toHaveBeenNthCalledWith(2, {
+			sessionId: 'job-runtime-job-repo-1',
+			sourceId: 'source-1',
+			userId: 'user-123',
+			baseUrl: 'https://example.com',
+			sourceRoot: '/',
+		})
+		expect(sessionClient.runChecks).toHaveBeenCalledWith({
+			sessionId: 'job-runtime-job-repo-1',
+			userId: 'user-123',
+		})
 		expect(sessionClient.discardSession).toHaveBeenCalledWith({
 			sessionId: 'job-runtime-job-repo-1',
 			userId: 'user-123',

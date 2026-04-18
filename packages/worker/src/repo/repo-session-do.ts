@@ -839,7 +839,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			repoSessionWorkspacePrefix,
 		)
 		const sourceRoot = resolveRepoWorkspacePath(
-			source.source_root || repoSessionWorkspacePrefix,
+			sessionRow.source_root ||
+				source.source_root ||
+				repoSessionWorkspacePrefix,
 			repoSessionWorkspacePrefix,
 		)
 		const result = await runRepoChecks({
