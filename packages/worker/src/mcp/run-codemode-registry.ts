@@ -30,7 +30,17 @@ import {
 	createStorageCodemodeTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
-import { type Modules } from '@cloudflare/worker-bundler'
+type WorkerLoaderModule =
+	| string
+	| {
+			js?: string
+			cjs?: string
+			text?: string
+			data?: ArrayBuffer
+			json?: object
+	  }
+
+type WorkerLoaderModules = Record<string, WorkerLoaderModule>
 
 type AdditionalCodemodeTools = Record<
 	string,
@@ -196,7 +206,7 @@ export async function runCodemodeWithRegistry(
 		additionalTools?: AdditionalCodemodeTools
 		helperPrelude?: string
 		storageTools?: StorageToolOptions
-		executorModules?: Modules
+		executorModules?: WorkerLoaderModules
 	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
