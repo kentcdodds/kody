@@ -14,6 +14,7 @@ import {
 } from './repo-sessions.ts'
 import {
 	type ArtifactBootstrapAccess,
+	type ArtifactRepoInfo,
 	buildAuthenticatedArtifactsRemote,
 	resolveArtifactSourceRepo,
 	resolveSessionRepo,
@@ -541,19 +542,21 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Source "${source.id}" already has a published commit. Use repo sessions for later edits.`,
 			)
 		}
-		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
-		const sourceInfo = input.bootstrapAccess
-			? null
-			: await sourceRepo.info()
-		const sourceAccess = input.bootstrapAccess
-			? {
-					remote: input.bootstrapAccess.remote,
-					token: input.bootstrapAccess.token,
-				}
-			: await ensureArtifactRepoRemote({
-					repo: sourceRepo,
-					scope: 'write',
-				})
+		let sourceInfo: ArtifactRepoInfo | null = null
+		let sourceAccess: { remote: string; token: string }
+		if (input.bootstrapAccess) {
+			sourceAccess = {
+				remote: input.bootstrapAccess.remote,
+				token: input.bootstrapAccess.token,
+			}
+		} else {
+			const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+			sourceInfo = await sourceRepo.info()
+			sourceAccess = await ensureArtifactRepoRemote({
+				repo: sourceRepo,
+				scope: 'write',
+			})
+		}
 		const targetBranch =
 			input.bootstrapAccess?.defaultBranch ??
 			sourceInfo?.defaultBranch ??
