@@ -272,6 +272,82 @@ test('runRepoChecks accepts execute runtime globals for repo-backed jobs', async
 	)
 })
 
+test('runRepoChecks accepts codemode globals for repo-backed skills', async () => {
+	mockModule.createFileSystemSnapshot.mockReset()
+	mockModule.createTypescriptLanguageService.mockReset()
+	const files = new Map<string, string>([
+		[
+			'kody.json',
+			JSON.stringify({
+				version: 1,
+				kind: 'skill',
+				title: 'Runtime globals skill',
+				description: 'Uses execute globals',
+				sourceRoot: '/',
+				entrypoint: 'src/skill.ts',
+			}),
+		],
+		[
+			'src/skill.ts',
+			`async (params) => {
+  const result = await codemode.value_get({ name: 'projectId' })
+  return { params, result }
+}
+`,
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	const getSemanticDiagnostics = vi.fn(() => [])
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics,
+		},
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'kody.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(true)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'typecheck',
+				ok: true,
+				message: 'No semantic diagnostics for "src/skill.ts".',
+			}),
+		]),
+	)
+	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+		'.__kody_repo_runtime__.d.ts',
+		expect.stringContaining('declare const codemode'),
+	)
+	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+		'.__kody_repo_check__.ts',
+	expect.stringContaining('declare function __kodyTypecheckSkill'),
+	)
+	expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
+		'.__kody_repo_runtime__.d.ts',
+		expect.stringContaining('declare const storage'),
+	)
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith('.__kody_repo_check__.ts')
+})
+
 test('runRepoChecks still reports unknown globals for repo-backed jobs', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()

@@ -93,7 +93,9 @@ function formatTypecheckDiagnostics(
 	})
 }
 
-function createExecuteTypecheckPrelude() {
+function createExecuteTypecheckPrelude(input?: {
+	includeStorage?: boolean
+}) {
 	return `type KodyJsonValue =
   | string
   | number
@@ -115,7 +117,7 @@ declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
 declare function agentChatTurnStream(input: KodyCapabilityArgs): AsyncIterable<unknown>;
-
+${input?.includeStorage === true ? `
 declare const storage: {
   id: string;
   get(key: string): Promise<unknown>;
@@ -125,14 +127,16 @@ declare const storage: {
   delete(key: string): Promise<unknown>;
   clear(): Promise<unknown>;
 };
+` : ''}
 `.trim()
 }
 
-function createJobTypecheckHarness(input: {
+function createExecuteSnippetTypecheckHarness(input: {
+	fnName: string
 	source: string
 }): string {
 	return `/// <reference path="./${executeTypecheckPreludePath}" />
-declare function __kodyTypecheckJob(fn: (params?: Record<string, unknown>) => Promise<unknown>): void; __kodyTypecheckJob(
+declare function ${input.fnName}(fn: (params?: Record<string, unknown>) => Promise<unknown>): void; ${input.fnName}(
 ${input.source}
 );
 `
@@ -173,10 +177,27 @@ function getRepoTypecheckDiagnostics(input: {
 } {
 	switch (input.manifest.kind) {
 		case 'app':
-		case 'skill':
 			return {
 				fileName: input.entryPoint,
 				diagnostics: input.languageService.getSemanticDiagnostics(input.entryPoint),
+			}
+		case 'skill':
+			input.fileSystem.write(
+				executeTypecheckPreludePath,
+				createExecuteTypecheckPrelude(),
+			)
+			input.fileSystem.write(
+				jobTypecheckHarnessPath,
+				createExecuteSnippetTypecheckHarness({
+					fnName: '__kodyTypecheckSkill',
+					source: input.entryPointSource,
+				}),
+			)
+			return {
+				fileName: input.entryPoint,
+				diagnostics:
+					input.languageService.getSemanticDiagnostics(jobTypecheckHarnessPath),
+				lineOffset: 2,
 			}
 		case 'job': {
 			if (hasModuleStyleRepoBackedJobEntrypoint(input.entryPointSource)) {
@@ -191,11 +212,14 @@ function getRepoTypecheckDiagnostics(input: {
 			}
 			input.fileSystem.write(
 				executeTypecheckPreludePath,
-				createExecuteTypecheckPrelude(),
+				createExecuteTypecheckPrelude({
+					includeStorage: true,
+				}),
 			)
 			input.fileSystem.write(
 				jobTypecheckHarnessPath,
-				createJobTypecheckHarness({
+				createExecuteSnippetTypecheckHarness({
+					fnName: '__kodyTypecheckJob',
 					source: input.entryPointSource,
 				}),
 			)
