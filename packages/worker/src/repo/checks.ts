@@ -1,4 +1,4 @@
-import { parseRepoManifest } from './manifest.ts'
+import { getManifestEntrypointPath, parseRepoManifest } from './manifest.ts'
 import { type RepoManifest } from './types.ts'
 
 export type RepoCheckKind =
@@ -117,8 +117,7 @@ export async function runRepoChecks(input: {
 				: 'No package.json found in source root; dependency check skipped.',
 	})
 
-	const entryPoint =
-		manifest.kind === 'app' ? manifest.server : manifest.entrypoint
+	const entryPoint = getManifestEntrypointPath(manifest)
 	results.push({
 		kind: 'bundle',
 		ok: snapshot.read(entryPoint) != null,

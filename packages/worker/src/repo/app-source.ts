@@ -5,7 +5,7 @@ import {
 } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { getEntitySourceById } from './entity-sources.ts'
-import { parseRepoManifest } from './manifest.ts'
+import { normalizeRepoWorkspacePath, parseRepoManifest } from './manifest.ts'
 import { type AppManifest } from './types.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
@@ -37,13 +37,13 @@ function fallbackFromArtifact(artifact: UiArtifactRow): ResolvedSavedAppSource {
 
 function resolveManifestClientPath(manifest: AppManifest) {
 	if (Array.isArray(manifest.assets) && manifest.assets.length > 0) {
-		return manifest.assets[0]!
+		return normalizeRepoWorkspacePath(manifest.assets[0]!)
 	}
 	if (typeof manifest.client === 'string') {
-		return manifest.client
+		return normalizeRepoWorkspacePath(manifest.client)
 	}
 	if (Array.isArray(manifest.client) && manifest.client.length > 0) {
-		return manifest.client[0]!
+		return normalizeRepoWorkspacePath(manifest.client[0]!)
 	}
 	return 'client.html'
 }
@@ -105,7 +105,7 @@ export async function resolveSavedAppSource(input: {
 			session.readFile({
 				sessionId: opened.id,
 				userId: input.artifact.user_id,
-				path: manifest.server,
+				path: normalizeRepoWorkspacePath(manifest.server),
 			}),
 		])
 		const resolved = {

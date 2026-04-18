@@ -6,6 +6,10 @@ import {
 	applySkillParameters,
 	parseSkillParameters,
 } from '#mcp/skills/skill-parameters.ts'
+import {
+	getManifestEntrypointPath,
+	parseRepoManifest,
+} from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 
 const runFailureHint =
@@ -127,7 +131,6 @@ async function runRepoBackedSkill(input: {
 				logs: [],
 			}
 		}
-		const { parseRepoManifest } = await import('#worker/repo/manifest.ts')
 		const manifest = parseRepoManifest({
 			content: entrypoint.content,
 			manifestPath,
@@ -142,7 +145,7 @@ async function runRepoBackedSkill(input: {
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user?.userId ?? '',
-			path: manifest.entrypoint.replace(/^\/+/, ''),
+			path: getManifestEntrypointPath(manifest),
 		})
 		if (!moduleFile.content) {
 			return {

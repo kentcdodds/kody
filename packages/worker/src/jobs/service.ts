@@ -31,7 +31,10 @@ import {
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
-import { parseRepoManifest } from '#worker/repo/manifest.ts'
+import {
+	getManifestEntrypointPath,
+	parseRepoManifest,
+} from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
@@ -533,7 +536,7 @@ async function runRepoBackedJob(input: {
 	const moduleFile = await sessionClient.readFile({
 		sessionId: session.id,
 		userId: input.callerContext.user.userId,
-		path: manifest.entrypoint.replace(/^\/+/, ''),
+		path: getManifestEntrypointPath(manifest),
 	})
 	if (!moduleFile.content) {
 		return {

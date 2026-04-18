@@ -723,7 +723,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 				kind: 'job',
 				title: 'Repo-backed job',
 				description: 'Runs from repo',
-				entrypoint: 'src/job.ts',
+				entrypoint: '/src/job.ts',
 			},
 		})),
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
@@ -735,7 +735,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 							kind: 'job',
 							title: 'Repo-backed job',
 							description: 'Runs from repo',
-							entrypoint: 'src/job.ts',
+							entrypoint: '/src/job.ts',
 						})
 					: 'async () => ({ ok: true, repoBacked: true })',
 		})),
@@ -775,6 +775,11 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		expect(sessionClient.discardSession).toHaveBeenCalledWith({
 			sessionId: 'job-runtime-job-repo-1',
 			userId: 'user-123',
+		})
+		expect(sessionClient.readFile).toHaveBeenCalledWith({
+			sessionId: 'job-runtime-job-repo-1',
+			userId: 'user-123',
+			path: 'src/job.ts',
 		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 	} finally {
