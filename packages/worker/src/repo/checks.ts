@@ -4,9 +4,10 @@ import {
 	parseRepoManifest,
 } from './manifest.ts'
 import {
-	hasModuleStyleRepoBackedJobEntrypoint,
-	repoBackedJobModuleStyleErrorMessage,
-} from '../jobs/repo-backed-job-entrypoint.ts'
+	createRepoCodemodeModuleTypecheckHarness,
+	hasModuleStyleRepoBackedEntrypoint,
+	repoCodemodeModuleTypecheckHarnessPath,
+} from './repo-codemode-execution.ts'
 import { type RepoManifest } from './types.ts'
 
 export type RepoCheckKind =
@@ -31,8 +32,6 @@ export type RepoCheckRunResult = {
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
 const executeSnippetTypecheckHarnessPath = '.__kody_repo_check__.ts'
-const repoBackedSkillModuleStyleErrorMessage =
-	'Repo-backed skill entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.'
 
 async function* workspaceFilesForSnapshot(input: {
 	workspace: {
@@ -184,67 +183,55 @@ function getRepoTypecheckDiagnostics(input: {
 				diagnostics: input.languageService.getSemanticDiagnostics(input.entryPoint),
 			}
 		case 'skill': {
-			if (hasModuleStyleRepoBackedJobEntrypoint(input.entryPointSource)) {
-				return {
-					fileName: input.entryPoint,
-					diagnostics: [
-						{
-							messageText: repoBackedSkillModuleStyleErrorMessage,
-						},
-					],
-				}
-			}
 			input.fileSystem.write(
 				executeTypecheckPreludePath,
 				createExecuteTypecheckPrelude(),
 			)
+			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
+				? repoCodemodeModuleTypecheckHarnessPath
+				: executeSnippetTypecheckHarnessPath
 			input.fileSystem.write(
-				executeSnippetTypecheckHarnessPath,
-				createExecuteSnippetTypecheckHarness({
-					fnName: '__kodyTypecheckSkill',
-					source: input.entryPointSource,
-				}),
+				harnessPath,
+				hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
+					? createRepoCodemodeModuleTypecheckHarness({
+							entryPoint: input.entryPoint,
+						})
+					: createExecuteSnippetTypecheckHarness({
+							fnName: '__kodyTypecheckSkill',
+							source: input.entryPointSource,
+						}),
 			)
 			return {
 				fileName: input.entryPoint,
-				diagnostics:
-					input.languageService.getSemanticDiagnostics(
-						executeSnippetTypecheckHarnessPath,
-					),
-				lineOffset: 2,
+				diagnostics: input.languageService.getSemanticDiagnostics(harnessPath),
+				lineOffset: harnessPath === executeSnippetTypecheckHarnessPath ? 2 : 0,
 			}
 		}
 		case 'job': {
-			if (hasModuleStyleRepoBackedJobEntrypoint(input.entryPointSource)) {
-				return {
-					fileName: input.entryPoint,
-					diagnostics: [
-						{
-							messageText: repoBackedJobModuleStyleErrorMessage,
-						},
-					],
-				}
-			}
 			input.fileSystem.write(
 				executeTypecheckPreludePath,
 				createExecuteTypecheckPrelude({
 					includeStorage: true,
 				}),
 			)
+			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
+				? repoCodemodeModuleTypecheckHarnessPath
+				: executeSnippetTypecheckHarnessPath
 			input.fileSystem.write(
-				executeSnippetTypecheckHarnessPath,
-				createExecuteSnippetTypecheckHarness({
-					fnName: '__kodyTypecheckJob',
-					source: input.entryPointSource,
-				}),
+				harnessPath,
+				hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
+					? createRepoCodemodeModuleTypecheckHarness({
+							entryPoint: input.entryPoint,
+						})
+					: createExecuteSnippetTypecheckHarness({
+							fnName: '__kodyTypecheckJob',
+							source: input.entryPointSource,
+						}),
 			)
 			return {
 				fileName: input.entryPoint,
-				diagnostics:
-					input.languageService.getSemanticDiagnostics(
-						executeSnippetTypecheckHarnessPath,
-					),
-				lineOffset: 2,
+				diagnostics: input.languageService.getSemanticDiagnostics(harnessPath),
+				lineOffset: harnessPath === executeSnippetTypecheckHarnessPath ? 2 : 0,
 			}
 		}
 		default: {

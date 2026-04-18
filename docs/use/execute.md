@@ -37,6 +37,12 @@ To run persisted user code by name, use **`meta_run_skill`** with **`name`** and
 optional **`params`**. To inspect source, use **`meta_get_skill`**. You can also
 inline saved skill code into **execute** when that fits the workflow.
 
+Repo-backed saved skills and jobs now execute through the same codemode runtime
+as **`execute`**, including helper globals such as **`refreshAccessToken(...)`**,
+**`createAuthenticatedFetch(...)`**, **`agentChatTurnStream(...)`**, and job
+storage helpers. Repo-backed sources can use module imports and package
+dependencies instead of being limited to one file.
+
 ## Agent turns
 
 Kody exposes two generic primitives for tool-using chat turns:

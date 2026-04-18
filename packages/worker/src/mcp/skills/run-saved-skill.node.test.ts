@@ -5,6 +5,8 @@ const mockModule = vi.hoisted(() => ({
 	getMcpSkillByNameInput: vi.fn(),
 	repoSessionRpc: vi.fn(),
 	runCodemodeWithRegistry: vi.fn(),
+	buildRepoCodemodeBundle: vi.fn(),
+	loadRepoSourceFilesFromSession: vi.fn(),
 }))
 
 vi.mock('#mcp/skills/mcp-skills-repo.ts', () => ({
@@ -21,12 +23,28 @@ vi.mock('#mcp/run-codemode-registry.ts', () => ({
 		mockModule.runCodemodeWithRegistry(...args),
 }))
 
+vi.mock('#worker/repo/repo-codemode-execution.ts', () => ({
+	buildRepoCodemodeBundle: (...args: Array<unknown>) =>
+		mockModule.buildRepoCodemodeBundle(...args),
+	loadRepoSourceFilesFromSession: (...args: Array<unknown>) =>
+		mockModule.loadRepoSourceFilesFromSession(...args),
+	createRepoCodemodeWrapper: ({
+		mainModule,
+		includeStorage,
+	}: {
+		mainModule: string
+		includeStorage?: boolean
+	}) => `repo-wrapper:${mainModule}:${includeStorage === true ? 'storage' : 'no-storage'}`,
+}))
+
 const { runSavedSkill } = await import('./run-saved-skill.ts')
 
 test('runSavedSkill opens a repo session and executes repo-backed skill code immediately after save', async () => {
 	mockModule.getMcpSkillByNameInput.mockReset()
 	mockModule.repoSessionRpc.mockReset()
 	mockModule.runCodemodeWithRegistry.mockReset()
+	mockModule.buildRepoCodemodeBundle.mockReset()
+	mockModule.loadRepoSourceFilesFromSession.mockReset()
 
 	mockModule.getMcpSkillByNameInput.mockResolvedValue({
 		id: 'skill-1',
@@ -112,6 +130,17 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 		})),
 	}
 	mockModule.repoSessionRpc.mockReturnValue(sessionClient)
+	mockModule.loadRepoSourceFilesFromSession.mockResolvedValue({
+		'skill.ts': 'export default async () => ({ ok: true, repoBacked: true })',
+		'util.ts': 'export const ok = true',
+	})
+	mockModule.buildRepoCodemodeBundle.mockResolvedValue({
+		entrypointMode: 'module',
+		mainModule: 'dist/entry.js',
+		modules: {
+			'dist/entry.js': 'export default async () => ({ ok: true, repoBacked: true })',
+		},
+	})
 	mockModule.runCodemodeWithRegistry.mockResolvedValue({
 		result: { ok: true, repoBacked: true },
 		logs: ['repo-backed skill executed'],
@@ -151,10 +180,14 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 				entityId: 'skill-1',
 			}),
 		}),
-		'async () => ({ ok: true, repoBacked: true })',
+		'repo-wrapper:dist/entry.js:no-storage',
 		undefined,
 		expect.objectContaining({
 			executorExports: expect.any(Object),
+			executorModules: {
+				'dist/entry.js':
+					'export default async () => ({ ok: true, repoBacked: true })',
+			},
 		}),
 	)
 	expect(sessionClient.discardSession).toHaveBeenCalledWith({

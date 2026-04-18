@@ -24,6 +24,17 @@ vi.mock('@cloudflare/worker-bundler', () => ({
 			}
 		},
 	),
+	createWorker: vi.fn(async ({ files, entryPoint }: { files: Record<string, string>; entryPoint?: string }) => {
+		const mainModule = 'dist/bundled-entry.js'
+		const selectedEntryPoint = entryPoint ?? 'index.ts'
+		return {
+			mainModule,
+			modules: {
+				[mainModule]: files[selectedEntryPoint] ?? '',
+			},
+			warnings: [],
+		}
+	}),
 }))
 
 vi.mock('@cloudflare/worker-bundler/typescript', () => ({
@@ -773,6 +784,20 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 						})
 					: 'async () => ({ ok: true, repoBacked: true })',
 		})),
+		tree: vi.fn(async () => ({
+			path: '',
+			name: '',
+			type: 'directory' as const,
+			size: 0,
+			children: [
+				{
+					path: 'src/job.ts',
+					name: 'job.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+			],
+		})),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
 			sessionId: 'job-runtime-job-repo-1',
@@ -1010,6 +1035,20 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 						})
 					: 'async () => ({ ok: true, bypassed: true })',
 		})),
+		tree: vi.fn(async () => ({
+			path: '',
+			name: '',
+			type: 'directory' as const,
+			size: 0,
+			children: [
+				{
+					path: 'src/job.ts',
+					name: 'job.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+			],
+		})),
 		discardSession: vi.fn(),
 	}
 
@@ -1139,6 +1178,20 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 						})
 					: 'async () => ({ ok: true, bypassed: true })',
 		})),
+		tree: vi.fn(async () => ({
+			path: '',
+			name: '',
+			type: 'directory' as const,
+			size: 0,
+			children: [
+				{
+					path: 'src/job.ts',
+					name: 'job.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+			],
+		})),
 		discardSession: vi.fn(),
 	}
 
@@ -1261,6 +1314,26 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 							entrypoint: '/src/job.ts',
 						})
 					: 'async () => ({ ok: true, normalized: true })',
+		})),
+		tree: vi.fn(async () => ({
+			path: '',
+			name: '',
+			type: 'directory' as const,
+			size: 0,
+			children: [
+				{
+					path: 'src/job.ts',
+					name: 'job.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+				{
+					path: 'package.json',
+					name: 'package.json',
+					type: 'file' as const,
+					size: 1,
+				},
+			],
 		})),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
@@ -1431,7 +1504,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 	}
 })
 
-test('executeJobOnce returns a clear error for module-style repo-backed job entrypoints', async () => {
+test('executeJobOnce bundles and runs module-style repo-backed job entrypoints', async () => {
 	const env = {
 		APP_DB: createDatabase(),
 		LOADER: {} as WorkerLoader,
@@ -1506,6 +1579,32 @@ test('executeJobOnce returns a clear error for module-style repo-backed job entr
 						})
 					: 'export default async () => ({ ok: true })',
 		})),
+		tree: vi.fn(async () => ({
+			path: '',
+			name: '',
+			type: 'directory' as const,
+			size: 0,
+			children: [
+				{
+					path: 'src/job.ts',
+					name: 'job.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+				{
+					path: 'src/lib.ts',
+					name: 'lib.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+				{
+					path: 'package.json',
+					name: 'package.json',
+					type: 'file' as const,
+					size: 1,
+				},
+			],
+		})),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
 			sessionId: 'job-runtime-job-repo-module',
@@ -1520,8 +1619,35 @@ test('executeJobOnce returns a clear error for module-style repo-backed job entr
 		await import('#mcp/run-codemode-registry.ts'),
 		'runCodemodeWithRegistry',
 	)
+	const bundleSpy = vi.spyOn(
+		await import('#worker/repo/repo-codemode-execution.ts'),
+		'buildRepoCodemodeBundle',
+	)
+	const loadFilesSpy = vi.spyOn(
+		await import('#worker/repo/repo-codemode-execution.ts'),
+		'loadRepoSourceFilesFromSession',
+	)
 
 	try {
+		loadFilesSpy.mockResolvedValue({
+			'package.json': JSON.stringify({
+				name: 'repo-module-job',
+				private: true,
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, repoBacked: "module" })',
+			'src/lib.ts': 'export const value = 1',
+		})
+		bundleSpy.mockResolvedValue({
+			entrypointMode: 'module',
+			mainModule: 'dist/job.js',
+			modules: {
+				'dist/job.js': 'export default async () => ({ ok: true, repoBacked: "module" })',
+			},
+		})
+		executeSpy.mockResolvedValue({
+			result: { ok: true, repoBacked: 'module' },
+			logs: ['repo-backed codemode executed'],
+		})
 		const outcome = await executeJobOnce({
 			env,
 			job,
@@ -1529,16 +1655,59 @@ test('executeJobOnce returns a clear error for module-style repo-backed job entr
 		})
 
 		expect(outcome.execution).toEqual({
-			ok: false,
-			error:
-				'Repo-backed job entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.',
-			logs: [],
+			ok: true,
+			result: { ok: true, repoBacked: 'module' },
+			logs: ['repo-backed codemode executed'],
 		})
-		expect(executeSpy).not.toHaveBeenCalled()
+		expect(loadFilesSpy).toHaveBeenCalledWith({
+			sessionClient,
+			sessionId: 'job-runtime-job-repo-module',
+			userId: 'user-123',
+			sourceRoot: '/',
+		})
+		expect(bundleSpy).toHaveBeenCalledWith({
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: 'repo-module-job',
+					private: true,
+				}),
+				'src/job.ts':
+					'export default async () => ({ ok: true, repoBacked: "module" })',
+				'src/lib.ts': 'export const value = 1',
+			},
+			entryPoint: 'src/job.ts',
+			entryPointSource: 'export default async () => ({ ok: true })',
+			cacheKey: 'source-job-repo-module:commit-abc',
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+		expect(executeSpy.mock.calls[0]?.[0]).toBe(env)
+		expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
+			repoContext: expect.objectContaining({
+				sourceId: 'source-job-repo-module',
+				sessionId: 'job-runtime-job-repo-module',
+			}),
+		})
+		expect(String(executeSpy.mock.calls[0]?.[2] ?? '')).toContain(
+			'const __repoModule = await import("./dist/job.js")',
+		)
+		expect(executeSpy.mock.calls[0]?.[3]).toBeUndefined()
+		expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
+			executorModules: {
+				'dist/job.js':
+					'export default async () => ({ ok: true, repoBacked: "module" })',
+			},
+			storageTools: {
+				userId: 'user-123',
+				storageId: 'job:job-repo-module',
+				writable: true,
+			},
+		})
 		expect(sessionClient.discardSession).not.toHaveBeenCalled()
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
+		bundleSpy.mockRestore()
+		loadFilesSpy.mockRestore()
 	}
 })
 
@@ -1731,6 +1900,20 @@ test('runJobNow can use a one-off repo check policy override without changing th
 							entrypoint: 'src/job.ts',
 						})
 					: 'async () => ({ ok: true, override: true })',
+		})),
+		tree: vi.fn(async () => ({
+			path: '',
+			name: '',
+			type: 'directory' as const,
+			size: 0,
+			children: [
+				{
+					path: 'src/job.ts',
+					name: 'job.ts',
+					type: 'file' as const,
+					size: 1,
+				},
+			],
 		})),
 		discardSession: vi.fn(),
 	}

@@ -8,8 +8,14 @@ import {
 } from '#mcp/skills/skill-parameters.ts'
 import {
 	getManifestEntrypointPath,
+	getManifestSourceRoot,
 	parseRepoManifest,
 } from '#worker/repo/manifest.ts'
+import {
+	buildRepoCodemodeBundle,
+	createRepoCodemodeWrapper,
+	loadRepoSourceFilesFromSession,
+} from '#worker/repo/repo-codemode-execution.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 
 const runFailureHint =
@@ -142,6 +148,7 @@ async function runRepoBackedSkill(input: {
 				logs: [],
 			}
 		}
+		const sourceRoot = getManifestSourceRoot(manifest)
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user?.userId ?? '',
@@ -154,6 +161,21 @@ async function runRepoBackedSkill(input: {
 				logs: [],
 			}
 		}
+		const sourceFiles = await loadRepoSourceFilesFromSession({
+			sessionClient,
+			sessionId: session.id,
+			userId: input.callerContext.user?.userId ?? '',
+			sourceRoot,
+		})
+		const bundle = await buildRepoCodemodeBundle({
+			sourceFiles,
+			entryPoint: getManifestEntrypointPath(manifest),
+			entryPointSource: moduleFile.content,
+			cacheKey:
+				input.row.source_id && session.published_commit
+					? `${input.row.source_id}:${session.published_commit}`
+					: null,
+		})
 		const { runCodemodeWithRegistry } =
 			await import('#mcp/run-codemode-registry.ts')
 		return runCodemodeWithRegistry(
@@ -173,10 +195,13 @@ async function runRepoBackedSkill(input: {
 					entityId: input.row.id,
 				},
 			},
-			moduleFile.content,
+			createRepoCodemodeWrapper({
+				mainModule: bundle.mainModule,
+			}),
 			input.params,
 			{
 				executorExports: workerExports,
+				executorModules: bundle.modules,
 			},
 		)
 	} finally {

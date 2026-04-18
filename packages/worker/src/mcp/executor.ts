@@ -1,4 +1,5 @@
 import { DynamicWorkerExecutor, type ExecuteResult } from '@cloudflare/codemode'
+import { type Modules } from '@cloudflare/worker-bundler'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
@@ -20,7 +21,7 @@ export function createExecuteExecutor(input: {
 	env: Env
 	exports?: WorkerLoopbackExports
 	gatewayProps: FetchGatewayProps
-	modules?: Record<string, string>
+	modules?: Modules
 }) {
 	const loopbackExports = input.exports ?? workerExports
 	if (!loopbackExports?.CodemodeFetchGateway) {
@@ -34,7 +35,7 @@ export function createExecuteExecutor(input: {
 		globalOutbound: loopbackExports.CodemodeFetchGateway({
 			props: input.gatewayProps,
 		}),
-		modules: input.modules,
+		modules: input.modules as unknown as Record<string, string> | undefined,
 	})
 }
 

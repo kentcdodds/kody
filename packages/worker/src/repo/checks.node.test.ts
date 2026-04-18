@@ -16,7 +16,6 @@ vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 }))
 
 import { runRepoChecks } from './checks.ts'
-import { repoBackedJobModuleStyleErrorMessage } from '../jobs/repo-backed-job-entrypoint.ts'
 
 type MockSnapshot = {
 	read: ReturnType<typeof vi.fn>
@@ -421,7 +420,7 @@ test('runRepoChecks still reports unknown globals for repo-backed jobs', async (
 	)
 })
 
-test('runRepoChecks rejects module-style repo-backed job entrypoints', async () => {
+test('runRepoChecks typechecks module-style repo-backed job entrypoints', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
@@ -443,7 +442,9 @@ test('runRepoChecks rejects module-style repo-backed job entrypoints', async () 
 		...snapshot,
 		write: vi.fn(),
 	}
-	const getSemanticDiagnostics = vi.fn(() => [])
+	const getSemanticDiagnostics = vi.fn((path: string) =>
+		path === '.__kody_repo_module_check__.ts' ? [] : [],
+	)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
@@ -465,15 +466,21 @@ test('runRepoChecks rejects module-style repo-backed job entrypoints', async () 
 		sourceRoot: '/',
 	})
 
-	expect(result.ok).toBe(false)
+	expect(result.ok).toBe(true)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'typecheck',
-				ok: false,
-				message: `src/job.ts ${repoBackedJobModuleStyleErrorMessage}`,
+				ok: true,
+				message: 'No semantic diagnostics for "src/job.ts".',
 			}),
 		]),
 	)
-	expect(getSemanticDiagnostics).not.toHaveBeenCalled()
+	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+		expect.stringContaining("import userEntrypoint from './src/job.ts'"),
+	)
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+	)
 })
