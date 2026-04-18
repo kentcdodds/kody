@@ -486,3 +486,163 @@ test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 		'.__kody_repo_module_check__.ts',
 	)
 })
+
+test('runRepoChecks injects a synthetic tsconfig that allows optional .ts imports when the repo has no tsconfig', async () => {
+	mockModule.createFileSystemSnapshot.mockReset()
+	mockModule.createTypescriptLanguageService.mockReset()
+	const files = new Map<string, string>([
+		[
+			'kody.json',
+			JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'TS extension import job',
+				description: 'Imports a sibling .ts module',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
+			}),
+		],
+		[
+			'src/job.ts',
+			'export { default } from "./helper.ts"\n',
+		],
+		[
+			'src/helper.ts',
+			'export default async () => ({ ok: true })\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	const getSemanticDiagnostics = vi.fn(() => [])
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics,
+		},
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'kody.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(true)
+	expect(mockModule.createTypescriptLanguageService).toHaveBeenCalledWith({
+		fileSystem: expect.objectContaining({
+			read: expect.any(Function),
+			write: expect.any(Function),
+			delete: expect.any(Function),
+			list: expect.any(Function),
+			flush: expect.any(Function),
+		}),
+	})
+	const typecheckInput = mockModule.createTypescriptLanguageService.mock
+		.calls[0]?.[0] as { fileSystem: MockTypeScriptFileSystem }
+	expect(typecheckInput.fileSystem.read('tsconfig.json')).toBe(
+		JSON.stringify({
+			compilerOptions: {
+				allowImportingTsExtensions: true,
+				noEmit: true,
+			},
+		}),
+	)
+	expect(typecheckInput.fileSystem.read('./.__kody_repo_tsconfig_base__.json')).toBe(
+		null,
+	)
+	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+		expect.stringContaining('import userEntrypoint from "./src/job"'),
+	)
+})
+
+test('runRepoChecks preserves repo tsconfig via extends while enabling optional .ts imports', async () => {
+	mockModule.createFileSystemSnapshot.mockReset()
+	mockModule.createTypescriptLanguageService.mockReset()
+	const repoTsconfig = JSON.stringify({
+		compilerOptions: {
+			module: 'NodeNext',
+			moduleResolution: 'NodeNext',
+			strict: true,
+		},
+	})
+	const files = new Map<string, string>([
+		[
+			'kody.json',
+			JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'TS extension import job',
+				description: 'Preserves repo tsconfig',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
+			}),
+		],
+		['tsconfig.json', repoTsconfig],
+		[
+			'src/job.ts',
+			'export { default } from "./helper.ts"\n',
+		],
+		[
+			'src/helper.ts',
+			'export default async () => ({ ok: true })\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	const getSemanticDiagnostics = vi.fn(() => [])
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics,
+		},
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'kody.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(true)
+	const typecheckInput = mockModule.createTypescriptLanguageService.mock
+		.calls[0]?.[0] as { fileSystem: MockTypeScriptFileSystem }
+	expect(typecheckInput.fileSystem.read('tsconfig.json')).toBe(
+		JSON.stringify({
+			extends: './.__kody_repo_tsconfig_base__.json',
+			compilerOptions: {
+				allowImportingTsExtensions: true,
+				noEmit: true,
+			},
+		}),
+	)
+	expect(
+		typecheckInput.fileSystem.read('.__kody_repo_tsconfig_base__.json'),
+	).toBe(repoTsconfig)
+	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+		expect.stringContaining('import userEntrypoint from "./src/job"'),
+	)
+})
