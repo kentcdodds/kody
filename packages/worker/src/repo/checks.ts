@@ -31,6 +31,8 @@ export type RepoCheckRunResult = {
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
 const jobTypecheckHarnessPath = '.__kody_repo_check__.ts'
+const repoBackedSkillModuleStyleErrorMessage =
+	'Repo-backed skill entrypoints must be execute-compatible async function snippets, not ESM/CommonJS modules.'
 
 async function* workspaceFilesForSnapshot(input: {
 	workspace: {
@@ -181,7 +183,17 @@ function getRepoTypecheckDiagnostics(input: {
 				fileName: input.entryPoint,
 				diagnostics: input.languageService.getSemanticDiagnostics(input.entryPoint),
 			}
-		case 'skill':
+		case 'skill': {
+			if (hasModuleStyleRepoBackedJobEntrypoint(input.entryPointSource)) {
+				return {
+					fileName: input.entryPoint,
+					diagnostics: [
+						{
+							messageText: repoBackedJobModuleStyleErrorMessage,
+						},
+					],
+				}
+			}
 			input.fileSystem.write(
 				executeTypecheckPreludePath,
 				createExecuteTypecheckPrelude(),
@@ -199,6 +211,7 @@ function getRepoTypecheckDiagnostics(input: {
 					input.languageService.getSemanticDiagnostics(jobTypecheckHarnessPath),
 				lineOffset: 2,
 			}
+		}
 		case 'job': {
 			if (hasModuleStyleRepoBackedJobEntrypoint(input.entryPointSource)) {
 				return {
