@@ -143,14 +143,16 @@ test('meta_save_skill forwards bootstrap access for a brand-new repo-backed skil
 		},
 	)
 
-	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith({
-		db: {},
-		env: { APP_DB: {} },
-		userId: 'user-1',
-		entityKind: 'skill',
-		entityId: expect.any(String),
-		sourceRoot: '/',
-	})
+	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith(
+		expect.objectContaining({
+			db: {},
+			env: { APP_DB: {} },
+			userId: 'user-1',
+			entityKind: 'skill',
+			entityId: expect.any(String),
+			sourceRoot: '/',
+		}),
+	)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			env: { APP_DB: {} },

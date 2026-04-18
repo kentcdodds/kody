@@ -236,7 +236,7 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 	})
 	mockModule.repoSessionRpc.mockReturnValue(sessionClient as never)
 
-	await syncArtifactSourceSnapshot({
+	const publishedCommit = await syncArtifactSourceSnapshot({
 		env: {
 			APP_DB: {
 				prepare() {
@@ -256,6 +256,7 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 		},
 	})
 
+	expect(publishedCommit).toBe('commit-bootstrap-2')
 	expect(sessionClient.bootstrapSource).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		sourceId: 'source-1',

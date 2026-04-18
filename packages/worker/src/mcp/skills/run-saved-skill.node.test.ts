@@ -71,19 +71,40 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 			manifest_path: 'kody.json',
 			entity_type: 'skill' as const,
 		})),
-		readFile: vi.fn(async ({ path }: { path: string }) => ({
-			path,
-			content:
-				path === 'kody.json'
-					? JSON.stringify({
+		readFile: vi.fn(
+			async (input: {
+				sessionId: string
+				userId: string
+				path: string
+			}) => {
+				expect(input).toEqual(
+					expect.objectContaining({
+						sessionId: 'skill-runtime-skill-1-session',
+						userId: 'user-1',
+						path: expect.any(String),
+					}),
+				)
+				if (input.path === 'kody.json') {
+					return {
+						path: input.path,
+						content: JSON.stringify({
 							version: 1,
 							kind: 'skill',
 							title: 'Fresh skill',
 							description: 'Runs from repo',
 							entrypoint: 'skill.ts',
-						})
-					: 'async () => ({ ok: true, repoBacked: true })',
-		})),
+						}),
+					}
+				}
+				if (input.path === 'skill.ts') {
+					return {
+						path: input.path,
+						content: 'async () => ({ ok: true, repoBacked: true })',
+					}
+				}
+				throw new Error(`Unexpected repo session readFile path: ${input.path}`)
+			},
+		),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
 			sessionId: 'skill-runtime-skill-1-session',
