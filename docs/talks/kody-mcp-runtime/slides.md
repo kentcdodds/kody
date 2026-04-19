@@ -246,7 +246,7 @@ Now the rest of the talk explains how Kody solves those problems.
 <!--
 Map for the rest of the talk: discovery, execution, UI escape hatch.
 
-`search` finds capabilities, saved skills, saved apps, and secret references.
+`search` finds capabilities, saved apps, and secret references.
 `execute` runs an async function in Codemode to compose capability calls.
 `open_generated_ui` opens dynamically generated MCP Apps.
 
@@ -284,7 +284,7 @@ one "write code" tool, not a giant bag of disconnected tool calls.
 - Thin results → **rephrase** or check registry
 
 <!--
-`search` returns ranked hits across capabilities, saved skills, saved apps, and
+`search` returns ranked hits across capabilities, saved apps, and
 secret references. Top hits are what the agent should inspect first. Without
 `search`, `execute` is just guessing names and input shapes.
 

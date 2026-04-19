@@ -156,7 +156,7 @@ const allKeywords = [
 		'hosted callback',
 		'redirect uri',
 		'provider registration',
-		'ui_save_app',
+		'app_save',
 		'open_generated_ui',
 		'@kody/ui-utils',
 		'connect oauth',

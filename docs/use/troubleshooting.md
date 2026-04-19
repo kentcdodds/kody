@@ -10,9 +10,9 @@
   empty ranked **`query`** into better matches — rephrase or list capabilities
   instead.
 
-## Saved skills or apps missing
+## Saved apps missing
 
-Saved skills and apps require an **authenticated MCP user**. If the client is
+Saved apps require an **authenticated MCP user**. If the client is
 not signed in, user-scoped results are empty.
 
 ## Fetch or secret errors
