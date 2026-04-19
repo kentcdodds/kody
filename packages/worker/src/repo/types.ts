@@ -320,10 +320,19 @@ export type RepoSessionPublishResult =
 			message: string
 	  }
 	| {
-			status: 'checks_outdated' | 'base_moved'
+			status: 'checks_outdated'
 			sessionId: string
 			message: string
 			publishedCommit: null
+	  }
+	| {
+			status: 'base_moved'
+			sessionId: string
+			message: string
+			publishedCommit: null
+			sessionBaseCommit: string
+			currentPublishedCommit: string | null
+			repairHint: 'repo_rebase_session'
 	  }
 
 export type RepoSourceBootstrapResult = {

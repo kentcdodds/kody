@@ -2,12 +2,15 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { getActiveRepoSessionByConversation } from '#worker/repo/repo-sessions.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
-	repoSessionInfoSchema,
+	repoOpenSessionOutputSchema,
 	repoOpenSessionInputSchema,
 } from './repo-shared.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import {
+	resolveRepoSourceReference,
+	resolveRepoTargetFromSource,
+} from './repo-resolve-target.ts'
 
 export const repoOpenSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -20,7 +23,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 		idempotent: false,
 		destructive: false,
 		inputSchema: repoOpenSessionInputSchema,
-		outputSchema: repoSessionInfoSchema,
+		outputSchema: repoOpenSessionOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = ctx.callerContext.user
 			if (!user) {
@@ -34,21 +37,32 @@ export const repoOpenSessionCapability = defineDomainCapability(
 							userId: user.userId,
 							conversationId: args.conversation_id,
 						})
+			const requested = await resolveRepoSourceReference({
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				args,
+			})
 			if (existingSession) {
-				if (existingSession.source_id !== args.source_id) {
+				if (existingSession.source_id !== requested.source.id) {
 					throw new Error(
 						'Active repo session does not match the requested source. Discard the current session before opening a new source.',
 					)
 				}
-				return repoSessionRpc(ctx.env, existingSession.id).getSessionInfo({
+				const session = await repoSessionRpc(
+					ctx.env,
+					existingSession.id,
+				).getSessionInfo({
 					sessionId: existingSession.id,
 					userId: user.userId,
 				})
-			}
-
-			const source = await getEntitySourceById(ctx.env.APP_DB, args.source_id)
-			if (!source || source.user_id !== user.userId) {
-				throw new Error('Repo source was not found for this user.')
+				return {
+					...session,
+					resolved_target: await resolveRepoTargetFromSource({
+						db: ctx.env.APP_DB,
+						userId: user.userId,
+						sourceId: session.source_id,
+					}),
+				}
 			}
 
 			const sessionId =
@@ -57,14 +71,19 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					.toString(36)
 					.slice(2, 10)}`
 
-			return repoSessionRpc(ctx.env, sessionId).openSession({
+			const session = await repoSessionRpc(ctx.env, sessionId).openSession({
 				sessionId,
-				sourceId: source.id,
+				sourceId: requested.source.id,
 				userId: user.userId,
 				baseUrl: ctx.callerContext.baseUrl,
 				conversationId: args.conversation_id ?? null,
-				sourceRoot: args.source_root ?? source.source_root,
+				sourceRoot: args.source_root ?? requested.source.source_root,
+				defaultBranch: args.default_branch ?? null,
 			})
+			return {
+				...session,
+				resolved_target: requested.resolvedTarget,
+			}
 		},
 	},
 )

@@ -3,37 +3,118 @@ import { z } from 'zod'
 export const repoSearchModeSchema = z.enum(['literal', 'regex'])
 export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
 
+export const repoTargetSchema = z.union([
+	z.object({
+		kind: z.literal('skill'),
+		name: z
+			.string()
+			.min(1)
+			.describe('Saved skill name to open or edit by user-facing identity.'),
+	}),
+	z.object({
+		kind: z.literal('job'),
+		job_id: z
+			.string()
+			.min(1)
+			.describe('Saved job id to open or edit by stable identifier.'),
+	}),
+	z.object({
+		kind: z.literal('job'),
+		name: z
+			.string()
+			.min(1)
+			.describe(
+				'Saved job name to open or edit by human-facing label. This must resolve to exactly one job for the current user.',
+			),
+	}),
+	z.object({
+		kind: z.literal('app'),
+		app_id: z
+			.string()
+			.min(1)
+			.describe('Saved app id to open or edit by app_id.'),
+	}),
+])
+
+export const repoResolvedTargetSchema = z.union([
+	z.object({
+		kind: z.literal('source'),
+		source_id: z.string(),
+		entity_kind: z.enum(['skill', 'app', 'job']),
+		entity_id: z.string(),
+	}),
+	z.object({
+		kind: z.literal('skill'),
+		source_id: z.string(),
+		skill_id: z.string(),
+		name: z.string(),
+	}),
+	z.object({
+		kind: z.literal('job'),
+		source_id: z.string(),
+		job_id: z.string(),
+		name: z.string(),
+	}),
+	z.object({
+		kind: z.literal('app'),
+		source_id: z.string(),
+		app_id: z.string(),
+		title: z.string(),
+	}),
+])
+
 export const repoSessionIdSchema = z.object({
 	session_id: z.string().min(1).describe('Active repo session id.'),
 })
 
 export const repoSessionIdInputSchema = repoSessionIdSchema
 
-export const repoOpenSessionInputSchema = z.object({
-	source_id: z
-		.string()
-		.min(1)
-		.describe('Shared source id to open a session for.'),
-	conversation_id: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional conversation id to associate with this repo session for default resolution in later calls.',
-		),
-	source_root: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional repo subdirectory to treat as the working source root.',
-		),
-	default_branch: z
-		.string()
-		.min(1)
-		.optional()
-		.describe('Optional default branch name hint for session creation.'),
-})
+export const repoOpenSessionInputSchema = z
+	.object({
+		source_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Shared source id to open a session for. Prefer `target` when you know the saved skill name, job id/name, or app_id instead of the internal source id.',
+			),
+		target: repoTargetSchema
+			.optional()
+			.describe(
+				'User-facing repo-backed entity identity. Use this instead of `source_id` when opening a saved skill, job, or app session.',
+			),
+		conversation_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional conversation id to associate with this repo session for default resolution in later calls.',
+			),
+		source_root: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional repo subdirectory to treat as the working source root.',
+			),
+		default_branch: z
+			.string()
+			.min(1)
+			.optional()
+			.describe('Optional default branch name hint for session creation.'),
+	})
+	.superRefine((value, ctx) => {
+		const sourceRefCount =
+			(value.source_id !== undefined ? 1 : 0) +
+			(value.target !== undefined ? 1 : 0)
+		if (sourceRefCount !== 1) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['source_id'],
+				message: 'Provide exactly one of `source_id` or `target`.',
+			})
+		}
+	})
 
 export const repoSourceRefSchema = z.object({
 	source_id: z
@@ -60,6 +141,10 @@ export const repoSessionInfoSchema = z.object({
 	published_commit: z.string().nullable(),
 	manifest_path: z.string(),
 	entity_type: z.enum(['skill', 'app', 'job']),
+})
+
+export const repoOpenSessionOutputSchema = repoSessionInfoSchema.extend({
+	resolved_target: repoResolvedTargetSchema,
 })
 
 export const repoReadFileInputSchema = repoSessionIdSchema.extend({
@@ -271,10 +356,228 @@ export const repoRunChecksOutputSchema = z.object({
 	}),
 })
 
+export const repoRunChecksDetailedOutputSchema =
+	repoRunChecksOutputSchema.extend({
+		run_id: z.string(),
+		tree_hash: z.string(),
+		checked_at: z.string(),
+	})
+
+export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
+	z.object({
+		status: z.literal('ok'),
+		session_id: z.string(),
+		published_commit: z.string(),
+		message: z.string(),
+	}),
+	z.object({
+		status: z.literal('checks_outdated'),
+		session_id: z.string(),
+		published_commit: z.null(),
+		message: z.string(),
+	}),
+	z.object({
+		status: z.literal('base_moved'),
+		session_id: z.string(),
+		published_commit: z.null(),
+		message: z.string(),
+		repair_hint: z.literal('repo_rebase_session'),
+		session_base_commit: z.string(),
+		current_published_commit: z.string().nullable(),
+	}),
+])
+
 export const repoCheckStatusOutputSchema = z.object({
 	run_id: z.string().nullable(),
 	tree_hash: z.string().nullable(),
 	checked_at: z.string().nullable(),
 	ok: z.boolean(),
 	results: z.array(repoCheckResultSchema),
+})
+
+export const repoEditFlowInputSchema = z
+	.object({
+		session_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Existing repo session id to continue editing. When provided, omit `source_id` and `target`.',
+			),
+		source_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Internal repo source id to open when not reusing an existing session. Prefer `target` for user-facing identities.',
+			),
+		target: repoTargetSchema
+			.optional()
+			.describe(
+				'User-facing repo-backed entity identity to open when not reusing an existing session.',
+			),
+		conversation_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional conversation id used when opening or resuming a session by source identity.',
+			),
+		source_root: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional repo subdirectory to treat as the working source root when opening a session.',
+			),
+		default_branch: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional default branch hint used when opening a new session.',
+			),
+		instructions: z
+			.array(repoPatchInstructionSchema)
+			.min(1)
+			.describe('Ordered structured edit instructions to apply.'),
+		rollback_on_error: z
+			.boolean()
+			.optional()
+			.describe(
+				'Whether to roll back all edits when one instruction fails. Defaults to true.',
+			),
+		run_checks: z
+			.boolean()
+			.optional()
+			.describe(
+				'Whether to run Worker-native repo checks after applying edits. Defaults to true.',
+			),
+		publish: z
+			.boolean()
+			.optional()
+			.describe(
+				'Whether to publish after successful checks. Defaults to true. Publishing requires `run_checks` to stay enabled.',
+			),
+	})
+	.superRefine((value, ctx) => {
+		const openRefCount =
+			(value.session_id !== undefined ? 1 : 0) +
+			(value.source_id !== undefined ? 1 : 0) +
+			(value.target !== undefined ? 1 : 0)
+		if (openRefCount !== 1) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['session_id'],
+				message:
+					'Provide exactly one of `session_id`, `source_id`, or `target`.',
+			})
+		}
+		if (value.session_id !== undefined) {
+			if (value.source_id !== undefined || value.target !== undefined) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['session_id'],
+					message: 'Do not combine `session_id` with `source_id` or `target`.',
+				})
+			}
+			if (
+				value.conversation_id !== undefined ||
+				value.source_root !== undefined ||
+				value.default_branch !== undefined
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['session_id'],
+					message:
+						'`conversation_id`, `source_root`, and `default_branch` only apply when opening a session by source identity.',
+				})
+			}
+		}
+		if (value.publish === true && value.run_checks === false) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['publish'],
+				message:
+					'`publish` requires checks to run in the same flow. Keep `run_checks` enabled or disable `publish`.',
+			})
+		}
+	})
+
+export const repoEditFlowChecksSchema = z.union([
+	z.object({
+		status: z.literal('not_requested'),
+	}),
+	z.object({
+		status: z.literal('passed'),
+		ok: z.literal(true),
+		results: z.array(repoCheckResultSchema),
+		manifest: z.object({
+			version: z.literal(1),
+			kind: z.enum(['skill', 'app', 'job']),
+			title: z.string(),
+			description: z.string(),
+		}),
+		run_id: z.string(),
+		tree_hash: z.string(),
+		checked_at: z.string(),
+	}),
+	z.object({
+		status: z.literal('failed'),
+		ok: z.literal(false),
+		results: z.array(repoCheckResultSchema),
+		failed_checks: z.array(repoCheckResultSchema),
+		manifest: z.object({
+			version: z.literal(1),
+			kind: z.enum(['skill', 'app', 'job']),
+			title: z.string(),
+			description: z.string(),
+		}),
+		run_id: z.string(),
+		tree_hash: z.string(),
+		checked_at: z.string(),
+	}),
+])
+
+export const repoEditFlowPublishSchema = z.union([
+	z.object({
+		status: z.literal('not_requested'),
+	}),
+	z.object({
+		status: z.literal('published'),
+		session_id: z.string(),
+		published_commit: z.string(),
+		message: z.string(),
+	}),
+	z.object({
+		status: z.literal('blocked_by_checks'),
+		message: z.string(),
+		failed_checks: z.array(repoCheckResultSchema),
+		run_id: z.string(),
+		tree_hash: z.string(),
+		checked_at: z.string(),
+	}),
+	z.object({
+		status: z.literal('checks_outdated'),
+		session_id: z.string(),
+		published_commit: z.null(),
+		message: z.string(),
+	}),
+	z.object({
+		status: z.literal('base_moved'),
+		session_id: z.string(),
+		published_commit: z.null(),
+		message: z.string(),
+		repair_hint: z.literal('repo_rebase_session'),
+		session_base_commit: z.string(),
+		current_published_commit: z.string().nullable(),
+	}),
+])
+
+export const repoEditFlowOutputSchema = z.object({
+	session: repoSessionInfoSchema,
+	resolved_target: repoResolvedTargetSchema,
+	edits: repoApplyPatchResultSchema,
+	checks: repoEditFlowChecksSchema,
+	publish: repoEditFlowPublishSchema,
 })

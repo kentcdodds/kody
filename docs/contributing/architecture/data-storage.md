@@ -96,6 +96,19 @@ Artifacts repos plus D1 `entity_sources` / `repo_sessions` rows.
   commit.
 - `repo_sessions` stores mutable editing forks for repo session Durable Objects.
 
+Operational notes:
+
+- Saved skill names, job ids/names, and app ids are the user-facing identities.
+  They resolve through D1 metadata to `entity_sources.id` when a repo editing
+  session is opened.
+- `source_id` remains the internal durable join key for repo-backed artifacts,
+  but most MCP callers should prefer the user-facing identity-first open/edit
+  flow.
+- Once a repo-backed artifact exists, the repo snapshot is the durable source of
+  truth for later edits and publishes. Legacy inline code fields may still
+  appear in some read APIs for convenience, but they are materialized views of
+  the repo-backed source rather than an independent second source of truth.
+
 Production note:
 
 - Released `wrangler` `4.83.0` still warns that the documented Artifacts Worker

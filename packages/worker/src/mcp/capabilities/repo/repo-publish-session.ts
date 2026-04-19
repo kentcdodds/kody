@@ -23,6 +23,9 @@ const outputSchema = z.discriminatedUnion('status', [
 		session_id: z.string(),
 		published_commit: z.null(),
 		message: z.string(),
+		repair_hint: z.literal('repo_rebase_session'),
+		session_base_commit: z.string(),
+		current_published_commit: z.string().nullable(),
 	}),
 ])
 
@@ -68,6 +71,9 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				session_id: result.sessionId,
 				published_commit: null,
 				message: result.message,
+				repair_hint: result.repairHint,
+				session_base_commit: result.sessionBaseCommit,
+				current_published_commit: result.currentPublishedCommit,
 			}
 		},
 	},

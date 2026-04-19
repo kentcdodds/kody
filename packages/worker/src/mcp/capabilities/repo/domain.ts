@@ -2,6 +2,7 @@ import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { repoApplyPatchCapability } from './repo-apply-patch.ts'
 import { repoDiscardSessionCapability } from './repo-discard-session.ts'
+import { repoEditFlowCapability } from './repo-edit-flow.ts'
 import { repoGetCheckStatusCapability } from './repo-get-check-status.ts'
 import { repoGetSessionCapability } from './repo-get-session.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
@@ -20,6 +21,7 @@ export const repoDomain = defineDomain({
 	keywords: ['repo', 'artifact', 'session', 'workspace', 'edit', 'search'],
 	capabilities: [
 		repoOpenSessionCapability,
+		repoEditFlowCapability,
 		repoGetSessionCapability,
 		repoTreeCapability,
 		repoReadFileCapability,
