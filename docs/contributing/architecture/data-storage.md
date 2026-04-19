@@ -91,8 +91,9 @@ Repo-backed saved apps, skills, jobs, and repo editing sessions use Cloudflare
 Artifacts repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 - Primary code lives under `packages/worker/src/repo/`.
-- `entity_sources` stores the durable mapping from `(user_id, entity_kind,
-  entity_id)` to the repo identity and last published commit.
+- `entity_sources` stores the durable mapping from
+  `(user_id, entity_kind, entity_id)` to the repo identity and last published
+  commit.
 - `repo_sessions` stores mutable editing forks for repo session Durable Objects.
 
 Production note:
@@ -112,6 +113,7 @@ Production note:
   (`create`, `get`, `list`, `createToken`, and `fork`). The mock only covers the
   REST control plane; repo session Durable Objects still need a Git-capable
   remote for clone/pull/push flows.
-- Durable repo-source creation paths (`ensureEntitySource(...,
-  requirePersistence: true)`) fail closed when persistence bindings are
-  unavailable so callers do not write orphaned `source_id` references into D1.
+- Durable repo-source creation paths
+  (`ensureEntitySource(..., requirePersistence: true)`) fail closed when
+  persistence bindings are unavailable so callers do not write orphaned
+  `source_id` references into D1.

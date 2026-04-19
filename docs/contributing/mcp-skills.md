@@ -23,13 +23,12 @@ Developer Docs without a dedicated builtin capability).
   `collectionSlug`.
 - **`meta_save_skill`** — upserts by unique per-user skill `name`, persists
   skill metadata plus a repo-backed source snapshot, and rewrites the existing
-  skill when that `name` already exists; server infers static `codemode.*`
-  usage with Acorn from the saved module source. Optional `collection` assigns
-  the skill to a first-class user-defined grouping. Optional
-  `uses_capabilities` merges explicit names when inference is incomplete.
-  Saved skills run through the same execute sandbox as ad hoc `execute`, and
-  their entrypoint may import sibling ES modules and package dependencies from
-  the saved artifact repo.
+  skill when that `name` already exists; server infers static `codemode.*` usage
+  with Acorn from the saved module source. Optional `collection` assigns the
+  skill to a first-class user-defined grouping. Optional `uses_capabilities`
+  merges explicit names when inference is incomplete. Saved skills run through
+  the same execute sandbox as ad hoc `execute`, and their entrypoint may import
+  sibling ES modules and package dependencies from the saved artifact repo.
 - **`meta_run_skill`**, **`meta_delete_skill`** — execute (same sandbox path as
   `execute`) or remove skill + vector row.
 - **`meta_list_skill_collections`** — returns normalized collection names/slugs

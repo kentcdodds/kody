@@ -93,7 +93,12 @@ export async function updateUiArtifact(
 	updates: Partial<
 		Pick<
 			UiArtifactRow,
-			'title' | 'description' | 'sourceId' | 'hasServerCode' | 'parameters' | 'hidden'
+			| 'title'
+			| 'description'
+			| 'sourceId'
+			| 'hasServerCode'
+			| 'parameters'
+			| 'hidden'
 		>
 	>,
 ): Promise<boolean> {

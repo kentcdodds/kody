@@ -68,10 +68,7 @@ test('kody_official_guide rejects oversized guide responses', async () => {
 		})) as typeof fetch
 	try {
 		await expect(
-			kodyOfficialGuideCapability.handler(
-				{ guide: 'generated_ui_oauth' },
-				ctx,
-			),
+			kodyOfficialGuideCapability.handler({ guide: 'generated_ui_oauth' }, ctx),
 		).rejects.toThrow(/response exceeds 2000000 characters/)
 	} finally {
 		globalThis.fetch = originalFetch

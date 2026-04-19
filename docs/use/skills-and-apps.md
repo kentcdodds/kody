@@ -14,8 +14,8 @@ artifact repo and executes its ES module entrypoint with the same **execute**
 runtime semantics (including `codemode`, OAuth helpers, and skill params).
 
 Optional **collection** groups related skills. Use
-**meta_list_skill_collections**, **meta_run_skill**, and
-**meta_delete_skill** for lifecycle tasks.
+**meta_list_skill_collections**, **meta_run_skill**, and **meta_delete_skill**
+for lifecycle tasks.
 
 ## Saved apps (MCP App artifacts)
 

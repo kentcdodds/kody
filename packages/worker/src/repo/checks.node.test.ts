@@ -56,10 +56,7 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 				entrypoint: '/src/job.ts',
 			}),
 		],
-		[
-			'src/job.ts',
-			'async () => ({ ok: true })\n',
-		],
+		['src/job.ts', 'async () => ({ ok: true })\n'],
 		[
 			'package.json',
 			JSON.stringify({
@@ -139,10 +136,7 @@ test('runRepoChecks strips repo-session workspace prefixes from snapshot paths',
 				entrypoint: '/src/job.ts',
 			}),
 		],
-		[
-			'/session/src/job.ts',
-			'async () => ({ ok: true })\n',
-		],
+		['/session/src/job.ts', 'async () => ({ ok: true })\n'],
 		[
 			'/session/package.json',
 			JSON.stringify({
@@ -164,7 +158,9 @@ test('runRepoChecks strips repo-session workspace prefixes from snapshot paths',
 		snapshotFiles = await collectSnapshotFiles(
 			input as AsyncIterable<readonly [string, string]>,
 		)
-		snapshot.read.mockImplementation((path: string) => snapshotFiles.get(path) ?? null)
+		snapshot.read.mockImplementation(
+			(path: string) => snapshotFiles.get(path) ?? null,
+		)
 		return snapshot
 	})
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
@@ -260,7 +256,8 @@ test('runRepoChecks accepts execute runtime globals for repo-backed jobs', async
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message: 'No package.json found in source root; dependency check skipped.',
+				message:
+					'No package.json found in source root; dependency check skipped.',
 			}),
 			expect.objectContaining({
 				kind: 'typecheck',
@@ -508,14 +505,8 @@ test('runRepoChecks injects a synthetic tsconfig that allows optional .ts import
 				entrypoint: 'src/job.ts',
 			}),
 		],
-		[
-			'src/job.ts',
-			'export { default } from "./helper.ts"\n',
-		],
-		[
-			'src/helper.ts',
-			'export default async () => ({ ok: true })\n',
-		],
+		['src/job.ts', 'export { default } from "./helper.ts"\n'],
+		['src/helper.ts', 'export default async () => ({ ok: true })\n'],
 	])
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
@@ -564,9 +555,9 @@ test('runRepoChecks injects a synthetic tsconfig that allows optional .ts import
 			},
 		}),
 	)
-	expect(typecheckInput.fileSystem.read('./.__kody_repo_tsconfig_base__.json')).toBe(
-		null,
-	)
+	expect(
+		typecheckInput.fileSystem.read('./.__kody_repo_tsconfig_base__.json'),
+	).toBe(null)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
 		expect.stringContaining('import userEntrypoint from "./src/job"'),
@@ -596,14 +587,8 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 			}),
 		],
 		['tsconfig.json', repoTsconfig],
-		[
-			'src/job.ts',
-			'export { default } from "./helper.ts"\n',
-		],
-		[
-			'src/helper.ts',
-			'export default async () => ({ ok: true })\n',
-		],
+		['src/job.ts', 'export { default } from "./helper.ts"\n'],
+		['src/helper.ts', 'export default async () => ({ ok: true })\n'],
 	])
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {

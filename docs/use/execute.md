@@ -37,11 +37,10 @@ To run a saved skill by name, use **`meta_run_skill`** with **`name`** and
 optional **`params`**.
 
 Saved skills and jobs execute through the same codemode runtime as
-**`execute`**, including helper globals such as
-**`refreshAccessToken(...)`**, **`createAuthenticatedFetch(...)`**,
-**`agentChatTurnStream(...)`**, and job storage helpers. Saved sources use
-repo-backed ES module entrypoints, so they can import sibling modules and
-package dependencies.
+**`execute`**, including helper globals such as **`refreshAccessToken(...)`**,
+**`createAuthenticatedFetch(...)`**, **`agentChatTurnStream(...)`**, and job
+storage helpers. Saved sources use repo-backed ES module entrypoints, so they
+can import sibling modules and package dependencies.
 
 ## Agent turns
 

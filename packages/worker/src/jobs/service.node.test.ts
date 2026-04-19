@@ -32,18 +32,21 @@ afterEach(() => {
 function mockRepoPersistence() {
 	repoMockModule.ensureEntitySource.mockImplementation(
 		async ({ id, userId, entityKind, entityId, sourceRoot }) => ({
-		id: typeof id === 'string' && id.length > 0 ? id : `${entityKind}-${entityId}`,
-		user_id: userId,
-		entity_kind: entityKind,
-		entity_id: entityId,
-		repo_id: `${entityKind}-${entityId}`,
-		published_commit: null,
-		indexed_commit: null,
-		manifest_path: 'kody.json',
-		source_root: sourceRoot ?? '/',
-		created_at: '2026-04-18T00:00:00.000Z',
-		updated_at: '2026-04-18T00:00:00.000Z',
-		bootstrapAccess: null,
+			id:
+				typeof id === 'string' && id.length > 0
+					? id
+					: `${entityKind}-${entityId}`,
+			user_id: userId,
+			entity_kind: entityKind,
+			entity_id: entityId,
+			repo_id: `${entityKind}-${entityId}`,
+			published_commit: null,
+			indexed_commit: null,
+			manifest_path: 'kody.json',
+			source_root: sourceRoot ?? '/',
+			created_at: '2026-04-18T00:00:00.000Z',
+			updated_at: '2026-04-18T00:00:00.000Z',
+			bootstrapAccess: null,
 		}),
 	)
 	repoMockModule.syncArtifactSourceSnapshot.mockResolvedValue(
@@ -65,17 +68,25 @@ vi.mock('@cloudflare/worker-bundler', () => ({
 			}
 		},
 	),
-	createWorker: vi.fn(async ({ files, entryPoint }: { files: Record<string, string>; entryPoint?: string }) => {
-		const mainModule = 'dist/bundled-entry.js'
-		const selectedEntryPoint = entryPoint ?? 'index.ts'
-		return {
-			mainModule,
-			modules: {
-				[mainModule]: files[selectedEntryPoint] ?? '',
-			},
-			warnings: [],
-		}
-	}),
+	createWorker: vi.fn(
+		async ({
+			files,
+			entryPoint,
+		}: {
+			files: Record<string, string>
+			entryPoint?: string
+		}) => {
+			const mainModule = 'dist/bundled-entry.js'
+			const selectedEntryPoint = entryPoint ?? 'index.ts'
+			return {
+				mainModule,
+				modules: {
+					[mainModule]: files[selectedEntryPoint] ?? '',
+				},
+				warnings: [],
+			}
+		},
+	),
 }))
 
 vi.mock('@cloudflare/worker-bundler/typescript', () => ({
@@ -96,7 +107,9 @@ vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 	})),
 }))
 
-function withRepoPersistence<TEnv extends { APP_DB: D1Database }>(env: TEnv): TEnv & {
+function withRepoPersistence<TEnv extends { APP_DB: D1Database }>(
+	env: TEnv,
+): TEnv & {
 	CLOUDFLARE_ACCOUNT_ID: string
 	CLOUDFLARE_API_TOKEN: string
 } {
@@ -1539,10 +1552,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 				entrypoint: '/src/job.ts',
 			}),
 		],
-		[
-			'/session/src/job.ts',
-			'async () => ({ ok: true })\n',
-		],
+		['/session/src/job.ts', 'async () => ({ ok: true })\n'],
 		[
 			'/session/package.json',
 			JSON.stringify({
@@ -1820,14 +1830,16 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				name: 'repo-module-job',
 				private: true,
 			}),
-			'src/job.ts': 'export default async () => ({ ok: true, repoBacked: "module" })',
+			'src/job.ts':
+				'export default async () => ({ ok: true, repoBacked: "module" })',
 			'src/lib.ts': 'export const value = 1',
 		})
 		bundleSpy.mockResolvedValue({
 			entrypointMode: 'module',
 			mainModule: 'dist/job.js',
 			modules: {
-				'dist/job.js': 'export default async () => ({ ok: true, repoBacked: "module" })',
+				'dist/job.js':
+					'export default async () => ({ ok: true, repoBacked: "module" })',
 			},
 		})
 		executeSpy.mockResolvedValue({
@@ -2279,4 +2291,3 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		executeSpy.mockRestore()
 	}
 })
-

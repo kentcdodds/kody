@@ -19,8 +19,8 @@ function canSyncArtifactSource(env: Env) {
 		hasArtifactsAccess(env) &&
 		(env as Env & { REPO_SESSION?: DurableObjectNamespace | undefined })
 			.REPO_SESSION != null &&
-		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB?.prepare ===
-			'function'
+		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB
+			?.prepare === 'function'
 	)
 }
 

@@ -40,7 +40,6 @@ import {
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
-import { readRepoModuleSource } from '#worker/repo/repo-module-source.ts'
 import {
 	buildRepoCodemodeBundle,
 	createRepoCodemodeWrapper,
@@ -187,26 +186,13 @@ function resolveUpdatedShape(input: {
 	}
 	return {
 		moduleSource:
-			input.body.code === undefined ? undefined : normalizeJobCode(input.body.code),
+			input.body.code === undefined
+				? undefined
+				: normalizeJobCode(input.body.code),
 		sourceId: nextSourceId,
 		publishedCommit: nextPublishedCommit ?? null,
 		repoCheckPolicy: nextRepoCheckPolicy,
 	}
-}
-
-async function readJobModuleSource(input: {
-	env: Env
-	callerContext: PersistedJobCallerContext
-	sourceId: string
-}) {
-	return readRepoModuleSource({
-		env: input.env,
-		baseUrl: input.callerContext.baseUrl,
-		userId: input.callerContext.user.userId,
-		sourceId: input.sourceId,
-		expectedKind: 'job',
-		sessionIdPrefix: 'job-source',
-	})
 }
 
 export async function createJob(input: {

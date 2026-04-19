@@ -350,7 +350,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const ensuredSource = await ensureSource()
 				const title = args.title ?? existingApp.title
 				const description = args.description ?? existingApp.description
-				const clientCode = args.clientCode ?? resolvedExistingAppSource.clientCode
+				const clientCode =
+					args.clientCode ?? resolvedExistingAppSource.clientCode
 				const serverCode =
 					args.serverCode === undefined
 						? resolvedExistingAppSource.serverCode
@@ -415,10 +416,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							parameters: existingApp.parameters,
 							hidden: existingApp.hidden,
 						}),
-						restorePublishedCommit(
-							ensuredSource.id,
-							previousPublishedCommit,
-						),
+						restorePublishedCommit(ensuredSource.id, previousPublishedCommit),
 					])
 					throw cause
 				}
@@ -484,10 +482,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				} catch (cause) {
 					await Promise.allSettled([
 						deleteUiArtifact(ctx.env.APP_DB, user.userId, appId),
-						restorePublishedCommit(
-							ensuredSource.id,
-							previousPublishedCommit,
-						),
+						restorePublishedCommit(ensuredSource.id, previousPublishedCommit),
 					])
 					throw cause
 				}

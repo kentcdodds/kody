@@ -59,7 +59,9 @@ export async function resolveSavedAppSource(input: {
 		input.artifact.sourceId!,
 	)
 	if (!source) {
-		throw new Error(`Saved app source "${input.artifact.sourceId}" was not found.`)
+		throw new Error(
+			`Saved app source "${input.artifact.sourceId}" was not found.`,
+		)
 	}
 	const sessionId = `app-source-${source.id}-${crypto.randomUUID()}`
 	const session = repoSessionRpc(input.env, sessionId)
@@ -109,7 +111,11 @@ export async function resolveSavedAppSource(input: {
 				`Saved app client asset "${resolveManifestClientPath(manifest)}" was not found in the repo source.`,
 			)
 		}
-		if (input.artifact.hasServerCode && manifest.server && !serverFile.content) {
+		if (
+			input.artifact.hasServerCode &&
+			manifest.server &&
+			!serverFile.content
+		) {
 			throw new Error(
 				`Saved app server module "${manifest.server}" was not found in the repo source.`,
 			)

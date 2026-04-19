@@ -6,6 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	execSavedAppRunnerServer: vi.fn(),
 	exportSavedAppRunnerStorage: vi.fn(),
 	getUiArtifactById: vi.fn(),
+	resolveSavedAppSource: vi.fn(),
 }))
 
 vi.mock('#mcp/app-runner.ts', () => ({
@@ -20,6 +21,11 @@ vi.mock('#mcp/app-runner.ts', () => ({
 vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
 	getUiArtifactById: (...args: Array<unknown>) =>
 		mockModule.getUiArtifactById(...args),
+}))
+
+vi.mock('#worker/repo/app-source.ts', () => ({
+	resolveSavedAppSource: (...args: Array<unknown>) =>
+		mockModule.resolveSavedAppSource(...args),
 }))
 
 const { appServerExecCapability } = await import('./app-server-exec.ts')
@@ -146,15 +152,15 @@ test('ui_load_app_source returns saved source for the authenticated user', async
 	mockModule.execSavedAppRunnerServer.mockReset()
 	mockModule.exportSavedAppRunnerStorage.mockReset()
 	mockModule.getUiArtifactById.mockReset()
+	mockModule.resolveSavedAppSource.mockReset()
 
 	mockModule.getUiArtifactById.mockResolvedValueOnce({
 		id: 'app-1',
+		user_id: 'user-1',
 		title: 'Patchable App',
 		description: 'Saved app source',
-		clientCode: '<main><h1>Saved</h1></main>',
-		serverCode:
-			'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject {}',
-		serverCodeId: 'server-code-v1',
+		sourceId: 'source-app-1',
+		hasServerCode: true,
 		parameters: JSON.stringify([
 			{
 				name: 'team',
@@ -165,13 +171,33 @@ test('ui_load_app_source returns saved source for the authenticated user', async
 		]),
 		hidden: true,
 	})
+	mockModule.resolveSavedAppSource.mockResolvedValueOnce({
+		id: 'app-1',
+		title: 'Patchable App',
+		description: 'Saved app source',
+		hidden: true,
+		parameters: [
+			{
+				name: 'team',
+				description: 'Team slug',
+				type: 'string',
+				required: true,
+			},
+		],
+		clientCode: '<main><h1>Saved</h1></main>',
+		serverCode:
+			'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject {}',
+		serverCodeId: 'server-code-v1',
+		sourceId: 'source-app-1',
+		publishedCommit: 'server-code-v1',
+	})
 
 	const result = await uiLoadAppSourceCapability.handler(
 		{
 			app_id: 'app-1',
 		},
 		{
-			env: { APP_DB: {} } as Env,
+			env: { APP_DB: {}, REPO_SESSION: {} } as Env,
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: { userId: 'user-1', email: 'user@example.com' },

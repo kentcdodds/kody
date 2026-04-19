@@ -202,8 +202,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				return false
 			}
 			return remotes.some(
-				(remote) =>
-					remote.remote === 'origin' && remote.url === expectedUrl,
+				(remote) => remote.remote === 'origin' && remote.url === expectedUrl,
 			)
 		} catch {
 			return false
@@ -532,9 +531,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw new Error(`Source "${input.sourceId}" was not found.`)
 		}
 		if (source.user_id !== input.userId) {
-			throw new Error(
-				`Source "${input.sourceId}" was not found for this user.`,
-			)
+			throw new Error(`Source "${input.sourceId}" was not found for this user.`)
 		}
 		if (source.published_commit) {
 			throw new Error(
@@ -549,7 +546,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				token: input.bootstrapAccess.token,
 			}
 		} else {
-			const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+			const sourceRepo = await resolveArtifactSourceRepo(
+				this.env,
+				source.repo_id,
+			)
 			sourceInfo = await sourceRepo.info()
 			sourceAccess = await ensureArtifactRepoRemote({
 				repo: sourceRepo,

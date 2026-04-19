@@ -139,9 +139,7 @@ export async function loadRepoSourceFilesFromSession(input: {
 	if (limitError) {
 		throw new Error(limitError)
 	}
-	return Object.fromEntries(
-		files,
-	)
+	return Object.fromEntries(files)
 }
 
 export async function buildRepoCodemodeBundle(input: {

@@ -1,7 +1,68 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { capabilityMap } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { errorFields, logMcpEvent } from '#mcp/observability.ts'
+
+const repoMockModule = vi.hoisted(() => ({
+	ensureEntitySource: vi.fn(),
+	syncArtifactSourceSnapshot: vi.fn(),
+	resolveSavedAppSource: vi.fn(),
+}))
+
+vi.mock('#worker/repo/source-service.ts', () => ({
+	ensureEntitySource: (...args: Array<unknown>) =>
+		repoMockModule.ensureEntitySource(...args),
+}))
+
+vi.mock('#worker/repo/source-sync.ts', () => ({
+	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		repoMockModule.syncArtifactSourceSnapshot(...args),
+}))
+
+vi.mock('#worker/repo/app-source.ts', () => ({
+	resolveSavedAppSource: (...args: Array<unknown>) =>
+		repoMockModule.resolveSavedAppSource(...args),
+}))
+
+function resetRepoPersistenceMocks() {
+	repoMockModule.ensureEntitySource.mockReset()
+	repoMockModule.syncArtifactSourceSnapshot.mockReset()
+	repoMockModule.resolveSavedAppSource.mockReset()
+	repoMockModule.ensureEntitySource.mockImplementation(
+		async ({ id, userId, entityKind, entityId, sourceRoot }) => ({
+			id:
+				typeof id === 'string' && id.length > 0
+					? id
+					: `${entityKind}-${entityId}`,
+			user_id: userId,
+			entity_kind: entityKind,
+			entity_id: entityId,
+			repo_id: `${entityKind}-${entityId}`,
+			published_commit: null,
+			indexed_commit: null,
+			manifest_path: 'kody.json',
+			source_root: sourceRoot ?? '/',
+			created_at: '2026-04-18T00:00:00.000Z',
+			updated_at: '2026-04-18T00:00:00.000Z',
+			bootstrapAccess: null,
+		}),
+	)
+	repoMockModule.syncArtifactSourceSnapshot.mockResolvedValue(
+		'published-commit-1',
+	)
+	repoMockModule.resolveSavedAppSource.mockResolvedValue({
+		id: 'app-1',
+		title: 'Observed app',
+		description: 'Observation test app.',
+		hidden: false,
+		parameters: null,
+		clientCode: '<main><h1>Observed app</h1></main>',
+		serverCode: null,
+		serverCodeId: 'published-commit-1',
+		sourceId: 'source-app-1',
+		publishedCommit: 'published-commit-1',
+	})
+}
 
 test('errorFields normalizes Error and non-Error values', () => {
 	expect(errorFields(new TypeError('bad'))).toEqual({
@@ -159,6 +220,7 @@ test('logMcpEvent reports failure without throwing when Sentry is off', () => {
 test('ui_save_app capability logs success for valid invocation', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
+	resetRepoPersistenceMocks()
 	console.info = ((tag: unknown, json?: unknown) => {
 		if (tag === 'mcp-event' && typeof json === 'string') {
 			payloads.push(json)
@@ -187,9 +249,8 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 														user_id: 'user-1',
 														title: 'Observed app',
 														description: 'Observation test app.',
-														client_code: '<main><h1>Observed app</h1></main>',
-														server_code: null,
-														server_code_id: 'server-code-1',
+														source_id: 'source-app-1',
+														has_server_code: 0,
 														parameters: null,
 														hidden: 0,
 														created_at: '2026-04-13T00:00:00.000Z',
@@ -204,22 +265,9 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 							}
 						},
 					},
-					ARTIFACTS: {
-						async get() {
-							return { status: 'ready', repo: {} }
-						},
-						async create() {
-							return {
-								id: 'repo-1',
-								name: 'repo-1',
-								description: null,
-								defaultBranch: 'main',
-								remote: 'https://artifacts.example/repo-1.git',
-								token: 'art_v1_test?expires=9999999999',
-								expiresAt: '2099-01-01T00:00:00.000Z',
-							}
-						},
-					},
+					CLOUDFLARE_ACCOUNT_ID: 'acct',
+					CLOUDFLARE_API_TOKEN: 'token',
+					CLOUDFLARE_API_BASE_URL: 'https://example.com',
 					APP_RUNNER: {
 						idFromName(name: string) {
 							return name as unknown as DurableObjectId
@@ -265,6 +313,7 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 test('ui_save_app logs vector refresh failure for in-place updates and still succeeds', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
+	resetRepoPersistenceMocks()
 	console.info = ((tag: unknown, json?: unknown) => {
 		if (tag === 'mcp-event' && typeof json === 'string') {
 			payloads.push(json)
@@ -294,9 +343,8 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 														user_id: 'user-1',
 														title: 'Observed app',
 														description: 'Observation test app.',
-														client_code: '<main><h1>Observed app</h1></main>',
-														server_code: null,
-														server_code_id: 'server-code-1',
+														source_id: 'source-app-1',
+														has_server_code: 0,
 														parameters: null,
 														hidden: 0,
 														created_at: '2026-04-13T00:00:00.000Z',
@@ -311,22 +359,9 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 							}
 						},
 					},
-					ARTIFACTS: {
-						async get() {
-							return { status: 'ready', repo: {} }
-						},
-						async create() {
-							return {
-								id: 'repo-1',
-								name: 'repo-1',
-								description: null,
-								defaultBranch: 'main',
-								remote: 'https://artifacts.example/repo-1.git',
-								token: 'art_v1_test?expires=9999999999',
-								expiresAt: '2099-01-01T00:00:00.000Z',
-							}
-						},
-					},
+					CLOUDFLARE_ACCOUNT_ID: 'acct',
+					CLOUDFLARE_API_TOKEN: 'token',
+					CLOUDFLARE_API_BASE_URL: 'https://example.com',
 					APP_RUNNER: {
 						idFromName(name: string) {
 							return name as unknown as DurableObjectId

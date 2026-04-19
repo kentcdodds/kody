@@ -135,8 +135,11 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			(currentApp as typeof currentApp & { resolvedServerCode?: string | null })
 				.resolvedServerCode ?? initialServerCode,
 		serverCodeId:
-			(currentApp as typeof currentApp & { resolvedServerCodeId?: string | null })
-				.resolvedServerCodeId ?? 'server-code-v1',
+			(
+				currentApp as typeof currentApp & {
+					resolvedServerCodeId?: string | null
+				}
+			).resolvedServerCodeId ?? 'server-code-v1',
 		sourceId: currentApp.sourceId,
 		publishedCommit:
 			(currentApp as typeof currentApp & { publishedCommit?: string | null })
@@ -171,9 +174,12 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 					: {}),
 			}
 			if (updates['hasServerCode'] !== undefined) {
-				;(currentApp as typeof currentApp & { resolvedServerCode?: string | null })
-					.resolvedServerCode =
-						updates['hasServerCode'] === true ? initialServerCode : null
+				;(
+					currentApp as typeof currentApp & {
+						resolvedServerCode?: string | null
+					}
+				).resolvedServerCode =
+					updates['hasServerCode'] === true ? initialServerCode : null
 			}
 			return { ...currentApp }
 		},

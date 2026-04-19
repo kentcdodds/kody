@@ -31,7 +31,8 @@ export async function readRepoModuleSource(input: {
 			sourceRoot: null,
 		})
 		openedSessionId = opened.id
-		const manifestPath = opened.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+		const manifestPath =
+			opened.manifest_path?.replace(/^\/+/, '') || 'kody.json'
 		const manifestFile = await session.readFile({
 			sessionId: opened.id,
 			userId: input.userId,

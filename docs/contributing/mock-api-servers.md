@@ -17,9 +17,9 @@ Worker package so it can also be deployed alongside the main app.
    and set `ACME_API_BASE_URL` to the mock Worker origin.
 
 See `packages/mock-servers/cloudflare/` for a small Cloudflare API v4 subset
-mock used by tests and the internal API client (started by `npm run dev`
-unless `SKIP_CLOUDFLARE_MOCK=1`). It now covers the Cloudflare Email REST
-fallback plus the Artifacts REST control-plane endpoints used by
+mock used by tests and the internal API client (started by `npm run dev` unless
+`SKIP_CLOUDFLARE_MOCK=1`). It now covers the Cloudflare Email REST fallback plus
+the Artifacts REST control-plane endpoints used by
 `packages/worker/src/repo/artifacts.ts` (`repos`, `repo info`, `tokens`, and
 `fork`).
 

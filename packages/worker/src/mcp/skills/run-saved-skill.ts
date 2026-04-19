@@ -1,7 +1,6 @@
 import { exports as workerExports } from 'cloudflare:workers'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { getMcpSkillByNameInput } from '#mcp/skills/mcp-skills-repo.ts'
 import {
 	applySkillParameters,
@@ -17,7 +16,6 @@ import {
 	createRepoCodemodeWrapper,
 	getRepoSourceRelativePath,
 	loadRepoSourceFilesFromSession,
-	repoBackedModuleEntrypointExportErrorMessage,
 } from '#worker/repo/repo-codemode-execution.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 
@@ -152,13 +150,6 @@ async function runRepoBackedSkill(input: {
 				logs: [],
 			}
 		}
-		if (!/\bexport\s+default\b/.test(moduleFile.content)) {
-			return {
-				result: undefined,
-				error: repoBackedModuleEntrypointExportErrorMessage,
-				logs: [],
-			}
-		}
 		const sourceFiles = await loadRepoSourceFilesFromSession({
 			sessionClient,
 			sessionId: session.id,
@@ -175,6 +166,8 @@ async function runRepoBackedSkill(input: {
 					? `${input.row.source_id}:${session.published_commit}`
 					: null,
 		})
+		const { runCodemodeWithRegistry } =
+			await import('#mcp/run-codemode-registry.ts')
 		return runCodemodeWithRegistry(
 			input.env,
 			{

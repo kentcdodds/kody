@@ -34,10 +34,7 @@ export type ArtifactRepoInfo = {
 export type ArtifactRepoHandle = {
 	info(): Promise<ArtifactRepoInfo | null>
 	createToken(scope?: 'write' | 'read', ttl?: number): Promise<ArtifactToken>
-	fork(target: {
-		name: string
-		readOnly?: boolean
-	}): Promise<{
+	fork(target: { name: string; readOnly?: boolean }): Promise<{
 		id: string
 		name: string
 		description: string | null
@@ -168,12 +165,17 @@ function createArtifactsRestBinding(env: Env) {
 	const client = createCloudflareRestClient(env)
 	const namespace = getArtifactsNamespace(env)
 	const basePath = `/client/v4/accounts/${accountId}/artifacts/namespaces/${namespace}`
-	const getRepoInfo = async (name: string): Promise<ArtifactRepoInfo | null> => {
-		const response = await requestArtifactsEnvelope<ArtifactRestRepoInfo>(client, {
-			method: 'GET',
-			path: `${basePath}/repos/${encodeURIComponent(name)}`,
-			treat404AsNull: true,
-		})
+	const getRepoInfo = async (
+		name: string,
+	): Promise<ArtifactRepoInfo | null> => {
+		const response = await requestArtifactsEnvelope<ArtifactRestRepoInfo>(
+			client,
+			{
+				method: 'GET',
+				path: `${basePath}/repos/${encodeURIComponent(name)}`,
+				treat404AsNull: true,
+			},
+		)
 		return response.result ? normalizeArtifactRepoInfo(response.result) : null
 	}
 	const repoHandle = (name: string): ArtifactRepoHandle => ({
@@ -269,14 +271,13 @@ function createArtifactsRestBinding(env: Env) {
 			if (opts?.cursor) {
 				query['cursor'] = opts.cursor
 			}
-			const envelope = await requestArtifactsEnvelope<Array<ArtifactRestRepoInfo>>(
-				client,
-				{
-					method: 'GET',
-					path: `${basePath}/repos`,
-					query,
-				},
-			)
+			const envelope = await requestArtifactsEnvelope<
+				Array<ArtifactRestRepoInfo>
+			>(client, {
+				method: 'GET',
+				path: `${basePath}/repos`,
+				query,
+			})
 			const repos = (envelope.result ?? []).map((repo) => {
 				const normalized = normalizeArtifactRepoInfo(repo)
 				return {
@@ -367,7 +368,9 @@ async function requestArtifactsEnvelope<T>(
 	}
 }
 
-function normalizeArtifactRepoInfo(repo: ArtifactRestRepoInfo): ArtifactRepoInfo {
+function normalizeArtifactRepoInfo(
+	repo: ArtifactRestRepoInfo,
+): ArtifactRepoInfo {
 	return {
 		id: repo.id,
 		name: repo.name,

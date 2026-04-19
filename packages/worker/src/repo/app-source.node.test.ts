@@ -12,7 +12,8 @@ vi.mock('./entity-sources.ts', () => ({
 }))
 
 vi.mock('./repo-session-do.ts', () => ({
-	repoSessionRpc: (...args: Array<unknown>) => mockModule.repoSessionRpc(...args),
+	repoSessionRpc: (...args: Array<unknown>) =>
+		mockModule.repoSessionRpc(...args),
 }))
 
 const { resolveSavedAppSource } = await import('./app-source.ts')
@@ -24,9 +25,7 @@ function createArtifact(): UiArtifactRow {
 		title: 'Fallback app',
 		description: 'Fallback source',
 		sourceId: 'source-1',
-		clientCode: '<main>fallback</main>',
-		serverCode: 'export const fallback = true',
-		serverCodeId: 'server-code-fallback',
+		hasServerCode: true,
 		parameters: null,
 		hidden: false,
 		created_at: '2026-04-16T00:00:00.000Z',

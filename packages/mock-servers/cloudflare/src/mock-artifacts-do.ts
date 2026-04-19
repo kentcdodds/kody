@@ -174,7 +174,8 @@ export class MockCloudflareArtifactsDurableObject {
 				if (!repo) {
 					return Response.json({ error: 'repo_not_found' })
 				}
-				const expiresAtSeconds = Math.floor(Date.now() / 1000) + command.payload.ttl
+				const expiresAtSeconds =
+					Math.floor(Date.now() / 1000) + command.payload.ttl
 				const tokenId = `tok_${crypto.randomUUID()}`
 				return Response.json({
 					token: {
@@ -299,11 +300,14 @@ class MockCloudflareArtifactsState {
 	private async callState<TResponse>(
 		payload: MockArtifactsCommand,
 	): Promise<TResponse> {
-		const response = await this.stub.fetch('https://mock-cloudflare-artifacts/', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(payload),
-		})
+		const response = await this.stub.fetch(
+			'https://mock-cloudflare-artifacts/',
+			{
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(payload),
+			},
+		)
 		if (!response.ok) {
 			const detail = await response.text()
 			throw new Error(

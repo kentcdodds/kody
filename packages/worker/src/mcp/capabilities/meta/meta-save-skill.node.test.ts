@@ -18,11 +18,14 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#mcp/skills/mcp-skills-repo.ts', () => ({
 	getMcpSkillByName: (...args: Array<unknown>) =>
 		mockModule.getMcpSkillByName(...args),
-	insertMcpSkill: (...args: Array<unknown>) => mockModule.insertMcpSkill(...args),
-	updateMcpSkill: (...args: Array<unknown>) => mockModule.updateMcpSkill(...args),
+	insertMcpSkill: (...args: Array<unknown>) =>
+		mockModule.insertMcpSkill(...args),
+	updateMcpSkill: (...args: Array<unknown>) =>
+		mockModule.updateMcpSkill(...args),
 	isDuplicateSkillNameError: (...args: Array<unknown>) =>
 		mockModule.isDuplicateSkillNameError(...args),
-	deleteMcpSkill: (...args: Array<unknown>) => mockModule.deleteMcpSkill(...args),
+	deleteMcpSkill: (...args: Array<unknown>) =>
+		mockModule.deleteMcpSkill(...args),
 }))
 
 vi.mock('#mcp/skills/skill-mutation.ts', () => ({
@@ -49,7 +52,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 }))
 
 vi.mock('#mcp/skills/skill-vectorize.ts', () => ({
-	upsertSkillVector: (...args: Array<unknown>) => mockModule.upsertSkillVector(...args),
+	upsertSkillVector: (...args: Array<unknown>) =>
+		mockModule.upsertSkillVector(...args),
 }))
 
 const { metaSaveSkillCapability } = await import('./meta-save-skill.ts')

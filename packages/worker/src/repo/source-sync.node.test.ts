@@ -12,7 +12,8 @@ vi.mock('./entity-sources.ts', () => ({
 }))
 
 vi.mock('./repo-session-do.ts', () => ({
-	repoSessionRpc: (...args: Array<unknown>) => mockModule.repoSessionRpc(...args),
+	repoSessionRpc: (...args: Array<unknown>) =>
+		mockModule.repoSessionRpc(...args),
 }))
 
 const { syncArtifactSourceSnapshot } = await import('./source-sync.ts')

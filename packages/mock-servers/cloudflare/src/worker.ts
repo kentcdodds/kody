@@ -614,7 +614,10 @@ async function handleArtifactsRepos(
 			100,
 			Math.max(
 				1,
-				Number.parseInt(input.url.searchParams.get('limit')?.trim() || '50', 10),
+				Number.parseInt(
+					input.url.searchParams.get('limit')?.trim() || '50',
+					10,
+				),
 			),
 		)
 		const cursor = input.url.searchParams.get('cursor')?.trim() || null
@@ -643,8 +646,7 @@ async function handleArtifactsRepos(
 	}
 	const repo = await state.createRepo({
 		name: repoName,
-		description:
-			typeof body.description === 'string' ? body.description : null,
+		description: typeof body.description === 'string' ? body.description : null,
 		defaultBranch:
 			typeof body.default_branch === 'string' && body.default_branch.trim()
 				? body.default_branch.trim()

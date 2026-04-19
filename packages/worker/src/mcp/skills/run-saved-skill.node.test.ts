@@ -15,7 +15,8 @@ vi.mock('#mcp/skills/mcp-skills-repo.ts', () => ({
 }))
 
 vi.mock('#worker/repo/repo-session-do.ts', () => ({
-	repoSessionRpc: (...args: Array<unknown>) => mockModule.repoSessionRpc(...args),
+	repoSessionRpc: (...args: Array<unknown>) =>
+		mockModule.repoSessionRpc(...args),
 }))
 
 vi.mock('#mcp/run-codemode-registry.ts', () => ({
@@ -32,7 +33,9 @@ vi.mock('#worker/repo/repo-codemode-execution.ts', () => ({
 		'Repo-backed job and skill entrypoints must default export a function so Kody can invoke them with execute semantics.',
 	getRepoSourceRelativePath: (path: string, sourceRoot: string) => {
 		const normalizedPath = path.replace(/^\/+/, '')
-		const normalizedSourceRoot = sourceRoot.replace(/^\/+/, '').replace(/\/+$/, '')
+		const normalizedSourceRoot = sourceRoot
+			.replace(/^\/+/, '')
+			.replace(/\/+$/, '')
 		if (!normalizedSourceRoot) return normalizedPath
 		if (normalizedPath === normalizedSourceRoot) return ''
 		return normalizedPath.startsWith(`${normalizedSourceRoot}/`)
@@ -45,7 +48,8 @@ vi.mock('#worker/repo/repo-codemode-execution.ts', () => ({
 	}: {
 		mainModule: string
 		includeStorage?: boolean
-	}) => `repo-wrapper:${mainModule}:${includeStorage === true ? 'storage' : 'no-storage'}`,
+	}) =>
+		`repo-wrapper:${mainModule}:${includeStorage === true ? 'storage' : 'no-storage'}`,
 }))
 
 const { runSavedSkill } = await import('./run-saved-skill.ts')
@@ -100,11 +104,7 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 			entity_type: 'skill' as const,
 		})),
 		readFile: vi.fn(
-			async (input: {
-				sessionId: string
-				userId: string
-				path: string
-			}) => {
+			async (input: { sessionId: string; userId: string; path: string }) => {
 				expect(input).toEqual(
 					expect.objectContaining({
 						sessionId: 'skill-runtime-skill-1-session',
@@ -149,7 +149,8 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 		entrypointMode: 'module',
 		mainModule: 'dist/entry.js',
 		modules: {
-			'dist/entry.js': 'export default async () => ({ ok: true, repoBacked: true })',
+			'dist/entry.js':
+				'export default async () => ({ ok: true, repoBacked: true })',
 		},
 	})
 	mockModule.runCodemodeWithRegistry.mockResolvedValue({

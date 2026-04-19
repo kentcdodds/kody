@@ -31,7 +31,8 @@ export type RepoCheckRunResult = {
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
 const repoChecksSyntheticTsconfigPath = 'tsconfig.json'
-const repoChecksSyntheticTsconfigExtendsPath = './.__kody_repo_tsconfig_base__.json'
+const repoChecksSyntheticTsconfigExtendsPath =
+	'./.__kody_repo_tsconfig_base__.json'
 
 type RepoChecksFileSystem = {
 	read(path: string): string | null
@@ -45,7 +46,9 @@ function normalizeRepoChecksFileSystemPath(path: string) {
 	return path.replace(/^\.?\//, '')
 }
 
-function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem }) {
+function createRepoChecksFileSystem(input: {
+	fileSystem: RepoChecksFileSystem
+}) {
 	const overlay = new Map<string, string>()
 	const deleted = new Set<string>()
 
@@ -82,7 +85,10 @@ function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem })
 					.filter((path) => !deleted.has(path)),
 			)
 			for (const path of overlay.keys()) {
-				if (normalizedPrefix === undefined || path.startsWith(normalizedPrefix)) {
+				if (
+					normalizedPrefix === undefined ||
+					path.startsWith(normalizedPrefix)
+				) {
 					listed.add(path)
 				}
 			}
@@ -92,9 +98,7 @@ function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem })
 	} satisfies RepoChecksFileSystem
 }
 
-function buildRepoChecksTsconfig(
-	baseConfigContent: string | null,
-) {
+function buildRepoChecksTsconfig(baseConfigContent: string | null) {
 	if (baseConfigContent == null) {
 		return JSON.stringify({
 			compilerOptions: {
@@ -173,9 +177,7 @@ function formatTypecheckDiagnostics(
 	})
 }
 
-function createExecuteTypecheckPrelude(input?: {
-	includeStorage?: boolean
-}) {
+function createExecuteTypecheckPrelude(input?: { includeStorage?: boolean }) {
 	return `type KodyJsonValue =
   | string
   | number
@@ -197,7 +199,9 @@ declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
 declare function agentChatTurnStream(input: KodyCapabilityArgs): AsyncIterable<unknown>;
-${input?.includeStorage === true ? `
+${
+	input?.includeStorage === true
+		? `
 declare const storage: {
   id: string;
   get(key: string): Promise<unknown>;
@@ -207,7 +211,9 @@ declare const storage: {
   delete(key: string): Promise<unknown>;
   clear(): Promise<unknown>;
 };
-` : ''}
+`
+		: ''
+}
 `.trim()
 }
 
@@ -247,7 +253,9 @@ function getRepoTypecheckDiagnostics(input: {
 		case 'app':
 			return {
 				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(input.entryPoint),
+				diagnostics: input.languageService.getSemanticDiagnostics(
+					input.entryPoint,
+				),
 			}
 		case 'skill': {
 			input.fileSystem.write(
@@ -396,9 +404,11 @@ export async function runRepoChecks(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
-	const { fileSystem, languageService } = await createTypescriptLanguageService({
-		fileSystem: typecheckFileSystem,
-	})
+	const { fileSystem, languageService } = await createTypescriptLanguageService(
+		{
+			fileSystem: typecheckFileSystem,
+		},
+	)
 	const { fileName, diagnostics, lineOffset } = getRepoTypecheckDiagnostics({
 		manifest,
 		entryPoint,
