@@ -213,6 +213,10 @@ export async function resolveRepoSourceReference(input: {
 				userId: input.userId,
 				appId: input.args.target.app_id,
 			})
+		default: {
+			const exhaustiveCheck: never = input.args.target
+			return exhaustiveCheck
+		}
 	}
 }
 
