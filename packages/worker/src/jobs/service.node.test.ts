@@ -1018,8 +1018,17 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 			logs: ['repo-backed codemode executed'],
 		})
 		expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
+		const firstOpenSessionId = sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
+		const secondOpenSessionId =
+			sessionClient.openSession.mock.calls[1]?.[0]?.sessionId
+		expect(firstOpenSessionId).toMatch(/^job-runtime-job-repo-1-/)
+		expect(secondOpenSessionId).toBe(firstOpenSessionId)
 		expect(sessionClient.discardSession).toHaveBeenCalledWith({
 			sessionId: 'job-runtime-job-repo-1',
+			userId: 'user-123',
+		})
+		expect(sessionClient.discardSession).toHaveBeenCalledWith({
+			sessionId: firstOpenSessionId,
 			userId: 'user-123',
 		})
 		expect(sessionClient.readFile).toHaveBeenCalledWith({
@@ -1887,7 +1896,10 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				writable: true,
 			},
 		})
-		expect(sessionClient.discardSession).not.toHaveBeenCalled()
+		expect(sessionClient.discardSession).toHaveBeenCalledWith({
+			sessionId: expect.stringMatching(/^job-runtime-job-repo-module-/),
+			userId: 'user-123',
+		})
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
