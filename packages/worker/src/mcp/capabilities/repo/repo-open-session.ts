@@ -30,6 +30,11 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				throw new Error('repo_open_session requires an authenticated user.')
 			}
 
+			const requested = await resolveRepoSourceReference({
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				args,
+			})
 			const existingSession =
 				args.conversation_id == null
 					? null
@@ -38,7 +43,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 							conversationId: args.conversation_id,
 						})
 			if (existingSession) {
-				if (args.source_id && existingSession.source_id !== args.source_id) {
+				if (existingSession.source_id !== requested.source.id) {
 					throw new Error(
 						'Active repo session does not match the requested source. Discard the current session before opening a new source.',
 					)
@@ -59,12 +64,6 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					}),
 				}
 			}
-
-			const requested = await resolveRepoSourceReference({
-				db: ctx.env.APP_DB,
-				userId: user.userId,
-				args,
-			})
 			const sessionId =
 				crypto.randomUUID?.() ??
 				`repo-session-${Date.now().toString(36)}-${Math.random()
