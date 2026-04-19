@@ -1,6 +1,7 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { normalizeSkillParameters } from '#mcp/skills/skill-parameters.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { buildUiArtifactEmbedText } from '#mcp/ui-artifacts-embed.ts'
 import {
 	deleteUiArtifactVector,
@@ -13,6 +14,7 @@ import {
 } from '#mcp/app-runner.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { runJobNowViaManager, syncJobManagerAlarm } from '#worker/jobs/manager-do.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import {
 	buildAppSourceFiles,
@@ -100,6 +102,30 @@ function toAppView(app: AppRecord): AppView {
 	}
 }
 
+function toUiArtifactRow(app: AppRecord): UiArtifactRow {
+	return {
+		id: app.id,
+		user_id: app.userId,
+		title: app.title,
+		description: app.description,
+		sourceId: app.sourceId,
+		hasClient: app.hasClient,
+		hasServerCode: app.hasServer,
+		parameters: app.parameters ? JSON.stringify(app.parameters) : null,
+		hidden: app.hidden,
+		taskNames: app.tasks.map((task) => task.name),
+		jobNames: app.jobs.map((job) => job.name),
+		scheduleSummaries: app.jobs.map((job) =>
+			formatScheduleSummary({
+				schedule: job.schedule,
+				timezone: job.timezone,
+			}),
+		),
+		created_at: app.createdAt,
+		updated_at: app.updatedAt,
+	}
+}
+
 function normalizeTasks(
 	tasks: NonNullable<AppSaveInput['tasks']> | undefined,
 ): Array<{
@@ -157,8 +183,9 @@ function normalizeJobs(input: {
 		const schedule = normalizeJobSchedule(job.schedule)
 		const timezone = normalizeJobTimezone(job.timezone)
 		const createdAt = existing?.createdAt ?? input.now
+		const id = existing?.id ?? crypto.randomUUID()
 		return {
-			id: existing?.id ?? crypto.randomUUID(),
+			id,
 			name: job.name,
 			title: job.title?.trim() || job.name,
 			description: job.description?.trim() || job.name,
@@ -171,7 +198,7 @@ function normalizeJobs(input: {
 			killSwitchEnabled:
 				job.killSwitchEnabled ?? existing?.killSwitchEnabled ?? false,
 			storageId:
-				job.storageId ?? existing?.storageId ?? createJobStorageId(existing?.id ?? crypto.randomUUID()),
+				job.storageId ?? existing?.storageId ?? createJobStorageId(id),
 			lastRunAt: existing?.lastRunAt,
 			lastRunStatus: existing?.lastRunStatus,
 			lastRunError: existing?.lastRunError,
@@ -222,8 +249,8 @@ async function syncAppArtifacts(input: {
 	userId: string
 	baseUrl: string
 	app: AppRecord
-	clientCode: string | null
-	serverCode: string | null
+	clientCode?: string | null
+	serverCode?: string | null
 	taskSources: Array<NonNullable<Parameters<typeof buildAppSourceFiles>[0]['tasks']>[number]>
 	bootstrapAccess: Awaited<ReturnType<typeof ensureEntitySource>>['bootstrapAccess']
 }) {
@@ -240,6 +267,8 @@ async function syncAppArtifacts(input: {
 			searchText: input.app.searchText,
 			parameters: input.app.parameters,
 			hidden: input.app.hidden,
+			hasClient: input.app.hasClient,
+			hasServer: input.app.hasServer,
 			clientCode: input.clientCode,
 			serverCode: input.serverCode,
 			tasks: input.taskSources,
@@ -303,6 +332,38 @@ export async function saveApp(input: {
 		callerContext,
 		now,
 	})
+	const needsClientCode =
+		input.body.clientCode === undefined && (existing?.hasClient ?? false)
+	const needsServerCode =
+		input.body.serverCode === undefined && (existing?.hasServer ?? false)
+	const resolvedSource =
+		existing && (needsClientCode || needsServerCode)
+			? await resolveSavedAppSource({
+					env: input.env,
+					baseUrl: callerContext.baseUrl,
+					artifact: toUiArtifactRow(existing),
+				})
+			: null
+	const resolvedClientCode =
+		input.body.clientCode === undefined
+			? needsClientCode
+				? resolvedSource?.clientCode ?? null
+				: null
+			: input.body.clientCode
+	const resolvedServerCode =
+		input.body.serverCode === undefined
+			? needsServerCode
+				? resolvedSource?.serverCode ?? null
+				: null
+			: input.body.serverCode
+	const hasClient =
+		input.body.clientCode === undefined
+			? (existing?.hasClient ?? false)
+			: input.body.clientCode != null
+	const hasServer =
+		input.body.serverCode === undefined
+			? (existing?.hasServer ?? false)
+			: input.body.serverCode != null
 	const app: AppRecord = {
 		version: 1,
 		id: appId,
@@ -316,8 +377,8 @@ export async function saveApp(input: {
 		keywords: normalizeKeywords(input.body.keywords),
 		searchText: input.body.searchText ?? null,
 		parameters: normalizeUiArtifactParameters(input.body.parameters),
-		hasClient: input.body.clientCode != null,
-		hasServer: input.body.serverCode != null,
+		hasClient,
+		hasServer,
 		tasks,
 		jobs,
 		createdAt: existing?.createdAt ?? now,
@@ -328,8 +389,8 @@ export async function saveApp(input: {
 		userId: callerContext.user.userId,
 		baseUrl: callerContext.baseUrl,
 		app,
-		clientCode: input.body.clientCode ?? null,
-		serverCode: input.body.serverCode ?? null,
+		clientCode: resolvedClientCode,
+		serverCode: resolvedServerCode,
 		taskSources: taskSources.map((task) => task.source),
 		bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 	})

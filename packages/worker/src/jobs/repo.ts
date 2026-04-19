@@ -1,8 +1,8 @@
 import {
 	deleteAppRow,
+	findAppRowByJobId,
 	getAppRowById,
 	insertAppRow,
-	listAppRowsByUserId,
 	updateAppRow,
 } from '#worker/apps/repo.ts'
 import { type AppRecord } from '#worker/apps/types.ts'
@@ -144,14 +144,15 @@ function mapJobRecord(app: AppRecord, job: AppRecord['jobs'][number]): JobRow {
 }
 
 function appWithUpdatedJob(app: AppRecord, job: JobRecord): AppRecord {
+	const existingJob = app.jobs.find((candidate) => candidate.id === job.id)
 	const nextJob = {
 		id: job.id,
 		name: job.name,
-		title: job.name,
-		description: job.name,
-		task: app.jobs.find((candidate) => candidate.id === job.id)?.task ?? 'default',
+		title: existingJob?.title ?? job.name,
+		description: existingJob?.description ?? job.name,
+		task: existingJob?.task ?? 'default',
 		params: job.params,
-		callerContext: null,
+		callerContext: existingJob?.callerContext ?? null,
 		schedule: job.schedule,
 		timezone: job.timezone,
 		enabled: job.enabled,
@@ -247,13 +248,37 @@ export async function insertJobRow(input: {
 	})
 }
 
-async function findAppByJobId(
-	db: D1Database,
-	userId: string,
-	jobId: string,
-): Promise<AppRecord | null> {
-	const apps = await listAppRowsByUserId(db, userId)
-	return apps.find((app) => app.jobs.some((job) => job.id === jobId)) ?? null
+function parseJobJson(value: string | null): AppRecord['jobs'][number] | null {
+	return parseJson(value, null)
+}
+
+async function loadAppJobRows(input: {
+	db: D1Database
+	userId: string
+	query: string
+	bindings: Array<unknown>
+}): Promise<Array<JobRow>> {
+	const { results } = await input.db
+		.prepare(input.query)
+		.bind(...input.bindings)
+		.all<Record<string, unknown>>()
+	const appCache = new Map<string, AppRecord>()
+	const rows: Array<JobRow> = []
+	for (const row of results ?? []) {
+		const job = parseJobJson(
+			typeof row['job_json'] === 'string' ? row['job_json'] : null,
+		)
+		if (!job) continue
+		const appId = String(row['app_id'])
+		let app = appCache.get(appId)
+		if (!app) {
+			app = await getAppRowById(input.db, input.userId, appId)
+			if (!app) continue
+			appCache.set(appId, app)
+		}
+		rows.push(mapJobRecord(app, job))
+	}
+	return rows
 }
 
 export async function updateJobRow(input: {
@@ -264,7 +289,7 @@ export async function updateJobRow(input: {
 }) {
 	const app =
 		(await getAppRowById(input.db, input.userId, input.job.id)) ??
-		(await findAppByJobId(input.db, input.userId, input.job.id))
+		(await findAppRowByJobId(input.db, input.userId, input.job.id))
 	if (!app) return false
 	return updateAppRow(
 		input.db,
@@ -288,7 +313,7 @@ export async function getJobRowById(
 	userId: string,
 	jobId: string,
 ): Promise<JobRow | null> {
-	const app = await findAppByJobId(db, userId, jobId)
+	const app = await findAppRowByJobId(db, userId, jobId)
 	if (!app) return null
 	const job = app.jobs.find((candidate) => candidate.id === jobId)
 	return job ? mapJobRecord(app, job) : null
@@ -298,13 +323,17 @@ export async function listJobRowsByUserId(
 	db: D1Database,
 	userId: string,
 ): Promise<Array<JobRow>> {
-	const apps = await listAppRowsByUserId(db, userId)
-	return apps
-		.flatMap((app) => app.jobs.map((job) => mapJobRecord(app, job)))
-		.sort((left, right) =>
-			left.record.nextRunAt.localeCompare(right.record.nextRunAt) ||
-			left.record.name.localeCompare(right.record.name),
-		)
+	const rows = await loadAppJobRows({
+		db,
+		userId,
+		query: `SELECT apps.id AS app_id, json_each.value AS job_json
+			FROM apps, json_each(apps.jobs_json)
+			WHERE apps.user_id = ?
+			ORDER BY json_extract(json_each.value, '$.nextRunAt') ASC,
+				json_extract(json_each.value, '$.name') ASC`,
+		bindings: [userId],
+	})
+	return rows
 }
 
 export async function listDueJobRows(
@@ -312,25 +341,39 @@ export async function listDueJobRows(
 	userId: string,
 	nowIso: string,
 ): Promise<Array<JobRow>> {
-	const rows = await listJobRowsByUserId(db, userId)
-	return rows.filter(
-		(row) =>
-			row.record.enabled &&
-			!row.record.killSwitchEnabled &&
-			row.record.nextRunAt <= nowIso,
-	)
+	return loadAppJobRows({
+		db,
+		userId,
+		query: `SELECT apps.id AS app_id, json_each.value AS job_json
+			FROM apps, json_each(apps.jobs_json)
+			WHERE apps.user_id = ?
+				AND json_extract(json_each.value, '$.enabled') = 1
+				AND json_extract(json_each.value, '$.killSwitchEnabled') = 0
+				AND json_extract(json_each.value, '$.nextRunAt') <= ?
+			ORDER BY json_extract(json_each.value, '$.nextRunAt') ASC,
+				json_extract(json_each.value, '$.name') ASC`,
+		bindings: [userId, nowIso],
+	})
 }
 
 export async function getNextRunnableJobRow(
 	db: D1Database,
 	userId: string,
 ): Promise<JobRow | null> {
-	const rows = await listJobRowsByUserId(db, userId)
-	return (
-		rows.find(
-			(row) => row.record.enabled && !row.record.killSwitchEnabled,
-		) ?? null
-	)
+	const rows = await loadAppJobRows({
+		db,
+		userId,
+		query: `SELECT apps.id AS app_id, json_each.value AS job_json
+			FROM apps, json_each(apps.jobs_json)
+			WHERE apps.user_id = ?
+				AND json_extract(json_each.value, '$.enabled') = 1
+				AND json_extract(json_each.value, '$.killSwitchEnabled') = 0
+			ORDER BY json_extract(json_each.value, '$.nextRunAt') ASC,
+				json_extract(json_each.value, '$.name') ASC
+			LIMIT 1`,
+		bindings: [userId],
+	})
+	return rows[0] ?? null
 }
 
 export async function deleteJobRow(
@@ -338,7 +381,7 @@ export async function deleteJobRow(
 	userId: string,
 	jobId: string,
 ): Promise<boolean> {
-	const app = await findAppByJobId(db, userId, jobId)
+	const app = await findAppRowByJobId(db, userId, jobId)
 	if (!app) return false
 	if (app.jobs.length === 1 && app.jobs[0]?.id === jobId && !app.hasClient && !app.hasServer) {
 		return deleteAppRow(db, userId, app.id)

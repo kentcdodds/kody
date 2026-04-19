@@ -174,6 +174,30 @@ export async function listAllApps(db: D1Database): Promise<Array<AppRecord>> {
 	return (results ?? []).map(mapRow)
 }
 
+export async function findAppRowByJobId(
+	db: D1Database,
+	userId: string,
+	jobId: string,
+): Promise<AppRecord | null> {
+	const result = await db
+		.prepare(
+			`SELECT * FROM apps
+			WHERE user_id = ?
+				AND (
+					json_array_length(jobs_json) > 0
+					AND EXISTS (
+						SELECT 1
+						FROM json_each(apps.jobs_json) AS job
+						WHERE json_extract(job.value, '$.id') = ?
+					)
+				)
+			LIMIT 1`,
+		)
+		.bind(userId, jobId)
+		.first<Record<string, unknown>>()
+	return result ? mapRow(result) : null
+}
+
 export async function deleteAppRow(
 	db: D1Database,
 	userId: string,
