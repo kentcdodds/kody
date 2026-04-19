@@ -337,26 +337,13 @@ export async function updateJob(input: {
 			`Job "${existing.id}" cannot change sourceId after it is assigned.`,
 		)
 	}
-	const ensuredSource =
-		shape.sourceId !== existing.sourceId
-			? await ensureEntitySource({
-					db: input.env.APP_DB,
-					env: input.env,
-					id: shape.sourceId,
-					userId: callerContext.user.userId,
-					entityKind: 'job',
-					entityId: existing.id,
-					sourceRoot: '/',
-					requirePersistence: true,
-				})
-			: null
 	const updated: JobRecord = {
 		...existing,
 		name:
 			input.body.name === undefined
 				? existing.name
 				: normalizeJobName(input.body.name),
-		sourceId: ensuredSource?.id ?? shape.sourceId,
+		sourceId: shape.sourceId,
 		publishedCommit: shape.publishedCommit ?? null,
 		repoCheckPolicy: shape.repoCheckPolicy,
 		params:
@@ -381,7 +368,7 @@ export async function updateJob(input: {
 		userId: callerContext.user.userId,
 		baseUrl: callerContext.baseUrl,
 		sourceId: updated.sourceId,
-		bootstrapAccess: ensuredSource?.bootstrapAccess ?? null,
+		bootstrapAccess: null,
 		files: buildJobSourceFiles({
 			job: toJobView(updated),
 			moduleSource: shape.moduleSource ?? null,

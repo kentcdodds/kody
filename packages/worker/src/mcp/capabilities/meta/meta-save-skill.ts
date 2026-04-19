@@ -168,14 +168,19 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				requirePersistence: true,
 			})
 			const previousPublishedCommit = source.published_commit
-			const previousModuleSource = existing
-				? await readSkillModuleSource({
+			let previousModuleSource: string | null = null
+			if (existing) {
+				try {
+					previousModuleSource = await readSkillModuleSource({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
 						userId: user.userId,
 						sourceId: source.id,
 					})
-				: null
+				} catch {
+					previousModuleSource = null
+				}
+			}
 
 			if (existing) {
 				const updated = await updateMcpSkill(
