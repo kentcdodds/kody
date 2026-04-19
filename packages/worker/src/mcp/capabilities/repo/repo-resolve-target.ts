@@ -1,13 +1,11 @@
-import { type z } from 'zod'
-import {
-	getEntitySourceById,
-	type EntitySourceRow,
-} from '#worker/repo/entity-sources.ts'
+import { z } from 'zod'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
 	getMcpSkillByNameInput,
 	listMcpSkillsByUserId,
-	type McpSkillRow,
 } from '#mcp/skills/mcp-skills-repo.ts'
+import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import {
@@ -98,7 +96,11 @@ async function requireJobByName(input: {
 			`Saved job name "${trimmedName}" is ambiguous for this user. Use job_id instead. Matching job ids: ${jobIds}.`,
 		)
 	}
-	return matches[0]
+	const match = matches[0]
+	if (!match) {
+		throw new Error(`Saved job "${trimmedName}" was not found.`)
+	}
+	return match
 }
 
 async function requireJobTarget(input: {
@@ -252,9 +254,6 @@ export async function resolveRepoTargetFromSource(input: {
 			}
 			return toResolvedAppTarget(app)
 		}
-		default: {
-			const exhaustiveCheck: never = source.entity_kind
-			return exhaustiveCheck
-		}
 	}
+	return toResolvedSourceTarget(source)
 }
