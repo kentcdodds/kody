@@ -503,6 +503,7 @@ async function runRepoBackedJob(input: {
 		baseUrl: input.callerContext.baseUrl,
 		sourceRoot: null,
 	}
+	let bypassLogs: Array<string> = []
 	try {
 		let session = await sessionClient.openSession(openSessionInput)
 		if (repoSessionNeedsRefresh(session)) {
@@ -545,7 +546,7 @@ async function runRepoBackedJob(input: {
 				logs: gate.logs,
 			}
 		}
-		const bypassLogs = [...gate.logs]
+		bypassLogs = [...gate.logs]
 		const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
 		const entrypoint = await sessionClient.readFile({
 			sessionId: session.id,
@@ -658,18 +659,17 @@ async function runRepoBackedJob(input: {
 		return {
 			error: formatJobError(error),
 			result: null,
-			logs: [],
+			logs: bypassLogs,
 		}
 	} finally {
-		await Promise.resolve(
-			sessionClient.discardSession({
+		try {
+			await sessionClient.discardSession({
 				sessionId,
 				userId: input.callerContext.user.userId,
-			}),
-		)
-			.catch(() => {
-				// Best effort only; preserve the original execution failure.
 			})
+		} catch {
+			// Best effort only; preserve the original execution failure.
+		}
 	}
 }
 

@@ -1896,8 +1896,10 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				writable: true,
 			},
 		})
+		const openedSessionId = sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
+		expect(openedSessionId).toMatch(/^job-runtime-job-repo-module-/)
 		expect(sessionClient.discardSession).toHaveBeenCalledWith({
-			sessionId: expect.stringMatching(/^job-runtime-job-repo-module-/),
+			sessionId: openedSessionId,
 			userId: 'user-123',
 		})
 	} finally {
