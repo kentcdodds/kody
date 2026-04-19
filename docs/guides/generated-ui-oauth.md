@@ -9,7 +9,7 @@ required).
 
 Use **this** document only when **`/connect/oauth` is not sufficient** and you
 are **building or changing OAuth inside a saved generated UI**
-(\`open_generated_ui\` / \`ui_save_app\`): custom layout, coupling with other
+(\`open_generated_ui\` / \`app_save\`): custom layout, coupling with other
 UI, or callbacks on the **saved app** URL (\`/ui/:id\`) instead of
 \`/connect/oauth\`.
 
@@ -28,7 +28,7 @@ UI, or callbacks on the **saved app** URL (\`/ui/:id\`) instead of
 ## Core rules
 
 For browser-based OAuth callbacks, do not rely on an ephemeral inline render.
-Save the UI first with \`ui_save_app\`, then use the hosted saved-app URL as the
+Save the UI first with \`app_save\`, then use the hosted saved-app URL as the
 provider callback or redirect target.
 
 Do not try to complete the OAuth flow inside the conversation iframe. OAuth
@@ -64,7 +64,7 @@ the default integration-backed app structure.
 ## Recommended capability and tool sequence
 
 1. Generate the UI source.
-2. Save it with \`ui_save_app\` if the provider must redirect back to the app.
+2. Save it with \`app_save\` if the provider must redirect back to the app.
 3. Tell the user the exact hosted callback URL and any other provider
    registration values they need.
 4. Give the user the hosted saved-app URL and tell them to open it in their

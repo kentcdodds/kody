@@ -324,7 +324,6 @@ async function loadSearchRowsAndRegistry(input: {
 		: new Map()
 	return {
 		registry,
-		skillCollectionSlug: undefined,
 		appSecretsByAppId,
 		...optionalRows,
 	}

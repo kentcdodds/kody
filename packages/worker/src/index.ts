@@ -35,7 +35,6 @@ import {
 import { readGeneratedUiAppBackendSession } from './mcp/generated-ui-app-auth.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
-import { handleJobReindexRequest } from './job-maintenance.ts'
 	import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 	import { handleUiArtifactReindexRequest } from './ui-artifact-maintenance.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
@@ -111,10 +110,6 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/reindex-apps') {
 			return handleUiArtifactReindexRequest(request, env)
-		}
-
-		if (url.pathname === '/__maintenance/reindex-jobs') {
-			return handleJobReindexRequest(request, env)
 		}
 
 		if (url.pathname === oauthPaths.authorize) {

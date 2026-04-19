@@ -11,8 +11,8 @@ An app can include any combination of:
 - **tasks** — named callable codemode entrypoints
 - **jobs** — named scheduled entrypoints
 
-That means you no longer need to think in terms of separate saved skills, saved
-jobs, and saved UI artifacts. One repo-backed app can expose all of those
+That means you no longer need to think in terms of separate persisted units for
+automation, schedules, and UI. One repo-backed app can expose all of those
 surfaces together.
 
 ## Saving an app

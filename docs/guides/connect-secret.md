@@ -59,7 +59,7 @@ Settings → API → Personal API Keys → Create key
      names exist in Kody (use \`search\` or \`meta_list_capabilities\`).
 2. Ask the user to open the URL in their browser.
 3. Wait until they confirm the secret is saved.
-4. If the secret will back a saved skill or app, run the authenticated smoke
+4. If the secret will back a saved app, run the authenticated smoke
    test described in `guide: "integration_bootstrap"` before saving the
    downstream artifact.
 5. Proceed using \`{{secret:name}}\` placeholders or the relevant capability.

@@ -14,7 +14,7 @@ Send the signed-in user to **`/connect/oauth`** on your deployment host with
 query parameters that describe the provider. The page runs **authorize →
 callback → token exchange** in a full browser context and persists access and
 refresh tokens (and related values) via the account secrets API—**no**
-\`open_generated_ui\`, \`ui_save_app\`, or \`kodyWidget\` OAuth code required.
+\`open_generated_ui\`, \`app_save\`, or \`kodyWidget\` OAuth code required.
 
 Example shape (encode values for real URLs):
 
@@ -79,7 +79,7 @@ authenticating to Kody**. This guide is for **outbound** provider OAuth.
 3. Tell the user the exact **redirect URI** to register:
    \`{origin}/connect/oauth\`.
 4. Have the user open the connect URL while signed in; wait for success.
-5. If the OAuth connection will back a saved skill or app, verify connector
+5. If the OAuth connection will back a saved app, verify connector
    state and run the authenticated smoke test described in
    `guide: "integration_bootstrap"` before saving the downstream artifact.
 6. Continue with capabilities that use \`{{secret:…}}\` or connector helpers;
@@ -102,7 +102,7 @@ client-side `executeCode(...)` strings. Those inline snippets are acceptable for
 quick or throwaway prototypes only.
 
 ```ts
-await codemode.ui_save_app({
+await codemode.app_save({
 	title: 'Spotify playback controls',
 	description:
 		'Read current playback state and trigger simple Spotify actions through a saved app backend.',
