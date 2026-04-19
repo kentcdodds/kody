@@ -43,22 +43,6 @@ export const appDeleteCapability = defineDomainCapability(
 					deleted: false,
 				} as const
 			}
-			const deleted = await deleteUiArtifact(
-				ctx.env.APP_DB,
-				user.userId,
-				args.app_id,
-			)
-			if (!deleted) {
-				console.warn('saved-app-delete-race', {
-					appId: args.app_id,
-					userId: user.userId,
-				})
-				return {
-					ok: true,
-					app_id: args.app_id,
-					deleted: false,
-				} as const
-			}
 			const cleanupResults = await Promise.allSettled([
 				deleteSavedAppRunner({
 					env: ctx.env,
@@ -85,10 +69,26 @@ export const appDeleteCapability = defineDomainCapability(
 				)
 			if (cleanupErrors.length > 0) {
 				throw new Error(
-					`Saved app cleanup failed after deleting the record: ${cleanupErrors.join(
+					`Saved app cleanup failed before deleting the record: ${cleanupErrors.join(
 						'; ',
 					)}`,
 				)
+			}
+			const deleted = await deleteUiArtifact(
+				ctx.env.APP_DB,
+				user.userId,
+				args.app_id,
+			)
+			if (!deleted) {
+				console.warn('saved-app-delete-race', {
+					appId: args.app_id,
+					userId: user.userId,
+				})
+				return {
+					ok: true,
+					app_id: args.app_id,
+					deleted: false,
+				} as const
 			}
 			return {
 				ok: true,
