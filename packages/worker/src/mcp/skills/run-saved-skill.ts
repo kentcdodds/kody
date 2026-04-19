@@ -1,6 +1,7 @@
 import { exports as workerExports } from 'cloudflare:workers'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { getMcpSkillByNameInput } from '#mcp/skills/mcp-skills-repo.ts'
 import {
 	applySkillParameters,
@@ -16,11 +17,12 @@ import {
 	createRepoCodemodeWrapper,
 	getRepoSourceRelativePath,
 	loadRepoSourceFilesFromSession,
+	repoBackedModuleEntrypointExportErrorMessage,
 } from '#worker/repo/repo-codemode-execution.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 
 const runFailureHint =
-	'If the saved codemode is wrong, use meta_get_skill to inspect it, then call meta_save_skill again with the same skill name to replace the stored code and metadata.'
+	'Open the saved skill source from its repo session, fix the module entrypoint, publish it, then run the skill again.'
 
 export type SavedSkillRunResult = {
 	ok: boolean
@@ -66,25 +68,12 @@ export async function runSavedSkill(input: {
 		values: input.params,
 	})
 	const shouldPassParams = definitions != null || input.params !== undefined
-	const { runCodemodeWithRegistry } =
-		await import('#mcp/run-codemode-registry.ts')
-	const exec =
-		row.source_id != null
-			? await runRepoBackedSkill({
-					env: input.env,
-					row,
-					callerContext: input.callerContext,
-					params: shouldPassParams ? params : undefined,
-				})
-			: await runCodemodeWithRegistry(
-					input.env,
-					input.callerContext,
-					row.code,
-					shouldPassParams ? params : undefined,
-					{
-						executorExports: workerExports,
-					},
-				)
+	const exec = await runRepoBackedSkill({
+		env: input.env,
+		row,
+		callerContext: input.callerContext,
+		params: shouldPassParams ? params : undefined,
+	})
 	if (exec.error) {
 		return {
 			ok: false,
@@ -110,7 +99,7 @@ async function runRepoBackedSkill(input: {
 	if (!input.row?.source_id) {
 		return {
 			result: undefined,
-			error: 'Repo-backed skill source is missing.',
+			error: 'Saved skill source is missing.',
 			logs: [],
 		}
 	}
@@ -163,6 +152,13 @@ async function runRepoBackedSkill(input: {
 				logs: [],
 			}
 		}
+		if (!/\bexport\s+default\b/.test(moduleFile.content)) {
+			return {
+				result: undefined,
+				error: repoBackedModuleEntrypointExportErrorMessage,
+				logs: [],
+			}
+		}
 		const sourceFiles = await loadRepoSourceFilesFromSession({
 			sessionClient,
 			sessionId: session.id,
@@ -179,8 +175,6 @@ async function runRepoBackedSkill(input: {
 					? `${input.row.source_id}:${session.published_commit}`
 					: null,
 		})
-		const { runCodemodeWithRegistry } =
-			await import('#mcp/run-codemode-registry.ts')
 		return runCodemodeWithRegistry(
 			input.env,
 			{

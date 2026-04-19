@@ -5,7 +5,6 @@ import {
 } from './manifest.ts'
 import {
 	createRepoCodemodeModuleTypecheckHarness,
-	hasModuleStyleRepoBackedEntrypoint,
 	repoCodemodeModuleTypecheckHarnessPath,
 } from './repo-codemode-execution.ts'
 import { type RepoManifest } from './types.ts'
@@ -31,7 +30,6 @@ export type RepoCheckRunResult = {
 }
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
-const executeSnippetTypecheckHarnessPath = '.__kody_repo_check__.ts'
 const repoChecksSyntheticTsconfigPath = 'tsconfig.json'
 const repoChecksSyntheticTsconfigExtendsPath = './.__kody_repo_tsconfig_base__.json'
 
@@ -213,21 +211,9 @@ declare const storage: {
 `.trim()
 }
 
-function createExecuteSnippetTypecheckHarness(input: {
-	fnName: string
-	source: string
-}): string {
-	return `/// <reference path="./${executeTypecheckPreludePath}" />
-declare function ${input.fnName}(fn: (params?: Record<string, unknown>) => Promise<unknown>): void; ${input.fnName}(
-${input.source}
-);
-`
-}
-
 function getRepoTypecheckDiagnostics(input: {
 	manifest: RepoManifest
 	entryPoint: string
-	entryPointSource: string
 	languageService: {
 		getSemanticDiagnostics(path: string): Array<{
 			messageText: unknown
@@ -268,26 +254,17 @@ function getRepoTypecheckDiagnostics(input: {
 				executeTypecheckPreludePath,
 				createExecuteTypecheckPrelude(),
 			)
-			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
-				? repoCodemodeModuleTypecheckHarnessPath
-				: executeSnippetTypecheckHarnessPath
-			const isModuleHarness =
-				harnessPath === repoCodemodeModuleTypecheckHarnessPath
 			input.fileSystem.write(
-				harnessPath,
-				isModuleHarness
-					? createRepoCodemodeModuleTypecheckHarness({
-							entryPoint: input.entryPoint,
-						})
-					: createExecuteSnippetTypecheckHarness({
-							fnName: '__kodyTypecheckSkill',
-							source: input.entryPointSource,
-						}),
+				repoCodemodeModuleTypecheckHarnessPath,
+				createRepoCodemodeModuleTypecheckHarness({
+					entryPoint: input.entryPoint,
+				}),
 			)
 			return {
 				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(harnessPath),
-				lineOffset: harnessPath === executeSnippetTypecheckHarnessPath ? 2 : 0,
+				diagnostics: input.languageService.getSemanticDiagnostics(
+					repoCodemodeModuleTypecheckHarnessPath,
+				),
 			}
 		}
 		case 'job': {
@@ -297,26 +274,17 @@ function getRepoTypecheckDiagnostics(input: {
 					includeStorage: true,
 				}),
 			)
-			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
-				? repoCodemodeModuleTypecheckHarnessPath
-				: executeSnippetTypecheckHarnessPath
-			const isModuleHarness =
-				harnessPath === repoCodemodeModuleTypecheckHarnessPath
 			input.fileSystem.write(
-				harnessPath,
-				isModuleHarness
-					? createRepoCodemodeModuleTypecheckHarness({
-							entryPoint: input.entryPoint,
-						})
-					: createExecuteSnippetTypecheckHarness({
-							fnName: '__kodyTypecheckJob',
-							source: input.entryPointSource,
-						}),
+				repoCodemodeModuleTypecheckHarnessPath,
+				createRepoCodemodeModuleTypecheckHarness({
+					entryPoint: input.entryPoint,
+				}),
 			)
 			return {
 				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(harnessPath),
-				lineOffset: harnessPath === executeSnippetTypecheckHarnessPath ? 2 : 0,
+				diagnostics: input.languageService.getSemanticDiagnostics(
+					repoCodemodeModuleTypecheckHarnessPath,
+				),
 			}
 		}
 		default: {
@@ -434,7 +402,6 @@ export async function runRepoChecks(input: {
 	const { fileName, diagnostics, lineOffset } = getRepoTypecheckDiagnostics({
 		manifest,
 		entryPoint,
-		entryPointSource,
 		languageService,
 		fileSystem,
 	})

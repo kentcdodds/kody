@@ -18,9 +18,10 @@ import {
 	hasUiArtifactServerCode,
 	type UiArtifactRow,
 } from '#mcp/ui-artifacts-types.ts'
+import { type ResolvedSavedAppSource } from '#worker/repo/app-source.ts'
 
 type HostedSavedUiInput = {
-	artifact: UiArtifactRow
+	artifact: Pick<UiArtifactRow, 'id'> & ResolvedSavedAppSource
 	appSession: GeneratedUiAppSession
 	appBaseUrl: string
 }
@@ -39,7 +40,7 @@ export function renderHostedSavedUiHtml(input: HostedSavedUiInput) {
 }
 
 function buildHeadInjection(
-	artifact: UiArtifactRow,
+	artifact: Pick<UiArtifactRow, 'id'> & ResolvedSavedAppSource,
 	appSession: GeneratedUiAppSession,
 	appBaseUrl: string,
 ) {
@@ -68,9 +69,9 @@ ${buildGeneratedUiRuntimeImportMap(runtimeScriptSrc)}
 }
 
 function buildAppBackendBootstrap(
-	artifact: UiArtifactRow,
+	artifact: Pick<UiArtifactRow, 'id'> & ResolvedSavedAppSource,
 ): GeneratedUiAppBackendBootstrap | null {
-	if (!hasUiArtifactServerCode(artifact.serverCode)) {
+	if (!hasUiArtifactServerCode(Boolean(artifact.serverCode))) {
 		return null
 	}
 	return {

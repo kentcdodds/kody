@@ -28,6 +28,8 @@ vi.mock('#worker/repo/repo-codemode-execution.ts', () => ({
 		mockModule.buildRepoCodemodeBundle(...args),
 	loadRepoSourceFilesFromSession: (...args: Array<unknown>) =>
 		mockModule.loadRepoSourceFilesFromSession(...args),
+	repoBackedModuleEntrypointExportErrorMessage:
+		'Repo-backed job and skill entrypoints must default export a function so Kody can invoke them with execute semantics.',
 	getRepoSourceRelativePath: (path: string, sourceRoot: string) => {
 		const normalizedPath = path.replace(/^\/+/, '')
 		const normalizedSourceRoot = sourceRoot.replace(/^\/+/, '').replace(/\/+$/, '')
@@ -65,7 +67,6 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 		collection_slug: null,
 		source_id: 'source-1',
 		keywords: '[]',
-		code: 'async () => ({ inline: false })',
 		search_text: null,
 		uses_capabilities: null,
 		parameters: null,
@@ -126,7 +127,8 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 				if (input.path === 'skill.ts') {
 					return {
 						path: input.path,
-						content: 'async () => ({ ok: true, repoBacked: true })',
+						content:
+							'export default async () => ({ ok: true, repoBacked: true })',
 					}
 				}
 				throw new Error(`Unexpected repo session readFile path: ${input.path}`)
@@ -205,7 +207,8 @@ test('runSavedSkill opens a repo session and executes repo-backed skill code imm
 			'util.ts': 'export const ok = true',
 		},
 		entryPoint: 'skill.ts',
-		entryPointSource: 'async () => ({ ok: true, repoBacked: true })',
+		entryPointSource:
+			'export default async () => ({ ok: true, repoBacked: true })',
 		sourceRoot: '/',
 		cacheKey: 'source-1:commit-1',
 	})
@@ -232,7 +235,6 @@ test('runSavedSkill bundles repo-backed skills relative to manifest sourceRoot',
 		collection_slug: null,
 		source_id: 'source-2',
 		keywords: '[]',
-		code: 'async () => ({ inline: false })',
 		search_text: null,
 		uses_capabilities: null,
 		parameters: null,

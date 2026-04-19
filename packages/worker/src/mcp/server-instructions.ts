@@ -14,7 +14,7 @@ https://github.com/kentcdodds/kody/tree/main/docs/use
 
 Three-step flow:
 1. \`search\` — built-in capabilities, saved skills, saved apps, persisted values, saved connectors, and secret references (metadata).
-2. \`execute\` — \`codemode[capabilityName](args)\`; saved skills via \`meta_run_skill\` or inline code from \`meta_get_skill\`.
+2. \`execute\` — \`codemode[capabilityName](args)\`; saved skills via \`meta_run_skill\`.
 3. \`open_generated_ui\` — MCP App runtime (\`code\` or \`app_id\`).
 
 Conventions

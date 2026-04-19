@@ -19,7 +19,6 @@ import {
 	configureSavedAppRunner,
 	deleteSavedAppRunner,
 } from '#mcp/app-runner.ts'
-import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	normalizeUiArtifactParameters,
@@ -33,6 +32,7 @@ import {
 	getEntitySourceById,
 	updateEntitySource,
 } from '#worker/repo/entity-sources.ts'
+import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const appServerCodeExportPattern =
 	/export\s+class\s+App\s+extends\s+DurableObject\b/
@@ -177,6 +177,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					entityKind: 'app',
 					entityId: appId,
 					sourceRoot: '/',
+					requirePersistence: true,
 				})
 			let hidden: boolean
 			let existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null =
@@ -221,7 +222,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 				previousPublishedCommit: string | null
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
-				const hasBackend = hasUiArtifactServerCode(input.serverCode)
+				const hasBackend = input.serverCode != null
 				try {
 					await configureSavedAppRunner({
 						env: ctx.env,
@@ -251,9 +252,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 									title: input.existingApp.title,
 									description: input.existingApp.description,
 									sourceId: input.existingApp.sourceId,
-									clientCode: input.existingApp.clientCode,
-									serverCode: input.existingApp.serverCode,
-									serverCodeId: input.existingApp.serverCodeId,
+									hasServerCode: input.existingApp.hasServerCode,
 									parameters: input.existingApp.parameters,
 									hidden: input.existingApp.hidden,
 								}),
@@ -343,13 +342,18 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!existingApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
+				const resolvedExistingAppSource = await resolveSavedAppSource({
+					env: ctx.env,
+					baseUrl: ctx.callerContext.baseUrl,
+					artifact: existingApp,
+				})
 				const ensuredSource = await ensureSource()
 				const title = args.title ?? existingApp.title
 				const description = args.description ?? existingApp.description
-				const clientCode = args.clientCode ?? existingApp.clientCode
+				const clientCode = args.clientCode ?? resolvedExistingAppSource.clientCode
 				const serverCode =
 					args.serverCode === undefined
-						? existingApp.serverCode
+						? resolvedExistingAppSource.serverCode
 						: args.serverCode
 				assertValidSavedAppServerCode(serverCode)
 				const parameters =
@@ -362,23 +366,15 @@ export const uiSaveAppCapability = defineDomainCapability(
 						: parameters
 							? JSON.stringify(parameters)
 							: null
-				const serverCodeChanged = serverCode !== existingApp.serverCode
-				const serverCodeId = serverCodeChanged
-					? crypto.randomUUID()
-					: existingApp.serverCodeId
 				const updates: Parameters<typeof updateUiArtifact>[3] = {
 					title: args.title,
 					description: args.description,
 					sourceId: ensuredSource.id,
-					clientCode: args.clientCode,
+					hasServerCode: serverCode != null,
 					hidden: args.hidden,
 				}
 				if (args.parameters !== undefined) {
 					updates.parameters = serializedParameters
-				}
-				if (args.serverCode !== undefined) {
-					updates.serverCode = serverCode
-					updates.serverCodeId = serverCodeId
 				}
 				const updated = await updateUiArtifact(
 					ctx.env.APP_DB,
@@ -392,8 +388,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const previousPublishedCommit = await readPublishedCommit(
 					ensuredSource.id,
 				)
+				let nextPublishedCommit: string | null = null
 				try {
-					await syncArtifactSourceSnapshot({
+					nextPublishedCommit = await syncArtifactSourceSnapshot({
 						env: ctx.env,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
@@ -414,9 +411,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							title: existingApp.title,
 							description: existingApp.description,
 							sourceId: existingApp.sourceId,
-							clientCode: existingApp.clientCode,
-							serverCode: existingApp.serverCode,
-							serverCodeId: existingApp.serverCodeId,
+							hasServerCode: existingApp.hasServerCode,
 							parameters: existingApp.parameters,
 							hidden: existingApp.hidden,
 						}),
@@ -434,7 +429,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					description,
 					clientCode,
 					serverCode,
-					serverCodeId,
+					serverCodeId: nextPublishedCommit ?? ensuredSource.id,
 					parameters,
 					hidden,
 					sourceId: ensuredSource.id,
@@ -451,7 +446,6 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const serializedParameters = parameters
 					? JSON.stringify(parameters)
 					: null
-				const serverCodeId = crypto.randomUUID()
 				hidden = args.hidden ?? true
 				const ensuredSource = await ensureSource()
 				const now = new Date().toISOString()
@@ -461,9 +455,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					sourceId: ensuredSource.id,
 					title,
 					description,
-					clientCode,
-					serverCode,
-					serverCodeId,
+					hasServerCode: serverCode != null,
 					parameters: serializedParameters,
 					hidden,
 					created_at: now,
@@ -504,7 +496,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					description,
 					clientCode,
 					serverCode,
-					serverCodeId,
+					serverCodeId: ensuredSource.id,
 					parameters,
 					hidden,
 					sourceId: ensuredSource.id,

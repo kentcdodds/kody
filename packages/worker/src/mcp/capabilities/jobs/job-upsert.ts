@@ -30,7 +30,7 @@ export const jobUpsertCapability = defineDomainCapability(
 							callerContext: ctx.callerContext,
 							body: {
 								name: args.name ?? '',
-								code: args.code === undefined ? '' : args.code,
+								code: args.code ?? '',
 								...(args.sourceId !== undefined
 									? { sourceId: args.sourceId }
 									: {}),
@@ -62,7 +62,6 @@ export const jobUpsertCapability = defineDomainCapability(
 								id: args.id,
 								...(args.name !== undefined ? { name: args.name } : {}),
 								...(typeof args.code === 'string' ? { code: args.code } : {}),
-								...(args.code === null ? { code: null } : {}),
 								...(args.sourceId !== undefined
 									? { sourceId: args.sourceId }
 									: {}),

@@ -10,6 +10,9 @@ const mockModule = vi.hoisted(() => ({
 	deleteSavedAppRunner: vi.fn(),
 	upsertUiArtifactVector: vi.fn(),
 	deleteUiArtifactVector: vi.fn(),
+	resolveSavedAppSource: vi.fn(),
+	ensureEntitySource: vi.fn(),
+	syncArtifactSourceSnapshot: vi.fn(),
 }))
 
 vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
@@ -37,6 +40,21 @@ vi.mock('#mcp/ui-artifacts-vectorize.ts', () => ({
 		mockModule.deleteUiArtifactVector(...args),
 }))
 
+vi.mock('#worker/repo/app-source.ts', () => ({
+	resolveSavedAppSource: (...args: Array<unknown>) =>
+		mockModule.resolveSavedAppSource(...args),
+}))
+
+vi.mock('#worker/repo/source-service.ts', () => ({
+	ensureEntitySource: (...args: Array<unknown>) =>
+		mockModule.ensureEntitySource(...args),
+}))
+
+vi.mock('#worker/repo/source-sync.ts', () => ({
+	syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.syncArtifactSourceSnapshot(...args),
+}))
+
 const { uiSaveAppCapability } = await import('./ui-save-app.ts')
 
 test('ui_save_app updates preserve backend code unless the caller clears or replaces it', async () => {
@@ -48,20 +66,23 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 	mockModule.deleteSavedAppRunner.mockReset()
 	mockModule.upsertUiArtifactVector.mockReset()
 	mockModule.deleteUiArtifactVector.mockReset()
+	mockModule.resolveSavedAppSource.mockReset()
+	mockModule.ensureEntitySource.mockReset()
+	mockModule.syncArtifactSourceSnapshot.mockReset()
 
 	const initialServerCode =
 		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v1" } }'
 	const replacementServerCode =
 		'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async readVersion() { return "v2" } }'
+	const appDb = {} as D1Database
 
 	let currentApp = {
 		id: 'app-1',
 		user_id: 'user-1',
 		title: 'Patchable App',
 		description: 'Saved app used to verify partial ui_save_app updates.',
-		clientCode: '<main><h1>Patchable v1</h1></main>',
-		serverCode: initialServerCode,
-		serverCodeId: 'server-code-v1',
+		sourceId: 'source-app-1',
+		hasServerCode: true,
 		parameters: JSON.stringify([
 			{
 				name: 'team',
@@ -75,6 +96,51 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 
 	mockModule.getUiArtifactById.mockImplementation(async () => ({
 		...currentApp,
+	}))
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'source-app-1',
+		user_id: 'user-1',
+		entity_kind: 'app',
+		entity_id: 'app-1',
+		repo_id: 'app-app-1',
+		published_commit: 'server-code-v1',
+		indexed_commit: 'server-code-v1',
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+		bootstrapAccess: null,
+	})
+	mockModule.syncArtifactSourceSnapshot
+		.mockResolvedValueOnce('server-code-v2')
+		.mockResolvedValueOnce('server-code-v3')
+		.mockResolvedValueOnce('server-code-v4')
+	mockModule.resolveSavedAppSource.mockImplementation(async () => ({
+		id: currentApp.id,
+		title: currentApp.title,
+		description: currentApp.description,
+		hidden: currentApp.hidden,
+		parameters: [
+			{
+				name: 'team',
+				description: 'Team slug',
+				type: 'string',
+				required: true,
+			},
+		],
+		clientCode:
+			(currentApp as typeof currentApp & { resolvedClientCode?: string })
+				.resolvedClientCode ?? '<main><h1>Patchable v1</h1></main>',
+		serverCode:
+			(currentApp as typeof currentApp & { resolvedServerCode?: string | null })
+				.resolvedServerCode ?? initialServerCode,
+		serverCodeId:
+			(currentApp as typeof currentApp & { resolvedServerCodeId?: string | null })
+				.resolvedServerCodeId ?? 'server-code-v1',
+		sourceId: currentApp.sourceId,
+		publishedCommit:
+			(currentApp as typeof currentApp & { publishedCommit?: string | null })
+				.publishedCommit ?? 'server-code-v1',
 	}))
 	mockModule.updateUiArtifact.mockImplementation(
 		async (
@@ -91,21 +157,23 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				...(updates['description'] !== undefined
 					? { description: updates['description'] as string }
 					: {}),
-				...(updates['clientCode'] !== undefined
-					? { clientCode: updates['clientCode'] as string }
-					: {}),
 				...(updates['hidden'] !== undefined
 					? { hidden: updates['hidden'] as boolean }
 					: {}),
 				...(updates['parameters'] !== undefined
 					? { parameters: updates['parameters'] as string | null }
 					: {}),
-				...(updates['serverCode'] !== undefined
-					? { serverCode: updates['serverCode'] as string | null }
+				...(updates['sourceId'] !== undefined
+					? { sourceId: updates['sourceId'] as string }
 					: {}),
-				...(updates['serverCodeId'] !== undefined
-					? { serverCodeId: updates['serverCodeId'] as string }
+				...(updates['hasServerCode'] !== undefined
+					? { hasServerCode: updates['hasServerCode'] as boolean }
 					: {}),
+			}
+			if (updates['hasServerCode'] !== undefined) {
+				;(currentApp as typeof currentApp & { resolvedServerCode?: string | null })
+					.resolvedServerCode =
+						updates['hasServerCode'] === true ? initialServerCode : null
 			}
 			return { ...currentApp }
 		},
@@ -127,13 +195,17 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				clientCode: '<main><h1>Patchable v2</h1></main>',
 			},
 			{
-				env: { APP_DB: {} } as Env,
+				env: {
+					APP_DB: appDb,
+					CLOUDFLARE_ACCOUNT_ID: 'acct',
+					CLOUDFLARE_API_TOKEN: 'token',
+				} as Env,
 				callerContext,
 			},
 		)
 		expect(preservedResult).toEqual({
 			app_id: 'app-1',
-			server_code_id: 'server-code-v1',
+			server_code_id: expect.any(String),
 			has_server_code: true,
 			hosted_url: 'https://heykody.dev/ui/app-1',
 			parameters: [
@@ -149,15 +221,15 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		expect(mockModule.updateUiArtifact.mock.calls[0]?.[3]).toEqual({
 			title: undefined,
 			description: undefined,
-			sourceId: 'server-code-v2',
-			clientCode: '<main><h1>Patchable v2</h1></main>',
+			sourceId: expect.any(String),
+			hasServerCode: true,
 			hidden: undefined,
 		})
 		expect(mockModule.configureSavedAppRunner.mock.calls[0]?.[0]).toEqual(
 			expect.objectContaining({
 				appId: 'app-1',
 				serverCode: initialServerCode,
-				serverCodeId: 'server-code-v1',
+				serverCodeId: expect.any(String),
 			}),
 		)
 
@@ -167,7 +239,11 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				serverCode: null,
 			},
 			{
-				env: { APP_DB: {} } as Env,
+				env: {
+					APP_DB: appDb,
+					CLOUDFLARE_ACCOUNT_ID: 'acct',
+					CLOUDFLARE_API_TOKEN: 'token',
+				} as Env,
 				callerContext,
 			},
 		)
@@ -190,11 +266,9 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			expect.objectContaining({
 				title: undefined,
 				description: undefined,
-				sourceId: 'server-code-v3',
-				clientCode: undefined,
+				sourceId: expect.any(String),
 				hidden: undefined,
-				serverCode: null,
-				serverCodeId: expect.any(String),
+				hasServerCode: false,
 			}),
 		)
 		expect(mockModule.configureSavedAppRunner.mock.calls[1]?.[0]).toEqual(
@@ -211,7 +285,11 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				serverCode: replacementServerCode,
 			},
 			{
-				env: { APP_DB: {} } as Env,
+				env: {
+					APP_DB: appDb,
+					CLOUDFLARE_ACCOUNT_ID: 'acct',
+					CLOUDFLARE_API_TOKEN: 'token',
+				} as Env,
 				callerContext,
 			},
 		)
@@ -235,10 +313,8 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				title: undefined,
 				description: undefined,
 				sourceId: expect.any(String),
-				clientCode: undefined,
 				hidden: undefined,
-				serverCode: replacementServerCode,
-				serverCodeId: expect.any(String),
+				hasServerCode: true,
 			}),
 		)
 		expect(mockModule.configureSavedAppRunner.mock.calls[2]?.[0]).toEqual(
@@ -248,7 +324,6 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				serverCodeId: expect.any(String),
 			}),
 		)
-		expect(randomUuidSpy).toHaveBeenCalled()
 		expect(mockModule.deleteUiArtifactVector).toHaveBeenCalledTimes(3)
 	} finally {
 		randomUuidSpy.mockRestore()

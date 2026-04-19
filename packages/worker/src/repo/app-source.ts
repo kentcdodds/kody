@@ -10,6 +10,7 @@ import { type AppManifest } from './types.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
 export type ResolvedSavedAppSource = {
+	id: string
 	title: string
 	description: string
 	hidden: boolean
@@ -17,22 +18,8 @@ export type ResolvedSavedAppSource = {
 	clientCode: string
 	serverCode: string | null
 	serverCodeId: string
-	sourceId: string | null
+	sourceId: string
 	publishedCommit: string | null
-}
-
-function fallbackFromArtifact(artifact: UiArtifactRow): ResolvedSavedAppSource {
-	return {
-		title: artifact.title,
-		description: artifact.description,
-		hidden: artifact.hidden,
-		parameters: parseUiArtifactParameters(artifact.parameters),
-		clientCode: artifact.clientCode ?? '',
-		serverCode: artifact.serverCode ?? null,
-		serverCodeId: artifact.serverCodeId,
-		sourceId: artifact.sourceId,
-		publishedCommit: null,
-	}
 }
 
 function resolveManifestClientPath(manifest: AppManifest) {
@@ -64,15 +51,16 @@ export async function resolveSavedAppSource(input: {
 	baseUrl: string
 	artifact: UiArtifactRow
 }): Promise<ResolvedSavedAppSource> {
-	const fallback = fallbackFromArtifact(input.artifact)
 	if (!canResolveRepoBackedSource(input.env, input.artifact)) {
-		return fallback
+		throw new Error('Saved app source bindings are not available.')
 	}
 	const source = await getEntitySourceById(
 		input.env.APP_DB,
 		input.artifact.sourceId!,
 	)
-	if (!source) return fallback
+	if (!source) {
+		throw new Error(`Saved app source "${input.artifact.sourceId}" was not found.`)
+	}
 	const sessionId = `app-source-${source.id}-${crypto.randomUUID()}`
 	const session = repoSessionRpc(input.env, sessionId)
 	let openedSessionId: string | null = null
@@ -90,12 +78,18 @@ export async function resolveSavedAppSource(input: {
 			userId: input.artifact.user_id,
 			path: source.manifest_path,
 		})
-		if (!manifestFile.content) return fallback
+		if (!manifestFile.content) {
+			throw new Error(
+				`Saved app manifest "${source.manifest_path}" was not found in the repo source.`,
+			)
+		}
 		const manifest = parseRepoManifest({
 			content: manifestFile.content,
 			manifestPath: source.manifest_path,
 		})
-		if (manifest.kind !== 'app') return fallback
+		if (manifest.kind !== 'app') {
+			throw new Error(`Repo source "${source.id}" is not an app manifest.`)
+		}
 		const [clientFile, serverFile] = await Promise.all([
 			session.readFile({
 				sessionId: opened.id,
@@ -108,16 +102,27 @@ export async function resolveSavedAppSource(input: {
 				path: normalizeRepoWorkspacePath(manifest.server),
 			}),
 		])
+		if (!clientFile.content) {
+			throw new Error(
+				`Saved app client asset "${resolveManifestClientPath(manifest)}" was not found in the repo source.`,
+			)
+		}
+		if (!serverFile.content) {
+			throw new Error(
+				`Saved app server module "${manifest.server}" was not found in the repo source.`,
+			)
+		}
 		const resolved = {
+			id: input.artifact.id,
 			title: manifest.title,
 			description: manifest.description,
-			hidden: manifest.hidden ?? fallback.hidden,
+			hidden: manifest.hidden ?? input.artifact.hidden,
 			parameters: manifest.parameters
 				? normalizeUiArtifactParameters(manifest.parameters)
-				: null,
-			clientCode: clientFile.content ?? fallback.clientCode,
-			serverCode: serverFile.content ?? fallback.serverCode,
-			serverCodeId: source.published_commit ?? fallback.serverCodeId,
+				: parseUiArtifactParameters(input.artifact.parameters),
+			clientCode: clientFile.content,
+			serverCode: serverFile.content,
+			serverCodeId: source.published_commit ?? source.id,
 			sourceId: source.id,
 			publishedCommit: source.published_commit,
 		}

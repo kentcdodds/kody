@@ -169,7 +169,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				params: resolvedParams,
 				hostedUrl,
 				appSession,
-				appBackend: hasUiArtifactServerCode(savedApp?.serverCode)
+				appBackend: hasUiArtifactServerCode(savedApp?.hasServerCode)
 					? {
 							basePath: buildSavedAppBackendBasePath(savedApp.id),
 							facetNames: ['main'],

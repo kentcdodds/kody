@@ -116,10 +116,12 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 		expect.stringContaining('declare const codemode'),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_check__.ts',
-		expect.stringContaining('declare function __kodyTypecheckJob'),
+		'.__kody_repo_module_check__.ts',
+		expect.stringContaining('declare function __kodyTypecheckModule'),
 	)
-	expect(getSemanticDiagnostics).toHaveBeenCalledWith('.__kody_repo_check__.ts')
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+	)
 })
 
 test('runRepoChecks strips repo-session workspace prefixes from snapshot paths', async () => {
@@ -191,11 +193,13 @@ test('runRepoChecks strips repo-session workspace prefixes from snapshot paths',
 		'src/job.ts',
 		'package.json',
 		'.__kody_repo_runtime__.d.ts',
-		'.__kody_repo_check__.ts',
+		'.__kody_repo_module_check__.ts',
 	])
 	expect(snapshot.read).toHaveBeenCalledWith('src/job.ts')
 	expect(snapshot.read).not.toHaveBeenCalledWith('/src/job.ts')
-	expect(getSemanticDiagnostics).toHaveBeenCalledWith('.__kody_repo_check__.ts')
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+	)
 })
 
 test('runRepoChecks accepts execute runtime globals for repo-backed jobs', async () => {
@@ -337,14 +341,16 @@ test('runRepoChecks accepts codemode globals for repo-backed skills', async () =
 		expect.stringContaining('declare const codemode'),
 	)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
-		'.__kody_repo_check__.ts',
-	expect.stringContaining('declare function __kodyTypecheckSkill'),
+		'.__kody_repo_module_check__.ts',
+		expect.stringContaining('declare function __kodyTypecheckModule'),
 	)
 	expect(typeScriptFileSystem.write).not.toHaveBeenCalledWith(
 		'.__kody_repo_runtime__.d.ts',
 		expect.stringContaining('declare const storage'),
 	)
-	expect(getSemanticDiagnostics).toHaveBeenCalledWith('.__kody_repo_check__.ts')
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
+		'.__kody_repo_module_check__.ts',
+	)
 })
 
 test('runRepoChecks still reports unknown globals for repo-backed jobs', async () => {
@@ -370,7 +376,7 @@ test('runRepoChecks still reports unknown globals for repo-backed jobs', async (
 		write: vi.fn(),
 	}
 	const getSemanticDiagnostics = vi.fn((path: string) =>
-		path === '.__kody_repo_check__.ts'
+		path === '.__kody_repo_module_check__.ts'
 			? [
 					{
 						messageText: "Cannot find name 'totallyMissingThing'.",
@@ -414,7 +420,7 @@ test('runRepoChecks still reports unknown globals for repo-backed jobs', async (
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: false,
-				message: "src/job.ts:1:12 Cannot find name 'totallyMissingThing'.",
+				message: "src/job.ts:2:12 Cannot find name 'totallyMissingThing'.",
 			}),
 		]),
 	)

@@ -42,7 +42,8 @@ export function buildSkillSourceFiles(input: {
 }
 
 export function buildJobSourceFiles(input: {
-	job: Pick<JobView, 'name' | 'scheduleSummary' | 'code'>
+	job: Pick<JobView, 'name' | 'scheduleSummary'>
+	moduleSource: string
 }) {
 	const manifest = {
 		version: 1 as const,
@@ -56,7 +57,7 @@ export function buildJobSourceFiles(input: {
 	}
 	return {
 		'kody.json': stringifyManifest(manifest),
-		'src/job.ts': `${(input.job.code ?? 'async () => null').trim()}\n`,
+		'src/job.ts': `${input.moduleSource.trim()}\n`,
 	}
 }
 

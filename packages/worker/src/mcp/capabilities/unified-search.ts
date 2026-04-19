@@ -50,7 +50,7 @@ function parseJsonStringArray(raw: string): Array<string> {
 
 function buildSkillUsage(skillName: string): string {
 	const runArgs = JSON.stringify({ name: skillName })
-	return `Run with meta_run_skill: ${runArgs}. Optionally include "params": { ... }. To inspect code, call meta_get_skill then execute.`
+	return `Run with meta_run_skill: ${runArgs}. Optionally include "params": { ... }.`
 }
 
 function normalizeSearchPhrase(value: string | null | undefined): string {

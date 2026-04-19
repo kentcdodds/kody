@@ -138,7 +138,7 @@ empty ranked list.
 | \`connector\` | \`skill\` | \`app\` | \`job\` | \`secret\`), including schemas for
 capabilities. Types and fields: see response.
 
-Run a skill: \`meta_run_skill({ name, params })\`; source: \`meta_get_skill\`.
+Run a skill: \`meta_run_skill({ name, params })\`.
 Manage jobs: \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`,
 \`job_run_now\`.
 Apps: \`open_generated_ui({ app_id })\`. Secrets: never raw in results; use

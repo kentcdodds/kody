@@ -148,6 +148,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				entityKind: 'skill',
 				entityId: skillId,
 				sourceRoot: '/',
+				requirePersistence: true,
 			})
 			const previousPublishedCommit = source.published_commit
 
@@ -230,7 +231,6 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						collection_name: existing.collection_name,
 						collection_slug: existing.collection_slug,
 						keywords: existing.keywords,
-						code: existing.code,
 						search_text: existing.search_text,
 						uses_capabilities: existing.uses_capabilities,
 						parameters: existing.parameters,
@@ -281,7 +281,7 @@ export const metaSaveSkillCapability = defineDomainCapability(
 											default?: unknown
 										}>)
 								: null,
-							code: existing.code,
+							code: args.code,
 						}),
 					})
 					await updateEntitySource(ctx.env.APP_DB, {

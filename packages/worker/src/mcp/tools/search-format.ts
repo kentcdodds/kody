@@ -603,7 +603,6 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Run this skill',
 			'',
 			`- \`codemode.meta_run_skill({ name: "${detail.row.name}", params: { ... } })\``,
-			'- Use `meta_get_skill` separately if you need the stored source code.',
 		]
 		if (parameters && parameters.length > 0) {
 			lines.push('', '## Parameters', '')
@@ -653,7 +652,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 
 	if (detail.type === 'app') {
 		const parameters = parseUiArtifactParameters(detail.row.parameters)
-		const hasServerCode = hasUiArtifactServerCode(detail.row.serverCode)
+		const hasServerCode = hasUiArtifactServerCode(detail.row.hasServerCode)
 		const lines = [
 			`# App — ${detail.row.title}`,
 			'',

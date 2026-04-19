@@ -40,7 +40,6 @@ test('buildRepoCodemodeBundle emits an extensionless synthetic ESM re-export for
 		entryPointSource: 'export default async () => ({ ok: true })\n',
 	})
 
-	expect(bundle.entrypointMode).toBe('module')
 	expect(mockModule.createWorker).toHaveBeenCalledWith({
 		files: {
 			'src/job.ts': 'export default async () => ({ ok: true })\n',

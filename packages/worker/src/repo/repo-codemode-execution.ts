@@ -1,16 +1,13 @@
-import { normalizeCode } from '@cloudflare/codemode'
 import { type RepoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 import { type RepoSessionTreeResult } from './types.ts'
 
-export type RepoCodemodeEntrypointMode = 'snippet' | 'module'
-
 export const repoCodemodeModuleTypecheckHarnessPath =
 	'.__kody_repo_module_check__.ts'
 
 export const repoBackedModuleEntrypointExportErrorMessage =
-	'Repo-backed job and skill entrypoints that use ESM syntax must default export a function so Kody can invoke them with execute semantics.'
+	'Repo-backed job and skill entrypoints must default export a function so Kody can invoke them with execute semantics.'
 
 const syntheticRepoEntrypointPath = '.__kody_repo_user_entry__.ts'
 const repoCodemodeBundleCacheLimit = 50
@@ -21,7 +18,6 @@ const repoCodemodeImportExtensionPattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const repoCodemodeBundleCache = new Map<
 	string,
 	Promise<{
-		entrypointMode: RepoCodemodeEntrypointMode
 		mainModule: string
 		modules: WorkerLoaderModules
 	}>
@@ -39,14 +35,6 @@ function enforceRepoCodemodeBundleCacheLimit() {
 
 function stripTrailingSlashes(value: string) {
 	return value.replace(/\/+$/, '')
-}
-
-function usesModuleSyntax(code: string) {
-	return /^\s*import\b/m.test(code) || /^\s*export\b/m.test(code)
-}
-
-export function hasModuleStyleRepoBackedEntrypoint(code: string) {
-	return usesModuleSyntax(code)
 }
 
 function createRelativeImportSpecifier(path: string) {
@@ -83,24 +71,9 @@ export function getRepoSourceRelativePath(path: string, sourceRoot: string) {
 	return toRelativeSourcePath(path, sourceRoot)
 }
 
-function buildSyntheticEntrypointSource(input: {
-	entryPoint: string
-	entryPointSource: string
-	entrypointMode: RepoCodemodeEntrypointMode
-}) {
-	if (input.entrypointMode === 'snippet') {
-		return `const __kodyUserCode = (${normalizeCode(input.entryPointSource)});
-export default __kodyUserCode;
-`
-	}
+function buildSyntheticEntrypointSource(input: { entryPoint: string }) {
 	return `export { default } from ${createRelativeImportSpecifier(input.entryPoint)};
 `
-}
-
-function getRepoBackedEntrypointMode(
-	code: string,
-): RepoCodemodeEntrypointMode {
-	return usesModuleSyntax(code) ? 'module' : 'snippet'
 }
 
 export async function loadRepoSourceFilesFromSession(input: {
@@ -178,13 +151,11 @@ export async function buildRepoCodemodeBundle(input: {
 	sourceRoot?: string | null
 	cacheKey?: string | null
 }): Promise<{
-	entrypointMode: RepoCodemodeEntrypointMode
 	mainModule: string
 	modules: WorkerLoaderModules
 }> {
 	const buildBundle = async () => {
 		const { createWorker } = await import('@cloudflare/worker-bundler')
-		const entrypointMode = getRepoBackedEntrypointMode(input.entryPointSource)
 		const bundle = await createWorker({
 			files: {
 				...input.sourceFiles,
@@ -193,14 +164,11 @@ export async function buildRepoCodemodeBundle(input: {
 						input.entryPoint,
 						input.sourceRoot ?? '/',
 					),
-					entryPointSource: input.entryPointSource,
-					entrypointMode,
 				}),
 			},
 			entryPoint: syntheticRepoEntrypointPath,
 		})
 		return {
-			entrypointMode,
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
 		}
