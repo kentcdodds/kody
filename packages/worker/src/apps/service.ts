@@ -607,30 +607,6 @@ export async function runAppJob(input: {
 	})
 }
 
-export async function listAllAppRecords(input: { env: Env }) {
-	return listAllApps(input.env.APP_DB)
-}
-
-export async function executeAppJobOnce(input: {
-	app: AppRecord
-	job: AppJobRecord
-	execute: (job: AppJobRecord) => Promise<AppExecutionOutcome>
-}) {
-	return input.execute(input.job)
-}
-
-export async function processDueAppJobs(input: {
-	app: AppRecord
-	now?: Date
-	executeJob: (job: AppJobRecord) => Promise<AppExecutionOutcome>
-}) {
-	return processDueJobs({
-		jobs: input.app.jobs as never,
-		now: input.now,
-		executeJob: async (job) => input.executeJob(job as unknown as AppJobRecord),
-	})
-}
-
 export function buildAppExecutionResult(input: {
 	ok: boolean
 	result?: unknown
