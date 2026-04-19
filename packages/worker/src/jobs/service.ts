@@ -158,6 +158,10 @@ function repoSessionNeedsRefresh(session: {
 	)
 }
 
+function createJobRuntimeSessionId(jobId: string) {
+	return `job-runtime-${jobId}-${crypto.randomUUID()}`
+}
+
 function resolveCreateShape(input: JobCreateInput) {
 	return {
 		moduleSource: normalizeJobCode(input.code),
@@ -449,7 +453,10 @@ export async function executeJobOnce(input: {
 			execution = result.error
 				? {
 						ok: false,
-						error: formatJobError(result.error),
+						error:
+							typeof result.error === 'string'
+								? result.error
+								: formatJobError(result.error),
 						logs: result.logs ?? [],
 					}
 				: {
@@ -487,7 +494,7 @@ async function runRepoBackedJob(input: {
 			logs: [],
 		}
 	}
-	const sessionId = `job-runtime-${input.job.id}`
+	const sessionId = createJobRuntimeSessionId(input.job.id)
 	const sessionClient = repoSessionRpc(input.env, sessionId)
 	const openSessionInput = {
 		sessionId,
@@ -496,154 +503,172 @@ async function runRepoBackedJob(input: {
 		baseUrl: input.callerContext.baseUrl,
 		sourceRoot: null,
 	}
-	let session = await sessionClient.openSession(openSessionInput)
-	if (repoSessionNeedsRefresh(session)) {
-		const stalePublishedCommit = session.published_commit
-		try {
-			await sessionClient.discardSession({
-				sessionId: session.id,
-				userId: input.callerContext.user.userId,
-			})
-		} catch (error) {
-			throw new Error(
-				`Failed to discard stale repo session "${session.id}" before refreshing to published commit "${stalePublishedCommit}".`,
-				{ cause: error },
-			)
-		}
-		session = await sessionClient.openSession(openSessionInput)
+	let bypassLogs: Array<string> = []
+	try {
+		let session = await sessionClient.openSession(openSessionInput)
 		if (repoSessionNeedsRefresh(session)) {
-			throw new Error(
-				`Repo session "${session.id}" still points at base commit "${session.base_commit}" instead of published commit "${session.published_commit}".`,
-			)
+			const stalePublishedCommit = session.published_commit
+			try {
+				await sessionClient.discardSession({
+					sessionId: session.id,
+					userId: input.callerContext.user.userId,
+				})
+			} catch (error) {
+				throw new Error(
+					`Failed to discard stale repo session "${session.id}" before refreshing to published commit "${stalePublishedCommit}".`,
+					{ cause: error },
+				)
+			}
+			session = await sessionClient.openSession(openSessionInput)
+			if (repoSessionNeedsRefresh(session)) {
+				throw new Error(
+					`Repo session "${session.id}" still points at base commit "${session.base_commit}" instead of published commit "${session.published_commit}".`,
+				)
+			}
 		}
-	}
-	const result = await sessionClient.runChecks({
-		sessionId: session.id,
-		userId: input.callerContext.user.userId,
-	})
-	const gate = evaluateRepoCheckGate({
-		result,
-		policy: resolveJobRepoCheckPolicy({
-			stored: input.job.repoCheckPolicy,
-			override: input.repoCheckPolicyOverride,
-		}),
-		jobId: input.job.id,
-		sourceId: input.job.sourceId,
-	})
-	if (!gate.proceed) {
-		return {
-			error: gate.error ?? 'Repo checks failed.',
-			result: null,
-			logs: gate.logs,
-		}
-	}
-	const bypassLogs = [...gate.logs]
-	const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-	const entrypoint = await sessionClient.readFile({
-		sessionId: session.id,
-		userId: input.callerContext.user.userId,
-		path: manifestPath,
-	})
-	if (!entrypoint.content) {
-		return {
-			error: `Job manifest "${manifestPath}" was not found in repo session.`,
-			result: null,
-			logs: bypassLogs,
-		}
-	}
-	let manifest: ReturnType<typeof parseRepoManifest>
-	try {
-		manifest = parseRepoManifest({
-			content: entrypoint.content,
-			manifestPath,
-		})
-	} catch (error) {
-		return {
-			error: error instanceof Error ? error.message : String(error),
-			result: null,
-			logs: bypassLogs,
-		}
-	}
-	if (manifest.kind !== 'job') {
-		return {
-			error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
-			result: null,
-			logs: bypassLogs,
-		}
-	}
-	const moduleFile = await sessionClient.readFile({
-		sessionId: session.id,
-		userId: input.callerContext.user.userId,
-		path: getManifestEntrypointPath(manifest),
-	})
-	if (!moduleFile.content) {
-		return {
-			error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-			result: null,
-			logs: bypassLogs,
-		}
-	}
-	try {
-		const { runCodemodeWithRegistry } =
-			await import('#mcp/run-codemode-registry.ts')
-		const sourceRoot = getManifestSourceRoot(manifest)
-		const sourceFiles = await loadRepoSourceFilesFromSession({
-			sessionClient,
+		const result = await sessionClient.runChecks({
 			sessionId: session.id,
 			userId: input.callerContext.user.userId,
-			sourceRoot,
 		})
-		const bundled = await buildRepoCodemodeBundle({
-			sourceFiles,
-			entryPoint: getManifestEntrypointPath(manifest),
-			entryPointSource: moduleFile.content,
-			sourceRoot,
-			cacheKey:
-				session.published_commit != null
-					? `${input.job.sourceId}:${session.published_commit}`
-					: null,
-		})
-		const executionResult = await runCodemodeWithRegistry(
-			input.env,
-			{
-				...input.callerContext,
-				repoContext: {
-					sourceId: session.source_id,
-					repoId: null,
-					sessionId: session.id,
-					sessionRepoId: session.session_repo_id,
-					baseCommit: session.base_commit,
-					manifestPath: session.manifest_path,
-					sourceRoot: session.source_root,
-					publishedCommit: session.published_commit,
-					entityKind: session.entity_type,
-					entityId: input.job.id,
-				},
-			},
-			createRepoCodemodeWrapper({
-				mainModule: bundled.mainModule,
-				includeStorage: true,
+		const gate = evaluateRepoCheckGate({
+			result,
+			policy: resolveJobRepoCheckPolicy({
+				stored: input.job.repoCheckPolicy,
+				override: input.repoCheckPolicyOverride,
 			}),
-			input.job.params,
-			{
-				executorExports: workerExports,
-				storageTools: {
-					userId: input.callerContext.user.userId,
-					storageId: input.job.storageId,
-					writable: true,
+			jobId: input.job.id,
+			sourceId: input.job.sourceId,
+		})
+		if (!gate.proceed) {
+			return {
+				error: gate.error ?? 'Repo checks failed.',
+				result: null,
+				logs: gate.logs,
+			}
+		}
+		bypassLogs = [...gate.logs]
+		const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+		const entrypoint = await sessionClient.readFile({
+			sessionId: session.id,
+			userId: input.callerContext.user.userId,
+			path: manifestPath,
+		})
+		if (!entrypoint.content) {
+			return {
+				error: `Job manifest "${manifestPath}" was not found in repo session.`,
+				result: null,
+				logs: bypassLogs,
+			}
+		}
+		let manifest: ReturnType<typeof parseRepoManifest>
+		try {
+			manifest = parseRepoManifest({
+				content: entrypoint.content,
+				manifestPath,
+			})
+		} catch (error) {
+			return {
+				error: error instanceof Error ? error.message : String(error),
+				result: null,
+				logs: bypassLogs,
+			}
+		}
+		if (manifest.kind !== 'job') {
+			return {
+				error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+				result: null,
+				logs: bypassLogs,
+			}
+		}
+		const moduleFile = await sessionClient.readFile({
+			sessionId: session.id,
+			userId: input.callerContext.user.userId,
+			path: getManifestEntrypointPath(manifest),
+		})
+		if (!moduleFile.content) {
+			return {
+				error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+				result: null,
+				logs: bypassLogs,
+			}
+		}
+		try {
+			const { runCodemodeWithRegistry } =
+				await import('#mcp/run-codemode-registry.ts')
+			const sourceRoot = getManifestSourceRoot(manifest)
+			const sourceFiles = await loadRepoSourceFilesFromSession({
+				sessionClient,
+				sessionId: session.id,
+				userId: input.callerContext.user.userId,
+				sourceRoot,
+			})
+			const bundled = await buildRepoCodemodeBundle({
+				sourceFiles,
+				entryPoint: getManifestEntrypointPath(manifest),
+				entryPointSource: moduleFile.content,
+				sourceRoot,
+				cacheKey:
+					session.published_commit != null
+						? `${input.job.sourceId}:${session.published_commit}`
+						: null,
+			})
+			const executionResult = await runCodemodeWithRegistry(
+				input.env,
+				{
+					...input.callerContext,
+					repoContext: {
+						sourceId: session.source_id,
+						repoId: null,
+						sessionId: session.id,
+						sessionRepoId: session.session_repo_id,
+						baseCommit: session.base_commit,
+						manifestPath: session.manifest_path,
+						sourceRoot: session.source_root,
+						publishedCommit: session.published_commit,
+						entityKind: session.entity_type,
+						entityId: input.job.id,
+					},
 				},
-				executorModules: bundled.modules,
-			},
-		)
-		return {
-			...executionResult,
-			logs: [...bypassLogs, ...(executionResult.logs ?? [])],
+				createRepoCodemodeWrapper({
+					mainModule: bundled.mainModule,
+					includeStorage: true,
+				}),
+				input.job.params,
+				{
+					executorExports: workerExports,
+					storageTools: {
+						userId: input.callerContext.user.userId,
+						storageId: input.job.storageId,
+						writable: true,
+					},
+					executorModules: bundled.modules,
+				},
+			)
+			return {
+				...executionResult,
+				logs: [...bypassLogs, ...(executionResult.logs ?? [])],
+			}
+		} catch (error) {
+			return {
+				error: formatJobError(error),
+				result: null,
+				logs: bypassLogs,
+			}
 		}
 	} catch (error) {
 		return {
 			error: formatJobError(error),
 			result: null,
 			logs: bypassLogs,
+		}
+	} finally {
+		try {
+			await sessionClient.discardSession({
+				sessionId,
+				userId: input.callerContext.user.userId,
+			})
+		} catch {
+			// Best effort only; preserve the original execution failure.
 		}
 	}
 }
