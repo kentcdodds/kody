@@ -17,8 +17,14 @@ type StoredMockArtifactRepo = {
 	remote: string
 }
 
+type StoredMockArtifactSnapshot = {
+	published_commit: string
+	files: Record<string, string>
+}
+
 type MockArtifactsStorage = {
 	repos: Record<string, StoredMockArtifactRepo>
+	snapshots: Record<string, StoredMockArtifactSnapshot>
 }
 
 type MockArtifactsListPayload = {
@@ -53,6 +59,16 @@ type MockArtifactsCreateTokenPayload = {
 
 type MockArtifactsCountPayload = Record<string, never>
 
+type MockArtifactsWriteSnapshotPayload = {
+	repo: string
+	files: Record<string, string>
+}
+
+type MockArtifactsReadSnapshotPayload = {
+	repo: string
+	commit: string | null
+}
+
 type MockArtifactsCommand =
 	| {
 			type: 'list'
@@ -77,6 +93,14 @@ type MockArtifactsCommand =
 	| {
 			type: 'count'
 			payload: MockArtifactsCountPayload
+	  }
+	| {
+			type: 'writeSnapshot'
+			payload: MockArtifactsWriteSnapshotPayload
+	  }
+	| {
+			type: 'readSnapshot'
+			payload: MockArtifactsReadSnapshotPayload
 	  }
 
 function assertNever(value: never): never {
@@ -191,6 +215,37 @@ export class MockCloudflareArtifactsDurableObject {
 					count: Object.keys(storage.repos).length,
 				})
 			}
+			case 'writeSnapshot': {
+				const repo = storage.repos[command.payload.repo]
+				if (!repo) {
+					return Response.json({ error: 'repo_not_found' })
+				}
+				const publishedCommit = `mock_commit_${crypto.randomUUID()}`
+				storage.snapshots[repo.name] = {
+					published_commit: publishedCommit,
+					files: command.payload.files,
+				}
+				repo.last_push_at = new Date().toISOString()
+				await this.writeStorage(storage)
+				return Response.json({
+					published_commit: publishedCommit,
+				})
+			}
+			case 'readSnapshot': {
+				const repo = storage.repos[command.payload.repo]
+				if (!repo) {
+					return Response.json({ error: 'repo_not_found' })
+				}
+				const snapshot = storage.snapshots[repo.name] ?? null
+				if (
+					snapshot &&
+					command.payload.commit &&
+					command.payload.commit !== snapshot.published_commit
+				) {
+					return Response.json({ snapshot: null })
+				}
+				return Response.json({ snapshot })
+			}
 			default:
 				return assertNever(command)
 		}
@@ -199,11 +254,15 @@ export class MockCloudflareArtifactsDurableObject {
 	private async readStorage(): Promise<MockArtifactsStorage> {
 		const storage = await this.state.storage.get<MockArtifactsStorage>('state')
 		if (!storage) {
-			return { repos: {} }
+			return { repos: {}, snapshots: {} }
 		}
 		return {
 			repos:
 				storage.repos && typeof storage.repos === 'object' ? storage.repos : {},
+			snapshots:
+				storage.snapshots && typeof storage.snapshots === 'object'
+					? storage.snapshots
+					: {},
 		}
 	}
 
@@ -295,6 +354,36 @@ class MockCloudflareArtifactsState {
 			)
 		}
 		return response.token
+	}
+
+	async writeSnapshot(input: MockArtifactsWriteSnapshotPayload) {
+		const response = await this.callState<{
+			published_commit?: string
+			error?: string
+		}>({
+			type: 'writeSnapshot',
+			payload: input,
+		})
+		if (!response.published_commit) {
+			throw new Error(
+				response.error ?? 'Failed to write mock artifacts snapshot.',
+			)
+		}
+		return response.published_commit
+	}
+
+	async readSnapshot(input: MockArtifactsReadSnapshotPayload) {
+		const response = await this.callState<{
+			snapshot: StoredMockArtifactSnapshot | null
+			error?: string
+		}>({
+			type: 'readSnapshot',
+			payload: input,
+		})
+		if (response.error) {
+			throw new Error(response.error)
+		}
+		return response.snapshot
 	}
 
 	private async callState<TResponse>(

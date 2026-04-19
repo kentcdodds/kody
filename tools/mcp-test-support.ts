@@ -57,6 +57,48 @@ export async function createTestDatabase() {
 
 export async function startDevServer(persistDir: string) {
 	await applyMigrations(persistDir)
+	const mockCloudflarePort = await getPort({ host: localhost })
+	const mockCloudflareOrigin = `http://${localhost}:${mockCloudflarePort}`
+	const mockCloudflareToken = `mock-cloudflare-${crypto.randomUUID()}`
+	const mockCloudflareProc = spawnProcess({
+		cmd: [
+			nodeBin,
+			'--env-file=packages/worker/.env',
+			'./wrangler-env.ts',
+			'dev',
+			'--local',
+			'--config',
+			'packages/mock-servers/cloudflare/wrangler.jsonc',
+			'--port',
+			String(mockCloudflarePort),
+			'--ip',
+			localhost,
+			'--show-interactive-dev-session=false',
+			'--log-level',
+			'error',
+			'--var',
+			`MOCK_API_TOKEN:${mockCloudflareToken}`,
+		],
+		cwd: projectRoot,
+		env: {
+			...process.env,
+			CLOUDFLARE_ENV: 'test',
+		},
+	})
+	const getMockCloudflareStdout = captureOutput(mockCloudflareProc.stdout)
+	const getMockCloudflareStderr = captureOutput(mockCloudflareProc.stderr)
+
+	try {
+		await waitForUrlReady(
+			new URL('/__mocks/meta', mockCloudflareOrigin),
+			mockCloudflareProc.exited,
+			getMockCloudflareStdout,
+			getMockCloudflareStderr,
+		)
+	} catch (error) {
+		await stopProcess(mockCloudflareProc).catch(() => undefined)
+		throw error
+	}
 	const port = await getPort({ host: localhost })
 	const origin = `http://${localhost}:${port}`
 	const proc = spawnProcess({
@@ -75,6 +117,12 @@ export async function startDevServer(persistDir: string) {
 			'--show-interactive-dev-session=false',
 			'--log-level',
 			'error',
+			'--var',
+			`CLOUDFLARE_API_BASE_URL:${mockCloudflareOrigin}`,
+			'--var',
+			`CLOUDFLARE_API_TOKEN:${mockCloudflareToken}`,
+			'--var',
+			'CLOUDFLARE_ACCOUNT_ID:cf_account_mock_123',
 		],
 		cwd: projectRoot,
 		env: {
@@ -88,6 +136,7 @@ export async function startDevServer(persistDir: string) {
 	try {
 		await waitForServerReady(origin, proc.exited, getStdout, getStderr)
 	} catch (error) {
+		await stopProcess(mockCloudflareProc).catch(() => undefined)
 		await stopProcess(proc).catch(() => undefined)
 		throw error
 	}
@@ -95,7 +144,10 @@ export async function startDevServer(persistDir: string) {
 	return {
 		origin,
 		async [Symbol.asyncDispose]() {
-			await stopProcess(proc)
+			await Promise.allSettled([
+				stopProcess(proc),
+				stopProcess(mockCloudflareProc),
+			])
 		},
 	}
 }
@@ -291,6 +343,50 @@ async function waitForServerReady(
 	throw new Error(
 		[
 			`Timed out waiting for test worker at ${origin}.`,
+			getStdout(),
+			getStderr(),
+		]
+			.filter(Boolean)
+			.join('\n\n'),
+	)
+}
+
+async function waitForUrlReady(
+	url: URL,
+	exited: Promise<number | null>,
+	getStdout: () => string,
+	getStderr: () => string,
+) {
+	const deadline = Date.now() + defaultWaitTimeoutMs
+	while (Date.now() < deadline) {
+		const exitCode = await Promise.race([exited, delay(200).then(() => null)])
+		if (typeof exitCode === 'number') {
+			throw new Error(
+				[
+					`Test worker exited before becoming ready (exit ${exitCode}).`,
+					getStdout(),
+					getStderr(),
+				]
+					.filter(Boolean)
+					.join('\n\n'),
+			)
+		}
+
+		try {
+			const response = await fetch(url)
+			if (response.ok) {
+				await response.body?.cancel()
+				return
+			}
+			await response.body?.cancel()
+		} catch {
+			// Retry until the worker starts accepting connections.
+		}
+	}
+
+	throw new Error(
+		[
+			`Timed out waiting for test worker at ${url.toString()}.`,
 			getStdout(),
 			getStderr(),
 		]

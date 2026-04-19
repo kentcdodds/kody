@@ -446,13 +446,78 @@ export function buildAuthenticatedArtifactsRemote(input: {
 	token: string
 }) {
 	const remoteUrl = new URL(input.remote)
-	if (remoteUrl.protocol !== 'https:') {
+	const isLoopbackHost = isLoopbackHostname(remoteUrl.hostname)
+	const isAllowedProtocol =
+		remoteUrl.protocol === 'https:' ||
+		(remoteUrl.protocol === 'http:' && isLoopbackHost)
+	if (!isAllowedProtocol) {
 		throw new Error(`Artifact remote must use https://, got: ${input.remote}`)
 	}
 	const auth = buildArtifactsGitAuth({ token: input.token })
 	remoteUrl.username = auth.username
 	remoteUrl.password = auth.password
 	return remoteUrl.toString()
+}
+
+export function isLoopbackHostname(hostname: string) {
+	return (
+		hostname === 'localhost' ||
+		hostname === '127.0.0.1' ||
+		hostname === '[::1]' ||
+		hostname === '::1'
+	)
+}
+
+export function isLoopbackArtifactsRemote(remote: string) {
+	try {
+		const url = new URL(remote)
+		return url.protocol === 'http:' && isLoopbackHostname(url.hostname)
+	} catch {
+		return false
+	}
+}
+
+type MockArtifactSnapshot = {
+	published_commit: string
+	files: Record<string, string>
+}
+
+function buildArtifactsNamespaceBasePath(env: Env) {
+	return `/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/artifacts/namespaces/${getArtifactsNamespace(env)}`
+}
+
+export async function writeMockArtifactSnapshot(input: {
+	env: Env
+	repoId: string
+	files: Record<string, string>
+}) {
+	const client = createCloudflareRestClient(input.env)
+	const result = await requestArtifactsApi<MockArtifactSnapshot>(client, {
+		method: 'POST',
+		path: `${buildArtifactsNamespaceBasePath(input.env)}/repos/${encodeURIComponent(input.repoId)}/mock-source-snapshot`,
+		body: {
+			files: input.files,
+		},
+	})
+	return result
+}
+
+export async function readMockArtifactSnapshot(input: {
+	env: Env
+	repoId: string
+	commit: string | null
+}) {
+	const client = createCloudflareRestClient(input.env)
+	const envelope = await requestArtifactsEnvelope<MockArtifactSnapshot>(
+		client,
+		{
+			method: 'GET',
+			path: `${buildArtifactsNamespaceBasePath(input.env)}/repos/${encodeURIComponent(input.repoId)}/mock-source-snapshot`,
+			query: input.commit ? { commit: input.commit } : undefined,
+			treat404AsNull: true,
+		},
+	)
+	return envelope.result
 }
 
 export async function resolveArtifactSourceRepo(env: Env, repoId: string) {

@@ -95,7 +95,7 @@ test('Cloudflare mock implements the Artifacts REST workflow used in local dev',
 		name: repoName,
 		description: 'Repo 1',
 		defaultBranch: 'main',
-		remote: `https://${mockAccountId}.artifacts.mock.local/git/default/${repoName}.git`,
+		remote: `${mock.origin}/git/default/${repoName}.git`,
 	})
 	expect(created.token).toMatch(/\?expires=\d+$/)
 
@@ -123,7 +123,7 @@ test('Cloudflare mock implements the Artifacts REST workflow used in local dev',
 	expect(forked).toMatchObject({
 		name: forkName,
 		defaultBranch: 'main',
-		remote: `https://${mockAccountId}.artifacts.mock.local/git/default/${forkName}.git`,
+		remote: `${mock.origin}/git/default/${forkName}.git`,
 	})
 	expect(forked.token).toMatch(/\?expires=\d+$/)
 

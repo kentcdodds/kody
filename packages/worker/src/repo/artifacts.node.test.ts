@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 const {
 	buildArtifactsGitAuth,
+	buildAuthenticatedArtifactsRemote,
 	getArtifactsBinding,
 	parseArtifactTokenSecret,
 	resolveArtifactSourceRepo,
@@ -250,4 +251,13 @@ test('artifacts git auth uses x username and strips expiry from password', () =>
 		username: 'x',
 		password: 'art_v1_secret',
 	})
+})
+
+test('authenticated artifact remotes allow loopback http for local mocks', () => {
+	expect(
+		buildAuthenticatedArtifactsRemote({
+			remote: 'http://127.0.0.1:8787/git/default/repo-1.git',
+			token: 'art_v1_secret?expires=1760000100',
+		}),
+	).toBe('http://x:art_v1_secret@127.0.0.1:8787/git/default/repo-1.git')
 })
