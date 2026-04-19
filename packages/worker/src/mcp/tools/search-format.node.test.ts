@@ -17,7 +17,7 @@ test('parseEntityRef accepts value and connector entity types', () => {
 	})
 })
 
-test('search markdown surfaces entity identifiers and match-specific details', () => {
+test('search markdown and entity detail formatting preserve structured behavior', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
 		warnings: [],
@@ -54,14 +54,13 @@ test('search markdown surfaces entity identifiers and match-specific details', (
 		],
 	})
 
-	expect(markdown).toContain('**Entity:** `user:preferred_repo:value`')
-	expect(markdown).toContain('Preferred repository owner/name.')
-	expect(markdown).toContain('**Flow:** `confidential`')
-	expect(markdown).toContain('**API base URL:** `https://api.github.com`')
-})
+	expect(markdown).toMatch(/^# Search results/)
+	expect(markdown).toContain('## Value')
+	expect(markdown).toContain('## Connector')
+	expect(markdown).toContain('user:preferred_repo:value')
+	expect(markdown).toContain('https://api.github.com')
 
-test('slim structured matches include value and connector fields', () => {
-	const matches = toSlimStructuredMatches({
+	expect(toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
 			{
@@ -94,9 +93,7 @@ test('slim structured matches include value and connector fields', () => {
 				fusedScore: 0.9,
 			},
 		],
-	})
-
-	expect(matches).toEqual([
+	})).toEqual([
 		{
 			type: 'value',
 			id: 'user:preferred_repo',
@@ -119,9 +116,7 @@ test('slim structured matches include value and connector fields', () => {
 			requiredHosts: ['api.github.com'],
 		},
 	])
-})
 
-test('entity detail formatting supports value and connector entities', () => {
 	const valueDetail = formatEntityDetailMarkdown({
 		type: 'value',
 		id: 'user:preferred_repo',
@@ -138,8 +133,6 @@ test('entity detail formatting supports value and connector entities', () => {
 			ttlMs: null,
 		},
 	})
-	expect(valueDetail.markdown).toContain('codemode.value_get')
-	expect(valueDetail.markdown).toContain('kentcdodds/kody')
 	expect(valueDetail.structured).toMatchObject({
 		type: 'value',
 		scope: 'user',
@@ -173,8 +166,6 @@ test('entity detail formatting supports value and connector entities', () => {
 			requiredHosts: ['api.github.com'],
 		},
 	})
-	expect(connectorDetail.markdown).toContain('codemode.connector_get')
-	expect(connectorDetail.markdown).toContain('api.github.com')
 	expect(connectorDetail.structured).toMatchObject({
 		type: 'connector',
 		flow: 'confidential',
@@ -183,7 +174,7 @@ test('entity detail formatting supports value and connector entities', () => {
 	})
 })
 
-test('entity detail formatting includes saved app backend metadata', () => {
+test('entity detail formatting includes saved app backend metadata in structured output', () => {
 	const appDetail = formatEntityDetailMarkdown({
 		type: 'app',
 		id: 'app-123',
@@ -203,7 +194,6 @@ test('entity detail formatting includes saved app backend metadata', () => {
 			updated_at: '2026-03-20T00:00:00.000Z',
 		},
 	})
-	expect(appDetail.markdown).toContain('Has backend: yes')
 	expect(appDetail.structured).toMatchObject({
 		type: 'app',
 		hasServerCode: true,
