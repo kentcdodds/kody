@@ -1,6 +1,6 @@
 # Saved app backends
 
-Saved apps persist **two** code artifacts:
+Saved apps publish **two** code artifacts into the repo-backed source snapshot:
 
 - **`clientCode`** — HTML for the generic MCP app shell
 - **`serverCode`** — optional Durable Object code that runs behind
