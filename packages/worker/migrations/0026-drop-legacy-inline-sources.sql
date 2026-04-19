@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS legacy_inline_sources_archive (
 	PRIMARY KEY (entity_kind, user_id, entity_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_legacy_inline_sources_archive_user_id_entity_kind
+ON legacy_inline_sources_archive(user_id, entity_kind);
+
 UPDATE mcp_skills
 SET source_id = (
 	SELECT entity_sources.id
@@ -167,6 +170,10 @@ WHERE source_id IS NULL;
 DELETE FROM jobs
 WHERE source_id IS NULL;
 
+-- __migration_assertions intentionally uses CHECK (0) as an unreachable trap.
+-- The archive-and-delete steps above should remove every NULL source_id row
+-- before these INSERTs run, so keep this guard to fail loudly if a future
+-- change ever skips those deletes and makes the block reachable again.
 CREATE TABLE __migration_assertions (
 	message TEXT NOT NULL CHECK (0)
 );
