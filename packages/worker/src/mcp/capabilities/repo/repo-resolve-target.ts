@@ -63,14 +63,17 @@ async function requireSkillTarget(input: {
 	})
 	return {
 		source,
-		resolvedTarget: toResolvedSkillTarget(skill),
+		resolvedTarget: toResolvedSkillTarget(skill, source.id),
 	}
 }
 
-function toResolvedSkillTarget(skill: McpSkillRow): RepoResolvedTarget {
+function toResolvedSkillTarget(
+	skill: McpSkillRow,
+	sourceId?: string,
+): RepoResolvedTarget {
 	return {
 		kind: 'skill',
-		source_id: skill.source_id,
+		source_id: sourceId ?? skill.source_id,
 		skill_id: skill.id,
 		name: skill.name,
 	}
@@ -156,14 +159,17 @@ async function requireAppTarget(input: {
 	})
 	return {
 		source,
-		resolvedTarget: toResolvedAppTarget(app),
+		resolvedTarget: toResolvedAppTarget(app, source.id),
 	}
 }
 
-function toResolvedAppTarget(app: UiArtifactRow): RepoResolvedTarget {
+function toResolvedAppTarget(
+	app: UiArtifactRow,
+	sourceId?: string,
+): RepoResolvedTarget {
 	return {
 		kind: 'app',
-		source_id: app.sourceId ?? '',
+		source_id: sourceId ?? app.sourceId ?? '',
 		app_id: app.id,
 		title: app.title,
 	}
@@ -229,7 +235,7 @@ export async function resolveRepoTargetFromSource(input: {
 			if (!skill) {
 				return toResolvedSourceTarget(source)
 			}
-			return toResolvedSkillTarget(skill)
+			return toResolvedSkillTarget(skill, source.id)
 		}
 		case 'job': {
 			const job = await getJobRowById(input.db, input.userId, source.entity_id)
@@ -252,7 +258,7 @@ export async function resolveRepoTargetFromSource(input: {
 			if (!app || !app.sourceId) {
 				return toResolvedSourceTarget(source)
 			}
-			return toResolvedAppTarget(app)
+			return toResolvedAppTarget(app, source.id)
 		}
 	}
 	return toResolvedSourceTarget(source)

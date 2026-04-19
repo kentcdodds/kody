@@ -356,13 +356,6 @@ export const repoRunChecksOutputSchema = z.object({
 	}),
 })
 
-export const repoRunChecksDetailedOutputSchema =
-	repoRunChecksOutputSchema.extend({
-		run_id: z.string(),
-		tree_hash: z.string(),
-		checked_at: z.string(),
-	})
-
 export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('ok'),
@@ -386,6 +379,7 @@ export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 		current_published_commit: z.string().nullable(),
 	}),
 ])
+
 
 export const repoCheckStatusOutputSchema = z.object({
 	run_id: z.string().nullable(),
