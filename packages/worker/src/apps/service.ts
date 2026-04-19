@@ -91,8 +91,9 @@ function normalizeKeywords(keywords: Array<string> | undefined) {
 }
 
 function toAppView(app: AppRecord): AppView {
+	const { userId: _userId, ...appView } = app
 	return {
-		...app,
+		...appView,
 		jobCount: app.jobs.length,
 		taskCount: app.tasks.length,
 		scheduleSummary: app.jobs.map((job) =>
