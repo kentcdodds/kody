@@ -96,18 +96,20 @@ export async function resolveSavedAppSource(input: {
 				userId: input.artifact.user_id,
 				path: resolveManifestClientPath(manifest),
 			}),
-			session.readFile({
-				sessionId: opened.id,
-				userId: input.artifact.user_id,
-				path: normalizeRepoWorkspacePath(manifest.server),
-			}),
+			input.artifact.hasServerCode && manifest.server
+				? session.readFile({
+						sessionId: opened.id,
+						userId: input.artifact.user_id,
+						path: normalizeRepoWorkspacePath(manifest.server),
+					})
+				: Promise.resolve({ path: '', content: null }),
 		])
 		if (!clientFile.content) {
 			throw new Error(
 				`Saved app client asset "${resolveManifestClientPath(manifest)}" was not found in the repo source.`,
 			)
 		}
-		if (!serverFile.content) {
+		if (input.artifact.hasServerCode && manifest.server && !serverFile.content) {
 			throw new Error(
 				`Saved app server module "${manifest.server}" was not found in the repo source.`,
 			)
@@ -121,7 +123,7 @@ export async function resolveSavedAppSource(input: {
 				? normalizeUiArtifactParameters(manifest.parameters)
 				: parseUiArtifactParameters(input.artifact.parameters),
 			clientCode: clientFile.content,
-			serverCode: serverFile.content,
+			serverCode: input.artifact.hasServerCode ? serverFile.content : null,
 			serverCodeId: source.published_commit ?? source.id,
 			sourceId: source.id,
 			publishedCommit: source.published_commit,

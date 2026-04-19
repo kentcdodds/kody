@@ -193,6 +193,66 @@ function resolveUpdatedShape(input: {
 	}
 }
 
+async function readJobModuleSource(input: {
+	env: Env
+	callerContext: PersistedJobCallerContext
+	sourceId: string
+}) {
+	const sessionId = `job-source-${input.sourceId}-${crypto.randomUUID()}`
+	const session = repoSessionRpc(input.env, sessionId)
+	let openedSessionId: string | null = null
+	try {
+		const opened = await session.openSession({
+			sessionId,
+			sourceId: input.sourceId,
+			userId: input.callerContext.user.userId,
+			baseUrl: input.callerContext.baseUrl,
+			sourceRoot: null,
+		})
+		openedSessionId = opened.id
+		const manifestPath = opened.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+		const manifestFile = await session.readFile({
+			sessionId: opened.id,
+			userId: input.callerContext.user.userId,
+			path: manifestPath,
+		})
+		if (!manifestFile.content) {
+			throw new Error(
+				`Job manifest "${manifestPath}" was not found in repo session.`,
+			)
+		}
+		const manifest = parseRepoManifest({
+			content: manifestFile.content,
+			manifestPath,
+		})
+		if (manifest.kind !== 'job') {
+			throw new Error(`Repo source "${input.sourceId}" is not a job manifest.`)
+		}
+		const moduleFile = await session.readFile({
+			sessionId: opened.id,
+			userId: input.callerContext.user.userId,
+			path: getManifestEntrypointPath(manifest),
+		})
+		if (!moduleFile.content) {
+			throw new Error(
+				`Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+			)
+		}
+		return moduleFile.content
+	} finally {
+		if (openedSessionId) {
+			await session
+				.discardSession({
+					sessionId: openedSessionId,
+					userId: input.callerContext.user.userId,
+				})
+				.catch(() => {
+					// Best effort only; source resolution should preserve the original error.
+				})
+		}
+	}
+}
+
 export async function createJob(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -370,6 +430,13 @@ export async function updateJob(input: {
 				})
 			: existing.nextRunAt,
 	}
+	const moduleSource =
+		shape.moduleSource ??
+		(await readJobModuleSource({
+			env: input.env,
+			callerContext,
+			sourceId: updated.sourceId,
+		}))
 	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 		env: input.env,
 		userId: callerContext.user.userId,
@@ -378,7 +445,7 @@ export async function updateJob(input: {
 		bootstrapAccess: ensuredSource?.bootstrapAccess ?? null,
 		files: buildJobSourceFiles({
 			job: toJobView(updated),
-			moduleSource: shape.moduleSource ?? 'export default async () => null',
+			moduleSource,
 		}),
 	})
 	if (syncedPublishedCommit) {
