@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const entityKindValues = ['skill', 'app', 'job'] as const
+export const entityKindValues = ['app'] as const
 export type EntityKind = (typeof entityKindValues)[number]
 
 export const entitySourceRowSchema = z.object({
@@ -90,9 +90,50 @@ const manifestParameterSchema = z.object({
 	default: z.unknown().optional(),
 })
 
+const appScheduleSchema = z.discriminatedUnion('type', [
+	z.object({
+		type: z.literal('cron'),
+		expression: z.string().min(1),
+	}),
+	z.object({
+		type: z.literal('interval'),
+		every: z.string().min(1),
+	}),
+	z.object({
+		type: z.literal('once'),
+		runAt: z.string().min(1),
+	}),
+])
+
+const appTaskManifestSchema = z.object({
+	name: z.string().min(1),
+	title: z.string().min(1),
+	description: z.string().min(1),
+	entrypoint: z.string().min(1),
+	keywords: z.array(z.string()).optional(),
+	searchText: z.string().optional(),
+	parameters: z.array(manifestParameterSchema).optional(),
+	readOnly: z.boolean().optional(),
+	idempotent: z.boolean().optional(),
+	destructive: z.boolean().optional(),
+	usesCapabilities: z.array(z.string()).optional(),
+})
+
+const appJobManifestSchema = z.object({
+	name: z.string().min(1),
+	title: z.string().min(1),
+	description: z.string().min(1),
+	task: z.string().min(1),
+	params: z.record(z.string(), z.unknown()).optional(),
+	schedule: appScheduleSchema,
+	timezone: z.string().optional(),
+	enabled: z.boolean().optional(),
+	killSwitchEnabled: z.boolean().optional(),
+})
+
 const manifestBaseSchema = z.object({
 	version: z.literal(1),
-	kind: z.enum(entityKindValues),
+	kind: z.literal('app'),
 	title: z.string().min(1),
 	description: z.string().min(1),
 	keywords: z.array(z.string()).optional(),
@@ -103,38 +144,19 @@ const manifestBaseSchema = z.object({
 	checks: repoChecksSchema,
 })
 
-export const skillManifestSchema = manifestBaseSchema.extend({
-	kind: z.literal('skill'),
-	entrypoint: z.string().min(1),
-	collection: z.string().optional(),
-	readOnly: z.boolean().optional(),
-	idempotent: z.boolean().optional(),
-	destructive: z.boolean().optional(),
-	usesCapabilities: z.array(z.string()).optional(),
-})
-
 export const appManifestSchema = manifestBaseSchema.extend({
 	kind: z.literal('app'),
-	server: z.string().min(1),
 	client: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
+	server: z.string().min(1).optional(),
 	assets: z.array(z.string().min(1)).optional(),
 	hidden: z.boolean().optional(),
+	tasks: z.array(appTaskManifestSchema).optional(),
+	jobs: z.array(appJobManifestSchema).optional(),
 })
 
-export const jobManifestSchema = manifestBaseSchema.extend({
-	kind: z.literal('job'),
-	entrypoint: z.string().min(1),
-})
+export const repoManifestSchema = appManifestSchema
 
-export const repoManifestSchema = z.discriminatedUnion('kind', [
-	skillManifestSchema,
-	appManifestSchema,
-	jobManifestSchema,
-])
-
-export type SkillManifest = z.infer<typeof skillManifestSchema>
 export type AppManifest = z.infer<typeof appManifestSchema>
-export type JobManifest = z.infer<typeof jobManifestSchema>
 export type RepoManifest = z.infer<typeof repoManifestSchema>
 
 export type SearchProjection = {

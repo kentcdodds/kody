@@ -1,58 +1,75 @@
-# Skills, saved apps, and generated UI
+# Apps and generated UI
 
-## Saved skills
+## Apps are the top-level persisted unit
 
-**meta_save_skill** stores repeatable **codemode** workflows. Save patterns you
-expect to run again with similar structure; run one-off work with **execute**
-instead.
+Kody persists personal automation as **apps**.
 
-Skills can declare **parameters**; pass values through **meta_run_skill**
-**`params`** and read them as **`params`** inside the skill code.
+An app can include any combination of:
 
-Repo-backed saved skills can also span multiple files. Kody bundles the saved
-artifact repo and executes its ES module entrypoint with the same **execute**
-runtime semantics (including `codemode`, OAuth helpers, and skill params).
+- **client UI** — HTML rendered inside the generic UI shell
+- **server backend** — request/RPC code behind the app backend
+- **tasks** — named callable codemode entrypoints
+- **jobs** — named scheduled entrypoints
 
-Optional **collection** groups related skills. Use
-**meta_list_skill_collections**, **meta_run_skill**, and **meta_delete_skill**
-for lifecycle tasks.
+That means you no longer need to think in terms of separate saved skills, saved
+jobs, and saved UI artifacts. One repo-backed app can expose all of those
+surfaces together.
 
-## Saved apps (MCP App artifacts)
+## Saving an app
 
-**ui_save_app** persists reusable **generated UI** as a saved app record with:
+Use **`app_save`** to create or replace an app package.
 
-- **`clientCode`** — HTML rendered inside the generic shell
-- **`serverCode`** — Durable Object facet backend code for real app logic
-- **`serverCodeId`** — rotated automatically on each save when backend code
-  changes so Cloudflare reloads the Dynamic Worker
+Typical fields:
 
-`clientCode` supports **HTML only**. Put browser-side logic inside
-`<script type="module">...</script>` tags in that HTML.
+- **`title`** — human-readable app name
+- **`description`** — what the app does
+- **`clientCode`** — optional HTML UI
+- **`serverCode`** — optional backend code
+- **`tasks`** — optional named callable tasks
+- **`jobs`** — optional named scheduled jobs
 
-For non-trivial saved apps, treat **`serverCode`** plus
-**`kodyWidget.appBackend.fetch(...)`** as the default pattern:
+For non-trivial apps, prefer:
 
-- put provider API calls, persistence, validation, and mutations in
-  **`serverCode`**
-- expose backend routes such as **`/api/state`** and **`/api/action`**
-- keep **`clientCode`** mostly UI plus `kodyWidget.appBackend.fetch(...)` calls
-  to the app backend
-- reserve embedded **`kodyWidget.executeCode(...)`** strings in client HTML for
-  quick prototypes or one-off experiments
+- provider API calls, persistence, and validation in **`serverCode`**
+- lightweight UI in **`clientCode`**
+- named automation entrypoints in **`tasks`**
+- recurring automation in **`jobs`**
 
-When updating an existing saved app with `app_id`, omitted fields preserve the
-current saved value. Omit `serverCode` to keep the existing backend, or pass
-`serverCode: null` to clear it explicitly.
+When updating an existing app with `app_id`, omitted fields preserve the
+current saved value unless the capability says otherwise.
 
-Reopen with **open_generated_ui** using **`app_id`**, or discover apps via
-**search**.
+## Running app tasks and jobs
 
-Saved apps can be **hidden** from search by default; set **`hidden: false`**
-when the app should appear in discovery for reuse.
+Use:
 
-Saved app backends run behind **`/app/:appId/*`** with their own isolated SQLite
-database per facet. The default facet is **`main`**. Additional named facets
-such as **`jobs`** or **`cache`** are supported by the lifecycle capabilities.
+- **`app_run_task`** for named callable automation inside an app
+- **`app_run_job`** to trigger a named scheduled job immediately
+
+These app entrypoints execute with the same codemode-style capability model as
+the rest of Kody’s server-side automation surface.
+
+## Opening app UI
+
+Use **`open_generated_ui`** with **`app_id`** to reopen a saved app UI, or
+**`code`** for a one-off inline UI.
+
+Import **`kodyWidget`** from **`@kody/ui-utils`** for helpers, app-backend
+discovery, secrets, values, OAuth, forms, and **`executeCode`** when you truly
+need an inline server snippet. Use generated UI when the user must enter
+sensitive data instead of pasting into chat.
+
+For saved apps with real logic, use **`kodyWidget.appBackend`** as the default
+client-to-backend path:
+
+**`await kodyWidget.appBackend.fetch('/api/state')`**
+
+That keeps **`clientCode`** focused on UI while **`serverCode`** handles the
+backend contract.
+
+## App backends
+
+Saved app backends run behind **`/app/:appId/*`** with isolated SQLite storage
+per facet. The default facet is **`main`**.
 
 Use these lifecycle capabilities when you need backend maintenance:
 
@@ -65,33 +82,15 @@ Use these lifecycle capabilities when you need backend maintenance:
 See [Saved app backends](./saved-app-backends.md) for the route contract, RPC
 bridge surface, and the default **`/api/state`** + **`/api/action`** pattern.
 
-## Generated UI
+## Integrations and OAuth
 
-**open_generated_ui** accepts exactly one of **`code`** (inline source) or
-**`app_id`** (reopen saved). **`params`** applies to saved apps with declared
-parameters.
+If an app depends on a third-party integration, run **`kody_official_guide`**
+with **`guide`** **`integration_bootstrap`** first.
 
-Import **`kodyWidget`** from **`@kody/ui-utils`** for helpers, app-backend
-discovery, secrets, values, OAuth, forms, and **`executeCode`** when you truly
-need an inline server snippet. Use generated UI when the user must enter
-sensitive data instead of pasting into chat.
+After the authenticated smoke test passes and you are ready to build the app
+itself, use **`guide`** **`integration_backed_app`** for the default
+serverCode-first pattern.
 
-`kodyWidget.executeCode(code, params?)` also accepts optional per-call JSON
-params. Those values are injected as **`params`** inside the async function and
-override saved-app/session params for that execution only.
-
-For saved apps with real logic, use **`kodyWidget.appBackend`** as the default
-client-to-backend path:
-
-**`await kodyWidget.appBackend.fetch('/api/state')`**
-
-That keeps **`clientCode`** focused on UI while **`serverCode`** handles the
-backend contract.
-
-If a skill or saved app depends on a third-party integration, run
-**`kody_official_guide`** with **`guide`** **`integration_bootstrap`** first.
-After the authenticated smoke test passes and you are ready to build the saved
-app itself, use **`guide`** **`integration_backed_app`** for the default
-serverCode-first pattern. For third-party OAuth, then run **`guide`**
-**`oauth`** (hosted **`/connect/oauth`**). Use **`guide`**
-**`generated_ui_oauth`** only for OAuth built inside a saved app.
+For third-party OAuth, then run **`guide`** **`oauth`** (hosted
+**`/connect/oauth`**). Use **`guide`** **`generated_ui_oauth`** only for OAuth
+built inside a saved app.

@@ -4,18 +4,13 @@ import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type UnifiedSearchMatch } from '#mcp/capabilities/unified-search.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
-import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
-import { type JobView } from '#worker/jobs/types.ts'
 
 export type SearchEntityType =
 	| 'capability'
-	| 'skill'
 	| 'app'
-	| 'job'
 	| 'secret'
 	| 'value'
 	| 'connector'
@@ -63,31 +58,17 @@ export type SlimSearchMatch =
 			usage: string
 	  }
 	| {
-			type: 'skill'
-			id: string
-			name: string
-			title: string
-			description: string
-			usage: string
-			collection: string | null
-			collectionSlug: string | null
-	  }
-	| {
 			type: 'app'
 			id: string
 			title: string
 			description: string
 			usage: string
-			hostedUrl: string
-	  }
-	| {
-			type: 'job'
-			id: string
-			title: string
-			description: string
-			usage: string
-			scheduleSummary: string
-			sourceId: string | null
+			hostedUrl: string | null
+			hasClient: boolean
+			hasServerCode: boolean
+			taskNames: Array<string>
+			jobNames: Array<string>
+			scheduleSummaries: Array<string>
 	  }
 	| {
 			type: 'secret'
@@ -135,44 +116,19 @@ export type SearchEntityDetailStructured =
 	  }
 	| {
 			kind: 'entity'
-			type: 'skill'
-			id: string
-			title: string
-			description: string
-			usage: string
-			collection: string | null
-			collectionSlug: string | null
-			parameters: ReturnType<typeof parseSkillParameters>
-			inferredCapabilities: Array<string>
-			usesCapabilities: Array<string> | null
-			searchText: string | null
-			readOnly: boolean
-			idempotent: boolean
-			destructive: boolean
-	  }
-	| {
-			kind: 'entity'
 			type: 'app'
 			id: string
 			title: string
 			description: string
 			usage: string
-			hostedUrl: string
+			hostedUrl: string | null
+			hasClient: boolean
 			hasServerCode: boolean
+			taskNames: Array<string>
+			jobNames: Array<string>
+			scheduleSummaries: Array<string>
 			parameters: ReturnType<typeof parseUiArtifactParameters>
 			hidden: boolean
-	  }
-	| {
-			kind: 'entity'
-			type: 'job'
-			id: string
-			title: string
-			description: string
-			usage: string
-			scheduleSummary: string
-			sourceId: string | null
-			publishedCommit: string | null
-			storageId: string
 	  }
 	| {
 			kind: 'entity'
@@ -223,26 +179,12 @@ export type SearchEntityDetail =
 			spec: CapabilitySpec
 	  }
 	| {
-			type: 'skill'
-			id: string
-			title: string
-			description: string
-			row: McpSkillRow
-	  }
-	| {
 			type: 'app'
 			id: string
 			title: string
 			description: string
 			row: UiArtifactRow
-			hostedUrl: string
-	  }
-	| {
-			type: 'job'
-			id: string
-			title: string
-			description: string
-			row: JobView
+			hostedUrl: string | null
 	  }
 	| {
 			type: 'secret'
@@ -275,22 +217,20 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new Error(
-			'Entity must use the format "{id}:{type}" where type is capability, skill, app, job, secret, value, or connector.',
+			'Entity must use the format "{id}:{type}" where type is capability, app, secret, value, or connector.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
 	const type = trimmed.slice(separator + 1).trim()
 	if (
 		type !== 'capability' &&
-		type !== 'skill' &&
 		type !== 'app' &&
-		type !== 'job' &&
 		type !== 'secret' &&
 		type !== 'value' &&
 		type !== 'connector'
 	) {
 		throw new Error(
-			'Entity type must be one of: capability, skill, app, job, secret, value, or connector.',
+			'Entity type must be one of: capability, app, secret, value, or connector.',
 		)
 	}
 	if (!id) {
@@ -323,8 +263,7 @@ export function formatSearchMarkdown(input: {
 			'- Built-in capabilities — `execute` / `codemode.<name>(args)`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved skills — `codemode.meta_run_skill({ name, params })`',
-			'- Saved apps — `open_generated_ui({ app_id })`; users can also open the hosted URL for the saved app',
+			'- Saved apps — `app_get`, `app_list`, `app_save`, `app_run_task`, `app_run_job`, and `open_generated_ui({ app_id })` when the app has client UI',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
@@ -381,31 +320,19 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 			'description' in match ? match.description : '',
 		]
 	}
-	if (match.type === 'skill') {
-		return [
-			`## Skill — ${match.title} (name: \`${match.skillName}\`)`,
-			'',
-			match.description,
-		]
-	}
 	if (match.type === 'app') {
-		const hostedUrl = buildSavedUiUrl(baseUrl, match.appId)
+		const hostedUrl = match.hostedUrl ?? buildSavedUiUrl(baseUrl, match.appId)
 		return [
 			`## App — ${match.title}`,
 			'',
 			match.description,
-			'',
-			`**Hosted URL:** \`${hostedUrl}\``,
-		]
-	}
-	if (match.type === 'job') {
-		return [
-			`## Job — ${match.title}`,
-			'',
-			match.description,
-			'',
-			`**Schedule:** ${match.scheduleSummary}`,
-			...(match.sourceId ? [`**Source ID:** \`${match.sourceId}\``] : []),
+			...(match.taskNames.length > 0
+				? ['', `**Tasks:** ${match.taskNames.map((name) => `\`${name}\``).join(', ')}`]
+				: []),
+			...(match.jobNames.length > 0
+				? ['', `**Jobs:** ${match.jobNames.map((name) => `\`${name}\``).join(', ')}`]
+				: []),
+			...(match.hostedUrl ? ['', `**Hosted URL:** \`${hostedUrl}\``] : []),
 		]
 	}
 	if (match.type === 'value') {
@@ -427,7 +354,10 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 			`**API base URL:** ${match.apiBaseUrl ? `\`${match.apiBaseUrl}\`` : 'none'}`,
 		]
 	}
-	return [`## Secret — \`${match.name}\``, '', match.description]
+	if (match.type === 'secret') {
+		return [`## Secret — \`${match.name}\``, '', match.description]
+	}
+	return [String(match)]
 }
 
 export function toSlimStructuredMatches(input: {
@@ -447,37 +377,19 @@ export function toSlimStructuredMatches(input: {
 				usage: `execute with codemode.${match.name}(args)`,
 			}
 		}
-		if (match.type === 'skill') {
-			return {
-				type: 'skill',
-				id: match.skillName,
-				name: match.skillName,
-				title: match.title,
-				description: match.description,
-				usage: `codemode.meta_run_skill({ name: "${match.skillName}", params: { ... } })`,
-				collection: match.collection,
-				collectionSlug: match.collectionSlug,
-			}
-		}
 		if (match.type === 'app') {
 			return {
 				type: 'app',
 				id: match.appId,
 				title: match.title,
 				description: match.description,
-				usage: `open_generated_ui({ app_id: "${match.appId}" })`,
-				hostedUrl: buildSavedUiUrl(input.baseUrl, match.appId),
-			}
-		}
-		if (match.type === 'job') {
-			return {
-				type: 'job',
-				id: match.jobId,
-				title: match.title,
-				description: match.description,
-				usage: `codemode.job_get({ id: "${match.jobId}" })`,
-				scheduleSummary: match.scheduleSummary,
-				sourceId: match.sourceId,
+				usage: match.usage,
+				hostedUrl: match.hostedUrl,
+				hasClient: match.hasClient,
+				hasServerCode: match.hasServerCode,
+				taskNames: match.taskNames,
+				jobNames: match.jobNames,
+				scheduleSummaries: match.scheduleSummaries,
 			}
 		}
 		if (match.type === 'value') {
@@ -505,25 +417,17 @@ export function toSlimStructuredMatches(input: {
 				requiredHosts: match.requiredHosts,
 			}
 		}
-		return {
-			type: 'secret',
-			id: match.name,
-			title: match.name,
-			description: match.description,
-			usage: `{{secret:${match.name}|scope=user}}`,
+		if (match.type === 'secret') {
+			return {
+				type: 'secret',
+				id: match.name,
+				title: match.name,
+				description: match.description,
+				usage: `{{secret:${match.name}|scope=user}}`,
+			}
 		}
+		throw new Error(`Unhandled search match type: ${match.type}`)
 	})
-}
-
-function parseJsonStringArray(raw: string | null): Array<string> | null {
-	if (raw == null) return null
-	try {
-		const value = JSON.parse(raw) as unknown
-		if (!Array.isArray(value)) return null
-		return value.filter((item): item is string => typeof item === 'string')
-	} catch {
-		return null
-	}
 }
 
 export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
@@ -579,75 +483,6 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		}
 	}
 
-	if (detail.type === 'skill') {
-		const parameters = parseSkillParameters(detail.row.parameters)
-		const inferredCapabilities =
-			parseJsonStringArray(detail.row.inferred_capabilities) ?? []
-		const usesCapabilities = parseJsonStringArray(detail.row.uses_capabilities)
-		const lines = [
-			`# Skill — ${detail.row.title}`,
-			'',
-			detail.row.description,
-			'',
-			'## Summary',
-			'',
-			`- Name: \`${detail.row.name}\``,
-			`- Collection: ${detail.row.collection_name ?? 'none'}`,
-			`- Collection slug: ${detail.row.collection_slug ?? 'none'}`,
-			`- Read-only: ${detail.row.read_only === 1 ? 'yes' : 'no'}`,
-			`- Idempotent: ${detail.row.idempotent === 1 ? 'yes' : 'no'}`,
-			`- Destructive: ${detail.row.destructive === 1 ? 'yes' : 'no'}`,
-			'',
-			'## Run this skill',
-			'',
-			`- \`codemode.meta_run_skill({ name: "${detail.row.name}", params: { ... } })\``,
-		]
-		if (parameters && parameters.length > 0) {
-			lines.push('', '## Parameters', '')
-			for (const parameter of parameters) {
-				lines.push(
-					`- \`${parameter.name}\` (${parameter.type}${parameter.required ? ', required' : ', optional'}) — ${parameter.description}`,
-				)
-			}
-		}
-		if (inferredCapabilities.length > 0 || usesCapabilities?.length) {
-			lines.push('', '## Capability hints', '')
-			if (inferredCapabilities.length > 0) {
-				lines.push(
-					`- Inferred capabilities: ${inferredCapabilities.join(', ')}`,
-				)
-			}
-			if (usesCapabilities && usesCapabilities.length > 0) {
-				lines.push(
-					`- Declared uses_capabilities: ${usesCapabilities.join(', ')}`,
-				)
-			}
-		}
-		if (detail.row.search_text) {
-			lines.push('', '## Search text', '', `- ${detail.row.search_text}`)
-		}
-		return {
-			markdown: lines.join('\n'),
-			structured: {
-				kind: 'entity',
-				type: 'skill',
-				id: detail.row.name,
-				title: detail.title,
-				description: detail.description,
-				usage: `codemode.meta_run_skill({ name: "${detail.row.name}", params: { ... } })`,
-				collection: detail.row.collection_name,
-				collectionSlug: detail.row.collection_slug,
-				parameters,
-				inferredCapabilities,
-				usesCapabilities,
-				searchText: detail.row.search_text,
-				readOnly: detail.row.read_only === 1,
-				idempotent: detail.row.idempotent === 1,
-				destructive: detail.row.destructive === 1,
-			} satisfies SearchEntityDetailStructured,
-		}
-	}
-
 	if (detail.type === 'app') {
 		const parameters = parseUiArtifactParameters(detail.row.parameters)
 		const hasServerCode = detail.row.hasServerCode
@@ -659,13 +494,35 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Summary',
 			'',
 			`- App ID: \`${detail.row.id}\``,
+			`- Has client UI: ${detail.row.hasClient ? 'yes' : 'no'}`,
 			`- Has backend: ${hasServerCode ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.row.hidden ? 'yes' : 'no'}`,
+			...(detail.row.taskNames.length > 0
+				? [`- Tasks: ${detail.row.taskNames.map((name) => `\`${name}\``).join(', ')}`]
+				: []),
+			...(detail.row.jobNames.length > 0
+				? [`- Jobs: ${detail.row.jobNames.map((name) => `\`${name}\``).join(', ')}`]
+				: []),
+			...(detail.row.scheduleSummaries.length > 0
+				? [`- Schedules: ${detail.row.scheduleSummaries.join(' | ')}`]
+				: []),
 			'',
-			'## Open this app',
+			'## Use this app',
 			'',
-			`- \`open_generated_ui({ app_id: "${detail.row.id}" })\``,
-			`- Hosted URL: \`${detail.hostedUrl}\``,
+			...(detail.row.hasClient
+				? [`- \`open_generated_ui({ app_id: "${detail.row.id}" })\``]
+				: []),
+			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
+			...(detail.row.taskNames.length > 0
+				? [
+						`- \`codemode.app_run_task({ app_id: "${detail.row.id}", task_name: "${detail.row.taskNames[0]}" })\``,
+					]
+				: []),
+			...(detail.row.jobNames.length > 0
+				? [
+						`- \`codemode.app_run_job({ app_id: "${detail.row.id}", job_name: "${detail.row.jobNames[0]}" })\``,
+					]
+				: []),
 		]
 		if (parameters && parameters.length > 0) {
 			lines.push('', '## Parameters', '')
@@ -683,50 +540,21 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				id: detail.id,
 				title: detail.title,
 				description: detail.description,
-				usage: `open_generated_ui({ app_id: "${detail.row.id}" })`,
+				usage: detail.row.hasClient
+					? `open_generated_ui({ app_id: "${detail.row.id}" })`
+					: detail.row.taskNames.length > 0
+						? `codemode.app_run_task({ app_id: "${detail.row.id}", task_name: "${detail.row.taskNames[0]}" })`
+						: detail.row.jobNames.length > 0
+							? `codemode.app_run_job({ app_id: "${detail.row.id}", job_name: "${detail.row.jobNames[0]}" })`
+							: `codemode.app_get({ app_id: "${detail.row.id}" })`,
 				hostedUrl: detail.hostedUrl,
+				hasClient: detail.row.hasClient,
 				hasServerCode,
+				taskNames: detail.row.taskNames,
+				jobNames: detail.row.jobNames,
+				scheduleSummaries: detail.row.scheduleSummaries,
 				parameters,
 				hidden: detail.row.hidden,
-			} satisfies SearchEntityDetailStructured,
-		}
-	}
-
-	if (detail.type === 'job') {
-		const lines = [
-			`# Job — ${detail.row.name}`,
-			'',
-			detail.description,
-			'',
-			'## Summary',
-			'',
-			`- Id: \`${detail.row.id}\``,
-			`- Schedule: ${detail.row.scheduleSummary}`,
-			`- Enabled: ${detail.row.enabled ? 'yes' : 'no'}`,
-			`- Kill switch: ${detail.row.killSwitchEnabled ? 'on' : 'off'}`,
-			`- Source id: ${detail.row.sourceId ?? 'none'}`,
-			`- Published commit: ${detail.row.publishedCommit ?? 'none'}`,
-			`- Storage id: \`${detail.row.storageId}\``,
-			'',
-			'## Operate on this job',
-			'',
-			`- \`codemode.job_get({ id: "${detail.row.id}" })\``,
-			`- \`codemode.job_run_now({ id: "${detail.row.id}" })\``,
-			`- \`codemode.job_upsert({ id: "${detail.row.id}", ... })\``,
-		]
-		return {
-			markdown: lines.join('\n'),
-			structured: {
-				kind: 'entity',
-				type: 'job',
-				id: detail.id,
-				title: detail.title,
-				description: detail.description,
-				usage: `codemode.job_get({ id: "${detail.row.id}" })`,
-				scheduleSummary: detail.row.scheduleSummary,
-				sourceId: detail.row.sourceId,
-				publishedCommit: detail.row.publishedCommit,
-				storageId: detail.row.storageId,
 			} satisfies SearchEntityDetailStructured,
 		}
 	}

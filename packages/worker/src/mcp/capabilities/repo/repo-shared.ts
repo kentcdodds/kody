@@ -5,34 +5,20 @@ export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
 
 export const repoTargetSchema = z.union([
 	z.object({
-		kind: z.literal('skill'),
-		name: z
-			.string()
-			.min(1)
-			.describe('Saved skill name to open or edit by user-facing identity.'),
-	}),
-	z.object({
-		kind: z.literal('job'),
-		job_id: z
-			.string()
-			.min(1)
-			.describe('Saved job id to open or edit by stable identifier.'),
-	}),
-	z.object({
-		kind: z.literal('job'),
-		name: z
-			.string()
-			.min(1)
-			.describe(
-				'Saved job name to open or edit by human-facing label. This must resolve to exactly one job for the current user.',
-			),
-	}),
-	z.object({
 		kind: z.literal('app'),
 		app_id: z
 			.string()
 			.min(1)
-			.describe('Saved app id to open or edit by app_id.'),
+			.describe('Saved app id to open or edit by app id.'),
+	}),
+	z.object({
+		kind: z.literal('app'),
+		name: z
+			.string()
+			.min(1)
+			.describe(
+				'Saved app title/name to open or edit by human-facing label. This must resolve to exactly one app for the current user.',
+			),
 	}),
 ])
 
@@ -40,20 +26,8 @@ export const repoResolvedTargetSchema = z.union([
 	z.object({
 		kind: z.literal('source'),
 		source_id: z.string(),
-		entity_kind: z.enum(['skill', 'app', 'job']),
+		entity_kind: z.enum(['app']),
 		entity_id: z.string(),
-	}),
-	z.object({
-		kind: z.literal('skill'),
-		source_id: z.string(),
-		skill_id: z.string(),
-		name: z.string(),
-	}),
-	z.object({
-		kind: z.literal('job'),
-		source_id: z.string(),
-		job_id: z.string(),
-		name: z.string(),
 	}),
 	z.object({
 		kind: z.literal('app'),
@@ -76,12 +50,12 @@ export const repoOpenSessionInputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'Shared source id to open a session for. Prefer `target` when you know the saved skill name, job id/name, or app_id instead of the internal source id.',
+				'Shared source id to open a session for. Prefer `target` when you know the saved app id or title instead of the internal source id.',
 			),
 		target: repoTargetSchema
 			.optional()
 			.describe(
-				'User-facing repo-backed entity identity. Use this instead of `source_id` when opening a saved skill, job, or app session.',
+				'User-facing repo-backed app identity. Use this instead of `source_id` when opening a saved app session.',
 			),
 		conversation_id: z
 			.string()
@@ -140,7 +114,7 @@ export const repoSessionInfoSchema = z.object({
 	updated_at: z.string(),
 	published_commit: z.string().nullable(),
 	manifest_path: z.string(),
-	entity_type: z.enum(['skill', 'app', 'job']),
+	entity_type: z.enum(['app']),
 })
 
 export const repoOpenSessionOutputSchema = repoSessionInfoSchema.extend({

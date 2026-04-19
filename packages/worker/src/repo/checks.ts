@@ -216,6 +216,7 @@ declare const storage: {
 function getRepoTypecheckDiagnostics(input: {
 	manifest: RepoManifest
 	entryPoint: string
+	includeStorage?: boolean
 	languageService: {
 		getSemanticDiagnostics(path: string): Array<{
 			messageText: unknown
@@ -244,58 +245,23 @@ function getRepoTypecheckDiagnostics(input: {
 		}
 	}>
 } {
-	switch (input.manifest.kind) {
-		case 'app':
-			return {
-				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(
-					input.entryPoint,
-				),
-			}
-		case 'skill': {
-			input.fileSystem.write(
-				executeTypecheckPreludePath,
-				createExecuteTypecheckPrelude(),
-			)
-			input.fileSystem.write(
-				repoCodemodeModuleTypecheckHarnessPath,
-				createRepoCodemodeModuleTypecheckHarness({
-					entryPoint: input.entryPoint,
-				}),
-			)
-			return {
-				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(
-					repoCodemodeModuleTypecheckHarnessPath,
-				),
-			}
-		}
-		case 'job': {
-			input.fileSystem.write(
-				executeTypecheckPreludePath,
-				createExecuteTypecheckPrelude({
-					includeStorage: true,
-				}),
-			)
-			input.fileSystem.write(
-				repoCodemodeModuleTypecheckHarnessPath,
-				createRepoCodemodeModuleTypecheckHarness({
-					entryPoint: input.entryPoint,
-				}),
-			)
-			return {
-				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(
-					repoCodemodeModuleTypecheckHarnessPath,
-				),
-			}
-		}
-		default: {
-			const exhaustiveManifest: never = input.manifest
-			throw new Error(
-				`Unhandled repo manifest kind: ${JSON.stringify(exhaustiveManifest)}`,
-			)
-		}
+	input.fileSystem.write(
+		executeTypecheckPreludePath,
+		createExecuteTypecheckPrelude({
+			includeStorage: input.includeStorage === true,
+		}),
+	)
+	input.fileSystem.write(
+		repoCodemodeModuleTypecheckHarnessPath,
+		createRepoCodemodeModuleTypecheckHarness({
+			entryPoint: input.entryPoint,
+		}),
+	)
+	return {
+		fileName: input.entryPoint,
+		diagnostics: input.languageService.getSemanticDiagnostics(
+			repoCodemodeModuleTypecheckHarnessPath,
+		),
 	}
 }
 

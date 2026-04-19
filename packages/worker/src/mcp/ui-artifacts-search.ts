@@ -32,21 +32,42 @@ function rowToEmbedDoc(row: UiArtifactRow, appSecrets: Array<SecretMetadata>) {
 
 function buildUsage(row: UiArtifactRow) {
 	const parameters = parseUiArtifactParameters(row.parameters)
-	const usageArgs: Record<string, unknown> = { app_id: row.id }
-	if (parameters && parameters.length > 0) {
-		usageArgs['params'] = Object.fromEntries(
-			parameters.map((parameter) => {
-				if (parameter.default !== undefined) {
-					return [parameter.name, parameter.default] as const
-				}
-				return [
-					parameter.name,
-					buildPlaceholderForParameter(parameter.type),
-				] as const
-			}),
-		)
+	const runtimeParams =
+		parameters && parameters.length > 0
+			? Object.fromEntries(
+					parameters.map((parameter) => {
+						if (parameter.default !== undefined) {
+							return [parameter.name, parameter.default] as const
+						}
+						return [
+							parameter.name,
+							buildPlaceholderForParameter(parameter.type),
+						] as const
+					}),
+				)
+			: undefined
+	if (row.hasClient) {
+		const usageArgs: Record<string, unknown> = { app_id: row.id }
+		if (runtimeParams) {
+			usageArgs['params'] = runtimeParams
+		}
+		return `Open with open_generated_ui: ${JSON.stringify(usageArgs)}.`
 	}
-	return `Open with open_generated_ui: ${JSON.stringify(usageArgs)}.`
+	if (row.taskNames.length > 0) {
+		const firstTask = row.taskNames[0]!
+		const usageArgs: Record<string, unknown> = {
+			app_id: row.id,
+			task_name: firstTask,
+		}
+		if (runtimeParams) {
+			usageArgs['params'] = runtimeParams
+		}
+		return `Run a task with app_run_task: ${JSON.stringify(usageArgs)}.`
+	}
+	if (row.jobNames.length > 0) {
+		return `Run a scheduled job with app_run_job: ${JSON.stringify({ app_id: row.id, job_name: row.jobNames[0] })}.`
+	}
+	return `Inspect with app_get: ${JSON.stringify({ app_id: row.id })}.`
 }
 
 function buildPlaceholderForParameter(
@@ -64,8 +85,12 @@ export type UiArtifactSearchHitSummary = {
 	domain: 'apps'
 	title: string
 	description: string
-	hostedUrl: string
+	hostedUrl: string | null
+	hasClient: boolean
 	hasServerCode: boolean
+	taskNames: Array<string>
+	jobNames: Array<string>
+	scheduleSummaries: Array<string>
 	parameters: Array<{
 		name: string
 		description: string
@@ -100,8 +125,12 @@ function rowToUiArtifactHit(
 		domain: 'apps',
 		title: row.title,
 		description: row.description,
-		hostedUrl: buildSavedUiUrl(baseUrl, row.id),
+		hostedUrl: row.hasClient ? buildSavedUiUrl(baseUrl, row.id) : null,
+		hasClient: row.hasClient,
 		hasServerCode: row.hasServerCode,
+		taskNames: row.taskNames,
+		jobNames: row.jobNames,
+		scheduleSummaries: row.scheduleSummaries,
 		parameters,
 		usage: buildUsage(row),
 		availableSecrets: appSecrets.map((secret) => ({

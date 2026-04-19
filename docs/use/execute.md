@@ -31,21 +31,24 @@ result that changes the plan.
 To read field shapes while coding, use **search** with
 **`entity: "{name}:capability"`** for full schema detail for that capability.
 
-## Saved skills
+## Saved apps
 
-To run a saved skill by name, use **`meta_run_skill`** with **`name`** and
-optional **`params`**.
+Persist reusable automation as an **app**. A saved app can include:
 
-Saved skills and jobs execute through the same codemode runtime as
+- **tasks** — named execute-style entrypoints run with `app_run_task`
+- **jobs** — scheduled entrypoints run with `app_run_job`
+- **serverCode** — request/RPC backend code
+- **clientCode** — optional generated UI
+
+Saved app tasks and jobs execute through the same codemode runtime as
 **`execute`**, including helper globals such as **`refreshAccessToken(...)`**,
 **`createAuthenticatedFetch(...)`**, **`agentChatTurnStream(...)`**, and job
 storage helpers. Saved sources use repo-backed ES module entrypoints, so they
 can import sibling modules and package dependencies.
 
-When you need to edit the saved source behind a skill, job, or app, prefer the
-repo-backed workflow in [Repo-backed editing sessions](./repo-sessions.md). For
-common edits, use **`repo_edit_flow`** with a user-facing identity such as skill
-`name`, job `job_id`/`name`, or app `app_id` rather than the internal
+When you need to edit saved source, prefer the repo-backed workflow in
+[Repo-backed editing sessions](./repo-sessions.md). For common edits, use
+**`repo_edit_flow`** with the app **`app_id`** rather than the internal
 `source_id`.
 
 ## Agent turns
@@ -67,36 +70,28 @@ Typical pattern inside execute:
 - use **`codemode.agent_chat_turn(...)`** in jobs or workflows that only need
   the final answer
 
-## Jobs
+## App jobs
 
-Kody has one persisted jobs system per user:
+Each app can define zero or more scheduled **jobs**. Jobs have:
 
-- **`job_upsert`** — create a new job, or update an existing one when you pass
-  **`id`**
-- **`job_list`** — list jobs with next run time, last run status, counters, and
-  a human-readable schedule summary
-- **`job_get`** — inspect one job
-- **`job_delete`** — remove a job
-- **`job_run_now`** — trigger a job immediately without changing its normal
-  schedule
+- a named **task** they invoke
+- a stable **storageId**
+- run history, counters, and next-run state
+- schedule types:
+  - **cron** — standard 5-field cron syntax with optional timezone
+  - **interval** — fixed durations such as `15m`, `1h`, or `1d`
+  - **once** — an ISO 8601 UTC timestamp
 
-Jobs have:
+Run a job immediately with **`app_run_job`**. List or inspect jobs through
+**`app_get`** / **`app_list`**.
 
-- **`code`** provides the module source (must default export a function) that
-  Kody publishes as the job's repo-backed entrypoint
-- Each job has a stable **`storageId`** that identifies its durable storage
-  bucket
-- Scheduled jobs run with writable storage access
-- Ad hoc execute calls can bind to a storage bucket with **`storageId`** and use
-  **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**, and
-  **`storage.sql(query, params?)`**
+Ad hoc **`execute`** calls can still bind to a storage bucket with
+**`storageId`** and use:
 
-Schedules support:
-
-- **cron** — standard **5-field cron syntax**, optionally with an IANA timezone
-  such as **`America/New_York`**
-- **interval** — fixed durations such as **`15m`**, **`1h`**, or **`1d`**
-- **once** — an ISO 8601 UTC timestamp such as **`2026-04-17T15:00:00Z`**
+- **`storage.get(...)`**
+- **`storage.set(...)`**
+- **`storage.list(...)`**
+- **`storage.sql(query, params?)`**
 
 For dedicated inspection, use:
 

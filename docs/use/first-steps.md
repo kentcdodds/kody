@@ -1,9 +1,9 @@
 # First steps
 
 Kody exposes **search**, **execute**, and **open generated UI** as the main
-tools. The agent should **search first** to find the right capability, skill, or
-app name, then run work through **execute** (or **meta_run_skill** for a saved
-skill).
+tools. The agent should **search first** to find the right capability or app,
+then run work through **execute**, **app_run_task**, **app_run_job**, or
+**open_generated_ui** depending on how that app is invoked.
 
 ## Habits that help
 

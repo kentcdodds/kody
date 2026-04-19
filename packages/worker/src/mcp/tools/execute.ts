@@ -35,11 +35,10 @@ builtin capability). Discover names with \`search\`; for one capability’s
 \`inputSchema\` / \`outputSchema\`, call \`search\` with
 \`entity: "{name}:capability"\` or use \`meta_list_capabilities\`.
 
-Saved skills: prefer \`meta_run_skill({ name, params })\`.
-
-Jobs: use \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`, and
-\`job_run_now\` to manage one-shot, interval, or cron jobs for the signed-in
-user. Each job stores repo-backed source metadata plus a stable durable storage id.
+Saved apps are the top-level repo-backed unit. Use \`app_save\` to persist an
+app package with optional client UI, server code, named tasks, and scheduled
+jobs. Use \`app_run_task\` to invoke an app task and \`app_run_job\` to trigger a
+saved app job immediately.
 
 Sandbox surface:
 - \`codemode\`: \`(args) => Promise<unknown>\` per capability.

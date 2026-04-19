@@ -33,8 +33,9 @@ import {
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
-	getManifestEntrypointPath,
 	getManifestSourceRoot,
+	getManifestTaskDefinition,
+	getManifestTaskEntrypointPath,
 	parseRepoManifest,
 } from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
@@ -219,7 +220,7 @@ export async function createJob(input: {
 		env: input.env,
 		id: shape.sourceId ?? undefined,
 		userId: callerContext.user.userId,
-		entityKind: 'job',
+		entityKind: 'app',
 		entityId: jobId,
 		sourceRoot: '/',
 		requirePersistence: true,
@@ -573,21 +574,26 @@ async function runRepoBackedJob(input: {
 				logs: bypassLogs,
 			}
 		}
-		if (manifest.kind !== 'job') {
+		const manifestJob =
+			manifest.jobs?.find((job) => job.name === input.job.name) ??
+			manifest.jobs?.[0]
+		if (!manifestJob) {
 			return {
-				error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+				error: `App manifest does not define a runnable job for "${input.job.name}".`,
 				result: null,
 				logs: bypassLogs,
 			}
 		}
+		const taskDefinition = getManifestTaskDefinition(manifest, manifestJob.task)
+		const taskEntrypoint = getManifestTaskEntrypointPath(manifest, manifestJob.task)
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user.userId,
-			path: getManifestEntrypointPath(manifest),
+			path: taskEntrypoint,
 		})
 		if (!moduleFile.content) {
 			return {
-				error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+				error: `App job task entrypoint "${taskDefinition.entrypoint}" was not found in repo session.`,
 				result: null,
 				logs: bypassLogs,
 			}
@@ -604,7 +610,7 @@ async function runRepoBackedJob(input: {
 			})
 			const bundled = await buildRepoCodemodeBundle({
 				sourceFiles,
-				entryPoint: getManifestEntrypointPath(manifest),
+				entryPoint: taskEntrypoint,
 				entryPointSource: moduleFile.content,
 				sourceRoot,
 				cacheKey:

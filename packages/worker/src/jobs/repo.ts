@@ -1,3 +1,11 @@
+import {
+	deleteAppRow,
+	getAppRowById,
+	insertAppRow,
+	listAppRowsByUserId,
+	updateAppRow,
+} from '#worker/apps/repo.ts'
+import { type AppRecord } from '#worker/apps/types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 
@@ -49,6 +57,7 @@ function serializeJob(job: JobRecord) {
 		timezone: job.timezone,
 		enabled: job.enabled ? 1 : 0,
 		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
+		caller_context_json: 'null',
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
 		last_run_at: job.lastRunAt ?? null,
@@ -72,96 +81,107 @@ function parseJson<T>(value: string | null, fallback: T): T {
 	}
 }
 
-function mapRow(row: Record<string, unknown>): JobRow {
-	const jobId = String(row['id'])
-	const rawStorageId = row['storage_id']
-	const storageId =
-		rawStorageId == null ? createJobStorageId(jobId) : String(rawStorageId)
+function mapJobRecord(app: AppRecord, job: AppRecord['jobs'][number]): JobRow {
+	const serialized = serializeJob({
+		version: 1,
+		id: job.id,
+		userId: app.userId,
+		name: job.name,
+		sourceId: app.sourceId,
+		publishedCommit: app.publishedCommit,
+		repoCheckPolicy: app.repoCheckPolicy,
+		storageId: job.storageId || createJobStorageId(job.id),
+		params: job.params,
+		schedule: job.schedule,
+		timezone: job.timezone,
+		enabled: job.enabled,
+		killSwitchEnabled: job.killSwitchEnabled,
+		createdAt: job.createdAt,
+		updatedAt: job.updatedAt,
+		lastRunAt: job.lastRunAt,
+		lastRunStatus: job.lastRunStatus,
+		lastRunError: job.lastRunError,
+		lastDurationMs: job.lastDurationMs,
+		nextRunAt: job.nextRunAt,
+		runCount: job.runCount,
+		successCount: job.successCount,
+		errorCount: job.errorCount,
+		runHistory: job.runHistory,
+	})
 	const record: JobRecord = {
 		version: 1,
-		id: jobId,
-		userId: String(row['user_id']),
-		name: String(row['name']),
-		sourceId: String(row['source_id']),
-		publishedCommit:
-			row['published_commit'] == null ? null : String(row['published_commit']),
-		repoCheckPolicy: parseJson<JobRecord['repoCheckPolicy'] | undefined>(
-			row['repo_check_policy_json'] == null
-				? null
-				: String(row['repo_check_policy_json']),
-			undefined,
-		),
-		storageId,
-		params: parseJson<Record<string, unknown> | undefined>(
-			row['params_json'] == null ? null : String(row['params_json']),
-			undefined,
-		),
-		schedule: parseJson<JobRecord['schedule']>(String(row['schedule_json']), {
-			type: 'once',
-			runAt: String(row['next_run_at']),
-		}),
-		timezone: String(row['timezone']),
-		enabled: Number(row['enabled']) === 1,
-		killSwitchEnabled: Number(row['kill_switch_enabled']) === 1,
-		createdAt: String(row['created_at']),
-		updatedAt: String(row['updated_at']),
-		lastRunAt:
-			row['last_run_at'] == null ? undefined : String(row['last_run_at']),
-		lastRunStatus:
-			row['last_run_status'] == null
-				? undefined
-				: (String(row['last_run_status']) as JobRecord['lastRunStatus']),
-		lastRunError:
-			row['last_run_error'] == null ? undefined : String(row['last_run_error']),
-		lastDurationMs:
-			row['last_duration_ms'] == null
-				? undefined
-				: Number(row['last_duration_ms']),
-		nextRunAt: String(row['next_run_at']),
-		runCount: Number(row['run_count']) || 0,
-		successCount: Number(row['success_count']) || 0,
-		errorCount: Number(row['error_count']) || 0,
-		runHistory: parseJson<JobRecord['runHistory']>(
-			String(row['run_history_json'] ?? '[]'),
-			[],
-		),
+		id: job.id,
+		userId: app.userId,
+		name: job.name,
+		sourceId: app.sourceId,
+		publishedCommit: app.publishedCommit,
+		repoCheckPolicy: app.repoCheckPolicy,
+		storageId: serialized.storage_id ?? createJobStorageId(job.id),
+		params: job.params,
+		schedule: job.schedule,
+		timezone: job.timezone,
+		enabled: job.enabled,
+		killSwitchEnabled: job.killSwitchEnabled,
+		createdAt: job.createdAt,
+		updatedAt: job.updatedAt,
+		lastRunAt: job.lastRunAt,
+		lastRunStatus: job.lastRunStatus,
+		lastRunError: job.lastRunError,
+		lastDurationMs: job.lastDurationMs,
+		nextRunAt: job.nextRunAt,
+		runCount: job.runCount,
+		successCount: job.successCount,
+		errorCount: job.errorCount,
+		runHistory: job.runHistory,
 	}
 	return {
-		id: record.id,
-		user_id: String(row['user_id']),
-		name: record.name,
-		source_id: record.sourceId,
-		published_commit: record.publishedCommit ?? null,
-		repo_check_policy_json:
-			row['repo_check_policy_json'] == null
-				? null
-				: String(row['repo_check_policy_json']),
-		storage_id: record.storageId,
-		params_json: row['params_json'] == null ? null : String(row['params_json']),
-		schedule_json: String(row['schedule_json']),
-		timezone: record.timezone,
-		enabled: record.enabled ? 1 : 0,
-		kill_switch_enabled: record.killSwitchEnabled ? 1 : 0,
-		caller_context_json: String(row['caller_context_json']),
-		created_at: record.createdAt,
-		updated_at: record.updatedAt,
-		last_run_at: record.lastRunAt ?? null,
-		last_run_status: record.lastRunStatus ?? null,
-		last_run_error: record.lastRunError ?? null,
-		last_duration_ms: record.lastDurationMs ?? null,
-		next_run_at: record.nextRunAt,
-		run_count: record.runCount,
-		success_count: record.successCount,
-		error_count: record.errorCount,
-		run_history_json: String(row['run_history_json'] ?? '[]'),
+		...serialized,
+		user_id: app.userId,
 		record,
-		callerContextJson: String(row['caller_context_json']),
-		callerContext: parseJson<PersistedJobCallerContext | null>(
-			row['caller_context_json'] == null
-				? null
-				: String(row['caller_context_json']),
-			null,
-		),
+		callerContextJson: serialized.caller_context_json ?? 'null',
+		callerContext: job.callerContext ?? null,
+	}
+}
+
+function appWithUpdatedJob(app: AppRecord, job: JobRecord): AppRecord {
+	const nextJob = {
+		id: job.id,
+		name: job.name,
+		title: job.name,
+		description: job.name,
+		task: app.jobs.find((candidate) => candidate.id === job.id)?.task ?? 'default',
+		params: job.params,
+		callerContext: null,
+		schedule: job.schedule,
+		timezone: job.timezone,
+		enabled: job.enabled,
+		killSwitchEnabled: job.killSwitchEnabled,
+		storageId: job.storageId,
+		lastRunAt: job.lastRunAt,
+		lastRunStatus: job.lastRunStatus,
+		lastRunError: job.lastRunError,
+		lastDurationMs: job.lastDurationMs,
+		nextRunAt: job.nextRunAt,
+		runCount: job.runCount,
+		successCount: job.successCount,
+		errorCount: job.errorCount,
+		runHistory: job.runHistory,
+		createdAt: job.createdAt,
+		updatedAt: job.updatedAt,
+	}
+	const existingIndex = app.jobs.findIndex((candidate) => candidate.id === job.id)
+	const nextJobs =
+		existingIndex >= 0
+			? app.jobs.map((candidate, index) =>
+					index === existingIndex ? nextJob : candidate,
+				)
+			: [...app.jobs, nextJob]
+	return {
+		...app,
+		jobs: nextJobs,
+		hasServer: app.hasServer,
+		hasClient: app.hasClient,
+		updatedAt: job.updatedAt,
 	}
 }
 
@@ -171,43 +191,69 @@ export async function insertJobRow(input: {
 	job: JobRecord
 	callerContextJson: string
 }) {
-	const serialized = serializeJob(input.job)
-	await input.db
-		.prepare(
-			`INSERT INTO jobs (
-				id, user_id, name, source_id, published_commit, repo_check_policy_json, storage_id, params_json, schedule_json, timezone, enabled,
-				kill_switch_enabled, caller_context_json, created_at, updated_at,
-				last_run_at, last_run_status, last_run_error, last_duration_ms,
-				next_run_at, run_count, success_count, error_count, run_history_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			serialized.id,
-			input.userId,
-			serialized.name,
-			serialized.source_id,
-			serialized.published_commit,
-			serialized.repo_check_policy_json,
-			serialized.storage_id,
-			serialized.params_json,
-			serialized.schedule_json,
-			serialized.timezone,
-			serialized.enabled,
-			serialized.kill_switch_enabled,
-			input.callerContextJson,
-			serialized.created_at,
-			serialized.updated_at,
-			serialized.last_run_at,
-			serialized.last_run_status,
-			serialized.last_run_error,
-			serialized.last_duration_ms,
-			serialized.next_run_at,
-			serialized.run_count,
-			serialized.success_count,
-			serialized.error_count,
-			serialized.run_history_json,
-		)
-		.run()
+	const appId = input.job.id
+	await insertAppRow(input.db, {
+		version: 1,
+		id: appId,
+		userId: input.userId,
+		title: input.job.name,
+		description: input.job.name,
+		sourceId: input.job.sourceId,
+		publishedCommit: input.job.publishedCommit,
+		repoCheckPolicy: input.job.repoCheckPolicy,
+		hidden: true,
+		keywords: ['job', 'scheduled'],
+		searchText: input.job.name,
+		parameters: null,
+		hasClient: false,
+		hasServer: false,
+		tasks: [
+			{
+				name: 'default',
+				title: input.job.name,
+				description: input.job.name,
+				entrypoint: 'src/tasks/default.ts',
+			},
+		],
+		jobs: [
+			{
+				id: input.job.id,
+				name: input.job.name,
+				title: input.job.name,
+				description: input.job.name,
+				task: 'default',
+				params: input.job.params,
+				callerContext: parseJson(input.callerContextJson, null),
+				schedule: input.job.schedule,
+				timezone: input.job.timezone,
+				enabled: input.job.enabled,
+				killSwitchEnabled: input.job.killSwitchEnabled,
+				storageId: input.job.storageId,
+				lastRunAt: input.job.lastRunAt,
+				lastRunStatus: input.job.lastRunStatus,
+				lastRunError: input.job.lastRunError,
+				lastDurationMs: input.job.lastDurationMs,
+				nextRunAt: input.job.nextRunAt,
+				runCount: input.job.runCount,
+				successCount: input.job.successCount,
+				errorCount: input.job.errorCount,
+				runHistory: input.job.runHistory,
+				createdAt: input.job.createdAt,
+				updatedAt: input.job.updatedAt,
+			},
+		],
+		createdAt: input.job.createdAt,
+		updatedAt: input.job.updatedAt,
+	})
+}
+
+async function findAppByJobId(
+	db: D1Database,
+	userId: string,
+	jobId: string,
+): Promise<AppRecord | null> {
+	const apps = await listAppRowsByUserId(db, userId)
+	return apps.find((app) => app.jobs.some((job) => job.id === jobId)) ?? null
 }
 
 export async function updateJobRow(input: {
@@ -216,43 +262,25 @@ export async function updateJobRow(input: {
 	job: JobRecord
 	callerContextJson: string
 }) {
-	const serialized = serializeJob(input.job)
-	const result = await input.db
-		.prepare(
-			`UPDATE jobs SET
-				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
-				enabled = ?, kill_switch_enabled = ?, caller_context_json = ?, updated_at = ?,
-				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
-				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?, run_history_json = ?
-			WHERE id = ? AND user_id = ?`,
-		)
-		.bind(
-			serialized.name,
-			serialized.source_id,
-			serialized.published_commit,
-			serialized.repo_check_policy_json,
-			serialized.storage_id,
-			serialized.params_json,
-			serialized.schedule_json,
-			serialized.timezone,
-			serialized.enabled,
-			serialized.kill_switch_enabled,
-			input.callerContextJson,
-			serialized.updated_at,
-			serialized.last_run_at,
-			serialized.last_run_status,
-			serialized.last_run_error,
-			serialized.last_duration_ms,
-			serialized.next_run_at,
-			serialized.run_count,
-			serialized.success_count,
-			serialized.error_count,
-			serialized.run_history_json,
-			serialized.id,
-			input.userId,
-		)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const app =
+		(await getAppRowById(input.db, input.userId, input.job.id)) ??
+		(await findAppByJobId(input.db, input.userId, input.job.id))
+	if (!app) return false
+	return updateAppRow(
+		input.db,
+		input.userId,
+		appWithUpdatedJob({
+			...app,
+			jobs: app.jobs.map((candidate) =>
+				candidate.id === input.job.id
+					? {
+							...candidate,
+							callerContext: parseJson(input.callerContextJson, null),
+						}
+					: candidate,
+			),
+		}, input.job),
+	)
 }
 
 export async function getJobRowById(
@@ -260,24 +288,23 @@ export async function getJobRowById(
 	userId: string,
 	jobId: string,
 ): Promise<JobRow | null> {
-	const result = await db
-		.prepare(`SELECT * FROM jobs WHERE id = ? AND user_id = ?`)
-		.bind(jobId, userId)
-		.first<Record<string, unknown>>()
-	return result ? mapRow(result) : null
+	const app = await findAppByJobId(db, userId, jobId)
+	if (!app) return null
+	const job = app.jobs.find((candidate) => candidate.id === jobId)
+	return job ? mapJobRecord(app, job) : null
 }
 
 export async function listJobRowsByUserId(
 	db: D1Database,
 	userId: string,
 ): Promise<Array<JobRow>> {
-	const { results } = await db
-		.prepare(
-			`SELECT * FROM jobs WHERE user_id = ? ORDER BY next_run_at ASC, name ASC`,
+	const apps = await listAppRowsByUserId(db, userId)
+	return apps
+		.flatMap((app) => app.jobs.map((job) => mapJobRecord(app, job)))
+		.sort((left, right) =>
+			left.record.nextRunAt.localeCompare(right.record.nextRunAt) ||
+			left.record.name.localeCompare(right.record.name),
 		)
-		.bind(userId)
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapRow)
 }
 
 export async function listDueJobRows(
@@ -285,36 +312,25 @@ export async function listDueJobRows(
 	userId: string,
 	nowIso: string,
 ): Promise<Array<JobRow>> {
-	const { results } = await db
-		.prepare(
-			`SELECT * FROM jobs
-			WHERE user_id = ?
-				AND enabled = 1
-				AND kill_switch_enabled = 0
-				AND next_run_at <= ?
-			ORDER BY next_run_at ASC, name ASC`,
-		)
-		.bind(userId, nowIso)
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapRow)
+	const rows = await listJobRowsByUserId(db, userId)
+	return rows.filter(
+		(row) =>
+			row.record.enabled &&
+			!row.record.killSwitchEnabled &&
+			row.record.nextRunAt <= nowIso,
+	)
 }
 
 export async function getNextRunnableJobRow(
 	db: D1Database,
 	userId: string,
 ): Promise<JobRow | null> {
-	const result = await db
-		.prepare(
-			`SELECT * FROM jobs
-			WHERE user_id = ?
-				AND enabled = 1
-				AND kill_switch_enabled = 0
-			ORDER BY next_run_at ASC, name ASC
-			LIMIT 1`,
-		)
-		.bind(userId)
-		.first<Record<string, unknown>>()
-	return result ? mapRow(result) : null
+	const rows = await listJobRowsByUserId(db, userId)
+	return (
+		rows.find(
+			(row) => row.record.enabled && !row.record.killSwitchEnabled,
+		) ?? null
+	)
 }
 
 export async function deleteJobRow(
@@ -322,9 +338,14 @@ export async function deleteJobRow(
 	userId: string,
 	jobId: string,
 ): Promise<boolean> {
-	const result = await db
-		.prepare(`DELETE FROM jobs WHERE id = ? AND user_id = ?`)
-		.bind(jobId, userId)
-		.run()
-	return (result.meta.changes ?? 0) > 0
+	const app = await findAppByJobId(db, userId, jobId)
+	if (!app) return false
+	if (app.jobs.length === 1 && app.jobs[0]?.id === jobId && !app.hasClient && !app.hasServer) {
+		return deleteAppRow(db, userId, app.id)
+	}
+	return updateAppRow(db, userId, {
+		...app,
+		jobs: app.jobs.filter((job) => job.id !== jobId),
+		updatedAt: new Date().toISOString(),
+	})
 }

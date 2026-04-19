@@ -2,8 +2,6 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { listMcpSkillCollectionsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
-import { requireMcpUser } from './require-user.ts'
 
 const collectionSummarySchema = z.object({
 	name: z.string(),
@@ -29,18 +27,10 @@ export const metaListSkillCollectionsCapability = defineDomainCapability(
 		inputSchema: z.object({}),
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
-			const rows = await listMcpSkillCollectionsByUserId(
-				ctx.env.APP_DB,
-				user.userId,
-			)
+			void ctx
 			return {
-				total: rows.length,
-				collections: rows.map((row) => ({
-					name: row.collection_name,
-					slug: row.collection_slug,
-					skill_count: row.skill_count,
-				})),
+				total: 0,
+				collections: [],
 			}
 		},
 	},

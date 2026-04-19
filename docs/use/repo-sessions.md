@@ -1,8 +1,8 @@
 # Repo-backed editing sessions
 
-Repo-backed saved skills, jobs, and apps keep their durable source in artifact
-repos. After an artifact exists, that repo-backed source is the source of truth
-for later edits and publishes.
+Repo-backed apps keep their durable source in artifact repos. After an app
+exists, that repo-backed source is the source of truth for later edits and
+publishes.
 
 Use the repo capabilities when you want to inspect or modify that saved source
 directly.
@@ -24,25 +24,17 @@ That keeps normal edit workflows to one capability call instead of separate
 
 ## Opening by user-facing identity
 
-`repo_open_session` and `repo_edit_flow` can now open repo-backed entities by
-their user-facing identity instead of requiring the internal `source_id`.
+`repo_open_session` and `repo_edit_flow` can open repo-backed apps by their
+user-facing identity instead of requiring the internal `source_id`.
 
 Examples:
 
 ```json
-{ "target": { "kind": "skill", "name": "triage-github-pr" } }
-```
-
-```json
-{ "target": { "kind": "job", "job_id": "job-123" } }
-```
-
-```json
-{ "target": { "kind": "job", "name": "Nightly inbox sweep" } }
-```
-
-```json
 { "target": { "kind": "app", "app_id": "app-123" } }
+```
+
+```json
+{ "target": { "kind": "app", "name": "Nightly inbox sweep" } }
 ```
 
 You can still pass `source_id` when you already have it, but most callers should
@@ -77,11 +69,11 @@ session:
 
 ```ts
 await codemode.repo_edit_flow({
-	target: { kind: 'skill', name: 'triage-github-pr' },
+	target: { kind: 'app', name: 'triage-github-pr' },
 	instructions: [
 		{
 			kind: 'replace',
-			path: 'src/skill.ts',
+			path: 'src/tasks/triage-github-pr.ts',
 			search: 'return { status: "todo" }',
 			replacement: 'return { status: "done" }',
 		},

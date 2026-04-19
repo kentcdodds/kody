@@ -187,16 +187,23 @@ test('entity detail formatting includes saved app backend metadata in structured
 			title: 'Facet counter',
 			description: 'Saved app with a facet backend',
 			sourceId: 'source-app-123',
+			hasClient: true,
 			hasServerCode: true,
 			parameters: null,
 			hidden: false,
+			taskNames: ['refresh'],
+			jobNames: ['nightly-refresh'],
+			scheduleSummaries: ['Runs every 1h'],
 			created_at: '2026-03-20T00:00:00.000Z',
 			updated_at: '2026-03-20T00:00:00.000Z',
 		},
 	})
 	expect(appDetail.structured).toMatchObject({
 		type: 'app',
+		hasClient: true,
 		hasServerCode: true,
 		hostedUrl: 'http://localhost/ui/app-123',
+		taskNames: ['refresh'],
+		jobNames: ['nightly-refresh'],
 	})
 })

@@ -1,18 +1,8 @@
 import { type z } from 'zod'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
-import {
-	getMcpSkillByNameInput,
-	listMcpSkillsByUserId,
-} from '#mcp/skills/mcp-skills-repo.ts'
-import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
-import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
-import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
-import {
-	getJobRowById,
-	listJobRowsByUserId,
-	type JobRow,
-} from '#worker/jobs/repo.ts'
+import { getAppRowById, listAppRowsByUserId } from '#worker/apps/repo.ts'
+import { type AppRecord } from '#worker/apps/types.ts'
 import {
 	type repoOpenSessionInputSchema,
 	type repoResolvedTargetSchema,
@@ -44,113 +34,47 @@ function toResolvedSourceTarget(source: EntitySourceRow): RepoResolvedTarget {
 	}
 }
 
-async function requireSkillTarget(input: {
+async function requireAppByName(input: {
 	db: D1Database
 	userId: string
 	name: string
-}): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
-	const skill = await getMcpSkillByNameInput(input.db, input.userId, input.name)
-	if (!skill) {
-		throw new Error(`Saved skill "${input.name}" was not found.`)
-	}
-	if (!skill.source_id) {
-		throw new Error(`Saved skill "${skill.name}" has no repo-backed source.`)
-	}
-	const source = await requireOwnedEntitySource({
-		db: input.db,
-		userId: input.userId,
-		sourceId: skill.source_id,
-	})
-	return {
-		source,
-		resolvedTarget: toResolvedSkillTarget(skill, source.id),
-	}
-}
-
-function toResolvedSkillTarget(
-	skill: McpSkillRow,
-	sourceId?: string,
-): RepoResolvedTarget {
-	return {
-		kind: 'skill',
-		source_id: sourceId ?? skill.source_id,
-		skill_id: skill.id,
-		name: skill.name,
-	}
-}
-
-async function requireJobByName(input: {
-	db: D1Database
-	userId: string
-	name: string
-}): Promise<JobRow> {
+}): Promise<AppRecord> {
 	const trimmedName = input.name.trim()
-	if (!trimmedName) {
-		throw new Error('Job name must not be empty.')
-	}
-	const rows = await listJobRowsByUserId(input.db, input.userId)
-	const matches = rows.filter((row) => row.name === trimmedName)
+	const rows = await listAppRowsByUserId(input.db, input.userId)
+	const matches = rows.filter((row) => row.title === trimmedName)
 	if (matches.length === 0) {
-		throw new Error(`Saved job "${trimmedName}" was not found.`)
+		throw new Error(`Saved app "${trimmedName}" was not found.`)
 	}
 	if (matches.length > 1) {
-		const jobIds = matches.map((row) => row.id).join(', ')
+		const appIds = matches.map((row) => row.id).join(', ')
 		throw new Error(
-			`Saved job name "${trimmedName}" is ambiguous for this user. Use job_id instead. Matching job ids: ${jobIds}.`,
+			`Saved app title "${trimmedName}" is ambiguous for this user. Use app_id instead. Matching app ids: ${appIds}.`,
 		)
 	}
 	const match = matches[0]
 	if (!match) {
-		throw new Error(`Saved job "${trimmedName}" was not found.`)
+		throw new Error(`Saved app "${trimmedName}" was not found.`)
 	}
 	return match
-}
-
-async function requireJobTarget(input: {
-	db: D1Database
-	userId: string
-	target: Extract<RepoTarget, { kind: 'job' }>
-}): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
-	const job =
-		'job_id' in input.target
-			? await getJobRowById(input.db, input.userId, input.target.job_id)
-			: await requireJobByName({
-					db: input.db,
-					userId: input.userId,
-					name: input.target.name,
-				})
-	if (!job) {
-		const missingId =
-			'job_id' in input.target ? input.target.job_id : input.target.name
-		throw new Error(`Saved job "${missingId}" was not found.`)
-	}
-	const source = await requireOwnedEntitySource({
-		db: input.db,
-		userId: input.userId,
-		sourceId: job.source_id,
-	})
-	return {
-		source,
-		resolvedTarget: {
-			kind: 'job',
-			source_id: source.id,
-			job_id: job.id,
-			name: job.name,
-		},
-	}
 }
 
 async function requireAppTarget(input: {
 	db: D1Database
 	userId: string
-	appId: string
+	target: Extract<RepoTarget, { kind: 'app' }>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
-	const app = await getUiArtifactById(input.db, input.userId, input.appId)
+	const app =
+		'app_id' in input.target
+			? await getAppRowById(input.db, input.userId, input.target.app_id)
+			: await requireAppByName({
+					db: input.db,
+					userId: input.userId,
+					name: input.target.name,
+				})
 	if (!app) {
-		throw new Error(`Saved app "${input.appId}" was not found.`)
-	}
-	if (!app.sourceId) {
-		throw new Error(`Saved app "${app.id}" has no repo-backed source.`)
+		const missingId =
+			'app_id' in input.target ? input.target.app_id : input.target.name
+		throw new Error(`Saved app "${missingId}" was not found.`)
 	}
 	const source = await requireOwnedEntitySource({
 		db: input.db,
@@ -164,12 +88,12 @@ async function requireAppTarget(input: {
 }
 
 function toResolvedAppTarget(
-	app: UiArtifactRow,
+	app: Pick<AppRecord, 'id' | 'title' | 'sourceId'>,
 	sourceId?: string,
 ): RepoResolvedTarget {
 	return {
 		kind: 'app',
-		source_id: sourceId ?? app.sourceId ?? '',
+		source_id: sourceId ?? app.sourceId,
 		app_id: app.id,
 		title: app.title,
 	}
@@ -194,30 +118,11 @@ export async function resolveRepoSourceReference(input: {
 	if (!input.args.target) {
 		throw new Error('Repo source identity is required.')
 	}
-	switch (input.args.target.kind) {
-		case 'skill':
-			return requireSkillTarget({
-				db: input.db,
-				userId: input.userId,
-				name: input.args.target.name,
-			})
-		case 'job':
-			return requireJobTarget({
-				db: input.db,
-				userId: input.userId,
-				target: input.args.target,
-			})
-		case 'app':
-			return requireAppTarget({
-				db: input.db,
-				userId: input.userId,
-				appId: input.args.target.app_id,
-			})
-		default: {
-			const exhaustiveCheck: never = input.args.target
-			return exhaustiveCheck
-		}
-	}
+	return requireAppTarget({
+		db: input.db,
+		userId: input.userId,
+		target: input.args.target,
+	})
 }
 
 export async function resolveRepoTargetFromSource(input: {
@@ -231,35 +136,9 @@ export async function resolveRepoTargetFromSource(input: {
 		sourceId: input.sourceId,
 	})
 	switch (source.entity_kind) {
-		case 'skill': {
-			const skills = await listMcpSkillsByUserId(input.db, input.userId)
-			const skill = skills.find(
-				(candidate) => candidate.id === source.entity_id,
-			)
-			if (!skill) {
-				return toResolvedSourceTarget(source)
-			}
-			return toResolvedSkillTarget(skill, source.id)
-		}
-		case 'job': {
-			const job = await getJobRowById(input.db, input.userId, source.entity_id)
-			if (!job) {
-				return toResolvedSourceTarget(source)
-			}
-			return {
-				kind: 'job',
-				source_id: source.id,
-				job_id: job.id,
-				name: job.name,
-			}
-		}
 		case 'app': {
-			const app = await getUiArtifactById(
-				input.db,
-				input.userId,
-				source.entity_id,
-			)
-			if (!app || !app.sourceId) {
+			const app = await getAppRowById(input.db, input.userId, source.entity_id)
+			if (!app) {
 				return toResolvedSourceTarget(source)
 			}
 			return toResolvedAppTarget(app, source.id)

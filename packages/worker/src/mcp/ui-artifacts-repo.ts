@@ -1,7 +1,49 @@
+import { type AppRecord } from '#worker/apps/types.ts'
+import {
+	deleteAppRow,
+	getAppRowById,
+	insertAppRow,
+	listAppRowsByUserId,
+	updateAppRow,
+} from '#worker/apps/repo.ts'
+import { formatScheduleSummary } from '#worker/jobs/schedule.ts'
 import { type UiArtifactRow } from './ui-artifacts-types.ts'
 
 export function uiArtifactVectorId(artifactId: string): string {
-	return `ui_artifact_${artifactId}`
+	return `app_${artifactId}`
+}
+
+function appToUiArtifactRow(app: AppRecord): UiArtifactRow {
+	return {
+		id: app.id,
+		user_id: app.userId,
+		title: app.title,
+		description: app.description,
+		sourceId: app.sourceId,
+		hasClient: app.hasClient,
+		hasServerCode: app.hasServer,
+		taskNames: app.tasks.map((task) => task.name),
+		jobNames: app.jobs.map((job) => job.name),
+		scheduleSummaries: app.jobs.map((job) =>
+			formatScheduleSummary({
+				schedule: job.schedule,
+				timezone: job.timezone,
+			}),
+		),
+		parameters: app.parameters ? JSON.stringify(app.parameters) : null,
+		hidden: app.hidden,
+		created_at: app.createdAt,
+		updated_at: app.updatedAt,
+	}
+}
+
+function parseParametersJson(raw: string | null | undefined) {
+	if (raw == null) return null
+	try {
+		return JSON.parse(raw) as Array<unknown> | null
+	} catch {
+		return null
+	}
 }
 
 export async function insertUiArtifact(
@@ -12,26 +54,28 @@ export async function insertUiArtifact(
 	},
 ): Promise<void> {
 	const now = new Date().toISOString()
-	await db
-		.prepare(
-			`INSERT INTO ui_artifacts (
-				id, user_id, title, description, source_id, has_server_code,
-				parameters, hidden, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			row.id,
-			row.user_id,
-			row.title,
-			row.description,
-			row.sourceId,
-			row.hasServerCode ? 1 : 0,
-			row.parameters ?? null,
-			row.hidden ? 1 : 0,
-			row.created_at ?? now,
-			row.updated_at ?? now,
-		)
-		.run()
+	if (!row.sourceId) {
+		throw new Error('Saved app requires a repo-backed source.')
+	}
+	await insertAppRow(db, {
+		version: 1,
+		id: row.id,
+		userId: row.user_id,
+		title: row.title,
+		description: row.description,
+		sourceId: row.sourceId,
+		publishedCommit: null,
+		hidden: row.hidden,
+		keywords: [],
+		searchText: null,
+		parameters: parseParametersJson(row.parameters) as AppRecord['parameters'],
+		hasClient: true,
+		hasServer: row.hasServerCode,
+		tasks: [],
+		jobs: [],
+		createdAt: row.created_at ?? now,
+		updatedAt: row.updated_at ?? now,
+	})
 }
 
 export async function getUiArtifactById(
@@ -39,16 +83,9 @@ export async function getUiArtifactById(
 	userId: string,
 	artifactId: string,
 ): Promise<UiArtifactRow | null> {
-	const result = await db
-		.prepare(
-			`SELECT id, user_id, title, description, source_id, has_server_code,
-				parameters, hidden, created_at, updated_at
-			FROM ui_artifacts WHERE id = ? AND user_id = ?`,
-		)
-		.bind(artifactId, userId)
-		.first<Record<string, unknown>>()
-	if (!result) return null
-	return mapRow(result)
+	const row = await getAppRowById(db, userId, artifactId)
+	if (!row) return null
+	return appToUiArtifactRow(row)
 }
 
 export async function getUiArtifactByOwnerIds(
@@ -56,22 +93,11 @@ export async function getUiArtifactByOwnerIds(
 	userIds: Array<string>,
 	artifactId: string,
 ): Promise<UiArtifactRow | null> {
-	const ownerIds = userIds.map((userId) => userId.trim()).filter(Boolean)
-	if (ownerIds.length === 0) return null
-
-	const placeholders = ownerIds.map(() => '?').join(', ')
-	const result = await db
-		.prepare(
-			`SELECT id, user_id, title, description, source_id, has_server_code,
-				parameters, hidden, created_at, updated_at
-			FROM ui_artifacts
-			WHERE id = ? AND user_id IN (${placeholders})
-			LIMIT 1`,
-		)
-		.bind(artifactId, ...ownerIds)
-		.first<Record<string, unknown>>()
-	if (!result) return null
-	return mapRow(result)
+	for (const userId of userIds.map((value) => value.trim()).filter(Boolean)) {
+		const row = await getUiArtifactById(db, userId, artifactId)
+		if (row) return row
+	}
+	return null
 }
 
 export async function deleteUiArtifact(
@@ -79,11 +105,7 @@ export async function deleteUiArtifact(
 	userId: string,
 	artifactId: string,
 ): Promise<boolean> {
-	const out = await db
-		.prepare(`DELETE FROM ui_artifacts WHERE id = ? AND user_id = ?`)
-		.bind(artifactId, userId)
-		.run()
-	return (out.meta.changes ?? 0) > 0
+	return deleteAppRow(db, userId, artifactId)
 }
 
 export async function updateUiArtifact(
@@ -102,41 +124,22 @@ export async function updateUiArtifact(
 		>
 	>,
 ): Promise<boolean> {
-	const assignments: Array<string> = []
-	const values: Array<unknown> = []
-	const addAssignment = (column: string, value: unknown) => {
-		assignments.push(`${column} = ?`)
-		values.push(value)
-	}
-
-	if (updates.title !== undefined) {
-		addAssignment('title', updates.title)
-	}
-	if (updates.description !== undefined) {
-		addAssignment('description', updates.description)
-	}
-	if (updates.sourceId !== undefined) {
-		addAssignment('source_id', updates.sourceId)
-	}
-	if (updates.hasServerCode !== undefined) {
-		addAssignment('has_server_code', updates.hasServerCode ? 1 : 0)
-	}
-	if (updates.parameters !== undefined) {
-		addAssignment('parameters', updates.parameters ?? null)
-	}
-	if (updates.hidden !== undefined) {
-		addAssignment('hidden', updates.hidden ? 1 : 0)
-	}
-
-	addAssignment('updated_at', new Date().toISOString())
-
-	const out = await db
-		.prepare(
-			`UPDATE ui_artifacts SET ${assignments.join(', ')} WHERE id = ? AND user_id = ?`,
-		)
-		.bind(...values, artifactId, userId)
-		.run()
-	return (out.meta.changes ?? 0) > 0
+	const existing = await getAppRowById(db, userId, artifactId)
+	if (!existing) return false
+	return updateAppRow(db, userId, {
+		...existing,
+		title: updates.title ?? existing.title,
+		description: updates.description ?? existing.description,
+		sourceId: updates.sourceId ?? existing.sourceId,
+		hasClient: true,
+		hasServer: updates.hasServerCode ?? existing.hasServer,
+		parameters:
+			updates.parameters === undefined
+				? existing.parameters
+				: (parseParametersJson(updates.parameters) as AppRecord['parameters']),
+		hidden: updates.hidden ?? existing.hidden,
+		updatedAt: new Date().toISOString(),
+	})
 }
 
 export async function listUiArtifactsByUserId(
@@ -145,34 +148,9 @@ export async function listUiArtifactsByUserId(
 	options?: { hidden?: boolean },
 ): Promise<Array<UiArtifactRow>> {
 	const hidden = options?.hidden
-	const { results } = await db
-		.prepare(
-			`SELECT id, user_id, title, description, source_id, has_server_code,
-				parameters, hidden, created_at, updated_at
-			FROM ui_artifacts
-			WHERE user_id = ?
-				${hidden === undefined ? '' : 'AND hidden = ?'}`,
-		)
-		.bind(userId, ...(hidden === undefined ? [] : [hidden ? 1 : 0]))
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapRow)
-}
-
-function mapRow(row: Record<string, unknown>): UiArtifactRow {
-	return {
-		id: String(row['id']),
-		user_id: String(row['user_id']),
-		title: String(row['title']),
-		description: String(row['description']),
-		sourceId: row['source_id'] == null ? null : String(row['source_id']),
-		hasServerCode:
-			row['has_server_code'] === 1 ||
-			row['has_server_code'] === '1' ||
-			row['has_server_code'] === true,
-		parameters: row['parameters'] == null ? null : String(row['parameters']),
-		hidden:
-			row['hidden'] === 1 || row['hidden'] === '1' || row['hidden'] === true,
-		created_at: String(row['created_at']),
-		updated_at: String(row['updated_at']),
-	}
+	const rows = await listAppRowsByUserId(db, userId)
+	return rows
+		.filter((row) => row.hasClient)
+		.filter((row) => (hidden === undefined ? true : row.hidden === hidden))
+		.map(appToUiArtifactRow)
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
 	repoManifestSchema,
+	type AppManifest,
 	type RepoManifest,
 	type SearchProjection,
 } from './types.ts'
@@ -59,8 +60,48 @@ export function normalizeRepoWorkspacePath(path: string) {
 	return path.trim().replace(/^\/+/, '')
 }
 
-export function getManifestEntrypointPath(manifest: RepoManifest) {
-	return normalizeRepoWorkspacePath(
-		manifest.kind === 'app' ? manifest.server : manifest.entrypoint,
+export function getManifestServerEntrypointPath(manifest: AppManifest) {
+	const serverPath = manifest.server?.trim()
+	return serverPath ? normalizeRepoWorkspacePath(serverPath) : null
+}
+
+export function getManifestTaskDefinition(
+	manifest: AppManifest,
+	taskName: string,
+) {
+	const normalizedTaskName = taskName.trim()
+	const task = manifest.tasks?.find(
+		(candidate) => candidate.name === normalizedTaskName,
 	)
+	if (!task) {
+		throw new Error(
+			`App manifest does not define a task named "${normalizedTaskName}".`,
+		)
+	}
+	return task
+}
+
+export function getManifestTaskEntrypointPath(
+	manifest: AppManifest,
+	taskName: string,
+) {
+	return normalizeRepoWorkspacePath(
+		getManifestTaskDefinition(manifest, taskName).entrypoint,
+	)
+}
+
+export function getManifestDefaultEntrypointPath(manifest: RepoManifest) {
+	const serverPath = getManifestServerEntrypointPath(manifest)
+	if (serverPath) return serverPath
+	const firstTask = manifest.tasks?.[0]
+	if (!firstTask) {
+		throw new Error(
+			'App manifest does not define a default server or task entrypoint.',
+		)
+	}
+	return normalizeRepoWorkspacePath(firstTask.entrypoint)
+}
+
+export function getManifestEntrypointPath(manifest: RepoManifest) {
+	return getManifestDefaultEntrypointPath(manifest)
 }

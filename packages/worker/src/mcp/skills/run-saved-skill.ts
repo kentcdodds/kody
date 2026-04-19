@@ -7,7 +7,7 @@ import {
 	parseSkillParameters,
 } from '#mcp/skills/skill-parameters.ts'
 import {
-	getManifestEntrypointPath,
+	getManifestTaskEntrypointPath,
 	getManifestSourceRoot,
 	parseRepoManifest,
 } from '#worker/repo/manifest.ts'
@@ -129,15 +129,13 @@ async function runRepoBackedSkill(input: {
 			content: entrypoint.content,
 			manifestPath,
 		})
-		if (manifest.kind !== 'skill') {
-			return {
-				result: undefined,
-				error: `Repo source "${input.row.source_id}" is not a skill manifest.`,
-				logs: [],
-			}
-		}
+		const taskName =
+			input.row.name?.trim() || manifest.tasks?.[0]?.name || 'default'
+		const workspaceEntrypoint = getManifestTaskEntrypointPath(
+			manifest,
+			taskName,
+		)
 		const sourceRoot = getManifestSourceRoot(manifest)
-		const workspaceEntrypoint = getManifestEntrypointPath(manifest)
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user?.userId ?? '',
@@ -146,7 +144,7 @@ async function runRepoBackedSkill(input: {
 		if (!moduleFile.content) {
 			return {
 				result: undefined,
-				error: `Skill entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+				error: `App task "${taskName}" was not found in repo session.`,
 				logs: [],
 			}
 		}

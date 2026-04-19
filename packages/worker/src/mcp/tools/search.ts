@@ -13,11 +13,6 @@ import {
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import {
-	getMcpSkillByName,
-	listMcpSkillsByUserId,
-} from '#mcp/skills/mcp-skills-repo.ts'
-import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import {
 	getUiArtifactById,
@@ -39,8 +34,6 @@ import {
 } from '#worker/home/status.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
-import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
-import { listJobs, getJob } from '#worker/jobs/service.ts'
 import { type JobView } from '#worker/jobs/types.ts'
 import {
 	callerContextFields,
@@ -124,10 +117,9 @@ function applyMaxResponseSize<TPayload>(
 const searchTool = {
 	name: 'search',
 	title:
-		'Search Capabilities, Values, Connectors, Skills, Apps, Jobs, and Secrets',
+		'Search Capabilities, Apps, Values, Connectors, and Secrets',
 	description: `
-Find **built-in capabilities**, **persisted values**, **saved connectors**,
-**saved skills**, **saved apps**, **saved jobs**, and **user secret references** (metadata only)
+Find **built-in capabilities**, **saved apps**, **persisted values**, **saved connectors**, and **user secret references** (metadata only)
 before \`execute\` or \`open_generated_ui\`.
 
 **query** — ranked markdown + structured matches (order matters). If nothing useful
@@ -135,13 +127,10 @@ returns, rephrase or call \`meta_list_capabilities\`; \`entity\` does not fix an
 empty ranked list.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
-| \`connector\` | \`skill\` | \`app\` | \`job\` | \`secret\`), including schemas for
+| \`connector\` | \`app\` | \`secret\`), including schemas for
 capabilities. Types and fields: see response.
 
-Run a skill: \`meta_run_skill({ name, params })\`.
-Manage jobs: \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`,
-\`job_run_now\`.
-Apps: \`open_generated_ui({ app_id })\`. Secrets: never raw in results; use
+Apps: \`app_get\`, \`app_list\`, \`app_save\`, \`app_run_task\`, \`app_run_job\`, and \`open_generated_ui({ app_id })\`. Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
 use \`codemode.connector_get\` / \`codemode.connector_list\`.
@@ -149,20 +138,18 @@ use \`codemode.connector_get\` / \`codemode.connector_list\`.
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
 \`meta_list_remote_connector_status\` / \`meta_get_home_connector_status\` (remote connectors).
 
-Domain hints for \`query\` / \`skill_collection\`: \`coding\`, \`meta\`, \`home\`
+Domain hints for \`query\`: \`coding\`, \`meta\`, \`home\`
 (see server instructions).
 
-Optional **limit** (default 15), **maxResponseSize**, **skill_collection** (narrow
-skills only).
+Optional **limit** (default 15) and **maxResponseSize**.
 
 Example arguments:
 - \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
 - \`{ "query": "preferred org value or saved connector", "limit": 10 }\`
-- \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
 - \`{ "entity": "kody_official_guide:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:connector" }\`
-- To run a skill: \`meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })\`
+- To run an app task: \`app_run_task({ "app_id": "<id>", "task_name": "<task>" })\`
 - To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
@@ -337,7 +324,6 @@ async function loadSearchRowsAndRegistry(input: {
 	agent: McpRegistrationAgent
 	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
 	userId: string | null
-	skillCollection?: string
 }) {
 	const [registry, optionalRows] = await Promise.all([
 		getCapabilityRegistryForContext({
@@ -346,17 +332,12 @@ async function loadSearchRowsAndRegistry(input: {
 		}),
 		loadOptionalSearchRows({
 			userId: input.userId,
-			loadSkills: () =>
-				listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
+			loadSkills: () => Promise.resolve([]),
 			loadUiArtifacts: () =>
 				listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
 					hidden: false,
 				}),
-			loadJobs: () =>
-				listJobs({
-					env: input.agent.getEnv(),
-					userId: input.userId!,
-				}),
+			loadJobs: () => Promise.resolve([]),
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({
 					env: input.agent.getEnv(),
@@ -380,12 +361,9 @@ async function loadSearchRowsAndRegistry(input: {
 				appIds: optionalRows.uiArtifactRows.map((row) => row.id),
 			})
 		: new Map()
-	const skillCollectionSlug = input.skillCollection?.trim()
-		? slugifySkillCollectionName(input.skillCollection)
-		: undefined
 	return {
 		registry,
-		skillCollectionSlug,
+		skillCollectionSlug: undefined,
 		appSecretsByAppId,
 		...optionalRows,
 	}
@@ -433,24 +411,6 @@ async function resolveEntityDetail(input: {
 		throw new Error('Authentication required to access saved user entities.')
 	}
 
-	if (ref.type === 'skill') {
-		const row = await getMcpSkillByName(
-			input.agent.getEnv().APP_DB,
-			input.userId,
-			ref.id,
-		)
-		if (!row) {
-			throw new Error('Skill not found for this user.')
-		}
-		return {
-			type: 'skill' as const,
-			id: row.name,
-			title: row.title,
-			description: row.description,
-			row,
-		}
-	}
-
 	if (ref.type === 'app') {
 		const row = await getUiArtifactById(
 			input.agent.getEnv().APP_DB,
@@ -466,22 +426,7 @@ async function resolveEntityDetail(input: {
 			title: row.title,
 			description: row.description,
 			row,
-			hostedUrl: buildSavedUiUrl(input.callerContext.baseUrl, row.id),
-		}
-	}
-
-	if (ref.type === 'job') {
-		const row = await getJob({
-			env: input.agent.getEnv(),
-			userId: input.userId,
-			jobId: ref.id,
-		})
-		return {
-			type: 'job' as const,
-			id: row.id,
-			title: row.name,
-			description: row.scheduleSummary,
-			row,
+			hostedUrl: row.hasClient ? new URL(`/ui/${row.id}`, input.callerContext.baseUrl).toString() : null,
 		}
 	}
 
@@ -554,13 +499,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						'Optional exact entity reference in the format "{id}:{type}" where type is capability, skill, app, job, secret, value, or connector.',
-					),
-				skill_collection: z
-					.string()
-					.optional()
-					.describe(
-						'Optional saved-skill collection/domain name or slug to narrow skill matches to one grouping.',
+						'Optional exact entity reference in the format "{id}:{type}" where type is capability, app, secret, value, or connector.',
 					),
 				limit: z
 					.number()
@@ -585,7 +524,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 		async (args: {
 			query?: string
 			entity?: string
-			skill_collection?: string
 			limit?: number
 			maxResponseSize?: number
 			conversationId?: string
@@ -621,7 +559,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					agent,
 					callerContext,
 					userId,
-					skillCollection: args.skill_collection,
 				})
 				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
 					env: agent.getEnv(),
