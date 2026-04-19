@@ -1055,13 +1055,13 @@ function trimTrailingSlash(value: string) {
 
 function getRuntimeLocationHref() {
 	const location =
-		(typeof kodyWindow.location?.href === 'string' &&
+		typeof kodyWindow.location?.href === 'string' &&
 		kodyWindow.location.href.length > 0
 			? kodyWindow.location
 			: typeof globalThis.location?.href === 'string' &&
 				  globalThis.location.href.length > 0
 				? globalThis.location
-				: null)
+				: null
 	if (location) {
 		return location.href
 	}
@@ -1070,7 +1070,10 @@ function getRuntimeLocationHref() {
 
 function buildAppBackendBaseUrl(basePath: string) {
 	const backendOriginUrl = new URL(basePath, getRuntimeLocationHref())
-	return new URL(`${trimTrailingSlash(backendOriginUrl.pathname)}/`, backendOriginUrl)
+	return new URL(
+		`${trimTrailingSlash(backendOriginUrl.pathname)}/`,
+		backendOriginUrl,
+	)
 }
 
 function getCurrentAppBackendBootstrap() {
@@ -1089,7 +1092,10 @@ function isAbsoluteUrlString(value: string) {
 	return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(value) || value.startsWith('//')
 }
 
-function isWithinAppBackendBasePath(candidate: URL, appBackend: { basePath: string }) {
+function isWithinAppBackendBasePath(
+	candidate: URL,
+	appBackend: { basePath: string },
+) {
 	const backendBaseUrl = new URL(appBackend.basePath, getRuntimeLocationHref())
 	const normalizedBasePath = trimTrailingSlash(backendBaseUrl.pathname)
 	const normalizedCandidatePath = trimTrailingSlash(candidate.pathname)
@@ -1112,7 +1118,10 @@ function validateResolvedAppBackendUrl(candidate: URL) {
 
 function resolveAppBackendRequestUrl(path?: AppBackendRequestPath) {
 	const appBackend = requireCurrentAppBackendBootstrap()
-	const backendOriginUrl = new URL(appBackend.basePath, getRuntimeLocationHref())
+	const backendOriginUrl = new URL(
+		appBackend.basePath,
+		getRuntimeLocationHref(),
+	)
 	if (path == null || path === '') {
 		return backendOriginUrl.toString()
 	}
@@ -1125,13 +1134,17 @@ function resolveAppBackendRequestUrl(path?: AppBackendRequestPath) {
 		)
 	}
 	if (isAbsoluteUrlString(path)) {
-		return validateResolvedAppBackendUrl(new URL(path, getRuntimeLocationHref()))
+		return validateResolvedAppBackendUrl(
+			new URL(path, getRuntimeLocationHref()),
+		)
 	}
 	if (path.startsWith('?') || path.startsWith('#')) {
 		return new URL(path, backendOriginUrl).toString()
 	}
 	const normalizedPath = path.replace(/^\/+/, '')
-	return new URL(normalizedPath, buildAppBackendBaseUrl(appBackend.basePath)).toString()
+	return validateResolvedAppBackendUrl(
+		new URL(normalizedPath, buildAppBackendBaseUrl(appBackend.basePath)),
+	)
 }
 
 async function fetchAppBackendInCurrentContext(
