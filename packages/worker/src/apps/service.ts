@@ -493,18 +493,19 @@ export async function deleteApp(input: {
 
 async function executeAppTaskInternal(input: {
 	env: Env
-	callerContext: McpCallerContext
+	callerContext: PersistedAppCallerContext
 	app: AppRecord
 	taskName: string
 	params?: Record<string, unknown>
 	storageId?: string | null
 }): Promise<AppExecutionResult> {
+	const userId = input.callerContext.user.userId
 	const sessionId = `app-task-runtime-${input.app.id}-${crypto.randomUUID()}`
 	const sessionClient = repoSessionRpc(input.env, sessionId)
 	const session = await sessionClient.openSession({
 		sessionId,
 		sourceId: input.app.sourceId,
-		userId: input.callerContext.user?.userId ?? '',
+		userId,
 		baseUrl: input.callerContext.baseUrl,
 		sourceRoot: '/',
 	})
@@ -513,7 +514,7 @@ async function executeAppTaskInternal(input: {
 			session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
 		const manifestFile = await sessionClient.readFile({
 			sessionId: session.id,
-			userId: input.callerContext.user?.userId ?? '',
+			userId,
 			path: manifestPath,
 		})
 		if (!manifestFile.content) {
@@ -534,7 +535,7 @@ async function executeAppTaskInternal(input: {
 		)
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
-			userId: input.callerContext.user?.userId ?? '',
+			userId,
 			path: workspaceEntrypoint,
 		})
 		if (!moduleFile.content) {
@@ -546,7 +547,7 @@ async function executeAppTaskInternal(input: {
 		const sourceFiles = await loadRepoSourceFilesFromSession({
 			sessionClient,
 			sessionId: session.id,
-			userId: input.callerContext.user?.userId ?? '',
+			userId,
 			sourceRoot,
 		})
 		const bundle = await buildRepoCodemodeBundle({
@@ -592,7 +593,7 @@ async function executeAppTaskInternal(input: {
 				...(input.storageId != null
 					? {
 							storageTools: {
-								userId: input.callerContext.user?.userId ?? '',
+								userId,
 								storageId: input.storageId,
 								writable: true,
 							},
@@ -615,7 +616,7 @@ async function executeAppTaskInternal(input: {
 		await sessionClient
 			.discardSession({
 				sessionId: session.id,
-				userId: input.callerContext.user?.userId ?? '',
+				userId,
 			})
 			.catch(() => {
 				// Best effort only.

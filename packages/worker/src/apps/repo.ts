@@ -223,7 +223,10 @@ export async function listAppRowsByUserId(
 	return (results ?? []).map(mapRow)
 }
 
-export async function listAllApps(db: D1Database): Promise<Array<AppRecord>> {
+/** System-only helper; do not use in user-scoped request paths. */
+export async function listAllAppsSystem(
+	db: D1Database,
+): Promise<Array<AppRecord>> {
 	const { results } = await db.prepare(`SELECT * FROM apps`).all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }
