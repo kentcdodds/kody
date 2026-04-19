@@ -85,10 +85,10 @@ Optional Worker secret:
 
 - **`CAPABILITY_REINDEX_SECRET`** — Bearer token for
   `POST /__maintenance/reindex-capabilities` and
-  `POST /__maintenance/reindex-skills` (production deploy workflow calls both
-  after healthcheck when the GitHub secret is set). Use skill reindex when
-  `mcp_skills` and Vectorize disagree (restore, manual D1 edits, etc.). Local
-  dev uses offline search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is
+  `POST /__maintenance/reindex-apps` (production deploy workflow calls both
+  after healthcheck when the GitHub secret is set). Use app reindex when app
+  metadata and Vectorize disagree (restore, manual D1 edits, etc.). Local dev
+  uses offline search while `WRANGLER_IS_LOCAL_DEV` is set or the binding is
   missing.
 
 ## Cloudflare API (Worker + Email)
