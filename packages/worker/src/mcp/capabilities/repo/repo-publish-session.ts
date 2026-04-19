@@ -1,30 +1,11 @@
-import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import { repoSessionIdSchema } from './repo-shared.ts'
-
-const outputSchema = z.discriminatedUnion('status', [
-	z.object({
-		status: z.literal('ok'),
-		session_id: z.string(),
-		published_commit: z.string(),
-		message: z.string(),
-	}),
-	z.object({
-		status: z.literal('checks_outdated'),
-		session_id: z.string(),
-		published_commit: z.null(),
-		message: z.string(),
-	}),
-	z.object({
-		status: z.literal('base_moved'),
-		session_id: z.string(),
-		published_commit: z.null(),
-		message: z.string(),
-	}),
-])
+import {
+	repoPublishSessionOutputSchema,
+	repoSessionIdSchema,
+} from './repo-shared.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -37,7 +18,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 		idempotent: false,
 		destructive: false,
 		inputSchema: repoSessionIdSchema,
-		outputSchema,
+		outputSchema: repoPublishSessionOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			const result = await repoSessionRpc(
@@ -68,6 +49,9 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				session_id: result.sessionId,
 				published_commit: null,
 				message: result.message,
+				repair_hint: result.repairHint,
+				session_base_commit: result.sessionBaseCommit,
+				current_published_commit: result.currentPublishedCommit,
 			}
 		},
 	},

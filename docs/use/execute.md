@@ -42,6 +42,12 @@ Saved skills and jobs execute through the same codemode runtime as
 storage helpers. Saved sources use repo-backed ES module entrypoints, so they
 can import sibling modules and package dependencies.
 
+When you need to edit the saved source behind a skill, job, or app, prefer the
+repo-backed workflow in [Repo-backed editing sessions](./repo-sessions.md). For
+common edits, use **`repo_edit_flow`** with a user-facing identity such as skill
+`name`, job `job_id`/`name`, or app `app_id` rather than the internal
+`source_id`.
+
 ## Agent turns
 
 Kody exposes two generic primitives for tool-using chat turns:

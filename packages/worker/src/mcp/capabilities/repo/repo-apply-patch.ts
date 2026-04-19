@@ -6,6 +6,7 @@ import {
 	repoApplyPatchInputSchema,
 	repoApplyPatchResultSchema,
 } from './repo-shared.ts'
+import { toRepoSessionEdit } from './repo-patch-instruction.ts'
 
 export const repoApplyPatchCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -24,40 +25,7 @@ export const repoApplyPatchCapability = defineDomainCapability(
 			const result = await repoSessionRpc(ctx.env, args.session_id).applyEdits({
 				sessionId: args.session_id,
 				userId: user.userId,
-				edits: args.instructions.map((instruction) => {
-					switch (instruction.kind) {
-						case 'write':
-							return instruction
-						case 'replace':
-							return {
-								kind: 'replace' as const,
-								path: instruction.path,
-								search: instruction.search,
-								replacement: instruction.replacement,
-								options:
-									instruction.options == null
-										? undefined
-										: {
-												caseSensitive: instruction.options.case_sensitive,
-												regex: instruction.options.regex,
-												wholeWord: instruction.options.whole_word,
-												contextBefore: instruction.options.context_before,
-												contextAfter: instruction.options.context_after,
-												maxMatches: instruction.options.max_matches,
-											},
-							}
-						case 'write_json':
-							return {
-								kind: 'writeJson' as const,
-								path: instruction.path,
-								value: instruction.value,
-								options:
-									instruction.spaces == null
-										? undefined
-										: { spaces: instruction.spaces },
-							}
-					}
-				}),
+				edits: args.instructions.map(toRepoSessionEdit),
 				dryRun: args.dry_run,
 				rollbackOnError: args.rollback_on_error,
 			})

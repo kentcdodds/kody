@@ -959,6 +959,9 @@ class RepoSessionBase extends DurableObject<Env> {
 				status: 'base_moved',
 				sessionId: input.sessionId,
 				publishedCommit: null,
+				sessionBaseCommit: sessionRow.base_commit,
+				currentPublishedCommit: source.published_commit,
+				repairHint: 'repo_rebase_session',
 				message:
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
 			}
