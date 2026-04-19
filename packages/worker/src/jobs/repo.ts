@@ -270,13 +270,15 @@ async function loadAppJobRows(input: {
 		)
 		if (!job) continue
 		const appId = String(row['app_id'])
-		let app = appCache.get(appId)
-		if (!app) {
-			app = await getAppRowById(input.db, input.userId, appId)
-			if (!app) continue
-			appCache.set(appId, app)
+		const cachedApp = appCache.get(appId)
+		if (cachedApp) {
+			rows.push(mapJobRecord(cachedApp, job))
+			continue
 		}
-		rows.push(mapJobRecord(app, job))
+		const loadedApp = await getAppRowById(input.db, input.userId, appId)
+		if (!loadedApp) continue
+		appCache.set(appId, loadedApp)
+		rows.push(mapJobRecord(loadedApp, job))
 	}
 	return rows
 }

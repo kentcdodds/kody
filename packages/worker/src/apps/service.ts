@@ -267,10 +267,8 @@ async function syncAppArtifacts(input: {
 			searchText: input.app.searchText,
 			parameters: input.app.parameters,
 			hidden: input.app.hidden,
-			hasClient: input.app.hasClient,
-			hasServer: input.app.hasServer,
-			clientCode: input.clientCode,
-			serverCode: input.serverCode,
+			clientCode: input.clientCode ?? null,
+			serverCode: input.serverCode ?? null,
 			tasks: input.taskSources,
 			jobs: input.app.jobs.map((job) => ({
 				name: job.name,
