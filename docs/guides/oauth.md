@@ -95,7 +95,7 @@ The ordering is:
 1. auth bootstrap first
 2. smoke test second
 3. save the app with `serverCode` backend routes
-4. keep `clientCode` mostly UI plus fetches to `kodyWidget.appBackend.basePath`
+4. keep `clientCode` mostly UI plus `kodyWidget.appBackend.fetch(...)`
 
 For non-trivial apps, keep provider API calls in `serverCode`, not in embedded
 client-side `executeCode(...)` strings. Those inline snippets are acceptable for
@@ -119,19 +119,18 @@ await codemode.ui_save_app({
 				import { kodyWidget } from '@kody/ui-utils'
 
 				const track = document.querySelector('#track')
-				const basePath = kodyWidget.appBackend?.basePath
-				function requireBackendBasePath() {
-					if (!basePath) {
+				function requireBackend() {
+					if (!kodyWidget.appBackend) {
 						track.textContent = 'Saved app backend is not available.'
 						return null
 					}
-					return basePath
+					return kodyWidget.appBackend
 				}
 
 				async function loadState() {
-					const resolvedBasePath = requireBackendBasePath()
-					if (!resolvedBasePath) return
-					const response = await fetch(\`\${resolvedBasePath}/api/state\`)
+					const backend = requireBackend()
+					if (!backend) return
+					const response = await backend.fetch('/api/state')
 					const payload = await response.json()
 					track.textContent = payload.trackName
 						? \`\${payload.trackName} — \${payload.artistName}\`
@@ -139,9 +138,9 @@ await codemode.ui_save_app({
 				}
 
 				async function runAction(action) {
-					const resolvedBasePath = requireBackendBasePath()
-					if (!resolvedBasePath) return
-					await fetch(\`\${resolvedBasePath}/api/action\`, {
+					const backend = requireBackend()
+					if (!backend) return
+					await backend.fetch('/api/action', {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
 						body: JSON.stringify({ action }),

@@ -3,7 +3,7 @@
 This example shows the default saved-app backend structure for non-trivial apps:
 
 - **`clientCode`** is mostly UI plus fetches to
-  **`kodyWidget.appBackend.basePath`**
+  **`kodyWidget.appBackend.fetch(...)`**
 - **`serverCode`** owns storage, validation, and mutations
 - the backend exposes **`GET /api/state`** and **`POST /api/action`**
 
@@ -60,11 +60,11 @@ Save it with **`ui_save_app`**, then reopen it with **`open_generated_ui`**.
 	async function loadState() {
 		try {
 			clearCounterError()
-			const basePath = kodyWidget.appBackend?.basePath
-			if (!basePath) {
+			const appBackend = kodyWidget.appBackend
+			if (!appBackend) {
 				throw new Error('Saved app backend is not available.')
 			}
-			const response = await fetch(`${basePath}/api/state`)
+			const response = await appBackend.fetch('api/state')
 			const payload = await readStatePayload(response)
 			counterValue.textContent = String(payload.count ?? 0)
 		} catch (error) {
@@ -78,11 +78,11 @@ Save it with **`ui_save_app`**, then reopen it with **`open_generated_ui`**.
 	async function runAction(action) {
 		try {
 			clearCounterError()
-			const basePath = kodyWidget.appBackend?.basePath
-			if (!basePath) {
+			const appBackend = kodyWidget.appBackend
+			if (!appBackend) {
 				throw new Error('Saved app backend is not available.')
 			}
-			const response = await fetch(`${basePath}/api/action`, {
+			const response = await appBackend.fetch('api/action', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ action }),
@@ -165,7 +165,7 @@ export class App extends DurableObject {
   counter storage logic with connector lookups and provider API calls in
   **`serverCode`**.
 - The client talks to its backend indirectly through
-  **`kodyWidget.appBackend.basePath`**.
+  **`kodyWidget.appBackend.fetch(...)`**.
 - The backend cannot make arbitrary outbound network calls. It only gets the
   explicit bridge bindings Kody passes in.
 - Reset the stored counter with **`app_storage_reset({ app_id })`**.

@@ -6,8 +6,9 @@ const mockModule = vi.hoisted(() => ({
 	updateUiArtifact: vi.fn(),
 	insertUiArtifact: vi.fn(),
 	deleteUiArtifact: vi.fn(),
-	configureSavedAppRunner: vi.fn(),
 	deleteSavedAppRunner: vi.fn(),
+	syncSavedAppRunnerFromDb: vi.fn(),
+	validateSavedAppRunner: vi.fn(),
 	upsertUiArtifactVector: vi.fn(),
 	deleteUiArtifactVector: vi.fn(),
 	resolveSavedAppSource: vi.fn(),
@@ -27,10 +28,12 @@ vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
 }))
 
 vi.mock('#mcp/app-runner.ts', () => ({
-	configureSavedAppRunner: (...args: Array<unknown>) =>
-		mockModule.configureSavedAppRunner(...args),
 	deleteSavedAppRunner: (...args: Array<unknown>) =>
 		mockModule.deleteSavedAppRunner(...args),
+	syncSavedAppRunnerFromDb: (...args: Array<unknown>) =>
+		mockModule.syncSavedAppRunnerFromDb(...args),
+	validateSavedAppRunner: (...args: Array<unknown>) =>
+		mockModule.validateSavedAppRunner(...args),
 }))
 
 vi.mock('#mcp/ui-artifacts-vectorize.ts', () => ({
@@ -62,8 +65,9 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 	mockModule.updateUiArtifact.mockReset()
 	mockModule.insertUiArtifact.mockReset()
 	mockModule.deleteUiArtifact.mockReset()
-	mockModule.configureSavedAppRunner.mockReset()
 	mockModule.deleteSavedAppRunner.mockReset()
+	mockModule.syncSavedAppRunnerFromDb.mockReset()
+	mockModule.validateSavedAppRunner.mockReset()
 	mockModule.upsertUiArtifactVector.mockReset()
 	mockModule.deleteUiArtifactVector.mockReset()
 	mockModule.resolveSavedAppSource.mockReset()
@@ -115,6 +119,12 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 		.mockResolvedValueOnce('server-code-v2')
 		.mockResolvedValueOnce('server-code-v3')
 		.mockResolvedValueOnce('server-code-v4')
+	mockModule.validateSavedAppRunner.mockResolvedValue({
+		ok: true,
+		appId: 'app-1',
+		facetName: 'main',
+		validated: true,
+	})
 	mockModule.resolveSavedAppSource.mockImplementation(async () => ({
 		id: currentApp.id,
 		title: currentApp.title,
@@ -132,8 +142,51 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			(currentApp as typeof currentApp & { resolvedClientCode?: string })
 				.resolvedClientCode ?? '<main><h1>Patchable v1</h1></main>',
 		serverCode:
+			'resolvedServerCode' in
 			(currentApp as typeof currentApp & { resolvedServerCode?: string | null })
-				.resolvedServerCode ?? initialServerCode,
+				? (
+						currentApp as typeof currentApp & {
+							resolvedServerCode?: string | null
+						}
+					).resolvedServerCode ?? null
+				: initialServerCode,
+		serverCodeId:
+			(
+				currentApp as typeof currentApp & {
+					resolvedServerCodeId?: string | null
+				}
+			).resolvedServerCodeId ?? 'server-code-v1',
+		sourceId: currentApp.sourceId,
+		publishedCommit:
+			(currentApp as typeof currentApp & { publishedCommit?: string | null })
+				.publishedCommit ?? 'server-code-v1',
+	}))
+	mockModule.syncSavedAppRunnerFromDb.mockImplementation(async () => ({
+		id: currentApp.id,
+		user_id: currentApp.user_id,
+		title: currentApp.title,
+		description: currentApp.description,
+		hidden: currentApp.hidden,
+		parameters: [
+			{
+				name: 'team',
+				description: 'Team slug',
+				type: 'string',
+				required: true,
+			},
+		],
+		clientCode:
+			(currentApp as typeof currentApp & { resolvedClientCode?: string })
+				.resolvedClientCode ?? '<main><h1>Patchable v1</h1></main>',
+		serverCode:
+			'resolvedServerCode' in
+			(currentApp as typeof currentApp & { resolvedServerCode?: string | null })
+				? (
+						currentApp as typeof currentApp & {
+							resolvedServerCode?: string | null
+						}
+					).resolvedServerCode ?? null
+				: initialServerCode,
 		serverCodeId:
 			(
 				currentApp as typeof currentApp & {
@@ -179,7 +232,7 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 						resolvedServerCode?: string | null
 					}
 				).resolvedServerCode =
-					updates['hasServerCode'] === true ? initialServerCode : null
+					updates['hasServerCode'] === true ? replacementServerCode : null
 			}
 			return { ...currentApp }
 		},
@@ -231,13 +284,21 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 			hasServerCode: true,
 			hidden: undefined,
 		})
-		expect(mockModule.configureSavedAppRunner.mock.calls[0]?.[0]).toEqual(
+		expect(mockModule.syncSavedAppRunnerFromDb.mock.calls[0]?.[0]).toEqual(
 			expect.objectContaining({
 				appId: 'app-1',
-				serverCode: initialServerCode,
-				serverCodeId: expect.any(String),
+				userId: 'user-1',
+				baseUrl: 'https://heykody.dev',
 			}),
 		)
+		expect(mockModule.validateSavedAppRunner.mock.calls[0]?.[0]).toEqual({
+			env: {
+				APP_DB: appDb,
+				CLOUDFLARE_ACCOUNT_ID: 'acct',
+				CLOUDFLARE_API_TOKEN: 'token',
+			},
+			appId: 'app-1',
+		})
 
 		const clearedResult = await uiSaveAppCapability.handler(
 			{
@@ -277,11 +338,11 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				hasServerCode: false,
 			}),
 		)
-		expect(mockModule.configureSavedAppRunner.mock.calls[1]?.[0]).toEqual(
+		expect(mockModule.syncSavedAppRunnerFromDb.mock.calls[1]?.[0]).toEqual(
 			expect.objectContaining({
 				appId: 'app-1',
-				serverCode: null,
-				serverCodeId: expect.any(String),
+				userId: 'user-1',
+				baseUrl: 'https://heykody.dev',
 			}),
 		)
 
@@ -323,15 +384,211 @@ test('ui_save_app updates preserve backend code unless the caller clears or repl
 				hasServerCode: true,
 			}),
 		)
-		expect(mockModule.configureSavedAppRunner.mock.calls[2]?.[0]).toEqual(
+		expect(mockModule.syncSavedAppRunnerFromDb.mock.calls[2]?.[0]).toEqual(
 			expect.objectContaining({
 				appId: 'app-1',
-				serverCode: replacementServerCode,
-				serverCodeId: expect.any(String),
+				userId: 'user-1',
+				baseUrl: 'https://heykody.dev',
 			}),
 		)
 		expect(mockModule.deleteUiArtifactVector).toHaveBeenCalledTimes(3)
 	} finally {
 		randomUuidSpy.mockRestore()
 	}
+})
+
+test('ui_save_app rolls back create when backend validation fails after source sync', async () => {
+	mockModule.getUiArtifactById.mockReset()
+	mockModule.updateUiArtifact.mockReset()
+	mockModule.insertUiArtifact.mockReset()
+	mockModule.deleteUiArtifact.mockReset()
+	mockModule.deleteSavedAppRunner.mockReset()
+	mockModule.syncSavedAppRunnerFromDb.mockReset()
+	mockModule.validateSavedAppRunner.mockReset()
+	mockModule.upsertUiArtifactVector.mockReset()
+	mockModule.deleteUiArtifactVector.mockReset()
+	mockModule.resolveSavedAppSource.mockReset()
+	mockModule.ensureEntitySource.mockReset()
+	mockModule.syncArtifactSourceSnapshot.mockReset()
+
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'source-app-create',
+		bootstrapAccess: null,
+	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('server-code-created')
+	mockModule.syncSavedAppRunnerFromDb.mockResolvedValue({
+		id: 'app-create',
+		user_id: 'user-1',
+		title: 'Broken backend',
+		description: 'Should fail during backend validation.',
+		hidden: true,
+		parameters: null,
+		clientCode: '<main>Broken backend</main>',
+		serverCode:
+			'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject {}',
+		serverCodeId: 'server-code-created',
+		sourceId: 'source-app-create',
+		publishedCommit: 'server-code-created',
+	})
+	mockModule.validateSavedAppRunner.mockRejectedValue(
+		new Error('Saved app backend failed validation.'),
+	)
+
+	const randomUuidSpy = vi.spyOn(crypto, 'randomUUID')
+	randomUuidSpy.mockReturnValueOnce('app-create')
+	try {
+		await expect(
+			uiSaveAppCapability.handler(
+				{
+					title: 'Broken backend',
+					description: 'Should fail during backend validation.',
+					clientCode: '<main>Broken backend</main>',
+					serverCode:
+						'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject {}',
+				},
+				{
+					env: {
+						APP_DB: {} as D1Database,
+						CLOUDFLARE_ACCOUNT_ID: 'acct',
+						CLOUDFLARE_API_TOKEN: 'token',
+					} as Env,
+					callerContext: createMcpCallerContext({
+						baseUrl: 'https://heykody.dev',
+						user: { userId: 'user-1', email: 'user@example.com' },
+					}),
+				},
+			),
+		).rejects.toThrow('Saved app backend failed validation.')
+
+		expect(mockModule.insertUiArtifact).toHaveBeenCalledTimes(1)
+		expect(mockModule.deleteSavedAppRunner).toHaveBeenCalledWith({
+			env: {
+				APP_DB: {} as D1Database,
+				CLOUDFLARE_ACCOUNT_ID: 'acct',
+				CLOUDFLARE_API_TOKEN: 'token',
+			},
+			appId: 'app-create',
+		})
+		expect(mockModule.deleteUiArtifact).toHaveBeenCalledWith(
+			{} as D1Database,
+			'user-1',
+			'app-create',
+		)
+	} finally {
+		randomUuidSpy.mockRestore()
+	}
+})
+
+test('ui_save_app rolls back updates to the previous runner state when backend validation fails', async () => {
+	mockModule.getUiArtifactById.mockReset()
+	mockModule.updateUiArtifact.mockReset()
+	mockModule.insertUiArtifact.mockReset()
+	mockModule.deleteUiArtifact.mockReset()
+	mockModule.deleteSavedAppRunner.mockReset()
+	mockModule.syncSavedAppRunnerFromDb.mockReset()
+	mockModule.validateSavedAppRunner.mockReset()
+	mockModule.upsertUiArtifactVector.mockReset()
+	mockModule.deleteUiArtifactVector.mockReset()
+	mockModule.resolveSavedAppSource.mockReset()
+	mockModule.ensureEntitySource.mockReset()
+	mockModule.syncArtifactSourceSnapshot.mockReset()
+
+	const existingApp = {
+		id: 'app-update',
+		user_id: 'user-1',
+		title: 'Original title',
+		description: 'Original description',
+		sourceId: 'source-original',
+		hasServerCode: true,
+		parameters: null,
+		hidden: true,
+	}
+	mockModule.getUiArtifactById.mockResolvedValue(existingApp)
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'source-original',
+		bootstrapAccess: null,
+	})
+	mockModule.resolveSavedAppSource.mockResolvedValue({
+		id: 'app-update',
+		title: 'Original title',
+		description: 'Original description',
+		hidden: true,
+		parameters: null,
+		clientCode: '<main>Original</main>',
+		serverCode:
+			'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async fetch() { return new Response("ok") } }',
+		serverCodeId: 'server-code-original',
+		sourceId: 'source-original',
+		publishedCommit: 'server-code-original',
+	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('server-code-next')
+	mockModule.syncSavedAppRunnerFromDb
+		.mockRejectedValueOnce(new Error('Updated backend failed validation.'))
+		.mockResolvedValueOnce({
+			id: 'app-update',
+			user_id: 'user-1',
+			title: 'Original title',
+			description: 'Original description',
+			hidden: true,
+			parameters: null,
+			clientCode: '<main>Original</main>',
+			serverCode:
+				'import { DurableObject } from "cloudflare:workers"; export class App extends DurableObject { async fetch() { return new Response("ok") } }',
+			serverCodeId: 'server-code-original',
+			sourceId: 'source-original',
+			publishedCommit: 'server-code-original',
+		})
+	mockModule.validateSavedAppRunner.mockResolvedValue({
+		ok: true,
+		appId: 'app-update',
+		facetName: 'main',
+		validated: true,
+	})
+	mockModule.updateUiArtifact.mockResolvedValue(true)
+
+	await expect(
+		uiSaveAppCapability.handler(
+			{
+				app_id: 'app-update',
+				title: 'Broken title',
+			},
+			{
+				env: {
+					APP_DB: {} as D1Database,
+					CLOUDFLARE_ACCOUNT_ID: 'acct',
+					CLOUDFLARE_API_TOKEN: 'token',
+				} as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://heykody.dev',
+					user: { userId: 'user-1', email: 'user@example.com' },
+				}),
+			},
+		),
+	).rejects.toThrow('Updated backend failed validation.')
+
+	expect(mockModule.updateUiArtifact.mock.calls[0]?.[3]).toEqual({
+		title: 'Broken title',
+		description: undefined,
+		sourceId: 'source-original',
+		hasServerCode: true,
+		hidden: undefined,
+	})
+	expect(mockModule.updateUiArtifact.mock.calls[1]?.[3]).toEqual({
+		title: 'Original title',
+		description: 'Original description',
+		sourceId: 'source-original',
+		hasServerCode: true,
+		parameters: null,
+		hidden: true,
+	})
+	expect(mockModule.syncSavedAppRunnerFromDb.mock.calls[1]?.[0]).toEqual({
+		env: {
+			APP_DB: {} as D1Database,
+			CLOUDFLARE_ACCOUNT_ID: 'acct',
+			CLOUDFLARE_API_TOKEN: 'token',
+		},
+		appId: 'app-update',
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+	})
 })

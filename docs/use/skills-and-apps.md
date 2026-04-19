@@ -30,12 +30,13 @@ for lifecycle tasks.
 `<script type="module">...</script>` tags in that HTML.
 
 For non-trivial saved apps, treat **`serverCode`** plus
-**`kodyWidget.appBackend.basePath`** as the default pattern:
+**`kodyWidget.appBackend.fetch(...)`** as the default pattern:
 
 - put provider API calls, persistence, validation, and mutations in
   **`serverCode`**
 - expose backend routes such as **`/api/state`** and **`/api/action`**
-- keep **`clientCode`** mostly UI plus `fetch(...)` calls to the app backend
+- keep **`clientCode`** mostly UI plus `kodyWidget.appBackend.fetch(...)` calls
+  to the app backend
 - reserve embedded **`kodyWidget.executeCode(...)`** strings in client HTML for
   quick prototypes or one-off experiments
 
@@ -82,7 +83,7 @@ override saved-app/session params for that execution only.
 For saved apps with real logic, use **`kodyWidget.appBackend`** as the default
 client-to-backend path:
 
-**`fetch(\`\${kodyWidget.appBackend.basePath}/api/state\`)`**
+**`await kodyWidget.appBackend.fetch('/api/state')`**
 
 That keeps **`clientCode`** focused on UI while **`serverCode`** handles the
 backend contract.

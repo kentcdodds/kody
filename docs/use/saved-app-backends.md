@@ -57,8 +57,8 @@ For non-trivial or integration-backed apps, prefer a saved app with:
 
 - `GET /api/state` for the current UI state
 - `POST /api/action` for validated mutations
-- `clientCode` that stays mostly UI plus fetches through
-  `kodyWidget.appBackend.basePath`
+- `clientCode` that stays mostly UI plus requests through
+  `kodyWidget.appBackend.fetch(...)`
 - `serverCode` that owns storage, provider API calls, and request validation
 
 ## Authoring `serverCode`
@@ -83,22 +83,41 @@ The facet has:
 
 ## The `/app/:appId/*` route
 
-Saved app frontend code can call:
+Saved app frontend code can call its backend through:
 
-- `fetch('/app/<appId>/api/...')`
+- `kodyWidget.appBackend.fetch('api/...', init?)`
 
-The request is authenticated with the same generated UI app session token Kody
-already uses for saved app iframes. Kody also sets an app-scoped HttpOnly cookie
-so ordinary relative `fetch()` calls from the iframe work without custom auth
-code.
+The helper resolves requests under the saved app backend base path and applies
+the same generated UI auth Kody already uses for saved app iframes. When a
+generated UI bearer token is available, the helper forwards it automatically.
+Otherwise, ordinary cookie-backed iframe requests still work through the
+app-scoped HttpOnly cookie.
 
-Inside generated UI code, read the base path from:
+If you need the URL without issuing a request, use:
 
 ```ts
 import { kodyWidget } from '@kody/ui-utils'
 
-const backendBase = kodyWidget.appBackend?.basePath
+const backendUrl = kodyWidget.appBackend?.resolveUrl('api/state')
 ```
+
+The helper still exposes `basePath` for inspection/debugging, but
+`kodyWidget.appBackend.fetch(...)` should be the default public API for saved
+app frontend code.
+
+## Save-time backend validation
+
+`ui_save_app` now validates saved app backends through the same repo-published
+source snapshot and dynamic runner load path used at runtime:
+
+- Kody syncs the repo-backed app source snapshot first.
+- It re-resolves the saved app from that published source.
+- It configures the app runner from the resolved source.
+- It forces the backend facet to load before the save succeeds.
+
+That means backend refactors fail earlier when the published server module
+cannot actually load in the saved app runtime, instead of only surfacing on the
+first real backend request later.
 
 ## `KODY` facet bridge
 
@@ -200,24 +219,24 @@ await codemode.ui_save_app({
 				const refreshButton = document.querySelector('#refresh')
 				const incrementButton = document.querySelector('#increment')
 				const resetButton = document.querySelector('#reset')
-				const backendBase = kodyWidget.appBackend?.basePath
+				const backend = kodyWidget.appBackend
 
-			function requireBackendBase() {
-				if (!backendBase) {
-					output.textContent = 'Backend unavailable'
-					throw new Error('Saved app backend is not available.')
+				function requireBackend() {
+					if (!backend) {
+						output.textContent = 'Backend unavailable'
+						throw new Error('Saved app backend is not available.')
+					}
+					return backend
 				}
-				return backendBase
-			}
 
 				async function refresh() {
-				const response = await fetch(\`\${requireBackendBase()}/api/state\`)
+					const response = await requireBackend().fetch('api/state')
 					const payload = await response.json()
 					output.textContent = String(payload.count)
 				}
 
 				async function runAction(action) {
-				await fetch(\`\${requireBackendBase()}/api/action\`, {
+					await requireBackend().fetch('api/action', {
 						method: 'POST',
 						headers: { 'content-type': 'application/json' },
 						body: JSON.stringify({ action }),

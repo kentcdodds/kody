@@ -16,8 +16,9 @@ import {
 	upsertUiArtifactVector,
 } from '#mcp/ui-artifacts-vectorize.ts'
 import {
-	configureSavedAppRunner,
 	deleteSavedAppRunner,
+	syncSavedAppRunnerFromDb,
+	validateSavedAppRunner,
 } from '#mcp/app-runner.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
@@ -211,26 +212,57 @@ export const uiSaveAppCapability = defineDomainCapability(
 
 			async function saveAndIndexApp(input: {
 				appId: string
-				title: string
-				description: string
-				clientCode: string
-				serverCode: string | null
-				serverCodeId: string
-				parameters: ReturnType<typeof normalizeUiArtifactParameters>
-				hidden: boolean
 				sourceId: string
 				previousPublishedCommit: string | null
 				existingApp: Awaited<ReturnType<typeof getUiArtifactById>> | null
 			}) {
-				const hasBackend = input.serverCode != null
+				const restoreExistingSavedAppState = async () => {
+					if (!input.existingApp) {
+						return
+					}
+					await Promise.allSettled([
+						updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
+							title: input.existingApp.title,
+							description: input.existingApp.description,
+							sourceId: input.existingApp.sourceId,
+							hasServerCode: input.existingApp.hasServerCode,
+							parameters: input.existingApp.parameters,
+							hidden: input.existingApp.hidden,
+						}),
+						restorePublishedCommit(input.sourceId, input.previousPublishedCommit),
+					])
+					try {
+						await syncSavedAppRunnerFromDb({
+							env: ctx.env,
+							appId: input.appId,
+							userId: user.userId,
+							baseUrl: ctx.callerContext.baseUrl,
+						})
+					} catch {
+						// Preserve the original save failure.
+					}
+				}
+
+				let syncedArtifact: Awaited<ReturnType<typeof syncSavedAppRunnerFromDb>>
+				let syncedParameters:
+					| ReturnType<typeof parseUiArtifactParameters>
+					| undefined
 				try {
-					await configureSavedAppRunner({
+					syncedArtifact = await syncSavedAppRunnerFromDb({
 						env: ctx.env,
 						appId: input.appId,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
-						serverCode: input.serverCode,
-						serverCodeId: input.serverCodeId,
+					})
+					if (!syncedArtifact) {
+						throw new Error('Saved UI artifact not found for this user.')
+					}
+					syncedParameters = Array.isArray(syncedArtifact.parameters)
+						? syncedArtifact.parameters
+						: parseUiArtifactParameters(syncedArtifact.parameters)
+					await validateSavedAppRunner({
+						env: ctx.env,
+						appId: input.appId,
 					})
 				} catch (cause) {
 					if (!isUpdate) {
@@ -246,38 +278,22 @@ export const uiSaveAppCapability = defineDomainCapability(
 							),
 						])
 					} else if (input.existingApp) {
-						try {
-							await Promise.allSettled([
-								updateUiArtifact(ctx.env.APP_DB, user.userId, input.appId, {
-									title: input.existingApp.title,
-									description: input.existingApp.description,
-									sourceId: input.existingApp.sourceId,
-									hasServerCode: input.existingApp.hasServerCode,
-									parameters: input.existingApp.parameters,
-									hidden: input.existingApp.hidden,
-								}),
-								restorePublishedCommit(
-									input.sourceId,
-									input.previousPublishedCommit,
-								),
-							])
-						} catch {
-							// Preserve the original runner configuration failure.
-						}
+						await restoreExistingSavedAppState()
 					}
 					throw cause
 				}
 
 				try {
-					if (!input.hidden) {
+					const hasBackend = syncedArtifact.serverCode != null
+					if (!syncedArtifact.hidden) {
 						await upsertUiArtifactVector(ctx.env, {
 							appId: input.appId,
 							userId: user.userId,
 							embedText: buildUiArtifactEmbedText({
-								title: input.title,
-								description: input.description,
+								title: syncedArtifact.title,
+								description: syncedArtifact.description,
 								hasServerCode: hasBackend,
-								parameters: input.parameters,
+								parameters: syncedParameters ?? null,
 							}),
 						})
 					} else if (isUpdate) {
@@ -325,11 +341,11 @@ export const uiSaveAppCapability = defineDomainCapability(
 
 				return {
 					app_id: input.appId,
-					server_code_id: input.serverCodeId,
-					has_server_code: hasBackend,
+					server_code_id: syncedArtifact.serverCodeId,
+					has_server_code: syncedArtifact.serverCode != null,
 					hosted_url: buildSavedUiUrl(ctx.callerContext.baseUrl, input.appId),
-					parameters: input.parameters,
-					hidden: input.hidden,
+					parameters: syncedParameters ?? null,
+					hidden: syncedArtifact.hidden,
 				}
 			}
 
@@ -397,9 +413,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const previousPublishedCommit = await readPublishedCommit(
 					ensuredSource.id,
 				)
-				let nextPublishedCommit: string | null = null
 				try {
-					nextPublishedCommit = await syncArtifactSourceSnapshot({
+					await syncArtifactSourceSnapshot({
 						env: ctx.env,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
@@ -431,13 +446,6 @@ export const uiSaveAppCapability = defineDomainCapability(
 				hidden = args.hidden ?? existingApp.hidden
 				return await saveAndIndexApp({
 					appId,
-					title,
-					description,
-					clientCode,
-					serverCode: serverCode ?? null,
-					serverCodeId: nextPublishedCommit ?? ensuredSource.id,
-					parameters,
-					hidden,
 					sourceId: ensuredSource.id,
 					previousPublishedCommit,
 					existingApp,
@@ -470,9 +478,8 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const previousPublishedCommit = await readPublishedCommit(
 					ensuredSource.id,
 				)
-				let nextPublishedCommit: string | null = null
 				try {
-					nextPublishedCommit = await syncArtifactSourceSnapshot({
+					await syncArtifactSourceSnapshot({
 						env: ctx.env,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
@@ -496,13 +503,6 @@ export const uiSaveAppCapability = defineDomainCapability(
 				}
 				return await saveAndIndexApp({
 					appId,
-					title,
-					description,
-					clientCode,
-					serverCode,
-					serverCodeId: nextPublishedCommit ?? ensuredSource.id,
-					parameters,
-					hidden,
 					sourceId: ensuredSource.id,
 					previousPublishedCommit,
 					existingApp,

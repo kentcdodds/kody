@@ -32,7 +32,11 @@ export {
 	type GeneratedUiRuntimeBootstrap,
 	generatedUiRuntimeModuleSpecifier,
 } from './kody-ui-utils-contract.ts'
-export { kodyWidget, type KodyWidgetPublicApi } from './kody-widget-runtime.ts'
+export {
+	kodyWidget,
+	type KodyWidgetAppBackendPublicApi,
+	type KodyWidgetPublicApi,
+} from './kody-widget-runtime.ts'
 
 type RenderMode = 'inline_code' | 'saved_app'
 type AppRuntime = 'html' | 'javascript'

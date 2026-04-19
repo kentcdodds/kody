@@ -104,6 +104,7 @@ import * as userModule from './user-app.js'
 const BaseApp = userModule.App
 const reservedFacetMethodNames = new Set([
 	'fetch',
+	'__kody_validate',
 	'__kody_resetStorage',
 	'__kody_exportStorage',
 	'__kody_invokeUserMethod',
@@ -114,6 +115,16 @@ if (typeof BaseApp !== 'function') {
 }
 
 export class ${exportName} extends BaseApp {
+	async __kody_validate() {
+		return {
+			ok: true,
+			className:
+				typeof BaseApp.name === 'string' && BaseApp.name.length > 0
+					? BaseApp.name
+					: 'App',
+		}
+	}
+
 	async __kody_resetStorage() {
 		await this.ctx.storage.deleteAll()
 		return { ok: true }
@@ -505,6 +516,31 @@ class AppRunnerBase extends DurableObject<Env> {
 		}
 	}
 
+	async validateBackend(input: { appId: string; facetName?: string | null }) {
+		const facetName = buildFacetName(input.facetName)
+		const config = await this.readConfig(this.ctx.id.toString())
+		if (!config.serverCode) {
+			return {
+				ok: true,
+				appId: input.appId,
+				facetName,
+				validated: false,
+			}
+		}
+		const facet = await this.getFacetStub(facetName)
+		await (
+			facet as unknown as {
+				__kody_validate: () => Promise<unknown>
+			}
+		).__kody_validate()
+		return {
+			ok: true,
+			appId: input.appId,
+			facetName,
+			validated: true,
+		}
+	}
+
 	async exportStorage(input: {
 		appId: string
 		facetName?: string | null
@@ -857,6 +893,15 @@ export function appRunnerRpc(env: Env, appId: string) {
 			metrics: AppRunnerMetrics
 			storageBytes: number
 		}>
+		validateBackend: (payload: {
+			appId: string
+			facetName?: string | null
+		}) => Promise<{
+			ok: true
+			appId: string
+			facetName: string
+			validated: boolean
+		}>
 		resetStorage: (payload: {
 			appId: string
 			facetName?: string | null
@@ -908,6 +953,17 @@ export async function exportSavedAppRunnerStorage(input: {
 		facetName: input.facetName ?? 'main',
 		pageSize: input.pageSize,
 		startAfter: input.startAfter ?? null,
+	})
+}
+
+export async function validateSavedAppRunner(input: {
+	env: Env
+	appId: string
+	facetName?: string | null
+}) {
+	return await appRunnerRpc(input.env, input.appId).validateBackend({
+		appId: input.appId,
+		facetName: input.facetName ?? 'main',
 	})
 }
 
