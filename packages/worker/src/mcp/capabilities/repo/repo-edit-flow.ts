@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -10,6 +11,8 @@ import {
 	repoOpenSessionOutputSchema,
 } from './repo-shared.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
+
+type RepoEditFlowResult = z.infer<typeof repoEditFlowOutputSchema>
 
 async function loadRepoEditFlowSession(input: {
 	env: Env
@@ -82,11 +85,15 @@ export const repoEditFlowCapability = defineDomainCapability(
 				),
 				rollbackOnError: args.rollback_on_error,
 			})
-
-			const shouldRunChecks = args.run_checks ?? true
-			const shouldPublish = args.publish ?? shouldRunChecks
-
-			if (!shouldRunChecks) {
+			const editsSummary = {
+				dry_run: edits.dryRun,
+				total_changed: edits.totalChanged,
+				edits: edits.edits,
+			}
+			const buildFlowResponse = async (
+				checks: RepoEditFlowResult['checks'],
+				publish: RepoEditFlowResult['publish'],
+			) => {
 				const currentSession = await loadRepoEditFlowSession({
 					env: ctx.env,
 					userId: user.userId,
@@ -95,18 +102,24 @@ export const repoEditFlowCapability = defineDomainCapability(
 				return {
 					session: currentSession,
 					resolved_target: currentSession.resolved_target,
-					edits: {
-						dry_run: edits.dryRun,
-						total_changed: edits.totalChanged,
-						edits: edits.edits,
-					},
-					checks: {
-						status: 'not_requested' as const,
-					},
-					publish: {
-						status: 'not_requested' as const,
-					},
+					edits: editsSummary,
+					checks,
+					publish,
 				}
+			}
+
+			const shouldRunChecks = args.run_checks ?? true
+			const shouldPublish = args.publish ?? shouldRunChecks
+
+			if (!shouldRunChecks) {
+				return buildFlowResponse(
+					{
+						status: 'not_requested' as const,
+					},
+					{
+						status: 'not_requested' as const,
+					},
+				)
 			}
 
 			const checkRun = await rpc.runChecks({
@@ -115,20 +128,8 @@ export const repoEditFlowCapability = defineDomainCapability(
 			})
 			if (!checkRun.ok) {
 				const failedChecks = checkRun.results.filter((entry) => !entry.ok)
-				const currentSession = await loadRepoEditFlowSession({
-					env: ctx.env,
-					userId: user.userId,
-					sessionId: validatedSession.id,
-				})
-				return {
-					session: currentSession,
-					resolved_target: currentSession.resolved_target,
-					edits: {
-						dry_run: edits.dryRun,
-						total_changed: edits.totalChanged,
-						edits: edits.edits,
-					},
-					checks: {
+				return buildFlowResponse(
+					{
 						status: 'failed' as const,
 						ok: false as const,
 						results: checkRun.results,
@@ -138,7 +139,7 @@ export const repoEditFlowCapability = defineDomainCapability(
 						tree_hash: checkRun.treeHash,
 						checked_at: checkRun.checkedAt,
 					},
-					publish: shouldPublish
+					shouldPublish
 						? {
 								status: 'blocked_by_checks' as const,
 								message:
@@ -151,24 +152,12 @@ export const repoEditFlowCapability = defineDomainCapability(
 						: {
 								status: 'not_requested' as const,
 							},
-				}
+				)
 			}
 
 			if (!shouldPublish) {
-				const currentSession = await loadRepoEditFlowSession({
-					env: ctx.env,
-					userId: user.userId,
-					sessionId: validatedSession.id,
-				})
-				return {
-					session: currentSession,
-					resolved_target: currentSession.resolved_target,
-					edits: {
-						dry_run: edits.dryRun,
-						total_changed: edits.totalChanged,
-						edits: edits.edits,
-					},
-					checks: {
+				return buildFlowResponse(
+					{
 						status: 'passed' as const,
 						ok: true as const,
 						results: checkRun.results,
@@ -177,10 +166,10 @@ export const repoEditFlowCapability = defineDomainCapability(
 						tree_hash: checkRun.treeHash,
 						checked_at: checkRun.checkedAt,
 					},
-					publish: {
+					{
 						status: 'not_requested' as const,
 					},
-				}
+				)
 			}
 
 			const publish = await rpc.publishSession({
@@ -189,20 +178,8 @@ export const repoEditFlowCapability = defineDomainCapability(
 			})
 			switch (publish.status) {
 				case 'ok': {
-					const currentSession = await loadRepoEditFlowSession({
-						env: ctx.env,
-						userId: user.userId,
-						sessionId: validatedSession.id,
-					})
-					return {
-						session: currentSession,
-						resolved_target: currentSession.resolved_target,
-						edits: {
-							dry_run: edits.dryRun,
-							total_changed: edits.totalChanged,
-							edits: edits.edits,
-						},
-						checks: {
+					return buildFlowResponse(
+						{
 							status: 'passed' as const,
 							ok: true as const,
 							results: checkRun.results,
@@ -211,29 +188,17 @@ export const repoEditFlowCapability = defineDomainCapability(
 							tree_hash: checkRun.treeHash,
 							checked_at: checkRun.checkedAt,
 						},
-						publish: {
+						{
 							status: 'published' as const,
 							session_id: publish.sessionId,
 							published_commit: publish.publishedCommit,
 							message: publish.message,
 						},
-					}
+					)
 				}
 				case 'checks_outdated': {
-					const currentSession = await loadRepoEditFlowSession({
-						env: ctx.env,
-						userId: user.userId,
-						sessionId: validatedSession.id,
-					})
-					return {
-						session: currentSession,
-						resolved_target: currentSession.resolved_target,
-						edits: {
-							dry_run: edits.dryRun,
-							total_changed: edits.totalChanged,
-							edits: edits.edits,
-						},
-						checks: {
+					return buildFlowResponse(
+						{
 							status: 'passed' as const,
 							ok: true as const,
 							results: checkRun.results,
@@ -242,29 +207,17 @@ export const repoEditFlowCapability = defineDomainCapability(
 							tree_hash: checkRun.treeHash,
 							checked_at: checkRun.checkedAt,
 						},
-						publish: {
+						{
 							status: 'checks_outdated' as const,
 							session_id: publish.sessionId,
 							published_commit: null,
 							message: publish.message,
 						},
-					}
+					)
 				}
 				case 'base_moved': {
-					const currentSession = await loadRepoEditFlowSession({
-						env: ctx.env,
-						userId: user.userId,
-						sessionId: validatedSession.id,
-					})
-					return {
-						session: currentSession,
-						resolved_target: currentSession.resolved_target,
-						edits: {
-							dry_run: edits.dryRun,
-							total_changed: edits.totalChanged,
-							edits: edits.edits,
-						},
-						checks: {
+					return buildFlowResponse(
+						{
 							status: 'passed' as const,
 							ok: true as const,
 							results: checkRun.results,
@@ -273,7 +226,7 @@ export const repoEditFlowCapability = defineDomainCapability(
 							tree_hash: checkRun.treeHash,
 							checked_at: checkRun.checkedAt,
 						},
-						publish: {
+						{
 							status: 'base_moved' as const,
 							session_id: publish.sessionId,
 							published_commit: null,
@@ -282,7 +235,7 @@ export const repoEditFlowCapability = defineDomainCapability(
 							session_base_commit: publish.sessionBaseCommit,
 							current_published_commit: publish.currentPublishedCommit,
 						},
-					}
+					)
 				}
 				default: {
 					const exhaustiveCheck: never = publish
