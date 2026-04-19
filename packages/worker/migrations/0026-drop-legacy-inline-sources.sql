@@ -1,5 +1,179 @@
 PRAGMA defer_foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS legacy_inline_sources_archive (
+	entity_kind TEXT NOT NULL CHECK (entity_kind IN ('skill', 'app', 'job')),
+	entity_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	display_name TEXT NOT NULL,
+	reason TEXT NOT NULL,
+	payload_json TEXT NOT NULL,
+	archived_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	PRIMARY KEY (entity_kind, user_id, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_legacy_inline_sources_archive_user_id_entity_kind
+ON legacy_inline_sources_archive(user_id, entity_kind);
+
+UPDATE mcp_skills
+SET source_id = (
+	SELECT entity_sources.id
+	FROM entity_sources
+	WHERE entity_sources.user_id = mcp_skills.user_id
+		AND entity_sources.entity_kind = 'skill'
+		AND entity_sources.entity_id = mcp_skills.id
+	LIMIT 1
+)
+WHERE source_id IS NULL;
+
+INSERT OR REPLACE INTO legacy_inline_sources_archive (
+	entity_kind,
+	entity_id,
+	user_id,
+	display_name,
+	reason,
+	payload_json
+)
+SELECT
+	'skill',
+	id,
+	user_id,
+	title,
+	'Archived during 0026 because no repo-backed source metadata was available.',
+	json_object(
+		'id', id,
+		'user_id', user_id,
+		'name', name,
+		'title', title,
+		'description', description,
+		'keywords', keywords,
+		'code', code,
+		'search_text', search_text,
+		'uses_capabilities', uses_capabilities,
+		'inferred_capabilities', inferred_capabilities,
+		'inference_partial', inference_partial,
+		'read_only', read_only,
+		'idempotent', idempotent,
+		'destructive', destructive,
+		'parameters', parameters,
+		'collection_name', collection_name,
+		'collection_slug', collection_slug,
+		'source_id', source_id,
+		'created_at', created_at,
+		'updated_at', updated_at
+	)
+FROM mcp_skills
+WHERE source_id IS NULL;
+
+DELETE FROM mcp_skills
+WHERE source_id IS NULL;
+
+UPDATE ui_artifacts
+SET source_id = (
+	SELECT entity_sources.id
+	FROM entity_sources
+	WHERE entity_sources.user_id = ui_artifacts.user_id
+		AND entity_sources.entity_kind = 'app'
+		AND entity_sources.entity_id = ui_artifacts.id
+	LIMIT 1
+)
+WHERE source_id IS NULL;
+
+INSERT OR REPLACE INTO legacy_inline_sources_archive (
+	entity_kind,
+	entity_id,
+	user_id,
+	display_name,
+	reason,
+	payload_json
+)
+SELECT
+	'app',
+	id,
+	user_id,
+	title,
+	'Archived during 0026 because no repo-backed source metadata was available.',
+	json_object(
+		'id', id,
+		'user_id', user_id,
+		'title', title,
+		'description', description,
+		'client_code', client_code,
+		'server_code', server_code,
+		'server_code_id', server_code_id,
+		'parameters', parameters,
+		'hidden', hidden,
+		'source_id', source_id,
+		'created_at', created_at,
+		'updated_at', updated_at
+	)
+FROM ui_artifacts
+WHERE source_id IS NULL;
+
+DELETE FROM ui_artifacts
+WHERE source_id IS NULL;
+
+UPDATE jobs
+SET source_id = (
+	SELECT entity_sources.id
+	FROM entity_sources
+	WHERE entity_sources.user_id = jobs.user_id
+		AND entity_sources.entity_kind = 'job'
+		AND entity_sources.entity_id = jobs.id
+	LIMIT 1
+)
+WHERE source_id IS NULL;
+
+INSERT OR REPLACE INTO legacy_inline_sources_archive (
+	entity_kind,
+	entity_id,
+	user_id,
+	display_name,
+	reason,
+	payload_json
+)
+SELECT
+	'job',
+	id,
+	user_id,
+	name,
+	'Archived during 0026 because no repo-backed source metadata was available.',
+	json_object(
+		'id', id,
+		'user_id', user_id,
+		'name', name,
+		'code', code,
+		'source_id', source_id,
+		'published_commit', published_commit,
+		'repo_check_policy_json', repo_check_policy_json,
+		'storage_id', storage_id,
+		'params_json', params_json,
+		'schedule_json', schedule_json,
+		'timezone', timezone,
+		'enabled', enabled,
+		'kill_switch_enabled', kill_switch_enabled,
+		'caller_context_json', caller_context_json,
+		'created_at', created_at,
+		'updated_at', updated_at,
+		'last_run_at', last_run_at,
+		'last_run_status', last_run_status,
+		'last_run_error', last_run_error,
+		'last_duration_ms', last_duration_ms,
+		'next_run_at', next_run_at,
+		'run_count', run_count,
+		'success_count', success_count,
+		'error_count', error_count,
+		'run_history_json', run_history_json
+	)
+FROM jobs
+WHERE source_id IS NULL;
+
+DELETE FROM jobs
+WHERE source_id IS NULL;
+
+-- __migration_assertions intentionally uses CHECK (0) as an unreachable trap.
+-- The archive-and-delete steps above should remove every NULL source_id row
+-- before these INSERTs run, so keep this guard to fail loudly if a future
+-- change ever skips those deletes and makes the block reachable again.
 CREATE TABLE __migration_assertions (
 	message TEXT NOT NULL CHECK (0)
 );
