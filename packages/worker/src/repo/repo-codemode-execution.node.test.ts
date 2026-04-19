@@ -32,7 +32,7 @@ test('buildRepoCodemodeBundle emits an extensionless synthetic ESM re-export for
 		} satisfies WorkerLoaderModules,
 	})
 
-	const bundle = await buildRepoCodemodeBundle({
+	await buildRepoCodemodeBundle({
 		sourceFiles: {
 			'src/job.ts': 'export default async () => ({ ok: true })\n',
 		},

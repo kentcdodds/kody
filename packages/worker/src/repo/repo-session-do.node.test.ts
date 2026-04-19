@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareWorkers from 'cloudflare:workers'
+import type * as Artifacts from './artifacts.ts'
 
 const mockModule = vi.hoisted(() => {
 	const gitState = {
@@ -83,7 +85,7 @@ const mockModule = vi.hoisted(() => {
 })
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('cloudflare:workers')>()
+	const actual = await importOriginal<CloudflareWorkers>()
 	return {
 		...actual,
 		DurableObject: class {
@@ -151,8 +153,7 @@ vi.mock('./entity-sources.ts', () => ({
 }))
 
 vi.mock('./artifacts.ts', async () => {
-	const actual =
-		await vi.importActual<typeof import('./artifacts.ts')>('./artifacts.ts')
+	const actual = await vi.importActual<Artifacts>('./artifacts.ts')
 	return {
 		...actual,
 		resolveSessionRepo: (...args: Array<unknown>) =>

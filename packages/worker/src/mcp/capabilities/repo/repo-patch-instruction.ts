@@ -1,6 +1,6 @@
-import type { z } from 'zod'
-import type { RepoSessionEdit } from '#worker/repo/types.ts'
-import { repoPatchInstructionSchema } from './repo-shared.ts'
+import { type z } from 'zod'
+import { type RepoSessionEdit } from '#worker/repo/types.ts'
+import { type repoPatchInstructionSchema } from './repo-shared.ts'
 
 type RepoPatchInstruction = z.infer<typeof repoPatchInstructionSchema>
 

@@ -9,6 +9,7 @@ import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
+import { type JobView } from '#worker/jobs/types.ts'
 
 export type SearchEntityType =
 	| 'capability'
@@ -241,7 +242,7 @@ export type SearchEntityDetail =
 			id: string
 			title: string
 			description: string
-			row: import('#worker/jobs/types.ts').JobView
+			row: JobView
 	  }
 	| {
 			type: 'secret'
