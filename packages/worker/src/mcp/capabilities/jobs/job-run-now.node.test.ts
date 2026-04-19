@@ -19,7 +19,6 @@ test('job_run_now forwards one-off repo check policy overrides', async () => {
 			version: 1,
 			id: 'job-1',
 			name: 'Repo-backed run now',
-			code: null,
 			sourceId: 'source-1',
 			publishedCommit: 'commit-1',
 			repoCheckPolicy: undefined,

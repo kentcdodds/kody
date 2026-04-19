@@ -76,7 +76,6 @@ test('meta_save_skill forwards bootstrap access for a brand-new repo-backed skil
 			collection_name: null,
 			collection_slug: null,
 			keywords: '["repo","skill"]',
-			code: 'async () => ({ ok: true })',
 			search_text: null,
 			uses_capabilities: null,
 			parameters: null,
