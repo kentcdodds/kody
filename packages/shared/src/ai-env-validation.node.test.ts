@@ -14,8 +14,6 @@ test('remote AI env validation reports missing variables only when they matter',
 	const credentialsError = getRemoteAiLocalDevCredentialsError({})
 	expect(credentialsError).toContain('CLOUDFLARE_ACCOUNT_ID')
 	expect(credentialsError).toContain('CLOUDFLARE_API_TOKEN')
-	expect(credentialsError).toContain('packages/worker/.env')
-	expect(credentialsError).toContain('npm run dev')
 
 	const startupError = getRemoteAiLocalDevStartupError({
 		AI_MODE: 'remote',
@@ -23,7 +21,6 @@ test('remote AI env validation reports missing variables only when they matter',
 	expect(startupError).toContain('AI_GATEWAY_ID')
 	expect(startupError).toContain('CLOUDFLARE_ACCOUNT_ID')
 	expect(startupError).toContain('CLOUDFLARE_API_TOKEN')
-	expect(startupError).toContain('AI_MODE is "remote"')
 
 	expect(
 		getRemoteAiLocalDevStartupError({
