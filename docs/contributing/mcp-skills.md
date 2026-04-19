@@ -29,6 +29,8 @@ Developer Docs without a dedicated builtin capability).
   merges explicit names when inference is incomplete. Saved skills run through
   the same execute sandbox as ad hoc `execute`, and their entrypoint may import
   sibling ES modules and package dependencies from the saved artifact repo.
+  Saved skill modules must default export a single function entrypoint so Kody
+  can invoke them with execute semantics.
 - **`meta_run_skill`**, **`meta_delete_skill`** — execute (same sandbox path as
   `execute`) or remove skill + vector row.
 - **`meta_list_skill_collections`** — returns normalized collection names/slugs

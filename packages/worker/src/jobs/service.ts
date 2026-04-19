@@ -44,6 +44,7 @@ import {
 	buildRepoCodemodeBundle,
 	createRepoCodemodeWrapper,
 	loadRepoSourceFilesFromSession,
+	repoBackedModuleEntrypointExportErrorMessage,
 } from '#worker/repo/repo-codemode-execution.ts'
 
 function requirePersistableJobCallerContext(
@@ -72,6 +73,9 @@ function normalizeJobCode(code: string) {
 	const trimmed = code.trim()
 	if (!trimmed) {
 		throw new Error('Jobs require non-empty code.')
+	}
+	if (!/\bexport\s+default\b/.test(trimmed)) {
+		throw new Error(repoBackedModuleEntrypointExportErrorMessage)
 	}
 	return trimmed
 }

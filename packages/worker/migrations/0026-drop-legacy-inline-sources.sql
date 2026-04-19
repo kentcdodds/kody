@@ -1,5 +1,23 @@
 PRAGMA defer_foreign_keys = ON;
 
+CREATE TABLE __migration_assertions (
+	message TEXT NOT NULL CHECK (0)
+);
+
+INSERT INTO __migration_assertions (message)
+SELECT 'mcp_skills contains rows with NULL source_id; backfill repo-backed sources before applying 0026.'
+WHERE EXISTS (SELECT 1 FROM mcp_skills WHERE source_id IS NULL);
+
+INSERT INTO __migration_assertions (message)
+SELECT 'ui_artifacts contains rows with NULL source_id; backfill repo-backed sources before applying 0026.'
+WHERE EXISTS (SELECT 1 FROM ui_artifacts WHERE source_id IS NULL);
+
+INSERT INTO __migration_assertions (message)
+SELECT 'jobs contains rows with NULL source_id; backfill repo-backed sources before applying 0026.'
+WHERE EXISTS (SELECT 1 FROM jobs WHERE source_id IS NULL);
+
+DROP TABLE __migration_assertions;
+
 CREATE TABLE mcp_skills_next (
 	id TEXT PRIMARY KEY NOT NULL,
 	user_id TEXT NOT NULL,
@@ -63,8 +81,7 @@ SELECT
 	collection_slug,
 	name,
 	source_id
-FROM mcp_skills
-WHERE source_id IS NOT NULL;
+FROM mcp_skills;
 
 DROP TABLE mcp_skills;
 ALTER TABLE mcp_skills_next RENAME TO mcp_skills;
@@ -115,8 +132,7 @@ SELECT
 	hidden,
 	created_at,
 	updated_at
-FROM ui_artifacts
-WHERE source_id IS NOT NULL;
+FROM ui_artifacts;
 
 DROP TABLE ui_artifacts;
 ALTER TABLE ui_artifacts_next RENAME TO ui_artifacts;
@@ -202,8 +218,7 @@ SELECT
 	success_count,
 	error_count,
 	run_history_json
-FROM jobs
-WHERE source_id IS NOT NULL;
+FROM jobs;
 
 DROP TABLE jobs;
 ALTER TABLE jobs_next RENAME TO jobs;

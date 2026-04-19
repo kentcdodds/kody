@@ -76,8 +76,8 @@ Kody has one persisted jobs system per user:
 
 Jobs have:
 
-- **`code`** provides the default-exported module source that Kody publishes to
-  the repo-backed job implementation
+- **`code`** provides the module source (must default export a function) that
+  Kody publishes as the job's repo-backed entrypoint
 - Each job has a stable **`storageId`** that identifies its durable storage
   bucket
 - Scheduled jobs run with writable storage access

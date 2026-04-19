@@ -157,11 +157,7 @@ function formatTypecheckDiagnostics(
 			}
 		}
 	}>,
-	options?: {
-		lineOffset?: number
-	},
 ) {
-	const lineOffset = options?.lineOffset ?? 0
 	return diagnostics.map((diagnostic) => {
 		const location =
 			typeof diagnostic.start === 'number' && diagnostic.file
@@ -172,7 +168,7 @@ function formatTypecheckDiagnostics(
 				? diagnostic.messageText
 				: JSON.stringify(diagnostic.messageText)
 		return location
-			? `${fileName}:${Math.max(0, location.line - lineOffset) + 1}:${location.character + 1} ${message}`
+			? `${fileName}:${location.line + 1}:${location.character + 1} ${message}`
 			: `${fileName} ${message}`
 	})
 }
@@ -247,7 +243,6 @@ function getRepoTypecheckDiagnostics(input: {
 			}
 		}
 	}>
-	lineOffset?: number
 } {
 	switch (input.manifest.kind) {
 		case 'app':
@@ -409,7 +404,7 @@ export async function runRepoChecks(input: {
 			fileSystem: typecheckFileSystem,
 		},
 	)
-	const { fileName, diagnostics, lineOffset } = getRepoTypecheckDiagnostics({
+	const { fileName, diagnostics } = getRepoTypecheckDiagnostics({
 		manifest,
 		entryPoint,
 		languageService,
@@ -421,9 +416,7 @@ export async function runRepoChecks(input: {
 		message:
 			diagnostics.length === 0
 				? `No semantic diagnostics for "${entryPoint}".`
-				: formatTypecheckDiagnostics(fileName, diagnostics, {
-						lineOffset,
-					}).join('\n'),
+				: formatTypecheckDiagnostics(fileName, diagnostics).join('\n'),
 	})
 
 	results.push({

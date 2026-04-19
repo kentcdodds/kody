@@ -98,7 +98,6 @@ vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 		languageService: {
 			getSemanticDiagnostics: vi.fn((entryPoint: string) =>
 				entryPoint === '.__kody_repo_module_check__.ts' ||
-				entryPoint === '.__kody_repo_check__.ts' ||
 				entryPoint === 'src/job.ts'
 					? []
 					: [{ messageText: `missing ${entryPoint}` }],
@@ -106,19 +105,6 @@ vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 		},
 	})),
 }))
-
-function withRepoPersistence<TEnv extends { APP_DB: D1Database }>(
-	env: TEnv,
-): TEnv & {
-	CLOUDFLARE_ACCOUNT_ID: string
-	CLOUDFLARE_API_TOKEN: string
-} {
-	return {
-		...env,
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token',
-	}
-}
 
 function createDatabase() {
 	const tables = new Map<string, Array<Record<string, unknown>>>([
@@ -524,7 +510,7 @@ test('createJob stores a codemode job with interval support', async () => {
 		callerContext,
 		body: {
 			name: 'Deploy Worker',
-			code: 'async () => ({ ok: true })',
+			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
 				every: '15m',
@@ -551,7 +537,7 @@ test('createJob assigns a stable job storage id', async () => {
 		callerContext,
 		body: {
 			name: 'Storage-backed job',
-			code: 'async () => ({ ok: true })',
+			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
 				every: '15m',
@@ -611,7 +597,7 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 		callerContext,
 		body: {
 			name: 'Storage bridge',
-			code: 'async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
+			code: 'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
 			params: {
 				stepCount: 2,
 			},
@@ -757,7 +743,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		callerContext,
 		body: {
 			name: 'Use codemode semantics',
-			code: 'async () => ({ ok: true })',
+			code: 'export default async () => ({ ok: true })',
 			params: {
 				step: 'deploy',
 			},
@@ -1375,7 +1361,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 							description: 'Runs from repo',
 							entrypoint: 'src/job.ts',
 						})
-					: 'async () => ({ ok: true, bypassed: true })',
+					: 'export default async () => ({ ok: true, bypassed: true })',
 		})),
 		tree: vi.fn(async () => ({
 			path: '',
@@ -1512,7 +1498,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 							sourceRoot: '/',
 							entrypoint: '/src/job.ts',
 						})
-					: 'async () => ({ ok: true, normalized: true })',
+					: 'export default async () => ({ ok: true, normalized: true })',
 		})),
 		tree: vi.fn(async () => ({
 			path: '',
@@ -2049,7 +2035,7 @@ test('runJobNow deletes vectors for once jobs', async () => {
 		callerContext,
 		body: {
 			name: 'Run once and delete vector',
-			code: 'async () => ({ ok: true })',
+			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'once',
 				runAt: '2026-04-17T15:00:00Z',
@@ -2230,7 +2216,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 							description: 'Runs from repo',
 							entrypoint: 'src/job.ts',
 						})
-					: 'async () => ({ ok: true, override: true })',
+					: 'export default async () => ({ ok: true, override: true })',
 		})),
 		tree: vi.fn(async () => ({
 			path: '',

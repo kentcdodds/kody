@@ -342,20 +342,28 @@ export const uiSaveAppCapability = defineDomainCapability(
 				if (!existingApp) {
 					throw new Error('Saved UI artifact not found for this user.')
 				}
-				const resolvedExistingAppSource = await resolveSavedAppSource({
-					env: ctx.env,
-					baseUrl: ctx.callerContext.baseUrl,
-					artifact: existingApp,
-				})
 				const ensuredSource = await ensureSource()
 				const title = args.title ?? existingApp.title
 				const description = args.description ?? existingApp.description
+				const resolvedExistingAppSource =
+					args.clientCode === undefined || args.serverCode === undefined
+						? await resolveSavedAppSource({
+								env: ctx.env,
+								baseUrl: ctx.callerContext.baseUrl,
+								artifact: existingApp,
+							})
+						: null
 				const clientCode =
-					args.clientCode ?? resolvedExistingAppSource.clientCode
+					args.clientCode ?? resolvedExistingAppSource?.clientCode
 				const serverCode =
 					args.serverCode === undefined
-						? resolvedExistingAppSource.serverCode
+						? resolvedExistingAppSource?.serverCode
 						: args.serverCode
+				if (clientCode == null) {
+					throw new Error(
+						'Saved app source could not resolve the existing client asset.',
+					)
+				}
 				assertValidSavedAppServerCode(serverCode)
 				const parameters =
 					args.parameters === undefined
@@ -403,7 +411,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 							parameters,
 							hidden: args.hidden ?? existingApp.hidden,
 							clientCode,
-							serverCode,
+							serverCode: serverCode ?? null,
 						}),
 					})
 				} catch (cause) {
@@ -426,7 +434,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					title,
 					description,
 					clientCode,
-					serverCode,
+					serverCode: serverCode ?? null,
 					serverCodeId: nextPublishedCommit ?? ensuredSource.id,
 					parameters,
 					hidden,

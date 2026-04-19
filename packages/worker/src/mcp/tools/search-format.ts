@@ -7,10 +7,7 @@ import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
-import {
-	hasUiArtifactServerCode,
-	type UiArtifactRow,
-} from '#mcp/ui-artifacts-types.ts'
+import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 
 export type SearchEntityType =
@@ -652,7 +649,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 
 	if (detail.type === 'app') {
 		const parameters = parseUiArtifactParameters(detail.row.parameters)
-		const hasServerCode = hasUiArtifactServerCode(detail.row.hasServerCode)
+		const hasServerCode = detail.row.hasServerCode
 		const lines = [
 			`# App — ${detail.row.title}`,
 			'',
