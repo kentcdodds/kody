@@ -137,7 +137,7 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 		name: 'execute',
 		arguments: {
 			code: `async () => {
-					return await codemode.ui_save_app({
+					return await codemode.app_save({
 						title: 'Facet Counter',
 						description: 'Saved app with a backend facet counter',
 						clientCode: '<main><h1>Facet Counter</h1></main>',

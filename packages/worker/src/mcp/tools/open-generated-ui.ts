@@ -46,7 +46,7 @@ Do not treat an auth-dependent app as complete until the required connector/secr
 
 Persist with \`app_save\`; discover with \`search\` or \`app_list\`.
 
-https://github.com/kentcdodds/kody/blob/main/docs/use/skills-and-apps.md
+https://github.com/kentcdodds/kody/blob/main/docs/use/apps.md
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,

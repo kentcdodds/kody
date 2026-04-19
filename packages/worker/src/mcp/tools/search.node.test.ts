@@ -40,7 +40,7 @@ test('search memory context does not synthesize a fallback for blank queries', (
 	).toBeUndefined()
 })
 
-test('optional search rows fall back when saved skills lookup fails', async () => {
+test('optional search rows include app rows when app lookup succeeds', async () => {
 	const result = await loadOptionalSearchRows({
 		userId: 'user-123',
 		loadUiArtifacts: async () => [
@@ -71,7 +71,7 @@ test('optional search rows fall back when saved skills lookup fails', async () =
 	expect(result.warnings).toEqual([])
 })
 
-test('optional search rows fall back when saved apps lookup fails', async () => {
+test('optional search rows fall back when app lookup fails', async () => {
 	const result = await loadOptionalSearchRows({
 		userId: 'user-123',
 		loadUiArtifacts: async () => {
