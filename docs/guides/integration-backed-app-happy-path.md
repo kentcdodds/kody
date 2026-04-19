@@ -19,8 +19,7 @@ quickly.
 4. If the smoke test passes, proceed directly to building the app.
    - Prefer a saved app with `serverCode` backend endpoints such as `/api/state`
      and `/api/action`.
-   - Keep `clientCode` mostly UI plus `fetch(...)` calls to
-     `kodyWidget.appBackend.basePath`.
+   - Keep `clientCode` mostly UI plus `kodyWidget.appBackend.fetch(...)` calls.
 5. Open the saved app and iterate.
    - Save with `ui_save_app`.
    - Reopen with `open_generated_ui({ app_id })`.

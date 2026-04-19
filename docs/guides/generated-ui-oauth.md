@@ -56,10 +56,10 @@ of treating it like a secret.
 
 Once the connector or tokens exist and the post-connect smoke test passes,
 prefer to continue with a saved app that uses `serverCode` backend endpoints for
-provider API calls and `clientCode` fetches through
-`kodyWidget.appBackend.basePath`. Keep embedded client-side `executeCode(...)`
-strings for quick prototypes or throwaway experiments, not the default
-integration-backed app structure.
+provider API calls and `clientCode` requests through
+`kodyWidget.appBackend.fetch(...)`. Keep embedded client-side
+`executeCode(...)` strings for quick prototypes or throwaway experiments, not
+the default integration-backed app structure.
 
 ## Recommended capability and tool sequence
 

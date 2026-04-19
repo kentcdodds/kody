@@ -17,6 +17,16 @@ const {
 	shouldInitializeGeneratedUiRuntimeImmediately,
 } = uiUtils
 
+function installWindowLocation(href: string) {
+	const currentWindow = globalThis.window as Window | undefined
+	const location = new URL(href)
+	globalThis.window = {
+		...(currentWindow ?? {}),
+		location,
+	} as Window & typeof globalThis
+	globalThis.location = location as Location
+}
+
 test('injectIntoHtmlDocument inserts content into an existing head', () => {
 	const result = injectIntoHtmlDocument(
 		'<!doctype html><html lang="en" class="demo"><head data-shell="true"><title>Demo</title></head><body></body></html>',
@@ -178,6 +188,24 @@ test('kodyWidget public api exposes executeCode helper', () => {
 	expect(typeof kodyWidget.executeCode).toBe('function')
 })
 
+test('kodyWidget public api exposes appBackend helper facade when available', () => {
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	runtimeState.install({
+		mode: 'hosted',
+		appBackend: {
+			basePath: '/app/app-123',
+			facetNames: ['main'],
+		},
+	})
+
+	expect(kodyWidget.appBackend).not.toBeNull()
+	expect(kodyWidget.appBackend?.basePath).toBe('/app/app-123')
+	expect(kodyWidget.appBackend?.facetNames).toEqual(['main'])
+	expect(typeof kodyWidget.appBackend?.resolveUrl).toBe('function')
+	expect(typeof kodyWidget.appBackend?.fetch).toBe('function')
+})
+
 test('public module does not export readiness helpers', () => {
 	expect('getKodyWidget' in uiUtils).toBe(false)
 	expect('whenKodyWidgetReady' in uiUtils).toBe(false)
@@ -242,6 +270,144 @@ test('runtime bootstrap updates refresh params and app session without reinit', 
 	})
 
 	expect(kodyWidget.params).toEqual({ owner: 'updated', limit: 3 })
+})
+
+test('appBackend.resolveUrl resolves backend-relative paths safely', () => {
+	installWindowLocation('http://localhost:3000/ui/app-123')
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	runtimeState.install({
+		mode: 'hosted',
+		appBackend: {
+			basePath: '/app/app-123',
+			facetNames: ['main'],
+		},
+	})
+
+	expect(kodyWidget.appBackend?.resolveUrl()).toBe('http://localhost:3000/app/app-123')
+	expect(kodyWidget.appBackend?.resolveUrl('api/state')).toBe(
+		'http://localhost:3000/app/app-123/api/state',
+	)
+	expect(kodyWidget.appBackend?.resolveUrl('/api/state')).toBe(
+		'http://localhost:3000/app/app-123/api/state',
+	)
+	expect(kodyWidget.appBackend?.resolveUrl('?view=full')).toBe(
+		'http://localhost:3000/app/app-123?view=full',
+	)
+	expect(
+		kodyWidget.appBackend?.resolveUrl(
+			new URL('http://localhost:3000/app/app-123/api/state'),
+		),
+	).toBe('http://localhost:3000/app/app-123/api/state')
+})
+
+test('appBackend.resolveUrl rejects urls outside the saved app backend path', () => {
+	installWindowLocation('http://localhost:3000/ui/app-123')
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	runtimeState.install({
+		mode: 'hosted',
+		appBackend: {
+			basePath: '/app/app-123',
+			facetNames: ['main'],
+		},
+	})
+
+	expect(() =>
+		kodyWidget.appBackend?.resolveUrl('http://localhost:3000/ui/app-123'),
+	).toThrow(
+		/only supports same-origin urls within the saved app backend base path/i,
+	)
+	expect(() =>
+		kodyWidget.appBackend?.resolveUrl('https://example.com/app/app-123/api/state'),
+	).toThrow(/only supports same-origin urls within the saved app backend base path/i)
+})
+
+test('appBackend.fetch adds the generated ui bearer token by default', async () => {
+	installWindowLocation('http://localhost:3000/ui/app-123')
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	runtimeState.install({
+		mode: 'hosted',
+		appSession: {
+			token: 'app-session-token',
+			endpoints: {
+				source: 'https://kody.example/ui-api/app-123/source',
+				execute: 'https://kody.example/ui-api/app-123/execute',
+				secrets: 'https://kody.example/ui-api/app-123/secrets',
+				deleteSecret: 'https://kody.example/ui-api/app-123/secrets/delete',
+			},
+		},
+		appBackend: {
+			basePath: '/app/app-123',
+			facetNames: ['main'],
+		},
+	})
+
+	const fetchSpy = vi
+		.spyOn(globalThis, 'fetch')
+		.mockResolvedValue(new Response(JSON.stringify({ ok: true })))
+
+	try {
+		await kodyWidget.appBackend?.fetch('api/state', {
+			method: 'POST',
+			body: JSON.stringify({ action: 'refresh' }),
+		})
+
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+		const [requestUrl, requestInit] = fetchSpy.mock.calls[0] ?? []
+		expect(requestUrl).toBe('http://localhost:3000/app/app-123/api/state')
+		expect((requestInit as RequestInit | undefined)?.method).toBe('POST')
+		expect((requestInit as RequestInit | undefined)?.credentials).toBe('omit')
+		const headers = new Headers(
+			(requestInit as RequestInit | undefined)?.headers,
+		)
+		expect(headers.get('Authorization')).toBe('Bearer app-session-token')
+	} finally {
+		fetchSpy.mockRestore()
+	}
+})
+
+test('appBackend.fetch preserves explicit authorization headers', async () => {
+	installWindowLocation('http://localhost:3000/ui/app-123')
+	const runtimeState = getKodyWidgetRuntimeStateForTest()
+	runtimeState.reset()
+	runtimeState.install({
+		mode: 'hosted',
+		appSession: {
+			token: 'app-session-token',
+			endpoints: {
+				source: 'https://kody.example/ui-api/app-123/source',
+				execute: 'https://kody.example/ui-api/app-123/execute',
+				secrets: 'https://kody.example/ui-api/app-123/secrets',
+				deleteSecret: 'https://kody.example/ui-api/app-123/secrets/delete',
+			},
+		},
+		appBackend: {
+			basePath: '/app/app-123',
+			facetNames: ['main'],
+		},
+	})
+
+	const fetchSpy = vi
+		.spyOn(globalThis, 'fetch')
+		.mockResolvedValue(new Response(JSON.stringify({ ok: true })))
+
+	try {
+		await kodyWidget.appBackend?.fetch('api/state', {
+			headers: {
+				Authorization: 'Bearer explicit-token',
+			},
+		})
+
+		const [, requestInit] = fetchSpy.mock.calls[0] ?? []
+		const headers = new Headers(
+			(requestInit as RequestInit | undefined)?.headers,
+		)
+		expect(headers.get('Authorization')).toBe('Bearer explicit-token')
+	} finally {
+		fetchSpy.mockRestore()
+	}
 })
 
 test('runtime-backed helpers time out if the runtime never becomes ready', async () => {

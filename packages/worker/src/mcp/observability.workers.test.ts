@@ -285,6 +285,12 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 									killSwitchEnabled: false,
 									lastError: null,
 								}),
+								validateBackend: async () => ({
+									ok: true,
+									appId: 'generated-app',
+									facetName: 'main',
+									validated: false,
+								}),
 							}
 						},
 					},
@@ -299,7 +305,7 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 			},
 		)
 		expect(typeof (result as { app_id: string }).app_id).toBe('string')
-		expect((result as { hidden: boolean }).hidden).toBe(true)
+		expect((result as { hidden: boolean }).hidden).toBe(false)
 	} finally {
 		console.info = originalInfo
 	}
@@ -378,6 +384,12 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 									rateLimitPerMinute: 120,
 									killSwitchEnabled: false,
 									lastError: null,
+								}),
+								validateBackend: async () => ({
+									ok: true,
+									appId: 'app-1',
+									facetName: 'main',
+									validated: false,
 								}),
 							}
 						},

@@ -122,14 +122,22 @@ type BuildSecretFormInput = {
 	onSuccess?: (result: SaveSecretsResult, values: FormObject) => unknown
 	onError?: (result: SaveSecretsResult, values: FormObject) => unknown
 }
+type AppBackendRequestPath = string | URL
 type MessageLogRefs = {
 	root: HTMLElement
 	list: HTMLElement
 }
 
+export type KodyWidgetAppBackendPublicApi = {
+	basePath: string
+	facetNames?: Array<string>
+	resolveUrl: (path?: AppBackendRequestPath) => string
+	fetch: (path?: AppBackendRequestPath, init?: RequestInit) => Promise<Response>
+}
+
 export type KodyWidgetPublicApi = Record<string, any> & {
 	params: JsonRecord
-	appBackend: GeneratedUiAppBackendBootstrap | null
+	appBackend: KodyWidgetAppBackendPublicApi | null
 	executeCode: (code: string, params?: JsonRecord) => Promise<unknown>
 }
 
@@ -151,6 +159,7 @@ type KodyWindow = Window &
 		}
 		__kodyLocalMessageLogRoot?: HTMLElement | null
 		__kodyLocalMessageLogList?: HTMLElement | null
+		__kodyWidgetAppBackendFacade?: KodyWidgetAppBackendPublicApi
 		__kodyWidgetRuntimeState?: KodyWidgetRuntimeState
 		kodyWidget?: KodyWidgetPublicApi
 		params?: Record<string, unknown>
@@ -276,6 +285,16 @@ function getOrCreateKodyWidgetFacade() {
 	const widget = createKodyWidgetFacade()
 	kodyWindow.kodyWidget = widget
 	return widget
+}
+
+function getOrCreateAppBackendFacade() {
+	const existingFacade = kodyWindow.__kodyWidgetAppBackendFacade
+	if (existingFacade) {
+		return existingFacade
+	}
+	const facade = createAppBackendFacade()
+	kodyWindow.__kodyWidgetAppBackendFacade = facade
+	return facade
 }
 
 export function getKodyWidgetRuntimeStateForTest() {
@@ -1030,6 +1049,140 @@ async function fetchJsonResponse(input: {
 	return { response, payload }
 }
 
+function trimTrailingSlash(value: string) {
+	return value.endsWith('/') ? value.slice(0, -1) : value
+}
+
+function getRuntimeLocationHref() {
+	const location =
+		typeof kodyWindow.location?.href === 'string' &&
+		kodyWindow.location.href.length > 0
+			? kodyWindow.location
+			: typeof globalThis.location?.href === 'string' &&
+				  globalThis.location.href.length > 0
+				? globalThis.location
+				: null
+	if (location) {
+		return location.href
+	}
+	return 'http://localhost/'
+}
+
+function buildAppBackendBaseUrl(basePath: string) {
+	const backendOriginUrl = new URL(basePath, getRuntimeLocationHref())
+	return new URL(
+		`${trimTrailingSlash(backendOriginUrl.pathname)}/`,
+		backendOriginUrl,
+	)
+}
+
+function getCurrentAppBackendBootstrap() {
+	return getOrCreateKodyWidgetRuntimeState().appBackend
+}
+
+function requireCurrentAppBackendBootstrap() {
+	const appBackend = getCurrentAppBackendBootstrap()
+	if (!appBackend) {
+		throw new Error('Saved app backend is not available in this context.')
+	}
+	return appBackend
+}
+
+function isAbsoluteUrlString(value: string) {
+	return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(value) || value.startsWith('//')
+}
+
+function isWithinAppBackendBasePath(
+	candidate: URL,
+	appBackend: { basePath: string },
+) {
+	const backendBaseUrl = new URL(appBackend.basePath, getRuntimeLocationHref())
+	const normalizedBasePath = trimTrailingSlash(backendBaseUrl.pathname)
+	const normalizedCandidatePath = trimTrailingSlash(candidate.pathname)
+	return (
+		candidate.origin === backendBaseUrl.origin &&
+		(normalizedCandidatePath === normalizedBasePath ||
+			normalizedCandidatePath.startsWith(`${normalizedBasePath}/`))
+	)
+}
+
+function validateResolvedAppBackendUrl(candidate: URL) {
+	const appBackend = requireCurrentAppBackendBootstrap()
+	if (!isWithinAppBackendBasePath(candidate, appBackend)) {
+		throw new Error(
+			'kodyWidget.appBackend only supports same-origin URLs within the saved app backend base path.',
+		)
+	}
+	return candidate.toString()
+}
+
+function resolveAppBackendRequestUrl(path?: AppBackendRequestPath) {
+	const appBackend = requireCurrentAppBackendBootstrap()
+	const backendOriginUrl = new URL(
+		appBackend.basePath,
+		getRuntimeLocationHref(),
+	)
+	if (path == null || path === '') {
+		return backendOriginUrl.toString()
+	}
+	if (path instanceof URL) {
+		return validateResolvedAppBackendUrl(path)
+	}
+	if (typeof path !== 'string') {
+		throw new Error(
+			'kodyWidget.appBackend.fetch requires a string path, URL, or no path.',
+		)
+	}
+	if (isAbsoluteUrlString(path)) {
+		return validateResolvedAppBackendUrl(
+			new URL(path, getRuntimeLocationHref()),
+		)
+	}
+	if (path.startsWith('?') || path.startsWith('#')) {
+		return new URL(path, backendOriginUrl).toString()
+	}
+	const normalizedPath = path.replace(/^\/+/, '')
+	return validateResolvedAppBackendUrl(
+		new URL(normalizedPath, buildAppBackendBaseUrl(appBackend.basePath)),
+	)
+}
+
+async function fetchAppBackendInCurrentContext(
+	path?: AppBackendRequestPath,
+	init?: RequestInit,
+) {
+	await ensureKodyWidgetRuntimeReady()
+	const requestUrl = resolveAppBackendRequestUrl(path)
+	const headers = new Headers(init?.headers)
+	const sessionToken = getOrCreateKodyWidgetRuntimeState().appSession?.token
+	if (sessionToken && !headers.has('Authorization')) {
+		headers.set('Authorization', `Bearer ${sessionToken}`)
+	}
+	return await fetch(requestUrl, {
+		...init,
+		headers,
+		credentials:
+			init?.credentials ?? (headers.has('Authorization') ? 'omit' : 'include'),
+	})
+}
+
+function createAppBackendFacade(): KodyWidgetAppBackendPublicApi {
+	return {
+		get basePath() {
+			return requireCurrentAppBackendBootstrap().basePath
+		},
+		get facetNames() {
+			return requireCurrentAppBackendBootstrap().facetNames
+		},
+		resolveUrl(path?: AppBackendRequestPath) {
+			return resolveAppBackendRequestUrl(path)
+		},
+		async fetch(path?: AppBackendRequestPath, init?: RequestInit) {
+			return await fetchAppBackendInCurrentContext(path, init)
+		},
+	}
+}
+
 function getOAuthStorage(): Storage {
 	try {
 		return window.localStorage
@@ -1278,6 +1431,8 @@ function createKodyWidgetFacade(): KodyWidgetPublicApi {
 		},
 		get appBackend() {
 			return getOrCreateKodyWidgetRuntimeState().appBackend
+				? getOrCreateAppBackendFacade()
+				: null
 		},
 		sendMessage(text: unknown) {
 			return sendMessageInCurrentContext(text)
