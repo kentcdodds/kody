@@ -33,15 +33,15 @@ To read field shapes while coding, use **search** with
 
 ## Saved skills
 
-To run persisted user code by name, use **`meta_run_skill`** with **`name`** and
-optional **`params`**. To inspect source, use **`meta_get_skill`**. You can also
-inline saved skill code into **execute** when that fits the workflow.
+To run a saved skill by name, use **`meta_run_skill`** with **`name`** and
+optional **`params`**.
 
-Repo-backed saved skills and jobs now execute through the same codemode runtime
-as **`execute`**, including helper globals such as **`refreshAccessToken(...)`**,
-**`createAuthenticatedFetch(...)`**, **`agentChatTurnStream(...)`**, and job
-storage helpers. Repo-backed sources can use ES module imports and package
-dependencies instead of being limited to one file.
+Saved skills and jobs execute through the same codemode runtime as
+**`execute`**, including helper globals such as
+**`refreshAccessToken(...)`**, **`createAuthenticatedFetch(...)`**,
+**`agentChatTurnStream(...)`**, and job storage helpers. Saved sources use
+repo-backed ES module entrypoints, so they can import sibling modules and
+package dependencies.
 
 ## Agent turns
 
@@ -77,8 +77,8 @@ Kody has one persisted jobs system per user:
 
 Jobs have:
 
-- **`code`** stores the async arrow function source and runs through the same
-  execute/capability runtime as normal `execute`
+- **`code`** provides the default-exported module source that Kody publishes to
+  the repo-backed job implementation
 - Each job has a stable **`storageId`** that identifies its durable storage
   bucket
 - Scheduled jobs run with writable storage access

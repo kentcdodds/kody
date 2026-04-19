@@ -61,7 +61,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'Codemode snippet as accepted by execute (async arrow or equivalent after normalization).',
+			'Module source for the saved skill entrypoint. It must default export a function so Kody can invoke it with execute semantics.',
 		),
 	search_text: z
 		.string()

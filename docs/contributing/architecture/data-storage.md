@@ -66,8 +66,8 @@ Jobs use two Durable Object roles:
 Storage split:
 
 - D1 `jobs` table: job metadata, persisted caller context, schedule, run
-  counters, last error, last duration, run history, codemode source, and stable
-  `storage_id`
+  counters, last error, last duration, run history, repo source reference, and
+  stable `storage_id`
 - `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`

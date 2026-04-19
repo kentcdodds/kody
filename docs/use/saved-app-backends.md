@@ -134,7 +134,7 @@ Facet names default to `main`. Kody reserves named facets such as `jobs` and
 Kody compiles the provided `code` into a **throwaway Dynamic Worker** and binds
 an explicit RPC bridge for the saved app facet.
 
-Inside the snippet body you can access:
+Inside the provided code you can access:
 
 - **`app`** — explicit bridge with `app.call(methodName, ...args)` for invoking
   public RPC methods on the saved app `App` class

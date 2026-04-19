@@ -22,7 +22,7 @@ export async function reindexJobVectors(
 	}
 
 	const rows = await env.APP_DB.prepare(
-		`SELECT DISTINCT user_id FROM jobs WHERE source_id IS NOT NULL OR code IS NOT NULL`,
+		`SELECT DISTINCT user_id FROM jobs WHERE source_id IS NOT NULL`,
 	).all<{ user_id: string }>()
 	const userIds = (rows.results ?? []).map((row) => row.user_id).filter(Boolean)
 	if (userIds.length === 0) return { upserted: 0 }
