@@ -63,7 +63,8 @@ SELECT
 	collection_slug,
 	name,
 	source_id
-FROM mcp_skills;
+FROM mcp_skills
+WHERE source_id IS NOT NULL;
 
 DROP TABLE mcp_skills;
 ALTER TABLE mcp_skills_next RENAME TO mcp_skills;
@@ -114,7 +115,8 @@ SELECT
 	hidden,
 	created_at,
 	updated_at
-FROM ui_artifacts;
+FROM ui_artifacts
+WHERE source_id IS NOT NULL;
 
 DROP TABLE ui_artifacts;
 ALTER TABLE ui_artifacts_next RENAME TO ui_artifacts;
@@ -200,7 +202,8 @@ SELECT
 	success_count,
 	error_count,
 	run_history_json
-FROM jobs;
+FROM jobs
+WHERE source_id IS NOT NULL;
 
 DROP TABLE jobs;
 ALTER TABLE jobs_next RENAME TO jobs;

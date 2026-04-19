@@ -40,6 +40,7 @@ import {
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
+import { readRepoModuleSource } from '#worker/repo/repo-module-source.ts'
 import {
 	buildRepoCodemodeBundle,
 	createRepoCodemodeWrapper,
@@ -198,59 +199,14 @@ async function readJobModuleSource(input: {
 	callerContext: PersistedJobCallerContext
 	sourceId: string
 }) {
-	const sessionId = `job-source-${input.sourceId}-${crypto.randomUUID()}`
-	const session = repoSessionRpc(input.env, sessionId)
-	let openedSessionId: string | null = null
-	try {
-		const opened = await session.openSession({
-			sessionId,
-			sourceId: input.sourceId,
-			userId: input.callerContext.user.userId,
-			baseUrl: input.callerContext.baseUrl,
-			sourceRoot: null,
-		})
-		openedSessionId = opened.id
-		const manifestPath = opened.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-		const manifestFile = await session.readFile({
-			sessionId: opened.id,
-			userId: input.callerContext.user.userId,
-			path: manifestPath,
-		})
-		if (!manifestFile.content) {
-			throw new Error(
-				`Job manifest "${manifestPath}" was not found in repo session.`,
-			)
-		}
-		const manifest = parseRepoManifest({
-			content: manifestFile.content,
-			manifestPath,
-		})
-		if (manifest.kind !== 'job') {
-			throw new Error(`Repo source "${input.sourceId}" is not a job manifest.`)
-		}
-		const moduleFile = await session.readFile({
-			sessionId: opened.id,
-			userId: input.callerContext.user.userId,
-			path: getManifestEntrypointPath(manifest),
-		})
-		if (!moduleFile.content) {
-			throw new Error(
-				`Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-			)
-		}
-		return moduleFile.content
-	} finally {
-		if (openedSessionId) {
-			await session
-				.discardSession({
-					sessionId: openedSessionId,
-					userId: input.callerContext.user.userId,
-				})
-				.catch(() => {
-					// Best effort only; source resolution should preserve the original error.
-				})
-		}
-	}
+	return readRepoModuleSource({
+		env: input.env,
+		baseUrl: input.callerContext.baseUrl,
+		userId: input.callerContext.user.userId,
+		sourceId: input.sourceId,
+		expectedKind: 'job',
+		sessionIdPrefix: 'job-source',
+	})
 }
 
 export async function createJob(input: {

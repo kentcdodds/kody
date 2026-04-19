@@ -23,11 +23,7 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import { requireMcpUser } from './require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import {
-	getManifestEntrypointPath,
-	parseRepoManifest,
-} from '#worker/repo/manifest.ts'
+import { readRepoModuleSource } from '#worker/repo/repo-module-source.ts'
 
 function parseJsonStringArray(raw: string | null): Array<string> {
 	if (raw == null) return []
@@ -47,59 +43,14 @@ async function readSkillModuleSource(input: {
 	userId: string
 	sourceId: string
 }) {
-	const sessionId = `skill-source-${input.sourceId}-${crypto.randomUUID()}`
-	const session = repoSessionRpc(input.env, sessionId)
-	let openedSessionId: string | null = null
-	try {
-		const opened = await session.openSession({
-			sessionId,
-			sourceId: input.sourceId,
-			userId: input.userId,
-			baseUrl: input.baseUrl,
-			sourceRoot: null,
-		})
-		openedSessionId = opened.id
-		const manifestPath = opened.manifest_path?.replace(/^\/+/, '') || 'kody.json'
-		const manifestFile = await session.readFile({
-			sessionId: opened.id,
-			userId: input.userId,
-			path: manifestPath,
-		})
-		if (!manifestFile.content) {
-			throw new Error(
-				`Skill manifest "${manifestPath}" was not found in repo session.`,
-			)
-		}
-		const manifest = parseRepoManifest({
-			content: manifestFile.content,
-			manifestPath,
-		})
-		if (manifest.kind !== 'skill') {
-			throw new Error(`Repo source "${input.sourceId}" is not a skill manifest.`)
-		}
-		const moduleFile = await session.readFile({
-			sessionId: opened.id,
-			userId: input.userId,
-			path: getManifestEntrypointPath(manifest),
-		})
-		if (!moduleFile.content) {
-			throw new Error(
-				`Skill entrypoint "${manifest.entrypoint}" was not found in repo session.`,
-			)
-		}
-		return moduleFile.content
-	} finally {
-		if (openedSessionId) {
-			await session
-				.discardSession({
-					sessionId: openedSessionId,
-					userId: input.userId,
-				})
-				.catch(() => {
-					// Best effort only; source resolution should preserve the original error.
-				})
-		}
-	}
+	return readRepoModuleSource({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		expectedKind: 'skill',
+		sessionIdPrefix: 'skill-source',
+	})
 }
 
 const inputSchema = z.object({
