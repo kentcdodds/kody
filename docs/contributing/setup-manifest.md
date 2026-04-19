@@ -93,7 +93,7 @@ automatically:
   internal Cloudflare API client expects paths under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-capabilities` and
-  `POST /__maintenance/reindex-apps` to embed and upsert builtin capabilities
+  `POST /__maintenance/reindex-apps` to embed and upsert built-in capabilities
   and discoverable saved apps into Vectorize)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local

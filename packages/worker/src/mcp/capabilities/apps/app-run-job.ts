@@ -89,11 +89,13 @@ export const appRunJobCapability = defineDomainCapability(
 			.superRefine((value, ctx) => {
 				const refs = Number(Boolean(value.job_id)) + Number(Boolean(value.job_name))
 				if (refs !== 1) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						path: ['job_id'],
-						message: 'Provide exactly one of job_id or job_name.',
-					})
+					for (const path of ['job_id', 'job_name'] as const) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							path: [path],
+							message: 'Provide exactly one of job_id or job_name.',
+						})
+					}
 				}
 			}),
 		outputSchema,
