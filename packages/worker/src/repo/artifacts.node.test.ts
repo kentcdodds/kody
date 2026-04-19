@@ -1,7 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
 const {
+	buildArtifactsGitAuth,
 	getArtifactsBinding,
+	parseArtifactTokenSecret,
 	resolveArtifactSourceRepo,
 } = await import('./artifacts.ts')
 
@@ -232,4 +234,16 @@ test('artifacts REST client rejects tokens without parseable expiry timestamps',
 		'Artifacts token is missing a parseable expires timestamp.',
 	)
 	expect(fetchMock).toHaveBeenCalledTimes(1)
+})
+
+test('artifacts git auth uses x username and strips expiry from password', () => {
+	expect(parseArtifactTokenSecret('art_v1_secret?expires=1760000100')).toBe(
+		'art_v1_secret',
+	)
+	expect(buildArtifactsGitAuth({ token: 'art_v1_secret?expires=1760000100' })).toEqual(
+		{
+			username: 'x',
+			password: 'art_v1_secret',
+		},
+	)
 })

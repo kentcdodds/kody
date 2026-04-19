@@ -15,6 +15,7 @@ import {
 import {
 	type ArtifactBootstrapAccess,
 	type ArtifactRepoInfo,
+	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
 	resolveArtifactSourceRepo,
 	resolveSessionRepo,
@@ -87,11 +88,9 @@ async function ensureArtifactRepoRemote(input: {
 }
 
 function buildGitCloneAuth(input: { remote: string; token: string }) {
-	const tokenSecret = input.token.split('?expires=')[0] ?? input.token
 	return {
 		url: input.remote,
-		username: 'x',
-		password: tokenSecret,
+		...buildArtifactsGitAuth({ token: input.token }),
 	}
 }
 
@@ -592,9 +591,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			dir: repoSessionWorkspacePrefix,
 			remote: 'source',
 			ref: targetBranch,
-			token: sourceAccess.token,
-			username: 'x',
-			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
@@ -908,19 +905,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			remote: 'source',
 			ref: defaultBranch,
 			author: sessionCommitAuthor,
-			token: sourceAccess.token,
-			username: 'x',
-			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
 		const headCommit = await this.getHeadCommit()
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: defaultBranch,
-			token: sessionAccess.token,
-			username: 'x',
-			password:
-				sessionAccess.token.split('?expires=')[0] ?? sessionAccess.token,
+			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
@@ -986,10 +978,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: await this.getCurrentBranch(
 				sourceInfo?.defaultBranch ?? defaultSessionBranch,
 			),
-			token: sessionAccess.token,
-			username: 'x',
-			password:
-				sessionAccess.token.split('?expires=')[0] ?? sessionAccess.token,
+			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
 		await this.ensureRemote({
 			name: 'source',
@@ -1003,9 +992,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			dir: repoSessionWorkspacePrefix,
 			remote: 'source',
 			ref: targetBranch,
-			token: sourceAccess.token,
-			username: 'x',
-			password: sourceAccess.token.split('?expires=')[0] ?? sourceAccess.token,
+			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
 		const manifest = await this.readManifestFromWorkspace(source.manifest_path)
 		await updateEntitySource(this.env.APP_DB, {
