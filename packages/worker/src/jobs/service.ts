@@ -386,13 +386,6 @@ export async function updateJob(input: {
 				})
 			: existing.nextRunAt,
 	}
-	const moduleSource =
-		shape.moduleSource ??
-		(await readJobModuleSource({
-			env: input.env,
-			callerContext,
-			sourceId: updated.sourceId,
-		}))
 	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 		env: input.env,
 		userId: callerContext.user.userId,
@@ -401,7 +394,7 @@ export async function updateJob(input: {
 		bootstrapAccess: ensuredSource?.bootstrapAccess ?? null,
 		files: buildJobSourceFiles({
 			job: toJobView(updated),
-			moduleSource,
+			moduleSource: shape.moduleSource ?? null,
 		}),
 	})
 	if (syncedPublishedCommit) {

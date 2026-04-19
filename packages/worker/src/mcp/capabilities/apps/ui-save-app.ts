@@ -464,8 +464,9 @@ export const uiSaveAppCapability = defineDomainCapability(
 				const previousPublishedCommit = await readPublishedCommit(
 					ensuredSource.id,
 				)
+				let nextPublishedCommit: string | null = null
 				try {
-					await syncArtifactSourceSnapshot({
+					nextPublishedCommit = await syncArtifactSourceSnapshot({
 						env: ctx.env,
 						userId: user.userId,
 						baseUrl: ctx.callerContext.baseUrl,
@@ -496,7 +497,7 @@ export const uiSaveAppCapability = defineDomainCapability(
 					description,
 					clientCode,
 					serverCode,
-					serverCodeId: ensuredSource.id,
+					serverCodeId: nextPublishedCommit ?? ensuredSource.id,
 					parameters,
 					hidden,
 					sourceId: ensuredSource.id,
