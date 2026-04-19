@@ -18,6 +18,7 @@ import {
 	listUiArtifactsByUserId,
 } from '#mcp/ui-artifacts-repo.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import {
@@ -386,7 +387,9 @@ async function resolveEntityDetail(input: {
 			title: row.title,
 			description: row.description,
 			row,
-			hostedUrl: row.hasClient ? new URL(`/ui/${row.id}`, input.callerContext.baseUrl).toString() : null,
+			hostedUrl: row.hasClient
+				? buildSavedUiUrl(input.callerContext.baseUrl, row.id)
+				: null,
 		}
 	}
 

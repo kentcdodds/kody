@@ -180,8 +180,8 @@ How to get/set each value:
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
     workflow sync it to the Worker. After each production deploy, CI POSTs to
-    `/__maintenance/reindex-capabilities` and `/__maintenance/reindex-skills`
-    with `Authorization: Bearer …` to refresh capability and user-skill
+    `/__maintenance/reindex-capabilities` and `/__maintenance/reindex-apps`
+    with `Authorization: Bearer …` to refresh built-in capability and app
     embeddings.
 - `DOCKERHUB_USERNAME`
   - Use your Docker Hub username or organization service account name.

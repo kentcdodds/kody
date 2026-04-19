@@ -216,7 +216,6 @@ declare const storage: {
 function getRepoTypecheckDiagnostics(input: {
 	manifest: RepoManifest
 	entryPoint: string
-	includeStorage?: boolean
 	languageService: {
 		getSemanticDiagnostics(path: string): Array<{
 			messageText: unknown
@@ -247,9 +246,7 @@ function getRepoTypecheckDiagnostics(input: {
 } {
 	input.fileSystem.write(
 		executeTypecheckPreludePath,
-		createExecuteTypecheckPrelude({
-			includeStorage: input.includeStorage === true,
-		}),
+		createExecuteTypecheckPrelude(),
 	)
 	input.fileSystem.write(
 		repoCodemodeModuleTypecheckHarnessPath,

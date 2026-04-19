@@ -30,6 +30,6 @@ export function buildJobEmbedText(
 	return text.slice(0, maxChars)
 }
 
-export function buildJobUsage(job: Pick<JobView, 'id'>) {
-	return `Trigger this app job with app_run_job: ${JSON.stringify({ app_id: job.id, job_id: job.id })}.`
+export function buildJobUsage(job: Pick<JobView, 'id' | 'name' | 'sourceId'>) {
+	return `Trigger this app job with app_run_job: ${JSON.stringify({ app_id: job.sourceId, job_name: job.name })}.`
 }

@@ -71,6 +71,16 @@ function normalizeTaskName(input: string, fallbackTitle: string) {
 	if (!candidate) {
 		throw new Error('App task name cannot be empty.')
 	}
+	if (candidate.includes('/') || candidate.includes('\\') || candidate.includes('..')) {
+		throw new Error(
+			'App task name must not contain path separators or traversal segments.',
+		)
+	}
+	if (!/^[a-z0-9_-]+$/i.test(candidate)) {
+		throw new Error(
+			'App task name may only use letters, numbers, hyphen, and underscore.',
+		)
+	}
 	return candidate
 }
 
@@ -184,6 +194,17 @@ function normalizeJobs(input: {
 		const timezone = normalizeJobTimezone(job.timezone)
 		const createdAt = existing?.createdAt ?? input.now
 		const id = existing?.id ?? crypto.randomUUID()
+		const existingSchedule = existing
+			? normalizeJobSchedule(existing.schedule)
+			: undefined
+		const existingTimezone = existing
+			? normalizeJobTimezone(existing.timezone)
+			: undefined
+		const scheduleChanged =
+			existing == null ||
+			JSON.stringify(existingSchedule) !== JSON.stringify(schedule) ||
+			existingTimezone !== timezone ||
+			!existing.nextRunAt
 		return {
 			id,
 			name: job.name,
@@ -203,12 +224,12 @@ function normalizeJobs(input: {
 			lastRunStatus: existing?.lastRunStatus,
 			lastRunError: existing?.lastRunError,
 			lastDurationMs: existing?.lastDurationMs,
-			nextRunAt:
-				existing?.nextRunAt ??
-				computeNextRunAt({
-					schedule,
-					timezone,
-				}),
+			nextRunAt: scheduleChanged
+				? computeNextRunAt({
+						schedule,
+						timezone,
+					})
+				: existing.nextRunAt,
 			runCount: existing?.runCount ?? 0,
 			successCount: existing?.successCount ?? 0,
 			errorCount: existing?.errorCount ?? 0,
@@ -452,18 +473,21 @@ export async function deleteApp(input: {
 	userId: string
 	appId: string
 }) {
-	await deleteSavedAppRunner({
-		env: input.env,
-		appId: input.appId,
-	}).catch(() => {
-		// Best effort only.
-	})
-	await deleteUiArtifactVector(input.env, input.appId).catch(() => {
-		// Best effort only.
-	})
+	const deleted = await deleteAppRow(input.env.APP_DB, input.userId, input.appId)
+	if (deleted) {
+		await deleteSavedAppRunner({
+			env: input.env,
+			appId: input.appId,
+		}).catch(() => {
+			// Best effort only.
+		})
+		await deleteUiArtifactVector(input.env, input.appId).catch(() => {
+			// Best effort only.
+		})
+	}
 	return {
 		id: input.appId,
-		deleted: await deleteAppRow(input.env.APP_DB, input.userId, input.appId),
+		deleted,
 	}
 }
 

@@ -332,7 +332,7 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 			...(match.jobNames.length > 0
 				? ['', `**Jobs:** ${match.jobNames.map((name) => `\`${name}\``).join(', ')}`]
 				: []),
-			...(match.hostedUrl ? ['', `**Hosted URL:** \`${hostedUrl}\``] : []),
+			...(hostedUrl ? ['', `**Hosted URL:** \`${hostedUrl}\``] : []),
 		]
 	}
 	if (match.type === 'value') {
@@ -510,17 +510,17 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Use this app',
 			'',
 			...(detail.row.hasClient
-				? [`- \`open_generated_ui({ app_id: "${detail.row.id}" })\``]
+				? [`- \`open_generated_ui({ app_id: ${JSON.stringify(detail.row.id)} })\``]
 				: []),
 			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
 			...(detail.row.taskNames.length > 0
 				? [
-						`- \`codemode.app_run_task({ app_id: "${detail.row.id}", task_name: "${detail.row.taskNames[0]}" })\``,
+						`- \`codemode.app_run_task({ app_id: ${JSON.stringify(detail.row.id)}, task_name: ${JSON.stringify(detail.row.taskNames[0]!)} })\``,
 					]
 				: []),
 			...(detail.row.jobNames.length > 0
 				? [
-						`- \`codemode.app_run_job({ app_id: "${detail.row.id}", job_name: "${detail.row.jobNames[0]}" })\``,
+						`- \`codemode.app_run_job({ app_id: ${JSON.stringify(detail.row.id)}, job_name: ${JSON.stringify(detail.row.jobNames[0]!)} })\``,
 					]
 				: []),
 		]
@@ -541,12 +541,12 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				title: detail.title,
 				description: detail.description,
 				usage: detail.row.hasClient
-					? `open_generated_ui({ app_id: "${detail.row.id}" })`
+					? `open_generated_ui({ app_id: ${JSON.stringify(detail.row.id)} })`
 					: detail.row.taskNames.length > 0
-						? `codemode.app_run_task({ app_id: "${detail.row.id}", task_name: "${detail.row.taskNames[0]}" })`
+						? `codemode.app_run_task({ app_id: ${JSON.stringify(detail.row.id)}, task_name: ${JSON.stringify(detail.row.taskNames[0]!)} })`
 						: detail.row.jobNames.length > 0
-							? `codemode.app_run_job({ app_id: "${detail.row.id}", job_name: "${detail.row.jobNames[0]}" })`
-							: `codemode.app_get({ app_id: "${detail.row.id}" })`,
+							? `codemode.app_run_job({ app_id: ${JSON.stringify(detail.row.id)}, job_name: ${JSON.stringify(detail.row.jobNames[0]!)} })`
+							: `codemode.app_get({ app_id: ${JSON.stringify(detail.row.id)} })`,
 				hostedUrl: detail.hostedUrl,
 				hasClient: detail.row.hasClient,
 				hasServerCode,

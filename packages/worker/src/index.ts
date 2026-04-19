@@ -35,8 +35,8 @@ import {
 import { readGeneratedUiAppBackendSession } from './mcp/generated-ui-app-auth.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
-	import { handleMemoryReindexRequest } from './memory-maintenance.ts'
-	import { handleUiArtifactReindexRequest } from './ui-artifact-maintenance.ts'
+import { handleMemoryReindexRequest } from './memory-maintenance.ts'
+import { handleUiArtifactReindexRequest } from './ui-artifact-maintenance.ts'
 import { CodemodeFetchGateway } from '#mcp/fetch-gateway.ts'
 import {
 	connectorSessionKey,

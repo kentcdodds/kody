@@ -145,7 +145,6 @@ const manifestBaseSchema = z.object({
 })
 
 export const appManifestSchema = manifestBaseSchema.extend({
-	kind: z.literal('app'),
 	client: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
 	server: z.string().min(1).optional(),
 	assets: z.array(z.string().min(1)).optional(),
