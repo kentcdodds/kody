@@ -33,8 +33,14 @@ For non-trivial apps, prefer:
 - named automation entrypoints in **`tasks`**
 - recurring automation in **`jobs`**
 
-When updating an existing app with `app_id`, omitted fields preserve the
-current saved value unless the capability says otherwise.
+When updating an existing app with `app_id`, `app_save` is mostly
+replace-oriented:
+
+- omit `clientCode` or `serverCode` to keep the current published code
+- pass `clientCode: null` or `serverCode: null` to clear that code explicitly
+- omit `tasks`, `jobs`, `keywords`, `searchText`, or `parameters` only if you
+  want them reset from the new payload defaults (usually empty or `null`)
+- omit `hidden` or `repoCheckPolicy` to keep the current saved value
 
 ## Running app tasks and jobs
 

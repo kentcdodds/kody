@@ -30,11 +30,15 @@ include it inside `<script type="module">...</script>` tags in the HTML.
 When **creating** a saved app, `title`, `description`, and `clientCode` are
 required.
 
-When **updating** an existing saved app with `app_id`, omitted fields preserve
-their current saved values:
+When **updating** an existing saved app with `app_id`, treat `app_save` as a
+replace-style write for most optional fields:
 
-- omit `serverCode` to keep the current backend
-- pass **`serverCode: null`** to clear the backend explicitly
+- omit `clientCode` or `serverCode` to keep the currently published client/server
+  source
+- pass **`clientCode: null`** or **`serverCode: null`** to clear those artifacts
+  explicitly
+- pass `tasks`, `jobs`, `keywords`, `searchText`, and `parameters` explicitly
+  when you want to keep them; omitting those fields clears them
 - `server_code_id` only rotates when the saved backend actually changes
 
 ## Read shape
