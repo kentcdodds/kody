@@ -15,9 +15,9 @@ forms when secrets and approvals matter.
 
 Center the narrative on **Cursor Cloud Agents + GitHub PR observability**:
 
-- A **saved generated UI** (Cursor Agent PR Dashboard) that polls Cursor and
+- A **saved app UI** (Cursor Agent PR Dashboard) that polls Cursor and
   GitHub with secret-backed fetches.
-- **Saved skills** that wrap the same APIs for scripted checks: open PRs from
+- **App tasks** that wrap the same APIs for scripted checks: open PRs from
   agents, agent status overview, follow-up on an agent.
 
 That stack is “personal infrastructure”: not a one-off chat, but software you

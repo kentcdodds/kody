@@ -8,7 +8,7 @@ first. For normal third-party OAuth, then load the standard guide:
 required).
 
 Use **this** document only when **`/connect/oauth` is not sufficient** and you
-are **building or changing OAuth inside a saved generated UI**
+are **building or changing OAuth inside a saved app UI**
 (\`open_generated_ui\` / \`app_save\`): custom layout, coupling with other
 UI, or callbacks on the **saved app** URL (\`/ui/:id\`) instead of
 \`/connect/oauth\`.

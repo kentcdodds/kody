@@ -3,7 +3,7 @@
 ## Search returns no good matches
 
 - **Rephrase the query** using domain vocabulary from the search tool’s domain
-  hints (for example “GitHub”, “Cloudflare”, “meta skills”).
+  hints (for example “GitHub”, “Cloudflare”, or “memory”).
 - Try **`meta_list_capabilities`** for the full live registry, including dynamic
   capabilities.
 - **`entity: "id:capability"`** looks up a **known** id. It does **not** turn an
