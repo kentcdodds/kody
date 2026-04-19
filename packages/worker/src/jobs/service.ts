@@ -574,18 +574,30 @@ async function runRepoBackedJob(input: {
 				logs: bypassLogs,
 			}
 		}
-		const manifestJob =
-			manifest.jobs?.find((job) => job.name === input.job.name) ??
-			manifest.jobs?.[0]
+		const manifestJob = manifest.jobs?.find(
+			(job) => job.name === input.job.name,
+		)
 		if (!manifestJob) {
 			return {
-				error: `App manifest does not define a runnable job for "${input.job.name}".`,
+				error: `App manifest does not define a runnable job named "${input.job.name}".`,
 				result: null,
 				logs: bypassLogs,
 			}
 		}
-		const taskDefinition = getManifestTaskDefinition(manifest, manifestJob.task)
-		const taskEntrypoint = getManifestTaskEntrypointPath(manifest, manifestJob.task)
+		let taskEntrypoint: string
+		try {
+			getManifestTaskDefinition(manifest, manifestJob.task)
+			taskEntrypoint = getManifestTaskEntrypointPath(manifest, manifestJob.task)
+		} catch (error) {
+			return {
+				error:
+					error instanceof Error
+						? error.message
+						: `App manifest job "${manifestJob.name}" references an invalid task.`,
+				result: null,
+				logs: bypassLogs,
+			}
+		}
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user.userId,
@@ -593,7 +605,7 @@ async function runRepoBackedJob(input: {
 		})
 		if (!moduleFile.content) {
 			return {
-				error: `App job task entrypoint "${taskDefinition.entrypoint}" was not found in repo session.`,
+				error: `App job task entrypoint "${taskEntrypoint}" was not found in repo session.`,
 				result: null,
 				logs: bypassLogs,
 			}

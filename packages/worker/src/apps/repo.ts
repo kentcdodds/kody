@@ -4,13 +4,41 @@ import {
 	type PersistedAppCallerContext,
 } from './types.ts'
 
-function parseJson<T>(value: string | null, fallback: T): T {
+function parseJson<T>(
+	value: string | null,
+	fallback: T,
+	options?: {
+		fieldName?: string
+		rowId?: string
+		isValid?: (value: unknown) => value is T
+	},
+): T {
 	if (!value) return fallback
 	try {
-		return JSON.parse(value) as T
+		const parsed = JSON.parse(value) as unknown
+		if (options?.isValid && !options.isValid(parsed)) {
+			console.warn('invalid-app-row-json-shape', {
+				rowId: options.rowId ?? null,
+				fieldName: options.fieldName ?? null,
+			})
+			return fallback
+		}
+		return parsed as T
 	} catch {
+		console.warn('invalid-app-row-json', {
+			rowId: options?.rowId ?? null,
+			fieldName: options?.fieldName ?? null,
+		})
 		return fallback
 	}
+}
+
+function isArray<T>(value: unknown): value is Array<T> {
+	return Array.isArray(value)
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+	return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
 function serializeApp(app: AppRecord) {
@@ -38,40 +66,66 @@ function serializeApp(app: AppRecord) {
 }
 
 function mapRow(row: Record<string, unknown>): AppRecord {
+	const rowId = String(row['id'])
 	const record: AppRecord = {
 		version: 1,
-		id: String(row['id']),
+		id: rowId,
 		userId: String(row['user_id']),
 		title: String(row['title']),
 		description: String(row['description']),
 		sourceId: String(row['source_id']),
 		publishedCommit:
 			row['published_commit'] == null ? null : String(row['published_commit']),
-		repoCheckPolicy: parseJson(
+		repoCheckPolicy: parseJson<AppRecord['repoCheckPolicy']>(
 			row['repo_check_policy_json'] == null
 				? null
 				: String(row['repo_check_policy_json']),
 			undefined,
+			{
+				fieldName: 'repo_check_policy_json',
+				rowId,
+				isValid: isObjectRecord,
+			},
 		),
 		hidden: Number(row['hidden']) === 1,
-		keywords: parseJson<Array<string>>(String(row['keywords_json'] ?? '[]'), []),
+		keywords: parseJson<Array<string>>(String(row['keywords_json'] ?? '[]'), [], {
+			fieldName: 'keywords_json',
+			rowId,
+			isValid: isArray,
+		}),
 		searchText: row['search_text'] == null ? null : String(row['search_text']),
-		parameters: parseJson(
+		parameters: parseJson<AppRecord['parameters']>(
 			row['parameters_json'] == null ? null : String(row['parameters_json']),
 			null,
+			{
+				fieldName: 'parameters_json',
+				rowId,
+				isValid: (value): value is NonNullable<AppRecord['parameters']> =>
+					isArray(value),
+			},
 		),
 		hasClient: Number(row['has_client']) === 1,
 		hasServer: Number(row['has_server']) === 1,
-		tasks: parseJson(String(row['tasks_json'] ?? '[]'), []),
-		jobs: parseJson<Array<AppJobRecord>>(String(row['jobs_json'] ?? '[]'), []).map(
-			(job) => ({
-				...job,
-				callerContext:
-					job.callerContext == null
-						? null
-						: (job.callerContext as PersistedAppCallerContext),
-			}),
-		),
+		tasks: parseJson<AppRecord['tasks']>(String(row['tasks_json'] ?? '[]'), [], {
+			fieldName: 'tasks_json',
+			rowId,
+			isValid: isArray,
+		}),
+		jobs: parseJson<Array<AppJobRecord>>(
+			String(row['jobs_json'] ?? '[]'),
+			[],
+			{
+				fieldName: 'jobs_json',
+				rowId,
+				isValid: isArray,
+			},
+		).map((job) => ({
+			...job,
+			callerContext:
+				job.callerContext == null
+					? null
+					: (job.callerContext as PersistedAppCallerContext),
+		})),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}

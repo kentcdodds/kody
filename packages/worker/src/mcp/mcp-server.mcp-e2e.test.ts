@@ -165,18 +165,18 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 	const saveStructured = (saveResult as CallToolResult).structuredContent as
 		| {
 				result?: {
-					app_id?: string
-					has_server_code?: boolean
-					hosted_url?: string
+					id?: string
+					hasServer?: boolean
+					hasClient?: boolean
+					hidden?: boolean
 				}
 		  }
 		| undefined
-	const savedAppId = saveStructured?.result?.app_id
+	const savedAppId = saveStructured?.result?.id
 	expect(typeof savedAppId).toBe('string')
-	expect(saveStructured?.result?.has_server_code).toBe(true)
-	expect(saveStructured?.result?.hosted_url).toBe(
-		`${server.origin}/ui/${savedAppId}`,
-	)
+	expect(saveStructured?.result?.hasServer).toBe(true)
+	expect(saveStructured?.result?.hasClient).toBe(true)
+	expect(saveStructured?.result?.hidden).toBe(true)
 
 	const savedOpenResult = await mcpClient.client.callTool({
 		name: 'open_generated_ui',

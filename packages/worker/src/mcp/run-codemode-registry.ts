@@ -24,7 +24,6 @@ import { buildSecretCapabilityApprovalUrl } from '#mcp/secrets/capability-approv
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
-import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
 import {
 	createStorageCodemodeTools,
@@ -56,6 +55,9 @@ export async function buildCodemodeFns(
 		storageTools?: StorageToolOptions
 	},
 ) {
+	const { getCapabilityRegistryForContext } = await import(
+		'#mcp/capabilities/registry.ts'
+	)
 	const { capabilityMap } = await getCapabilityRegistryForContext({
 		env,
 		callerContext,

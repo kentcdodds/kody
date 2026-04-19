@@ -129,7 +129,7 @@ behavior:
 - `valueSet({ name, value, description?, scope? })`
 - `connectorGet(args)`
 - `connectorList()`
-- `metaRunSkill(name, params?)`
+- `callAppRpc(methodName, args?)`
 - `secretPlaceholder(name, scope?)`
 
 The bridge is intentionally explicit. Facets do **not** inherit the normal
