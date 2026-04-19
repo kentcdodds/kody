@@ -44,7 +44,7 @@ If the app depends on a third-party integration, load \`kody_official_guide\` (\
 OAuth: standard path is \`/connect/oauth\`—then run \`kody_official_guide\` (\`guide: "oauth"\`); for OAuth inside a saved app only, use \`guide: "generated_ui_oauth"\`.
 Do not treat an auth-dependent app as complete until the required connector/secret exists and a minimal authenticated smoke test succeeds.
 
-Persist with \`ui_save_app\`; discover with \`search\` or \`ui_list_apps\`.
+Persist with \`app_save\`; discover with \`search\` or \`app_list\`.
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/skills-and-apps.md
 	`.trim(),

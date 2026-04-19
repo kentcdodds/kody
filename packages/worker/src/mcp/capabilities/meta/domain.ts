@@ -15,7 +15,6 @@ import {
 	metaAgentTurnStartCapability,
 } from './meta-agent-turn.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
-import { metaRunSkillCapability } from './meta-run-skill.ts'
 import { metaSetMcpServerInstructionsCapability } from './meta-set-mcp-server-instructions.ts'
 
 export const metaDomain = defineDomain({
@@ -44,6 +43,5 @@ export const metaDomain = defineDomain({
 		metaAgentTurnStartCapability,
 		metaAgentTurnNextCapability,
 		metaAgentTurnCancelCapability,
-		metaRunSkillCapability,
 	],
 })

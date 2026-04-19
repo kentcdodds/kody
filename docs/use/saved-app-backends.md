@@ -12,7 +12,7 @@ Object Facet** and gives it an isolated SQLite database.
 
 ## Save input shape
 
-`ui_save_app` accepts camelCase fields:
+`app_save` accepts camelCase fields:
 
 ```json
 {
@@ -39,7 +39,7 @@ their current saved values:
 
 ## Read shape
 
-Saved app reads (`ui_get_app`, `ui_load_app_source`, generated UI source APIs)
+Saved app reads (`app_get`, generated UI source APIs)
 return snake_case fields:
 
 ```json
@@ -107,7 +107,7 @@ app frontend code.
 
 ## Save-time backend validation
 
-`ui_save_app` now validates saved app backends through the same repo-published
+`app_save` now validates saved app backends through the same repo-published
 source snapshot and dynamic runner load path used at runtime:
 
 - Kody syncs the repo-backed app source snapshot first.
@@ -196,10 +196,10 @@ For raw SQLite inspection, use **`app_storage_export`** instead of
 
 ## Example: `/api/state` + `/api/action` pattern
 
-Save this app with `ui_save_app`:
+Save this app with `app_save`:
 
 ```ts
-await codemode.ui_save_app({
+await codemode.app_save({
 	title: 'Facet counter',
 	description:
 		'Counter app that uses the default /api/state and /api/action backend pattern.',

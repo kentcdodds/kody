@@ -7,7 +7,7 @@ This example shows the default saved-app backend structure for non-trivial apps:
 - **`serverCode`** owns storage, validation, and mutations
 - the backend exposes **`GET /api/state`** and **`POST /api/action`**
 
-Save it with **`ui_save_app`**, then reopen it with **`open_generated_ui`**.
+Save it with **`app_save`**, then reopen it with **`open_generated_ui`**.
 
 ## `clientCode`
 
