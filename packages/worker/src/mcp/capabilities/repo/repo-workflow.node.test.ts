@@ -342,6 +342,74 @@ test('repo_open_session resolves a saved app by app_id', async () => {
 	})
 })
 
+test('repo_open_session rejects an active conversation session for a different target source', async () => {
+	mockModule.getActiveRepoSessionByConversation.mockReset()
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.getMcpSkillByNameInput.mockReset()
+	mockModule.listMcpSkillsByUserId.mockReset()
+	mockModule.getUiArtifactById.mockReset()
+	mockModule.getJobRowById.mockReset()
+	mockModule.listJobRowsByUserId.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce({
+		id: 'session-existing',
+		source_id: 'source-existing',
+	})
+	mockModule.getMcpSkillByNameInput.mockResolvedValueOnce({
+		id: 'skill-1',
+		user_id: 'user-1',
+		name: 'triage-github-pr',
+		title: 'Triage GitHub PR',
+		description: 'Triages one PR',
+		source_id: 'source-requested',
+		keywords: '[]',
+		search_text: null,
+		uses_capabilities: null,
+		parameters: null,
+		collection_name: null,
+		collection_slug: null,
+		inferred_capabilities: '[]',
+		inference_partial: 0,
+		read_only: 1,
+		idempotent: 1,
+		destructive: 0,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValueOnce({
+		id: 'source-requested',
+		user_id: 'user-1',
+		entity_kind: 'skill',
+		entity_id: 'skill-1',
+		repo_id: 'repo-skill-1',
+		published_commit: 'commit-skill-1',
+		indexed_commit: 'commit-skill-1',
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+
+	const rpc = createRepoRpc()
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+
+	await expect(
+		repoOpenSessionCapability.handler(
+			{
+				target: { kind: 'skill', name: 'triage-github-pr' },
+				conversation_id: 'conversation-1',
+			},
+			createCapabilityContext(),
+		),
+	).rejects.toThrow(
+		'Active repo session does not match the requested source. Discard the current session before opening a new source.',
+	)
+
+	expect(rpc.getSessionInfo).not.toHaveBeenCalled()
+	expect(rpc.openSession).not.toHaveBeenCalled()
+})
+
 test('repo_edit_flow applies edits, runs checks, and skips publish when checks fail', async () => {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
 	mockModule.getEntitySourceById.mockReset()
