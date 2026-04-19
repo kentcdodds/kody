@@ -1,4 +1,4 @@
-# Skill pattern: Cloudflare Developer Docs (`developers.cloudflare.com`)
+# App task pattern: Cloudflare Developer Docs (`developers.cloudflare.com`)
 
 Use this pattern when you need API or product documentation from
 [developers.cloudflare.com](https://developers.cloudflare.com).
@@ -30,7 +30,7 @@ Paths must:
 
 - Not contain `..`, `#`, or whitespace; max length 2048.
 
-## Example skill body (save via `meta_save_skill`)
+## Example app task body
 
 Adjust `name`, `title`, `description`, and trust flags when saving.
 
@@ -83,8 +83,8 @@ Callers should inspect `contentType` before treating `body` as Markdown. This
 helper returns the raw sliced response body plus `markdownTokenEstimate`; HTML
 responses are not auto-converted.
 
-For parameterized skills, use **`meta_save_skill`** **`parameters`** (e.g. a
-required `path` string) and read **`params.path`** instead of a hard-coded path.
+For parameterized app tasks, declare a task parameter (for example a required
+`path` string) and read **`params.path`** instead of a hard-coded path.
 
 ## Related
 

@@ -1,8 +1,8 @@
-# Skill patterns
+# App task patterns
 
-Small, copyable **codemode** patterns for **`meta_save_skill`** / **`execute`**.
-Prefer skills over new builtin capabilities when the workflow does not require
-Worker-only primitives (billing bindings, secret storage, etc.).
+Small, copyable **codemode** patterns for **app tasks** or **`execute`**.
+Prefer app tasks over new builtin capabilities when the workflow does not
+require Worker-only primitives (billing bindings, secret storage, etc.).
 
 | Pattern                                                        | Summary                                                                                                        |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |

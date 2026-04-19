@@ -1,13 +1,11 @@
-# Skill pattern: Cloudflare API v4 (`api.cloudflare.com`)
+# App task pattern: Cloudflare API v4 (`api.cloudflare.com`)
 
 The **`cloudflare_rest`** builtin capability was removed. Use **secret-aware
-`fetch`** in **`execute`** or a **saved skill** so Cloudflare API access can
+`fetch`** in **`execute`** or an **app task** so Cloudflare API access can
 change without shipping Worker code.
 
-A reference saved skill named **`cloudflare-api-v4`** (collection **Cloudflare
-Ops**) may already exist on your account; run it with
-`meta_run_skill({ name: 'cloudflare-api-v4', params: { method, path, query?, body? } })`
-or save your own copy from the example below.
+A reference app task named **`cloudflare-api-v4`** may already exist inside one
+of your saved apps; otherwise save your own app task from the example below.
 
 ## Auth and hosts
 
@@ -26,7 +24,7 @@ Capability **allowlists** on secrets apply to **capability inputs** that use
 All API paths must be under **`/client/v4/`** (see
 [Cloudflare API docs](https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/)).
 
-## Example skill (save via `meta_save_skill`)
+## Example app task
 
 Use **`uses_capabilities`** or trust inference as appropriate. Mark
 **`destructive: true`** when the skill can call mutating methods.

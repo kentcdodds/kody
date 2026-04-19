@@ -1,7 +1,8 @@
 # Adding capabilities
 
-User-persisted codemode skills (`meta` domain) are documented in
-[`mcp-skills.md`](./mcp-skills.md).
+App packages with tasks, jobs, and optional UI/server surfaces are documented in
+the usage docs and related architecture pages. Do not introduce new top-level
+saved primitive docs for skills or jobs.
 
 Secret-bearing outbound requests are governed by
 [`secret-host-approval.md`](./secret-host-approval.md). Read that doc before
