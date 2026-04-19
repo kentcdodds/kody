@@ -1,8 +1,11 @@
 import {
 	hasArtifactsAccess,
 	type ArtifactBootstrapAccess,
+	isLoopbackArtifactsRemote,
+	writeMockArtifactSnapshot,
 } from './artifacts.ts'
-import { getEntitySourceById } from './entity-sources.ts'
+import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
+import { parseRepoManifest } from './manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
 type SyncArtifactSourceInput = {
@@ -19,8 +22,8 @@ function canSyncArtifactSource(env: Env) {
 		hasArtifactsAccess(env) &&
 		(env as Env & { REPO_SESSION?: DurableObjectNamespace | undefined })
 			.REPO_SESSION != null &&
-		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB?.prepare ===
-			'function'
+		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB
+			?.prepare === 'function'
 	)
 }
 
@@ -45,6 +48,38 @@ export async function syncArtifactSourceSnapshot(
 	}))
 	try {
 		if (!source.published_commit) {
+			if (
+				input.bootstrapAccess?.remote &&
+				isLoopbackArtifactsRemote(input.bootstrapAccess.remote)
+			) {
+				const snapshot = await writeMockArtifactSnapshot({
+					env: input.env,
+					repoId: source.repo_id,
+					files: input.files,
+				})
+				const manifestContent = input.files[source.manifest_path]
+				if (typeof manifestContent !== 'string') {
+					throw new Error(
+						`Manifest "${source.manifest_path}" was not found in the repo source.`,
+					)
+				}
+				const manifest = parseRepoManifest({
+					content: manifestContent,
+					manifestPath: source.manifest_path,
+				})
+				await updateEntitySource(input.env.APP_DB, {
+					id: source.id,
+					userId: source.user_id,
+					publishedCommit: snapshot.published_commit,
+					manifestPath: source.manifest_path,
+					sourceRoot: manifest.sourceRoot?.startsWith('/')
+						? manifest.sourceRoot
+						: manifest.sourceRoot
+							? `/${manifest.sourceRoot}`
+							: source.source_root,
+				})
+				return snapshot.published_commit
+			}
 			const bootstrapResult = await session.bootstrapSource({
 				sessionId,
 				sourceId: source.id,

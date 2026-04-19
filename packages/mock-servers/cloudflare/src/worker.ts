@@ -291,11 +291,16 @@ function getMockArtifactsState(
 }
 
 function buildMockArtifactsRemote(input: {
+	requestUrl: URL
 	accountId: string
 	namespace: string
 	repoName: string
 }) {
-	return `https://${input.accountId}.artifacts.mock.local/git/${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.repoName)}.git`
+	const remote = new URL(
+		`/git/${encodeURIComponent(input.namespace)}/${encodeURIComponent(input.repoName)}.git`,
+		input.requestUrl,
+	)
+	return remote.toString()
 }
 
 async function readJsonBody(request: Request) {
@@ -614,7 +619,10 @@ async function handleArtifactsRepos(
 			100,
 			Math.max(
 				1,
-				Number.parseInt(input.url.searchParams.get('limit')?.trim() || '50', 10),
+				Number.parseInt(
+					input.url.searchParams.get('limit')?.trim() || '50',
+					10,
+				),
 			),
 		)
 		const cursor = input.url.searchParams.get('cursor')?.trim() || null
@@ -643,14 +651,14 @@ async function handleArtifactsRepos(
 	}
 	const repo = await state.createRepo({
 		name: repoName,
-		description:
-			typeof body.description === 'string' ? body.description : null,
+		description: typeof body.description === 'string' ? body.description : null,
 		defaultBranch:
 			typeof body.default_branch === 'string' && body.default_branch.trim()
 				? body.default_branch.trim()
 				: 'main',
 		readOnly: body.read_only === true,
 		remote: buildMockArtifactsRemote({
+			requestUrl: input.url,
 			accountId: input.accountId,
 			namespace: input.namespace,
 			repoName,
@@ -745,6 +753,7 @@ async function handleArtifactsFork(
 		accountId: string
 		namespace: string
 		repoName: string
+		url: URL
 	},
 ) {
 	if (input.accountId !== fixtureAccount.id) {
@@ -777,6 +786,7 @@ async function handleArtifactsFork(
 		targetName,
 		readOnly: body.read_only === true,
 		remote: buildMockArtifactsRemote({
+			requestUrl: input.url,
 			accountId: input.accountId,
 			namespace: input.namespace,
 			repoName: targetName,
@@ -795,6 +805,62 @@ async function handleArtifactsFork(
 			default_branch: forked.default_branch,
 			remote: forked.remote,
 			token: token.plaintext,
+		},
+		{ status: 200 },
+	)
+}
+
+async function handleArtifactsMockSourceSnapshot(
+	request: Request,
+	env: MockCloudflareEnv,
+	input: {
+		accountId: string
+		namespace: string
+		repoName: string
+		url: URL
+	},
+) {
+	if (input.accountId !== fixtureAccount.id) {
+		return errorEnvelope(404, 1002, 'account not found')
+	}
+	const tokenHash = await getTokenPartition(env)
+	const state = getMockArtifactsState(env, {
+		tokenHash,
+		accountId: input.accountId,
+		namespace: input.namespace,
+	})
+	if (request.method === 'GET') {
+		const snapshot = await state.readSnapshot({
+			repo: input.repoName,
+			commit: input.url.searchParams.get('commit')?.trim() || null,
+		})
+		if (!snapshot) {
+			return errorEnvelope(404, 1002, 'snapshot not found')
+		}
+		return envelope(snapshot, { status: 200 })
+	}
+	const body = await readJsonBody(request)
+	if (body === null) {
+		return errorEnvelope(400, 1001, 'invalid JSON body')
+	}
+	const entries =
+		body.files && typeof body.files === 'object'
+			? Object.entries(body.files)
+			: []
+	const files = Object.fromEntries(
+		entries.filter(
+			(entry): entry is [string, string] =>
+				typeof entry[0] === 'string' && typeof entry[1] === 'string',
+		),
+	)
+	const publishedCommit = await state.writeSnapshot({
+		repo: input.repoName,
+		files,
+	})
+	return envelope(
+		{
+			published_commit: publishedCommit,
+			files,
 		},
 		{ status: 200 },
 	)
@@ -897,6 +963,22 @@ async function routeApi(request: Request, env: MockCloudflareEnv, url: URL) {
 			accountId: artifactsForkMatch[1]!,
 			namespace: decodeURIComponent(artifactsForkMatch[2]!),
 			repoName: decodeURIComponent(artifactsForkMatch[3]!),
+			url,
+		})
+	}
+
+	const artifactsSnapshotMatch = url.pathname.match(
+		/^\/client\/v4\/accounts\/([^/]+)\/artifacts\/namespaces\/([^/]+)\/repos\/([^/]+)\/mock-source-snapshot\/?$/,
+	)
+	if (
+		artifactsSnapshotMatch &&
+		(request.method === 'GET' || request.method === 'POST')
+	) {
+		return handleArtifactsMockSourceSnapshot(request, env, {
+			accountId: artifactsSnapshotMatch[1]!,
+			namespace: decodeURIComponent(artifactsSnapshotMatch[2]!),
+			repoName: decodeURIComponent(artifactsSnapshotMatch[3]!),
+			url,
 		})
 	}
 

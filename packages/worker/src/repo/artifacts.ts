@@ -34,10 +34,7 @@ export type ArtifactRepoInfo = {
 export type ArtifactRepoHandle = {
 	info(): Promise<ArtifactRepoInfo | null>
 	createToken(scope?: 'write' | 'read', ttl?: number): Promise<ArtifactToken>
-	fork(target: {
-		name: string
-		readOnly?: boolean
-	}): Promise<{
+	fork(target: { name: string; readOnly?: boolean }): Promise<{
 		id: string
 		name: string
 		description: string | null
@@ -168,12 +165,17 @@ function createArtifactsRestBinding(env: Env) {
 	const client = createCloudflareRestClient(env)
 	const namespace = getArtifactsNamespace(env)
 	const basePath = `/client/v4/accounts/${accountId}/artifacts/namespaces/${namespace}`
-	const getRepoInfo = async (name: string): Promise<ArtifactRepoInfo | null> => {
-		const response = await requestArtifactsEnvelope<ArtifactRestRepoInfo>(client, {
-			method: 'GET',
-			path: `${basePath}/repos/${encodeURIComponent(name)}`,
-			treat404AsNull: true,
-		})
+	const getRepoInfo = async (
+		name: string,
+	): Promise<ArtifactRepoInfo | null> => {
+		const response = await requestArtifactsEnvelope<ArtifactRestRepoInfo>(
+			client,
+			{
+				method: 'GET',
+				path: `${basePath}/repos/${encodeURIComponent(name)}`,
+				treat404AsNull: true,
+			},
+		)
 		return response.result ? normalizeArtifactRepoInfo(response.result) : null
 	}
 	const repoHandle = (name: string): ArtifactRepoHandle => ({
@@ -269,14 +271,13 @@ function createArtifactsRestBinding(env: Env) {
 			if (opts?.cursor) {
 				query['cursor'] = opts.cursor
 			}
-			const envelope = await requestArtifactsEnvelope<Array<ArtifactRestRepoInfo>>(
-				client,
-				{
-					method: 'GET',
-					path: `${basePath}/repos`,
-					query,
-				},
-			)
+			const envelope = await requestArtifactsEnvelope<
+				Array<ArtifactRestRepoInfo>
+			>(client, {
+				method: 'GET',
+				path: `${basePath}/repos`,
+				query,
+			})
 			const repos = (envelope.result ?? []).map((repo) => {
 				const normalized = normalizeArtifactRepoInfo(repo)
 				return {
@@ -367,7 +368,9 @@ async function requestArtifactsEnvelope<T>(
 	}
 }
 
-function normalizeArtifactRepoInfo(repo: ArtifactRestRepoInfo): ArtifactRepoInfo {
+function normalizeArtifactRepoInfo(
+	repo: ArtifactRestRepoInfo,
+): ArtifactRepoInfo {
 	return {
 		id: repo.id,
 		name: repo.name,
@@ -443,13 +446,78 @@ export function buildAuthenticatedArtifactsRemote(input: {
 	token: string
 }) {
 	const remoteUrl = new URL(input.remote)
-	if (remoteUrl.protocol !== 'https:') {
+	const isLoopbackHost = isLoopbackHostname(remoteUrl.hostname)
+	const isAllowedProtocol =
+		remoteUrl.protocol === 'https:' ||
+		(remoteUrl.protocol === 'http:' && isLoopbackHost)
+	if (!isAllowedProtocol) {
 		throw new Error(`Artifact remote must use https://, got: ${input.remote}`)
 	}
 	const auth = buildArtifactsGitAuth({ token: input.token })
 	remoteUrl.username = auth.username
 	remoteUrl.password = auth.password
 	return remoteUrl.toString()
+}
+
+export function isLoopbackHostname(hostname: string) {
+	return (
+		hostname === 'localhost' ||
+		hostname === '127.0.0.1' ||
+		hostname === '[::1]' ||
+		hostname === '::1'
+	)
+}
+
+export function isLoopbackArtifactsRemote(remote: string) {
+	try {
+		const url = new URL(remote)
+		return url.protocol === 'http:' && isLoopbackHostname(url.hostname)
+	} catch {
+		return false
+	}
+}
+
+type MockArtifactSnapshot = {
+	published_commit: string
+	files: Record<string, string>
+}
+
+function buildArtifactsNamespaceBasePath(env: Env) {
+	return `/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/artifacts/namespaces/${getArtifactsNamespace(env)}`
+}
+
+export async function writeMockArtifactSnapshot(input: {
+	env: Env
+	repoId: string
+	files: Record<string, string>
+}) {
+	const client = createCloudflareRestClient(input.env)
+	const result = await requestArtifactsApi<MockArtifactSnapshot>(client, {
+		method: 'POST',
+		path: `${buildArtifactsNamespaceBasePath(input.env)}/repos/${encodeURIComponent(input.repoId)}/mock-source-snapshot`,
+		body: {
+			files: input.files,
+		},
+	})
+	return result
+}
+
+export async function readMockArtifactSnapshot(input: {
+	env: Env
+	repoId: string
+	commit: string | null
+}) {
+	const client = createCloudflareRestClient(input.env)
+	const envelope = await requestArtifactsEnvelope<MockArtifactSnapshot>(
+		client,
+		{
+			method: 'GET',
+			path: `${buildArtifactsNamespaceBasePath(input.env)}/repos/${encodeURIComponent(input.repoId)}/mock-source-snapshot`,
+			query: input.commit ? { commit: input.commit } : undefined,
+			treat404AsNull: true,
+		},
+	)
+	return envelope.result
 }
 
 export async function resolveArtifactSourceRepo(env: Env, repoId: string) {

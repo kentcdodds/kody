@@ -9,7 +9,6 @@ import { metaMemoryVerifyCapability } from './meta-memory-verify.ts'
 import { metaGetHomeConnectorStatusCapability } from './meta-get-home-connector-status.ts'
 import { metaListRemoteConnectorStatusCapability } from './meta-list-remote-connector-status.ts'
 import { metaGetMcpServerInstructionsCapability } from './meta-get-mcp-server-instructions.ts'
-import { metaGetSkillCapability } from './meta-get-skill.ts'
 import {
 	metaAgentChatTurnCapability,
 	metaAgentTurnCancelCapability,
@@ -54,7 +53,6 @@ export const metaDomain = defineDomain({
 		metaAgentTurnCancelCapability,
 		metaSaveSkillCapability,
 		metaDeleteSkillCapability,
-		metaGetSkillCapability,
 		metaRunSkillCapability,
 	],
 })

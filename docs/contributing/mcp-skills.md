@@ -1,8 +1,8 @@
 # MCP user skills (meta domain)
 
-Authenticated users can save **codemode** workflows as **skills**: D1 row +
-Vectorize embedding keyed by `skill_<uuid>` with metadata
-`{ kind: 'skill', userId, collectionSlug? }`.
+Authenticated users can save **codemode** workflows as **skills**: D1 metadata +
+repo-backed source snapshot + Vectorize embedding keyed by `skill_<uuid>` with
+metadata `{ kind: 'skill', userId, collectionSlug? }`.
 
 **When to save:** Agents should use **`meta_save_skill`** only for workflows
 that are **reasonably repeatable**—patterns expected to run again with similar
@@ -21,23 +21,24 @@ Developer Docs without a dedicated builtin capability).
   (skills only when the MCP caller has user context). Search accepts an optional
   `skill_collection` filter and skill hits include `collection` plus
   `collectionSlug`.
-- **`meta_save_skill`** — upserts by unique per-user skill `name`, persists code
-  and trust flags, and rewrites the existing skill when that `name` already
-  exists; server infers static `codemode.*` usage with Acorn (after
-  `normalizeCode` from `@cloudflare/codemode`, matching execute). Optional
-  `collection` assigns the skill to a first-class user-defined grouping.
-  Optional `uses_capabilities` merges explicit names when inference is
-  incomplete. Repo-backed skills now run through the same execute sandbox as ad
-  hoc `execute`, but their entrypoint may import sibling ES modules and package
-  dependencies from the saved artifact repo.
-- **`meta_get_skill`**, **`meta_run_skill`**, **`meta_delete_skill`** — load,
-  execute (same sandbox path as `execute`), or remove skill + vector row.
+- **`meta_save_skill`** — upserts by unique per-user skill `name`, persists
+  skill metadata plus a repo-backed source snapshot, and rewrites the existing
+  skill when that `name` already exists; server infers static `codemode.*` usage
+  with Acorn from the saved module source. Optional `collection` assigns the
+  skill to a first-class user-defined grouping. Optional `uses_capabilities`
+  merges explicit names when inference is incomplete. Saved skills run through
+  the same execute sandbox as ad hoc `execute`, and their entrypoint may import
+  sibling ES modules and package dependencies from the saved artifact repo.
+  Saved skill modules must default export a single function entrypoint so Kody
+  can invoke them with execute semantics.
+- **`meta_run_skill`**, **`meta_delete_skill`** — execute (same sandbox path as
+  `execute`) or remove skill + vector row.
 - **`meta_list_skill_collections`** — returns normalized collection names/slugs
   with skill counts for browsing and filter confirmation.
 
 When **`meta_run_skill`** fails (`ok: false`), the structured output includes a
-**`hint`** directing the client to inspect the skill with **`meta_get_skill`**
-and then call **`meta_save_skill`** again with the same `name` to replace it.
+**`hint`** directing the client to fix the repo-backed module source and then
+call **`meta_save_skill`** again with the same `name` to replace it.
 
 ## Parameters
 
@@ -80,9 +81,7 @@ The server stores both:
 - `collection_slug`: normalized lower-kebab-style slug for filtering and future
   browsing UX
 
-If no collection is provided, the skill remains ungrouped. Existing skills stay
-valid after migration and simply have `null` collection fields until they are
-saved again.
+If no collection is provided, the skill remains ungrouped.
 
 Use `meta_list_skill_collections({})` to inspect available groupings before
 reusing one, and use `search({ query, skill_collection: "<slug>" })` to narrow
@@ -110,4 +109,4 @@ saved UI artifacts and upserts `ui_artifact_<uuid>` vectors after app-search
 embed text changes or any D1/Vectorize drift.
 
 For broken skills, prefer **`meta_save_skill`** with the same `name` to replace
-stored code in place. There is no versioning.
+the published repo-backed source. There is no versioning.

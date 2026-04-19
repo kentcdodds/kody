@@ -9,7 +9,7 @@ const outputSchema = z.object({
 	result: z.unknown().optional(),
 	error: z.string().optional(),
 	logs: z.array(z.string()).optional(),
-	/** Present when ok is false; suggests how to fix stored skill code. */
+	/** Present when ok is false; suggests how to fix the saved skill source. */
 	hint: z.string().optional(),
 })
 
@@ -18,7 +18,7 @@ export const metaRunSkillCapability = defineDomainCapability(
 	{
 		name: 'meta_run_skill',
 		description:
-			'Execute a saved skill by name in the same sandbox as the MCP execute tool. Skill names are lower-kebab-case and unique per user. When the skill defines parameters, pass them in params; the code receives them via the params variable or the first function argument. Example: meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds", "days": 3 } }). On failure, the structured result includes a hint for re-saving the skill with corrected code or metadata.',
+			'Execute a saved skill by name in the same sandbox as the MCP execute tool. Skill names are lower-kebab-case and unique per user. When the skill defines parameters, pass them in params; the code receives them via the params variable or the first function argument. Example: meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds", "days": 3 } }). On failure, the structured result includes a hint for re-saving the skill with corrected source or metadata.',
 		keywords: ['skill', 'run', 'execute'],
 		readOnly: false,
 		idempotent: false,

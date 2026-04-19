@@ -35,12 +35,11 @@ builtin capability). Discover names with \`search\`; for one capability’s
 \`inputSchema\` / \`outputSchema\`, call \`search\` with
 \`entity: "{name}:capability"\` or use \`meta_list_capabilities\`.
 
-Saved skills: prefer \`meta_run_skill({ name, params })\`, or \`meta_get_skill\`
-then paste code here.
+Saved skills: prefer \`meta_run_skill({ name, params })\`.
 
 Jobs: use \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`, and
 \`job_run_now\` to manage one-shot, interval, or cron jobs for the signed-in
-user. Each job stores codemode source plus a stable durable storage id.
+user. Each job stores repo-backed source metadata plus a stable durable storage id.
 
 Sandbox surface:
 - \`codemode\`: \`(args) => Promise<unknown>\` per capability.

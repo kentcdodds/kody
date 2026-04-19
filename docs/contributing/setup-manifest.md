@@ -72,8 +72,8 @@ automatically:
   Cloudflare AI Gateway)
 - `CLOUDFLARE_ACCOUNT_ID` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests against the correct account;
-  also required for the Cloudflare Email Service REST API fallback used by
-  local mocks and preview deploys)
+  also required for the Cloudflare Email Service REST API fallback used by local
+  mocks and preview deploys)
 - `CLOUDFLARE_API_TOKEN` (required for local development when `AI_MODE=remote`
   so Wrangler can authenticate Workers AI requests; also reused by the
   Cloudflare Email Service REST API fallback when local/preview email is routed

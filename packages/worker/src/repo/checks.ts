@@ -5,7 +5,6 @@ import {
 } from './manifest.ts'
 import {
 	createRepoCodemodeModuleTypecheckHarness,
-	hasModuleStyleRepoBackedEntrypoint,
 	repoCodemodeModuleTypecheckHarnessPath,
 } from './repo-codemode-execution.ts'
 import { type RepoManifest } from './types.ts'
@@ -31,9 +30,9 @@ export type RepoCheckRunResult = {
 }
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
-const executeSnippetTypecheckHarnessPath = '.__kody_repo_check__.ts'
 const repoChecksSyntheticTsconfigPath = 'tsconfig.json'
-const repoChecksSyntheticTsconfigExtendsPath = './.__kody_repo_tsconfig_base__.json'
+const repoChecksSyntheticTsconfigExtendsPath =
+	'./.__kody_repo_tsconfig_base__.json'
 
 type RepoChecksFileSystem = {
 	read(path: string): string | null
@@ -47,7 +46,9 @@ function normalizeRepoChecksFileSystemPath(path: string) {
 	return path.replace(/^\.?\//, '')
 }
 
-function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem }) {
+function createRepoChecksFileSystem(input: {
+	fileSystem: RepoChecksFileSystem
+}) {
 	const overlay = new Map<string, string>()
 	const deleted = new Set<string>()
 
@@ -84,7 +85,10 @@ function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem })
 					.filter((path) => !deleted.has(path)),
 			)
 			for (const path of overlay.keys()) {
-				if (normalizedPrefix === undefined || path.startsWith(normalizedPrefix)) {
+				if (
+					normalizedPrefix === undefined ||
+					path.startsWith(normalizedPrefix)
+				) {
 					listed.add(path)
 				}
 			}
@@ -94,9 +98,7 @@ function createRepoChecksFileSystem(input: { fileSystem: RepoChecksFileSystem })
 	} satisfies RepoChecksFileSystem
 }
 
-function buildRepoChecksTsconfig(
-	baseConfigContent: string | null,
-) {
+function buildRepoChecksTsconfig(baseConfigContent: string | null) {
 	if (baseConfigContent == null) {
 		return JSON.stringify({
 			compilerOptions: {
@@ -155,11 +157,7 @@ function formatTypecheckDiagnostics(
 			}
 		}
 	}>,
-	options?: {
-		lineOffset?: number
-	},
 ) {
-	const lineOffset = options?.lineOffset ?? 0
 	return diagnostics.map((diagnostic) => {
 		const location =
 			typeof diagnostic.start === 'number' && diagnostic.file
@@ -170,14 +168,12 @@ function formatTypecheckDiagnostics(
 				? diagnostic.messageText
 				: JSON.stringify(diagnostic.messageText)
 		return location
-			? `${fileName}:${Math.max(0, location.line - lineOffset) + 1}:${location.character + 1} ${message}`
+			? `${fileName}:${location.line + 1}:${location.character + 1} ${message}`
 			: `${fileName} ${message}`
 	})
 }
 
-function createExecuteTypecheckPrelude(input?: {
-	includeStorage?: boolean
-}) {
+function createExecuteTypecheckPrelude(input?: { includeStorage?: boolean }) {
 	return `type KodyJsonValue =
   | string
   | number
@@ -199,7 +195,9 @@ declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
 declare function agentChatTurnStream(input: KodyCapabilityArgs): AsyncIterable<unknown>;
-${input?.includeStorage === true ? `
+${
+	input?.includeStorage === true
+		? `
 declare const storage: {
   id: string;
   get(key: string): Promise<unknown>;
@@ -209,25 +207,15 @@ declare const storage: {
   delete(key: string): Promise<unknown>;
   clear(): Promise<unknown>;
 };
-` : ''}
-`.trim()
-}
-
-function createExecuteSnippetTypecheckHarness(input: {
-	fnName: string
-	source: string
-}): string {
-	return `/// <reference path="./${executeTypecheckPreludePath}" />
-declare function ${input.fnName}(fn: (params?: Record<string, unknown>) => Promise<unknown>): void; ${input.fnName}(
-${input.source}
-);
 `
+		: ''
+}
+`.trim()
 }
 
 function getRepoTypecheckDiagnostics(input: {
 	manifest: RepoManifest
 	entryPoint: string
-	entryPointSource: string
 	languageService: {
 		getSemanticDiagnostics(path: string): Array<{
 			messageText: unknown
@@ -255,39 +243,31 @@ function getRepoTypecheckDiagnostics(input: {
 			}
 		}
 	}>
-	lineOffset?: number
 } {
 	switch (input.manifest.kind) {
 		case 'app':
 			return {
 				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(input.entryPoint),
+				diagnostics: input.languageService.getSemanticDiagnostics(
+					input.entryPoint,
+				),
 			}
 		case 'skill': {
 			input.fileSystem.write(
 				executeTypecheckPreludePath,
 				createExecuteTypecheckPrelude(),
 			)
-			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
-				? repoCodemodeModuleTypecheckHarnessPath
-				: executeSnippetTypecheckHarnessPath
-			const isModuleHarness =
-				harnessPath === repoCodemodeModuleTypecheckHarnessPath
 			input.fileSystem.write(
-				harnessPath,
-				isModuleHarness
-					? createRepoCodemodeModuleTypecheckHarness({
-							entryPoint: input.entryPoint,
-						})
-					: createExecuteSnippetTypecheckHarness({
-							fnName: '__kodyTypecheckSkill',
-							source: input.entryPointSource,
-						}),
+				repoCodemodeModuleTypecheckHarnessPath,
+				createRepoCodemodeModuleTypecheckHarness({
+					entryPoint: input.entryPoint,
+				}),
 			)
 			return {
 				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(harnessPath),
-				lineOffset: harnessPath === executeSnippetTypecheckHarnessPath ? 2 : 0,
+				diagnostics: input.languageService.getSemanticDiagnostics(
+					repoCodemodeModuleTypecheckHarnessPath,
+				),
 			}
 		}
 		case 'job': {
@@ -297,26 +277,17 @@ function getRepoTypecheckDiagnostics(input: {
 					includeStorage: true,
 				}),
 			)
-			const harnessPath = hasModuleStyleRepoBackedEntrypoint(input.entryPointSource)
-				? repoCodemodeModuleTypecheckHarnessPath
-				: executeSnippetTypecheckHarnessPath
-			const isModuleHarness =
-				harnessPath === repoCodemodeModuleTypecheckHarnessPath
 			input.fileSystem.write(
-				harnessPath,
-				isModuleHarness
-					? createRepoCodemodeModuleTypecheckHarness({
-							entryPoint: input.entryPoint,
-						})
-					: createExecuteSnippetTypecheckHarness({
-							fnName: '__kodyTypecheckJob',
-							source: input.entryPointSource,
-						}),
+				repoCodemodeModuleTypecheckHarnessPath,
+				createRepoCodemodeModuleTypecheckHarness({
+					entryPoint: input.entryPoint,
+				}),
 			)
 			return {
 				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(harnessPath),
-				lineOffset: harnessPath === executeSnippetTypecheckHarnessPath ? 2 : 0,
+				diagnostics: input.languageService.getSemanticDiagnostics(
+					repoCodemodeModuleTypecheckHarnessPath,
+				),
 			}
 		}
 		default: {
@@ -428,13 +399,14 @@ export async function runRepoChecks(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
-	const { fileSystem, languageService } = await createTypescriptLanguageService({
-		fileSystem: typecheckFileSystem,
-	})
-	const { fileName, diagnostics, lineOffset } = getRepoTypecheckDiagnostics({
+	const { fileSystem, languageService } = await createTypescriptLanguageService(
+		{
+			fileSystem: typecheckFileSystem,
+		},
+	)
+	const { fileName, diagnostics } = getRepoTypecheckDiagnostics({
 		manifest,
 		entryPoint,
-		entryPointSource,
 		languageService,
 		fileSystem,
 	})
@@ -444,9 +416,7 @@ export async function runRepoChecks(input: {
 		message:
 			diagnostics.length === 0
 				? `No semantic diagnostics for "${entryPoint}".`
-				: formatTypecheckDiagnostics(fileName, diagnostics, {
-						lineOffset,
-					}).join('\n'),
+				: formatTypecheckDiagnostics(fileName, diagnostics).join('\n'),
 	})
 
 	results.push({

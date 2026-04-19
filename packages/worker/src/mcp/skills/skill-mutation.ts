@@ -82,7 +82,6 @@ export type PreparedSkillPersistence = {
 		collection_name: string | null
 		collection_slug: string | null
 		keywords: string
-		code: string
 		search_text: string | null
 		uses_capabilities: string | null
 		parameters: string | null
@@ -97,13 +96,17 @@ export type PreparedSkillPersistence = {
 export async function prepareSkillPersistence(
 	args: SkillPersistenceArgs,
 ): Promise<PreparedSkillPersistence> {
-	const [{ normalizeCode }, { capabilitySpecs }] = await Promise.all([
-		import('@cloudflare/codemode'),
-		import('#mcp/capabilities/registry.ts'),
-	] as const)
-
-	const normalized = normalizeCode(args.code)
-	const infer = inferCodemodeCapabilities(normalized)
+	const { capabilitySpecs } = await import('#mcp/capabilities/registry.ts')
+	const code = args.code.trim()
+	if (!code) {
+		throw new Error('Skills require non-empty module source.')
+	}
+	if (!/\bexport\s+default\b/.test(code)) {
+		throw new Error(
+			'Saved skill source must default export a function so Kody can invoke it with execute semantics.',
+		)
+	}
+	const infer = inferCodemodeCapabilities(code)
 	const { merged, unknownNames } = mergeInferredCapabilityNames({
 		astStaticNames: [...infer.staticNames, ...infer.helperNames],
 		usesCapabilities: args.uses_capabilities,
@@ -155,7 +158,6 @@ export async function prepareSkillPersistence(
 		collection_name: collection?.name ?? null,
 		collection_slug: collection?.slug ?? null,
 		keywords: JSON.stringify(args.keywords),
-		code: args.code,
 		search_text: args.search_text ?? null,
 		uses_capabilities: args.uses_capabilities
 			? JSON.stringify(args.uses_capabilities)

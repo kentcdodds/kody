@@ -210,7 +210,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 					client_code: resolvedApp.clientCode,
 					server_code: resolvedApp.serverCode,
 					server_code_id: resolvedApp.serverCodeId,
-					...(hasUiArtifactServerCode(resolvedApp.serverCode)
+					...(hasUiArtifactServerCode(app.hasServerCode)
 						? {
 								app_backend: {
 									basePath: buildSavedAppBackendBasePath(app.id),
@@ -223,7 +223,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 				},
 				appSession,
 			})
-			if (hasUiArtifactServerCode(resolvedApp.serverCode)) {
+			if (hasUiArtifactServerCode(app.hasServerCode)) {
 				response.headers.append(
 					'Set-Cookie',
 					await createGeneratedUiAppBackendCookieHeader({

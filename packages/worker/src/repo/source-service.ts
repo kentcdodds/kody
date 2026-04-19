@@ -66,10 +66,12 @@ export async function ensureEntitySource(input: {
 	if (!hasDbPrepare || hasArtifactsAccessResult === false) {
 		if (input.requirePersistence) {
 			throw new Error(
-				`Repo-backed source persistence requires ${missingPersistenceRequirements({
-					hasDbPrepare,
-					hasArtifactsAccess: hasArtifactsAccessResult,
-				}).join(' and ')}.`,
+				`Repo-backed source persistence requires ${missingPersistenceRequirements(
+					{
+						hasDbPrepare,
+						hasArtifactsAccess: hasArtifactsAccessResult,
+					},
+				).join(' and ')}.`,
 			)
 		}
 		return buildEntitySourceRow({

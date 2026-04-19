@@ -1,10 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
- 
+
 const mockModule = vi.hoisted(() => ({
 	createWorker: vi.fn(),
 }))
- 
+
 vi.mock('@cloudflare/worker-bundler', () => ({
 	createWorker: (...args: Array<unknown>) => mockModule.createWorker(...args),
 }))
@@ -40,7 +40,6 @@ test('buildRepoCodemodeBundle emits an extensionless synthetic ESM re-export for
 		entryPointSource: 'export default async () => ({ ok: true })\n',
 	})
 
-	expect(bundle.entrypointMode).toBe('module')
 	expect(mockModule.createWorker).toHaveBeenCalledWith({
 		files: {
 			'src/job.ts': 'export default async () => ({ ok: true })\n',

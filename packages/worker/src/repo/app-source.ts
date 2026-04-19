@@ -4,12 +4,14 @@ import {
 	parseUiArtifactParameters,
 } from '#mcp/ui-artifact-parameters.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
+import { isLoopbackHostname, readMockArtifactSnapshot } from './artifacts.ts'
 import { getEntitySourceById } from './entity-sources.ts'
 import { normalizeRepoWorkspacePath, parseRepoManifest } from './manifest.ts'
 import { type AppManifest } from './types.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
 export type ResolvedSavedAppSource = {
+	id: string
 	title: string
 	description: string
 	hidden: boolean
@@ -17,22 +19,8 @@ export type ResolvedSavedAppSource = {
 	clientCode: string
 	serverCode: string | null
 	serverCodeId: string
-	sourceId: string | null
+	sourceId: string
 	publishedCommit: string | null
-}
-
-function fallbackFromArtifact(artifact: UiArtifactRow): ResolvedSavedAppSource {
-	return {
-		title: artifact.title,
-		description: artifact.description,
-		hidden: artifact.hidden,
-		parameters: parseUiArtifactParameters(artifact.parameters),
-		clientCode: artifact.clientCode ?? '',
-		serverCode: artifact.serverCode ?? null,
-		serverCodeId: artifact.serverCodeId,
-		sourceId: artifact.sourceId,
-		publishedCommit: null,
-	}
 }
 
 function resolveManifestClientPath(manifest: AppManifest) {
@@ -64,15 +52,77 @@ export async function resolveSavedAppSource(input: {
 	baseUrl: string
 	artifact: UiArtifactRow
 }): Promise<ResolvedSavedAppSource> {
-	const fallback = fallbackFromArtifact(input.artifact)
 	if (!canResolveRepoBackedSource(input.env, input.artifact)) {
-		return fallback
+		throw new Error('Saved app source bindings are not available.')
 	}
 	const source = await getEntitySourceById(
 		input.env.APP_DB,
 		input.artifact.sourceId!,
 	)
-	if (!source) return fallback
+	if (!source) {
+		throw new Error(
+			`Saved app source "${input.artifact.sourceId}" was not found.`,
+		)
+	}
+	const mockArtifactsBaseUrl = input.env.CLOUDFLARE_API_BASE_URL?.trim()
+	if (mockArtifactsBaseUrl && source.published_commit) {
+		const mockArtifactsUrl = new URL(mockArtifactsBaseUrl)
+		if (isLoopbackHostname(mockArtifactsUrl.hostname)) {
+			const snapshot = await readMockArtifactSnapshot({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: source.published_commit,
+			})
+			if (snapshot) {
+				const manifestContent = snapshot.files[source.manifest_path]
+				if (!manifestContent) {
+					throw new Error(
+						`Saved app manifest "${source.manifest_path}" was not found in the repo source.`,
+					)
+				}
+				const manifest = parseRepoManifest({
+					content: manifestContent,
+					manifestPath: source.manifest_path,
+				})
+				if (manifest.kind !== 'app') {
+					throw new Error(`Repo source "${source.id}" is not an app manifest.`)
+				}
+				const clientPath = resolveManifestClientPath(manifest)
+				const clientCode = snapshot.files[clientPath]
+				if (!clientCode) {
+					throw new Error(
+						`Saved app client asset "${clientPath}" was not found in the repo source.`,
+					)
+				}
+				const serverPath =
+					input.artifact.hasServerCode && manifest.server
+						? normalizeRepoWorkspacePath(manifest.server)
+						: null
+				const serverCode = serverPath
+					? (snapshot.files[serverPath] ?? null)
+					: null
+				if (serverPath && !serverCode) {
+					throw new Error(
+						`Saved app server module "${manifest.server}" was not found in the repo source.`,
+					)
+				}
+				return {
+					id: input.artifact.id,
+					title: manifest.title,
+					description: manifest.description,
+					hidden: manifest.hidden ?? input.artifact.hidden,
+					parameters: manifest.parameters
+						? normalizeUiArtifactParameters(manifest.parameters)
+						: parseUiArtifactParameters(input.artifact.parameters),
+					clientCode,
+					serverCode,
+					serverCodeId: source.published_commit ?? source.id,
+					sourceId: source.id,
+					publishedCommit: source.published_commit,
+				}
+			}
+		}
+	}
 	const sessionId = `app-source-${source.id}-${crypto.randomUUID()}`
 	const session = repoSessionRpc(input.env, sessionId)
 	let openedSessionId: string | null = null
@@ -90,34 +140,57 @@ export async function resolveSavedAppSource(input: {
 			userId: input.artifact.user_id,
 			path: source.manifest_path,
 		})
-		if (!manifestFile.content) return fallback
+		if (!manifestFile.content) {
+			throw new Error(
+				`Saved app manifest "${source.manifest_path}" was not found in the repo source.`,
+			)
+		}
 		const manifest = parseRepoManifest({
 			content: manifestFile.content,
 			manifestPath: source.manifest_path,
 		})
-		if (manifest.kind !== 'app') return fallback
+		if (manifest.kind !== 'app') {
+			throw new Error(`Repo source "${source.id}" is not an app manifest.`)
+		}
 		const [clientFile, serverFile] = await Promise.all([
 			session.readFile({
 				sessionId: opened.id,
 				userId: input.artifact.user_id,
 				path: resolveManifestClientPath(manifest),
 			}),
-			session.readFile({
-				sessionId: opened.id,
-				userId: input.artifact.user_id,
-				path: normalizeRepoWorkspacePath(manifest.server),
-			}),
+			input.artifact.hasServerCode && manifest.server
+				? session.readFile({
+						sessionId: opened.id,
+						userId: input.artifact.user_id,
+						path: normalizeRepoWorkspacePath(manifest.server),
+					})
+				: Promise.resolve({ path: '', content: null }),
 		])
+		if (!clientFile.content) {
+			throw new Error(
+				`Saved app client asset "${resolveManifestClientPath(manifest)}" was not found in the repo source.`,
+			)
+		}
+		if (
+			input.artifact.hasServerCode &&
+			manifest.server &&
+			!serverFile.content
+		) {
+			throw new Error(
+				`Saved app server module "${manifest.server}" was not found in the repo source.`,
+			)
+		}
 		const resolved = {
+			id: input.artifact.id,
 			title: manifest.title,
 			description: manifest.description,
-			hidden: manifest.hidden ?? fallback.hidden,
+			hidden: manifest.hidden ?? input.artifact.hidden,
 			parameters: manifest.parameters
 				? normalizeUiArtifactParameters(manifest.parameters)
-				: null,
-			clientCode: clientFile.content ?? fallback.clientCode,
-			serverCode: serverFile.content ?? fallback.serverCode,
-			serverCodeId: source.published_commit ?? fallback.serverCodeId,
+				: parseUiArtifactParameters(input.artifact.parameters),
+			clientCode: clientFile.content,
+			serverCode: input.artifact.hasServerCode ? serverFile.content : null,
+			serverCodeId: source.published_commit ?? source.id,
 			sourceId: source.id,
 			publishedCommit: source.published_commit,
 		}

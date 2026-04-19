@@ -10,35 +10,40 @@ const mockModule = vi.hoisted(() => {
 
 	const git = {
 		clone: vi.fn(async () => ({ cloned: 'ok', dir: '/session' })),
-		remote: vi.fn(async (opts?: {
-			list?: boolean
-			add?: { name: string; url: string }
-			remove?: string
-		}) => {
-			if (opts?.list) {
-				return gitState.remotes
-			}
-			if (opts?.remove) {
-				gitState.remotes = gitState.remotes.filter(
-					(remote) => remote.remote !== opts.remove,
-				)
-				return { removed: opts.remove }
-			}
-			if (opts?.add) {
-				gitState.remotes = [
-					...gitState.remotes.filter(
-						(remote) => remote.remote !== opts.add?.name,
-					),
-					{ remote: opts.add.name, url: opts.add.url },
-				]
-				return { added: opts.add.name, url: opts.add.url }
-			}
-			return []
-		}),
+		remote: vi.fn(
+			async (opts?: {
+				list?: boolean
+				add?: { name: string; url: string }
+				remove?: string
+			}) => {
+				if (opts?.list) {
+					return gitState.remotes
+				}
+				if (opts?.remove) {
+					gitState.remotes = gitState.remotes.filter(
+						(remote) => remote.remote !== opts.remove,
+					)
+					return { removed: opts.remove }
+				}
+				if (opts?.add) {
+					gitState.remotes = [
+						...gitState.remotes.filter(
+							(remote) => remote.remote !== opts.add?.name,
+						),
+						{ remote: opts.add.name, url: opts.add.url },
+					]
+					return { added: opts.add.name, url: opts.add.url }
+				}
+				return []
+			},
+		),
 		init: vi.fn(async () => ({ initialized: '/session' })),
 		status: vi.fn(async () => gitState.statusEntries),
 		add: vi.fn(async () => ({ added: '.' })),
-		commit: vi.fn(async () => ({ oid: gitState.headCommit, message: 'commit' })),
+		commit: vi.fn(async () => ({
+			oid: gitState.headCommit,
+			message: 'commit',
+		})),
 		log: vi.fn(async () => [{ oid: gitState.headCommit }]),
 		branch: vi.fn(async () => ({
 			branches: [gitState.currentBranch],
@@ -51,7 +56,9 @@ const mockModule = vi.hoisted(() => {
 	return {
 		git,
 		gitState,
-		workspaceExists: vi.fn(async (path: string) => path === '/session/.git/config'),
+		workspaceExists: vi.fn(
+			async (path: string) => path === '/session/.git/config',
+		),
 		workspaceReadFile: vi.fn(async () => '{"version":1,"kind":"app"}'),
 		workspaceWriteFile: vi.fn(async () => undefined),
 		workspaceMkdir: vi.fn(async () => undefined),
@@ -144,9 +151,8 @@ vi.mock('./entity-sources.ts', () => ({
 }))
 
 vi.mock('./artifacts.ts', async () => {
-	const actual = await vi.importActual<typeof import('./artifacts.ts')>(
-		'./artifacts.ts',
-	)
+	const actual =
+		await vi.importActual<typeof import('./artifacts.ts')>('./artifacts.ts')
 	return {
 		...actual,
 		resolveSessionRepo: (...args: Array<unknown>) =>
@@ -157,7 +163,8 @@ vi.mock('./artifacts.ts', async () => {
 })
 
 vi.mock('./manifest.ts', () => ({
-	parseRepoManifest: (...args: Array<unknown>) => mockModule.parseRepoManifest(...args),
+	parseRepoManifest: (...args: Array<unknown>) =>
+		mockModule.parseRepoManifest(...args),
 }))
 
 const { RepoSession } = await import('./repo-session-do.ts')
@@ -199,7 +206,8 @@ function setCommonSessionFixtures() {
 	})
 	mockModule.resolveSessionRepo.mockResolvedValue({
 		info: vi.fn(async () => ({
-			remote: 'https://acct.artifacts.cloudflare.net/git/default/session-repo.git',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/session-repo.git',
 		})),
 		createToken: vi.fn(async () => ({
 			plaintext: 'art_session_secret?expires=1760000200',
@@ -208,7 +216,8 @@ function setCommonSessionFixtures() {
 	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
 		info: vi.fn(async () => ({
 			defaultBranch: 'main',
-			remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
 		})),
 		createToken: vi.fn(async () => ({
 			plaintext: 'art_source_secret?expires=1760000100',

@@ -4,9 +4,7 @@ export type UiArtifactRow = {
 	title: string
 	description: string
 	sourceId: string | null
-	clientCode: string
-	serverCode: string | null
-	serverCodeId: string
+	hasServerCode: boolean
 	parameters: string | null
 	hidden: boolean
 	created_at: string
@@ -14,7 +12,7 @@ export type UiArtifactRow = {
 }
 
 export function hasUiArtifactServerCode(
-	serverCode: string | null | undefined,
-): serverCode is string {
-	return typeof serverCode === 'string' && serverCode.trim().length > 0
+	hasServerCode: boolean | null | undefined,
+): hasServerCode is true {
+	return hasServerCode === true
 }

@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 const {
 	buildArtifactsGitAuth,
+	buildAuthenticatedArtifactsRemote,
 	getArtifactsBinding,
 	parseArtifactTokenSecret,
 	resolveArtifactSourceRepo,
@@ -13,8 +14,9 @@ afterEach(() => {
 
 test('artifacts REST client supports get, create, token, and fork operations', async () => {
 	let getRepo1Count = 0
-	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
-		async (input, init) => {
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
 			const method = init?.method ?? 'GET'
 			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
@@ -46,7 +48,8 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 							last_push_at: null,
 							source: null,
 							read_only: false,
-							remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
 						},
 						errors: [],
 						messages: [],
@@ -66,7 +69,8 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 							name: 'repo-1',
 							description: null,
 							default_branch: 'main',
-							remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
 							token: 'art_v1_create?expires=1760000000',
 						},
 						errors: [],
@@ -106,7 +110,8 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 							name: 'repo-copy',
 							description: null,
 							default_branch: 'main',
-							remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-copy.git',
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/repo-copy.git',
 							token: 'art_v1_fork?expires=1760000200',
 						},
 						errors: [],
@@ -119,8 +124,7 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 				)
 			}
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		},
-	)
+		})
 
 	const env = {
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
@@ -151,15 +155,15 @@ test('artifacts REST client supports get, create, token, and fork operations', a
 		scope: 'read',
 		expiresAt: '2026-10-09T08:55:00.000Z',
 	})
-	await expect(repo.fork({ name: 'repo-copy', readOnly: false })).resolves.toMatchObject(
-		{
-			id: 'repo_2',
-			name: 'repo-copy',
-			defaultBranch: 'main',
-			remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-copy.git',
-			token: 'art_v1_fork?expires=1760000200',
-		},
-	)
+	await expect(
+		repo.fork({ name: 'repo-copy', readOnly: false }),
+	).resolves.toMatchObject({
+		id: 'repo_2',
+		name: 'repo-copy',
+		defaultBranch: 'main',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-copy.git',
+		token: 'art_v1_fork?expires=1760000200',
+	})
 
 	expect(fetchMock).toHaveBeenCalledTimes(6)
 })
@@ -193,8 +197,9 @@ test('artifacts REST client uses fallback API error text when envelope errors ar
 })
 
 test('artifacts REST client rejects tokens without parseable expiry timestamps', async () => {
-	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
-		async (input, init) => {
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
 			const method = init?.method ?? 'GET'
 			if (method === 'POST' && url.pathname.endsWith('/repos')) {
@@ -206,7 +211,8 @@ test('artifacts REST client rejects tokens without parseable expiry timestamps',
 							name: 'repo-1',
 							description: null,
 							default_branch: 'main',
-							remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
 							token: 'art_v1_missing_expiry',
 						},
 						errors: [],
@@ -219,8 +225,7 @@ test('artifacts REST client rejects tokens without parseable expiry timestamps',
 				)
 			}
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		},
-	)
+		})
 
 	const env = {
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
@@ -240,10 +245,19 @@ test('artifacts git auth uses x username and strips expiry from password', () =>
 	expect(parseArtifactTokenSecret('art_v1_secret?expires=1760000100')).toBe(
 		'art_v1_secret',
 	)
-	expect(buildArtifactsGitAuth({ token: 'art_v1_secret?expires=1760000100' })).toEqual(
-		{
-			username: 'x',
-			password: 'art_v1_secret',
-		},
-	)
+	expect(
+		buildArtifactsGitAuth({ token: 'art_v1_secret?expires=1760000100' }),
+	).toEqual({
+		username: 'x',
+		password: 'art_v1_secret',
+	})
+})
+
+test('authenticated artifact remotes allow loopback http for local mocks', () => {
+	expect(
+		buildAuthenticatedArtifactsRemote({
+			remote: 'http://127.0.0.1:8787/git/default/repo-1.git',
+			token: 'art_v1_secret?expires=1760000100',
+		}),
+	).toBe('http://x:art_v1_secret@127.0.0.1:8787/git/default/repo-1.git')
 })

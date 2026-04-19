@@ -35,16 +35,16 @@ Quick notes for getting a local kody environment running.
 - `npm run dev` (starts mock API servers automatically, the main worker, and the
   local home connector; it sets `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and
   `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
-  to the local Cloudflare API mock Worker for the internal Cloudflare API client,
-  local email sending, and Artifacts REST repo create/get/list/token/fork calls.
-  Those REST calls do not hit the live Cloudflare Artifacts control plane during
-  normal local development. The mock currently covers only the REST control
-  plane; repo-session git clone/pull/push flows still need a real Git-capable
-  Artifacts remote and are not fully simulated by the local mock. Unless you
-  already set `CLOUDFLARE_EMAIL_FROM`, the launcher also defaults it to
-  `reset@kody.dev`. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare
-  mock entirely. The home connector receives the resolved worker origin via
-  `WORKER_BASE_URL`. When
+  to the local Cloudflare API mock Worker for the internal Cloudflare API
+  client, local email sending, and Artifacts REST repo
+  create/get/list/token/fork calls. Those REST calls do not hit the live
+  Cloudflare Artifacts control plane during normal local development. The mock
+  currently covers only the REST control plane; repo-session git clone/pull/push
+  flows still need a real Git-capable Artifacts remote and are not fully
+  simulated by the local mock. Unless you already set `CLOUDFLARE_EMAIL_FROM`,
+  the launcher also defaults it to `reset@kody.dev`. Set
+  `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The home
+  connector receives the resolved worker origin via `WORKER_BASE_URL`. When
   `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
   it to both the worker and the connector so the outbound registration handshake
   succeeds in local development. The main worker and home connector stream logs

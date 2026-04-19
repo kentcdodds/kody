@@ -14,7 +14,6 @@ import {
 	buildFacetClassExportName,
 	buildFacetName,
 } from '#mcp/app-runner-facet-names.ts'
-import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
 import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const defaultAppRateLimit = 120
@@ -661,7 +660,7 @@ class AppRunnerBase extends DurableObject<Env> {
 				503,
 			)
 		}
-		if (!hasUiArtifactServerCode(config.serverCode)) {
+		if (!config.serverCode) {
 			throw jsonResponse(
 				{
 					ok: false,

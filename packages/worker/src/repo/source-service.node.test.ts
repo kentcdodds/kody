@@ -52,7 +52,9 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 							if (query.includes('INSERT INTO entity_sources')) {
 								return { meta: { changes: 1 } }
 							}
-							throw new Error(`Unexpected run query: ${query} ${params.join(',')}`)
+							throw new Error(
+								`Unexpected run query: ${query} ${params.join(',')}`,
+							)
 						},
 					}
 				},
@@ -61,14 +63,12 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 	} as unknown as D1Database
 
 	let getRepoCount = 0
-	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
-		async (input, init) => {
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
 			const method = init?.method ?? 'GET'
-			if (
-				method === 'GET' &&
-				url.pathname.endsWith('/repos/skill-skill-1')
-			) {
+			if (method === 'GET' && url.pathname.endsWith('/repos/skill-skill-1')) {
 				getRepoCount += 1
 				if (getRepoCount === 1) {
 					return new Response(
@@ -118,7 +118,8 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 							name: 'skill-skill-1',
 							description: null,
 							default_branch: 'main',
-							remote: 'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
+							remote:
+								'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
 							token: 'art_v1_create?expires=1760000000',
 						},
 						errors: [],
@@ -131,8 +132,7 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 				)
 			}
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		},
-	)
+		})
 
 	const source = await ensureEntitySource({
 		db,
@@ -152,7 +152,8 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 	expect(source.repo_id).toBe('skill-skill-1')
 	expect(source.bootstrapAccess).toEqual({
 		defaultBranch: 'main',
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/default/skill-skill-1.git',
 		token: 'art_v1_create?expires=1760000000',
 		expiresAt: '2025-10-09T08:53:20.000Z',
 	})

@@ -195,10 +195,8 @@ test('entity detail formatting includes saved app backend metadata', () => {
 			user_id: 'user-123',
 			title: 'Facet counter',
 			description: 'Saved app with a facet backend',
-			clientCode: '<main>Counter</main>',
-			serverCode:
-				"import { DurableObject } from 'cloudflare:workers'; export class App extends DurableObject {}",
-			serverCodeId: 'server-code-123',
+			sourceId: 'source-app-123',
+			hasServerCode: true,
 			parameters: null,
 			hidden: false,
 			created_at: '2026-03-20T00:00:00.000Z',

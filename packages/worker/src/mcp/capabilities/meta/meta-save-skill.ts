@@ -23,6 +23,7 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildSkillSourceFiles } from '#worker/repo/source-templates.ts'
 import { requireMcpUser } from './require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import { readRepoModuleSource } from '#worker/repo/repo-module-source.ts'
 
 function parseJsonStringArray(raw: string | null): Array<string> {
 	if (raw == null) return []
@@ -34,6 +35,22 @@ function parseJsonStringArray(raw: string | null): Array<string> {
 	} catch {
 		return []
 	}
+}
+
+async function readSkillModuleSource(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceId: string
+}) {
+	return readRepoModuleSource({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		expectedKind: 'skill',
+		sessionIdPrefix: 'skill-source',
+	})
 }
 
 const inputSchema = z.object({
@@ -61,7 +78,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'Codemode snippet as accepted by execute (async arrow or equivalent after normalization).',
+			'Module source for the saved skill entrypoint. It must default export a function so Kody can invoke it with execute semantics.',
 		),
 	search_text: z
 		.string()
@@ -148,8 +165,22 @@ export const metaSaveSkillCapability = defineDomainCapability(
 				entityKind: 'skill',
 				entityId: skillId,
 				sourceRoot: '/',
+				requirePersistence: true,
 			})
 			const previousPublishedCommit = source.published_commit
+			let previousModuleSource: string | null = null
+			if (existing) {
+				try {
+					previousModuleSource = await readSkillModuleSource({
+						env: ctx.env,
+						baseUrl: ctx.callerContext.baseUrl,
+						userId: user.userId,
+						sourceId: source.id,
+					})
+				} catch {
+					previousModuleSource = null
+				}
+			}
 
 			if (existing) {
 				const updated = await updateMcpSkill(
@@ -230,7 +261,6 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						collection_name: existing.collection_name,
 						collection_slug: existing.collection_slug,
 						keywords: existing.keywords,
-						code: existing.code,
 						search_text: existing.search_text,
 						uses_capabilities: existing.uses_capabilities,
 						parameters: existing.parameters,
@@ -247,43 +277,50 @@ export const metaSaveSkillCapability = defineDomainCapability(
 						embedText: oldEmbed,
 						collectionSlug: existing.collection_slug,
 					})
-					const restoredPublishedCommit = await syncArtifactSourceSnapshot({
-						env: ctx.env,
-						userId: user.userId,
-						baseUrl: ctx.callerContext.baseUrl,
-						sourceId: source.id,
-						files: buildSkillSourceFiles({
-							title: existing.title,
-							description: existing.description,
-							keywords: parseJsonStringArray(existing.keywords),
-							searchText: existing.search_text ?? null,
-							collection: existing.collection_name,
-							readOnly: existing.read_only === 1,
-							idempotent: existing.idempotent === 1,
-							destructive: existing.destructive === 1,
-							usesCapabilities: parseJsonStringArray(
-								existing.uses_capabilities,
-							),
-							parameters: skillParameterSchema
-								.array()
-								.safeParse(
-									existing.parameters == null
-										? null
-										: JSON.parse(existing.parameters),
-								).success
-								? existing.parameters == null
-									? null
-									: (JSON.parse(existing.parameters) as Array<{
-											name: string
-											description: string
-											type: 'string' | 'number' | 'boolean' | 'json'
-											required?: boolean
-											default?: unknown
-										}>)
-								: null,
-							code: existing.code,
-						}),
-					})
+					const restoredPublishedCommit =
+						previousPublishedCommit == null || previousModuleSource == null
+							? null
+							: await syncArtifactSourceSnapshot({
+									env: ctx.env,
+									userId: user.userId,
+									baseUrl: ctx.callerContext.baseUrl,
+									sourceId: source.id,
+									files: buildSkillSourceFiles({
+										title: existing.title,
+										description: existing.description,
+										keywords: parseJsonStringArray(existing.keywords),
+										searchText: existing.search_text ?? null,
+										collection: existing.collection_name,
+										readOnly: existing.read_only === 1,
+										idempotent: existing.idempotent === 1,
+										destructive: existing.destructive === 1,
+										usesCapabilities: parseJsonStringArray(
+											existing.uses_capabilities,
+										),
+										parameters: skillParameterSchema
+											.array()
+											.safeParse(
+												existing.parameters == null
+													? null
+													: JSON.parse(existing.parameters),
+											).success
+											? existing.parameters == null
+												? null
+												: (JSON.parse(existing.parameters) as Array<{
+														name: string
+														description: string
+														type:
+															| 'string'
+															| 'number'
+															| 'boolean'
+															| 'json'
+														required?: boolean
+														default?: unknown
+													}>)
+											: null,
+										code: previousModuleSource,
+									}),
+								})
 					await updateEntitySource(ctx.env.APP_DB, {
 						id: source.id,
 						userId: user.userId,

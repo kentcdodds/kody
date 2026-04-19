@@ -27,7 +27,6 @@ test('job_upsert forwards repo-backed fields on create', async () => {
 		version: 1,
 		id: 'job-1',
 		name: 'Repo-backed create',
-		code: null,
 		sourceId: 'source-1',
 		publishedCommit: 'commit-1',
 		storageId: 'job:job-1',
@@ -48,7 +47,7 @@ test('job_upsert forwards repo-backed fields on create', async () => {
 	await jobUpsertCapability.handler(
 		{
 			name: 'Repo-backed create',
-			code: null,
+			code: 'export default async () => ({ ok: true })',
 			sourceId: 'source-1',
 			publishedCommit: 'commit-1',
 			schedule: { type: 'interval', every: '15m' },
@@ -68,7 +67,7 @@ test('job_upsert forwards repo-backed fields on create', async () => {
 			baseUrl: 'https://heykody.dev',
 		}),
 		body: {
-			code: null,
+			code: 'export default async () => ({ ok: true })',
 			name: 'Repo-backed create',
 			sourceId: 'source-1',
 			publishedCommit: 'commit-1',
@@ -85,7 +84,6 @@ test('job_upsert forwards repo-backed fields on update', async () => {
 		version: 1,
 		id: 'job-1',
 		name: 'Repo-backed update',
-		code: null,
 		sourceId: 'source-1',
 		publishedCommit: 'commit-2',
 		storageId: 'job:job-1',
@@ -108,7 +106,7 @@ test('job_upsert forwards repo-backed fields on update', async () => {
 			id: 'job-1',
 			sourceId: 'source-1',
 			publishedCommit: 'commit-2',
-			code: null,
+			code: 'export default async () => ({ ok: true })',
 		},
 		{
 			env: {} as Env,
@@ -126,7 +124,7 @@ test('job_upsert forwards repo-backed fields on update', async () => {
 		}),
 		body: {
 			id: 'job-1',
-			code: null,
+			code: 'export default async () => ({ ok: true })',
 			sourceId: 'source-1',
 			publishedCommit: 'commit-2',
 		},
@@ -148,7 +146,6 @@ test('job_upsert forwards repo check policy on create', async () => {
 		version: 1,
 		id: 'job-2',
 		name: 'Repo-backed create with policy',
-		code: null,
 		sourceId: 'source-2',
 		publishedCommit: 'commit-2',
 		repoCheckPolicy: {
@@ -172,7 +169,7 @@ test('job_upsert forwards repo check policy on create', async () => {
 	await jobUpsertCapability.handler(
 		{
 			name: 'Repo-backed create with policy',
-			code: null,
+			code: 'export default async () => ({ ok: true })',
 			sourceId: 'source-2',
 			publishedCommit: 'commit-2',
 			repoCheckPolicy: {
