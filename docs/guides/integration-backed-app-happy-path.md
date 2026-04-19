@@ -21,7 +21,7 @@ quickly.
      and `/api/action`.
    - Keep `clientCode` mostly UI plus `kodyWidget.appBackend.fetch(...)` calls.
 5. Open the saved app and iterate.
-   - Save with `ui_save_app`.
+   - Save with `app_save`.
    - Reopen with `open_generated_ui({ app_id })`.
    - Iterate on the hosted app instead of repeatedly pasting large inline HTML
      blobs back into the model context.

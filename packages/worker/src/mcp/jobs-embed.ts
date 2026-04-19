@@ -31,5 +31,5 @@ export function buildJobEmbedText(
 }
 
 export function buildJobUsage(job: Pick<JobView, 'id'>) {
-	return `Inspect with job_get: ${JSON.stringify({ id: job.id })}. Trigger immediately with job_run_now: ${JSON.stringify({ id: job.id })}.`
+	return `Trigger this app job with app_run_job: ${JSON.stringify({ app_id: job.id, job_id: job.id })}.`
 }
