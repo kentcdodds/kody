@@ -33,9 +33,6 @@ import {
 } from '#worker/repo/repo-codemode-execution.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import {
-	processDueJobs,
-} from '#worker/jobs/process-due-jobs.ts'
-import {
 	computeNextRunAt,
 	formatScheduleSummary,
 	normalizeJobSchedule,
@@ -47,12 +44,10 @@ import {
 	deleteAppRow,
 	getAppRowById,
 	insertAppRow,
-	listAllApps,
 	listAppRowsByUserId,
 	updateAppRow,
 } from './repo.ts'
 import {
-	type AppExecutionOutcome,
 	type AppExecutionResult,
 	type AppJobRecord,
 	type AppRecord,

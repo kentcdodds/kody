@@ -426,7 +426,7 @@ export function toSlimStructuredMatches(input: {
 				usage: `{{secret:${match.name}|scope=user}}`,
 			}
 		}
-		throw new Error(`Unhandled search match type: ${match.type}`)
+		throw new Error('Unhandled search match type.')
 	})
 }
 

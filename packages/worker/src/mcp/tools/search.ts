@@ -13,7 +13,6 @@ import {
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
 import {
 	getUiArtifactById,
 	listUiArtifactsByUserId,
@@ -34,7 +33,6 @@ import {
 } from '#worker/home/status.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
-import { type JobView } from '#worker/jobs/types.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -163,9 +161,7 @@ https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 } as const
 
 type OptionalSearchRowsResult = {
-	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
-	jobRows: Array<JobView>
 	userSecretRows: Array<SecretSearchRow>
 	userValueRows: Array<ValueMetadata>
 	warnings: Array<string>
@@ -224,17 +220,13 @@ export async function loadDownHomeConnectorStatus(input: {
 
 export async function loadOptionalSearchRows(input: {
 	userId: string | null
-	loadSkills: () => Promise<Array<McpSkillRow>>
 	loadUiArtifacts: () => Promise<Array<UiArtifactRow>>
-	loadJobs?: () => Promise<Array<JobView>>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
 	loadUserValues: () => Promise<Array<ValueMetadata>>
 }): Promise<OptionalSearchRowsResult> {
 	if (!input.userId) {
 		return {
-			skillRows: [],
 			uiArtifactRows: [],
-			jobRows: [],
 			userSecretRows: [],
 			userValueRows: [],
 			warnings: [],
@@ -242,29 +234,12 @@ export async function loadOptionalSearchRows(input: {
 	}
 
 	const warnings: Array<string> = []
-	const [
-		skillRowsResult,
-		uiArtifactRowsResult,
-		jobRowsResult,
-		userSecretRowsResult,
-		userValueRowsResult,
-	] = await Promise.allSettled([
-		input.loadSkills(),
-		input.loadUiArtifacts(),
-		input.loadJobs ? input.loadJobs() : Promise.resolve([]),
-		input.loadUserSecrets(),
-		input.loadUserValues(),
-	])
-
-	const skillRows =
-		skillRowsResult.status === 'fulfilled' ? skillRowsResult.value : []
-	if (skillRowsResult.status === 'rejected') {
-		const message =
-			skillRowsResult.reason instanceof Error
-				? skillRowsResult.reason.message
-				: String(skillRowsResult.reason)
-		warnings.push(`Saved skills are temporarily unavailable: ${message}`)
-	}
+	const [uiArtifactRowsResult, userSecretRowsResult, userValueRowsResult] =
+		await Promise.allSettled([
+			input.loadUiArtifacts(),
+			input.loadUserSecrets(),
+			input.loadUserValues(),
+		])
 
 	const uiArtifactRows =
 		uiArtifactRowsResult.status === 'fulfilled'
@@ -276,16 +251,6 @@ export async function loadOptionalSearchRows(input: {
 				? uiArtifactRowsResult.reason.message
 				: String(uiArtifactRowsResult.reason)
 		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
-	}
-
-	const jobRows =
-		jobRowsResult.status === 'fulfilled' ? jobRowsResult.value : []
-	if (jobRowsResult.status === 'rejected') {
-		const message =
-			jobRowsResult.reason instanceof Error
-				? jobRowsResult.reason.message
-				: String(jobRowsResult.reason)
-		warnings.push(`Saved jobs are temporarily unavailable: ${message}`)
 	}
 
 	const userSecretRows =
@@ -311,9 +276,7 @@ export async function loadOptionalSearchRows(input: {
 	}
 
 	return {
-		skillRows,
 		uiArtifactRows,
-		jobRows,
 		userSecretRows,
 		userValueRows,
 		warnings,
@@ -332,12 +295,10 @@ async function loadSearchRowsAndRegistry(input: {
 		}),
 		loadOptionalSearchRows({
 			userId: input.userId,
-			loadSkills: () => Promise.resolve([]),
 			loadUiArtifacts: () =>
 				listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
 					hidden: false,
 				}),
-			loadJobs: () => Promise.resolve([]),
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({
 					env: input.agent.getEnv(),
@@ -576,9 +537,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							entity: args.entity,
 							searchRows: {
 								registry: searchRows.registry,
-								skillRows: searchRows.skillRows,
 								uiArtifactRows: searchRows.uiArtifactRows,
-								jobRows: searchRows.jobRows,
 								userSecretRows: searchRows.userSecretRows,
 								userValueRows: searchRows.userValueRows,
 								warnings: searchRows.warnings,
@@ -594,13 +553,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						baseUrl,
 						env: agent.getEnv(),
 						query: args.query!,
-						skillCollectionSlug: searchRows.skillCollectionSlug,
 						limit,
 						specs: searchRows.registry.capabilitySpecs,
 						userId,
-						skillRows: searchRows.skillRows,
 						uiArtifactRows: searchRows.uiArtifactRows,
-						jobRows: searchRows.jobRows,
 						userSecretRows: searchRows.userSecretRows,
 						userValueRows: searchRows.userValueRows,
 						appSecretsByAppId: searchRows.appSecretsByAppId,

@@ -14,12 +14,9 @@ import {
 	listAppSecretsByAppIds,
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
-import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
-import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
 import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { listJobs } from '#worker/jobs/service.ts'
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -43,11 +40,10 @@ export async function createAgentTurnToolSet(input: {
 	return {
 		search: tool({
 			description:
-				'Search Kody capabilities, saved skills, apps, values, connectors, and secret references using a natural language query.',
+				'Search Kody capabilities, saved apps, values, connectors, and secret references using a natural language query.',
 			inputSchema: z.object({
 				query: z.string().min(1),
 				limit: z.number().int().min(1).max(50).optional(),
-				skill_collection: z.string().min(1).optional(),
 			}),
 			execute: async (args) => {
 				const userId = input.callerContext.user?.userId ?? null
@@ -57,15 +53,9 @@ export async function createAgentTurnToolSet(input: {
 				})
 				const optionalRows = await loadOptionalSearchRows({
 					userId,
-					loadSkills: () => listMcpSkillsByUserId(input.env.APP_DB, userId!),
 					loadUiArtifacts: () =>
 						listUiArtifactsByUserId(input.env.APP_DB, userId!, {
 							hidden: false,
-						}),
-					loadJobs: () =>
-						listJobs({
-							env: input.env,
-							userId: userId!,
 						}),
 					loadUserSecrets: () =>
 						listUserSecretsForSearch({
@@ -83,9 +73,6 @@ export async function createAgentTurnToolSet(input: {
 							},
 						}),
 				})
-				const skillCollectionSlug = args.skill_collection?.trim()
-					? slugifySkillCollectionName(args.skill_collection)
-					: undefined
 				const appSecretsByAppId = userId
 					? await listAppSecretsByAppIds({
 							env: input.env,
@@ -97,13 +84,10 @@ export async function createAgentTurnToolSet(input: {
 					baseUrl: input.callerContext.baseUrl,
 					env: input.env,
 					query: args.query,
-					skillCollectionSlug,
 					limit: args.limit ?? defaultSearchLimit,
 					specs: registry.capabilitySpecs,
 					userId,
-					skillRows: optionalRows.skillRows,
 					uiArtifactRows: optionalRows.uiArtifactRows,
-					jobRows: optionalRows.jobRows,
 					userSecretRows: optionalRows.userSecretRows,
 					userValueRows: optionalRows.userValueRows,
 					appSecretsByAppId,

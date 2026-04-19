@@ -2,8 +2,6 @@ import {
 	CAPABILITY_SEARCH_RRF_K,
 	cosineSimilarity,
 	deterministicEmbedding,
-	embedTextForVectorize,
-	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 	lexicalScore,
 	type CapabilitySearchHit,
@@ -18,9 +16,6 @@ import {
 	parseConnectorJson,
 	parseConnectorValueName,
 } from '#mcp/capabilities/values/connector-shared.ts'
-import { buildSkillEmbedText } from '#mcp/skills/skill-embed-and-flags.ts'
-import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
-import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
 import {
 	type SecretMetadata,
 	type SecretSearchRow,
@@ -35,23 +30,6 @@ import {
 } from '#mcp/ui-artifacts-search.ts'
 import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type ValueMetadata, type ValueScope } from '#mcp/values/types.ts'
-import { type JobView } from '#worker/jobs/types.ts'
-import { buildJobEmbedText, buildJobUsage } from '#mcp/jobs-embed.ts'
-
-function parseJsonStringArray(raw: string): Array<string> {
-	try {
-		const v = JSON.parse(raw) as unknown
-		if (!Array.isArray(v)) return []
-		return v.filter((x): x is string => typeof x === 'string')
-	} catch {
-		return []
-	}
-}
-
-function buildSkillUsage(skillName: string): string {
-	const runArgs = JSON.stringify({ name: skillName })
-	return `Run with meta_run_skill: ${runArgs}. Optionally include "params": { ... }.`
-}
 
 function normalizeSearchPhrase(value: string | null | undefined): string {
 	return (value ?? '')
@@ -71,27 +49,6 @@ function scoreSkillPhraseMatch(
 	if (normalizedValue === normalizedQuery) return 1.5
 	if (normalizedValue.includes(normalizedQuery)) return 1
 	return 0
-}
-
-function scoreSkillLexicalMatch(
-	query: string,
-	row: McpSkillRow,
-	doc: string,
-	keywords: ReadonlyArray<string>,
-): number {
-	const normalizedQuery = normalizeSearchPhrase(query)
-	let bonus = 0
-
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.title) * 1.5
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.description) * 1.25
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.search_text) * 1
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.collection_name) * 0.25
-	for (const keyword of keywords) {
-		bonus += scoreSkillPhraseMatch(normalizedQuery, keyword) * 0.5
-	}
-
-	return lexicalScore(query, doc) + bonus
 }
 
 type ValueLexicalFields = Pick<
@@ -242,56 +199,6 @@ function buildConnectorEmbedDoc(entry: ConnectorSearchEntry): string {
 	].join('\n')
 }
 
-function skillRowEmbedDoc(
-	row: McpSkillRow,
-	specs: Record<string, CapabilitySpec>,
-): string {
-	const keywords = parseJsonStringArray(row.keywords)
-	const parameters = parseSkillParameters(row.parameters)
-	let inferred: Array<string> = []
-	try {
-		const v = JSON.parse(row.inferred_capabilities) as unknown
-		if (Array.isArray(v)) {
-			inferred = v.filter((x): x is string => typeof x === 'string')
-		}
-	} catch {
-		inferred = []
-	}
-	return buildSkillEmbedText({
-		skillName: row.name,
-		title: row.title,
-		description: row.description,
-		collectionName: row.collection_name,
-		collectionSlug: row.collection_slug,
-		keywords,
-		searchText: row.search_text,
-		inferredCapabilities: inferred,
-		parameters,
-		specs,
-	})
-}
-
-export type SkillSearchHitSummary = {
-	type: 'skill'
-	skillName: string
-	domain: 'meta'
-	collection: string | null
-	collectionSlug: string | null
-	title: string
-	description: string
-	keywords: Array<string>
-	usage: string
-	readOnly: boolean
-	idempotent: boolean
-	destructive: boolean
-	inferencePartial: boolean
-	fusedScore: number
-	lexicalRank?: number
-	vectorRank?: number
-}
-
-export type SkillSearchHit = SkillSearchHitSummary
-
 export type CapabilitySearchHitTyped = {
 	type: 'capability'
 } & CapabilitySearchHit
@@ -354,53 +261,11 @@ export type ConnectorSearchHitSummary = {
 
 export type ConnectorSearchHit = ConnectorSearchHitSummary
 
-export type JobSearchHitSummary = {
-	type: 'job'
-	jobId: string
-	domain: 'jobs'
-	title: string
-	description: string
-	scheduleSummary: string
-	sourceId: string | null
-	publishedCommit: string | null
-	storageId: string
-	usage: string
-	fusedScore: number
-	lexicalRank?: number
-	vectorRank?: number
-}
-
-export type JobSearchHit = JobSearchHitSummary
-
-function scoreJobLexicalMatch(
-	query: string,
-	row: JobView,
-	doc: string,
-): number {
-	const normalizedQuery = normalizeSearchPhrase(query)
-	let bonus = 0
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.name) * 2
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.scheduleSummary) * 1
-	bonus += scoreSkillPhraseMatch(normalizedQuery, row.sourceId ?? '') * 0.5
-	return lexicalScore(query, doc) + bonus
-}
-
-function buildJobEmbedDoc(row: JobView): string {
-	return buildJobEmbedText({
-		name: row.name,
-		scheduleSummary: row.scheduleSummary,
-		sourceId: row.sourceId,
-		publishedCommit: row.publishedCommit,
-	})
-}
-
 export type UnifiedSearchMatch =
 	| CapabilitySearchHitTyped
-	| SkillSearchHit
 	| SecretSearchHit
 	| ValueSearchHit
 	| ConnectorSearchHit
-	| JobSearchHit
 	| UiArtifactSearchHit
 
 function buildSecretUsage(name: string) {
@@ -474,282 +339,6 @@ function rowToConnectorHit(
 	}
 }
 
-function rowToSkillHit(
-	row: McpSkillRow,
-	fusedScore: number,
-	lexicalRank?: number,
-	vectorRank?: number,
-): SkillSearchHit {
-	const keywords = parseJsonStringArray(row.keywords)
-	return {
-		type: 'skill',
-		skillName: row.name,
-		domain: 'meta',
-		collection: row.collection_name,
-		collectionSlug: row.collection_slug,
-		title: row.title,
-		description: row.description,
-		keywords,
-		usage: buildSkillUsage(row.name),
-		readOnly: row.read_only === 1,
-		idempotent: row.idempotent === 1,
-		destructive: row.destructive === 1,
-		inferencePartial: row.inference_partial === 1,
-		fusedScore,
-		lexicalRank,
-		vectorRank,
-	}
-}
-
-function rowToJobHit(
-	row: JobView,
-	fusedScore: number,
-	lexicalRank?: number,
-	vectorRank?: number,
-): JobSearchHit {
-	return {
-		type: 'job',
-		jobId: row.id,
-		domain: 'jobs',
-		title: row.name,
-		description: row.scheduleSummary,
-		scheduleSummary: row.scheduleSummary,
-		sourceId: row.sourceId ?? null,
-		publishedCommit: row.publishedCommit ?? null,
-		storageId: row.storageId,
-		usage: buildJobUsage(row),
-		fusedScore,
-		lexicalRank,
-		vectorRank,
-	}
-}
-
-async function searchJobsForUser(input: {
-	env: Env
-	query: string
-	limit: number
-	userId: string
-	rows: Array<JobView>
-}): Promise<{ matches: Array<JobSearchHit>; offline: boolean }> {
-	const q = input.query.trim()
-	const rowById = new Map(input.rows.map((row) => [row.id, row] as const))
-	const ids = [...rowById.keys()]
-	const offline = isCapabilitySearchOffline(input.env)
-
-	if (ids.length === 0) {
-		return { matches: [], offline }
-	}
-
-	const docsById = Object.fromEntries(
-		input.rows.map((row) => [row.id, buildJobEmbedDoc(row)] as const),
-	)
-	const lexicalOrder = sortIdsByScore(ids, (id) =>
-		scoreJobLexicalMatch(q, rowById.get(id)!, docsById[id]!),
-	)
-
-	let vectorOrder: Array<string>
-	if (offline) {
-		const qVec = deterministicEmbedding(q)
-		const simById = Object.fromEntries(
-			ids.map((id) => {
-				const cVec = deterministicEmbedding(docsById[id]!)
-				return [id, cosineSimilarity(qVec, cVec)] as const
-			}),
-		)
-		vectorOrder = sortIdsByScore(ids, (id) => simById[id]!)
-	} else {
-		const index = getCapabilityVectorIndex(input.env)!
-		const qVec = await embedTextForVectorize(input.env, q)
-		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
-		const matches = await index.query(qVec, {
-			topK,
-			returnMetadata: 'none',
-			filter: {
-				kind: { $eq: 'job' },
-				userId: { $eq: input.userId },
-			},
-		})
-		const seen = new Set<string>()
-		const fromIndex: Array<string> = []
-		for (const match of matches.matches) {
-			if (typeof match.id !== 'string' || seen.has(match.id)) continue
-			if (!match.id.startsWith('job_')) continue
-			const jobId = match.id.slice('job_'.length)
-			if (!rowById.has(jobId)) continue
-			seen.add(match.id)
-			fromIndex.push(jobId)
-		}
-		vectorOrder = [...fromIndex, ...ids.filter((id) => !seen.has(`job_${id}`))]
-	}
-
-	const lexicalRankById = new Map<string, number>()
-	for (let index = 0; index < lexicalOrder.length; index += 1) {
-		lexicalRankById.set(lexicalOrder[index]!, index + 1)
-	}
-	const vectorRankById = new Map<string, number>()
-	for (let index = 0; index < vectorOrder.length; index += 1) {
-		vectorRankById.set(vectorOrder[index]!, index + 1)
-	}
-
-	const fused = reciprocalRankFusion(
-		[lexicalOrder, vectorOrder],
-		CAPABILITY_SEARCH_RRF_K,
-	)
-	const ordered = [...ids]
-		.sort((a, b) => (fused.get(b) ?? 0) - (fused.get(a) ?? 0))
-		.slice(0, Math.max(1, Math.min(input.limit, ids.length)))
-
-	return {
-		matches: ordered.map((id) =>
-			rowToJobHit(
-				rowById.get(id)!,
-				fused.get(id) ?? 0,
-				lexicalRankById.get(id),
-				vectorRankById.get(id),
-			),
-		),
-		offline,
-	}
-}
-
-async function searchSkillsForUser(input: {
-	env: Env
-	query: string
-	limit: number
-	specs: Record<string, CapabilitySpec>
-	userId: string
-	rows: Array<McpSkillRow>
-	collectionSlug?: string | null
-}): Promise<{ matches: Array<SkillSearchHit>; offline: boolean }> {
-	const q = input.query.trim()
-	const filteredRows =
-		input.collectionSlug == null
-			? input.rows
-			: input.rows.filter((row) => row.collection_slug === input.collectionSlug)
-	const idSet = new Map(filteredRows.map((r) => [r.id, r] as const))
-	const ids = [...idSet.keys()]
-	const offline = isCapabilitySearchOffline(input.env)
-
-	if (ids.length === 0) {
-		return { matches: [], offline }
-	}
-
-	const docsById = Object.fromEntries(
-		filteredRows.map(
-			(row) => [row.id, skillRowEmbedDoc(row, input.specs)] as const,
-		),
-	)
-	const keywordsById = Object.fromEntries(
-		filteredRows.map(
-			(row) => [row.id, parseJsonStringArray(row.keywords)] as const,
-		),
-	)
-	const lexicalScoreById = Object.fromEntries(
-		ids.map((id) => {
-			const row = idSet.get(id)!
-			return [
-				id,
-				scoreSkillLexicalMatch(q, row, docsById[id]!, keywordsById[id] ?? []),
-			] as const
-		}),
-	)
-
-	const lexicalOrder = sortIdsByScore(ids, (id) => lexicalScoreById[id]!)
-
-	let vectorOrder: Array<string>
-
-	if (offline) {
-		const qVec = deterministicEmbedding(q)
-		const simById = Object.fromEntries(
-			ids.map((id) => {
-				const cVec = deterministicEmbedding(docsById[id]!)
-				return [id, cosineSimilarity(qVec, cVec)] as const
-			}),
-		)
-		vectorOrder = sortIdsByScore(ids, (id) => simById[id]!)
-	} else {
-		const index = getCapabilityVectorIndex(input.env)!
-		const qVec = await embedTextForVectorize(input.env, q)
-		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
-		const rowById = idSet
-
-		async function collectSkillOrder(
-			filter?: VectorizeVectorMetadataFilter,
-		): Promise<Array<string>> {
-			const matches = await index.query(qVec, {
-				topK,
-				returnMetadata: 'none',
-				...(filter ? { filter } : {}),
-			})
-			const seenVec = new Set<string>()
-			const order: Array<string> = []
-			for (const m of matches.matches) {
-				if (typeof m.id !== 'string' || seenVec.has(m.id)) continue
-				if (!m.id.startsWith('skill_')) continue
-				const skillId = m.id.slice('skill_'.length)
-				const row = rowById.get(skillId)
-				if (!row || row.user_id !== input.userId) continue
-				seenVec.add(m.id)
-				order.push(skillId)
-			}
-			return order
-		}
-
-		let fromIndex = await collectSkillOrder({
-			kind: { $eq: 'skill' },
-			userId: { $eq: input.userId },
-			...(input.collectionSlug
-				? { collectionSlug: { $eq: input.collectionSlug } }
-				: {}),
-		})
-		if (fromIndex.length === 0) {
-			fromIndex = await collectSkillOrder({
-				kind: { $eq: 'skill' },
-				userId: { $eq: input.userId },
-			})
-		}
-		const seenSkillIds = new Set(fromIndex)
-		vectorOrder = [...fromIndex, ...ids.filter((id) => !seenSkillIds.has(id))]
-	}
-
-	const lexicalRankById = new Map<string, number>()
-	for (let r = 0; r < lexicalOrder.length; r += 1) {
-		lexicalRankById.set(lexicalOrder[r]!, r + 1)
-	}
-	const vectorRankById = new Map<string, number>()
-	for (let r = 0; r < vectorOrder.length; r += 1) {
-		vectorRankById.set(vectorOrder[r]!, r + 1)
-	}
-
-	const fused = reciprocalRankFusion(
-		[lexicalOrder, vectorOrder],
-		CAPABILITY_SEARCH_RRF_K,
-	)
-	const ordered = [...ids]
-		.sort((a, b) => {
-			const fusedDiff = (fused.get(b) ?? 0) - (fused.get(a) ?? 0)
-			if (fusedDiff !== 0) return fusedDiff
-			const lexicalDiff = lexicalScoreById[b]! - lexicalScoreById[a]!
-			if (lexicalDiff !== 0) return lexicalDiff
-			return (
-				(vectorRankById.get(a) ?? Number.MAX_SAFE_INTEGER) -
-				(vectorRankById.get(b) ?? Number.MAX_SAFE_INTEGER)
-			)
-		})
-		.slice(0, Math.max(1, Math.min(input.limit, ids.length)))
-
-	const matches = ordered.map((id) => {
-		const row = idSet.get(id)!
-		return rowToSkillHit(
-			row,
-			fused.get(id) ?? 0,
-			lexicalRankById.get(id),
-			vectorRankById.get(id),
-		)
-	})
-
-	return { matches, offline }
-}
 
 async function searchSecretsForUser(input: {
 	query: string
@@ -950,10 +539,7 @@ export async function searchUnified(input: {
 	limit: number
 	specs: Record<string, CapabilitySpec>
 	userId: string | null
-	skillCollectionSlug?: string | null
-	skillRows: Array<McpSkillRow>
 	uiArtifactRows: Array<UiArtifactRow>
-	jobRows?: Array<JobView>
 	userSecretRows: Array<SecretSearchRow>
 	userValueRows: Array<ValueMetadata>
 	appSecretsByAppId: Map<string, Array<SecretMetadata>>
@@ -976,19 +562,8 @@ export async function searchUnified(input: {
 		offline: offlineByEnv,
 	}
 
-	let skillResult: { matches: Array<SkillSearchHit>; offline: boolean } = {
-		matches: [],
-		offline: offlineByEnv,
-	}
 	let uiArtifactResult: {
 		matches: Array<UiArtifactSearchHit>
-		offline: boolean
-	} = {
-		matches: [],
-		offline: offlineByEnv,
-	}
-	let jobResult: {
-		matches: Array<JobSearchHit>
 		offline: boolean
 	} = {
 		matches: [],
@@ -1021,9 +596,7 @@ export async function searchUnified(input: {
 			secretResult,
 			valueResult,
 			connectorResult,
-			skillResult,
 			uiArtifactResult,
-			jobResult,
 		] = await Promise.all([
 			capResultPromise,
 			searchSecretsForUser({
@@ -1041,15 +614,6 @@ export async function searchUnified(input: {
 				limit: candidateLimit,
 				rows: input.userValueRows,
 			}),
-			searchSkillsForUser({
-				env: input.env,
-				query: input.query,
-				limit: candidateLimit,
-				specs: input.specs,
-				userId: input.userId,
-				collectionSlug: input.skillCollectionSlug,
-				rows: input.skillRows,
-			}),
 			searchUiArtifactsForUser({
 				baseUrl: input.baseUrl,
 				env: input.env,
@@ -1059,22 +623,12 @@ export async function searchUnified(input: {
 				rows: input.uiArtifactRows,
 				appSecretsByAppId: input.appSecretsByAppId,
 			}),
-			searchJobsForUser({
-				env: input.env,
-				query: input.query,
-				limit: candidateLimit,
-				userId: input.userId,
-				rows: input.jobRows ?? [],
-			}),
 		])
 	} else {
 		capResult = await capResultPromise
 	}
 
 	const capByName = new Map(capResult.matches.map((m) => [m.name, m] as const))
-	const skillByName = new Map(
-		skillResult.matches.map((m) => [m.skillName, m] as const),
-	)
 	const secretByName = new Map(
 		secretResult.matches.map((m) => [m.name, m] as const),
 	)
@@ -1084,27 +638,22 @@ export async function searchUnified(input: {
 	const connectorByName = new Map(
 		connectorResult.matches.map((m) => [m.connectorName, m] as const),
 	)
-	const jobById = new Map(jobResult.matches.map((m) => [m.jobId, m] as const))
 	const uiArtifactById = new Map(
 		uiArtifactResult.matches.map((m) => [m.appId, m] as const),
 	)
 	const capKeys = capResult.matches.map((m) => `c:${m.name}`)
-	const skillKeys = skillResult.matches.map((m) => `s:${m.skillName}`)
 	const secretKeys = secretResult.matches.map((m) => `u:${m.name}`)
 	const valueKeys = valueResult.matches.map((m) => `v:${m.valueId}`)
 	const connectorKeys = connectorResult.matches.map(
 		(m) => `n:${m.connectorName}`,
 	)
-	const jobKeys = jobResult.matches.map((m) => `j:${m.jobId}`)
 	const uiArtifactKeys = uiArtifactResult.matches.map((m) => `a:${m.appId}`)
 	const fusedCross = reciprocalRankFusion(
 		[
 			capKeys,
-			skillKeys,
 			secretKeys,
 			valueKeys,
 			connectorKeys,
-			jobKeys,
 			uiArtifactKeys,
 		],
 		CAPABILITY_SEARCH_RRF_K,
@@ -1112,11 +661,9 @@ export async function searchUnified(input: {
 	const allKeys = [
 		...new Set([
 			...capKeys,
-			...skillKeys,
 			...secretKeys,
 			...valueKeys,
 			...connectorKeys,
-			...jobKeys,
 			...uiArtifactKeys,
 		]),
 	]
@@ -1127,9 +674,6 @@ export async function searchUnified(input: {
 		if (key.startsWith('c:')) {
 			return capByName.get(key.slice(2))?.fusedScore ?? 0
 		}
-		if (key.startsWith('s:')) {
-			return skillByName.get(key.slice(2))?.fusedScore ?? 0
-		}
 		if (key.startsWith('u:')) {
 			return secretByName.get(key.slice(2))?.fusedScore ?? 0
 		}
@@ -1138,9 +682,6 @@ export async function searchUnified(input: {
 		}
 		if (key.startsWith('a:')) {
 			return uiArtifactById.get(key.slice(2))?.fusedScore ?? 0
-		}
-		if (key.startsWith('j:')) {
-			return jobById.get(key.slice(2))?.fusedScore ?? 0
 		}
 		return 0
 	}
@@ -1171,34 +712,6 @@ export async function searchUnified(input: {
 			const hit = capByName.get(key.slice(2))
 			return hit ? scoreCapabilityLexicalMatch(input.query, hit) : 0
 		}
-		if (key.startsWith('s:')) {
-			const hit = skillByName.get(key.slice(2))
-			if (!hit) return 0
-			return (
-				lexicalScore(
-					input.query,
-					[
-						hit.skillName,
-						hit.title,
-						hit.description,
-						hit.collection ?? '',
-						hit.keywords.join(' '),
-					].join('\n'),
-				) +
-				scoreSkillPhraseMatch(
-					normalizeSearchPhrase(input.query),
-					hit.skillName,
-				) *
-					2 +
-				scoreSkillPhraseMatch(normalizeSearchPhrase(input.query), hit.title) *
-					1.5 +
-				scoreSkillPhraseMatch(
-					normalizeSearchPhrase(input.query),
-					hit.description,
-				) *
-					1.25
-			)
-		}
 		if (key.startsWith('u:')) {
 			const hit = secretByName.get(key.slice(2))
 			return hit ? scoreSecretLexicalMatch(input.query, hit) : 0
@@ -1220,20 +733,6 @@ export async function searchUnified(input: {
 		if (key.startsWith('a:')) {
 			const hit = uiArtifactById.get(key.slice(2))
 			return hit ? scoreUiArtifactLexicalMatch(input.query, hit) : 0
-		}
-		if (key.startsWith('j:')) {
-			const hit = jobById.get(key.slice(2))
-			if (!hit) return 0
-			return lexicalScore(
-				input.query,
-				[
-					hit.title,
-					hit.description,
-					hit.scheduleSummary,
-					hit.sourceId ?? '',
-					hit.publishedCommit ?? '',
-				].join('\n'),
-			)
 		}
 		return 0
 	}
@@ -1262,12 +761,6 @@ export async function searchUnified(input: {
 			if (hit) {
 				matches.push({ type: 'capability', ...hit, fusedScore: score })
 			}
-		} else if (key.startsWith('s:')) {
-			const name = key.slice(2)
-			const hit = skillByName.get(name)
-			if (hit) {
-				matches.push({ ...hit, fusedScore: score })
-			}
 		} else if (key.startsWith('u:')) {
 			const name = key.slice(2)
 			const hit = secretByName.get(name)
@@ -1286,12 +779,6 @@ export async function searchUnified(input: {
 			if (hit) {
 				matches.push({ ...hit, fusedScore: score })
 			}
-		} else if (key.startsWith('j:')) {
-			const id = key.slice(2)
-			const hit = jobById.get(id)
-			if (hit) {
-				matches.push({ ...hit, fusedScore: score })
-			}
 		} else if (key.startsWith('a:')) {
 			const id = key.slice(2)
 			const hit = uiArtifactById.get(id)
@@ -1303,11 +790,9 @@ export async function searchUnified(input: {
 
 	const offline =
 		capResult.offline ||
-		skillResult.offline ||
 		secretResult.offline ||
 		valueResult.offline ||
 		connectorResult.offline ||
-		jobResult.offline ||
 		uiArtifactResult.offline
 	return { matches, offline }
 }
