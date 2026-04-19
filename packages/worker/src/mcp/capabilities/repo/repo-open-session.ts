@@ -7,10 +7,7 @@ import {
 	repoOpenSessionInputSchema,
 } from './repo-shared.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import {
-	resolveRepoSourceReference,
-	resolveRepoTargetFromSource,
-} from './repo-resolve-target.ts'
+import { resolveRepoSourceReference } from './repo-resolve-target.ts'
 
 export const repoOpenSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -57,11 +54,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				})
 				return {
 					...session,
-					resolved_target: await resolveRepoTargetFromSource({
-						db: ctx.env.APP_DB,
-						userId: user.userId,
-						sourceId: session.source_id,
-					}),
+					resolved_target: requested.resolvedTarget,
 				}
 			}
 			const sessionId =

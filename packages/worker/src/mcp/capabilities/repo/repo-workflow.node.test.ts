@@ -410,6 +410,96 @@ test('repo_open_session rejects an active conversation session for a different t
 	expect(rpc.openSession).not.toHaveBeenCalled()
 })
 
+test('repo_open_session reuses resolved target metadata when resuming an existing session', async () => {
+	mockModule.getActiveRepoSessionByConversation.mockReset()
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.getMcpSkillByNameInput.mockReset()
+	mockModule.listMcpSkillsByUserId.mockReset()
+	mockModule.getUiArtifactById.mockReset()
+	mockModule.getJobRowById.mockReset()
+	mockModule.listJobRowsByUserId.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+
+	mockModule.getMcpSkillByNameInput.mockResolvedValueOnce({
+		id: 'skill-1',
+		user_id: 'user-1',
+		name: 'triage-github-pr',
+		title: 'Triage GitHub PR',
+		description: 'Triages one PR',
+		source_id: 'source-skill-1',
+		keywords: '[]',
+		search_text: null,
+		uses_capabilities: null,
+		parameters: null,
+		collection_name: null,
+		collection_slug: null,
+		inferred_capabilities: '[]',
+		inference_partial: 0,
+		read_only: 1,
+		idempotent: 1,
+		destructive: 0,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValueOnce({
+		id: 'source-skill-1',
+		user_id: 'user-1',
+		entity_kind: 'skill',
+		entity_id: 'skill-1',
+		repo_id: 'repo-skill-1',
+		published_commit: 'commit-skill-1',
+		indexed_commit: 'commit-skill-1',
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce({
+		id: 'session-existing',
+		source_id: 'source-skill-1',
+	})
+	const rpc = createRepoRpc()
+	rpc.getSessionInfo.mockResolvedValueOnce({
+		id: 'session-existing',
+		source_id: 'source-skill-1',
+		source_root: '/',
+		base_commit: 'commit-skill-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'repo-skill-1-session-1',
+		session_repo_namespace: 'default',
+		conversation_id: 'conversation-1',
+		last_checkpoint_commit: 'commit-skill-1',
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		expires_at: null,
+		created_at: '2026-04-18T00:01:00.000Z',
+		updated_at: '2026-04-18T00:02:00.000Z',
+		published_commit: 'commit-skill-1',
+		manifest_path: 'kody.json',
+		entity_type: 'skill',
+	})
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+
+	const result = await repoOpenSessionCapability.handler(
+		{
+			target: { kind: 'skill', name: 'triage-github-pr' },
+			conversation_id: 'conversation-1',
+		},
+		createCapabilityContext(),
+	)
+
+	expect(result.resolved_target).toEqual({
+		kind: 'skill',
+		source_id: 'source-skill-1',
+		skill_id: 'skill-1',
+		name: 'triage-github-pr',
+	})
+	expect(mockModule.listMcpSkillsByUserId).not.toHaveBeenCalled()
+	expect(mockModule.getJobRowById).not.toHaveBeenCalled()
+	expect(mockModule.getUiArtifactById).not.toHaveBeenCalled()
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
+})
+
 test('repo_edit_flow applies edits, runs checks, and skips publish when checks fail', async () => {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
 	mockModule.getEntitySourceById.mockReset()
