@@ -15,8 +15,14 @@ function parsePackageAppPath(pathname: string) {
 	if (parts[0] !== 'packages') return null
 	const rawKodyId = parts[1]?.trim()
 	if (!rawKodyId) return null
+	let kodyId: string
+	try {
+		kodyId = decodeURIComponent(rawKodyId)
+	} catch {
+		return null
+	}
 	return {
-		kodyId: rawKodyId,
+		kodyId,
 		restPath: parts.length > 2 ? `/${parts.slice(2).join('/')}` : '/',
 	}
 }

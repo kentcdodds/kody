@@ -101,10 +101,9 @@ function createKnownMockToolResult(
 			typeof result.input.package_id === 'string' ? result.input.package_id : null
 		const kodyId =
 			typeof result.input.kody_id === 'string' ? result.input.kody_id : null
-		const hostedUrl =
-			packageId || kodyId
-				? `${baseUrl}/packages/${encodeURIComponent(kodyId ?? packageId ?? '')}`
-				: null
+		const hostedUrl = kodyId
+			? `${baseUrl}/packages/${encodeURIComponent(kodyId)}`
+			: null
 		return {
 			assistantText: [
 				'## Generated UI ready',
