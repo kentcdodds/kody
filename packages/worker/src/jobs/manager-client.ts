@@ -1,9 +1,15 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type JobRepoCheckPolicy } from './types.ts'
 
+export type JobManagerDebugStatus =
+	| 'missing_binding'
+	| 'idle'
+	| 'armed'
+	| 'out_of_sync'
+
 export type JobManagerDebugState = {
 	bindingAvailable: boolean
-	status: 'missing_binding' | 'idle' | 'armed' | 'out_of_sync'
+	status: JobManagerDebugStatus
 	storedUserId: string | null
 	alarmScheduledFor: string | null
 	nextRunnableJobId: string | null

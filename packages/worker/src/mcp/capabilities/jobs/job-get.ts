@@ -1,7 +1,6 @@
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { getJobInspection } from '#worker/jobs/service.ts'
 import {
 	buildJobInspectionOutput,
 	buildJobManagerDebugOutput,
@@ -23,6 +22,7 @@ export const jobGetCapability = defineDomainCapability(
 		outputSchema: jobGetOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const { getJobInspection } = await import('#worker/jobs/service.ts')
 			const inspection = await getJobInspection({
 				env: ctx.env,
 				userId: user.userId,

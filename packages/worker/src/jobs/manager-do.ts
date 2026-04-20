@@ -4,10 +4,12 @@ import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getNextRunnableJob, runDueJobsForUser, runJobNow } from './service.ts'
 import {
-	type JobManagerDebugState,
-	type JobManagerDebugStatus,
 	type JobRepoCheckPolicy,
 } from './types.ts'
+import {
+	type JobManagerDebugState,
+	type JobManagerDebugStatus,
+} from './manager-client.ts'
 
 const userIdStorageKey = 'user-id'
 
