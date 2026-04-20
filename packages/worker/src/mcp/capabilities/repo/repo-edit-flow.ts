@@ -89,7 +89,7 @@ export const repoEditFlowCapability = defineDomainCapability(
 			const editsSummary = {
 				dry_run: edits.dryRun,
 				total_changed: edits.totalChanged,
-				...(args.include_edits === true ? { edits: edits.edits } : {}),
+				...(args.include_edits ? { edits: edits.edits } : {}),
 			}
 			const buildFlowResponse = async (
 				checks: RepoEditFlowResult['checks'],

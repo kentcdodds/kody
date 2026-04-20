@@ -292,20 +292,17 @@ export const repoApplyPatchInputSchema = repoSessionIdSchema.extend({
 		),
 })
 
-export const repoApplyPatchEditSchema = z.object({
-	path: z.string(),
-	changed: z.boolean(),
-	content: z.string(),
-	diff: z.string(),
-})
-
-export const repoApplyPatchSummarySchema = z.object({
+export const repoApplyPatchResultSchema = z.object({
 	dry_run: z.boolean(),
 	total_changed: z.number().int().min(0),
-})
-
-export const repoApplyPatchResultSchema = repoApplyPatchSummarySchema.extend({
-	edits: z.array(repoApplyPatchEditSchema),
+	edits: z.array(
+		z.object({
+			path: z.string(),
+			changed: z.boolean(),
+			content: z.string(),
+			diff: z.string(),
+		}),
+	),
 })
 
 export const repoRunChecksInputSchema = repoSessionIdSchema
@@ -450,6 +447,12 @@ export const repoEditFlowInputSchema = z
 			.describe(
 				'Whether to roll back all edits when one instruction fails. Defaults to true.',
 			),
+		include_edits: z
+			.boolean()
+			.optional()
+			.describe(
+				'Whether to include the full applied edits array in the response. Defaults to false.',
+			),
 		run_checks: z
 			.boolean()
 			.optional()
@@ -461,12 +464,6 @@ export const repoEditFlowInputSchema = z
 			.optional()
 			.describe(
 				'Whether to publish after successful checks. Defaults to true. Publishing requires `run_checks` to stay enabled.',
-			),
-		include_edits: z
-			.boolean()
-			.optional()
-			.describe(
-				'Whether to include the per-file `edits` array in the response. Defaults to false to keep the payload compact.',
 			),
 	})
 	.superRefine((value, ctx) => {
@@ -586,8 +583,10 @@ export const repoEditFlowPublishSchema = z.union([
 export const repoEditFlowOutputSchema = z.object({
 	session: repoSessionInfoSchema,
 	resolved_target: repoResolvedTargetSchema,
-	edits: repoApplyPatchSummarySchema.extend({
-		edits: z.array(repoApplyPatchEditSchema).optional(),
+	edits: z.object({
+		dry_run: z.boolean(),
+		total_changed: z.number().int().min(0),
+		edits: repoApplyPatchResultSchema.shape.edits.optional(),
 	}),
 	checks: repoEditFlowChecksSchema,
 	publish: repoEditFlowPublishSchema,

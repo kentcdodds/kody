@@ -72,6 +72,9 @@ export async function handlePackageAppRequest(
 				kodyId: savedPackage.kodyId,
 				name: savedPackage.name,
 				sourceId: savedPackage.sourceId,
+				publishedCommit: packageSource.source.published_commit,
+				manifestPath: packageSource.source.manifest_path,
+				sourceRoot: packageSource.source.source_root,
 			},
 			sourceFiles: packageSource.files,
 			runtime: {

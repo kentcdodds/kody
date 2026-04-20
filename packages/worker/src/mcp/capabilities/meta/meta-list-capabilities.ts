@@ -72,6 +72,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 					capabilityDomainNames.apps,
 					capabilityDomainNames.coding,
 					capabilityDomainNames.home,
+					capabilityDomainNames.jobs,
 					capabilityDomainNames.math,
 					capabilityDomainNames.meta,
 				])

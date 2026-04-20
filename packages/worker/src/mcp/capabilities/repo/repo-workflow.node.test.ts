@@ -253,16 +253,16 @@ test('repo_open_session reuses resolved target metadata when resuming an existin
 		createCapabilityContext(),
 	)
 
+	expect(result.edits).toEqual({
+		dry_run: false,
+		total_changed: 1,
+	})
 	expect(result.resolved_target).toEqual({
 		kind: 'package',
 		source_id: 'source-package-1',
 		package_id: 'package-1',
 		kody_id: 'triage-github-pr',
 		name: '@kody/triage-github-pr',
-	})
-	expect(result.edits).toEqual({
-		dry_run: false,
-		total_changed: 1,
 	})
 })
 
@@ -364,6 +364,10 @@ test('repo_edit_flow applies edits, runs checks, and skips publish when checks f
 	expect(rpc.applyEdits).toHaveBeenCalledTimes(1)
 	expect(rpc.runChecks).toHaveBeenCalledTimes(1)
 	expect(rpc.publishSession).not.toHaveBeenCalled()
+	expect(result.edits).toEqual({
+		dry_run: false,
+		total_changed: 1,
+	})
 	expect(result.checks).toEqual({
 		status: 'failed',
 		ok: false,
@@ -394,13 +398,9 @@ test('repo_edit_flow applies edits, runs checks, and skips publish when checks f
 		tree_hash: 'tree-1',
 		checked_at: '2026-04-18T00:02:00.000Z',
 	})
-	expect(result.edits).toEqual({
-		dry_run: false,
-		total_changed: 1,
-	})
 })
 
-test('repo_edit_flow includes per-file edits only when requested', async () => {
+test('repo_edit_flow includes edit details when include_edits is true', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackageRow())

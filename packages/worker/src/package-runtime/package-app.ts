@@ -10,7 +10,10 @@ import {
 	createAuthenticatedFetch,
 	refreshAccessToken,
 } from '#mcp/execute-modules/codemode-utils.ts'
-import { buildKodyAppBundle } from './module-graph.ts'
+import {
+	buildKodyAppBundle,
+	createPublishedPackageAppBundleCacheKey,
+} from './module-graph.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
@@ -501,6 +504,9 @@ export async function buildPackageAppWorker(input: {
 		kodyId: string
 		name: string
 		sourceId: string
+		publishedCommit: string | null
+		manifestPath: string
+		sourceRoot: string
 	}
 	sourceFiles: Record<string, string>
 	params?: Record<string, unknown>
@@ -528,6 +534,16 @@ export async function buildPackageAppWorker(input: {
 		userId: input.userId,
 		sourceFiles: input.sourceFiles,
 		entryPoint: appEntry,
+		cacheKey: createPublishedPackageAppBundleCacheKey({
+			userId: input.userId,
+			source: {
+				id: input.savedPackage.sourceId,
+				published_commit: input.savedPackage.publishedCommit,
+				manifest_path: input.savedPackage.manifestPath,
+				source_root: input.savedPackage.sourceRoot,
+			},
+			entryPoint: appEntry,
+		}),
 	})
 	const mainModule = 'package-app-entry.js'
 	const modules = {
@@ -537,6 +553,9 @@ export async function buildPackageAppWorker(input: {
 		}),
 	}
 	return {
+		// Keep the loader stub per-request because the bound runtime bridge props are
+		// caller-specific (user/package context) and we do not want to risk leaking
+		// request-scoped bindings through a reused stub.
 		stub: input.env.APP_LOADER.load({
 			compatibilityDate: '2026-04-13',
 			compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],

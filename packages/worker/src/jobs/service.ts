@@ -1,5 +1,8 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { parseMcpCallerContext } from '#mcp/context.ts'
+import {
+	createMcpCallerContext,
+	parseMcpCallerContext,
+} from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
@@ -31,12 +34,15 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
-import { createMcpCallerContext } from '#mcp/context.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
+import {
+	getManifestEntrypointPath,
+	parseRepoManifest,
+} from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
@@ -161,6 +167,82 @@ function repoSessionNeedsRefresh(session: {
 
 function createJobRuntimeSessionId(jobId: string) {
 	return `job-runtime-${jobId}-${crypto.randomUUID()}`
+}
+
+async function executeBundledJobModule(input: {
+	env: Env
+	job: JobRecord
+	callerContext: PersistedJobCallerContext
+	session: Awaited<ReturnType<ReturnType<typeof repoSessionRpc>['openSession']>>
+	sessionClient: ReturnType<typeof repoSessionRpc>
+	source: Awaited<ReturnType<typeof getEntitySourceById>>
+	modulePath: string
+	bypassLogs: Array<string>
+	packageContext?:
+		| {
+				packageId: string
+				kodyId: string
+		  }
+		| null
+}): Promise<ExecuteResult> {
+	try {
+		const sourceFiles = await loadRepoSourceFilesFromSession({
+			sessionClient: input.sessionClient,
+			sessionId: input.session.id,
+			userId: input.callerContext.user.userId,
+			sourceRoot: input.session.source_root,
+		})
+		const bundled = await buildKodyModuleBundle({
+			env: input.env,
+			baseUrl: input.callerContext.baseUrl,
+			userId: input.callerContext.user.userId,
+			sourceFiles,
+			entryPoint: input.modulePath,
+			params: input.job.params,
+		})
+		const executionResult = await runBundledModuleWithRegistry(
+			input.env,
+			{
+				...input.callerContext,
+				repoContext: {
+					sourceId: input.session.source_id,
+					repoId: null,
+					sessionId: input.session.id,
+					sessionRepoId: input.session.session_repo_id,
+					baseCommit: input.session.base_commit,
+					manifestPath: input.session.manifest_path,
+					sourceRoot: input.session.source_root,
+					publishedCommit: input.session.published_commit,
+					entityKind: input.session.entity_type,
+					entityId: input.source?.entity_id ?? input.job.id,
+				},
+			},
+			{
+				mainModule: bundled.mainModule,
+				modules: bundled.modules,
+			},
+			input.job.params,
+			{
+				executorExports: workerExports,
+				storageTools: {
+					userId: input.callerContext.user.userId,
+					storageId: input.job.storageId,
+					writable: true,
+				},
+				...(input.packageContext ? { packageContext: input.packageContext } : {}),
+			},
+		)
+		return {
+			...executionResult,
+			logs: [...input.bypassLogs, ...(executionResult.logs ?? [])],
+		}
+	} catch (error) {
+		return {
+			error: formatJobError(error),
+			result: null,
+			logs: input.bypassLogs,
+		}
+	}
 }
 
 function buildPackageJobId(packageId: string, jobName: string) {
@@ -645,6 +727,7 @@ async function runRepoBackedJob(input: {
 	}
 	let bypassLogs: Array<string> = []
 	try {
+		const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)
 		let session = await sessionClient.openSession(openSessionInput)
 		if (repoSessionNeedsRefresh(session)) {
 			const stalePublishedCommit = session.published_commit
@@ -665,6 +748,68 @@ async function runRepoBackedJob(input: {
 					`Repo session "${session.id}" still points at base commit "${session.base_commit}" instead of published commit "${session.published_commit}".`,
 				)
 			}
+		}
+		const manifestPath =
+			session.manifest_path?.replace(/^\/+/, '') ||
+			(session.entity_type === 'job' ? 'kody.json' : 'package.json')
+		const isStandaloneJobSource =
+			source?.entity_kind === 'job' || manifestPath === 'kody.json'
+		if (isStandaloneJobSource) {
+			const entrypoint = await sessionClient.readFile({
+				sessionId: session.id,
+				userId: input.callerContext.user.userId,
+				path: manifestPath,
+			})
+			if (!entrypoint.content) {
+				return {
+					error: `Job manifest "${manifestPath}" was not found in repo session.`,
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			let manifest: ReturnType<typeof parseRepoManifest>
+			try {
+				manifest = parseRepoManifest({
+					content: entrypoint.content,
+					manifestPath,
+				})
+			} catch (error) {
+				return {
+					error: error instanceof Error ? error.message : String(error),
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			if (manifest.kind !== 'job') {
+				return {
+					error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			const modulePath = getManifestEntrypointPath(manifest)
+			const moduleFile = await sessionClient.readFile({
+				sessionId: session.id,
+				userId: input.callerContext.user.userId,
+				path: modulePath,
+			})
+			if (!moduleFile.content) {
+				return {
+					error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			return executeBundledJobModule({
+				env: input.env,
+				job: input.job,
+				callerContext: input.callerContext,
+				session,
+				sessionClient,
+				source,
+				modulePath,
+				bypassLogs,
+			})
 		}
 		const result = await sessionClient.runChecks({
 			sessionId: session.id,
@@ -687,8 +832,6 @@ async function runRepoBackedJob(input: {
 			}
 		}
 		bypassLogs = [...gate.logs]
-		const manifestPath =
-			session.manifest_path?.replace(/^\/+/, '') || 'package.json'
 		const entrypoint = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user.userId,
@@ -735,71 +878,20 @@ async function runRepoBackedJob(input: {
 				logs: bypassLogs,
 			}
 		}
-		try {
-			const sourceFiles = await loadRepoSourceFilesFromSession({
-				sessionClient,
-				sessionId: session.id,
-				userId: input.callerContext.user.userId,
-				sourceRoot: session.source_root,
-			})
-			const bundled = await buildKodyModuleBundle({
-				env: input.env,
-				baseUrl: input.callerContext.baseUrl,
-				userId: input.callerContext.user.userId,
-				sourceFiles,
-				entryPoint: modulePath,
-				params: input.job.params,
-			})
-			const source = await getEntitySourceById(
-				input.env.APP_DB,
-				input.job.sourceId,
-			)
-			const executionResult = await runBundledModuleWithRegistry(
-				input.env,
-				{
-					...input.callerContext,
-					repoContext: {
-						sourceId: session.source_id,
-						repoId: null,
-						sessionId: session.id,
-						sessionRepoId: session.session_repo_id,
-						baseCommit: session.base_commit,
-						manifestPath: session.manifest_path,
-						sourceRoot: session.source_root,
-						publishedCommit: session.published_commit,
-						entityKind: session.entity_type,
-						entityId: source?.entity_id ?? input.job.id,
-					},
-				},
-				{
-					mainModule: bundled.mainModule,
-					modules: bundled.modules,
-				},
-				input.job.params,
-				{
-					executorExports: workerExports,
-					storageTools: {
-						userId: input.callerContext.user.userId,
-						storageId: input.job.storageId,
-						writable: true,
-					},
-					packageContext: {
-						packageId: source?.entity_id ?? input.job.id,
-						kodyId: manifest.kody.id,
-					},
-				},
-			)
-			return {
-				...executionResult,
-				logs: [...bypassLogs, ...(executionResult.logs ?? [])],
-			}
-		} catch (error) {
-			return {
-				error: formatJobError(error),
-				result: null,
-				logs: bypassLogs,
-			}
-		}
+		return executeBundledJobModule({
+			env: input.env,
+			job: input.job,
+			callerContext: input.callerContext,
+			session,
+			sessionClient,
+			source,
+			modulePath,
+			bypassLogs,
+			packageContext: {
+				packageId: source?.entity_id ?? input.job.id,
+				kodyId: manifest.kody.id,
+			},
+		})
 	} catch (error) {
 		return {
 			error: formatJobError(error),
