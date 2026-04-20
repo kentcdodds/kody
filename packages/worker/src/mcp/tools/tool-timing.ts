@@ -17,9 +17,13 @@ export function startToolTiming(): ToolTimingStart {
 }
 
 export function finishToolTiming(start: ToolTimingStart): ToolTiming {
+	const durationMs = Math.max(
+		0,
+		Math.round(performance.now() - start.startedAtMs),
+	)
 	return {
 		startedAt: start.startedAt,
-		endedAt: new Date().toISOString(),
-		durationMs: Math.max(0, Math.round(performance.now() - start.startedAtMs)),
+		endedAt: new Date(Date.parse(start.startedAt) + durationMs).toISOString(),
+		durationMs,
 	}
 }

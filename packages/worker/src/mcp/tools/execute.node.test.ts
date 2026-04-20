@@ -28,6 +28,15 @@ beforeEach(() => {
 
 const mockPerformanceNow = vi.spyOn(performance, 'now')
 
+function mockPerformanceSequence(...values: Array<number>) {
+	let index = 0
+	mockPerformanceNow.mockImplementation(() => {
+		const value = values[Math.min(index, values.length - 1)] ?? 0
+		index += 1
+		return value
+	})
+}
+
 async function getExecuteHandler() {
 	const registerTool = vi.fn()
 
@@ -76,7 +85,7 @@ test('registers execute tool', async () => {
 
 test('execute tool passes through raw MCP content blocks in success responses', async () => {
 	const handler = await getExecuteHandler()
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(142)
+	mockPerformanceSequence(100, 142)
 	const rawContent: Array<ContentBlock> = [
 		{
 			type: 'image',
@@ -122,7 +131,7 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 
 test('execute tool keeps serializing normal success results as text', async () => {
 	const handler = await getExecuteHandler()
-	mockPerformanceNow.mockReturnValueOnce(10).mockReturnValueOnce(19)
+	mockPerformanceSequence(10, 19)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
@@ -158,7 +167,7 @@ test('execute tool keeps serializing normal success results as text', async () =
 
 test('execute tool binds storage id and writable flag when provided', async () => {
 	const handler = await getExecuteHandler()
-	mockPerformanceNow.mockReturnValueOnce(1).mockReturnValueOnce(8)
+	mockPerformanceSequence(1, 8)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
@@ -205,7 +214,7 @@ test('execute tool binds storage id and writable flag when provided', async () =
 
 test('execute tool includes timing metadata in error responses', async () => {
 	const handler = await getExecuteHandler()
-	mockPerformanceNow.mockReturnValueOnce(50).mockReturnValueOnce(65)
+	mockPerformanceSequence(50, 65)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		error: new Error('Boom'),
 		logs: [{ level: 'error', message: 'failed' }],

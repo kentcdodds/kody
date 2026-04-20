@@ -3,7 +3,6 @@ import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
-import { type ToolTiming } from './tool-timing.ts'
 import {
 	type AuthoredPackageJson,
 	type PackageJobSchedule,
@@ -49,12 +48,6 @@ export type SearchResultStructuredContent = {
 		connected: boolean
 		toolCount: number
 	}>
-}
-
-export type SearchStructuredContent = {
-	conversationId: string
-	timing: ToolTiming
-	result: SearchResultStructuredContent | SearchEntityDetailStructured
 }
 
 export type SlimSearchMatch =

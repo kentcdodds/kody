@@ -151,3 +151,27 @@ test('search tool includes timing metadata in validation errors', async () => {
 		error: 'Provide either "query" or "entity".',
 	})
 })
+
+test('search tool includes timing metadata in handled errors', async () => {
+	const handler = await getSearchHandler()
+	mockModule.getCapabilityRegistryForContext.mockRejectedValueOnce(
+		new Error('Registry unavailable'),
+	)
+	mockPerformanceNow.mockReturnValueOnce(20).mockReturnValueOnce(35)
+
+	const response = await handler({
+		query: 'search docs',
+		conversationId: 'conv-search-handled-error',
+	})
+
+	expect(response.isError).toBe(true)
+	expect(response.structuredContent).toEqual({
+		conversationId: 'conv-search-handled-error',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 15,
+		},
+		error: 'Registry unavailable',
+	})
+})
