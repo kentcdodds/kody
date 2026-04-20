@@ -146,7 +146,9 @@ test('bond setup route renders token form', async () => {
 		const html = await response.text()
 		expect(html).toContain('Save pasted token')
 		expect(html).toContain('Retrieve token from bridge')
-		expect(html).toContain('No bridges are known yet. Run a scan from Bond status.')
+		expect(html).toContain(
+			'No bridges are known yet. Run a scan from Bond status.',
+		)
 	} finally {
 		storage.close()
 	}

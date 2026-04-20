@@ -10,15 +10,10 @@ import {
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
-import {
-	buildSavedPackageEmbedText,
-} from '#worker/package-registry/embed.ts'
+import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
-import {
-	packageFileSchema,
-	packageSummarySchema,
-} from './shared.ts'
+import { packageFileSchema, packageSummarySchema } from './shared.ts'
 
 const inputSchema = z
 	.object({

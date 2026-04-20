@@ -401,14 +401,19 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		if (!capability) {
 			throw new Error(`Package app capability "${name}" is not available.`)
 		}
-		return await capability.handler((input.args ?? {}) as Record<string, unknown>, {
-			env: this.env,
-			callerContext: this.createCallerContext(this.ctx.props.packageId),
-		})
+		return await capability.handler(
+			(input.args ?? {}) as Record<string, unknown>,
+			{
+				env: this.env,
+				callerContext: this.createCallerContext(this.ctx.props.packageId),
+			},
+		)
 	}
 
 	async storageGet(input: { storageId: string; key: string }) {
-		return await this.getStorageRunner(input.storageId).getValue({ key: input.key })
+		return await this.getStorageRunner(input.storageId).getValue({
+			key: input.key,
+		})
 	}
 
 	async storageList(input: {
@@ -538,19 +543,18 @@ export async function buildPackageAppWorker(input: {
 			mainModule,
 			modules,
 			env: {
-				[packageAppRuntimeBindingName]:
-					workerExports.PackageAppRuntimeBridge({
-						props: {
-							baseUrl: input.baseUrl,
-							userId: input.userId,
-							email: input.runtime.callerContext.user?.email ?? '',
-							displayName:
-								input.runtime.callerContext.user?.displayName ??
-								`package:${input.savedPackage.id}`,
-							packageId: input.savedPackage.id,
-							kodyId: input.savedPackage.kodyId,
-						},
-					}),
+				[packageAppRuntimeBindingName]: workerExports.PackageAppRuntimeBridge({
+					props: {
+						baseUrl: input.baseUrl,
+						userId: input.userId,
+						email: input.runtime.callerContext.user?.email ?? '',
+						displayName:
+							input.runtime.callerContext.user?.displayName ??
+							`package:${input.savedPackage.id}`,
+						packageId: input.savedPackage.id,
+						kodyId: input.savedPackage.kodyId,
+					},
+				}),
 				__kodyRuntimeParams: input.params ?? null,
 				__kodyPackageContext: {
 					packageId: input.savedPackage.id,
@@ -589,8 +593,7 @@ export async function createPackageAppCallerContext(input: {
 		user: {
 			userId: input.user.userId,
 			email: input.user.email,
-			displayName:
-				input.user.displayName ?? `package:${input.packageId}`,
+			displayName: input.user.displayName ?? `package:${input.packageId}`,
 		},
 		storageContext: {
 			sessionId: null,

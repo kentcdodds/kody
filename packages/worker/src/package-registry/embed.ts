@@ -23,7 +23,8 @@ export function buildSavedPackageEmbedText(manifest: AuthoredPackageJson) {
 			}`.trim(),
 	)
 	const jobLines = Object.entries(manifest.kody.jobs ?? {}).map(
-		([jobName, job]) => `${jobName} ${job.entry} ${formatJobSchedule(job)}`.trim(),
+		([jobName, job]) =>
+			`${jobName} ${job.entry} ${formatJobSchedule(job)}`.trim(),
 	)
 	return [
 		`package ${manifest.kody.id}`,

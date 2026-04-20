@@ -92,9 +92,9 @@ automatically:
   `npm run dev` targets the Cloudflare mock unless `SKIP_CLOUDFLARE_MOCK=1`. The
   internal Cloudflare API client expects paths under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
-  `POST /__maintenance/reindex-capabilities`
-  to refresh builtin capability embeddings in Vectorize. Saved package
-  projections refresh when packages are saved or published.)
+  `POST /__maintenance/reindex-capabilities` to refresh builtin capability
+  embeddings in Vectorize. Saved package projections refresh when packages are
+  saved or published.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `packages/worker/.env`.

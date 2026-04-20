@@ -38,8 +38,7 @@ Important fields:
 
 `package.json.exports` is the package's callable and importable surface.
 
-- Cross-package imports use specifiers such as
-  `kody:@my-package/export-name`.
+- Cross-package imports use specifiers such as `kody:@my-package/export-name`.
 - Callable exports are exports whose resolved module default export is a
   function.
 - Packages may also export non-callable helper modules and values for reuse.

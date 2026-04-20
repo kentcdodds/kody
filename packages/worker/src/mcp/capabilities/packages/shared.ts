@@ -4,10 +4,10 @@ export const packageFileSchema = z.object({
 	path: z
 		.string()
 		.min(1)
-		.describe('Package-relative file path to write into the saved package repo.'),
-	content: z
-		.string()
-		.describe('Full file contents for this package file.'),
+		.describe(
+			'Package-relative file path to write into the saved package repo.',
+		),
+	content: z.string().describe('Full file contents for this package file.'),
 })
 
 export const packageSummarySchema = z.object({

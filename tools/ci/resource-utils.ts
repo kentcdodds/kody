@@ -349,7 +349,9 @@ export async function writeGeneratedWranglerConfig({
 	const migrations = config.migrations
 	if (extraMigrations && extraMigrations.length > 0) {
 		if (!Array.isArray(migrations)) {
-			fail(`wrangler config "${baseConfigPath}" is missing top-level "migrations".`)
+			fail(
+				`wrangler config "${baseConfigPath}" is missing top-level "migrations".`,
+			)
 		}
 
 		const migrationList = migrations as Array<Record<string, unknown>>

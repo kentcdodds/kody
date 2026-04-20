@@ -6,8 +6,8 @@ Use this pattern when you need API or product documentation from
 ## Preferred approach
 
 Use **markdown-preferred `fetch`** against a path under the docs site (see
-allowlist below). Keep the package export or execute module focused on direct docs retrieval instead of
-adding site-specific fallback machinery.
+allowlist below). Keep the package export or execute module focused on direct
+docs retrieval instead of adding site-specific fallback machinery.
 
 ## Path allowlist
 

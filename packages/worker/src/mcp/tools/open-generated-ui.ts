@@ -62,7 +62,9 @@ const inputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Saved package id to reopen when the package defines kody.app.'),
+			.describe(
+				'Saved package id to reopen when the package defines kody.app.',
+			),
 		kody_id: z
 			.string()
 			.min(1)

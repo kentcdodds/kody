@@ -100,7 +100,9 @@ function createPackageSourceRow() {
 test('repo_open_session resolves a package by kody id', async () => {
 	resetMocks()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(createSavedPackageRow())
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
+		createSavedPackageRow(),
+	)
 	mockModule.getEntitySourceById.mockResolvedValueOnce(createPackageSourceRow())
 	const rpc = createRepoRpc()
 	rpc.openSession.mockResolvedValueOnce({
@@ -153,7 +155,9 @@ test('repo_open_session rejects an active conversation session for a different t
 		id: 'session-other',
 		source_id: 'source-other',
 	})
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(createSavedPackageRow())
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
+		createSavedPackageRow(),
+	)
 	mockModule.getEntitySourceById.mockResolvedValueOnce({
 		...createPackageSourceRow(),
 		id: 'source-other',
@@ -261,7 +265,9 @@ test('repo_open_session reuses resolved target metadata when resuming an existin
 test('repo_edit_flow applies edits, runs checks, and skips publish when checks fail', async () => {
 	resetMocks()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(createSavedPackageRow())
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
+		createSavedPackageRow(),
+	)
 	mockModule.getSavedPackageById.mockResolvedValueOnce(createSavedPackageRow())
 	mockModule.getEntitySourceById
 		.mockResolvedValueOnce(createPackageSourceRow())

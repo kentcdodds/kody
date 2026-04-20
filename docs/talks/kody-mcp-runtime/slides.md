@@ -445,19 +445,11 @@ this repo.
 -->
 
 ---
-layout: center
----
 
-# Live demo cheat sheet
+# Thank you
 
-1. **`search`** — no creds needed
-2. **`execute`** — one safe read-only path
-3. **`open_generated_ui`** — "software, not chat"
-4. **Secrets** — slide only (`/connect/secret`, `/connect/oauth`), not live
+- ⭐ **GitHub: kentcdodds/kody** ⭐
 
 <!--
-Appendix if extra time. `search`: show capabilities or saved app without
-credentials. `execute`: one public-safe read-only workflow. `open_generated_ui`:
-reopen saved app for the software moment. Stop before live secrets — show URLs in
-deck only.
+Thank you for attending!
 -->

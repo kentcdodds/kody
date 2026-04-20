@@ -74,11 +74,10 @@ function createPackageJobManifest(input: {
 			jobs: {
 				[input.jobName]: {
 					entry: input.entry ?? './src/job.ts',
-					schedule:
-						input.schedule ?? {
-							type: 'once',
-							runAt: '2026-04-17T15:00:00Z',
-						},
+					schedule: input.schedule ?? {
+						type: 'once',
+						runAt: '2026-04-17T15:00:00Z',
+					},
 				},
 			},
 		},
@@ -1066,7 +1065,8 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 			logs: ['repo-backed codemode executed'],
 		})
 		expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
-		const firstOpenSessionId = sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
+		const firstOpenSessionId =
+			sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
 		const secondOpenSessionId =
 			sessionClient.openSession.mock.calls[1]?.[0]?.sessionId
 		expect(firstOpenSessionId).toMatch(/^job-runtime-job-repo-1-/)
@@ -1137,7 +1137,7 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-strict',
-				manifest_path: 'package.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
@@ -1240,7 +1240,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-bypass',
-				manifest_path: 'package.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
@@ -1381,7 +1381,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-bypass-failure',
-				manifest_path: 'package.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
@@ -1678,7 +1678,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-1',
-				manifest_path: 'package.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(),
@@ -1932,7 +1932,8 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				kodyId: 'repo-module-job',
 			},
 		})
-		const openedSessionId = sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
+		const openedSessionId =
+			sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
 		expect(openedSessionId).toMatch(/^job-runtime-job-repo-module-/)
 		expect(sessionClient.discardSession).toHaveBeenCalledWith({
 			sessionId: openedSessionId,

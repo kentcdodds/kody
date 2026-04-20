@@ -10,9 +10,7 @@ import {
 } from '#mcp/tools/search.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import { toSlimStructuredMatches } from '#mcp/tools/search-format.ts'
-import {
-	listUserSecretsForSearch,
-} from '#mcp/secrets/service.ts'
+import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
@@ -135,7 +133,7 @@ export async function createAgentTurnToolSet(input: {
 		}),
 		execute: tool({
 			description:
-			'Run a short JavaScript module via the execute runtime; the module should default export the function to run.',
+				'Run a short JavaScript module via the execute runtime; the module should default export the function to run.',
 			inputSchema: z.object({
 				code: z.string().min(1),
 				params: z.record(z.string(), z.unknown()).optional(),

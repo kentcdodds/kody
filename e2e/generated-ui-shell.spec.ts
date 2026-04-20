@@ -52,7 +52,9 @@ test('generated UI shell rerenders inline and package apps without document rewr
 		'</html>',
 	].join('\n')
 	const inlineHtmlJson = escapeHtmlScriptContent(JSON.stringify(inlineHtml))
-	const packageAppHtmlJson = escapeHtmlScriptContent(JSON.stringify(packageAppHtml))
+	const packageAppHtmlJson = escapeHtmlScriptContent(
+		JSON.stringify(packageAppHtml),
+	)
 
 	await page.setContent(`
 		<!doctype html>

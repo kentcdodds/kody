@@ -1,8 +1,6 @@
 import { createWorker } from '@cloudflare/worker-bundler'
 import { parse, type Node } from 'acorn'
-import {
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
@@ -61,7 +59,10 @@ type RewriteState = {
 	userId: string
 	files: Record<string, string>
 	proxies: Map<string, string>
-	packages: Map<string, LoadedPackageSource & { row: SavedPackageRecord; prefix: string }>
+	packages: Map<
+		string,
+		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
+	>
 }
 
 type KodyPackageSpecifier = {
@@ -226,7 +227,9 @@ function collectLiteralImportNodes(source: string): Array<{
 				})
 			}
 		}
-		for (const value of Object.values(typedNode as unknown as Record<string, unknown>)) {
+		for (const value of Object.values(
+			typedNode as unknown as Record<string, unknown>,
+		)) {
 			if (value == null) continue
 			if (typeof value === 'object') {
 				visit(value)
@@ -247,7 +250,10 @@ function collectLiteralImportNodes(source: string): Array<{
 	return nodes.sort((left, right) => left.start - right.start)
 }
 
-function applyReplacements(source: string, replacements: Array<RewriteReplacement>) {
+function applyReplacements(
+	source: string,
+	replacements: Array<RewriteReplacement>,
+) {
 	if (replacements.length === 0) return source
 	let cursor = 0
 	let nextSource = ''
@@ -314,7 +320,10 @@ async function ensurePackageProxy(
 		packageImportProxyPrefix,
 		`${sanitizeSpecifier(specifier)}.js`,
 	)
-	const proxyTarget = createRelativeImportSpecifier(proxyPath, absoluteExportPath)
+	const proxyTarget = createRelativeImportSpecifier(
+		proxyPath,
+		absoluteExportPath,
+	)
 	state.files[proxyPath] = createPackageImportProxySource({
 		targetPath: proxyTarget,
 	})
@@ -390,12 +399,12 @@ export async function buildKodyModuleBundle(input: {
 		rootSourcePrefix,
 		normalizePackageWorkspacePath(input.entryPoint),
 	)
-	const bootstrapPath = joinPath(
-		rootSourcePrefix,
-		'.__kody_execute_entry__.js',
-	)
+	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_execute_entry__.js')
 	files[bootstrapPath] = createExecuteEntrypointSource({
-		modulePath: createRelativeImportSpecifier(bootstrapPath, normalizedEntrypoint),
+		modulePath: createRelativeImportSpecifier(
+			bootstrapPath,
+			normalizedEntrypoint,
+		),
 		paramsJson: JSON.stringify(input.params ?? null),
 	})
 	const bundle = await createWorker({
@@ -458,7 +467,10 @@ export async function buildKodyAppBundle(input: {
 	)
 	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_app_entry__.js')
 	files[bootstrapPath] = createAppEntrypointSource({
-		modulePath: createRelativeImportSpecifier(bootstrapPath, normalizedEntrypoint),
+		modulePath: createRelativeImportSpecifier(
+			bootstrapPath,
+			normalizedEntrypoint,
+		),
 	})
 	const bundle = await createWorker({
 		files,

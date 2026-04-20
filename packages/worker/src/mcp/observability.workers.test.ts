@@ -206,9 +206,7 @@ test('logMcpEvent reports failure without throwing when Sentry is off', () => {
 	}
 })
 
-test(
-	'package_save capability logs success for valid invocation',
-	async () => {
+test('package_save capability logs success for valid invocation', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	resetRepoPersistenceMocks()
@@ -240,11 +238,13 @@ test(
 					},
 					{
 						path: 'src/index.ts',
-						content: 'export default async function main() { return { ok: true } }\n',
+						content:
+							'export default async function main() { return { ok: true } }\n',
 					},
 					{
 						path: 'src/app.ts',
-						content: 'export default { async fetch() { return new Response("ok") } }\n',
+						content:
+							'export default { async fetch() { return new Response("ok") } }\n',
 					},
 				],
 			},
@@ -271,7 +271,7 @@ test(
 														created_at: '2026-04-13T00:00:00.000Z',
 														updated_at: '2026-04-13T00:00:00.000Z',
 													}
-										: query.includes('SELECT * FROM entity_sources')
+												: query.includes('SELECT * FROM entity_sources')
 													? {
 															id: 'package-package-1',
 															user_id: 'user-1',
@@ -285,7 +285,7 @@ test(
 															created_at: '2026-04-13T00:00:00.000Z',
 															updated_at: '2026-04-13T00:00:00.000Z',
 														}
-												: null,
+													: null,
 										all: async () => ({
 											results: [],
 										}),
@@ -382,7 +382,4 @@ test(
 	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
 	expect(event.outcome).toBe('success')
 	expect(event.failurePhase).toBeUndefined()
-	},
-	15_000,
-)
-
+}, 15_000)

@@ -1,8 +1,8 @@
 # Generated UI OAuth guide
 
 **This is the edge-case guide.** Use it when **`/connect/oauth` is not
-sufficient** and the integration needs a hosted package app callback or a
-custom browser-first OAuth experience.
+sufficient** and the integration needs a hosted package app callback or a custom
+browser-first OAuth experience.
 
 For standard third-party OAuth, use the normal hosted connector path from
 [OAuth guide](./oauth.md).

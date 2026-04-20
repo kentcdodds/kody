@@ -198,8 +198,12 @@ export async function syncPackageJobsForPackage(input: {
 }) {
 	const desiredJobs = input.manifest.kody.jobs ?? {}
 	const existingRows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
-	const packageRows = existingRows.filter((row) => row.source_id === input.sourceId)
-	const existingByName = new Map(packageRows.map((row) => [row.name, row] as const))
+	const packageRows = existingRows.filter(
+		(row) => row.source_id === input.sourceId,
+	)
+	const existingByName = new Map(
+		packageRows.map((row) => [row.name, row] as const),
+	)
 	const desiredNames = new Set(Object.keys(desiredJobs))
 	const now = new Date().toISOString()
 
@@ -246,7 +250,9 @@ export async function syncPackageJobsForPackage(input: {
 			name: jobName,
 			sourceId: input.sourceId,
 			publishedCommit: null,
-			storageId: createJobStorageId(buildPackageJobId(input.packageId, jobName)),
+			storageId: createJobStorageId(
+				buildPackageJobId(input.packageId, jobName),
+			),
 			schedule,
 			timezone,
 			enabled,
@@ -744,7 +750,10 @@ async function runRepoBackedJob(input: {
 				entryPoint: modulePath,
 				params: input.job.params,
 			})
-			const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)
+			const source = await getEntitySourceById(
+				input.env.APP_DB,
+				input.job.sourceId,
+			)
 			const executionResult = await runBundledModuleWithRegistry(
 				input.env,
 				{

@@ -69,9 +69,9 @@ test('buildCapabilityRegistry rejects duplicate domain registration', () => {
 			}),
 		],
 	})
-	expect(() => buildCapabilityRegistry([packagesDomain, packagesDomain])).toThrow(
-		/Duplicate domain registration/,
-	)
+	expect(() =>
+		buildCapabilityRegistry([packagesDomain, packagesDomain]),
+	).toThrow(/Duplicate domain registration/)
 })
 
 test('builtin capability domains include packages', async () => {

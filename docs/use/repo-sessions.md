@@ -37,8 +37,8 @@ Examples:
 { "target": { "kind": "package", "package_id": "pkg-123" } }
 ```
 
-You can still pass `source_id` when you already have it, but most callers
-should prefer `target`.
+You can still pass `source_id` when you already have it, but most callers should
+prefer `target`.
 
 ## Structured repair detail
 

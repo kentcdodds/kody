@@ -6,8 +6,7 @@ Linear, or Stripe.
 
 This guide is about **ordering**. The goal is to finish the integration setup
 and prove it works **before** you save or present downstream packages or package
-apps that
-depend on it.
+apps that depend on it.
 
 ## What counts as an integration bootstrap
 
@@ -73,8 +72,7 @@ If those conditions are not met, stop and fix the integration first.
 ## Smoke test expectations
 
 The smoke test should prove the same auth wiring the final package or package
-app will
-depend on:
+app will depend on:
 
 - the expected connector or secret exists
 - the request reaches the intended API host
@@ -92,8 +90,7 @@ Even in that case:
 - the package app should be treated as the **setup** surface, not the finished
   downstream integration
 - any later package or package app that depends on the resulting connector or
-  tokens
-  should wait until the post-connect smoke test passes
+  tokens should wait until the post-connect smoke test passes
 
 ## Recommended phrasing in chat
 

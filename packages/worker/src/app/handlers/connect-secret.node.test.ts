@@ -51,10 +51,7 @@ const mockModule = vi.hoisted(() => ({
 	setSecretAllowedHosts: vi.fn(async () => undefined),
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	saveValue: vi.fn(async () => undefined),
-	getSavedPackageById: async (
-		_db: D1Database,
-		input: { packageId: string },
-	) =>
+	getSavedPackageById: async (_db: D1Database, input: { packageId: string }) =>
 		input.packageId === 'package-123'
 			? {
 					id: 'package-123',

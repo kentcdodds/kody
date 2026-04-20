@@ -38,7 +38,8 @@ vi.mock('#app/authenticated-user.ts', () => ({
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
-	redirectToLogin: (...args: Array<unknown>) => mockModule.redirectToLogin(...args),
+	redirectToLogin: (...args: Array<unknown>) =>
+		mockModule.redirectToLogin(...args),
 }))
 
 vi.mock('#app/app-base-url.ts', () => ({

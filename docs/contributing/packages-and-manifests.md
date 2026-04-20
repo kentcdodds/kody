@@ -35,8 +35,7 @@ The top-level saved identity is the package.
 
 `package.json.exports` is the package's callable/importable surface.
 
-- Cross-package imports use specifiers such as
-  `kody:@my-package/export-name`.
+- Cross-package imports use specifiers such as `kody:@my-package/export-name`.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

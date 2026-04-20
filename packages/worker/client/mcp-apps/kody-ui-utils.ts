@@ -38,7 +38,7 @@ export {
 	type KodyWidgetPublicApi,
 } from './kody-widget-runtime.ts'
 
- type RenderMode = 'inline_code' | 'saved_package'
+type RenderMode = 'inline_code' | 'saved_package'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 

@@ -16,7 +16,9 @@ export const repoTargetSchema = z.union([
 		kody_id: z
 			.string()
 			.min(1)
-			.describe('Saved package kody id to open or edit by user-facing identity.'),
+			.describe(
+				'Saved package kody id to open or edit by user-facing identity.',
+			),
 	}),
 ])
 
@@ -384,7 +386,6 @@ export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 		current_published_commit: z.string().nullable(),
 	}),
 ])
-
 
 export const repoCheckStatusOutputSchema = z.object({
 	run_id: z.string().nullable(),

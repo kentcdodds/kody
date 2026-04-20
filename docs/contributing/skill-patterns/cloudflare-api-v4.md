@@ -1,7 +1,7 @@
 # Pattern: Cloudflare API v4 (`api.cloudflare.com`)
 
-Use **secret-aware `fetch`** in **`execute`** or inside a saved package export so
-Cloudflare API access can change without shipping Worker code.
+Use **secret-aware `fetch`** in **`execute`** or inside a saved package export
+so Cloudflare API access can change without shipping Worker code.
 
 You can keep this logic inline in `execute`, or place it in a package export and
 import it from other packages with `kody:@...`.

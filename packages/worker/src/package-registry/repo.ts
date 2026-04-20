@@ -16,9 +16,7 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 			row['search_text'] == null ? null : String(row['search_text']).trim(),
 		sourceId: String(row['source_id']),
 		hasApp:
-			row['has_app'] === 1 ||
-			row['has_app'] === '1' ||
-			row['has_app'] === true,
+			row['has_app'] === 1 || row['has_app'] === '1' || row['has_app'] === true,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}

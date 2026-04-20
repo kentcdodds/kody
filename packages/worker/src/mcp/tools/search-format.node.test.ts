@@ -58,40 +58,43 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	expect(markdown).toContain('## Value')
 	expect(markdown).toContain('## Connector')
 
-	expect(toSlimStructuredMatches({
-		baseUrl: 'http://localhost',
-		matches: [
-			{
-				type: 'value',
-				valueId: 'user:preferred_repo',
-				name: 'preferred_repo',
-				scope: 'user',
-				description: 'Preferred repository owner/name.',
-				value: 'kentcdodds/kody',
-				appId: null,
-				updatedAt: '2026-03-20T00:00:00.000Z',
-				ttlMs: null,
-				usage: 'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
-				fusedScore: 1,
-			},
-			{
-				type: 'connector',
-				connectorName: 'github',
-				title: 'github',
-				description: 'GitHub OAuth connector config',
-				flow: 'confidential',
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				apiBaseUrl: 'https://api.github.com',
-				clientIdValueName: 'github_client_id',
-				clientSecretSecretName: 'github_client_secret',
-				accessTokenSecretName: 'github_access_token',
-				refreshTokenSecretName: 'github_refresh_token',
-				requiredHosts: ['api.github.com'],
-				usage: 'Read with connector_get: {"name":"github"}.',
-				fusedScore: 0.9,
-			},
-		],
-	})).toEqual([
+	expect(
+		toSlimStructuredMatches({
+			baseUrl: 'http://localhost',
+			matches: [
+				{
+					type: 'value',
+					valueId: 'user:preferred_repo',
+					name: 'preferred_repo',
+					scope: 'user',
+					description: 'Preferred repository owner/name.',
+					value: 'kentcdodds/kody',
+					appId: null,
+					updatedAt: '2026-03-20T00:00:00.000Z',
+					ttlMs: null,
+					usage:
+						'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
+					fusedScore: 1,
+				},
+				{
+					type: 'connector',
+					connectorName: 'github',
+					title: 'github',
+					description: 'GitHub OAuth connector config',
+					flow: 'confidential',
+					tokenUrl: 'https://github.com/login/oauth/access_token',
+					apiBaseUrl: 'https://api.github.com',
+					clientIdValueName: 'github_client_id',
+					clientSecretSecretName: 'github_client_secret',
+					accessTokenSecretName: 'github_access_token',
+					refreshTokenSecretName: 'github_refresh_token',
+					requiredHosts: ['api.github.com'],
+					usage: 'Read with connector_get: {"name":"github"}.',
+					fusedScore: 0.9,
+				},
+			],
+		}),
+	).toEqual([
 		{
 			type: 'value',
 			id: 'user:preferred_repo',
@@ -221,7 +224,8 @@ test('entity detail formatting includes package app and export metadata', () => 
 		},
 		files: {
 			'package.json': '{}',
-			'src/app.d.ts': 'export default function fetch(request: Request): Promise<Response>\n',
+			'src/app.d.ts':
+				'export default function fetch(request: Request): Promise<Response>\n',
 		},
 	})
 	expect(packageDetail.structured).toMatchObject({

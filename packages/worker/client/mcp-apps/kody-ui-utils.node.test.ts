@@ -290,7 +290,9 @@ test('appBackend.resolveUrl resolves backend-relative paths safely', () => {
 		},
 	})
 
-	expect(kodyWidget.appBackend?.resolveUrl()).toBe('http://localhost:3000/app/app-123')
+	expect(kodyWidget.appBackend?.resolveUrl()).toBe(
+		'http://localhost:3000/app/app-123',
+	)
 	expect(kodyWidget.appBackend?.resolveUrl('api/state')).toBe(
 		'http://localhost:3000/app/app-123/api/state',
 	)
@@ -323,7 +325,9 @@ test('appBackend.resolveUrl rejects urls outside the package app backend path', 
 		kodyWidget.appBackend?.resolveUrl('http://localhost:3000/ui/app-123'),
 	).toThrow(/only supports same-origin urls within the app backend base path/i)
 	expect(() =>
-		kodyWidget.appBackend?.resolveUrl('https://example.com/app/app-123/api/state'),
+		kodyWidget.appBackend?.resolveUrl(
+			'https://example.com/app/app-123/api/state',
+		),
 	).toThrow(/only supports same-origin urls within the app backend base path/i)
 })
 

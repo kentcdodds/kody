@@ -439,10 +439,9 @@ export async function runRepoChecks(input: {
 	results.push({
 		kind: 'typecheck',
 		ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
-		message:
-			diagnostics.every((entry) => entry.diagnostics.length === 0)
-				? `No semantic diagnostics for ${entryPoints.length} package runtime entrypoint(s).`
-				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+		message: diagnostics.every((entry) => entry.diagnostics.length === 0)
+			? `No semantic diagnostics for ${entryPoints.length} package runtime entrypoint(s).`
+			: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
 	})
 
 	results.push({

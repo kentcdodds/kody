@@ -16,10 +16,7 @@ export const deletePackageCapability = defineDomainCapability(
 		idempotent: false,
 		destructive: true,
 		inputSchema: z.object({
-			package_id: z
-				.string()
-				.min(1)
-				.describe('Saved package id to delete.'),
+			package_id: z.string().min(1).describe('Saved package id to delete.'),
 		}),
 		outputSchema: z.object({
 			ok: z.literal(true),

@@ -29,26 +29,26 @@ Use the same origin the user uses to open Kody.
 
 ## Required query parameters
 
-| Param | Purpose |
-| --- | --- |
-| `provider` | Short integration label used to derive stored names. |
-| `authorizeUrl` | Provider authorization endpoint URL. |
-| `tokenUrl` | Provider token endpoint URL. |
+| Param          | Purpose                                              |
+| -------------- | ---------------------------------------------------- |
+| `provider`     | Short integration label used to derive stored names. |
+| `authorizeUrl` | Provider authorization endpoint URL.                 |
+| `tokenUrl`     | Provider token endpoint URL.                         |
 
-The token endpoint host is always included for host approval. Add more API
-hosts with `allowedHosts` when needed.
+The token endpoint host is always included for host approval. Add more API hosts
+with `allowedHosts` when needed.
 
 ## Common optional parameters
 
-| Param | Purpose |
-| --- | --- |
-| `flow` | `pkce` (default) or `confidential`. |
-| `scopes` | Space- or separator-separated scopes. |
-| `scopeSeparator` | Defaults to a single space. |
-| `allowedHosts` | Extra API hosts beyond the token host. |
-| `apiBaseUrl` | Optional API base URL hint. |
-| `dashboardUrl` | Provider settings link. |
-| `extraAuthorizeParams` | Provider-specific authorize params. |
+| Param                       | Purpose                                    |
+| --------------------------- | ------------------------------------------ |
+| `flow`                      | `pkce` (default) or `confidential`.        |
+| `scopes`                    | Space- or separator-separated scopes.      |
+| `scopeSeparator`            | Defaults to a single space.                |
+| `allowedHosts`              | Extra API hosts beyond the token host.     |
+| `apiBaseUrl`                | Optional API base URL hint.                |
+| `dashboardUrl`              | Provider settings link.                    |
+| `extraAuthorizeParams`      | Provider-specific authorize params.        |
 | `providerSetupInstructions` | Free-form setup hints shown in the wizard. |
 
 Client ID, access token, and refresh token names are derived from a normalized
@@ -63,9 +63,9 @@ routes) are for clients authenticating to Kody itself.
 
 ## When to use another guide
 
-| Need | Use |
-| --- | --- |
-| API keys or PATs instead of OAuth | `connect_secret` |
+| Need                                                        | Use                  |
+| ----------------------------------------------------------- | -------------------- |
+| API keys or PATs instead of OAuth                           | `connect_secret`     |
 | Custom browser UX or callback on a hosted package app route | `generated_ui_oauth` |
 
 ## Agent checklist
