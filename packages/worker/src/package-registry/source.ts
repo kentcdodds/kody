@@ -6,6 +6,10 @@ import {
 } from '#worker/repo/artifacts.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { loadRepoSourceFilesFromSession } from '#worker/repo/repo-codemode-execution.ts'
+import {
+	createPublishedPackageCacheKey,
+	PromiseLruCache,
+} from './published-package-cache.ts'
 import { parseAuthoredPackageJson } from './manifest.ts'
 import { type AuthoredPackageJson } from './types.ts'
 
@@ -14,6 +18,8 @@ export type LoadedPackageSource = {
 	manifest: AuthoredPackageJson
 	files: Record<string, string>
 }
+
+const packageSourceCache = new PromiseLruCache<LoadedPackageSource>()
 
 function canResolveRepoBackedPackageSource(env: Env) {
 	const anyEnv = env as Env & { APP_DB?: unknown; REPO_SESSION?: unknown }
@@ -25,19 +31,50 @@ function canResolveRepoBackedPackageSource(env: Env) {
 	)
 }
 
-export async function loadPackageSourceBySourceId(input: {
+function createPackageSourceCacheKey(input: {
+	userId: string
+	source: EntitySourceRow
+}) {
+	return createPublishedPackageCacheKey({
+		userId: input.userId,
+		source: input.source,
+	})
+}
+
+async function loadPackageSourceUncached(input: {
 	env: Env
 	baseUrl: string
 	userId: string
-	sourceId: string
+	source: EntitySourceRow
 }): Promise<LoadedPackageSource> {
-	if (!canResolveRepoBackedPackageSource(input.env)) {
-		throw new Error('Saved package source bindings are not available.')
+	const source = input.source
+	const freezeFiles = (files: Record<string, string>) =>
+		Object.freeze({ ...files }) as Record<string, string>
+	const deepFreeze = <T>(value: T, seen = new WeakSet<object>()): T => {
+		if (value && typeof value === 'object') {
+			const objectValue = value as object
+			if (seen.has(objectValue)) {
+				return value
+			}
+			seen.add(objectValue)
+			for (const child of Object.values(value as Record<string, unknown>)) {
+				deepFreeze(child, seen)
+			}
+			Object.freeze(objectValue)
+		}
+		return value
 	}
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-	if (!source || source.user_id !== input.userId) {
-		throw new Error(`Saved package source "${input.sourceId}" was not found.`)
-	}
+
+	const finalizeLoadedSource = (loaded: {
+		manifest: AuthoredPackageJson
+		files: Record<string, string>
+	}) =>
+		Object.freeze({
+			source: deepFreeze({ ...source }),
+			manifest: deepFreeze(structuredClone(loaded.manifest)),
+			files: freezeFiles(loaded.files),
+		}) as LoadedPackageSource
+
 	const mockArtifactsBaseUrl = input.env.CLOUDFLARE_API_BASE_URL?.trim()
 	if (mockArtifactsBaseUrl && source.published_commit) {
 		const mockArtifactsUrl = new URL(mockArtifactsBaseUrl)
@@ -54,14 +91,13 @@ export async function loadPackageSourceBySourceId(input: {
 						`Saved package manifest "${source.manifest_path}" was not found in the repo source.`,
 					)
 				}
-				return {
-					source,
+				return finalizeLoadedSource({
 					manifest: parseAuthoredPackageJson({
 						content: manifestContent,
 						manifestPath: source.manifest_path,
 					}),
 					files: snapshot.files,
-				}
+				})
 			}
 		}
 	}
@@ -98,11 +134,10 @@ export async function loadPackageSourceBySourceId(input: {
 			sourceRoot: source.source_root,
 		})
 		files[source.manifest_path] = manifestFile.content
-		return {
-			source,
+		return finalizeLoadedSource({
 			manifest,
 			files,
-		}
+		})
 	} finally {
 		if (openedSessionId) {
 			await session
@@ -115,4 +150,47 @@ export async function loadPackageSourceBySourceId(input: {
 				})
 		}
 	}
+}
+
+export async function loadPackageSourceBySourceId(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceId: string
+}): Promise<LoadedPackageSource> {
+	if (!canResolveRepoBackedPackageSource(input.env)) {
+		throw new Error('Saved package source bindings are not available.')
+	}
+	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	if (!source || source.user_id !== input.userId) {
+		throw new Error(`Saved package source "${input.sourceId}" was not found.`)
+	}
+	const cacheKey = createPackageSourceCacheKey({
+		userId: input.userId,
+		source,
+	})
+	if (!cacheKey) {
+		return await loadPackageSourceUncached({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			source,
+		})
+	}
+
+	const cached = packageSourceCache.get(cacheKey)
+	if (cached) {
+		return await cached
+	}
+
+	return await packageSourceCache.getOrCreate({
+		cacheKey,
+		create: async () =>
+			await loadPackageSourceUncached({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				source,
+			}),
+	})
 }
