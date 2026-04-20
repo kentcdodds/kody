@@ -6,6 +6,10 @@ import {
 	buildSavedAppBackendBasePath,
 	createGeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
+import {
+	getSavedPackageById,
+	getSavedPackageByKodyId,
+} from '#worker/package-registry/repo.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	conversationIdInputField,
@@ -34,19 +38,20 @@ const openGeneratedUiTool = {
 	title: 'Open Generated UI',
 	description: `
 Open the MCP App runtime. Pass exactly one of \`code\` (inline HTML fragment or
-full document) or \`app_id\` (reopen saved source without resending it). \`params\`
-only with \`app_id\` — validated against the app’s saved parameter definitions;
-read \`kodyWidget.params\` after \`import { kodyWidget } from '@kody/ui-utils'\`.
+full document), \`app_id\` (legacy saved UI artifact), \`package_id\`, or
+\`kody_id\` (saved package app identity). \`params\` currently applies only to
+legacy \`app_id\` flows.
 
 Use for sensitive input (never ask the user to paste credentials in chat).
 Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
-If the app depends on a third-party integration, load \`kody_official_guide\` (\`guide: "integration_bootstrap"\`) before building or saving the downstream app.
-OAuth: standard path is \`/connect/oauth\`—then run \`kody_official_guide\` (\`guide: "oauth"\`); for OAuth inside a saved app only, use \`guide: "generated_ui_oauth"\`.
-Do not treat an auth-dependent app as complete until the required connector/secret exists and a minimal authenticated smoke test succeeds.
+If the package app depends on a third-party integration, load
+\`kody_official_guide\` (\`guide: "integration_bootstrap"\`) before building or
+saving the downstream package.
 
-Persist with \`ui_save_app\`; discover with \`search\` or \`ui_list_apps\`.
+Persist packages with \`package_save\`; discover them with \`search\` or
+\`package_list\`.
 
-https://github.com/kentcdodds/kody/blob/main/docs/use/skills-and-apps.md
+https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,
@@ -69,7 +74,19 @@ const inputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Saved UI artifact id to reopen.'),
+			.describe('Legacy saved UI artifact id to reopen.'),
+		package_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe('Saved package id to reopen when the package defines kody.app.'),
+		kody_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Saved package kody id to reopen when the package defines kody.app.',
+			),
 		title: z
 			.string()
 			.min(1)
@@ -86,14 +103,31 @@ const inputSchema = z
 			.record(z.string(), z.unknown())
 			.optional()
 			.describe(
-				'Optional runtime parameter values for a saved app (validated against its saved parameter definitions).',
+				'Optional runtime parameter values for a legacy saved app (validated against its saved parameter definitions).',
 			),
 	})
-	.refine((value) => (value.code ? 1 : 0) + (value.app_id ? 1 : 0) === 1, {
-		message: 'Provide exactly one of `code` or `app_id`.',
+	.refine(
+		(value) =>
+			(value.code ? 1 : 0) +
+				(value.app_id ? 1 : 0) +
+				(value.package_id ? 1 : 0) +
+				(value.kody_id ? 1 : 0) ===
+			1,
+		{
+			message:
+				'Provide exactly one of `code`, `app_id`, `package_id`, or `kody_id`.',
+			path: ['code'],
+		},
+	)
+	.refine((value) => !(value.code && value.params), {
+		message: '`params` is only supported with `app_id`.',
 		path: ['code'],
 	})
-	.refine((value) => !(value.code && value.params), {
+	.refine((value) => !(value.package_id && value.params), {
+		message: '`params` is only supported with `app_id`.',
+		path: ['params'],
+	})
+	.refine((value) => !(value.kody_id && value.params), {
 		message: '`params` is only supported with `app_id`.',
 		path: ['params'],
 	})
@@ -117,10 +151,16 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			const callerContext = agent.getCallerContext()
 			const conversationId = resolveConversationId(args.conversationId)
 			const appId = args.app_id ?? null
+			const packageId = args.package_id ?? null
+			const kodyId = args.kody_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
 			let resolvedParams: Record<string, unknown> | undefined
 			let savedApp: Awaited<ReturnType<typeof getUiArtifactById>> | null = null
+			let savedPackage:
+				| Awaited<ReturnType<typeof getSavedPackageById>>
+				| Awaited<ReturnType<typeof getSavedPackageByKodyId>>
+				| null = null
 			if (appId) {
 				if (!callerContext.user) {
 					throw new Error(
@@ -140,10 +180,31 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					values: args.params,
 				})
 			}
+			if (packageId || kodyId) {
+				if (!callerContext.user) {
+					throw new Error('Authentication required to access saved packages.')
+				}
+				savedPackage = packageId
+					? await getSavedPackageById(agent.getEnv().APP_DB, {
+							userId: callerContext.user.userId,
+							packageId,
+						})
+					: await getSavedPackageByKodyId(agent.getEnv().APP_DB, {
+							userId: callerContext.user.userId,
+							kodyId: kodyId!,
+						})
+				if (!savedPackage || !savedPackage.hasApp) {
+					throw new Error(
+						'Saved package app not found for this user or the package does not define kody.app.',
+					)
+				}
+			}
 			const hostedUrl = appId
 				? buildSavedUiUrl(agent.requireDomain(), appId, {
 						params: resolvedParams,
 					})
+				: savedPackage
+					? `${agent.requireDomain()}/packages/${encodeURIComponent(savedPackage.kodyId)}`
 				: null
 			const appSession =
 				callerContext.user != null
@@ -151,7 +212,7 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 							env: agent.getEnv(),
 							baseUrl: callerContext.baseUrl,
 							user: callerContext.user,
-							appId,
+							appId: appId ?? savedPackage?.id ?? null,
 							homeConnectorId: callerContext.homeConnectorId ?? null,
 							params: resolvedParams,
 						})
@@ -160,8 +221,12 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 				conversationId,
 				widget: 'generated_ui' as const,
 				resourceUri: generatedUiRuntimeResourceUri,
-				renderSource: appId ? ('saved_app' as const) : ('inline_code' as const),
-				appId,
+				renderSource: appId
+					? ('saved_app' as const)
+					: savedPackage
+						? ('saved_package' as const)
+						: ('inline_code' as const),
+				appId: appId ?? savedPackage?.id ?? null,
 				title,
 				description,
 				runtime: 'html' as const,
@@ -189,8 +254,8 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 						[
 							{
 								type: 'text',
-								text: appId
-									? `## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will load saved app \`${appId}\` inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
+								text: appId || savedPackage
+									? `## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will load the saved UI surface inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
 									: '## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will render the provided inline source inside the widget runtime.',
 							},
 						],

@@ -5,6 +5,7 @@ export const routes = route({
 	chat: '/chat',
 	chatThread: '/chat/:threadId',
 	savedUi: '/ui/:id',
+	packageApp: '/packages/:kodyId',
 	connectSecret: '/connect/secret',
 	connectSecretApi: '/connect/secret.json',
 	connectSecretApiPost: post('/connect/secret.json'),

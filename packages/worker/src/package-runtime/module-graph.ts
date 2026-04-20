@@ -112,6 +112,36 @@ export default async function __kodyExecuteEntrypoint() {
 `.trim()
 }
 
+function createAppEntrypointSource(input: { modulePath: string }) {
+	return `
+import * as userModule from ${JSON.stringify(input.modulePath)};
+
+function resolvePackageAppHandler() {
+  const candidate = userModule.default ?? userModule;
+  if (typeof candidate === 'function') {
+    return candidate;
+  }
+  if (candidate && typeof candidate.fetch === 'function') {
+    return candidate.fetch.bind(candidate);
+  }
+  if (typeof userModule.fetch === 'function') {
+    return userModule.fetch;
+  }
+  throw new Error(
+    'Kody package apps must export a fetch handler via default export or named fetch.',
+  );
+}
+
+const handler = resolvePackageAppHandler();
+
+export default {
+  async fetch(request, env, ctx) {
+    return await handler(request, env, ctx);
+  },
+};
+`.trim()
+}
+
 function createPackageImportProxySource(input: { targetPath: string }) {
 	return `
 export * from ${JSON.stringify(input.targetPath)};
@@ -366,6 +396,68 @@ export async function buildKodyModuleBundle(input: {
 	files[bootstrapPath] = createExecuteEntrypointSource({
 		modulePath: createRelativeImportSpecifier(bootstrapPath, normalizedEntrypoint),
 		paramsJson: JSON.stringify(input.params ?? null),
+	})
+	const bundle = await createWorker({
+		files,
+		entryPoint: bootstrapPath,
+	})
+	return {
+		mainModule: bundle.mainModule,
+		modules: bundle.modules as WorkerLoaderModules,
+	}
+}
+
+async function prepareKodyGraphFiles(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceFiles: Record<string, string>
+}) {
+	const files: Record<string, string> = {
+		[runtimeModulePath]: createRuntimeModuleSource(),
+	}
+	const state: RewriteState = {
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		files,
+		proxies: new Map(),
+		packages: new Map(),
+	}
+	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
+		const normalizedPath = joinPath(
+			rootSourcePrefix,
+			normalizePackageWorkspacePath(filePath),
+		)
+		files[normalizedPath] = await rewriteKodyImports({
+			state,
+			source: content,
+			modulePath: normalizedPath,
+		})
+	}
+	return files
+}
+
+export async function buildKodyAppBundle(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceFiles: Record<string, string>
+	entryPoint: string
+}) {
+	const files = await prepareKodyGraphFiles({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceFiles: input.sourceFiles,
+	})
+	const normalizedEntrypoint = joinPath(
+		rootSourcePrefix,
+		normalizePackageWorkspacePath(input.entryPoint),
+	)
+	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_app_entry__.js')
+	files[bootstrapPath] = createAppEntrypointSource({
+		modulePath: createRelativeImportSpecifier(bootstrapPath, normalizedEntrypoint),
 	})
 	const bundle = await createWorker({
 		files,
