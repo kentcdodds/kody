@@ -8,7 +8,10 @@ import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
-import { syncJobManagerAlarm } from './manager-client.ts'
+import {
+	getJobManagerDebugState,
+	syncJobManagerAlarm,
+} from './manager-client.ts'
 import {
 	deleteJobRow,
 	getJobRowById,
@@ -18,7 +21,6 @@ import {
 	insertJobRow,
 	updateJobRow,
 } from './repo.ts'
-import { getJobManagerDebugState } from './manager-client.ts'
 import {
 	computeNextRunAt,
 	formatJobError,

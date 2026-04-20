@@ -3,12 +3,12 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getNextRunnableJob, runDueJobsForUser, runJobNow } from './service.ts'
+import { resolveJobManagerAlarmState } from './manager-state.ts'
 import {
 	type JobRepoCheckPolicy,
 } from './types.ts'
 import {
 	type JobManagerDebugState,
-	type JobManagerDebugStatus,
 } from './manager-client.ts'
 
 const userIdStorageKey = 'user-id'
@@ -53,23 +53,12 @@ class JobManagerBase extends DurableObject<Env> {
 				userId,
 			}),
 		])
-		const alarmScheduledFor =
-			typeof alarmTimestamp === 'number'
-				? new Date(alarmTimestamp).toISOString()
-				: null
 		const nextRunnableRunAt = nextJob?.nextRunAt ?? null
-		const alarmInSync =
-			nextRunnableRunAt == null
-				? alarmScheduledFor === null
-				: alarmScheduledFor === nextRunnableRunAt
-		const status: JobManagerDebugStatus =
-			nextRunnableRunAt == null
-				? alarmScheduledFor == null
-					? 'idle'
-					: 'out_of_sync'
-				: alarmScheduledFor === nextRunnableRunAt
-					? 'armed'
-					: 'out_of_sync'
+		const { alarmScheduledFor, alarmInSync, status } =
+			resolveJobManagerAlarmState({
+				alarmTimestamp,
+				nextRunnableRunAt,
+			})
 		return {
 			bindingAvailable: true,
 			status,

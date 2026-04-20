@@ -80,11 +80,13 @@ export const jobInspectionInputSchema = z.object({
 		.describe('Job id from job_list output or a previous scheduling response.'),
 })
 
+const nonNegativeIntegerSchema = z.number().int().min(0)
+
 const jobRunHistoryEntrySchema = z.object({
 	started_at: z.string(),
 	finished_at: z.string(),
 	status: z.enum(['success', 'error']),
-	duration_ms: z.number(),
+	duration_ms: nonNegativeIntegerSchema,
 	error: z.string().nullable(),
 })
 
@@ -106,10 +108,10 @@ export const jobInspectionSchema = z.object({
 	last_run_at: z.string().nullable(),
 	last_run_status: z.enum(['success', 'error']).nullable(),
 	last_run_error: z.string().nullable(),
-	last_duration_ms: z.number().nullable(),
-	run_count: z.number(),
-	success_count: z.number(),
-	error_count: z.number(),
+	last_duration_ms: nonNegativeIntegerSchema.nullable(),
+	run_count: nonNegativeIntegerSchema,
+	success_count: nonNegativeIntegerSchema,
+	error_count: nonNegativeIntegerSchema,
 	recent_runs: z.array(jobRunHistoryEntrySchema),
 })
 

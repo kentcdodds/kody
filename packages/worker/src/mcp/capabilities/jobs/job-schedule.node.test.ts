@@ -346,6 +346,8 @@ test('job_schedule requires an authenticated user', async () => {
 
 test('job_list returns inspectable jobs plus alarm state', async () => {
 	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
@@ -391,62 +393,68 @@ test('job_list returns inspectable jobs plus alarm state', async () => {
 		},
 	})
 
-	const result = await jobListCapability.handler(
-		{},
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.inspectJobsForUser).toHaveBeenCalledWith({
-		env,
-		userId: 'user-123',
-	})
-	expect(result).toEqual({
-		jobs: [
+	try {
+		const result = await jobListCapability.handler(
+			{},
 			{
-				id: 'job-123',
-				name: 'Turn lights off',
-				source_id: 'source-123',
-				published_commit: 'commit-123',
-				storage_id: 'job:job-123',
-				schedule: {
-					type: 'once',
-					run_at: '2026-04-20T18:30:00.000Z',
-				},
-				schedule_summary: 'Runs once at 2026-04-20T18:30:00.000Z',
-				timezone: 'UTC',
-				enabled: true,
-				kill_switch_enabled: false,
-				created_at: '2026-04-20T10:00:00.000Z',
-				updated_at: '2026-04-20T10:05:00.000Z',
-				next_run_at: '2026-04-20T18:30:00.000Z',
-				due_now: true,
-				last_run_at: null,
-				last_run_status: null,
-				last_run_error: null,
-				last_duration_ms: null,
-				run_count: 0,
-				success_count: 0,
-				error_count: 0,
-				recent_runs: [],
+				env,
+				callerContext,
 			},
-		],
-		alarm: {
-			binding_available: true,
-			status: 'armed',
-			stored_user_id: 'user-123',
-			alarm_scheduled_for: '2026-04-20T18:30:00.000Z',
-			next_runnable_job_id: 'job-123',
-			next_runnable_run_at: '2026-04-20T18:30:00.000Z',
-			alarm_in_sync: true,
-		},
-	})
+		)
+
+		expect(mockModule.inspectJobsForUser).toHaveBeenCalledWith({
+			env,
+			userId: 'user-123',
+		})
+		expect(result).toEqual({
+			jobs: [
+				{
+					id: 'job-123',
+					name: 'Turn lights off',
+					source_id: 'source-123',
+					published_commit: 'commit-123',
+					storage_id: 'job:job-123',
+					schedule: {
+						type: 'once',
+						run_at: '2026-04-20T18:30:00.000Z',
+					},
+					schedule_summary: 'Runs once at 2026-04-20T18:30:00.000Z',
+					timezone: 'UTC',
+					enabled: true,
+					kill_switch_enabled: false,
+					created_at: '2026-04-20T10:00:00.000Z',
+					updated_at: '2026-04-20T10:05:00.000Z',
+					next_run_at: '2026-04-20T18:30:00.000Z',
+					due_now: true,
+					last_run_at: null,
+					last_run_status: null,
+					last_run_error: null,
+					last_duration_ms: null,
+					run_count: 0,
+					success_count: 0,
+					error_count: 0,
+					recent_runs: [],
+				},
+			],
+			alarm: {
+				binding_available: true,
+				status: 'armed',
+				stored_user_id: 'user-123',
+				alarm_scheduled_for: '2026-04-20T18:30:00.000Z',
+				next_runnable_job_id: 'job-123',
+				next_runnable_run_at: '2026-04-20T18:30:00.000Z',
+				alarm_in_sync: true,
+			},
+		})
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('job_get returns one inspectable job plus alarm state', async () => {
 	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
@@ -502,63 +510,67 @@ test('job_get returns one inspectable job plus alarm state', async () => {
 		},
 	})
 
-	const result = await jobGetCapability.handler(
-		{ id: 'job-123' },
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.getJobInspection).toHaveBeenCalledWith({
-		env,
-		userId: 'user-123',
-		jobId: 'job-123',
-	})
-	expect(result).toEqual({
-		job: {
-			id: 'job-123',
-			name: 'Turn lights off',
-			source_id: 'source-123',
-			published_commit: null,
-			storage_id: 'job:job-123',
-			schedule: {
-				type: 'once',
-				run_at: '2026-04-20T18:30:00.000Z',
+	try {
+		const result = await jobGetCapability.handler(
+			{ id: 'job-123' },
+			{
+				env,
+				callerContext,
 			},
-			schedule_summary: 'Runs once at 2026-04-20T18:30:00.000Z',
-			timezone: 'UTC',
-			enabled: true,
-			kill_switch_enabled: false,
-			created_at: '2026-04-20T10:00:00.000Z',
-			updated_at: '2026-04-20T10:05:00.000Z',
-			next_run_at: '2026-04-20T18:30:00.000Z',
-				due_now: true,
-			last_run_at: '2026-04-20T09:00:00.000Z',
-			last_run_status: 'error',
-			last_run_error: 'Timed out',
-			last_duration_ms: 1200,
-			run_count: 2,
-			success_count: 1,
-			error_count: 1,
-			recent_runs: [
-				{
-					started_at: '2026-04-20T08:59:58.000Z',
-					finished_at: '2026-04-20T09:00:00.000Z',
-					status: 'error',
-					duration_ms: 1200,
-					error: 'Timed out',
+		)
+
+		expect(mockModule.getJobInspection).toHaveBeenCalledWith({
+			env,
+			userId: 'user-123',
+			jobId: 'job-123',
+		})
+		expect(result).toEqual({
+			job: {
+				id: 'job-123',
+				name: 'Turn lights off',
+				source_id: 'source-123',
+				published_commit: null,
+				storage_id: 'job:job-123',
+				schedule: {
+					type: 'once',
+					run_at: '2026-04-20T18:30:00.000Z',
 				},
-			],
-		},
-		alarm: {
-			binding_available: true,
-			status: 'out_of_sync',
-			stored_user_id: 'user-123',
-			alarm_scheduled_for: '2026-04-20T19:00:00.000Z',
-			next_runnable_job_id: 'job-123',
-			next_runnable_run_at: '2026-04-20T18:30:00.000Z',
-			alarm_in_sync: false,
-		},
-	})
+				schedule_summary: 'Runs once at 2026-04-20T18:30:00.000Z',
+				timezone: 'UTC',
+				enabled: true,
+				kill_switch_enabled: false,
+				created_at: '2026-04-20T10:00:00.000Z',
+				updated_at: '2026-04-20T10:05:00.000Z',
+				next_run_at: '2026-04-20T18:30:00.000Z',
+				due_now: true,
+				last_run_at: '2026-04-20T09:00:00.000Z',
+				last_run_status: 'error',
+				last_run_error: 'Timed out',
+				last_duration_ms: 1200,
+				run_count: 2,
+				success_count: 1,
+				error_count: 1,
+				recent_runs: [
+					{
+						started_at: '2026-04-20T08:59:58.000Z',
+						finished_at: '2026-04-20T09:00:00.000Z',
+						status: 'error',
+						duration_ms: 1200,
+						error: 'Timed out',
+					},
+				],
+			},
+			alarm: {
+				binding_available: true,
+				status: 'out_of_sync',
+				stored_user_id: 'user-123',
+				alarm_scheduled_for: '2026-04-20T19:00:00.000Z',
+				next_runnable_job_id: 'job-123',
+				next_runnable_run_at: '2026-04-20T18:30:00.000Z',
+				alarm_in_sync: false,
+			},
+		})
+	} finally {
+		vi.useRealTimers()
+	}
 })
