@@ -4,7 +4,7 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "MCP" | "ChatAgent" | "HomeConnectorSession" | "HomeMCP" | "AppRunner" | "JobManager" | "StorageRunner" | "AgentTurnRunner" | "RepoSession";
+		durableNamespaces: "MCP" | "ChatAgent" | "HomeConnectorSession" | "HomeMCP" | "JobManager" | "StorageRunner" | "AgentTurnRunner" | "RepoSession";
 	}
 	interface Env {
 		OAUTH_KV: KVNamespace;
@@ -28,7 +28,6 @@ declare namespace Cloudflare {
 		STORAGE_RUNNER: DurableObjectNamespace<import("./src/index").StorageRunner>;
 		AGENT_TURN_RUNNER: DurableObjectNamespace<import("./src/index").AgentTurnRunner>;
 		REPO_SESSION: DurableObjectNamespace<import("./src/index").RepoSession>;
-		APP_RUNNER: DurableObjectNamespace<import("./src/index").AppRunner>;
 	}
 }
 interface Env extends Cloudflare.Env {}

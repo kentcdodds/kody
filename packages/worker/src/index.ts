@@ -4,7 +4,6 @@ import { ChatAgent } from './chat-agent.ts'
 import { HomeConnectorSession } from './home/session.ts'
 import { HomeMCP } from './home/mcp.ts'
 import { MCP } from './mcp/index.ts'
-import { AppFacetBridge, AppRunner } from './mcp/app-runner.ts'
 import { JobManager } from './jobs/manager-do.ts'
 import { StorageRunner } from './storage-runner.ts'
 import { AgentTurnRunner } from './agent-turn/runner-do.ts'
@@ -32,7 +31,6 @@ import {
 	handleGeneratedUiApiRequest,
 	isGeneratedUiApiRequest,
 } from './mcp/generated-ui-api.ts'
-import { readGeneratedUiAppBackendSession } from './mcp/generated-ui-app-auth.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
@@ -51,8 +49,6 @@ export {
 	HomeConnectorSession,
 	HomeMCP,
 	MCP,
-	AppFacetBridge,
-	AppRunner,
 	JobManager,
 	StorageRunner,
 }
@@ -145,48 +141,6 @@ const appHandler = withCors({
 
 		if (isGeneratedUiApiRequest(url.pathname)) {
 			return handleGeneratedUiApiRequest(request, env)
-		}
-
-		if (url.pathname.startsWith('/app/')) {
-			const [, , rawAppId, ...rest] = url.pathname.split('/')
-			let appId = rawAppId?.trim()
-			if (!appId) {
-				return new Response('Not found.', { status: 404 })
-			}
-			try {
-				appId = decodeURIComponent(appId)
-			} catch {
-				return new Response('Not found.', { status: 404 })
-			}
-			let auth: Awaited<
-				ReturnType<typeof readGeneratedUiAppBackendSession>
-			> | null = null
-			try {
-				auth = await readGeneratedUiAppBackendSession({
-					request,
-					env,
-					appId,
-				})
-			} catch {
-				return Response.json(
-					{ ok: false, error: 'Unauthorized app backend request.' },
-					{ status: 401 },
-				)
-			}
-			if (!auth || auth.app_id !== appId) {
-				return Response.json(
-					{ ok: false, error: 'Unauthorized app backend request.' },
-					{ status: 401 },
-				)
-			}
-			const runner = ctx.exports.AppRunner.getByName(appId)
-			const forwardedUrl = new URL(request.url)
-			forwardedUrl.pathname = `/${rest.join('/')}`
-			const forwardedRequest = new Request(forwardedUrl.toString(), request)
-			forwardedRequest.headers.set('X-Kody-App-Id', appId)
-			forwardedRequest.headers.set('X-Kody-App-User-Id', auth.user.userId)
-			forwardedRequest.headers.set('X-Kody-App-Base-Url', forwardedUrl.origin)
-			return await runner.fetch(forwardedRequest)
 		}
 
 		const connectorRoute = parseConnectorRoutePath(url.pathname)
