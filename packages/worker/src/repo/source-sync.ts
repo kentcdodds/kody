@@ -8,6 +8,7 @@ import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
+import { type EntitySourceRow } from './types.ts'
 
 type SyncArtifactSourceInput = {
 	env: Env
