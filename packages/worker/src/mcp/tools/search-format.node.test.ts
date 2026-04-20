@@ -172,29 +172,81 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	})
 })
 
-test('entity detail formatting includes saved app backend metadata in structured output', () => {
-	const appDetail = formatEntityDetailMarkdown({
-		type: 'app',
-		id: 'app-123',
-		title: 'Facet counter',
-		description: 'Saved app with a facet backend',
-		hostedUrl: 'http://localhost/ui/app-123',
-		row: {
-			id: 'app-123',
-			user_id: 'user-123',
-			title: 'Facet counter',
-			description: 'Saved app with a facet backend',
-			sourceId: 'source-app-123',
-			hasServerCode: true,
-			parameters: null,
-			hidden: false,
-			created_at: '2026-03-20T00:00:00.000Z',
-			updated_at: '2026-03-20T00:00:00.000Z',
+test('entity detail formatting includes package app and export metadata', () => {
+	const packageDetail = formatEntityDetailMarkdown({
+		type: 'package',
+		id: 'observed-package',
+		title: '@kody/observed',
+		description: 'Observed package with an app surface.',
+		hostedUrl: 'http://localhost/packages/observed-package',
+		record: {
+			id: 'package-123',
+			userId: 'user-123',
+			name: '@kody/observed',
+			kodyId: 'observed-package',
+			description: 'Observed package with an app surface.',
+			tags: ['observed', 'ui'],
+			searchText: null,
+			sourceId: 'source-package-123',
+			hasApp: true,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kody/observed',
+			exports: {
+				'.': './src/index.ts',
+				'./app': {
+					import: './src/app.ts',
+					types: './src/app.d.ts',
+				},
+			},
+			kody: {
+				id: 'observed-package',
+				description: 'Observed package with an app surface.',
+				tags: ['observed', 'ui'],
+				app: {
+					entry: './src/app.ts',
+				},
+				jobs: {
+					nightly: {
+						entry: './src/jobs/nightly.ts',
+						schedule: {
+							type: 'interval',
+							every: '1d',
+						},
+					},
+				},
+			},
+		},
+		files: {
+			'package.json': '{}',
+			'src/app.d.ts': 'export default function fetch(request: Request): Promise<Response>\n',
 		},
 	})
-	expect(appDetail.structured).toMatchObject({
-		type: 'app',
-		hasServerCode: true,
-		hostedUrl: 'http://localhost/ui/app-123',
+	expect(packageDetail.structured).toMatchObject({
+		type: 'package',
+		hasApp: true,
+		hostedUrl: 'http://localhost/packages/observed-package',
+		appEntry: './src/app.ts',
+	})
+	expect(packageDetail.structured).toMatchObject({
+		exports: [
+			expect.objectContaining({
+				subpath: '.',
+				importSpecifier: 'kody:@observed-package',
+			}),
+			expect.objectContaining({
+				subpath: './app',
+				typesSource:
+					'export default function fetch(request: Request): Promise<Response>\n',
+			}),
+		],
+		jobs: [
+			expect.objectContaining({
+				name: 'nightly',
+				scheduleSummary: 'Runs every 1d',
+			}),
+		],
 	})
 })

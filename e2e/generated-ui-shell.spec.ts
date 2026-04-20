@@ -107,8 +107,9 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 						renderSaved(params) {
 							hostState.renderData = {
 								toolOutput: {
-									renderSource: 'saved_app',
-									appId: 'saved-app-123',
+									renderSource: 'saved_package',
+									sourceCode: ${savedHtmlJson},
+									runtime: 'html',
 									params,
 								},
 							}
@@ -155,16 +156,6 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 						}
 						if (message.jsonrpc === '2.0' && message.method === 'tools/call') {
 							hostState.toolCalls.push(message.params ?? {})
-							if (message.params?.name === 'ui_load_app_source') {
-								postToFrame({
-									jsonrpc: '2.0',
-									id: message.id,
-									result: {
-										structuredContent: hostState.savedSource,
-									},
-								})
-								return
-							}
 							if (message.params?.name === 'execute') {
 								postToFrame({
 									jsonrpc: '2.0',
@@ -281,5 +272,5 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 				).__generatedUiHostState.toolCalls.map((call) => call.name)
 			})
 		})
-		.toEqual(['execute', 'ui_load_app_source', 'execute'])
+		.toEqual(['execute', 'execute'])
 })

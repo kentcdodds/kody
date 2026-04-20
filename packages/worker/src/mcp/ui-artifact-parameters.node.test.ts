@@ -42,7 +42,7 @@ test('applyUiArtifactParameters enforces required and applies defaults', () => {
 	])!
 	expect(() =>
 		applyUiArtifactParameters({ definitions: defs, values: { limit: 2 } }),
-	).toThrow('Missing required saved app parameter: owner.')
+	).toThrow('Missing required package app parameter: owner.')
 	expect(
 		applyUiArtifactParameters({ definitions: defs, values: { owner: 'kody' } }),
 	).toEqual({
@@ -65,5 +65,5 @@ test('applyUiArtifactParameters rejects unknown names', () => {
 			definitions: defs,
 			values: { query: 'hello', extra: true },
 		}),
-	).toThrow('Unknown saved app parameter(s): extra.')
+	).toThrow('Unknown package app parameter(s): extra.')
 })

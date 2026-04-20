@@ -6,6 +6,7 @@ export const capabilityDomainNames = {
 	jobs: 'jobs',
 	math: 'math',
 	meta: 'meta',
+	packages: 'packages',
 	repo: 'repo',
 	secrets: 'secrets',
 	storage: 'storage',

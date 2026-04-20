@@ -51,14 +51,23 @@ const mockModule = vi.hoisted(() => ({
 	setSecretAllowedHosts: vi.fn(async () => undefined),
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	saveValue: vi.fn(async () => undefined),
-	getUiArtifactByOwnerIds: async (
+	getSavedPackageById: async (
 		_db: D1Database,
-		_owners: Array<string>,
-		appId: string,
+		input: { packageId: string },
 	) =>
-		appId === 'app-123'
+		input.packageId === 'package-123'
 			? {
-					id: 'app-123',
+					id: 'package-123',
+					userId: 'stable-user-1',
+					name: '@kody/example-package',
+					kodyId: 'example-package',
+					description: 'Example package',
+					tags: [],
+					searchText: null,
+					sourceId: 'source-package-123',
+					hasApp: true,
+					createdAt: new Date(0).toISOString(),
+					updatedAt: new Date(0).toISOString(),
 				}
 			: null,
 }))
@@ -122,9 +131,9 @@ vi.mock('#mcp/values/service.ts', () => ({
 	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
 }))
 
-vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
-	getUiArtifactByOwnerIds: (...args: Array<unknown>) =>
-		mockModule.getUiArtifactByOwnerIds(...args),
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
 }))
 
 const { createConnectSecretApiHandler } = await import('./connect-secret.ts')
@@ -173,7 +182,7 @@ test('connect secret GET creates app-scoped session with requested app id', asyn
 	const handler = createConnectSecretApiHandler(createEnv())
 	const response = await handler.action({
 		request: new Request(
-			'https://example.com/connect/secret.json?scope=app&appId=app-123',
+			'https://example.com/connect/secret.json?scope=app&appId=package-123',
 		),
 		params: {},
 	} as never)

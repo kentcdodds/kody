@@ -90,7 +90,6 @@ export function App(handle: Handle) {
 	return () => {
 		const isWideLayout =
 			currentPathname.startsWith('/chat') ||
-			currentPathname.startsWith('/ui/') ||
 			currentPathname.startsWith('/account/secrets')
 		const sessionEmail = session?.email ?? ''
 		const isSessionReady = sessionStatus === 'ready'

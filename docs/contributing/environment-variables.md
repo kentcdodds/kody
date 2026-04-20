@@ -98,10 +98,10 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API token used by the internal API client
   (`Authorization: Bearer ...`) for Worker-side Cloudflare REST calls such as
-  the Cloudflare Email sender. User Cloudflare API calls from codemode use saved
-  secrets and secret-aware `fetch` (see
-  `docs/contributing/skill-patterns/cloudflare-api-v4.md`). Local `npm run dev`
-  sets this to the Cloudflare mock token unless `AI_MODE=remote` or
+  the Cloudflare Email sender. User Cloudflare API calls from authored package
+  modules use saved secrets and secret-aware `fetch` (see
+  `docs/contributing/packages-and-manifests.md`). Local `npm run dev` sets this
+  to the Cloudflare mock token unless `AI_MODE=remote` or
   `SKIP_CLOUDFLARE_MOCK=1`.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the Cloudflare
   Email Service REST API fallback used by local mocks and preview deploys. This

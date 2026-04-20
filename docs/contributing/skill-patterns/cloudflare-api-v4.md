@@ -1,13 +1,10 @@
-# Skill pattern: Cloudflare API v4 (`api.cloudflare.com`)
+# Pattern: Cloudflare API v4 (`api.cloudflare.com`)
 
-The **`cloudflare_rest`** builtin capability was removed. Use **secret-aware
-`fetch`** in **`execute`** or a **saved skill** so Cloudflare API access can
-change without shipping Worker code.
+Use **secret-aware `fetch`** in **`execute`** or inside a saved package export so
+Cloudflare API access can change without shipping Worker code.
 
-A reference saved skill named **`cloudflare-api-v4`** (collection **Cloudflare
-Ops**) may already exist on your account; run it with
-`meta_run_skill({ name: 'cloudflare-api-v4', params: { method, path, query?, body? } })`
-or save your own copy from the example below.
+You can keep this logic inline in `execute`, or place it in a package export and
+import it from other packages with `kody:@...`.
 
 ## Auth and hosts
 
@@ -26,10 +23,11 @@ Capability **allowlists** on secrets apply to **capability inputs** that use
 All API paths must be under **`/client/v4/`** (see
 [Cloudflare API docs](https://developers.cloudflare.com/fundamentals/api/how-to/make-api-calls/)).
 
-## Example skill (save via `meta_save_skill`)
+## Example module body
 
-Use **`uses_capabilities`** or trust inference as appropriate. Mark
-**`destructive: true`** when the skill can call mutating methods.
+When this logic lives in a package export, mark the package metadata and search
+description appropriately. When the code can mutate Cloudflare resources, treat
+it as destructive in your surrounding workflow and review path.
 
 ```javascript
 ;async () => {

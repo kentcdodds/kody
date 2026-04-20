@@ -4,7 +4,6 @@ export const routes = route({
 	home: '/',
 	chat: '/chat',
 	chatThread: '/chat/:threadId',
-	savedUi: '/ui/:id',
 	connectSecret: '/connect/secret',
 	connectSecretApi: '/connect/secret.json',
 	connectSecretApiPost: post('/connect/secret.json'),

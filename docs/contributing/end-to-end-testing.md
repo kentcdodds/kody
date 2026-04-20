@@ -33,8 +33,8 @@ that are unlikely to recur.
   the fix.
 - For MCP specifically, treat `*.mcp-e2e.test.ts` as a tiny transport smoke
   suite. Do not add capability-by-capability coverage there unless the failure
-  mode depends on the real MCP HTTP transport, OAuth flow, or saved-app session
-  wiring.
+  mode depends on the real MCP HTTP transport, OAuth flow, or package-app
+  session wiring.
 
 ## Structure and style
 

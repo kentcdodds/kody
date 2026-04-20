@@ -25,7 +25,7 @@ import {
 	setSecretAllowedHosts,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
-import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type routes } from '#app/routes.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
@@ -37,7 +37,7 @@ import {
 
 type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
 
-type SavedAppOption = {
+type SavedPackageAppOption = {
 	id: string
 	title: string
 	updatedAt: string
@@ -73,7 +73,7 @@ type SecretApprovalView = {
 type AccountSecretsPayload = {
 	ok: true
 	email: string
-	apps: Array<SavedAppOption>
+	apps: Array<SavedPackageAppOption>
 	secrets: Array<AccountSecretListItem>
 	selectedSecret: AccountSecretDetail | null
 	approval: SecretApprovalView | null
@@ -626,7 +626,7 @@ async function buildAccountSecretsPayload(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 	selectedSecretId?: string | null
-	savedApps?: Array<SavedAppOption>
+	savedApps?: Array<SavedPackageAppOption>
 }): Promise<AccountSecretsPayload> {
 	const url = new URL(input.request.url)
 	const approvalToken = url.searchParams.get('request')
@@ -677,23 +677,16 @@ async function listSavedAppsForUser(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 }) {
-	const apps = await Promise.all(
-		input.user.artifactOwnerIds.map((ownerId) =>
-			listUiArtifactsByUserId(input.env.APP_DB, ownerId),
-		),
-	)
-	const dedupedIds = new Set<string>()
-	return apps
-		.flat()
-		.filter((app) => {
-			if (dedupedIds.has(app.id)) return false
-			dedupedIds.add(app.id)
-			return true
+	return (
+		await listSavedPackagesByUserId(input.env.APP_DB, {
+			userId: input.user.mcpUser.userId,
 		})
-		.map((app) => ({
-			id: app.id,
-			title: app.title,
-			updatedAt: app.updated_at,
+	)
+		.filter((savedPackage) => savedPackage.hasApp)
+		.map((savedPackage) => ({
+			id: savedPackage.id,
+			title: savedPackage.name,
+			updatedAt: savedPackage.updatedAt,
 		}))
 		.sort((left, right) => {
 			return (
@@ -706,7 +699,7 @@ async function listSavedAppsForUser(input: {
 async function listAccountSecrets(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-	savedApps: Array<SavedAppOption>
+	savedApps: Array<SavedPackageAppOption>
 }) {
 	const appTitles = new Map(input.savedApps.map((app) => [app.id, app.title]))
 	const [userSecrets, appSecrets] = await Promise.all([
@@ -1142,7 +1135,7 @@ function readAccountSecretScope(
 function readAppIdForScope(input: {
 	body: object
 	scope: AccountEditableSecretScope
-	savedApps: Array<SavedAppOption>
+	savedApps: Array<SavedPackageAppOption>
 }) {
 	if (input.scope !== 'app') return null
 	const appId = readString(input.body, 'appId')

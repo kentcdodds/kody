@@ -1,10 +1,10 @@
 # Repo-backed editing sessions
 
-Repo-backed saved skills, jobs, and apps keep their durable source in artifact
-repos. After an artifact exists, that repo-backed source is the source of truth
-for later edits and publishes.
+Saved packages keep their durable source in artifact repos. Once a package
+exists, that repo-backed source is the source of truth for later edits and
+publishes.
 
-Use the repo capabilities when you want to inspect or modify that saved source
+Use the repo capabilities when you want to inspect or modify package source
 directly.
 
 ## Preferred workflow
@@ -22,35 +22,27 @@ That keeps normal edit workflows to one capability call instead of separate
 `repo_open_session` + `repo_apply_patch` + `repo_run_checks` +
 `repo_publish_session` calls.
 
-## Opening by user-facing identity
+## Opening by package identity
 
-`repo_open_session` and `repo_edit_flow` can now open repo-backed entities by
-their user-facing identity instead of requiring the internal `source_id`.
+`repo_open_session` and `repo_edit_flow` can open repo-backed packages by
+user-facing identity instead of requiring the internal `source_id`.
 
 Examples:
 
 ```json
-{ "target": { "kind": "skill", "name": "triage-github-pr" } }
+{ "target": { "kind": "package", "kody_id": "triage-github-pr" } }
 ```
 
 ```json
-{ "target": { "kind": "job", "job_id": "job-123" } }
+{ "target": { "kind": "package", "package_id": "pkg-123" } }
 ```
 
-```json
-{ "target": { "kind": "job", "name": "Nightly inbox sweep" } }
-```
-
-```json
-{ "target": { "kind": "app", "app_id": "app-123" } }
-```
-
-You can still pass `source_id` when you already have it, but most callers should
-prefer `target`.
+You can still pass `source_id` when you already have it, but most callers
+should prefer `target`.
 
 ## Structured repair detail
 
-Publish-oriented repo flows now return structured detail for important failure
+Publish-oriented repo flows return structured detail for important failure
 states:
 
 - **`blocked_by_checks`** when checks fail inside `repo_edit_flow`
@@ -77,11 +69,11 @@ session:
 
 ```ts
 await codemode.repo_edit_flow({
-	target: { kind: 'skill', name: 'triage-github-pr' },
+	target: { kind: 'package', kody_id: 'triage-github-pr' },
 	instructions: [
 		{
 			kind: 'replace',
-			path: 'src/skill.ts',
+			path: 'src/index.ts',
 			search: 'return { status: "todo" }',
 			replacement: 'return { status: "done" }',
 		},

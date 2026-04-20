@@ -6,7 +6,7 @@ import {
 	formatExecutionOutput,
 	getExecutionErrorDetails,
 } from '#mcp/executor.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	callerContextFields,
@@ -30,18 +30,20 @@ const executeTool = {
 	name: 'execute',
 	title: 'Execute Capabilities',
 	description: `
-Run an async JavaScript arrow function against \`codemode\` (one method per
-builtin capability). Discover names with \`search\`; for one capability’s
-\`inputSchema\` / \`outputSchema\`, call \`search\` with
-\`entity: "{name}:capability"\` or use \`meta_list_capabilities\`.
+Run one ephemeral ESM module string with a default export. Discover capability
+names with \`search\`; for one capability’s \`inputSchema\` / \`outputSchema\`,
+call \`search\` with \`entity: "{name}:capability"\` or use
+\`meta_list_capabilities\`.
 
-Saved skills: prefer \`meta_run_skill({ name, params })\`.
-
-Jobs: use \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`, and
-\`job_run_now\` to manage one-shot, interval, or cron jobs for the signed-in
-user. Each job stores repo-backed source metadata plus a stable durable storage id.
+Saved package surface:
+- \`package_save\`, \`package_get\`, \`package_list\`, \`package_delete\`
+- repo-backed package editing with \`repo_edit_flow\`, \`repo_open_session\`,
+  and \`repo_publish_session\`
+- cross-package imports with specifiers such as
+  \`kody:@my-package/export-name\`
 
 Sandbox surface:
+- import runtime APIs from \`kody:runtime\`
 - \`codemode\`: \`(args) => Promise<unknown>\` per capability.
 - \`storage\`: durable storage helpers for the bound \`storageId\`.
 - \`storage.sql(query, params?)\`: raw SQLite access for the bound storage id.
@@ -60,7 +62,9 @@ Prefer one \`execute\` when the workflow is clear; split calls when you need new
 
 Example:
 
-\`async () => {
+\`import { codemode } from 'kody:runtime'
+
+export default async function run() {
   return await codemode.kody_official_guide({
     guide: 'integration_bootstrap',
   });
@@ -87,12 +91,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			inputSchema: {
 				code: z
 					.string()
-					.describe('JavaScript async arrow function to execute capabilities.'),
+					.describe(
+						'Single ESM module string with imports/exports and a default export to execute.',
+					),
 				params: z
 					.record(z.string(), z.unknown())
 					.optional()
 					.describe(
-						'Optional JSON params injected as `params` when invoking the async function.',
+						'Optional JSON params passed to the module default export at execution time.',
 					),
 				storageId: z
 					.string()
@@ -170,7 +176,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					},
 				},
 				async () =>
-					runCodemodeWithRegistry(env, callerContext, code, params, {
+					runModuleWithRegistry(env, callerContext, code, params, {
 						executorExports: agent.getLoopbackExports(),
 						storageTools: activeStorageId
 							? {

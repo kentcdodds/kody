@@ -142,7 +142,7 @@ test('injectRuntimeStateIntoDocument exposes runtime bootstrap globals', () => {
 	expect(result).toContain('window.params =')
 })
 
-test('readSavedAppSourceFromHostToolResult reads a saved app source payload', () => {
+test('readSavedAppSourceFromHostToolResult reads a package app source payload', () => {
 	const result = readSavedAppSourceFromHostToolResult({
 		structuredContent: {
 			app_id: 'app-123',
@@ -162,14 +162,14 @@ test('readSavedAppSourceFromHostToolResult preserves host tool errors', () => {
 		isError: true,
 		structuredContent: {
 			error: {
-				message: 'Saved app not found for this user.',
+				message: 'Saved package app not found for this user.',
 			},
 		},
 	})
 
 	expect(result).toEqual({
 		handled: true,
-		errorMessage: 'Saved app not found for this user.',
+		errorMessage: 'Saved package app not found for this user.',
 	})
 })
 
@@ -307,7 +307,7 @@ test('appBackend.resolveUrl resolves backend-relative paths safely', () => {
 	).toBe('http://localhost:3000/app/app-123/api/state')
 })
 
-test('appBackend.resolveUrl rejects urls outside the saved app backend path', () => {
+test('appBackend.resolveUrl rejects urls outside the package app backend path', () => {
 	installWindowLocation('http://localhost:3000/ui/app-123')
 	const runtimeState = getKodyWidgetRuntimeStateForTest()
 	runtimeState.reset()
@@ -321,12 +321,10 @@ test('appBackend.resolveUrl rejects urls outside the saved app backend path', ()
 
 	expect(() =>
 		kodyWidget.appBackend?.resolveUrl('http://localhost:3000/ui/app-123'),
-	).toThrow(
-		/only supports same-origin urls within the saved app backend base path/i,
-	)
+	).toThrow(/only supports same-origin urls within the app backend base path/i)
 	expect(() =>
 		kodyWidget.appBackend?.resolveUrl('https://example.com/app/app-123/api/state'),
-	).toThrow(/only supports same-origin urls within the saved app backend base path/i)
+	).toThrow(/only supports same-origin urls within the app backend base path/i)
 })
 
 test('appBackend.fetch adds the generated ui bearer token by default', async () => {

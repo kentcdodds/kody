@@ -1,4 +1,4 @@
-# Skill pattern: Cloudflare Developer Docs (`developers.cloudflare.com`)
+# Package/execute pattern: Cloudflare Developer Docs (`developers.cloudflare.com`)
 
 Use this pattern when you need API or product documentation from
 [developers.cloudflare.com](https://developers.cloudflare.com).
@@ -6,7 +6,7 @@ Use this pattern when you need API or product documentation from
 ## Preferred approach
 
 Use **markdown-preferred `fetch`** against a path under the docs site (see
-allowlist below). Keep the skill focused on direct docs retrieval instead of
+allowlist below). Keep the package export or execute module focused on direct docs retrieval instead of
 adding site-specific fallback machinery.
 
 ## Path allowlist
@@ -30,9 +30,9 @@ Paths must:
 
 - Not contain `..`, `#`, or whitespace; max length 2048.
 
-## Example skill body (save via `meta_save_skill`)
+## Example module body
 
-Adjust `name`, `title`, `description`, and trust flags when saving.
+Adapt this into a package export or use it directly in `execute`.
 
 ```javascript
 ;async () => {
@@ -83,8 +83,8 @@ Callers should inspect `contentType` before treating `body` as Markdown. This
 helper returns the raw sliced response body plus `markdownTokenEstimate`; HTML
 responses are not auto-converted.
 
-For parameterized skills, use **`meta_save_skill`** **`parameters`** (e.g. a
-required `path` string) and read **`params.path`** instead of a hard-coded path.
+For parameterized modules, accept a normal function argument (for example a
+required `path` string) instead of a hard-coded path.
 
 ## Related
 

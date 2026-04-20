@@ -1,9 +1,8 @@
 # Search
 
-The **search** tool finds **built-in capabilities**, **persisted values**,
-**saved connectors**, **saved skills**, **saved apps** (client + optional facet
-backend artifacts), and **user secret references** (metadata only, not secret
-values).
+The **search** tool finds **built-in capabilities**, **saved packages**,
+**persisted values**, **saved connectors**, and **user secret references**
+(metadata only, not secret values).
 
 ## Queries and ranking
 
@@ -18,23 +17,19 @@ Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches when the response must stay
 small.
 
-Optional **`skill_collection`** narrows saved skills to one collection slug
-while still searching capabilities, values, connectors, apps, and secrets
-normally.
-
 ## Single-entity detail
 
 To get **full markdown and schemas for one hit** (for example a capability’s
 `inputSchema` / `outputSchema`), call **search** again with **`entity`** set to
-`"{id}:{type}"` where **`type`** is `capability`, `value`, `connector`, `skill`,
-`app`, or `secret`.
+`"{id}:{type}"` where **`type`** is `capability`, `value`, `connector`,
+`package`, or `secret`.
 
 Examples:
 
 - `kody_official_guide:capability`
 - `user:preferred_org:value`
 - `github:connector`
-- `my-skill-name:skill`
+- `my-package:package`
 - `spotify:connector`
 - `spotify-access-token:secret`
 
@@ -51,12 +46,11 @@ for an empty ranked list.
 
 ## Authentication
 
-Saved **skills** and **apps** require a signed-in MCP user. Capabilities and
-builtin behavior still work without user-scoped data.
+Saved **packages** require a signed-in MCP user. Capabilities and builtin
+behavior still work without user-scoped data.
 
-Saved app search hits include whether an app has backend server code. Entity
-detail for an app also includes the hosted fallback URL plus whether the app has
-an isolated Durable Object backend.
+Package search hits summarize whether the package has an app surface. Package
+detail nests exports, jobs, tags, and app metadata under the package itself.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

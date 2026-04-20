@@ -3,6 +3,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import {
+	normalizeRepoManifestSummary,
 	repoRunChecksOutputSchema,
 	repoSessionIdSchema,
 } from './repo-shared.ts'
@@ -32,7 +33,7 @@ export const repoRunChecksCapability = defineDomainCapability(
 					ok: entry.ok,
 					message: entry.message,
 				})),
-				manifest: result.manifest,
+				manifest: normalizeRepoManifestSummary(result.manifest),
 			}
 		},
 	},

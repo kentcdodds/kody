@@ -92,10 +92,9 @@ automatically:
   `npm run dev` targets the Cloudflare mock unless `SKIP_CLOUDFLARE_MOCK=1`. The
   internal Cloudflare API client expects paths under `/client/v4/`.)
 - `CAPABILITY_REINDEX_SECRET` (optional Worker secret; bearer auth for
-  `POST /__maintenance/reindex-capabilities`,
-  `POST /__maintenance/reindex-skills`, and `POST /__maintenance/reindex-apps`
-  to embed and upsert builtin capabilities, all user skills, and discoverable
-  saved apps into Vectorize)
+  `POST /__maintenance/reindex-capabilities`
+  to refresh builtin capability embeddings in Vectorize. Saved package
+  projections refresh when packages are saved or published.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
 secrets from `packages/worker/.env`.
@@ -106,7 +105,7 @@ Configure these GitHub Actions secrets and variables for workflows:
 
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account; also reused for remote AI and Cloudflare API workflows that run with
-  account secrets + skills)
+  account secrets + package workflows)
 - `COOKIE_SECRET` (same format as local)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
   deploy as the canonical public app origin and written into the generated

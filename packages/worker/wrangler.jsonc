@@ -23,10 +23,6 @@
 			"tag": "v4",
 		},
 		{
-			"new_sqlite_classes": ["AppRunner"],
-			"tag": "v5",
-		},
-		{
 			"new_sqlite_classes": ["JobManager", "JobRunner"],
 			"tag": "v6",
 		},
@@ -108,10 +104,6 @@
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
-					{
-						"class_name": "AppRunner",
-						"name": "APP_RUNNER",
-					},
 				],
 			},
 			"d1_databases": [
@@ -190,10 +182,6 @@
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
-					{
-						"class_name": "AppRunner",
-						"name": "APP_RUNNER",
-					},
 				],
 			},
 			"d1_databases": [
@@ -271,10 +259,6 @@
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
-					},
-					{
-						"class_name": "AppRunner",
-						"name": "APP_RUNNER",
 					},
 				],
 			},
