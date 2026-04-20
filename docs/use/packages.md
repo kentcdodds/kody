@@ -76,7 +76,8 @@ Jobs are part of the package definition.
 
 For repo-backed jobs that are not part of a saved package, use
 `job_schedule` instead. `job_schedule_once` remains available as the one-off
-shortcut.
+shortcut, and `job_run_now` can trigger an existing scheduled job immediately
+for debugging or ad hoc runs.
 
 ## Save and edit packages
 
