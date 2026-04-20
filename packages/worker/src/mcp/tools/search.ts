@@ -8,11 +8,11 @@ import {
 } from '#mcp/capabilities/values/connector-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import {
-	deterministicEmbedding,
-	lexicalScore,
 	cosineSimilarity,
+	deterministicEmbedding,
+	hybridSearchScore,
 	isCapabilitySearchOffline,
-	normalizeHybridSearchScore,
+	lexicalScore,
 } from '#mcp/capabilities/capability-search.ts'
 import {
 	listUserSecretsForSearch,
@@ -50,6 +50,7 @@ import {
 	resolveConversationId,
 } from './tool-call-context.ts'
 import {
+	type SearchMatch,
 	type SearchResultStructuredContent,
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
@@ -64,13 +65,146 @@ const maxChars = maxTokens * charsPerToken
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
 
-type PackageSearchRow = {
+export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
 	projection: ReturnType<typeof buildPackageSearchProjection>
 }
 
-type SearchMatch =
-	Parameters<typeof toSlimStructuredMatches>[0]['matches'][number]
+export type OptionalSearchRowsResult = {
+	packageRows: Array<PackageSearchRow>
+	userSecretRows: Array<SecretSearchRow>
+	userValueRows: Array<ValueMetadata>
+	warnings: Array<string>
+}
+
+export function searchUnified(input: {
+	env: Env
+	query: string
+	limit: number
+	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	optionalRows: Pick<
+		OptionalSearchRowsResult,
+		'packageRows' | 'userSecretRows' | 'userValueRows'
+	>
+}): { matches: Array<SearchMatch>; offline: boolean } {
+	const offline = isCapabilitySearchOffline(input.env)
+	const query = input.query.trim()
+	if (!query) {
+		return {
+			matches: [],
+			offline,
+		}
+	}
+
+	const limit = Math.max(1, input.limit)
+	const queryEmbedding = deterministicEmbedding(query)
+	const capabilityMatches = Object.values(input.registry.capabilitySpecs)
+		.map((spec) => ({
+			type: 'capability' as const,
+			name: spec.name,
+			description: spec.description,
+			score: lexicalScore(query, `${spec.name}\n${spec.description}`),
+		}))
+		.filter((match) => match.score > 0)
+	const packageMatches = input.optionalRows.packageRows
+		.map((entry) => {
+			const doc = [
+				entry.record.name,
+				entry.record.kodyId,
+				entry.record.description,
+				entry.record.tags.join(' '),
+				entry.record.searchText ?? '',
+			].join('\n')
+			const lexical = lexicalScore(query, doc)
+			const vector = cosineSimilarity(queryEmbedding, deterministicEmbedding(doc))
+			return {
+				type: 'package' as const,
+				packageId: entry.record.id,
+				kodyId: entry.record.kodyId,
+				name: entry.record.name,
+				title: entry.record.name,
+				description: entry.record.description,
+				tags: entry.record.tags,
+				hasApp: entry.record.hasApp,
+				score: hybridSearchScore(lexical, vector),
+			}
+		})
+		.filter((match) => match.score > 0)
+	const valueMatches = input.optionalRows.userValueRows
+		.flatMap((row) => {
+			if (parseConnectorValueName(row.name)) return []
+			return [
+				{
+					type: 'value' as const,
+					valueId: buildValueEntityId(row),
+					name: row.name,
+					description: describeValue(row),
+					scope: row.scope,
+					appId: row.appId,
+					score: lexicalScore(
+						query,
+						[row.name, row.description, row.scope, row.value].join('\n'),
+					),
+				},
+			]
+		})
+		.filter((match) => match.score > 0)
+	const connectorMatches = input.optionalRows.userValueRows
+		.flatMap((row) => {
+			const connectorName = parseConnectorValueName(row.name)
+			if (!connectorName) return []
+			const config = parseConnectorConfig(
+				parseConnectorJson(row.value),
+				connectorName,
+			)
+			if (!config) return []
+			return [
+				{
+					type: 'connector' as const,
+					connectorName,
+					title: connectorName,
+					description:
+						row.description.trim() ||
+						`Saved OAuth connector configuration (${config.flow} flow).`,
+					flow: config.flow,
+					apiBaseUrl: config.apiBaseUrl ?? null,
+					requiredHosts: config.requiredHosts ?? [],
+					score: lexicalScore(
+						query,
+						[
+							connectorName,
+							row.description,
+							config.tokenUrl,
+							config.apiBaseUrl ?? '',
+						].join('\n'),
+					),
+				},
+			]
+		})
+		.filter((match) => match.score > 0)
+	const secretMatches = input.optionalRows.userSecretRows
+		.map((row) => ({
+			type: 'secret' as const,
+			name: row.name,
+			description: row.description,
+			score: lexicalScore(query, `${row.name}\n${row.description}`),
+		}))
+		.filter((match) => match.score > 0)
+
+	return {
+		matches: [
+			...capabilityMatches,
+			...packageMatches,
+			...valueMatches,
+			...connectorMatches,
+			...secretMatches,
+		]
+			.sort((left, right) => right.score - left.score)
+			.slice(0, limit)
+			.map(({ score: _score, ...match }) => match),
+		offline,
+	}
+}
 
 export async function searchPackages(input: {
 	env: Env
@@ -222,13 +356,6 @@ https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 		openWorldHint: false,
 	} satisfies ToolAnnotations,
 } as const
-
-type OptionalSearchRowsResult = {
-	packageRows: Array<PackageSearchRow>
-	userSecretRows: Array<SecretSearchRow>
-	userValueRows: Array<ValueMetadata>
-	warnings: Array<string>
-}
 
 type SearchRowsAndRegistry = OptionalSearchRowsResult & {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
@@ -615,124 +742,22 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							callerContext,
 							userId,
 							entity: args.entity,
-						searchRows,
+							searchRows,
 						}),
 					}
 				}
 
-				const capabilityMatches = Object.values(
-					searchRows.registry.capabilitySpecs,
-				)
-					.map((spec) => ({
-						type: 'capability' as const,
-						name: spec.name,
-						description: spec.description,
-						score: lexicalScore(args.query!, `${spec.name}\n${spec.description}`),
-					}))
-					.filter((match) => match.score > 0)
-				const packageMatches = searchRows.packageRows
-					.map((entry) => {
-						const doc = [
-							entry.record.name,
-							entry.record.kodyId,
-							entry.record.description,
-							entry.record.tags.join(' '),
-							entry.record.searchText ?? '',
-						].join('\n')
-						const lexical = lexicalScore(args.query!, doc)
-						const vector = cosineSimilarity(
-							deterministicEmbedding(args.query!),
-							deterministicEmbedding(doc),
-						)
-						return {
-							type: 'package' as const,
-							packageId: entry.record.id,
-							kodyId: entry.record.kodyId,
-							name: entry.record.name,
-							title: entry.record.name,
-							description: entry.record.description,
-							tags: entry.record.tags,
-							hasApp: entry.record.hasApp,
-							score: normalizeHybridSearchScore({
-								lexical,
-								vector,
-							}),
-						}
-					})
-					.filter((match) => match.score > 0)
-				const valueMatches = searchRows.userValueRows
-					.filter((row) => parseConnectorValueName(row.name) == null)
-					.map((row) => ({
-						type: 'value' as const,
-						valueId: buildValueEntityId(row),
-						name: row.name,
-						description: describeValue(row),
-						scope: row.scope,
-						appId: row.appId,
-						score: lexicalScore(
-							args.query!,
-							[row.name, row.description, row.scope, row.value].join('\n'),
-						),
-					}))
-					.filter((match) => match.score > 0)
-				const connectorMatches = searchRows.userValueRows
-					.flatMap((row) => {
-						const connectorName = parseConnectorValueName(row.name)
-						if (!connectorName) return []
-						const config = parseConnectorConfig(
-							parseConnectorJson(row.value),
-							connectorName,
-						)
-						if (!config) return []
-						return [
-							{
-								type: 'connector' as const,
-								connectorName,
-								title: connectorName,
-								description:
-									row.description.trim() ||
-									`Saved OAuth connector configuration (${config.flow} flow).`,
-								flow: config.flow,
-								apiBaseUrl: config.apiBaseUrl ?? null,
-								requiredHosts: config.requiredHosts ?? [],
-								score: lexicalScore(
-									args.query!,
-									[
-										connectorName,
-										row.description,
-										config.tokenUrl,
-										config.apiBaseUrl ?? '',
-									].join('\n'),
-								),
-							},
-						]
-					})
-					.filter((match) => match.score > 0)
-				const secretMatches = searchRows.userSecretRows
-					.map((row) => ({
-						type: 'secret' as const,
-						name: row.name,
-						description: row.description,
-						score: lexicalScore(args.query!, `${row.name}\n${row.description}`),
-					}))
-					.filter((match) => match.score > 0)
-				const allMatches = [
-					...capabilityMatches,
-					...packageMatches,
-					...valueMatches,
-					...connectorMatches,
-					...secretMatches,
-				]
-					.sort((left, right) => right.score - left.score)
-					.slice(0, limit)
-					.map(({ score: _score, ...match }) => match)
+				const result = searchUnified({
+					env: agent.getEnv(),
+					query: args.query!,
+					limit,
+					registry: searchRows.registry,
+					optionalRows: searchRows,
+				})
 
 				return {
 					mode: 'list' as const,
-					result: {
-						matches: allMatches,
-						offline: isCapabilitySearchOffline(agent.getEnv()),
-					},
+					result,
 				}
 			}
 

@@ -1,9 +1,145 @@
 import { expect, test } from 'vitest'
+import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shared.ts'
 import {
 	loadDownHomeConnectorStatus,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
+	searchUnified,
+	type OptionalSearchRowsResult,
+	type PackageSearchRow,
 } from './search.ts'
+
+test('searchUnified ranks mixed search rows through one shared pipeline', () => {
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'meta',
+			description: 'Meta capabilities',
+			capabilities: [
+				{
+					name: 'alpha beta',
+					domain: 'meta',
+					description: 'gamma helper',
+					keywords: [],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					handler: async () => null,
+				},
+			],
+		},
+	])
+	const packageRows: Array<PackageSearchRow> = [
+		{
+			record: {
+				id: 'pkg-1',
+				userId: 'user-1',
+				name: 'alpha',
+				kodyId: 'beta',
+				description: 'gamma',
+				tags: ['delta'],
+				searchText: 'epsilon',
+				sourceId: 'source-1',
+				hasApp: false,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+			projection: {
+				name: 'alpha',
+				kodyId: 'beta',
+				description: 'gamma',
+				tags: ['delta'],
+				searchText: 'epsilon',
+				hasApp: false,
+				exports: [],
+				jobs: [],
+			},
+		},
+	]
+	const optionalRows = {
+		packageRows,
+		userSecretRows: [
+			{
+				name: 'alpha-secret',
+				scope: 'user',
+				description: 'beta gamma delta secret',
+				appId: null,
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+		],
+		userValueRows: [
+			{
+				name: 'preferred-alpha',
+				scope: 'user',
+				value: 'beta',
+				description: 'gamma delta',
+				appId: null,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+				ttlMs: null,
+			},
+			{
+				name: buildConnectorValueName('github'),
+				scope: 'user',
+				value: JSON.stringify({
+					tokenUrl: 'https://delta.example/token',
+					apiBaseUrl: 'https://epsilon.example/api',
+					flow: 'confidential',
+					clientIdValueName: 'github-client-id',
+					clientSecretSecretName: 'github-client-secret',
+					accessTokenSecretName: 'github-access-token',
+					refreshTokenSecretName: 'github-refresh-token',
+					requiredHosts: ['epsilon.example'],
+				}),
+				description: 'alpha beta gamma connector',
+				appId: null,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+				ttlMs: null,
+			},
+		],
+		warnings: [],
+	} satisfies OptionalSearchRowsResult
+
+	const result = searchUnified({
+		env: {} as Env,
+		query: 'alpha\nbeta\ngamma\ndelta\nepsilon',
+		limit: 5,
+		registry,
+		optionalRows,
+	})
+
+	expect(result.offline).toBe(true)
+	expect(result.matches).toHaveLength(5)
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		packageId: 'pkg-1',
+	})
+	expect(result.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'capability',
+				name: 'alpha beta',
+			}),
+			expect.objectContaining({
+				type: 'value',
+				name: 'preferred-alpha',
+			}),
+			expect.objectContaining({
+				type: 'connector',
+				connectorName: 'github',
+			}),
+			expect.objectContaining({
+				type: 'secret',
+				name: 'alpha-secret',
+			}),
+		]),
+	)
+})
 
 test('search memory context falls back to the query when omitted', () => {
 	expect(
