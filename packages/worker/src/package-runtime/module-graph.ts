@@ -10,6 +10,10 @@ import {
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	createPublishedPackageCacheKey,
+	createPublishedPackagePromiseCache,
+} from '#worker/package-registry/published-package-cache.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 const runtimeModulePath = '.__kody_virtual__/runtime.js'
@@ -17,6 +21,10 @@ const rootSourcePrefix = '.__kody_root__'
 const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const packageSpecifierPrefix = 'kody:@'
+const packageAppBundleCache = createPublishedPackagePromiseCache<{
+	mainModule: string
+	modules: WorkerLoaderModules
+}>()
 
 function joinPath(...parts: Array<string>) {
 	return parts
@@ -454,30 +462,60 @@ export async function buildKodyAppBundle(input: {
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
+	cacheKey?: string | null
 }) {
-	const files = await prepareKodyGraphFiles({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		sourceFiles: input.sourceFiles,
-	})
-	const normalizedEntrypoint = joinPath(
-		rootSourcePrefix,
-		normalizePackageWorkspacePath(input.entryPoint),
-	)
-	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_app_entry__.js')
-	files[bootstrapPath] = createAppEntrypointSource({
-		modulePath: createRelativeImportSpecifier(
-			bootstrapPath,
-			normalizedEntrypoint,
-		),
-	})
-	const bundle = await createWorker({
-		files,
-		entryPoint: bootstrapPath,
-	})
-	return {
-		mainModule: bundle.mainModule,
-		modules: bundle.modules as WorkerLoaderModules,
+	const buildBundle = async () => {
+		const files = await prepareKodyGraphFiles({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceFiles: input.sourceFiles,
+		})
+		const normalizedEntrypoint = joinPath(
+			rootSourcePrefix,
+			normalizePackageWorkspacePath(input.entryPoint),
+		)
+		const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_app_entry__.js')
+		files[bootstrapPath] = createAppEntrypointSource({
+			modulePath: createRelativeImportSpecifier(
+				bootstrapPath,
+				normalizedEntrypoint,
+			),
+		})
+		const bundle = await createWorker({
+			files,
+			entryPoint: bootstrapPath,
+		})
+		return {
+			mainModule: bundle.mainModule,
+			modules: bundle.modules as WorkerLoaderModules,
+		}
 	}
+
+	const cacheKey = input.cacheKey?.trim() || null
+	if (!cacheKey) {
+		return await buildBundle()
+	}
+
+	return await packageAppBundleCache.getOrCreate({
+		cacheKey,
+		create: buildBundle,
+	})
+}
+
+export function createPublishedPackageAppBundleCacheKey(input: {
+	userId: string
+	source: {
+		id: string
+		published_commit: string | null
+		manifest_path: string
+		source_root: string
+	}
+	entryPoint: string
+}) {
+	return createPublishedPackageCacheKey({
+		userId: input.userId,
+		source: input.source,
+		entryPoint: input.entryPoint,
+	})
 }

@@ -6,6 +6,10 @@ import {
 } from '#worker/repo/artifacts.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { loadRepoSourceFilesFromSession } from '#worker/repo/repo-codemode-execution.ts'
+import {
+	createPublishedPackageCacheKey,
+	PromiseLruCache,
+} from './published-package-cache.ts'
 import { parseAuthoredPackageJson } from './manifest.ts'
 import { type AuthoredPackageJson } from './types.ts'
 
@@ -15,16 +19,7 @@ export type LoadedPackageSource = {
 	files: Record<string, string>
 }
 
-const packageSourceCacheLimit = 50
-const packageSourceCacheTtlMs = 5 * 60 * 1000
-
-const packageSourceCache = new Map<
-	string,
-	{
-		expiresAt: number
-		pending: Promise<LoadedPackageSource>
-	}
->()
+const packageSourceCache = new PromiseLruCache<LoadedPackageSource>()
 
 function canResolveRepoBackedPackageSource(env: Env) {
 	const anyEnv = env as Env & { APP_DB?: unknown; REPO_SESSION?: unknown }
@@ -40,53 +35,10 @@ function createPackageSourceCacheKey(input: {
 	userId: string
 	source: EntitySourceRow
 }) {
-	if (!input.source.published_commit) {
-		return null
-	}
-
-	return JSON.stringify([
-		input.userId,
-		input.source.id,
-		input.source.published_commit,
-		input.source.manifest_path,
-		input.source.source_root,
-	])
-}
-
-function enforcePackageSourceCacheLimit() {
-	while (packageSourceCache.size > packageSourceCacheLimit) {
-		const oldestKey = packageSourceCache.keys().next().value
-		if (oldestKey === undefined) {
-			break
-		}
-		packageSourceCache.delete(oldestKey)
-	}
-}
-
-function getCachedPackageSource(cacheKey: string) {
-	const cached = packageSourceCache.get(cacheKey)
-	if (!cached) {
-		return null
-	}
-	if (cached.expiresAt <= Date.now()) {
-		packageSourceCache.delete(cacheKey)
-		return null
-	}
-	packageSourceCache.delete(cacheKey)
-	packageSourceCache.set(cacheKey, cached)
-	return cached.pending
-}
-
-function setCachedPackageSource(
-	cacheKey: string,
-	pending: Promise<LoadedPackageSource>,
-) {
-	packageSourceCache.set(cacheKey, {
-		expiresAt: Date.now() + packageSourceCacheTtlMs,
-		pending,
+	return createPublishedPackageCacheKey({
+		userId: input.userId,
+		source: input.source,
 	})
-	enforcePackageSourceCacheLimit()
-	return pending
 }
 
 async function loadPackageSourceUncached(input: {
@@ -212,20 +164,19 @@ export async function loadPackageSourceBySourceId(input: {
 		})
 	}
 
-	const cached = getCachedPackageSource(cacheKey)
+	const cached = packageSourceCache.get(cacheKey)
 	if (cached) {
 		return await cached
 	}
 
-	const pending = loadPackageSourceUncached({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		source,
-	}).catch((error) => {
-		packageSourceCache.delete(cacheKey)
-		throw error
+	return await packageSourceCache.getOrCreate({
+		cacheKey,
+		create: async () =>
+			await loadPackageSourceUncached({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				source,
+			}),
 	})
-
-	return await setCachedPackageSource(cacheKey, pending)
 }

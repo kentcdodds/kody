@@ -1,0 +1,229 @@
+import { expect, test, vi } from 'vitest'
+import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+
+const mockModule = vi.hoisted(() => ({
+	createWorker: vi.fn(),
+}))
+
+vi.mock('@cloudflare/worker-bundler', () => ({
+	createWorker: (...args: Array<unknown>) => mockModule.createWorker(...args),
+}))
+
+const {
+	buildKodyAppBundle,
+	createPublishedPackageAppBundleCacheKey,
+} = await import('./module-graph.ts')
+
+function createBundleResult(suffix: string) {
+	return {
+		mainModule: `dist/${suffix}.js`,
+		modules: {
+			[`dist/${suffix}.js`]: `export default { async fetch() { return new Response(${JSON.stringify(
+				suffix,
+			)}) } }`,
+		} satisfies WorkerLoaderModules,
+	}
+}
+
+function createBundleInput(input?: {
+	cacheKey?: string | null
+	entryPoint?: string
+}) {
+	return {
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+					app: {
+						entry: input?.entryPoint ?? 'app.js',
+					},
+				},
+			}),
+			'app.js':
+				'export default { async fetch() { return new Response("app") } }',
+			'index.js': 'export const value = "ok"',
+		},
+		entryPoint: input?.entryPoint ?? 'app.js',
+		cacheKey: input?.cacheKey,
+	}
+}
+
+test('buildKodyAppBundle reuses cached published package app bundles', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('warm-cache'))
+
+	const cacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		entryPoint: 'app.js',
+	})
+
+	const first = await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey,
+		}),
+	)
+	const second = await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey,
+		}),
+	)
+
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
+	expect(first).toBe(second)
+})
+
+test('buildKodyAppBundle does not cache unpublished package app bundles', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockResolvedValueOnce(createBundleResult('uncached-first'))
+		.mockResolvedValueOnce(createBundleResult('uncached-second'))
+
+	await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey: null,
+		}),
+	)
+	await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey: null,
+		}),
+	)
+
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+})
+
+test('buildKodyAppBundle shares the same in-flight published bundle build', async () => {
+	mockModule.createWorker.mockReset()
+	let resolveBundle:
+		| ((value: { mainModule: string; modules: WorkerLoaderModules }) => void)
+		| null = null
+	const bundlePromise = new Promise<{
+		mainModule: string
+		modules: WorkerLoaderModules
+	}>((resolve) => {
+		resolveBundle = resolve
+	})
+	mockModule.createWorker.mockImplementation(async () => await bundlePromise)
+
+	const cacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source: {
+			id: 'source-concurrent',
+			published_commit: 'commit-concurrent-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		entryPoint: 'app.js',
+	})
+
+	const firstPromise = buildKodyAppBundle(
+		createBundleInput({
+			cacheKey,
+		}),
+	)
+	const secondPromise = buildKodyAppBundle(
+		createBundleInput({
+			cacheKey,
+		}),
+	)
+
+	resolveBundle?.(createBundleResult('shared-in-flight'))
+
+	const [first, second] = await Promise.all([firstPromise, secondPromise])
+
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
+	expect(first).toBe(second)
+})
+
+test('buildKodyAppBundle evicts rejected published bundle builds before retrying', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockRejectedValueOnce(new Error('bundle failed'))
+		.mockResolvedValueOnce(createBundleResult('retry-success'))
+
+	const cacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source: {
+			id: 'source-failure',
+			published_commit: 'commit-failure-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		entryPoint: 'app.js',
+	})
+
+	await expect(
+		buildKodyAppBundle(
+			createBundleInput({
+				cacheKey,
+			}),
+		),
+	).rejects.toThrow('bundle failed')
+
+	const retried = await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey,
+		}),
+	)
+
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+	expect(retried).toEqual(createBundleResult('retry-success'))
+})
+
+test('buildKodyAppBundle keeps separate cache entries for different app entrypoints', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker
+		.mockResolvedValueOnce(createBundleResult('entry-app'))
+		.mockResolvedValueOnce(createBundleResult('entry-admin'))
+
+	const source = {
+		id: 'source-shared',
+		published_commit: 'commit-shared-1',
+		manifest_path: 'package.json',
+		source_root: '/',
+	}
+
+	const appEntryCacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source,
+		entryPoint: 'app.js',
+	})
+	const adminEntryCacheKey = createPublishedPackageAppBundleCacheKey({
+		userId: 'user-1',
+		source,
+		entryPoint: 'admin.js',
+	})
+
+	const appBundle = await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey: appEntryCacheKey,
+			entryPoint: 'app.js',
+		}),
+	)
+	const adminBundle = await buildKodyAppBundle(
+		createBundleInput({
+			cacheKey: adminEntryCacheKey,
+			entryPoint: 'admin.js',
+		}),
+	)
+
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(2)
+	expect(appBundle).not.toBe(adminBundle)
+})
