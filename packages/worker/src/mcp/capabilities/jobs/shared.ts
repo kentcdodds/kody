@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
 import { type JobCreateInput, type JobSchedule, type JobView } from '#worker/jobs/types.ts'
 
 const onceScheduleSchema = z.object({
@@ -66,11 +67,71 @@ export const scheduledJobScheduleSchema = z.discriminatedUnion('type', [
 	cronScheduleSchema,
 ])
 
-const scheduledJobSummarySchema = z.discriminatedUnion('type', [
+export const scheduledJobSummarySchema = z.discriminatedUnion('type', [
 	onceScheduleSchema,
 	intervalScheduleSchema,
 	cronScheduleSchema,
 ])
+
+export const jobInspectionInputSchema = z.object({
+	id: z
+		.string()
+		.min(1)
+		.describe('Job id from job_list output or a previous scheduling response.'),
+})
+
+const jobRunHistoryEntrySchema = z.object({
+	started_at: z.string(),
+	finished_at: z.string(),
+	status: z.enum(['success', 'error']),
+	duration_ms: z.number(),
+	error: z.string().nullable(),
+})
+
+export const jobInspectionSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	source_id: z.string(),
+	published_commit: z.string().nullable(),
+	storage_id: z.string(),
+	schedule: scheduledJobSummarySchema,
+	schedule_summary: z.string(),
+	timezone: z.string(),
+	enabled: z.boolean(),
+	kill_switch_enabled: z.boolean(),
+	created_at: z.string(),
+	updated_at: z.string(),
+	next_run_at: z.string(),
+	due_now: z.boolean(),
+	last_run_at: z.string().nullable(),
+	last_run_status: z.enum(['success', 'error']).nullable(),
+	last_run_error: z.string().nullable(),
+	last_duration_ms: z.number().nullable(),
+	run_count: z.number(),
+	success_count: z.number(),
+	error_count: z.number(),
+	recent_runs: z.array(jobRunHistoryEntrySchema),
+})
+
+export const jobManagerDebugSchema = z.object({
+	binding_available: z.boolean(),
+	status: z.enum(['missing_binding', 'idle', 'armed', 'out_of_sync']),
+	stored_user_id: z.string().nullable(),
+	alarm_scheduled_for: z.string().nullable(),
+	next_runnable_job_id: z.string().nullable(),
+	next_runnable_run_at: z.string().nullable(),
+	alarm_in_sync: z.boolean().nullable(),
+})
+
+export const jobListOutputSchema = z.object({
+	jobs: z.array(jobInspectionSchema),
+	alarm: jobManagerDebugSchema,
+})
+
+export const jobGetOutputSchema = z.object({
+	job: jobInspectionSchema,
+	alarm: jobManagerDebugSchema,
+})
 
 export const jobScheduleInputSchema = z.object({
 	...scheduledJobInputBaseSchema,
@@ -99,6 +160,26 @@ export const jobScheduleOutputSchema = z.object({
 })
 
 export type JobScheduleCapabilityInput = z.infer<typeof jobScheduleInputSchema>
+
+function toScheduleOutput(created: Pick<JobView, 'schedule'>) {
+	switch (created.schedule.type) {
+		case 'once':
+			return {
+				type: 'once' as const,
+				run_at: created.schedule.runAt,
+			}
+		case 'interval':
+			return {
+				type: 'interval' as const,
+				every: created.schedule.every,
+			}
+		case 'cron':
+			return {
+				type: 'cron' as const,
+				expression: created.schedule.expression,
+			}
+	}
+}
 
 export function toJobSchedule(
 	schedule: z.infer<typeof scheduledJobScheduleSchema>,
@@ -141,28 +222,66 @@ export function buildJobScheduleOutput(created: JobView) {
 		name: created.name,
 		source_id: created.sourceId,
 		storage_id: created.storageId,
-		schedule: (() => {
-			switch (created.schedule.type) {
-				case 'once':
-					return {
-						type: 'once' as const,
-						run_at: created.schedule.runAt,
-					}
-				case 'interval':
-					return {
-						type: 'interval' as const,
-						every: created.schedule.every,
-					}
-				case 'cron':
-					return {
-						type: 'cron' as const,
-						expression: created.schedule.expression,
-					}
-			}
-		})(),
+		schedule: toScheduleOutput(created),
 		schedule_summary: created.scheduleSummary,
 		created_at: created.createdAt,
 		next_run_at: created.nextRunAt,
+	}
+}
+
+export function buildJobInspectionOutput(
+	job: JobView,
+	input: { now?: Date } = {},
+) {
+	const now = input.now ?? new Date()
+	const nextRunAtValue = new Date(job.nextRunAt).valueOf()
+	const dueNow =
+		job.enabled &&
+		job.killSwitchEnabled === false &&
+		Number.isFinite(nextRunAtValue) &&
+		nextRunAtValue <= now.valueOf()
+
+	return {
+		id: job.id,
+		name: job.name,
+		source_id: job.sourceId,
+		published_commit: job.publishedCommit,
+		storage_id: job.storageId,
+		schedule: toScheduleOutput(job),
+		schedule_summary: job.scheduleSummary,
+		timezone: job.timezone,
+		enabled: job.enabled,
+		kill_switch_enabled: job.killSwitchEnabled,
+		created_at: job.createdAt,
+		updated_at: job.updatedAt,
+		next_run_at: job.nextRunAt,
+		due_now: dueNow,
+		last_run_at: job.lastRunAt ?? null,
+		last_run_status: job.lastRunStatus ?? null,
+		last_run_error: job.lastRunError ?? null,
+		last_duration_ms: job.lastDurationMs ?? null,
+		run_count: job.runCount,
+		success_count: job.successCount,
+		error_count: job.errorCount,
+		recent_runs: job.runHistory.map((entry) => ({
+			started_at: entry.startedAt,
+			finished_at: entry.finishedAt,
+			status: entry.status,
+			duration_ms: entry.durationMs,
+			error: entry.error ?? null,
+		})),
+	}
+}
+
+export function buildJobManagerDebugOutput(state: JobManagerDebugState) {
+	return {
+		binding_available: state.bindingAvailable,
+		status: state.status,
+		stored_user_id: state.storedUserId,
+		alarm_scheduled_for: state.alarmScheduledFor,
+		next_runnable_job_id: state.nextRunnableJobId,
+		next_runnable_run_at: state.nextRunnableRunAt,
+		alarm_in_sync: state.alarmInSync,
 	}
 }
 

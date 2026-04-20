@@ -3,7 +3,11 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getNextRunnableJob, runDueJobsForUser, runJobNow } from './service.ts'
-import { type JobRepoCheckPolicy } from './types.ts'
+import {
+	type JobManagerDebugState,
+	type JobManagerDebugStatus,
+	type JobRepoCheckPolicy,
+} from './types.ts'
 
 const userIdStorageKey = 'user-id'
 
@@ -31,6 +35,47 @@ class JobManagerBase extends DurableObject<Env> {
 			ok: true as const,
 			userId,
 			nextRunAt: nextJob.nextRunAt,
+		}
+	}
+
+	async getDebugState(input: { userId: string }): Promise<JobManagerDebugState> {
+		const userId = input.userId.trim()
+		if (!userId) {
+			throw new Error('Job manager requires a non-empty userId.')
+		}
+		const [storedUserId, alarmTimestamp, nextJob] = await Promise.all([
+			this.ctx.storage.get<string>(userIdStorageKey),
+			this.ctx.storage.getAlarm(),
+			getNextRunnableJob({
+				env: this.env,
+				userId,
+			}),
+		])
+		const alarmScheduledFor =
+			typeof alarmTimestamp === 'number'
+				? new Date(alarmTimestamp).toISOString()
+				: null
+		const nextRunnableRunAt = nextJob?.nextRunAt ?? null
+		const alarmInSync =
+			nextRunnableRunAt == null
+				? alarmScheduledFor === null
+				: alarmScheduledFor === nextRunnableRunAt
+		const status: JobManagerDebugStatus =
+			nextRunnableRunAt == null
+				? alarmScheduledFor == null
+					? 'idle'
+					: 'out_of_sync'
+				: alarmScheduledFor === nextRunnableRunAt
+					? 'armed'
+					: 'out_of_sync'
+		return {
+			bindingAvailable: true,
+			status,
+			storedUserId: storedUserId ?? null,
+			alarmScheduledFor,
+			nextRunnableJobId: nextJob?.id ?? null,
+			nextRunnableRunAt,
+			alarmInSync,
 		}
 	}
 
@@ -94,6 +139,9 @@ export function jobManagerRpc(env: Env, userId: string) {
 			userId: string
 			nextRunAt: string | null
 		}>
+		getDebugState: (payload: {
+			userId: string
+		}) => Promise<JobManagerDebugState>
 		runNow: (payload: {
 			userId: string
 			jobId: string
