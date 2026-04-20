@@ -50,14 +50,28 @@ async function loadPackageSourceUncached(input: {
 	const source = input.source
 	const freezeFiles = (files: Record<string, string>) =>
 		Object.freeze({ ...files }) as Record<string, string>
+	const deepFreeze = <T>(value: T, seen = new WeakSet<object>()): T => {
+		if (value && typeof value === 'object') {
+			const objectValue = value as object
+			if (seen.has(objectValue)) {
+				return value
+			}
+			seen.add(objectValue)
+			for (const child of Object.values(value as Record<string, unknown>)) {
+				deepFreeze(child, seen)
+			}
+			Object.freeze(objectValue)
+		}
+		return value
+	}
 
 	const finalizeLoadedSource = (loaded: {
 		manifest: AuthoredPackageJson
 		files: Record<string, string>
 	}) =>
 		Object.freeze({
-			source,
-			manifest: loaded.manifest,
+			source: deepFreeze({ ...source }),
+			manifest: deepFreeze(structuredClone(loaded.manifest)),
 			files: freezeFiles(loaded.files),
 		}) as LoadedPackageSource
 

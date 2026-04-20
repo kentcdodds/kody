@@ -119,6 +119,10 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledTimes(1)
 	expect(sessionClient.discardSession).toHaveBeenCalledTimes(1)
 	expect(first).toBe(second)
+	expect(Object.isFrozen(first)).toBe(true)
+	expect(Object.isFrozen(first.source)).toBe(true)
+	expect(Object.isFrozen(first.manifest)).toBe(true)
+	expect(Object.isFrozen(first.files)).toBe(true)
 	expect(first.files).toEqual({
 		'app.js': 'export default { async fetch() { return new Response("ok") } }',
 		'index.js': 'export const value = "ok"',
@@ -236,4 +240,58 @@ test('loadPackageSourceBySourceId shares the same in-flight published source loa
 	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledTimes(1)
 	expect(sessionClient.discardSession).toHaveBeenCalledTimes(1)
 	expect(first).toBe(second)
+})
+
+test('loadPackageSourceBySourceId evicts failed published source loads before retrying', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.readMockArtifactSnapshot.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.loadRepoSourceFilesFromSession.mockReset()
+
+	const firstSessionClient = createSessionClient('session-published-failure-1')
+	const secondSessionClient = createSessionClient('session-published-failure-2')
+
+	mockModule.getEntitySourceById.mockResolvedValue(
+		createPackageSourceRow({
+			id: 'source-published-failure',
+			publishedCommit: 'commit-failure-1',
+		}),
+	)
+	mockModule.readMockArtifactSnapshot.mockResolvedValue(null)
+	mockModule.repoSessionRpc
+		.mockReturnValueOnce(firstSessionClient as never)
+		.mockReturnValueOnce(secondSessionClient as never)
+	mockModule.loadRepoSourceFilesFromSession
+		.mockRejectedValueOnce(new Error('repo load failed'))
+		.mockResolvedValueOnce({
+			'app.js': 'export default { async fetch() { return new Response("ok") } }',
+			'index.js': 'export const value = "ok"',
+		})
+
+	const input = {
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceId: 'source-published-failure',
+	}
+
+	await expect(loadPackageSourceBySourceId(input)).rejects.toThrow(
+		'repo load failed',
+	)
+	await expect(loadPackageSourceBySourceId(input)).resolves.toMatchObject({
+		files: {
+			'app.js':
+				'export default { async fetch() { return new Response("ok") } }',
+			'index.js': 'export const value = "ok"',
+		},
+	})
+
+	expect(firstSessionClient.openSession).toHaveBeenCalledTimes(1)
+	expect(firstSessionClient.discardSession).toHaveBeenCalledTimes(1)
+	expect(secondSessionClient.openSession).toHaveBeenCalledTimes(1)
+	expect(secondSessionClient.discardSession).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledTimes(2)
 })

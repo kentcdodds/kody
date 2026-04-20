@@ -78,8 +78,11 @@ export class PromiseLruCache<T> {
 		if (cached) {
 			return cached
 		}
-		const pending = input.create().catch((error) => {
-			this.delete(input.cacheKey)
+		let pending: Promise<T>
+		pending = input.create().catch((error) => {
+			if (this.cache.get(input.cacheKey)?.pending === pending) {
+				this.delete(input.cacheKey)
+			}
 			throw error
 		})
 		this.set(input.cacheKey, pending)
