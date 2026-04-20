@@ -7,7 +7,8 @@ function Kody should invoke.
 ## Shape of the code
 
 Author code as one module string. Import runtime APIs from **`kody:runtime`**
-and export a default function:
+and export a default function. These helpers are runtime exports, not ambient
+globals:
 
 - use **`import { codemode } from 'kody:runtime'`** to call builtin capabilities
 - use
@@ -15,6 +16,13 @@ and export a default function:
   for connector OAuth helpers
 - use **`import { storage } from 'kody:runtime'`** when the execute call is
   bound to a storage id
+- use **`import { agentChatTurnStream } from 'kody:runtime'`** for streamed
+  agent turns
+- use **`import { params } from 'kody:runtime'`** when shared helpers need the
+  active execute or job params instead of receiving them as a function argument
+- use **`import { packageContext } from 'kody:runtime'`** inside saved package
+  code when you need package metadata; it is **`null`** for ad hoc execute
+  calls
 - use **`import thing from 'kody:@my-package/export-name'`** to reuse a saved
   package export
 
@@ -72,8 +80,9 @@ Kody exposes two generic primitives for tool-using chat turns:
 
 Typical pattern inside execute:
 
-- use **`agentChatTurnStream(...)`** for interactive controllers that need to
-  forward progress over time
+- use
+  **`import { agentChatTurnStream } from 'kody:runtime'`**
+  when interactive controllers need to forward progress over time
 - use **`codemode.agent_chat_turn(...)`** in package jobs or workflows that only
   need the final answer
 
@@ -126,11 +135,16 @@ reconnect the MCP client if the host caches server instructions.
 
 ## Network and OAuth helpers
 
-The sandbox exposes **`fetch`**, secret placeholders in approved contexts,
-**`refreshAccessToken(providerName)`**, and
-**`createAuthenticatedFetch(providerName)`** for connector OAuth. See
-[Secrets, values, and host approval](./secrets-and-values.md) for placeholders,
-host approval, and **`codemode.secret_list`** / **`secret_set`**.
+The sandbox exposes global **`fetch`** plus secret placeholders in approved
+contexts. OAuth helpers are **not** globals: import
+**`refreshAccessToken`** and **`createAuthenticatedFetch`** explicitly from
+**`kody:runtime`**:
+
+**`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
+
+See [Secrets, values, and host approval](./secrets-and-values.md) for
+placeholders, host approval, and **`codemode.secret_list`** /
+**`secret_set`**.
 
 Treat placeholder syntax as operational wiring, not prose. Do not place the
 exact **`{{secret:...}}`** token into issue bodies, comments, prompts, logs, or

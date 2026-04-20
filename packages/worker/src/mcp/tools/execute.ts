@@ -44,12 +44,14 @@ Saved package surface:
   \`kody:@my-package/export-name\`
 
 Sandbox surface:
-- import runtime APIs from \`kody:runtime\`
-- \`codemode\`: \`(args) => Promise<unknown>\` per capability.
-- \`storage\`: durable storage helpers for the bound \`storageId\`.
-- \`storage.sql(query, params?)\`: raw SQLite access for the bound storage id.
-- \`refreshAccessToken(providerName)\`, \`createAuthenticatedFetch(providerName)\` for OAuth connectors.
-- \`fetch(...)\` through the host gateway; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` in URL, headers, or body on approved hosts only.
+- Runtime helpers are **not** ambient globals in execute modules. Import them from \`kody:runtime\`.
+- \`import { codemode } from 'kody:runtime'\` for builtin capabilities.
+- \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`.
+- \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth connectors.
+- \`import { agentChatTurnStream } from 'kody:runtime'\` for streamed agent turns.
+- \`params\` is passed to the module default export; if a shared helper needs it, \`import { params } from 'kody:runtime'\`.
+- \`import { packageContext } from 'kody:runtime'\` in saved package code when you need package metadata; it is \`null\` for ad hoc execute calls.
+- \`fetch(...)\` is the host-provided network global; \`{{secret:name}}\` / \`{{secret:name|scope=user}}\` work in URL, headers, or body on approved hosts only.
 - Fields marked \`x-kody-secret: true\` accept the same placeholder form; respect per-secret allowed-capability lists.
 - Placeholders are not general string interpolation (they do not resolve in arbitrary return values).
 - Never place placeholder text into user-visible or third-party-visible content such as issue bodies, comments, prompts, logs, or returned strings. If you need to describe a placeholder literally, obfuscate it instead of embedding the exact \`{{secret:...}}\` token into content that may be sent over \`fetch\`.
