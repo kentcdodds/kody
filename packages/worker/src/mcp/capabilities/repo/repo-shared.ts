@@ -447,6 +447,12 @@ export const repoEditFlowInputSchema = z
 			.describe(
 				'Whether to roll back all edits when one instruction fails. Defaults to true.',
 			),
+		include_edits: z
+			.boolean()
+			.optional()
+			.describe(
+				'Whether to include the full applied edits array in the response. Defaults to false.',
+			),
 		run_checks: z
 			.boolean()
 			.optional()
@@ -577,7 +583,11 @@ export const repoEditFlowPublishSchema = z.union([
 export const repoEditFlowOutputSchema = z.object({
 	session: repoSessionInfoSchema,
 	resolved_target: repoResolvedTargetSchema,
-	edits: repoApplyPatchResultSchema,
+	edits: z.object({
+		dry_run: z.boolean(),
+		total_changed: z.number().int().min(0),
+		edits: repoApplyPatchResultSchema.shape.edits.optional(),
+	}),
 	checks: repoEditFlowChecksSchema,
 	publish: repoEditFlowPublishSchema,
 })

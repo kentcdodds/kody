@@ -49,6 +49,11 @@ When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
 instead of internal source ids whenever possible.
 
+For common edit-and-check workflows, `repo_edit_flow` returns session, checks,
+and publish detail in one response. The nested `edits.edits` array is omitted by
+default to keep that response smaller, and can be requested explicitly when a
+caller needs the concrete diff in the same call.
+
 ## Agent turns
 
 Kody exposes two generic primitives for tool-using chat turns:
