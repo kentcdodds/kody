@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const entityKindValues = ['skill', 'app', 'job'] as const
+export const entityKindValues = ['skill', 'app', 'job', 'package'] as const
 export type EntityKind = (typeof entityKindValues)[number]
 
 export const entitySourceRowSchema = z.object({

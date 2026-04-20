@@ -2,6 +2,10 @@ import { type z } from 'zod'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
+	getSavedPackageById,
+	getSavedPackageByKodyId,
+} from '#worker/package-registry/repo.ts'
+import {
 	getMcpSkillByNameInput,
 	listMcpSkillsByUserId,
 } from '#mcp/skills/mcp-skills-repo.ts'
@@ -41,6 +45,45 @@ function toResolvedSourceTarget(source: EntitySourceRow): RepoResolvedTarget {
 		source_id: source.id,
 		entity_kind: source.entity_kind,
 		entity_id: source.entity_id,
+	}
+}
+
+async function requirePackageTarget(input: {
+	db: D1Database
+	userId: string
+	target: Extract<RepoTarget, { kind: 'package' }>
+}): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
+	const savedPackage =
+		'package_id' in input.target
+			? await getSavedPackageById(input.db, {
+					userId: input.userId,
+					packageId: input.target.package_id,
+				})
+			: await getSavedPackageByKodyId(input.db, {
+					userId: input.userId,
+					kodyId: input.target.kody_id,
+				})
+	if (!savedPackage) {
+		const missingId =
+			'package_id' in input.target
+				? input.target.package_id
+				: input.target.kody_id
+		throw new Error(`Saved package "${missingId}" was not found.`)
+	}
+	const source = await requireOwnedEntitySource({
+		db: input.db,
+		userId: input.userId,
+		sourceId: savedPackage.sourceId,
+	})
+	return {
+		source,
+		resolvedTarget: {
+			kind: 'package',
+			source_id: source.id,
+			package_id: savedPackage.id,
+			kody_id: savedPackage.kodyId,
+			name: savedPackage.name,
+		},
 	}
 }
 
@@ -195,6 +238,12 @@ export async function resolveRepoSourceReference(input: {
 		throw new Error('Repo source identity is required.')
 	}
 	switch (input.args.target.kind) {
+		case 'package':
+			return requirePackageTarget({
+				db: input.db,
+				userId: input.userId,
+				target: input.args.target,
+			})
 		case 'skill':
 			return requireSkillTarget({
 				db: input.db,
@@ -231,6 +280,22 @@ export async function resolveRepoTargetFromSource(input: {
 		sourceId: input.sourceId,
 	})
 	switch (source.entity_kind) {
+		case 'package': {
+			const savedPackage = await getSavedPackageById(input.db, {
+				userId: input.userId,
+				packageId: source.entity_id,
+			})
+			if (!savedPackage) {
+				return toResolvedSourceTarget(source)
+			}
+			return {
+				kind: 'package',
+				source_id: source.id,
+				package_id: savedPackage.id,
+				kody_id: savedPackage.kodyId,
+				name: savedPackage.name,
+			}
+		}
 		case 'skill': {
 			const skills = await listMcpSkillsByUserId(input.db, input.userId)
 			const skill = skills.find(

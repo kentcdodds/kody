@@ -11,12 +11,12 @@ Read in order for a full tour, or jump to a topic.
 - [First steps — what to ask Kody to do](./first-steps.md)
 - [Search](./search.md)
 - [Execute and workflows](./execute.md) — includes per-user MCP instruction
-  overlays
+  overlays and package imports
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Saved app backends](./saved-app-backends.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets, values, and host approval](./secrets-and-values.md)
-- [Skills, saved apps, and generated UI](./skills-and-apps.md)
+- [Packages, package apps, and generated UI](./skills-and-apps.md)
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Troubleshooting](./troubleshooting.md)
 - [Memory and conversation context](./memory.md)

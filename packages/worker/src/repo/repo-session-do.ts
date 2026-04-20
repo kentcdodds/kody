@@ -47,6 +47,7 @@ import {
 	type RepoSessionSearchResult,
 	type RepoSessionTreeResult,
 } from './types.ts'
+import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
@@ -1017,6 +1018,15 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointCommit: sessionHeadCommit,
 			lastCheckpointAt: nowIso(),
 		})
+		if (source.entity_kind === 'package') {
+			await refreshSavedPackageProjection({
+				env: this.env,
+				baseUrl: source.source_root,
+				userId: source.user_id,
+				packageId: source.entity_id,
+				sourceId: source.id,
+			})
+		}
 		return {
 			status: 'ok',
 			sessionId: sessionRow.id,
