@@ -46,10 +46,6 @@
 			"new_sqlite_classes": ["RepoSession"],
 			"tag": "v11",
 		},
-		{
-			"deleted_classes": ["AppRunner"],
-			"tag": "v12",
-		},
 	],
 
 	"observability": {
