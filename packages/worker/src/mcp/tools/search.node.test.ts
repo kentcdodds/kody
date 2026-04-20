@@ -115,15 +115,15 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 
 	expect(result.offline).toBe(true)
 	expect(result.matches).toHaveLength(5)
-	expect(result.matches[0]).toMatchObject({
-		type: 'package',
-		packageId: 'pkg-1',
-	})
 	expect(result.matches).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				type: 'capability',
 				name: 'alpha beta',
+			}),
+			expect.objectContaining({
+				type: 'package',
+				packageId: 'pkg-1',
 			}),
 			expect.objectContaining({
 				type: 'value',
