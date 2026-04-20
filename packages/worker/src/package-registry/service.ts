@@ -1,7 +1,5 @@
 import { buildSavedPackageEmbedText } from './embed.ts'
-import {
-	buildPackageSearchProjection,
-} from './manifest.ts'
+import { buildPackageSearchProjection } from './manifest.ts'
 import {
 	deleteSavedPackage,
 	getSavedPackageById,
@@ -19,6 +17,7 @@ import {
 	upsertSavedPackageVector,
 } from './vectorize.ts'
 import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
+import { syncJobManagerAlarm } from '#worker/jobs/manager-do.ts'
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
@@ -96,6 +95,10 @@ export async function refreshSavedPackageProjection(input: {
 		sourceId: input.sourceId,
 		manifest: loaded.manifest,
 	})
+	await syncJobManagerAlarm({
+		env: input.env,
+		userId: input.userId,
+	})
 	return {
 		record:
 			existing ??
@@ -127,7 +130,10 @@ export async function deleteSavedPackageProjection(input: {
 		packageId: input.packageId,
 	})
 	if (savedPackage) {
-		const existingRows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
+		const existingRows = await listJobRowsByUserId(
+			input.env.APP_DB,
+			input.userId,
+		)
 		const packageRows = existingRows.filter(
 			(row) => row.source_id === savedPackage.sourceId,
 		)
@@ -140,4 +146,8 @@ export async function deleteSavedPackageProjection(input: {
 		packageId: input.packageId,
 	})
 	await deleteSavedPackageVector(input.env, input.packageId)
+	await syncJobManagerAlarm({
+		env: input.env,
+		userId: input.userId,
+	})
 }
