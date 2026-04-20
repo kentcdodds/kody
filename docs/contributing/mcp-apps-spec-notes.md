@@ -1,6 +1,6 @@
 # MCP Apps Spec Notes
 
-This repo currently uses one generic MCP Apps shell rather than a family of app
+This repo uses one generic MCP Apps shell rather than a family of app
 implementations. For MCP Apps behavior, prefer the upstream spec and API docs
 over project-local conventions.
 

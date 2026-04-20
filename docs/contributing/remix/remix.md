@@ -25,7 +25,7 @@ The `remix` package is used through subpath imports.
 
 ## Subpath export surface (`3.0.0-alpha.3`)
 
-Top-level package exports currently include:
+Top-level package exports include:
 
 - `remix/async-context-middleware`
 - `remix/component`

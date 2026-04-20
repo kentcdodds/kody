@@ -24,8 +24,8 @@ That keeps normal edit workflows to one capability call instead of separate
 
 ## Opening by user-facing identity
 
-`repo_open_session` and `repo_edit_flow` can now open repo-backed entities by
-their user-facing identity instead of requiring the internal `source_id`.
+`repo_open_session` and `repo_edit_flow` open repo-backed entities by their
+user-facing identity instead of requiring the internal `source_id`.
 
 Examples:
 
@@ -50,7 +50,7 @@ prefer `target`.
 
 ## Structured repair detail
 
-Publish-oriented repo flows now return structured detail for important failure
+Publish-oriented repo flows return structured detail for important failure
 states:
 
 - **`blocked_by_checks`** when checks fail inside `repo_edit_flow`

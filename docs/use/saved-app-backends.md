@@ -107,7 +107,7 @@ app frontend code.
 
 ## Save-time backend validation
 
-`ui_save_app` now validates saved app backends through the same repo-published
+`ui_save_app` validates saved app backends through the same repo-published
 source snapshot and dynamic runner load path used at runtime:
 
 - Kody syncs the repo-backed app source snapshot first.
@@ -137,7 +137,7 @@ global `fetch()` capability.
 
 ## Lifecycle capabilities
 
-Kody now exposes saved app backend lifecycle operations:
+Kody exposes saved app backend lifecycle operations:
 
 - `app_storage_reset({ app_id, facet_name? })`
 - `app_storage_export({ app_id, facet_name? })`

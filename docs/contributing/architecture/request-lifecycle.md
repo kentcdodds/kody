@@ -68,7 +68,7 @@ session, logout, password reset, health).
 
 The browser app intercepts same-origin `<a>` clicks and same-origin form
 submissions (`GET`/`POST`) and routes them in-place through the client router.
-Normal app navigations no longer require a full document refresh.
+Normal app navigations do not require a full document refresh.
 
 Full page navigations still occur for:
 

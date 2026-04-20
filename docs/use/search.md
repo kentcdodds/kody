@@ -63,5 +63,5 @@ Long-term memory retrieval also requires a signed-in MCP user.
 Use **search** as the default way to discover whether a connector or secret
 already exists before switching to **execute**. Runtime helpers such as
 **`codemode.secret_list(...)`** are still useful when code running inside
-**execute** needs current secret metadata, but they are no longer the primary
+**execute** needs current secret metadata, but **search** remains the primary
 discovery path.

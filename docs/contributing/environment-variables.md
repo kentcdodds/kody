@@ -110,7 +110,7 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
   `https://api.cloudflare.com` when unset, including for outbound email sending.
   Local `npm run dev` sets this to the Cloudflare mock Worker unless
-  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`. That same local mock now also
+  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`. That same local mock also
   serves the Artifacts REST control-plane endpoints used by
   `packages/worker/src/repo/artifacts.ts` (`repos`, `tokens`, and `fork`), so
   local repo create/get/list/token/fork calls do not need the live Artifacts
@@ -175,12 +175,12 @@ Authoring guide for outbound WebSocket services:
   label.
 - `SAMSUNG_TV_DISCOVERY_URL` — optional connector env var. Defaults to
   `mdns://_samsungmsf._tcp.local`. Mocked connector runs should set an explicit
-  value such as `http://samsung-tv.mock.local/discovery`. Live discovery now
-  uses a single pure-JS mDNS path that works across macOS and Linux/container
+  value such as `http://samsung-tv.mock.local/discovery`. Live discovery uses a
+  single pure-JS mDNS path that works across macOS and Linux/container
   environments.
 - `LUTRON_DISCOVERY_URL` — optional connector env var. Defaults to
   `mdns://_lutron._tcp.local`. Mocked connector runs should set an explicit
-  value such as `http://lutron.mock.local/discovery`. Live discovery now uses a
+  value such as `http://lutron.mock.local/discovery`. Live discovery uses a
   single pure-JS mDNS path that works across macOS and Linux/container
   environments.
 - `VENSTAR_SCAN_CIDRS` — optional connector env var. Comma-separated CIDR list
