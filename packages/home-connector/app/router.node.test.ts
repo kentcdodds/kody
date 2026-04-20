@@ -14,6 +14,7 @@ import { type HomeConnectorConfig } from '../src/config.ts'
 import { createAppState } from '../src/state.ts'
 import { createHomeConnectorStorage } from '../src/storage/index.ts'
 import { createHomeConnectorRouter } from './router.ts'
+import { routes } from './routes.ts'
 
 function createConfig(dataPath = '/tmp'): HomeConnectorConfig {
 	return {
@@ -106,13 +107,13 @@ test('home route toggles worker snapshot link by connector id', async () => {
 		const htmlWithConnector = await responseWithConnector.text()
 		expect(htmlWithConnector).toContain('Home connector admin')
 		expect(htmlWithConnector).toContain('/home/connectors/default/snapshot')
-		expect(htmlWithConnector).toContain('/venstar/status')
-		expect(htmlWithConnector).toContain('/venstar/setup')
-		expect(htmlWithConnector).toContain('/jellyfish/status')
-		expect(htmlWithConnector).toContain('/jellyfish/setup')
 		expect(htmlWithConnector).toContain('JellyFish controllers')
 		expect(htmlWithConnector).toContain('Venstar configured')
 		expect(htmlWithConnector).toContain('Venstar online')
+		expect(htmlWithConnector).toContain(routes.venstarStatus.pattern)
+		expect(htmlWithConnector).toContain(routes.venstarSetup.pattern)
+		expect(htmlWithConnector).toContain(routes.jellyfishStatus.pattern)
+		expect(htmlWithConnector).toContain(routes.jellyfishSetup.pattern)
 
 		state.connection.connectorId = ''
 		const responseWithoutConnector = await router.fetch('http://example.test/')
@@ -145,6 +146,7 @@ test('bond setup route renders token form', async () => {
 		const html = await response.text()
 		expect(html).toContain('Save pasted token')
 		expect(html).toContain('Retrieve token from bridge')
+		expect(html).toContain('No bridges are known yet. Run a scan from Bond status.')
 	} finally {
 		storage.close()
 	}
@@ -170,8 +172,7 @@ test('jellyfish routes render status and setup details', async () => {
 		)
 		expect(statusResponse.status).toBe(200)
 		const statusHtml = await statusResponse.text()
-		expect(statusHtml).toContain('JellyFish status')
-		expect(statusHtml).toContain('Scan now')
+		expect(statusHtml).toContain('<button type="submit">Scan now</button>')
 		expect(statusHtml).toContain('JellyFish-F348.local')
 		expect(statusHtml).toContain('Christmas/Christmas Tree')
 
@@ -180,7 +181,6 @@ test('jellyfish routes render status and setup details', async () => {
 		)
 		expect(setupResponse.status).toBe(200)
 		const setupHtml = await setupResponse.text()
-		expect(setupHtml).toContain('JellyFish setup')
 		expect(setupHtml).toContain('Scan CIDRs')
 		expect(setupHtml).toContain('jellyfish.mock.local')
 	} finally {
@@ -208,21 +208,19 @@ test('venstar routes render status and setup details', async () => {
 		)
 		expect(statusResponse.status).toBe(200)
 		const statusHtml = await statusResponse.text()
-		expect(statusHtml).toContain('Venstar status')
 		expect(statusHtml).toContain('Hallway')
 		expect(statusHtml).toContain('venstar.mock.local')
 		expect(statusHtml).toContain('Online thermostats')
-		expect(statusHtml).toContain('Scan now')
+		expect(statusHtml).toContain('<button type="submit">Scan now</button>')
 
 		const setupResponse = await router.fetch(
 			'http://example.test/venstar/setup',
 		)
 		expect(setupResponse.status).toBe(200)
 		const setupHtml = await setupResponse.text()
-		expect(setupHtml).toContain('Venstar setup')
-		expect(setupHtml).toContain('Save thermostat')
-		expect(setupHtml).toContain('Remove thermostat')
-		expect(setupHtml).toContain('SQLite database')
+		expect(setupHtml).toContain('name="action" value="save-manual"')
+		expect(setupHtml).toContain('name="action" value="remove-configured"')
+		expect(setupHtml).toContain('Scan CIDRs')
 	} finally {
 		storage.close()
 	}

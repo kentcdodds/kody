@@ -69,11 +69,11 @@ test('applySkillParameters rejects unknown names', () => {
 	).toThrow('Unknown skill parameter(s): extra.')
 })
 
-test('buildParameterizedSkillCode injects params', async () => {
+test('buildParameterizedSkillCode applies params through the generated wrapper', async () => {
 	const code = await buildParameterizedSkillCode(
 		'async (params) => params.owner',
 		{ owner: 'kody' },
 	)
-	expect(code).toContain('const params = {"owner":"kody"};')
-	expect(code).toContain('return await skill(params);')
+	const skill = Function(`return (${code})`)() as () => Promise<unknown>
+	await expect(skill()).resolves.toBe('kody')
 })

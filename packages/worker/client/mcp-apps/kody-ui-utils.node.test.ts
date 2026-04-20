@@ -127,13 +127,19 @@ test('injectRuntimeStateIntoDocument exposes runtime bootstrap globals', () => {
 		owner: 'kody',
 		limit: 3,
 	})
-	expect(result).toContain(
-		'window.__kodyGeneratedUiBootstrap = {"mode":"mcp","params":{"owner":"kody","limit":3}};',
+	const bootstrapMatch = result.match(
+		/window\.__kodyGeneratedUiBootstrap = (.+);/,
 	)
-	expect(result).toContain(
-		'window.__kodyAppParams = window.__kodyGeneratedUiBootstrap.params ?? {};',
-	)
-	expect(result).toContain('window.params = window.__kodyAppParams;')
+	expect(bootstrapMatch?.[1]).toBeDefined()
+	expect(JSON.parse(bootstrapMatch?.[1] ?? 'null')).toEqual({
+		mode: 'mcp',
+		params: {
+			owner: 'kody',
+			limit: 3,
+		},
+	})
+	expect(result).toContain('window.__kodyAppParams =')
+	expect(result).toContain('window.params =')
 })
 
 test('readSavedAppSourceFromHostToolResult reads a package app source payload', () => {

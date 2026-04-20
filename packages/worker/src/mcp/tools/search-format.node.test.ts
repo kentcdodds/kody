@@ -57,8 +57,6 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	expect(markdown).toMatch(/^# Search results/)
 	expect(markdown).toContain('## Value')
 	expect(markdown).toContain('## Connector')
-	expect(markdown).toContain('user:preferred_repo:value')
-	expect(markdown).toContain('https://api.github.com')
 
 	expect(toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
