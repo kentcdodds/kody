@@ -2,10 +2,7 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { generatedUiRuntimeResourceUri } from '#mcp/apps/generated-ui-runtime-html-entry.ts'
-import {
-	buildSavedAppBackendBasePath,
-	createGeneratedUiAppSession,
-} from '#mcp/generated-ui-app-session.ts'
+import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -22,13 +19,6 @@ import {
 	buildMemoryStructuredContent,
 } from '#mcp/tools/memory-tool-context.ts'
 import {
-	applyUiArtifactParameters,
-	parseUiArtifactParameters,
-} from '#mcp/ui-artifact-parameters.ts'
-import { getUiArtifactById } from '#mcp/ui-artifacts-repo.ts'
-import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
-import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
-import {
 	appendToolContent,
 	prependToolMetadataContent,
 } from './tool-response-content.ts'
@@ -38,9 +28,7 @@ const openGeneratedUiTool = {
 	title: 'Open Generated UI',
 	description: `
 Open the MCP App runtime. Pass exactly one of \`code\` (inline HTML fragment or
-full document), \`app_id\` (legacy saved UI artifact), \`package_id\`, or
-\`kody_id\` (saved package app identity). \`params\` currently applies only to
-legacy \`app_id\` flows.
+full document), \`package_id\`, or \`kody_id\` (saved package app identity).
 
 Use for sensitive input (never ask the user to paste credentials in chat).
 Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
@@ -70,11 +58,6 @@ const inputSchema = z
 			.describe(
 				'Inline HTML source to render immediately. Provide an HTML fragment or full HTML document.',
 			),
-		app_id: z
-			.string()
-			.min(1)
-			.optional()
-			.describe('Legacy saved UI artifact id to reopen.'),
 		package_id: z
 			.string()
 			.min(1)
@@ -99,38 +82,18 @@ const inputSchema = z
 			.describe('Optional short description for the current render session.'),
 		conversationId: conversationIdInputField,
 		memoryContext: memoryContextInputField,
-		params: z
-			.record(z.string(), z.unknown())
-			.optional()
-			.describe(
-				'Optional runtime parameter values for a legacy saved app (validated against its saved parameter definitions).',
-			),
 	})
 	.refine(
 		(value) =>
 			(value.code ? 1 : 0) +
-				(value.app_id ? 1 : 0) +
 				(value.package_id ? 1 : 0) +
 				(value.kody_id ? 1 : 0) ===
 			1,
 		{
-			message:
-				'Provide exactly one of `code`, `app_id`, `package_id`, or `kody_id`.',
+			message: 'Provide exactly one of `code`, `package_id`, or `kody_id`.',
 			path: ['code'],
 		},
 	)
-	.refine((value) => !(value.code && value.params), {
-		message: '`params` is only supported with `app_id`.',
-		path: ['code'],
-	})
-	.refine((value) => !(value.package_id && value.params), {
-		message: '`params` is only supported with `app_id`.',
-		path: ['params'],
-	})
-	.refine((value) => !(value.kody_id && value.params), {
-		message: '`params` is only supported with `app_id`.',
-		path: ['params'],
-	})
 
 export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 	registerAppTool(
@@ -150,36 +113,14 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 		async (args) => {
 			const callerContext = agent.getCallerContext()
 			const conversationId = resolveConversationId(args.conversationId)
-			const appId = args.app_id ?? null
 			const packageId = args.package_id ?? null
 			const kodyId = args.kody_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
-			let resolvedParams: Record<string, unknown> | undefined
-			let savedApp: Awaited<ReturnType<typeof getUiArtifactById>> | null = null
 			let savedPackage:
 				| Awaited<ReturnType<typeof getSavedPackageById>>
 				| Awaited<ReturnType<typeof getSavedPackageByKodyId>>
 				| null = null
-			if (appId) {
-				if (!callerContext.user) {
-					throw new Error(
-						'Authentication required to access saved UI artifacts.',
-					)
-				}
-				savedApp = await getUiArtifactById(
-					agent.getEnv().APP_DB,
-					callerContext.user.userId,
-					appId,
-				)
-				if (!savedApp) {
-					throw new Error('Saved UI artifact not found for this user.')
-				}
-				resolvedParams = applyUiArtifactParameters({
-					definitions: parseUiArtifactParameters(savedApp.parameters),
-					values: args.params,
-				})
-			}
 			if (packageId || kodyId) {
 				if (!callerContext.user) {
 					throw new Error('Authentication required to access saved packages.')
@@ -199,12 +140,8 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					)
 				}
 			}
-			const hostedUrl = appId
-				? buildSavedUiUrl(agent.requireDomain(), appId, {
-						params: resolvedParams,
-					})
-				: savedPackage
-					? `${agent.requireDomain()}/packages/${encodeURIComponent(savedPackage.kodyId)}`
+			const hostedUrl = savedPackage
+				? `${agent.requireDomain()}/packages/${encodeURIComponent(savedPackage.kodyId)}`
 				: null
 			const appSession =
 				callerContext.user != null
@@ -212,34 +149,25 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 							env: agent.getEnv(),
 							baseUrl: callerContext.baseUrl,
 							user: callerContext.user,
-							appId: appId ?? savedPackage?.id ?? null,
+							appId: savedPackage?.id ?? null,
 							homeConnectorId: callerContext.homeConnectorId ?? null,
-							params: resolvedParams,
 						})
 					: null
 			const structuredContent = {
 				conversationId,
 				widget: 'generated_ui' as const,
 				resourceUri: generatedUiRuntimeResourceUri,
-				renderSource: appId
-					? ('saved_app' as const)
-					: savedPackage
-						? ('saved_package' as const)
-						: ('inline_code' as const),
-				appId: appId ?? savedPackage?.id ?? null,
+				renderSource: savedPackage
+					? ('saved_package' as const)
+					: ('inline_code' as const),
+				appId: savedPackage?.id ?? null,
 				title,
 				description,
 				runtime: 'html' as const,
 				sourceCode: args.code ?? null,
-				params: resolvedParams,
 				hostedUrl,
 				appSession,
-				appBackend: hasUiArtifactServerCode(savedApp?.hasServerCode)
-					? {
-							basePath: buildSavedAppBackendBasePath(savedApp.id),
-							facetNames: ['main'],
-						}
-					: null,
+				appBackend: null,
 			}
 			const memoryResult = await loadRelevantMemoriesForTool({
 				env: agent.getEnv(),
@@ -254,8 +182,8 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 						[
 							{
 								type: 'text',
-								text: appId || savedPackage
-									? `## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will load the saved UI surface inside the widget runtime.\n\nIf the host does not display the attached UI correctly, open the hosted fallback URL: ${hostedUrl}`
+								text: savedPackage
+									? `## Generated UI ready\n\nThe hosted package app is ready.\n\nIf the host does not display the attached UI correctly, open the hosted package URL: ${hostedUrl}`
 									: '## Generated UI ready\n\nThe generic app runtime is attached to this tool call and will render the provided inline source inside the widget runtime.',
 							},
 						],
