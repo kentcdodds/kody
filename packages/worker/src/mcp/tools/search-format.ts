@@ -1,21 +1,17 @@
-import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
 import { compressSchemaForLlm } from '#mcp/capabilities/schema-compression.ts'
-import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
-import { type UnifiedSearchMatch } from '#mcp/capabilities/unified-search.ts'
+import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
-import { parseSkillParameters } from '#mcp/skills/skill-parameters.ts'
-import { parseUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
-import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
-import { type JobView } from '#worker/jobs/types.ts'
+import {
+	type AuthoredPackageJson,
+	type SavedPackageRecord,
+} from '#worker/package-registry/types.ts'
+import { type PackageJobSchedule } from '#worker/package-registry/types.ts'
 
 export type SearchEntityType =
 	| 'capability'
-	| 'skill'
-	| 'app'
-	| 'job'
+	| 'package'
 	| 'secret'
 	| 'value'
 	| 'connector'
@@ -63,31 +59,16 @@ export type SlimSearchMatch =
 			usage: string
 	  }
 	| {
-			type: 'skill'
+			type: 'package'
 			id: string
-			name: string
+			packageId: string
+			kodyId: string
 			title: string
 			description: string
 			usage: string
-			collection: string | null
-			collectionSlug: string | null
-	  }
-	| {
-			type: 'app'
-			id: string
-			title: string
-			description: string
-			usage: string
-			hostedUrl: string
-	  }
-	| {
-			type: 'job'
-			id: string
-			title: string
-			description: string
-			usage: string
-			scheduleSummary: string
-			sourceId: string | null
+			tags: Array<string>
+			hasApp: boolean
+			hostedUrl: string | null
 	  }
 	| {
 			type: 'secret'
@@ -135,44 +116,31 @@ export type SearchEntityDetailStructured =
 	  }
 	| {
 			kind: 'entity'
-			type: 'skill'
+			type: 'package'
 			id: string
 			title: string
 			description: string
 			usage: string
-			collection: string | null
-			collectionSlug: string | null
-			parameters: ReturnType<typeof parseSkillParameters>
-			inferredCapabilities: Array<string>
-			usesCapabilities: Array<string> | null
-			searchText: string | null
-			readOnly: boolean
-			idempotent: boolean
-			destructive: boolean
-	  }
-	| {
-			kind: 'entity'
-			type: 'app'
-			id: string
-			title: string
-			description: string
-			usage: string
-			hostedUrl: string
-			hasServerCode: boolean
-			parameters: ReturnType<typeof parseUiArtifactParameters>
-			hidden: boolean
-	  }
-	| {
-			kind: 'entity'
-			type: 'job'
-			id: string
-			title: string
-			description: string
-			usage: string
-			scheduleSummary: string
-			sourceId: string | null
-			publishedCommit: string | null
-			storageId: string
+			packageId: string
+			kodyId: string
+			name: string
+			tags: Array<string>
+			hasApp: boolean
+			hostedUrl: string | null
+			appEntry: string | null
+			exports: Array<{
+				subpath: string
+				importSpecifier: string
+				runtimeTarget: string | null
+				typesPath: string | null
+				typesSource: string | null
+			}>
+			jobs: Array<{
+				name: string
+				entry: string
+				scheduleSummary: string
+				enabled: boolean
+			}>
 	  }
 	| {
 			kind: 'entity'
@@ -223,26 +191,14 @@ export type SearchEntityDetail =
 			spec: CapabilitySpec
 	  }
 	| {
-			type: 'skill'
+			type: 'package'
 			id: string
 			title: string
 			description: string
-			row: McpSkillRow
-	  }
-	| {
-			type: 'app'
-			id: string
-			title: string
-			description: string
-			row: UiArtifactRow
-			hostedUrl: string
-	  }
-	| {
-			type: 'job'
-			id: string
-			title: string
-			description: string
-			row: JobView
+			record: SavedPackageRecord
+			manifest: AuthoredPackageJson
+			files: Record<string, string>
+			hostedUrl: string | null
 	  }
 	| {
 			type: 'secret'
@@ -267,6 +223,66 @@ export type SearchEntityDetail =
 			config: ConnectorConfig
 	  }
 
+export type SearchMatch =
+	| {
+			type: 'capability'
+			name: string
+			description: string
+	  }
+	| {
+			type: 'package'
+			packageId: string
+			kodyId: string
+			name: string
+			title: string
+			description: string
+			tags: Array<string>
+			hasApp: boolean
+	  }
+	| {
+			type: 'value'
+			valueId: string
+			name: string
+			description: string
+			scope: string
+			appId: string | null
+	  }
+	| {
+			type: 'connector'
+			connectorName: string
+			title: string
+			description: string
+			flow: string
+			apiBaseUrl: string | null
+			requiredHosts: Array<string>
+	  }
+	| {
+			type: 'secret'
+			name: string
+			description: string
+	  }
+
+function buildPackageHostedUrl(baseUrl: string, kodyId: string) {
+	return `${baseUrl.replace(/\/+$/, '')}/packages/${encodeURIComponent(kodyId)}`
+}
+
+function buildPackageImportSpecifier(kodyId: string, exportName: string) {
+	if (exportName === '.') {
+		return `kody:@${kodyId}`
+	}
+	return `kody:@${kodyId}/${exportName.replace(/^\.\//, '')}`
+}
+
+function formatPackageSchedule(schedule: PackageJobSchedule, timezone?: string) {
+	if (schedule.type === 'cron') {
+		return `Runs on cron "${schedule.expression}" in ${timezone?.trim() || 'UTC'}`
+	}
+	if (schedule.type === 'interval') {
+		return `Runs every ${schedule.every}`
+	}
+	return `Runs once at ${schedule.runAt}`
+}
+
 export function parseEntityRef(entity: string): {
 	id: string
 	type: SearchEntityType
@@ -282,15 +298,13 @@ export function parseEntityRef(entity: string): {
 	const type = trimmed.slice(separator + 1).trim()
 	if (
 		type !== 'capability' &&
-		type !== 'skill' &&
-		type !== 'app' &&
-		type !== 'job' &&
+		type !== 'package' &&
 		type !== 'secret' &&
 		type !== 'value' &&
 		type !== 'connector'
 	) {
 		throw new Error(
-			'Entity type must be one of: capability, skill, app, job, secret, value, or connector.',
+			'Entity type must be one of: capability, package, secret, value, or connector.',
 		)
 	}
 	if (!id) {
@@ -300,7 +314,7 @@ export function parseEntityRef(entity: string): {
 }
 
 export function formatSearchMarkdown(input: {
-	matches: Array<UnifiedSearchMatch>
+	matches: Array<SearchMatch>
 	warnings: Array<string>
 	baseUrl: string
 	includePreamble?: boolean
@@ -320,11 +334,10 @@ export function formatSearchMarkdown(input: {
 			'',
 			'**How to run matches:**',
 			'',
-			'- Built-in capabilities — `execute` / `codemode.<name>(args)`',
+			'- Built-in capabilities — `execute` with `import { codemode } from "kody:runtime"`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved skills — `codemode.meta_run_skill({ name, params })`',
-			'- Saved apps — `open_generated_ui({ app_id })`; users can also open the hosted URL for the saved app',
+			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ package_id })` when the package declares `kody.app`',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
@@ -373,7 +386,7 @@ export function formatSearchMarkdown(input: {
 	return lines.join('\n').trim()
 }
 
-function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
+function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 	if (match.type === 'capability') {
 		return [
 			`## Capability — \`${match.name}\``,
@@ -381,31 +394,16 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 			'description' in match ? match.description : '',
 		]
 	}
-	if (match.type === 'skill') {
+	if (match.type === 'package') {
+		const hostedUrl = match.hasApp ? buildPackageHostedUrl(baseUrl, match.kodyId) : null
 		return [
-			`## Skill — ${match.title} (name: \`${match.skillName}\`)`,
-			'',
-			match.description,
-		]
-	}
-	if (match.type === 'app') {
-		const hostedUrl = buildSavedUiUrl(baseUrl, match.appId)
-		return [
-			`## App — ${match.title}`,
+			`## Package — ${match.title} (\`${match.kodyId}\`)`,
 			'',
 			match.description,
 			'',
-			`**Hosted URL:** \`${hostedUrl}\``,
-		]
-	}
-	if (match.type === 'job') {
-		return [
-			`## Job — ${match.title}`,
-			'',
-			match.description,
-			'',
-			`**Schedule:** ${match.scheduleSummary}`,
-			...(match.sourceId ? [`**Source ID:** \`${match.sourceId}\``] : []),
+			`**Tags:** ${match.tags.length > 0 ? match.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
+			`**Has app:** ${match.hasApp ? 'yes' : 'no'}`,
+			...(hostedUrl ? [`**Hosted URL:** \`${hostedUrl}\``] : []),
 		]
 	}
 	if (match.type === 'value') {
@@ -431,7 +429,7 @@ function formatMatchBlock(match: UnifiedSearchMatch, baseUrl: string) {
 }
 
 export function toSlimStructuredMatches(input: {
-	matches: Array<UnifiedSearchMatch>
+	matches: Array<SearchMatch>
 	baseUrl: string
 }): Array<SlimSearchMatch> {
 	return input.matches.map((match) => {
@@ -447,37 +445,22 @@ export function toSlimStructuredMatches(input: {
 				usage: `execute with codemode.${match.name}(args)`,
 			}
 		}
-		if (match.type === 'skill') {
+		if (match.type === 'package') {
 			return {
-				type: 'skill',
-				id: match.skillName,
-				name: match.skillName,
+				type: 'package',
+				id: match.kodyId,
+				packageId: match.packageId,
+				kodyId: match.kodyId,
 				title: match.title,
 				description: match.description,
-				usage: `codemode.meta_run_skill({ name: "${match.skillName}", params: { ... } })`,
-				collection: match.collection,
-				collectionSlug: match.collectionSlug,
-			}
-		}
-		if (match.type === 'app') {
-			return {
-				type: 'app',
-				id: match.appId,
-				title: match.title,
-				description: match.description,
-				usage: `open_generated_ui({ app_id: "${match.appId}" })`,
-				hostedUrl: buildSavedUiUrl(input.baseUrl, match.appId),
-			}
-		}
-		if (match.type === 'job') {
-			return {
-				type: 'job',
-				id: match.jobId,
-				title: match.title,
-				description: match.description,
-				usage: `codemode.job_get({ id: "${match.jobId}" })`,
-				scheduleSummary: match.scheduleSummary,
-				sourceId: match.sourceId,
+				usage: match.hasApp
+					? `open_generated_ui({ package_id: "${match.packageId}" })`
+					: `import entry from "${buildPackageImportSpecifier(match.kodyId, '.')}"`,
+				tags: match.tags,
+				hasApp: match.hasApp,
+				hostedUrl: match.hasApp
+					? buildPackageHostedUrl(input.baseUrl, match.kodyId)
+					: null,
 			}
 		}
 		if (match.type === 'value') {
@@ -513,17 +496,6 @@ export function toSlimStructuredMatches(input: {
 			usage: `{{secret:${match.name}|scope=user}}`,
 		}
 	})
-}
-
-function parseJsonStringArray(raw: string | null): Array<string> | null {
-	if (raw == null) return null
-	try {
-		const value = JSON.parse(raw) as unknown
-		if (!Array.isArray(value)) return null
-		return value.filter((item): item is string => typeof item === 'string')
-	} catch {
-		return null
-	}
 }
 
 export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
@@ -579,154 +551,98 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		}
 	}
 
-	if (detail.type === 'skill') {
-		const parameters = parseSkillParameters(detail.row.parameters)
-		const inferredCapabilities =
-			parseJsonStringArray(detail.row.inferred_capabilities) ?? []
-		const usesCapabilities = parseJsonStringArray(detail.row.uses_capabilities)
+	if (detail.type === 'package') {
+		const exportDetails = Object.entries(detail.manifest.exports).map(
+			([exportName, target]) => {
+				const runtimeTarget =
+					typeof target === 'string'
+						? target
+						: (target.import ?? target.default ?? null)
+				const typesPath =
+					typeof target === 'string' ? null : (target.types ?? null)
+				const typesSource =
+					typesPath == null ? null : (detail.files[typesPath.replace(/^\.?\//, '')] ?? null)
+				return {
+					subpath: exportName,
+					importSpecifier: buildPackageImportSpecifier(
+						detail.record.kodyId,
+						exportName,
+					),
+					runtimeTarget,
+					typesPath,
+					typesSource,
+				}
+			},
+		)
+		const jobs = Object.entries(detail.manifest.kody.jobs ?? {}).map(
+			([jobName, job]) => ({
+				name: jobName,
+				entry: job.entry,
+				scheduleSummary: formatPackageSchedule(job.schedule, job.timezone),
+				enabled: job.enabled ?? true,
+			}),
+		)
+		const appEntry = detail.manifest.kody.app?.entry ?? null
 		const lines = [
-			`# Skill — ${detail.row.title}`,
-			'',
-			detail.row.description,
-			'',
-			'## Summary',
-			'',
-			`- Name: \`${detail.row.name}\``,
-			`- Collection: ${detail.row.collection_name ?? 'none'}`,
-			`- Collection slug: ${detail.row.collection_slug ?? 'none'}`,
-			`- Read-only: ${detail.row.read_only === 1 ? 'yes' : 'no'}`,
-			`- Idempotent: ${detail.row.idempotent === 1 ? 'yes' : 'no'}`,
-			`- Destructive: ${detail.row.destructive === 1 ? 'yes' : 'no'}`,
-			'',
-			'## Run this skill',
-			'',
-			`- \`codemode.meta_run_skill({ name: "${detail.row.name}", params: { ... } })\``,
-		]
-		if (parameters && parameters.length > 0) {
-			lines.push('', '## Parameters', '')
-			for (const parameter of parameters) {
-				lines.push(
-					`- \`${parameter.name}\` (${parameter.type}${parameter.required ? ', required' : ', optional'}) — ${parameter.description}`,
-				)
-			}
-		}
-		if (inferredCapabilities.length > 0 || usesCapabilities?.length) {
-			lines.push('', '## Capability hints', '')
-			if (inferredCapabilities.length > 0) {
-				lines.push(
-					`- Inferred capabilities: ${inferredCapabilities.join(', ')}`,
-				)
-			}
-			if (usesCapabilities && usesCapabilities.length > 0) {
-				lines.push(
-					`- Declared uses_capabilities: ${usesCapabilities.join(', ')}`,
-				)
-			}
-		}
-		if (detail.row.search_text) {
-			lines.push('', '## Search text', '', `- ${detail.row.search_text}`)
-		}
-		return {
-			markdown: lines.join('\n'),
-			structured: {
-				kind: 'entity',
-				type: 'skill',
-				id: detail.row.name,
-				title: detail.title,
-				description: detail.description,
-				usage: `codemode.meta_run_skill({ name: "${detail.row.name}", params: { ... } })`,
-				collection: detail.row.collection_name,
-				collectionSlug: detail.row.collection_slug,
-				parameters,
-				inferredCapabilities,
-				usesCapabilities,
-				searchText: detail.row.search_text,
-				readOnly: detail.row.read_only === 1,
-				idempotent: detail.row.idempotent === 1,
-				destructive: detail.row.destructive === 1,
-			} satisfies SearchEntityDetailStructured,
-		}
-	}
-
-	if (detail.type === 'app') {
-		const parameters = parseUiArtifactParameters(detail.row.parameters)
-		const hasServerCode = detail.row.hasServerCode
-		const lines = [
-			`# App — ${detail.row.title}`,
-			'',
-			detail.row.description,
-			'',
-			'## Summary',
-			'',
-			`- App ID: \`${detail.row.id}\``,
-			`- Has backend: ${hasServerCode ? 'yes' : 'no'}`,
-			`- Hidden: ${detail.row.hidden ? 'yes' : 'no'}`,
-			'',
-			'## Open this app',
-			'',
-			`- \`open_generated_ui({ app_id: "${detail.row.id}" })\``,
-			`- Hosted URL: \`${detail.hostedUrl}\``,
-		]
-		if (parameters && parameters.length > 0) {
-			lines.push('', '## Parameters', '')
-			for (const parameter of parameters) {
-				lines.push(
-					`- \`${parameter.name}\` (${parameter.type}${parameter.required ? ', required' : ', optional'}) — ${parameter.description}`,
-				)
-			}
-		}
-		return {
-			markdown: lines.join('\n'),
-			structured: {
-				kind: 'entity',
-				type: 'app',
-				id: detail.id,
-				title: detail.title,
-				description: detail.description,
-				usage: `open_generated_ui({ app_id: "${detail.row.id}" })`,
-				hostedUrl: detail.hostedUrl,
-				hasServerCode,
-				parameters,
-				hidden: detail.row.hidden,
-			} satisfies SearchEntityDetailStructured,
-		}
-	}
-
-	if (detail.type === 'job') {
-		const lines = [
-			`# Job — ${detail.row.name}`,
+			`# Package — \`${detail.record.kodyId}\``,
 			'',
 			detail.description,
 			'',
 			'## Summary',
 			'',
-			`- Id: \`${detail.row.id}\``,
-			`- Schedule: ${detail.row.scheduleSummary}`,
-			`- Enabled: ${detail.row.enabled ? 'yes' : 'no'}`,
-			`- Kill switch: ${detail.row.killSwitchEnabled ? 'on' : 'off'}`,
-			`- Source id: ${detail.row.sourceId ?? 'none'}`,
-			`- Published commit: ${detail.row.publishedCommit ?? 'none'}`,
-			`- Storage id: \`${detail.row.storageId}\``,
-			'',
-			'## Operate on this job',
-			'',
-			`- \`codemode.job_get({ id: "${detail.row.id}" })\``,
-			`- \`codemode.job_run_now({ id: "${detail.row.id}" })\``,
-			`- \`codemode.job_upsert({ id: "${detail.row.id}", ... })\``,
+			`- Package id: \`${detail.record.id}\``,
+			`- Package name: \`${detail.record.name}\``,
+			`- Kody id: \`${detail.record.kodyId}\``,
+			`- Tags: ${detail.record.tags.length > 0 ? detail.record.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
+			`- Has app: ${detail.record.hasApp ? 'yes' : 'no'}`,
+			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
 		]
+		if (appEntry) {
+			lines.push('', '## App', '', `- Entry: \`${appEntry}\``)
+		}
+		if (exportDetails.length > 0) {
+			lines.push('', '## Exports', '')
+			for (const exportDetail of exportDetails) {
+				lines.push(
+					`- \`${exportDetail.subpath}\` -> \`${exportDetail.importSpecifier}\`${exportDetail.runtimeTarget ? ` (runtime target: \`${exportDetail.runtimeTarget}\`)` : ''}${exportDetail.typesPath ? ` (types: \`${exportDetail.typesPath}\`)` : ''}`,
+				)
+				if (exportDetail.typesSource) {
+					lines.push('', '  Type definitions:', '', '  ```ts')
+					lines.push(
+						...exportDetail.typesSource.split('\n').map((line) => `  ${line}`),
+					)
+					lines.push('  ```')
+				}
+			}
+		}
+		if (jobs.length > 0) {
+			lines.push('', '## Jobs', '')
+			for (const job of jobs) {
+				lines.push(
+					`- \`${job.name}\` -> \`${job.entry}\` — ${job.scheduleSummary}${job.enabled ? '' : ' (disabled)'}`,
+				)
+			}
+		}
 		return {
 			markdown: lines.join('\n'),
 			structured: {
 				kind: 'entity',
-				type: 'job',
-				id: detail.id,
+				type: 'package',
+				id: detail.record.kodyId,
 				title: detail.title,
 				description: detail.description,
-				usage: `codemode.job_get({ id: "${detail.row.id}" })`,
-				scheduleSummary: detail.row.scheduleSummary,
-				sourceId: detail.row.sourceId,
-				publishedCommit: detail.row.publishedCommit,
-				storageId: detail.row.storageId,
+				usage: detail.record.hasApp
+					? `open_generated_ui({ package_id: "${detail.record.id}" })`
+					: `import entry from "${buildPackageImportSpecifier(detail.record.kodyId, '.')}"`,
+				packageId: detail.record.id,
+				kodyId: detail.record.kodyId,
+				name: detail.record.name,
+				tags: detail.record.tags,
+				hasApp: detail.record.hasApp,
+				hostedUrl: detail.hostedUrl,
+				appEntry,
+				exports: exportDetails,
+				jobs,
 			} satisfies SearchEntityDetailStructured,
 		}
 	}

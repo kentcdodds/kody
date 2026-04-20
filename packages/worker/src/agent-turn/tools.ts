@@ -1,25 +1,20 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { searchUnified } from '#mcp/capabilities/unified-search.ts'
 import {
 	loadDownRemoteConnectorStatuses,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
+	searchPackages,
 } from '#mcp/tools/search.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import { toSlimStructuredMatches } from '#mcp/tools/search-format.ts'
 import {
-	listAppSecretsByAppIds,
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
-import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
-import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
-import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { listJobs } from '#worker/jobs/service.ts'
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -43,30 +38,34 @@ export async function createAgentTurnToolSet(input: {
 	return {
 		search: tool({
 			description:
-				'Search Kody capabilities, saved skills, apps, values, connectors, and secret references using a natural language query.',
+				'Search Kody capabilities, saved packages, values, connectors, and secret references using a natural language query.',
 			inputSchema: z.object({
 				query: z.string().min(1),
 				limit: z.number().int().min(1).max(50).optional(),
-				skill_collection: z.string().min(1).optional(),
 			}),
 			execute: async (args) => {
 				const userId = input.callerContext.user?.userId ?? null
-				const registry = await getCapabilityRegistryForContext({
-					env: input.env,
-					callerContext: input.callerContext,
-				})
 				const optionalRows = await loadOptionalSearchRows({
 					userId,
-					loadSkills: () => listMcpSkillsByUserId(input.env.APP_DB, userId!),
-					loadUiArtifacts: () =>
-						listUiArtifactsByUserId(input.env.APP_DB, userId!, {
-							hidden: false,
-						}),
-					loadJobs: () =>
-						listJobs({
-							env: input.env,
-							userId: userId!,
-						}),
+					loadPackages: async () => {
+						const savedPackages = await listSavedPackagesByUserId(
+							input.env.APP_DB,
+							{ userId: userId! },
+						)
+						return savedPackages.map((savedPackage) => ({
+							record: savedPackage,
+							projection: {
+								name: savedPackage.name,
+								kodyId: savedPackage.kodyId,
+								description: savedPackage.description,
+								tags: savedPackage.tags,
+								searchText: savedPackage.searchText,
+								hasApp: savedPackage.hasApp,
+								exports: [],
+								jobs: [],
+							},
+						}))
+					},
 					loadUserSecrets: () =>
 						listUserSecretsForSearch({
 							env: input.env,
@@ -83,30 +82,12 @@ export async function createAgentTurnToolSet(input: {
 							},
 						}),
 				})
-				const skillCollectionSlug = args.skill_collection?.trim()
-					? slugifySkillCollectionName(args.skill_collection)
-					: undefined
-				const appSecretsByAppId = userId
-					? await listAppSecretsByAppIds({
-							env: input.env,
-							userId,
-							appIds: optionalRows.uiArtifactRows.map((row) => row.id),
-						})
-					: new Map()
-				const result = await searchUnified({
-					baseUrl: input.callerContext.baseUrl,
+				const result = await searchPackages({
 					env: input.env,
+					baseUrl: input.callerContext.baseUrl,
 					query: args.query,
-					skillCollectionSlug,
 					limit: args.limit ?? defaultSearchLimit,
-					specs: registry.capabilitySpecs,
-					userId,
-					skillRows: optionalRows.skillRows,
-					uiArtifactRows: optionalRows.uiArtifactRows,
-					jobRows: optionalRows.jobRows,
-					userSecretRows: optionalRows.userSecretRows,
-					userValueRows: optionalRows.userValueRows,
-					appSecretsByAppId,
+					rows: optionalRows.packageRows,
 				})
 				const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
 					env: input.env,

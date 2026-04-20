@@ -40,72 +40,75 @@ test('search memory context does not synthesize a fallback for blank queries', (
 	).toBeUndefined()
 })
 
-test('optional search rows fall back when saved skills lookup fails', async () => {
+test('optional search rows fall back when saved packages lookup fails', async () => {
 	const result = await loadOptionalSearchRows({
 		userId: 'user-123',
-		loadSkills: async () => {
-			throw new Error('D1 skills unavailable')
+		loadPackages: async () => {
+			throw new Error('D1 packages unavailable')
 		},
-		loadUiArtifacts: async () => [
+		loadUserSecrets: async () => [],
+		loadUserValues: async () => [],
+	})
+
+	expect(result.packageRows).toEqual([])
+	expect(result.userSecretRows).toEqual([])
+	expect(result.userValueRows).toEqual([])
+	expect(result.warnings).toEqual([
+		'Saved packages are temporarily unavailable: D1 packages unavailable',
+	])
+})
+
+test('optional search rows include saved packages when lookup succeeds', async () => {
+	const result = await loadOptionalSearchRows({
+		userId: 'user-123',
+		loadPackages: async () => [
 			{
-				id: 'app-123',
-				user_id: 'user-123',
-				title: 'Roku remote',
-				description: 'Saved remote UI',
-				code: '<div />',
-				runtime: 'html',
-				parameters: null,
-				hidden: false,
-				created_at: '2026-03-24T00:00:00.000Z',
-				updated_at: '2026-03-24T00:00:00.000Z',
+				record: {
+					id: 'package-123',
+					userId: 'user-123',
+					name: '@kody/roku-remote',
+					kodyId: 'roku-remote',
+					description: 'Saved package for the Roku remote',
+					tags: ['roku'],
+					searchText: null,
+					sourceId: 'source-package-123',
+					hasApp: true,
+					createdAt: '2026-03-24T00:00:00.000Z',
+					updatedAt: '2026-03-24T00:00:00.000Z',
+				},
+				projection: {
+					name: '@kody/roku-remote',
+					kodyId: 'roku-remote',
+					description: 'Saved package for the Roku remote',
+					tags: ['roku'],
+					searchText: null,
+					hasApp: true,
+					exports: ['.'],
+					jobs: [],
+				},
 			},
 		],
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
 	})
 
-	expect(result.skillRows).toEqual([])
-	expect(result.uiArtifactRows).toHaveLength(1)
+	expect(result.packageRows).toHaveLength(1)
 	expect(result.userSecretRows).toEqual([])
 	expect(result.userValueRows).toEqual([])
-	expect(result.warnings).toEqual([
-		'Saved skills are temporarily unavailable: D1 skills unavailable',
-	])
-})
-
-test('optional search rows fall back when saved apps lookup fails', async () => {
-	const result = await loadOptionalSearchRows({
-		userId: 'user-123',
-		loadSkills: async () => [],
-		loadUiArtifacts: async () => {
-			throw new Error('D1 apps unavailable')
-		},
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => [],
-	})
-
-	expect(result.skillRows).toEqual([])
-	expect(result.uiArtifactRows).toEqual([])
-	expect(result.userSecretRows).toEqual([])
-	expect(result.userValueRows).toEqual([])
-	expect(result.warnings).toEqual([
-		'Saved apps are temporarily unavailable: D1 apps unavailable',
-	])
+	expect(result.warnings).toEqual([])
 })
 
 test('optional search rows fall back when persisted values lookup fails', async () => {
 	const result = await loadOptionalSearchRows({
 		userId: 'user-123',
-		loadSkills: async () => [],
-		loadUiArtifacts: async () => [],
+		loadPackages: async () => [],
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => {
 			throw new Error('D1 values unavailable')
 		},
 	})
 
-	expect(result.skillRows).toEqual([])
-	expect(result.uiArtifactRows).toEqual([])
+	expect(result.packageRows).toEqual([])
 	expect(result.userSecretRows).toEqual([])
 	expect(result.userValueRows).toEqual([])
 	expect(result.warnings).toEqual([
@@ -116,24 +119,17 @@ test('optional search rows fall back when persisted values lookup fails', async 
 test('optional search rows skip D1 access without a user', async () => {
 	const result = await loadOptionalSearchRows({
 		userId: null,
-		loadSkills: async () => {
+		loadPackages: async () => {
 			throw new Error('should not run')
 		},
-		loadUiArtifacts: async () => {
-			throw new Error('should not run')
-		},
-		loadUserSecrets: async () => {
-			throw new Error('should not run')
-		},
+		loadUserSecrets: async () => [],
 		loadUserValues: async () => {
 			throw new Error('should not run')
 		},
 	})
 
 	expect(result).toEqual({
-		jobRows: [],
-		skillRows: [],
-		uiArtifactRows: [],
+		packageRows: [],
 		userSecretRows: [],
 		userValueRows: [],
 		warnings: [],

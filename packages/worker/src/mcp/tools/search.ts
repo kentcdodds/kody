@@ -7,23 +7,16 @@ import {
 	parseConnectorValueName,
 } from '#mcp/capabilities/values/connector-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { searchUnified } from '#mcp/capabilities/unified-search.ts'
 import {
-	listAppSecretsByAppIds,
+	deterministicEmbedding,
+	lexicalScore,
+	cosineSimilarity,
+	isCapabilitySearchOffline,
+} from '#mcp/capabilities/capability-search.ts'
+import {
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import {
-	getMcpSkillByName,
-	listMcpSkillsByUserId,
-} from '#mcp/skills/mcp-skills-repo.ts'
-import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
-import { type McpSkillRow } from '#mcp/skills/mcp-skills-types.ts'
-import {
-	getUiArtifactById,
-	listUiArtifactsByUserId,
-} from '#mcp/ui-artifacts-repo.ts'
-import { type UiArtifactRow } from '#mcp/ui-artifacts-types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 import {
@@ -34,14 +27,17 @@ import {
 import { listValues } from '#mcp/values/service.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import {
+	getSavedPackageByKodyId,
+	listSavedPackagesByUserId,
+} from '#worker/package-registry/repo.ts'
+import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
+import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
+import {
 	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
 } from '#worker/home/status.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
-import { buildSavedUiUrl } from '#worker/ui-artifact-urls.ts'
-import { listJobs, getJob } from '#worker/jobs/service.ts'
-import { type JobView } from '#worker/jobs/types.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -66,6 +62,63 @@ const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
+
+type PackageSearchRow = {
+	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
+	projection: ReturnType<typeof buildPackageSearchProjection>
+}
+
+type SearchMatch =
+	Parameters<typeof toSlimStructuredMatches>[0]['matches'][number]
+
+export async function searchPackages(input: {
+	env: Env
+	baseUrl: string
+	query: string
+	limit: number
+	rows: Array<PackageSearchRow>
+}): Promise<{ matches: Array<SearchMatch>; offline: boolean }> {
+	const query = input.query.trim()
+	const offline = isCapabilitySearchOffline(input.env)
+	if (!query || input.rows.length === 0) {
+		return { matches: [], offline }
+	}
+	const queryEmbedding = deterministicEmbedding(query)
+	const ranked = input.rows
+		.map((row) => {
+			const document = [
+				row.projection.kodyId,
+				row.projection.name,
+				row.projection.description,
+				row.projection.tags.join(' '),
+				row.projection.searchText ?? '',
+				row.projection.exports.join(' '),
+				row.projection.jobs.map((job) => job.name).join(' '),
+			].join('\n')
+			const lexical = lexicalScore(query, document)
+			const vector = cosineSimilarity(queryEmbedding, deterministicEmbedding(document))
+			return {
+				row,
+				score: lexical + vector,
+			}
+		})
+		.sort((left, right) => right.score - left.score)
+		.slice(0, Math.max(1, Math.min(input.limit, input.rows.length)))
+		.map(({ row }) => ({
+			type: 'package' as const,
+			packageId: row.record.id,
+			kodyId: row.record.kodyId,
+			name: row.record.name,
+			title: row.record.name,
+			description: row.record.description,
+			tags: row.record.tags,
+			hasApp: row.record.hasApp,
+		}))
+	return {
+		matches: ranked,
+		offline,
+	}
+}
 
 export function resolveSearchMemoryContext(input: {
 	query?: string
@@ -124,10 +177,10 @@ function applyMaxResponseSize<TPayload>(
 const searchTool = {
 	name: 'search',
 	title:
-		'Search Capabilities, Values, Connectors, Skills, Apps, Jobs, and Secrets',
+		'Search Capabilities, Packages, Values, Connectors, and Secrets',
 	description: `
-Find **built-in capabilities**, **persisted values**, **saved connectors**,
-**saved skills**, **saved apps**, **saved jobs**, and **user secret references** (metadata only)
+Find **built-in capabilities**, **saved packages**, **persisted values**,
+**saved connectors**, and **user secret references** (metadata only)
 before \`execute\` or \`open_generated_ui\`.
 
 **query** — ranked markdown + structured matches (order matters). If nothing useful
@@ -135,13 +188,12 @@ returns, rephrase or call \`meta_list_capabilities\`; \`entity\` does not fix an
 empty ranked list.
 
 **entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
-| \`connector\` | \`skill\` | \`app\` | \`job\` | \`secret\`), including schemas for
+| \`connector\` | \`package\` | \`secret\`), including schemas for
 capabilities. Types and fields: see response.
 
-Run a skill: \`meta_run_skill({ name, params })\`.
-Manage jobs: \`job_upsert\`, \`job_list\`, \`job_get\`, \`job_delete\`,
-\`job_run_now\`.
-Apps: \`open_generated_ui({ app_id })\`. Secrets: never raw in results; use
+Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
+Open package apps with \`open_generated_ui({ package_id })\` or hosted package URLs.
+Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
 use \`codemode.connector_get\` / \`codemode.connector_list\`.
@@ -149,21 +201,16 @@ use \`codemode.connector_get\` / \`codemode.connector_list\`.
 If results look incomplete: \`meta_list_capabilities\` (full registry) or
 \`meta_list_remote_connector_status\` / \`meta_get_home_connector_status\` (remote connectors).
 
-Domain hints for \`query\` / \`skill_collection\`: \`coding\`, \`meta\`, \`home\`
-(see server instructions).
-
-Optional **limit** (default 15), **maxResponseSize**, **skill_collection** (narrow
-skills only).
+Optional **limit** (default 15) and **maxResponseSize** trim low-ranked results.
 
 Example arguments:
-- \`{ "query": "saved interactive dashboard app", "limit": 10 }\`
+- \`{ "query": "saved github automation package", "limit": 10 }\`
 - \`{ "query": "preferred org value or saved connector", "limit": 10 }\`
-- \`{ "query": "github automation", "skill_collection": "release-engineering" }\`
+- \`{ "query": "package with worker app ui", "limit": 10 }\`
 - \`{ "entity": "kody_official_guide:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:connector" }\`
-- To run a skill: \`meta_run_skill({ "name": "github-pr-summary", "params": { "owner": "kentcdodds" } })\`
-- To reopen a saved app: \`open_generated_ui({ "app_id": "<id>" })\`
+- To open a saved package app: \`open_generated_ui({ "package_id": "<id>" })\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),
@@ -176,9 +223,7 @@ https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 } as const
 
 type OptionalSearchRowsResult = {
-	skillRows: Array<McpSkillRow>
-	uiArtifactRows: Array<UiArtifactRow>
-	jobRows: Array<JobView>
+	packageRows: Array<PackageSearchRow>
 	userSecretRows: Array<SecretSearchRow>
 	userValueRows: Array<ValueMetadata>
 	warnings: Array<string>
@@ -186,7 +231,6 @@ type OptionalSearchRowsResult = {
 
 type SearchRowsAndRegistry = OptionalSearchRowsResult & {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	appSecretsByAppId: Awaited<ReturnType<typeof listAppSecretsByAppIds>>
 }
 
 function shouldIncludeRemoteConnectorStatus(status: HomeConnectorStatus) {
@@ -237,17 +281,13 @@ export async function loadDownHomeConnectorStatus(input: {
 
 export async function loadOptionalSearchRows(input: {
 	userId: string | null
-	loadSkills: () => Promise<Array<McpSkillRow>>
-	loadUiArtifacts: () => Promise<Array<UiArtifactRow>>
-	loadJobs?: () => Promise<Array<JobView>>
+	loadPackages: () => Promise<Array<PackageSearchRow>>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
 	loadUserValues: () => Promise<Array<ValueMetadata>>
 }): Promise<OptionalSearchRowsResult> {
 	if (!input.userId) {
 		return {
-			skillRows: [],
-			uiArtifactRows: [],
-			jobRows: [],
+			packageRows: [],
 			userSecretRows: [],
 			userValueRows: [],
 			warnings: [],
@@ -256,49 +296,23 @@ export async function loadOptionalSearchRows(input: {
 
 	const warnings: Array<string> = []
 	const [
-		skillRowsResult,
-		uiArtifactRowsResult,
-		jobRowsResult,
+		packageRowsResult,
 		userSecretRowsResult,
 		userValueRowsResult,
 	] = await Promise.allSettled([
-		input.loadSkills(),
-		input.loadUiArtifacts(),
-		input.loadJobs ? input.loadJobs() : Promise.resolve([]),
+		input.loadPackages(),
 		input.loadUserSecrets(),
 		input.loadUserValues(),
 	])
 
-	const skillRows =
-		skillRowsResult.status === 'fulfilled' ? skillRowsResult.value : []
-	if (skillRowsResult.status === 'rejected') {
+	const packageRows =
+		packageRowsResult.status === 'fulfilled' ? packageRowsResult.value : []
+	if (packageRowsResult.status === 'rejected') {
 		const message =
-			skillRowsResult.reason instanceof Error
-				? skillRowsResult.reason.message
-				: String(skillRowsResult.reason)
-		warnings.push(`Saved skills are temporarily unavailable: ${message}`)
-	}
-
-	const uiArtifactRows =
-		uiArtifactRowsResult.status === 'fulfilled'
-			? uiArtifactRowsResult.value
-			: []
-	if (uiArtifactRowsResult.status === 'rejected') {
-		const message =
-			uiArtifactRowsResult.reason instanceof Error
-				? uiArtifactRowsResult.reason.message
-				: String(uiArtifactRowsResult.reason)
-		warnings.push(`Saved apps are temporarily unavailable: ${message}`)
-	}
-
-	const jobRows =
-		jobRowsResult.status === 'fulfilled' ? jobRowsResult.value : []
-	if (jobRowsResult.status === 'rejected') {
-		const message =
-			jobRowsResult.reason instanceof Error
-				? jobRowsResult.reason.message
-				: String(jobRowsResult.reason)
-		warnings.push(`Saved jobs are temporarily unavailable: ${message}`)
+			packageRowsResult.reason instanceof Error
+				? packageRowsResult.reason.message
+				: String(packageRowsResult.reason)
+		warnings.push(`Saved packages are temporarily unavailable: ${message}`)
 	}
 
 	const userSecretRows =
@@ -324,9 +338,7 @@ export async function loadOptionalSearchRows(input: {
 	}
 
 	return {
-		skillRows,
-		uiArtifactRows,
-		jobRows,
+		packageRows,
 		userSecretRows,
 		userValueRows,
 		warnings,
@@ -337,7 +349,6 @@ async function loadSearchRowsAndRegistry(input: {
 	agent: McpRegistrationAgent
 	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
 	userId: string | null
-	skillCollection?: string
 }) {
 	const [registry, optionalRows] = await Promise.all([
 		getCapabilityRegistryForContext({
@@ -346,17 +357,27 @@ async function loadSearchRowsAndRegistry(input: {
 		}),
 		loadOptionalSearchRows({
 			userId: input.userId,
-			loadSkills: () =>
-				listMcpSkillsByUserId(input.agent.getEnv().APP_DB, input.userId!),
-			loadUiArtifacts: () =>
-				listUiArtifactsByUserId(input.agent.getEnv().APP_DB, input.userId!, {
-					hidden: false,
-				}),
-			loadJobs: () =>
-				listJobs({
-					env: input.agent.getEnv(),
-					userId: input.userId!,
-				}),
+			loadPackages: async () => {
+				const savedPackages = await listSavedPackagesByUserId(
+					input.agent.getEnv().APP_DB,
+					{
+						userId: input.userId!,
+					},
+				)
+				return savedPackages.map((record) => ({
+					record,
+					projection: {
+						name: record.name,
+						kodyId: record.kodyId,
+						description: record.description,
+						tags: record.tags,
+						searchText: record.searchText,
+						hasApp: record.hasApp,
+						exports: [],
+						jobs: [],
+					},
+				}))
+			},
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({
 					env: input.agent.getEnv(),
@@ -373,20 +394,8 @@ async function loadSearchRowsAndRegistry(input: {
 				}),
 		}),
 	])
-	const appSecretsByAppId = input.userId
-		? await listAppSecretsByAppIds({
-				env: input.agent.getEnv(),
-				userId: input.userId,
-				appIds: optionalRows.uiArtifactRows.map((row) => row.id),
-			})
-		: new Map()
-	const skillCollectionSlug = input.skillCollection?.trim()
-		? slugifySkillCollectionName(input.skillCollection)
-		: undefined
 	return {
 		registry,
-		skillCollectionSlug,
-		appSecretsByAppId,
 		...optionalRows,
 	}
 }
@@ -433,55 +442,31 @@ async function resolveEntityDetail(input: {
 		throw new Error('Authentication required to access saved user entities.')
 	}
 
-	if (ref.type === 'skill') {
-		const row = await getMcpSkillByName(
-			input.agent.getEnv().APP_DB,
-			input.userId,
-			ref.id,
-		)
-		if (!row) {
-			throw new Error('Skill not found for this user.')
-		}
-		return {
-			type: 'skill' as const,
-			id: row.name,
-			title: row.title,
-			description: row.description,
-			row,
-		}
-	}
-
-	if (ref.type === 'app') {
-		const row = await getUiArtifactById(
-			input.agent.getEnv().APP_DB,
-			input.userId,
-			ref.id,
-		)
-		if (!row || row.hidden) {
-			throw new Error('Saved app not found for this user.')
-		}
-		return {
-			type: 'app' as const,
-			id: row.id,
-			title: row.title,
-			description: row.description,
-			row,
-			hostedUrl: buildSavedUiUrl(input.callerContext.baseUrl, row.id),
-		}
-	}
-
-	if (ref.type === 'job') {
-		const row = await getJob({
-			env: input.agent.getEnv(),
+	if (ref.type === 'package') {
+		const record = await getSavedPackageByKodyId(input.agent.getEnv().APP_DB, {
 			userId: input.userId,
-			jobId: ref.id,
+			kodyId: ref.id,
+		})
+		if (!record) {
+			throw new Error('Saved package not found for this user.')
+		}
+		const loaded = await loadPackageSourceBySourceId({
+			env: input.agent.getEnv(),
+			baseUrl: input.callerContext.baseUrl,
+			userId: input.userId,
+			sourceId: record.sourceId,
 		})
 		return {
-			type: 'job' as const,
-			id: row.id,
-			title: row.name,
-			description: row.scheduleSummary,
-			row,
+			type: 'package' as const,
+			id: record.kodyId,
+			title: record.name,
+			description: record.description,
+			record,
+			manifest: loaded.manifest,
+			files: loaded.files,
+			hostedUrl: record.hasApp
+				? `${input.callerContext.baseUrl}/packages/${encodeURIComponent(record.kodyId)}`
+				: null,
 		}
 	}
 
@@ -585,7 +570,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 		async (args: {
 			query?: string
 			entity?: string
-			skill_collection?: string
 			limit?: number
 			maxResponseSize?: number
 			conversationId?: string
@@ -621,7 +605,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					agent,
 					callerContext,
 					userId,
-					skillCollection: args.skill_collection,
 				})
 				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
 					env: agent.getEnv(),
@@ -637,44 +620,131 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							callerContext,
 							userId,
 							entity: args.entity,
-							searchRows: {
-								registry: searchRows.registry,
-								skillRows: searchRows.skillRows,
-								uiArtifactRows: searchRows.uiArtifactRows,
-								jobRows: searchRows.jobRows,
-								userSecretRows: searchRows.userSecretRows,
-								userValueRows: searchRows.userValueRows,
-								warnings: searchRows.warnings,
-								appSecretsByAppId: searchRows.appSecretsByAppId,
-							},
+						searchRows,
 						}),
 					}
 				}
 
+				const capabilityMatches = Object.values(
+					searchRows.registry.capabilitySpecs,
+				)
+					.map((spec) => ({
+						type: 'capability' as const,
+						name: spec.name,
+						description: spec.description,
+						score: lexicalScore(args.query!, `${spec.name}\n${spec.description}`),
+					}))
+					.filter((match) => match.score > 0)
+				const packageMatches = searchRows.packageRows
+					.map((entry) => {
+						const doc = [
+							entry.record.name,
+							entry.record.kodyId,
+							entry.record.description,
+							entry.record.tags.join(' '),
+							entry.record.searchText ?? '',
+						].join('\n')
+						const lexical = lexicalScore(args.query!, doc)
+						const vector = cosineSimilarity(
+							deterministicEmbedding(args.query!),
+							deterministicEmbedding(doc),
+						)
+						return {
+							type: 'package' as const,
+							packageId: entry.record.id,
+							kodyId: entry.record.kodyId,
+							name: entry.record.name,
+							title: entry.record.name,
+							description: entry.record.description,
+							tags: entry.record.tags,
+							hasApp: entry.record.hasApp,
+							score:
+								isCapabilitySearchOffline(agent.getEnv()) ? lexical + vector : lexical + vector,
+						}
+					})
+					.filter((match) => match.score > 0)
+				const valueMatches = searchRows.userValueRows
+					.map((row) => ({
+						type: 'value' as const,
+						valueId: buildValueEntityId(row),
+						name: row.name,
+						description: describeValue(row),
+						scope: row.scope,
+						appId: row.appId,
+						score: lexicalScore(
+							args.query!,
+							[row.name, row.description, row.scope, row.value].join('\n'),
+						),
+					}))
+					.filter((match) => match.score > 0)
+				const connectorMatches = searchRows.userValueRows
+					.flatMap((row) => {
+						const connectorName = parseConnectorValueName(row.name)
+						if (!connectorName) return []
+						const config = parseConnectorConfig(
+							parseConnectorJson(row.value),
+							connectorName,
+						)
+						if (!config) return []
+						return [
+							{
+								type: 'connector' as const,
+								connectorName,
+								title: connectorName,
+								description:
+									row.description.trim() ||
+									`Saved OAuth connector configuration (${config.flow} flow).`,
+								flow: config.flow,
+								apiBaseUrl: config.apiBaseUrl ?? null,
+								requiredHosts: config.requiredHosts ?? [],
+								score: lexicalScore(
+									args.query!,
+									[
+										connectorName,
+										row.description,
+										config.tokenUrl,
+										config.apiBaseUrl ?? '',
+									].join('\n'),
+								),
+							},
+						]
+					})
+					.filter((match) => match.score > 0)
+				const secretMatches = searchRows.userSecretRows
+					.map((row) => ({
+						type: 'secret' as const,
+						name: row.name,
+						description: row.description,
+						score: lexicalScore(args.query!, `${row.name}\n${row.description}`),
+					}))
+					.filter((match) => match.score > 0)
+				const allMatches = [
+					...capabilityMatches,
+					...packageMatches,
+					...valueMatches,
+					...connectorMatches,
+					...secretMatches,
+				]
+					.sort((left, right) => right.score - left.score)
+					.slice(0, limit)
+					.map(({ score: _score, ...match }) => match)
+
 				return {
 					mode: 'list' as const,
-					result: await searchUnified({
-						baseUrl,
-						env: agent.getEnv(),
-						query: args.query!,
-						skillCollectionSlug: searchRows.skillCollectionSlug,
-						limit,
-						specs: searchRows.registry.capabilitySpecs,
-						userId,
-						skillRows: searchRows.skillRows,
-						uiArtifactRows: searchRows.uiArtifactRows,
-						jobRows: searchRows.jobRows,
-						userSecretRows: searchRows.userSecretRows,
-						userValueRows: searchRows.userValueRows,
-						appSecretsByAppId: searchRows.appSecretsByAppId,
-					}),
+					result: {
+						matches: allMatches,
+						offline: isCapabilitySearchOffline(agent.getEnv()),
+					},
 				}
 			}
 
 			let outcome:
 				| {
 						mode: 'list'
-						result: Awaited<ReturnType<typeof searchUnified>>
+				result: {
+					matches: Array<SearchMatch>
+					offline: boolean
+				}
 				  }
 				| {
 						mode: 'entity'
@@ -775,7 +845,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				: undefined
 
 			const payload: {
-				matches: Awaited<ReturnType<typeof searchUnified>>['matches']
+				matches: Array<SearchMatch>
 				offline: boolean
 				warnings: Array<string>
 				memories?: SearchResultStructuredContent['memories']
