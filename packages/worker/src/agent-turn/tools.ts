@@ -1,33 +1,15 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import {
-	parseConnectorConfig,
-	parseConnectorJson,
-	parseConnectorValueName,
-} from '#mcp/capabilities/values/connector-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import {
-	cosineSimilarity,
-	deterministicEmbedding,
-	hybridSearchScore,
-	isCapabilitySearchOffline,
-	lexicalScore,
-} from '#mcp/capabilities/capability-search.ts'
 import {
 	loadDownRemoteConnectorStatuses,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
+	searchUnified,
 } from '#mcp/tools/search.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
-import {
-	buildValueEntityId,
-	describeValue,
-} from '#mcp/tools/search-entities.ts'
-import {
-	type SearchMatch,
-	toSlimStructuredMatches,
-} from '#mcp/tools/search-format.ts'
+import { toSlimStructuredMatches } from '#mcp/tools/search-format.ts'
 import {
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
@@ -107,120 +89,13 @@ export async function createAgentTurnToolSet(input: {
 							}),
 					}),
 				])
-				const query = args.query.trim()
-				const limit = args.limit ?? defaultSearchLimit
-				const queryEmbedding = deterministicEmbedding(query)
-				const capabilityMatches = Object.values(
-					registry.capabilitySpecs,
-				)
-					.map((spec) => ({
-						type: 'capability' as const,
-						name: spec.name,
-						description: spec.description,
-						score: lexicalScore(query, `${spec.name}\n${spec.description}`),
-					}))
-					.filter((match) => match.score > 0)
-				const packageMatches = optionalRows.packageRows
-					.map((entry) => {
-						const doc = [
-							entry.record.name,
-							entry.record.kodyId,
-							entry.record.description,
-							entry.record.tags.join(' '),
-							entry.record.searchText ?? '',
-						].join('\n')
-						const lexical = lexicalScore(query, doc)
-						const vector = cosineSimilarity(
-							queryEmbedding,
-							deterministicEmbedding(doc),
-						)
-						return {
-							type: 'package' as const,
-							packageId: entry.record.id,
-							kodyId: entry.record.kodyId,
-							name: entry.record.name,
-							title: entry.record.name,
-							description: entry.record.description,
-							tags: entry.record.tags,
-							hasApp: entry.record.hasApp,
-							score: hybridSearchScore(lexical, vector),
-						}
-					})
-					.filter((match) => match.score > 0)
-				const valueMatches = optionalRows.userValueRows
-					.flatMap((row) => {
-						if (parseConnectorValueName(row.name)) return []
-						return [
-							{
-								type: 'value' as const,
-								valueId: buildValueEntityId(row),
-								name: row.name,
-								description: describeValue(row),
-								scope: row.scope,
-								appId: row.appId,
-								score: lexicalScore(
-									query,
-									[row.name, row.description, row.scope, row.value].join('\n'),
-								),
-							},
-						]
-					})
-					.filter((match) => match.score > 0)
-				const connectorMatches = optionalRows.userValueRows
-					.flatMap((row) => {
-						const connectorName = parseConnectorValueName(row.name)
-						if (!connectorName) return []
-						const config = parseConnectorConfig(
-							parseConnectorJson(row.value),
-							connectorName,
-						)
-						if (!config) return []
-						return [
-							{
-								type: 'connector' as const,
-								connectorName,
-								title: connectorName,
-								description:
-									row.description.trim() ||
-									`Saved OAuth connector configuration (${config.flow} flow).`,
-								flow: config.flow,
-								apiBaseUrl: config.apiBaseUrl ?? null,
-								requiredHosts: config.requiredHosts ?? [],
-								score: lexicalScore(
-									query,
-									[
-										connectorName,
-										row.description,
-										config.tokenUrl,
-										config.apiBaseUrl ?? '',
-									].join('\n'),
-								),
-							},
-						]
-					})
-					.filter((match) => match.score > 0)
-				const secretMatches = optionalRows.userSecretRows
-					.map((row) => ({
-						type: 'secret' as const,
-						name: row.name,
-						description: row.description,
-						score: lexicalScore(query, `${row.name}\n${row.description}`),
-					}))
-					.filter((match) => match.score > 0)
-				const matches: Array<SearchMatch> = [
-					...capabilityMatches,
-					...packageMatches,
-					...valueMatches,
-					...connectorMatches,
-					...secretMatches,
-				]
-					.sort((left, right) => right.score - left.score)
-					.slice(0, limit)
-					.map(({ score: _score, ...match }) => match)
-				const result = {
-					matches,
-					offline: isCapabilitySearchOffline(input.env),
-				}
+				const result = searchUnified({
+					env: input.env,
+					query: args.query,
+					limit: args.limit ?? defaultSearchLimit,
+					registry,
+					optionalRows,
+				})
 				const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
 					env: input.env,
 					callerContext: input.callerContext,
