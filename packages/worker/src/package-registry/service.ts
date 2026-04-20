@@ -17,7 +17,7 @@ import {
 	upsertSavedPackageVector,
 } from './vectorize.ts'
 import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
-import { syncJobManagerAlarm } from '#worker/jobs/manager-do.ts'
+import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)

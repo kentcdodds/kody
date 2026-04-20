@@ -55,7 +55,7 @@ vi.mock('#worker/jobs/repo.ts', () => ({
 		mockModule.listJobRowsByUserId(...args),
 }))
 
-vi.mock('#worker/jobs/manager-do.ts', () => ({
+vi.mock('#worker/jobs/manager-client.ts', () => ({
 	syncJobManagerAlarm: (...args: Array<unknown>) =>
 		mockModule.syncJobManagerAlarm(...args),
 }))
