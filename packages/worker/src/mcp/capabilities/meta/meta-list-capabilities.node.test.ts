@@ -127,13 +127,26 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 		(capability) => capability.name === 'home_roku_get_active_app',
 	)
 	expect(homeCapability).not.toBeUndefined()
-	expect(homeCapability?.domain).toBe('home')
-	expect(homeCapability?.description).toBeTruthy()
-	expect(homeCapability?.requiredInputFields).toEqual(['deviceId', 'key'])
+	expect(homeCapability).toMatchObject({
+		name: 'home_roku_press_key',
+		domain: 'home',
+		description: runtimeHomeTools[0].description,
+		requiredInputFields: ['deviceId', 'key'],
+	})
 	expect(listAppsCapability).not.toBeUndefined()
-	expect(listAppsCapability?.requiredInputFields).toEqual(['deviceId'])
+	expect(listAppsCapability).toMatchObject({
+		name: 'home_roku_list_apps',
+		domain: 'home',
+		description: runtimeHomeTools[1].description,
+		requiredInputFields: ['deviceId'],
+	})
 	expect(activeAppCapability).not.toBeUndefined()
-	expect(activeAppCapability?.requiredInputFields).toEqual(['deviceId'])
+	expect(activeAppCapability).toMatchObject({
+		name: 'home_roku_get_active_app',
+		domain: 'home',
+		description: runtimeHomeTools[2].description,
+		requiredInputFields: ['deviceId'],
+	})
 })
 
 test('meta_list_capabilities filters by domain', async () => {

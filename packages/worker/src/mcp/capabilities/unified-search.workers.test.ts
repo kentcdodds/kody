@@ -69,7 +69,7 @@ function createValueRow(
 	}
 }
 
-test('skill search hits include usage hints', async () => {
+test('skill search returns stable saved skill metadata', async () => {
 	const env = { SENTRY_ENVIRONMENT: 'test' } as Env
 	const skillRow = createSkillRow('skill-usage-hint')
 	const specs = {} as Record<string, CapabilitySpec>
@@ -93,12 +93,12 @@ test('skill search hits include usage hints', async () => {
 		throw new Error('Expected a skill match in results.')
 	}
 
-	expect(skill.usage).toContain('meta_run_skill')
-	expect(skill.usage).toContain(skillRow.name)
-	expect(skill.usage).toContain('"params"')
 	expect(skill.collection).toBe('GitHub Workflows')
 	expect(skill.collectionSlug).toBe('github-workflows')
 	expect(skill.skillName).toBe(skillRow.name)
+	expect(skill.readOnly).toBe(true)
+	expect(skill.idempotent).toBe(true)
+	expect(skill.destructive).toBe(false)
 })
 
 test('skill collection filter narrows saved skill matches', async () => {
@@ -272,8 +272,15 @@ test('search can return standalone user secrets and nest app secrets on apps', a
 			description: 'Worker secret for this app',
 		},
 	])
-	expect(app.usage).toContain('"params"')
 	expect(app.hostedUrl).toBe('http://localhost/ui/app-123')
+	expect(app.parameters).toEqual([
+		{
+			name: 'workerName',
+			description: 'Worker name to deploy.',
+			type: 'string',
+			required: true,
+		},
+	])
 })
 
 test('search returns value and connector entities as first-class matches', async () => {
@@ -319,7 +326,7 @@ test('search returns value and connector entities as first-class matches', async
 	expect(connector.connectorName).toBe('github')
 	expect(connector.apiBaseUrl).toBe('https://api.github.com')
 	expect(connector.requiredHosts).toEqual(['api.github.com'])
-	expect(connector.usage).toContain('connector_get')
+	expect(connector.flow).toBe('confidential')
 
 	const value = result.matches.find((match) => match.type === 'value')
 	if (!value || value.type !== 'value') {
@@ -328,7 +335,7 @@ test('search returns value and connector entities as first-class matches', async
 	expect(value.name).toBe('github_repo')
 	expect(value.scope).toBe('user')
 	expect(value.value).toBe('kentcdodds/kody')
-	expect(value.usage).toContain('value_get')
+	expect(value.ttlMs).toBeNull()
 })
 
 test('search skips connector rows whose stored id disagrees with config.name', async () => {

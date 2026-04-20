@@ -40,7 +40,6 @@ test('fetch gateway blocks placeholders when allowed hosts are empty', async () 
 		throw new Error('Expected host approval error.')
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
-		expect(message).toContain('Secrets require host approval:')
 		const approvals = parseHostApprovalRequiredBatchMessage(message)
 		expect(approvals).toEqual([
 			expect.objectContaining({

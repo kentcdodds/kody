@@ -71,8 +71,14 @@ test('buildSkillEmbedText keeps inferred capability names lightweight', () => {
 		specs: fakeSpecs,
 	})
 	const lines = text.split('\n')
-	expect(lines).toEqual(
-		expect.arrayContaining([
+	expect(lines).toContain('name launch-cursor-cloud-agent')
+	expect(lines).toContain('launch cursor cloud agent')
+	expect(lines).toContain('collection GitHub automation')
+	expect(lines).toContain('github-automation')
+	expect(lines).toContain('owner: GitHub repo owner. (string)')
+	expect(lines.at(-1)).toBe('inferred capabilities: ui_save_app')
+	expect(text).toBe(
+		[
 			'name launch-cursor-cloud-agent',
 			'launch cursor cloud agent',
 			't',
@@ -84,10 +90,8 @@ test('buildSkillEmbedText keeps inferred capability names lightweight', () => {
 			'skill',
 			'owner: GitHub repo owner. (string)',
 			'inferred capabilities: ui_save_app',
-		]),
+		].join('\n'),
 	)
-	expect(text).not.toContain('Save a generated UI artifact.')
-	expect(text).not.toContain('title description keywords source app_id')
 })
 
 test('validateSkillSaveFlags rejects read_only with destructive inferred set', () => {

@@ -146,9 +146,12 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		).toBe(true)
 		const bondAuthGuide = await mcp.callTool('bond_authentication_guide')
 		expect(bondAuthGuide.content[0]?.type).toBe('text')
-		expect(
-			String((bondAuthGuide.content[0] as { text?: string }).text),
-		).toContain('/bond/setup')
+		expect(bondAuthGuide.structuredContent).toMatchObject({
+			adminPort: 4040,
+			statusPath: '/bond/status',
+			setupPath: '/bond/setup',
+			bondLocalApiDocsUrl: 'https://docs-local.appbond.com/',
+		})
 		const lutronCredentialsTool = tools.find(
 			(tool) => tool.name === 'lutron_set_credentials',
 		)

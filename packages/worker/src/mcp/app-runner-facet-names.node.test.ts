@@ -4,20 +4,14 @@ import {
 	buildFacetName,
 } from './app-runner-facet-names.ts'
 
-test('buildFacetName defaults blank values to main', () => {
+test('facet names normalize blank values and keep export names stable', () => {
 	expect(buildFacetName(undefined)).toBe('main')
 	expect(buildFacetName(null)).toBe('main')
 	expect(buildFacetName('  ')).toBe('main')
 	expect(buildFacetName(' reports ')).toBe('reports')
-})
-
-test('buildFacetClassExportName keeps main facet stable', () => {
 	expect(buildFacetClassExportName('main')).toBe('App')
 	expect(buildFacetClassExportName(' main ')).toBe('App')
 	expect(buildFacetClassExportName('')).toBe('App')
-})
-
-test('buildFacetClassExportName stays unique for colliding sanitized names', () => {
 	expect(buildFacetClassExportName('foo-bar')).not.toBe(
 		buildFacetClassExportName('foo_bar'),
 	)
