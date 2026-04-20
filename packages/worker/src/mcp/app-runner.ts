@@ -379,33 +379,6 @@ export class AppFacetBridge extends WorkerEntrypoint<Env, FacetBridgeProps> {
 		return `{{secret:${name}|scope=${scope}}}`
 	}
 
-	async metaRunSkill(
-		name: string,
-		params: Record<string, unknown> | undefined,
-	) {
-		const { metaRunSkillCapability } =
-			await import('#mcp/capabilities/meta/meta-run-skill.ts')
-		const { createMcpCallerContext } = await import('#mcp/context.ts')
-		return await metaRunSkillCapability.handler(
-			{ name, params },
-			{
-				env: this.env,
-				callerContext: createMcpCallerContext({
-					baseUrl: this.ctx.props.baseUrl,
-					user: {
-						userId: this.ctx.props.userId,
-						email: '',
-						displayName: `saved-app:${this.ctx.props.appId}`,
-					},
-					storageContext: {
-						sessionId: null,
-						appId: this.ctx.props.appId,
-						storageId: null,
-					},
-				}),
-			},
-		)
-	}
 }
 
 class AppRunnerBase extends DurableObject<Env> {

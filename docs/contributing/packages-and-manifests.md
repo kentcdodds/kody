@@ -18,7 +18,7 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.app` — optional hosted package app config
 - `kody.jobs` — optional package-owned schedules
 
-There is no `kody.json`.
+The package manifest is `package.json`.
 
 ## Mental model
 
@@ -29,8 +29,7 @@ Think in terms of:
 - package apps
 - package-owned jobs
 
-There are no separate top-level saved skills, saved apps, or saved jobs in the
-intended architecture.
+The top-level saved identity is the package.
 
 ## Package exports
 

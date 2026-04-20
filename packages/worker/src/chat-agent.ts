@@ -9,7 +9,6 @@ import { type Connection, type ConnectionContext } from 'agents'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createChatThreadsStore } from '#app/chat-threads.ts'
 import { createMcpCallerContext } from './mcp/context.ts'
-import { buildSavedUiUrl } from './ui-artifact-urls.ts'
 import { createAiRuntime, type AiRuntimeResult } from './ai-runtime.ts'
 import { buildSentryOptions } from './sentry-options.ts'
 
@@ -98,18 +97,25 @@ function createKnownMockToolResult(
 	baseUrl: string,
 ): MockToolCallResult | null {
 	if (result.toolName === 'open_generated_ui') {
-		const appId =
-			typeof result.input.app_id === 'string' ? result.input.app_id : null
+		const packageId =
+			typeof result.input.package_id === 'string' ? result.input.package_id : null
+		const kodyId =
+			typeof result.input.kody_id === 'string' ? result.input.kody_id : null
+		const hostedUrl =
+			packageId || kodyId
+				? `${baseUrl}/packages/${encodeURIComponent(kodyId ?? packageId ?? '')}`
+				: null
 		return {
 			assistantText: [
 				'## Generated UI ready',
 				'',
 				'The generated UI is attached to this tool call in MCP-compatible hosts.',
-				...(appId
+				...(hostedUrl
 					? [
 							'',
-							`Saved app id: \`${appId}\``,
-							`Hosted fallback URL: ${buildSavedUiUrl(baseUrl, appId)}`,
+							...(packageId ? [`Package id: \`${packageId}\``] : []),
+							...(kodyId ? [`Package kody id: \`${kodyId}\``] : []),
+							`Hosted fallback URL: ${hostedUrl}`,
 						]
 					: []),
 			].join('\n'),

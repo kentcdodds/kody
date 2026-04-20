@@ -12,6 +12,7 @@ Read in order for a full tour, or jump to a topic.
 - [Search](./search.md)
 - [Execute and workflows](./execute.md) — includes per-user MCP instruction
   overlays and package imports
+- [Packages](./packages.md)
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets, values, and host approval](./secrets-and-values.md)

@@ -143,13 +143,20 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			const hostedUrl = savedPackage
 				? `${agent.requireDomain()}/packages/${encodeURIComponent(savedPackage.kodyId)}`
 				: null
+			const inlineSourceCode = savedPackage
+				? [
+						'<main style="margin:0;padding:0;min-height:100vh;">',
+						`<iframe src="${hostedUrl}" title="${savedPackage.name.replaceAll('"', '&quot;')}" style="border:0;width:100%;min-height:100vh;"></iframe>`,
+						'</main>',
+					].join('')
+				: (args.code ?? null)
 			const appSession =
-				callerContext.user != null
+				savedPackage == null && callerContext.user != null
 					? await createGeneratedUiAppSession({
 							env: agent.getEnv(),
 							baseUrl: callerContext.baseUrl,
 							user: callerContext.user,
-							appId: savedPackage?.id ?? null,
+							appId: null,
 							homeConnectorId: callerContext.homeConnectorId ?? null,
 						})
 					: null
@@ -161,10 +168,10 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 					? ('saved_package' as const)
 					: ('inline_code' as const),
 				appId: savedPackage?.id ?? null,
-				title,
-				description,
+				title: title ?? savedPackage?.name ?? null,
+				description: description ?? savedPackage?.description ?? null,
 				runtime: 'html' as const,
-				sourceCode: args.code ?? null,
+				sourceCode: inlineSourceCode,
 				hostedUrl,
 				appSession,
 				appBackend: null,

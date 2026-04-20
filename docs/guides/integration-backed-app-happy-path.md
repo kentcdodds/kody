@@ -1,4 +1,4 @@
-# Integration-backed app happy path
+# Integration-backed package app happy path
 
 Use this guide after `integration_bootstrap` proves the integration already
 works, or when connector and secret state are already clear enough to verify
@@ -16,26 +16,28 @@ quickly.
 3. Run one cheap authenticated smoke test in `execute`.
    - Prefer a small read-only request such as `GET /me`, `GET /viewer`, or
      `GET /v1/me`.
-4. If the smoke test passes, proceed directly to building the app.
-   - Prefer a saved app with `serverCode` backend endpoints such as `/api/state`
-     and `/api/action`.
-   - Keep `clientCode` mostly UI plus `kodyWidget.appBackend.fetch(...)` calls.
-5. Open the saved app and iterate.
-   - Save with `ui_save_app`.
-   - Reopen with `open_generated_ui({ app_id })`.
-   - Iterate on the hosted app instead of repeatedly pasting large inline HTML
-     blobs back into the model context.
+4. If the smoke test passes, proceed directly to building the package app.
+   - Prefer a saved package with `package.json#kody.app.entry`.
+   - Keep provider API calls and durable coordination in package-owned backend
+     modules or internal Worker/DO implementation details.
+5. Open the hosted package app and iterate.
+   - Save with `package_save`.
+   - Reopen with `open_generated_ui({ package_id })` or the hosted package URL.
+   - Iterate on the hosted package app instead of repeatedly pasting large
+     inline HTML blobs back into model context.
 
-## Default saved app shape
+## Default package app shape
 
-For non-trivial or integration-backed apps, prefer this split:
+For non-trivial or integration-backed package apps, prefer this split:
 
-- `serverCode`: connector lookups, provider API calls, persistence, validation,
-  and mutations
-- `clientCode`: rendering, form handling, button clicks, and fetches to the app
-  backend
-- `executeCode(...)` embedded directly in client HTML: acceptable for quick
-  prototypes or one-off experiments, not the default saved-app pattern
+- package app entry: Worker-style fetch surface declared by
+  `package.json#kody.app.entry`
+- package exports: reusable modules and callable default exports declared in
+  `package.json.exports`
+- internal backend modules / Durable Objects / facets: connector lookups,
+  provider API calls, persistence, validation, and mutations
+- inline HTML/code renders: acceptable for quick prototypes or one-off
+  experiments, not the default package app pattern
 
 ## Avoid this detour
 
@@ -44,4 +46,4 @@ already clear enough, do **not** spend extra time spelunking the local repo
 before building the app.
 
 Inspect local source only when you specifically need repo conventions, shared
-helpers, or an existing app artifact to extend.
+helpers, or an existing package to extend.

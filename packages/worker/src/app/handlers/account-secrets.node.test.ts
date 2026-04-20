@@ -37,7 +37,7 @@ const mockModule = vi.hoisted(() => ({
 		(input: { name: string; requestedHost: string; token: string }) =>
 			`https://example.com/account/secrets/user/${input.name}?allowed-host=${input.requestedHost}&request=${input.token}`,
 	),
-	listUiArtifactsByUserId: vi.fn(async () => []),
+	listSavedPackagesByUserId: vi.fn(async () => []),
 	listSecrets: vi.fn(async () => []),
 	listAppSecretsByAppIds: vi.fn(async () => []),
 	resolveSecret: vi.fn(async () => null),
@@ -113,9 +113,9 @@ vi.mock('#mcp/values/service.ts', () => ({
 	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
 }))
 
-vi.mock('#mcp/ui-artifacts-repo.ts', () => ({
-	listUiArtifactsByUserId: (...args: Array<unknown>) =>
-		mockModule.listUiArtifactsByUserId(...args),
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByUserId: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByUserId(...args),
 }))
 
 const { createAccountSecretsApiHandler } = await import('./account-secrets.ts')

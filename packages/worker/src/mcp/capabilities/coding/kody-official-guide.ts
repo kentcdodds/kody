@@ -20,13 +20,13 @@ export const kodyOfficialGuideCatalog = {
 		file: 'integration-bootstrap.md',
 		title: 'Integration bootstrap guide',
 		summary:
-			'START HERE when a third-party integration must work before saving a dependent skill or app: inspect connector/secret state, stop for setup, then run an authenticated smoke test.',
+			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect connector/secret state, stop for setup, then run an authenticated smoke test.',
 	},
 	integration_backed_app: {
 		file: 'integration-backed-app-happy-path.md',
-		title: 'Integration-backed app happy path',
+		title: 'Integration-backed package app happy path',
 		summary:
-			'After connector/secret verification and a cheap smoke test, proceed directly to a saved app with serverCode endpoints and client fetches; avoid unnecessary repo spelunking.',
+			'After connector/secret verification and a cheap smoke test, proceed directly to a package app rooted in package.json and package-owned code; avoid unnecessary repo spelunking.',
 	},
 	oauth: {
 		file: 'oauth.md',
@@ -36,9 +36,9 @@ export const kodyOfficialGuideCatalog = {
 	},
 	generated_ui_oauth: {
 		file: 'generated-ui-oauth.md',
-		title: 'Generated UI OAuth guide',
+		title: 'Package app OAuth guide',
 		summary:
-			'Edge case: OAuth inside a saved app (/ui/:id), kodyWidget callbacks, PKCE/exchange helpers—after reading guide `oauth`.',
+			'Edge case: OAuth inside a hosted package app, kodyWidget callbacks, PKCE/exchange helpers—after reading guide `oauth`.',
 	},
 	connect_secret: {
 		file: 'connect-secret.md',
@@ -103,7 +103,7 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a skill, app, or workflow, use `guide: "integration_bootstrap"` first.** After the smoke test passes and you are ready to build a saved app, use `guide: "integration_backed_app"` for the default serverCode-first app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom saved-app OAuth. For API keys/PATs, use `connect_secret`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
 		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
@@ -117,10 +117,10 @@ const guideFieldSchema = z
 	.describe(
 		[
 			'Which guide to load.',
-			'`integration_bootstrap`: required sequence before building skills/apps that depend on a third-party integration.',
-			'`integration_backed_app`: default saved-app construction pattern after the integration smoke test passes.',
+			'`integration_bootstrap`: required sequence before building packages/package apps that depend on a third-party integration.',
+			'`integration_backed_app`: default package-app construction pattern after the integration smoke test passes.',
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
-			'`generated_ui_oauth`: edge case—OAuth in a saved generated UI app.',
+			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
 			'`connect_secret`: /connect/secret for API keys and PATs.',
 		].join(' '),
 	)
@@ -148,15 +148,15 @@ const allKeywords = [
 		'connector_list',
 		'secret_list',
 		'smoke test',
-		'serverCode',
-		'clientCode',
-		'app backend',
+		'package app',
+		'package app entry',
+		'worker fetch app',
 		'pkce',
 		'generated ui',
 		'hosted callback',
 		'redirect uri',
 		'provider registration',
-		'ui_save_app',
+		'package_save',
 		'open_generated_ui',
 		'@kody/ui-utils',
 		'connect oauth',

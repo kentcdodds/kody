@@ -6,6 +6,7 @@ import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { Layout } from '#app/layout.ts'
 import { render } from '#app/render.ts'
 import { type routes } from '#app/routes.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	createGeneratedUiAppSession,
 	verifyGeneratedUiAppSession,
@@ -21,7 +22,6 @@ import {
 } from '#mcp/secrets/service.ts'
 import { secretScopeValues, type SecretScope } from '#mcp/secrets/types.ts'
 import { saveValue } from '#mcp/values/service.ts'
-import { getUiArtifactByOwnerIds } from '#mcp/ui-artifacts-repo.ts'
 
 const connectSecretConnectorBindingPrefix = '_connector-secret:'
 
@@ -73,18 +73,20 @@ export function createConnectSecretApiHandler(env: Env) {
 						400,
 					)
 				}
-				const appArtifact =
+				const savedPackage =
 					scope === 'app' && requestedAppId
-						? await getUiArtifactByOwnerIds(
-								env.APP_DB,
-								user.artifactOwnerIds,
-								requestedAppId,
-							)
+						? await getSavedPackageById(env.APP_DB, {
+								userId: user.mcpUser.userId,
+								packageId: requestedAppId,
+							})
 						: null
-				if (scope === 'app' && !appArtifact) {
-					return jsonResponse({ ok: false, error: 'Saved app not found.' }, 404)
+				if (scope === 'app' && !savedPackage) {
+					return jsonResponse(
+						{ ok: false, error: 'Saved package not found.' },
+						404,
+					)
 				}
-				const appId = scope === 'app' ? (appArtifact?.id ?? null) : null
+				const appId = scope === 'app' ? (savedPackage?.id ?? null) : null
 				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 				const appSession = await createGeneratedUiAppSession({
 					env,

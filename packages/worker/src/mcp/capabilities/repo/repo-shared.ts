@@ -18,36 +18,6 @@ export const repoTargetSchema = z.union([
 			.min(1)
 			.describe('Saved package kody id to open or edit by user-facing identity.'),
 	}),
-	z.object({
-		kind: z.literal('skill'),
-		name: z
-			.string()
-			.min(1)
-			.describe('Saved skill name to open or edit by user-facing identity.'),
-	}),
-	z.object({
-		kind: z.literal('job'),
-		job_id: z
-			.string()
-			.min(1)
-			.describe('Saved job id to open or edit by stable identifier.'),
-	}),
-	z.object({
-		kind: z.literal('job'),
-		name: z
-			.string()
-			.min(1)
-			.describe(
-				'Saved job name to open or edit by human-facing label. This must resolve to exactly one job for the current user.',
-			),
-	}),
-	z.object({
-		kind: z.literal('app'),
-		app_id: z
-			.string()
-			.min(1)
-			.describe('Saved app id to open or edit by app_id.'),
-	}),
 ])
 
 export const repoResolvedTargetSchema = z.union([
@@ -63,24 +33,6 @@ export const repoResolvedTargetSchema = z.union([
 		package_id: z.string(),
 		kody_id: z.string(),
 		name: z.string(),
-	}),
-	z.object({
-		kind: z.literal('skill'),
-		source_id: z.string(),
-		skill_id: z.string(),
-		name: z.string(),
-	}),
-	z.object({
-		kind: z.literal('job'),
-		source_id: z.string(),
-		job_id: z.string(),
-		name: z.string(),
-	}),
-	z.object({
-		kind: z.literal('app'),
-		source_id: z.string(),
-		app_id: z.string(),
-		title: z.string(),
 	}),
 ])
 
@@ -370,12 +322,44 @@ export const repoRunChecksOutputSchema = z.object({
 	ok: z.boolean(),
 	results: z.array(repoCheckResultSchema),
 	manifest: z.object({
-		version: z.literal(1),
-		kind: z.enum(['skill', 'app', 'job']),
-		title: z.string(),
+		name: z.string(),
+		kody_id: z.string(),
 		description: z.string(),
+		has_app: z.boolean(),
 	}),
 })
+
+export function normalizeRepoManifestSummary(manifest: {
+	name?: unknown
+	title?: unknown
+	description?: unknown
+	kody?: {
+		id?: unknown
+		description?: unknown
+		app?: unknown
+	}
+}) {
+	const packageName =
+		typeof manifest.name === 'string'
+			? manifest.name
+			: typeof manifest.title === 'string'
+				? manifest.title
+				: 'package'
+	const kodyId =
+		typeof manifest.kody?.id === 'string' ? manifest.kody.id : packageName
+	const description =
+		typeof manifest.kody?.description === 'string'
+			? manifest.kody.description
+			: typeof manifest.description === 'string'
+				? manifest.description
+				: ''
+	return {
+		name: packageName,
+		kody_id: kodyId,
+		description,
+		has_app: manifest.kody?.app !== undefined,
+	}
+}
 
 export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 	z.object({
@@ -528,10 +512,10 @@ export const repoEditFlowChecksSchema = z.union([
 		ok: z.literal(true),
 		results: z.array(repoCheckResultSchema),
 		manifest: z.object({
-			version: z.literal(1),
-			kind: z.enum(['skill', 'app', 'job']),
-			title: z.string(),
+			name: z.string(),
+			kody_id: z.string(),
 			description: z.string(),
+			has_app: z.boolean(),
 		}),
 		run_id: z.string(),
 		tree_hash: z.string(),
@@ -543,10 +527,10 @@ export const repoEditFlowChecksSchema = z.union([
 		results: z.array(repoCheckResultSchema),
 		failed_checks: z.array(repoCheckResultSchema),
 		manifest: z.object({
-			version: z.literal(1),
-			kind: z.enum(['skill', 'app', 'job']),
-			title: z.string(),
+			name: z.string(),
+			kody_id: z.string(),
 			description: z.string(),
+			has_app: z.boolean(),
 		}),
 		run_id: z.string(),
 		tree_hash: z.string(),

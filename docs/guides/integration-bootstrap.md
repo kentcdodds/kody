@@ -1,11 +1,12 @@
 # Integration bootstrap guide
 
-**Read this guide first** when a user wants a skill, app, or workflow that
-depends on a third-party integration such as Spotify, GitHub, Slack, Linear, or
-Stripe.
+**Read this guide first** when a user wants a package, package app, or workflow
+that depends on a third-party integration such as Spotify, GitHub, Slack,
+Linear, or Stripe.
 
 This guide is about **ordering**. The goal is to finish the integration setup
-and prove it works **before** you save or present downstream skills or apps that
+and prove it works **before** you save or present downstream packages or package
+apps that
 depend on it.
 
 ## What counts as an integration bootstrap
@@ -15,11 +16,13 @@ Use this workflow when the requested result depends on any of the following:
 - an OAuth connector
 - a saved secret such as an API key or PAT
 - host approvals for outbound API calls
-- a saved app or skill that assumes authenticated API access already works
+- a saved package or package app that assumes authenticated API access already
+  works
 
 ## Core rule
 
-Do **not** save or present an auth-dependent skill or app as complete until:
+Do **not** save or present an auth-dependent package or package app as complete
+until:
 
 1. the required connector or secret exists
 2. the user has finished any required connect flow
@@ -32,9 +35,9 @@ If those conditions are not met, stop and fix the integration first.
 1. Decide which auth path the integration needs.
    - Standard OAuth: load `kody_official_guide` with `guide: "oauth"`.
    - API key or PAT: load `kody_official_guide` with `guide: "connect_secret"`.
-   - OAuth inside a saved app: load `guide: "oauth"` first, then use
-     `guide: "generated_ui_oauth"` only when you deliberately need the saved-app
-     callback flow.
+   - OAuth inside a package app: load `guide: "oauth"` first, then use
+     `guide: "generated_ui_oauth"` only when you deliberately need the package
+     app callback flow.
 2. Inspect current integration state before building downstream artifacts.
    - Use `search` to look for saved connectors and secret references for the
      integration.
@@ -44,7 +47,7 @@ If those conditions are not met, stop and fix the integration first.
 3. If the required connector or secret is missing, **stop**.
    - Surface the exact `/connect/oauth` or `/connect/secret` URL in chat.
    - Wait for the user to confirm they completed the connect flow.
-   - Do not save a downstream auth-dependent skill or app yet.
+   - Do not save a downstream auth-dependent package or package app yet.
 4. After the user confirms setup, run a minimal authenticated smoke test in
    `execute`.
    - Use the real auth path the final integration will use.
@@ -53,20 +56,21 @@ If those conditions are not met, stop and fix the integration first.
    - Confirm the connector or secret name, token refresh behavior, and allowed
      hosts all work end-to-end.
 5. Only after the smoke test succeeds should you build or save the dependent
-   skill or app.
+   package or package app.
    - If the connector or tokens already exist and the smoke test passes, proceed
-     directly to app or skill construction.
+     directly to package construction.
    - Do not spend extra time exploring the local repo when the connector state,
      secret names, allowed hosts, and provider contract are already clear
      enough.
-   - For the default saved-app structure after bootstrap, load
+   - For the default package-app structure after bootstrap, load
      `kody_official_guide` with `guide: "integration_backed_app"`.
 6. If the smoke test fails, keep working on integration setup. Do not treat the
    downstream artifact as ready.
 
 ## Smoke test expectations
 
-The smoke test should prove the same auth wiring the final skill or app will
+The smoke test should prove the same auth wiring the final package or package
+app will
 depend on:
 
 - the expected connector or secret exists
@@ -77,14 +81,15 @@ depend on:
 
 ## Important exceptions
 
-The main exception is a saved app whose explicit purpose is to complete
+The main exception is a package app whose explicit purpose is to complete
 `generated_ui_oauth`.
 
 Even in that case:
 
-- the saved app should be treated as the **setup** surface, not the finished
+- the package app should be treated as the **setup** surface, not the finished
   downstream integration
-- any later skill or app that depends on the resulting connector or tokens
+- any later package or package app that depends on the resulting connector or
+  tokens
   should wait until the post-connect smoke test passes
 
 ## Recommended phrasing in chat
@@ -93,8 +98,8 @@ When setup is incomplete, tell the user what must happen next in concrete terms:
 
 - what connect URL to open
 - what provider settings or redirect URI to register
-- that you are waiting for confirmation before building the dependent skill or
-  app
+- that you are waiting for confirmation before building the dependent package or
+  package app
 - that you will run a minimal authenticated verification step after setup
 
 ## Anti-patterns
@@ -102,7 +107,7 @@ When setup is incomplete, tell the user what must happen next in concrete terms:
 Avoid these common mistakes:
 
 - building a polished UI first and only discovering later that auth is missing
-- saving an app that assumes a non-existent secret or connector
+- saving a package app that assumes a non-existent secret or connector
 - treating a rendered app as success when the first authenticated API call still
   fails
 - using `generated_ui_oauth` by default instead of the standard `/connect/oauth`
