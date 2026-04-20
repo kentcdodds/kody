@@ -260,7 +260,7 @@ export async function createAgentTurnToolSet(input: {
 		}),
 		execute: tool({
 			description:
-				'Run a short async JavaScript function against Kody capabilities via the execute runtime.',
+			'Run a short JavaScript module via the execute runtime; the module should default export the function to run.',
 			inputSchema: z.object({
 				code: z.string().min(1),
 				params: z.record(z.string(), z.unknown()).optional(),

@@ -291,7 +291,7 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new Error(
-			'Entity must use the format "{id}:{type}" where type is capability, skill, app, job, secret, value, or connector.',
+			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or connector.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
