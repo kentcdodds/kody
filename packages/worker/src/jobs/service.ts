@@ -8,6 +8,7 @@ import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
+import { syncJobManagerAlarm } from './manager-client.ts'
 import {
 	deleteJobRow,
 	getJobRowById,
@@ -502,6 +503,10 @@ export async function createJob(input: {
 			publishedCommit: job.publishedCommit,
 		}),
 	})
+	await syncJobManagerAlarm({
+		env: input.env,
+		userId: callerContext.user.userId,
+	})
 	return toJobView(job)
 }
 
@@ -620,6 +625,10 @@ export async function updateJob(input: {
 			publishedCommit: updated.publishedCommit,
 		}),
 	})
+	await syncJobManagerAlarm({
+		env: input.env,
+		userId: callerContext.user.userId,
+	})
 	return toJobView(updated)
 }
 
@@ -634,6 +643,10 @@ export async function deleteJob(input: {
 	}
 	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
 	await deleteJobVector(input.env, input.jobId)
+	await syncJobManagerAlarm({
+		env: input.env,
+		userId: input.userId,
+	})
 	return {
 		id: input.jobId,
 		deleted: true as const,

@@ -3,7 +3,13 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
-import { createJob, executeJobOnce, runJobNow } from './service.ts'
+import {
+	createJob,
+	deleteJob,
+	executeJobOnce,
+	runJobNow,
+	updateJob,
+} from './service.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -13,6 +19,10 @@ import {
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
+}))
+
+const jobManagerMockModule = vi.hoisted(() => ({
+	syncJobManagerAlarm: vi.fn(),
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -25,8 +35,14 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 		repoMockModule.syncArtifactSourceSnapshot(...args),
 }))
 
+vi.mock('./manager-client.ts', () => ({
+	syncJobManagerAlarm: (...args: Array<unknown>) =>
+		jobManagerMockModule.syncJobManagerAlarm(...args),
+}))
+
 afterEach(() => {
 	vi.restoreAllMocks()
+	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 })
 
 function mockRepoPersistence() {
@@ -589,6 +605,102 @@ test('createJob assigns a stable job storage id', async () => {
 	})
 
 	expect(created.storageId).toBe(`job:${created.id}`)
+})
+
+test('createJob syncs the job manager alarm after persisting a job', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+
+	await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Sync job manager on create',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+
+	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: callerContext.user.userId,
+	})
+})
+
+test('updateJob syncs the job manager alarm after mutating a job', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Sync job manager on update',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	jobManagerMockModule.syncJobManagerAlarm.mockClear()
+
+	await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: created.id,
+			schedule: {
+				type: 'interval',
+				every: '30m',
+			},
+		},
+	})
+
+	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: callerContext.user.userId,
+	})
+})
+
+test('deleteJob syncs the job manager alarm after removing a job', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Sync job manager on delete',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	jobManagerMockModule.syncJobManagerAlarm.mockClear()
+
+	await deleteJob({
+		env,
+		userId: callerContext.user.userId,
+		jobId: created.id,
+	})
+
+	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: callerContext.user.userId,
+	})
 })
 
 test('executeJobOnce binds scheduled jobs to writable storage', async () => {
