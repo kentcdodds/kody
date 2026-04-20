@@ -315,6 +315,12 @@ async function ensureProductionResources(options: CliOptions) {
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		oauthKvId: kv.id,
+		extraMigrations: [
+			{
+				deleted_classes: ['AppRunner'],
+				tag: 'v12',
+			},
+		],
 		workerVars: {
 			APP_BASE_URL: process.env.APP_BASE_URL,
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,

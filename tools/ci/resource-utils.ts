@@ -5,6 +5,16 @@ import { resolveLocalBinary } from '../node-runtime.ts'
 
 type WranglerEnvName = 'preview' | 'production'
 
+type WranglerMigration = {
+	tag: string
+	deleted_classes?: Array<string>
+	new_sqlite_classes?: Array<string>
+	renamed_classes?: Array<{
+		from: string
+		to: string
+	}>
+}
+
 export type D1DatabaseListEntry = {
 	uuid: string
 	name: string
@@ -242,6 +252,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseId,
 	oauthKvId,
 	workerVars,
+	extraMigrations,
 }: {
 	baseConfigPath: string
 	outConfigPath: string
@@ -250,6 +261,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseId: string
 	oauthKvId: string
 	workerVars?: Record<string, string | undefined>
+	extraMigrations?: Array<WranglerMigration>
 }) {
 	const baseText = await readFile(baseConfigPath, 'utf8')
 	const config = parseJsonc<Record<string, unknown>>(baseText)
@@ -333,6 +345,23 @@ export async function writeGeneratedWranglerConfig({
 		}
 	}
 	;(targetEnv as Record<string, unknown>).vars = resolvedVars
+
+	const migrations = config.migrations
+	if (extraMigrations && extraMigrations.length > 0) {
+		if (!Array.isArray(migrations)) {
+			fail(`wrangler config "${baseConfigPath}" is missing top-level "migrations".`)
+		}
+
+		const migrationList = migrations as Array<Record<string, unknown>>
+		for (const extraMigration of extraMigrations) {
+			const alreadyExists = migrationList.some((migration) => {
+				return migration.tag === extraMigration.tag
+			})
+			if (!alreadyExists) {
+				migrationList.push(extraMigration)
+			}
+		}
+	}
 
 	const resolvedOut = path.resolve(outConfigPath)
 	await writeFile(
