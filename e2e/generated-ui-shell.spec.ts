@@ -4,7 +4,7 @@ function escapeHtmlScriptContent(value: string) {
 	return value.replaceAll('</script>', '<\\/script>')
 }
 
-test('generated UI shell rerenders inline and saved apps without document rewrites', async ({
+test('generated UI shell rerenders inline and package apps without document rewrites', async ({
 	page,
 	baseURL,
 }) => {
@@ -33,15 +33,15 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		'})',
 		'</script>',
 	].join('\n')
-	const savedHtml = [
+	const packageAppHtml = [
 		'<!doctype html>',
 		'<html lang="en" data-shell-phase="saved">',
 		'<head>',
-		'<title>Saved app</title>',
+		'<title>Package app</title>',
 		'<style>body { font-family: system-ui, sans-serif; }</style>',
 		'</head>',
 		'<body data-shell-body="saved">',
-		'<main id="saved-app"><button id="saved-app-button">Saved app</button></main>',
+		'<main id="package-app"><button id="package-app-button">Package app</button></main>',
 		'<script type="module">',
 		'const result = await window.kodyWidget.executeCode(\'async () => ({ phase: "saved", owner: window.kodyWidget.params.owner })\')',
 		'window.document.body.dataset.savedExecute = JSON.stringify(result)',
@@ -52,7 +52,7 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		'</html>',
 	].join('\n')
 	const inlineHtmlJson = escapeHtmlScriptContent(JSON.stringify(inlineHtml))
-	const savedHtmlJson = escapeHtmlScriptContent(JSON.stringify(savedHtml))
+	const packageAppHtmlJson = escapeHtmlScriptContent(JSON.stringify(packageAppHtml))
 
 	await page.setContent(`
 		<!doctype html>
@@ -69,11 +69,11 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 						renderData: undefined,
 						lastSize: null,
 						toolCalls: [],
-						savedSource: {
-							app_id: 'saved-app-123',
-							title: 'Saved app',
-							description: 'Saved test app',
-							client_code: ${savedHtmlJson},
+						packageAppSource: {
+							app_id: 'package-app-123',
+							title: 'Package app',
+							description: 'Package test app',
+							client_code: ${packageAppHtmlJson},
 							server_code: null,
 							server_code_id: 'server-code-1',
 							parameters: null,
@@ -104,11 +104,11 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 							}
 							postRenderData()
 						},
-						renderSaved(params) {
+						renderPackageApp(params) {
 							hostState.renderData = {
 								toolOutput: {
 									renderSource: 'saved_package',
-									sourceCode: ${savedHtmlJson},
+									sourceCode: ${packageAppHtmlJson},
 									runtime: 'html',
 									params,
 								},
@@ -233,13 +233,13 @@ test('generated UI shell rerenders inline and saved apps without document rewrit
 		;(
 			window as typeof window & {
 				__generatedUiHostActions: {
-					renderSaved: (params: Record<string, unknown>) => void
+					renderPackageApp: (params: Record<string, unknown>) => void
 				}
 			}
-		).__generatedUiHostActions.renderSaved({ owner: 'beta', count: 2 })
+		).__generatedUiHostActions.renderPackageApp({ owner: 'beta', count: 2 })
 	})
 
-	await expect(frame.getByRole('button', { name: 'Saved app' })).toBeVisible()
+	await expect(frame.getByRole('button', { name: 'Package app' })).toBeVisible()
 	await expect(frame.locator('html')).toHaveAttribute(
 		'data-shell-phase',
 		'saved',

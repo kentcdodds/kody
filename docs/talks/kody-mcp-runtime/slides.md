@@ -246,7 +246,7 @@ Now the rest of the talk explains how Kody solves those problems.
 <!--
 Map for the rest of the talk: discovery, execution, UI escape hatch.
 
-`search` finds capabilities, saved skills, saved apps, and secret references.
+`search` finds capabilities, saved packages, values, connectors, and secret references.
 `execute` runs an async function in Codemode to compose capability calls.
 `open_generated_ui` opens dynamically generated MCP Apps.
 
@@ -284,7 +284,7 @@ one "write code" tool, not a giant bag of disconnected tool calls.
 - Thin results → **rephrase** or check registry
 
 <!--
-`search` returns ranked hits across capabilities, saved skills, saved apps, and
+`search` returns ranked hits across capabilities, saved packages, values, connectors, and
 secret references. Top hits are what the agent should inspect first. Without
 `search`, `execute` is just guessing names and input shapes.
 
@@ -357,11 +357,11 @@ not "Kody has the smartest model." Use Kody on existing subscriptions instead of
 
 - **MCP server**, not a chat app
 - Any **MCP host** works
-- Compounds in **capabilities, apps, secrets, skills**
+- Compounds in **capabilities, package apps, secrets, package exports**
 
 <!--
-Portability: investment is the runtime layer — capabilities, saved apps,
-secrets, skills — not the current chat client. Bring your own agent, same runtime.
+Portability: investment is the runtime layer — capabilities, package apps,
+secrets, package exports — not the current chat client. Bring your own agent, same runtime.
 -->
 
 ---
@@ -398,7 +398,7 @@ secret; unapproved egress stays blocked.
 
 <!--
 Chat can launch the app; the app becomes durable software. Model generates UI;
-user can save as saved app. UI calls back for secrets, OAuth, approved API access.
+user can save it as a package app. UI calls back for secrets, OAuth, approved API access.
 -->
 
 ---
@@ -425,8 +425,8 @@ enough; generated UI OAuth is the exception, not the default.
 - Experiments → **personal infra**
 
 <!--
-Why it sticks: connected account powers automation and saved apps; OAuth fans out;
-saved app becomes internal tool; capability portable across MCP hosts.
+Why it sticks: connected accounts power automation and package apps; OAuth fans out;
+a package app becomes an internal tool; capabilities stay portable across MCP hosts.
 -->
 
 ---

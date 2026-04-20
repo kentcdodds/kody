@@ -101,7 +101,3 @@ export async function verifyGeneratedUiAppSession(
 	}
 	return payload as GeneratedUiAppSessionPayload
 }
-
-export function buildSavedAppBackendBasePath(appId: string) {
-	return `/app/${encodeURIComponent(appId)}`
-}

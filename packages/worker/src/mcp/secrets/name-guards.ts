@@ -1,8 +1,5 @@
 export const skillRunnerSecretNamePrefix = 'skill-runner-token:'
 
-export function buildSkillRunnerSecretName(clientName: string) {
-	return `${skillRunnerSecretNamePrefix}${clientName.trim()}`
-}
 
 export function parseSkillRunnerSecretClientName(secretName: string) {
 	if (!secretName.startsWith(skillRunnerSecretNamePrefix)) return null

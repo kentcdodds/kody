@@ -260,10 +260,6 @@ const workerHandler = {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
 
-		if (url.pathname === '/api/skills/run') {
-			return apiHandler.fetch(request, env, ctx)
-		}
-
 		// OAuthProvider serves this URL first and defaults `resource` to the origin only.
 		// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our
 		// token audience; otherwise authorize stores origin but the token request sends

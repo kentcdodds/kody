@@ -30,7 +30,7 @@ test('buildUiArtifactEmbedText summarizes searchable app metadata and truncates 
 		'mcp app',
 		'ui artifact',
 		'facet backend',
-		'saved app parameters',
+		'package app parameters',
 		'clientId string required Spotify client id',
 		'region string optional Spotify API region default "us"',
 	])

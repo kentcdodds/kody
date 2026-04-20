@@ -626,23 +626,23 @@ async function buildAccountSecretsPayload(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 	selectedSecretId?: string | null
-	savedApps?: Array<SavedPackageAppOption>
+	packageApps?: Array<SavedPackageAppOption>
 }): Promise<AccountSecretsPayload> {
 	const url = new URL(input.request.url)
 	const approvalToken = url.searchParams.get('request')
 	const requestedApprovalHost = readApprovalHost(url)
 	const requestedCapability = readRequestedCapability(url)
 
-	const savedApps =
-		input.savedApps ??
-		(await listSavedAppsForUser({
+	const packageApps =
+		input.packageApps ??
+		(await listPackageAppsForUser({
 			env: input.env,
 			user: input.user,
 		}))
 	const secrets = await listAccountSecrets({
 		env: input.env,
 		user: input.user,
-		savedApps,
+		packageApps,
 	})
 	const selectedSecret = input.selectedSecretId
 		? await resolveAccountSecretDetail({
@@ -666,14 +666,14 @@ async function buildAccountSecretsPayload(input: {
 	return {
 		ok: true,
 		email: input.user.email,
-		apps: savedApps,
+		apps: packageApps,
 		secrets,
 		selectedSecret,
 		approval,
 	}
 }
 
-async function listSavedAppsForUser(input: {
+async function listPackageAppsForUser(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 }) {
@@ -699,9 +699,9 @@ async function listSavedAppsForUser(input: {
 async function listAccountSecrets(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-	savedApps: Array<SavedPackageAppOption>
+	packageApps: Array<SavedPackageAppOption>
 }) {
-	const appTitles = new Map(input.savedApps.map((app) => [app.id, app.title]))
+	const appTitles = new Map(input.packageApps.map((app) => [app.id, app.title]))
 	const [userSecrets, appSecrets] = await Promise.all([
 		listSecrets({
 			env: input.env,
@@ -711,7 +711,7 @@ async function listAccountSecrets(input: {
 		listAppSecretsByAppIds({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
-			appIds: input.savedApps.map((app) => app.id),
+			appIds: input.packageApps.map((app) => app.id),
 		}),
 	])
 
@@ -929,14 +929,14 @@ async function handleSaveAction(input: {
 		return jsonResponse({ ok: false, error: 'Secret scope is required.' }, 400)
 	}
 
-	const savedApps = await listSavedAppsForUser({
+	const packageApps = await listPackageAppsForUser({
 		env: input.env,
 		user: input.user,
 	})
 	const appId = readAppIdForScope({
 		body: input.body,
 		scope,
-		savedApps,
+		packageApps,
 	})
 	if (scope === 'app' && !appId) {
 		return jsonResponse(
@@ -948,7 +948,7 @@ async function handleSaveAction(input: {
 	const secrets = await listAccountSecrets({
 		env: input.env,
 		user: input.user,
-		savedApps,
+		packageApps,
 	})
 	const secretById = new Map(secrets.map((secret) => [secret.id, secret]))
 	const currentSecret = currentId ? (secretById.get(currentId) ?? null) : null
@@ -1021,7 +1021,7 @@ async function handleSaveAction(input: {
 			request: input.request,
 			env: input.env,
 			user: input.user,
-			savedApps,
+			packageApps,
 			selectedSecretId: nextId,
 		})
 		return jsonResponse(payload)
@@ -1135,12 +1135,12 @@ function readAccountSecretScope(
 function readAppIdForScope(input: {
 	body: object
 	scope: AccountEditableSecretScope
-	savedApps: Array<SavedPackageAppOption>
+	packageApps: Array<SavedPackageAppOption>
 }) {
 	if (input.scope !== 'app') return null
 	const appId = readString(input.body, 'appId')
 	if (!appId) return null
-	return input.savedApps.some((app) => app.id === appId) ? appId : null
+	return input.packageApps.some((app) => app.id === appId) ? appId : null
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {

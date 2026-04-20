@@ -44,7 +44,7 @@ import {
 
 type SecretScope = 'app' | 'user'
 
-type SavedAppOption = {
+type PackageAppOption = {
 	id: string
 	title: string
 	updatedAt: string
@@ -71,7 +71,7 @@ type SecretDetail = SecretListItem & {
 type AccountSecretsPayload = {
 	ok: true
 	email: string
-	apps: Array<SavedAppOption>
+	apps: Array<PackageAppOption>
 	secrets: Array<SecretListItem>
 	selectedSecret: SecretDetail | null
 	approval: ApprovalView | null
@@ -117,7 +117,7 @@ function formatTimestamp(value: string) {
 	return new Date(value).toLocaleString()
 }
 
-function createEmptyEditorState(apps: Array<SavedAppOption>): EditorState {
+function createEmptyEditorState(apps: Array<PackageAppOption>): EditorState {
 	return {
 		currentId: null,
 		name: '',
@@ -336,7 +336,7 @@ function getDataRefreshKey(href: string) {
 
 function readFilterState(
 	href: string,
-	apps: Array<SavedAppOption>,
+	apps: Array<PackageAppOption>,
 ): SecretFilterState {
 	const url = new URL(href, 'http://localhost')
 	const search = url.searchParams.get('q')?.trim() ?? ''
@@ -393,7 +393,7 @@ function buildAppOptionDescription(updatedAt: string) {
 export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
-	let apps: Array<SavedAppOption> = []
+	let apps: Array<PackageAppOption> = []
 	let secrets: Array<SecretListItem> = []
 	let selectedSecret: SecretDetail | null = null
 	let approval: ApprovalView | null = null
@@ -860,7 +860,7 @@ export function AccountSecretsRoute(handle: Handle) {
 						</h1>
 						<p css={{ color: colors.textMuted, margin: 0 }}>
 							Create, update, and delete the secrets available to your account
-							and saved apps.
+							and package apps.
 						</p>
 					</div>
 					<button
