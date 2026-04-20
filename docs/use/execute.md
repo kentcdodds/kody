@@ -21,8 +21,7 @@ globals:
 - use **`import { params } from 'kody:runtime'`** when shared helpers need the
   active execute or job params instead of receiving them as a function argument
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
-  code when you need package metadata; it is **`null`** for ad hoc execute
-  calls
+  code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import thing from 'kody:@my-package/export-name'`** to reuse a saved
   package export
 
@@ -80,17 +79,16 @@ Kody exposes two generic primitives for tool-using chat turns:
 
 Typical pattern inside execute:
 
-- use
-  **`import { agentChatTurnStream } from 'kody:runtime'`**
-  when interactive controllers need to forward progress over time
+- use **`import { agentChatTurnStream } from 'kody:runtime'`** when interactive
+  controllers need to forward progress over time
 - use **`codemode.agent_chat_turn(...)`** in package jobs or workflows that only
   need the final answer
 
 ## Storage
 
-Kody supports durable storage binding for execute and scheduled jobs,
-including package-owned jobs and non-package jobs created with
-`job_schedule` or `job_schedule_once`.
+Kody supports durable storage binding for execute and scheduled jobs, including
+package-owned jobs and non-package jobs created with `job_schedule` or
+`job_schedule_once`.
 
 - bound storage is execute-, app-, package-, or job-owned durable state
 - import **`storage`** from **`kody:runtime`**
@@ -136,15 +134,13 @@ reconnect the MCP client if the host caches server instructions.
 ## Network and OAuth helpers
 
 The sandbox exposes global **`fetch`** plus secret placeholders in approved
-contexts. OAuth helpers are **not** globals: import
-**`refreshAccessToken`** and **`createAuthenticatedFetch`** explicitly from
-**`kody:runtime`**:
+contexts. OAuth helpers are **not** globals: import **`refreshAccessToken`** and
+**`createAuthenticatedFetch`** explicitly from **`kody:runtime`**:
 
 **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
 
 See [Secrets, values, and host approval](./secrets-and-values.md) for
-placeholders, host approval, and **`codemode.secret_list`** /
-**`secret_set`**.
+placeholders, host approval, and **`codemode.secret_list`** / **`secret_set`**.
 
 Treat placeholder syntax as operational wiring, not prose. Do not place the
 exact **`{{secret:...}}`** token into issue bodies, comments, prompts, logs, or
