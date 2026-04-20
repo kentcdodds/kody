@@ -35,6 +35,9 @@ If those conditions are not met, stop and fix the integration first.
 1. Decide which auth path the integration needs.
    - Standard OAuth: load `kody_official_guide` with `guide: "oauth"`.
    - API key or PAT: load `kody_official_guide` with `guide: "connect_secret"`.
+   - Non-OAuth secret-backed API: after `connect_secret`, load
+     `kody_official_guide` with `guide: "secret_backed_integration"` for the
+     default "research auth, collect secret, smoke-test, then build" recipe.
    - OAuth inside a package app: load `guide: "oauth"` first, then use
      `guide: "generated_ui_oauth"` only when you deliberately need the package
      app callback flow.

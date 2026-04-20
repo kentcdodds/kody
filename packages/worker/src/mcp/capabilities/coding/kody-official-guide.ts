@@ -22,6 +22,12 @@ export const kodyOfficialGuideCatalog = {
 		summary:
 			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect connector/secret state, stop for setup, then run an authenticated smoke test.',
 	},
+	secret_backed_integration: {
+		file: 'secret-backed-integration.md',
+		title: 'Secret-backed integration recipe',
+		summary:
+			'Default non-OAuth recipe for secret-backed integrations: research auth, collect secrets through /connect/secret, run a smoke test, then build the downstream package or workflow.',
+	},
 	integration_backed_app: {
 		file: 'integration-backed-app-happy-path.md',
 		title: 'Integration-backed package app happy path',
@@ -50,6 +56,7 @@ export const kodyOfficialGuideCatalog = {
 
 const guideIds = Object.keys(kodyOfficialGuideCatalog) as [
 	'integration_bootstrap',
+	'secret_backed_integration',
 	'integration_backed_app',
 	'oauth',
 	'generated_ui_oauth',
@@ -103,7 +110,7 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
 		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
@@ -118,10 +125,11 @@ const guideFieldSchema = z
 		[
 			'Which guide to load.',
 			'`integration_bootstrap`: required sequence before building packages/package apps that depend on a third-party integration.',
+			'`secret_backed_integration`: default non-OAuth recipe after bootstrap when the integration is driven by saved secrets.',
 			'`integration_backed_app`: default package-app construction pattern after the integration smoke test passes.',
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
 			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
-			'`connect_secret`: /connect/secret for API keys and PATs.',
+			'`connect_secret`: /connect/secret for API keys, PATs, and other secret collection steps.',
 		].join(' '),
 	)
 
@@ -143,6 +151,9 @@ const allKeywords = [
 		'oauth',
 		'integration bootstrap',
 		'bootstrap',
+		'secret-backed integration',
+		'basic auth',
+		'account id plus token',
 		'integration backed app',
 		'third-party integration',
 		'connector_list',

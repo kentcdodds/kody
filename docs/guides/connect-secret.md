@@ -6,7 +6,9 @@ see the secret value.
 
 If the secret will power a downstream package or package app, load
 `kody_official_guide` with `guide: "integration_bootstrap"` before building
-that package. This guide covers the secret-collection step only.
+that package. For the common non-OAuth path after bootstrap, load
+`kody_official_guide` with `guide: "secret_backed_integration"`. This guide
+covers the secret-collection step only.
 
 ## When to use `/connect/secret`
 
@@ -56,4 +58,6 @@ Provide the user a URL like:
 4. If the secret will back a package or package app, run the authenticated
    smoke test described in `guide: "integration_bootstrap"` before saving the
    downstream package.
-5. Proceed using `{{secret:name}}` placeholders or the relevant capability.
+5. For common non-OAuth integrations, continue with
+   `guide: "secret_backed_integration"` after the secret exists.
+6. Proceed using `{{secret:name}}` placeholders or the relevant capability.
