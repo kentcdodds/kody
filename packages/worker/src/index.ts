@@ -169,13 +169,13 @@ const appHandler = withCors({
 				})
 			} catch {
 				return Response.json(
-					{ ok: false, error: 'Unauthorized saved app backend request.' },
+					{ ok: false, error: 'Unauthorized app backend request.' },
 					{ status: 401 },
 				)
 			}
 			if (!auth || auth.app_id !== appId) {
 				return Response.json(
-					{ ok: false, error: 'Unauthorized saved app backend request.' },
+					{ ok: false, error: 'Unauthorized app backend request.' },
 					{ status: 401 },
 				)
 			}

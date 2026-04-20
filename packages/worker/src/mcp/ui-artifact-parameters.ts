@@ -25,7 +25,7 @@ export const uiArtifactParameterSchema = z.object({
 	description: z
 		.string()
 		.min(1)
-		.describe('What this parameter controls for the saved app.'),
+		.describe('What this parameter controls for the package app.'),
 	type: z
 		.enum(uiArtifactParameterTypes)
 		.describe('Expected parameter type for runtime validation.'),
@@ -50,13 +50,13 @@ export function normalizeUiArtifactParameters(
 	for (const param of input) {
 		const name = param.name.trim()
 		if (!name) {
-			throw new Error('Saved app parameter name cannot be empty.')
+			throw new Error('Package app parameter name cannot be empty.')
 		}
 		if (reservedParameterNames.has(name)) {
-			throw new Error(`Saved app parameter name "${name}" is not allowed.`)
+			throw new Error(`Package app parameter name "${name}" is not allowed.`)
 		}
 		if (seen.has(name)) {
-			throw new Error(`Duplicate saved app parameter name: ${name}.`)
+			throw new Error(`Duplicate package app parameter name: ${name}.`)
 		}
 		seen.add(name)
 		if (param.default !== undefined) {
@@ -94,14 +94,14 @@ export function applyUiArtifactParameters(input: {
 }): Record<string, unknown> {
 	if (!input.definitions || input.definitions.length === 0) {
 		const fallback = input.values ?? {}
-		assertJsonSerializable(fallback, 'saved app params')
+		assertJsonSerializable(fallback, 'package app params')
 		return fallback
 	}
 	const values = input.values ?? {}
 	const definedNames = new Set(input.definitions.map((def) => def.name))
 	const unknown = Object.keys(values).filter((key) => !definedNames.has(key))
 	if (unknown.length > 0) {
-		throw new Error(`Unknown saved app parameter(s): ${unknown.join(', ')}.`)
+		throw new Error(`Unknown package app parameter(s): ${unknown.join(', ')}.`)
 	}
 	const resolved: Record<string, unknown> = Object.create(null)
 	for (const def of input.definitions) {
@@ -116,10 +116,10 @@ export function applyUiArtifactParameters(input: {
 			continue
 		}
 		if (def.required) {
-			throw new Error(`Missing required saved app parameter: ${def.name}.`)
+			throw new Error(`Missing required package app parameter: ${def.name}.`)
 		}
 	}
-	assertJsonSerializable(resolved, 'saved app params')
+	assertJsonSerializable(resolved, 'package app params')
 	return resolved
 }
 
@@ -140,22 +140,22 @@ function assertParameterValueType(
 	label: string,
 ) {
 	if (value === undefined) {
-		throw new Error(`Saved app parameter "${label}" must not be undefined.`)
+		throw new Error(`Package app parameter "${label}" must not be undefined.`)
 	}
 	if (type === 'json') return
 	if (type === 'string') {
 		if (typeof value !== 'string') {
-			throw new Error(`Saved app parameter "${label}" must be a string.`)
+			throw new Error(`Package app parameter "${label}" must be a string.`)
 		}
 		return
 	}
 	if (type === 'number') {
 		if (typeof value !== 'number' || !Number.isFinite(value)) {
-			throw new Error(`Saved app parameter "${label}" must be a number.`)
+			throw new Error(`Package app parameter "${label}" must be a number.`)
 		}
 		return
 	}
 	if (type === 'boolean' && typeof value !== 'boolean') {
-		throw new Error(`Saved app parameter "${label}" must be a boolean.`)
+		throw new Error(`Package app parameter "${label}" must be a boolean.`)
 	}
 }

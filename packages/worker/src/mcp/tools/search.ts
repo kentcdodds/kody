@@ -541,12 +541,6 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					.describe(
 						'Optional exact entity reference in the format "{id}:{type}" where type is capability, skill, app, job, secret, value, or connector.',
 					),
-				skill_collection: z
-					.string()
-					.optional()
-					.describe(
-						'Optional saved-skill collection/domain name or slug to narrow skill matches to one grouping.',
-					),
 				limit: z
 					.number()
 					.int()

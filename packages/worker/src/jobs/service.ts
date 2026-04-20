@@ -31,21 +31,22 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
-	getManifestEntrypointPath,
-	getManifestSourceRoot,
-	parseRepoManifest,
-} from '#worker/repo/manifest.ts'
+	normalizePackageWorkspacePath,
+	parseAuthoredPackageJson,
+} from '#worker/package-registry/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import {
-	buildRepoCodemodeBundle,
-	createRepoCodemodeWrapper,
 	loadRepoSourceFilesFromSession,
 	repoBackedModuleEntrypointExportErrorMessage,
 } from '#worker/repo/repo-codemode-execution.ts'
+import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
+import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
@@ -160,6 +161,139 @@ function repoSessionNeedsRefresh(session: {
 
 function createJobRuntimeSessionId(jobId: string) {
 	return `job-runtime-${jobId}-${crypto.randomUUID()}`
+}
+
+function buildPackageJobId(packageId: string, jobName: string) {
+	return `package-job:${packageId}:${encodeURIComponent(jobName)}`
+}
+
+function createPackageJobCallerContext(input: {
+	baseUrl: string
+	userId: string
+	packageId: string
+}): PersistedJobCallerContext {
+	return createMcpCallerContext({
+		baseUrl: input.baseUrl,
+		user: {
+			userId: input.userId,
+			email: '',
+			displayName: `package:${input.packageId}`,
+		},
+		storageContext: {
+			sessionId: null,
+			appId: input.packageId,
+			storageId: null,
+		},
+		repoContext: null,
+	}) as PersistedJobCallerContext
+}
+
+export async function syncPackageJobsForPackage(input: {
+	env: Env
+	userId: string
+	baseUrl: string
+	packageId: string
+	sourceId: string
+	manifest: Awaited<ReturnType<typeof parseAuthoredPackageJson>>
+}) {
+	const desiredJobs = input.manifest.kody.jobs ?? {}
+	const existingRows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
+	const packageRows = existingRows.filter((row) => row.source_id === input.sourceId)
+	const existingByName = new Map(packageRows.map((row) => [row.name, row] as const))
+	const desiredNames = new Set(Object.keys(desiredJobs))
+	const now = new Date().toISOString()
+
+	for (const [jobName, definition] of Object.entries(desiredJobs)) {
+		const existing = existingByName.get(jobName)
+		const schedule = normalizeJobSchedule(definition.schedule)
+		const timezone = normalizeJobTimezone(definition.timezone)
+		const enabled = definition.enabled ?? true
+		if (existing) {
+			const updated: JobRecord = {
+				...existing.record,
+				name: jobName,
+				sourceId: input.sourceId,
+				schedule,
+				timezone,
+				enabled,
+				updatedAt: now,
+				nextRunAt: computeNextRunAt({
+					schedule,
+					timezone,
+				}),
+			}
+			await updateJobRow({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				job: updated,
+				callerContextJson:
+					existing.callerContextJson ||
+					JSON.stringify(
+						createPackageJobCallerContext({
+							baseUrl: input.baseUrl,
+							userId: input.userId,
+							packageId: input.packageId,
+						}),
+					),
+			})
+			continue
+		}
+
+		const created: JobRecord = {
+			version: 1,
+			id: buildPackageJobId(input.packageId, jobName),
+			userId: input.userId,
+			name: jobName,
+			sourceId: input.sourceId,
+			publishedCommit: null,
+			storageId: createJobStorageId(buildPackageJobId(input.packageId, jobName)),
+			schedule,
+			timezone,
+			enabled,
+			killSwitchEnabled: false,
+			createdAt: now,
+			updatedAt: now,
+			nextRunAt: computeNextRunAt({
+				schedule,
+				timezone,
+			}),
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+			runHistory: [],
+		}
+		await insertJobRow({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			job: created,
+			callerContextJson: serializeCallerContext(
+				createPackageJobCallerContext({
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					packageId: input.packageId,
+				}),
+			),
+		})
+	}
+
+	for (const row of packageRows) {
+		if (desiredNames.has(row.name)) continue
+		await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+		await deleteJobVector(input.env, row.id)
+	}
+}
+
+export async function deletePackageJobsForSourceId(input: {
+	env: Env
+	userId: string
+	sourceId: string
+}) {
+	const existingRows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
+	for (const row of existingRows) {
+		if (row.source_id !== input.sourceId) continue
+		await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+		await deleteJobVector(input.env, row.id)
+	}
 }
 
 function resolveCreateShape(input: JobCreateInput) {
@@ -547,7 +681,8 @@ async function runRepoBackedJob(input: {
 			}
 		}
 		bypassLogs = [...gate.logs]
-		const manifestPath = session.manifest_path?.replace(/^\/+/, '') || 'kody.json'
+		const manifestPath =
+			session.manifest_path?.replace(/^\/+/, '') || 'package.json'
 		const entrypoint = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user.userId,
@@ -560,9 +695,9 @@ async function runRepoBackedJob(input: {
 				logs: bypassLogs,
 			}
 		}
-		let manifest: ReturnType<typeof parseRepoManifest>
+		let manifest: ReturnType<typeof parseAuthoredPackageJson>
 		try {
-			manifest = parseRepoManifest({
+			manifest = parseAuthoredPackageJson({
 				content: entrypoint.content,
 				manifestPath,
 			})
@@ -573,46 +708,44 @@ async function runRepoBackedJob(input: {
 				logs: bypassLogs,
 			}
 		}
-		if (manifest.kind !== 'job') {
+		const jobDefinition = manifest.kody.jobs?.[input.job.name]
+		if (!jobDefinition) {
 			return {
-				error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+				error: `Package "${manifest.kody.id}" does not define job "${input.job.name}".`,
 				result: null,
 				logs: bypassLogs,
 			}
 		}
+		const modulePath = normalizePackageWorkspacePath(jobDefinition.entry)
 		const moduleFile = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user.userId,
-			path: getManifestEntrypointPath(manifest),
+			path: modulePath,
 		})
 		if (!moduleFile.content) {
 			return {
-				error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+				error: `Job entrypoint "${jobDefinition.entry}" was not found in repo session.`,
 				result: null,
 				logs: bypassLogs,
 			}
 		}
 		try {
-			const { runCodemodeWithRegistry } =
-				await import('#mcp/run-codemode-registry.ts')
-			const sourceRoot = getManifestSourceRoot(manifest)
 			const sourceFiles = await loadRepoSourceFilesFromSession({
 				sessionClient,
 				sessionId: session.id,
 				userId: input.callerContext.user.userId,
-				sourceRoot,
+				sourceRoot: session.source_root,
 			})
-			const bundled = await buildRepoCodemodeBundle({
+			const bundled = await buildKodyModuleBundle({
+				env: input.env,
+				baseUrl: input.callerContext.baseUrl,
+				userId: input.callerContext.user.userId,
 				sourceFiles,
-				entryPoint: getManifestEntrypointPath(manifest),
-				entryPointSource: moduleFile.content,
-				sourceRoot,
-				cacheKey:
-					session.published_commit != null
-						? `${input.job.sourceId}:${session.published_commit}`
-						: null,
+				entryPoint: modulePath,
+				params: input.job.params,
 			})
-			const executionResult = await runCodemodeWithRegistry(
+			const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)
+			const executionResult = await runBundledModuleWithRegistry(
 				input.env,
 				{
 					...input.callerContext,
@@ -626,13 +759,13 @@ async function runRepoBackedJob(input: {
 						sourceRoot: session.source_root,
 						publishedCommit: session.published_commit,
 						entityKind: session.entity_type,
-						entityId: input.job.id,
+						entityId: source?.entity_id ?? input.job.id,
 					},
 				},
-				createRepoCodemodeWrapper({
+				{
 					mainModule: bundled.mainModule,
-					includeStorage: true,
-				}),
+					modules: bundled.modules,
+				},
 				input.job.params,
 				{
 					executorExports: workerExports,
@@ -641,7 +774,10 @@ async function runRepoBackedJob(input: {
 						storageId: input.job.storageId,
 						writable: true,
 					},
-					executorModules: bundled.modules,
+					packageContext: {
+						packageId: source?.entity_id ?? input.job.id,
+						kodyId: manifest.kody.id,
+					},
 				},
 			)
 			return {

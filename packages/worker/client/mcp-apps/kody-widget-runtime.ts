@@ -1083,7 +1083,7 @@ function getCurrentAppBackendBootstrap() {
 function requireCurrentAppBackendBootstrap() {
 	const appBackend = getCurrentAppBackendBootstrap()
 	if (!appBackend) {
-		throw new Error('Saved app backend is not available in this context.')
+		throw new Error('App backend is not available in this context.')
 	}
 	return appBackend
 }
@@ -1110,7 +1110,7 @@ function validateResolvedAppBackendUrl(candidate: URL) {
 	const appBackend = requireCurrentAppBackendBootstrap()
 	if (!isWithinAppBackendBasePath(candidate, appBackend)) {
 		throw new Error(
-			'kodyWidget.appBackend only supports same-origin URLs within the saved app backend base path.',
+			'kodyWidget.appBackend only supports same-origin URLs within the app backend base path.',
 		)
 	}
 	return candidate.toString()

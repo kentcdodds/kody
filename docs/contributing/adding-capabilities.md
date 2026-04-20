@@ -222,8 +222,8 @@ the domain modules.
 6. Add or update focused `*.node.test.ts` or `*.workers.test.ts` coverage beside
    the implementation for most MCP-visible behavior. Touch
    `packages/worker/src/mcp/*.mcp-e2e.test.ts` only when the behavior truly
-   depends on the real MCP transport, OAuth handshake, or saved-app session
-   wiring.
+   depends on the real MCP transport, OAuth handshake, or hosted package app
+   session wiring.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
 

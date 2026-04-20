@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 
 export const entityKindValues = ['skill', 'app', 'job', 'package'] as const
 export type EntityKind = (typeof entityKindValues)[number]
@@ -306,7 +307,7 @@ export type RepoSessionCheckRun = {
 		ok: boolean
 		message: string
 	}>
-	manifest: RepoManifest
+	manifest: AuthoredPackageJson
 	runId: string
 	treeHash: string
 	checkedAt: string

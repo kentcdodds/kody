@@ -284,6 +284,9 @@ test('package_save capability logs success for valid invocation', async () => {
 															updated_at: '2026-04-13T00:00:00.000Z',
 														}
 												: null,
+										all: async () => ({
+											results: [],
+										}),
 										run: async () => ({
 											meta: { changes: 1 },
 										}),

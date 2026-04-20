@@ -38,7 +38,7 @@ export {
 	type KodyWidgetPublicApi,
 } from './kody-widget-runtime.ts'
 
-type RenderMode = 'inline_code' | 'saved_app'
+ type RenderMode = 'inline_code' | 'saved_package'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 
@@ -344,7 +344,7 @@ export function readSavedAppSourceFromHostToolResult(
 	if (!code) {
 		return {
 			handled: true as const,
-			errorMessage: 'Saved app source is missing client_code.',
+			errorMessage: 'Saved package app source is missing client_code.',
 		}
 	}
 	return {
@@ -380,7 +380,7 @@ async function executeCodeWithHostTool(
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	if (!isRecord(value)) return null
 	const renderSource = value.renderSource ?? value.mode
-	if (renderSource !== 'inline_code' && renderSource !== 'saved_app')
+	if (renderSource !== 'inline_code' && renderSource !== 'saved_package')
 		return null
 	const code =
 		typeof value.sourceCode === 'string'
@@ -1143,7 +1143,7 @@ async function initializeShellHostDocument() {
 			throw new Error(
 				hostToolResult.handled
 					? hostToolResult.errorMessage
-					: 'Failed to load saved app source.',
+					: 'Failed to load saved package app source.',
 			)
 		}
 		try {
@@ -1159,12 +1159,12 @@ async function initializeShellHostDocument() {
 			const app = isRecord(payload?.app) ? payload.app : null
 			if (!response.ok || !payload || payload.ok !== true || !app) {
 				throw new Error(
-					getApiErrorMessage(payload, 'Failed to load saved app source.'),
+					getApiErrorMessage(payload, 'Failed to load saved package app source.'),
 				)
 			}
 			const code = typeof app.client_code === 'string' ? app.client_code : null
 			if (!code) {
-				throw new Error('Saved app source is missing client_code.')
+				throw new Error('Saved package app source is missing client_code.')
 			}
 			return {
 				code,
@@ -1227,9 +1227,9 @@ async function initializeShellHostDocument() {
 			})
 		}
 
-		if (envelope.mode === 'inline_code') {
+		if (envelope.mode === 'inline_code' || envelope.mode === 'saved_package') {
 			if (!envelope.code) {
-				await renderError('The tool result did not include inline code.')
+				await renderError('The tool result did not include renderable HTML.')
 				return
 			}
 			await renderCode(envelope.code, envelope.runtime ?? 'html')
@@ -1237,7 +1237,7 @@ async function initializeShellHostDocument() {
 		}
 
 		if (!envelope.appId) {
-			await renderError('The tool result did not include an app_id.')
+			await renderError('The tool result did not include an app identifier.')
 			return
 		}
 

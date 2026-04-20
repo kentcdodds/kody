@@ -269,11 +269,6 @@ export async function runModuleWithRegistry(
 		storageTools?: StorageToolOptions
 	},
 ): Promise<ExecuteResult> {
-	const { createExecuteExecutor } = await import('#mcp/executor.ts')
-	const secretRedactor = createExecutionSecretRedactor()
-	const normalizedStorageContext = normalizeStorageContext(
-		callerContext.storageContext ?? null,
-	)
 	const userId = callerContext.user?.userId ?? ''
 	const bundled = await buildKodyModuleBundle({
 		env,
@@ -285,6 +280,41 @@ export async function runModuleWithRegistry(
 		entryPoint: 'entry.ts',
 		params,
 	})
+	return runBundledModuleWithRegistry(
+		env,
+		callerContext,
+		{
+			mainModule: bundled.mainModule,
+			modules: bundled.modules,
+		},
+		params,
+		options,
+	)
+}
+
+export async function runBundledModuleWithRegistry(
+	env: Env,
+	callerContext: McpCallerContext,
+	bundle: {
+		mainModule: string
+		modules: WorkerLoaderModules
+	},
+	params?: Record<string, unknown>,
+	options?: {
+		executorExports?: typeof workerExports
+		additionalTools?: AdditionalCodemodeTools
+		storageTools?: StorageToolOptions
+		packageContext?: {
+			packageId: string
+			kodyId: string
+		} | null
+	},
+): Promise<ExecuteResult> {
+	const { createExecuteExecutor } = await import('#mcp/executor.ts')
+	const secretRedactor = createExecutionSecretRedactor()
+	const normalizedStorageContext = normalizeStorageContext(
+		callerContext.storageContext ?? null,
+	)
 	const executor = createExecuteExecutor({
 		env,
 		exports: options?.executorExports ?? workerExports,
@@ -293,7 +323,7 @@ export async function runModuleWithRegistry(
 			userId: callerContext.user?.userId ?? null,
 			storageContext: normalizedStorageContext,
 		},
-		modules: bundled.modules,
+		modules: bundle.modules,
 	})
 	const provider = await buildCodemodeProvider(env, callerContext, {
 		trackSecretInputValue: (value) => {
@@ -319,10 +349,10 @@ ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
     refreshAccessToken,
     createAuthenticatedFetch,
     agentChatTurnStream,
-    packageContext: null,
+    packageContext: ${JSON.stringify(options?.packageContext ?? null)},
   };
   try {
-    const __kodyModule = await import(${JSON.stringify(`./${bundled.mainModule}`)});
+    const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
     const __kodyEntrypoint = __kodyModule?.default;
     if (typeof __kodyEntrypoint !== 'function') {
       throw new Error('Kody execute modules must default export a function.');

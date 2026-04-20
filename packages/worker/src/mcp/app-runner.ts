@@ -111,7 +111,9 @@ const reservedFacetMethodNames = new Set([
 ])
 
 if (typeof BaseApp !== 'function') {
-	throw new Error('Saved app server code must export class App extends DurableObject.')
+	throw new Error(
+		'Package app server code must export class App extends DurableObject.',
+	)
 }
 
 export class ${exportName} extends BaseApp {
@@ -169,7 +171,7 @@ export class ${exportName} extends BaseApp {
 
 	async __kody_invokeUserMethod(methodName, args) {
 		if (typeof methodName !== 'string' || !methodName.trim()) {
-			throw new Error('Saved app RPC method name must be a non-empty string.')
+			throw new Error('Package app RPC method name must be a non-empty string.')
 		}
 		const normalizedMethodName = methodName.trim()
 		if (
@@ -177,13 +179,13 @@ export class ${exportName} extends BaseApp {
 			normalizedMethodName.startsWith('__kody_')
 		) {
 			throw new Error(
-				\`Saved app RPC method "\${normalizedMethodName}" is not allowed.\`,
+				\`Package app RPC method "\${normalizedMethodName}" is not allowed.\`,
 			)
 		}
 		const method = Reflect.get(this, normalizedMethodName)
 		if (typeof method !== 'function') {
 			throw new Error(
-				\`Saved app RPC method "\${normalizedMethodName}" was not found.\`,
+				\`Package app RPC method "\${normalizedMethodName}" was not found.\`,
 			)
 		}
 		return await Reflect.apply(
@@ -458,7 +460,7 @@ class AppRunnerBase extends DurableObject<Env> {
 			for (const facetName of dedupeFacetNames(nextConfig.facetNames)) {
 				this.ctx.facets.abort(
 					buildFacetName(facetName),
-					new Error('Saved app server code updated.'),
+					new Error('Package app server code updated.'),
 				)
 			}
 		}
@@ -608,7 +610,7 @@ class AppRunnerBase extends DurableObject<Env> {
 		}
 		if (!requestUserId || requestUserId !== config.userId) {
 			return jsonResponse(
-				{ ok: false, error: 'Unauthorized saved app lifecycle request.' },
+				{ ok: false, error: 'Unauthorized package app lifecycle request.' },
 				403,
 			)
 		}
@@ -665,7 +667,7 @@ class AppRunnerBase extends DurableObject<Env> {
 		const config = await this.readConfig(this.ctx.id.toString())
 		if (config.killSwitchEnabled) {
 			throw jsonResponse(
-				{ ok: false, error: 'Saved app backend is disabled.' },
+				{ ok: false, error: 'Package app backend is disabled.' },
 				503,
 			)
 		}
@@ -673,7 +675,7 @@ class AppRunnerBase extends DurableObject<Env> {
 			throw jsonResponse(
 				{
 					ok: false,
-					error: 'Saved app does not define server code for this facet.',
+					error: 'Package app does not define server code for this facet.',
 				},
 				404,
 			)
@@ -742,7 +744,7 @@ class AppRunnerBase extends DurableObject<Env> {
 			windowAgeMs >= 60_000 ? defaultRateWindow(now) : existing
 		if (windowState.requestCount >= config.rateLimitPerMinute) {
 			throw jsonResponse(
-				{ ok: false, error: 'Saved app backend rate limit exceeded.' },
+				{ ok: false, error: 'Package app backend rate limit exceeded.' },
 				429,
 			)
 		}

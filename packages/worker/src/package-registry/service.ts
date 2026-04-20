@@ -18,6 +18,7 @@ import {
 	deleteSavedPackageVector,
 	upsertSavedPackageVector,
 } from './vectorize.ts'
+import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
@@ -86,6 +87,15 @@ export async function refreshSavedPackageProjection(input: {
 		userId: input.userId,
 		embedText: buildSavedPackageEmbedText(loaded.manifest),
 	})
+	const { syncPackageJobsForPackage } = await import('#worker/jobs/service.ts')
+	await syncPackageJobsForPackage({
+		env: input.env,
+		userId: input.userId,
+		baseUrl: input.baseUrl,
+		packageId: input.packageId,
+		sourceId: input.sourceId,
+		manifest: loaded.manifest,
+	})
 	return {
 		record:
 			existing ??
@@ -112,6 +122,19 @@ export async function deleteSavedPackageProjection(input: {
 	userId: string
 	packageId: string
 }) {
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.userId,
+		packageId: input.packageId,
+	})
+	if (savedPackage) {
+		const existingRows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
+		const packageRows = existingRows.filter(
+			(row) => row.source_id === savedPackage.sourceId,
+		)
+		for (const row of packageRows) {
+			await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+		}
+	}
 	await deleteSavedPackage(input.env.APP_DB, {
 		userId: input.userId,
 		packageId: input.packageId,

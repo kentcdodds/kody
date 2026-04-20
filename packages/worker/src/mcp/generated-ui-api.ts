@@ -140,7 +140,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 							)
 						: null
 			if (!app) {
-				return jsonResponse({ error: 'Saved UI not found.' }, 404)
+				return jsonResponse({ error: 'Package app not found.' }, 404)
 			}
 			let resolvedApp
 			try {
@@ -155,7 +155,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 						error:
 							error instanceof Error
 								? error.message
-								: 'Unable to load saved UI source.',
+								: 'Unable to load package app source.',
 					},
 					502,
 				)
@@ -175,7 +175,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 						error:
 							error instanceof Error
 								? error.message
-								: 'Invalid saved app params.',
+								: 'Invalid package app params.',
 					},
 					400,
 				)
@@ -491,7 +491,7 @@ async function resolveSourceContext(input: {
 		input.routeId,
 	)
 	if (!artifact) {
-		return jsonResponse({ error: 'Saved UI not found.' }, 404)
+		return jsonResponse({ error: 'Package app not found.' }, 404)
 	}
 	return {
 		type: 'saved-app',
@@ -588,10 +588,10 @@ function readSavedAppParamsFromUrl(url: URL) {
 	try {
 		parsed = JSON.parse(raw)
 	} catch {
-		throw new Error('Invalid saved app params query string.')
+		throw new Error('Invalid package app params query string.')
 	}
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		throw new Error('Saved app params must be an object.')
+		throw new Error('Package app params must be an object.')
 	}
 	return parsed as Record<string, unknown>
 }

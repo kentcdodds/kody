@@ -5,7 +5,7 @@ import {
 	writeMockArtifactSnapshot,
 } from './artifacts.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
-import { parseRepoManifest } from './manifest.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
 type SyncArtifactSourceInput = {
@@ -63,7 +63,7 @@ export async function syncArtifactSourceSnapshot(
 						`Manifest "${source.manifest_path}" was not found in the repo source.`,
 					)
 				}
-				const manifest = parseRepoManifest({
+				parseAuthoredPackageJson({
 					content: manifestContent,
 					manifestPath: source.manifest_path,
 				})
@@ -72,11 +72,7 @@ export async function syncArtifactSourceSnapshot(
 					userId: source.user_id,
 					publishedCommit: snapshot.published_commit,
 					manifestPath: source.manifest_path,
-					sourceRoot: manifest.sourceRoot?.startsWith('/')
-						? manifest.sourceRoot
-						: manifest.sourceRoot
-							? `/${manifest.sourceRoot}`
-							: source.source_root,
+					sourceRoot: source.source_root,
 				})
 				return snapshot.published_commit
 			}

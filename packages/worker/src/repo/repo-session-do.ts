@@ -22,7 +22,7 @@ import {
 } from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
-import { parseRepoManifest } from './manifest.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { searchRepoWorkspace } from './repo-session-search.ts'
 import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
 import {
@@ -217,7 +217,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (manifestContent == null) {
 			throw new Error(`Manifest "${manifestPath}" was not found.`)
 		}
-		return parseRepoManifest({
+		return parseAuthoredPackageJson({
 			content: manifestContent,
 			manifestPath,
 		})
@@ -587,7 +587,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!publishedCommit) {
 			throw new Error(`Source "${source.id}" bootstrap produced no commit.`)
 		}
-		const manifest = await this.readManifestFromWorkspace(source.manifest_path)
+		await this.readManifestFromWorkspace(source.manifest_path)
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'source',
@@ -599,11 +599,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			userId: source.user_id,
 			publishedCommit,
 			manifestPath: source.manifest_path,
-			sourceRoot: manifest.sourceRoot?.startsWith('/')
-				? manifest.sourceRoot
-				: manifest.sourceRoot
-					? `/${manifest.sourceRoot}`
-					: source.source_root,
+			sourceRoot: source.source_root,
 		})
 		return {
 			sessionId: input.sessionId,
@@ -998,17 +994,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: targetBranch,
 			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
-		const manifest = await this.readManifestFromWorkspace(source.manifest_path)
+		await this.readManifestFromWorkspace(source.manifest_path)
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
 			userId: source.user_id,
 			publishedCommit: sessionHeadCommit,
 			manifestPath: source.manifest_path,
-			sourceRoot: manifest.sourceRoot?.startsWith('/')
-				? manifest.sourceRoot
-				: manifest.sourceRoot
-					? `/${manifest.sourceRoot}`
-					: source.source_root,
+			sourceRoot: source.source_root,
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
