@@ -13,6 +13,10 @@ When a tool call also includes **`memoryContext`**, Kody may attach a small
 number of relevant long-term memories that have not already been surfaced for
 that **`conversationId`**.
 
+Search responses also return top-level **`timing`** metadata with
+**`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about
+how long the ranked lookup or entity lookup took.
+
 Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches when the response must stay
 small.

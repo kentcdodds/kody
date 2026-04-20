@@ -14,9 +14,7 @@ import {
 	isCapabilitySearchOffline,
 	lexicalScore,
 } from '#mcp/capabilities/capability-search.ts'
-import {
-	listUserSecretsForSearch,
-} from '#mcp/secrets/service.ts'
+import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
@@ -32,7 +30,7 @@ import {
 	listSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
+import { type buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import {
 	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
@@ -57,6 +55,7 @@ import {
 	parseEntityRef,
 	toSlimStructuredMatches,
 } from './search-format.ts'
+import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 
 const charsPerToken = 4
@@ -116,7 +115,10 @@ export function searchUnified(input: {
 				entry.record.searchText ?? '',
 			].join('\n')
 			const lexical = lexicalScore(query, doc)
-			const vector = cosineSimilarity(queryEmbedding, deterministicEmbedding(doc))
+			const vector = cosineSimilarity(
+				queryEmbedding,
+				deterministicEmbedding(doc),
+			)
 			return {
 				type: 'package' as const,
 				packageId: entry.record.id,
@@ -231,7 +233,10 @@ export async function searchPackages(input: {
 				row.projection.jobs.map((job) => job.name).join(' '),
 			].join('\n')
 			const lexical = lexicalScore(query, document)
-			const vector = cosineSimilarity(queryEmbedding, deterministicEmbedding(document))
+			const vector = cosineSimilarity(
+				queryEmbedding,
+				deterministicEmbedding(document),
+			)
 			return {
 				row,
 				score: lexical + vector,
@@ -311,8 +316,7 @@ function applyMaxResponseSize<TPayload>(
 
 const searchTool = {
 	name: 'search',
-	title:
-		'Search Capabilities, Packages, Values, Connectors, and Secrets',
+	title: 'Search Capabilities, Packages, Values, Connectors, and Secrets',
 	description: `
 Find **built-in capabilities**, **saved packages**, **persisted values**,
 **saved connectors**, and **user secret references** (metadata only)
@@ -423,15 +427,12 @@ export async function loadOptionalSearchRows(input: {
 	}
 
 	const warnings: Array<string> = []
-	const [
-		packageRowsResult,
-		userSecretRowsResult,
-		userValueRowsResult,
-	] = await Promise.allSettled([
-		input.loadPackages(),
-		input.loadUserSecrets(),
-		input.loadUserValues(),
-	])
+	const [packageRowsResult, userSecretRowsResult, userValueRowsResult] =
+		await Promise.allSettled([
+			input.loadPackages(),
+			input.loadUserSecrets(),
+			input.loadUserValues(),
+		])
 
 	const packageRows =
 		packageRowsResult.status === 'fulfilled' ? packageRowsResult.value : []
@@ -697,12 +698,13 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
-			const startedAt = performance.now()
+			const timingStart = startToolTiming()
 			const conversationId = resolveConversationId(args.conversationId)
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
 			if (!args.query && !args.entity) {
+				const timing = finishToolTiming(timingStart)
 				return {
 					content: prependToolMetadataContent(conversationId, [
 						{
@@ -712,6 +714,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId,
+						timing,
 						error: 'Provide either "query" or "entity".',
 					},
 					isError: true,
@@ -761,20 +764,19 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				}
 			}
 
-			let outcome:
-				| {
-						mode: 'list'
-				result: {
-					matches: Array<SearchMatch>
-					offline: boolean
-				}
-				  }
-				| {
-						mode: 'entity'
-						detail: Awaited<ReturnType<typeof resolveEntityDetail>>
-				  }
 			try {
-				outcome = await Sentry.startSpan(
+				const outcome:
+					| {
+							mode: 'list'
+							result: {
+								matches: Array<SearchMatch>
+								offline: boolean
+							}
+					  }
+					| {
+							mode: 'entity'
+							detail: Awaited<ReturnType<typeof resolveEntityDetail>>
+					  } = await Sentry.startSpan(
 					{
 						name: 'mcp.tool.search',
 						op: 'mcp.tool',
@@ -784,8 +786,187 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					},
 					searchSpan,
 				)
+
+				if (outcome.mode === 'entity') {
+					const entityResult = formatEntityDetailMarkdown(outcome.detail)
+					const timing = finishToolTiming(timingStart)
+					logMcpEvent({
+						category: 'mcp',
+						tool: 'search',
+						toolName: 'search',
+						outcome: 'success',
+						durationMs: timing.durationMs,
+						baseUrl,
+						hasUser,
+					})
+					return {
+						content: prependToolMetadataContent(conversationId, [
+							{
+								type: 'text',
+								text: truncateSearchText(entityResult.markdown),
+							},
+						]),
+						structuredContent: {
+							conversationId,
+							timing,
+							result: entityResult.structured,
+						},
+					}
+				}
+
+				const normalizedRemoteConnectorStatuses =
+					remoteConnectorDownStatuses.length > 0
+						? remoteConnectorDownStatuses.map(serializeRemoteConnectorStatus)
+						: undefined
+				const normalizedHomeConnectorStatus =
+					remoteConnectorDownStatuses.length === 1 &&
+					remoteConnectorDownStatuses[0]?.connectorKind === 'home'
+						? serializeRemoteConnectorStatus(remoteConnectorDownStatuses[0]!)
+						: undefined
+				const memoryToolContext = await loadRelevantMemoriesForTool({
+					env: agent.getEnv(),
+					callerContext,
+					conversationId,
+					memoryContext: resolveSearchMemoryContext({
+						query: args.query,
+						memoryContext: args.memoryContext,
+					}),
+				})
+				const searchMemories = memoryToolContext
+					? {
+							surfaced: memoryToolContext.memories,
+							suppressedCount: memoryToolContext.suppressedCount,
+							retrievalQuery: memoryToolContext.retrievalQuery,
+						}
+					: undefined
+
+				const payload: {
+					matches: Array<SearchMatch>
+					offline: boolean
+					warnings: Array<string>
+					memories?: SearchResultStructuredContent['memories']
+					homeConnectorStatus?: {
+						connectorKind: string
+						connectorId: string
+						state: string
+						connected: boolean
+						toolCount: number
+					}
+					remoteConnectorStatuses?: Array<{
+						connectorKind: string
+						connectorId: string
+						state: string
+						connected: boolean
+						toolCount: number
+					}>
+				} = {
+					matches: outcome.result.matches,
+					offline: outcome.result.offline,
+					warnings,
+					...(searchMemories
+						? {
+								memories: searchMemories,
+							}
+						: {}),
+					...(normalizedRemoteConnectorStatuses
+						? {
+								remoteConnectorStatuses: normalizedRemoteConnectorStatuses,
+							}
+						: {}),
+					...(normalizedHomeConnectorStatus
+						? {
+								homeConnectorStatus: normalizedHomeConnectorStatus,
+							}
+						: {}),
+				}
+				const statefulAgent = agent as McpRegistrationAgent & {
+					state?: {
+						searchConversationIdsWithPreamble?: Array<string>
+					}
+					setState?: (state: {
+						searchConversationIdsWithPreamble?: Array<string>
+					}) => void
+				}
+				const searchConversationIdsWithPreamble = Array.isArray(
+					statefulAgent.state?.searchConversationIdsWithPreamble,
+				)
+					? (statefulAgent.state?.searchConversationIdsWithPreamble ?? [])
+					: []
+				const includePreamble =
+					!args.conversationId ||
+					!searchConversationIdsWithPreamble.includes(conversationId)
+				if (includePreamble && typeof statefulAgent.setState === 'function') {
+					statefulAgent.setState({
+						...(statefulAgent.state ?? {}),
+						searchConversationIdsWithPreamble: [
+							...searchConversationIdsWithPreamble,
+							conversationId,
+						],
+					})
+				}
+				const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
+					payload,
+					maxResponseSize,
+					(value) =>
+						formatSearchMarkdown({
+							matches: value.matches,
+							warnings: value.warnings,
+							memories: value.memories,
+							baseUrl,
+							includePreamble,
+						}),
+					(value, count) => ({
+						...value,
+						matches: value.matches.slice(0, count),
+					}),
+					(value) => value.matches.length,
+				)
+				const result: SearchResultStructuredContent = {
+					offline: trimmedPayload.offline,
+					warnings: trimmedPayload.warnings,
+					...(trimmedPayload.memories
+						? {
+								memories: trimmedPayload.memories,
+							}
+						: {}),
+					...(trimmedPayload.homeConnectorStatus
+						? { homeConnectorStatus: trimmedPayload.homeConnectorStatus }
+						: {}),
+					...(trimmedPayload.remoteConnectorStatuses
+						? {
+								remoteConnectorStatuses: trimmedPayload.remoteConnectorStatuses,
+							}
+						: {}),
+					matches: toSlimStructuredMatches({
+						matches: trimmedPayload.matches,
+						baseUrl,
+					}),
+				}
+				const timing = finishToolTiming(timingStart)
+				logMcpEvent({
+					category: 'mcp',
+					tool: 'search',
+					toolName: 'search',
+					outcome: 'success',
+					durationMs: timing.durationMs,
+					baseUrl,
+					hasUser,
+				})
+				return {
+					content: prependToolMetadataContent(conversationId, [
+						{
+							type: 'text',
+							text: truncateSearchText(serialized),
+						},
+					]),
+					structuredContent: {
+						conversationId,
+						timing,
+						result,
+					},
+				}
 			} catch (cause) {
-				const durationMs = Math.round(performance.now() - startedAt)
+				const timing = finishToolTiming(timingStart)
 				const error = cause instanceof Error ? cause : new Error(String(cause))
 				const { errorName, errorMessage } = errorFields(error)
 				logMcpEvent({
@@ -793,7 +974,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					tool: 'search',
 					toolName: 'search',
 					outcome: 'failure',
-					durationMs,
+					durationMs: timing.durationMs,
 					baseUrl,
 					hasUser,
 					sandboxError: false,
@@ -807,180 +988,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId,
+						timing,
 						error: error.message,
 					},
 					isError: true,
 				}
-			}
-
-			const durationMs = Math.round(performance.now() - startedAt)
-
-			logMcpEvent({
-				category: 'mcp',
-				tool: 'search',
-				toolName: 'search',
-				outcome: 'success',
-				durationMs,
-				baseUrl,
-				hasUser,
-			})
-
-			if (outcome.mode === 'entity') {
-				const entityResult = formatEntityDetailMarkdown(outcome.detail)
-				return {
-					content: prependToolMetadataContent(conversationId, [
-						{
-							type: 'text',
-							text: truncateSearchText(entityResult.markdown),
-						},
-					]),
-					structuredContent: {
-						conversationId,
-						result: entityResult.structured,
-					},
-				}
-			}
-
-			const normalizedRemoteConnectorStatuses =
-				remoteConnectorDownStatuses.length > 0
-					? remoteConnectorDownStatuses.map(serializeRemoteConnectorStatus)
-					: undefined
-			const normalizedHomeConnectorStatus =
-				remoteConnectorDownStatuses.length === 1 &&
-				remoteConnectorDownStatuses[0]?.connectorKind === 'home'
-					? serializeRemoteConnectorStatus(remoteConnectorDownStatuses[0]!)
-					: undefined
-			const memoryToolContext = await loadRelevantMemoriesForTool({
-				env: agent.getEnv(),
-				callerContext,
-				conversationId,
-				memoryContext: resolveSearchMemoryContext({
-					query: args.query,
-					memoryContext: args.memoryContext,
-				}),
-			})
-			const searchMemories = memoryToolContext
-				? {
-						surfaced: memoryToolContext.memories,
-						suppressedCount: memoryToolContext.suppressedCount,
-						retrievalQuery: memoryToolContext.retrievalQuery,
-					}
-				: undefined
-
-			const payload: {
-				matches: Array<SearchMatch>
-				offline: boolean
-				warnings: Array<string>
-				memories?: SearchResultStructuredContent['memories']
-				homeConnectorStatus?: {
-					connectorKind: string
-					connectorId: string
-					state: string
-					connected: boolean
-					toolCount: number
-				}
-				remoteConnectorStatuses?: Array<{
-					connectorKind: string
-					connectorId: string
-					state: string
-					connected: boolean
-					toolCount: number
-				}>
-			} = {
-				matches: outcome.result.matches,
-				offline: outcome.result.offline,
-				warnings,
-				...(searchMemories
-					? {
-							memories: searchMemories,
-						}
-					: {}),
-				...(normalizedRemoteConnectorStatuses
-					? {
-							remoteConnectorStatuses: normalizedRemoteConnectorStatuses,
-						}
-					: {}),
-				...(normalizedHomeConnectorStatus
-					? {
-							homeConnectorStatus: normalizedHomeConnectorStatus,
-						}
-					: {}),
-			}
-			const statefulAgent = agent as McpRegistrationAgent & {
-				state?: {
-					searchConversationIdsWithPreamble?: Array<string>
-				}
-				setState?: (state: {
-					searchConversationIdsWithPreamble?: Array<string>
-				}) => void
-			}
-			const searchConversationIdsWithPreamble = Array.isArray(
-				statefulAgent.state?.searchConversationIdsWithPreamble,
-			)
-				? (statefulAgent.state?.searchConversationIdsWithPreamble ?? [])
-				: []
-			const includePreamble =
-				!args.conversationId ||
-				!searchConversationIdsWithPreamble.includes(conversationId)
-			if (includePreamble && typeof statefulAgent.setState === 'function') {
-				statefulAgent.setState({
-					...(statefulAgent.state ?? {}),
-					searchConversationIdsWithPreamble: [
-						...searchConversationIdsWithPreamble,
-						conversationId,
-					],
-				})
-			}
-			const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
-				payload,
-				maxResponseSize,
-				(value) =>
-					formatSearchMarkdown({
-						matches: value.matches,
-						warnings: value.warnings,
-						memories: value.memories,
-						baseUrl,
-						includePreamble,
-					}),
-				(value, count) => ({
-					...value,
-					matches: value.matches.slice(0, count),
-				}),
-				(value) => value.matches.length,
-			)
-			const result: SearchResultStructuredContent = {
-				offline: trimmedPayload.offline,
-				warnings: trimmedPayload.warnings,
-				...(trimmedPayload.memories
-					? {
-							memories: trimmedPayload.memories,
-						}
-					: {}),
-				...(trimmedPayload.homeConnectorStatus
-					? { homeConnectorStatus: trimmedPayload.homeConnectorStatus }
-					: {}),
-				...(trimmedPayload.remoteConnectorStatuses
-					? {
-							remoteConnectorStatuses: trimmedPayload.remoteConnectorStatuses,
-						}
-					: {}),
-				matches: toSlimStructuredMatches({
-					matches: trimmedPayload.matches,
-					baseUrl,
-				}),
-			}
-
-			return {
-				content: prependToolMetadataContent(conversationId, [
-					{
-						type: 'text',
-						text: truncateSearchText(serialized),
-					},
-				]),
-				structuredContent: {
-					conversationId,
-					result,
-				},
 			}
 		},
 	)
