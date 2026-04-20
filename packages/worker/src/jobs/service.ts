@@ -37,6 +37,7 @@ import {
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
+import { createPackageStorageContext } from '#worker/package-runtime/package-state.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
@@ -179,11 +180,9 @@ function createPackageJobCallerContext(input: {
 			email: '',
 			displayName: `package:${input.packageId}`,
 		},
-		storageContext: {
-			sessionId: null,
-			appId: input.packageId,
-			storageId: null,
-		},
+		storageContext: createPackageStorageContext({
+			packageId: input.packageId,
+		}),
 		repoContext: null,
 	}) as PersistedJobCallerContext
 }
@@ -571,11 +570,11 @@ export async function executeJobOnce(input: {
 		} else {
 			const runtimeCallerContext = {
 				...input.callerContext,
-				storageContext: {
+				storageContext: createPackageStorageContext({
+					packageId: input.callerContext.storageContext?.appId ?? input.job.id,
 					sessionId: input.callerContext.storageContext?.sessionId ?? null,
-					appId: input.callerContext.storageContext?.appId ?? null,
 					storageId: input.job.storageId,
-				},
+				}),
 				repoContext: input.callerContext.repoContext ?? null,
 			}
 			const result = await runRepoBackedJob({

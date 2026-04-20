@@ -925,6 +925,67 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 	}
 })
 
+test('package-owned jobs keep package app scope while switching runtime storage to the job bucket', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+	} as Env
+	mockRepoPersistence()
+
+	const manifest = createPackageJobManifest({
+		packageName: '@kody/thread-router',
+		kodyId: 'thread-router',
+		description: 'Routes messages with package-owned state',
+		jobName: 'route-thread',
+	})
+
+	await (
+		await import('./service.ts')
+	).syncPackageJobsForPackage({
+		env,
+		userId: 'user-123',
+		baseUrl: 'https://example.com',
+		packageId: 'package-thread-router',
+		sourceId: 'source-thread-router',
+		manifest,
+	})
+
+	const row = await (
+		await import('./repo.ts')
+	).getJobRowById(
+		db,
+		'user-123',
+		'package-job:package-thread-router:route-thread',
+	)
+	if (!row?.callerContext) {
+		throw new Error('Expected synced package job caller context.')
+	}
+
+	expect(row.callerContext.storageContext).toEqual({
+		sessionId: null,
+		appId: 'package-thread-router',
+		storageId: 'package-thread-router',
+	})
+
+	const runtimeCallerContext = {
+		...row.callerContext,
+		storageContext: {
+			sessionId: row.callerContext.storageContext?.sessionId ?? null,
+			appId: row.callerContext.storageContext?.appId ?? null,
+			storageId: row.record.storageId,
+		},
+	}
+
+	expect(runtimeCallerContext.storageContext).toEqual({
+		sessionId: null,
+		appId: 'package-thread-router',
+		storageId: row.record.storageId,
+	})
+	expect(row.record.storageId).toBe(
+		'job:package-job:package-thread-router:route-thread',
+	)
+})
+
 test('executeJobOnce refreshes repo sessions when base commit moves', async () => {
 	const env = {
 		APP_DB: createDatabase(),

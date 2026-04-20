@@ -276,6 +276,26 @@ test('value service rejects unavailable scoped storage', async () => {
 	).rejects.toThrow('Value scope "app" is unavailable in this context.')
 })
 
+test('value service does not treat arbitrary storage ids as app scope', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+
+	await expect(
+		saveValue({
+			env,
+			userId: 'user-123',
+			scope: 'app',
+			name: 'workspaceSlug',
+			value: 'job-storage',
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				storageId: 'job:job-123',
+			},
+		}),
+	).rejects.toThrow('Value scope "app" is unavailable in this context.')
+})
+
 test('deleteAllAppScopedValues removes all app-scoped values for one app', async () => {
 	const testDb = createValueTestDb()
 	const env = { APP_DB: testDb.db }

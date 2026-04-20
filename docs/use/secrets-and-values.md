@@ -46,3 +46,20 @@ does not by itself approve new hosts.
 
 Use **values** capabilities for readable non-secret configuration that generated
 UI or workflows should store and read later.
+
+## Package config versus package storage
+
+When a package is involved, Kody keeps two package-related state concepts
+separate:
+
+- **package config** — readable values and secrets scoped by the saved package id
+- **package storage** — durable mutable state bound to the active `storageId`
+
+That means:
+
+- app-scoped values and secrets belong to the package root
+- package apps and package-owned jobs can both read that same package config
+- a package-owned job still executes against its own job storage id for durable
+  runtime state
+- package-internal Durable Objects or similar coordination units should use
+  their own storage ids, not app-scoped values/secrets, for mutable actor state

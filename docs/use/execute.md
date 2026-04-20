@@ -72,7 +72,11 @@ Typical pattern inside execute:
 
 Kody supports durable storage binding for execute and package-owned jobs.
 
-- bound storage is app- or package-owned durable state
+- the bound `storage` helper always points at one active durable storage owner
+- for package apps, that owner defaults to the package root storage
+- for package-owned jobs, that owner is the job's own durable storage id
+- package-scoped values and secrets are keyed by the saved package id (`appId`),
+  not by whichever `storageId` happens to be active
 - import **`storage`** from **`kody:runtime`**
 - use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
   and **`storage.sql(query, params?)`**

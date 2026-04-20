@@ -34,8 +34,12 @@ For non-trivial or integration-backed package apps, prefer this split:
   `package.json#kody.app.entry`
 - package exports: reusable modules and callable default exports declared in
   `package.json.exports`
-- internal backend modules / Durable Objects / facets: connector lookups,
-  provider API calls, persistence, validation, and mutations
+- package-root config: values/secrets scoped to the saved package id
+- package storage: durable state addressed by explicit `storageId`s for the
+  active coordination unit
+- internal backend modules / actors / Durable Objects: connector lookups,
+  provider API calls, persistence, validation, mutations, and long-lived
+  coordination
 - inline HTML/code renders: acceptable for quick prototypes or one-off
   experiments, not the default package app pattern
 

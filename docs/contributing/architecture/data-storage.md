@@ -72,6 +72,31 @@ Storage split:
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`
 
+### Package state model
+
+For saved packages, use this mental model:
+
+- **package source**: the repo-backed package rooted at `package.json`
+- **package config**: manifest metadata plus app-scoped values/secrets keyed by
+  the saved package id (`appId`)
+- **package storage**: durable `StorageRunner` state addressed by `storageId`
+- **package jobs**: scheduled executions owned by a package; they keep package
+  config scope via `appId`, but run against their own job `storageId`
+- **package actors/runtime internals**: package-app Durable Objects or similar
+  stateful coordination units layered on top of package storage; these are
+  package-owned implementation details rather than separate top-level persisted
+  entities
+
+That means package apps and package jobs do **not** introduce competing config
+namespaces:
+
+- app-scoped values/secrets resolve only from `appId` (the saved package id)
+- `storageId` identifies the active durable state owner for the current run
+- package apps typically use the package id as both `appId` and root
+  `storageId`
+- package jobs keep `appId = <saved package id>` while switching `storageId` to
+  the job-specific durable bucket
+
 ## Configuration reference
 
 Bindings are configured per environment in `packages/worker/wrangler.jsonc`

@@ -24,6 +24,7 @@ Conventions
 - \`package_save\`: create or replace a repo-backed saved package rooted at \`package.json\`. Standard package exports define the package surface. \`package.json#kody\` contains Kody-specific metadata such as tags, optional app config, and package-owned jobs.
 - \`package_get\` / \`package_list\` / \`package_delete\`: inspect or manage saved packages for the signed-in user.
 - Package jobs are schedules owned by a package, not a separate top-level primitive. Package apps are optional UI surfaces declared by the package, not a separate top-level primitive.
+- Package state model: package source is the repo-backed code, package config is manifest plus app-scoped values/secrets keyed by saved package id, package storage is durable state addressed by \`storageId\`, and package apps/jobs are package-owned ways to execute against that state rather than separate persisted primitives.
 - Memory writes are verify-first: always run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`. Kody retrieves related memories; the consuming agent decides whether to upsert, delete, both, or do nothing. \`meta_memory_upsert\` creates a new memory when \`memory_id\` is omitted and updates an existing memory when \`memory_id\` is provided.
 - User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions (reconnect to refresh what the host shows).
 

@@ -10,6 +10,7 @@ import {
 	createAuthenticatedFetch,
 	refreshAccessToken,
 } from '#mcp/execute-modules/codemode-utils.ts'
+import { createPackageStorageContext } from './package-state.ts'
 import { buildKodyAppBundle } from './module-graph.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 
@@ -311,11 +312,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				email: this.ctx.props.email,
 				displayName: this.ctx.props.displayName,
 			},
-			storageContext: {
-				sessionId: null,
-				appId: this.ctx.props.packageId,
+			storageContext: createPackageStorageContext({
+				packageId: this.ctx.props.packageId,
 				storageId,
-			},
+			}),
 		})
 	}
 
@@ -562,11 +562,9 @@ export async function buildPackageAppWorker(input: {
 						props: {
 							baseUrl: input.baseUrl,
 							userId: input.userId,
-							storageContext: {
-								sessionId: null,
-								appId: input.savedPackage.id,
-								storageId: input.savedPackage.id,
-							},
+							storageContext: createPackageStorageContext({
+								packageId: input.savedPackage.id,
+							}),
 						},
 					})
 				: null,
@@ -592,10 +590,8 @@ export async function createPackageAppCallerContext(input: {
 			displayName:
 				input.user.displayName ?? `package:${input.packageId}`,
 		},
-		storageContext: {
-			sessionId: null,
-			appId: input.packageId,
-			storageId: input.packageId,
-		},
+		storageContext: createPackageStorageContext({
+			packageId: input.packageId,
+		}),
 	})
 }

@@ -10,13 +10,31 @@ Kody-specific metadata.
 
 Think in terms of:
 
-- packages
+- package source
 - package exports
-- package apps
+- package config
+- package storage
 - package-owned jobs
+- package apps
+- package-owned runtime internals
 
 Packages are the saved-entity unit across search, execute, repo editing, and UI
 hosting.
+
+The durable package-state model is:
+
+- **package source** — the repo-backed code rooted at `package.json`
+- **package config** — readable/writable package-scoped values, secrets, and
+  manifest metadata keyed by the saved package id
+- **package storage** — durable SQLite/key-value state addressed by a
+  `storageId`
+- **package-owned jobs** — scheduled package entrypoints that run with package
+  config plus their own job storage
+- **package-owned runtime internals** — implementation details such as Durable
+  Objects, actor-like coordination, or namespaces built inside the package
+
+Those are related concepts, but they are not competing top-level primitives.
+The package remains the only saved top-level entity.
 
 ## `package.json`
 
@@ -62,8 +80,11 @@ Treat package apps like Worker-style modules:
 
 - app code lives in the package repo
 - the entry module is declared by `kody.app.entry`
-- internal Durable Objects or facets are implementation details, not the public
-  authoring contract
+- package-root values and secrets remain keyed by the saved package id
+- the default `storage` binding inside the app points at the package root
+  storage bucket
+- internal Durable Objects, actors, or facets are implementation details, not
+  the public authoring contract
 
 ## Package-owned jobs
 
@@ -71,7 +92,8 @@ Jobs belong to packages.
 
 - Define them under `package.json#kody.jobs`
 - Reference package-local entry modules
-- Treat their runtime state as package-owned implementation detail
+- Read package-scoped values and secrets through the package id
+- Treat each job's bound `storageId` as that job run's durable storage owner
 
 Jobs are part of the package definition.
 
