@@ -292,17 +292,20 @@ export const repoApplyPatchInputSchema = repoSessionIdSchema.extend({
 		),
 })
 
-export const repoApplyPatchResultSchema = z.object({
+export const repoApplyPatchEditSchema = z.object({
+	path: z.string(),
+	changed: z.boolean(),
+	content: z.string(),
+	diff: z.string(),
+})
+
+export const repoApplyPatchSummarySchema = z.object({
 	dry_run: z.boolean(),
 	total_changed: z.number().int().min(0),
-	edits: z.array(
-		z.object({
-			path: z.string(),
-			changed: z.boolean(),
-			content: z.string(),
-			diff: z.string(),
-		}),
-	),
+})
+
+export const repoApplyPatchResultSchema = repoApplyPatchSummarySchema.extend({
+	edits: z.array(repoApplyPatchEditSchema),
 })
 
 export const repoRunChecksInputSchema = repoSessionIdSchema
@@ -459,6 +462,12 @@ export const repoEditFlowInputSchema = z
 			.describe(
 				'Whether to publish after successful checks. Defaults to true. Publishing requires `run_checks` to stay enabled.',
 			),
+		include_edits: z
+			.boolean()
+			.optional()
+			.describe(
+				'Whether to include the per-file `edits` array in the response. Defaults to false to keep the payload compact.',
+			),
 	})
 	.superRefine((value, ctx) => {
 		const openRefCount =
@@ -577,7 +586,9 @@ export const repoEditFlowPublishSchema = z.union([
 export const repoEditFlowOutputSchema = z.object({
 	session: repoSessionInfoSchema,
 	resolved_target: repoResolvedTargetSchema,
-	edits: repoApplyPatchResultSchema,
+	edits: repoApplyPatchSummarySchema.extend({
+		edits: z.array(repoApplyPatchEditSchema).optional(),
+	}),
 	checks: repoEditFlowChecksSchema,
 	publish: repoEditFlowPublishSchema,
 })

@@ -81,5 +81,9 @@ await codemode.repo_edit_flow({
 })
 ```
 
-This returns the session metadata, applied edits, check outcome, and publish
-result in one structured response.
+This returns the session metadata, an edit summary (`dry_run` and
+`total_changed`), check outcome, and publish result in one structured
+response.
+
+If you also need the per-file edit payload with full `content` and `diff`,
+pass `include_edits: true`.
