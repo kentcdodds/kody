@@ -115,6 +115,7 @@ export default async function __kodyExecuteEntrypoint() {
 function createAppEntrypointSource(input: { modulePath: string }) {
 	return `
 import * as userModule from ${JSON.stringify(input.modulePath)};
+export * from ${JSON.stringify(input.modulePath)};
 
 function resolvePackageAppHandler() {
   const candidate = userModule.default ?? userModule;

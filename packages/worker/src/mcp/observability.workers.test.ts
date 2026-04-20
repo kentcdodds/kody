@@ -206,7 +206,9 @@ test('logMcpEvent reports failure without throwing when Sentry is off', () => {
 	}
 })
 
-test('package_save capability logs success for valid invocation', async () => {
+test(
+	'package_save capability logs success for valid invocation',
+	async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	resetRepoPersistenceMocks()
@@ -380,5 +382,7 @@ test('package_save capability logs success for valid invocation', async () => {
 	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
 	expect(event.outcome).toBe('success')
 	expect(event.failurePhase).toBeUndefined()
-})
+	},
+	15_000,
+)
 

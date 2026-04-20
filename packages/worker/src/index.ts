@@ -40,6 +40,8 @@ import {
 	connectorSessionKey,
 	parseConnectorRoutePath,
 } from './remote-connector/connector-session-key.ts'
+import { handlePackageAppRequest } from '#app/handlers/package-app.ts'
+import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 
 export {
 	ChatAgent,
@@ -50,6 +52,7 @@ export {
 	HomeMCP,
 	MCP,
 	JobManager,
+	PackageAppRuntimeBridge,
 	StorageRunner,
 }
 
@@ -141,6 +144,14 @@ const appHandler = withCors({
 
 		if (isGeneratedUiApiRequest(url.pathname)) {
 			return handleGeneratedUiApiRequest(request, env)
+		}
+
+		if (url.pathname.startsWith('/packages/')) {
+			const packageResponse = await handlePackageAppRequest(request, env)
+			if (packageResponse) {
+				return packageResponse
+			}
+			return handleRequest(request, env)
 		}
 
 		const connectorRoute = parseConnectorRoutePath(url.pathname)
