@@ -2,6 +2,7 @@ import { formatJobError } from './schedule.ts'
 import { type JobSchedule } from './types.ts'
 
 const maxLoggedJobOutcomes = 10
+const maxLoggedStringLength = 1_000
 type SchedulerLogLevel = 'error' | 'info'
 
 export type SchedulerJobOutcomeLog = {
@@ -78,11 +79,12 @@ function writeSchedulerLog(
 	input: JobSchedulerLogPayload,
 ): void {
 	try {
+		const payload = sanitizeSchedulerLogPayload(input)
 		console[level](
 			'job-scheduler',
 			JSON.stringify({
-				timestamp: input.timestamp ?? new Date().toISOString(),
-				...input,
+				timestamp: payload.timestamp ?? new Date().toISOString(),
+				...payload,
 			}),
 		)
 	} catch (error) {
@@ -91,5 +93,45 @@ function writeSchedulerLog(
 			level,
 			errorMessage: formatJobError(error),
 		})
+	}
+}
+
+function truncateLoggedString(value: string): string {
+	if (value.length <= maxLoggedStringLength) {
+		return value
+	}
+
+	return `${value.slice(0, maxLoggedStringLength)}...[truncated ${value.length - maxLoggedStringLength} chars]`
+}
+
+function sanitizeSchedulerJobOutcome(
+	jobOutcome: SchedulerJobOutcomeLog,
+): SchedulerJobOutcomeLog {
+	return {
+		...jobOutcome,
+		...(jobOutcome.error
+			? { error: truncateLoggedString(jobOutcome.error) }
+			: {}),
+		...(jobOutcome.rescheduleError
+			? {
+					rescheduleError: truncateLoggedString(jobOutcome.rescheduleError),
+				}
+			: {}),
+	}
+}
+
+function sanitizeSchedulerLogPayload(
+	input: JobSchedulerLogPayload,
+): JobSchedulerLogPayload {
+	return {
+		...input,
+		...(input.errorMessage
+			? { errorMessage: truncateLoggedString(input.errorMessage) }
+			: {}),
+		...(input.jobOutcomes
+			? {
+					jobOutcomes: input.jobOutcomes.map(sanitizeSchedulerJobOutcome),
+				}
+			: {}),
 	}
 }

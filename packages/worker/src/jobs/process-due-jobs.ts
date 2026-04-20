@@ -84,19 +84,37 @@ export async function processDueJobs(input: {
 			})
 		} catch (error) {
 			const rescheduleError = formatJobError(error)
-			const updated = applyExecutionOutcome(job, outcome, {
-				updatedAt: now.toISOString(),
-				enabled: false,
-				lastRunError: `Failed to reschedule job: ${rescheduleError}`,
-			})
+			if (outcome.execution.ok) {
+				successCount -= 1
+				errorCount += 1
+			}
+			const failedRescheduleError = `Failed to reschedule job: ${rescheduleError}`
+			const updated = applyExecutionOutcome(
+				job,
+				outcome.execution.ok
+					? {
+							...outcome,
+							execution: {
+								ok: false as const,
+								error: failedRescheduleError,
+								logs: outcome.execution.logs,
+							},
+						}
+					: outcome,
+				{
+					updatedAt: now.toISOString(),
+					enabled: false,
+					lastRunError: failedRescheduleError,
+				},
+			)
 			saveJobs.push(updated)
 			jobOutcomes.push({
 				jobId: job.id,
 				scheduleType: job.schedule.type,
-				outcome: outcome.execution.ok ? 'success' : 'failure',
+				outcome: 'failure',
 				nextRunAt: updated.nextRunAt,
 				deleted: false,
-				...(executionError ? { error: executionError } : {}),
+				error: executionError ?? rescheduleError,
 				rescheduleError,
 			})
 		}
