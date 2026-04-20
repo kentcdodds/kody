@@ -207,25 +207,7 @@ export function buildJobScheduleOutput(created: JobView) {
 		name: created.name,
 		source_id: created.sourceId,
 		storage_id: created.storageId,
-		schedule: (() => {
-			switch (created.schedule.type) {
-				case 'once':
-					return {
-						type: 'once' as const,
-						run_at: created.schedule.runAt,
-					}
-				case 'interval':
-					return {
-						type: 'interval' as const,
-						every: created.schedule.every,
-					}
-				case 'cron':
-					return {
-						type: 'cron' as const,
-						expression: created.schedule.expression,
-					}
-			}
-		})(),
+		schedule: buildJobScheduleSummaryOutput(created.schedule),
 		schedule_summary: created.scheduleSummary,
 		created_at: created.createdAt,
 		next_run_at: created.nextRunAt,
