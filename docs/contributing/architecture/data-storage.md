@@ -85,10 +85,10 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `STORAGE_RUNNER` (Durable Objects)
 - `ASSETS` (static assets bucket)
 
-## Repo-backed sources and Artifacts
+## Repo-backed packages and Artifacts
 
-Repo-backed saved apps, skills, jobs, and repo editing sessions use Cloudflare
-Artifacts repos plus D1 `entity_sources` / `repo_sessions` rows.
+Repo-backed saved packages and repo editing sessions use Cloudflare Artifacts
+repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 - Primary code lives under `packages/worker/src/repo/`.
 - `entity_sources` stores the durable mapping from
@@ -98,16 +98,14 @@ Artifacts repos plus D1 `entity_sources` / `repo_sessions` rows.
 
 Operational notes:
 
-- Saved skill names, job ids/names, and app ids are the user-facing identities.
-  They resolve through D1 metadata to `entity_sources.id` when a repo editing
-  session is opened.
-- `source_id` remains the internal durable join key for repo-backed artifacts,
-  but most MCP callers should prefer the user-facing identity-first open/edit
-  flow.
-- Once a repo-backed artifact exists, the repo snapshot is the durable source of
-  truth for later edits and publishes. Legacy inline code fields may still
-  appear in some read APIs for convenience, but they are materialized views of
-  the repo-backed source rather than an independent second source of truth.
+- Saved packages are the user-facing repo-backed identity. They resolve through
+  D1 metadata to `entity_sources.id` when a repo editing session is opened.
+- `source_id` remains the internal durable join key for repo-backed packages,
+  but most MCP callers should prefer the package identity-first open/edit flow.
+- Once a repo-backed package exists, the repo snapshot is the durable source of
+  truth for later edits and publishes. Search and detail payloads are derived
+  projections of that repo-backed package rather than a competing second source
+  of truth.
 
 Production note:
 

@@ -12,7 +12,7 @@ const noopHandler = async (
 ) => ({})
 
 test('defineDomain rejects capability registered under wrong domain id', () => {
-	const capability = defineDomainCapability(capabilityDomainNames.apps, {
+	const capability = defineDomainCapability(capabilityDomainNames.packages, {
 		name: 'orphan',
 		description: 'test',
 		inputSchema: z.object({}),
@@ -28,7 +28,7 @@ test('defineDomain rejects capability registered under wrong domain id', () => {
 })
 
 test('buildCapabilityRegistry rejects duplicate capability names across domains', () => {
-	const appsSide = defineDomainCapability(capabilityDomainNames.apps, {
+	const packagesSide = defineDomainCapability(capabilityDomainNames.packages, {
 		name: 'collision',
 		description: 'a',
 		inputSchema: z.object({}),
@@ -43,9 +43,9 @@ test('buildCapabilityRegistry rejects duplicate capability names across domains'
 	expect(() =>
 		buildCapabilityRegistry([
 			defineDomain({
-				name: capabilityDomainNames.apps,
+				name: capabilityDomainNames.packages,
 				description: 'a',
-				capabilities: [appsSide],
+				capabilities: [packagesSide],
 			}),
 			defineDomain({
 				name: capabilityDomainNames.coding,
@@ -57,11 +57,11 @@ test('buildCapabilityRegistry rejects duplicate capability names across domains'
 })
 
 test('buildCapabilityRegistry rejects duplicate domain registration', () => {
-	const appsDomain = defineDomain({
-		name: capabilityDomainNames.apps,
+	const packagesDomain = defineDomain({
+		name: capabilityDomainNames.packages,
 		description: 'a',
 		capabilities: [
-			defineDomainCapability(capabilityDomainNames.apps, {
+			defineDomainCapability(capabilityDomainNames.packages, {
 				name: 'only',
 				description: 'o',
 				inputSchema: z.object({}),
@@ -69,26 +69,28 @@ test('buildCapabilityRegistry rejects duplicate domain registration', () => {
 			}),
 		],
 	})
-	expect(() => buildCapabilityRegistry([appsDomain, appsDomain])).toThrow(
+	expect(() => buildCapabilityRegistry([packagesDomain, packagesDomain])).toThrow(
 		/Duplicate domain registration/,
 	)
 })
 
-test('builtin capability domains include jobs', async () => {
+test('builtin capability domains include packages', async () => {
 	const { builtinDomains } = await import('./builtin-domains.ts')
-	expect(builtinDomains.some((domain) => domain.name === 'jobs')).toBe(true)
-	const jobsDomain = builtinDomains.find((domain) => domain.name === 'jobs')
-	expect(jobsDomain?.capabilities.length).toBeGreaterThan(0)
+	expect(builtinDomains.some((domain) => domain.name === 'packages')).toBe(true)
+	const packagesDomain = builtinDomains.find(
+		(domain) => domain.name === 'packages',
+	)
+	expect(packagesDomain?.capabilities.length).toBeGreaterThan(0)
 })
 
 test('defineDomain rejects duplicate capability names within one domain', () => {
-	const one = defineDomainCapability(capabilityDomainNames.apps, {
+	const one = defineDomainCapability(capabilityDomainNames.packages, {
 		name: 'dup',
 		description: '1',
 		inputSchema: z.object({}),
 		handler: noopHandler,
 	})
-	const two = defineDomainCapability(capabilityDomainNames.apps, {
+	const two = defineDomainCapability(capabilityDomainNames.packages, {
 		name: 'dup',
 		description: '2',
 		inputSchema: z.object({}),
@@ -96,7 +98,7 @@ test('defineDomain rejects duplicate capability names within one domain', () => 
 	})
 	expect(() =>
 		defineDomain({
-			name: capabilityDomainNames.apps,
+			name: capabilityDomainNames.packages,
 			description: 'a',
 			capabilities: [one, two],
 		}),

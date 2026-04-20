@@ -3,6 +3,7 @@ import {
 	buildCapabilityEmbedText,
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	deterministicEmbedding,
+	hybridSearchScore,
 	lexicalScore,
 	searchCapabilities,
 } from './capability-search.ts'
@@ -47,13 +48,19 @@ test('lexicalScore prefers overlapping tokens', () => {
 	)
 })
 
+test('hybridSearchScore keeps lexical-vector blends in a 0..1 range', () => {
+	expect(hybridSearchScore(0, 0)).toBe(0)
+	expect(hybridSearchScore(1, 1)).toBe(1)
+	expect(hybridSearchScore(0.6, 0.2)).toBe(0.4)
+})
+
 test('offline search returns provided specs without depending on global ranks', async () => {
 	const specs = {
 		kody_official_guide: {
 			name: 'kody_official_guide',
 			domain: 'coding',
 			description:
-				'Load official Kody guides: integration_bootstrap, oauth (/connect/oauth), generated_ui_oauth (saved app), connect_secret.',
+				'Load official Kody guides: integration_bootstrap, oauth (/connect/oauth), generated_ui_oauth (hosted package app), connect_secret.',
 			keywords: [
 				'integration bootstrap',
 				'oauth',

@@ -2,7 +2,7 @@ import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	runCodemodeWithRegistry: vi.fn(),
+	runModuleWithRegistry: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(async () => ({
 		capabilityHandlers: {
 			kody_official_guide: true,
@@ -11,8 +11,8 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#mcp/run-codemode-registry.ts', () => ({
-	runCodemodeWithRegistry: (...args: Array<unknown>) =>
-		mockModule.runCodemodeWithRegistry(...args),
+	runModuleWithRegistry: (...args: Array<unknown>) =>
+		mockModule.runModuleWithRegistry(...args),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
@@ -80,7 +80,7 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 			text: 'Screenshot of https://example.com',
 		},
 	]
-	mockModule.runCodemodeWithRegistry.mockResolvedValueOnce({
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: {
 			__mcpContent: rawContent,
 		},
@@ -109,7 +109,7 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 
 test('execute tool keeps serializing normal success results as text', async () => {
 	const handler = await getExecuteHandler()
-	mockModule.runCodemodeWithRegistry.mockResolvedValueOnce({
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
 	})
@@ -139,7 +139,7 @@ test('execute tool keeps serializing normal success results as text', async () =
 
 test('execute tool binds storage id and writable flag when provided', async () => {
 	const handler = await getExecuteHandler()
-	mockModule.runCodemodeWithRegistry.mockResolvedValueOnce({
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
 	})
@@ -151,7 +151,7 @@ test('execute tool binds storage id and writable flag when provided', async () =
 		conversationId: 'conv-789',
 	})
 
-	expect(mockModule.runCodemodeWithRegistry).toHaveBeenCalledWith(
+	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			storageContext: {

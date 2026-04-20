@@ -42,7 +42,7 @@ function mockRepoPersistence() {
 			repo_id: `${entityKind}-${entityId}`,
 			published_commit: null,
 			indexed_commit: null,
-			manifest_path: 'kody.json',
+			manifest_path: 'package.json',
 			source_root: sourceRoot ?? '/',
 			created_at: '2026-04-18T00:00:00.000Z',
 			updated_at: '2026-04-18T00:00:00.000Z',
@@ -52,6 +52,43 @@ function mockRepoPersistence() {
 	repoMockModule.syncArtifactSourceSnapshot.mockResolvedValue(
 		'published-commit-1',
 	)
+}
+
+function createPackageJobManifest(input: {
+	packageName: string
+	kodyId: string
+	description: string
+	jobName: string
+	schedule?: Record<string, unknown>
+	entry?: string
+	exportPath?: string
+}) {
+	return {
+		name: input.packageName,
+		exports: {
+			'.': input.exportPath ?? './src/index.ts',
+		},
+		kody: {
+			id: input.kodyId,
+			description: input.description,
+			jobs: {
+				[input.jobName]: {
+					entry: input.entry ?? './src/job.ts',
+					schedule:
+						input.schedule ?? {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+				},
+			},
+		},
+	}
+}
+
+function createPackageJobManifestText(
+	input: Parameters<typeof createPackageJobManifest>[0],
+) {
+	return JSON.stringify(createPackageJobManifest(input))
 }
 
 vi.mock('@cloudflare/worker-bundler', () => ({
@@ -112,6 +149,7 @@ function createDatabase() {
 		['secret_entries', []],
 		['value_buckets', []],
 		['value_entries', []],
+		['entity_sources', []],
 		['jobs', []],
 	])
 
@@ -204,6 +242,12 @@ function createDatabase() {
 									'jobs',
 									(row) =>
 										row['id'] === params[0] && row['user_id'] === params[1],
+								) as T | null
+							}
+							if (query.includes('SELECT * FROM entity_sources WHERE id = ?')) {
+								return selectOne(
+									'entity_sources',
+									(row) => row['id'] === params[0],
 								) as T | null
 							}
 							if (query.includes('FROM jobs') && query.includes('LIMIT 1')) {
@@ -611,7 +655,7 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			result: {
@@ -638,30 +682,28 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 				published_commit: 'published-commit-1',
-				manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 				entity_type: 'job' as const,
 			})),
 			runChecks: vi.fn(async () => ({
 				ok: true,
 				results: [],
-				manifest: {
-					version: 1,
-					kind: 'job' as const,
-					title: 'Storage bridge',
+				manifest: createPackageJobManifest({
+					packageName: '@kody/storage-bridge',
+					kodyId: 'storage-bridge',
 					description: 'Runs from repo',
-					entrypoint: 'src/job.ts',
-				},
+					jobName: 'Storage bridge',
+				}),
 			})),
 			readFile: vi.fn(async ({ path }: { path: string }) => ({
 				path,
 				content:
-					path === 'kody.json'
-						? JSON.stringify({
-								version: 1,
-								kind: 'job',
-								title: 'Storage bridge',
+					path === 'package.json'
+						? createPackageJobManifestText({
+								packageName: '@kody/storage-bridge',
+								kodyId: 'storage-bridge',
 								description: 'Runs from repo',
-								entrypoint: 'src/job.ts',
+								jobName: 'Storage bridge',
 							})
 						: 'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
 			})),
@@ -757,7 +799,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			result: {
@@ -787,30 +829,28 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 				published_commit: 'published-commit-1',
-				manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 				entity_type: 'job' as const,
 			})),
 			runChecks: vi.fn(async () => ({
 				ok: true,
 				results: [],
-				manifest: {
-					version: 1,
-					kind: 'job' as const,
-					title: 'Use codemode semantics',
+				manifest: createPackageJobManifest({
+					packageName: '@kody/codemode-semantics',
+					kodyId: 'codemode-semantics',
 					description: 'Runs from repo',
-					entrypoint: 'src/job.ts',
-				},
+					jobName: 'Use codemode semantics',
+				}),
 			})),
 			readFile: vi.fn(async ({ path }: { path: string }) => ({
 				path,
 				content:
-					path === 'kody.json'
-						? JSON.stringify({
-								version: 1,
-								kind: 'job',
-								title: 'Use codemode semantics',
+					path === 'package.json'
+						? createPackageJobManifestText({
+								packageName: '@kody/codemode-semantics',
+								kodyId: 'codemode-semantics',
 								description: 'Runs from repo',
-								entrypoint: 'src/job.ts',
+								jobName: 'Use codemode semantics',
 							})
 						: 'export default async () => ({ ok: true })',
 			})),
@@ -871,6 +911,14 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			},
 			logs: ['codemode executed'],
 		})
+		expect(executeSpy.mock.calls[0]?.[2]).toMatchObject({
+			mainModule: 'dist/bundled-entry.js',
+		})
+		expect(
+			String(
+				executeSpy.mock.calls[0]?.[2]?.modules?.['dist/bundled-entry.js'] ?? '',
+			),
+		).toContain('return await entrypoint({"step":"deploy"});')
 		repoSessionRpcSpy.mockRestore()
 	} finally {
 		executeSpy.mockRestore()
@@ -925,7 +973,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 				published_commit: 'commit-1',
-				manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 				entity_type: 'job',
 			})
 			.mockResolvedValueOnce({
@@ -944,30 +992,30 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 				published_commit: 'commit-1',
-				manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 				entity_type: 'job',
 			}),
 		runChecks: vi.fn(async () => ({
 			ok: true,
 			results: [],
-			manifest: {
-				version: 1,
-				kind: 'job',
-				title: 'Repo-backed job',
+			manifest: createPackageJobManifest({
+				packageName: '@kody/repo-backed-job',
+				kodyId: 'repo-backed-job',
 				description: 'Runs from repo',
-				entrypoint: '/src/job.ts',
-			},
+				jobName: 'Repo-backed job',
+				entry: './src/job.ts',
+			}),
 		})),
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'kody.json'
-					? JSON.stringify({
-							version: 1,
-							kind: 'job',
-							title: 'Repo-backed job',
+				path === 'package.json'
+					? createPackageJobManifestText({
+							packageName: '@kody/repo-backed-job',
+							kodyId: 'repo-backed-job',
 							description: 'Runs from repo',
-							entrypoint: '/src/job.ts',
+							jobName: 'Repo-backed job',
+							entry: './src/job.ts',
 						})
 					: 'export default async () => ({ ok: true, repoBacked: true })',
 		})),
@@ -998,7 +1046,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			result: { ok: true, repoBacked: true },
@@ -1089,7 +1137,7 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-strict',
-			manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
@@ -1101,13 +1149,12 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
 				},
 			],
-			manifest: {
-				version: 1,
-				kind: 'job' as const,
-				title: 'Repo-backed strict typecheck job',
+			manifest: createPackageJobManifest({
+				packageName: '@kody/repo-typecheck-strict',
+				kodyId: 'repo-typecheck-strict',
 				description: 'Runs from repo',
-				entrypoint: 'src/job.ts',
-			},
+				jobName: 'Repo-backed strict typecheck job',
+			}),
 			runId: 'check-run-strict',
 			treeHash: 'tree-hash-strict',
 			checkedAt: '2026-04-16T00:00:00.000Z',
@@ -1121,7 +1168,7 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi.spyOn(
 		await import('#mcp/run-codemode-registry.ts'),
-		'runCodemodeWithRegistry',
+		'runBundledModuleWithRegistry',
 	)
 
 	try {
@@ -1193,7 +1240,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-bypass',
-			manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
@@ -1205,13 +1252,12 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
 				},
 			],
-			manifest: {
-				version: 1,
-				kind: 'job' as const,
-				title: 'Repo-backed bypass typecheck job',
+			manifest: createPackageJobManifest({
+				packageName: '@kody/repo-typecheck-bypass',
+				kodyId: 'repo-typecheck-bypass',
 				description: 'Runs from repo',
-				entrypoint: 'src/job.ts',
-			},
+				jobName: 'Repo-backed bypass typecheck job',
+			}),
 			runId: 'check-run-bypass',
 			treeHash: 'tree-hash-bypass',
 			checkedAt: '2026-04-16T00:00:00.000Z',
@@ -1219,13 +1265,12 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'kody.json'
-					? JSON.stringify({
-							version: 1,
-							kind: 'job',
-							title: 'Repo-backed bypass typecheck job',
+				path === 'package.json'
+					? createPackageJobManifestText({
+							packageName: '@kody/repo-typecheck-bypass',
+							kodyId: 'repo-typecheck-bypass',
 							description: 'Runs from repo',
-							entrypoint: 'src/job.ts',
+							jobName: 'Repo-backed bypass typecheck job',
 						})
 					: 'export default async () => ({ ok: true, bypassed: true })',
 		})),
@@ -1252,7 +1297,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			result: { ok: true, bypassed: true },
@@ -1336,7 +1381,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-bypass-failure',
-			manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
@@ -1348,13 +1393,12 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
 				},
 			],
-			manifest: {
-				version: 1,
-				kind: 'job' as const,
-				title: 'Repo-backed bypass failure job',
+			manifest: createPackageJobManifest({
+				packageName: '@kody/repo-bypass-failure',
+				kodyId: 'repo-bypass-failure',
 				description: 'Runs from repo',
-				entrypoint: 'src/job.ts',
-			},
+				jobName: 'Repo-backed bypass failure job',
+			}),
 			runId: 'check-run-bypass-failure',
 			treeHash: 'tree-hash-bypass-failure',
 			checkedAt: '2026-04-16T00:00:00.000Z',
@@ -1362,13 +1406,12 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'kody.json'
-					? JSON.stringify({
-							version: 1,
-							kind: 'job',
-							title: 'Repo-backed bypass failure job',
+				path === 'package.json'
+					? createPackageJobManifestText({
+							packageName: '@kody/repo-bypass-failure',
+							kodyId: 'repo-bypass-failure',
 							description: 'Runs from repo',
-							entrypoint: 'src/job.ts',
+							jobName: 'Repo-backed bypass failure job',
 						})
 					: 'export default async () => ({ ok: true, bypassed: true })',
 		})),
@@ -1394,7 +1437,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi.spyOn(
 		await import('#mcp/run-codemode-registry.ts'),
-		'runCodemodeWithRegistry',
+		'runBundledModuleWithRegistry',
 	)
 	const formatJobErrorSpy = vi.spyOn(
 		await import('./schedule.ts'),
@@ -1473,7 +1516,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-absolute',
-			manifest_path: 'kody.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => {
@@ -1491,21 +1534,20 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 						}))
 					},
 				},
-				manifestPath: '/session/kody.json',
+				manifestPath: '/session/package.json',
 				sourceRoot: '/session/',
 			})
 		}),
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'kody.json'
-					? JSON.stringify({
-							version: 1,
-							kind: 'job',
-							title: 'Repo absolute path job',
+				path === 'package.json'
+					? createPackageJobManifestText({
+							packageName: '@kody/repo-absolute-path-job',
+							kodyId: 'repo-absolute-path-job',
 							description: 'Runs from repo session files',
-							sourceRoot: '/',
-							entrypoint: '/src/job.ts',
+							jobName: 'Repo-backed absolute path job',
+							exportPath: './src/job.ts',
 						})
 					: 'export default async () => ({ ok: true, normalized: true })',
 		})),
@@ -1537,24 +1579,16 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 	}
 	const workspaceFiles = new Map<string, string>([
 		[
-			'/session/kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'Repo absolute path job',
-				description: 'Runs from repo session files',
-				sourceRoot: '/',
-				entrypoint: '/src/job.ts',
-			}),
-		],
-		['/session/src/job.ts', 'async () => ({ ok: true })\n'],
-		[
 			'/session/package.json',
-			JSON.stringify({
-				name: 'repo-absolute-path-job',
-				private: true,
+			createPackageJobManifestText({
+				packageName: '@kody/repo-absolute-path-job',
+				kodyId: 'repo-absolute-path-job',
+				description: 'Runs from repo session files',
+				jobName: 'Repo-backed absolute path job',
+				exportPath: './src/job.ts',
 			}),
 		],
+		['/session/src/job.ts', 'export default async () => ({ ok: true })\n'],
 	])
 
 	const repoSessionRpcSpy = vi
@@ -1563,7 +1597,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			result: { ok: true, normalized: true },
@@ -1644,7 +1678,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-1',
-			manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(),
@@ -1663,7 +1697,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 	)
 	const executeSpy = vi.spyOn(
 		await import('#mcp/run-codemode-registry.ts'),
-		'runCodemodeWithRegistry',
+		'runBundledModuleWithRegistry',
 	)
 
 	try {
@@ -1743,30 +1777,28 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-abc',
-			manifest_path: 'kody.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
 			ok: true,
 			results: [],
-			manifest: {
-				version: 1,
-				kind: 'job',
-				title: 'Repo-backed module job',
+			manifest: createPackageJobManifest({
+				packageName: '@kody/repo-module-job',
+				kodyId: 'repo-module-job',
 				description: 'Runs from repo',
-				entrypoint: 'src/job.ts',
-			},
+				jobName: 'Repo-backed module job',
+			}),
 		})),
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'kody.json'
-					? JSON.stringify({
-							version: 1,
-							kind: 'job',
-							title: 'Repo-backed module job',
+				path === 'package.json'
+					? createPackageJobManifestText({
+							packageName: '@kody/repo-module-job',
+							kodyId: 'repo-module-job',
 							description: 'Runs from repo',
-							entrypoint: 'src/job.ts',
+							jobName: 'Repo-backed module job',
 						})
 					: 'export default async () => ({ ok: true })',
 		})),
@@ -1808,11 +1840,11 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		.mockReturnValue(sessionClient as never)
 	const executeSpy = vi.spyOn(
 		await import('#mcp/run-codemode-registry.ts'),
-		'runCodemodeWithRegistry',
+		'runBundledModuleWithRegistry',
 	)
 	const bundleSpy = vi.spyOn(
-		await import('#worker/repo/repo-codemode-execution.ts'),
-		'buildRepoCodemodeBundle',
+		await import('#worker/package-runtime/module-graph.ts'),
+		'buildKodyModuleBundle',
 	)
 	const loadFilesSpy = vi.spyOn(
 		await import('#worker/repo/repo-codemode-execution.ts'),
@@ -1830,7 +1862,6 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 			'src/lib.ts': 'export const value = 1',
 		})
 		bundleSpy.mockResolvedValue({
-			entrypointMode: 'module',
 			mainModule: 'dist/job.js',
 			modules: {
 				'dist/job.js':
@@ -1859,6 +1890,9 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 			sourceRoot: '/',
 		})
 		expect(bundleSpy).toHaveBeenCalledWith({
+			env,
+			baseUrl: 'https://example.com',
+			userId: 'user-123',
 			sourceFiles: {
 				'package.json': JSON.stringify({
 					name: 'repo-module-job',
@@ -1869,9 +1903,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				'src/lib.ts': 'export const value = 1',
 			},
 			entryPoint: 'src/job.ts',
-			entryPointSource: 'export default async () => ({ ok: true })',
-			sourceRoot: '/',
-			cacheKey: 'source-job-repo-module:commit-abc',
+			params: undefined,
 		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 		expect(executeSpy.mock.calls[0]?.[0]).toBe(env)
@@ -1881,19 +1913,23 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				sessionId: 'job-runtime-job-repo-module',
 			}),
 		})
-		expect(String(executeSpy.mock.calls[0]?.[2] ?? '')).toContain(
-			'const __repoModule = await import("./dist/job.js")',
-		)
-		expect(executeSpy.mock.calls[0]?.[3]).toBeUndefined()
-		expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
-			executorModules: {
+		expect(executeSpy.mock.calls[0]?.[2]).toMatchObject({
+			mainModule: 'dist/job.js',
+			modules: {
 				'dist/job.js':
 					'export default async () => ({ ok: true, repoBacked: "module" })',
 			},
+		})
+		expect(executeSpy.mock.calls[0]?.[3]).toBeUndefined()
+		expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
 			storageTools: {
 				userId: 'user-123',
 				storageId: 'job:job-repo-module',
 				writable: true,
+			},
+			packageContext: {
+				packageId: 'job-repo-module',
+				kodyId: 'repo-module-job',
 			},
 		})
 		const openedSessionId = sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
@@ -1943,7 +1979,7 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			error: createCapabilitySecretAccessDeniedMessage(
@@ -1972,30 +2008,28 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 				published_commit: 'commit-secret-policy',
-				manifest_path: 'kody.json',
+				manifest_path: 'package.json',
 				entity_type: 'job' as const,
 			})),
 			runChecks: vi.fn(async () => ({
 				ok: true,
 				results: [],
-				manifest: {
-					version: 1,
-					kind: 'job' as const,
-					title: 'Forbidden secret access',
+				manifest: createPackageJobManifest({
+					packageName: '@kody/forbidden-secret-access',
+					kodyId: 'forbidden-secret-access',
 					description: 'Runs from repo',
-					entrypoint: 'src/job.ts',
-				},
+					jobName: 'Forbidden secret access',
+				}),
 			})),
 			readFile: vi.fn(async ({ path }: { path: string }) => ({
 				path,
 				content:
-					path === 'kody.json'
-						? JSON.stringify({
-								version: 1,
-								kind: 'job',
-								title: 'Forbidden secret access',
+					path === 'package.json'
+						? createPackageJobManifestText({
+								packageName: '@kody/forbidden-secret-access',
+								kodyId: 'forbidden-secret-access',
 								description: 'Runs from repo',
-								entrypoint: 'src/job.ts',
+								jobName: 'Forbidden secret access',
 							})
 						: 'export default async () => ({ ok: true })',
 			})),
@@ -2077,30 +2111,54 @@ test('runJobNow deletes vectors for once jobs', async () => {
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'published-commit-1',
-			manifest_path: 'kody.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
 			ok: true,
 			results: [],
 			manifest: {
-				version: 1,
-				kind: 'job' as const,
-				title: 'Run once and delete vector',
-				description: 'Runs from repo',
-				entrypoint: 'src/job.ts',
+				name: '@kody/run-once',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'run-once',
+					description: 'Runs from repo',
+					jobs: {
+						'Run once and delete vector': {
+							entry: './src/job.ts',
+							schedule: {
+								type: 'once',
+								runAt: '2026-04-17T15:00:00Z',
+							},
+						},
+					},
+				},
 			},
 		})),
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'kody.json'
+				path === 'package.json'
 					? JSON.stringify({
-							version: 1,
-							kind: 'job',
-							title: 'Run once and delete vector',
-							description: 'Runs from repo',
-							entrypoint: 'src/job.ts',
+							name: '@kody/run-once',
+							exports: {
+								'.': './src/index.ts',
+							},
+							kody: {
+								id: 'run-once',
+								description: 'Runs from repo',
+								jobs: {
+									'Run once and delete vector': {
+										entry: './src/job.ts',
+										schedule: {
+											type: 'once',
+											runAt: '2026-04-17T15:00:00Z',
+										},
+									},
+								},
+							},
 						})
 					: 'export default async () => ({ ok: true })',
 		})),
@@ -2126,7 +2184,7 @@ test('runJobNow deletes vectors for once jobs', async () => {
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			result: { ok: true },
@@ -2196,7 +2254,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 			created_at: '2026-04-16T00:00:00.000Z',
 			updated_at: '2026-04-16T00:00:00.000Z',
 			published_commit: 'commit-run-now-override',
-			manifest_path: 'kody.json',
+			manifest_path: 'package.json',
 			entity_type: 'job' as const,
 		})),
 		runChecks: vi.fn(async () => ({
@@ -2209,11 +2267,23 @@ test('runJobNow can use a one-off repo check policy override without changing th
 				},
 			],
 			manifest: {
-				version: 1,
-				kind: 'job' as const,
-				title: 'Repo-backed run-now override',
-				description: 'Runs from repo',
-				entrypoint: 'src/job.ts',
+				name: '@kody/run-now-override',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'run-now-override',
+					description: 'Runs from repo',
+					jobs: {
+						'Repo-backed run-now override': {
+							entry: './src/job.ts',
+							schedule: {
+								type: 'interval',
+								every: '15m',
+							},
+						},
+					},
+				},
 			},
 			runId: 'check-run-run-now-override',
 			treeHash: 'tree-hash-run-now-override',
@@ -2222,13 +2292,25 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		readFile: vi.fn(async ({ path }: { path: string }) => ({
 			path,
 			content:
-				path === 'kody.json'
+				path === 'package.json'
 					? JSON.stringify({
-							version: 1,
-							kind: 'job',
-							title: 'Repo-backed run-now override',
-							description: 'Runs from repo',
-							entrypoint: 'src/job.ts',
+							name: '@kody/run-now-override',
+							exports: {
+								'.': './src/index.ts',
+							},
+							kody: {
+								id: 'run-now-override',
+								description: 'Runs from repo',
+								jobs: {
+									'Repo-backed run-now override': {
+										entry: './src/job.ts',
+										schedule: {
+											type: 'interval',
+											every: '15m',
+										},
+									},
+								},
+							},
 						})
 					: 'export default async () => ({ ok: true, override: true })',
 		})),
@@ -2255,7 +2337,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 	const executeSpy = vi
 		.spyOn(
 			await import('#mcp/run-codemode-registry.ts'),
-			'runCodemodeWithRegistry',
+			'runBundledModuleWithRegistry',
 		)
 		.mockResolvedValue({
 			result: { ok: true, override: true },

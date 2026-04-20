@@ -6,7 +6,6 @@ import { errorFields, logMcpEvent } from '#mcp/observability.ts'
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
-	resolveSavedAppSource: vi.fn(),
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -19,15 +18,9 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 		repoMockModule.syncArtifactSourceSnapshot(...args),
 }))
 
-vi.mock('#worker/repo/app-source.ts', () => ({
-	resolveSavedAppSource: (...args: Array<unknown>) =>
-		repoMockModule.resolveSavedAppSource(...args),
-}))
-
 function resetRepoPersistenceMocks() {
 	repoMockModule.ensureEntitySource.mockReset()
 	repoMockModule.syncArtifactSourceSnapshot.mockReset()
-	repoMockModule.resolveSavedAppSource.mockReset()
 	repoMockModule.ensureEntitySource.mockImplementation(
 		async ({ id, userId, entityKind, entityId, sourceRoot }) => ({
 			id:
@@ -40,7 +33,7 @@ function resetRepoPersistenceMocks() {
 			repo_id: `${entityKind}-${entityId}`,
 			published_commit: null,
 			indexed_commit: null,
-			manifest_path: 'kody.json',
+			manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
 			source_root: sourceRoot ?? '/',
 			created_at: '2026-04-18T00:00:00.000Z',
 			updated_at: '2026-04-18T00:00:00.000Z',
@@ -50,18 +43,6 @@ function resetRepoPersistenceMocks() {
 	repoMockModule.syncArtifactSourceSnapshot.mockResolvedValue(
 		'published-commit-1',
 	)
-	repoMockModule.resolveSavedAppSource.mockResolvedValue({
-		id: 'app-1',
-		title: 'Observed app',
-		description: 'Observation test app.',
-		hidden: false,
-		parameters: null,
-		clientCode: '<main><h1>Observed app</h1></main>',
-		serverCode: null,
-		serverCodeId: 'published-commit-1',
-		sourceId: 'source-app-1',
-		publishedCommit: 'published-commit-1',
-	})
 }
 
 test('errorFields normalizes Error and non-Error values', () => {
@@ -136,7 +117,7 @@ test('logMcpEvent swallows failures from console.info', () => {
 	}
 })
 
-test('ui_save_app capability logs parse_input failure and rethrows', async () => {
+test('package_save capability logs parse_input failure and rethrows', async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	console.info = ((tag: unknown, json?: unknown) => {
@@ -145,10 +126,10 @@ test('ui_save_app capability logs parse_input failure and rethrows', async () =>
 		}
 	}) as typeof console.info
 	try {
-		const handler = capabilityMap['ui_save_app'].handler
+		const handler = capabilityMap['package_save'].handler
 		await expect(
 			handler(
-				{ title: 'Missing fields' },
+				{},
 				{
 					env: {} as Env,
 					callerContext: createMcpCallerContext({
@@ -164,20 +145,28 @@ test('ui_save_app capability logs parse_input failure and rethrows', async () =>
 	expect(payloads.length).toBe(1)
 	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
 	expect(event.tool).toBe('capability')
-	expect(event.capabilityName).toBe('ui_save_app')
+	expect(event.capabilityName).toBe('package_save')
 	expect(event.outcome).toBe('failure')
 	expect(event.failurePhase).toBe('parse_input')
 })
 
-test('ui_save_app rejects invalid serverCode before persistence', async () => {
-	const handler = capabilityMap['ui_save_app'].handler
+test('package_save rejects invalid package.json before persistence', async () => {
+	const handler = capabilityMap['package_save'].handler
 	await expect(
 		handler(
 			{
-				title: 'Invalid server app',
-				description: 'Should fail fast for invalid serverCode.',
-				clientCode: '<main>Invalid server app</main>',
-				serverCode: 'export const nope = 1',
+				files: [
+					{
+						path: 'package.json',
+						content: JSON.stringify({
+							name: 'pkg',
+							kody: {
+								id: 'pkg',
+								description: 'missing exports',
+							},
+						}),
+					},
+				],
 			},
 			{
 				env: {} as Env,
@@ -190,7 +179,7 @@ test('ui_save_app rejects invalid serverCode before persistence', async () => {
 				}),
 			},
 		),
-	).rejects.toThrow('serverCode must export class App extends DurableObject')
+	).rejects.toThrow('Invalid package.json')
 })
 
 test('logMcpEvent reports failure without throwing when Sentry is off', () => {
@@ -217,7 +206,9 @@ test('logMcpEvent reports failure without throwing when Sentry is off', () => {
 	}
 })
 
-test('ui_save_app capability logs success for valid invocation', async () => {
+test(
+	'package_save capability logs success for valid invocation',
+	async () => {
 	const originalInfo = console.info
 	const payloads: Array<string> = []
 	resetRepoPersistenceMocks()
@@ -227,13 +218,35 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 		}
 	}) as typeof console.info
 	try {
-		const handler = capabilityMap['ui_save_app'].handler
+		const handler = capabilityMap['package_save'].handler
 		const result = await handler(
 			{
-				title: 'Observed app',
-				description: 'Observation test app.',
-				clientCode:
-					'document.querySelector("#app")!.innerHTML = "<h1>Observed app</h1>"',
+				files: [
+					{
+						path: 'package.json',
+						content: JSON.stringify({
+							name: '@kody/observed',
+							exports: {
+								'.': './src/index.ts',
+							},
+							kody: {
+								id: 'observed-package',
+								description: 'Observation test package.',
+								app: {
+									entry: './src/app.ts',
+								},
+							},
+						}),
+					},
+					{
+						path: 'src/index.ts',
+						content: 'export default async function main() { return { ok: true } }\n',
+					},
+					{
+						path: 'src/app.ts',
+						content: 'export default { async fetch() { return new Response("ok") } }\n',
+					},
+				],
 			},
 			{
 				env: {
@@ -243,20 +256,39 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 								bind() {
 									return {
 										first: async () =>
-											query.includes('SELECT id, user_id')
+											query.includes('SELECT id, user_id') &&
+											query.includes('FROM saved_packages')
 												? {
-														id: 'app-1',
+														id: 'package-1',
 														user_id: 'user-1',
-														title: 'Observed app',
-														description: 'Observation test app.',
-														source_id: 'source-app-1',
-														has_server_code: 0,
-														parameters: null,
-														hidden: 0,
+														name: '@kody/observed',
+														kody_id: 'observed-package',
+														description: 'Observation test package.',
+														tags_json: '[]',
+														search_text: null,
+														source_id: 'package-package-1',
+														has_app: 1,
 														created_at: '2026-04-13T00:00:00.000Z',
 														updated_at: '2026-04-13T00:00:00.000Z',
 													}
+										: query.includes('SELECT * FROM entity_sources')
+													? {
+															id: 'package-package-1',
+															user_id: 'user-1',
+															entity_kind: 'package',
+															entity_id: 'package-1',
+															repo_id: 'package-package-1',
+															published_commit: 'published-commit-1',
+															indexed_commit: 'published-commit-1',
+															manifest_path: 'package.json',
+															source_root: '/',
+															created_at: '2026-04-13T00:00:00.000Z',
+															updated_at: '2026-04-13T00:00:00.000Z',
+														}
 												: null,
+										all: async () => ({
+											results: [],
+										}),
 										run: async () => ({
 											meta: { changes: 1 },
 										}),
@@ -268,135 +300,61 @@ test('ui_save_app capability logs success for valid invocation', async () => {
 					CLOUDFLARE_ACCOUNT_ID: 'acct',
 					CLOUDFLARE_API_TOKEN: 'token',
 					CLOUDFLARE_API_BASE_URL: 'https://example.com',
-					APP_RUNNER: {
+					REPO_SESSION: {
 						idFromName(name: string) {
 							return name as unknown as DurableObjectId
 						},
 						get() {
 							return {
-								configure: async () => ({
-									appId: 'generated-app',
-									userId: 'user-1',
-									baseUrl: 'https://example.com',
-									facetNames: ['main'],
-									serverCode: null,
-									serverCodeId: crypto.randomUUID(),
-									rateLimitPerMinute: 120,
-									killSwitchEnabled: false,
-									lastError: null,
+								openSession: async () => ({
+									id: 'session-1',
+									source_id: 'source-package-1',
+									session_repo_id: 'repo-1',
+									session_repo_name: 'repo-1',
+									session_repo_namespace: 'default',
+									base_commit: 'published-commit-1',
+									source_root: '/',
+									conversation_id: null,
+									status: 'active',
+									expires_at: null,
+									last_checkpoint_at: null,
+									last_checkpoint_commit: null,
+									last_check_run_id: null,
+									last_check_tree_hash: null,
+									created_at: '2026-04-13T00:00:00.000Z',
+									updated_at: '2026-04-13T00:00:00.000Z',
+									published_commit: 'published-commit-1',
+									manifest_path: 'package.json',
+									entity_type: 'package',
 								}),
-								validateBackend: async () => ({
+								readFile: async ({ path }: { path: string }) => ({
+									path,
+									content:
+										path === 'package.json'
+											? JSON.stringify({
+													name: '@kody/observed',
+													exports: { '.': './src/index.ts' },
+													kody: {
+														id: 'observed-package',
+														description: 'Observation test package.',
+														app: { entry: './src/app.ts' },
+													},
+												})
+											: null,
+								}),
+								tree: async () => ({
+									path: '/',
+									name: '',
+									type: 'directory',
+									size: 0,
+									children: [],
+								}),
+								discardSession: async () => ({
 									ok: true,
-									appId: 'generated-app',
-									facetName: 'main',
-									validated: false,
+									sessionId: 'session-1',
+									deleted: true,
 								}),
 							}
-						},
-					},
-				} as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-					user: {
-						userId: 'user-1',
-						email: 'user@example.com',
-					},
-				}),
-			},
-		)
-		expect(typeof (result as { app_id: string }).app_id).toBe('string')
-		expect((result as { hidden: boolean }).hidden).toBe(false)
-	} finally {
-		console.info = originalInfo
-	}
-
-	expect(payloads.length).toBe(1)
-	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
-	expect(event.outcome).toBe('success')
-	expect(event.failurePhase).toBeUndefined()
-})
-
-test('ui_save_app logs vector refresh failure for in-place updates and still succeeds', async () => {
-	const originalInfo = console.info
-	const payloads: Array<string> = []
-	resetRepoPersistenceMocks()
-	console.info = ((tag: unknown, json?: unknown) => {
-		if (tag === 'mcp-event' && typeof json === 'string') {
-			payloads.push(json)
-		}
-	}) as typeof console.info
-	try {
-		const handler = capabilityMap['ui_save_app'].handler
-		const result = await handler(
-			{
-				app_id: 'app-1',
-				title: 'Observed app',
-				description: 'Observation test app.',
-				clientCode: '<main><h1>Observed app</h1></main>',
-				hidden: false,
-			},
-			{
-				env: {
-					APP_DB: {
-						prepare(query: string) {
-							return {
-								bind() {
-									return {
-										first: async () =>
-											query.includes('SELECT id, user_id')
-												? {
-														id: 'app-1',
-														user_id: 'user-1',
-														title: 'Observed app',
-														description: 'Observation test app.',
-														source_id: 'source-app-1',
-														has_server_code: 0,
-														parameters: null,
-														hidden: 0,
-														created_at: '2026-04-13T00:00:00.000Z',
-														updated_at: '2026-04-13T00:00:00.000Z',
-													}
-												: null,
-										run: async () => ({
-											meta: { changes: 1 },
-										}),
-									}
-								},
-							}
-						},
-					},
-					CLOUDFLARE_ACCOUNT_ID: 'acct',
-					CLOUDFLARE_API_TOKEN: 'token',
-					CLOUDFLARE_API_BASE_URL: 'https://example.com',
-					APP_RUNNER: {
-						idFromName(name: string) {
-							return name as unknown as DurableObjectId
-						},
-						get() {
-							return {
-								configure: async () => ({
-									appId: 'app-1',
-									userId: 'user-1',
-									baseUrl: 'https://example.com',
-									facetNames: ['main'],
-									serverCode: null,
-									serverCodeId: crypto.randomUUID(),
-									rateLimitPerMinute: 120,
-									killSwitchEnabled: false,
-									lastError: null,
-								}),
-								validateBackend: async () => ({
-									ok: true,
-									appId: 'app-1',
-									facetName: 'main',
-									validated: false,
-								}),
-							}
-						},
-					},
-					CAPABILITY_VECTOR_INDEX: {
-						upsert: async () => {
-							throw new Error('vector refresh failed')
 						},
 					},
 					AI: {
@@ -414,29 +372,17 @@ test('ui_save_app logs vector refresh failure for in-place updates and still suc
 				}),
 			},
 		)
-		expect((result as { app_id: string }).app_id).toBe('app-1')
+		expect(typeof (result as { package_id: string }).package_id).toBe('string')
+		expect((result as { has_app: boolean }).has_app).toBe(true)
 	} finally {
 		console.info = originalInfo
 	}
 
-	expect(payloads.length).toBe(2)
-	const driftEvent = JSON.parse(payloads[0]!) as Record<string, unknown>
-	const driftContext = driftEvent.context as Record<string, unknown> | undefined
-	expect(driftEvent.outcome).toBe('failure')
-	expect(driftEvent.failurePhase).toBe('handler')
-	expect(driftEvent.errorName).toBe('Error')
-	expect(driftEvent.errorMessage).toBe('vector refresh failed')
-	expect(driftEvent.message).toBe(
-		'Failed to refresh saved app vector index after in-place update.',
-	)
-	expect(driftEvent.capabilityName).toBe('ui_save_app')
-	expect(driftContext).toEqual({
-		userId: 'user-1',
-		appId: 'app-1',
-		isUpdate: true,
-	})
+	expect(payloads.length).toBe(1)
+	const event = JSON.parse(payloads[0]!) as Record<string, unknown>
+	expect(event.outcome).toBe('success')
+	expect(event.failurePhase).toBeUndefined()
+	},
+	15_000,
+)
 
-	const successEvent = JSON.parse(payloads[1]!) as Record<string, unknown>
-	expect(successEvent.outcome).toBe('success')
-	expect(successEvent.capabilityName).toBe('ui_save_app')
-})

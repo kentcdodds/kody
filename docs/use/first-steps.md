@@ -1,9 +1,9 @@
 # First steps
 
 Kody exposes **search**, **execute**, and **open generated UI** as the main
-tools. The agent should **search first** to find the right capability, skill, or
-app name, then run work through **execute** (or **meta_run_skill** for a saved
-skill).
+tools. The agent should **search first** to find the right capability,
+package, connector, value, or secret reference, then run work through
+**execute**.
 
 ## Habits that help
 
@@ -13,8 +13,11 @@ skill).
 - **Pass `memoryContext`** when durable user memory may matter. Kody uses it to
   surface a small set of relevant long-term memories that have not already been
   shown in the same conversation.
+- **Think in packages.** A saved package is the only top-level persisted
+  primitive. Packages can expose exports, declare package-owned jobs, and
+  optionally expose an app/UI surface.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
-  request automation” or “Find Cloudflare DNS helpers.”
+  request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Do not paste secrets in chat.** Use saved secrets, generated UI, or the
   flows described in
   [Secrets, values, and host approval](./secrets-and-values.md).
@@ -27,7 +30,10 @@ skill).
 ## Where to go next
 
 - [Search](./search.md) — discovery, ranked results, and `entity` lookups
-- [Execute and workflows](./execute.md) — chaining capability calls in one run
+- [Execute and workflows](./execute.md) — module-based execution with
+  `kody:runtime`
+- [Repo-backed editing sessions](./repo-sessions.md) — editing and publishing
+  saved package source
 - [Memory and conversation context](./memory.md) — surfaced memories and the
   verify-first write workflow
 - [Troubleshooting](./troubleshooting.md) — empty results, auth, and approvals

@@ -1,59 +1,60 @@
 # Execute and workflows
 
-**execute** runs an async JavaScript function inside a sandbox. The sandbox
-exposes **`codemode`** — one async method per **builtin capability name**
-discovered through **search**.
+**execute** runs one ephemeral **ES module** inside Kody's runtime. That module
+uses normal **imports** and **exports** and must **default export** the entry
+function Kody should invoke.
 
 ## Shape of the code
 
-The code must be an **async arrow function** that returns a value. Each
-capability call takes one **args** object that matches that capability’s
-**inputSchema** and returns data that matches its **outputSchema** when one
-exists.
+Author code as one module string. Import runtime APIs from **`kody:runtime`**
+and export a default function:
 
-In addition to **`codemode.<capabilityName>(args)`**, the sandbox may expose
-small built-in helpers for common agent workflows. These helpers are not normal
-MCP capabilities; they are runtime conveniences layered on top of the same
-execute environment.
+- use **`import { codemode } from 'kody:runtime'`** to call builtin
+  capabilities
+- use **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
+  for connector OAuth helpers
+- use **`import { storage } from 'kody:runtime'`** when the execute call is
+  bound to a storage id
+- use **`import thing from 'kody:@my-package/export-name'`** to reuse a saved
+  package export
 
-**execute** also accepts optional **`params`**. When provided, Kody injects that
-JSON object as **`params`** when invoking your async function, so code like
-**`async (params) => { ... }`** can read structured inputs without manually
-stringifying them into the source.
+**execute** also accepts optional **`params`**. Kody passes that JSON object to
+the module's **default export**.
+
+Top-level `await` is acceptable when needed.
 
 ## Chaining
 
-Prefer **one execute** when the plan is clear: call several capabilities in a
-row, branch on results, and return the final structured result. Split into
-multiple **execute** calls when you need new user input, confirmation, or a
-result that changes the plan.
+Prefer **one execute** when the plan is clear: import what you need, call
+several capabilities or package exports, branch on results, and return the
+final structured result. Split into multiple **execute** calls only when you
+need new user input, confirmation, or a result that changes the plan.
 
 To read field shapes while coding, use **search** with
-**`entity: "{name}:capability"`** for full schema detail for that capability.
+**`entity: "{name}:capability"`** for builtin capability schemas, or inspect
+the relevant saved package with **`entity: "{kody_id}:package"`**.
 
-## Saved skills
+## Saved packages
 
-To run a saved skill by name, use **`meta_run_skill`** with **`name`** and
-optional **`params`**.
+Saved packages and one-off **execute** code share the same module-oriented
+runtime model:
 
-Saved skills and jobs execute through the same codemode runtime as
-**`execute`**, including helper globals such as **`refreshAccessToken(...)`**,
-**`createAuthenticatedFetch(...)`**, **`agentChatTurnStream(...)`**, and job
-storage helpers. Saved sources use repo-backed ES module entrypoints, so they
-can import sibling modules and package dependencies.
+- saved packages persist repo-backed source rooted at `package.json`
+- package exports are defined by standard `package.json.exports`
+- package-specific metadata lives under `package.json#kody`
+- package jobs are schedules declared under `package.json#kody.jobs`
+- package apps are optional UI surfaces declared under `package.json#kody.app`
 
-When you need to edit the saved source behind a skill, job, or app, prefer the
-repo-backed workflow in [Repo-backed editing sessions](./repo-sessions.md). For
-common edits, use **`repo_edit_flow`** with a user-facing identity such as skill
-`name`, job `job_id`/`name`, or app `app_id` rather than the internal
-`source_id`.
+When you need to edit saved source, prefer the repo-backed workflow in
+[Repo-backed editing sessions](./repo-sessions.md). Open by package identity
+instead of internal source ids whenever possible.
 
 ## Agent turns
 
 Kody exposes two generic primitives for tool-using chat turns:
 
-- **`agentChatTurnStream(input)`** — an async iterable helper available inside
-  the execute sandbox. Use this when your code needs incremental events such as
+- **`agentChatTurnStream(input)`** — an async iterable helper available through
+  `kody:runtime`. Use this when your code needs incremental events such as
   reasoning deltas, tool call notifications, and a final `turn_complete`
   message.
 - **`codemode.agent_chat_turn(args)`** — a normal final-value capability
@@ -64,39 +65,17 @@ Typical pattern inside execute:
 
 - use **`agentChatTurnStream(...)`** for interactive controllers that need to
   forward progress over time
-- use **`codemode.agent_chat_turn(...)`** in jobs or workflows that only need
-  the final answer
+- use **`codemode.agent_chat_turn(...)`** in package jobs or workflows that only
+  need the final answer
 
-## Jobs
+## Storage
 
-Kody has one persisted jobs system per user:
+Kody supports durable storage binding for execute and package-owned jobs.
 
-- **`job_upsert`** — create a new job, or update an existing one when you pass
-  **`id`**
-- **`job_list`** — list jobs with next run time, last run status, counters, and
-  a human-readable schedule summary
-- **`job_get`** — inspect one job
-- **`job_delete`** — remove a job
-- **`job_run_now`** — trigger a job immediately without changing its normal
-  schedule
-
-Jobs have:
-
-- **`code`** provides the module source (must default export a function) that
-  Kody publishes as the job's repo-backed entrypoint
-- Each job has a stable **`storageId`** that identifies its durable storage
-  bucket
-- Scheduled jobs run with writable storage access
-- Ad hoc execute calls can bind to a storage bucket with **`storageId`** and use
-  **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**, and
-  **`storage.sql(query, params?)`**
-
-Schedules support:
-
-- **cron** — standard **5-field cron syntax**, optionally with an IANA timezone
-  such as **`America/New_York`**
-- **interval** — fixed durations such as **`15m`**, **`1h`**, or **`1d`**
-- **once** — an ISO 8601 UTC timestamp such as **`2026-04-17T15:00:00Z`**
+- bound storage is app- or package-owned durable state
+- import **`storage`** from **`kody:runtime`**
+- use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
+  and **`storage.sql(query, params?)`**
 
 For dedicated inspection, use:
 

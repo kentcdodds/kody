@@ -1,13 +1,15 @@
 import {
-	getManifestEntrypointPath,
-	normalizeRepoWorkspacePath,
-	parseRepoManifest,
-} from './manifest.ts'
+	getPackageAppEntryPath,
+	normalizePackageWorkspacePath,
+	parseAuthoredPackageJson,
+	resolvePackageExportPath,
+} from '#worker/package-registry/manifest.ts'
+import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
+import { normalizeRepoWorkspacePath } from './manifest.ts'
 import {
 	createRepoCodemodeModuleTypecheckHarness,
 	repoCodemodeModuleTypecheckHarnessPath,
 } from './repo-codemode-execution.ts'
-import { type RepoManifest } from './types.ts'
 
 export type RepoCheckKind =
 	| 'manifest'
@@ -26,7 +28,7 @@ export type RepoCheckResult = {
 export type RepoCheckRunResult = {
 	ok: boolean
 	results: Array<RepoCheckResult>
-	manifest: RepoManifest
+	manifest: AuthoredPackageJson
 }
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
@@ -213,9 +215,48 @@ declare const storage: {
 `.trim()
 }
 
-function getRepoTypecheckDiagnostics(input: {
-	manifest: RepoManifest
-	entryPoint: string
+type PackageTypecheckTarget = {
+	path: string
+	includeStorage: boolean
+}
+
+function collectPackageTypecheckTargets(
+	manifest: AuthoredPackageJson,
+): Array<PackageTypecheckTarget> {
+	const targets = new Map<string, PackageTypecheckTarget>()
+	const remember = (path: string, includeStorage: boolean) => {
+		const normalizedPath = normalizePackageWorkspacePath(path)
+		const existing = targets.get(normalizedPath)
+		if (existing) {
+			existing.includeStorage = existing.includeStorage || includeStorage
+			return
+		}
+		targets.set(normalizedPath, {
+			path: normalizedPath,
+			includeStorage,
+		})
+	}
+	const appEntryPath = getPackageAppEntryPath(manifest)
+	if (appEntryPath) {
+		remember(appEntryPath, false)
+	}
+	for (const exportName of Object.keys(manifest.exports)) {
+		remember(
+			resolvePackageExportPath({
+				manifest,
+				exportName,
+			}),
+			false,
+		)
+	}
+	for (const job of Object.values(manifest.kody.jobs ?? {})) {
+		remember(job.entry, true)
+	}
+	return Array.from(targets.values())
+}
+
+function getPackageTypecheckDiagnostics(input: {
+	targets: Array<PackageTypecheckTarget>
 	languageService: {
 		getSemanticDiagnostics(path: string): Array<{
 			messageText: unknown
@@ -231,7 +272,7 @@ function getRepoTypecheckDiagnostics(input: {
 	fileSystem: {
 		write(path: string, content: string): void
 	}
-}): {
+}): Array<{
 	fileName: string
 	diagnostics: Array<{
 		messageText: unknown
@@ -243,60 +284,50 @@ function getRepoTypecheckDiagnostics(input: {
 			}
 		}
 	}>
-} {
-	switch (input.manifest.kind) {
-		case 'app':
-			return {
-				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(
-					input.entryPoint,
-				),
-			}
-		case 'skill': {
-			input.fileSystem.write(
-				executeTypecheckPreludePath,
-				createExecuteTypecheckPrelude(),
-			)
-			input.fileSystem.write(
+}> {
+	return input.targets.map((target) => {
+		input.fileSystem.write(
+			executeTypecheckPreludePath,
+			createExecuteTypecheckPrelude({
+				includeStorage: target.includeStorage,
+			}),
+		)
+		input.fileSystem.write(
+			repoCodemodeModuleTypecheckHarnessPath,
+			createRepoCodemodeModuleTypecheckHarness({
+				entryPoint: target.path,
+			}),
+		)
+		return {
+			fileName: target.path,
+			diagnostics: input.languageService.getSemanticDiagnostics(
 				repoCodemodeModuleTypecheckHarnessPath,
-				createRepoCodemodeModuleTypecheckHarness({
-					entryPoint: input.entryPoint,
-				}),
-			)
-			return {
-				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(
-					repoCodemodeModuleTypecheckHarnessPath,
-				),
-			}
+			),
 		}
-		case 'job': {
-			input.fileSystem.write(
-				executeTypecheckPreludePath,
-				createExecuteTypecheckPrelude({
-					includeStorage: true,
-				}),
-			)
-			input.fileSystem.write(
-				repoCodemodeModuleTypecheckHarnessPath,
-				createRepoCodemodeModuleTypecheckHarness({
-					entryPoint: input.entryPoint,
-				}),
-			)
-			return {
-				fileName: input.entryPoint,
-				diagnostics: input.languageService.getSemanticDiagnostics(
-					repoCodemodeModuleTypecheckHarnessPath,
-				),
-			}
-		}
-		default: {
-			const exhaustiveManifest: never = input.manifest
-			throw new Error(
-				`Unhandled repo manifest kind: ${JSON.stringify(exhaustiveManifest)}`,
-			)
-		}
+	})
+}
+
+function formatPackageTypecheckDiagnostics(
+	diagnostics: ReturnType<typeof getPackageTypecheckDiagnostics>,
+) {
+	return diagnostics.flatMap(({ fileName, diagnostics: fileDiagnostics }) =>
+		formatTypecheckDiagnostics(fileName, fileDiagnostics),
+	)
+}
+
+function formatBundleCheckMessage(input: {
+	missingEntryPoints: Array<string>
+	targetCount: number
+}) {
+	if (input.missingEntryPoints.length > 0) {
+		return `Package runtime entrypoint(s) missing from the repo session snapshot: ${input.missingEntryPoints
+			.map((path) => `"${path}"`)
+			.join(', ')}.`
 	}
+	if (input.targetCount === 0) {
+		return 'Package defines no app entry, exports, or jobs to bundle.'
+	}
+	return `Resolved ${input.targetCount} package runtime entrypoint(s) for bundling.`
 }
 
 export async function runRepoChecks(input: {
@@ -311,7 +342,7 @@ export async function runRepoChecks(input: {
 	if (manifestContent == null) {
 		throw new Error(`Manifest "${input.manifestPath}" was not found.`)
 	}
-	const manifest = parseRepoManifest({
+	const manifest = parseAuthoredPackageJson({
 		content: manifestContent,
 		manifestPath: input.manifestPath,
 	})
@@ -346,36 +377,32 @@ export async function runRepoChecks(input: {
 				: 'No package.json found in source root; dependency check skipped.',
 	})
 
-	const entryPoint = getManifestEntrypointPath(manifest)
+	const entryPoints = collectPackageTypecheckTargets(manifest)
+	const missingEntryPoints = entryPoints
+		.map((target) => target.path)
+		.filter((path) => snapshot.read(path) == null)
 	results.push({
 		kind: 'bundle',
-		ok: snapshot.read(entryPoint) != null,
-		message:
-			snapshot.read(entryPoint) != null
-				? `Entrypoint "${entryPoint}" found for bundling.`
-				: `Entrypoint "${entryPoint}" is missing from the repo session snapshot.`,
+		ok: missingEntryPoints.length === 0,
+		message: formatBundleCheckMessage({
+			missingEntryPoints,
+			targetCount: entryPoints.length,
+		}),
 	})
 
-	const entryPointSource = snapshot.read(entryPoint)
-	if (entryPointSource == null) {
+	if (missingEntryPoints.length > 0) {
 		results.push({
 			kind: 'typecheck',
 			ok: false,
-			message: `Typecheck skipped because entrypoint "${entryPoint}" is missing from the repo session snapshot.`,
+			message: `Typecheck skipped because package runtime entrypoint(s) are missing from the repo session snapshot: ${missingEntryPoints
+				.map((path) => `"${path}"`)
+				.join(', ')}.`,
 		})
 		results.push({
 			kind: 'lint',
 			ok: true,
 			message: 'Lint placeholder passed for this phase.',
 		})
-		const smokeChecks = manifest.checks?.smoke ?? []
-		if (smokeChecks.length > 0) {
-			results.push({
-				kind: 'smoke',
-				ok: true,
-				message: `Recorded ${smokeChecks.length} configured smoke check(s).`,
-			})
-		}
 		return {
 			ok: results.every((result) => result.ok),
 			results,
@@ -404,19 +431,18 @@ export async function runRepoChecks(input: {
 			fileSystem: typecheckFileSystem,
 		},
 	)
-	const { fileName, diagnostics } = getRepoTypecheckDiagnostics({
-		manifest,
-		entryPoint,
+	const diagnostics = getPackageTypecheckDiagnostics({
+		targets: entryPoints,
 		languageService,
 		fileSystem,
 	})
 	results.push({
 		kind: 'typecheck',
-		ok: diagnostics.length === 0,
+		ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
 		message:
-			diagnostics.length === 0
-				? `No semantic diagnostics for "${entryPoint}".`
-				: formatTypecheckDiagnostics(fileName, diagnostics).join('\n'),
+			diagnostics.every((entry) => entry.diagnostics.length === 0)
+				? `No semantic diagnostics for ${entryPoints.length} package runtime entrypoint(s).`
+				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
 	})
 
 	results.push({
@@ -424,15 +450,6 @@ export async function runRepoChecks(input: {
 		ok: true,
 		message: 'Lint placeholder passed for this phase.',
 	})
-
-	const smokeChecks = manifest.checks?.smoke ?? []
-	if (smokeChecks.length > 0) {
-		results.push({
-			kind: 'smoke',
-			ok: true,
-			message: `Recorded ${smokeChecks.length} configured smoke check(s).`,
-		})
-	}
 
 	return {
 		ok: results.every((result) => result.ok),

@@ -52,6 +52,11 @@ export function cosineSimilarity(
 	return dot
 }
 
+// Keep hybrid lexical+vector scores on the same scale as lexical-only matches.
+export function blendLexicalAndVectorScore(lexical: number, vector: number) {
+	return (lexical + vector) / 2
+}
+
 export function buildCapabilityEmbedText(spec: CapabilitySpec): string {
 	const keywords = spec.keywords.join(' ')
 	const fields = [...spec.inputFields, ...spec.outputFields].join(' ')
@@ -73,6 +78,17 @@ export function lexicalScore(query: string, doc: string): number {
 		if (d.has(t)) intersection += 1
 	}
 	return intersection / q.size
+}
+
+export function hybridSearchScore(lexical: number, vector: number): number {
+	return (lexical + vector) / 2
+}
+
+export function normalizeHybridSearchScore(input: {
+	lexical: number
+	vector: number
+}): number {
+	return hybridSearchScore(input.lexical, input.vector)
 }
 
 export function reciprocalRankFusion(

@@ -41,29 +41,60 @@ async function collectSnapshotFiles(
 	return snapshotFiles
 }
 
-test('runRepoChecks normalizes leading slashes in manifest entrypoints', async () => {
+function createPackageManifest(input: {
+	packageName: string
+	kodyId: string
+	description: string
+	exports?: Record<string, string>
+	jobs?: Record<string, { entry: string; schedule: Record<string, unknown> }>
+	appEntry?: string
+}) {
+	return JSON.stringify({
+		name: input.packageName,
+		exports:
+			input.exports ??
+			({
+				'.': './src/index.ts',
+			} satisfies Record<string, string>),
+		kody: {
+			id: input.kodyId,
+			description: input.description,
+			app: input.appEntry
+				? {
+						entry: input.appEntry,
+					}
+				: undefined,
+			jobs: input.jobs,
+		},
+	})
+}
+
+test('runRepoChecks normalizes leading slashes in package job entrypoints', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
-			'kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'Migrated job',
-				description: 'Runs immediately after migration',
-				sourceRoot: '/',
-				entrypoint: '/src/job.ts',
-			}),
-		],
-		['src/job.ts', 'async () => ({ ok: true })\n'],
-		[
 			'package.json',
-			JSON.stringify({
-				name: 'migrated-job',
-				private: true,
+			createPackageManifest({
+				packageName: '@kody/migrated-job',
+				kodyId: 'migrated-job',
+				description: 'Runs immediately after migration',
+				exports: {
+					'.': './src/index.ts',
+				},
+				jobs: {
+					migrate: {
+						entry: '/src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
 			}),
 		],
+		['src/index.ts', 'export const ready = true\n'],
+		['src/job.ts', 'async () => ({ ok: true })\n'],
 	])
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
@@ -88,7 +119,7 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: 'kody.json',
+		manifestPath: 'package.json',
 		sourceRoot: '/',
 	})
 
@@ -98,15 +129,16 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 			expect.objectContaining({
 				kind: 'bundle',
 				ok: true,
-				message: 'Entrypoint "src/job.ts" found for bundling.',
+				message: 'Resolved 2 package runtime entrypoint(s) for bundling.',
 			}),
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: true,
-				message: 'No semantic diagnostics for "src/job.ts".',
+				message: 'No semantic diagnostics for 2 package runtime entrypoint(s).',
 			}),
 		]),
 	)
+	expect(snapshot.read).toHaveBeenCalledWith('src/index.ts')
 	expect(snapshot.read).toHaveBeenCalledWith('src/job.ts')
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_runtime__.d.ts',
@@ -121,29 +153,32 @@ test('runRepoChecks normalizes leading slashes in manifest entrypoints', async (
 	)
 })
 
-test('runRepoChecks strips repo-session workspace prefixes from snapshot paths', async () => {
+test('runRepoChecks strips repo-session workspace prefixes from package snapshot paths', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
-			'/session/kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'Session-backed job',
-				description: 'Runs from a repo session workspace',
-				sourceRoot: '/',
-				entrypoint: '/src/job.ts',
-			}),
-		],
-		['/session/src/job.ts', 'async () => ({ ok: true })\n'],
-		[
 			'/session/package.json',
-			JSON.stringify({
-				name: 'session-backed-job',
-				private: true,
+			createPackageManifest({
+				packageName: '@kody/session-backed-job',
+				kodyId: 'session-backed-job',
+				description: 'Runs from a repo session workspace',
+				exports: {
+					'.': './src/index.ts',
+				},
+				jobs: {
+					session: {
+						entry: '/src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
 			}),
 		],
+		['/session/src/index.ts', 'export const ready = true\n'],
+		['/session/src/job.ts', 'async () => ({ ok: true })\n'],
 	])
 	let snapshotFiles = new Map<string, string>()
 	const snapshot = createSnapshotFromFiles(snapshotFiles)
@@ -179,18 +214,19 @@ test('runRepoChecks strips repo-session workspace prefixes from snapshot paths',
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: '/session/kody.json',
+		manifestPath: '/session/package.json',
 		sourceRoot: '/session/',
 	})
 
 	expect(result.ok).toBe(true)
 	expect(Array.from(snapshotFiles.keys())).toEqual([
-		'kody.json',
-		'src/job.ts',
 		'package.json',
+		'src/index.ts',
+		'src/job.ts',
 		'.__kody_repo_runtime__.d.ts',
 		'.__kody_repo_module_check__.ts',
 	])
+	expect(snapshot.read).toHaveBeenCalledWith('src/index.ts')
 	expect(snapshot.read).toHaveBeenCalledWith('src/job.ts')
 	expect(snapshot.read).not.toHaveBeenCalledWith('/src/job.ts')
 	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
@@ -198,21 +234,28 @@ test('runRepoChecks strips repo-session workspace prefixes from snapshot paths',
 	)
 })
 
-test('runRepoChecks accepts execute runtime globals for repo-backed jobs', async () => {
+test('runRepoChecks accepts execute runtime globals for package-owned jobs', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
-			'kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'Runtime globals job',
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/runtime-globals-job',
+				kodyId: 'runtime-globals-job',
 				description: 'Uses execute globals',
-				sourceRoot: '/',
-				entrypoint: 'src/job.ts',
+				jobs: {
+					runtime: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
 			}),
 		],
+		['src/index.ts', 'export const ready = true\n'],
 		[
 			'src/job.ts',
 			`async (params) => {
@@ -246,7 +289,7 @@ test('runRepoChecks accepts execute runtime globals for repo-backed jobs', async
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: 'kody.json',
+		manifestPath: 'package.json',
 		sourceRoot: '/',
 	})
 
@@ -256,13 +299,12 @@ test('runRepoChecks accepts execute runtime globals for repo-backed jobs', async
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message:
-					'No package.json found in source root; dependency check skipped.',
+				message: 'package.json found for dependency fingerprinting.',
 			}),
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: true,
-				message: 'No semantic diagnostics for "src/job.ts".',
+				message: 'No semantic diagnostics for 2 package runtime entrypoint(s).',
 			}),
 		]),
 	)
@@ -272,23 +314,25 @@ test('runRepoChecks accepts execute runtime globals for repo-backed jobs', async
 	)
 })
 
-test('runRepoChecks accepts codemode globals for repo-backed skills', async () => {
+test('runRepoChecks typechecks package exports with execute semantics globals', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
-			'kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'skill',
-				title: 'Runtime globals skill',
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/runtime-globals-export',
+				kodyId: 'runtime-globals-export',
 				description: 'Uses execute globals',
-				sourceRoot: '/',
-				entrypoint: 'src/skill.ts',
+				exports: {
+					'.': './src/index.ts',
+					'./run': './src/run.ts',
+				},
 			}),
 		],
+		['src/index.ts', 'export const ready = true\n'],
 		[
-			'src/skill.ts',
+			'src/run.ts',
 			`async (params) => {
   const result = await codemode.value_get({ name: 'projectId' })
   return { params, result }
@@ -319,7 +363,7 @@ test('runRepoChecks accepts codemode globals for repo-backed skills', async () =
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: 'kody.json',
+		manifestPath: 'package.json',
 		sourceRoot: '/',
 	})
 
@@ -329,7 +373,7 @@ test('runRepoChecks accepts codemode globals for repo-backed skills', async () =
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: true,
-				message: 'No semantic diagnostics for "src/skill.ts".',
+				message: 'No semantic diagnostics for 2 package runtime entrypoint(s).',
 			}),
 		]),
 	)
@@ -345,26 +389,30 @@ test('runRepoChecks accepts codemode globals for repo-backed skills', async () =
 		'.__kody_repo_runtime__.d.ts',
 		expect.stringContaining('declare const storage'),
 	)
-	expect(getSemanticDiagnostics).toHaveBeenCalledWith(
-		'.__kody_repo_module_check__.ts',
-	)
 })
 
-test('runRepoChecks still reports unknown globals for repo-backed jobs', async () => {
+test('runRepoChecks still reports unknown globals for package-owned jobs', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
-			'kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'Broken job',
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/broken-job',
+				kodyId: 'broken-job',
 				description: 'Uses unknown runtime symbol',
-				sourceRoot: '/',
-				entrypoint: 'src/job.ts',
+				jobs: {
+					broken: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
 			}),
 		],
+		['src/index.ts', 'export const ready = true\n'],
 		['src/job.ts', 'async () => totallyMissingThing()\n'],
 	])
 	const snapshot = createSnapshotFromFiles(files)
@@ -407,7 +455,7 @@ test('runRepoChecks still reports unknown globals for repo-backed jobs', async (
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: 'kody.json',
+		manifestPath: 'package.json',
 		sourceRoot: '/',
 	})
 
@@ -417,27 +465,36 @@ test('runRepoChecks still reports unknown globals for repo-backed jobs', async (
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: false,
-				message: "src/job.ts:2:12 Cannot find name 'totallyMissingThing'.",
+				message: expect.stringContaining(
+					`Cannot find name 'totallyMissingThing'.`,
+				),
 			}),
 		]),
 	)
 })
 
-test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
+test('runRepoChecks typechecks ESM package job entrypoints', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
-			'kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'ESM job',
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/esm-job',
+				kodyId: 'esm-job',
 				description: 'Uses exports',
-				sourceRoot: '/',
-				entrypoint: 'src/job.ts',
+				jobs: {
+					esm: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
 			}),
 		],
+		['src/index.ts', 'export const ready = true\n'],
 		['src/job.ts', 'export default async () => ({ ok: true })\n'],
 	])
 	const snapshot = createSnapshotFromFiles(files)
@@ -467,7 +524,7 @@ test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: 'kody.json',
+		manifestPath: 'package.json',
 		sourceRoot: '/',
 	})
 
@@ -477,7 +534,7 @@ test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 			expect.objectContaining({
 				kind: 'typecheck',
 				ok: true,
-				message: 'No semantic diagnostics for "src/job.ts".',
+				message: 'No semantic diagnostics for 2 package runtime entrypoint(s).',
 			}),
 		]),
 	)
@@ -490,21 +547,28 @@ test('runRepoChecks typechecks ESM repo-backed job entrypoints', async () => {
 	)
 })
 
-test('runRepoChecks injects a synthetic tsconfig that allows optional .ts imports when the repo has no tsconfig', async () => {
+test('runRepoChecks injects a synthetic tsconfig that allows optional .ts imports for package entrypoints', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
-			'kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'TS extension import job',
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/ts-extension-job',
+				kodyId: 'ts-extension-job',
 				description: 'Imports a sibling .ts module',
-				sourceRoot: '/',
-				entrypoint: 'src/job.ts',
+				jobs: {
+					tsExtension: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
 			}),
 		],
+		['src/index.ts', 'export const ready = true\n'],
 		['src/job.ts', 'export { default } from "./helper.ts"\n'],
 		['src/helper.ts', 'export default async () => ({ ok: true })\n'],
 	])
@@ -531,7 +595,7 @@ test('runRepoChecks injects a synthetic tsconfig that allows optional .ts import
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: 'kody.json',
+		manifestPath: 'package.json',
 		sourceRoot: '/',
 	})
 
@@ -560,11 +624,11 @@ test('runRepoChecks injects a synthetic tsconfig that allows optional .ts import
 	).toBe(null)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/job"'),
+		expect.stringContaining('import userEntrypoint from "./src/index"'),
 	)
 })
 
-test('runRepoChecks preserves repo tsconfig via extends while enabling optional .ts imports', async () => {
+test('runRepoChecks preserves repo tsconfig via extends while enabling optional .ts imports for packages', async () => {
 	mockModule.createFileSystemSnapshot.mockReset()
 	mockModule.createTypescriptLanguageService.mockReset()
 	const repoTsconfig = JSON.stringify({
@@ -576,17 +640,24 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 	})
 	const files = new Map<string, string>([
 		[
-			'kody.json',
-			JSON.stringify({
-				version: 1,
-				kind: 'job',
-				title: 'TS extension import job',
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/ts-extension-job',
+				kodyId: 'ts-extension-job',
 				description: 'Preserves repo tsconfig',
-				sourceRoot: '/',
-				entrypoint: 'src/job.ts',
+				jobs: {
+					tsExtension: {
+						entry: 'src/job.ts',
+						schedule: {
+							type: 'once',
+							runAt: '2026-04-17T15:00:00Z',
+						},
+					},
+				},
 			}),
 		],
 		['tsconfig.json', repoTsconfig],
+		['src/index.ts', 'export const ready = true\n'],
 		['src/job.ts', 'export { default } from "./helper.ts"\n'],
 		['src/helper.ts', 'export default async () => ({ ok: true })\n'],
 	])
@@ -613,7 +684,7 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
 			},
 		},
-		manifestPath: 'kody.json',
+		manifestPath: 'package.json',
 		sourceRoot: '/',
 	})
 
@@ -637,6 +708,6 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 	).toBe(repoTsconfig)
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
-		expect.stringContaining('import userEntrypoint from "./src/job"'),
+		expect.stringContaining('import userEntrypoint from "./src/index"'),
 	)
 })

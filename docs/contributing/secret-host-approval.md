@@ -144,7 +144,7 @@ When a generated UI hits a recoverable runtime problem, it should:
 For OAuth and similar flows, prefer this sequence:
 
 1. Save the client credentials as secrets.
-2. Use a hosted saved app as the callback page when helpful.
+2. Use a hosted package app as the callback page when helpful.
 3. Attempt the token exchange with secret placeholders.
 4. If the exchange is blocked on host approval, send the user to the admin UI
    approval page.

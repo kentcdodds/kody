@@ -2,7 +2,6 @@ import { createRouter, type BuildAction } from 'remix/fetch-router'
 import { post, route } from 'remix/fetch-router/routes'
 import { z } from 'zod'
 import { exports as workerExports } from 'cloudflare:workers'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -11,20 +10,11 @@ import {
 } from '#mcp/executor.ts'
 import {
 	createGeneratedUiAppSession,
-	buildSavedAppBackendBasePath,
 	verifyGeneratedUiAppSession,
 } from '#mcp/generated-ui-app-session.ts'
-import { createGeneratedUiAppBackendCookieHeader } from '#mcp/generated-ui-app-auth.ts'
 import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { deleteSecret, listSecrets, saveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
-import { applyUiArtifactParameters } from '#mcp/ui-artifact-parameters.ts'
-import {
-	getUiArtifactById,
-	getUiArtifactByOwnerIds,
-} from '#mcp/ui-artifacts-repo.ts'
-import { hasUiArtifactServerCode } from '#mcp/ui-artifacts-types.ts'
-import { resolveSavedAppSource } from '#worker/repo/app-source.ts'
 
 const executeRequestSchema = z.object({
 	code: z.string().min(1),
@@ -65,16 +55,7 @@ type GeneratedUiSessionContext = {
 	}
 }
 
-type GeneratedUiSavedAppContext = {
-	type: 'saved-app'
-	appId: string
-	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-	artifact: NonNullable<Awaited<ReturnType<typeof getUiArtifactByOwnerIds>>>
-}
-
-type GeneratedUiRequestContext =
-	| GeneratedUiSessionContext
-	| GeneratedUiSavedAppContext
+type GeneratedUiRequestContext = GeneratedUiSessionContext
 
 export function isGeneratedUiApiRequest(pathname: string) {
 	return pathname.startsWith('/ui-api/')
@@ -129,113 +110,18 @@ function createGeneratedUiSourceHandler(env: Env) {
 				bearerToken: readBearerToken(request),
 			})
 			if (sourceContext instanceof Response) return sourceContext
-			const app =
-				sourceContext.type === 'saved-app'
-					? sourceContext.artifact
-					: sourceContext.appId
-						? await getUiArtifactById(
-								env.APP_DB,
-								sourceContext.user.userId,
-								sourceContext.appId,
-							)
-						: null
-			if (!app) {
-				return jsonResponse({ error: 'Saved UI not found.' }, 404)
-			}
-			let resolvedApp
-			try {
-				resolvedApp = await resolveSavedAppSource({
-					env,
-					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
-					artifact: app,
-				})
-			} catch (error) {
-				return jsonResponse(
-					{
-						error:
-							error instanceof Error
-								? error.message
-								: 'Unable to load saved UI source.',
-					},
-					502,
-				)
-			}
-			let resolvedParams: Record<string, unknown>
-			try {
-				resolvedParams =
-					sourceContext.type === 'session'
-						? sourceContext.params
-						: applyUiArtifactParameters({
-								definitions: resolvedApp.parameters,
-								values: readSavedAppParamsFromUrl(new URL(request.url)),
-							})
-			} catch (error) {
-				return jsonResponse(
-					{
-						error:
-							error instanceof Error
-								? error.message
-								: 'Invalid saved app params.',
-					},
-					400,
-				)
-			}
 			const appSession = await createGeneratedUiAppSession({
 				env,
 				baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
-				user:
-					sourceContext.type === 'saved-app'
-						? {
-								userId: app.user_id,
-								email: sourceContext.user.email,
-								displayName: sourceContext.user.displayName,
-							}
-						: sourceContext.user,
-				appId: app.id,
-				params: resolvedParams,
-				homeConnectorId:
-					sourceContext.type === 'session'
-						? sourceContext.homeConnectorId
-						: null,
+				user: sourceContext.user,
+				appId: sourceContext.appId,
+				params: sourceContext.params,
+				homeConnectorId: sourceContext.homeConnectorId,
 			})
-			const response = jsonResponse({
+			return jsonResponse({
 				ok: true,
-				app: {
-					app_id: app.id,
-					title: resolvedApp.title,
-					description: resolvedApp.description,
-					hidden: resolvedApp.hidden,
-					parameters: resolvedApp.parameters,
-					params: resolvedParams,
-					client_code: resolvedApp.clientCode,
-					server_code: resolvedApp.serverCode,
-					server_code_id: resolvedApp.serverCodeId,
-					...(hasUiArtifactServerCode(app.hasServerCode)
-						? {
-								app_backend: {
-									basePath: buildSavedAppBackendBasePath(app.id),
-									facetNames: ['main'],
-								},
-							}
-						: {}),
-					created_at: app.created_at,
-					updated_at: app.updated_at,
-				},
 				appSession,
 			})
-			if (hasUiArtifactServerCode(app.hasServerCode)) {
-				response.headers.append(
-					'Set-Cookie',
-					await createGeneratedUiAppBackendCookieHeader({
-						env,
-						request,
-						appId: app.id,
-						token: appSession.token,
-						expiresAt: appSession.expiresAt,
-					}),
-				)
-			}
-			return response
 		},
 	} satisfies BuildAction<
 		typeof generatedUiApiRoutes.source.method,
@@ -474,31 +360,14 @@ async function resolveSourceContext(input: {
 	routeId: string
 	bearerToken: string | null
 }): Promise<GeneratedUiRequestContext | Response> {
-	if (input.bearerToken) {
-		return resolveSessionContext({
-			env: input.env,
-			routeId: input.routeId,
-			token: input.bearerToken,
-		})
+	if (!input.bearerToken) {
+		return jsonResponse({ error: 'Missing generated UI bearer token.' }, 401)
 	}
-	const user = await readAuthenticatedAppUser(input.request, input.env)
-	if (!user) {
-		return jsonResponse({ error: 'Unauthorized' }, 401)
-	}
-	const artifact = await getUiArtifactByOwnerIds(
-		input.env.APP_DB,
-		user.artifactOwnerIds,
-		input.routeId,
-	)
-	if (!artifact) {
-		return jsonResponse({ error: 'Saved UI not found.' }, 404)
-	}
-	return {
-		type: 'saved-app',
-		appId: artifact.id,
-		user,
-		artifact,
-	}
+	return resolveSessionContext({
+		env: input.env,
+		routeId: input.routeId,
+		token: input.bearerToken,
+	})
 }
 
 async function requireGeneratedUiSessionContext(input: {
@@ -579,21 +448,6 @@ function parseOptionalScope(value: string | null) {
 	return secretScopeValues.includes(value as (typeof secretScopeValues)[number])
 		? (value as (typeof secretScopeValues)[number])
 		: null
-}
-
-function readSavedAppParamsFromUrl(url: URL) {
-	const raw = url.searchParams.get('params')
-	if (!raw) return undefined
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(raw)
-	} catch {
-		throw new Error('Invalid saved app params query string.')
-	}
-	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		throw new Error('Saved app params must be an object.')
-	}
-	return parsed as Record<string, unknown>
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {

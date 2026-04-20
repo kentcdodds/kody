@@ -38,7 +38,7 @@ export {
 	type KodyWidgetPublicApi,
 } from './kody-widget-runtime.ts'
 
-type RenderMode = 'inline_code' | 'saved_app'
+ type RenderMode = 'inline_code' | 'saved_package'
 type AppRuntime = 'html' | 'javascript'
 type DisplayMode = 'inline' | 'fullscreen' | 'pip'
 
@@ -344,7 +344,7 @@ export function readSavedAppSourceFromHostToolResult(
 	if (!code) {
 		return {
 			handled: true as const,
-			errorMessage: 'Saved app source is missing client_code.',
+			errorMessage: 'Saved package app source is missing client_code.',
 		}
 	}
 	return {
@@ -380,7 +380,7 @@ async function executeCodeWithHostTool(
 function coerceRenderEnvelope(value: unknown): RenderEnvelope | null {
 	if (!isRecord(value)) return null
 	const renderSource = value.renderSource ?? value.mode
-	if (renderSource !== 'inline_code' && renderSource !== 'saved_app')
+	if (renderSource !== 'inline_code' && renderSource !== 'saved_package')
 		return null
 	const code =
 		typeof value.sourceCode === 'string'
@@ -552,21 +552,6 @@ async function executeCodeWithHttp(
 		handled: true,
 		result: payload.result ?? null,
 	}
-}
-
-function buildSavedUiEndpoint(
-	baseHref: string | null,
-	uiId: string,
-	endpoint: 'source' | 'execute' | 'secrets' | 'delete-secret',
-) {
-	if (!baseHref) {
-		return null
-	}
-	const path =
-		endpoint === 'delete-secret'
-			? `/ui-api/${encodeURIComponent(uiId)}/secrets/delete`
-			: `/ui-api/${encodeURIComponent(uiId)}/${endpoint}`
-	return new URL(path, baseHref).toString()
 }
 
 async function observeRenderedDocumentSize(
@@ -1105,79 +1090,6 @@ async function initializeShellHostDocument() {
 		},
 	})
 
-	const resolveSavedAppCode = async (
-		appId: string,
-		appSession: AppSessionEnvelope | null | undefined,
-	): Promise<{ code: string; runtime: AppRuntime }> => {
-		const hostToolResult = readSavedAppSourceFromHostToolResult(
-			(await hostBridge.callTool({
-				name: 'ui_load_app_source',
-				arguments: {
-					app_id: appId,
-				},
-				timeoutMs: 90_000,
-			})) as HostToolResult | null,
-		)
-		if (hostToolResult.handled && 'code' in hostToolResult) {
-			return {
-				code: hostToolResult.code,
-				runtime: hostToolResult.runtime,
-			}
-		}
-		const target = appSession?.token
-			? (() => {
-					const url = new URL(appSession.endpoints.source)
-					if (!url.searchParams.has('app_id')) {
-						url.searchParams.set('app_id', appId)
-					}
-					return {
-						url: url.toString(),
-						token: appSession.token,
-					}
-				})()
-			: (() => {
-					const url = buildSavedUiEndpoint(baseHref, appId, 'source')
-					return url ? { url } : null
-				})()
-		if (!target) {
-			throw new Error(
-				hostToolResult.handled
-					? hostToolResult.errorMessage
-					: 'Failed to load saved app source.',
-			)
-		}
-		try {
-			const targetToken =
-				'token' in target && typeof target.token === 'string'
-					? target.token
-					: undefined
-			const { response, payload } = await fetchJsonResponse({
-				url: target.url,
-				method: 'GET',
-				token: targetToken,
-			})
-			const app = isRecord(payload?.app) ? payload.app : null
-			if (!response.ok || !payload || payload.ok !== true || !app) {
-				throw new Error(
-					getApiErrorMessage(payload, 'Failed to load saved app source.'),
-				)
-			}
-			const code = typeof app.client_code === 'string' ? app.client_code : null
-			if (!code) {
-				throw new Error('Saved app source is missing client_code.')
-			}
-			return {
-				code,
-				runtime: 'html',
-			}
-		} catch (error) {
-			if (hostToolResult.handled) {
-				throw new Error(hostToolResult.errorMessage)
-			}
-			throw error
-		}
-	}
-
 	const isStaleRender = (renderId: number) =>
 		renderId !== latestScheduledRenderId
 
@@ -1227,35 +1139,13 @@ async function initializeShellHostDocument() {
 			})
 		}
 
-		if (envelope.mode === 'inline_code') {
+		if (envelope.mode === 'inline_code' || envelope.mode === 'saved_package') {
 			if (!envelope.code) {
-				await renderError('The tool result did not include inline code.')
+				await renderError('The tool result did not include renderable HTML.')
 				return
 			}
 			await renderCode(envelope.code, envelope.runtime ?? 'html')
 			return
-		}
-
-		if (!envelope.appId) {
-			await renderError('The tool result did not include an app_id.')
-			return
-		}
-
-		try {
-			if (isStaleRender(renderId)) {
-				return
-			}
-			const resolved = await resolveSavedAppCode(
-				envelope.appId,
-				envelope.appSession,
-			)
-			if (isStaleRender(renderId)) return
-			await renderCode(resolved.code, resolved.runtime)
-		} catch (error) {
-			if (isStaleRender(renderId)) return
-			const message =
-				error instanceof Error ? error.message : 'Unknown app loading error.'
-			await renderError(message)
 		}
 	}
 

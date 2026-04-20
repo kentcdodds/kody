@@ -3,13 +3,22 @@ import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	buildCodemodeFns,
-	runCodemodeWithRegistry,
+	runModuleWithRegistry,
 } from './run-codemode-registry.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import {
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createCapabilitySecretAccessDeniedMessage,
 } from '#mcp/secrets/errors.ts'
+
+vi.mock('#worker/package-runtime/module-graph.ts', () => ({
+	buildKodyModuleBundle: vi.fn(async () => ({
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async function run() { return null }',
+		},
+	})),
+}))
 
 test('buildCodemodeFns resolves annotated home capability secret placeholders', async () => {
 	let toolArguments: Record<string, unknown> | null = null
@@ -542,16 +551,18 @@ test('runCodemodeWithRegistry redacts secret keys and survives cyclic results', 
 		} as never)
 
 	try {
-		const result = await runCodemodeWithRegistry(
+		const result = await runModuleWithRegistry(
 			env,
 			callerContext,
-			`async () => {
-				await codemode.secret_set({
-					name: 'spotifyAccessToken',
-					value: 'fresh-access-token',
-				})
-				return null
-			}`,
+			`import { codemode } from 'kody:runtime'
+
+export default async function run() {
+	await codemode.secret_set({
+		name: 'spotifyAccessToken',
+		value: 'fresh-access-token',
+	})
+	return null
+}`,
 		)
 		const sanitized = result.result as {
 			objectResult: Record<string, unknown>
@@ -627,13 +638,13 @@ test('runCodemodeWithRegistry batch capability rewrite ignores Secret "…" text
 		} as never)
 
 	try {
-		const result = await runCodemodeWithRegistry(
+		const result = await runModuleWithRegistry(
 			env,
 			callerContext,
-			`async () => {
-				const hint = 'Secret "extraSecret" was not found.';
-				return { hint };
-			}`,
+			`export default async function run() {
+	const hint = 'Secret "extraSecret" was not found.'
+	return { hint }
+}`,
 		)
 
 		expect(result.error).toBe(

@@ -13,17 +13,17 @@ End-user documentation (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use
 
 Three-step flow:
-1. \`search\` — built-in capabilities, saved skills, saved apps, persisted values, saved connectors, and secret references (metadata).
-2. \`execute\` — \`codemode[capabilityName](args)\`; saved skills via \`meta_run_skill\`.
-3. \`open_generated_ui\` — MCP App runtime (\`code\` or \`app_id\`).
+1. \`search\` — built-in capabilities, saved packages, persisted values, saved connectors, and secret references (metadata).
+2. \`execute\` — run one ephemeral module with imports/exports and runtime access through \`kody:runtime\`.
+3. \`open_generated_ui\` — open UI when a package or inline UI flow needs user interaction.
 
 Conventions
 - ${conversationIdGuidance}
 - \`memoryContext\`: short and task-focused. Kody may use it to surface a few relevant long-term memories and suppress repeats within the same \`conversationId\`.
 - Do not ask the user to paste secrets in chat; use saved secrets or \`open_generated_ui\`.
-- \`meta_save_skill\`: repeatable workflows only; optional \`collection\`; same name replaces an existing skill. One-off work: \`execute\`. Skill params: pass via \`meta_run_skill\` → \`params\` in codemode.
-- \`job_upsert\`: create or update a persisted job. Use \`job_list\` / \`job_get\` to inspect status and next run times, and \`job_run_now\` to trigger the stored job immediately without changing its schedule.
-- \`ui_save_app\` / \`app_id\`: persisted UI artifacts (hidden from search unless \`hidden: false\`). \`codemode.secret_list\` / \`secret_set\`: metadata-only list; set only for values already in trusted execution (see \`execute\` tool description).
+- \`package_save\`: create or replace a repo-backed saved package rooted at \`package.json\`. Standard package exports define the package surface. \`package.json#kody\` contains Kody-specific metadata such as tags, optional app config, and package-owned jobs.
+- \`package_get\` / \`package_list\` / \`package_delete\`: inspect or manage saved packages for the signed-in user.
+- Package jobs are schedules owned by a package, not a separate top-level primitive. Package apps are optional UI surfaces declared by the package, not a separate top-level primitive.
 - Memory writes are verify-first: always run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`. Kody retrieves related memories; the consuming agent decides whether to upsert, delete, both, or do nothing. \`meta_memory_upsert\` creates a new memory when \`memory_id\` is omitted and updates an existing memory when \`memory_id\` is provided.
 - User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions (reconnect to refresh what the host shows).
 
@@ -33,24 +33,24 @@ Domains (builtin capability groups)
 ${domainInstructions}
 
 What shows up in \`search\` (before you search)
-- Result **types**: \`capability\` (built-in), \`skill\` (saved codemode), \`app\` (saved UI shell), \`value\` (persisted non-secret config), \`connector\` (saved connector config), \`secret\` (metadata only). Use \`entity: "{id}:{type}"\` for one item’s detail.
-- **Saved skills** may use an optional **collection** (a user-defined label for grouping). Narrow with \`skill_collection\`; list a user’s collections via \`meta_list_skill_collections\`. Collections are not a closed list—any label when saving or from the user.
+- Result **types**: \`capability\` (built-in), \`package\` (saved repo-backed package), \`value\` (persisted non-secret config), \`connector\` (saved connector config), \`secret\` (metadata only). Use \`entity: "{id}:{type}"\` for one item’s detail.
 
 search
-- \`query\`: natural language; results are ranked (order matters). Optional \`limit\`, \`maxResponseSize\`, \`skill_collection\`.
-- \`entity: "{id}:{type}"\` (\`capability\` | \`skill\` | \`app\` | \`value\` | \`connector\` | \`secret\`) for one entity’s detail (schemas, usage). If a \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
+- \`query\`: natural language; results are ranked (order matters). Optional \`limit\`, \`maxResponseSize\`.
+- \`entity: "{id}:{type}"\` (\`capability\` | \`package\` | \`value\` | \`connector\` | \`secret\`) for one entity’s detail (schemas, usage). If a \`query\` returns no useful hits, rephrase or call \`meta_list_capabilities\` — \`entity\` does not repair an empty ranked list.
 - Examples:
-  - search({ query: 'saved dashboard app or generated UI runtime' })
+  - search({ query: 'saved package for github automation' })
   - search({ query: 'Cloudflare API zones dns workers d1' })
   - search({ entity: 'kody_official_guide:capability' })
 
 execute
-- Async arrow function; \`codemode\` + OAuth helpers \`refreshAccessToken\` / \`createAuthenticatedFetch\`. Prefer one \`execute\` when the plan is clear. Full rules for \`fetch\`, placeholders, \`secret_list\` / \`value_get\`, and \`x-kody-secret\`: see the \`execute\` tool description.
-- Official how-to guides from the Kody repo: if a requested skill, app, or workflow depends on a third-party integration, secrets, or OAuth, call \`kody_official_guide\` with \`guide: "integration_bootstrap"\` before building or saving the downstream artifact. Then load the relevant setup guide: \`oauth\` for standard third-party OAuth (\`/connect/oauth\`), \`generated_ui_oauth\` only for deliberate saved-app OAuth, and \`connect_secret\` for API keys/PATs. If unsure, \`search\` for this capability and load the right guide before implementing.
-- Do not save or present an auth-dependent skill or app as complete until \`search\` shows the required connector or secret reference exists and a minimal authenticated \`execute\` smoke test succeeds.
+- Single ESM module string with a default export. Import runtime APIs from \`kody:runtime\`. Prefer one \`execute\` when the plan is clear. Full rules for \`fetch\`, placeholders, \`secret_list\` / \`value_get\`, and \`x-kody-secret\`: see the \`execute\` tool description.
+- Cross-package imports use specifiers such as \`kody:@my-package/export-name\`. Package jobs are owned by packages and package apps are optional package surfaces.
+- Official how-to guides from the Kody repo: if a requested package or workflow depends on a third-party integration, secrets, or OAuth, call \`kody_official_guide\` with \`guide: "integration_bootstrap"\` before building the package. Then load the relevant setup guide: \`oauth\` for standard third-party OAuth (\`/connect/oauth\`) and \`connect_secret\` for API keys/PATs. If unsure, \`search\` for this capability and load the right guide before implementing.
+- Do not save or present an auth-dependent package as complete until \`search\` shows the required connector or secret reference exists and a minimal authenticated \`execute\` smoke test succeeds.
 
 open_generated_ui
-- Exactly one of \`code\` or \`app_id\`. Sensitive input: use UI; import \`kodyWidget\` from \`@kody/ui-utils\`. Details: \`open_generated_ui\` tool description.
+- Use UI when the package needs user interaction or sensitive input. Details: \`open_generated_ui\` tool description.
 	`.trim()
 }
 

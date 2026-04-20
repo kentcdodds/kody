@@ -22,7 +22,7 @@ import {
 } from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
-import { parseRepoManifest } from './manifest.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { searchRepoWorkspace } from './repo-session-search.ts'
 import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
 import {
@@ -32,7 +32,9 @@ import {
 	toRepoSessionTreeResult,
 } from './repo-session-tree.ts'
 import { runRepoChecks } from './checks.ts'
+import { parseRepoManifest } from './manifest.ts'
 import {
+	type EntityKind,
 	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -47,6 +49,7 @@ import {
 	type RepoSessionSearchResult,
 	type RepoSessionTreeResult,
 } from './types.ts'
+import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
@@ -209,12 +212,21 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	private async readManifestFromWorkspace(manifestPath: string) {
+	private async readManifestFromWorkspace(
+		manifestPath: string,
+		entityKind: EntityKind,
+	) {
 		const manifestContent = await this.workspace.readFile(
 			resolveRepoWorkspacePath(manifestPath, repoSessionWorkspacePrefix),
 		)
 		if (manifestContent == null) {
 			throw new Error(`Manifest "${manifestPath}" was not found.`)
+		}
+		if (entityKind === 'package') {
+			return parseAuthoredPackageJson({
+				content: manifestContent,
+				manifestPath,
+			})
 		}
 		return parseRepoManifest({
 			content: manifestContent,
@@ -586,7 +598,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!publishedCommit) {
 			throw new Error(`Source "${source.id}" bootstrap produced no commit.`)
 		}
-		const manifest = await this.readManifestFromWorkspace(source.manifest_path)
+		await this.readManifestFromWorkspace(
+			source.manifest_path,
+			source.entity_kind,
+		)
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'source',
@@ -598,11 +613,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			userId: source.user_id,
 			publishedCommit,
 			manifestPath: source.manifest_path,
-			sourceRoot: manifest.sourceRoot?.startsWith('/')
-				? manifest.sourceRoot
-				: manifest.sourceRoot
-					? `/${manifest.sourceRoot}`
-					: source.source_root,
+			sourceRoot: source.source_root,
 		})
 		return {
 			sessionId: input.sessionId,
@@ -997,17 +1008,16 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: targetBranch,
 			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
-		const manifest = await this.readManifestFromWorkspace(source.manifest_path)
+		await this.readManifestFromWorkspace(
+			source.manifest_path,
+			source.entity_kind,
+		)
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
 			userId: source.user_id,
 			publishedCommit: sessionHeadCommit,
 			manifestPath: source.manifest_path,
-			sourceRoot: manifest.sourceRoot?.startsWith('/')
-				? manifest.sourceRoot
-				: manifest.sourceRoot
-					? `/${manifest.sourceRoot}`
-					: source.source_root,
+			sourceRoot: source.source_root,
 		})
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
@@ -1017,6 +1027,15 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointCommit: sessionHeadCommit,
 			lastCheckpointAt: nowIso(),
 		})
+		if (source.entity_kind === 'package') {
+			await refreshSavedPackageProjection({
+				env: this.env,
+				baseUrl: source.source_root,
+				userId: source.user_id,
+				packageId: source.entity_id,
+				sourceId: source.id,
+			})
+		}
 		return {
 			status: 'ok',
 			sessionId: sessionRow.id,

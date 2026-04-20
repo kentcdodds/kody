@@ -1,25 +1,39 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import {
+	parseConnectorConfig,
+	parseConnectorJson,
+	parseConnectorValueName,
+} from '#mcp/capabilities/values/connector-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { searchUnified } from '#mcp/capabilities/unified-search.ts'
+import {
+	cosineSimilarity,
+	deterministicEmbedding,
+	hybridSearchScore,
+	isCapabilitySearchOffline,
+	lexicalScore,
+} from '#mcp/capabilities/capability-search.ts'
 import {
 	loadDownRemoteConnectorStatuses,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
 } from '#mcp/tools/search.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
-import { toSlimStructuredMatches } from '#mcp/tools/search-format.ts'
 import {
-	listAppSecretsByAppIds,
+	buildValueEntityId,
+	describeValue,
+} from '#mcp/tools/search-entities.ts'
+import {
+	type SearchMatch,
+	toSlimStructuredMatches,
+} from '#mcp/tools/search-format.ts'
+import {
 	listUserSecretsForSearch,
 } from '#mcp/secrets/service.ts'
-import { listMcpSkillsByUserId } from '#mcp/skills/mcp-skills-repo.ts'
-import { slugifySkillCollectionName } from '#mcp/skills/skill-collections.ts'
-import { listUiArtifactsByUserId } from '#mcp/ui-artifacts-repo.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { listJobs } from '#worker/jobs/service.ts'
+import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -43,71 +57,170 @@ export async function createAgentTurnToolSet(input: {
 	return {
 		search: tool({
 			description:
-				'Search Kody capabilities, saved skills, apps, values, connectors, and secret references using a natural language query.',
+				'Search Kody capabilities, saved packages, values, connectors, and secret references using a natural language query.',
 			inputSchema: z.object({
 				query: z.string().min(1),
 				limit: z.number().int().min(1).max(50).optional(),
-				skill_collection: z.string().min(1).optional(),
 			}),
 			execute: async (args) => {
 				const userId = input.callerContext.user?.userId ?? null
-				const registry = await getCapabilityRegistryForContext({
-					env: input.env,
-					callerContext: input.callerContext,
-				})
-				const optionalRows = await loadOptionalSearchRows({
-					userId,
-					loadSkills: () => listMcpSkillsByUserId(input.env.APP_DB, userId!),
-					loadUiArtifacts: () =>
-						listUiArtifactsByUserId(input.env.APP_DB, userId!, {
-							hidden: false,
-						}),
-					loadJobs: () =>
-						listJobs({
-							env: input.env,
-							userId: userId!,
-						}),
-					loadUserSecrets: () =>
-						listUserSecretsForSearch({
-							env: input.env,
-							userId: userId!,
-						}),
-					loadUserValues: () =>
-						listValues({
-							env: input.env,
-							userId: userId!,
-							storageContext: {
-								sessionId:
-									input.callerContext.storageContext?.sessionId ?? null,
-								appId: input.callerContext.storageContext?.appId ?? null,
+				const [registry, optionalRows] = await Promise.all([
+					getCapabilityRegistryForContext({
+						env: input.env,
+						callerContext: input.callerContext,
+					}),
+					loadOptionalSearchRows({
+						userId,
+						loadPackages: async () => {
+							const savedPackages = await listSavedPackagesByUserId(
+								input.env.APP_DB,
+								{ userId: userId! },
+							)
+							return savedPackages.map((savedPackage) => ({
+								record: savedPackage,
+								projection: {
+									name: savedPackage.name,
+									kodyId: savedPackage.kodyId,
+									description: savedPackage.description,
+									tags: savedPackage.tags,
+									searchText: savedPackage.searchText,
+									hasApp: savedPackage.hasApp,
+									exports: [],
+									jobs: [],
+								},
+							}))
+						},
+						loadUserSecrets: () =>
+							listUserSecretsForSearch({
+								env: input.env,
+								userId: userId!,
+							}),
+						loadUserValues: () =>
+							listValues({
+								env: input.env,
+								userId: userId!,
+								storageContext: {
+									sessionId:
+										input.callerContext.storageContext?.sessionId ?? null,
+									appId: input.callerContext.storageContext?.appId ?? null,
+								},
+							}),
+					}),
+				])
+				const query = args.query.trim()
+				const limit = args.limit ?? defaultSearchLimit
+				const queryEmbedding = deterministicEmbedding(query)
+				const capabilityMatches = Object.values(
+					registry.capabilitySpecs,
+				)
+					.map((spec) => ({
+						type: 'capability' as const,
+						name: spec.name,
+						description: spec.description,
+						score: lexicalScore(query, `${spec.name}\n${spec.description}`),
+					}))
+					.filter((match) => match.score > 0)
+				const packageMatches = optionalRows.packageRows
+					.map((entry) => {
+						const doc = [
+							entry.record.name,
+							entry.record.kodyId,
+							entry.record.description,
+							entry.record.tags.join(' '),
+							entry.record.searchText ?? '',
+						].join('\n')
+						const lexical = lexicalScore(query, doc)
+						const vector = cosineSimilarity(
+							queryEmbedding,
+							deterministicEmbedding(doc),
+						)
+						return {
+							type: 'package' as const,
+							packageId: entry.record.id,
+							kodyId: entry.record.kodyId,
+							name: entry.record.name,
+							title: entry.record.name,
+							description: entry.record.description,
+							tags: entry.record.tags,
+							hasApp: entry.record.hasApp,
+							score: hybridSearchScore(lexical, vector),
+						}
+					})
+					.filter((match) => match.score > 0)
+				const valueMatches = optionalRows.userValueRows
+					.flatMap((row) => {
+						if (parseConnectorValueName(row.name)) return []
+						return [
+							{
+								type: 'value' as const,
+								valueId: buildValueEntityId(row),
+								name: row.name,
+								description: describeValue(row),
+								scope: row.scope,
+								appId: row.appId,
+								score: lexicalScore(
+									query,
+									[row.name, row.description, row.scope, row.value].join('\n'),
+								),
 							},
-						}),
-				})
-				const skillCollectionSlug = args.skill_collection?.trim()
-					? slugifySkillCollectionName(args.skill_collection)
-					: undefined
-				const appSecretsByAppId = userId
-					? await listAppSecretsByAppIds({
-							env: input.env,
-							userId,
-							appIds: optionalRows.uiArtifactRows.map((row) => row.id),
-						})
-					: new Map()
-				const result = await searchUnified({
-					baseUrl: input.callerContext.baseUrl,
-					env: input.env,
-					query: args.query,
-					skillCollectionSlug,
-					limit: args.limit ?? defaultSearchLimit,
-					specs: registry.capabilitySpecs,
-					userId,
-					skillRows: optionalRows.skillRows,
-					uiArtifactRows: optionalRows.uiArtifactRows,
-					jobRows: optionalRows.jobRows,
-					userSecretRows: optionalRows.userSecretRows,
-					userValueRows: optionalRows.userValueRows,
-					appSecretsByAppId,
-				})
+						]
+					})
+					.filter((match) => match.score > 0)
+				const connectorMatches = optionalRows.userValueRows
+					.flatMap((row) => {
+						const connectorName = parseConnectorValueName(row.name)
+						if (!connectorName) return []
+						const config = parseConnectorConfig(
+							parseConnectorJson(row.value),
+							connectorName,
+						)
+						if (!config) return []
+						return [
+							{
+								type: 'connector' as const,
+								connectorName,
+								title: connectorName,
+								description:
+									row.description.trim() ||
+									`Saved OAuth connector configuration (${config.flow} flow).`,
+								flow: config.flow,
+								apiBaseUrl: config.apiBaseUrl ?? null,
+								requiredHosts: config.requiredHosts ?? [],
+								score: lexicalScore(
+									query,
+									[
+										connectorName,
+										row.description,
+										config.tokenUrl,
+										config.apiBaseUrl ?? '',
+									].join('\n'),
+								),
+							},
+						]
+					})
+					.filter((match) => match.score > 0)
+				const secretMatches = optionalRows.userSecretRows
+					.map((row) => ({
+						type: 'secret' as const,
+						name: row.name,
+						description: row.description,
+						score: lexicalScore(query, `${row.name}\n${row.description}`),
+					}))
+					.filter((match) => match.score > 0)
+				const matches: Array<SearchMatch> = [
+					...capabilityMatches,
+					...packageMatches,
+					...valueMatches,
+					...connectorMatches,
+					...secretMatches,
+				]
+					.sort((left, right) => right.score - left.score)
+					.slice(0, limit)
+					.map(({ score: _score, ...match }) => match)
+				const result = {
+					matches,
+					offline: isCapabilitySearchOffline(input.env),
+				}
 				const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
 					env: input.env,
 					callerContext: input.callerContext,
@@ -147,13 +260,13 @@ export async function createAgentTurnToolSet(input: {
 		}),
 		execute: tool({
 			description:
-				'Run a short async JavaScript function against Kody capabilities via the execute runtime.',
+			'Run a short JavaScript module via the execute runtime; the module should default export the function to run.',
 			inputSchema: z.object({
 				code: z.string().min(1),
 				params: z.record(z.string(), z.unknown()).optional(),
 			}),
 			execute: async (args) => {
-				const result = await runCodemodeWithRegistry(
+				const result = await runModuleWithRegistry(
 					input.env,
 					input.callerContext,
 					args.code,

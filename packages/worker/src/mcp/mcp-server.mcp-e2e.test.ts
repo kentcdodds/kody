@@ -3,6 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createMcpClient,
 	createTestDatabase,
+	loginToApp,
 	startDevServer,
 } from '../../../../tools/mcp-test-support.ts'
 
@@ -10,7 +11,7 @@ import {
  * MCP E2E is intentionally tiny.
  *
  * Do not add cases here unless the thing being tested genuinely requires the
- * real MCP HTTP transport, OAuth flow, and saved-app session wiring all at
+ * real MCP HTTP transport, OAuth flow, and package-app session wiring all at
  * once. Most capability behavior belongs in faster node/workers tests beside
  * the implementation. Keep this file to a couple of smoke journeys.
  */
@@ -33,10 +34,11 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	)
 })
 
-test('authenticated MCP smoke covers core tools, inline UI, and saved app backends', async () => {
+test('authenticated MCP smoke covers core tools, inline UI, and hosted package apps', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
+	const appCookie = await loginToApp(server.origin, database.user)
 
 	const tools = await mcpClient.client.listTools()
 	expect(tools.tools.map((tool) => tool.name)).toEqual(
@@ -62,7 +64,9 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 	const upsertResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
+			code: `import { codemode } from 'kody:runtime'
+
+				export default async function upsertMemory() {
 					return await codemode.meta_memory_upsert({
 						subject: 'User prefers npm over pnpm',
 						summary: 'Always use npm commands in this repository.',
@@ -136,52 +140,88 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 	const saveResult = await mcpClient.client.callTool({
 		name: 'execute',
 		arguments: {
-			code: `async () => {
-					return await codemode.ui_save_app({
-						title: 'Facet Counter',
-						description: 'Saved app with a backend facet counter',
-						clientCode: '<main><h1>Facet Counter</h1></main>',
-						serverCode: \`
-							import { DurableObject } from 'cloudflare:workers'
+			code: `import { codemode } from 'kody:runtime'
 
-							export class App extends DurableObject {
-								async fetch(request) {
-									const url = new URL(request.url)
-									if (url.pathname !== '/api/counter') {
-										return new Response('Not found', { status: 404 })
-									}
-									const current = (await this.ctx.storage.get('count')) ?? 0
-									const next = Number(current) + 1
-									await this.ctx.storage.put('count', next)
-									return Response.json({ count: next })
-								}
-							}
-						\`,
-						hidden: true,
-					})
-				}`,
+export default async function savePackage() {
+	return await codemode.package_save({
+		files: [
+			{
+				path: 'package.json',
+				content: ${JSON.stringify(
+					JSON.stringify(
+						{
+							name: '@kody/facet-counter',
+							exports: {
+								'.': './src/index.ts',
+							},
+							kody: {
+								id: 'facet-counter',
+								description: 'Hosted package app with a backend counter',
+								app: {
+									entry: './src/app.ts',
+								},
+							},
+						},
+						null,
+						2,
+					),
+				)},
+			},
+			{
+				path: 'src/index.ts',
+				content: ${JSON.stringify(
+					'export default async function noop() { return null }\n',
+				)},
+			},
+			{
+				path: 'src/app.ts',
+				content: ${JSON.stringify(`import { DurableObject } from 'cloudflare:workers'
+
+export class Counter extends DurableObject {
+  async fetch(request) {
+    const url = new URL(request.url)
+    if (url.pathname !== '/api/counter') {
+      return new Response('Not found', { status: 404 })
+    }
+    const current = (await this.ctx.storage.get('count')) ?? 0
+    const next = Number(current) + 1
+    await this.ctx.storage.put('count', next)
+    return Response.json({ count: next })
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    const id = env.COUNTER.idFromName('main')
+    const stub = env.COUNTER.get(id)
+    return await stub.fetch(request)
+  },
+}
+`)},
+			},
+		],
+	})
+}`,
 		},
 	})
 	const saveStructured = (saveResult as CallToolResult).structuredContent as
 		| {
 				result?: {
-					app_id?: string
-					has_server_code?: boolean
-					hosted_url?: string
+					package_id?: string
+					kody_id?: string
+					has_app?: boolean
 				}
 		  }
 		| undefined
-	const savedAppId = saveStructured?.result?.app_id
-	expect(typeof savedAppId).toBe('string')
-	expect(saveStructured?.result?.has_server_code).toBe(true)
-	expect(saveStructured?.result?.hosted_url).toBe(
-		`${server.origin}/ui/${savedAppId}`,
-	)
+	const savedPackageId = saveStructured?.result?.package_id
+	expect(typeof savedPackageId).toBe('string')
+	expect(saveStructured?.result?.has_app).toBe(true)
+	expect(saveStructured?.result?.kody_id).toBe('facet-counter')
 
 	const savedOpenResult = await mcpClient.client.callTool({
 		name: 'open_generated_ui',
 		arguments: {
-			app_id: savedAppId,
+			package_id: savedPackageId,
 		},
 	})
 	const savedOpenStructured = (savedOpenResult as CallToolResult)
@@ -190,46 +230,20 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 				renderSource?: string
 				appId?: string | null
 				hostedUrl?: string | null
-				appSession?: {
-					token?: string
-					endpoints?: { source?: string }
-				} | null
-				appBackend?: {
-					basePath?: string
-				} | null
 		  }
 		| undefined
-	expect(savedOpenStructured?.renderSource).toBe('saved_app')
-	expect(savedOpenStructured?.appId).toBe(savedAppId)
+	expect(savedOpenStructured?.renderSource).toBe('saved_package')
+	expect(savedOpenStructured?.appId).toBe(savedPackageId)
 	expect(savedOpenStructured?.hostedUrl).toBe(
-		`${server.origin}/ui/${savedAppId}`,
+		`${server.origin}/packages/facet-counter`,
 	)
-	expect(savedOpenStructured?.appBackend?.basePath).toBe(`/app/${savedAppId}`)
-	expect(typeof savedOpenStructured?.appSession?.token).toBe('string')
-
-	const sourceResponse = await fetch(
-		savedOpenStructured!.appSession!.endpoints!.source!,
-		{
-			headers: {
-				Authorization: `Bearer ${savedOpenStructured!.appSession!.token}`,
-				Accept: 'application/json',
-			},
-		},
-	)
-	expect(sourceResponse.ok).toBe(true)
-	const backendCookie = sourceResponse.headers.get('Set-Cookie')
-	expect(backendCookie).toContain('kody_generated_ui_app=')
-	const scopedCookieHeader = backendCookie?.split(';')[0] ?? ''
 
 	const firstResponse = await fetch(
-		new URL(
-			`${savedOpenStructured!.appBackend!.basePath}/api/counter`,
-			server.origin,
-		),
+		new URL('/packages/facet-counter/api/counter', server.origin),
 		{
 			headers: {
 				Accept: 'application/json',
-				Cookie: scopedCookieHeader,
+				Cookie: appCookie,
 			},
 		},
 	)
@@ -237,14 +251,11 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 	expect(await firstResponse.json()).toEqual({ count: 1 })
 
 	const secondResponse = await fetch(
-		new URL(
-			`${savedOpenStructured!.appBackend!.basePath}/api/counter`,
-			server.origin,
-		),
+		new URL('/packages/facet-counter/api/counter', server.origin),
 		{
 			headers: {
 				Accept: 'application/json',
-				Cookie: scopedCookieHeader,
+				Cookie: appCookie,
 			},
 		},
 	)
@@ -252,15 +263,13 @@ test('authenticated MCP smoke covers core tools, inline UI, and saved app backen
 	expect(await secondResponse.json()).toEqual({ count: 2 })
 
 	const unauthenticatedResponse = await fetch(
-		new URL(
-			`${savedOpenStructured!.appBackend!.basePath}/api/counter`,
-			server.origin,
-		),
+		new URL('/packages/facet-counter/api/counter', server.origin),
 		{
-			headers: {
-				Accept: 'application/json',
-			},
+			headers: { Accept: 'application/json' },
+			redirect: 'manual',
 		},
 	)
-	expect(unauthenticatedResponse.status).toBe(401)
+	expect(unauthenticatedResponse.status).toBeGreaterThanOrEqual(300)
+	expect(unauthenticatedResponse.status).toBeLessThan(400)
+	expect(unauthenticatedResponse.headers.get('Location')).toBeTruthy()
 })
