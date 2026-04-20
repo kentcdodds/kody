@@ -17,8 +17,9 @@ connector, value, or secret reference, then run work through **execute**.
   shown in the same conversation.
 - **Think in packages for reusable saved code.** Packages expose exports,
   declare package-owned jobs, and can optionally expose an app/UI surface.
-  For one-off scheduled work that should not become a saved package, use the
-  built-in `job_schedule_once` capability.
+  For scheduled work that should not become a saved package, use the built-in
+  `job_schedule` capability. `job_schedule_once` remains available as a
+  one-off convenience alias.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Do not paste secrets in chat.** Use saved secrets, generated UI, or the

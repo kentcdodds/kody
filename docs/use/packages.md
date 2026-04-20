@@ -74,8 +74,9 @@ Packages can own jobs, but packages are no longer the only scheduling path.
 
 Jobs are part of the package definition.
 
-For one-off repo-backed jobs that are not part of a saved package, use the
-`job_schedule_once` capability instead.
+For repo-backed jobs that are not part of a saved package, use
+`job_schedule` instead. `job_schedule_once` remains available as the one-off
+shortcut.
 
 ## Save and edit packages
 

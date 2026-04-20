@@ -44,8 +44,10 @@ module-oriented runtime model:
 - package-specific metadata lives under `package.json#kody`
 - package jobs are schedules declared under `package.json#kody.jobs`
 - package apps are optional UI surfaces declared under `package.json#kody.app`
-- one-off jobs can also be scheduled directly with
-  **`codemode.job_schedule_once(...)`** without creating a saved package
+- non-package jobs can also be scheduled directly with
+  **`codemode.job_schedule(...)`** without creating a saved package
+- **`codemode.job_schedule_once(...)`** remains available as a convenience alias
+  for one-off schedules
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
@@ -73,8 +75,8 @@ Typical pattern inside execute:
 ## Storage
 
 Kody supports durable storage binding for execute and scheduled jobs,
-including package-owned jobs and one-off jobs created with
-`job_schedule_once`.
+including package-owned jobs and non-package jobs created with
+`job_schedule` or `job_schedule_once`.
 
 - bound storage is execute-, app-, package-, or job-owned durable state
 - import **`storage`** from **`kody:runtime`**
