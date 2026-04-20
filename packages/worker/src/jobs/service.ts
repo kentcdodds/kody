@@ -1,5 +1,8 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { parseMcpCallerContext } from '#mcp/context.ts'
+import {
+	createMcpCallerContext,
+	parseMcpCallerContext,
+} from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
@@ -31,7 +34,6 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
-import { createMcpCallerContext } from '#mcp/context.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
 	normalizePackageWorkspacePath,
@@ -165,6 +167,82 @@ function repoSessionNeedsRefresh(session: {
 
 function createJobRuntimeSessionId(jobId: string) {
 	return `job-runtime-${jobId}-${crypto.randomUUID()}`
+}
+
+async function executeBundledJobModule(input: {
+	env: Env
+	job: JobRecord
+	callerContext: PersistedJobCallerContext
+	session: Awaited<ReturnType<ReturnType<typeof repoSessionRpc>['openSession']>>
+	sessionClient: ReturnType<typeof repoSessionRpc>
+	source: Awaited<ReturnType<typeof getEntitySourceById>>
+	modulePath: string
+	bypassLogs: Array<string>
+	packageContext?:
+		| {
+				packageId: string
+				kodyId: string
+		  }
+		| null
+}): Promise<ExecuteResult> {
+	try {
+		const sourceFiles = await loadRepoSourceFilesFromSession({
+			sessionClient: input.sessionClient,
+			sessionId: input.session.id,
+			userId: input.callerContext.user.userId,
+			sourceRoot: input.session.source_root,
+		})
+		const bundled = await buildKodyModuleBundle({
+			env: input.env,
+			baseUrl: input.callerContext.baseUrl,
+			userId: input.callerContext.user.userId,
+			sourceFiles,
+			entryPoint: input.modulePath,
+			params: input.job.params,
+		})
+		const executionResult = await runBundledModuleWithRegistry(
+			input.env,
+			{
+				...input.callerContext,
+				repoContext: {
+					sourceId: input.session.source_id,
+					repoId: null,
+					sessionId: input.session.id,
+					sessionRepoId: input.session.session_repo_id,
+					baseCommit: input.session.base_commit,
+					manifestPath: input.session.manifest_path,
+					sourceRoot: input.session.source_root,
+					publishedCommit: input.session.published_commit,
+					entityKind: input.session.entity_type,
+					entityId: input.source?.entity_id ?? input.job.id,
+				},
+			},
+			{
+				mainModule: bundled.mainModule,
+				modules: bundled.modules,
+			},
+			input.job.params,
+			{
+				executorExports: workerExports,
+				storageTools: {
+					userId: input.callerContext.user.userId,
+					storageId: input.job.storageId,
+					writable: true,
+				},
+				...(input.packageContext ? { packageContext: input.packageContext } : {}),
+			},
+		)
+		return {
+			...executionResult,
+			logs: [...input.bypassLogs, ...(executionResult.logs ?? [])],
+		}
+	} catch (error) {
+		return {
+			error: formatJobError(error),
+			result: null,
+			logs: input.bypassLogs,
+		}
+	}
 }
 
 function buildPackageJobId(packageId: string, jobName: string) {
@@ -722,63 +800,16 @@ async function runRepoBackedJob(input: {
 					logs: bypassLogs,
 				}
 			}
-			try {
-				const sourceFiles = await loadRepoSourceFilesFromSession({
-					sessionClient,
-					sessionId: session.id,
-					userId: input.callerContext.user.userId,
-					sourceRoot: session.source_root,
-				})
-				const bundled = await buildKodyModuleBundle({
-					env: input.env,
-					baseUrl: input.callerContext.baseUrl,
-					userId: input.callerContext.user.userId,
-					sourceFiles,
-					entryPoint: modulePath,
-					params: input.job.params,
-				})
-				const executionResult = await runBundledModuleWithRegistry(
-					input.env,
-					{
-						...input.callerContext,
-						repoContext: {
-							sourceId: session.source_id,
-							repoId: null,
-							sessionId: session.id,
-							sessionRepoId: session.session_repo_id,
-							baseCommit: session.base_commit,
-							manifestPath: session.manifest_path,
-							sourceRoot: session.source_root,
-							publishedCommit: session.published_commit,
-							entityKind: session.entity_type,
-							entityId: source?.entity_id ?? input.job.id,
-						},
-					},
-					{
-						mainModule: bundled.mainModule,
-						modules: bundled.modules,
-					},
-					input.job.params,
-					{
-						executorExports: workerExports,
-						storageTools: {
-							userId: input.callerContext.user.userId,
-							storageId: input.job.storageId,
-							writable: true,
-						},
-					},
-				)
-				return {
-					...executionResult,
-					logs: [...bypassLogs, ...(executionResult.logs ?? [])],
-				}
-			} catch (error) {
-				return {
-					error: formatJobError(error),
-					result: null,
-					logs: bypassLogs,
-				}
-			}
+			return executeBundledJobModule({
+				env: input.env,
+				job: input.job,
+				callerContext: input.callerContext,
+				session,
+				sessionClient,
+				source,
+				modulePath,
+				bypassLogs,
+			})
 		}
 		const result = await sessionClient.runChecks({
 			sessionId: session.id,
@@ -847,67 +878,20 @@ async function runRepoBackedJob(input: {
 				logs: bypassLogs,
 			}
 		}
-		try {
-			const sourceFiles = await loadRepoSourceFilesFromSession({
-				sessionClient,
-				sessionId: session.id,
-				userId: input.callerContext.user.userId,
-				sourceRoot: session.source_root,
-			})
-			const bundled = await buildKodyModuleBundle({
-				env: input.env,
-				baseUrl: input.callerContext.baseUrl,
-				userId: input.callerContext.user.userId,
-				sourceFiles,
-				entryPoint: modulePath,
-				params: input.job.params,
-			})
-			const executionResult = await runBundledModuleWithRegistry(
-				input.env,
-				{
-					...input.callerContext,
-					repoContext: {
-						sourceId: session.source_id,
-						repoId: null,
-						sessionId: session.id,
-						sessionRepoId: session.session_repo_id,
-						baseCommit: session.base_commit,
-						manifestPath: session.manifest_path,
-						sourceRoot: session.source_root,
-						publishedCommit: session.published_commit,
-						entityKind: session.entity_type,
-						entityId: source?.entity_id ?? input.job.id,
-					},
-				},
-				{
-					mainModule: bundled.mainModule,
-					modules: bundled.modules,
-				},
-				input.job.params,
-				{
-					executorExports: workerExports,
-					storageTools: {
-						userId: input.callerContext.user.userId,
-						storageId: input.job.storageId,
-						writable: true,
-					},
-					packageContext: {
-						packageId: source?.entity_id ?? input.job.id,
-						kodyId: manifest.kody.id,
-					},
-				},
-			)
-			return {
-				...executionResult,
-				logs: [...bypassLogs, ...(executionResult.logs ?? [])],
-			}
-		} catch (error) {
-			return {
-				error: formatJobError(error),
-				result: null,
-				logs: bypassLogs,
-			}
-		}
+		return executeBundledJobModule({
+			env: input.env,
+			job: input.job,
+			callerContext: input.callerContext,
+			session,
+			sessionClient,
+			source,
+			modulePath,
+			bypassLogs,
+			packageContext: {
+				packageId: source?.entity_id ?? input.job.id,
+				kodyId: manifest.kody.id,
+			},
+		})
 	} catch (error) {
 		return {
 			error: formatJobError(error),

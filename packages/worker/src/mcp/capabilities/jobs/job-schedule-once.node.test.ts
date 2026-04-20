@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -17,13 +17,10 @@ vi.mock('#worker/jobs/manager-client.ts', () => ({
 
 const { jobScheduleOnceCapability } = await import('./job-schedule-once.ts')
 
-beforeEach(() => {
+test('job_schedule_once creates a one-off job and syncs the job manager alarm', async () => {
 	mockModule.createJob.mockReset()
 	mockModule.syncJobManagerAlarm.mockReset()
 	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
-})
-
-test('job_schedule_once creates a one-off job and syncs the job manager alarm', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
@@ -100,6 +97,9 @@ test('job_schedule_once creates a one-off job and syncs the job manager alarm', 
 })
 
 test('job_schedule_once requires an authenticated user', async () => {
+	mockModule.createJob.mockReset()
+	mockModule.syncJobManagerAlarm.mockReset()
+	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
 	const env = {} as Env
 
 	await expect(
