@@ -26,6 +26,7 @@ import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
+import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
 	createStorageCodemodeTools,
 	createStorageHelperPrelude,
@@ -241,6 +242,99 @@ ${createExecuteHelperPrelude()}
 ${helperPrelude ? `${helperPrelude}\n` : ''}
   const __kodyUserCode = (${normalized});
   return await __kodyUserCode();
+}`
+	const result = await executor.execute(wrapped, [provider])
+	const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
+	if (!result.error) return sanitizedResult
+	const batchMessage = await rewriteCapabilitySecretError({
+		error: result.error,
+		env,
+		callerContext,
+	})
+	if (!batchMessage) return sanitizedResult
+	return {
+		...sanitizedResult,
+		error: secretRedactor.redactErrorMessage(batchMessage),
+	}
+}
+
+export async function runModuleWithRegistry(
+	env: Env,
+	callerContext: McpCallerContext,
+	code: string,
+	params?: Record<string, unknown>,
+	options?: {
+		executorExports?: typeof workerExports
+		additionalTools?: AdditionalCodemodeTools
+		storageTools?: StorageToolOptions
+	},
+): Promise<ExecuteResult> {
+	const { createExecuteExecutor } = await import('#mcp/executor.ts')
+	const secretRedactor = createExecutionSecretRedactor()
+	const normalizedStorageContext = normalizeStorageContext(
+		callerContext.storageContext ?? null,
+	)
+	const userId = callerContext.user?.userId ?? ''
+	const bundled = await buildKodyModuleBundle({
+		env,
+		baseUrl: callerContext.baseUrl,
+		userId,
+		sourceFiles: {
+			'entry.ts': code,
+		},
+		entryPoint: 'entry.ts',
+		params,
+	})
+	const executor = createExecuteExecutor({
+		env,
+		exports: options?.executorExports ?? workerExports,
+		gatewayProps: {
+			baseUrl: callerContext.baseUrl,
+			userId: callerContext.user?.userId ?? null,
+			storageContext: normalizedStorageContext,
+		},
+		modules: bundled.modules,
+	})
+	const provider = await buildCodemodeProvider(env, callerContext, {
+		trackSecretInputValue: (value) => {
+			secretRedactor.track(value)
+		},
+		additionalTools: options?.additionalTools,
+		storageTools: options?.storageTools,
+	})
+	const storageHelperPrelude = options?.storageTools
+		? createStorageHelperPrelude({
+				storageId: options.storageTools.storageId,
+				writable: options.storageTools.writable,
+			})
+		: ''
+	const wrapped = `async () => {
+${createExecuteHelperPrelude()}
+${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
+  const __previousRuntime = globalThis.__kodyRuntime;
+  globalThis.__kodyRuntime = {
+    codemode,
+    params: ${JSON.stringify(params ?? null)},
+    storage: typeof storage === 'undefined' ? undefined : storage,
+    refreshAccessToken,
+    createAuthenticatedFetch,
+    agentChatTurnStream,
+    packageContext: null,
+  };
+  try {
+    const __kodyModule = await import(${JSON.stringify(`./${bundled.mainModule}`)});
+    const __kodyEntrypoint = __kodyModule?.default;
+    if (typeof __kodyEntrypoint !== 'function') {
+      throw new Error('Kody execute modules must default export a function.');
+    }
+    return await __kodyEntrypoint();
+  } finally {
+    if (__previousRuntime === undefined) {
+      delete globalThis.__kodyRuntime;
+    } else {
+      globalThis.__kodyRuntime = __previousRuntime;
+    }
+  }
 }`
 	const result = await executor.execute(wrapped, [provider])
 	const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)

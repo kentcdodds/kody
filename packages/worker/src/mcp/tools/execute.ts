@@ -6,7 +6,7 @@ import {
 	formatExecutionOutput,
 	getExecutionErrorDetails,
 } from '#mcp/executor.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	callerContextFields,
@@ -176,7 +176,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					},
 				},
 				async () =>
-					runCodemodeWithRegistry(env, callerContext, code, params, {
+					runModuleWithRegistry(env, callerContext, code, params, {
 						executorExports: agent.getLoopbackExports(),
 						storageTools: activeStorageId
 							? {

@@ -14,7 +14,7 @@ import {
 } from '#mcp/secrets/service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
-import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -134,7 +134,7 @@ export async function createAgentTurnToolSet(input: {
 				params: z.record(z.string(), z.unknown()).optional(),
 			}),
 			execute: async (args) => {
-				const result = await runCodemodeWithRegistry(
+				const result = await runModuleWithRegistry(
 					input.env,
 					input.callerContext,
 					args.code,
