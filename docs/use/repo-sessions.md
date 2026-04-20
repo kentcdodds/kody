@@ -7,6 +7,27 @@ publishes.
 Use the repo capabilities when you want to inspect or modify package source
 directly.
 
+## Why `repo_edit_flow` returns `edits`
+
+`repo_edit_flow` returns the applied `edits` array by default.
+
+That response shape favors one-shot agent workflows:
+
+- the caller can inspect exactly what changed without issuing extra read calls
+- checks and publish results can be paired with the concrete file diffs that
+  produced them
+- retries and repair logic can reason over one structured result instead of
+  reconstructing state from a session after the fact
+
+This is especially useful for auditability and for agents that need to explain
+their work immediately after an edit flow finishes.
+
+The tradeoff is response size. Large edit batches can produce a large `edits`
+payload, which may be wasteful for callers that only need session, checks, or
+publish status. When response size matters more than a self-contained result,
+use the lower-level repo capabilities instead of `repo_edit_flow` so you can
+choose when to read file contents or diffs.
+
 ## Preferred workflow
 
 For common edits, prefer **`repo_edit_flow`**.
@@ -61,6 +82,7 @@ session:
 - browse files with `repo_tree` and `repo_read_file`
 - search the workspace with `repo_search`
 - apply multiple edit batches over time
+- avoid returning the full `edits` payload from one convenience workflow
 - run checks separately from publish
 - inspect status with `repo_get_check_status`
 - repair drift with `repo_rebase_session`
@@ -82,4 +104,5 @@ await codemode.repo_edit_flow({
 ```
 
 This returns the session metadata, applied edits, check outcome, and publish
-result in one structured response.
+result in one structured response. The response is intentionally self-contained,
+which is why the `edits` array is included by default.
