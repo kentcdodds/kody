@@ -3,6 +3,7 @@ import {
 	buildCapabilityEmbedText,
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	deterministicEmbedding,
+	hybridSearchScore,
 	lexicalScore,
 	searchCapabilities,
 } from './capability-search.ts'
@@ -45,6 +46,12 @@ test('lexicalScore prefers overlapping tokens', () => {
 	expect(lexicalScore('github issues', doc)).toBeGreaterThan(
 		lexicalScore('weather forecast', doc),
 	)
+})
+
+test('hybridSearchScore keeps lexical-vector blends in a 0..1 range', () => {
+	expect(hybridSearchScore(0, 0)).toBe(0)
+	expect(hybridSearchScore(1, 1)).toBe(1)
+	expect(hybridSearchScore(0.6, 0.2)).toBe(0.4)
 })
 
 test('offline search returns provided specs without depending on global ranks', async () => {

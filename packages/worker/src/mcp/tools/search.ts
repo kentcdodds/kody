@@ -12,6 +12,7 @@ import {
 	lexicalScore,
 	cosineSimilarity,
 	isCapabilitySearchOffline,
+	normalizeHybridSearchScore,
 } from '#mcp/capabilities/capability-search.ts'
 import {
 	listUserSecretsForSearch,
@@ -652,8 +653,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							description: entry.record.description,
 							tags: entry.record.tags,
 							hasApp: entry.record.hasApp,
-							score:
-								isCapabilitySearchOffline(agent.getEnv()) ? lexical + vector : lexical + vector,
+							score: normalizeHybridSearchScore({
+								lexical,
+								vector,
+							}),
 						}
 					})
 					.filter((match) => match.score > 0)

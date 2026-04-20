@@ -10,6 +10,7 @@ import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import {
 	cosineSimilarity,
 	deterministicEmbedding,
+	hybridSearchScore,
 	isCapabilitySearchOffline,
 	lexicalScore,
 } from '#mcp/capabilities/capability-search.ts'
@@ -142,7 +143,7 @@ export async function createAgentTurnToolSet(input: {
 							description: entry.record.description,
 							tags: entry.record.tags,
 							hasApp: entry.record.hasApp,
-							score: lexical + vector,
+							score: hybridSearchScore(lexical, vector),
 						}
 					})
 					.filter((match) => match.score > 0)

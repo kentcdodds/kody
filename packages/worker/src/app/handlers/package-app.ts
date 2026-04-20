@@ -46,45 +46,50 @@ export async function handlePackageAppRequest(
 	if (!savedPackage || !savedPackage.hasApp) {
 		return new Response('Saved package app not found.', { status: 404 })
 	}
-	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
-	const packageSource = await loadPackageSourceBySourceId({
-		env,
-		baseUrl,
-		userId: user.mcpUser.userId,
-		sourceId: savedPackage.sourceId,
-	})
-	const callerContext = await createPackageAppCallerContext({
-		baseUrl,
-		user: {
+	try {
+		const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+		const packageSource = await loadPackageSourceBySourceId({
+			env,
+			baseUrl,
 			userId: user.mcpUser.userId,
-			email: user.email,
-			displayName: user.displayName,
-		},
-		packageId: savedPackage.id,
-	})
-	const appWorker = await buildPackageAppWorker({
-		env,
-		baseUrl,
-		userId: user.mcpUser.userId,
-		savedPackage: {
-			id: savedPackage.id,
-			kodyId: savedPackage.kodyId,
-			name: savedPackage.name,
 			sourceId: savedPackage.sourceId,
-		},
-		sourceFiles: packageSource.files,
-		runtime: {
-			callerContext,
-		},
-	})
-	const entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName)
-	const forwardedUrl = new URL(request.url)
-	const resolvedPackagePath = parsePackageAppPath(forwardedUrl.pathname)
-	if (!resolvedPackagePath || resolvedPackagePath.kodyId !== kodyId) {
-		forwardedUrl.pathname = '/'
-	} else {
-		forwardedUrl.pathname = resolvedPackagePath.restPath
+		})
+		const callerContext = await createPackageAppCallerContext({
+			baseUrl,
+			user: {
+				userId: user.mcpUser.userId,
+				email: user.email,
+				displayName: user.displayName,
+			},
+			packageId: savedPackage.id,
+		})
+		const appWorker = await buildPackageAppWorker({
+			env,
+			baseUrl,
+			userId: user.mcpUser.userId,
+			savedPackage: {
+				id: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				name: savedPackage.name,
+				sourceId: savedPackage.sourceId,
+			},
+			sourceFiles: packageSource.files,
+			runtime: {
+				callerContext,
+			},
+		})
+		const entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName)
+		const forwardedUrl = new URL(request.url)
+		const resolvedPackagePath = parsePackageAppPath(forwardedUrl.pathname)
+		if (!resolvedPackagePath || resolvedPackagePath.kodyId !== kodyId) {
+			forwardedUrl.pathname = '/'
+		} else {
+			forwardedUrl.pathname = resolvedPackagePath.restPath
+		}
+		const forwardedRequest = new Request(forwardedUrl.toString(), request)
+		return await entrypoint.fetch(forwardedRequest)
+	} catch (error) {
+		console.error('Package app handler failed:', error)
+		return new Response('Internal Server Error', { status: 500 })
 	}
-	const forwardedRequest = new Request(forwardedUrl.toString(), request)
-	return await entrypoint.fetch(forwardedRequest)
 }
