@@ -37,6 +37,10 @@ import {
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
+import {
+	getManifestEntrypointPath,
+	parseRepoManifest,
+} from '#worker/repo/manifest.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
@@ -645,6 +649,7 @@ async function runRepoBackedJob(input: {
 	}
 	let bypassLogs: Array<string> = []
 	try {
+		const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)
 		let session = await sessionClient.openSession(openSessionInput)
 		if (repoSessionNeedsRefresh(session)) {
 			const stalePublishedCommit = session.published_commit
@@ -664,6 +669,115 @@ async function runRepoBackedJob(input: {
 				throw new Error(
 					`Repo session "${session.id}" still points at base commit "${session.base_commit}" instead of published commit "${session.published_commit}".`,
 				)
+			}
+		}
+		const manifestPath =
+			session.manifest_path?.replace(/^\/+/, '') ||
+			(session.entity_type === 'job' ? 'kody.json' : 'package.json')
+		const isStandaloneJobSource =
+			source?.entity_kind === 'job' || manifestPath === 'kody.json'
+		if (isStandaloneJobSource) {
+			const entrypoint = await sessionClient.readFile({
+				sessionId: session.id,
+				userId: input.callerContext.user.userId,
+				path: manifestPath,
+			})
+			if (!entrypoint.content) {
+				return {
+					error: `Job manifest "${manifestPath}" was not found in repo session.`,
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			let manifest: ReturnType<typeof parseRepoManifest>
+			try {
+				manifest = parseRepoManifest({
+					content: entrypoint.content,
+					manifestPath,
+				})
+			} catch (error) {
+				return {
+					error: error instanceof Error ? error.message : String(error),
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			if (manifest.kind !== 'job') {
+				return {
+					error: `Repo source "${input.job.sourceId}" is not a job manifest.`,
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			const modulePath = getManifestEntrypointPath(manifest)
+			const moduleFile = await sessionClient.readFile({
+				sessionId: session.id,
+				userId: input.callerContext.user.userId,
+				path: modulePath,
+			})
+			if (!moduleFile.content) {
+				return {
+					error: `Job entrypoint "${manifest.entrypoint}" was not found in repo session.`,
+					result: null,
+					logs: bypassLogs,
+				}
+			}
+			try {
+				const sourceFiles = await loadRepoSourceFilesFromSession({
+					sessionClient,
+					sessionId: session.id,
+					userId: input.callerContext.user.userId,
+					sourceRoot: session.source_root,
+				})
+				const bundled = await buildKodyModuleBundle({
+					env: input.env,
+					baseUrl: input.callerContext.baseUrl,
+					userId: input.callerContext.user.userId,
+					sourceFiles,
+					entryPoint: modulePath,
+					params: input.job.params,
+				})
+				const executionResult = await runBundledModuleWithRegistry(
+					input.env,
+					{
+						...input.callerContext,
+						repoContext: {
+							sourceId: session.source_id,
+							repoId: null,
+							sessionId: session.id,
+							sessionRepoId: session.session_repo_id,
+							baseCommit: session.base_commit,
+							manifestPath: session.manifest_path,
+							sourceRoot: session.source_root,
+							publishedCommit: session.published_commit,
+							entityKind: session.entity_type,
+							entityId: source?.entity_id ?? input.job.id,
+						},
+					},
+					{
+						mainModule: bundled.mainModule,
+						modules: bundled.modules,
+					},
+					input.job.params,
+					{
+						executorExports: workerExports,
+						storageTools: {
+							userId: input.callerContext.user.userId,
+							storageId: input.job.storageId,
+							writable: true,
+						},
+					},
+				)
+				return {
+					...executionResult,
+					logs: [...bypassLogs, ...(executionResult.logs ?? [])],
+				}
+			} catch (error) {
+				return {
+					error: formatJobError(error),
+					result: null,
+					logs: bypassLogs,
+				}
 			}
 		}
 		const result = await sessionClient.runChecks({
@@ -687,8 +801,6 @@ async function runRepoBackedJob(input: {
 			}
 		}
 		bypassLogs = [...gate.logs]
-		const manifestPath =
-			session.manifest_path?.replace(/^\/+/, '') || 'package.json'
 		const entrypoint = await sessionClient.readFile({
 			sessionId: session.id,
 			userId: input.callerContext.user.userId,
@@ -750,10 +862,6 @@ async function runRepoBackedJob(input: {
 				entryPoint: modulePath,
 				params: input.job.params,
 			})
-			const source = await getEntitySourceById(
-				input.env.APP_DB,
-				input.job.sourceId,
-			)
 			const executionResult = await runBundledModuleWithRegistry(
 				input.env,
 				{

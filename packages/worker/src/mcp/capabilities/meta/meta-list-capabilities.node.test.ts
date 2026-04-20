@@ -174,3 +174,29 @@ test('meta_list_capabilities filters by domain', async () => {
 		),
 	).toBe(true)
 })
+
+test('meta_list_capabilities includes the built-in jobs domain capability', async () => {
+	const env = {} as Env
+
+	const result = await metaListCapabilitiesCapability.handler(
+		{
+			detail: true,
+		},
+		{
+			env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+			}),
+		},
+	)
+
+	const scheduleCapability = result.capabilities.find(
+		(capability) => capability.name === 'job_schedule_once',
+	)
+
+	expect(scheduleCapability).toMatchObject({
+		name: 'job_schedule_once',
+		domain: 'jobs',
+		requiredInputFields: ['code', 'run_at'],
+	})
+})

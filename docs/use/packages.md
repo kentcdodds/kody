@@ -66,13 +66,16 @@ Treat package apps like Worker-style modules:
 
 ## Package-owned jobs
 
-Jobs belong to packages.
+Packages can own jobs, but packages are no longer the only scheduling path.
 
 - Define them under `package.json#kody.jobs`
 - Reference package-local entry modules
 - Treat their runtime state as package-owned implementation detail
 
 Jobs are part of the package definition.
+
+For one-off repo-backed jobs that are not part of a saved package, use the
+`job_schedule_once` capability instead.
 
 ## Save and edit packages
 

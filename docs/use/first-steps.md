@@ -15,9 +15,10 @@ connector, value, or secret reference, then run work through **execute**.
 - **Pass `memoryContext`** when durable user memory may matter. Kody uses it to
   surface a small set of relevant long-term memories that have not already been
   shown in the same conversation.
-- **Think in packages.** A saved package is the only top-level persisted
-  primitive. Packages can expose exports, declare package-owned jobs, and
-  optionally expose an app/UI surface.
+- **Think in packages for reusable saved code.** Packages expose exports,
+  declare package-owned jobs, and can optionally expose an app/UI surface.
+  For one-off scheduled work that should not become a saved package, use the
+  built-in `job_schedule_once` capability.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Do not paste secrets in chat.** Use saved secrets, generated UI, or the

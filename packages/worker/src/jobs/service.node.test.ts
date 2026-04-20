@@ -751,6 +751,187 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	}
 })
 
+test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		LOADER: {} as WorkerLoader,
+		REPO_SESSION: {} as DurableObjectNamespace,
+		STORAGE_RUNNER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					getValue: async () => ({ key: 'count', value: 2 }),
+					setValue: async () => ({ ok: true, key: 'count' }),
+					deleteValue: async () => ({ ok: true, key: 'count', deleted: true }),
+					clearStorage: async () => ({ ok: true }),
+					listValues: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					exportStorage: async () => ({
+						entries: [],
+						estimatedBytes: 0,
+						truncated: false,
+						nextStartAfter: null,
+						pageSize: 250,
+					}),
+					sqlQuery: async () => ({
+						columns: ['value'],
+						rows: [{ value: 2 }],
+						rowCount: 1,
+						rowsRead: 1,
+						rowsWritten: 0,
+					}),
+				}
+			},
+		},
+	} as unknown as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Capability-created one-off job',
+			code: 'export default async () => ({ ok: true, adHoc: true })',
+			params: {
+				step: 'lights-off',
+			},
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runBundledModuleWithRegistry',
+		)
+		.mockResolvedValue({
+			result: {
+				ok: true,
+				adHoc: true,
+			},
+			logs: ['ad hoc job executed'],
+		})
+
+	try {
+		const sessionClient = {
+			openSession: vi.fn(async () => ({
+				id: `job-runtime-${jobView.id}`,
+				source_id: jobView.sourceId,
+				source_root: '/',
+				base_commit: 'published-commit-1',
+				session_repo_id: 'session-repo-ad-hoc',
+				session_repo_name: 'session-repo-name',
+				session_repo_namespace: 'default',
+				conversation_id: null,
+				last_checkpoint_commit: null,
+				last_check_run_id: null,
+				last_check_tree_hash: null,
+				expires_at: null,
+				created_at: '2026-04-16T00:00:00.000Z',
+				updated_at: '2026-04-16T00:00:00.000Z',
+				published_commit: 'published-commit-1',
+				manifest_path: 'kody.json',
+				entity_type: 'job' as const,
+			})),
+			runChecks: vi.fn(),
+			readFile: vi.fn(async ({ path }: { path: string }) => ({
+				path,
+				content:
+					path === 'kody.json'
+						? JSON.stringify({
+								version: 1,
+								kind: 'job',
+								title: 'Capability-created one-off job',
+								description: 'Runs once at 2026-04-17T15:00:00.000Z',
+								sourceRoot: '/',
+								entrypoint: 'src/job.ts',
+							})
+						: 'export default async () => ({ ok: true, adHoc: true })',
+			})),
+			tree: vi.fn(async () => ({
+				path: '',
+				name: '',
+				type: 'directory' as const,
+				size: 0,
+				children: [
+					{
+						path: 'kody.json',
+						name: 'kody.json',
+						type: 'file' as const,
+						size: 1,
+					},
+					{
+						path: 'src/job.ts',
+						name: 'job.ts',
+						type: 'file' as const,
+						size: 1,
+					},
+				],
+			})),
+			discardSession: vi.fn(),
+		}
+		const repoSessionRpcSpy = vi
+			.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+			.mockReturnValue(sessionClient as never)
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
+		if (!row) {
+			throw new Error('Expected created job row.')
+		}
+		const outcome = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+		})
+
+		expect(outcome.execution).toEqual({
+			ok: true,
+			result: {
+				ok: true,
+				adHoc: true,
+			},
+			logs: ['ad hoc job executed'],
+		})
+		expect(sessionClient.runChecks).not.toHaveBeenCalled()
+		expect(sessionClient.readFile).toHaveBeenCalledWith({
+			sessionId: `job-runtime-${jobView.id}`,
+			userId: 'user-123',
+			path: 'kody.json',
+		})
+		expect(executeSpy).toHaveBeenCalledTimes(1)
+		expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
+			repoContext: expect.objectContaining({
+				entityKind: 'job',
+				entityId: jobView.id,
+				manifestPath: 'kody.json',
+			}),
+		})
+		expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
+			storageTools: {
+				userId: 'user-123',
+				storageId: `job:${jobView.id}`,
+				writable: true,
+			},
+		})
+		repoSessionRpcSpy.mockRestore()
+	} finally {
+		executeSpy.mockRestore()
+	}
+})
+
 test('executeJobOnce preserves codemode secret and value semantics', async () => {
 	const db = createDatabase()
 	const env = {
