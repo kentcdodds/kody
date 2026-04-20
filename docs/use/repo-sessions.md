@@ -7,26 +7,16 @@ publishes.
 Use the repo capabilities when you want to inspect or modify package source
 directly.
 
-## Why `repo_edit_flow` returns `edits`
+## `edits` payload
 
-`repo_edit_flow` returns the applied `edits` array by default.
+`repo_edit_flow` returns `edits.dry_run` and `edits.total_changed` by default.
 
-That response shape favors one-shot agent workflows:
+The full `edits.edits` array is opt-in through `include_edits: true`.
 
-- the caller can inspect exactly what changed without issuing extra read calls
-- checks and publish results can be paired with the concrete file diffs that
-  produced them
-- retries and repair logic can reason over one structured result instead of
-  reconstructing state from a session after the fact
-
-This is especially useful for auditability and for agents that need to explain
-their work immediately after an edit flow finishes.
-
-The tradeoff is response size. Large edit batches can produce a large `edits`
-payload, which may be wasteful for callers that only need session, checks, or
-publish status. When response size matters more than a self-contained result,
-use the lower-level repo capabilities instead of `repo_edit_flow` so you can
-choose when to read file contents or diffs.
+That keeps the default response small for agent workflows that only need
+session, checks, publish status, or a count of changed files, while still
+allowing callers to request the concrete changed content and diff when they need
+audit or explanation detail.
 
 ## Preferred workflow
 
@@ -82,7 +72,7 @@ session:
 - browse files with `repo_tree` and `repo_read_file`
 - search the workspace with `repo_search`
 - apply multiple edit batches over time
-- avoid returning the full `edits` payload from one convenience workflow
+- inspect file contents or diffs only when you decide to read them
 - run checks separately from publish
 - inspect status with `repo_get_check_status`
 - repair drift with `repo_rebase_session`
@@ -92,6 +82,7 @@ session:
 ```ts
 await codemode.repo_edit_flow({
 	target: { kind: 'package', kody_id: 'triage-github-pr' },
+	include_edits: true,
 	instructions: [
 		{
 			kind: 'replace',
@@ -103,6 +94,6 @@ await codemode.repo_edit_flow({
 })
 ```
 
-This returns the session metadata, applied edits, check outcome, and publish
-result in one structured response. The response is intentionally self-contained,
-which is why the `edits` array is included by default.
+This returns the session metadata, edit summary, check outcome, and publish
+result in one structured response. Set `include_edits: true` when you also want
+the full applied edit list with file content and diffs.

@@ -253,6 +253,10 @@ test('repo_open_session reuses resolved target metadata when resuming an existin
 		createCapabilityContext(),
 	)
 
+	expect(result.edits).toEqual({
+		dry_run: false,
+		total_changed: 1,
+	})
 	expect(result.resolved_target).toEqual({
 		kind: 'package',
 		source_id: 'source-package-1',
@@ -360,6 +364,10 @@ test('repo_edit_flow applies edits, runs checks, and skips publish when checks f
 	expect(rpc.applyEdits).toHaveBeenCalledTimes(1)
 	expect(rpc.runChecks).toHaveBeenCalledTimes(1)
 	expect(rpc.publishSession).not.toHaveBeenCalled()
+	expect(result.edits).toEqual({
+		dry_run: false,
+		total_changed: 1,
+	})
 	expect(result.checks).toEqual({
 		status: 'failed',
 		ok: false,
@@ -389,6 +397,99 @@ test('repo_edit_flow applies edits, runs checks, and skips publish when checks f
 		run_id: 'check-1',
 		tree_hash: 'tree-1',
 		checked_at: '2026-04-18T00:02:00.000Z',
+	})
+})
+
+test('repo_edit_flow includes edit details when include_edits is true', async () => {
+	resetMocks()
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce(createSavedPackageRow())
+		.mockResolvedValueOnce(createSavedPackageRow())
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(createPackageSourceRow())
+		.mockResolvedValueOnce(createPackageSourceRow())
+	const rpc = createRepoRpc()
+	rpc.getSessionInfo.mockResolvedValueOnce({
+		id: 'session-existing',
+		source_id: 'source-package-1',
+		source_root: '/',
+		base_commit: 'commit-package-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'repo-package-1-session-1',
+		session_repo_namespace: 'default',
+		conversation_id: 'conversation-1',
+		last_checkpoint_commit: 'commit-package-1',
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		expires_at: null,
+		created_at: '2026-04-18T00:01:00.000Z',
+		updated_at: '2026-04-18T00:02:00.000Z',
+		published_commit: 'commit-package-1',
+		manifest_path: 'package.json',
+		entity_type: 'package',
+	})
+	rpc.getSessionInfo.mockResolvedValueOnce({
+		id: 'session-existing',
+		source_id: 'source-package-1',
+		source_root: '/',
+		base_commit: 'commit-package-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'repo-package-1-session-1',
+		session_repo_namespace: 'default',
+		conversation_id: 'conversation-1',
+		last_checkpoint_commit: 'commit-package-1',
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		expires_at: null,
+		created_at: '2026-04-18T00:01:00.000Z',
+		updated_at: '2026-04-18T00:02:00.000Z',
+		published_commit: 'commit-package-1',
+		manifest_path: 'package.json',
+		entity_type: 'package',
+	})
+	rpc.applyEdits.mockResolvedValueOnce({
+		dryRun: false,
+		totalChanged: 1,
+		edits: [
+			{
+				path: 'src/index.ts',
+				changed: true,
+				content: 'export default async function run() { return { ok: true } }',
+				diff: '@@',
+			},
+		],
+	})
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+
+	const result = await repoEditFlowCapability.handler(
+		{
+			session_id: 'session-existing',
+			instructions: [
+				{
+					kind: 'replace',
+					path: 'src/index.ts',
+					search: 'return { ok: false }',
+					replacement: 'return { ok: true }',
+				},
+			],
+			include_edits: true,
+			run_checks: false,
+			publish: false,
+		},
+		createCapabilityContext(),
+	)
+
+	expect(result.edits).toEqual({
+		dry_run: false,
+		total_changed: 1,
+		edits: [
+			{
+				path: 'src/index.ts',
+				changed: true,
+				content: 'export default async function run() { return { ok: true } }',
+				diff: '@@',
+			},
+		],
 	})
 })
 
