@@ -55,6 +55,25 @@ test('processDueJobs records failures without aborting later jobs', async () => 
 
 	expect(result.deleteJobIds).toEqual([])
 	expect(result.saveJobs).toHaveLength(2)
+	expect(result.successCount).toBe(1)
+	expect(result.errorCount).toBe(1)
+	expect(result.jobOutcomes).toEqual([
+		{
+			jobId: 'job-1',
+			scheduleType: 'cron',
+			outcome: 'failure',
+			nextRunAt: expect.any(String),
+			deleted: false,
+			error: 'boom',
+		},
+		{
+			jobId: 'job-2',
+			scheduleType: 'cron',
+			outcome: 'success',
+			nextRunAt: expect.any(String),
+			deleted: false,
+		},
+	])
 	expect(result.saveJobs).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
@@ -107,4 +126,16 @@ test('processDueJobs deletes one-shot jobs after execution', async () => {
 
 	expect(result.deleteJobIds).toEqual(['job-once'])
 	expect(result.saveJobs).toEqual([])
+	expect(result.successCount).toBe(0)
+	expect(result.errorCount).toBe(1)
+	expect(result.jobOutcomes).toEqual([
+		{
+			jobId: 'job-once',
+			scheduleType: 'once',
+			outcome: 'failure',
+			nextRunAt: null,
+			deleted: true,
+			error: 'expected failure',
+		},
+	])
 })

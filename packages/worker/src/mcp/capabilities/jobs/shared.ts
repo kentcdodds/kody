@@ -2,6 +2,11 @@ import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
+	logJobSchedulerError,
+	logJobSchedulerEvent,
+	schedulerErrorFields,
+} from '#worker/jobs/scheduler-logging.ts'
+import {
 	type JobCreateInput,
 	type JobExecutionResult,
 	type JobSchedule,
@@ -55,7 +60,9 @@ export const scheduledJobInputBaseSchema = {
 	params: z
 		.record(z.string(), z.unknown())
 		.optional()
-		.describe('Optional JSON params passed to the job entrypoint when it runs.'),
+		.describe(
+			'Optional JSON params passed to the job entrypoint when it runs.',
+		),
 	timezone: z
 		.string()
 		.min(1)
@@ -294,10 +301,29 @@ export async function createScheduledJobFromArgs(input: {
 		callerContext: input.callerContext,
 		body: resolveJobCreateBody(input.args, input.defaultName),
 	})
-	await syncJobManagerAlarm({
-		env: input.env,
+	logJobSchedulerEvent({
+		event: 'job-created',
 		userId: user.userId,
+		jobId: created.id,
+		scheduleType: created.schedule.type,
+		nextRunAt: created.nextRunAt,
 	})
+	try {
+		await syncJobManagerAlarm({
+			env: input.env,
+			userId: user.userId,
+		})
+	} catch (error) {
+		logJobSchedulerError({
+			event: 'job-manager-sync-after-create-failed',
+			userId: user.userId,
+			jobId: created.id,
+			scheduleType: created.schedule.type,
+			nextRunAt: created.nextRunAt,
+			...schedulerErrorFields(error),
+		})
+		throw error
+	}
 	return buildJobScheduleOutput(created)
 }
 
