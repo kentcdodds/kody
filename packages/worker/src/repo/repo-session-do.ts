@@ -32,7 +32,9 @@ import {
 	toRepoSessionTreeResult,
 } from './repo-session-tree.ts'
 import { runRepoChecks } from './checks.ts'
+import { parseRepoManifest } from './manifest.ts'
 import {
+	type EntityKind,
 	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -210,14 +212,23 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	private async readManifestFromWorkspace(manifestPath: string) {
+	private async readManifestFromWorkspace(
+		manifestPath: string,
+		entityKind: EntityKind,
+	) {
 		const manifestContent = await this.workspace.readFile(
 			resolveRepoWorkspacePath(manifestPath, repoSessionWorkspacePrefix),
 		)
 		if (manifestContent == null) {
 			throw new Error(`Manifest "${manifestPath}" was not found.`)
 		}
-		return parseAuthoredPackageJson({
+		if (entityKind === 'package') {
+			return parseAuthoredPackageJson({
+				content: manifestContent,
+				manifestPath,
+			})
+		}
+		return parseRepoManifest({
 			content: manifestContent,
 			manifestPath,
 		})
@@ -587,7 +598,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!publishedCommit) {
 			throw new Error(`Source "${source.id}" bootstrap produced no commit.`)
 		}
-		await this.readManifestFromWorkspace(source.manifest_path)
+		await this.readManifestFromWorkspace(
+			source.manifest_path,
+			source.entity_kind,
+		)
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'source',
@@ -994,7 +1008,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			ref: targetBranch,
 			...buildArtifactsGitAuth({ token: sourceAccess.token }),
 		})
-		await this.readManifestFromWorkspace(source.manifest_path)
+		await this.readManifestFromWorkspace(
+			source.manifest_path,
+			source.entity_kind,
+		)
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
 			userId: source.user_id,

@@ -6,6 +6,7 @@ import {
 } from './artifacts.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { parseRepoManifest } from './manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
 type SyncArtifactSourceInput = {
@@ -15,6 +16,24 @@ type SyncArtifactSourceInput = {
 	sourceId: string | null
 	files: Record<string, string>
 	bootstrapAccess?: ArtifactBootstrapAccess | null
+}
+
+function validateEntitySourceManifest(input: {
+	entityKind: EntitySourceRow['entity_kind']
+	content: string
+	manifestPath: string
+}) {
+	if (input.entityKind === 'package') {
+		parseAuthoredPackageJson({
+			content: input.content,
+			manifestPath: input.manifestPath,
+		})
+		return
+	}
+	parseRepoManifest({
+		content: input.content,
+		manifestPath: input.manifestPath,
+	})
 }
 
 function canSyncArtifactSource(env: Env) {
@@ -63,7 +82,8 @@ export async function syncArtifactSourceSnapshot(
 						`Manifest "${source.manifest_path}" was not found in the repo source.`,
 					)
 				}
-				parseAuthoredPackageJson({
+				validateEntitySourceManifest({
+					entityKind: source.entity_kind,
 					content: manifestContent,
 					manifestPath: source.manifest_path,
 				})

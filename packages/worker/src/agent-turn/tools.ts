@@ -147,18 +147,23 @@ export async function createAgentTurnToolSet(input: {
 					})
 					.filter((match) => match.score > 0)
 				const valueMatches = optionalRows.userValueRows
-					.map((row) => ({
-						type: 'value' as const,
-						valueId: buildValueEntityId(row),
-						name: row.name,
-						description: describeValue(row),
-						scope: row.scope,
-						appId: row.appId,
-						score: lexicalScore(
-							query,
-							[row.name, row.description, row.scope, row.value].join('\n'),
-						),
-					}))
+					.flatMap((row) => {
+						if (parseConnectorValueName(row.name)) return []
+						return [
+							{
+								type: 'value' as const,
+								valueId: buildValueEntityId(row),
+								name: row.name,
+								description: describeValue(row),
+								scope: row.scope,
+								appId: row.appId,
+								score: lexicalScore(
+									query,
+									[row.name, row.description, row.scope, row.value].join('\n'),
+								),
+							},
+						]
+					})
 					.filter((match) => match.score > 0)
 				const connectorMatches = optionalRows.userValueRows
 					.flatMap((row) => {

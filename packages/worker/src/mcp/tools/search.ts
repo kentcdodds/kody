@@ -658,6 +658,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					})
 					.filter((match) => match.score > 0)
 				const valueMatches = searchRows.userValueRows
+					.filter((row) => parseConnectorValueName(row.name) == null)
 					.map((row) => ({
 						type: 'value' as const,
 						valueId: buildValueEntityId(row),

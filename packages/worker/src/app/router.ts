@@ -24,7 +24,6 @@ import {
 	createConnectSecretApiHandler,
 	createConnectSecretHandler,
 } from '#app/handlers/connect-secret.ts'
-import { createPackageAppPageHandler } from '#app/handlers/package-app.ts'
 import { session } from '#app/handlers/session.ts'
 import { signup } from '#app/handlers/signup.ts'
 import { Layout } from '#app/layout.ts'
@@ -103,10 +102,6 @@ export function createAppRouter(appEnv: AppEnv) {
 	router.map(
 		routes.connectOauth,
 		createConnectOauthHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.packageApp,
-		createPackageAppPageHandler(appEnv as unknown as Env),
 	)
 	router.map(routes.auth, createAuthHandler(appEnv))
 	router.map(routes.session, session)

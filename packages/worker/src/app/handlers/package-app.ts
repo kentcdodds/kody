@@ -1,8 +1,6 @@
-import { type BuildAction } from 'remix/fetch-router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { type routes } from '#app/routes.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -25,18 +23,6 @@ function parsePackageAppPath(pathname: string) {
 		kodyId,
 		restPath: parts.length > 2 ? `/${parts.slice(2).join('/')}` : '/',
 	}
-}
-
-export function createPackageAppPageHandler(env: Env) {
-	return {
-		middleware: [],
-		async action({ request, params }) {
-			return await handlePackageAppRequest(request, env, params.kodyId?.trim() ?? null)
-		},
-	} satisfies BuildAction<
-		typeof routes.packageApp.method,
-		typeof routes.packageApp.pattern
-	>
 }
 
 export async function handlePackageAppRequest(
