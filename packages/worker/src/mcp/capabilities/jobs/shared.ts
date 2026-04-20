@@ -1,6 +1,4 @@
 import { z } from 'zod'
-import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
-import { createJob } from '#worker/jobs/service.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { type JobCreateInput, type JobSchedule, type JobView } from '#worker/jobs/types.ts'
@@ -175,6 +173,10 @@ export async function createScheduledJobFromArgs(input: {
 	defaultName?: string
 }) {
 	const user = requireMcpUser(input.callerContext)
+	// Delay job runtime imports so capability registration can load without
+	// recursively pulling the full jobs runtime back through the registry.
+	const { createJob } = await import('#worker/jobs/service.ts')
+	const { syncJobManagerAlarm } = await import('#worker/jobs/manager-client.ts')
 	const created = await createJob({
 		env: input.env,
 		callerContext: input.callerContext,
