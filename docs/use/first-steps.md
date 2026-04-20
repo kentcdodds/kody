@@ -1,15 +1,17 @@
 # First steps
 
 Kody exposes **search**, **execute**, and **open generated UI** as the main
-tools. The agent should **search first** to find the right capability,
-package, connector, value, or secret reference, then run work through
-**execute**.
+tools. The agent should **search first** to find the right capability, package,
+connector, value, or secret reference, then run work through **execute**.
 
 ## Habits that help
 
 - **Reuse returned `conversationId` values.** If a prior tool response included
   one, pass it back unchanged on follow-up calls. Otherwise omit the field and
   use the server-generated value the tool returns. Do not make one up locally.
+- **Read `timing` when tool latency matters.** `search` and `execute` return
+  timing metadata with `startedAt`, `endedAt`, and `durationMs` in structured
+  responses.
 - **Pass `memoryContext`** when durable user memory may matter. Kody uses it to
   surface a small set of relevant long-term memories that have not already been
   shown in the same conversation.

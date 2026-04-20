@@ -3,11 +3,12 @@ import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
+import { type ToolTiming } from './tool-timing.ts'
 import {
 	type AuthoredPackageJson,
+	type PackageJobSchedule,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
-import { type PackageJobSchedule } from '#worker/package-registry/types.ts'
 
 export type SearchEntityType =
 	| 'capability'
@@ -48,6 +49,12 @@ export type SearchResultStructuredContent = {
 		connected: boolean
 		toolCount: number
 	}>
+}
+
+export type SearchStructuredContent = {
+	conversationId: string
+	timing: ToolTiming
+	result: SearchResultStructuredContent | SearchEntityDetailStructured
 }
 
 export type SlimSearchMatch =
@@ -273,7 +280,10 @@ function buildPackageImportSpecifier(kodyId: string, exportName: string) {
 	return `kody:@${kodyId}/${exportName.replace(/^\.\//, '')}`
 }
 
-function formatPackageSchedule(schedule: PackageJobSchedule, timezone?: string) {
+function formatPackageSchedule(
+	schedule: PackageJobSchedule,
+	timezone?: string,
+) {
 	if (schedule.type === 'cron') {
 		return `Runs on cron "${schedule.expression}" in ${timezone?.trim() || 'UTC'}`
 	}
@@ -395,7 +405,9 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 		]
 	}
 	if (match.type === 'package') {
-		const hostedUrl = match.hasApp ? buildPackageHostedUrl(baseUrl, match.kodyId) : null
+		const hostedUrl = match.hasApp
+			? buildPackageHostedUrl(baseUrl, match.kodyId)
+			: null
 		return [
 			`## Package — ${match.title} (\`${match.kodyId}\`)`,
 			'',
@@ -561,7 +573,9 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				const typesPath =
 					typeof target === 'string' ? null : (target.types ?? null)
 				const typesSource =
-					typesPath == null ? null : (detail.files[typesPath.replace(/^\.?\//, '')] ?? null)
+					typesPath == null
+						? null
+						: (detail.files[typesPath.replace(/^\.?\//, '')] ?? null)
 				return {
 					subpath: exportName,
 					importSpecifier: buildPackageImportSpecifier(

@@ -55,10 +55,12 @@ test('authenticated MCP smoke covers core tools, inline UI, and hosted package a
 	const searchStructured = (searchResult as CallToolResult).structuredContent as
 		| {
 				conversationId?: string
+				timing?: { durationMs?: number }
 				result?: { matches?: Array<unknown> }
 		  }
 		| undefined
 	expect(typeof searchStructured?.conversationId).toBe('string')
+	expect(typeof searchStructured?.timing?.durationMs).toBe('number')
 	expect(Array.isArray(searchStructured?.result?.matches)).toBe(true)
 
 	const upsertResult = await mcpClient.client.callTool({
@@ -83,8 +85,12 @@ test('authenticated MCP smoke covers core tools, inline UI, and hosted package a
 		},
 	})
 	const upsertStructured = (upsertResult as CallToolResult).structuredContent as
-		| { result?: { memory?: { id?: string } } }
+		| {
+				timing?: { durationMs?: number }
+				result?: { memory?: { id?: string } }
+		  }
 		| undefined
+	expect(typeof upsertStructured?.timing?.durationMs).toBe('number')
 	expect(typeof upsertStructured?.result?.memory?.id).toBe('string')
 
 	const memorySearchResult = await mcpClient.client.callTool({

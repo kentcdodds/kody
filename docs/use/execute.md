@@ -9,9 +9,9 @@ function Kody should invoke.
 Author code as one module string. Import runtime APIs from **`kody:runtime`**
 and export a default function:
 
-- use **`import { codemode } from 'kody:runtime'`** to call builtin
-  capabilities
-- use **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
+- use **`import { codemode } from 'kody:runtime'`** to call builtin capabilities
+- use
+  **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
   for connector OAuth helpers
 - use **`import { storage } from 'kody:runtime'`** when the execute call is
   bound to a storage id
@@ -26,13 +26,13 @@ Top-level `await` is acceptable when needed.
 ## Chaining
 
 Prefer **one execute** when the plan is clear: import what you need, call
-several capabilities or package exports, branch on results, and return the
-final structured result. Split into multiple **execute** calls only when you
-need new user input, confirmation, or a result that changes the plan.
+several capabilities or package exports, branch on results, and return the final
+structured result. Split into multiple **execute** calls only when you need new
+user input, confirmation, or a result that changes the plan.
 
 To read field shapes while coding, use **search** with
-**`entity: "{name}:capability"`** for builtin capability schemas, or inspect
-the relevant saved package with **`entity: "{kody_id}:package"`**.
+**`entity: "{name}:capability"`** for builtin capability schemas, or inspect the
+relevant saved package with **`entity: "{kody_id}:package"`**.
 
 ## Saved packages
 
@@ -87,6 +87,10 @@ For dedicated inspection, use:
 
 Kody can surface a small number of relevant long-term memories when you pass a
 short **`memoryContext`** with **`conversationId`** on normal MCP tool calls.
+
+Handled **execute** responses also include top-level **`timing`** metadata with
+`startedAt`, `endedAt`, and `durationMs` alongside `conversationId`. Use it for
+basic latency instrumentation around tool runs.
 
 For memory mutations, the workflow is explicit and strict:
 

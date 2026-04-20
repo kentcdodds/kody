@@ -24,6 +24,7 @@ import {
 	formatSurfacedMemoriesMarkdown,
 	surfaceToolMemories,
 } from './memory-tool-context.ts'
+import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 
 const executeTool = {
@@ -133,7 +134,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
-			const startedAt = performance.now()
+			const timingStart = startToolTiming()
 			const env = agent.getEnv()
 			const baseCallerContext = agent.getCallerContext()
 			const resolvedStorageId = storageId?.trim() || null
@@ -187,7 +188,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							: undefined,
 					}),
 			)
-			const durationMs = Math.round(performance.now() - startedAt)
+			const timing = finishToolTiming(timingStart)
+			const durationMs = timing.durationMs
 
 			if (result.error) {
 				const errorDetails = getExecutionErrorDetails(result.error)
@@ -216,6 +218,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId: resolvedConversationId,
+						timing,
 						...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
 						error: errorMessage,
 						errorDetails,
@@ -251,6 +254,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				]),
 				structuredContent: {
 					conversationId: resolvedConversationId,
+					timing,
 					...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
 					result: rawContent ? null : result.result,
 					logs: result.logs ?? [],

@@ -26,6 +26,8 @@ beforeEach(() => {
 	vi.clearAllMocks()
 })
 
+const mockPerformanceNow = vi.spyOn(performance, 'now')
+
 async function getExecuteHandler() {
 	const registerTool = vi.fn()
 
@@ -56,6 +58,11 @@ async function getExecuteHandler() {
 		structuredContent: {
 			conversationId: string
 			storage?: { id: string }
+			timing: {
+				startedAt: string
+				endedAt: string
+				durationMs: number
+			}
 			result: unknown
 			logs: Array<unknown>
 		}
@@ -69,6 +76,7 @@ test('registers execute tool', async () => {
 
 test('execute tool passes through raw MCP content blocks in success responses', async () => {
 	const handler = await getExecuteHandler()
+	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(142)
 	const rawContent: Array<ContentBlock> = [
 		{
 			type: 'image',
@@ -102,6 +110,11 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 	])
 	expect(response.structuredContent).toEqual({
 		conversationId: 'conv-123',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 42,
+		},
 		result: null,
 		logs: [{ level: 'info', message: 'captured screenshot' }],
 	})
@@ -109,6 +122,7 @@ test('execute tool passes through raw MCP content blocks in success responses', 
 
 test('execute tool keeps serializing normal success results as text', async () => {
 	const handler = await getExecuteHandler()
+	mockPerformanceNow.mockReturnValueOnce(10).mockReturnValueOnce(19)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
@@ -132,6 +146,11 @@ test('execute tool keeps serializing normal success results as text', async () =
 	])
 	expect(response.structuredContent).toEqual({
 		conversationId: 'conv-456',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 9,
+		},
 		result: { ok: true },
 		logs: [],
 	})
@@ -139,6 +158,7 @@ test('execute tool keeps serializing normal success results as text', async () =
 
 test('execute tool binds storage id and writable flag when provided', async () => {
 	const handler = await getExecuteHandler()
+	mockPerformanceNow.mockReturnValueOnce(1).mockReturnValueOnce(8)
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
@@ -173,7 +193,40 @@ test('execute tool binds storage id and writable flag when provided', async () =
 	expect(response.structuredContent).toEqual({
 		conversationId: 'conv-789',
 		storage: { id: 'job:lights-off' },
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 7,
+		},
 		result: { ok: true },
 		logs: [],
 	})
+})
+
+test('execute tool includes timing metadata in error responses', async () => {
+	const handler = await getExecuteHandler()
+	mockPerformanceNow.mockReturnValueOnce(50).mockReturnValueOnce(65)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		error: new Error('Boom'),
+		logs: [{ level: 'error', message: 'failed' }],
+	})
+
+	const response = await handler({
+		code: 'async () => { throw new Error("Boom") }',
+		conversationId: 'conv-error',
+	})
+
+	expect(response.isError).toBe(true)
+	expect(response.structuredContent).toEqual(
+		expect.objectContaining({
+			conversationId: 'conv-error',
+			timing: {
+				startedAt: expect.any(String),
+				endedAt: expect.any(String),
+				durationMs: 15,
+			},
+			error: 'Boom',
+			logs: [{ level: 'error', message: 'failed' }],
+		}),
+	)
 })

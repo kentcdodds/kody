@@ -14,9 +14,7 @@ import {
 	isCapabilitySearchOffline,
 	lexicalScore,
 } from '#mcp/capabilities/capability-search.ts'
-import {
-	listUserSecretsForSearch,
-} from '#mcp/secrets/service.ts'
+import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
@@ -32,7 +30,7 @@ import {
 	listSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
+import { type buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import {
 	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
@@ -57,6 +55,7 @@ import {
 	parseEntityRef,
 	toSlimStructuredMatches,
 } from './search-format.ts'
+import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 
 const charsPerToken = 4
@@ -116,7 +115,10 @@ export function searchUnified(input: {
 				entry.record.searchText ?? '',
 			].join('\n')
 			const lexical = lexicalScore(query, doc)
-			const vector = cosineSimilarity(queryEmbedding, deterministicEmbedding(doc))
+			const vector = cosineSimilarity(
+				queryEmbedding,
+				deterministicEmbedding(doc),
+			)
 			return {
 				type: 'package' as const,
 				packageId: entry.record.id,
@@ -231,7 +233,10 @@ export async function searchPackages(input: {
 				row.projection.jobs.map((job) => job.name).join(' '),
 			].join('\n')
 			const lexical = lexicalScore(query, document)
-			const vector = cosineSimilarity(queryEmbedding, deterministicEmbedding(document))
+			const vector = cosineSimilarity(
+				queryEmbedding,
+				deterministicEmbedding(document),
+			)
 			return {
 				row,
 				score: lexical + vector,
@@ -311,8 +316,7 @@ function applyMaxResponseSize<TPayload>(
 
 const searchTool = {
 	name: 'search',
-	title:
-		'Search Capabilities, Packages, Values, Connectors, and Secrets',
+	title: 'Search Capabilities, Packages, Values, Connectors, and Secrets',
 	description: `
 Find **built-in capabilities**, **saved packages**, **persisted values**,
 **saved connectors**, and **user secret references** (metadata only)
@@ -423,15 +427,12 @@ export async function loadOptionalSearchRows(input: {
 	}
 
 	const warnings: Array<string> = []
-	const [
-		packageRowsResult,
-		userSecretRowsResult,
-		userValueRowsResult,
-	] = await Promise.allSettled([
-		input.loadPackages(),
-		input.loadUserSecrets(),
-		input.loadUserValues(),
-	])
+	const [packageRowsResult, userSecretRowsResult, userValueRowsResult] =
+		await Promise.allSettled([
+			input.loadPackages(),
+			input.loadUserSecrets(),
+			input.loadUserValues(),
+		])
 
 	const packageRows =
 		packageRowsResult.status === 'fulfilled' ? packageRowsResult.value : []
@@ -697,12 +698,13 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
 		}) => {
-			const startedAt = performance.now()
+			const timingStart = startToolTiming()
 			const conversationId = resolveConversationId(args.conversationId)
 			const callerContext = agent.getCallerContext()
 			const { baseUrl, hasUser } = callerContextFields(callerContext)
 			const userId = callerContext.user?.userId ?? null
 			if (!args.query && !args.entity) {
+				const timing = finishToolTiming(timingStart)
 				return {
 					content: prependToolMetadataContent(conversationId, [
 						{
@@ -712,6 +714,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId,
+						timing,
 						error: 'Provide either "query" or "entity".',
 					},
 					isError: true,
@@ -764,10 +767,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			let outcome:
 				| {
 						mode: 'list'
-				result: {
-					matches: Array<SearchMatch>
-					offline: boolean
-				}
+						result: {
+							matches: Array<SearchMatch>
+							offline: boolean
+						}
 				  }
 				| {
 						mode: 'entity'
@@ -785,7 +788,8 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					searchSpan,
 				)
 			} catch (cause) {
-				const durationMs = Math.round(performance.now() - startedAt)
+				const timing = finishToolTiming(timingStart)
+				const durationMs = timing.durationMs
 				const error = cause instanceof Error ? cause : new Error(String(cause))
 				const { errorName, errorMessage } = errorFields(error)
 				logMcpEvent({
@@ -807,13 +811,15 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId,
+						timing,
 						error: error.message,
 					},
 					isError: true,
 				}
 			}
 
-			const durationMs = Math.round(performance.now() - startedAt)
+			const timing = finishToolTiming(timingStart)
+			const durationMs = timing.durationMs
 
 			logMcpEvent({
 				category: 'mcp',
@@ -836,6 +842,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					]),
 					structuredContent: {
 						conversationId,
+						timing,
 						result: entityResult.structured,
 					},
 				}
@@ -979,6 +986,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				]),
 				structuredContent: {
 					conversationId,
+					timing,
 					result,
 				},
 			}
