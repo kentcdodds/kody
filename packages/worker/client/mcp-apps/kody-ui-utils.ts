@@ -136,7 +136,7 @@ type HostToolResult = {
 	isError?: boolean
 }
 
-type SavedAppSourceFromHostToolResult =
+type SavedPackageAppSourceFromHostToolResult =
 	| {
 			handled: false
 	  }
@@ -317,9 +317,9 @@ function getHostToolErrorMessage(result: HostToolResult | null) {
 		: 'Code execution failed.'
 }
 
-export function readSavedAppSourceFromHostToolResult(
+export function readSavedPackageAppSourceFromHostToolResult(
 	result: HostToolResult | null,
-): SavedAppSourceFromHostToolResult {
+): SavedPackageAppSourceFromHostToolResult {
 	if (!result) {
 		return {
 			handled: false as const,

@@ -13,7 +13,7 @@ const {
 	injectRuntimeStateIntoDocument,
 	kodyWidget,
 	measureRenderedFrameSize,
-	readSavedAppSourceFromHostToolResult,
+	readSavedPackageAppSourceFromHostToolResult,
 	shouldInitializeGeneratedUiRuntimeImmediately,
 } = uiUtils
 
@@ -142,8 +142,8 @@ test('injectRuntimeStateIntoDocument exposes runtime bootstrap globals', () => {
 	expect(result).toContain('window.params =')
 })
 
-test('readSavedAppSourceFromHostToolResult reads a package app source payload', () => {
-	const result = readSavedAppSourceFromHostToolResult({
+test('readSavedPackageAppSourceFromHostToolResult reads a package app source payload', () => {
+	const result = readSavedPackageAppSourceFromHostToolResult({
 		structuredContent: {
 			app_id: 'app-123',
 			client_code: '<main>hello</main>',
@@ -157,8 +157,8 @@ test('readSavedAppSourceFromHostToolResult reads a package app source payload', 
 	})
 })
 
-test('readSavedAppSourceFromHostToolResult preserves host tool errors', () => {
-	const result = readSavedAppSourceFromHostToolResult({
+test('readSavedPackageAppSourceFromHostToolResult preserves host tool errors', () => {
+	const result = readSavedPackageAppSourceFromHostToolResult({
 		isError: true,
 		structuredContent: {
 			error: {

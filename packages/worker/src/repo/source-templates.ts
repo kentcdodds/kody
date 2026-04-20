@@ -90,7 +90,7 @@ export function buildAppSourceFiles(input: {
 			input.serverCode ??
 			`export default {
   async fetch() {
-    return new Response('Saved app backend not configured.', { status: 404 })
+    return new Response('Package app backend not configured.', { status: 404 })
   },
 }`
 		).trim()}\n`,

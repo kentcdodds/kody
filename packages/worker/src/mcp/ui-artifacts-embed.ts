@@ -18,7 +18,7 @@ export function buildUiArtifactEmbedText(
 	const parameterText =
 		input.parameters && input.parameters.length > 0
 			? [
-					'saved app parameters',
+					'package app parameters',
 					...input.parameters.map((parameter) =>
 						[
 							parameter.name,
