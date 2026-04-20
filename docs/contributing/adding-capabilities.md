@@ -1,7 +1,7 @@
 # Adding capabilities
 
-User-persisted codemode skills (`meta` domain) are documented in
-[`mcp-skills.md`](./mcp-skills.md).
+User-authored persisted packages and their `package.json#kody` contract are
+documented in [`packages-and-manifests.md`](./packages-and-manifests.md).
 
 Secret-bearing outbound requests are governed by
 [`secret-host-approval.md`](./secret-host-approval.md). Read that doc before
