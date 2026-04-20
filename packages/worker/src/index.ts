@@ -147,11 +147,7 @@ const appHandler = withCors({
 		}
 
 		if (url.pathname.startsWith('/packages/')) {
-			const packageResponse = await handlePackageAppRequest(request, env)
-			if (packageResponse) {
-				return packageResponse
-			}
-			return handleRequest(request, env)
+			return handlePackageAppRequest(request, env)
 		}
 
 		const connectorRoute = parseConnectorRoutePath(url.pathname)
