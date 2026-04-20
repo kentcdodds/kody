@@ -7,8 +7,7 @@ function Kody should invoke.
 ## Shape of the code
 
 Author code as one module string. Import runtime APIs from **`kody:runtime`**
-and export a default function. These helpers are runtime exports, not ambient
-globals:
+and export a default function. These helpers are runtime exports:
 
 - use **`import { codemode } from 'kody:runtime'`** to call builtin capabilities
 - use
@@ -134,8 +133,7 @@ reconnect the MCP client if the host caches server instructions.
 ## Network and OAuth helpers
 
 The sandbox exposes global **`fetch`** plus secret placeholders in approved
-contexts. OAuth helpers are **not** globals: import **`refreshAccessToken`** and
-**`createAuthenticatedFetch`** explicitly from **`kody:runtime`**:
+contexts. OAuth helpers are imported from **`kody:runtime`**:
 
 **`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`**
 

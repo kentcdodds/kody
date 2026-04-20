@@ -44,7 +44,7 @@ Saved package surface:
   \`kody:@my-package/export-name\`
 
 Sandbox surface:
-- Runtime helpers are **not** ambient globals in execute modules. Import them from \`kody:runtime\`.
+- Import runtime helpers from \`kody:runtime\`.
 - \`import { codemode } from 'kody:runtime'\` for builtin capabilities.
 - \`import { storage } from 'kody:runtime'\` for durable storage helpers on the bound \`storageId\`, including \`storage.sql(query, params?)\`.
 - \`import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'\` for OAuth connectors.
