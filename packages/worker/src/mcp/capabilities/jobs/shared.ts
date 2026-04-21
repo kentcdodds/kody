@@ -2,11 +2,7 @@ import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
-import {
-	logJobSchedulerError,
-	logJobSchedulerEvent,
-	schedulerErrorFields,
-} from '#worker/jobs/scheduler-logging.ts'
+import { logJobSchedulerEvent } from '#worker/jobs/scheduler-logging.ts'
 import {
 	type JobCreateInput,
 	type JobExecutionResult,
@@ -414,7 +410,6 @@ export async function createScheduledJobFromArgs(input: {
 	// Delay job runtime imports so capability registration can load without
 	// recursively pulling the full jobs runtime back through the registry.
 	const { createJob } = await import('#worker/jobs/service.ts')
-	const { syncJobManagerAlarm } = await import('#worker/jobs/manager-client.ts')
 	const created = await createJob({
 		env: input.env,
 		callerContext: input.callerContext,
@@ -427,22 +422,6 @@ export async function createScheduledJobFromArgs(input: {
 		scheduleType: created.schedule.type,
 		nextRunAt: created.nextRunAt,
 	})
-	try {
-		await syncJobManagerAlarm({
-			env: input.env,
-			userId: user.userId,
-		})
-	} catch (error) {
-		logJobSchedulerError({
-			event: 'job_manager_sync_after_create_failed',
-			userId: user.userId,
-			jobId: created.id,
-			scheduleType: created.schedule.type,
-			nextRunAt: created.nextRunAt,
-			...schedulerErrorFields(error),
-		})
-		throw error
-	}
 	return buildJobScheduleOutput(created)
 }
 
