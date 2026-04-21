@@ -4,7 +4,6 @@ import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shar
 import {
 	loadDownHomeConnectorStatus,
 	loadOptionalSearchRows,
-	resolveSearchMemoryContext,
 	searchUnified,
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
@@ -139,45 +138,6 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 			}),
 		]),
 	)
-})
-
-test('search memory context stays unset when omitted', () => {
-	expect(
-		resolveSearchMemoryContext({
-			query: 'saved interactive dashboard app',
-		}),
-	).toBeUndefined()
-})
-
-test('search memory context preserves explicit caller context', () => {
-	expect(
-		resolveSearchMemoryContext({
-			query: 'saved interactive dashboard app',
-			memoryContext: {
-				task: 'Find dashboard app',
-				query: 'saved dashboard app',
-				entities: ['dashboard'],
-			},
-		}),
-	).toEqual({
-		task: 'Find dashboard app',
-		query: 'saved dashboard app',
-		entities: ['dashboard'],
-	})
-})
-
-test('search memory context ignores the query without explicit caller context', () => {
-	expect(
-		resolveSearchMemoryContext({
-			query: '   ',
-		}),
-	).toBeUndefined()
-
-	expect(
-		resolveSearchMemoryContext({
-			query: 'saved github package',
-		}),
-	).toBeUndefined()
 })
 
 test('optional search rows fall back when saved packages lookup fails', async () => {
