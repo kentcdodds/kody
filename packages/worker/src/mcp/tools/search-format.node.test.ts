@@ -166,13 +166,46 @@ test('search markdown and entity detail formatting preserve structured behavior'
 			refreshTokenSecretName: 'github_refresh_token',
 			requiredHosts: ['api.github.com'],
 		},
+		readiness: {
+			status: 'missing_prerequisites',
+			authenticatedRequestsReady: false,
+			available: {
+				clientIdValue: true,
+				accessTokenSecret: false,
+				refreshTokenSecret: true,
+				clientSecretSecret: false,
+			},
+			missingPrerequisites: [
+				{
+					kind: 'secret',
+					requirement: 'client_secret',
+					name: 'github_client_secret',
+				},
+			],
+		},
 	})
 	expect(connectorDetail.structured).toMatchObject({
 		type: 'connector',
 		flow: 'confidential',
 		apiBaseUrl: 'https://api.github.com',
 		requiredHosts: ['api.github.com'],
+		readiness: {
+			authenticatedRequestsReady: false,
+			missingPrerequisites: [
+				{
+					kind: 'secret',
+					requirement: 'client_secret',
+					name: 'github_client_secret',
+				},
+			],
+		},
 	})
+	expect(connectorDetail.markdown).toContain(
+		'Operational readiness: Missing prerequisites for authenticated requests:',
+	)
+	expect(connectorDetail.markdown).toContain(
+		'user client secret `github_client_secret` is missing',
+	)
 })
 
 test('entity detail formatting includes package app and export metadata', () => {

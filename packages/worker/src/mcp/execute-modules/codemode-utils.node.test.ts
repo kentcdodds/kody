@@ -45,7 +45,20 @@ function createCodemode(payload: Record<string, unknown>) {
 		async connector_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe('spotify')
-			return { connector: spotifyConnector }
+			return {
+				connector: spotifyConnector,
+				readiness: {
+					status: 'ready' as const,
+					authenticatedRequestsReady: true,
+					available: {
+						clientIdValue: true,
+						accessTokenSecret: false,
+						refreshTokenSecret: true,
+						clientSecretSecret: null,
+					},
+					missingPrerequisites: [],
+				},
+			}
 		},
 		async value_get(args: CapabilityArgs) {
 			const name = args.name
@@ -244,6 +257,49 @@ test('createExecuteHelperPrelude persists rotated refresh token and access token
 	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
 		'Bearer new-access-token',
 	)
+})
+
+test('refreshAccessToken fails early when connector readiness reports missing prerequisites', async () => {
+	const { codemode, fetchStub, fetchCalls } = createCodemode({
+		access_token: 'new-access-token',
+	})
+	const codemodeWithMissingRefreshToken = {
+		...codemode,
+		async connector_get(args: CapabilityArgs) {
+			const result = (await codemode.connector_get(args)) as {
+				connector: typeof spotifyConnector
+			}
+			return {
+				...result,
+				readiness: {
+					status: 'missing_prerequisites' as const,
+					authenticatedRequestsReady: false,
+					available: {
+						clientIdValue: true,
+						accessTokenSecret: false,
+						refreshTokenSecret: false,
+						clientSecretSecret: null,
+					},
+					missingPrerequisites: [
+						{
+							kind: 'secret' as const,
+							requirement: 'refresh_token' as const,
+							name: 'spotifyRefreshToken',
+						},
+					],
+				},
+			}
+		},
+	} satisfies CodemodeNamespace
+
+	await expect(
+		withPatchedFetch(fetchStub, () =>
+			refreshAccessToken(codemodeWithMissingRefreshToken, 'spotify'),
+		),
+	).rejects.toThrow(
+		'Connector "spotify" is not ready for authenticated requests: refresh token secret "spotifyRefreshToken" is missing.',
+	)
+	expect(fetchCalls).toHaveLength(0)
 })
 
 test('getExecuteHelperCapabilityNames includes secret_set for refresh persistence', () => {

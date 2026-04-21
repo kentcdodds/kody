@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+import { getConnectorReadiness } from '#mcp/capabilities/values/connector-readiness.ts'
 import {
 	parseConnectorConfig,
 	parseConnectorJson,
@@ -624,6 +625,11 @@ async function resolveEntityDetail(input: {
 		if (!connector) {
 			throw new Error('Saved connector not found for this user.')
 		}
+		const readiness = getConnectorReadiness({
+			connector: connector.config,
+			values: input.searchRows.userValueRows,
+			userSecrets: input.searchRows.userSecretRows,
+		})
 		return {
 			type: 'connector' as const,
 			id: connector.config.name,
@@ -633,6 +639,7 @@ async function resolveEntityDetail(input: {
 				`Saved OAuth connector configuration (${connector.config.flow} flow).`,
 			row: connector.row,
 			config: connector.config,
+			readiness,
 		}
 	}
 

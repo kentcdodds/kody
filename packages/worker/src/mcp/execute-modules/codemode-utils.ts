@@ -21,6 +21,21 @@ type ConnectorConfig = {
 
 type ConnectorGetResult = {
 	connector: ConnectorConfig | null
+	readiness?: {
+		status: 'ready' | 'missing_prerequisites'
+		authenticatedRequestsReady: boolean
+		available: {
+			clientIdValue: boolean
+			accessTokenSecret: boolean
+			refreshTokenSecret: boolean | null
+			clientSecretSecret: boolean | null
+		}
+		missingPrerequisites: Array<{
+			kind: 'value' | 'secret' | 'config'
+			requirement: 'client_id' | 'refresh_token' | 'client_secret'
+			name: string | null
+		}>
+	} | null
 }
 
 type ValueGetResult = {
@@ -49,8 +64,13 @@ export async function refreshAccessToken(
 	codemode: CodemodeNamespace,
 	providerName: string,
 ): Promise<string> {
-	const connector = await readConnectorConfig(codemode, providerName)
-	return refreshAccessTokenWithConnector(codemode, providerName, connector)
+	const connectorResult = await readConnectorConfig(codemode, providerName)
+	return refreshAccessTokenWithConnector(
+		codemode,
+		providerName,
+		connectorResult.connector,
+		connectorResult.readiness,
+	)
 }
 
 export async function createAuthenticatedFetch(
@@ -59,15 +79,19 @@ export async function createAuthenticatedFetch(
 ): Promise<
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 > {
-	const connector = await readConnectorConfig(codemode, providerName)
+	const connectorResult = await readConnectorConfig(codemode, providerName)
 	const accessToken = await refreshAccessTokenWithConnector(
 		codemode,
 		providerName,
-		connector,
+		connectorResult.connector,
+		connectorResult.readiness,
 	)
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
-		const request = new Request(resolveRequestUrl(input, connector), init)
+		const request = new Request(
+			resolveRequestUrl(input, connectorResult.connector),
+			init,
+		)
 		const headers = new Headers(request.headers)
 		headers.set('Authorization', `Bearer ${accessToken}`)
 
@@ -94,7 +118,10 @@ async function readConnectorConfig(
 	if (!connector) {
 		throw new Error(`Connector "${providerName}" was not found.`)
 	}
-	return connector
+	return {
+		connector,
+		readiness: result?.readiness ?? null,
+	}
 }
 
 async function readClientId(
@@ -144,7 +171,9 @@ async function refreshAccessTokenWithConnector(
 	codemode: CodemodeNamespace,
 	providerName: string,
 	connector: ConnectorConfig,
+	readiness: ConnectorGetResult['readiness'],
 ) {
+	assertConnectorReadyForAuthenticatedRequests(providerName, readiness)
 	const clientId = await readClientId(codemode, connector)
 	const refreshTokenSecretName = connector.refreshTokenSecretName?.trim() ?? ''
 	if (!refreshTokenSecretName) {
@@ -190,7 +219,7 @@ async function refreshAccessTokenWithConnector(
 
 	if (!response.ok) {
 		throw new Error(
-			`Token refresh failed for connector "${providerName}" with HTTP ${response.status}.`,
+			buildTokenRefreshFailureMessage(providerName, response.status, readiness),
 		)
 	}
 	if (!payload || typeof payload.access_token !== 'string') {
@@ -220,6 +249,53 @@ async function refreshAccessTokenWithConnector(
 	)
 
 	return payload.access_token
+}
+
+function assertConnectorReadyForAuthenticatedRequests(
+	providerName: string,
+	readiness: ConnectorGetResult['readiness'],
+) {
+	if (!readiness || readiness.authenticatedRequestsReady) {
+		return
+	}
+	const missingSummary = readiness.missingPrerequisites
+		.map(formatMissingPrerequisite)
+		.join('; ')
+	throw new Error(
+		`Connector "${providerName}" is not ready for authenticated requests: ${missingSummary}.`,
+	)
+}
+
+function formatMissingPrerequisite(
+	prerequisite: NonNullable<ConnectorGetResult['readiness']>['missingPrerequisites'][number],
+) {
+	if (prerequisite.requirement === 'client_id') {
+		return `client ID value "${prerequisite.name ?? 'unknown'}" is missing`
+	}
+	if (prerequisite.requirement === 'refresh_token') {
+		if (prerequisite.kind === 'config') {
+			return 'connector config does not define a refresh token secret name'
+		}
+		return `refresh token secret "${prerequisite.name ?? 'unknown'}" is missing`
+	}
+	if (prerequisite.kind === 'config') {
+		return 'connector config does not define a client secret secret name'
+	}
+	return `client secret "${prerequisite.name ?? 'unknown'}" is missing`
+}
+
+function buildTokenRefreshFailureMessage(
+	providerName: string,
+	status: number,
+	readiness: ConnectorGetResult['readiness'],
+) {
+	const details =
+		readiness && readiness.missingPrerequisites.length > 0
+			? ` Readiness check also found missing prerequisites: ${readiness.missingPrerequisites
+					.map(formatMissingPrerequisite)
+					.join('; ')}.`
+			: ''
+	return `Token refresh failed for connector "${providerName}" with HTTP ${status}.${details}`
 }
 
 function buildSecretPlaceholder(
@@ -308,7 +384,52 @@ const __kodyReadConnectorConfig = async (providerName) => {
   if (!connector) {
     throw new Error(\`Connector "\${providerName}" was not found.\`);
   }
-  return connector;
+  return {
+    connector,
+    readiness: result?.readiness ?? null,
+  };
+};
+const __kodyFormatMissingPrerequisite = (prerequisite) => {
+  if (prerequisite.requirement === 'client_id') {
+    return \`client ID value "\${prerequisite.name ?? 'unknown'}" is missing\`;
+  }
+  if (prerequisite.requirement === 'refresh_token') {
+    if (prerequisite.kind === 'config') {
+      return 'connector config does not define a refresh token secret name';
+    }
+    return \`refresh token secret "\${prerequisite.name ?? 'unknown'}" is missing\`;
+  }
+  if (prerequisite.kind === 'config') {
+    return 'connector config does not define a client secret secret name';
+  }
+  return \`client secret "\${prerequisite.name ?? 'unknown'}" is missing\`;
+};
+const __kodyAssertConnectorReadyForAuthenticatedRequests = (
+  providerName,
+  readiness,
+) => {
+  if (!readiness || readiness.authenticatedRequestsReady) {
+    return;
+  }
+  const missingSummary = readiness.missingPrerequisites
+    .map(__kodyFormatMissingPrerequisite)
+    .join('; ');
+  throw new Error(
+    \`Connector "\${providerName}" is not ready for authenticated requests: \${missingSummary}.\`,
+  );
+};
+const __kodyBuildTokenRefreshFailureMessage = (
+  providerName,
+  status,
+  readiness,
+) => {
+  const details =
+    readiness && readiness.missingPrerequisites.length > 0
+      ? \` Readiness check also found missing prerequisites: \${readiness.missingPrerequisites
+          .map(__kodyFormatMissingPrerequisite)
+          .join('; ')}.\`
+      : '';
+  return \`Token refresh failed for connector "\${providerName}" with HTTP \${status}.\${details}\`;
 };
 const __kodyReadClientId = async (connector) => {
   const valueGet = codemode.value_get;
@@ -391,7 +512,12 @@ const __kodyResolveRequestUrl = (input, connector) => {
   return input;
 };
 const __kodyRefreshAccessToken = async (providerName) => {
-  const connector = await __kodyReadConnectorConfig(providerName);
+  const connectorResult = await __kodyReadConnectorConfig(providerName);
+  __kodyAssertConnectorReadyForAuthenticatedRequests(
+    providerName,
+    connectorResult.readiness,
+  );
+  const connector = connectorResult.connector;
   const clientId = await __kodyReadClientId(connector);
   const refreshTokenSecretName = connector.refreshTokenSecretName?.trim() ?? '';
   if (!refreshTokenSecretName) {
@@ -429,7 +555,11 @@ const __kodyRefreshAccessToken = async (providerName) => {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(
-      \`Token refresh failed for connector "\${providerName}" with HTTP \${response.status}.\`,
+      __kodyBuildTokenRefreshFailureMessage(
+        providerName,
+        response.status,
+        connectorResult.readiness,
+      ),
     );
   }
   if (!payload || typeof payload.access_token !== 'string') {
@@ -454,7 +584,8 @@ const __kodyRefreshAccessToken = async (providerName) => {
   return payload.access_token;
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
-  const connector = await __kodyReadConnectorConfig(providerName);
+  const connectorResult = await __kodyReadConnectorConfig(providerName);
+  const connector = connectorResult.connector;
   const accessToken = await __kodyRefreshAccessToken(providerName);
   return async (input, init) => {
     const request = new Request(__kodyResolveRequestUrl(input, connector), init);

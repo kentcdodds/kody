@@ -1,5 +1,10 @@
 import { compressSchemaForLlm } from '#mcp/capabilities/schema-compression.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
+import {
+	formatConnectorMissingPrerequisite,
+	formatConnectorReadinessSummary,
+	type ConnectorReadiness,
+} from '#mcp/capabilities/values/connector-readiness.ts'
 import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
@@ -180,6 +185,7 @@ export type SearchEntityDetailStructured =
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
 			requiredHosts: Array<string>
+			readiness: ConnectorReadiness
 	  }
 
 export type SearchEntityDetail =
@@ -221,6 +227,7 @@ export type SearchEntityDetail =
 			description: string
 			row: ValueMetadata
 			config: ConnectorConfig
+			readiness: ConnectorReadiness
 	  }
 
 export type SearchMatch =
@@ -698,6 +705,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 
 	if (detail.type === 'connector') {
 		const requiredHosts = detail.config.requiredHosts ?? []
+		const readinessSummary = formatConnectorReadinessSummary(detail.readiness)
 		const lines = [
 			`# Connector — \`${detail.config.name}\``,
 			'',
@@ -705,10 +713,12 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Summary',
 			'',
+			`- Authenticated requests ready: ${detail.readiness.authenticatedRequestsReady ? 'yes' : 'no'}`,
 			`- Flow: \`${detail.config.flow}\``,
 			`- Token URL: \`${detail.config.tokenUrl}\``,
 			`- API base URL: ${detail.config.apiBaseUrl ? `\`${detail.config.apiBaseUrl}\`` : 'none'}`,
 			`- Required hosts: ${requiredHosts.length > 0 ? requiredHosts.map((host) => `\`${host}\``).join(', ') : 'none'}`,
+			`- Operational readiness: ${readinessSummary}`,
 			'',
 			'## Read this connector',
 			'',
@@ -721,7 +731,20 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			`- Client secret secret name: ${detail.config.clientSecretSecretName ? `\`${detail.config.clientSecretSecretName}\`` : 'none'}`,
 			`- Access token secret name: \`${detail.config.accessTokenSecretName}\``,
 			`- Refresh token secret name: ${detail.config.refreshTokenSecretName ? `\`${detail.config.refreshTokenSecretName}\`` : 'none'}`,
+			'',
+			'## Operational readiness details',
+			'',
+			`- Client ID value available: ${formatBoolean(detail.readiness.available.clientIdValue)}`,
+			`- Access token secret already stored: ${formatBoolean(detail.readiness.available.accessTokenSecret)}`,
+			`- Refresh token secret available: ${formatNullableBoolean(detail.readiness.available.refreshTokenSecret)}`,
+			`- Client secret available: ${formatNullableBoolean(detail.readiness.available.clientSecretSecret)}`,
 		]
+		if (detail.readiness.missingPrerequisites.length > 0) {
+			lines.push('', '### Missing prerequisites', '')
+			for (const prerequisite of detail.readiness.missingPrerequisites) {
+				lines.push(`- ${formatConnectorMissingPrerequisite(prerequisite)}`)
+			}
+		}
 		return {
 			markdown: lines.join('\n'),
 			structured: {
@@ -739,6 +762,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				accessTokenSecretName: detail.config.accessTokenSecretName,
 				refreshTokenSecretName: detail.config.refreshTokenSecretName ?? null,
 				requiredHosts,
+				readiness: detail.readiness,
 			} satisfies SearchEntityDetailStructured,
 		}
 	}
@@ -783,4 +807,13 @@ function formatList(items: Array<string>) {
 function formatTtlMs(ttlMs: number | null) {
 	if (ttlMs == null) return 'none'
 	return `\`${ttlMs.toLocaleString()}\``
+}
+
+function formatBoolean(value: boolean) {
+	return value ? 'yes' : 'no'
+}
+
+function formatNullableBoolean(value: boolean | null) {
+	if (value == null) return 'not required'
+	return formatBoolean(value)
 }
