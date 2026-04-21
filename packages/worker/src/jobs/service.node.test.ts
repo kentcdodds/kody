@@ -2189,7 +2189,10 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 	const executeSpy = vi.spyOn(
 		await import('#mcp/run-codemode-registry.ts'),
 		'runBundledModuleWithRegistry',
-	)
+	).mockResolvedValue({
+		result: { ok: true, repoBacked: true },
+		logs: ['repo-backed codemode executed'],
+	})
 
 	try {
 		const outcome = await executeJobOnce({
