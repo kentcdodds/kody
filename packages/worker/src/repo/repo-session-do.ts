@@ -78,6 +78,34 @@ function getCachedSessionStateStorageKey(sessionId: string) {
 	return `${cachedSessionStateStorageKeyPrefix}${sessionId}`
 }
 
+// D1 read replicas can lag briefly behind the primary; when we know a row was
+// just inserted (for example, openSession persisted a fresh repo session before
+// returning to the worker), an immediate read from a different request handler
+// may still miss it. A short retry with backoff papers over that lag without
+// resorting to global throttling.
+const repoLookupRetryDelaysMs = [50, 100, 200, 400] as const
+
+async function readWithRetry<T>(
+	read: () => Promise<T | null>,
+): Promise<T | null> {
+	let result = await read()
+	if (result) return result
+	for (const delayMs of repoLookupRetryDelaysMs) {
+		await new Promise((resolve) => setTimeout(resolve, delayMs))
+		result = await read()
+		if (result) return result
+	}
+	return null
+}
+
+async function readRepoSessionWithRetry(db: D1Database, sessionId: string) {
+	return readWithRetry(() => getRepoSessionById(db, sessionId))
+}
+
+async function readEntitySourceWithRetry(db: D1Database, sourceId: string) {
+	return readWithRetry(() => getEntitySourceById(db, sourceId))
+}
+
 function compactArtifactsRepoSuffix(value: string) {
 	const compact = value.replace(/[^a-zA-Z0-9]/g, '')
 	return compact.length > 0 ? compact : 'session'
@@ -136,19 +164,36 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private initializedSessionId: string | null = null
 
+	// In-memory cache for the active DO instance. This serves as the primary
+	// fallback for follow-up RPC calls on the same sessionId so that even the
+	// shortest replication lag between D1 writes and reads does not surface as
+	// a spurious "Repo session was not found" error during scheduled runs.
+	private readonly inMemorySessionState = new Map<
+		string,
+		CachedRepoSessionState
+	>()
+
 	private async readCachedSessionState(
 		sessionId: string,
 	): Promise<CachedRepoSessionState | null> {
-		return (
+		const inMemory = this.inMemorySessionState.get(sessionId)
+		if (inMemory) {
+			return inMemory
+		}
+		const persisted =
 			(await this.ctx.storage.get<CachedRepoSessionState | null>(
 				getCachedSessionStateStorageKey(sessionId),
 			)) ?? null
-		)
+		if (persisted) {
+			this.inMemorySessionState.set(sessionId, persisted)
+		}
+		return persisted
 	}
 
 	private async writeCachedSessionState(
 		state: CachedRepoSessionState,
 	): Promise<void> {
+		this.inMemorySessionState.set(state.sessionRow.id, state)
 		await this.ctx.storage.put(
 			getCachedSessionStateStorageKey(state.sessionRow.id),
 			state,
@@ -156,15 +201,15 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async clearCachedSessionState(sessionId: string): Promise<void> {
+		this.inMemorySessionState.delete(sessionId)
 		await this.ctx.storage.put(getCachedSessionStateStorageKey(sessionId), null)
 	}
 
 	private async getSessionState(sessionId: string, userId: string) {
 		const cachedState = await this.readCachedSessionState(sessionId)
 		const sessionRow =
-			(await getRepoSessionById(this.env.APP_DB, sessionId)) ??
 			cachedState?.sessionRow ??
-			null
+			(await readRepoSessionWithRetry(this.env.APP_DB, sessionId))
 		if (!sessionRow) {
 			throw new Error(`Repo session "${sessionId}" was not found.`)
 		}
@@ -174,10 +219,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		const source =
-			(await getEntitySourceById(this.env.APP_DB, sessionRow.source_id)) ??
-			(cachedState?.source?.id === sessionRow.source_id
+			cachedState?.source?.id === sessionRow.source_id
 				? cachedState.source
-				: null)
+				: ((await readEntitySourceWithRetry(
+						this.env.APP_DB,
+						sessionRow.source_id,
+					)) ??
+					null)
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}

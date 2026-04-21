@@ -377,6 +377,77 @@ test('openSession strips unsupported characters from derived session repo names'
 	)
 })
 
+test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
+	// This test covers the alarm-driven scheduled-job failure mode where a fresh
+	// DO instance handles a follow-up RPC call before the in-memory cache from
+	// openSession is available, and D1 read replicas have not yet caught up to
+	// the freshly inserted repo session row.
+	const sessionRow = {
+		id: 'job-runtime-session-replica-lag',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'session-repo-name',
+		session_repo_namespace: 'default',
+		base_commit: 'commit-base',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active' as const,
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+	const source = {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'job' as const,
+		entity_id: 'job-1',
+		repo_id: 'job-job-1',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+	mockModule.getRepoSessionById
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(sessionRow)
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(source)
+	mockModule.resolveSessionRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/session-repo-name.git',
+		})),
+		createToken: vi.fn(async () => ({
+			plaintext: 'art_session_secret?expires=1760000200',
+		})),
+	})
+	mockModule.workspaceExists.mockResolvedValue(false)
+	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"job"}')
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const file = await repoSession.readFile({
+		sessionId: 'job-runtime-session-replica-lag',
+		userId: 'user-1',
+		path: 'kody.json',
+	})
+
+	expect(file).toEqual({
+		path: 'kody.json',
+		content: '{"version":1,"kind":"job"}',
+	})
+	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(3)
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
+})
+
 test('readFile falls back to cached session state when the session row is not yet readable from D1', async () => {
 	const source = {
 		id: 'source-1',
