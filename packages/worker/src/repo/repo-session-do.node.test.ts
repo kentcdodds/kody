@@ -171,12 +171,15 @@ vi.mock('./manifest.ts', () => ({
 const { RepoSession } = await import('./repo-session-do.ts')
 
 function createDurableObjectState() {
+	const storageState = new Map<string, unknown>()
 	return {
 		id: { toString: () => 'do-session-1' },
 		storage: {
 			sql: {},
-			get: mockModule.storageGet,
-			put: mockModule.storagePut,
+			get: vi.fn(async (key: string) => storageState.get(key)),
+			put: vi.fn(async (key: string, value: unknown) => {
+				storageState.set(key, value)
+			}),
 		},
 	} as unknown as DurableObjectState
 }
@@ -304,4 +307,132 @@ test('publishSession uses Artifacts username/password auth for both origin and s
 	for (const call of mockModule.git.push.mock.calls) {
 		expect(call[0]).not.toHaveProperty('token')
 	}
+})
+
+test('openSession strips unsupported characters from derived session repo names', async () => {
+	mockModule.getRepoSessionById.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'package-event-runner',
+		published_commit: 'commit-base',
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	const fork = vi.fn(async ({ name }: { name: string }) => ({
+		id: 'session-repo-1',
+		name,
+		description: null,
+		defaultBranch: 'main',
+		remote: `https://acct.artifacts.cloudflare.net/git/default/${name}.git`,
+		token: 'art_session_secret?expires=1760000200',
+		expiresAt: '2026-10-09T08:16:40.000Z',
+		repo: {
+			info: vi.fn(async () => ({
+				id: 'session-repo-1',
+				name,
+				description: null,
+				defaultBranch: 'main',
+				createdAt: '2026-04-16T00:00:00.000Z',
+				updatedAt: '2026-04-16T00:00:00.000Z',
+				lastPushAt: null,
+				source: null,
+				readOnly: false,
+				remote: `https://acct.artifacts.cloudflare.net/git/default/${name}.git`,
+			})),
+			createToken: vi.fn(async () => ({
+				id: 'token-1',
+				plaintext: 'art_session_secret?expires=1760000200',
+				scope: 'write',
+				expiresAt: '2026-10-09T08:16:40.000Z',
+			})),
+			fork: vi.fn(),
+		},
+	}))
+	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
+		fork,
+	})
+	mockModule.workspaceExists.mockResolvedValue(false)
+	mockModule.git.clone.mockClear()
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const opened = await repoSession.openSession({
+		sessionId:
+			'job-runtime-package-job:1a0476b4-c1d6-47ad-802e-dd5f4631c919:event-runner-123e4567-e89b-12d3-a456-426614174000',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		baseUrl: 'https://example.com',
+		sourceRoot: '/',
+	})
+
+	const forkName = fork.mock.calls[0]?.[0]?.name
+	expect(forkName).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+	expect(forkName).not.toContain(':')
+	expect(forkName.length).toBeLessThanOrEqual(63)
+	expect(opened.session_repo_name).toBe(forkName)
+	expect(mockModule.git.clone).toHaveBeenCalledWith(
+		expect.objectContaining({
+			url: `https://acct.artifacts.cloudflare.net/git/default/${forkName}.git`,
+		}),
+	)
+})
+
+test('readFile falls back to cached session state when the session row is not yet readable from D1', async () => {
+	const source = {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'job' as const,
+		entity_id: 'job-1',
+		repo_id: 'job-job-1',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+	mockModule.getRepoSessionById
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(null)
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(source)
+		.mockResolvedValueOnce(source)
+		.mockResolvedValueOnce(null)
+	mockModule.resolveArtifactSourceRepo.mockResolvedValue({
+		fork: vi.fn(async ({ name }: { name: string }) => ({
+			id: 'session-repo-1',
+			name,
+			description: null,
+			defaultBranch: 'main',
+			remote: `https://acct.artifacts.cloudflare.net/git/default/${name}.git`,
+			token: 'art_session_secret?expires=1760000200',
+			expiresAt: '2026-10-09T08:16:40.000Z',
+			repo: {
+				info: vi.fn(),
+				createToken: vi.fn(),
+				fork: vi.fn(),
+			},
+		})),
+	})
+	mockModule.workspaceExists.mockResolvedValue(false)
+	mockModule.workspaceReadFile.mockResolvedValue('export default {}')
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	await repoSession.openSession({
+		sessionId: 'job-runtime-session-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		baseUrl: 'https://example.com',
+		sourceRoot: '/',
+	})
+	const file = await repoSession.readFile({
+		sessionId: 'job-runtime-session-1',
+		userId: 'user-1',
+		path: 'kody.json',
+	})
+
+	expect(file).toEqual({
+		path: 'kody.json',
+		content: 'export default {}',
+	})
 })

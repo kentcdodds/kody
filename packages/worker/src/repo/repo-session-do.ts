@@ -35,6 +35,7 @@ import { runRepoChecks } from './checks.ts'
 import { parseRepoManifest } from './manifest.ts'
 import {
 	type EntityKind,
+	type EntitySourceRow,
 	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -53,10 +54,16 @@ import { refreshSavedPackageProjection } from '#worker/package-registry/service.
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
+const cachedSessionStateStorageKeyPrefix = 'repo-session:state:'
 const defaultSessionBranch = 'main'
 const sessionCommitAuthor = {
 	name: 'Kody Repo Session',
 	email: 'repo-session@local.invalid',
+}
+
+type CachedRepoSessionState = {
+	sessionRow: RepoSessionRow
+	source: EntitySourceRow
 }
 
 function buildRepoSessionWorkspaceName(sessionId: string) {
@@ -65,6 +72,10 @@ function buildRepoSessionWorkspaceName(sessionId: string) {
 
 function nowIso() {
 	return new Date().toISOString()
+}
+
+function getCachedSessionStateStorageKey(sessionId: string) {
+	return `${cachedSessionStateStorageKeyPrefix}${sessionId}`
 }
 
 function compactArtifactsRepoSuffix(value: string) {
@@ -125,8 +136,35 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private initializedSessionId: string | null = null
 
+	private async readCachedSessionState(
+		sessionId: string,
+	): Promise<CachedRepoSessionState | null> {
+		return (
+			(await this.ctx.storage.get<CachedRepoSessionState | null>(
+				getCachedSessionStateStorageKey(sessionId),
+			)) ?? null
+		)
+	}
+
+	private async writeCachedSessionState(
+		state: CachedRepoSessionState,
+	): Promise<void> {
+		await this.ctx.storage.put(
+			getCachedSessionStateStorageKey(state.sessionRow.id),
+			state,
+		)
+	}
+
+	private async clearCachedSessionState(sessionId: string): Promise<void> {
+		await this.ctx.storage.put(getCachedSessionStateStorageKey(sessionId), null)
+	}
+
 	private async getSessionState(sessionId: string, userId: string) {
-		const sessionRow = await getRepoSessionById(this.env.APP_DB, sessionId)
+		const cachedState = await this.readCachedSessionState(sessionId)
+		const sessionRow =
+			(await getRepoSessionById(this.env.APP_DB, sessionId)) ??
+			cachedState?.sessionRow ??
+			null
 		if (!sessionRow) {
 			throw new Error(`Repo session "${sessionId}" was not found.`)
 		}
@@ -135,13 +173,15 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Repo session "${sessionId}" was not found for this user.`,
 			)
 		}
-		const source = await getEntitySourceById(
-			this.env.APP_DB,
-			sessionRow.source_id,
-		)
+		const source =
+			(await getEntitySourceById(this.env.APP_DB, sessionRow.source_id)) ??
+			(cachedState?.source?.id === sessionRow.source_id
+				? cachedState.source
+				: null)
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}
+		await this.writeCachedSessionState({ sessionRow, source })
 		const sessionRepo = await resolveSessionRepo(this.env, {
 			namespace: sessionRow.session_repo_namespace,
 			name: sessionRow.session_repo_name,
@@ -527,6 +567,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}
+		await this.writeCachedSessionState({ sessionRow, source })
 		return toRepoSessionInfoResult(sessionRow, source)
 	}
 
@@ -654,6 +695,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 		)
 		if (!sessionRow) {
+			await this.clearCachedSessionState(input.sessionId)
 			await this.resetWorkspace()
 			return {
 				ok: true,
@@ -667,6 +709,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		await deleteRepoSession(this.env.APP_DB, input.sessionId)
+		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace()
 		return {
 			ok: true,
