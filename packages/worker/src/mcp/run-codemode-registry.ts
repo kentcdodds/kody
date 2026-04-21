@@ -4,6 +4,7 @@ import {
 	type ResolvedProvider,
 	type ToolProvider,
 } from '@cloudflare/codemode'
+import { parse } from 'acorn'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
@@ -42,6 +43,33 @@ type StorageToolOptions = {
 	userId: string
 	storageId: string
 	writable: boolean
+}
+
+function stripCodeFences(code: string) {
+	const match = code.match(
+		/^```(?:js|javascript|typescript|ts|tsx|jsx)?\s*\n([\s\S]*?)```\s*$/,
+	)
+	return match?.[1] ?? code
+}
+
+function hasTopLevelModuleSyntax(code: string) {
+	const source = stripCodeFences(code.trim())
+	if (!source) return false
+	try {
+		const program = parse(source, {
+			ecmaVersion: 'latest',
+			sourceType: 'module',
+		}) as {
+			body: Array<{ type: string }>
+		}
+		return program.body.some(
+			(statement) =>
+				statement.type === 'ImportDeclaration' ||
+				statement.type.startsWith('Export'),
+		)
+	} catch {
+		return false
+	}
 }
 
 export async function buildCodemodeFns(
@@ -200,6 +228,13 @@ export async function runCodemodeWithRegistry(
 		executorModules?: WorkerLoaderModules
 	},
 ): Promise<ExecuteResult> {
+	if (hasTopLevelModuleSyntax(code)) {
+		return runModuleWithRegistry(env, callerContext, code, params, {
+			executorExports: options?.executorExports,
+			additionalTools: options?.additionalTools,
+			storageTools: options?.storageTools,
+		})
+	}
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
 	const { normalizeCode } = await import('@cloudflare/codemode')
 	const secretRedactor = createExecutionSecretRedactor()
