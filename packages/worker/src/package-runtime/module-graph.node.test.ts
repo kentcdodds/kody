@@ -286,3 +286,55 @@ export default {
 		"'kody:runtime'",
 	)
 })
+
+test('buildKodyAppBundle rewrites dynamic kody runtime imports inside TypeScript package apps', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('ts-dynamic-app'))
+
+	await buildKodyAppBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+					app: {
+						entry: 'app.ts',
+					},
+				},
+			}),
+			'app.ts': `export default {
+	async fetch() {
+		const runtime = await import('kody:runtime')
+		return Response.json({ hasCodemode: typeof runtime.codemode === 'object' })
+	},
+}
+`,
+			'index.ts': 'export const value = "ok"',
+		},
+		entryPoint: 'app.ts',
+		cacheKey: null,
+	})
+
+	expect(mockModule.createWorker).toHaveBeenCalledTimes(1)
+	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	expect(firstCall?.files?.['.__kody_root__/app.ts']).toContain(
+		'import("../.__kody_virtual__/runtime.js")',
+	)
+	expect(firstCall?.files?.['.__kody_root__/app.ts']).not.toContain(
+		"import('kody:runtime')",
+	)
+})

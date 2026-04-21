@@ -16,6 +16,7 @@ export function parseModuleSource(source: string) {
 	return parse(source, {
 		sourceType: 'module',
 		plugins: ['typescript', 'jsx'],
+		createImportExpressions: true,
 	})
 }
 
