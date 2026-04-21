@@ -23,6 +23,7 @@ Conventions
 - Do not ask the user to paste secrets in chat; use saved secrets or \`open_generated_ui\`.
 - \`package_save\`: create or replace a repo-backed saved package rooted at \`package.json\`. Standard package exports define the package surface. \`package.json#kody\` contains Kody-specific metadata such as tags, optional app config, and package-owned jobs.
 - \`package_get\` / \`package_list\` / \`package_delete\`: inspect or manage saved packages for the signed-in user.
+- \`job_list\` / \`job_get\`: inspect the signed-in user's scheduled jobs, recent run outcomes, and current per-user alarm state when debugging scheduling issues.
 - \`job_schedule\`: schedule a repo-backed job for the signed-in user without creating a saved package first. Supports one-off, interval, and cron schedules.
 - \`job_schedule_once\`: compatibility wrapper for one-off repo-backed jobs when you only need a single run time.
 - \`job_run_now\`: run an existing scheduled job immediately by id and return the updated job view plus execution result for debugging.

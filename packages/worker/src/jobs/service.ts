@@ -8,7 +8,10 @@ import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
-import { syncJobManagerAlarm } from './manager-client.ts'
+import {
+	getJobManagerDebugState,
+	syncJobManagerAlarm,
+} from './manager-client.ts'
 import {
 	deleteJobRow,
 	getJobRowById,
@@ -525,6 +528,38 @@ export async function getJob(input: {
 		throw new Error(`Job "${input.jobId}" was not found.`)
 	}
 	return toJobView(row.record)
+}
+
+export async function inspectJobsForUser(input: { env: Env; userId: string }) {
+	const [jobs, alarm] = await Promise.all([
+		listJobs(input),
+		getJobManagerDebugState({
+			env: input.env,
+			userId: input.userId,
+		}),
+	])
+	return {
+		jobs,
+		alarm,
+	}
+}
+
+export async function getJobInspection(input: {
+	env: Env
+	userId: string
+	jobId: string
+}) {
+	const [job, alarm] = await Promise.all([
+		getJob(input),
+		getJobManagerDebugState({
+			env: input.env,
+			userId: input.userId,
+		}),
+	])
+	return {
+		job,
+		alarm,
+	}
 }
 
 export async function updateJob(input: {

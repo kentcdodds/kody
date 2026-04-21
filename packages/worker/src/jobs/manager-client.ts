@@ -5,12 +5,29 @@ import {
 	type JobView,
 } from './types.ts'
 
+export type JobManagerDebugStatus =
+	| 'missing_binding'
+	| 'idle'
+	| 'armed'
+	| 'out_of_sync'
+
+export type JobManagerDebugState = {
+	bindingAvailable: boolean
+	status: JobManagerDebugStatus
+	storedUserId: string | null
+	alarmScheduledFor: string | null
+	nextRunnableJobId: string | null
+	nextRunnableRunAt: string | null
+	alarmInSync: boolean | null
+}
+
 type JobManagerRpc = {
 	syncAlarm: (payload: { userId: string }) => Promise<{
 		ok: true
 		userId: string
 		nextRunAt: string | null
 	}>
+	getDebugState: (payload: { userId: string }) => Promise<JobManagerDebugState>
 	runNow: (payload: {
 		userId: string
 		jobId: string
@@ -40,6 +57,27 @@ export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {
 		}
 	}
 	return rpc.syncAlarm({
+		userId: input.userId,
+	})
+}
+
+export async function getJobManagerDebugState(input: {
+	env: Env
+	userId: string
+}) {
+	const rpc = jobManagerRpc(input.env, input.userId)
+	if (!rpc) {
+		return {
+			bindingAvailable: false,
+			status: 'missing_binding' as const,
+			storedUserId: null,
+			alarmScheduledFor: null,
+			nextRunnableJobId: null,
+			nextRunnableRunAt: null,
+			alarmInSync: null,
+		}
+	}
+	return rpc.getDebugState({
 		userId: input.userId,
 	})
 }

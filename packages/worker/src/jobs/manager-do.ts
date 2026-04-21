@@ -3,7 +3,13 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { DurableObject } from 'cloudflare:workers'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getNextRunnableJob, runDueJobsForUser, runJobNow } from './service.ts'
-import { type JobRepoCheckPolicy } from './types.ts'
+import { resolveJobManagerAlarmState } from './manager-state.ts'
+import {
+	type JobRepoCheckPolicy,
+} from './types.ts'
+import {
+	type JobManagerDebugState,
+} from './manager-client.ts'
 
 const userIdStorageKey = 'user-id'
 
@@ -31,6 +37,36 @@ class JobManagerBase extends DurableObject<Env> {
 			ok: true as const,
 			userId,
 			nextRunAt: nextJob.nextRunAt,
+		}
+	}
+
+	async getDebugState(input: { userId: string }): Promise<JobManagerDebugState> {
+		const userId = input.userId.trim()
+		if (!userId) {
+			throw new Error('Job manager requires a non-empty userId.')
+		}
+		const [storedUserId, alarmTimestamp, nextJob] = await Promise.all([
+			this.ctx.storage.get<string>(userIdStorageKey),
+			this.ctx.storage.getAlarm(),
+			getNextRunnableJob({
+				env: this.env,
+				userId,
+			}),
+		])
+		const nextRunnableRunAt = nextJob?.nextRunAt ?? null
+		const { alarmScheduledFor, alarmInSync, status } =
+			resolveJobManagerAlarmState({
+				alarmTimestamp,
+				nextRunnableRunAt,
+			})
+		return {
+			bindingAvailable: true,
+			status,
+			storedUserId: storedUserId ?? null,
+			alarmScheduledFor,
+			nextRunnableJobId: nextJob?.id ?? null,
+			nextRunnableRunAt,
+			alarmInSync,
 		}
 	}
 
@@ -94,6 +130,9 @@ export function jobManagerRpc(env: Env, userId: string) {
 			userId: string
 			nextRunAt: string | null
 		}>
+		getDebugState: (payload: {
+			userId: string
+		}) => Promise<JobManagerDebugState>
 		runNow: (payload: {
 			userId: string
 			jobId: string

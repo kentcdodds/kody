@@ -7,6 +7,8 @@ import {
 	createJob,
 	deleteJob,
 	executeJobOnce,
+	getJobInspection,
+	inspectJobsForUser,
 	runJobNow,
 	updateJob,
 } from './service.ts'
@@ -23,6 +25,7 @@ const repoMockModule = vi.hoisted(() => ({
 
 const jobManagerMockModule = vi.hoisted(() => ({
 	syncJobManagerAlarm: vi.fn(),
+	getJobManagerDebugState: vi.fn(),
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -38,11 +41,23 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 vi.mock('./manager-client.ts', () => ({
 	syncJobManagerAlarm: (...args: Array<unknown>) =>
 		jobManagerMockModule.syncJobManagerAlarm(...args),
+	getJobManagerDebugState: (...args: Array<unknown>) =>
+		jobManagerMockModule.getJobManagerDebugState(...args),
 }))
 
 afterEach(() => {
 	vi.restoreAllMocks()
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
+	jobManagerMockModule.getJobManagerDebugState.mockReset()
+	jobManagerMockModule.getJobManagerDebugState.mockResolvedValue({
+		bindingAvailable: false,
+		status: 'missing_binding',
+		storedUserId: null,
+		alarmScheduledFor: null,
+		nextRunnableJobId: null,
+		nextRunnableRunAt: null,
+		alarmInSync: null,
+	})
 })
 
 function mockRepoPersistence() {
@@ -700,6 +715,169 @@ test('deleteJob syncs the job manager alarm after removing a job', async () => {
 	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId: callerContext.user.userId,
+	})
+})
+
+test('inspectJobsForUser returns persisted job fields with alarm debug state', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Inspect recurring job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	const jobRow = await (
+		await import('./repo.ts')
+	).getJobRowById(env.APP_DB, callerContext.user.userId, created.id)
+	if (!jobRow) {
+		throw new Error('Expected created job row.')
+	}
+	jobRow.record.lastRunAt = '2026-04-20T10:05:00.000Z'
+	jobRow.record.lastRunStatus = 'error'
+	jobRow.record.lastRunError = 'Worker fetch failed'
+	jobRow.record.lastDurationMs = 321
+	jobRow.record.runCount = 3
+	jobRow.record.successCount = 1
+	jobRow.record.errorCount = 2
+	jobRow.record.runHistory = [
+		{
+			startedAt: '2026-04-20T10:00:00.000Z',
+			finishedAt: '2026-04-20T10:05:00.000Z',
+			status: 'error',
+			durationMs: 321,
+			error: 'Worker fetch failed',
+		},
+	]
+	jobRow.record.nextRunAt = '2026-04-20T10:00:00.000Z'
+	jobRow.record.updatedAt = '2026-04-20T10:05:00.000Z'
+	await (await import('./repo.ts')).updateJobRow({
+		db: env.APP_DB,
+		userId: callerContext.user.userId,
+		job: jobRow.record,
+		callerContextJson: jobRow.callerContextJson,
+	})
+	jobManagerMockModule.getJobManagerDebugState.mockResolvedValue({
+		bindingAvailable: true,
+		status: 'armed',
+		storedUserId: callerContext.user.userId,
+		alarmScheduledFor: '2026-04-20T10:00:00.000Z',
+		nextRunnableJobId: created.id,
+		nextRunnableRunAt: '2026-04-20T10:00:00.000Z',
+		alarmInSync: true,
+	})
+
+	const inspected = await inspectJobsForUser({
+		env,
+		userId: callerContext.user.userId,
+		now: new Date('2026-04-20T10:10:00.000Z'),
+	})
+
+	expect(jobManagerMockModule.getJobManagerDebugState).toHaveBeenCalledWith({
+		env,
+		userId: callerContext.user.userId,
+	})
+	expect(inspected.alarm).toEqual({
+		bindingAvailable: true,
+		status: 'armed',
+		storedUserId: 'user-123',
+		alarmScheduledFor: '2026-04-20T10:00:00.000Z',
+		nextRunnableJobId: created.id,
+		nextRunnableRunAt: '2026-04-20T10:00:00.000Z',
+		alarmInSync: true,
+	})
+	expect(inspected.jobs).toEqual([
+		expect.objectContaining({
+			id: created.id,
+			name: 'Inspect recurring job',
+			sourceId: created.sourceId,
+			storageId: created.storageId,
+			scheduleSummary: 'Runs every 15m',
+			lastRunAt: '2026-04-20T10:05:00.000Z',
+			lastRunStatus: 'error',
+			lastRunError: 'Worker fetch failed',
+			lastDurationMs: 321,
+			runCount: 3,
+			successCount: 1,
+			errorCount: 2,
+			runHistory: [
+				{
+					startedAt: '2026-04-20T10:00:00.000Z',
+					finishedAt: '2026-04-20T10:05:00.000Z',
+					status: 'error',
+					durationMs: 321,
+					error: 'Worker fetch failed',
+				},
+			],
+		}),
+	])
+})
+
+test('getJobInspection returns one job and out-of-sync alarm details', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Inspect one job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-20T18:30:00Z',
+			},
+		},
+	})
+	jobManagerMockModule.getJobManagerDebugState.mockResolvedValue({
+		bindingAvailable: true,
+		status: 'out_of_sync',
+		storedUserId: callerContext.user.userId,
+		alarmScheduledFor: '2026-04-20T18:35:00.000Z',
+		nextRunnableJobId: created.id,
+		nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
+		alarmInSync: false,
+	})
+
+	const inspected = await getJobInspection({
+		env,
+		userId: callerContext.user.userId,
+		jobId: created.id,
+		now: new Date('2026-04-20T18:00:00.000Z'),
+	})
+
+	expect(inspected.job).toMatchObject({
+		id: created.id,
+		name: 'Inspect one job',
+		sourceId: created.sourceId,
+		storageId: created.storageId,
+		lastRunAt: undefined,
+		lastRunStatus: undefined,
+		lastRunError: undefined,
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	})
+	expect(inspected.alarm).toEqual({
+		bindingAvailable: true,
+		status: 'out_of_sync',
+		storedUserId: 'user-123',
+		alarmScheduledFor: '2026-04-20T18:35:00.000Z',
+		nextRunnableJobId: created.id,
+		nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
+		alarmInSync: false,
 	})
 })
 
