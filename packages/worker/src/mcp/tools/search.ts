@@ -683,11 +683,16 @@ export function searchUnified(input: {
 }): SearchUnifiedResult {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
-	const emptyIntent = understandSearchQuery({
-		query,
-		entities: [],
-	})
 	if (!query) {
+		const queryUnderstandingStart = performance.now()
+		const emptyIntent = understandSearchQuery({
+			query,
+			entities: [],
+		})
+		const queryUnderstandingMs = Math.max(
+			0,
+			Math.round(performance.now() - queryUnderstandingStart),
+		)
 		return {
 			matches: [],
 			offline,
@@ -698,7 +703,7 @@ export function searchUnified(input: {
 				matches: [],
 			}),
 			phaseTimings: {
-				queryUnderstandingMs: 0,
+				queryUnderstandingMs,
 				candidateGenerationMs: 0,
 				rerankingMs: 0,
 			},
@@ -706,11 +711,11 @@ export function searchUnified(input: {
 	}
 
 	const limit = Math.max(1, input.limit)
-	const queryUnderstandingStart = performance.now()
 	const entityDescriptors = buildSearchableEntityDescriptors({
 		registry: input.registry,
 		optionalRows: input.optionalRows,
 	})
+	const queryUnderstandingStart = performance.now()
 	const intent = understandSearchQuery({
 		query,
 		entities: entityDescriptors,
@@ -875,7 +880,7 @@ empty ranked list.
 capabilities. Types and fields: see response.
 
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
-Open package apps with \`open_generated_ui({ package_id })\` or hosted package URLs.
+Open package apps with \`open_generated_ui({ kody_id })\` (recommended) or hosted package URLs.
 Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
@@ -893,7 +898,7 @@ Example arguments:
 - \`{ "entity": "kody_official_guide:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:connector" }\`
-- To open a saved package app: \`open_generated_ui({ "package_id": "<id>" })\`
+- To open a saved package app: \`open_generated_ui({ "kody_id": "<id>" })\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),

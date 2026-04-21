@@ -289,8 +289,11 @@ function inferTaskSignals(
 				(term.includes(' ') && normalizedQuery.includes(term)) ||
 				(term === 'setup' && normalizedQuery.includes('set up')),
 		)
+		const setupBoost =
+			terms.includes('setup') && normalizedQuery.includes('set up') ? 1 : 0
 		const score =
-			matchedTerms.length / Math.max(1, Math.min(3, meaningfulTokens.length))
+			(matchedTerms.length + setupBoost) /
+			Math.max(1, Math.min(3, meaningfulTokens.length))
 		return {
 			task,
 			matchedTerms,
