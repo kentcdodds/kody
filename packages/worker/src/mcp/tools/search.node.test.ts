@@ -132,6 +132,11 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 			expect.objectContaining({
 				type: 'connector',
 				connectorName: 'github',
+				tokenUrl: 'https://delta.example/token',
+				clientIdValueName: 'github-client-id',
+				clientSecretSecretName: 'github-client-secret',
+				accessTokenSecretName: 'github-access-token',
+				refreshTokenSecretName: 'github-refresh-token',
 			}),
 			expect.objectContaining({
 				type: 'secret',
