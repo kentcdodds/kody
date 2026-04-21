@@ -207,9 +207,18 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async getSessionState(sessionId: string, userId: string) {
 		const cachedState = await this.readCachedSessionState(sessionId)
+		// Prefer fresh reads from D1 so correctness-sensitive flows like
+		// rebaseSession and publishSession always observe the latest
+		// base_commit and published_commit. The cache is only a fallback for
+		// when a D1 read genuinely cannot see a row (e.g. brief replica lag
+		// immediately after openSession inserted it); this keeps scheduled
+		// jobs from throwing "Repo session was not found" while still letting
+		// concurrent mutations through updateRepoSession / updateEntitySource
+		// drive rebase and publish decisions.
 		const sessionRow =
+			(await readRepoSessionWithRetry(this.env.APP_DB, sessionId)) ??
 			cachedState?.sessionRow ??
-			(await readRepoSessionWithRetry(this.env.APP_DB, sessionId))
+			null
 		if (!sessionRow) {
 			throw new Error(`Repo session "${sessionId}" was not found.`)
 		}
@@ -219,13 +228,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		const source =
-			cachedState?.source?.id === sessionRow.source_id
+			(await readEntitySourceWithRetry(
+				this.env.APP_DB,
+				sessionRow.source_id,
+			)) ??
+			(cachedState?.source?.id === sessionRow.source_id
 				? cachedState.source
-				: ((await readEntitySourceWithRetry(
-						this.env.APP_DB,
-						sessionRow.source_id,
-					)) ??
-					null)
+				: null)
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}

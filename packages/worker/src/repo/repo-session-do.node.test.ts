@@ -448,6 +448,74 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
 })
 
+test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
+	// Guards against a regression where the cache, populated by openSession,
+	// would shadow fresh D1 reads and hide updates such as rebaseSession
+	// writing a new base_commit or an external publish updating
+	// source.published_commit. That would cause publishSession's base_moved
+	// check to compare stale values and silently pass when the source has
+	// actually moved.
+	setCommonSessionFixtures()
+	const initialSource = {
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-initial',
+		manifest_path: 'kody.json',
+		source_root: '/',
+	}
+	const initialSession = {
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_namespace: 'default',
+		session_repo_name: 'session-repo',
+		base_commit: 'commit-initial',
+		last_checkpoint_commit: 'commit-initial',
+	}
+	const movedSession = {
+		...initialSession,
+		base_commit: 'commit-rebased',
+		last_checkpoint_commit: 'commit-rebased',
+	}
+	const movedSource = {
+		...initialSource,
+		published_commit: 'commit-moved',
+	}
+	mockModule.getRepoSessionById
+		.mockResolvedValueOnce(initialSession)
+		.mockResolvedValueOnce(movedSession)
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(initialSource)
+		.mockResolvedValueOnce(movedSource)
+	mockModule.workspaceReadFile.mockResolvedValue('hello world')
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const firstRead = await repoSession.readFile({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		path: 'greeting.txt',
+	})
+	expect(firstRead).toEqual({
+		path: 'greeting.txt',
+		content: 'hello world',
+	})
+
+	const secondRead = await repoSession.readFile({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		path: 'greeting.txt',
+	})
+	expect(secondRead).toEqual({
+		path: 'greeting.txt',
+		content: 'hello world',
+	})
+	// The second readFile hits D1 again rather than short-circuiting on the
+	// in-memory cache, so the updated session and source rows are visible.
+	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(2)
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
+})
+
 test('readFile falls back to cached session state when the session row is not yet readable from D1', async () => {
 	const source = {
 		id: 'source-1',
