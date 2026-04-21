@@ -54,6 +54,8 @@ module-oriented runtime model:
   **`codemode.job_schedule(...)`** without creating a saved package
 - **`codemode.job_schedule_once(...)`** remains available as a convenience alias
   for one-off schedules
+- **`codemode.job_run_now(...)`** runs an existing scheduled job immediately and
+  returns both the updated job state and the execution result for debugging
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity

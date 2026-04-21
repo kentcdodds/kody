@@ -1,5 +1,9 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { type JobRepoCheckPolicy } from './types.ts'
+import {
+	type JobExecutionResult,
+	type JobRepoCheckPolicy,
+	type JobView,
+} from './types.ts'
 
 type JobManagerRpc = {
 	syncAlarm: (payload: { userId: string }) => Promise<{
@@ -12,7 +16,10 @@ type JobManagerRpc = {
 		jobId: string
 		callerContext?: McpCallerContext | null
 		repoCheckPolicyOverride?: JobRepoCheckPolicy | null
-	}) => Promise<unknown>
+	}) => Promise<{
+		job: JobView
+		execution: JobExecutionResult
+	}>
 }
 
 export function jobManagerRpc(env: Env, userId: string): JobManagerRpc | null {
