@@ -60,7 +60,6 @@
     "dev:talks": "npm --prefix docs/talks/kody-mcp-runtime run dev"
   },
   "devDependencies": {
-    "@babel/parser": "^7.29.2",
     "@cloudflare/vitest-pool-workers": "^0.14.7",
     "@cloudflare/workers-types": "^4.20260415.1",
     "@epic-web/config": "^1.24.1",
