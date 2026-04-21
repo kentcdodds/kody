@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { logJobSchedulerError, summarizeSchedulerJobOutcomes } from './scheduler-logging.ts'
+import {
+	logJobSchedulerError,
+	summarizeSchedulerJobOutcomes,
+} from './scheduler-logging.ts'
 
 test('summarizeSchedulerJobOutcomes keeps full fields while limiting count', () => {
 	const longMessage = 'x'.repeat(1300)
@@ -100,4 +103,28 @@ test('logJobSchedulerError truncates per-job error fields before logging', () =>
 			rescheduleError: `${'w'.repeat(1000)}...[truncated 10 chars]`,
 		},
 	])
+})
+
+test('logJobSchedulerError always emits a timestamp when input timestamp is undefined', () => {
+	const originalError = console.error
+	let jsonArg: unknown
+	console.error = ((_tag: unknown, json?: unknown) => {
+		jsonArg = json
+	}) as typeof console.error
+
+	try {
+		logJobSchedulerError({
+			event: 'sync_alarm_failed',
+			userId: 'user-123',
+			errorName: 'Error',
+			errorMessage: 'boom',
+			timestamp: undefined,
+		})
+	} finally {
+		console.error = originalError
+	}
+
+	const payload = JSON.parse(jsonArg as string) as Record<string, unknown>
+	expect(typeof payload.timestamp).toBe('string')
+	expect(payload.timestamp).not.toBe('')
 })

@@ -83,8 +83,8 @@ function writeSchedulerLog(
 		console[level](
 			'job-scheduler',
 			JSON.stringify({
-				timestamp: payload.timestamp ?? new Date().toISOString(),
 				...payload,
+				timestamp: payload.timestamp ?? new Date().toISOString(),
 			}),
 		)
 	} catch (error) {
