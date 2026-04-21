@@ -4,7 +4,7 @@ This folder documents the important runtime architecture for `kody`.
 
 Before making product-level assumptions, read
 [`../project-intent.md`](../project-intent.md). The architecture docs describe
-how the system currently works, while the intent doc explains what the project
+how the system works, while the intent doc explains what the project
 is trying to become.
 
 ## Core docs

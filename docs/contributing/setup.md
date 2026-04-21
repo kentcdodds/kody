@@ -39,7 +39,7 @@ Quick notes for getting a local kody environment running.
   client, local email sending, and Artifacts REST repo
   create/get/list/token/fork calls. Those REST calls do not hit the live
   Cloudflare Artifacts control plane during normal local development. The mock
-  currently covers only the REST control plane; repo-session git clone/pull/push
+  covers only the REST control plane; repo-session git clone/pull/push
   flows still need a real Git-capable Artifacts remote and are not fully
   simulated by the local mock. Unless you already set `CLOUDFLARE_EMAIL_FROM`,
   the launcher also defaults it to `reset@kody.dev`. Set
@@ -50,7 +50,7 @@ Quick notes for getting a local kody environment running.
   succeeds in local development. The main worker and home connector stream logs
   live; the client bundle and background mock workers buffer logs and only print
   them if that child process exits with an error.)
-- The home automation connector now lives in `packages/home-connector`.
+- The home automation connector lives in `packages/home-connector`.
   - `npm run dev:home-connector` starts the local connector app on Node 24 with
     `node --watch`, so connector code changes automatically restart the local
     process.
@@ -75,7 +75,7 @@ Quick notes for getting a local kody environment running.
   - When `ROKU_DISCOVERY_URL` is unset, the connector defaults Roku discovery to
     SSDP at `ssdp://239.255.255.250:1900`.
   - When `LUTRON_DISCOVERY_URL` is unset, the connector defaults Lutron
-    discovery to `mdns://_lutron._tcp.local`. Live discovery now uses one
+    discovery to `mdns://_lutron._tcp.local`. Live discovery uses one
     cross-platform pure-JS mDNS path, so the same code works on macOS and in
     Linux containers as long as the process has multicast visibility to the LAN.
   - When `SAMSUNG_TV_DISCOVERY_URL` is unset, the connector defaults Samsung TV
@@ -98,7 +98,7 @@ Quick notes for getting a local kody environment running.
   - The Samsung TV tool surface intentionally focuses on discovery, pairing,
     remote keys, known-app probing, explicit app launch by app ID, and Art Mode
     control.
-  - Samsung power support is now exposed as best-effort `power off` and
+  - Samsung power support is exposed as best-effort `power off` and
     `power on` actions. Power off uses the local Samsung remote channel and
     power on uses Wake-on-LAN with the stored TV MAC address. These semantics
     are still model- and firmware-dependent, especially on Frame TVs where the
@@ -113,7 +113,7 @@ Quick notes for getting a local kody environment running.
 - To opt into live remote inference locally, set `AI_MODE=remote` before
   starting `npm run dev`.
 - When `AI_MODE=remote`, set `AI_GATEWAY_ID`, `CLOUDFLARE_ACCOUNT_ID`, and
-  `CLOUDFLARE_API_TOKEN` in `packages/worker/.env`; remote AI mode now requires
+  `CLOUDFLARE_API_TOKEN` in `packages/worker/.env`; remote AI mode requires
   requests to flow through a configured Cloudflare AI Gateway using your
   Cloudflare account credentials. If any are missing, `npm run dev` fails fast
   with an explanatory startup error.
@@ -147,7 +147,7 @@ Quick notes for getting a local kody environment running.
 - `npm run format` applies formatting updates.
 - `npm run test:push` runs the same worker tests and Playwright E2E suite
   enforced by the Husky `pre-push` hook.
-- `npm run test:e2e:run` now ensures Playwright Chromium is installed before the
+- `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts, so `npm run validate` and `npm run test:push` self-heal on a
   fresh machine.
 - `npm run test:e2e:install` still exists when you want to prefetch Playwright
@@ -248,7 +248,7 @@ When a PR is closed, the cleanup job deletes the preview Worker(s) and these
 resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
-not currently available for Workers that use Durable Objects. The main app
+not available for Workers that use Durable Objects. The main app
 Worker binds `MCP_OBJECT`, so app previews continue to use per-PR Worker names.
 Mock Workers do not use Durable Objects, so their Wrangler configs opt into
 `preview_urls = true` and the workflow includes mock version preview links when

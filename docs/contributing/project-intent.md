@@ -27,7 +27,7 @@ document as the intent for the current project.
 
 ## Who this is for
 
-This project is intentionally single-user right now.
+This project is intentionally single-user.
 
 - Primary user: `me@kentcdodds.com`
 - Product posture: personal assistant for Kent
@@ -40,7 +40,7 @@ That means future decisions should usually optimize for:
 - Personal workflows and preferences
 - Interoperability across MCP-capable hosts
 
-It does not currently need to optimize for:
+It does not need to optimize for:
 
 - Multi-user account models
 - Per-organization tenancy
