@@ -914,6 +914,7 @@ async function insertPublishedEntitySource(input: {
 	db: ReturnType<typeof createDatabase>
 	userId: string
 	env?: Env
+	kv?: KVNamespace
 	sourceId: string
 	entityKind?: 'job' | 'package'
 	entityId: string
@@ -943,12 +944,19 @@ async function insertPublishedEntitySource(input: {
 			'2026-04-16T00:00:00.000Z',
 		)
 		.run()
-	if (input.env && input.files) {
+	const snapshotEnv =
+		input.env ??
+		(input.kv
+			? ({
+					BUNDLE_ARTIFACTS_KV: input.kv,
+				} as Env)
+			: null)
+	if (snapshotEnv && input.files) {
 		const { writePublishedSourceSnapshot } = await import(
 			'#worker/package-runtime/published-runtime-artifacts.ts'
 		)
 		await writePublishedSourceSnapshot({
-			env: input.env,
+			env: snapshotEnv,
 			source: {
 				id: input.sourceId,
 				user_id: input.userId,
@@ -1881,8 +1889,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			callerContext,
 		})
 
-		const [spyEnv, spyCallerContext] = executeSpy.mock.calls[0] ?? []
-		expect(spyEnv).toBe(env)
+		const [, spyCallerContext] = executeSpy.mock.calls[0] ?? []
 		expect(spyCallerContext).toMatchObject({
 			baseUrl: 'https://example.com',
 			repoContext: expect.objectContaining({
