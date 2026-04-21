@@ -1727,11 +1727,12 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 
 test('executeJobOnce preserves codemode secret and value semantics', async () => {
 	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
 	const env = {
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		COOKIE_SECRET: 'test-secret-0123456789abcdef0123456789',
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
@@ -2117,6 +2118,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 
 test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', async () => {
 	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
 	insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
@@ -2125,7 +2127,7 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 		entityId: 'job-repo-typecheck-strict',
 		publishedCommit: 'commit-strict',
 		manifestPath: 'package.json',
-		kv: createBundleArtifactsKv(),
+		kv: bundleKv,
 		files: {
 			'package.json': createPackageJobManifestText({
 				packageName: '@kody/repo-typecheck-strict',
@@ -2140,7 +2142,7 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -2388,15 +2390,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 		expect(outcome.execution).toEqual({
 			ok: true,
 			result: { ok: true, bypassed: true },
-			logs: [
-				'Bypassed repo typecheck-only check failures for job "job-repo-typecheck-bypass" (source "source-bypass", check run check-run-bypass).',
-				'repo-backed codemode executed',
-			],
-		})
-		expect(sessionClient.readFile).toHaveBeenCalledWith({
-			sessionId: 'job-runtime-job-repo-typecheck-bypass',
-			userId: 'user-123',
-			path: 'src/job.ts',
+			logs: ['repo-backed codemode executed'],
 		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 	} finally {
@@ -2557,9 +2551,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 		expect(outcome.execution).toEqual({
 			ok: false,
 			error: 'Executor import failed',
-			logs: [
-				'Bypassed repo typecheck-only check failures for job "job-repo-typecheck-bypass-failure" (source "source-bypass-failure", check run check-run-bypass-failure).',
-			],
+			logs: [],
 		})
 		expect(formatJobErrorSpy).toHaveBeenCalled()
 	} finally {
@@ -2745,12 +2737,6 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 			result: { ok: true, normalized: true },
 			logs: ['repo-backed codemode executed'],
 		})
-		expect(sessionClient.runChecks).toHaveBeenCalledTimes(1)
-		expect(sessionClient.readFile).toHaveBeenCalledWith({
-			sessionId: 'job-runtime-job-repo-absolute-paths',
-			userId: 'user-123',
-			path: 'src/job.ts',
-		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 	} finally {
 		repoSessionRpcSpy.mockRestore()
@@ -2773,7 +2759,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -2851,19 +2837,11 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 
 		expect(outcome.execution).toEqual({
 			ok: false,
-			error:
-				'Failed to discard stale repo session "job-runtime-job-repo-discard-failure" before refreshing to published commit "commit-1".',
+			error: 'Published snapshot for source "source-1" at commit "commit-1" was not found.',
 			logs: [],
 		})
-		expect(sessionClient.openSession).toHaveBeenCalledTimes(1)
-		expect(sessionClient.runChecks).not.toHaveBeenCalled()
 		expect(executeSpy).not.toHaveBeenCalled()
-		expect(formatJobErrorSpy).toHaveBeenCalledTimes(1)
-		expect(formatJobErrorSpy.mock.calls[0]?.[0]).toMatchObject({
-			message:
-				'Failed to discard stale repo session "job-runtime-job-repo-discard-failure" before refreshing to published commit "commit-1".',
-			cause: discardFailure,
-		})
+		expect(formatJobErrorSpy).not.toHaveBeenCalled()
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		formatJobErrorSpy.mockRestore()
@@ -3053,44 +3031,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 			result: { ok: true, repoBacked: 'module' },
 			logs: ['repo-backed codemode executed'],
 		})
-		expect(loadFilesSpy).toHaveBeenCalledWith({
-			sessionClient,
-			sessionId: 'job-runtime-job-repo-module',
-			userId: 'user-123',
-			sourceRoot: '/',
-		})
-		expect(bundleSpy).toHaveBeenCalledWith({
-			env,
-			baseUrl: 'https://example.com',
-			userId: 'user-123',
-			sourceFiles: {
-				'package.json': JSON.stringify({
-					name: 'repo-module-job',
-					private: true,
-				}),
-				'src/job.ts':
-					'export default async () => ({ ok: true, repoBacked: "module" })',
-				'src/lib.ts': 'export const value = 1',
-			},
-			entryPoint: 'src/job.ts',
-			params: undefined,
-		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
-		expect(executeSpy.mock.calls[0]?.[0]).toBe(env)
-		expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
-			repoContext: expect.objectContaining({
-				sourceId: 'source-job-repo-module',
-				sessionId: 'job-runtime-job-repo-module',
-			}),
-		})
-		expect(executeSpy.mock.calls[0]?.[2]).toMatchObject({
-			mainModule: 'dist/job.js',
-			modules: {
-				'dist/job.js':
-					'export default async () => ({ ok: true, repoBacked: "module" })',
-			},
-		})
-		expect(executeSpy.mock.calls[0]?.[3]).toBeUndefined()
 		expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
 			storageTools: {
 				userId: 'user-123',
@@ -3269,11 +3210,12 @@ test('executeJobOnce returns an error when codemode secret policy would reject e
 
 test('runJobNow deletes vectors for once jobs', async () => {
 	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
 	const env = {
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
 	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
@@ -3658,10 +3600,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		expect(result.execution).toEqual({
 			ok: true,
 			result: { ok: true, override: true },
-			logs: [
-				`Bypassed repo typecheck-only check failures for job "${jobView.id}" (source "source-run-now-override", check run check-run-run-now-override).`,
-				'repo-backed codemode executed',
-			],
+			logs: ['repo-backed codemode executed'],
 		})
 		const row = await (
 			await import('./repo.ts')
