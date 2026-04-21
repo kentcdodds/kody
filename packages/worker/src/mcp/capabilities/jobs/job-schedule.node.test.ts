@@ -182,6 +182,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 			result: { ok: true },
 			logs: ['ran job'],
 		},
+		deletedAfterRun: false,
 	})
 
 	const result = await jobRunNowCapability.handler(
@@ -245,7 +246,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 	})
 })
 
-test('job_run_now reports one-off jobs as deleted after the run', async () => {
+test('job_run_now preserves failed one-off jobs for inspection', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -296,6 +297,7 @@ test('job_run_now reports one-off jobs as deleted after the run', async () => {
 			error: 'boom',
 			logs: ['ran job'],
 		},
+		deletedAfterRun: false,
 	})
 
 	const result = await jobRunNowCapability.handler(
@@ -308,7 +310,7 @@ test('job_run_now reports one-off jobs as deleted after the run', async () => {
 		},
 	)
 
-	expect(result.deleted_after_run).toBe(true)
+	expect(result.deleted_after_run).toBe(false)
 	expect(result.execution).toEqual({
 		ok: false,
 		error: 'boom',
