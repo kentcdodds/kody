@@ -987,12 +987,15 @@ export async function runDueJobsForUser(input: {
 		input.userId,
 		now.toISOString(),
 	)
+	const dueRowById = new Map(
+		dueRows.map((row) => [row.record.id, row] as const),
+	)
 	if (dueRows.length === 0) {
 		logJobSchedulerEvent({
-			event: 'run_due_jobs.empty',
+			event: 'run_due_jobs_empty',
 			userId: input.userId,
 			dueJobCount: 0,
-			reason: 'no_due_jobs_found',
+			reason: 'no_due_jobs',
 		})
 		return {
 			dueJobCount: 0,
@@ -1005,7 +1008,7 @@ export async function runDueJobsForUser(input: {
 		jobs: dueRows.map((row) => row.record),
 		now,
 		executeJob: async (job) => {
-			const row = dueRows.find((candidate) => candidate.record.id === job.id)
+			const row = dueRowById.get(job.id)
 			const callerContext = row?.callerContext ?? null
 			return executeJobOnce({
 				env: input.env,
@@ -1015,7 +1018,7 @@ export async function runDueJobsForUser(input: {
 		},
 	})
 	for (const job of result.saveJobs) {
-		const row = dueRows.find((candidate) => candidate.record.id === job.id)
+		const row = dueRowById.get(job.id)
 		await updateJobRow({
 			db: input.env.APP_DB,
 			userId: input.userId,

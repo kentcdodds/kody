@@ -15,11 +15,14 @@ export type SchedulerJobOutcomeLog = {
 	rescheduleError?: string
 }
 
+export type SchedulerLogSource = 'alarm' | 'direct' | 'rpc' | 'run_now'
+
 type JobSchedulerLogPayload = {
 	event: string
 	userId?: string
 	jobId?: string | null
 	scheduleType?: JobSchedule['type']
+	source?: SchedulerLogSource
 	nextJobId?: string | null
 	nextRunAt?: string | null
 	currentAlarmAt?: string | null

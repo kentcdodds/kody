@@ -1,3 +1,4 @@
+import type * as SchedulerLoggingType from './scheduler-logging.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -42,7 +43,7 @@ vi.mock('#worker/sentry-options.ts', () => ({
 }))
 
 vi.mock('./scheduler-logging.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('./scheduler-logging.ts')>()
+	const actual = await importOriginal<typeof SchedulerLoggingType>()
 	return {
 		...actual,
 		logJobSchedulerEvent: (...args: Array<unknown>) =>
@@ -67,7 +68,7 @@ function createState({
 	userId = 'user-123',
 	currentAlarmAt = null,
 }: {
-	userId?: string | null
+	userId?: string
 	currentAlarmAt?: number | null
 } = {}) {
 	const persistedEntries = new Map<string, unknown>()
@@ -125,7 +126,7 @@ test('syncAlarm logs when it arms a new alarm for the next runnable job', async 
 		currentAlarmAt: '2026-04-20T18:00:00.000Z',
 		nextJobId: 'job-123',
 		nextRunAt,
-		reason: 'alarm-armed',
+		reason: 'alarm_armed',
 	})
 	expect(mockModule.logJobSchedulerError).not.toHaveBeenCalled()
 })
@@ -151,7 +152,7 @@ test('syncAlarm logs when no runnable job is found and clears the alarm', async 
 		currentAlarmAt: '2026-04-20T18:00:00.000Z',
 		nextJobId: null,
 		nextRunAt: null,
-		reason: 'no-runnable-job',
+		reason: 'no_runnable_job',
 	})
 })
 
@@ -204,12 +205,12 @@ test('alarm logs firing, due-job outcomes, and resyncs the next alarm', async ()
 		isRetry: true,
 	})
 	expect(mockModule.logJobSchedulerEvent).toHaveBeenNthCalledWith(2, {
-		event: 'alarm_processed_due_jobs',
+		event: 'run_due_jobs_completed',
 		userId: 'user-123',
 		dueJobCount: 2,
 		successCount: 1,
 		errorCount: 1,
-		reason: 'processed-due-jobs',
+		reason: 'processed_due_jobs',
 		jobOutcomes: [
 			{
 				jobId: 'job-success',
@@ -234,7 +235,151 @@ test('alarm logs firing, due-job outcomes, and resyncs the next alarm', async ()
 		currentAlarmAt: null,
 		nextJobId: 'job-next',
 		nextRunAt: '2026-04-20T19:00:00.000Z',
-		reason: 'alarm-armed',
+		reason: 'alarm_armed',
 	})
 	expect(mockModule.logJobSchedulerError).not.toHaveBeenCalled()
+})
+
+test('syncAlarm logs source-tagged errors when getNextRunnableJob fails', async () => {
+	resetMocks()
+	mockModule.getNextRunnableJob.mockRejectedValue(
+		new Error('next job lookup failed'),
+	)
+	const { state } = createState()
+	const manager = new JobManagerBase(state, {} as Env)
+
+	await expect(
+		manager.syncAlarm({ userId: 'user-123', source: 'alarm' }),
+	).rejects.toThrow('next job lookup failed')
+
+	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
+		event: 'sync_alarm_failed',
+		userId: 'user-123',
+		source: 'alarm',
+		errorName: 'Error',
+		errorMessage: 'next job lookup failed',
+	})
+})
+
+test('syncAlarm logs source-tagged errors when deleteAlarm fails', async () => {
+	resetMocks()
+	mockModule.getNextRunnableJob.mockResolvedValue(null)
+	const { state } = createState()
+	const deleteAlarm = vi.mocked(
+		state.storage.deleteAlarm as unknown as (
+			...args: Array<unknown>
+		) => Promise<void>,
+	)
+	deleteAlarm.mockRejectedValueOnce(new Error('delete alarm failed'))
+	const manager = new JobManagerBase(state, {} as Env)
+
+	await expect(
+		manager.syncAlarm({ userId: 'user-123', source: 'rpc' }),
+	).rejects.toThrow('delete alarm failed')
+
+	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
+		event: 'sync_alarm_failed',
+		userId: 'user-123',
+		source: 'rpc',
+		errorName: 'Error',
+		errorMessage: 'delete alarm failed',
+	})
+})
+
+test('syncAlarm logs source-tagged errors when setAlarm fails', async () => {
+	resetMocks()
+	mockModule.getNextRunnableJob.mockResolvedValue({
+		id: 'job-123',
+		nextRunAt: '2026-04-20T18:30:00.000Z',
+	})
+	const { state } = createState()
+	const setAlarm = vi.mocked(
+		state.storage.setAlarm as unknown as (
+			...args: Array<unknown>
+		) => Promise<void>,
+	)
+	setAlarm.mockRejectedValueOnce(new Error('set alarm failed'))
+	const manager = new JobManagerBase(state, {} as Env)
+
+	await expect(
+		manager.syncAlarm({ userId: 'user-123', source: 'run_now' }),
+	).rejects.toThrow('set alarm failed')
+
+	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
+		event: 'sync_alarm_failed',
+		userId: 'user-123',
+		source: 'run_now',
+		errorName: 'Error',
+		errorMessage: 'set alarm failed',
+	})
+})
+
+test('alarm logs missing_user_id when no user id was persisted', async () => {
+	resetMocks()
+	const { state } = createState()
+	vi.mocked(
+		state.storage.get as unknown as (
+			key: string,
+		) => Promise<string | undefined>,
+	).mockResolvedValueOnce(undefined)
+	const manager = new JobManagerBase(state, {} as Env)
+
+	await expect(manager.alarm()).resolves.toBeUndefined()
+
+	expect(mockModule.logJobSchedulerEvent).toHaveBeenCalledWith({
+		event: 'alarm_fired',
+		reason: 'missing_user_id',
+		retryCount: undefined,
+		isRetry: undefined,
+	})
+})
+
+test('alarm logs run_due_jobs failure details', async () => {
+	resetMocks()
+	mockModule.runDueJobsForUser.mockRejectedValue(
+		new Error('run due jobs failed'),
+	)
+	const { state } = createState()
+	const manager = new JobManagerBase(state, {} as Env)
+
+	await expect(manager.alarm()).rejects.toThrow('run due jobs failed')
+
+	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
+		event: 'alarm_run_due_jobs_failed',
+		userId: 'user-123',
+		retryCount: undefined,
+		isRetry: undefined,
+		errorName: 'Error',
+		errorMessage: 'run due jobs failed',
+	})
+})
+
+test('alarm logs resync failure details after due jobs run', async () => {
+	resetMocks()
+	mockModule.runDueJobsForUser.mockResolvedValue({
+		dueJobCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		jobOutcomes: [],
+	})
+	const { state } = createState()
+	const manager = new JobManagerBase(state, {} as Env)
+	const syncAlarmSpy = vi
+		.spyOn(manager, 'syncAlarm')
+		.mockRejectedValueOnce(new Error('resync failed'))
+
+	await expect(manager.alarm()).rejects.toThrow('resync failed')
+
+	expect(syncAlarmSpy).toHaveBeenCalledWith({
+		userId: 'user-123',
+		source: 'alarm',
+	})
+	expect(mockModule.logJobSchedulerError).toHaveBeenCalledWith({
+		event: 'alarm_resync_failed',
+		userId: 'user-123',
+		retryCount: undefined,
+		isRetry: undefined,
+		errorName: 'Error',
+		errorMessage: 'resync failed',
+	})
 })

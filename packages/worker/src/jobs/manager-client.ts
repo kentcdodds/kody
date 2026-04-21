@@ -11,7 +11,10 @@ import {
 } from './types.ts'
 
 type JobManagerRpc = {
-	syncAlarm: (payload: { userId: string }) => Promise<{
+	syncAlarm: (payload: {
+		userId: string
+		source?: 'alarm' | 'rpc' | 'run_now'
+	}) => Promise<{
 		ok: true
 		userId: string
 		nextRunAt: string | null
@@ -56,6 +59,7 @@ export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {
 	try {
 		const result = await rpc.syncAlarm({
 			userId: input.userId,
+			source: 'rpc',
 		})
 		logJobSchedulerEvent({
 			event: 'sync_alarm_completed',

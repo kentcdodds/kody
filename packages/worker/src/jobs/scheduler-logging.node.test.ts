@@ -1,8 +1,12 @@
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import {
 	logJobSchedulerError,
 	summarizeSchedulerJobOutcomes,
 } from './scheduler-logging.ts'
+
+afterEach(() => {
+	vi.restoreAllMocks()
+})
 
 test('summarizeSchedulerJobOutcomes keeps full fields while limiting count', () => {
 	const longMessage = 'x'.repeat(1300)
@@ -35,25 +39,17 @@ test('summarizeSchedulerJobOutcomes keeps full fields while limiting count', () 
 })
 
 test('logJobSchedulerError truncates top-level errorMessage before logging', () => {
-	const originalError = console.error
-	let tagArg: unknown
-	let jsonArg: unknown
-	console.error = ((tag: unknown, json?: unknown) => {
-		tagArg = tag
-		jsonArg = json
-	}) as typeof console.error
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-	try {
-		logJobSchedulerError({
-			event: 'sync_alarm_failed',
-			userId: 'user-123',
-			errorName: 'Error',
-			errorMessage: 'y'.repeat(1205),
-		})
-	} finally {
-		console.error = originalError
-	}
+	logJobSchedulerError({
+		event: 'sync_alarm_failed',
+		userId: 'user-123',
+		errorName: 'Error',
+		errorMessage: 'y'.repeat(1205),
+	})
 
+	expect(errorSpy).toHaveBeenCalledTimes(1)
+	const [tagArg, jsonArg] = errorSpy.mock.calls[0] ?? []
 	expect(tagArg).toBe('job-scheduler')
 	expect(typeof jsonArg).toBe('string')
 	const payload = JSON.parse(jsonArg as string) as Record<string, unknown>
@@ -63,32 +59,26 @@ test('logJobSchedulerError truncates top-level errorMessage before logging', () 
 })
 
 test('logJobSchedulerError truncates per-job error fields before logging', () => {
-	const originalError = console.error
-	let jsonArg: unknown
-	console.error = ((_tag: unknown, json?: unknown) => {
-		jsonArg = json
-	}) as typeof console.error
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-	try {
-		logJobSchedulerError({
-			event: 'alarm_processed_due_jobs',
-			userId: 'user-123',
-			jobOutcomes: [
-				{
-					jobId: 'job-123',
-					scheduleType: 'once',
-					outcome: 'failure',
-					nextRunAt: null,
-					deleted: true,
-					error: 'z'.repeat(1100),
-					rescheduleError: 'w'.repeat(1010),
-				},
-			],
-		})
-	} finally {
-		console.error = originalError
-	}
+	logJobSchedulerError({
+		event: 'alarm_processed_due_jobs',
+		userId: 'user-123',
+		jobOutcomes: [
+			{
+				jobId: 'job-123',
+				scheduleType: 'once',
+				outcome: 'failure',
+				nextRunAt: null,
+				deleted: true,
+				error: 'z'.repeat(1100),
+				rescheduleError: 'w'.repeat(1010),
+			},
+		],
+	})
 
+	expect(errorSpy).toHaveBeenCalledTimes(1)
+	const [, jsonArg] = errorSpy.mock.calls[0] ?? []
 	const payload = JSON.parse(jsonArg as string) as {
 		jobOutcomes: Array<Record<string, unknown>>
 	}
@@ -106,24 +96,18 @@ test('logJobSchedulerError truncates per-job error fields before logging', () =>
 })
 
 test('logJobSchedulerError always emits a timestamp when input timestamp is undefined', () => {
-	const originalError = console.error
-	let jsonArg: unknown
-	console.error = ((_tag: unknown, json?: unknown) => {
-		jsonArg = json
-	}) as typeof console.error
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-	try {
-		logJobSchedulerError({
-			event: 'sync_alarm_failed',
-			userId: 'user-123',
-			errorName: 'Error',
-			errorMessage: 'boom',
-			timestamp: undefined,
-		})
-	} finally {
-		console.error = originalError
-	}
+	logJobSchedulerError({
+		event: 'sync_alarm_failed',
+		userId: 'user-123',
+		errorName: 'Error',
+		errorMessage: 'boom',
+		timestamp: undefined,
+	})
 
+	expect(errorSpy).toHaveBeenCalledTimes(1)
+	const [, jsonArg] = errorSpy.mock.calls[0] ?? []
 	const payload = JSON.parse(jsonArg as string) as Record<string, unknown>
 	expect(typeof payload.timestamp).toBe('string')
 	expect(payload.timestamp).not.toBe('')

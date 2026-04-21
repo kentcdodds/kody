@@ -14,7 +14,10 @@ import { type JobRepoCheckPolicy } from './types.ts'
 const userIdStorageKey = 'user-id'
 
 export class JobManagerBase extends DurableObject<Env> {
-	async syncAlarm(input: { userId: string }) {
+	async syncAlarm(input: {
+		userId: string
+		source?: 'alarm' | 'rpc' | 'run_now'
+	}) {
 		const userId = input.userId.trim()
 		if (!userId) {
 			throw new Error('Job manager requires a non-empty userId.')
@@ -37,7 +40,7 @@ export class JobManagerBase extends DurableObject<Env> {
 							: new Date(currentAlarmAt).toISOString(),
 					nextJobId: null,
 					nextRunAt: null,
-					reason: 'no-runnable-job',
+					reason: 'no_runnable_job',
 				})
 				return {
 					ok: true as const,
@@ -57,8 +60,8 @@ export class JobManagerBase extends DurableObject<Env> {
 				nextRunAt: nextJob.nextRunAt,
 				reason:
 					currentAlarmAt === new Date(nextJob.nextRunAt).valueOf()
-						? 'alarm-unchanged'
-						: 'alarm-armed',
+						? 'alarm_unchanged'
+						: 'alarm_armed',
 			})
 			return {
 				ok: true as const,
@@ -69,6 +72,7 @@ export class JobManagerBase extends DurableObject<Env> {
 			logJobSchedulerError({
 				event: 'sync_alarm_failed',
 				userId,
+				source: input.source ?? 'rpc',
 				...schedulerErrorFields(error),
 			})
 			throw error
@@ -84,7 +88,7 @@ export class JobManagerBase extends DurableObject<Env> {
 			await this.ctx.storage.deleteAlarm()
 			logJobSchedulerEvent({
 				event: 'alarm_fired',
-				reason: 'missing-user-id',
+				reason: 'missing_user_id',
 				retryCount: alarmInfo?.retryCount,
 				isRetry: alarmInfo?.isRetry,
 			})
@@ -102,12 +106,13 @@ export class JobManagerBase extends DurableObject<Env> {
 				userId,
 			})
 			logJobSchedulerEvent({
-				event: 'alarm_processed_due_jobs',
+				event: 'run_due_jobs_completed',
 				userId,
 				dueJobCount: result.dueJobCount,
 				successCount: result.successCount,
 				errorCount: result.errorCount,
-				reason: result.dueJobCount === 0 ? 'no-due-jobs' : 'processed-due-jobs',
+				reason:
+					result.dueJobCount === 0 ? 'no_due_jobs_found' : 'processed_due_jobs',
 				...summarizeSchedulerJobOutcomes(result.jobOutcomes),
 			})
 		} catch (error) {
@@ -121,7 +126,7 @@ export class JobManagerBase extends DurableObject<Env> {
 			throw error
 		}
 		try {
-			await this.syncAlarm({ userId })
+			await this.syncAlarm({ userId, source: 'alarm' })
 		} catch (error) {
 			logJobSchedulerError({
 				event: 'alarm_resync_failed',
@@ -154,7 +159,7 @@ export class JobManagerBase extends DurableObject<Env> {
 			originalError = error
 		}
 		try {
-			await this.syncAlarm({ userId: input.userId })
+			await this.syncAlarm({ userId: input.userId, source: 'run_now' })
 		} catch (syncError) {
 			console.error('[JobManager.runNow] failed to sync job alarm', {
 				userId: input.userId,
