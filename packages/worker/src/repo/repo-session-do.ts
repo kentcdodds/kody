@@ -67,6 +67,20 @@ function nowIso() {
 	return new Date().toISOString()
 }
 
+function compactArtifactsRepoSuffix(value: string) {
+	const compact = value.replace(/[^a-zA-Z0-9]/g, '')
+	return compact.length > 0 ? compact : 'session'
+}
+
+function buildSessionArtifactsRepoName(
+	sourceRepoId: string,
+	sessionId: string,
+) {
+	const compactSessionId = compactArtifactsRepoSuffix(sessionId).slice(-61)
+	const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
+	return `${sourceRepoId.slice(0, repoPrefixLength)}-${compactSessionId}`
+}
+
 async function ensureArtifactRepoRemote(input: {
 	repo: {
 		info: () => Promise<{ remote: string } | null>
@@ -451,9 +465,10 @@ class RepoSessionBase extends DurableObject<Env> {
 					`Source "${source.id}" has no published commit yet. Bootstrap the source repo before opening a repo session.`,
 				)
 			}
-			const compactSessionId = input.sessionId.replace(/-/g, '')
-			const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
-			const sessionRepoName = `${source.repo_id.slice(0, repoPrefixLength)}-${compactSessionId}`
+			const sessionRepoName = buildSessionArtifactsRepoName(
+				source.repo_id,
+				input.sessionId,
+			)
 			const forked = await sourceRepo.fork({
 				name: sessionRepoName,
 				readOnly: false,
