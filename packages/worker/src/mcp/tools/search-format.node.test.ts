@@ -97,6 +97,7 @@ test('search markdown and entity detail formatting preserve structured behavior'
 		{
 			type: 'value',
 			id: 'user:preferred_repo',
+			entityRef: 'user:preferred_repo:value',
 			name: 'preferred_repo',
 			title: 'preferred_repo',
 			description: 'Preferred repository owner/name.',
@@ -107,6 +108,7 @@ test('search markdown and entity detail formatting preserve structured behavior'
 		{
 			type: 'connector',
 			id: 'github',
+			entityRef: 'github:connector',
 			name: 'github',
 			title: 'github',
 			description: 'GitHub OAuth connector config',

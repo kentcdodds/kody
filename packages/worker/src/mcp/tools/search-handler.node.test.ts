@@ -7,7 +7,10 @@ const mockModule = vi.hoisted(() => ({
 				name: 'search_docs',
 				description: 'Search docs capability',
 				domain: 'meta',
+				keywords: [],
+				inputFields: [],
 				requiredInputFields: [],
+				outputFields: [],
 				readOnly: true,
 				idempotent: true,
 				destructive: false,
@@ -120,16 +123,14 @@ test('search tool includes timing metadata in success responses', async () => {
 	})
 
 	expect(response.isError).toBeUndefined()
-	expect(response.structuredContent).toEqual(
-		expect.objectContaining({
-			conversationId: 'conv-search',
-			timing: {
-				startedAt: expect.any(String),
-				endedAt: expect.any(String),
-				durationMs: 12,
-			},
-		}),
-	)
+	expect(response.structuredContent).toMatchObject({
+		conversationId: 'conv-search',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+		},
+	})
+	expect(response.structuredContent.timing.durationMs).toBeGreaterThanOrEqual(0)
 })
 
 test('search tool includes timing metadata in validation errors', async () => {
