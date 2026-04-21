@@ -37,7 +37,7 @@ let routes = route({
 })
 
 type Routes = typeof routes
-// Each route is now typed with a specific request method.
+// Each route is typed with a specific request method.
 // {
 //   home: Route<'GET', '/'>,
 //   contact: {

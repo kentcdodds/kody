@@ -66,7 +66,8 @@ Treat package apps like Worker-style modules:
 
 ## Package-owned jobs
 
-Packages can own jobs, but packages are no longer the only scheduling path.
+Packages can own jobs, and Kody also supports schedules that are not owned
+by a package.
 
 - Define them under `package.json#kody.jobs`
 - Reference package-local entry modules
