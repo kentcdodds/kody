@@ -168,7 +168,7 @@ vi.mock('./manifest.ts', () => ({
 		mockModule.parseRepoManifest(...args),
 }))
 
-const { RepoSession } = await import('./repo-session-do.ts')
+const { RepoSession, readWithRetry } = await import('./repo-session-do.ts')
 
 function createDurableObjectState() {
 	const storageState = new Map<string, unknown>()
@@ -375,6 +375,171 @@ test('openSession strips unsupported characters from derived session repo names'
 			url: `https://acct.artifacts.cloudflare.net/git/default/${forkName}.git`,
 		}),
 	)
+})
+
+test('readFile retries the D1 lookup when the persisted cache is missing and the row is not yet readable', async () => {
+	// This test covers the alarm-driven scheduled-job failure mode where a fresh
+	// DO instance handles a follow-up RPC call before the in-memory cache from
+	// openSession is available, and D1 read replicas have not yet caught up to
+	// the freshly inserted repo session row.
+	const sessionRow = {
+		id: 'job-runtime-session-replica-lag',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'session-repo-name',
+		session_repo_namespace: 'default',
+		base_commit: 'commit-base',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active' as const,
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+	const source = {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'job' as const,
+		entity_id: 'job-1',
+		repo_id: 'job-job-1',
+		published_commit: 'commit-base',
+		indexed_commit: null,
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+	mockModule.getRepoSessionById
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(sessionRow)
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce(source)
+	mockModule.resolveSessionRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/session-repo-name.git',
+		})),
+		createToken: vi.fn(async () => ({
+			plaintext: 'art_session_secret?expires=1760000200',
+		})),
+	})
+	mockModule.workspaceExists.mockResolvedValue(false)
+	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"job"}')
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const file = await repoSession.readFile({
+		sessionId: 'job-runtime-session-replica-lag',
+		userId: 'user-1',
+		path: 'kody.json',
+	})
+
+	expect(file).toEqual({
+		path: 'kody.json',
+		content: '{"version":1,"kind":"job"}',
+	})
+	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(3)
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
+})
+
+test('readWithRetry distinguishes null from other falsy values', async () => {
+	// readWithRetry treats only null as "missing". Falsy-but-present values
+	// like 0, '', or false must be returned as-is instead of triggering
+	// extra retries and a final null.
+	for (const value of [0, '', false]) {
+		const read = vi.fn(async () => value as unknown as number | string | boolean)
+		const result = await readWithRetry(read, [])
+		expect(result).toBe(value)
+		expect(read).toHaveBeenCalledTimes(1)
+	}
+
+	const nullRead = vi.fn(async () => null)
+	const nullResult = await readWithRetry(nullRead, [0, 0])
+	expect(nullResult).toBeNull()
+	expect(nullRead).toHaveBeenCalledTimes(3)
+
+	let attempts = 0
+	const eventualRead = vi.fn(async () => {
+		attempts += 1
+		return attempts < 3 ? null : ('ok' as const)
+	})
+	const eventualResult = await readWithRetry(eventualRead, [0, 0, 0])
+	expect(eventualResult).toBe('ok')
+	expect(eventualRead).toHaveBeenCalledTimes(3)
+})
+
+test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
+	// Guards against a regression where the cache, populated by openSession,
+	// would shadow fresh D1 reads and hide updates such as rebaseSession
+	// writing a new base_commit or an external publish updating
+	// source.published_commit. That would cause publishSession's base_moved
+	// check to compare stale values and silently pass when the source has
+	// actually moved.
+	setCommonSessionFixtures()
+	const initialSource = {
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-initial',
+		manifest_path: 'kody.json',
+		source_root: '/',
+	}
+	const initialSession = {
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_namespace: 'default',
+		session_repo_name: 'session-repo',
+		base_commit: 'commit-initial',
+		last_checkpoint_commit: 'commit-initial',
+	}
+	const movedSession = {
+		...initialSession,
+		base_commit: 'commit-rebased',
+		last_checkpoint_commit: 'commit-rebased',
+	}
+	const movedSource = {
+		...initialSource,
+		published_commit: 'commit-moved',
+	}
+	mockModule.getRepoSessionById
+		.mockResolvedValueOnce(initialSession)
+		.mockResolvedValueOnce(movedSession)
+	mockModule.getEntitySourceById
+		.mockResolvedValueOnce(initialSource)
+		.mockResolvedValueOnce(movedSource)
+	mockModule.workspaceReadFile.mockResolvedValue('hello world')
+
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const firstRead = await repoSession.readFile({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		path: 'greeting.txt',
+	})
+	expect(firstRead).toEqual({
+		path: 'greeting.txt',
+		content: 'hello world',
+	})
+
+	const secondRead = await repoSession.readFile({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		path: 'greeting.txt',
+	})
+	expect(secondRead).toEqual({
+		path: 'greeting.txt',
+		content: 'hello world',
+	})
+	// The second readFile hits D1 again rather than short-circuiting on the
+	// in-memory cache, so the updated session and source rows are visible.
+	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(2)
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
 })
 
 test('readFile falls back to cached session state when the session row is not yet readable from D1', async () => {
