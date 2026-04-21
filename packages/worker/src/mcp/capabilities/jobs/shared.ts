@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
+import { logJobSchedulerEvent } from '#worker/jobs/scheduler-logging.ts'
 import {
 	type JobCreateInput,
 	type JobExecutionResult,
@@ -56,7 +57,9 @@ export const scheduledJobInputBaseSchema = {
 	params: z
 		.record(z.string(), z.unknown())
 		.optional()
-		.describe('Optional JSON params passed to the job entrypoint when it runs.'),
+		.describe(
+			'Optional JSON params passed to the job entrypoint when it runs.',
+		),
 	timezone: z
 		.string()
 		.min(1)
@@ -407,15 +410,17 @@ export async function createScheduledJobFromArgs(input: {
 	// Delay job runtime imports so capability registration can load without
 	// recursively pulling the full jobs runtime back through the registry.
 	const { createJob } = await import('#worker/jobs/service.ts')
-	const { syncJobManagerAlarm } = await import('#worker/jobs/manager-client.ts')
 	const created = await createJob({
 		env: input.env,
 		callerContext: input.callerContext,
 		body: resolveJobCreateBody(input.args, input.defaultName),
 	})
-	await syncJobManagerAlarm({
-		env: input.env,
+	logJobSchedulerEvent({
+		event: 'job_created',
 		userId: user.userId,
+		jobId: created.id,
+		scheduleType: created.schedule.type,
+		nextRunAt: created.nextRunAt,
 	})
 	return buildJobScheduleOutput(created)
 }

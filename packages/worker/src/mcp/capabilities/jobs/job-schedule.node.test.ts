@@ -6,7 +6,6 @@ const mockModule = vi.hoisted(() => ({
 	createJob: vi.fn(),
 	getJobInspection: vi.fn(),
 	inspectJobsForUser: vi.fn(),
-	syncJobManagerAlarm: vi.fn(),
 	runJobNowViaManager: vi.fn(),
 }))
 
@@ -19,8 +18,6 @@ vi.mock('#worker/jobs/service.ts', () => ({
 }))
 
 vi.mock('#worker/jobs/manager-client.ts', () => ({
-	syncJobManagerAlarm: (...args: Array<unknown>) =>
-		mockModule.syncJobManagerAlarm(...args),
 	runJobNowViaManager: (...args: Array<unknown>) =>
 		mockModule.runJobNowViaManager(...args),
 }))
@@ -35,12 +32,10 @@ function resetMocks() {
 	mockModule.createJob.mockReset()
 	mockModule.getJobInspection.mockReset()
 	mockModule.inspectJobsForUser.mockReset()
-	mockModule.syncJobManagerAlarm.mockReset()
 	mockModule.runJobNowViaManager.mockReset()
-	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
 }
 
-test('job_schedule creates a one-off job and syncs the job manager alarm', async () => {
+test('job_schedule creates a one-off job', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -103,10 +98,6 @@ test('job_schedule creates a one-off job and syncs the job manager alarm', async
 			},
 			timezone: 'America/Denver',
 		},
-	})
-	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env,
-		userId: 'user-123',
 	})
 	expect(result).toEqual({
 		job_id: 'job-123',
@@ -538,7 +529,6 @@ test('job_schedule requires an authenticated user', async () => {
 		),
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 	expect(mockModule.createJob).not.toHaveBeenCalled()
-	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 })
 
 test('job_list returns inspectable jobs plus alarm state', async () => {

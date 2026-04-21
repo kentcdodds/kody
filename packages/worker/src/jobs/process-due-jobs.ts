@@ -1,3 +1,4 @@
+import { type SchedulerJobOutcomeLog } from './scheduler-logging.ts'
 import { computeNextRunAt, formatJobError } from './schedule.ts'
 import {
 	type JobExecutionOutcome,
@@ -5,9 +6,12 @@ import {
 	type JobRunStatus,
 } from './types.ts'
 
-type ProcessDueJobsResult = {
+export type ProcessDueJobsResult = {
 	deleteJobIds: Array<string>
 	saveJobs: Array<JobRecord>
+	successCount: number
+	errorCount: number
+	jobOutcomes: Array<SchedulerJobOutcomeLog>
 }
 
 const maxRunHistoryEntries = 10
@@ -20,6 +24,9 @@ export async function processDueJobs(input: {
 	const now = input.now ?? new Date()
 	const deleteJobIds: Array<string> = []
 	const saveJobs: Array<JobRecord> = []
+	const jobOutcomes: Array<SchedulerJobOutcomeLog> = []
+	let successCount = 0
+	let errorCount = 0
 
 	for (const job of input.jobs) {
 		const outcome = await input.executeJob(job).catch((error) => {
@@ -35,37 +42,90 @@ export async function processDueJobs(input: {
 				durationMs: 0,
 			}
 		})
+		const executionError = outcome.execution.ok
+			? undefined
+			: outcome.execution.error
+		if (outcome.execution.ok) {
+			successCount += 1
+		} else {
+			errorCount += 1
+		}
 
 		if (job.schedule.type === 'once') {
 			deleteJobIds.push(job.id)
+			jobOutcomes.push({
+				jobId: job.id,
+				scheduleType: job.schedule.type,
+				outcome: outcome.execution.ok ? 'success' : 'failure',
+				nextRunAt: null,
+				deleted: true,
+				...(executionError ? { error: executionError } : {}),
+			})
 			continue
 		}
 
 		try {
-			saveJobs.push(
-				applyExecutionOutcome(job, outcome, {
-					updatedAt: now.toISOString(),
-					nextRunAt: computeNextRunAt({
-						schedule: job.schedule,
-						timezone: job.timezone,
-						from: now,
-					}),
+			const updated = applyExecutionOutcome(job, outcome, {
+				updatedAt: now.toISOString(),
+				nextRunAt: computeNextRunAt({
+					schedule: job.schedule,
+					timezone: job.timezone,
+					from: now,
 				}),
-			)
+			})
+			saveJobs.push(updated)
+			jobOutcomes.push({
+				jobId: job.id,
+				scheduleType: job.schedule.type,
+				outcome: outcome.execution.ok ? 'success' : 'failure',
+				nextRunAt: updated.nextRunAt,
+				deleted: false,
+				...(executionError ? { error: executionError } : {}),
+			})
 		} catch (error) {
-			saveJobs.push(
-				applyExecutionOutcome(job, outcome, {
+			const rescheduleError = formatJobError(error)
+			if (outcome.execution.ok) {
+				successCount -= 1
+				errorCount += 1
+			}
+			const failedRescheduleError = `Failed to reschedule job: ${rescheduleError}`
+			const updated = applyExecutionOutcome(
+				job,
+				outcome.execution.ok
+					? {
+							...outcome,
+							execution: {
+								ok: false as const,
+								error: failedRescheduleError,
+								logs: outcome.execution.logs,
+							},
+						}
+					: outcome,
+				{
 					updatedAt: now.toISOString(),
 					enabled: false,
-					lastRunError: `Failed to reschedule job: ${formatJobError(error)}`,
-				}),
+					lastRunError: failedRescheduleError,
+				},
 			)
+			saveJobs.push(updated)
+			jobOutcomes.push({
+				jobId: job.id,
+				scheduleType: job.schedule.type,
+				outcome: 'failure',
+				nextRunAt: updated.nextRunAt,
+				deleted: false,
+				error: executionError ?? rescheduleError,
+				rescheduleError,
+			})
 		}
 	}
 
 	return {
 		deleteJobIds,
 		saveJobs,
+		successCount,
+		errorCount,
+		jobOutcomes,
 	}
 }
 

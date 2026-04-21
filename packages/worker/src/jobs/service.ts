@@ -1,8 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import {
-	createMcpCallerContext,
-	parseMcpCallerContext,
-} from '#mcp/context.ts'
+import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
@@ -57,6 +54,10 @@ import {
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import {
+	logJobSchedulerEvent,
+	type SchedulerJobOutcomeLog,
+} from './scheduler-logging.ts'
 
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
@@ -182,12 +183,10 @@ async function executeBundledJobModule(input: {
 	source: Awaited<ReturnType<typeof getEntitySourceById>>
 	modulePath: string
 	bypassLogs: Array<string>
-	packageContext?:
-		| {
-				packageId: string
-				kodyId: string
-		  }
-		| null
+	packageContext?: {
+		packageId: string
+		kodyId: string
+	} | null
 }): Promise<ExecuteResult> {
 	try {
 		const sourceFiles = await loadRepoSourceFilesFromSession({
@@ -233,7 +232,9 @@ async function executeBundledJobModule(input: {
 					storageId: input.job.storageId,
 					writable: true,
 				},
-				...(input.packageContext ? { packageContext: input.packageContext } : {}),
+				...(input.packageContext
+					? { packageContext: input.packageContext }
+					: {}),
 			},
 		)
 		return {
@@ -775,7 +776,10 @@ async function runRepoBackedJob(input: {
 	}
 	let bypassLogs: Array<string> = []
 	try {
-		const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)
+		const source = await getEntitySourceById(
+			input.env.APP_DB,
+			input.job.sourceId,
+		)
 		let session = await sessionClient.openSession(openSessionInput)
 		if (repoSessionNeedsRefresh(session)) {
 			const stalePublishedCommit = session.published_commit
@@ -1012,19 +1016,34 @@ export async function runDueJobsForUser(input: {
 	userId: string
 	now?: Date
 }) {
+	const now = input.now ?? new Date()
 	const dueRows = await listDueJobRows(
 		input.env.APP_DB,
 		input.userId,
-		(input.now ?? new Date()).toISOString(),
+		now.toISOString(),
+	)
+	const dueRowById = new Map(
+		dueRows.map((row) => [row.record.id, row] as const),
 	)
 	if (dueRows.length === 0) {
-		return 0
+		logJobSchedulerEvent({
+			event: 'run_due_jobs_empty',
+			userId: input.userId,
+			dueJobCount: 0,
+			reason: 'no_due_jobs',
+		})
+		return {
+			dueJobCount: 0,
+			successCount: 0,
+			errorCount: 0,
+			jobOutcomes: [] satisfies Array<SchedulerJobOutcomeLog>,
+		}
 	}
 	const result = await processDueJobs({
 		jobs: dueRows.map((row) => row.record),
-		now: input.now,
+		now,
 		executeJob: async (job) => {
-			const row = dueRows.find((candidate) => candidate.record.id === job.id)
+			const row = dueRowById.get(job.id)
 			const callerContext = row?.callerContext ?? null
 			return executeJobOnce({
 				env: input.env,
@@ -1034,7 +1053,7 @@ export async function runDueJobsForUser(input: {
 		},
 	})
 	for (const job of result.saveJobs) {
-		const row = dueRows.find((candidate) => candidate.record.id === job.id)
+		const row = dueRowById.get(job.id)
 		await updateJobRow({
 			db: input.env.APP_DB,
 			userId: input.userId,
@@ -1046,7 +1065,12 @@ export async function runDueJobsForUser(input: {
 		await deleteJobRow(input.env.APP_DB, input.userId, jobId)
 		await deleteJobVector(input.env, jobId)
 	}
-	return dueRows.length
+	return {
+		dueJobCount: dueRows.length,
+		successCount: result.successCount,
+		errorCount: result.errorCount,
+		jobOutcomes: result.jobOutcomes,
+	}
 }
 
 export async function getNextRunnableJob(input: { env: Env; userId: string }) {

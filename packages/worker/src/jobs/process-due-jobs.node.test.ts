@@ -55,6 +55,25 @@ test('processDueJobs records failures without aborting later jobs', async () => 
 
 	expect(result.deleteJobIds).toEqual([])
 	expect(result.saveJobs).toHaveLength(2)
+	expect(result.successCount).toBe(1)
+	expect(result.errorCount).toBe(1)
+	expect(result.jobOutcomes).toEqual([
+		{
+			jobId: 'job-1',
+			scheduleType: 'cron',
+			outcome: 'failure',
+			nextRunAt: expect.any(String),
+			deleted: false,
+			error: 'boom',
+		},
+		{
+			jobId: 'job-2',
+			scheduleType: 'cron',
+			outcome: 'success',
+			nextRunAt: expect.any(String),
+			deleted: false,
+		},
+	])
 	expect(result.saveJobs).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
@@ -107,4 +126,70 @@ test('processDueJobs deletes one-shot jobs after execution', async () => {
 
 	expect(result.deleteJobIds).toEqual(['job-once'])
 	expect(result.saveJobs).toEqual([])
+	expect(result.successCount).toBe(0)
+	expect(result.errorCount).toBe(1)
+	expect(result.jobOutcomes).toEqual([
+		{
+			jobId: 'job-once',
+			scheduleType: 'once',
+			outcome: 'failure',
+			nextRunAt: null,
+			deleted: true,
+			error: 'expected failure',
+		},
+	])
+})
+
+test('processDueJobs treats reschedule failures as failed outcomes', async () => {
+	const cronJob = createCronJob({
+		id: 'job-reschedule-failure',
+		schedule: {
+			type: 'cron',
+			expression: '* *',
+		},
+		nextRunAt: '2026-04-12T07:00:00.000Z',
+	})
+
+	const result = await processDueJobs({
+		jobs: [cronJob],
+		now: new Date('2026-04-12T07:00:00.000Z'),
+		async executeJob() {
+			return {
+				execution: {
+					ok: true,
+					logs: ['ok'],
+					result: { ok: true },
+				},
+				startedAt: '2026-04-12T07:00:00.000Z',
+				finishedAt: '2026-04-12T07:00:00.000Z',
+				durationMs: 0,
+			}
+		},
+	})
+
+	expect(result.saveJobs).toHaveLength(1)
+	expect(result.successCount).toBe(0)
+	expect(result.errorCount).toBe(1)
+	expect(result.jobOutcomes).toEqual([
+		{
+			jobId: 'job-reschedule-failure',
+			scheduleType: 'cron',
+			outcome: 'failure',
+			nextRunAt: '2026-04-12T07:00:00.000Z',
+			deleted: false,
+			error:
+				'Cron expressions must use standard 5-field syntax: minute hour day-of-month month day-of-week.',
+			rescheduleError:
+				'Cron expressions must use standard 5-field syntax: minute hour day-of-month month day-of-week.',
+		},
+	])
+	expect(result.saveJobs[0]).toEqual(
+		expect.objectContaining({
+			id: 'job-reschedule-failure',
+			enabled: false,
+			lastRunStatus: 'error',
+			lastRunError:
+				'Failed to reschedule job: Cron expressions must use standard 5-field syntax: minute hour day-of-month month day-of-week.',
+		}),
+	)
 })
