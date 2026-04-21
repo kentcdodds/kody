@@ -5,6 +5,7 @@ import {
 	loadDownHomeConnectorStatus,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
+	searchPackages,
 	searchUnified,
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
@@ -139,6 +140,196 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 			}),
 		]),
 	)
+})
+
+test('searchUnified prioritizes spotify package and connector for operational queries', () => {
+	const registry = buildCapabilityRegistry([])
+	const optionalRows = {
+		packageRows: [
+			{
+				record: {
+					id: 'pkg-spotify',
+					userId: 'user-1',
+					name: '@kody/spotify-controller',
+					kodyId: 'spotify-controller',
+					description: 'Control Spotify playback from saved workflows.',
+					tags: ['spotify', 'audio'],
+					searchText: 'spotify playback',
+					sourceId: 'source-spotify',
+					hasApp: false,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+				},
+				projection: {
+					name: '@kody/spotify-controller',
+					kodyId: 'spotify-controller',
+					description: 'Control Spotify playback from saved workflows.',
+					tags: ['spotify', 'audio'],
+					searchText: 'spotify playback',
+					hasApp: false,
+					exports: ['./playback'],
+					jobs: [],
+				},
+			},
+			{
+				record: {
+					id: 'pkg-generic-player',
+					userId: 'user-1',
+					name: '@kody/laptop-music-player',
+					kodyId: 'laptop-music-player',
+					description: 'Play music on your laptop with saved automations.',
+					tags: ['music', 'laptop'],
+					searchText: 'play music on laptop',
+					sourceId: 'source-generic-player',
+					hasApp: false,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+				},
+				projection: {
+					name: '@kody/laptop-music-player',
+					kodyId: 'laptop-music-player',
+					description: 'Play music on your laptop with saved automations.',
+					tags: ['music', 'laptop'],
+					searchText: 'play music on laptop',
+					hasApp: false,
+					exports: ['./start'],
+					jobs: [],
+				},
+			},
+		],
+		userSecretRows: [],
+		userValueRows: [
+			{
+				name: buildConnectorValueName('spotify'),
+				scope: 'user',
+				value: JSON.stringify({
+					tokenUrl: 'https://accounts.spotify.com/api/token',
+					apiBaseUrl: 'https://api.spotify.com/v1',
+					flow: 'confidential',
+					clientIdValueName: 'spotify-client-id',
+					clientSecretSecretName: 'spotify-client-secret',
+					accessTokenSecretName: 'spotify-access-token',
+					refreshTokenSecretName: 'spotify-refresh-token',
+					requiredHosts: ['api.spotify.com'],
+				}),
+				description: 'Spotify connector for playback control.',
+				appId: null,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+				ttlMs: null,
+			},
+			{
+				name: buildConnectorValueName('laptop-audio'),
+				scope: 'user',
+				value: JSON.stringify({
+					tokenUrl: 'https://player.example/token',
+					apiBaseUrl: 'https://player.example/api',
+					flow: 'confidential',
+					clientIdValueName: 'player-client-id',
+					clientSecretSecretName: 'player-client-secret',
+					accessTokenSecretName: 'player-access-token',
+					refreshTokenSecretName: 'player-refresh-token',
+					requiredHosts: ['player.example'],
+				}),
+				description: 'Play music on your laptop.',
+				appId: null,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+				ttlMs: null,
+			},
+		],
+		warnings: [],
+	} satisfies OptionalSearchRowsResult
+
+	const result = searchUnified({
+		env: {} as Env,
+		query: 'spotify play music on my laptop',
+		limit: 4,
+		registry,
+		optionalRows,
+	})
+
+	expect(result.matches.slice(0, 2)).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'package',
+				kodyId: 'spotify-controller',
+			}),
+			expect.objectContaining({
+				type: 'connector',
+				connectorName: 'spotify',
+			}),
+		]),
+	)
+})
+
+test('searchPackages prefers the named integration over generic action matches', async () => {
+	const rows: Array<PackageSearchRow> = [
+		{
+			record: {
+				id: 'pkg-gmail',
+				userId: 'user-1',
+				name: '@kody/gmail-actions',
+				kodyId: 'gmail-actions',
+				description: 'Run Gmail actions from saved workflows.',
+				tags: ['gmail', 'email'],
+				searchText: 'gmail inbox actions',
+				sourceId: 'source-gmail',
+				hasApp: false,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+			projection: {
+				name: '@kody/gmail-actions',
+				kodyId: 'gmail-actions',
+				description: 'Run Gmail actions from saved workflows.',
+				tags: ['gmail', 'email'],
+				searchText: 'gmail inbox actions',
+				hasApp: false,
+				exports: ['./mail'],
+				jobs: [],
+			},
+		},
+		{
+			record: {
+				id: 'pkg-generic-email',
+				userId: 'user-1',
+				name: '@kody/laptop-email-sender',
+				kodyId: 'laptop-email-sender',
+				description: 'Send email from your laptop with saved workflows.',
+				tags: ['email', 'laptop'],
+				searchText: 'send email from laptop',
+				sourceId: 'source-generic-email',
+				hasApp: false,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+			projection: {
+				name: '@kody/laptop-email-sender',
+				kodyId: 'laptop-email-sender',
+				description: 'Send email from your laptop with saved workflows.',
+				tags: ['email', 'laptop'],
+				searchText: 'send email from laptop',
+				hasApp: false,
+				exports: ['./send'],
+				jobs: [],
+			},
+		},
+	]
+
+	const result = await searchPackages({
+		env: {} as Env,
+		baseUrl: 'https://example.com',
+		query: 'gmail send email from my laptop',
+		limit: 2,
+		rows,
+	})
+
+	expect(result.offline).toBe(true)
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'gmail-actions',
+	})
 })
 
 test('search memory context falls back to the query when omitted', () => {

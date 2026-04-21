@@ -63,6 +63,93 @@ const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
+const searchTokenPattern = /[a-z0-9]+/g
+const operationalQueryStopwords = new Set([
+	'a',
+	'an',
+	'and',
+	'app',
+	'apps',
+	'automation',
+	'automations',
+	'by',
+	'channel',
+	'channels',
+	'computer',
+	'connector',
+	'connectors',
+	'create',
+	'created',
+	'creating',
+	'data',
+	'delete',
+	'desktop',
+	'doc',
+	'docs',
+	'document',
+	'documents',
+	'email',
+	'emails',
+	'event',
+	'events',
+	'file',
+	'files',
+	'find',
+	'for',
+	'from',
+	'get',
+	'in',
+	'inbox',
+	'into',
+	'job',
+	'jobs',
+	'laptop',
+	'list',
+	'mail',
+	'messages',
+	'message',
+	'me',
+	'music',
+	'my',
+	'note',
+	'notes',
+	'oauth',
+	'of',
+	'on',
+	'open',
+	'or',
+	'package',
+	'packages',
+	'phone',
+	'play',
+	'playlist',
+	'playlists',
+	'post',
+	'run',
+	'saved',
+	'search',
+	'send',
+	'song',
+	'songs',
+	'start',
+	'stop',
+	'task',
+	'tasks',
+	'team',
+	'the',
+	'time',
+	'to',
+	'tool',
+	'tools',
+	'update',
+	'use',
+	'user',
+	'via',
+	'with',
+	'workflow',
+	'workflows',
+	'your',
+])
 
 export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
@@ -74,6 +161,93 @@ export type OptionalSearchRowsResult = {
 	userSecretRows: Array<SecretSearchRow>
 	userValueRows: Array<ValueMetadata>
 	warnings: Array<string>
+}
+
+function normalizeSearchText(text: string): string {
+	return text
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+}
+
+function extractSearchTokens(text: string): Array<string> {
+	return normalizeSearchText(text).match(searchTokenPattern) ?? []
+}
+
+function extractMeaningfulQueryTokens(query: string): Array<string> {
+	const meaningfulTokens: Array<string> = []
+	const seenTokens = new Set<string>()
+	for (const token of extractSearchTokens(query)) {
+		if (token.length < 3) continue
+		if (operationalQueryStopwords.has(token)) continue
+		if (seenTokens.has(token)) continue
+		seenTokens.add(token)
+		meaningfulTokens.push(token)
+	}
+	return meaningfulTokens
+}
+
+function scoreExactTokenCoverage(
+	queryTokens: ReadonlyArray<string>,
+	fields: ReadonlyArray<string | null | undefined>,
+): number {
+	if (queryTokens.length === 0) return 0
+	const fieldTokens = new Set<string>()
+	for (const field of fields) {
+		if (!field) continue
+		for (const token of extractSearchTokens(field)) {
+			fieldTokens.add(token)
+		}
+	}
+	if (fieldTokens.size === 0) return 0
+	let matches = 0
+	for (const token of queryTokens) {
+		if (fieldTokens.has(token)) matches += 1
+	}
+	return matches / queryTokens.length
+}
+
+function hasPrimaryPhraseMatch(
+	query: string,
+	fields: ReadonlyArray<string | null | undefined>,
+): boolean {
+	const normalizedQuery = extractSearchTokens(query).join(' ')
+	if (!normalizedQuery) return false
+	for (const field of fields) {
+		if (!field) continue
+		const normalizedField = extractSearchTokens(field).join(' ')
+		if (!normalizedField.includes(' ')) continue
+		if (normalizedQuery.includes(normalizedField)) return true
+	}
+	return false
+}
+
+function scoreOperationalIdentityBoost(input: {
+	query: string
+	primaryFields: ReadonlyArray<string | null | undefined>
+	secondaryFields?: ReadonlyArray<string | null | undefined>
+	tertiaryFields?: ReadonlyArray<string | null | undefined>
+}): number {
+	const meaningfulQueryTokens = extractMeaningfulQueryTokens(input.query)
+	if (meaningfulQueryTokens.length === 0) return 0
+	const primaryCoverage = scoreExactTokenCoverage(
+		meaningfulQueryTokens,
+		input.primaryFields,
+	)
+	const secondaryCoverage = scoreExactTokenCoverage(
+		meaningfulQueryTokens,
+		input.secondaryFields ?? [],
+	)
+	const tertiaryCoverage = scoreExactTokenCoverage(
+		meaningfulQueryTokens,
+		input.tertiaryFields ?? [],
+	)
+	return (
+		primaryCoverage * 0.85 +
+		secondaryCoverage * 0.35 +
+		tertiaryCoverage * 0.2 +
+		(hasPrimaryPhraseMatch(input.query, input.primaryFields) ? 0.2 : 0)
+	)
 }
 
 export function searchUnified(input: {
@@ -108,17 +282,28 @@ export function searchUnified(input: {
 	const packageMatches = input.optionalRows.packageRows
 		.map((entry) => {
 			const doc = [
-				entry.record.name,
-				entry.record.kodyId,
-				entry.record.description,
-				entry.record.tags.join(' '),
-				entry.record.searchText ?? '',
+				entry.projection.name,
+				entry.projection.kodyId,
+				entry.projection.description,
+				entry.projection.tags.join(' '),
+				entry.projection.searchText ?? '',
+				entry.projection.exports.join(' '),
+				entry.projection.jobs.map((job) => job.name).join(' '),
 			].join('\n')
 			const lexical = lexicalScore(query, doc)
 			const vector = cosineSimilarity(
 				queryEmbedding,
 				deterministicEmbedding(doc),
 			)
+			const identityBoost = scoreOperationalIdentityBoost({
+				query,
+				primaryFields: [entry.record.kodyId, entry.record.name],
+				secondaryFields: entry.record.tags,
+				tertiaryFields: [
+					...entry.projection.exports,
+					...entry.projection.jobs.map((job) => job.name),
+				],
+			})
 			return {
 				type: 'package' as const,
 				packageId: entry.record.id,
@@ -128,7 +313,7 @@ export function searchUnified(input: {
 				description: entry.record.description,
 				tags: entry.record.tags,
 				hasApp: entry.record.hasApp,
-				score: hybridSearchScore(lexical, vector),
+				score: hybridSearchScore(lexical, vector) + identityBoost,
 			}
 		})
 		.filter((match) => match.score > 0)
@@ -171,15 +356,21 @@ export function searchUnified(input: {
 					flow: config.flow,
 					apiBaseUrl: config.apiBaseUrl ?? null,
 					requiredHosts: config.requiredHosts ?? [],
-					score: lexicalScore(
-						query,
-						[
-							connectorName,
-							row.description,
-							config.tokenUrl,
-							config.apiBaseUrl ?? '',
-						].join('\n'),
-					),
+					score:
+						lexicalScore(
+							query,
+							[
+								connectorName,
+								row.description,
+								config.tokenUrl,
+								config.apiBaseUrl ?? '',
+							].join('\n'),
+						) +
+						scoreOperationalIdentityBoost({
+							query,
+							primaryFields: [connectorName],
+							secondaryFields: config.requiredHosts ?? [],
+						}),
 				},
 			]
 		})
@@ -237,9 +428,18 @@ export async function searchPackages(input: {
 				queryEmbedding,
 				deterministicEmbedding(document),
 			)
+			const identityBoost = scoreOperationalIdentityBoost({
+				query,
+				primaryFields: [row.record.kodyId, row.record.name],
+				secondaryFields: row.projection.tags,
+				tertiaryFields: [
+					...row.projection.exports,
+					...row.projection.jobs.map((job) => job.name),
+				],
+			})
 			return {
 				row,
-				score: lexical + vector,
+				score: lexical + vector + identityBoost,
 			}
 		})
 		.sort((left, right) => right.score - left.score)
