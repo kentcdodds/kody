@@ -20,6 +20,37 @@ export type SearchResultStructuredContent = {
 	matches: Array<SlimSearchMatch>
 	offline: boolean
 	warnings: Array<string>
+	telemetry?: {
+		intent: {
+			task: string
+			confidence: number
+			entityCount: number
+			actionCount: number
+			constraintCount: number
+			topEntities: Array<{
+				type: string
+				id: string
+				confidence: number
+			}>
+		}
+		candidateCounts: Partial<
+			Record<
+				'capability' | 'package' | 'value' | 'connector' | 'secret',
+				number
+			>
+		>
+		topResultTypes: Array<
+			'capability' | 'package' | 'value' | 'connector' | 'secret'
+		>
+		trimmedMatchCount?: number
+		responseTrimmed?: boolean
+	}
+	phaseTimings?: {
+		queryUnderstandingMs: number
+		candidateGenerationMs: number
+		rerankingMs: number
+		formattingMs?: number
+	}
 	memories?: {
 		surfaced: Array<{
 			id: string
@@ -54,6 +85,7 @@ export type SlimSearchMatch =
 	| {
 			type: 'capability'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			usage: string
@@ -61,6 +93,7 @@ export type SlimSearchMatch =
 	| {
 			type: 'package'
 			id: string
+			entityRef: string
 			packageId: string
 			kodyId: string
 			title: string
@@ -73,6 +106,7 @@ export type SlimSearchMatch =
 	| {
 			type: 'secret'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			usage: string
@@ -80,6 +114,7 @@ export type SlimSearchMatch =
 	| {
 			type: 'value'
 			id: string
+			entityRef: string
 			name: string
 			title: string
 			description: string
@@ -90,6 +125,7 @@ export type SlimSearchMatch =
 	| {
 			type: 'connector'
 			id: string
+			entityRef: string
 			name: string
 			title: string
 			description: string
@@ -340,7 +376,7 @@ export function formatSearchMarkdown(input: {
 			'- Built-in capabilities — `execute` with `import { codemode } from "kody:runtime"`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ package_id })` when the package declares `kody.app`',
+			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` or `open_generated_ui({ package_id })` when the package declares `kody.app`',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
@@ -395,6 +431,8 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 			`## Capability — \`${match.name}\``,
 			'',
 			'description' in match ? match.description : '',
+			'',
+			`**Entity:** \`${match.name}:capability\``,
 		]
 	}
 	if (match.type === 'package') {
@@ -406,6 +444,7 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 			'',
 			match.description,
 			'',
+			`**Entity:** \`${match.kodyId}:package\``,
 			`**Tags:** ${match.tags.length > 0 ? match.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
 			`**Has app:** ${match.hasApp ? 'yes' : 'no'}`,
 			...(hostedUrl ? [`**Hosted URL:** \`${hostedUrl}\``] : []),
@@ -426,11 +465,18 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 			'',
 			match.description,
 			'',
+			`**Entity:** \`${match.connectorName}:connector\``,
 			`**Flow:** \`${match.flow}\``,
 			`**API base URL:** ${match.apiBaseUrl ? `\`${match.apiBaseUrl}\`` : 'none'}`,
 		]
 	}
-	return [`## Secret — \`${match.name}\``, '', match.description]
+	return [
+		`## Secret — \`${match.name}\``,
+		'',
+		match.description,
+		'',
+		`**Entity:** \`${match.name}:secret\``,
+	]
 }
 
 export function toSlimStructuredMatches(input: {
@@ -442,6 +488,7 @@ export function toSlimStructuredMatches(input: {
 			return {
 				type: 'capability',
 				id: match.name,
+				entityRef: `${match.name}:capability`,
 				title: match.name,
 				description:
 					'description' in match && typeof match.description === 'string'
@@ -454,12 +501,13 @@ export function toSlimStructuredMatches(input: {
 			return {
 				type: 'package',
 				id: match.kodyId,
+				entityRef: `${match.kodyId}:package`,
 				packageId: match.packageId,
 				kodyId: match.kodyId,
 				title: match.title,
 				description: match.description,
 				usage: match.hasApp
-					? `open_generated_ui({ package_id: "${match.packageId}" })`
+					? `open_generated_ui({ kody_id: "${match.kodyId}" })`
 					: `import entry from "${buildPackageImportSpecifier(match.kodyId, '.')}"`,
 				tags: match.tags,
 				hasApp: match.hasApp,
@@ -472,6 +520,7 @@ export function toSlimStructuredMatches(input: {
 			return {
 				type: 'value',
 				id: match.valueId,
+				entityRef: `${match.valueId}:value`,
 				name: match.name,
 				title: match.name,
 				description: match.description,
@@ -484,6 +533,7 @@ export function toSlimStructuredMatches(input: {
 			return {
 				type: 'connector',
 				id: match.connectorName,
+				entityRef: `${match.connectorName}:connector`,
 				name: match.connectorName,
 				title: match.title,
 				description: match.description,
@@ -496,6 +546,7 @@ export function toSlimStructuredMatches(input: {
 		return {
 			type: 'secret',
 			id: match.name,
+			entityRef: `${match.name}:secret`,
 			title: match.name,
 			description: match.description,
 			usage: `{{secret:${match.name}|scope=user}}`,
@@ -639,7 +690,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				title: detail.title,
 				description: detail.description,
 				usage: detail.record.hasApp
-					? `open_generated_ui({ package_id: "${detail.record.id}" })`
+					? `open_generated_ui({ kody_id: "${detail.record.kodyId}" })`
 					: `import entry from "${buildPackageImportSpecifier(detail.record.kodyId, '.')}"`,
 				packageId: detail.record.id,
 				kodyId: detail.record.kodyId,
