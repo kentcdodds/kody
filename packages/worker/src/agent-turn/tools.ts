@@ -5,7 +5,6 @@ import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import {
 	loadDownRemoteConnectorStatuses,
 	loadOptionalSearchRows,
-	resolveSearchMemoryContext,
 	searchUnified,
 } from '#mcp/tools/search.ts'
 import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
@@ -102,10 +101,7 @@ export async function createAgentTurnToolSet(input: {
 					env: input.env,
 					callerContext: input.callerContext,
 					conversationId: input.conversationId,
-					memoryContext: resolveSearchMemoryContext({
-						query: args.query,
-						memoryContext: input.memoryContext ?? undefined,
-					}),
+					memoryContext: input.memoryContext ?? undefined,
 				})
 				return {
 					offline: result.offline,

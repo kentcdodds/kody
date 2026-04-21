@@ -260,14 +260,6 @@ export async function searchPackages(input: {
 	}
 }
 
-export function resolveSearchMemoryContext(input: {
-	query?: string
-	memoryContext?: z.infer<typeof memoryContextInputField>
-}) {
-	void input.query
-	return input.memoryContext
-}
-
 function truncateSearchText(text: string): string {
 	if (text.length <= maxChars) return text
 
@@ -823,10 +815,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					env: agent.getEnv(),
 					callerContext,
 					conversationId,
-					memoryContext: resolveSearchMemoryContext({
-						query: args.query,
-						memoryContext: args.memoryContext,
-					}),
+					memoryContext: args.memoryContext,
 				})
 				const searchMemories = memoryToolContext
 					? {
