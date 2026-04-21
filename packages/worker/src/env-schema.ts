@@ -165,6 +165,15 @@ export const EnvSchema = object({
 		'COOKIE_SECRET must be at least 32 characters for session signing.',
 	),
 	APP_DB: d1DatabaseSchema,
+	BUNDLE_ARTIFACTS_KV: createSchema<unknown, KVNamespace>((value, context) => {
+		if (value) {
+			return { value: value as KVNamespace }
+		}
+		return fail(
+			'Missing BUNDLE_ARTIFACTS_KV binding for published runtime artifacts.',
+			context.path,
+		)
+	}),
 	JOB_MANAGER: createSchema<unknown, DurableObjectNamespace>(
 		(value, context) => {
 			if (value) {

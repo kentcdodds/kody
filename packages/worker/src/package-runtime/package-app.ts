@@ -12,8 +12,13 @@ import {
 } from '#mcp/execute-modules/codemode-utils.ts'
 import {
 	buildKodyAppBundle,
+	createPublishedBundleArtifact,
 	createPublishedPackageAppBundleCacheKey,
 } from './module-graph.ts'
+import {
+	readPublishedBundleArtifact,
+	writePublishedBundleArtifact,
+} from './published-runtime-artifacts.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
@@ -528,23 +533,57 @@ export async function buildPackageAppWorker(input: {
 			`Saved package "${input.savedPackage.kodyId}" does not define kody.app.entry.`,
 		)
 	}
-	const bundled = await buildKodyAppBundle({
-		env: input.env,
-		baseUrl: input.baseUrl,
+	const kvKey = createPublishedPackageAppBundleCacheKey({
 		userId: input.userId,
-		sourceFiles: input.sourceFiles,
+		source: {
+			id: input.savedPackage.sourceId,
+			published_commit: input.savedPackage.publishedCommit,
+			manifest_path: input.savedPackage.manifestPath,
+			source_root: input.savedPackage.sourceRoot,
+		},
 		entryPoint: appEntry,
-		cacheKey: createPublishedPackageAppBundleCacheKey({
-			userId: input.userId,
-			source: {
-				id: input.savedPackage.sourceId,
-				published_commit: input.savedPackage.publishedCommit,
-				manifest_path: input.savedPackage.manifestPath,
-				source_root: input.savedPackage.sourceRoot,
-			},
-			entryPoint: appEntry,
-		}),
 	})
+	const artifact =
+		kvKey != null
+			? await readPublishedBundleArtifact({
+					env: input.env,
+					kvKey,
+				})
+			: null
+	const bundled =
+		artifact ??
+		(await (async () => {
+			const compiled = await buildKodyAppBundle({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceFiles: input.sourceFiles,
+				entryPoint: appEntry,
+				cacheKey: kvKey,
+			})
+			if (!input.savedPackage.publishedCommit || kvKey == null) {
+				return compiled
+			}
+			await writePublishedBundleArtifact({
+				env: input.env,
+				artifact: createPublishedBundleArtifact({
+					kind: 'app',
+					artifactName: input.savedPackage.kodyId,
+					sourceId: input.savedPackage.sourceId,
+					publishedCommit: input.savedPackage.publishedCommit,
+					entryPoint: appEntry,
+					mainModule: compiled.mainModule,
+					modules: compiled.modules,
+					dependencies: compiled.dependencies,
+					packageContext: {
+						packageId: input.savedPackage.id,
+						kodyId: input.savedPackage.kodyId,
+					},
+				}),
+				kvKey,
+			})
+			return compiled
+		})())
 	const mainModule = 'package-app-entry.js'
 	const modules = {
 		...bundled.modules,

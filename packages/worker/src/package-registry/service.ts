@@ -18,6 +18,13 @@ import {
 } from './vectorize.ts'
 import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
+import {
+	rebuildPublishedPackageArtifacts,
+} from '#worker/package-runtime/published-bundle-artifacts.ts'
+import {
+	buildKodyAppBundle,
+	buildKodyModuleBundle,
+} from '#worker/package-runtime/module-graph.ts'
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
@@ -85,6 +92,45 @@ export async function refreshSavedPackageProjection(input: {
 		packageId: input.packageId,
 		userId: input.userId,
 		embedText: buildSavedPackageEmbedText(loaded.manifest),
+	})
+	await rebuildPublishedPackageArtifacts({
+		env: input.env,
+		userId: input.userId,
+		source: loaded.source,
+		savedPackage: {
+			id: input.packageId,
+			userId: input.userId,
+			name: row.name,
+			kodyId: row.kody_id,
+			description: row.description,
+			tags: JSON.parse(row.tags_json) as Array<string>,
+			searchText: row.search_text ?? null,
+			sourceId: row.source_id,
+			hasApp: row.has_app === 1,
+			createdAt:
+				existing?.createdAt ??
+				(existing?.updatedAt ?? new Date().toISOString()),
+			updatedAt: existing?.updatedAt ?? new Date().toISOString(),
+		},
+		manifest: loaded.manifest,
+		files: loaded.files,
+		buildAppBundle: async ({ entryPoint }) =>
+			await buildKodyAppBundle({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceFiles: loaded.files,
+				entryPoint,
+				cacheKey: null,
+			}),
+		buildModuleBundle: async ({ entryPoint }) =>
+			await buildKodyModuleBundle({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceFiles: loaded.files,
+				entryPoint,
+			}),
 	})
 	const { syncPackageJobsForPackage } = await import('#worker/jobs/service.ts')
 	await syncPackageJobsForPackage({

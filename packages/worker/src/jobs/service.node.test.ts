@@ -62,26 +62,85 @@ afterEach(() => {
 
 function mockRepoPersistence() {
 	repoMockModule.ensureEntitySource.mockImplementation(
-		async ({ id, userId, entityKind, entityId, sourceRoot }) => ({
-			id:
+		async ({ db, id, userId, entityKind, entityId, sourceRoot }) => {
+			const sourceId =
 				typeof id === 'string' && id.length > 0
 					? id
-					: `${entityKind}-${entityId}`,
-			user_id: userId,
-			entity_kind: entityKind,
-			entity_id: entityId,
-			repo_id: `${entityKind}-${entityId}`,
-			published_commit: null,
-			indexed_commit: null,
-			manifest_path: 'package.json',
-			source_root: sourceRoot ?? '/',
-			created_at: '2026-04-18T00:00:00.000Z',
-			updated_at: '2026-04-18T00:00:00.000Z',
-			bootstrapAccess: null,
-		}),
+					: `${entityKind}-${entityId}`
+			await insertPublishedEntitySource({
+				db,
+				userId,
+				sourceId,
+				entityKind,
+				entityId,
+				publishedCommit: 'published-commit-1',
+				manifestPath: entityKind === 'package' ? 'package.json' : 'kody.json',
+				sourceRoot: sourceRoot ?? '/',
+			})
+			return {
+				id: sourceId,
+				user_id: userId,
+				entity_kind: entityKind,
+				entity_id: entityId,
+				repo_id: `${entityKind}-${entityId}`,
+				published_commit: 'published-commit-1',
+				indexed_commit: null,
+				manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
+				source_root: sourceRoot ?? '/',
+				created_at: '2026-04-18T00:00:00.000Z',
+				updated_at: '2026-04-18T00:00:00.000Z',
+				bootstrapAccess: null,
+			}
+		},
 	)
-	repoMockModule.syncArtifactSourceSnapshot.mockResolvedValue(
-		'published-commit-1',
+	repoMockModule.syncArtifactSourceSnapshot.mockImplementation(
+		async ({ env, userId, sourceId, files }) => {
+			if (typeof sourceId !== 'string' || !sourceId) {
+				return 'published-commit-1'
+			}
+			const existing = await (env.APP_DB as ReturnType<typeof createDatabase>)
+				.prepare(`SELECT * FROM entity_sources WHERE id = ?`)
+				.bind(sourceId)
+				.first<Record<string, unknown>>()
+			if (existing) {
+				await insertPublishedEntitySource({
+					db: env.APP_DB as ReturnType<typeof createDatabase>,
+					userId,
+					sourceId,
+					entityKind:
+						(existing['entity_kind'] as 'job' | 'package' | undefined) ?? 'job',
+					entityId: String(existing['entity_id'] ?? sourceId),
+					publishedCommit: 'published-commit-1',
+					manifestPath: String(existing['manifest_path'] ?? 'kody.json'),
+					sourceRoot: String(existing['source_root'] ?? '/'),
+				})
+				if (env.BUNDLE_ARTIFACTS_KV) {
+					const { writePublishedSourceSnapshot } = await import(
+						'#worker/package-runtime/published-runtime-artifacts.ts'
+					)
+					await writePublishedSourceSnapshot({
+						env,
+						source: {
+							id: sourceId,
+							user_id: String(existing['user_id']),
+							entity_kind:
+								(existing['entity_kind'] as 'job' | 'package' | 'skill' | 'app') ??
+								'job',
+							entity_id: String(existing['entity_id'] ?? sourceId),
+							repo_id: String(existing['repo_id'] ?? sourceId),
+							published_commit: 'published-commit-1',
+							indexed_commit: null,
+							manifest_path: String(existing['manifest_path'] ?? 'kody.json'),
+							source_root: String(existing['source_root'] ?? '/'),
+							created_at: String(existing['created_at'] ?? '2026-04-16T00:00:00.000Z'),
+							updated_at: String(existing['updated_at'] ?? '2026-04-16T00:00:00.000Z'),
+						},
+						files,
+					})
+				}
+			}
+			return 'published-commit-1'
+		},
 	)
 }
 
@@ -180,6 +239,8 @@ function createDatabase() {
 		['value_buckets', []],
 		['value_entries', []],
 		['entity_sources', []],
+		['published_bundle_artifacts', []],
+		['archived_job_artifacts', []],
 		['jobs', []],
 	])
 
@@ -280,6 +341,56 @@ function createDatabase() {
 									(row) => row['id'] === params[0],
 								) as T | null
 							}
+							if (
+								query.includes('SELECT * FROM entity_sources') &&
+								query.includes('WHERE user_id = ? AND entity_kind = ? AND entity_id = ?')
+							) {
+								return selectOne(
+									'entity_sources',
+									(row) =>
+										row['user_id'] === params[0] &&
+										row['entity_kind'] === params[1] &&
+										row['entity_id'] === params[2],
+								) as T | null
+							}
+							if (
+								query.includes('SELECT id FROM archived_job_artifacts WHERE job_id = ? AND user_id = ?')
+							) {
+								return selectOne(
+									'archived_job_artifacts',
+									(row) =>
+										row['job_id'] === params[0] && row['user_id'] === params[1],
+								) as T | null
+							}
+							if (
+								query.includes('FROM published_bundle_artifacts') &&
+								query.includes('WHERE user_id = ? AND source_id = ? AND artifact_kind = ?')
+							) {
+								return selectOne(
+									'published_bundle_artifacts',
+									(row) =>
+										row['user_id'] === params[0] &&
+										row['source_id'] === params[1] &&
+										row['artifact_kind'] === params[2] &&
+										String(row['artifact_name'] ?? '') ===
+											String(params[3] ?? '') &&
+										row['entry_point'] === params[4],
+								) as T | null
+							}
+							if (
+								query.includes('FROM entity_sources') &&
+								query.includes('user_id = ?') &&
+								query.includes('entity_kind = ?') &&
+								query.includes('entity_id = ?')
+							) {
+								return selectOne(
+									'entity_sources',
+									(row) =>
+										row['user_id'] === params[0] &&
+										row['entity_kind'] === params[1] &&
+										row['entity_id'] === params[2],
+								) as T | null
+							}
 							if (query.includes('FROM jobs') && query.includes('LIMIT 1')) {
 								const rows = selectAll(
 									'jobs',
@@ -375,6 +486,36 @@ function createDatabase() {
 										.sort((left, right) =>
 											String(left['name']).localeCompare(String(right['name'])),
 										) as T[],
+								}
+							}
+							if (
+								query.includes('FROM archived_job_artifacts') &&
+								query.includes('WHERE retain_until <= ?')
+							) {
+								return {
+									results: selectAll(
+										'archived_job_artifacts',
+										(row) => String(row['retain_until']) <= String(params[0]),
+									).sort((left, right) =>
+										String(left['retain_until']).localeCompare(
+											String(right['retain_until']),
+										),
+									) as T[],
+								}
+							}
+							if (
+								query.includes('FROM published_bundle_artifacts') &&
+								query.includes('WHERE source_id = ?')
+							) {
+								return {
+									results: selectAll(
+										'published_bundle_artifacts',
+										(row) => row['source_id'] === params[0],
+									).sort((left, right) =>
+										String(right['updated_at']).localeCompare(
+											String(left['updated_at']),
+										),
+									) as T[],
 								}
 							}
 							throw new Error(`Unsupported all query: ${query}`)
@@ -536,6 +677,189 @@ function createDatabase() {
 								)
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
+							if (query.startsWith('INSERT INTO entity_sources')) {
+								const row = {
+									id: params[0],
+									user_id: params[1],
+									entity_kind: params[2],
+									entity_id: params[3],
+									repo_id: params[4],
+									published_commit: params[5],
+									indexed_commit: params[6],
+									manifest_path: params[7],
+									source_root: params[8],
+									created_at: params[9],
+									updated_at: params[10],
+								}
+								upsert(
+									'entity_sources',
+									(existing) => existing['id'] === row.id,
+									row,
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (query.startsWith('UPDATE entity_sources')) {
+								const existing = selectOne(
+									'entity_sources',
+									(row) => row['id'] === params[params.length - 2],
+								)
+								if (!existing) {
+									return { meta: { changes: 0, last_row_id: 0 } }
+								}
+								const row = {
+									...existing,
+									published_commit: params.includes('published_commit')
+										? existing['published_commit']
+										: existing['published_commit'],
+								}
+								// Specific update patterns used in tests/codepaths.
+								const id = params[params.length - 2]
+								const userId = params[params.length - 1]
+								upsert(
+									'entity_sources',
+									(entry) =>
+										entry['id'] === id && entry['user_id'] === userId,
+									{
+										...existing,
+										repo_id: params[0] ?? existing['repo_id'],
+										published_commit:
+											params.length > 3 ? params[1] : existing['published_commit'],
+										indexed_commit:
+											params.length > 3 ? params[2] : existing['indexed_commit'],
+										manifest_path:
+											params.length > 3 ? params[3] : existing['manifest_path'],
+										source_root:
+											params.length > 4 ? params[4] : existing['source_root'],
+										updated_at: params[params.length - 3],
+									},
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (query.startsWith('DELETE FROM entity_sources')) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'entity_sources',
+											(row) =>
+												row['id'] === params[0] &&
+												row['user_id'] === params[1],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
+							if (query.startsWith('INSERT INTO published_bundle_artifacts')) {
+								const row = {
+									id: params[0],
+									user_id: params[1],
+									source_id: params[2],
+									published_commit: params[3],
+									artifact_kind: params[4],
+									artifact_name: params[5],
+									entry_point: params[6],
+									kv_key: params[7],
+									dependencies_json: params[8],
+									created_at: params[9],
+									updated_at: params[10],
+								}
+								upsert(
+									'published_bundle_artifacts',
+									(existing) => existing['id'] === row.id,
+									row,
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (query.startsWith('UPDATE published_bundle_artifacts')) {
+								const id = params[9]
+								const existing = selectOne(
+									'published_bundle_artifacts',
+									(row) => row['id'] === id,
+								)
+								if (!existing) {
+									return { meta: { changes: 0, last_row_id: 0 } }
+								}
+								upsert(
+									'published_bundle_artifacts',
+									(row) => row['id'] === id,
+									{
+										...existing,
+										user_id: params[0],
+										source_id: params[1],
+										published_commit: params[2],
+										artifact_kind: params[3],
+										artifact_name: params[4],
+										entry_point: params[5],
+										kv_key: params[6],
+										dependencies_json: params[7],
+										updated_at: params[8],
+									},
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (query.startsWith('DELETE FROM published_bundle_artifacts')) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'published_bundle_artifacts',
+											(row) => row['source_id'] === params[0],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
+							if (query.startsWith('INSERT INTO archived_job_artifacts')) {
+								const row = {
+									id: params[0],
+									job_id: params[1],
+									user_id: params[2],
+									source_id: params[3],
+									published_commit: params[4],
+									storage_id: params[5],
+									retain_until: params[6],
+									created_at: params[7],
+									updated_at: params[8],
+								}
+								upsert(
+									'archived_job_artifacts',
+									(existing) => existing['id'] === row.id,
+									row,
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (query.startsWith('UPDATE archived_job_artifacts')) {
+								const id = params[5]
+								const existing = selectOne(
+									'archived_job_artifacts',
+									(row) => row['id'] === id,
+								)
+								if (!existing) {
+									return { meta: { changes: 0, last_row_id: 0 } }
+								}
+								upsert(
+									'archived_job_artifacts',
+									(row) => row['id'] === id,
+									{
+										...existing,
+										source_id: params[0],
+										published_commit: params[1],
+										storage_id: params[2],
+										retain_until: params[3],
+										updated_at: params[4],
+									},
+								)
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
+							if (query.startsWith('DELETE FROM archived_job_artifacts')) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'archived_job_artifacts',
+											(row) => row['id'] === params[0],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
 							if (query.startsWith('DELETE FROM jobs')) {
 								return {
 									meta: {
@@ -555,6 +879,125 @@ function createDatabase() {
 			}
 		},
 	} as unknown as D1Database
+}
+
+function createBundleArtifactsKv() {
+	const store = new Map<string, string>()
+	return {
+		async get(key: string, type?: 'text' | 'json') {
+			const value = store.get(key) ?? null
+			if (value == null) return null
+			if (type === 'json') {
+				return JSON.parse(value)
+			}
+			return value
+		},
+		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
+			if (typeof value === 'string') {
+				store.set(key, value)
+				return
+			}
+			const view =
+				value instanceof ArrayBuffer
+					? new Uint8Array(value)
+					: new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+			store.set(key, Buffer.from(view).toString('utf8'))
+		},
+		async delete(key: string) {
+			store.delete(key)
+		},
+	} as unknown as KVNamespace
+}
+
+async function insertPublishedEntitySource(input: {
+	db: ReturnType<typeof createDatabase>
+	userId: string
+	env?: Env
+	sourceId: string
+	entityKind?: 'job' | 'package'
+	entityId: string
+	publishedCommit: string
+	manifestPath?: string
+	sourceRoot?: string
+	files?: Record<string, string>
+}) {
+	await input.db
+		.prepare(
+			`INSERT INTO entity_sources (
+				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit,
+				manifest_path, source_root, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			input.sourceId,
+			input.userId,
+			input.entityKind ?? 'job',
+			input.entityId,
+			`${input.entityKind ?? 'job'}-${input.entityId}`,
+			input.publishedCommit,
+			null,
+			input.manifestPath ?? 'kody.json',
+			input.sourceRoot ?? '/',
+			'2026-04-16T00:00:00.000Z',
+			'2026-04-16T00:00:00.000Z',
+		)
+		.run()
+	if (input.env && input.files) {
+		const { writePublishedSourceSnapshot } = await import(
+			'#worker/package-runtime/published-runtime-artifacts.ts'
+		)
+		await writePublishedSourceSnapshot({
+			env: input.env,
+			source: {
+				id: input.sourceId,
+				user_id: input.userId,
+				entity_kind: input.entityKind ?? 'job',
+				entity_id: input.entityId,
+				repo_id: `${input.entityKind ?? 'job'}-${input.entityId}`,
+				published_commit: input.publishedCommit,
+				indexed_commit: null,
+				manifest_path: input.manifestPath ?? 'kody.json',
+				source_root: input.sourceRoot ?? '/',
+				created_at: '2026-04-16T00:00:00.000Z',
+				updated_at: '2026-04-16T00:00:00.000Z',
+			},
+			files: input.files,
+		})
+	}
+}
+
+async function insertEntitySourceFixture(input: {
+	db: ReturnType<typeof createDatabase>
+	id: string
+	userId?: string
+	entityKind?: 'job' | 'package'
+	entityId: string
+	repoId?: string
+	publishedCommit: string
+	manifestPath?: string
+	sourceRoot?: string
+}) {
+	await input.db
+		.prepare(
+			`INSERT INTO entity_sources (
+				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit,
+				manifest_path, source_root, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			input.id,
+			input.userId ?? 'user-123',
+			input.entityKind ?? 'job',
+			input.entityId,
+			input.repoId ?? input.id,
+			input.publishedCommit,
+			null,
+			input.manifestPath ?? 'kody.json',
+			input.sourceRoot ?? '/',
+			'2026-04-16T00:00:00.000Z',
+			'2026-04-16T00:00:00.000Z',
+		)
+		.run()
 }
 
 function createBaseCallerContext(): PersistedJobCallerContext {
@@ -602,6 +1045,9 @@ test('createJob stores a codemode job with interval support', async () => {
 test('createJob assigns a stable job storage id', async () => {
 	const env = {
 		APP_DB: createDatabase(),
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
@@ -625,6 +1071,9 @@ test('createJob assigns a stable job storage id', async () => {
 test('createJob syncs the job manager alarm after persisting a job', async () => {
 	const env = {
 		APP_DB: createDatabase(),
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
@@ -651,6 +1100,9 @@ test('createJob syncs the job manager alarm after persisting a job', async () =>
 test('updateJob syncs the job manager alarm after mutating a job', async () => {
 	const env = {
 		APP_DB: createDatabase(),
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
@@ -689,6 +1141,9 @@ test('updateJob syncs the job manager alarm after mutating a job', async () => {
 test('deleteJob syncs the job manager alarm after removing a job', async () => {
 	const env = {
 		APP_DB: createDatabase(),
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 	} as Env
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
@@ -887,6 +1342,9 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
 		STORAGE_RUNNER: {
@@ -940,6 +1398,28 @@ test('executeJobOnce binds scheduled jobs to writable storage', async () => {
 				type: 'once',
 				runAt: '2026-04-17T15:00:00Z',
 			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-1',
+		manifestPath: 'kody.json',
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Storage bridge',
+				description: 'Runs once at 2026-04-17T15:00:00.000Z',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
+			}),
+			'src/job.ts':
+				'export default async (params) => { await storage.set("count", params.stepCount); return await storage.sql("select 2 as value") }',
 		},
 	})
 
@@ -1047,6 +1527,9 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
 		STORAGE_RUNNER: {
@@ -1100,6 +1583,27 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 				type: 'once',
 				runAt: '2026-04-17T15:00:00Z',
 			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-1',
+		manifestPath: 'kody.json',
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Capability-created one-off job',
+				description: 'Runs once at 2026-04-17T15:00:00.000Z',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, adHoc: true })',
 		},
 	})
 
@@ -1228,6 +1732,9 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		COOKIE_SECRET: 'test-secret-0123456789abcdef0123456789',
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
@@ -1265,6 +1772,25 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 				type: 'once',
 				runAt: '2026-04-17T15:00:00Z',
 			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-1',
+		manifestPath: 'package.json',
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/codemode-semantics',
+				kodyId: 'codemode-semantics',
+				description: 'Runs from repo',
+				jobName: 'Use codemode semantics',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true })',
 		},
 	})
 
@@ -1390,7 +1916,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			String(
 				executeSpy.mock.calls[0]?.[2]?.modules?.['dist/bundled-entry.js'] ?? '',
 			),
-		).toContain('return await entrypoint({"step":"deploy"});')
+		).toContain('return await entrypoint(globalThis.__kodyRuntime?.params ?? null);')
 		repoSessionRpcSpy.mockRestore()
 	} finally {
 		executeSpy.mockRestore()
@@ -1398,8 +1924,36 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 })
 
 test('executeJobOnce refreshes repo sessions when base commit moves', async () => {
+	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-1',
+		entityKind: 'package',
+		entityId: 'job-repo-1',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/repo-backed-job',
+				kodyId: 'repo-backed-job',
+				description: 'Runs from repo',
+				jobName: 'Repo-backed job',
+				entry: './src/job.ts',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, repoBacked: true })',
+		},
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -1565,8 +2119,31 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 })
 
 test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', async () => {
+	const db = createDatabase()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-strict',
+		entityKind: 'package',
+		entityId: 'job-repo-typecheck-strict',
+		publishedCommit: 'commit-strict',
+		manifestPath: 'package.json',
+		kv: createBundleArtifactsKv(),
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/repo-typecheck-strict',
+				kodyId: 'repo-typecheck-strict',
+				description: 'Runs from repo',
+				jobName: 'Repo-backed strict typecheck job',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true })',
+		},
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -1665,8 +2242,35 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 })
 
 test('executeJobOnce bypasses typecheck-only failures when the stored repo policy allows it', async () => {
+	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-bypass',
+		entityKind: 'package',
+		entityId: 'job-repo-typecheck-bypass',
+		publishedCommit: 'commit-bypass',
+		manifestPath: 'package.json',
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/repo-typecheck-bypass',
+				kodyId: 'repo-typecheck-bypass',
+				description: 'Runs from repo',
+				jobName: 'Repo-backed bypass typecheck job',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, bypassed: true })',
+		},
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -1805,8 +2409,35 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 })
 
 test('executeJobOnce preserves bypass audit logs when execution fails after a typecheck-only bypass', async () => {
+	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-bypass-failure',
+		entityKind: 'package',
+		entityId: 'job-repo-typecheck-bypass-failure',
+		publishedCommit: 'commit-bypass-failure',
+		manifestPath: 'package.json',
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/repo-bypass-failure',
+				kodyId: 'repo-bypass-failure',
+				description: 'Runs from repo',
+				jobName: 'Repo-backed bypass failure job',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, bypassed: true })',
+		},
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -1942,8 +2573,36 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 })
 
 test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute paths and migrated entrypoints', async () => {
+	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-absolute-paths',
+		entityKind: 'package',
+		entityId: 'job-repo-absolute-paths',
+		publishedCommit: 'commit-absolute',
+		manifestPath: 'package.json',
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/repo-absolute-path-job',
+				kodyId: 'repo-absolute-path-job',
+				description: 'Runs from repo session files',
+				jobName: 'Repo-backed absolute path job',
+				exportPath: './src/job.ts',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, normalized: true })',
+		},
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -2103,8 +2762,21 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 })
 
 test('executeJobOnce fails instead of reusing a stale repo session when discard fails', async () => {
+	const db = createDatabase()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-1',
+		entityKind: 'package',
+		entityId: 'job-repo-discard-failure',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -2203,8 +2875,35 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 })
 
 test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async () => {
+	const db = createDatabase()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-job-repo-module',
+		entityKind: 'package',
+		entityId: 'job-repo-module',
+		publishedCommit: 'commit-abc',
+		manifestPath: 'package.json',
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		} as Env,
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/repo-module-job',
+				kodyId: 'repo-module-job',
+				description: 'Runs from repo',
+				jobName: 'Repo-backed module job',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true, repoBacked: "module" })',
+			'src/lib.ts': 'export const value = 1',
+		},
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -2421,8 +3120,35 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 })
 
 test('executeJobOnce returns an error when codemode secret policy would reject execution', async () => {
+	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-secret-policy',
+		entityKind: 'package',
+		entityId: 'job-1',
+		publishedCommit: 'commit-secret-policy',
+		manifestPath: 'package.json',
+		files: {
+			'package.json': createPackageJobManifestText({
+				packageName: '@kody/forbidden-secret-access',
+				kodyId: 'forbidden-secret-access',
+				description: 'Runs from repo',
+				jobName: 'Forbidden secret access',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true })',
+		},
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+	})
 	const env = {
-		APP_DB: createDatabase(),
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -2547,6 +3273,9 @@ test('runJobNow deletes vectors for once jobs', async () => {
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
 	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
@@ -2692,6 +3421,9 @@ test('runJobNow preserves failed once jobs for inspection', async () => {
 	const db = createDatabase()
 	const env = {
 		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 		REPO_SESSION: {} as DurableObjectNamespace,
 	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
@@ -2758,8 +3490,19 @@ test('runJobNow preserves failed once jobs for inspection', async () => {
 
 test('runJobNow can use a one-off repo check policy override without changing the stored job', async () => {
 	const db = createDatabase()
+	insertPublishedEntitySource({
+		db,
+		userId: 'user-123',
+		sourceId: 'source-run-now-override',
+		entityKind: 'package',
+		entityId: 'job-repo-run-now-override',
+		publishedCommit: 'commit-run-now-override',
+		manifestPath: 'package.json',
+	})
 	const env = {
 		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
@@ -2777,6 +3520,20 @@ test('runJobNow can use a one-off repo check policy override without changing th
 				every: '15m',
 			},
 		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-1',
+		manifestPath: 'kody.json',
+		files: buildJobSourceFiles({
+			job: jobView,
+			moduleSource: 'export default async function run() { return { ok: true, override: true } }',
+		}),
 	})
 
 	const sessionClient = {

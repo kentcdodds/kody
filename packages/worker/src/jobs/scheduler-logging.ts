@@ -22,7 +22,18 @@ type JobSchedulerLogPayload = {
 	userId?: string
 	jobId?: string | null
 	scheduleType?: JobSchedule['type']
+	sourceId?: string | null
 	source?: SchedulerLogSource
+	artifactKind?: 'app' | 'job' | 'module' | null
+	artifactName?: string | null
+	artifactEntryPoint?: string | null
+	artifactCacheHit?: boolean
+	artifactPublishedCommit?: string | null
+	snapshotSource?: 'kv' | 'artifacts' | null
+	buildDurationMs?: number
+	dependencyCount?: number
+	cleanupDeletedSourceId?: string | null
+	cleanupDeletedStorageId?: string | null
 	nextJobId?: string | null
 	nextRunAt?: string | null
 	currentAlarmAt?: string | null

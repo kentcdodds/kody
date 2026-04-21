@@ -23,8 +23,10 @@ type ResolvedProductionBindings = {
 	workerName: string
 	d1DatabaseName: string
 	d1ConfiguredId: string
-	kvTitle: string
-	kvConfiguredId: string
+	oauthKvTitle: string
+	oauthKvConfiguredId: string
+	bundleArtifactsKvTitle: string
+	bundleArtifactsKvConfiguredId: string
 }
 
 function parseArgs(argv: Array<string>): {
@@ -95,6 +97,10 @@ function parseArgs(argv: Array<string>): {
 
 function defaultOauthKvTitle(workerName: string) {
 	return truncateWithSuffix(workerName, '-oauth', 63)
+}
+
+function defaultBundleArtifactsKvTitle(workerName: string) {
+	return truncateWithSuffix(workerName, '-bundle-artifacts', 63)
 }
 
 function ensureD1Database({
@@ -256,32 +262,59 @@ async function resolveProductionBindings({
 		)
 	}
 
-	const kvEntry = kvNamespaces.find((entry) => {
+	const oauthKvEntry = kvNamespaces.find((entry) => {
 		if (!entry || typeof entry !== 'object') return false
 		return (entry as Record<string, unknown>).binding === 'OAUTH_KV'
 	}) as Record<string, unknown> | undefined
-	if (!kvEntry) {
+	if (!oauthKvEntry) {
 		fail(
 			`wrangler config "${wranglerConfigPath}" has no production KV binding for "OAUTH_KV".`,
 		)
 	}
 
-	const kvConfiguredId = typeof kvEntry.id === 'string' ? kvEntry.id : ''
-	const kvTitleFromConfig =
-		typeof kvEntry.title === 'string' && kvEntry.title.length > 0
-			? kvEntry.title
+	const bundleArtifactsKvEntry = kvNamespaces.find((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (
+			(entry as Record<string, unknown>).binding === 'BUNDLE_ARTIFACTS_KV'
+		)
+	}) as Record<string, unknown> | undefined
+	if (!bundleArtifactsKvEntry) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" has no production KV binding for "BUNDLE_ARTIFACTS_KV".`,
+		)
+	}
+
+	const oauthKvConfiguredId =
+		typeof oauthKvEntry.id === 'string' ? oauthKvEntry.id : ''
+	const oauthKvTitleFromConfig =
+		typeof oauthKvEntry.title === 'string' && oauthKvEntry.title.length > 0
+			? oauthKvEntry.title
 			: ''
-	const kvTitle =
+	const oauthKvTitle =
 		(kvTitleOverride && kvTitleOverride.length > 0 && kvTitleOverride) ||
-		kvTitleFromConfig ||
+		oauthKvTitleFromConfig ||
 		defaultOauthKvTitle(workerName)
+	const bundleArtifactsKvConfiguredId =
+		typeof bundleArtifactsKvEntry.id === 'string'
+			? bundleArtifactsKvEntry.id
+			: ''
+	const bundleArtifactsKvTitleFromConfig =
+		typeof bundleArtifactsKvEntry.title === 'string' &&
+		bundleArtifactsKvEntry.title.length > 0
+			? bundleArtifactsKvEntry.title
+			: ''
+	const bundleArtifactsKvTitle =
+		bundleArtifactsKvTitleFromConfig ||
+		defaultBundleArtifactsKvTitle(workerName)
 
 	const resolved: ResolvedProductionBindings = {
 		workerName,
 		d1DatabaseName,
 		d1ConfiguredId,
-		kvTitle,
-		kvConfiguredId,
+		oauthKvTitle,
+		oauthKvConfiguredId,
+		bundleArtifactsKvTitle,
+		bundleArtifactsKvConfiguredId,
 	}
 
 	return resolved
@@ -293,7 +326,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, KV: ${bindings.kvTitle})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -302,9 +335,14 @@ async function ensureProductionResources(options: CliOptions) {
 		location: options.d1Location,
 		dryRun: options.dryRun,
 	})
-	const kv = ensureKvNamespace({
-		title: bindings.kvTitle,
-		configuredId: bindings.kvConfiguredId,
+	const oauthKv = ensureKvNamespace({
+		title: bindings.oauthKvTitle,
+		configuredId: bindings.oauthKvConfiguredId,
+		dryRun: options.dryRun,
+	})
+	const bundleArtifactsKv = ensureKvNamespace({
+		title: bindings.bundleArtifactsKvTitle,
+		configuredId: bindings.bundleArtifactsKvConfiguredId,
 		dryRun: options.dryRun,
 	})
 
@@ -314,7 +352,8 @@ async function ensureProductionResources(options: CliOptions) {
 		envName: 'production',
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
-		oauthKvId: kv.id,
+		oauthKvId: oauthKv.id,
+		bundleArtifactsKvId: bundleArtifactsKv.id,
 		extraMigrations: [
 			{
 				deleted_classes: ['AppRunner'],
@@ -331,8 +370,10 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`wrangler_config=${generatedConfigPath}`)
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
-	console.log(`oauth_kv_title=${kv.title}`)
-	console.log(`oauth_kv_id=${kv.id}`)
+	console.log(`oauth_kv_title=${oauthKv.title}`)
+	console.log(`oauth_kv_id=${oauthKv.id}`)
+	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
+	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
 }
 
 async function main() {

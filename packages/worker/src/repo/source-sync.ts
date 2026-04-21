@@ -8,6 +8,7 @@ import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
+import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type EntitySourceRow } from './types.ts'
 
 type SyncArtifactSourceInput = {
@@ -95,6 +96,14 @@ export async function syncArtifactSourceSnapshot(
 					manifestPath: source.manifest_path,
 					sourceRoot: source.source_root,
 				})
+				await writePublishedSourceSnapshot({
+					env: input.env,
+					source: {
+						...source,
+						published_commit: snapshot.published_commit,
+					},
+					files: input.files,
+				})
 				return snapshot.published_commit
 			}
 			const bootstrapResult = await session.bootstrapSource({
@@ -103,6 +112,14 @@ export async function syncArtifactSourceSnapshot(
 				userId: input.userId,
 				edits,
 				bootstrapAccess: input.bootstrapAccess ?? null,
+			})
+			await writePublishedSourceSnapshot({
+				env: input.env,
+				source: {
+					...source,
+					published_commit: bootstrapResult.publishedCommit,
+				},
+				files: input.files,
 			})
 			return bootstrapResult.publishedCommit
 		}
@@ -128,6 +145,14 @@ export async function syncArtifactSourceSnapshot(
 		if (publishResult.status !== 'ok') {
 			throw new Error(publishResult.message)
 		}
+		await writePublishedSourceSnapshot({
+			env: input.env,
+			source: {
+				...source,
+				published_commit: publishResult.publishedCommit,
+			},
+			files: input.files,
+		})
 		return publishResult.publishedCommit
 	} finally {
 		await session
