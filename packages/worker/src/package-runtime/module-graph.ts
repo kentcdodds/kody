@@ -1,10 +1,13 @@
 import { createWorker } from '@cloudflare/worker-bundler'
-import { parse, type Node } from 'acorn'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
 } from '#worker/package-registry/source.ts'
+import {
+	parseModuleSource,
+	type ModuleAstNode,
+} from '#worker/module-source.ts'
 import {
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
@@ -189,6 +192,39 @@ function collectLiteralImportNodes(source: string): Array<{
 }> {
 	const nodes: Array<{ start: number; end: number; specifier: string }> = []
 
+	function readLiteralStringNode(
+		node: unknown,
+	): { start: number; end: number; specifier: string } | null {
+		if (node == null || typeof node !== 'object') return null
+		if (!('type' in node)) return null
+		const typedNode = node as {
+			type?: string
+			value?: unknown
+			start?: number
+			end?: number
+			extra?: { rawValue?: unknown }
+		}
+		const literalValue =
+			typeof typedNode.value === 'string'
+				? typedNode.value
+				: typeof typedNode.extra?.rawValue === 'string'
+					? typedNode.extra.rawValue
+					: null
+		if (
+			(typedNode.type === 'Literal' || typedNode.type === 'StringLiteral') &&
+			typeof literalValue === 'string' &&
+			typeof typedNode.start === 'number' &&
+			typeof typedNode.end === 'number'
+		) {
+			return {
+				start: typedNode.start,
+				end: typedNode.end,
+				specifier: literalValue,
+			}
+		}
+		return null
+	}
+
 	function visit(node: unknown): void {
 		if (node == null || typeof node !== 'object') return
 		if (Array.isArray(node)) {
@@ -196,7 +232,7 @@ function collectLiteralImportNodes(source: string): Array<{
 			return
 		}
 		if (!('type' in node)) return
-		const typedNode = node as Node & {
+		const typedNode = node as ModuleAstNode & {
 			source?: { type?: string; value?: unknown; start?: number; end?: number }
 			start?: number
 			end?: number
@@ -205,34 +241,17 @@ function collectLiteralImportNodes(source: string): Array<{
 		if (
 			(typedNode.type === 'ImportDeclaration' ||
 				typedNode.type === 'ExportAllDeclaration' ||
-				typedNode.type === 'ExportNamedDeclaration') &&
-			typedNode.source?.type === 'Literal' &&
-			typeof typedNode.source.value === 'string' &&
-			typeof typedNode.source.start === 'number' &&
-			typeof typedNode.source.end === 'number'
+				typedNode.type === 'ExportNamedDeclaration')
 		) {
-			nodes.push({
-				start: typedNode.source.start,
-				end: typedNode.source.end,
-				specifier: typedNode.source.value,
-			})
+			const literalNode = readLiteralStringNode(typedNode.source)
+			if (literalNode) {
+				nodes.push(literalNode)
+			}
 		}
 		if (typedNode.type === 'ImportExpression') {
-			const sourceNode = typedNode.source
-			if (
-				sourceNode &&
-				typeof sourceNode === 'object' &&
-				'type' in sourceNode &&
-				(sourceNode as { type?: string }).type === 'Literal' &&
-				typeof (sourceNode as { value?: unknown }).value === 'string' &&
-				typeof (sourceNode as { start?: number }).start === 'number' &&
-				typeof (sourceNode as { end?: number }).end === 'number'
-			) {
-				nodes.push({
-					start: (sourceNode as { start: number }).start,
-					end: (sourceNode as { end: number }).end,
-					specifier: (sourceNode as { value: string }).value,
-				})
+			const literalNode = readLiteralStringNode(typedNode.source)
+			if (literalNode) {
+				nodes.push(literalNode)
 			}
 		}
 		for (const value of Object.values(
@@ -246,10 +265,7 @@ function collectLiteralImportNodes(source: string): Array<{
 	}
 
 	try {
-		const program = parse(source, {
-			ecmaVersion: 'latest',
-			sourceType: 'module',
-		})
+		const program = parseModuleSource(source)
 		visit(program)
 	} catch {
 		return []

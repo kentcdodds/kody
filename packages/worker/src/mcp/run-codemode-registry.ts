@@ -26,6 +26,10 @@ import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
+import {
+	hasTopLevelModuleSyntax,
+	stripCodeFences,
+} from '#worker/module-source.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
 	createStorageCodemodeTools,
@@ -200,6 +204,14 @@ export async function runCodemodeWithRegistry(
 		executorModules?: WorkerLoaderModules
 	},
 ): Promise<ExecuteResult> {
+	const moduleSource = stripCodeFences(code.trim())
+	if (hasTopLevelModuleSyntax(moduleSource)) {
+		return runModuleWithRegistry(env, callerContext, moduleSource, params, {
+			executorExports: options?.executorExports,
+			additionalTools: options?.additionalTools,
+			storageTools: options?.storageTools,
+		})
+	}
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
 	const { normalizeCode } = await import('@cloudflare/codemode')
 	const secretRedactor = createExecutionSecretRedactor()

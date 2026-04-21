@@ -1,5 +1,6 @@
 import * as acorn from 'acorn'
 import { z } from 'zod'
+import { stripCodeFences } from '#worker/module-source.ts'
 
 const skillParameterTypes = ['string', 'number', 'boolean', 'json'] as const
 const reservedParameterNames = new Set([
@@ -147,13 +148,6 @@ export async function buildParameterizedSkillCode(
   const skill = (${normalized});
   return await skill(params);
 }`
-}
-
-function stripCodeFences(code: string): string {
-	const match = code.match(
-		/^```(?:js|javascript|typescript|ts|tsx|jsx)?\s*\n([\s\S]*?)```\s*$/,
-	)
-	return match?.[1] ?? code
 }
 
 function normalizeSkillCode(code: string): string {
