@@ -85,15 +85,16 @@ function getCachedSessionStateStorageKey(sessionId: string) {
 // resorting to global throttling.
 const repoLookupRetryDelaysMs = [50, 100, 200, 400] as const
 
-async function readWithRetry<T>(
+export async function readWithRetry<T>(
 	read: () => Promise<T | null>,
+	delaysMs: ReadonlyArray<number> = repoLookupRetryDelaysMs,
 ): Promise<T | null> {
 	let result = await read()
-	if (result) return result
-	for (const delayMs of repoLookupRetryDelaysMs) {
+	if (result != null) return result
+	for (const delayMs of delaysMs) {
 		await new Promise((resolve) => setTimeout(resolve, delayMs))
 		result = await read()
-		if (result) return result
+		if (result != null) return result
 	}
 	return null
 }

@@ -168,7 +168,7 @@ vi.mock('./manifest.ts', () => ({
 		mockModule.parseRepoManifest(...args),
 }))
 
-const { RepoSession } = await import('./repo-session-do.ts')
+const { RepoSession, readWithRetry } = await import('./repo-session-do.ts')
 
 function createDurableObjectState() {
 	const storageState = new Map<string, unknown>()
@@ -446,6 +446,32 @@ test('readFile retries the D1 lookup when the persisted cache is missing and the
 	})
 	expect(mockModule.getRepoSessionById).toHaveBeenCalledTimes(3)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
+})
+
+test('readWithRetry distinguishes null from other falsy values', async () => {
+	// readWithRetry treats only null as "missing". Falsy-but-present values
+	// like 0, '', or false must be returned as-is instead of triggering
+	// extra retries and a final null.
+	for (const value of [0, '', false]) {
+		const read = vi.fn(async () => value as unknown as number | string | boolean)
+		const result = await readWithRetry(read, [])
+		expect(result).toBe(value)
+		expect(read).toHaveBeenCalledTimes(1)
+	}
+
+	const nullRead = vi.fn(async () => null)
+	const nullResult = await readWithRetry(nullRead, [0, 0])
+	expect(nullResult).toBeNull()
+	expect(nullRead).toHaveBeenCalledTimes(3)
+
+	let attempts = 0
+	const eventualRead = vi.fn(async () => {
+		attempts += 1
+		return attempts < 3 ? null : ('ok' as const)
+	})
+	const eventualResult = await readWithRetry(eventualRead, [0, 0, 0])
+	expect(eventualResult).toBe('ok')
+	expect(eventualRead).toHaveBeenCalledTimes(3)
 })
 
 test('getSessionState prefers fresh D1 reads over cached session and source rows', async () => {
