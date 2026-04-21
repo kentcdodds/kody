@@ -1461,6 +1461,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						],
 					})
 				}
+				const formattingStartMs = performance.now()
 				const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
 					payload,
 					maxResponseSize,
@@ -1482,18 +1483,24 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					0,
 					outcome.result.matches.length - trimmedPayload.matches.length,
 				)
+				const formattingMs = Math.max(
+					0,
+					Math.round(performance.now() - formattingStartMs),
+				)
 				const result: SearchResultStructuredContent = {
 					offline: trimmedPayload.offline,
 					warnings: trimmedPayload.warnings,
-					telemetry: buildCandidateTelemetry({
-						intent: outcome.result.intent,
-						candidates: [],
-						matches: trimmedPayload.matches,
+					telemetry: {
+						...outcome.result.telemetry,
+						topResultTypes: trimmedPayload.matches
+							.slice(0, 5)
+							.map((match) => match.type),
 						trimmedMatchCount,
-					}),
+						responseTrimmed: trimmedMatchCount > 0,
+					},
 					phaseTimings: {
 						...outcome.result.phaseTimings,
-						formattingMs: 0,
+						formattingMs,
 					},
 					...(trimmedPayload.memories
 						? {
