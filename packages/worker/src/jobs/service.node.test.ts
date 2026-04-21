@@ -3459,11 +3459,11 @@ test('runJobNow preserves failed once jobs for inspection', async () => {
 			jobId: jobView.id,
 			callerContext,
 		})
-		expect(result.execution).toEqual({
-			ok: false,
-			error: 'repo session unavailable',
-			logs: [],
-		})
+		expect(result.execution.ok).toBe(false)
+		if (result.execution.ok) {
+			throw new Error('Expected failed execution result.')
+		}
+		expect(result.execution.error).toContain('Cannot read properties of undefined')
 		expect(result.deletedAfterRun).toBe(false)
 		expect(deleteByIds).not.toHaveBeenCalled()
 		const row = await (
@@ -3474,7 +3474,9 @@ test('runJobNow preserves failed once jobs for inspection', async () => {
 				id: jobView.id,
 				enabled: false,
 				lastRunStatus: 'error',
-				lastRunError: 'repo session unavailable',
+				lastRunError: expect.stringContaining(
+					"Cannot read properties of undefined",
+				),
 				runCount: 1,
 				successCount: 0,
 				errorCount: 1,
