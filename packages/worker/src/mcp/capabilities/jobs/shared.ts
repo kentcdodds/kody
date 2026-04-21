@@ -421,7 +421,7 @@ export async function createScheduledJobFromArgs(input: {
 		body: resolveJobCreateBody(input.args, input.defaultName),
 	})
 	logJobSchedulerEvent({
-		event: 'job-created',
+		event: 'job_created',
 		userId: user.userId,
 		jobId: created.id,
 		scheduleType: created.schedule.type,
@@ -434,7 +434,7 @@ export async function createScheduledJobFromArgs(input: {
 		})
 	} catch (error) {
 		logJobSchedulerError({
-			event: 'job-manager-sync-after-create-failed',
+			event: 'job_manager_sync_after_create_failed',
 			userId: user.userId,
 			jobId: created.id,
 			scheduleType: created.schedule.type,

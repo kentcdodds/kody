@@ -10,10 +10,8 @@ import {
 	summarizeSchedulerJobOutcomes,
 } from './scheduler-logging.ts'
 import { resolveJobManagerAlarmState } from './manager-state.ts'
-import {
-	type JobManagerDebugState,
-	type JobRepoCheckPolicy,
-} from './types.ts'
+import { type JobRepoCheckPolicy } from './types.ts'
+import { type JobManagerDebugState } from './manager-client.ts'
 
 const userIdStorageKey = 'user-id'
 
@@ -83,7 +81,9 @@ export class JobManagerBase extends DurableObject<Env> {
 		}
 	}
 
-	async getDebugState(input: { userId: string }): Promise<JobManagerDebugState> {
+	async getDebugState(input: {
+		userId: string
+	}): Promise<JobManagerDebugState> {
 		const userId = input.userId.trim()
 		if (!userId) {
 			throw new Error('Job manager requires a non-empty userId.')
