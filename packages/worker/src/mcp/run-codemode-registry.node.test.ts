@@ -728,6 +728,127 @@ export default async function run() {
 	}
 })
 
+test('runCodemodeWithRegistry strips markdown fences before bundling module code', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
+	buildBundleMock.mockClear()
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const fencedCode = `\`\`\`ts
+import { codemode } from 'kody:runtime'
+
+export default async function run() {
+	return await codemode.meta_list_capabilities({})
+}
+\`\`\``
+		const result = await runCodemodeWithRegistry(env, callerContext, fencedCode)
+
+		expect(result.result).toBe('ok')
+		expect(buildBundleMock).toHaveBeenCalledTimes(1)
+		expect(buildBundleMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceFiles: {
+					'entry.ts': `import { codemode } from 'kody:runtime'
+
+export default async function run() {
+	return await codemode.meta_list_capabilities({})
+}
+`,
+				},
+			}),
+		)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
+test('runCodemodeWithRegistry routes TypeScript module syntax through the bundled runtime', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
+	buildBundleMock.mockClear()
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const code = `import type { ExecuteResult } from '@cloudflare/codemode'
+
+type ModuleOutput = ExecuteResult | null
+
+export default async function run(): Promise<ModuleOutput> {
+	return null
+}`
+		const result = await runCodemodeWithRegistry(env, callerContext, code)
+
+		expect(result.result).toBe('ok')
+		expect(buildBundleMock).toHaveBeenCalledTimes(1)
+		expect(buildBundleMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceFiles: {
+					'entry.ts': code,
+				},
+			}),
+		)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
 test('runCodemodeWithRegistry keeps legacy snippet execution for non-module code', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({

@@ -4,7 +4,6 @@ import {
 	type ResolvedProvider,
 	type ToolProvider,
 } from '@cloudflare/codemode'
-import { parse } from 'acorn'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
@@ -27,6 +26,10 @@ import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
 import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createExecuteHelperPrelude } from '#mcp/execute-modules/codemode-utils.ts'
+import {
+	hasTopLevelModuleSyntax,
+	stripCodeFences,
+} from '#worker/module-source.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
 	createStorageCodemodeTools,
@@ -43,33 +46,6 @@ type StorageToolOptions = {
 	userId: string
 	storageId: string
 	writable: boolean
-}
-
-function stripCodeFences(code: string) {
-	const match = code.match(
-		/^```(?:js|javascript|typescript|ts|tsx|jsx)?\s*\n([\s\S]*?)```\s*$/,
-	)
-	return match?.[1] ?? code
-}
-
-function hasTopLevelModuleSyntax(code: string) {
-	const source = stripCodeFences(code.trim())
-	if (!source) return false
-	try {
-		const program = parse(source, {
-			ecmaVersion: 'latest',
-			sourceType: 'module',
-		}) as {
-			body: Array<{ type: string }>
-		}
-		return program.body.some(
-			(statement) =>
-				statement.type === 'ImportDeclaration' ||
-				statement.type.startsWith('Export'),
-		)
-	} catch {
-		return false
-	}
 }
 
 export async function buildCodemodeFns(
@@ -228,8 +204,9 @@ export async function runCodemodeWithRegistry(
 		executorModules?: WorkerLoaderModules
 	},
 ): Promise<ExecuteResult> {
-	if (hasTopLevelModuleSyntax(code)) {
-		return runModuleWithRegistry(env, callerContext, code, params, {
+	const moduleSource = stripCodeFences(code.trim())
+	if (hasTopLevelModuleSyntax(moduleSource)) {
+		return runModuleWithRegistry(env, callerContext, moduleSource, params, {
 			executorExports: options?.executorExports,
 			additionalTools: options?.additionalTools,
 			storageTools: options?.storageTools,
