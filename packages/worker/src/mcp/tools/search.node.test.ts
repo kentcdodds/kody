@@ -141,14 +141,12 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 	)
 })
 
-test('search memory context falls back to the query when omitted', () => {
+test('search memory context stays unset when omitted', () => {
 	expect(
 		resolveSearchMemoryContext({
 			query: 'saved interactive dashboard app',
 		}),
-	).toEqual({
-		query: 'saved interactive dashboard app',
-	})
+	).toBeUndefined()
 })
 
 test('search memory context preserves explicit caller context', () => {
@@ -168,10 +166,16 @@ test('search memory context preserves explicit caller context', () => {
 	})
 })
 
-test('search memory context does not synthesize a fallback for blank queries', () => {
+test('search memory context ignores the query without explicit caller context', () => {
 	expect(
 		resolveSearchMemoryContext({
 			query: '   ',
+		}),
+	).toBeUndefined()
+
+	expect(
+		resolveSearchMemoryContext({
+			query: 'saved github package',
 		}),
 	).toBeUndefined()
 })

@@ -264,12 +264,8 @@ export function resolveSearchMemoryContext(input: {
 	query?: string
 	memoryContext?: z.infer<typeof memoryContextInputField>
 }) {
-	if (input.memoryContext !== undefined) {
-		return input.memoryContext
-	}
-
-	const query = input.query?.trim() ?? ''
-	return query.length > 0 ? { query } : undefined
+	void input.query
+	return input.memoryContext
 }
 
 function truncateSearchText(text: string): string {

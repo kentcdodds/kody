@@ -175,3 +175,44 @@ test('search tool includes timing metadata in handled errors', async () => {
 		error: 'Registry unavailable',
 	})
 })
+
+test('search tool does not load memories from the plain query by default', async () => {
+	const handler = await getSearchHandler()
+
+	await handler({
+		query: 'search docs',
+		conversationId: 'conv-search-no-memory-context',
+	})
+
+	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledWith(
+		expect.objectContaining({
+			conversationId: 'conv-search-no-memory-context',
+			memoryContext: undefined,
+		}),
+	)
+})
+
+test('search tool forwards explicit memory context to retrieval', async () => {
+	const handler = await getSearchHandler()
+
+	await handler({
+		query: 'search docs',
+		conversationId: 'conv-search-memory-context',
+		memoryContext: {
+			task: 'Debug the MCP registry',
+			query: 'search docs capability',
+			entities: ['search_docs'],
+		},
+	} as never)
+
+	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledWith(
+		expect.objectContaining({
+			conversationId: 'conv-search-memory-context',
+			memoryContext: {
+				task: 'Debug the MCP registry',
+				query: 'search docs capability',
+				entities: ['search_docs'],
+			},
+		}),
+	)
+})
