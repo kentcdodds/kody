@@ -20,8 +20,7 @@ export function parseModuleSource(source: string) {
 	})
 }
 
-export function hasTopLevelModuleSyntax(code: string) {
-	const source = stripCodeFences(code.trim())
+export function hasTopLevelModuleSyntax(source: string) {
 	if (!source) return false
 	try {
 		const parsed = parseModuleSource(source) as {
