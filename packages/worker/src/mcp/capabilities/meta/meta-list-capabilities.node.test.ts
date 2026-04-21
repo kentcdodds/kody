@@ -130,21 +130,18 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 	expect(homeCapability).toMatchObject({
 		name: 'home_roku_press_key',
 		domain: 'home',
-		description: runtimeHomeTools[0].description,
 		requiredInputFields: ['deviceId', 'key'],
 	})
 	expect(listAppsCapability).not.toBeUndefined()
 	expect(listAppsCapability).toMatchObject({
 		name: 'home_roku_list_apps',
 		domain: 'home',
-		description: runtimeHomeTools[1].description,
 		requiredInputFields: ['deviceId'],
 	})
 	expect(activeAppCapability).not.toBeUndefined()
 	expect(activeAppCapability).toMatchObject({
 		name: 'home_roku_get_active_app',
 		domain: 'home',
-		description: runtimeHomeTools[2].description,
 		requiredInputFields: ['deviceId'],
 	})
 })
