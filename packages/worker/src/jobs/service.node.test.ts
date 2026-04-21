@@ -2873,6 +2873,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 
 test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async () => {
 	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
 	insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
@@ -2883,7 +2884,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		manifestPath: 'package.json',
 		env: {
 			APP_DB: db,
-			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 		files: {
 			'package.json': createPackageJobManifestText({
@@ -2900,7 +2901,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		BUNDLE_ARTIFACTS_KV: bundleKv,
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
