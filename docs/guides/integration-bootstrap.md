@@ -52,6 +52,10 @@ If those conditions are not met, stop and fix the integration first.
    - Do not save a downstream auth-dependent package or package app yet.
 4. After the user confirms setup, run a minimal authenticated smoke test in
    `execute`.
+   - Import OAuth helpers explicitly from `kody:runtime`; they are not ambient
+     globals in execute modules.
+   - Example:
+     `import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`
    - Use the real auth path the final integration will use.
    - Prefer a cheap read-only request such as `GET /me`, `GET /viewer`, or a
      similarly small account/profile endpoint.
