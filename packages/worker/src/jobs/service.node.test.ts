@@ -3,6 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
+import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import {
 	createJob,
 	deleteJob,
@@ -1702,11 +1703,7 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 			logs: ['ad hoc job executed'],
 		})
 		expect(sessionClient.runChecks).not.toHaveBeenCalled()
-		expect(sessionClient.readFile).toHaveBeenCalledWith({
-			sessionId: `job-runtime-${jobView.id}`,
-			userId: 'user-123',
-			path: 'kody.json',
-		})
+		expect(sessionClient.readFile).not.toHaveBeenCalled()
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 		expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
 			repoContext: expect.objectContaining({
@@ -3503,6 +3500,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		APP_DB: db,
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
 		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 		LOADER: {} as WorkerLoader,
 	} as Env
 	const callerContext = createBaseCallerContext()
