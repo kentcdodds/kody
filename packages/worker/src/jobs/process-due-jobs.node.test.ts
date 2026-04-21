@@ -97,7 +97,7 @@ test('processDueJobs records failures without aborting later jobs', async () => 
 	)
 })
 
-test('processDueJobs deletes one-shot jobs after execution', async () => {
+test('processDueJobs preserves failed one-shot jobs for inspection', async () => {
 	const onceJob = createCronJob({
 		id: 'job-once',
 		schedule: {
@@ -124,8 +124,18 @@ test('processDueJobs deletes one-shot jobs after execution', async () => {
 		},
 	})
 
-	expect(result.deleteJobIds).toEqual(['job-once'])
-	expect(result.saveJobs).toEqual([])
+	expect(result.deleteJobIds).toEqual([])
+	expect(result.saveJobs).toEqual([
+		expect.objectContaining({
+			id: 'job-once',
+			enabled: false,
+			lastRunStatus: 'error',
+			lastRunError: 'expected failure',
+			runCount: 1,
+			successCount: 0,
+			errorCount: 1,
+		}),
+	])
 	expect(result.successCount).toBe(0)
 	expect(result.errorCount).toBe(1)
 	expect(result.jobOutcomes).toEqual([
@@ -133,9 +143,51 @@ test('processDueJobs deletes one-shot jobs after execution', async () => {
 			jobId: 'job-once',
 			scheduleType: 'once',
 			outcome: 'failure',
+			nextRunAt: '2026-04-12T07:00:00.000Z',
+			deleted: false,
+			error: 'expected failure',
+		},
+	])
+})
+
+test('processDueJobs deletes successful one-shot jobs', async () => {
+	const onceJob = createCronJob({
+		id: 'job-once-success',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-12T07:00:00.000Z',
+		},
+		nextRunAt: '2026-04-12T07:00:00.000Z',
+	})
+
+	const result = await processDueJobs({
+		jobs: [onceJob],
+		now: new Date('2026-04-12T07:00:00.000Z'),
+		async executeJob() {
+			return {
+				execution: {
+					ok: true,
+					logs: ['ok'],
+					result: { ok: true },
+				},
+				startedAt: '2026-04-12T07:00:00.000Z',
+				finishedAt: '2026-04-12T07:00:00.000Z',
+				durationMs: 0,
+			}
+		},
+	})
+
+	expect(result.deleteJobIds).toEqual(['job-once-success'])
+	expect(result.saveJobs).toEqual([])
+	expect(result.successCount).toBe(1)
+	expect(result.errorCount).toBe(0)
+	expect(result.jobOutcomes).toEqual([
+		{
+			jobId: 'job-once-success',
+			scheduleType: 'once',
+			outcome: 'success',
 			nextRunAt: null,
 			deleted: true,
-			error: 'expected failure',
 		},
 	])
 })

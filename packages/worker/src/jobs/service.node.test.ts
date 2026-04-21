@@ -760,7 +760,9 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 	]
 	jobRow.record.nextRunAt = '2026-04-20T10:00:00.000Z'
 	jobRow.record.updatedAt = '2026-04-20T10:05:00.000Z'
-	await (await import('./repo.ts')).updateJobRow({
+	await (
+		await import('./repo.ts')
+	).updateJobRow({
 		db: env.APP_DB,
 		userId: callerContext.user.userId,
 		job: jobRow.record,
@@ -2683,6 +2685,74 @@ test('runJobNow deletes vectors for once jobs', async () => {
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
+	}
+})
+
+test('runJobNow preserves failed once jobs for inspection', async () => {
+	const db = createDatabase()
+	const env = {
+		APP_DB: db,
+		LOADER: {} as WorkerLoader,
+		REPO_SESSION: {} as DurableObjectNamespace,
+	} as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Run once and keep failures',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-17T15:00:00Z',
+			},
+		},
+	})
+	const deleteByIds = vi.fn(async () => {})
+	env.CAPABILITY_VECTOR_INDEX = {
+		deleteByIds,
+	}
+	const sessionClient = {
+		openSession: vi.fn(async () => {
+			throw new Error('repo session unavailable')
+		}),
+		discardSession: vi.fn(),
+	}
+	const repoSessionRpcSpy = vi
+		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
+		.mockReturnValue(sessionClient as never)
+
+	try {
+		const result = await runJobNow({
+			env: env as Env,
+			userId: callerContext.user.userId,
+			jobId: jobView.id,
+			callerContext,
+		})
+		expect(result.execution).toEqual({
+			ok: false,
+			error: 'repo session unavailable',
+			logs: [],
+		})
+		expect(result.deletedAfterRun).toBe(false)
+		expect(deleteByIds).not.toHaveBeenCalled()
+		const row = await (
+			await import('./repo.ts')
+		).getJobRowById(db, callerContext.user.userId, jobView.id)
+		expect(row?.record).toEqual(
+			expect.objectContaining({
+				id: jobView.id,
+				enabled: false,
+				lastRunStatus: 'error',
+				lastRunError: 'repo session unavailable',
+				runCount: 1,
+				successCount: 0,
+				errorCount: 1,
+			}),
+		)
+	} finally {
+		repoSessionRpcSpy.mockRestore()
 	}
 })
 

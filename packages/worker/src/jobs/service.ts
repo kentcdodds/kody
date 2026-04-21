@@ -984,7 +984,11 @@ export async function runJobNow(input: {
 	})
 	const updated =
 		row.record.schedule.type === 'once'
-			? applyExecutionOutcome(row.record, outcome)
+			? applyExecutionOutcome(
+					row.record,
+					outcome,
+					outcome.execution.ok ? {} : { enabled: false },
+				)
 			: applyExecutionOutcome(row.record, outcome, {
 					nextRunAt: computeNextRunAt({
 						schedule: row.record.schedule,
@@ -992,7 +996,9 @@ export async function runJobNow(input: {
 						from: outcome.finishedAt,
 					}),
 				})
-	if (row.record.schedule.type === 'once') {
+	const deletedAfterRun =
+		row.record.schedule.type === 'once' && outcome.execution.ok
+	if (deletedAfterRun) {
 		await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
 		await deleteJobVector(input.env, input.jobId)
 	} else {
@@ -1008,6 +1014,7 @@ export async function runJobNow(input: {
 	return {
 		job: toJobView(updated),
 		execution: outcome.execution,
+		deletedAfterRun,
 	}
 }
 

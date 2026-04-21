@@ -44,6 +44,7 @@ type JobManagerRpc = {
 	}) => Promise<{
 		job: JobView
 		execution: JobExecutionResult
+		deletedAfterRun: boolean
 	}>
 }
 

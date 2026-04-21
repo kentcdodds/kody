@@ -52,14 +52,29 @@ export async function processDueJobs(input: {
 		}
 
 		if (job.schedule.type === 'once') {
-			deleteJobIds.push(job.id)
+			if (outcome.execution.ok) {
+				deleteJobIds.push(job.id)
+				jobOutcomes.push({
+					jobId: job.id,
+					scheduleType: job.schedule.type,
+					outcome: 'success',
+					nextRunAt: null,
+					deleted: true,
+				})
+				continue
+			}
+			const updated = applyExecutionOutcome(job, outcome, {
+				updatedAt: now.toISOString(),
+				enabled: false,
+			})
+			saveJobs.push(updated)
 			jobOutcomes.push({
 				jobId: job.id,
 				scheduleType: job.schedule.type,
-				outcome: outcome.execution.ok ? 'success' : 'failure',
-				nextRunAt: null,
-				deleted: true,
-				...(executionError ? { error: executionError } : {}),
+				outcome: 'failure',
+				nextRunAt: updated.nextRunAt,
+				deleted: false,
+				error: executionError,
 			})
 			continue
 		}
