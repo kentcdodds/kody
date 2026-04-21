@@ -40,6 +40,7 @@ import {
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
 import { getManifestEntrypointPath, parseRepoManifest } from '#worker/repo/manifest.ts'
+import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-codemode-execution.ts'
@@ -263,13 +264,26 @@ async function ensurePublishedBundleArtifactForJob(input: {
 				`Package "${manifest.kody.id}" does not define job "${input.job.name}".`,
 			)
 		}
+		const entryPoint = normalizePackageWorkspacePath(jobDefinition.entry)
+		const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
+			sourceFiles: published.files,
+			entryPoints: [
+				{
+					path: entryPoint,
+					includeStorage: true,
+				},
+			],
+		})
+		if (!typecheckResult.ok) {
+			throw new Error(typecheckResult.message)
+		}
 		await persistPublishedJobBundleArtifact({
 			env: input.env,
 			job: input.job,
 			callerContext: input.callerContext,
 			sourceId: input.job.sourceId,
 			sourceFiles: published.files,
-			entryPoint: normalizePackageWorkspacePath(jobDefinition.entry),
+			entryPoint,
 			artifactName,
 			packageContext: {
 				packageId: source.entity_id,

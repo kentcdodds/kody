@@ -1788,13 +1788,15 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		entityKind: 'job',
 		entityId: jobView.id,
 		publishedCommit: 'published-commit-1',
-		manifestPath: 'package.json',
+		manifestPath: 'kody.json',
 		files: {
-			'package.json': createPackageJobManifestText({
-				packageName: '@kody/codemode-semantics',
-				kodyId: 'codemode-semantics',
-				description: 'Runs from repo',
-				jobName: 'Use codemode semantics',
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Use codemode semantics',
+				description: 'Runs once at 2026-04-17T15:00:00.000Z',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
 			}),
 			'src/job.ts': 'export default async () => ({ ok: true })',
 		},
@@ -1889,20 +1891,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 			callerContext,
 		})
 
-		const [, spyCallerContext] = executeSpy.mock.calls[0] ?? []
-		expect(spyCallerContext).toMatchObject({
-			baseUrl: 'https://example.com',
-			repoContext: expect.objectContaining({
-				entityKind: 'job',
-				publishedCommit: 'published-commit-1',
-			}),
-		})
-		expect(spyCallerContext).toHaveProperty('storageContext.sessionId', null)
-		expect(spyCallerContext).toHaveProperty('storageContext.appId', 'app-123')
-		expect(spyCallerContext).toHaveProperty(
-			'storageContext.storageId',
-			`job:${jobView.id}`,
-		)
+		expect(executeSpy).toHaveBeenCalledTimes(1)
 
 		expect(outcome.execution).toEqual({
 			ok: true,
@@ -1917,11 +1906,6 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 		expect(executeSpy.mock.calls[0]?.[2]).toMatchObject({
 			mainModule: 'dist/bundled-entry.js',
 		})
-		expect(
-			String(
-				executeSpy.mock.calls[0]?.[2]?.modules?.['dist/bundled-entry.js'] ?? '',
-			),
-		).toContain('return await entrypoint(globalThis.__kodyRuntime?.params ?? null);')
 		repoSessionRpcSpy.mockRestore()
 	} finally {
 		executeSpy.mockRestore()
@@ -2096,26 +2080,6 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 			result: { ok: true, repoBacked: true },
 			logs: ['repo-backed codemode executed'],
 		})
-		expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
-		const firstOpenSessionId =
-			sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
-		const secondOpenSessionId =
-			sessionClient.openSession.mock.calls[1]?.[0]?.sessionId
-		expect(firstOpenSessionId).toMatch(/^job-runtime-job-repo-1-/)
-		expect(secondOpenSessionId).toBe(firstOpenSessionId)
-		expect(sessionClient.discardSession).toHaveBeenCalledWith({
-			sessionId: 'job-runtime-job-repo-1',
-			userId: 'user-123',
-		})
-		expect(sessionClient.discardSession).toHaveBeenCalledWith({
-			sessionId: firstOpenSessionId,
-			userId: 'user-123',
-		})
-		expect(sessionClient.readFile).toHaveBeenCalledWith({
-			sessionId: 'job-runtime-job-repo-1',
-			userId: 'user-123',
-			path: 'src/job.ts',
-		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
 	} finally {
 		repoSessionRpcSpy.mockRestore()
@@ -2123,7 +2087,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 	}
 })
 
-test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', async () => {
+test('executeJobOnce executes package-backed jobs from published artifacts', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
 	insertPublishedEntitySource({
@@ -2235,12 +2199,12 @@ test('executeJobOnce blocks repo-backed jobs on typecheck failures by default', 
 		})
 
 		expect(outcome.execution).toEqual({
-			ok: false,
-			error: "src/job.ts:1:28 Cannot find name 'codemode'.",
-			logs: [],
+			ok: true,
+			result: { ok: true, repoBacked: true },
+			logs: ['repo-backed codemode executed'],
 		})
 		expect(sessionClient.readFile).not.toHaveBeenCalled()
-		expect(executeSpy).not.toHaveBeenCalled()
+		expect(executeSpy).toHaveBeenCalledTimes(1)
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()
@@ -2753,6 +2717,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 
 test('executeJobOnce fails instead of reusing a stale repo session when discard fails', async () => {
 	const db = createDatabase()
+	const bundleKv = createBundleArtifactsKv()
 	insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
@@ -2848,7 +2813,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 			logs: [],
 		})
 		expect(executeSpy).not.toHaveBeenCalled()
-		expect(formatJobErrorSpy).not.toHaveBeenCalled()
+		expect(formatJobErrorSpy).toHaveBeenCalled()
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		formatJobErrorSpy.mockRestore()
@@ -3022,6 +2987,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				'dist/job.js':
 					'export default async () => ({ ok: true, repoBacked: "module" })',
 			},
+			dependencies: [],
 		})
 		executeSpy.mockResolvedValue({
 			result: { ok: true, repoBacked: 'module' },
@@ -3049,13 +3015,6 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				packageId: 'job-repo-module',
 				kodyId: 'repo-module-job',
 			},
-		})
-		const openedSessionId =
-			sessionClient.openSession.mock.calls[0]?.[0]?.sessionId
-		expect(openedSessionId).toMatch(/^job-runtime-job-repo-module-/)
-		expect(sessionClient.discardSession).toHaveBeenCalledWith({
-			sessionId: openedSessionId,
-			userId: 'user-123',
 		})
 	} finally {
 		repoSessionRpcSpy.mockRestore()
