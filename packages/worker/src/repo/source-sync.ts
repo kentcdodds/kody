@@ -8,7 +8,10 @@ import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
-import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	buildPublishedSourceSnapshotKvKey,
+	writePublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type EntitySourceRow } from './types.ts'
 
 type SyncArtifactSourceInput = {
@@ -101,13 +104,23 @@ export async function syncArtifactSourceSnapshot(
 					},
 					files: input.files,
 				})
-				await updateEntitySource(input.env.APP_DB, {
-					id: source.id,
-					userId: source.user_id,
-					publishedCommit: snapshot.published_commit,
-					manifestPath: source.manifest_path,
-					sourceRoot: source.source_root,
-				})
+				try {
+					await updateEntitySource(input.env.APP_DB, {
+						id: source.id,
+						userId: source.user_id,
+						publishedCommit: snapshot.published_commit,
+						manifestPath: source.manifest_path,
+						sourceRoot: source.source_root,
+					})
+				} catch (error) {
+					await input.env.BUNDLE_ARTIFACTS_KV.delete(
+						buildPublishedSourceSnapshotKvKey({
+							sourceId: source.id,
+							publishedCommit: snapshot.published_commit,
+						}),
+					)
+					throw error
+				}
 				return snapshot.published_commit
 			}
 			const bootstrapResult = await session.bootstrapSource({

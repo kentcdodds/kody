@@ -118,6 +118,12 @@ function truncateLoggedString(value: string): string {
 	return `${value.slice(0, maxLoggedStringLength)}...[truncated ${value.length - maxLoggedStringLength} chars]`
 }
 
+function truncateOptionalLoggedString<T extends string | null | undefined>(
+	value: T,
+): T {
+	return typeof value === 'string' ? (truncateLoggedString(value) as T) : value
+}
+
 function sanitizeSchedulerJobOutcome(
 	jobOutcome: SchedulerJobOutcomeLog,
 ): SchedulerJobOutcomeLog {
@@ -139,6 +145,18 @@ function sanitizeSchedulerLogPayload(
 ): JobSchedulerLogPayload {
 	return {
 		...input,
+		sourceId: truncateOptionalLoggedString(input.sourceId),
+		artifactName: truncateOptionalLoggedString(input.artifactName),
+		artifactEntryPoint: truncateOptionalLoggedString(input.artifactEntryPoint),
+		artifactPublishedCommit: truncateOptionalLoggedString(
+			input.artifactPublishedCommit,
+		),
+		cleanupDeletedSourceId: truncateOptionalLoggedString(
+			input.cleanupDeletedSourceId,
+		),
+		cleanupDeletedStorageId: truncateOptionalLoggedString(
+			input.cleanupDeletedStorageId,
+		),
 		...(input.errorMessage
 			? { errorMessage: truncateLoggedString(input.errorMessage) }
 			: {}),
