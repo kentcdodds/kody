@@ -389,3 +389,20 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 		'`codemode.connector_get({ name: "conn\\"name" })`',
 	)
 })
+
+test('search formatting does not throw for secret names outside placeholder syntax', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'secret',
+				name: 'secret "name"',
+				description: 'Secret with a display name that is not placeholder-safe.',
+			},
+		],
+	})
+
+	expect(markdown).toContain('## Secret')
+	expect(markdown).toContain('**Usage:** unavailable')
+})

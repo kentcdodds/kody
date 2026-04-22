@@ -228,28 +228,6 @@ jobs:
             echo "overrides_file=$OVERRIDES_FILE"
           } >> "$GITHUB_OUTPUT"
 
-      - name: 🔐 Sync preview app Worker secrets (bulk)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
-          OVERRIDES_FILE: ${{ steps.deploy_mocks.outputs.overrides_file }}
-          WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
-          AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID_PREVIEW }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-        run: |
-          set -euo pipefail
-          ENV_FILE="packages/worker/.env.example"
-          if [ ! -f "$ENV_FILE" ]; then
-            echo "Missing $ENV_FILE (required for preview deploy secrets)." >&2
-            exit 1
-          fi
-          if [ ! -f "$OVERRIDES_FILE" ]; then
-            echo "Missing overrides file ($OVERRIDES_FILE) from mock deploy step." >&2
-            exit 1
-          fi
-
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --generate-cookie-secret --include-empty
-
       - name: ☁️ Deploy preview app Worker
         id: deploy_preview
         env:
@@ -267,12 +245,39 @@ jobs:
           PREVIEW_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy.log "$APP_WORKER_NAME")"
           if [ -n "$PREVIEW_URL" ]; then
             echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
-            node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --set "APP_BASE_URL=$PREVIEW_URL"
           fi
           PREVIEW_VERSION_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const match = text.match(/(?:Version\s+)?Preview URL:\s*(https:\/\/\S+)/i); process.stdout.write(match?.[1] ?? "")' deploy.log)"
           if [ -n "$PREVIEW_VERSION_URL" ]; then
             echo "version_preview_url=$PREVIEW_VERSION_URL" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: 🔐 Sync preview app Worker secrets (bulk)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+          OVERRIDES_FILE: ${{ steps.deploy_mocks.outputs.overrides_file }}
+          WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
+          AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID_PREVIEW }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          set -euo pipefail
+          ENV_FILE="packages/worker/.env.example"
+          if [ ! -f "$ENV_FILE" ]; then
+            echo "Missing $ENV_FILE (required for preview deploy secrets)." >&2
+            exit 1
+          fi
+          if [ ! -f "$OVERRIDES_FILE" ]; then
+            echo "Missing overrides file ($OVERRIDES_FILE) from mock deploy step." >&2
+            exit 1
+          fi
+
+          extra_args=()
+          if [ -n "${PREVIEW_URL:-}" ]; then
+            extra_args+=(--set "APP_BASE_URL=$PREVIEW_URL")
+          fi
+
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --generate-cookie-secret --include-empty "${extra_args[@]}"
 
       - name: 📤 Upload Worker source maps to Sentry
         env:

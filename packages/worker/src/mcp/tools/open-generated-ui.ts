@@ -3,10 +3,7 @@ import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { generatedUiRuntimeResourceUri } from '#mcp/apps/generated-ui-runtime-html-entry.ts'
 import { createGeneratedUiAppSession } from '#mcp/generated-ui-app-session.ts'
-import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	conversationIdInputField,

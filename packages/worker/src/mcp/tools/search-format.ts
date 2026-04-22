@@ -354,10 +354,9 @@ function buildConnectorUsage(name: string) {
 }
 
 function buildSecretUsage(name: string) {
-	if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
-		throw new Error(`Secret name "${name}" cannot be expressed as a secret placeholder.`)
-	}
-	return `{{secret:${name}|scope=user}}`
+	return /^[a-zA-Z0-9._-]+$/.test(name)
+		? `{{secret:${name}|scope=user}}`
+		: '(secret placeholder unavailable for this name)'
 }
 
 function formatPackageSchedule(
@@ -825,7 +824,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'## Read this value',
 			'',
 			`- \`${buildValueUsage(detail.row.name, detail.row.scope)}\``,
-			`- \`codemode.value_list({ scope: "${detail.row.scope}" })\``,
+			`- \`codemode.value_list({ scope: ${JSON.stringify(detail.row.scope)} })\``,
 			'',
 			'## Stored value',
 			'',

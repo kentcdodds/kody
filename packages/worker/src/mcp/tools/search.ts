@@ -1035,8 +1035,7 @@ empty ranked list.
 capabilities. Types and fields: see response.
 
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
-Open package apps with \`open_generated_ui({ kody_id })\` when you have the Kody id
-(or \`package_id\` when that is the identifier you have) or use hosted package URLs.
+Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.
 Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
