@@ -59,6 +59,33 @@ function buildSyncSessionId(sourceId: string) {
 	return `source-sync-${sourceId}-${crypto.randomUUID()}`
 }
 
+async function writePublishedSnapshotWithRevert(input: {
+	env: Env
+	source: EntitySourceRow
+	files: Record<string, string>
+	publishedCommit: string
+}) {
+	try {
+		await writePublishedSourceSnapshot({
+			env: input.env,
+			source: {
+				...input.source,
+				published_commit: input.publishedCommit,
+			},
+			files: input.files,
+		})
+	} catch (error) {
+		await updateEntitySource(input.env.APP_DB, {
+			id: input.source.id,
+			userId: input.source.user_id,
+			publishedCommit: input.source.published_commit,
+			manifestPath: input.source.manifest_path,
+			sourceRoot: input.source.source_root,
+		})
+		throw error
+	}
+}
+
 export async function syncArtifactSourceSnapshot(
 	input: SyncArtifactSourceInput,
 ): Promise<string | null> {
@@ -130,13 +157,11 @@ export async function syncArtifactSourceSnapshot(
 				edits,
 				bootstrapAccess: input.bootstrapAccess ?? null,
 			})
-			await writePublishedSourceSnapshot({
+			await writePublishedSnapshotWithRevert({
 				env: input.env,
-				source: {
-					...source,
-					published_commit: bootstrapResult.publishedCommit,
-				},
+				source,
 				files: input.files,
+				publishedCommit: bootstrapResult.publishedCommit,
 			})
 			return bootstrapResult.publishedCommit
 		}
@@ -162,13 +187,11 @@ export async function syncArtifactSourceSnapshot(
 		if (publishResult.status !== 'ok') {
 			throw new Error(publishResult.message)
 		}
-		await writePublishedSourceSnapshot({
+		await writePublishedSnapshotWithRevert({
 			env: input.env,
-			source: {
-				...source,
-				published_commit: publishResult.publishedCommit,
-			},
+			source,
 			files: input.files,
+			publishedCommit: publishResult.publishedCommit,
 		})
 		return publishResult.publishedCommit
 	} finally {
