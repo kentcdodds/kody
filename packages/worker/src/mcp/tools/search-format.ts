@@ -20,6 +20,7 @@ export type SearchResultStructuredContent = {
 	matches: Array<SlimSearchMatch>
 	offline: boolean
 	warnings: Array<string>
+	guidance?: string
 	telemetry?: {
 		intent: {
 			task: string
@@ -102,6 +103,7 @@ export type SlimSearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hostedUrl: string | null
+			nextStep?: string
 	  }
 	| {
 			type: 'secret'
@@ -133,6 +135,7 @@ export type SlimSearchMatch =
 			flow: string
 			apiBaseUrl: string | null
 			requiredHosts: Array<string>
+			nextStep?: string
 	  }
 
 export type SearchEntityDetailStructured =
@@ -357,6 +360,7 @@ export function formatSearchMarkdown(input: {
 	warnings: Array<string>
 	baseUrl: string
 	includePreamble?: boolean
+	guidance?: string
 	memories?: {
 		surfaced: Array<{
 			category: string | null
@@ -399,6 +403,10 @@ export function formatSearchMarkdown(input: {
 				`- ${String(input.memories.suppressedCount)} additional memory item(s) were suppressed for this conversation.`,
 			)
 		}
+	}
+
+	if (input.guidance?.trim()) {
+		lines.push('', '## Recommended next step', '', input.guidance.trim())
 	}
 
 	for (const match of input.matches) {
@@ -498,6 +506,9 @@ export function toSlimStructuredMatches(input: {
 			}
 		}
 		if (match.type === 'package') {
+			const nextStep = match.hasApp
+				? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
+				: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.kodyId, '.')}".`
 			return {
 				type: 'package',
 				id: match.kodyId,
@@ -514,6 +525,7 @@ export function toSlimStructuredMatches(input: {
 				hostedUrl: match.hasApp
 					? buildPackageHostedUrl(input.baseUrl, match.kodyId)
 					: null,
+				nextStep,
 			}
 		}
 		if (match.type === 'value') {
@@ -541,6 +553,7 @@ export function toSlimStructuredMatches(input: {
 				flow: match.flow,
 				apiBaseUrl: match.apiBaseUrl,
 				requiredHosts: match.requiredHosts,
+				nextStep: `Inspect connector detail with search({ entity: "${match.connectorName}:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
 			}
 		}
 		return {

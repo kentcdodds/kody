@@ -30,8 +30,12 @@ import {
 	getSavedPackageByKodyId,
 	listSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
+import {
+	buildPackageSearchDocument,
+	buildPackageSearchProjection,
+	type PackageSearchProjection,
+} from '#worker/package-registry/manifest.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import { type buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import {
 	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
@@ -74,7 +78,7 @@ const defaultMaxResponseSize = 4_000
 
 export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
-	projection: ReturnType<typeof buildPackageSearchProjection>
+	projection: PackageSearchProjection
 }
 
 export type OptionalSearchRowsResult = {
@@ -131,12 +135,126 @@ type SearchPhaseTimings = {
 	formattingMs?: number
 }
 
+type SearchGuidanceContext = {
+	query: string
+	intent: SearchIntent
+	matches: Array<SearchMatch>
+}
+
 type SearchUnifiedResult = {
 	matches: Array<SearchMatch>
 	offline: boolean
 	intent: SearchIntent
 	telemetry: SearchTelemetry
 	phaseTimings: SearchPhaseTimings
+	guidance?: string
+}
+
+function buildFallbackPackageSearchProjection(
+	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number],
+): PackageSearchProjection {
+	return {
+		name: record.name,
+		kodyId: record.kodyId,
+		description: record.description,
+		tags: record.tags,
+		searchText: record.searchText,
+		hasApp: record.hasApp,
+		appEntry: null,
+		exports: [],
+		jobs: [],
+	}
+}
+
+export async function buildSavedPackageSearchRows(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	records: Array<Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]>
+}): Promise<Array<PackageSearchRow>> {
+	return await Promise.all(
+		input.records.map(async (record) => {
+			try {
+				const loaded = await loadPackageSourceBySourceId({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceId: record.sourceId,
+				})
+				return {
+					record,
+					projection: buildPackageSearchProjection(loaded.manifest),
+				}
+			} catch {
+				return {
+					record,
+					projection: buildFallbackPackageSearchProjection(record),
+				}
+			}
+		}),
+	)
+}
+
+const wellKnownConnectorAliases: Record<string, Array<string>> = {
+	spotify: [
+		'music',
+		'audio',
+		'playback',
+		'player',
+		'track',
+		'song',
+		'playlist',
+		'album',
+		'artist',
+		'queue',
+		'volume',
+	],
+	github: ['repo', 'repository', 'pull request', 'issue', 'code', 'git'],
+	tesla: ['car', 'vehicle', 'charging', 'climate', 'lock', 'unlock'],
+}
+
+function getConnectorAliases(connectorName: string): Array<string> {
+	return wellKnownConnectorAliases[connectorName.toLowerCase()] ?? []
+}
+
+function buildConnectorSearchDocument(input: {
+	connectorName: string
+	description: string
+	config: NonNullable<ReturnType<typeof parseConnectorConfig>>
+}): string {
+	return [
+		input.connectorName,
+		input.description,
+		input.config.tokenUrl,
+		input.config.apiBaseUrl ?? '',
+		input.config.flow,
+		...(input.config.requiredHosts ?? []),
+		...getConnectorAliases(input.connectorName),
+	]
+		.filter((value) => value.trim().length > 0)
+		.join('\n')
+}
+
+function buildRecommendedNextStep(input: SearchGuidanceContext): string | undefined {
+	const [topMatch] = input.matches
+	const topPackage = input.matches.find((match) => match.type === 'package')
+	const topConnector = input.matches.find((match) => match.type === 'connector')
+
+	if (topPackage && topConnector && input.intent.task.name === 'operate') {
+		return `Found saved package \`${topPackage.kodyId}\` and connector \`${topConnector.connectorName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the connector detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
+	}
+	if (topMatch?.type === 'package') {
+		return topMatch.hasApp
+			? `Open the saved app with \`open_generated_ui({ kody_id: "${topMatch.kodyId}" })\` or inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports and jobs.`
+			: `Inspect package detail with \`search({ entity: "${topMatch.kodyId}:package" })\` to review exports, then import the right entry from \`kody:@${topMatch.kodyId}\` or a subpath export.`
+	}
+	if (topMatch?.type === 'connector') {
+		return `Inspect connector detail with \`search({ entity: "${topMatch.connectorName}:connector" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
+	}
+	if (topMatch?.type === 'capability') {
+		return `Inspect capability detail with \`search({ entity: "${topMatch.name}:capability" })\` to confirm the schema, then call it from \`execute\` via \`codemode.${topMatch.name}(args)\`.`
+	}
+	return undefined
 }
 
 function buildSearchableEntityDescriptors(input: {
@@ -197,14 +315,17 @@ function buildSearchableEntityDescriptors(input: {
 				type: 'connector',
 				id: connectorName,
 				title: connectorName,
-				primaryAliases: [connectorName],
+				primaryAliases: [connectorName, ...getConnectorAliases(connectorName)],
 				secondaryAliases: [
 					row.description,
 					config.apiBaseUrl ?? '',
 					config.tokenUrl,
 					config.flow,
 				],
-				tertiaryAliases: config.requiredHosts ?? [],
+				tertiaryAliases: [
+					...(config.requiredHosts ?? []),
+					...(config.apiBaseUrl ? extractSearchTokens(config.apiBaseUrl) : []),
+				],
 			})
 			continue
 		}
@@ -505,15 +626,7 @@ function buildPackageCandidates(input: {
 			const jobs = Array.isArray(entry.projection.jobs)
 				? entry.projection.jobs
 				: []
-			const document = [
-				entry.projection.kodyId,
-				entry.projection.name,
-				entry.projection.description,
-				tags.join(' '),
-				entry.projection.searchText ?? '',
-				exports.join(' '),
-				jobs.map((job) => job.name).join(' '),
-			].join('\n')
+			const document = buildPackageSearchDocument(entry.projection)
 			const lexical = lexicalScore(input.query, document)
 			const vector = cosineSimilarity(
 				input.queryEmbedding,
@@ -540,7 +653,13 @@ function buildPackageCandidates(input: {
 					entry.record.searchText ?? '',
 					...entry.record.tags,
 					...exports,
-					...jobs.map((job) => job.name),
+					...jobs.flatMap((job) => [
+						job.name,
+						job.entry,
+						job.schedule,
+						job.enabled ? 'enabled' : 'disabled',
+					]),
+					...(entry.projection.appEntry ? [entry.projection.appEntry] : []),
 					...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
 				],
 				scoreComponents: buildCandidateBaseScore({
@@ -599,16 +718,17 @@ function buildConnectorCandidates(input: {
 				connectorName,
 			)
 			if (!config) return []
-			const lexical = lexicalScore(
-				input.query,
-				[
-					connectorName,
-					row.description,
-					config.tokenUrl,
-					config.apiBaseUrl ?? '',
-					config.flow,
-					...(config.requiredHosts ?? []),
-				].join('\n'),
+			const document = buildConnectorSearchDocument({
+				connectorName,
+				description:
+					row.description.trim() ||
+					`Saved OAuth connector configuration (${config.flow} flow).`,
+				config,
+			})
+			const lexical = lexicalScore(input.query, document)
+			const vector = cosineSimilarity(
+				deterministicEmbedding(input.query),
+				deterministicEmbedding(document),
 			)
 			return [
 				{
@@ -633,9 +753,11 @@ function buildConnectorCandidates(input: {
 						config.apiBaseUrl ?? '',
 						config.tokenUrl,
 						...(config.requiredHosts ?? []),
+						...getConnectorAliases(connectorName),
 					],
 					scoreComponents: buildCandidateBaseScore({
 						lexical,
+						vector,
 					}),
 				} satisfies SearchCandidate,
 			]
@@ -780,6 +902,11 @@ export function searchUnified(input: {
 			candidateGenerationMs,
 			rerankingMs,
 		},
+		guidance: buildRecommendedNextStep({
+			query,
+			intent,
+			matches,
+		}),
 	}
 }
 
@@ -1042,19 +1169,12 @@ async function loadSearchRowsAndRegistry(input: {
 						userId: input.userId!,
 					},
 				)
-				return savedPackages.map((record) => ({
-					record,
-					projection: {
-						name: record.name,
-						kodyId: record.kodyId,
-						description: record.description,
-						tags: record.tags,
-						searchText: record.searchText,
-						hasApp: record.hasApp,
-						exports: [],
-						jobs: [],
-					},
-				}))
+				return await buildSavedPackageSearchRows({
+					env: input.agent.getEnv(),
+					baseUrl: input.callerContext.baseUrl,
+					userId: input.userId!,
+					records: savedPackages,
+				})
 			},
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({
@@ -1406,6 +1526,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					matches: Array<SearchMatch>
 					offline: boolean
 					warnings: Array<string>
+					guidance?: string
 					memories?: SearchResultStructuredContent['memories']
 					homeConnectorStatus?: {
 						connectorKind: string
@@ -1425,6 +1546,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					matches: outcome.result.matches,
 					offline: outcome.result.offline,
 					warnings,
+					...(outcome.result.guidance
+						? {
+								guidance: outcome.result.guidance,
+							}
+						: {}),
 					...(searchMemories
 						? {
 								memories: searchMemories,
@@ -1474,6 +1600,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						formatSearchMarkdown({
 							matches: value.matches,
 							warnings: value.warnings,
+							guidance: value.guidance,
 							memories: value.memories,
 							baseUrl,
 							includePreamble,
@@ -1495,6 +1622,11 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 				const result: SearchResultStructuredContent = {
 					offline: trimmedPayload.offline,
 					warnings: trimmedPayload.warnings,
+					...(trimmedPayload.guidance
+						? {
+								guidance: trimmedPayload.guidance,
+							}
+						: {}),
 					telemetry: {
 						...outcome.result.telemetry,
 						topResultTypes: trimmedPayload.matches
