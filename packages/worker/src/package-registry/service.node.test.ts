@@ -170,7 +170,7 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 		env,
 		userId: 'user-1',
 		source: undefined,
-		savedPackage: {
+		savedPackage: expect.objectContaining({
 			id: 'package-1',
 			userId: 'user-1',
 			name: '@kentcdodds/shade-automation',
@@ -181,13 +181,18 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 			sourceId: 'source-1',
 			hasApp: false,
 			createdAt: '2026-04-20T00:00:00.000Z',
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		},
+		}),
 		manifest,
 		files: { 'package.json': '{}' },
 		buildAppBundle: expect.any(Function),
 		buildModuleBundle: expect.any(Function),
 	})
+	const savedPackageArg = mockModule.buildPublishedPackageArtifacts.mock.calls[0]?.[0]
+		?.savedPackage as { updatedAt: string } | undefined
+	expect(savedPackageArg?.updatedAt).toMatch(
+		/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+	)
+	expect(savedPackageArg?.updatedAt).not.toBe('2026-04-20T00:00:00.000Z')
 	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',
