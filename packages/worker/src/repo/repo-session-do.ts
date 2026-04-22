@@ -391,17 +391,24 @@ class RepoSessionBase extends DurableObject<Env> {
 		return commit.oid
 	}
 
-	private async collectWorkspaceFiles(
+	private async listWorkspaceFileEntries(
 		root = repoSessionWorkspacePrefix,
-	): Promise<Record<string, string>> {
-		const entries = (
-			await this.workspace.glob(`${root.replace(/\/+$/, '')}/**/*`)
-		)
+	): Promise<Array<{ path: string }>> {
+		const normalizedRoot = root.replace(/\/+$/, '')
+		const entries = await this.workspace.glob(`${normalizedRoot}/**/*`)
+		return entries
 			.filter((entry) => entry.type === 'file')
 			.filter((entry) => !entry.path.includes('/.git/'))
 			.sort((left, right) => left.path.localeCompare(right.path))
-		const files: Record<string, string> = {}
+			.map((entry) => ({ path: entry.path }))
+	}
+
+	private async collectWorkspaceFiles(
+		root = repoSessionWorkspacePrefix,
+	): Promise<Record<string, string>> {
+		const entries = await this.listWorkspaceFileEntries(root)
 		const rootPrefix = `${root.replace(/\/+$/, '')}/`
+		const files: Record<string, string> = {}
 		for (const entry of entries) {
 			const content = await this.workspace.readFile(entry.path)
 			if (content == null) continue
@@ -414,16 +421,11 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
-		const files = (
-			await this.workspace.glob(`${root.replace(/\/+$/, '')}/**/*`)
-		)
-			.filter((entry) => entry.type === 'file')
-			.filter((entry) => !entry.path.includes('/.git/'))
-			.sort((left, right) => left.path.localeCompare(right.path))
+		const entries = await this.listWorkspaceFileEntries(root)
 		const chunks: Array<string> = []
-		for (const file of files) {
-			const content = await this.workspace.readFile(file.path)
-			chunks.push(`${file.path}\n${content ?? ''}\n`)
+		for (const entry of entries) {
+			const content = await this.workspace.readFile(entry.path)
+			chunks.push(`${entry.path}\n${content ?? ''}\n`)
 		}
 		const data = new TextEncoder().encode(chunks.join(''))
 		const digest = await crypto.subtle.digest('SHA-256', data)
@@ -1179,15 +1181,34 @@ class RepoSessionBase extends DurableObject<Env> {
 					},
 					files,
 				})
-			} catch (error) {
-				await updateEntitySource(this.env.APP_DB, {
-					id: source.id,
-					userId: source.user_id,
-					publishedCommit: source.published_commit,
-					manifestPath: source.manifest_path,
-					sourceRoot: source.source_root,
-				})
-				throw error
+			} catch (snapshotError) {
+				// Preserve the original KV failure as the thrown error even if
+				// the compensating D1 revert also fails; surfacing the revert
+				// error would mask the real root cause and make the orphaned
+				// D1 row harder to diagnose.
+				try {
+					await updateEntitySource(this.env.APP_DB, {
+						id: source.id,
+						userId: source.user_id,
+						publishedCommit: source.published_commit,
+						manifestPath: source.manifest_path,
+						sourceRoot: source.source_root,
+					})
+				} catch (revertError) {
+					Sentry.captureException(revertError, {
+						tags: {
+							scope:
+								'repo-session.publishSession.revert-after-snapshot-failure',
+						},
+						extra: {
+							sessionId: input.sessionId,
+							sourceId: source.id,
+							previousPublishedCommit: source.published_commit,
+							attemptedPublishedCommit: sessionHeadCommit,
+						},
+					})
+				}
+				throw snapshotError
 			}
 		}
 		await updateRepoSession(this.env.APP_DB, {

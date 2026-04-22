@@ -334,20 +334,24 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so d
 	mockModule.gitState.headCommit = 'commit-published-new'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
 	mockModule.writePublishedSourceSnapshot.mockClear()
+	// Include the manifest file (kody.json per setCommonSessionFixtures) so
+	// the assertion mirrors the real writePublishedSourceSnapshot contract,
+	// which requires the manifest_path entry to be present in files.
 	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/kody.json' },
 		{ type: 'file', path: '/session/package.json' },
 		{ type: 'file', path: '/session/src/index.ts' },
 		{ type: 'file', path: '/session/.git/config' },
 	] as unknown as Array<{ type: 'file'; path: string }>)
 	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/kody.json') {
+			return '{"version":1,"kind":"app"}'
+		}
 		if (path === '/session/package.json') {
 			return '{"name":"demo","kody":{"id":"demo"}}'
 		}
 		if (path === '/session/src/index.ts') {
 			return 'export default {}'
-		}
-		if (path === '/session/kody.json') {
-			return '{"version":1,"kind":"app"}'
 		}
 		return ''
 	})
@@ -369,6 +373,7 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so d
 	expect(snapshotCall.source.id).toBe('source-1')
 	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
 	expect(snapshotCall.files).toEqual({
+		'kody.json': '{"version":1,"kind":"app"}',
 		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
 		'src/index.ts': 'export default {}',
 	})
@@ -429,6 +434,44 @@ test('publishSession rolls back the D1 published commit when snapshot persistenc
 			publishedCommit: 'commit-base',
 		}),
 	)
+})
+
+test('publishSession surfaces the original snapshot error even when the compensating revert also fails', async () => {
+	// If the KV snapshot write fails AND the compensating updateEntitySource
+	// revert subsequently fails, we must still rethrow the original KV error
+	// so operators see the real root cause instead of a misleading D1 error
+	// about the failed compensation.
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-published-double-fail'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.writePublishedSourceSnapshot.mockReset()
+	mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
+		new Error('kv write failed'),
+	)
+	mockModule.updateEntitySource.mockReset()
+	mockModule.updateEntitySource
+		.mockResolvedValueOnce(undefined)
+		.mockRejectedValueOnce(new Error('d1 revert failed'))
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/kody.json' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"app"}')
+
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env
+	const repoSession = new RepoSession(createDurableObjectState(), env)
+
+	await expect(
+		repoSession.publishSession({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			force: true,
+		}),
+	).rejects.toThrow('kv write failed')
+
+	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
 })
 
 test('openSession strips unsupported characters from derived session repo names', async () => {
