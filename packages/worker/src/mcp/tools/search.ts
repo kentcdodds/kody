@@ -617,9 +617,6 @@ function buildPackageCandidates(input: {
 }): Array<SearchCandidate> {
 	return input.rows
 		.map((entry) => {
-			const tags = Array.isArray(entry.projection.tags)
-				? entry.projection.tags
-				: []
 			const exports = Array.isArray(entry.projection.exports)
 				? entry.projection.exports
 				: []
