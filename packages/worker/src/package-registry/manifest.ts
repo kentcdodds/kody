@@ -151,7 +151,11 @@ export function buildPackageSearchDocument(projection: PackageSearchProjection) 
 		projection.searchText ?? '',
 		projection.exports.join('\n'),
 		jobLines.join('\n'),
-		projection.appEntry ? `app ${projection.appEntry}` : '',
+		projection.appEntry
+			? `app ${projection.appEntry}`
+			: projection.hasApp
+				? 'app'
+				: '',
 	]
 		.filter((value) => value.trim().length > 0)
 		.join('\n')
