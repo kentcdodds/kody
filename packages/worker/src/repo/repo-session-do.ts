@@ -411,7 +411,16 @@ class RepoSessionBase extends DurableObject<Env> {
 		const files: Record<string, string> = {}
 		for (const entry of entries) {
 			const content = await this.workspace.readFile(entry.path)
-			if (content == null) continue
+			// Treat an unreadable file as a hard failure so the caller aborts
+			// and triggers rollback instead of persisting a KV snapshot that
+			// is silently missing files. A null read here usually means the
+			// file was unlinked between glob and read, which means the tree
+			// we are about to publish is not the tree we scanned.
+			if (content == null) {
+				throw new Error(
+					`Failed to read repo session file "${entry.path}" while collecting workspace snapshot.`,
+				)
+			}
 			const relativePath = entry.path.startsWith(rootPrefix)
 				? entry.path.slice(rootPrefix.length)
 				: entry.path
@@ -1156,13 +1165,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			source.manifest_path,
 			source.entity_kind,
 		)
-		await updateEntitySource(this.env.APP_DB, {
-			id: source.id,
-			userId: source.user_id,
-			publishedCommit: sessionHeadCommit,
-			manifestPath: source.manifest_path,
-			sourceRoot: source.source_root,
-		})
 		// Persist the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream
 		// readers like loadPublishedEntitySource can resolve the freshly
 		// published commit without round-tripping to Artifacts. Without this,
@@ -1170,8 +1172,23 @@ class RepoSessionBase extends DurableObject<Env> {
 		// job run that reaches for the published snapshot, would throw
 		// "Published snapshot for source ... was not found" because no writer
 		// had stored the snapshot under the new commit.
-		if (sessionHeadCommit && hasPublishedRuntimeArtifacts(this.env)) {
-			const files = await this.collectWorkspaceFiles()
+		//
+		// Collect the workspace files BEFORE advancing D1 so a failure to
+		// materialize the tree never leaves entity_sources.published_commit
+		// pointing at a commit whose snapshot we never wrote.
+		const shouldPersistSnapshot =
+			sessionHeadCommit != null && hasPublishedRuntimeArtifacts(this.env)
+		const snapshotFiles = shouldPersistSnapshot
+			? await this.collectWorkspaceFiles()
+			: null
+		await updateEntitySource(this.env.APP_DB, {
+			id: source.id,
+			userId: source.user_id,
+			publishedCommit: sessionHeadCommit,
+			manifestPath: source.manifest_path,
+			sourceRoot: source.source_root,
+		})
+		if (shouldPersistSnapshot && snapshotFiles != null && sessionHeadCommit) {
 			try {
 				await writePublishedSourceSnapshot({
 					env: this.env,
@@ -1179,7 +1196,7 @@ class RepoSessionBase extends DurableObject<Env> {
 						...source,
 						published_commit: sessionHeadCommit,
 					},
-					files,
+					files: snapshotFiles,
 				})
 			} catch (snapshotError) {
 				// Preserve the original KV failure as the thrown error even if

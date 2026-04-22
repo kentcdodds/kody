@@ -474,6 +474,51 @@ test('publishSession surfaces the original snapshot error even when the compensa
 	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
 })
 
+test('publishSession aborts before advancing the D1 published commit when snapshot collection fails', async () => {
+	// Snapshot collection must happen BEFORE the entity_sources.published_commit
+	// advance. Otherwise a glob/read failure (or a file that disappears between
+	// glob and read) would leave D1 pointing at a commit whose snapshot was
+	// never written — the exact failure mode the main regression is about.
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-published-collect-fail'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.writePublishedSourceSnapshot.mockReset()
+	mockModule.updateEntitySource.mockClear()
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/kody.json' },
+		{ type: 'file', path: '/session/src/index.ts' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	// Simulate a file that vanished between glob and read. The manifest read
+	// from readManifestFromWorkspace still needs to resolve so publishSession
+	// reaches the snapshot-collection step; it is the follow-up collector's
+	// pass over the workspace that must treat the null content as a hard
+	// failure instead of silently dropping the file and writing an incomplete
+	// KV snapshot.
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/kody.json') {
+			return '{"version":1,"kind":"app"}'
+		}
+		return null
+	})
+
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env
+	const repoSession = new RepoSession(createDurableObjectState(), env)
+
+	await expect(
+		repoSession.publishSession({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			force: true,
+		}),
+	).rejects.toThrow(/Failed to read repo session file/)
+
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+})
+
 test('openSession strips unsupported characters from derived session repo names', async () => {
 	mockModule.getRepoSessionById.mockResolvedValue(null)
 	mockModule.getEntitySourceById.mockResolvedValue({
