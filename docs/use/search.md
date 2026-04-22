@@ -40,6 +40,10 @@ Examples:
 There is **no separate `detail` flag** on search. Deeper inspection of one
 entity uses **`entity`**, not a different mode of the same ranked query.
 
+Top-level ranked result cards include an explicit entity ref for each hit when
+applicable, using that same `"{id}:{type}"` format, so you can immediately copy
+the ref into a follow-up `entity` lookup when needed.
+
 ## When results look thin
 
 If ranked search misses what you need, **rephrase the query** or use
@@ -53,8 +57,11 @@ for an empty ranked list.
 Saved **packages** require a signed-in MCP user. Capabilities and builtin
 behavior still work without user-scoped data.
 
-Package search hits summarize whether the package has an app surface. Package
-detail nests exports, jobs, tags, and app metadata under the package itself.
+Package search hits summarize whether the package has an app surface and, when
+they do, include a direct `open_generated_ui({ kody_id: "..." })` hint.
+Connector hits also include operational details such as the token URL, API base
+URL, required hosts, and related stored value/secret names so common
+setup/debugging work can often proceed without an immediate detail lookup.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

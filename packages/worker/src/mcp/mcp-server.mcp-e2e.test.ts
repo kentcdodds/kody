@@ -219,15 +219,14 @@ export default {
 				}
 		  }
 		| undefined
-	const savedPackageId = saveStructured?.result?.package_id
-	expect(typeof savedPackageId).toBe('string')
+	const savedPackageKodyId = saveStructured?.result?.kody_id
 	expect(saveStructured?.result?.has_app).toBe(true)
-	expect(saveStructured?.result?.kody_id).toBe('facet-counter')
+	expect(savedPackageKodyId).toBe('facet-counter')
 
 	const savedOpenResult = await mcpClient.client.callTool({
 		name: 'open_generated_ui',
 		arguments: {
-			package_id: savedPackageId,
+			kody_id: savedPackageKodyId,
 		},
 	})
 	const savedOpenStructured = (savedOpenResult as CallToolResult)
@@ -239,7 +238,7 @@ export default {
 		  }
 		| undefined
 	expect(savedOpenStructured?.renderSource).toBe('saved_package')
-	expect(savedOpenStructured?.appId).toBe(savedPackageId)
+	expect(savedOpenStructured?.appId).toBe(saveStructured?.result?.package_id)
 	expect(savedOpenStructured?.hostedUrl).toBe(
 		`${server.origin}/packages/facet-counter`,
 	)

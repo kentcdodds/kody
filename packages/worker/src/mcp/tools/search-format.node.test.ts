@@ -56,6 +56,16 @@ test('search markdown and entity detail formatting preserve structured behavior'
 		],
 	})
 
+	expect(markdown).toMatch(/^# Search results/)
+	expect(markdown).toContain('## Value')
+	expect(markdown).toContain('## Connector')
+	expect(markdown).toContain('**Entity:** `user:preferred_repo:value`')
+	expect(markdown).toContain('**Entity:** `github:connector`')
+	expect(markdown).toContain(
+		'**Read:** `codemode.connector_get({ name: "github" })`',
+	)
+	expect(markdown).toContain('**Token URL:** `https://github.com/login/oauth/access_token`')
+	expect(markdown).toContain('**Client ID value:** `github_client_id`')
 	expect(markdown).toContain('`user:preferred_repo:value`')
 	expect(markdown).toContain('`https://api.github.com`')
 	expect(markdown).toContain('## Recommended next step')
@@ -118,7 +128,12 @@ test('search markdown and entity detail formatting preserve structured behavior'
 			description: 'GitHub OAuth connector config',
 			usage: 'codemode.connector_get({ name: "github" })',
 			flow: 'confidential',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
 			apiBaseUrl: 'https://api.github.com',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: 'github_refresh_token',
 			requiredHosts: ['api.github.com'],
 			nextStep:
 				'Inspect connector detail with search({ entity: "github:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.',
@@ -143,6 +158,7 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	})
 	expect(valueDetail.structured).toMatchObject({
 		type: 'value',
+		entityRef: 'user:preferred_repo:value',
 		scope: 'user',
 		value: 'kentcdodds/kody',
 	})
@@ -176,8 +192,14 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	})
 	expect(connectorDetail.structured).toMatchObject({
 		type: 'connector',
+		entityRef: 'github:connector',
 		flow: 'confidential',
+		tokenUrl: 'https://github.com/login/oauth/access_token',
 		apiBaseUrl: 'https://api.github.com',
+		clientIdValueName: 'github_client_id',
+		clientSecretSecretName: 'github_client_secret',
+		accessTokenSecretName: 'github_access_token',
+		refreshTokenSecretName: 'github_refresh_token',
 		requiredHosts: ['api.github.com'],
 	})
 })
@@ -235,8 +257,13 @@ test('entity detail formatting includes package app and export metadata', () => 
 				'export default function fetch(request: Request): Promise<Response>\n',
 		},
 	})
+	expect(packageDetail.markdown).toContain(
+		'- Open: `open_generated_ui({ kody_id: "observed-package" })`',
+	)
 	expect(packageDetail.structured).toMatchObject({
 		type: 'package',
+		entityRef: 'observed-package:package',
+		usage: 'open_generated_ui({ kody_id: "observed-package" })',
 		hasApp: true,
 		hostedUrl: 'http://localhost/packages/observed-package',
 		appEntry: './src/app.ts',
@@ -260,4 +287,124 @@ test('entity detail formatting includes package app and export metadata', () => 
 			}),
 		],
 	})
+})
+
+test('search markdown and slim structured matches surface package entity refs and app hints', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-123',
+				kodyId: 'spotify-playback',
+				name: '@kody/spotify-playback',
+				title: '@kody/spotify-playback',
+				description: 'Saved package for Spotify playback controls.',
+				tags: ['spotify', 'playback'],
+				hasApp: true,
+			},
+		],
+	})
+
+	expect(markdown).toContain('**Entity:** `spotify-playback:package`')
+	expect(markdown).toContain('**Package ID:** `package-123`')
+	expect(markdown).toContain(
+		'**Open app:** `open_generated_ui({ kody_id: "spotify-playback" })`',
+	)
+	expect(markdown).toContain('**Import:** `import entry from "kody:@spotify-playback"`')
+
+	expect(
+		toSlimStructuredMatches({
+			baseUrl: 'http://localhost',
+			matches: [
+				{
+					type: 'package',
+					packageId: 'package-123',
+					kodyId: 'spotify-playback',
+					name: '@kody/spotify-playback',
+					title: '@kody/spotify-playback',
+					description: 'Saved package for Spotify playback controls.',
+					tags: ['spotify', 'playback'],
+					hasApp: true,
+				},
+			],
+		}),
+	).toEqual([
+		{
+			type: 'package',
+			id: 'spotify-playback',
+			entityRef: 'spotify-playback:package',
+			packageId: 'package-123',
+			kodyId: 'spotify-playback',
+			title: '@kody/spotify-playback',
+			description: 'Saved package for Spotify playback controls.',
+			usage: 'open_generated_ui({ kody_id: "spotify-playback" })',
+			rootImportUsage: 'import entry from "kody:@spotify-playback"',
+			openGeneratedUiUsage:
+				'open_generated_ui({ kody_id: "spotify-playback" })',
+			tags: ['spotify', 'playback'],
+			hasApp: true,
+			hostedUrl: 'http://localhost/packages/spotify-playback',
+			nextStep:
+				'Open the app with open_generated_ui({ kody_id: "spotify-playback" }) or inspect package detail with search({ entity: "spotify-playback:package" }).',
+		},
+	])
+})
+
+test('usage helpers escape dynamic identifiers in generated snippets', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'value',
+				valueId: 'user:strange-name',
+				name: 'display"name',
+				scope: 'user"scope',
+				description: 'Value with quotes in the lookup fields.',
+				appId: null,
+			},
+			{
+				type: 'connector',
+				connectorName: 'conn"name',
+				title: 'conn"name',
+				description: 'Connector with quotes in its name.',
+				flow: 'confidential',
+				tokenUrl: 'https://example.com/token',
+				apiBaseUrl: 'https://example.com/api',
+				requiredHosts: ['example.com'],
+				clientIdValueName: 'client-id',
+				clientSecretSecretName: 'client-secret',
+				accessTokenSecretName: 'access-token',
+				refreshTokenSecretName: 'refresh-token',
+			},
+		],
+	})
+
+	expect(markdown).toContain(
+		'`codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })`',
+	)
+	expect(markdown).toContain(
+		'`codemode.connector_get({ name: "conn\\"name" })`',
+	)
+})
+
+test('search formatting does not throw for secret names outside placeholder syntax', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'secret',
+				name: 'secret "name"',
+				description: 'Secret with a display name that is not placeholder-safe.',
+			},
+		],
+	})
+
+	expect(markdown).toContain('## Secret')
+	expect(markdown).toContain(
+		'**Usage:** `(secret placeholder unavailable for this name)`',
+	)
 })

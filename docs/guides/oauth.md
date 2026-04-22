@@ -84,7 +84,7 @@ After the hosted `/connect/oauth` flow succeeds and the smoke test passes:
 - build a package app when the integration needs a hosted UI
 - keep provider API calls in package-owned backend code
 - keep reusable automation in package exports
-- use `open_generated_ui({ package_id })` to reopen a hosted package app
+- use `open_generated_ui({ kody_id })` to reopen a hosted package app
 
 Use `generated_ui_oauth` only when the package app itself must own the OAuth
 browser flow.

@@ -100,6 +100,8 @@ export type SlimSearchMatch =
 			title: string
 			description: string
 			usage: string
+			rootImportUsage: string
+			openGeneratedUiUsage: string | null
 			tags: Array<string>
 			hasApp: boolean
 			hostedUrl: string | null
@@ -133,8 +135,13 @@ export type SlimSearchMatch =
 			description: string
 			usage: string
 			flow: string
+			tokenUrl: string
 			apiBaseUrl: string | null
 			requiredHosts: Array<string>
+			clientIdValueName: string
+			clientSecretSecretName: string | null
+			accessTokenSecretName: string
+			refreshTokenSecretName: string | null
 			nextStep?: string
 	  }
 
@@ -143,6 +150,7 @@ export type SearchEntityDetailStructured =
 			kind: 'entity'
 			type: 'capability'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			usage: string
@@ -157,6 +165,7 @@ export type SearchEntityDetailStructured =
 			kind: 'entity'
 			type: 'package'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			usage: string
@@ -185,6 +194,7 @@ export type SearchEntityDetailStructured =
 			kind: 'entity'
 			type: 'secret'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			usage: string
@@ -195,6 +205,7 @@ export type SearchEntityDetailStructured =
 			kind: 'entity'
 			type: 'value'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			usage: string
@@ -208,6 +219,7 @@ export type SearchEntityDetailStructured =
 			kind: 'entity'
 			type: 'connector'
 			id: string
+			entityRef: string
 			title: string
 			description: string
 			usage: string
@@ -292,8 +304,13 @@ export type SearchMatch =
 			title: string
 			description: string
 			flow: string
+			tokenUrl: string
 			apiBaseUrl: string | null
 			requiredHosts: Array<string>
+			clientIdValueName: string
+			clientSecretSecretName: string | null
+			accessTokenSecretName: string
+			refreshTokenSecretName: string | null
 	  }
 	| {
 			type: 'secret'
@@ -310,6 +327,36 @@ function buildPackageImportSpecifier(kodyId: string, exportName: string) {
 		return `kody:@${kodyId}`
 	}
 	return `kody:@${kodyId}/${exportName.replace(/^\.\//, '')}`
+}
+
+function buildEntityRef(id: string, type: SearchEntityType) {
+	return `${id}:${type}`
+}
+
+function buildCapabilityUsage(name: string) {
+	return `execute with codemode.${name}(args)`
+}
+
+function buildPackageRootImportUsage(kodyId: string) {
+	return `import entry from ${JSON.stringify(buildPackageImportSpecifier(kodyId, '.'))}`
+}
+
+function buildPackageAppUsage(kodyId: string) {
+	return `open_generated_ui({ kody_id: ${JSON.stringify(kodyId)} })`
+}
+
+function buildValueUsage(name: string, scope: string) {
+	return `codemode.value_get({ name: ${JSON.stringify(name)}, scope: ${JSON.stringify(scope)} })`
+}
+
+function buildConnectorUsage(name: string) {
+	return `codemode.connector_get({ name: ${JSON.stringify(name)} })`
+}
+
+function buildSecretUsage(name: string) {
+	return /^[a-zA-Z0-9._-]+$/.test(name)
+		? `{{secret:${name}|scope=user}}`
+		: '(secret placeholder unavailable for this name)'
 }
 
 function formatPackageSchedule(
@@ -380,7 +427,7 @@ export function formatSearchMarkdown(input: {
 			'- Built-in capabilities — `execute` with `import { codemode } from "kody:runtime"`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` or `open_generated_ui({ package_id })` when the package declares `kody.app`',
+			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app`',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
@@ -435,47 +482,69 @@ export function formatSearchMarkdown(input: {
 
 function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 	if (match.type === 'capability') {
+		const entityRef = buildEntityRef(match.name, 'capability')
 		return [
 			`## Capability — \`${match.name}\``,
 			'',
 			'description' in match ? match.description : '',
 			'',
-			`**Entity:** \`${match.name}:capability\``,
+			`**Entity:** \`${entityRef}\``,
+			`**Run:** \`${buildCapabilityUsage(match.name)}\``,
 		]
 	}
 	if (match.type === 'package') {
 		const hostedUrl = match.hasApp
 			? buildPackageHostedUrl(baseUrl, match.kodyId)
 			: null
+		const entityRef = buildEntityRef(match.kodyId, 'package')
+		const rootImportUsage = buildPackageRootImportUsage(match.kodyId)
+		const openGeneratedUiUsage = match.hasApp
+			? buildPackageAppUsage(match.kodyId)
+			: null
 		return [
 			`## Package — ${match.title} (\`${match.kodyId}\`)`,
 			'',
 			match.description,
 			'',
-			`**Entity:** \`${match.kodyId}:package\``,
+			`**Entity:** \`${entityRef}\``,
+			`**Package ID:** \`${match.packageId}\``,
+			...(openGeneratedUiUsage
+				? [`**Open app:** \`${openGeneratedUiUsage}\``]
+				: []),
+			`**Import:** \`${rootImportUsage}\``,
 			`**Tags:** ${match.tags.length > 0 ? match.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
 			`**Has app:** ${match.hasApp ? 'yes' : 'no'}`,
 			...(hostedUrl ? [`**Hosted URL:** \`${hostedUrl}\``] : []),
 		]
 	}
 	if (match.type === 'value') {
+		const entityRef = buildEntityRef(match.valueId, 'value')
 		return [
 			`## Value — \`${match.name}\` (\`${match.scope}\` scope)`,
 			'',
 			match.description,
 			'',
-			`**Entity:** \`${match.valueId}:value\``,
+			`**Entity:** \`${entityRef}\``,
+			`**Read:** \`${buildValueUsage(match.name, match.scope)}\``,
 		]
 	}
 	if (match.type === 'connector') {
+		const entityRef = buildEntityRef(match.connectorName, 'connector')
 		return [
 			`## Connector — \`${match.connectorName}\``,
 			'',
 			match.description,
 			'',
-			`**Entity:** \`${match.connectorName}:connector\``,
+			`**Entity:** \`${entityRef}\``,
+			`**Read:** \`${buildConnectorUsage(match.connectorName)}\``,
 			`**Flow:** \`${match.flow}\``,
+			`**Token URL:** \`${match.tokenUrl}\``,
 			`**API base URL:** ${match.apiBaseUrl ? `\`${match.apiBaseUrl}\`` : 'none'}`,
+			`**Required hosts:** ${formatList(match.requiredHosts)}`,
+			`**Client ID value:** \`${match.clientIdValueName}\``,
+			`**Client secret secret:** ${match.clientSecretSecretName ? `\`${match.clientSecretSecretName}\`` : 'none'}`,
+			`**Access token secret:** \`${match.accessTokenSecretName}\``,
+			`**Refresh token secret:** ${match.refreshTokenSecretName ? `\`${match.refreshTokenSecretName}\`` : 'none'}`,
 		]
 	}
 	return [
@@ -483,7 +552,8 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 		'',
 		match.description,
 		'',
-		`**Entity:** \`${match.name}:secret\``,
+		`**Entity:** \`${buildEntityRef(match.name, 'secret')}\``,
+		`**Usage:** \`${buildSecretUsage(match.name)}\``,
 	]
 }
 
@@ -496,30 +566,34 @@ export function toSlimStructuredMatches(input: {
 			return {
 				type: 'capability',
 				id: match.name,
-				entityRef: `${match.name}:capability`,
+				entityRef: buildEntityRef(match.name, 'capability'),
 				title: match.name,
 				description:
 					'description' in match && typeof match.description === 'string'
 						? match.description
 						: '',
-				usage: `execute with codemode.${match.name}(args)`,
+				usage: buildCapabilityUsage(match.name),
 			}
 		}
 		if (match.type === 'package') {
+			const rootImportUsage = buildPackageRootImportUsage(match.kodyId)
+			const openGeneratedUiUsage = match.hasApp
+				? buildPackageAppUsage(match.kodyId)
+				: null
 			const nextStep = match.hasApp
 				? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
 				: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.kodyId, '.')}".`
 			return {
 				type: 'package',
 				id: match.kodyId,
-				entityRef: `${match.kodyId}:package`,
+				entityRef: buildEntityRef(match.kodyId, 'package'),
 				packageId: match.packageId,
 				kodyId: match.kodyId,
 				title: match.title,
 				description: match.description,
-				usage: match.hasApp
-					? `open_generated_ui({ kody_id: "${match.kodyId}" })`
-					: `import entry from "${buildPackageImportSpecifier(match.kodyId, '.')}"`,
+				usage: openGeneratedUiUsage ?? rootImportUsage,
+				rootImportUsage,
+				openGeneratedUiUsage,
 				tags: match.tags,
 				hasApp: match.hasApp,
 				hostedUrl: match.hasApp
@@ -532,11 +606,11 @@ export function toSlimStructuredMatches(input: {
 			return {
 				type: 'value',
 				id: match.valueId,
-				entityRef: `${match.valueId}:value`,
+				entityRef: buildEntityRef(match.valueId, 'value'),
 				name: match.name,
 				title: match.name,
 				description: match.description,
-				usage: `codemode.value_get({ name: "${match.name}", scope: "${match.scope}" })`,
+				usage: buildValueUsage(match.name, match.scope),
 				scope: match.scope,
 				appId: match.appId,
 			}
@@ -545,24 +619,29 @@ export function toSlimStructuredMatches(input: {
 			return {
 				type: 'connector',
 				id: match.connectorName,
-				entityRef: `${match.connectorName}:connector`,
+				entityRef: buildEntityRef(match.connectorName, 'connector'),
 				name: match.connectorName,
 				title: match.title,
 				description: match.description,
-				usage: `codemode.connector_get({ name: "${match.connectorName}" })`,
+				usage: buildConnectorUsage(match.connectorName),
 				flow: match.flow,
+				tokenUrl: match.tokenUrl,
 				apiBaseUrl: match.apiBaseUrl,
 				requiredHosts: match.requiredHosts,
+				clientIdValueName: match.clientIdValueName,
+				clientSecretSecretName: match.clientSecretSecretName,
+				accessTokenSecretName: match.accessTokenSecretName,
+				refreshTokenSecretName: match.refreshTokenSecretName,
 				nextStep: `Inspect connector detail with search({ entity: "${match.connectorName}:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
 			}
 		}
 		return {
 			type: 'secret',
 			id: match.name,
-			entityRef: `${match.name}:secret`,
+			entityRef: buildEntityRef(match.name, 'secret'),
 			title: match.name,
 			description: match.description,
-			usage: `{{secret:${match.name}|scope=user}}`,
+			usage: buildSecretUsage(match.name),
 		}
 	})
 }
@@ -583,6 +662,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Summary',
 			'',
+			`- Entity: \`${buildEntityRef(detail.id, 'capability')}\``,
 			`- Domain: \`${detail.spec.domain}\``,
 			`- Required input fields: ${formatList(detail.spec.requiredInputFields)}`,
 			`- Read-only: ${detail.spec.readOnly ? 'yes' : 'no'}`,
@@ -607,9 +687,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				kind: 'entity',
 				type: 'capability',
 				id: detail.id,
+				entityRef: buildEntityRef(detail.id, 'capability'),
 				title: detail.title,
 				description: detail.description,
-				usage: `execute with codemode.${detail.spec.name}(args)`,
+				usage: buildCapabilityUsage(detail.spec.name),
 				requiredInputFields: detail.spec.requiredInputFields,
 				readOnly: detail.spec.readOnly,
 				idempotent: detail.spec.idempotent,
@@ -661,6 +742,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Summary',
 			'',
+			`- Entity: \`${buildEntityRef(detail.record.kodyId, 'package')}\``,
 			`- Package id: \`${detail.record.id}\``,
 			`- Package name: \`${detail.record.name}\``,
 			`- Kody id: \`${detail.record.kodyId}\``,
@@ -669,7 +751,13 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
 		]
 		if (appEntry) {
-			lines.push('', '## App', '', `- Entry: \`${appEntry}\``)
+			lines.push(
+				'',
+				'## App',
+				'',
+				`- Entry: \`${appEntry}\``,
+				`- Open: \`${buildPackageAppUsage(detail.record.kodyId)}\``,
+			)
 		}
 		if (exportDetails.length > 0) {
 			lines.push('', '## Exports', '')
@@ -700,11 +788,12 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				kind: 'entity',
 				type: 'package',
 				id: detail.record.kodyId,
+				entityRef: buildEntityRef(detail.record.kodyId, 'package'),
 				title: detail.title,
 				description: detail.description,
 				usage: detail.record.hasApp
-					? `open_generated_ui({ kody_id: "${detail.record.kodyId}" })`
-					: `import entry from "${buildPackageImportSpecifier(detail.record.kodyId, '.')}"`,
+					? buildPackageAppUsage(detail.record.kodyId)
+					: buildPackageRootImportUsage(detail.record.kodyId),
 				packageId: detail.record.id,
 				kodyId: detail.record.kodyId,
 				name: detail.record.name,
@@ -726,6 +815,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Summary',
 			'',
+			`- Entity: \`${buildEntityRef(detail.id, 'value')}\``,
 			`- Scope: \`${detail.row.scope}\``,
 			`- App ID: ${detail.row.appId ? `\`${detail.row.appId}\`` : 'none'}`,
 			`- Updated at: \`${detail.row.updatedAt}\``,
@@ -733,8 +823,8 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Read this value',
 			'',
-			`- \`codemode.value_get({ name: "${detail.row.name}", scope: "${detail.row.scope}" })\``,
-			`- \`codemode.value_list({ scope: "${detail.row.scope}" })\``,
+			`- \`${buildValueUsage(detail.row.name, detail.row.scope)}\``,
+			`- \`codemode.value_list({ scope: ${JSON.stringify(detail.row.scope)} })\``,
 			'',
 			'## Stored value',
 			'',
@@ -748,9 +838,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				kind: 'entity',
 				type: 'value',
 				id: detail.id,
+				entityRef: buildEntityRef(detail.id, 'value'),
 				title: detail.title,
 				description: detail.description,
-				usage: `codemode.value_get({ name: "${detail.row.name}", scope: "${detail.row.scope}" })`,
+				usage: buildValueUsage(detail.row.name, detail.row.scope),
 				scope: detail.row.scope,
 				appId: detail.row.appId,
 				value: detail.row.value,
@@ -769,6 +860,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Summary',
 			'',
+			`- Entity: \`${buildEntityRef(detail.id, 'connector')}\``,
 			`- Flow: \`${detail.config.flow}\``,
 			`- Token URL: \`${detail.config.tokenUrl}\``,
 			`- API base URL: ${detail.config.apiBaseUrl ? `\`${detail.config.apiBaseUrl}\`` : 'none'}`,
@@ -776,7 +868,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			'',
 			'## Read this connector',
 			'',
-			`- \`codemode.connector_get({ name: "${detail.config.name}" })\``,
+			`- \`${buildConnectorUsage(detail.config.name)}\``,
 			'- `codemode.connector_list({})`',
 			'',
 			'## Related stored names',
@@ -792,9 +884,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				kind: 'entity',
 				type: 'connector',
 				id: detail.id,
+				entityRef: buildEntityRef(detail.id, 'connector'),
 				title: detail.title,
 				description: detail.description,
-				usage: `codemode.connector_get({ name: "${detail.config.name}" })`,
+				usage: buildConnectorUsage(detail.config.name),
 				flow: detail.config.flow,
 				tokenUrl: detail.config.tokenUrl,
 				apiBaseUrl: detail.config.apiBaseUrl ?? null,
@@ -814,12 +907,13 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 		'',
 		'## Summary',
 		'',
+		`- Entity: \`${buildEntityRef(detail.id, 'secret')}\``,
 		`- Scope: \`${detail.row.scope}\``,
 		`- Updated at: \`${detail.row.updatedAt}\``,
 		'',
 		'## Usage',
 		'',
-		`- Placeholder: \`{{secret:${detail.row.name}|scope=user}}\``,
+		`- Placeholder: \`${buildSecretUsage(detail.row.name)}\``,
 		'- Use placeholders only in execute-time fetch URL/header/body fields or capability inputs that explicitly opt into secret placeholders.',
 		'- Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.',
 		'- List secret metadata with `codemode.secret_list(...)` inside `execute` when needed.',
@@ -830,9 +924,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			kind: 'entity',
 			type: 'secret',
 			id: detail.id,
+			entityRef: buildEntityRef(detail.id, 'secret'),
 			title: detail.title,
 			description: detail.description,
-			usage: `{{secret:${detail.row.name}|scope=user}}`,
+			usage: buildSecretUsage(detail.row.name),
 			scope: detail.row.scope,
 			updatedAt: detail.row.updatedAt,
 		} satisfies SearchEntityDetailStructured,

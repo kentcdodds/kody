@@ -763,8 +763,13 @@ function buildConnectorCandidates(input: {
 							row.description.trim() ||
 							`Saved OAuth connector configuration (${config.flow} flow).`,
 						flow: config.flow,
+						tokenUrl: config.tokenUrl,
 						apiBaseUrl: config.apiBaseUrl ?? null,
 						requiredHosts: config.requiredHosts ?? [],
+						clientIdValueName: config.clientIdValueName,
+						clientSecretSecretName: config.clientSecretSecretName ?? null,
+						accessTokenSecretName: config.accessTokenSecretName,
+						refreshTokenSecretName: config.refreshTokenSecretName ?? null,
 					},
 					type: 'connector' as const,
 					id: connectorName,
@@ -1030,7 +1035,7 @@ empty ranked list.
 capabilities. Types and fields: see response.
 
 Packages: \`package_list\`, \`package_get\`, and \`repo_*\` for editing/publishing.
-Open package apps with \`open_generated_ui({ kody_id })\` (recommended) or hosted package URLs.
+Open package apps with \`open_generated_ui({ kody_id })\` or use hosted package URLs.
 Secrets: never raw in results; use
 \`codemode.secret_list\` during execute and UI for missing values.
 Persisted values use \`codemode.value_get\` / \`codemode.value_list\`. Connectors
@@ -1048,7 +1053,7 @@ Example arguments:
 - \`{ "entity": "kody_official_guide:capability" }\`
 - \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:connector" }\`
-- To open a saved package app: \`open_generated_ui({ "kody_id": "<id>" })\`
+- To open a saved package app: \`open_generated_ui({ "kody_id": "<kody-id>" })\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),
