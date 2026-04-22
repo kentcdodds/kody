@@ -335,7 +335,7 @@ test('searchUnified uses package exports and connector aliases for operate queri
 					refreshTokenSecretName: 'spotify-refresh-token',
 					requiredHosts: ['api.spotify.com'],
 				}),
-				description: 'Spotify OAuth connector config',
+					description: 'Spotify playback and music OAuth connector config',
 				appId: null,
 				createdAt: '2026-04-20T00:00:00.000Z',
 				updatedAt: '2026-04-20T00:00:00.000Z',

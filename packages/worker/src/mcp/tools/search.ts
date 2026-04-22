@@ -220,26 +220,17 @@ export async function buildSavedPackageSearchRows(input: {
 	return { rows, warnings }
 }
 
-const wellKnownConnectorAliases: Record<string, Array<string>> = {
-	spotify: [
-		'music',
-		'audio',
-		'playback',
-		'player',
-		'track',
-		'song',
-		'playlist',
-		'album',
-		'artist',
-		'queue',
-		'volume',
-	],
-	github: ['repo', 'repository', 'pull request', 'issue', 'code', 'git'],
-	tesla: ['car', 'vehicle', 'charging', 'climate', 'lock', 'unlock'],
-}
-
-function getConnectorAliases(connectorName: string): Array<string> {
-	return wellKnownConnectorAliases[connectorName.toLowerCase()] ?? []
+function buildPackageRelationTokens(match: Extract<SearchMatch, { type: 'package' }>) {
+	return new Set(
+		extractSearchTokens(
+			[
+				match.kodyId,
+				match.name,
+				match.description,
+				match.tags.join(' '),
+			].join('\n'),
+		),
+	)
 }
 
 function buildConnectorSearchDocument(input: {
@@ -254,7 +245,6 @@ function buildConnectorSearchDocument(input: {
 		input.config.apiBaseUrl ?? '',
 		input.config.flow,
 		...(input.config.requiredHosts ?? []),
-		...getConnectorAliases(input.connectorName),
 	]
 		.filter((value) => value.trim().length > 0)
 		.join('\n')
@@ -264,16 +254,13 @@ function buildRecommendedNextStep(input: SearchGuidanceContext): string | undefi
 	const [topMatch] = input.matches
 	const topPackage = input.matches.find((match) => match.type === 'package')
 	const topConnector = input.matches.find((match) => match.type === 'connector')
+	const packageRelationTokens = topPackage
+		? buildPackageRelationTokens(topPackage)
+		: null
 	const connectorMatchesPackage =
 		topPackage &&
 		topConnector &&
-		(topConnector.connectorName.toLowerCase() === topPackage.kodyId.toLowerCase() ||
-			topPackage.kodyId
-				.toLowerCase()
-				.includes(topConnector.connectorName.toLowerCase()) ||
-			getConnectorAliases(topConnector.connectorName).some((alias) =>
-				topPackage.kodyId.toLowerCase().includes(alias.toLowerCase()),
-			))
+		(packageRelationTokens?.has(topConnector.connectorName.toLowerCase()) ?? false)
 
 	if (connectorMatchesPackage && input.intent.task.name === 'operate') {
 		return `Found saved package \`${topPackage.kodyId}\` and connector \`${topConnector.connectorName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the connector detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
@@ -350,7 +337,7 @@ function buildSearchableEntityDescriptors(input: {
 				type: 'connector',
 				id: connectorName,
 				title: connectorName,
-				primaryAliases: [connectorName, ...getConnectorAliases(connectorName)],
+				primaryAliases: [connectorName],
 				secondaryAliases: [
 					row.description,
 					config.apiBaseUrl ?? '',
@@ -786,7 +773,6 @@ function buildConnectorCandidates(input: {
 						config.apiBaseUrl ?? '',
 						config.tokenUrl,
 						...(config.requiredHosts ?? []),
-						...getConnectorAliases(connectorName),
 					],
 					scoreComponents: buildCandidateBaseScore({
 						lexical,
