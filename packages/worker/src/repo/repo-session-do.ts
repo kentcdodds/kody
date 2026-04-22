@@ -34,6 +34,10 @@ import {
 import { runRepoChecks } from './checks.ts'
 import { parseRepoManifest } from './manifest.ts'
 import {
+	hasPublishedRuntimeArtifacts,
+	writePublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
 	type EntityKind,
 	type EntitySourceRow,
 	type RepoApplyPatchResult,
@@ -387,17 +391,50 @@ class RepoSessionBase extends DurableObject<Env> {
 		return commit.oid
 	}
 
-	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
-		const files = (
-			await this.workspace.glob(`${root.replace(/\/+$/, '')}/**/*`)
-		)
+	private async listWorkspaceFileEntries(
+		root = repoSessionWorkspacePrefix,
+	): Promise<Array<{ path: string }>> {
+		const normalizedRoot = root.replace(/\/+$/, '')
+		const entries = await this.workspace.glob(`${normalizedRoot}/**/*`)
+		return entries
 			.filter((entry) => entry.type === 'file')
 			.filter((entry) => !entry.path.includes('/.git/'))
 			.sort((left, right) => left.path.localeCompare(right.path))
+			.map((entry) => ({ path: entry.path }))
+	}
+
+	private async collectWorkspaceFiles(
+		root = repoSessionWorkspacePrefix,
+	): Promise<Record<string, string>> {
+		const entries = await this.listWorkspaceFileEntries(root)
+		const rootPrefix = `${root.replace(/\/+$/, '')}/`
+		const files: Record<string, string> = {}
+		for (const entry of entries) {
+			const content = await this.workspace.readFile(entry.path)
+			// Treat an unreadable file as a hard failure so the caller aborts
+			// and triggers rollback instead of persisting a KV snapshot that
+			// is silently missing files. A null read here usually means the
+			// file was unlinked between glob and read, which means the tree
+			// we are about to publish is not the tree we scanned.
+			if (content == null) {
+				throw new Error(
+					`Failed to read repo session file "${entry.path}" while collecting workspace snapshot.`,
+				)
+			}
+			const relativePath = entry.path.startsWith(rootPrefix)
+				? entry.path.slice(rootPrefix.length)
+				: entry.path
+			files[relativePath] = content
+		}
+		return files
+	}
+
+	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
+		const entries = await this.listWorkspaceFileEntries(root)
 		const chunks: Array<string> = []
-		for (const file of files) {
-			const content = await this.workspace.readFile(file.path)
-			chunks.push(`${file.path}\n${content ?? ''}\n`)
+		for (const entry of entries) {
+			const content = await this.workspace.readFile(entry.path)
+			chunks.push(`${entry.path}\n${content ?? ''}\n`)
 		}
 		const data = new TextEncoder().encode(chunks.join(''))
 		const digest = await crypto.subtle.digest('SHA-256', data)
@@ -1128,6 +1165,22 @@ class RepoSessionBase extends DurableObject<Env> {
 			source.manifest_path,
 			source.entity_kind,
 		)
+		// Persist the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream
+		// readers like loadPublishedEntitySource can resolve the freshly
+		// published commit without round-tripping to Artifacts. Without this,
+		// refreshSavedPackageProjection below, as well as every package-backed
+		// job run that reaches for the published snapshot, would throw
+		// "Published snapshot for source ... was not found" because no writer
+		// had stored the snapshot under the new commit.
+		//
+		// Collect the workspace files BEFORE advancing D1 so a failure to
+		// materialize the tree never leaves entity_sources.published_commit
+		// pointing at a commit whose snapshot we never wrote.
+		const shouldPersistSnapshot =
+			sessionHeadCommit != null && hasPublishedRuntimeArtifacts(this.env)
+		const snapshotFiles = shouldPersistSnapshot
+			? await this.collectWorkspaceFiles()
+			: null
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
 			userId: source.user_id,
@@ -1135,6 +1188,46 @@ class RepoSessionBase extends DurableObject<Env> {
 			manifestPath: source.manifest_path,
 			sourceRoot: source.source_root,
 		})
+		if (shouldPersistSnapshot && snapshotFiles != null && sessionHeadCommit) {
+			try {
+				await writePublishedSourceSnapshot({
+					env: this.env,
+					source: {
+						...source,
+						published_commit: sessionHeadCommit,
+					},
+					files: snapshotFiles,
+				})
+			} catch (snapshotError) {
+				// Preserve the original KV failure as the thrown error even if
+				// the compensating D1 revert also fails; surfacing the revert
+				// error would mask the real root cause and make the orphaned
+				// D1 row harder to diagnose.
+				try {
+					await updateEntitySource(this.env.APP_DB, {
+						id: source.id,
+						userId: source.user_id,
+						publishedCommit: source.published_commit,
+						manifestPath: source.manifest_path,
+						sourceRoot: source.source_root,
+					})
+				} catch (revertError) {
+					Sentry.captureException(revertError, {
+						tags: {
+							scope:
+								'repo-session.publishSession.revert-after-snapshot-failure',
+						},
+						extra: {
+							sessionId: input.sessionId,
+							sourceId: source.id,
+							previousPublishedCommit: source.published_commit,
+							attemptedPublishedCommit: sessionHeadCommit,
+						},
+					})
+				}
+				throw snapshotError
+			}
+		}
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,

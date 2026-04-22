@@ -317,7 +317,13 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 	expect(sessionClient.openSession).not.toHaveBeenCalled()
 })
 
-test('syncArtifactSourceSnapshot restores the previous published commit when snapshot persistence fails after publish', async () => {
+test('syncArtifactSourceSnapshot does not re-persist the KV snapshot after a successful publishSession', async () => {
+	// publishSession now owns both the D1 advance and the BUNDLE_ARTIFACTS_KV
+	// snapshot write (with its own compensating rollback). A redundant second
+	// writePublishedSourceSnapshot here would be harmless on success but
+	// actively wrong on failure: its revert would undo the consistent D1+KV
+	// state publishSession already established while leaving the repo session
+	// row marked status: 'published' with the new base_commit.
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.updateEntitySource.mockReset()
 	mockModule.repoSessionRpc.mockReset()
@@ -336,7 +342,7 @@ test('syncArtifactSourceSnapshot restores the previous published commit when sna
 		publishSession: vi.fn(async () => ({
 			status: 'ok' as const,
 			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-session-rollback',
+			publishedCommit: 'commit-session-final',
 			message: 'Published session source-sync-source-1-session to app-1.',
 		})),
 		discardSession: vi.fn(async () => ({
@@ -360,40 +366,31 @@ test('syncArtifactSourceSnapshot restores the previous published commit when sna
 		updated_at: '2026-04-18T00:00:00.000Z',
 	})
 	mockModule.repoSessionRpc.mockReturnValue(sessionClient as never)
-	mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
-		new Error('kv write failed'),
-	)
 
-	await expect(
-		syncArtifactSourceSnapshot({
-			env: {
-				APP_DB: {
-					prepare() {
-						return {} as D1PreparedStatement
-					},
+	const publishedCommit = await syncArtifactSourceSnapshot({
+		env: {
+			APP_DB: {
+				prepare() {
+					return {} as D1PreparedStatement
 				},
-				BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-				REPO_SESSION: {},
-				CLOUDFLARE_ACCOUNT_ID: 'account-1',
-				CLOUDFLARE_API_TOKEN: 'token-1',
-			} as unknown as Env,
-			userId: 'user-1',
-			baseUrl: 'https://heykody.dev',
-			sourceId: 'source-1',
-			files: {
-				'kody.json': '{"version":1,"kind":"app"}',
 			},
-		}),
-	).rejects.toThrow('kv write failed')
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+			REPO_SESSION: {},
+			CLOUDFLARE_ACCOUNT_ID: 'account-1',
+			CLOUDFLARE_API_TOKEN: 'token-1',
+		} as unknown as Env,
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+		sourceId: 'source-1',
+		files: {
+			'kody.json': '{"version":1,"kind":"app"}',
+		},
+	})
 
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			id: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-existing-1',
-		}),
-	)
+	expect(publishedCommit).toBe('commit-session-final')
+	expect(sessionClient.publishSession).toHaveBeenCalledTimes(1)
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(sessionClient.discardSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		userId: 'user-1',
