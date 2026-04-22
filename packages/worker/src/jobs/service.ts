@@ -332,6 +332,9 @@ async function rebuildAndExecuteJobArtifact(input: {
 		kodyId: string
 	} | null
 }) {
+	if (!input.job.sourceId) {
+		throw new Error('Repo-backed job source is missing.')
+	}
 	await persistPublishedJobBundleArtifact({
 		env: input.env,
 		job: input.job,
