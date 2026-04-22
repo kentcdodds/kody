@@ -44,9 +44,6 @@ import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-codemode-execution.ts'
-import {
-	buildKodyModuleBundle,
-} from '#worker/package-runtime/module-graph.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPublishedEntitySource } from '#worker/repo/published-source.ts'
@@ -121,6 +118,21 @@ function normalizeJobRepoCheckPolicy(
 	return undefined
 }
 
+async function buildPublishedJobBundle(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceFiles: Record<string, string>
+	entryPoint: string
+}) {
+	// Load the worker bundler lazily so registry-only/node test paths that import
+	// jobs/service.ts do not eagerly pull the heavy bundler stack.
+	const { buildKodyModuleBundle } = await import(
+		'#worker/package-runtime/module-graph.ts'
+	)
+	return await buildKodyModuleBundle(input)
+}
+
 async function persistPublishedJobBundleArtifact(input: {
 	env: Env
 	job: JobRecord
@@ -146,7 +158,7 @@ async function persistPublishedJobBundleArtifact(input: {
 		artifactEntryPoint: input.entryPoint,
 		reason: 'bundle_missing_or_stale',
 	})
-	const bundle = await buildKodyModuleBundle({
+	const bundle = await buildPublishedJobBundle({
 		env: input.env,
 		baseUrl: input.callerContext.baseUrl,
 		userId: input.callerContext.user.userId,

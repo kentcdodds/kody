@@ -2,9 +2,7 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
-	readMockArtifactSnapshot: vi.fn(),
-	repoSessionRpc: vi.fn(),
-	loadRepoSourceFilesFromSession: vi.fn(),
+	loadPublishedEntitySource: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -12,19 +10,9 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 }))
 
-vi.mock('#worker/repo/artifacts.ts', () => ({
-	isLoopbackHostname: () => false,
-	readMockArtifactSnapshot: (...args: Array<unknown>) =>
-		mockModule.readMockArtifactSnapshot(...args),
-}))
-
-vi.mock('#worker/repo/repo-session-do.ts', () => ({
-	repoSessionRpc: (...args: Array<unknown>) => mockModule.repoSessionRpc(...args),
-}))
-
-vi.mock('#worker/repo/repo-codemode-execution.ts', () => ({
-	loadRepoSourceFilesFromSession: (...args: Array<unknown>) =>
-		mockModule.loadRepoSourceFilesFromSession(...args),
+vi.mock('#worker/repo/published-source.ts', () => ({
+	loadPublishedEntitySource: (...args: Array<unknown>) =>
+		mockModule.loadPublishedEntitySource(...args),
 }))
 
 const { loadPackageSourceBySourceId } = await import('./source.ts')
@@ -78,28 +66,47 @@ function createSessionClient(sessionId: string) {
 
 test('loadPackageSourceBySourceId reuses cached published package sources', async () => {
 	mockModule.getEntitySourceById.mockReset()
-	mockModule.readMockArtifactSnapshot.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.loadRepoSourceFilesFromSession.mockReset()
+	mockModule.loadPublishedEntitySource.mockReset()
+	const bundleKv = {
+		get: vi.fn(async () => null),
+		put: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	} as unknown as KVNamespace
 
-	const sessionClient = createSessionClient('session-published-1')
 	mockModule.getEntitySourceById.mockResolvedValue(
 		createPackageSourceRow({
 			id: 'source-published-1',
 			publishedCommit: 'commit-1',
 		}),
 	)
-	mockModule.readMockArtifactSnapshot.mockResolvedValue(null)
-	mockModule.repoSessionRpc.mockReturnValue(sessionClient as never)
-	mockModule.loadRepoSourceFilesFromSession.mockResolvedValue({
-		'app.js': 'export default { async fetch() { return new Response("ok") } }',
-		'index.js': 'export const value = "ok"',
+	mockModule.loadPublishedEntitySource.mockResolvedValue({
+		source: createPackageSourceRow({
+			id: 'source-published-1',
+			publishedCommit: 'commit-1',
+		}),
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+					app: {
+						entry: 'app.js',
+					},
+				},
+			}),
+			'app.js': 'export default { async fetch() { return new Response("ok") } }',
+			'index.js': 'export const value = "ok"',
+		},
 	})
 
 	const first = await loadPackageSourceBySourceId({
 		env: {
 			APP_DB: {},
-			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
@@ -108,16 +115,14 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 	const second = await loadPackageSourceBySourceId({
 		env: {
 			APP_DB: {},
-			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
 		sourceId: 'source-published-1',
 	})
 
-	expect(sessionClient.openSession).toHaveBeenCalledTimes(1)
-	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledTimes(1)
-	expect(sessionClient.discardSession).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
 	expect(first).toBe(second)
 	expect(Object.isFrozen(first)).toBe(true)
 	expect(Object.isFrozen(first.source)).toBe(true)
@@ -144,57 +149,51 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 
 test('loadPackageSourceBySourceId does not cache unpublished sources', async () => {
 	mockModule.getEntitySourceById.mockReset()
-	mockModule.readMockArtifactSnapshot.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.loadRepoSourceFilesFromSession.mockReset()
+	mockModule.loadPublishedEntitySource.mockReset()
+	const bundleKv = {
+		get: vi.fn(async () => null),
+		put: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	} as unknown as KVNamespace
 
-	const sessionClient = createSessionClient('session-unpublished-1')
 	mockModule.getEntitySourceById.mockResolvedValue(
 		createPackageSourceRow({
 			id: 'source-unpublished-1',
 			publishedCommit: null,
 		}),
 	)
-	mockModule.readMockArtifactSnapshot.mockResolvedValue(null)
-	mockModule.repoSessionRpc.mockReturnValue(sessionClient as never)
-	mockModule.loadRepoSourceFilesFromSession.mockResolvedValue({
-		'app.js': 'export default { async fetch() { return new Response("ok") } }',
-		'index.js': 'export const value = "ok"',
-	})
+	mockModule.loadPublishedEntitySource.mockRejectedValue(
+		new Error('Source "source-unpublished-1" has no published commit.'),
+	)
 
-	await loadPackageSourceBySourceId({
-		env: {
-			APP_DB: {},
-			REPO_SESSION: {},
-		} as Env,
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
-		sourceId: 'source-unpublished-1',
-	})
-	await loadPackageSourceBySourceId({
-		env: {
-			APP_DB: {},
-			REPO_SESSION: {},
-		} as Env,
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
-		sourceId: 'source-unpublished-1',
-	})
-
-	expect(sessionClient.openSession).toHaveBeenCalledTimes(2)
-	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledTimes(2)
-	expect(sessionClient.discardSession).toHaveBeenCalledTimes(2)
+	await expect(
+		loadPackageSourceBySourceId({
+			env: {
+				APP_DB: {},
+				BUNDLE_ARTIFACTS_KV: bundleKv,
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceId: 'source-unpublished-1',
+		}),
+	).rejects.toThrow('Source "source-unpublished-1" has no published commit.')
+	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
 })
 
 test('loadPackageSourceBySourceId shares the same in-flight published source load', async () => {
 	mockModule.getEntitySourceById.mockReset()
-	mockModule.readMockArtifactSnapshot.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.loadRepoSourceFilesFromSession.mockReset()
+	mockModule.loadPublishedEntitySource.mockReset()
+	const bundleKv = {
+		get: vi.fn(async () => null),
+		put: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	} as unknown as KVNamespace
 
-	const sessionClient = createSessionClient('session-published-concurrent')
 	let resolveFiles: ((files: Record<string, string>) => void) | null = null
-	const filesPromise = new Promise<Record<string, string>>((resolve) => {
+	const filesPromise = new Promise<{
+		source: ReturnType<typeof createPackageSourceRow>
+		files: Record<string, string>
+	}>((resolve) => {
 		resolveFiles = resolve
 	})
 
@@ -204,16 +203,14 @@ test('loadPackageSourceBySourceId shares the same in-flight published source loa
 			publishedCommit: 'commit-concurrent-1',
 		}),
 	)
-	mockModule.readMockArtifactSnapshot.mockResolvedValue(null)
-	mockModule.repoSessionRpc.mockReturnValue(sessionClient as never)
-	mockModule.loadRepoSourceFilesFromSession.mockImplementation(
+	mockModule.loadPublishedEntitySource.mockImplementation(
 		async () => await filesPromise,
 	)
 
 	const firstPromise = loadPackageSourceBySourceId({
 		env: {
 			APP_DB: {},
-			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
@@ -222,7 +219,7 @@ test('loadPackageSourceBySourceId shares the same in-flight published source loa
 	const secondPromise = loadPackageSourceBySourceId({
 		env: {
 			APP_DB: {},
-			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
@@ -230,26 +227,43 @@ test('loadPackageSourceBySourceId shares the same in-flight published source loa
 	})
 
 	resolveFiles?.({
-		'app.js': 'export default { async fetch() { return new Response("ok") } }',
-		'index.js': 'export const value = "ok"',
+		source: createPackageSourceRow({
+			id: 'source-published-concurrent',
+			publishedCommit: 'commit-concurrent-1',
+		}),
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+					app: {
+						entry: 'app.js',
+					},
+				},
+			}),
+			'app.js': 'export default { async fetch() { return new Response("ok") } }',
+			'index.js': 'export const value = "ok"',
+		},
 	})
 
 	const [first, second] = await Promise.all([firstPromise, secondPromise])
 
-	expect(sessionClient.openSession).toHaveBeenCalledTimes(1)
-	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledTimes(1)
-	expect(sessionClient.discardSession).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
 	expect(first).toBe(second)
 })
 
 test('loadPackageSourceBySourceId evicts failed published source loads before retrying', async () => {
 	mockModule.getEntitySourceById.mockReset()
-	mockModule.readMockArtifactSnapshot.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.loadRepoSourceFilesFromSession.mockReset()
-
-	const firstSessionClient = createSessionClient('session-published-failure-1')
-	const secondSessionClient = createSessionClient('session-published-failure-2')
+	mockModule.loadPublishedEntitySource.mockReset()
+	const bundleKv = {
+		get: vi.fn(async () => null),
+		put: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	} as unknown as KVNamespace
 
 	mockModule.getEntitySourceById.mockResolvedValue(
 		createPackageSourceRow({
@@ -257,21 +271,36 @@ test('loadPackageSourceBySourceId evicts failed published source loads before re
 			publishedCommit: 'commit-failure-1',
 		}),
 	)
-	mockModule.readMockArtifactSnapshot.mockResolvedValue(null)
-	mockModule.repoSessionRpc
-		.mockReturnValueOnce(firstSessionClient as never)
-		.mockReturnValueOnce(secondSessionClient as never)
-	mockModule.loadRepoSourceFilesFromSession
+	mockModule.loadPublishedEntitySource
 		.mockRejectedValueOnce(new Error('repo load failed'))
 		.mockResolvedValueOnce({
-			'app.js': 'export default { async fetch() { return new Response("ok") } }',
-			'index.js': 'export const value = "ok"',
+			source: createPackageSourceRow({
+				id: 'source-published-failure',
+				publishedCommit: 'commit-failure-1',
+			}),
+			files: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/example-package',
+					exports: {
+						'.': './index.js',
+					},
+					kody: {
+						id: 'example-package',
+						description: 'Example package',
+						app: {
+							entry: 'app.js',
+						},
+					},
+				}),
+				'app.js': 'export default { async fetch() { return new Response("ok") } }',
+				'index.js': 'export const value = "ok"',
+			},
 		})
 
 	const input = {
 		env: {
 			APP_DB: {},
-			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: bundleKv,
 		} as Env,
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
@@ -289,9 +318,5 @@ test('loadPackageSourceBySourceId evicts failed published source loads before re
 		},
 	})
 
-	expect(firstSessionClient.openSession).toHaveBeenCalledTimes(1)
-	expect(firstSessionClient.discardSession).toHaveBeenCalledTimes(1)
-	expect(secondSessionClient.openSession).toHaveBeenCalledTimes(1)
-	expect(secondSessionClient.discardSession).toHaveBeenCalledTimes(1)
-	expect(mockModule.loadRepoSourceFilesFromSession).toHaveBeenCalledTimes(2)
+	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(2)
 })

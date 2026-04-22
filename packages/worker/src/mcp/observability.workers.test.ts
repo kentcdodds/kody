@@ -45,6 +45,34 @@ function resetRepoPersistenceMocks() {
 	)
 }
 
+function createBundleArtifactsKv(): KVNamespace {
+	const store = new Map<string, string>()
+	return {
+		async get(key: string, type?: 'text' | 'json') {
+			const value = store.get(key) ?? null
+			if (value == null) return null
+			if (type === 'json') {
+				return JSON.parse(value)
+			}
+			return value
+		},
+		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
+			if (typeof value === 'string') {
+				store.set(key, value)
+				return
+			}
+			const view =
+				value instanceof ArrayBuffer
+					? new Uint8Array(value)
+					: new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+			store.set(key, Buffer.from(view).toString('utf8'))
+		},
+		async delete(key: string) {
+			store.delete(key)
+		},
+	} as unknown as KVNamespace
+}
+
 test('errorFields normalizes Error and non-Error values', () => {
 	expect(errorFields(new TypeError('bad'))).toEqual({
 		errorName: 'TypeError',
@@ -296,6 +324,41 @@ test('package_save capability logs success for valid invocation', async () => {
 								},
 							}
 						},
+					},
+					BUNDLE_ARTIFACTS_KV: {
+						get: async (_key: string, type?: 'text' | 'json') => {
+							if (type === 'json') {
+								return {
+									version: 1,
+									sourceId: 'package-package-1',
+									repoId: 'package-package-1',
+									entityKind: 'package',
+									entityId: 'package-1',
+									publishedCommit: 'published-commit-1',
+									manifestPath: 'package.json',
+									sourceRoot: '/',
+									files: {
+										'package.json': JSON.stringify({
+											name: '@kody/observed',
+											exports: { '.': './src/index.ts' },
+											kody: {
+												id: 'observed-package',
+												description: 'Observation test package.',
+												app: { entry: './src/app.ts' },
+											},
+										}),
+										'src/index.ts':
+											'export default async function main() { return { ok: true } }\n',
+										'src/app.ts':
+											'export default { async fetch() { return new Response("ok") } }\n',
+									},
+									createdAt: '2026-04-13T00:00:00.000Z',
+								}
+							}
+							return null
+						},
+						put: async () => undefined,
+						delete: async () => undefined,
 					},
 					CLOUDFLARE_ACCOUNT_ID: 'acct',
 					CLOUDFLARE_API_TOKEN: 'token',

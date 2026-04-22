@@ -21,10 +21,6 @@ import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import {
 	rebuildPublishedPackageArtifacts,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
-import {
-	buildKodyAppBundle,
-	buildKodyModuleBundle,
-} from '#worker/package-runtime/module-graph.ts'
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
@@ -114,23 +110,31 @@ export async function refreshSavedPackageProjection(input: {
 		},
 		manifest: loaded.manifest,
 		files: loaded.files,
-		buildAppBundle: async ({ entryPoint }) =>
-			await buildKodyAppBundle({
+		buildAppBundle: async ({ entryPoint }) => {
+			const { buildKodyAppBundle } = await import(
+				'#worker/package-runtime/module-graph.ts'
+			)
+			return await buildKodyAppBundle({
 				env: input.env,
 				baseUrl: input.baseUrl,
 				userId: input.userId,
 				sourceFiles: loaded.files,
 				entryPoint,
 				cacheKey: null,
-			}),
-		buildModuleBundle: async ({ entryPoint }) =>
-			await buildKodyModuleBundle({
+			})
+		},
+		buildModuleBundle: async ({ entryPoint }) => {
+			const { buildKodyModuleBundle } = await import(
+				'#worker/package-runtime/module-graph.ts'
+			)
+			return await buildKodyModuleBundle({
 				env: input.env,
 				baseUrl: input.baseUrl,
 				userId: input.userId,
 				sourceFiles: loaded.files,
 				entryPoint,
-			}),
+			})
+		},
 	})
 	const { syncPackageJobsForPackage } = await import('#worker/jobs/service.ts')
 	await syncPackageJobsForPackage({

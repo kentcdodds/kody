@@ -4,6 +4,7 @@ import { type ArtifactBootstrapAccess } from './artifacts.ts'
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	repoSessionRpc: vi.fn(),
+	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
@@ -16,6 +17,11 @@ vi.mock('./repo-session-do.ts', () => ({
 		mockModule.repoSessionRpc(...args),
 }))
 
+vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
+	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.writePublishedSourceSnapshot(...args),
+}))
+
 const { syncArtifactSourceSnapshot } = await import('./source-sync.ts')
 
 const bootstrapAccess: ArtifactBootstrapAccess = {
@@ -23,6 +29,34 @@ const bootstrapAccess: ArtifactBootstrapAccess = {
 	remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
 	token: 'art_v1_bootstrap?expires=1760000000',
 	expiresAt: '2025-10-09T08:53:20.000Z',
+}
+
+function createBundleArtifactsKv(): KVNamespace {
+	const store = new Map<string, string>()
+	return {
+		async get(key: string, type?: 'text' | 'json') {
+			const value = store.get(key) ?? null
+			if (value == null) return null
+			if (type === 'json') {
+				return JSON.parse(value)
+			}
+			return value
+		},
+		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
+			if (typeof value === 'string') {
+				store.set(key, value)
+				return
+			}
+			const view =
+				value instanceof ArrayBuffer
+					? new Uint8Array(value)
+					: new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+			store.set(key, Buffer.from(view).toString('utf8'))
+		},
+		async delete(key: string) {
+			store.delete(key)
+		},
+	} as unknown as KVNamespace
 }
 
 test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into the source repo', async () => {
@@ -67,6 +101,7 @@ test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into th
 					return {} as D1PreparedStatement
 				},
 			},
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 			REPO_SESSION: {},
 			CLOUDFLARE_ACCOUNT_ID: 'account-1',
 			CLOUDFLARE_API_TOKEN: 'token-1',
@@ -157,6 +192,7 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 					return {} as D1PreparedStatement
 				},
 			},
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 			REPO_SESSION: {},
 			CLOUDFLARE_ACCOUNT_ID: 'account-1',
 			CLOUDFLARE_API_TOKEN: 'token-1',
@@ -244,6 +280,7 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 					return {} as D1PreparedStatement
 				},
 			},
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 			REPO_SESSION: {},
 			CLOUDFLARE_ACCOUNT_ID: 'account-1',
 			CLOUDFLARE_API_TOKEN: 'token-1',

@@ -39,12 +39,16 @@ function validateEntitySourceManifest(input: {
 }
 
 function canSyncArtifactSource(env: Env) {
+	const runtimeEnv = env as Env & {
+		REPO_SESSION?: DurableObjectNamespace | undefined
+		APP_DB?: D1Database | undefined
+		BUNDLE_ARTIFACTS_KV?: KVNamespace | undefined
+	}
 	return (
 		hasArtifactsAccess(env) &&
-		(env as Env & { REPO_SESSION?: DurableObjectNamespace | undefined })
-			.REPO_SESSION != null &&
-		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB
-			?.prepare === 'function'
+		runtimeEnv.REPO_SESSION != null &&
+		typeof runtimeEnv.APP_DB?.prepare === 'function' &&
+		runtimeEnv.BUNDLE_ARTIFACTS_KV != null
 	)
 }
 
@@ -89,13 +93,6 @@ export async function syncArtifactSourceSnapshot(
 					content: manifestContent,
 					manifestPath: source.manifest_path,
 				})
-				await updateEntitySource(input.env.APP_DB, {
-					id: source.id,
-					userId: source.user_id,
-					publishedCommit: snapshot.published_commit,
-					manifestPath: source.manifest_path,
-					sourceRoot: source.source_root,
-				})
 				await writePublishedSourceSnapshot({
 					env: input.env,
 					source: {
@@ -103,6 +100,13 @@ export async function syncArtifactSourceSnapshot(
 						published_commit: snapshot.published_commit,
 					},
 					files: input.files,
+				})
+				await updateEntitySource(input.env.APP_DB, {
+					id: source.id,
+					userId: source.user_id,
+					publishedCommit: snapshot.published_commit,
+					manifestPath: source.manifest_path,
+					sourceRoot: source.source_root,
 				})
 				return snapshot.published_commit
 			}
