@@ -88,6 +88,8 @@ export type OptionalSearchRowsResult = {
 	warnings: Array<string>
 }
 
+type LoadedPackageRows = Array<PackageSearchRow> | BuildSavedPackageSearchRowsResult
+
 export type SearchScoreComponents = {
 	base: number
 	lexical: number
@@ -1121,7 +1123,7 @@ export async function loadDownHomeConnectorStatus(input: {
 
 export async function loadOptionalSearchRows(input: {
 	userId: string | null
-	loadPackages: () => Promise<Array<PackageSearchRow>>
+	loadPackages: () => Promise<LoadedPackageRows>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
 	loadUserValues: () => Promise<Array<ValueMetadata>>
 }): Promise<OptionalSearchRowsResult> {
@@ -1142,9 +1144,15 @@ export async function loadOptionalSearchRows(input: {
 			input.loadUserValues(),
 		])
 
-	const packageRows =
-		packageRowsResult.status === 'fulfilled' ? packageRowsResult.value : []
-	if (packageRowsResult.status === 'rejected') {
+	let packageRows: Array<PackageSearchRow> = []
+	if (packageRowsResult.status === 'fulfilled') {
+		if (Array.isArray(packageRowsResult.value)) {
+			packageRows = packageRowsResult.value
+		} else {
+			packageRows = packageRowsResult.value.rows
+			warnings.push(...packageRowsResult.value.warnings)
+		}
+	} else {
 		const message =
 			packageRowsResult.reason instanceof Error
 				? packageRowsResult.reason.message
@@ -1207,7 +1215,7 @@ async function loadSearchRowsAndRegistry(input: {
 					userId: input.userId!,
 					records: savedPackages,
 				})
-				return packageRows.rows
+				return packageRows
 			},
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({

@@ -237,6 +237,50 @@ test('optional search rows include saved packages when lookup succeeds', async (
 	expect(result.warnings).toEqual([])
 })
 
+test('optional search rows preserve package fallback warnings', async () => {
+	const result = await loadOptionalSearchRows({
+		userId: 'user-123',
+		loadPackages: async () => ({
+			rows: [
+				{
+					record: {
+						id: 'package-123',
+						userId: 'user-123',
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package',
+						tags: ['observed'],
+						searchText: null,
+						sourceId: 'source-package-123',
+						hasApp: true,
+						createdAt: '2026-03-24T00:00:00.000Z',
+						updatedAt: '2026-03-24T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package',
+						tags: ['observed'],
+						searchText: null,
+						hasApp: true,
+						appEntry: null,
+						exports: [],
+						jobs: [],
+					},
+				},
+			],
+			warnings: ['Saved package "observed-package" fallback metadata was used.'],
+		}),
+		loadUserSecrets: async () => [],
+		loadUserValues: async () => [],
+	})
+
+	expect(result.packageRows).toHaveLength(1)
+	expect(result.warnings).toEqual([
+		'Saved package "observed-package" fallback metadata was used.',
+	])
+})
+
 test('searchUnified uses package exports and connector aliases for operate queries', () => {
 	const registry = buildCapabilityRegistry([])
 	const optionalRows = {

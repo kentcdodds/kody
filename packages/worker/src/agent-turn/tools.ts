@@ -63,7 +63,7 @@ export async function createAgentTurnToolSet(input: {
 								userId: userId!,
 								records: savedPackages,
 							})
-							return packageRows.rows
+							return packageRows
 						},
 						loadUserSecrets: () =>
 							listUserSecretsForSearch({
