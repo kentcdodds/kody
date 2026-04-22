@@ -63,7 +63,10 @@ import {
 	listArchivedJobArtifactsDueBefore,
 	upsertArchivedJobArtifact,
 } from './archived-artifacts-repo.ts'
-import { deletePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	deletePublishedSourceSnapshot,
+	type PublishedBundleArtifact,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	logJobSchedulerError,
 	logJobSchedulerEvent,
@@ -171,6 +174,19 @@ async function persistPublishedJobBundleArtifact(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 	})
+	const artifact: PublishedBundleArtifact = {
+		version: 1,
+		kind: 'job',
+		artifactName: input.artifactName ?? null,
+		sourceId: input.sourceId,
+		publishedCommit: source.published_commit,
+		entryPoint: input.entryPoint,
+		mainModule: bundle.mainModule,
+		modules: bundle.modules,
+		dependencies: bundle.dependencies,
+		packageContext: input.packageContext ?? null,
+		createdAt: new Date().toISOString(),
+	}
 	await persistPublishedBundleArtifact({
 		env: input.env,
 		userId: input.callerContext.user.userId,
@@ -192,7 +208,7 @@ async function persistPublishedJobBundleArtifact(input: {
 		artifactCacheHit: false,
 		dependencyCount: bundle.dependencies.length,
 	})
-	return bundle
+	return artifact
 }
 
 async function ensurePublishedBundleArtifactForJob(input: {
@@ -218,7 +234,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 	if (!publishedSource) {
 		throw new Error(`Published source "${input.job.sourceId}" was not found.`)
 	}
-	const manifestPath = publishedSource.manifest_path
+	const manifestPath = publishedSource.manifest_path.replace(/^\/+/, '')
 	const manifestContent = published.files[manifestPath]
 	if (!manifestContent) {
 		throw new Error(`Job manifest "${manifestPath}" was not found.`)
@@ -337,7 +353,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 	if (!input.job.sourceId) {
 		throw new Error('Repo-backed job source is missing.')
 	}
-	await persistPublishedJobBundleArtifact({
+	const artifact = await persistPublishedJobBundleArtifact({
 		env: input.env,
 		job: input.job,
 		callerContext: input.callerContext,
@@ -347,11 +363,11 @@ async function rebuildAndExecuteJobArtifact(input: {
 		artifactName: input.artifactName,
 		packageContext: input.packageContext ?? null,
 	})
-	const artifact = await ensurePublishedBundleArtifactForJob({
-		env: input.env,
-		job: input.job,
-		callerContext: input.callerContext,
-	})
+	if (!artifact) {
+		throw new Error(
+			`Published bundle artifact for job "${input.job.id}" could not be persisted.`,
+		)
+	}
 	return await executePublishedJobArtifact({
 		env: input.env,
 		job: input.job,
