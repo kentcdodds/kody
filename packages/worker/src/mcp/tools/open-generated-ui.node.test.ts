@@ -12,7 +12,6 @@ vi.mock('@modelcontextprotocol/ext-apps/server', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
 }))
