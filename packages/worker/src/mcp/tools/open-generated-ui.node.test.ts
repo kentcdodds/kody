@@ -53,7 +53,7 @@ async function getOpenGeneratedUiHandler() {
 	} as never)
 
 	expect(mockModule.registerAppTool).toHaveBeenCalledTimes(1)
-	const [, , handler] = mockModule.registerAppTool.mock.calls[0] ?? []
+	const [, , , handler] = mockModule.registerAppTool.mock.calls[0] ?? []
 	expect(typeof handler).toBe('function')
 	return handler as (args: Record<string, unknown>) => Promise<{
 		structuredContent: {
