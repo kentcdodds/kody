@@ -8,6 +8,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		OAUTH_KV: KVNamespace;
+		BUNDLE_ARTIFACTS_KV: KVNamespace;
 		APP_DB: D1Database;
 		CAPABILITY_VECTOR_INDEX: VectorizeIndex;
 		LOADER: WorkerLoader;

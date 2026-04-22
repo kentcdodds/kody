@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	buildPackageSearchProjection: vi.fn(),
 	buildSavedPackageEmbedText: vi.fn(),
+	buildPublishedPackageArtifacts: vi.fn(),
 	deleteJobRow: vi.fn(),
 	deleteSavedPackage: vi.fn(),
 	deleteSavedPackageVector: vi.fn(),
@@ -24,6 +25,16 @@ vi.mock('./manifest.ts', () => ({
 vi.mock('./embed.ts', () => ({
 	buildSavedPackageEmbedText: (...args: Array<unknown>) =>
 		mockModule.buildSavedPackageEmbedText(...args),
+}))
+
+vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
+	rebuildPublishedPackageArtifacts: (...args: Array<unknown>) =>
+		mockModule.buildPublishedPackageArtifacts(...args),
+}))
+
+vi.mock('#worker/package-runtime/module-graph.ts', () => ({
+	buildKodyAppBundle: vi.fn(),
+	buildKodyModuleBundle: vi.fn(),
 }))
 
 vi.mock('./repo.ts', () => ({
@@ -92,6 +103,7 @@ beforeEach(() => {
 	mockModule.buildPackageSearchProjection.mockReturnValue(createProjection())
 	mockModule.buildSavedPackageEmbedText.mockReturnValue('saved package embed')
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
+	mockModule.buildPublishedPackageArtifacts.mockResolvedValue(undefined)
 	mockModule.syncPackageJobsForPackage.mockResolvedValue(undefined)
 	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
 	mockModule.updateSavedPackage.mockResolvedValue(undefined)
@@ -154,6 +166,33 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 		sourceId: 'source-1',
 		manifest,
 	})
+	expect(mockModule.buildPublishedPackageArtifacts).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		source: undefined,
+		savedPackage: expect.objectContaining({
+			id: 'package-1',
+			userId: 'user-1',
+			name: '@kentcdodds/shade-automation',
+			kodyId: 'shade-automation',
+			description: 'Shade automation package',
+			tags: ['home', 'shades'],
+			searchText: 'shade automation',
+			sourceId: 'source-1',
+			hasApp: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+		}),
+		manifest,
+		files: { 'package.json': '{}' },
+		buildAppBundle: expect.any(Function),
+		buildModuleBundle: expect.any(Function),
+	})
+	const savedPackageArg = mockModule.buildPublishedPackageArtifacts.mock.calls[0]?.[0]
+		?.savedPackage as { updatedAt: string } | undefined
+	expect(savedPackageArg?.updatedAt).toMatch(
+		/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+	)
+	expect(savedPackageArg?.updatedAt).not.toBe('2026-04-20T00:00:00.000Z')
 	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',

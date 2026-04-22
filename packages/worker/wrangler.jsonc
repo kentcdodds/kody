@@ -117,6 +117,9 @@
 				{
 					"binding": "OAUTH_KV",
 				},
+				{
+					"binding": "BUNDLE_ARTIFACTS_KV",
+				},
 			],
 			"vectorize": [
 				{
@@ -195,6 +198,9 @@
 				{
 					"binding": "OAUTH_KV",
 				},
+				{
+					"binding": "BUNDLE_ARTIFACTS_KV",
+				},
 			],
 			"vectorize": [
 				{
@@ -272,6 +278,9 @@
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
+				},
+				{
+					"binding": "BUNDLE_ARTIFACTS_KV",
 				},
 			],
 			"vars": {

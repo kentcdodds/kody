@@ -251,6 +251,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseName,
 	d1DatabaseId,
 	oauthKvId,
+	bundleArtifactsKvId,
 	workerVars,
 	extraMigrations,
 }: {
@@ -260,6 +261,7 @@ export async function writeGeneratedWranglerConfig({
 	d1DatabaseName: string
 	d1DatabaseId: string
 	oauthKvId: string
+	bundleArtifactsKvId: string
 	workerVars?: Record<string, string | undefined>
 	extraMigrations?: Array<WranglerMigration>
 }) {
@@ -307,21 +309,40 @@ export async function writeGeneratedWranglerConfig({
 		)
 	}
 
-	const kvEntryIndex = kvNamespaces.findIndex((entry) => {
+	const oauthKvEntryIndex = kvNamespaces.findIndex((entry) => {
 		if (!entry || typeof entry !== 'object') return false
 		return (entry as Record<string, unknown>).binding === 'OAUTH_KV'
 	})
-	if (kvEntryIndex < 0) {
+	if (oauthKvEntryIndex < 0) {
 		fail(
 			`wrangler config "${baseConfigPath}" has no ${envName} KV binding for "OAUTH_KV".`,
 		)
 	}
 
-	const kvEntry = kvNamespaces[kvEntryIndex] as Record<string, unknown>
-	kvNamespaces[kvEntryIndex] = {
-		...kvEntry,
+	const oauthKvEntry = kvNamespaces[oauthKvEntryIndex] as Record<string, unknown>
+	kvNamespaces[oauthKvEntryIndex] = {
+		...oauthKvEntry,
 		id: oauthKvId,
 		preview_id: oauthKvId,
+	}
+
+	const bundleArtifactsKvEntryIndex = kvNamespaces.findIndex((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (entry as Record<string, unknown>).binding === 'BUNDLE_ARTIFACTS_KV'
+	})
+	if (bundleArtifactsKvEntryIndex < 0) {
+		fail(
+			`wrangler config "${baseConfigPath}" has no ${envName} KV binding for "BUNDLE_ARTIFACTS_KV".`,
+		)
+	}
+
+	const bundleArtifactsKvEntry = kvNamespaces[
+		bundleArtifactsKvEntryIndex
+	] as Record<string, unknown>
+	kvNamespaces[bundleArtifactsKvEntryIndex] = {
+		...bundleArtifactsKvEntry,
+		id: bundleArtifactsKvId,
+		preview_id: bundleArtifactsKvId,
 	}
 
 	const existingVars = (targetEnv as Record<string, unknown>).vars
