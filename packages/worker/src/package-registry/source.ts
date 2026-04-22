@@ -27,6 +27,158 @@ export type LoadedPackageManifest = {
 const packageSourceCache = new PromiseLruCache<LoadedPackageSource>()
 const packageManifestCache = new PromiseLruCache<LoadedPackageManifest>()
 
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+	if (value && typeof value === 'object') {
+		const objectValue = value as object
+		if (seen.has(objectValue)) {
+			return value
+		}
+		seen.add(objectValue)
+		for (const child of Object.values(value as Record<string, unknown>)) {
+			deepFreeze(child, seen)
+		}
+		Object.freeze(objectValue)
+	}
+	return value
+}
+
+function freezeFiles(files: Record<string, string>) {
+	return Object.freeze({ ...files }) as Record<string, string>
+}
+
+function finalizeLoadedSource(input: {
+	source: EntitySourceRow
+	manifest: AuthoredPackageJson
+	files: Record<string, string>
+}) {
+	return Object.freeze({
+		source: deepFreeze({ ...input.source }),
+		manifest: deepFreeze(structuredClone(input.manifest)),
+		files: freezeFiles(input.files),
+	}) as LoadedPackageSource
+}
+
+function finalizeLoadedManifest(input: {
+	source: EntitySourceRow
+	manifest: AuthoredPackageJson
+}) {
+	return Object.freeze({
+		source: deepFreeze({ ...input.source }),
+		manifest: deepFreeze(structuredClone(input.manifest)),
+	}) as LoadedPackageManifest
+}
+
+function parsePackageManifest(input: {
+	source: EntitySourceRow
+	content: string
+}) {
+	return parseAuthoredPackageJson({
+		content: input.content,
+		manifestPath: input.source.manifest_path,
+	})
+}
+
+async function readManifestFromMockSnapshot(input: {
+	env: Env
+	source: EntitySourceRow
+}): Promise<
+	| {
+			manifest: AuthoredPackageJson
+			manifestContent: string
+			files: Record<string, string>
+	  }
+	| null
+> {
+	const mockArtifactsBaseUrl = input.env.CLOUDFLARE_API_BASE_URL?.trim()
+	if (!mockArtifactsBaseUrl || !input.source.published_commit) {
+		return null
+	}
+	const mockArtifactsUrl = new URL(mockArtifactsBaseUrl)
+	if (!isLoopbackHostname(mockArtifactsUrl.hostname)) {
+		return null
+	}
+	const snapshot = await readMockArtifactSnapshot({
+		env: input.env,
+		repoId: input.source.repo_id,
+		commit: input.source.published_commit,
+	})
+	if (!snapshot) {
+		return null
+	}
+	const manifestContent = snapshot.files[input.source.manifest_path]
+	if (!manifestContent) {
+		throw new Error(
+			`Saved package manifest "${input.source.manifest_path}" was not found in the repo source.`,
+		)
+	}
+	return {
+		manifest: parsePackageManifest({
+			source: input.source,
+			content: manifestContent,
+		}),
+		manifestContent,
+		files: snapshot.files,
+	}
+}
+
+async function withPackageManifestSession<T>(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	source: EntitySourceRow
+	sessionPrefix: string
+	run: (resolved: {
+		session: ReturnType<typeof repoSessionRpc>
+		sessionId: string
+		manifest: AuthoredPackageJson
+		manifestContent: string
+	}) => Promise<T>
+}): Promise<T> {
+	const sessionId = `${input.sessionPrefix}-${input.source.id}-${crypto.randomUUID()}`
+	const session = repoSessionRpc(input.env, sessionId)
+	let openedSessionId: string | null = null
+	try {
+		const opened = await session.openSession({
+			sessionId,
+			sourceId: input.source.id,
+			userId: input.userId,
+			baseUrl: input.baseUrl,
+			sourceRoot: input.source.source_root,
+		})
+		openedSessionId = opened.id
+		const manifestFile = await session.readFile({
+			sessionId: opened.id,
+			userId: input.userId,
+			path: input.source.manifest_path,
+		})
+		if (!manifestFile.content) {
+			throw new Error(
+				`Saved package manifest "${input.source.manifest_path}" was not found in the repo source.`,
+			)
+		}
+		return await input.run({
+			session,
+			sessionId: opened.id,
+			manifest: parsePackageManifest({
+				source: input.source,
+				content: manifestFile.content,
+			}),
+			manifestContent: manifestFile.content,
+		})
+	} finally {
+		if (openedSessionId) {
+			await session
+				.discardSession({
+					sessionId: openedSessionId,
+					userId: input.userId,
+				})
+				.catch(() => {
+					// Best effort only; source resolution should preserve the original error.
+				})
+		}
+	}
+}
+
 function canResolveRepoBackedPackageSource(env: Env) {
 	const anyEnv = env as Env & { APP_DB?: unknown; REPO_SESSION?: unknown }
 	return (
@@ -53,109 +205,38 @@ async function loadPackageSourceUncached(input: {
 	userId: string
 	source: EntitySourceRow
 }): Promise<LoadedPackageSource> {
-	const source = input.source
-	const freezeFiles = (files: Record<string, string>) =>
-		Object.freeze({ ...files }) as Record<string, string>
-	const deepFreeze = <T>(value: T, seen = new WeakSet<object>()): T => {
-		if (value && typeof value === 'object') {
-			const objectValue = value as object
-			if (seen.has(objectValue)) {
-				return value
-			}
-			seen.add(objectValue)
-			for (const child of Object.values(value as Record<string, unknown>)) {
-				deepFreeze(child, seen)
-			}
-			Object.freeze(objectValue)
-		}
-		return value
-	}
-
-	const finalizeLoadedSource = (loaded: {
-		manifest: AuthoredPackageJson
-		files: Record<string, string>
-	}) =>
-		Object.freeze({
-			source: deepFreeze({ ...source }),
-			manifest: deepFreeze(structuredClone(loaded.manifest)),
-			files: freezeFiles(loaded.files),
-		}) as LoadedPackageSource
-
-	const mockArtifactsBaseUrl = input.env.CLOUDFLARE_API_BASE_URL?.trim()
-	if (mockArtifactsBaseUrl && source.published_commit) {
-		const mockArtifactsUrl = new URL(mockArtifactsBaseUrl)
-		if (isLoopbackHostname(mockArtifactsUrl.hostname)) {
-			const snapshot = await readMockArtifactSnapshot({
-				env: input.env,
-				repoId: source.repo_id,
-				commit: source.published_commit,
-			})
-			if (snapshot) {
-				const manifestContent = snapshot.files[source.manifest_path]
-				if (!manifestContent) {
-					throw new Error(
-						`Saved package manifest "${source.manifest_path}" was not found in the repo source.`,
-					)
-				}
-				return finalizeLoadedSource({
-					manifest: parseAuthoredPackageJson({
-						content: manifestContent,
-						manifestPath: source.manifest_path,
-					}),
-					files: snapshot.files,
-				})
-			}
-		}
-	}
-	const sessionId = `package-source-${source.id}-${crypto.randomUUID()}`
-	const session = repoSessionRpc(input.env, sessionId)
-	let openedSessionId: string | null = null
-	try {
-		const opened = await session.openSession({
-			sessionId,
-			sourceId: source.id,
-			userId: input.userId,
-			baseUrl: input.baseUrl,
-			sourceRoot: source.source_root,
-		})
-		openedSessionId = opened.id
-		const manifestFile = await session.readFile({
-			sessionId: opened.id,
-			userId: input.userId,
-			path: source.manifest_path,
-		})
-		if (!manifestFile.content) {
-			throw new Error(
-				`Saved package manifest "${source.manifest_path}" was not found in the repo source.`,
-			)
-		}
-		const manifest = parseAuthoredPackageJson({
-			content: manifestFile.content,
-			manifestPath: source.manifest_path,
-		})
-		const files = await loadRepoSourceFilesFromSession({
-			sessionClient: session,
-			sessionId: opened.id,
-			userId: input.userId,
-			sourceRoot: source.source_root,
-		})
-		files[source.manifest_path] = manifestFile.content
+	const snapshot = await readManifestFromMockSnapshot({
+		env: input.env,
+		source: input.source,
+	})
+	if (snapshot) {
 		return finalizeLoadedSource({
-			manifest,
-			files,
+			source: input.source,
+			manifest: snapshot.manifest,
+			files: snapshot.files,
 		})
-	} finally {
-		if (openedSessionId) {
-			await session
-				.discardSession({
-					sessionId: openedSessionId,
-					userId: input.userId,
-				})
-				.catch(() => {
-					// Best effort only; source resolution should preserve the original error.
-				})
-		}
 	}
+	return await withPackageManifestSession({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		source: input.source,
+		sessionPrefix: 'package-source',
+		run: async ({ session, sessionId, manifest, manifestContent }) => {
+			const files = await loadRepoSourceFilesFromSession({
+				sessionClient: session,
+				sessionId,
+				userId: input.userId,
+				sourceRoot: input.source.source_root,
+			})
+			files[input.source.manifest_path] = manifestContent
+			return finalizeLoadedSource({
+				source: input.source,
+				manifest,
+				files,
+			})
+		},
+	})
 }
 
 async function loadPackageManifestUncached(input: {
@@ -164,95 +245,28 @@ async function loadPackageManifestUncached(input: {
 	userId: string
 	source: EntitySourceRow
 }): Promise<LoadedPackageManifest> {
-	const source = input.source
-	const deepFreeze = <T>(value: T, seen = new WeakSet<object>()): T => {
-		if (value && typeof value === 'object') {
-			const objectValue = value as object
-			if (seen.has(objectValue)) {
-				return value
-			}
-			seen.add(objectValue)
-			for (const child of Object.values(value as Record<string, unknown>)) {
-				deepFreeze(child, seen)
-			}
-			Object.freeze(objectValue)
-		}
-		return value
-	}
-
-	const finalizeLoadedManifest = (loaded: {
-		manifest: AuthoredPackageJson
-	}) =>
-		Object.freeze({
-			source: deepFreeze({ ...source }),
-			manifest: deepFreeze(structuredClone(loaded.manifest)),
-		}) as LoadedPackageManifest
-
-	const mockArtifactsBaseUrl = input.env.CLOUDFLARE_API_BASE_URL?.trim()
-	if (mockArtifactsBaseUrl && source.published_commit) {
-		const mockArtifactsUrl = new URL(mockArtifactsBaseUrl)
-		if (isLoopbackHostname(mockArtifactsUrl.hostname)) {
-			const snapshot = await readMockArtifactSnapshot({
-				env: input.env,
-				repoId: source.repo_id,
-				commit: source.published_commit,
-			})
-			if (snapshot) {
-				const manifestContent = snapshot.files[source.manifest_path]
-				if (!manifestContent) {
-					throw new Error(
-						`Saved package manifest "${source.manifest_path}" was not found in the repo source.`,
-					)
-				}
-				return finalizeLoadedManifest({
-					manifest: parseAuthoredPackageJson({
-						content: manifestContent,
-						manifestPath: source.manifest_path,
-					}),
-				})
-			}
-		}
-	}
-	const sessionId = `package-manifest-${source.id}-${crypto.randomUUID()}`
-	const session = repoSessionRpc(input.env, sessionId)
-	let openedSessionId: string | null = null
-	try {
-		const opened = await session.openSession({
-			sessionId,
-			sourceId: source.id,
-			userId: input.userId,
-			baseUrl: input.baseUrl,
-			sourceRoot: source.source_root,
-		})
-		openedSessionId = opened.id
-		const manifestFile = await session.readFile({
-			sessionId: opened.id,
-			userId: input.userId,
-			path: source.manifest_path,
-		})
-		if (!manifestFile.content) {
-			throw new Error(
-				`Saved package manifest "${source.manifest_path}" was not found in the repo source.`,
-			)
-		}
+	const snapshot = await readManifestFromMockSnapshot({
+		env: input.env,
+		source: input.source,
+	})
+	if (snapshot) {
 		return finalizeLoadedManifest({
-			manifest: parseAuthoredPackageJson({
-				content: manifestFile.content,
-				manifestPath: source.manifest_path,
-			}),
+			source: input.source,
+			manifest: snapshot.manifest,
 		})
-	} finally {
-		if (openedSessionId) {
-			await session
-				.discardSession({
-					sessionId: openedSessionId,
-					userId: input.userId,
-				})
-				.catch(() => {
-					// Best effort only; source resolution should preserve the original error.
-				})
-		}
 	}
+	return await withPackageManifestSession({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		source: input.source,
+		sessionPrefix: 'package-manifest',
+		run: async ({ manifest }) =>
+			finalizeLoadedManifest({
+				source: input.source,
+				manifest,
+			}),
+	})
 }
 
 export async function loadPackageSourceBySourceId(input: {
