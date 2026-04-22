@@ -404,5 +404,7 @@ test('search formatting does not throw for secret names outside placeholder synt
 	})
 
 	expect(markdown).toContain('## Secret')
-	expect(markdown).toContain('**Usage:** unavailable')
+	expect(markdown).toContain(
+		'**Usage:** `(secret placeholder unavailable for this name)`',
+	)
 })
