@@ -28,7 +28,7 @@ const openGeneratedUiTool = {
 	title: 'Open Generated UI',
 	description: `
 Open the MCP App runtime. Pass exactly one of \`code\` (inline HTML fragment or
-full document), \`package_id\`, or \`kody_id\` (saved package app identity).
+full document) or \`kody_id\` (saved package app identity).
 
 Use for sensitive input (never ask the user to paste credentials in chat).
 Recoverable errors: show in the UI and \`sendMessage(...)\` with the next step.
@@ -58,13 +58,6 @@ const inputSchema = z
 			.describe(
 				'Inline HTML source to render immediately. Provide an HTML fragment or full HTML document.',
 			),
-		package_id: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Saved package id to reopen when the package defines kody.app.',
-			),
 		kody_id: z
 			.string()
 			.min(1)
@@ -86,13 +79,9 @@ const inputSchema = z
 		memoryContext: memoryContextInputField,
 	})
 	.refine(
-		(value) =>
-			(value.code ? 1 : 0) +
-				(value.package_id ? 1 : 0) +
-				(value.kody_id ? 1 : 0) ===
-			1,
+		(value) => (value.code ? 1 : 0) + (value.kody_id ? 1 : 0) === 1,
 		{
-			message: 'Provide exactly one of `code`, `package_id`, or `kody_id`.',
+			message: 'Provide exactly one of `code` or `kody_id`.',
 			path: ['code'],
 		},
 	)
@@ -115,27 +104,19 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 		async (args) => {
 			const callerContext = agent.getCallerContext()
 			const conversationId = resolveConversationId(args.conversationId)
-			const packageId = args.package_id ?? null
 			const kodyId = args.kody_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
-			let savedPackage:
-				| Awaited<ReturnType<typeof getSavedPackageById>>
-				| Awaited<ReturnType<typeof getSavedPackageByKodyId>>
-				| null = null
-			if (packageId || kodyId) {
+			let savedPackage: Awaited<ReturnType<typeof getSavedPackageByKodyId>> | null =
+				null
+			if (kodyId) {
 				if (!callerContext.user) {
 					throw new Error('Authentication required to access saved packages.')
 				}
-				savedPackage = packageId
-					? await getSavedPackageById(agent.getEnv().APP_DB, {
-							userId: callerContext.user.userId,
-							packageId,
-						})
-					: await getSavedPackageByKodyId(agent.getEnv().APP_DB, {
-							userId: callerContext.user.userId,
-							kodyId: kodyId!,
-						})
+				savedPackage = await getSavedPackageByKodyId(agent.getEnv().APP_DB, {
+					userId: callerContext.user.userId,
+					kodyId,
+				})
 				if (!savedPackage || !savedPackage.hasApp) {
 					throw new Error(
 						'Saved package app not found for this user or the package does not define kody.app.',

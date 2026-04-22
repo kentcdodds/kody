@@ -97,10 +97,6 @@ function createKnownMockToolResult(
 	baseUrl: string,
 ): MockToolCallResult | null {
 	if (result.toolName === 'open_generated_ui') {
-		const packageId =
-			typeof result.input.package_id === 'string'
-				? result.input.package_id
-				: null
 		const kodyId =
 			typeof result.input.kody_id === 'string' ? result.input.kody_id : null
 		const hostedUrl = kodyId
@@ -114,7 +110,6 @@ function createKnownMockToolResult(
 				...(hostedUrl
 					? [
 							'',
-							...(packageId ? [`Package id: \`${packageId}\``] : []),
 							...(kodyId ? [`Package kody id: \`${kodyId}\``] : []),
 							`Hosted fallback URL: ${hostedUrl}`,
 						]

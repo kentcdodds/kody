@@ -351,3 +351,41 @@ test('search markdown and slim structured matches surface package entity refs an
 		},
 	])
 })
+
+test('usage helpers escape dynamic identifiers in generated snippets', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'value',
+				valueId: 'user:strange-name',
+				name: 'display"name',
+				scope: 'user"scope',
+				description: 'Value with quotes in the lookup fields.',
+				appId: null,
+			},
+			{
+				type: 'connector',
+				connectorName: 'conn"name',
+				title: 'conn"name',
+				description: 'Connector with quotes in its name.',
+				flow: 'confidential',
+				tokenUrl: 'https://example.com/token',
+				apiBaseUrl: 'https://example.com/api',
+				requiredHosts: ['example.com'],
+				clientIdValueName: 'client-id',
+				clientSecretSecretName: 'client-secret',
+				accessTokenSecretName: 'access-token',
+				refreshTokenSecretName: 'refresh-token',
+			},
+		],
+	})
+
+	expect(markdown).toContain(
+		'`codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })`',
+	)
+	expect(markdown).toContain(
+		'`codemode.connector_get({ name: "conn\\"name" })`',
+	)
+})

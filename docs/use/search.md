@@ -58,11 +58,10 @@ Saved **packages** require a signed-in MCP user. Capabilities and builtin
 behavior still work without user-scoped data.
 
 Package search hits summarize whether the package has an app surface and, when
-they do, include a direct `open_generated_ui({ kody_id: "..." })` hint plus the
-saved `package_id`. Connector hits also include operational details such as the
-token URL, API base URL, required hosts, and related stored value/secret names
-so common setup/debugging work can often proceed without an immediate detail
-lookup.
+they do, include a direct `open_generated_ui({ kody_id: "..." })` hint.
+Connector hits also include operational details such as the token URL, API base
+URL, required hosts, and related stored value/secret names so common
+setup/debugging work can often proceed without an immediate detail lookup.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

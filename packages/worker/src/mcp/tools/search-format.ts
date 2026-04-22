@@ -338,22 +338,25 @@ function buildCapabilityUsage(name: string) {
 }
 
 function buildPackageRootImportUsage(kodyId: string) {
-	return `import entry from "${buildPackageImportSpecifier(kodyId, '.')}"`
+	return `import entry from ${JSON.stringify(buildPackageImportSpecifier(kodyId, '.'))}`
 }
 
 function buildPackageAppUsage(kodyId: string) {
-	return `open_generated_ui({ kody_id: "${kodyId}" })`
+	return `open_generated_ui({ kody_id: ${JSON.stringify(kodyId)} })`
 }
 
 function buildValueUsage(name: string, scope: string) {
-	return `codemode.value_get({ name: "${name}", scope: "${scope}" })`
+	return `codemode.value_get({ name: ${JSON.stringify(name)}, scope: ${JSON.stringify(scope)} })`
 }
 
 function buildConnectorUsage(name: string) {
-	return `codemode.connector_get({ name: "${name}" })`
+	return `codemode.connector_get({ name: ${JSON.stringify(name)} })`
 }
 
 function buildSecretUsage(name: string) {
+	if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+		throw new Error(`Secret name "${name}" cannot be expressed as a secret placeholder.`)
+	}
 	return `{{secret:${name}|scope=user}}`
 }
 
@@ -425,7 +428,7 @@ export function formatSearchMarkdown(input: {
 			'- Built-in capabilities — `execute` with `import { codemode } from "kody:runtime"`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app` (or `open_generated_ui({ package_id })` when that is the identifier you have)',
+			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app`',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}

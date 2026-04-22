@@ -22,7 +22,7 @@ quickly.
      modules or internal Worker/DO implementation details.
 5. Open the hosted package app and iterate.
    - Save with `package_save`.
-   - Reopen with `open_generated_ui({ package_id })` or the hosted package URL.
+   - Reopen with `open_generated_ui({ kody_id })` or the hosted package URL.
    - Iterate on the hosted package app instead of repeatedly pasting large
      inline HTML blobs back into model context.
 
