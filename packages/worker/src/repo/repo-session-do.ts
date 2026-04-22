@@ -34,6 +34,10 @@ import {
 import { runRepoChecks } from './checks.ts'
 import { parseRepoManifest } from './manifest.ts'
 import {
+	hasPublishedRuntimeArtifacts,
+	writePublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
 	type EntityKind,
 	type EntitySourceRow,
 	type RepoApplyPatchResult,
@@ -385,6 +389,28 @@ class RepoSessionBase extends DurableObject<Env> {
 			author: sessionCommitAuthor,
 		})
 		return commit.oid
+	}
+
+	private async collectWorkspaceFiles(
+		root = repoSessionWorkspacePrefix,
+	): Promise<Record<string, string>> {
+		const entries = (
+			await this.workspace.glob(`${root.replace(/\/+$/, '')}/**/*`)
+		)
+			.filter((entry) => entry.type === 'file')
+			.filter((entry) => !entry.path.includes('/.git/'))
+			.sort((left, right) => left.path.localeCompare(right.path))
+		const files: Record<string, string> = {}
+		const rootPrefix = `${root.replace(/\/+$/, '')}/`
+		for (const entry of entries) {
+			const content = await this.workspace.readFile(entry.path)
+			if (content == null) continue
+			const relativePath = entry.path.startsWith(rootPrefix)
+				? entry.path.slice(rootPrefix.length)
+				: entry.path
+			files[relativePath] = content
+		}
+		return files
 	}
 
 	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
@@ -1135,6 +1161,35 @@ class RepoSessionBase extends DurableObject<Env> {
 			manifestPath: source.manifest_path,
 			sourceRoot: source.source_root,
 		})
+		// Persist the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream
+		// readers like loadPublishedEntitySource can resolve the freshly
+		// published commit without round-tripping to Artifacts. Without this,
+		// refreshSavedPackageProjection below, as well as every package-backed
+		// job run that reaches for the published snapshot, would throw
+		// "Published snapshot for source ... was not found" because no writer
+		// had stored the snapshot under the new commit.
+		if (sessionHeadCommit && hasPublishedRuntimeArtifacts(this.env)) {
+			const files = await this.collectWorkspaceFiles()
+			try {
+				await writePublishedSourceSnapshot({
+					env: this.env,
+					source: {
+						...source,
+						published_commit: sessionHeadCommit,
+					},
+					files,
+				})
+			} catch (error) {
+				await updateEntitySource(this.env.APP_DB, {
+					id: source.id,
+					userId: source.user_id,
+					publishedCommit: source.published_commit,
+					manifestPath: source.manifest_path,
+					sourceRoot: source.source_root,
+				})
+				throw error
+			}
+		}
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,

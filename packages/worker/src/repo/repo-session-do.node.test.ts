@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as Artifacts from './artifacts.ts'
+import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
 
 const mockModule = vi.hoisted(() => {
 	const gitState = {
@@ -81,6 +82,7 @@ const mockModule = vi.hoisted(() => {
 		resolveSessionRepo: vi.fn(),
 		resolveArtifactSourceRepo: vi.fn(),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
+		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
 	}
 })
 
@@ -167,6 +169,17 @@ vi.mock('./manifest.ts', () => ({
 	parseRepoManifest: (...args: Array<unknown>) =>
 		mockModule.parseRepoManifest(...args),
 }))
+
+vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
+	const actual = await vi.importActual<PublishedRuntimeArtifacts>(
+		'#worker/package-runtime/published-runtime-artifacts.ts',
+	)
+	return {
+		...actual,
+		writePublishedSourceSnapshot: (...args: Array<unknown>) =>
+			mockModule.writePublishedSourceSnapshot(...args),
+	}
+})
 
 const { RepoSession, readWithRetry } = await import('./repo-session-do.ts')
 
@@ -277,6 +290,7 @@ test('rebaseSession uses Artifacts username/password auth without token override
 
 test('publishSession uses Artifacts username/password auth for both origin and source pushes', async () => {
 	setCommonSessionFixtures()
+	mockModule.writePublishedSourceSnapshot.mockClear()
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 
 	await repoSession.publishSession({
@@ -307,6 +321,114 @@ test('publishSession uses Artifacts username/password auth for both origin and s
 	for (const call of mockModule.git.push.mock.calls) {
 		expect(call[0]).not.toHaveProperty('token')
 	}
+})
+
+test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
+	// Regression test: repo_publish_session was throwing
+	// "Published snapshot for source ... was not found" because the publish
+	// handler updated D1 with the new commit without writing the KV snapshot
+	// that loadPublishedEntitySource and package-backed jobs rely on. The
+	// handler must persist the current workspace tree under the new commit
+	// before any downstream read is attempted.
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-published-new'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.writePublishedSourceSnapshot.mockClear()
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/package.json' },
+		{ type: 'file', path: '/session/src/index.ts' },
+		{ type: 'file', path: '/session/.git/config' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/package.json') {
+			return '{"name":"demo","kody":{"id":"demo"}}'
+		}
+		if (path === '/session/src/index.ts') {
+			return 'export default {}'
+		}
+		if (path === '/session/kody.json') {
+			return '{"version":1,"kind":"app"}'
+		}
+		return ''
+	})
+
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env
+	const repoSession = new RepoSession(createDurableObjectState(), env)
+
+	await repoSession.publishSession({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		force: true,
+	})
+
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledTimes(1)
+	const snapshotCall = mockModule.writePublishedSourceSnapshot.mock.calls[0][0]
+	expect(snapshotCall.source.id).toBe('source-1')
+	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
+	expect(snapshotCall.files).toEqual({
+		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
+		'src/index.ts': 'export default {}',
+	})
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'source-1',
+			publishedCommit: 'commit-published-new',
+		}),
+	)
+})
+
+test('publishSession rolls back the D1 published commit when snapshot persistence fails', async () => {
+	// Matches the source-sync.ts revert behavior so a failed KV write never
+	// leaves an entity source pointing at a commit whose snapshot nobody can
+	// read. Without this, a partial failure would permanently break package
+	// jobs for the source until it is republished.
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-published-fail'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.writePublishedSourceSnapshot.mockReset()
+	mockModule.writePublishedSourceSnapshot.mockRejectedValueOnce(
+		new Error('kv write failed'),
+	)
+	mockModule.updateEntitySource.mockClear()
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/kody.json' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockResolvedValue('{"version":1,"kind":"app"}')
+
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as unknown as KVNamespace,
+	} as Env
+	const repoSession = new RepoSession(createDurableObjectState(), env)
+
+	await expect(
+		repoSession.publishSession({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			force: true,
+		}),
+	).rejects.toThrow('kv write failed')
+
+	expect(mockModule.updateEntitySource).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		expect.objectContaining({
+			id: 'source-1',
+			publishedCommit: 'commit-published-fail',
+		}),
+	)
+	expect(mockModule.updateEntitySource).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		expect.objectContaining({
+			id: 'source-1',
+			publishedCommit: 'commit-base',
+		}),
+	)
 })
 
 test('openSession strips unsupported characters from derived session repo names', async () => {
@@ -453,7 +575,9 @@ test('readWithRetry distinguishes null from other falsy values', async () => {
 	// like 0, '', or false must be returned as-is instead of triggering
 	// extra retries and a final null.
 	for (const value of [0, '', false]) {
-		const read = vi.fn(async () => value as unknown as number | string | boolean)
+		const read = vi.fn(
+			async () => value as unknown as number | string | boolean,
+		)
 		const result = await readWithRetry(read, [])
 		expect(result).toBe(value)
 		expect(read).toHaveBeenCalledTimes(1)
