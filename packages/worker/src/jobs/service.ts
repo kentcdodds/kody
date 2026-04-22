@@ -33,7 +33,10 @@ import {
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
-import { createJobStorageId } from '#worker/storage-runner.ts'
+import {
+	createJobStorageId,
+	storageRunnerRpc,
+} from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
 	normalizePackageWorkspacePath,
@@ -45,7 +48,10 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-codemode-execution.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import {
+	deleteEntitySource,
+	getEntitySourceById,
+} from '#worker/repo/entity-sources.ts'
 import { loadPublishedEntitySource } from '#worker/repo/published-source.ts'
 import {
 	deletePublishedArtifactsForSource,
@@ -58,8 +64,6 @@ import {
 	upsertArchivedJobArtifact,
 } from './archived-artifacts-repo.ts'
 import { deletePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
-import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	logJobSchedulerEvent,
 	type SchedulerJobOutcomeLog,
@@ -201,14 +205,60 @@ async function ensurePublishedBundleArtifactForJob(input: {
 	if (!source) {
 		throw new Error(`Source "${input.job.sourceId}" was not found.`)
 	}
-	const artifactName = source.entity_kind === 'package' ? input.job.name : null
+	const artifactName =
+		source.entity_kind === 'package' ? input.job.name : input.job.id
+	const published = await loadPublishedEntitySource({
+		env: input.env,
+		userId: input.callerContext.user.userId,
+		sourceId: input.job.sourceId,
+	})
+	const publishedSource = published.source
+	if (!publishedSource) {
+		throw new Error(`Published source "${input.job.sourceId}" was not found.`)
+	}
+	const manifestPath = publishedSource.manifest_path
+	const manifestContent = published.files[manifestPath]
+	if (!manifestContent) {
+		throw new Error(`Job manifest "${manifestPath}" was not found.`)
+	}
+	let entryPoint: string
+	let packageContext: {
+		packageId: string
+		kodyId: string
+	} | null = null
+	if (manifestPath === 'kody.json' || publishedSource.entity_kind === 'job') {
+		const manifest = parseRepoManifest({
+			content: manifestContent,
+			manifestPath,
+		})
+		if (manifest.kind !== 'job') {
+			throw new Error(`Repo source "${input.job.sourceId}" is not a job manifest.`)
+		}
+		entryPoint = getManifestEntrypointPath(manifest)
+	} else {
+		const manifest = parseAuthoredPackageJson({
+			content: manifestContent,
+			manifestPath,
+		})
+		const jobDefinition = manifest.kody.jobs?.[input.job.name]
+		if (!jobDefinition) {
+			throw new Error(
+				`Package "${manifest.kody.id}" does not define job "${input.job.name}".`,
+			)
+		}
+		entryPoint = normalizePackageWorkspacePath(jobDefinition.entry)
+		packageContext = {
+			packageId: source.entity_id,
+			kodyId: manifest.kody.id,
+		}
+	}
 	const artifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
 		userId: input.callerContext.user.userId,
 		sourceId: input.job.sourceId,
 		kind: 'job',
 		artifactName,
-		entryPoint: 'src/job.ts',
+		entryPoint,
 	})
 	if (artifact?.artifact) {
 		logJobSchedulerEvent({
@@ -230,53 +280,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 		artifactCacheHit: false,
 		reason: 'bundle_not_found',
 	})
-	const published = await loadPublishedEntitySource({
-		env: input.env,
-		userId: input.callerContext.user.userId,
-		sourceId: input.job.sourceId,
-	})
-	const publishedSource = published.source
-	if (!publishedSource) {
-		throw new Error(`Published source "${input.job.sourceId}" was not found.`)
-	}
-	const manifestPath = publishedSource.manifest_path
-	if (manifestPath === 'kody.json' || publishedSource.entity_kind === 'job') {
-		const manifestContent = published.files[manifestPath]
-		if (!manifestContent) {
-			throw new Error(`Job manifest "${manifestPath}" was not found.`)
-		}
-		const manifest = parseRepoManifest({
-			content: manifestContent,
-			manifestPath,
-		})
-		if (manifest.kind !== 'job') {
-			throw new Error(`Repo source "${input.job.sourceId}" is not a job manifest.`)
-		}
-		const entryPoint = getManifestEntrypointPath(manifest)
-		await persistPublishedJobBundleArtifact({
-			env: input.env,
-			job: input.job,
-			callerContext: input.callerContext,
-			sourceId: input.job.sourceId,
-			sourceFiles: published.files,
-			entryPoint,
-		})
-	} else {
-		const manifestContent = published.files[manifestPath]
-		if (!manifestContent) {
-			throw new Error(`Job manifest "${manifestPath}" was not found.`)
-		}
-		const manifest = parseAuthoredPackageJson({
-			content: manifestContent,
-			manifestPath,
-		})
-		const jobDefinition = manifest.kody.jobs?.[input.job.name]
-		if (!jobDefinition) {
-			throw new Error(
-				`Package "${manifest.kody.id}" does not define job "${input.job.name}".`,
-			)
-		}
-		const entryPoint = normalizePackageWorkspacePath(jobDefinition.entry)
+	if (packageContext) {
 		const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
 			sourceFiles: published.files,
 			entryPoints: [
@@ -289,27 +293,24 @@ async function ensurePublishedBundleArtifactForJob(input: {
 		if (!typecheckResult.ok) {
 			throw new Error(typecheckResult.message)
 		}
-		await persistPublishedJobBundleArtifact({
-			env: input.env,
-			job: input.job,
-			callerContext: input.callerContext,
-			sourceId: input.job.sourceId,
-			sourceFiles: published.files,
-			entryPoint,
-			artifactName,
-			packageContext: {
-				packageId: source.entity_id,
-				kodyId: manifest.kody.id,
-			},
-		})
 	}
+	await persistPublishedJobBundleArtifact({
+		env: input.env,
+		job: input.job,
+		callerContext: input.callerContext,
+		sourceId: input.job.sourceId,
+		sourceFiles: published.files,
+		entryPoint,
+		artifactName,
+		packageContext,
+	})
 	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
 		userId: input.callerContext.user.userId,
 		sourceId: input.job.sourceId,
 		kind: 'job',
 		artifactName,
-		entryPoint: 'src/job.ts',
+		entryPoint,
 	})
 	if (!loadedArtifact?.artifact) {
 		throw new Error(
@@ -1000,24 +1001,6 @@ async function runRepoBackedJob(input: {
 	}
 	const artifactName =
 		source.entity_kind === 'package' ? input.job.name : input.job.id
-	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
-		env: input.env,
-		userId: input.callerContext.user.userId,
-		sourceId: input.job.sourceId,
-		kind: 'job',
-		artifactName,
-		entryPoint: 'src/job.ts',
-	})
-	if (loadedArtifact?.artifact) {
-		return await executePublishedJobArtifact({
-			env: input.env,
-			job: input.job,
-			callerContext: input.callerContext,
-			artifact: loadedArtifact.artifact,
-			bypassLogs: [],
-		})
-	}
-
 	const publishedSource = await loadPublishedEntitySource({
 		env: input.env,
 		userId: input.callerContext.user.userId,
@@ -1054,6 +1037,23 @@ async function runRepoBackedJob(input: {
 			}
 		}
 		const entryPoint = getManifestEntrypointPath(manifest)
+		const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
+			env: input.env,
+			userId: input.callerContext.user.userId,
+			sourceId: input.job.sourceId,
+			kind: 'job',
+			artifactName,
+			entryPoint,
+		})
+		if (loadedArtifact?.artifact) {
+			return await executePublishedJobArtifact({
+				env: input.env,
+				job: input.job,
+				callerContext: input.callerContext,
+				artifact: loadedArtifact.artifact,
+				bypassLogs: [],
+			})
+		}
 		return await rebuildAndExecuteJobArtifact({
 			env: input.env,
 			job: input.job,
@@ -1087,6 +1087,23 @@ async function runRepoBackedJob(input: {
 		}
 	}
 	const entryPoint = normalizePackageWorkspacePath(jobDefinition.entry)
+	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
+		env: input.env,
+		userId: input.callerContext.user.userId,
+		sourceId: input.job.sourceId,
+		kind: 'job',
+		artifactName,
+		entryPoint,
+	})
+	if (loadedArtifact?.artifact) {
+		return await executePublishedJobArtifact({
+			env: input.env,
+			job: input.job,
+			callerContext: input.callerContext,
+			artifact: loadedArtifact.artifact,
+			bypassLogs: [],
+		})
+	}
 	return await rebuildAndExecuteJobArtifact({
 		env: input.env,
 		job: input.job,

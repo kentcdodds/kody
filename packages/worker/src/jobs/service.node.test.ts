@@ -2075,8 +2075,9 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 				kodyId: 'repo-typecheck-strict',
 				description: 'Runs from repo',
 				jobName: 'Repo-backed strict typecheck job',
+				entry: './src/custom-job.ts',
 			}),
-			'src/job.ts': 'export default async () => ({ ok: true })',
+			'src/custom-job.ts': 'export default async () => ({ ok: true })',
 		},
 	})
 	const env = {
@@ -2136,7 +2137,7 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 				{
 					kind: 'typecheck' as const,
 					ok: false,
-					message: "src/job.ts:1:28 Cannot find name 'codemode'.",
+					message: "src/custom-job.ts:1:28 Cannot find name 'codemode'.",
 				},
 			],
 			manifest: createPackageJobManifest({
@@ -2144,6 +2145,7 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 				kodyId: 'repo-typecheck-strict',
 				description: 'Runs from repo',
 				jobName: 'Repo-backed strict typecheck job',
+				entry: './src/custom-job.ts',
 			}),
 			runId: 'check-run-strict',
 			treeHash: 'tree-hash-strict',
