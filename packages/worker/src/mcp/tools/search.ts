@@ -35,7 +35,10 @@ import {
 	buildPackageSearchProjection,
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
-import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
+import {
+	loadPackageManifestBySourceId,
+	loadPackageSourceBySourceId,
+} from '#worker/package-registry/source.ts'
 import {
 	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
@@ -185,7 +188,7 @@ export async function buildSavedPackageSearchRows(input: {
 	const rows = await Promise.all(
 		input.records.map(async (record) => {
 			try {
-				const loaded = await loadPackageSourceBySourceId({
+				const loaded = await loadPackageManifestBySourceId({
 					env: input.env,
 					baseUrl: input.baseUrl,
 					userId: input.userId,

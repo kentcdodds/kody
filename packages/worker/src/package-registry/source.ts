@@ -19,7 +19,13 @@ export type LoadedPackageSource = {
 	files: Record<string, string>
 }
 
+export type LoadedPackageManifest = {
+	source: EntitySourceRow
+	manifest: AuthoredPackageJson
+}
+
 const packageSourceCache = new PromiseLruCache<LoadedPackageSource>()
+const packageManifestCache = new PromiseLruCache<LoadedPackageManifest>()
 
 function canResolveRepoBackedPackageSource(env: Env) {
 	const anyEnv = env as Env & { APP_DB?: unknown; REPO_SESSION?: unknown }
@@ -152,6 +158,103 @@ async function loadPackageSourceUncached(input: {
 	}
 }
 
+async function loadPackageManifestUncached(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	source: EntitySourceRow
+}): Promise<LoadedPackageManifest> {
+	const source = input.source
+	const deepFreeze = <T>(value: T, seen = new WeakSet<object>()): T => {
+		if (value && typeof value === 'object') {
+			const objectValue = value as object
+			if (seen.has(objectValue)) {
+				return value
+			}
+			seen.add(objectValue)
+			for (const child of Object.values(value as Record<string, unknown>)) {
+				deepFreeze(child, seen)
+			}
+			Object.freeze(objectValue)
+		}
+		return value
+	}
+
+	const finalizeLoadedManifest = (loaded: {
+		manifest: AuthoredPackageJson
+	}) =>
+		Object.freeze({
+			source: deepFreeze({ ...source }),
+			manifest: deepFreeze(structuredClone(loaded.manifest)),
+		}) as LoadedPackageManifest
+
+	const mockArtifactsBaseUrl = input.env.CLOUDFLARE_API_BASE_URL?.trim()
+	if (mockArtifactsBaseUrl && source.published_commit) {
+		const mockArtifactsUrl = new URL(mockArtifactsBaseUrl)
+		if (isLoopbackHostname(mockArtifactsUrl.hostname)) {
+			const snapshot = await readMockArtifactSnapshot({
+				env: input.env,
+				repoId: source.repo_id,
+				commit: source.published_commit,
+			})
+			if (snapshot) {
+				const manifestContent = snapshot.files[source.manifest_path]
+				if (!manifestContent) {
+					throw new Error(
+						`Saved package manifest "${source.manifest_path}" was not found in the repo source.`,
+					)
+				}
+				return finalizeLoadedManifest({
+					manifest: parseAuthoredPackageJson({
+						content: manifestContent,
+						manifestPath: source.manifest_path,
+					}),
+				})
+			}
+		}
+	}
+	const sessionId = `package-manifest-${source.id}-${crypto.randomUUID()}`
+	const session = repoSessionRpc(input.env, sessionId)
+	let openedSessionId: string | null = null
+	try {
+		const opened = await session.openSession({
+			sessionId,
+			sourceId: source.id,
+			userId: input.userId,
+			baseUrl: input.baseUrl,
+			sourceRoot: source.source_root,
+		})
+		openedSessionId = opened.id
+		const manifestFile = await session.readFile({
+			sessionId: opened.id,
+			userId: input.userId,
+			path: source.manifest_path,
+		})
+		if (!manifestFile.content) {
+			throw new Error(
+				`Saved package manifest "${source.manifest_path}" was not found in the repo source.`,
+			)
+		}
+		return finalizeLoadedManifest({
+			manifest: parseAuthoredPackageJson({
+				content: manifestFile.content,
+				manifestPath: source.manifest_path,
+			}),
+		})
+	} finally {
+		if (openedSessionId) {
+			await session
+				.discardSession({
+					sessionId: openedSessionId,
+					userId: input.userId,
+				})
+				.catch(() => {
+					// Best effort only; source resolution should preserve the original error.
+				})
+		}
+	}
+}
+
 export async function loadPackageSourceBySourceId(input: {
 	env: Env
 	baseUrl: string
@@ -187,6 +290,58 @@ export async function loadPackageSourceBySourceId(input: {
 		cacheKey,
 		create: async () =>
 			await loadPackageSourceUncached({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				source,
+			}),
+	})
+}
+
+export async function loadPackageManifestBySourceId(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceId: string
+}): Promise<LoadedPackageManifest> {
+	if (!canResolveRepoBackedPackageSource(input.env)) {
+		throw new Error('Saved package source bindings are not available.')
+	}
+	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	if (!source || source.user_id !== input.userId) {
+		throw new Error(`Saved package source "${input.sourceId}" was not found.`)
+	}
+	const cacheKey = createPackageSourceCacheKey({
+		userId: input.userId,
+		source,
+	})
+	if (!cacheKey) {
+		return await loadPackageManifestUncached({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			source,
+		})
+	}
+
+	const cachedSource = packageSourceCache.get(cacheKey)
+	if (cachedSource) {
+		const loadedSource = await cachedSource
+		return Object.freeze({
+			source: loadedSource.source,
+			manifest: loadedSource.manifest,
+		}) as LoadedPackageManifest
+	}
+
+	const cachedManifest = packageManifestCache.get(cacheKey)
+	if (cachedManifest) {
+		return await cachedManifest
+	}
+
+	return await packageManifestCache.getOrCreate({
+		cacheKey,
+		create: async () =>
+			await loadPackageManifestUncached({
 				env: input.env,
 				baseUrl: input.baseUrl,
 				userId: input.userId,

@@ -27,7 +27,8 @@ vi.mock('#worker/repo/repo-codemode-execution.ts', () => ({
 		mockModule.loadRepoSourceFilesFromSession(...args),
 }))
 
-const { loadPackageSourceBySourceId } = await import('./source.ts')
+const { loadPackageSourceBySourceId, loadPackageManifestBySourceId } =
+	await import('./source.ts')
 
 function createPackageSourceRow(input: {
 	id: string
@@ -139,6 +140,54 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 				},
 			},
 		}),
+	})
+})
+
+test('loadPackageManifestBySourceId reads only the manifest for published sources', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.readMockArtifactSnapshot.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.loadRepoSourceFilesFromSession.mockReset()
+
+	const sessionClient = createSessionClient('session-manifest-only-1')
+	mockModule.getEntitySourceById.mockResolvedValue(
+		createPackageSourceRow({
+			id: 'source-manifest-only-1',
+			publishedCommit: 'commit-manifest-only-1',
+		}),
+	)
+	mockModule.readMockArtifactSnapshot.mockResolvedValue(null)
+	mockModule.repoSessionRpc.mockReturnValue(sessionClient as never)
+
+	const first = await loadPackageManifestBySourceId({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceId: 'source-manifest-only-1',
+	})
+	const second = await loadPackageManifestBySourceId({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceId: 'source-manifest-only-1',
+	})
+
+	expect(sessionClient.openSession).toHaveBeenCalledTimes(1)
+	expect(sessionClient.readFile).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadRepoSourceFilesFromSession).not.toHaveBeenCalled()
+	expect(sessionClient.discardSession).toHaveBeenCalledTimes(1)
+	expect(first).toBe(second)
+	expect(first.manifest).toMatchObject({
+		name: '@kentcdodds/example-package',
+		kody: {
+			id: 'example-package',
+		},
 	})
 })
 
