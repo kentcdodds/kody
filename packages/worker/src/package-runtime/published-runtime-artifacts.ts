@@ -93,11 +93,13 @@ function serializeWorkerLoaderModules(
 			return [
 				path,
 				{
-					...(module.js ? { js: module.js } : {}),
-					...(module.cjs ? { cjs: module.cjs } : {}),
-					...(module.text ? { text: module.text } : {}),
-					...(module.data ? { dataBase64: toBase64(module.data) } : {}),
-					...(module.json ? { json: module.json } : {}),
+					...(module.js !== undefined ? { js: module.js } : {}),
+					...(module.cjs !== undefined ? { cjs: module.cjs } : {}),
+					...(module.text !== undefined ? { text: module.text } : {}),
+					...(module.data !== undefined
+						? { dataBase64: toBase64(module.data) }
+						: {}),
+					...(module.json !== undefined ? { json: module.json } : {}),
 				} satisfies SerializedWorkerLoaderModule,
 			]
 		}),
@@ -115,11 +117,13 @@ function deserializeWorkerLoaderModules(
 			return [
 				path,
 				{
-					...(module.js ? { js: module.js } : {}),
-					...(module.cjs ? { cjs: module.cjs } : {}),
-					...(module.text ? { text: module.text } : {}),
-					...(module.dataBase64 ? { data: fromBase64(module.dataBase64) } : {}),
-					...(module.json ? { json: module.json } : {}),
+					...(module.js !== undefined ? { js: module.js } : {}),
+					...(module.cjs !== undefined ? { cjs: module.cjs } : {}),
+					...(module.text !== undefined ? { text: module.text } : {}),
+					...(module.dataBase64 !== undefined
+						? { data: fromBase64(module.dataBase64) }
+						: {}),
+					...(module.json !== undefined ? { json: module.json } : {}),
 				},
 			]
 		}),
@@ -291,7 +295,11 @@ export async function readPublishedBundleArtifact(input: {
 	const artifact = stored as Omit<PublishedBundleArtifact, 'modules'> & {
 		modules: Record<string, SerializedWorkerLoaderModule>
 	}
-	if (artifact.version !== bundleArtifactVersion) {
+	if (
+		artifact.version !== bundleArtifactVersion ||
+		typeof artifact.modules !== 'object' ||
+		artifact.modules == null
+	) {
 		return null
 	}
 	return {

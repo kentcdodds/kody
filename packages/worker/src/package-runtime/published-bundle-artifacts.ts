@@ -4,6 +4,7 @@ import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	type BundleArtifactDependency,
 	type BundleArtifactKind,
@@ -73,10 +74,7 @@ async function resolveDependencyForPackage(input: {
 	if (!row) {
 		throw new Error(`Saved package "${input.kodyId}" was not found for this user.`)
 	}
-	const source = await import('#worker/repo/entity-sources.ts').then(
-		async ({ getEntitySourceById }) =>
-			await getEntitySourceById(input.state.env.APP_DB, row.sourceId),
-	)
+	const source = await getEntitySourceById(input.state.env.APP_DB, row.sourceId)
 	if (!source?.published_commit) {
 		throw new Error(
 			`Saved package "${input.kodyId}" source "${row.sourceId}" has no published commit.`,
@@ -89,13 +87,12 @@ async function resolveDependencyForPackage(input: {
 	})
 }
 
-const packageSpecifierPattern = /['"]kody:@([^/'"]+)(?:\/[^'"]*)?['"]/g
-
 async function collectDependenciesFromFiles(input: {
 	env: Env
 	userId: string
 	files: Record<string, string>
 }) {
+	const packageSpecifierPattern = /['"]kody:@([^/'"]+)(?:\/[^'"]*)?['"]/g
 	const state: DependencyResolutionState = {
 		env: input.env,
 		userId: input.userId,
@@ -103,9 +100,7 @@ async function collectDependenciesFromFiles(input: {
 		dependencies: [],
 	}
 	for (const content of Object.values(input.files)) {
-		let match: RegExpExecArray | null
-		packageSpecifierPattern.lastIndex = 0
-		while ((match = packageSpecifierPattern.exec(content)) !== null) {
+		for (const match of content.matchAll(packageSpecifierPattern)) {
 			const kodyId = match[1]?.trim()
 			if (!kodyId) continue
 			await resolveDependencyForPackage({
@@ -167,11 +162,6 @@ export async function persistPublishedBundleArtifact(input: PersistPublishedBund
 		packageContext: input.packageContext ?? null,
 		createdAt: new Date().toISOString(),
 	}
-	await writePublishedBundleArtifact({
-		env: input.env,
-		artifact,
-		kvKey,
-	})
 	const existing = await getPublishedBundleArtifactByIdentity(input.env.APP_DB, {
 		userId: input.userId,
 		sourceId: input.source.id,
@@ -189,13 +179,28 @@ export async function persistPublishedBundleArtifact(input: PersistPublishedBund
 		kvKey,
 		dependencies: input.dependencies,
 	})
-	if (existing) {
-		await updatePublishedBundleArtifactRow(input.env.APP_DB, {
-			id: existing.id,
-			...rowInput,
+	try {
+		await writePublishedBundleArtifact({
+			env: input.env,
+			artifact,
+			kvKey,
 		})
-	} else {
-		await insertPublishedBundleArtifactRow(input.env.APP_DB, rowInput)
+		if (existing) {
+			await updatePublishedBundleArtifactRow(input.env.APP_DB, {
+				id: existing.id,
+				...rowInput,
+			})
+		} else {
+			await insertPublishedBundleArtifactRow(input.env.APP_DB, rowInput)
+		}
+	} catch (error) {
+		await deletePublishedBundleArtifact({
+			env: input.env,
+			kvKey,
+		}).catch(() => {
+			// Best effort; preserve the original DB/KV failure as the root cause.
+		})
+		throw error
 	}
 	return kvKey
 }
@@ -332,21 +337,29 @@ export async function rebuildPublishedPackageArtifacts(input: {
 
 export async function deletePublishedArtifactsForSource(input: {
 	env: Env
+	userId: string
 	sourceId: string
 }) {
 	const rows = await listPublishedBundleArtifactsBySourceId(
 		input.env.APP_DB,
+		input.userId,
 		input.sourceId,
 	)
-	await Promise.all(
-		rows.map(async (row: PublishedBundleArtifactRecord) => {
-			await deletePublishedBundleArtifact({
-				env: input.env,
-				kvKey: row.kvKey,
-			})
-		}),
+	if (hasPublishedRuntimeArtifacts(input.env)) {
+		await Promise.allSettled(
+			rows.map(async (row: PublishedBundleArtifactRecord) => {
+				await deletePublishedBundleArtifact({
+					env: input.env,
+					kvKey: row.kvKey,
+				})
+			}),
+		)
+	}
+	await deletePublishedBundleArtifactRowsBySourceId(
+		input.env.APP_DB,
+		input.userId,
+		input.sourceId,
 	)
-	await deletePublishedBundleArtifactRowsBySourceId(input.env.APP_DB, input.sourceId)
 }
 
 export type { PublishedBundleArtifactRecord }

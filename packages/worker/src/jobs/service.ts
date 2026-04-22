@@ -65,7 +65,9 @@ import {
 } from './archived-artifacts-repo.ts'
 import { deletePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
+	logJobSchedulerError,
 	logJobSchedulerEvent,
+	schedulerErrorFields,
 	type SchedulerJobOutcomeLog,
 } from './scheduler-logging.ts'
 
@@ -451,35 +453,47 @@ async function cleanupArchivedJobArtifacts(input: {
 		(input.now ?? new Date()).toISOString(),
 	)
 	for (const artifact of due) {
-		const source = await getEntitySourceById(input.env.APP_DB, artifact.sourceId)
-		if (source) {
-			await deletePublishedArtifactsForSource({
+		try {
+			const source = await getEntitySourceById(input.env.APP_DB, artifact.sourceId)
+			if (source) {
+				await deletePublishedArtifactsForSource({
+					env: input.env,
+					userId: artifact.userId,
+					sourceId: source.id,
+				})
+				await deletePublishedSourceSnapshot({
+					env: input.env,
+					sourceId: source.id,
+					publishedCommit: source.published_commit,
+				})
+				await deleteEntitySource(input.env.APP_DB, {
+					id: source.id,
+					userId: artifact.userId,
+				})
+			}
+			await storageRunnerRpc({
 				env: input.env,
-				sourceId: source.id,
-			})
-			await deletePublishedSourceSnapshot({
-				env: input.env,
-				sourceId: source.id,
-				publishedCommit: source.published_commit,
-			})
-			await deleteEntitySource(input.env.APP_DB, {
-				id: source.id,
 				userId: artifact.userId,
+				storageId: artifact.storageId,
+			}).clearStorage()
+			await deleteArchivedJobArtifact(input.env.APP_DB, artifact.id)
+			logJobSchedulerEvent({
+				event: 'job_artifact_cleanup_completed',
+				userId: artifact.userId,
+				jobId: artifact.jobId,
+				sourceId: artifact.sourceId,
+				reason: 'retention_elapsed',
+			})
+		} catch (error) {
+			logJobSchedulerError({
+				event: 'job_artifact_cleanup_failed',
+				userId: artifact.userId,
+				jobId: artifact.jobId,
+				sourceId: artifact.sourceId,
+				reason: 'retention_elapsed',
+				...schedulerErrorFields(error),
 			})
 		}
-		await storageRunnerRpc({
-			env: input.env,
-			userId: artifact.userId,
-			storageId: artifact.storageId,
-		}).clearStorage()
-		await deleteArchivedJobArtifact(input.env.APP_DB, artifact.id)
-		logJobSchedulerEvent({
-			event: 'job_artifact_cleanup_completed',
-			userId: artifact.userId,
-			jobId: artifact.jobId,
-			sourceId: artifact.sourceId,
-			reason: 'retention_elapsed',
-		})
 	}
 }
 

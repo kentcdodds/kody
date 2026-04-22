@@ -89,6 +89,7 @@ export async function refreshSavedPackageProjection(input: {
 		userId: input.userId,
 		embedText: buildSavedPackageEmbedText(loaded.manifest),
 	})
+	const refreshedAt = new Date().toISOString()
 	await rebuildPublishedPackageArtifacts({
 		env: input.env,
 		userId: input.userId,
@@ -103,10 +104,8 @@ export async function refreshSavedPackageProjection(input: {
 			searchText: row.search_text ?? null,
 			sourceId: row.source_id,
 			hasApp: row.has_app === 1,
-			createdAt:
-				existing?.createdAt ??
-				(existing?.updatedAt ?? new Date().toISOString()),
-			updatedAt: existing?.updatedAt ?? new Date().toISOString(),
+			createdAt: existing?.createdAt ?? refreshedAt,
+			updatedAt: refreshedAt,
 		},
 		manifest: loaded.manifest,
 		files: loaded.files,

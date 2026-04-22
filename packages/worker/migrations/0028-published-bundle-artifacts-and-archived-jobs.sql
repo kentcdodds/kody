@@ -28,7 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_published_bundle_artifacts_source_id
 ON published_bundle_artifacts(source_id);
 
 CREATE TABLE IF NOT EXISTS archived_job_artifacts (
-	job_id TEXT PRIMARY KEY,
+	id TEXT PRIMARY KEY,
+	job_id TEXT NOT NULL UNIQUE,
 	user_id TEXT NOT NULL,
 	source_id TEXT NOT NULL,
 	published_commit TEXT NOT NULL,

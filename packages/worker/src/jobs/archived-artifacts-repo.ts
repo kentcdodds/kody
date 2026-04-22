@@ -69,15 +69,17 @@ export async function upsertArchivedJobArtifact(input: {
 export async function listArchivedJobArtifactsDueBefore(
 	db: D1Database,
 	retainUntil: string,
+	limit = 100,
 ): Promise<Array<ArchivedJobArtifactRecord>> {
 	const { results } = await db
 		.prepare(
 			`SELECT id, job_id, user_id, source_id, published_commit, storage_id, retain_until, created_at, updated_at
 			FROM archived_job_artifacts
 			WHERE retain_until <= ?
-			ORDER BY retain_until ASC`,
+			ORDER BY retain_until ASC, id ASC
+			LIMIT ?`,
 		)
-		.bind(retainUntil)
+		.bind(retainUntil, limit)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map((row) => ({
 		id: String(row['id']),

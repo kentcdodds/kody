@@ -45,34 +45,6 @@ function resetRepoPersistenceMocks() {
 	)
 }
 
-function createBundleArtifactsKv(): KVNamespace {
-	const store = new Map<string, string>()
-	return {
-		async get(key: string, type?: 'text' | 'json') {
-			const value = store.get(key) ?? null
-			if (value == null) return null
-			if (type === 'json') {
-				return JSON.parse(value)
-			}
-			return value
-		},
-		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
-			if (typeof value === 'string') {
-				store.set(key, value)
-				return
-			}
-			const view =
-				value instanceof ArrayBuffer
-					? new Uint8Array(value)
-					: new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-			store.set(key, Buffer.from(view).toString('utf8'))
-		},
-		async delete(key: string) {
-			store.delete(key)
-		},
-	} as unknown as KVNamespace
-}
-
 test('errorFields normalizes Error and non-Error values', () => {
 	expect(errorFields(new TypeError('bad'))).toEqual({
 		errorName: 'TypeError',

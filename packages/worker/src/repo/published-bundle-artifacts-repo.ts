@@ -71,15 +71,16 @@ export async function getPublishedBundleArtifactByIdentity(
 
 export async function listPublishedBundleArtifactsBySourceId(
 	db: D1Database,
+	userId: string,
 	sourceId: string,
 ) {
 	const result = await db
 		.prepare(
 			`SELECT * FROM published_bundle_artifacts
-			WHERE source_id = ?
+			WHERE user_id = ? AND source_id = ?
 			ORDER BY updated_at DESC, created_at DESC`,
 		)
-		.bind(sourceId)
+		.bind(userId, sourceId)
 		.all<Record<string, unknown>>()
 	return (result.results ?? []).map(mapRow)
 }
@@ -144,11 +145,14 @@ export async function updatePublishedBundleArtifactRow(
 
 export async function deletePublishedBundleArtifactRowsBySourceId(
 	db: D1Database,
+	userId: string,
 	sourceId: string,
 ) {
 	const result = await db
-		.prepare(`DELETE FROM published_bundle_artifacts WHERE source_id = ?`)
-		.bind(sourceId)
+		.prepare(
+			`DELETE FROM published_bundle_artifacts WHERE user_id = ? AND source_id = ?`,
+		)
+		.bind(userId, sourceId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

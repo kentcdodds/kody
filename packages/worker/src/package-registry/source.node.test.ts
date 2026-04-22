@@ -36,34 +36,6 @@ function createPackageSourceRow(input: {
 	}
 }
 
-function createSessionClient(sessionId: string) {
-	return {
-		openSession: vi.fn(async () => ({
-			id: sessionId,
-		})),
-		readFile: vi.fn(async () => ({
-			content: JSON.stringify({
-				name: '@kentcdodds/example-package',
-				exports: {
-					'.': './index.js',
-				},
-				kody: {
-					id: 'example-package',
-					description: 'Example package',
-					app: {
-						entry: 'app.js',
-					},
-				},
-			}),
-		})),
-		discardSession: vi.fn(async () => ({
-			ok: true as const,
-			sessionId,
-			deleted: true,
-		})),
-	}
-}
-
 test('loadPackageSourceBySourceId reuses cached published package sources', async () => {
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.loadPublishedEntitySource.mockReset()
@@ -189,11 +161,12 @@ test('loadPackageSourceBySourceId shares the same in-flight published source loa
 		delete: vi.fn(async () => undefined),
 	} as unknown as KVNamespace
 
-	let resolveFiles: ((files: Record<string, string>) => void) | null = null
-	const filesPromise = new Promise<{
+	type PublishedSourcePayload = {
 		source: ReturnType<typeof createPackageSourceRow>
 		files: Record<string, string>
-	}>((resolve) => {
+	}
+	let resolveFiles: ((value: PublishedSourcePayload) => void) | null = null
+	const filesPromise = new Promise<PublishedSourcePayload>((resolve) => {
 		resolveFiles = resolve
 	})
 
