@@ -101,6 +101,11 @@ function createEnv(
 	return {
 		OAUTH_PROVIDER: helpers,
 		APP_DB: resolvedDb,
+		BUNDLE_ARTIFACTS_KV: {
+			get: async () => null,
+			put: async () => undefined,
+			delete: async () => undefined,
+		},
 		COOKIE_SECRET: cookieSecretValue,
 		JOB_MANAGER: mockJobDoNamespace('job-manager-test-id'),
 		STORAGE_RUNNER: mockJobDoNamespace('storage-runner-test-id'),

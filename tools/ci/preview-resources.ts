@@ -86,12 +86,18 @@ function parseArgs(argv: Array<string>): {
 function buildPreviewResourceNames(workerName: string) {
 	const maxLen = 63
 	const d1Suffix = '-db'
-	const kvSuffix = '-oauth-kv'
+	const oauthKvSuffix = '-oauth-kv'
+	const bundleKvSuffix = '-bundle-artifacts-kv'
 
 	const d1DatabaseName = truncateWithSuffix(workerName, d1Suffix, maxLen)
-	const oauthKvTitle = truncateWithSuffix(workerName, kvSuffix, maxLen)
+	const oauthKvTitle = truncateWithSuffix(workerName, oauthKvSuffix, maxLen)
+	const bundleArtifactsKvTitle = truncateWithSuffix(
+		workerName,
+		bundleKvSuffix,
+		maxLen,
+	)
 
-	return { d1DatabaseName, oauthKvTitle }
+	return { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle }
 }
 
 function ensureD1Database({
@@ -224,15 +230,23 @@ function deleteKvNamespace({
 }
 
 async function ensurePreviewResources(options: CliOptions) {
-	const { d1DatabaseName, oauthKvTitle } = buildPreviewResourceNames(
+	const { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle } =
+		buildPreviewResourceNames(
 		options.workerName,
-	)
+		)
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
 		location: options.d1Location,
 		dryRun: options.dryRun,
 	})
-	const kv = ensureKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
+	const oauthKv = ensureKvNamespace({
+		title: oauthKvTitle,
+		dryRun: options.dryRun,
+	})
+	const bundleArtifactsKv = ensureKvNamespace({
+		title: bundleArtifactsKvTitle,
+		dryRun: options.dryRun,
+	})
 
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
@@ -240,7 +254,8 @@ async function ensurePreviewResources(options: CliOptions) {
 		envName: 'preview',
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
-		oauthKvId: kv.id,
+		oauthKvId: oauthKv.id,
+		bundleArtifactsKvId: bundleArtifactsKv.id,
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
@@ -250,14 +265,18 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`wrangler_config=${generatedConfigPath}`)
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
-	console.log(`oauth_kv_title=${kv.title}`)
-	console.log(`oauth_kv_id=${kv.id}`)
+	console.log(`oauth_kv_title=${oauthKv.title}`)
+	console.log(`oauth_kv_id=${oauthKv.id}`)
+	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
+	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
 }
 
 async function cleanupPreviewResources(options: CliOptions) {
-	const { d1DatabaseName, oauthKvTitle } = buildPreviewResourceNames(
+	const { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle } =
+		buildPreviewResourceNames(
 		options.workerName,
-	)
+		)
+	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })
 	deleteKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
 	deleteD1Database({ name: d1DatabaseName, dryRun: options.dryRun })
 }

@@ -22,6 +22,7 @@ function createBundleResult(suffix: string) {
 				suffix,
 			)}) } }`,
 		} satisfies WorkerLoaderModules,
+		dependencies: [],
 	}
 }
 

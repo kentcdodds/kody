@@ -18,16 +18,19 @@ import {
 	createPublishedPackagePromiseCache,
 } from '#worker/package-registry/published-package-cache.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+import {
+	type BundleArtifactDependency,
+	type BundleArtifactKind,
+	type PublishedBundleArtifact,
+} from './published-runtime-artifacts.ts'
+import { type RuntimeBundle } from './runtime-bundle-types.ts'
 
 const runtimeModulePath = '.__kody_virtual__/runtime.js'
 const rootSourcePrefix = '.__kody_root__'
 const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const packageSpecifierPrefix = 'kody:@'
-const packageAppBundleCache = createPublishedPackagePromiseCache<{
-	mainModule: string
-	modules: WorkerLoaderModules
-}>()
+const packageAppBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 
 function joinPath(...parts: Array<string>) {
 	return parts
@@ -74,6 +77,7 @@ type RewriteState = {
 		string,
 		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
 	>
+	dependencies: Map<string, BundleArtifactDependency>
 }
 
 type KodyPackageSpecifier = {
@@ -315,6 +319,13 @@ async function ensurePackageLoaded(
 		prefix: joinPath(packageSourcePrefix, kodyId),
 	}
 	state.packages.set(kodyId, entry)
+	if (loaded.source.published_commit) {
+		state.dependencies.set(kodyId, {
+			sourceId: loaded.source.id,
+			publishedCommit: loaded.source.published_commit,
+			kodyId,
+		})
+	}
 	for (const [filePath, content] of Object.entries(loaded.files)) {
 		const normalizedPath = normalizePackageWorkspacePath(filePath)
 		const targetPath = joinPath(entry.prefix, normalizedPath)
@@ -397,28 +408,12 @@ export async function buildKodyModuleBundle(input: {
 	entryPoint: string
 	params?: Record<string, unknown>
 }) {
-	const files: Record<string, string> = {
-		[runtimeModulePath]: createRuntimeModuleSource(),
-	}
-	const state: RewriteState = {
+	const { files, dependencies } = await prepareKodyGraphFiles({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
-		files,
-		proxies: new Map(),
-		packages: new Map(),
-	}
-	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
-		const normalizedPath = joinPath(
-			rootSourcePrefix,
-			normalizePackageWorkspacePath(filePath),
-		)
-		files[normalizedPath] = await rewriteKodyImports({
-			state,
-			source: content,
-			modulePath: normalizedPath,
-		})
-	}
+		sourceFiles: input.sourceFiles,
+	})
 	const normalizedEntrypoint = joinPath(
 		rootSourcePrefix,
 		normalizePackageWorkspacePath(input.entryPoint),
@@ -429,7 +424,7 @@ export async function buildKodyModuleBundle(input: {
 			bootstrapPath,
 			normalizedEntrypoint,
 		),
-		paramsJson: JSON.stringify(input.params ?? null),
+		paramsJson: 'globalThis.__kodyRuntime?.params ?? null',
 	})
 	const bundle = await createWorker({
 		files,
@@ -438,6 +433,7 @@ export async function buildKodyModuleBundle(input: {
 	return {
 		mainModule: bundle.mainModule,
 		modules: bundle.modules as WorkerLoaderModules,
+		dependencies: [...dependencies.values()],
 	}
 }
 
@@ -457,6 +453,7 @@ async function prepareKodyGraphFiles(input: {
 		files,
 		proxies: new Map(),
 		packages: new Map(),
+		dependencies: new Map(),
 	}
 	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
 		const normalizedPath = joinPath(
@@ -469,7 +466,10 @@ async function prepareKodyGraphFiles(input: {
 			modulePath: normalizedPath,
 		})
 	}
-	return files
+	return {
+		files,
+		dependencies: state.dependencies,
+	}
 }
 
 export async function buildKodyAppBundle(input: {
@@ -481,7 +481,7 @@ export async function buildKodyAppBundle(input: {
 	cacheKey?: string | null
 }) {
 	const buildBundle = async () => {
-		const files = await prepareKodyGraphFiles({
+		const { files, dependencies } = await prepareKodyGraphFiles({
 			env: input.env,
 			baseUrl: input.baseUrl,
 			userId: input.userId,
@@ -505,6 +505,7 @@ export async function buildKodyAppBundle(input: {
 		return {
 			mainModule: bundle.mainModule,
 			modules: bundle.modules as WorkerLoaderModules,
+			dependencies: [...dependencies.values()],
 		}
 	}
 
@@ -517,6 +518,35 @@ export async function buildKodyAppBundle(input: {
 		cacheKey,
 		create: buildBundle,
 	})
+}
+
+export function createPublishedBundleArtifact(input: {
+	kind: BundleArtifactKind
+	artifactName?: string | null
+	sourceId: string
+	publishedCommit: string
+	entryPoint: string
+	mainModule: string
+	modules: WorkerLoaderModules
+	dependencies: Array<BundleArtifactDependency>
+	packageContext?: {
+		packageId: string
+		kodyId: string
+	} | null
+}): PublishedBundleArtifact {
+	return {
+		version: 1,
+		kind: input.kind,
+		artifactName: input.artifactName?.trim() || null,
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		entryPoint: normalizePackageWorkspacePath(input.entryPoint),
+		mainModule: input.mainModule,
+		modules: input.modules,
+		dependencies: input.dependencies,
+		packageContext: input.packageContext ?? null,
+		createdAt: new Date().toISOString(),
+	}
 }
 
 export function createPublishedPackageAppBundleCacheKey(input: {
