@@ -3,17 +3,26 @@ import { type ArtifactBootstrapAccess } from './artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
+	updateEntitySource: vi.fn(async () => true),
 	repoSessionRpc: vi.fn(),
+	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
+	updateEntitySource: (...args: Array<unknown>) =>
+		mockModule.updateEntitySource(...args),
 }))
 
 vi.mock('./repo-session-do.ts', () => ({
 	repoSessionRpc: (...args: Array<unknown>) =>
 		mockModule.repoSessionRpc(...args),
+}))
+
+vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
+	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.writePublishedSourceSnapshot(...args),
 }))
 
 const { syncArtifactSourceSnapshot } = await import('./source-sync.ts')
@@ -25,8 +34,37 @@ const bootstrapAccess: ArtifactBootstrapAccess = {
 	expiresAt: '2025-10-09T08:53:20.000Z',
 }
 
+function createBundleArtifactsKv(): KVNamespace {
+	const store = new Map<string, string>()
+	return {
+		async get(key: string, type?: 'text' | 'json') {
+			const value = store.get(key) ?? null
+			if (value == null) return null
+			if (type === 'json') {
+				return JSON.parse(value)
+			}
+			return value
+		},
+		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
+			if (typeof value === 'string') {
+				store.set(key, value)
+				return
+			}
+			const view =
+				value instanceof ArrayBuffer
+					? new Uint8Array(value)
+					: new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+			store.set(key, Buffer.from(view).toString('utf8'))
+		},
+		async delete(key: string) {
+			store.delete(key)
+		},
+	} as unknown as KVNamespace
+}
+
 test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into the source repo', async () => {
 	mockModule.getEntitySourceById.mockReset()
+	mockModule.updateEntitySource.mockReset()
 	mockModule.repoSessionRpc.mockReset()
 
 	const sessionClient = {
@@ -67,6 +105,7 @@ test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into th
 					return {} as D1PreparedStatement
 				},
 			},
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 			REPO_SESSION: {},
 			CLOUDFLARE_ACCOUNT_ID: 'account-1',
 			CLOUDFLARE_API_TOKEN: 'token-1',
@@ -110,6 +149,7 @@ test('syncArtifactSourceSnapshot bootstraps unpublished sources directly into th
 
 test('syncArtifactSourceSnapshot still uses repo sessions for already-published sources', async () => {
 	mockModule.getEntitySourceById.mockReset()
+	mockModule.updateEntitySource.mockReset()
 	mockModule.repoSessionRpc.mockReset()
 
 	const sessionClient = {
@@ -157,6 +197,7 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 					return {} as D1PreparedStatement
 				},
 			},
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 			REPO_SESSION: {},
 			CLOUDFLARE_ACCOUNT_ID: 'account-1',
 			CLOUDFLARE_API_TOKEN: 'token-1',
@@ -204,6 +245,7 @@ test('syncArtifactSourceSnapshot still uses repo sessions for already-published 
 
 test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish of a new source', async () => {
 	mockModule.getEntitySourceById.mockReset()
+	mockModule.updateEntitySource.mockReset()
 	mockModule.repoSessionRpc.mockReset()
 
 	const sessionClient = {
@@ -244,6 +286,7 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 					return {} as D1PreparedStatement
 				},
 			},
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
 			REPO_SESSION: {},
 			CLOUDFLARE_ACCOUNT_ID: 'account-1',
 			CLOUDFLARE_API_TOKEN: 'token-1',
@@ -272,4 +315,84 @@ test('syncArtifactSourceSnapshot forwards bootstrap access for the first publish
 		bootstrapAccess,
 	})
 	expect(sessionClient.openSession).not.toHaveBeenCalled()
+})
+
+test('syncArtifactSourceSnapshot does not re-persist the KV snapshot after a successful publishSession', async () => {
+	// publishSession now owns both the D1 advance and the BUNDLE_ARTIFACTS_KV
+	// snapshot write (with its own compensating rollback). A redundant second
+	// writePublishedSourceSnapshot here would be harmless on success but
+	// actively wrong on failure: its revert would undo the consistent D1+KV
+	// state publishSession already established while leaving the repo session
+	// row marked status: 'published' with the new base_commit.
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.updateEntitySource.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.writePublishedSourceSnapshot.mockReset()
+
+	const sessionClient = {
+		bootstrapSource: vi.fn(),
+		openSession: vi.fn(async () => ({
+			id: 'source-sync-source-1-session',
+		})),
+		applyEdits: vi.fn(async () => ({
+			dryRun: false,
+			totalChanged: 1,
+			edits: [],
+		})),
+		publishSession: vi.fn(async () => ({
+			status: 'ok' as const,
+			sessionId: 'source-sync-source-1-session',
+			publishedCommit: 'commit-session-final',
+			message: 'Published session source-sync-source-1-session to app-1.',
+		})),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'source-sync-source-1-session',
+			deleted: true,
+		})),
+	}
+
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'app',
+		entity_id: 'app-1',
+		repo_id: 'app-1',
+		published_commit: 'commit-existing-1',
+		indexed_commit: 'commit-existing-1',
+		manifest_path: 'kody.json',
+		source_root: '/',
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+	mockModule.repoSessionRpc.mockReturnValue(sessionClient as never)
+
+	const publishedCommit = await syncArtifactSourceSnapshot({
+		env: {
+			APP_DB: {
+				prepare() {
+					return {} as D1PreparedStatement
+				},
+			},
+			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+			REPO_SESSION: {},
+			CLOUDFLARE_ACCOUNT_ID: 'account-1',
+			CLOUDFLARE_API_TOKEN: 'token-1',
+		} as unknown as Env,
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+		sourceId: 'source-1',
+		files: {
+			'kody.json': '{"version":1,"kind":"app"}',
+		},
+	})
+
+	expect(publishedCommit).toBe('commit-session-final')
+	expect(sessionClient.publishSession).toHaveBeenCalledTimes(1)
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(sessionClient.discardSession).toHaveBeenCalledWith({
+		sessionId: expect.stringMatching(/^source-sync-source-1-/),
+		userId: 'user-1',
+	})
 })

@@ -392,11 +392,12 @@ export function buildJobManagerDebugOutput(state: JobManagerDebugState) {
 export function buildJobRunNowOutput(input: {
 	job: JobView
 	execution: JobExecutionResult
+	deletedAfterRun: boolean
 }) {
 	return {
 		job: buildJobViewOutput(input.job),
 		execution: input.execution,
-		deleted_after_run: input.job.schedule.type === 'once',
+		deleted_after_run: input.deletedAfterRun,
 	}
 }
 

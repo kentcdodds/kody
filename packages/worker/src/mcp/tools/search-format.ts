@@ -20,6 +20,38 @@ export type SearchResultStructuredContent = {
 	matches: Array<SlimSearchMatch>
 	offline: boolean
 	warnings: Array<string>
+	guidance?: string
+	telemetry?: {
+		intent: {
+			task: string
+			confidence: number
+			entityCount: number
+			actionCount: number
+			constraintCount: number
+			topEntities: Array<{
+				type: string
+				id: string
+				confidence: number
+			}>
+		}
+		candidateCounts: Partial<
+			Record<
+				'capability' | 'package' | 'value' | 'connector' | 'secret',
+				number
+			>
+		>
+		topResultTypes: Array<
+			'capability' | 'package' | 'value' | 'connector' | 'secret'
+		>
+		trimmedMatchCount?: number
+		responseTrimmed?: boolean
+	}
+	phaseTimings?: {
+		queryUnderstandingMs: number
+		candidateGenerationMs: number
+		rerankingMs: number
+		formattingMs?: number
+	}
 	memories?: {
 		surfaced: Array<{
 			id: string
@@ -73,6 +105,7 @@ export type SlimSearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hostedUrl: string | null
+			nextStep?: string
 	  }
 	| {
 			type: 'secret'
@@ -109,6 +142,7 @@ export type SlimSearchMatch =
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
+			nextStep?: string
 	  }
 
 export type SearchEntityDetailStructured =
@@ -371,6 +405,7 @@ export function formatSearchMarkdown(input: {
 	warnings: Array<string>
 	baseUrl: string
 	includePreamble?: boolean
+	guidance?: string
 	memories?: {
 		surfaced: Array<{
 			category: string | null
@@ -390,7 +425,7 @@ export function formatSearchMarkdown(input: {
 			'- Built-in capabilities — `execute` with `import { codemode } from "kody:runtime"`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app` (use `package_id` when that is the identifier you have)',
+			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app` (or `open_generated_ui({ package_id })` when that is the identifier you have)',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
@@ -413,6 +448,10 @@ export function formatSearchMarkdown(input: {
 				`- ${String(input.memories.suppressedCount)} additional memory item(s) were suppressed for this conversation.`,
 			)
 		}
+	}
+
+	if (input.guidance?.trim()) {
+		lines.push('', '## Recommended next step', '', input.guidance.trim())
 	}
 
 	for (const match of input.matches) {
@@ -539,6 +578,9 @@ export function toSlimStructuredMatches(input: {
 			const openGeneratedUiUsage = match.hasApp
 				? buildPackageAppUsage(match.kodyId)
 				: null
+			const nextStep = match.hasApp
+				? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
+				: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.kodyId, '.')}".`
 			return {
 				type: 'package',
 				id: match.kodyId,
@@ -555,6 +597,7 @@ export function toSlimStructuredMatches(input: {
 				hostedUrl: match.hasApp
 					? buildPackageHostedUrl(input.baseUrl, match.kodyId)
 					: null,
+				nextStep,
 			}
 		}
 		if (match.type === 'value') {
@@ -587,6 +630,7 @@ export function toSlimStructuredMatches(input: {
 				clientSecretSecretName: match.clientSecretSecretName,
 				accessTokenSecretName: match.accessTokenSecretName,
 				refreshTokenSecretName: match.refreshTokenSecretName,
+				nextStep: `Inspect connector detail with search({ entity: "${match.connectorName}:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
 			}
 		}
 		return {

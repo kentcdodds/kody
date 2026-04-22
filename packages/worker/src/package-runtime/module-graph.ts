@@ -1,10 +1,13 @@
 import { createWorker } from '@cloudflare/worker-bundler'
-import { parse, type Node } from 'acorn'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
 } from '#worker/package-registry/source.ts'
+import {
+	parseModuleSource,
+	type ModuleAstNode,
+} from '#worker/module-source.ts'
 import {
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
@@ -15,16 +18,19 @@ import {
 	createPublishedPackagePromiseCache,
 } from '#worker/package-registry/published-package-cache.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+import {
+	type BundleArtifactDependency,
+	type BundleArtifactKind,
+	type PublishedBundleArtifact,
+} from './published-runtime-artifacts.ts'
+import { type RuntimeBundle } from './runtime-bundle-types.ts'
 
 const runtimeModulePath = '.__kody_virtual__/runtime.js'
 const rootSourcePrefix = '.__kody_root__'
 const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const packageSpecifierPrefix = 'kody:@'
-const packageAppBundleCache = createPublishedPackagePromiseCache<{
-	mainModule: string
-	modules: WorkerLoaderModules
-}>()
+const packageAppBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 
 function joinPath(...parts: Array<string>) {
 	return parts
@@ -71,6 +77,7 @@ type RewriteState = {
 		string,
 		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
 	>
+	dependencies: Map<string, BundleArtifactDependency>
 }
 
 type KodyPackageSpecifier = {
@@ -189,6 +196,39 @@ function collectLiteralImportNodes(source: string): Array<{
 }> {
 	const nodes: Array<{ start: number; end: number; specifier: string }> = []
 
+	function readLiteralStringNode(
+		node: unknown,
+	): { start: number; end: number; specifier: string } | null {
+		if (node == null || typeof node !== 'object') return null
+		if (!('type' in node)) return null
+		const typedNode = node as {
+			type?: string
+			value?: unknown
+			start?: number
+			end?: number
+			extra?: { rawValue?: unknown }
+		}
+		const literalValue =
+			typeof typedNode.value === 'string'
+				? typedNode.value
+				: typeof typedNode.extra?.rawValue === 'string'
+					? typedNode.extra.rawValue
+					: null
+		if (
+			(typedNode.type === 'Literal' || typedNode.type === 'StringLiteral') &&
+			typeof literalValue === 'string' &&
+			typeof typedNode.start === 'number' &&
+			typeof typedNode.end === 'number'
+		) {
+			return {
+				start: typedNode.start,
+				end: typedNode.end,
+				specifier: literalValue,
+			}
+		}
+		return null
+	}
+
 	function visit(node: unknown): void {
 		if (node == null || typeof node !== 'object') return
 		if (Array.isArray(node)) {
@@ -196,7 +236,7 @@ function collectLiteralImportNodes(source: string): Array<{
 			return
 		}
 		if (!('type' in node)) return
-		const typedNode = node as Node & {
+		const typedNode = node as ModuleAstNode & {
 			source?: { type?: string; value?: unknown; start?: number; end?: number }
 			start?: number
 			end?: number
@@ -205,34 +245,17 @@ function collectLiteralImportNodes(source: string): Array<{
 		if (
 			(typedNode.type === 'ImportDeclaration' ||
 				typedNode.type === 'ExportAllDeclaration' ||
-				typedNode.type === 'ExportNamedDeclaration') &&
-			typedNode.source?.type === 'Literal' &&
-			typeof typedNode.source.value === 'string' &&
-			typeof typedNode.source.start === 'number' &&
-			typeof typedNode.source.end === 'number'
+				typedNode.type === 'ExportNamedDeclaration')
 		) {
-			nodes.push({
-				start: typedNode.source.start,
-				end: typedNode.source.end,
-				specifier: typedNode.source.value,
-			})
+			const literalNode = readLiteralStringNode(typedNode.source)
+			if (literalNode) {
+				nodes.push(literalNode)
+			}
 		}
 		if (typedNode.type === 'ImportExpression') {
-			const sourceNode = typedNode.source
-			if (
-				sourceNode &&
-				typeof sourceNode === 'object' &&
-				'type' in sourceNode &&
-				(sourceNode as { type?: string }).type === 'Literal' &&
-				typeof (sourceNode as { value?: unknown }).value === 'string' &&
-				typeof (sourceNode as { start?: number }).start === 'number' &&
-				typeof (sourceNode as { end?: number }).end === 'number'
-			) {
-				nodes.push({
-					start: (sourceNode as { start: number }).start,
-					end: (sourceNode as { end: number }).end,
-					specifier: (sourceNode as { value: string }).value,
-				})
+			const literalNode = readLiteralStringNode(typedNode.source)
+			if (literalNode) {
+				nodes.push(literalNode)
 			}
 		}
 		for (const value of Object.values(
@@ -246,10 +269,7 @@ function collectLiteralImportNodes(source: string): Array<{
 	}
 
 	try {
-		const program = parse(source, {
-			ecmaVersion: 'latest',
-			sourceType: 'module',
-		})
+		const program = parseModuleSource(source)
 		visit(program)
 	} catch {
 		return []
@@ -299,6 +319,13 @@ async function ensurePackageLoaded(
 		prefix: joinPath(packageSourcePrefix, kodyId),
 	}
 	state.packages.set(kodyId, entry)
+	if (loaded.source.published_commit) {
+		state.dependencies.set(kodyId, {
+			sourceId: loaded.source.id,
+			publishedCommit: loaded.source.published_commit,
+			kodyId,
+		})
+	}
 	for (const [filePath, content] of Object.entries(loaded.files)) {
 		const normalizedPath = normalizePackageWorkspacePath(filePath)
 		const targetPath = joinPath(entry.prefix, normalizedPath)
@@ -381,28 +408,12 @@ export async function buildKodyModuleBundle(input: {
 	entryPoint: string
 	params?: Record<string, unknown>
 }) {
-	const files: Record<string, string> = {
-		[runtimeModulePath]: createRuntimeModuleSource(),
-	}
-	const state: RewriteState = {
+	const { files, dependencies } = await prepareKodyGraphFiles({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
-		files,
-		proxies: new Map(),
-		packages: new Map(),
-	}
-	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
-		const normalizedPath = joinPath(
-			rootSourcePrefix,
-			normalizePackageWorkspacePath(filePath),
-		)
-		files[normalizedPath] = await rewriteKodyImports({
-			state,
-			source: content,
-			modulePath: normalizedPath,
-		})
-	}
+		sourceFiles: input.sourceFiles,
+	})
 	const normalizedEntrypoint = joinPath(
 		rootSourcePrefix,
 		normalizePackageWorkspacePath(input.entryPoint),
@@ -413,7 +424,7 @@ export async function buildKodyModuleBundle(input: {
 			bootstrapPath,
 			normalizedEntrypoint,
 		),
-		paramsJson: JSON.stringify(input.params ?? null),
+		paramsJson: 'globalThis.__kodyRuntime?.params ?? null',
 	})
 	const bundle = await createWorker({
 		files,
@@ -422,6 +433,7 @@ export async function buildKodyModuleBundle(input: {
 	return {
 		mainModule: bundle.mainModule,
 		modules: bundle.modules as WorkerLoaderModules,
+		dependencies: [...dependencies.values()],
 	}
 }
 
@@ -441,6 +453,7 @@ async function prepareKodyGraphFiles(input: {
 		files,
 		proxies: new Map(),
 		packages: new Map(),
+		dependencies: new Map(),
 	}
 	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
 		const normalizedPath = joinPath(
@@ -453,7 +466,10 @@ async function prepareKodyGraphFiles(input: {
 			modulePath: normalizedPath,
 		})
 	}
-	return files
+	return {
+		files,
+		dependencies: state.dependencies,
+	}
 }
 
 export async function buildKodyAppBundle(input: {
@@ -465,7 +481,7 @@ export async function buildKodyAppBundle(input: {
 	cacheKey?: string | null
 }) {
 	const buildBundle = async () => {
-		const files = await prepareKodyGraphFiles({
+		const { files, dependencies } = await prepareKodyGraphFiles({
 			env: input.env,
 			baseUrl: input.baseUrl,
 			userId: input.userId,
@@ -489,6 +505,7 @@ export async function buildKodyAppBundle(input: {
 		return {
 			mainModule: bundle.mainModule,
 			modules: bundle.modules as WorkerLoaderModules,
+			dependencies: [...dependencies.values()],
 		}
 	}
 
@@ -501,6 +518,35 @@ export async function buildKodyAppBundle(input: {
 		cacheKey,
 		create: buildBundle,
 	})
+}
+
+export function createPublishedBundleArtifact(input: {
+	kind: BundleArtifactKind
+	artifactName?: string | null
+	sourceId: string
+	publishedCommit: string
+	entryPoint: string
+	mainModule: string
+	modules: WorkerLoaderModules
+	dependencies: Array<BundleArtifactDependency>
+	packageContext?: {
+		packageId: string
+		kodyId: string
+	} | null
+}): PublishedBundleArtifact {
+	return {
+		version: 1,
+		kind: input.kind,
+		artifactName: input.artifactName?.trim() || null,
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		entryPoint: normalizePackageWorkspacePath(input.entryPoint),
+		mainModule: input.mainModule,
+		modules: input.modules,
+		dependencies: input.dependencies,
+		packageContext: input.packageContext ?? null,
+		createdAt: new Date().toISOString(),
+	}
 }
 
 export function createPublishedPackageAppBundleCacheKey(input: {

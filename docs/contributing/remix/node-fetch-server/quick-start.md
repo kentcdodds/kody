@@ -130,7 +130,7 @@ import { createRequestListener } from '@remix-run/node-fetch-server'
 let hostname = process.env.HOST || 'api.example.com'
 
 async function handler(request: Request) {
-	// request.url will now use your custom hostname
+	// request.url uses your custom hostname
 	console.log(request.url) // https://api.example.com/path
 
 	return Response.json({

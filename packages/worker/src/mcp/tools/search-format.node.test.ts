@@ -21,6 +21,8 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
 		warnings: [],
+		guidance:
+			'Inspect connector detail with `search({ entity: "github:connector" })` next.',
 		matches: [
 			{
 				type: 'value',
@@ -64,6 +66,10 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	)
 	expect(markdown).toContain('**Token URL:** `https://github.com/login/oauth/access_token`')
 	expect(markdown).toContain('**Client ID value:** `github_client_id`')
+	expect(markdown).toContain('`user:preferred_repo:value`')
+	expect(markdown).toContain('`https://api.github.com`')
+	expect(markdown).toContain('## Recommended next step')
+	expect(markdown).toContain('`search({ entity: "github:connector" })`')
 
 	expect(
 		toSlimStructuredMatches({
@@ -129,6 +135,8 @@ test('search markdown and entity detail formatting preserve structured behavior'
 			accessTokenSecretName: 'github_access_token',
 			refreshTokenSecretName: 'github_refresh_token',
 			requiredHosts: ['api.github.com'],
+			nextStep:
+				'Inspect connector detail with search({ entity: "github:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.',
 		},
 	])
 
@@ -338,6 +346,8 @@ test('search markdown and slim structured matches surface package entity refs an
 			tags: ['spotify', 'playback'],
 			hasApp: true,
 			hostedUrl: 'http://localhost/packages/spotify-playback',
+			nextStep:
+				'Open the app with open_generated_ui({ kody_id: "spotify-playback" }) or inspect package detail with search({ entity: "spotify-playback:package" }).',
 		},
 	])
 })

@@ -65,7 +65,7 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - `preview:e2e` prepares `packages/worker/.env`, builds the client bundles,
   applies local D1 migrations, and starts Wrangler against
   `.wrangler/state/e2e`.
-- `npm run test:e2e:run` now ensures Playwright Chromium is installed before the
+- `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts.
 - `npm run test:e2e:ui` and plain `npx playwright test` still assume Playwright
   browsers are already installed.

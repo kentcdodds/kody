@@ -22,7 +22,7 @@ request routing, chat-agent plumbing, and OAuth-protected MCP endpoints. The
 current direction favors a compact MCP surface with powerful `search` and Code
 Mode `execute` flows over a large static tool catalog.
 
-This project is intentionally single-user right now and is being built for
+This project is intentionally single-user and is being built for
 `me@kentcdodds.com`. The repo was generated from the
 [epicflare](https://github.com/epicweb-dev/epicflare) starter.
 

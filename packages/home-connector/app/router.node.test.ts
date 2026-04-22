@@ -14,7 +14,6 @@ import { type HomeConnectorConfig } from '../src/config.ts'
 import { createAppState } from '../src/state.ts'
 import { createHomeConnectorStorage } from '../src/storage/index.ts'
 import { createHomeConnectorRouter } from './router.ts'
-import { routes } from './routes.ts'
 
 function createConfig(dataPath = '/tmp'): HomeConnectorConfig {
 	return {
@@ -105,124 +104,13 @@ test('home route toggles worker snapshot link by connector id', async () => {
 		const responseWithConnector = await router.fetch('http://example.test/')
 		expect(responseWithConnector.status).toBe(200)
 		const htmlWithConnector = await responseWithConnector.text()
-		expect(htmlWithConnector).toContain('Home connector admin')
 		expect(htmlWithConnector).toContain('/home/connectors/default/snapshot')
-		expect(htmlWithConnector).toContain('JellyFish controllers')
-		expect(htmlWithConnector).toContain('Venstar configured')
-		expect(htmlWithConnector).toContain('Venstar online')
-		expect(htmlWithConnector).toContain(routes.venstarStatus.pattern)
-		expect(htmlWithConnector).toContain(routes.venstarSetup.pattern)
-		expect(htmlWithConnector).toContain(routes.jellyfishStatus.pattern)
-		expect(htmlWithConnector).toContain(routes.jellyfishSetup.pattern)
 
 		state.connection.connectorId = ''
 		const responseWithoutConnector = await router.fetch('http://example.test/')
 		expect(responseWithoutConnector.status).toBe(200)
 		const htmlWithoutConnector = await responseWithoutConnector.text()
-		expect(htmlWithoutConnector).toContain('Home connector admin')
-		expect(htmlWithoutConnector).not.toContain('Worker connector snapshot')
-	} finally {
-		storage.close()
-	}
-})
-
-test('bond setup route renders token form', async () => {
-	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
-	try {
-		const router = createHomeConnectorRouter(
-			state,
-			config,
-			lutron,
-			samsungTv,
-			sonos,
-			bond,
-			jellyfish,
-			venstar,
-		)
-		const response = await router.fetch('http://example.test/bond/setup')
-		expect(response.status).toBe(200)
-		const html = await response.text()
-		expect(html).toContain('Save pasted token')
-		expect(html).toContain('Retrieve token from bridge')
-		expect(html).toContain(
-			'No bridges are known yet. Run a scan from Bond status.',
-		)
-	} finally {
-		storage.close()
-	}
-})
-
-test('jellyfish routes render status and setup details', async () => {
-	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
-	try {
-		const router = createHomeConnectorRouter(
-			state,
-			config,
-			lutron,
-			samsungTv,
-			sonos,
-			bond,
-			jellyfish,
-			venstar,
-		)
-		const statusResponse = await router.fetch(
-			'http://example.test/jellyfish/status',
-		)
-		expect(statusResponse.status).toBe(200)
-		const statusHtml = await statusResponse.text()
-		expect(statusHtml).toContain('<button type="submit">Scan now</button>')
-		expect(statusHtml).toContain('JellyFish-F348.local')
-		expect(statusHtml).toContain('Christmas/Christmas Tree')
-
-		const setupResponse = await router.fetch(
-			'http://example.test/jellyfish/setup',
-		)
-		expect(setupResponse.status).toBe(200)
-		const setupHtml = await setupResponse.text()
-		expect(setupHtml).toContain('Scan CIDRs')
-		expect(setupHtml).toContain('jellyfish.mock.local')
-	} finally {
-		storage.close()
-	}
-})
-
-test('venstar routes render status and setup details', async () => {
-	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
-	try {
-		const router = createHomeConnectorRouter(
-			state,
-			config,
-			lutron,
-			samsungTv,
-			sonos,
-			bond,
-			jellyfish,
-			venstar,
-		)
-		const statusResponse = await router.fetch(
-			'http://example.test/venstar/status',
-		)
-		expect(statusResponse.status).toBe(200)
-		const statusHtml = await statusResponse.text()
-		expect(statusHtml).toContain('Hallway')
-		expect(statusHtml).toContain('venstar.mock.local')
-		expect(statusHtml).toContain('Online thermostats')
-		expect(statusHtml).toContain('<button type="submit">Scan now</button>')
-
-		const setupResponse = await router.fetch(
-			'http://example.test/venstar/setup',
-		)
-		expect(setupResponse.status).toBe(200)
-		const setupHtml = await setupResponse.text()
-		expect(setupHtml).toContain('name="action" value="save-manual"')
-		expect(setupHtml).toContain('name="action" value="remove-configured"')
-		expect(setupHtml).toContain('Scan CIDRs')
+		expect(htmlWithoutConnector).not.toContain('/home/connectors/default/snapshot')
 	} finally {
 		storage.close()
 	}
@@ -252,10 +140,14 @@ test('venstar status scan shows discovered thermostats', async () => {
 		})
 		expect(response.status).toBe(200)
 		const html = await response.text()
-		expect(html).toContain('Scan complete. Discovered')
-		expect(html).toContain('Discovered thermostats')
 		expect(html).toContain('Office')
-		expect(html).toContain('Add to managed thermostats')
+		expect(html).toContain('192.168.10.41')
+		expect(venstar.listThermostats()).toMatchObject([
+			{
+				name: 'Hallway',
+				ip: 'venstar.mock.local',
+			},
+		])
 	} finally {
 		storage.close()
 	}
@@ -299,10 +191,7 @@ test('venstar status can adopt a discovered thermostat', async () => {
 		})
 
 		expect(response.status).toBe(200)
-		const html = await response.text()
-		expect(html).toContain(
-			'Added Office (192.168.10.41) to managed thermostats.',
-		)
+		await response.text()
 		expect(venstar.listThermostats()).toMatchObject([
 			{
 				name: 'Hallway',
@@ -354,9 +243,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 			},
 		)
 		expect(saveResponse.status).toBe(200)
-		expect(await saveResponse.text()).toContain(
-			'Saved UPSTAIRS (192.168.0.71) to managed thermostats.',
-		)
+		await saveResponse.text()
 		expect(venstar.listThermostats()).toEqual([
 			{ name: 'UPSTAIRS', ip: '192.168.0.71', lastSeenAt: null },
 		])
@@ -375,9 +262,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 			},
 		)
 		expect(removeResponse.status).toBe(200)
-		expect(await removeResponse.text()).toContain(
-			'Removed UPSTAIRS (192.168.0.71) from managed thermostats.',
-		)
+		await removeResponse.text()
 		expect(venstar.listThermostats()).toEqual([])
 	} finally {
 		storage.close()

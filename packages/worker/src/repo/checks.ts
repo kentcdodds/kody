@@ -315,6 +315,71 @@ function formatPackageTypecheckDiagnostics(
 	)
 }
 
+export async function typecheckPackageEntrypointsFromSourceFiles(input: {
+	sourceFiles: Record<string, string>
+	entryPoints: Array<{
+		path: string
+		includeStorage?: boolean
+	}>
+}): Promise<{
+	ok: boolean
+	message: string
+}> {
+	const { createFileSystemSnapshot } = await import('@cloudflare/worker-bundler')
+	const snapshot = await createFileSystemSnapshot(
+		(async function* () {
+			for (const [path, content] of Object.entries(input.sourceFiles)) {
+				yield [path, content] as const
+			}
+		})(),
+	)
+	const missingEntryPoints = input.entryPoints
+		.map((target) => target.path)
+		.filter((path) => snapshot.read(path) == null)
+	if (missingEntryPoints.length > 0) {
+		return {
+			ok: false,
+			message: `Typecheck skipped because package runtime entrypoint(s) are missing from the published source snapshot: ${missingEntryPoints
+				.map((path) => `"${path}"`)
+				.join(', ')}.`,
+		}
+	}
+	const { createTypescriptLanguageService } =
+		await import('@cloudflare/worker-bundler/typescript')
+	const typecheckFileSystem = createRepoChecksFileSystem({
+		fileSystem: snapshot,
+	})
+	const baseTsconfig = snapshot.read(repoChecksSyntheticTsconfigPath)
+	if (baseTsconfig != null) {
+		typecheckFileSystem.write(
+			repoChecksSyntheticTsconfigExtendsPath.slice('./'.length),
+			baseTsconfig,
+		)
+	}
+	typecheckFileSystem.write(
+		repoChecksSyntheticTsconfigPath,
+		buildRepoChecksTsconfig(baseTsconfig),
+	)
+	const { fileSystem, languageService } = await createTypescriptLanguageService({
+		fileSystem: typecheckFileSystem,
+	})
+	const diagnostics = getPackageTypecheckDiagnostics({
+		targets: input.entryPoints.map((entryPoint) => ({
+			path: entryPoint.path,
+			includeStorage: entryPoint.includeStorage === true,
+		})),
+		languageService,
+		fileSystem,
+	})
+	const ok = diagnostics.every((entry) => entry.diagnostics.length === 0)
+	return {
+		ok,
+		message: ok
+			? `No semantic diagnostics for ${input.entryPoints.length} package runtime entrypoint(s).`
+			: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+	}
+}
+
 function formatBundleCheckMessage(input: {
 	missingEntryPoints: Array<string>
 	targetCount: number
@@ -456,3 +521,4 @@ export async function runRepoChecks(input: {
 		manifest,
 	}
 }
+

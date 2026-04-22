@@ -34,7 +34,12 @@ import {
 import { runRepoChecks } from './checks.ts'
 import { parseRepoManifest } from './manifest.ts'
 import {
+	hasPublishedRuntimeArtifacts,
+	writePublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
 	type EntityKind,
+	type EntitySourceRow,
 	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -53,10 +58,16 @@ import { refreshSavedPackageProjection } from '#worker/package-registry/service.
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
+const cachedSessionStateStorageKeyPrefix = 'repo-session:state:'
 const defaultSessionBranch = 'main'
 const sessionCommitAuthor = {
 	name: 'Kody Repo Session',
 	email: 'repo-session@local.invalid',
+}
+
+type CachedRepoSessionState = {
+	sessionRow: RepoSessionRow
+	source: EntitySourceRow
 }
 
 function buildRepoSessionWorkspaceName(sessionId: string) {
@@ -65,6 +76,53 @@ function buildRepoSessionWorkspaceName(sessionId: string) {
 
 function nowIso() {
 	return new Date().toISOString()
+}
+
+function getCachedSessionStateStorageKey(sessionId: string) {
+	return `${cachedSessionStateStorageKeyPrefix}${sessionId}`
+}
+
+// D1 read replicas can lag briefly behind the primary; when we know a row was
+// just inserted (for example, openSession persisted a fresh repo session before
+// returning to the worker), an immediate read from a different request handler
+// may still miss it. A short retry with backoff papers over that lag without
+// resorting to global throttling.
+const repoLookupRetryDelaysMs = [50, 100, 200, 400] as const
+
+export async function readWithRetry<T>(
+	read: () => Promise<T | null>,
+	delaysMs: ReadonlyArray<number> = repoLookupRetryDelaysMs,
+): Promise<T | null> {
+	let result = await read()
+	if (result != null) return result
+	for (const delayMs of delaysMs) {
+		await new Promise((resolve) => setTimeout(resolve, delayMs))
+		result = await read()
+		if (result != null) return result
+	}
+	return null
+}
+
+async function readRepoSessionWithRetry(db: D1Database, sessionId: string) {
+	return readWithRetry(() => getRepoSessionById(db, sessionId))
+}
+
+async function readEntitySourceWithRetry(db: D1Database, sourceId: string) {
+	return readWithRetry(() => getEntitySourceById(db, sourceId))
+}
+
+function compactArtifactsRepoSuffix(value: string) {
+	const compact = value.replace(/[^a-zA-Z0-9]/g, '')
+	return compact.length > 0 ? compact : 'session'
+}
+
+function buildSessionArtifactsRepoName(
+	sourceRepoId: string,
+	sessionId: string,
+) {
+	const compactSessionId = compactArtifactsRepoSuffix(sessionId).slice(-61)
+	const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
+	return `${sourceRepoId.slice(0, repoPrefixLength)}-${compactSessionId}`
 }
 
 async function ensureArtifactRepoRemote(input: {
@@ -111,8 +169,61 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private initializedSessionId: string | null = null
 
+	// In-memory cache for the active DO instance. This serves as the primary
+	// fallback for follow-up RPC calls on the same sessionId so that even the
+	// shortest replication lag between D1 writes and reads does not surface as
+	// a spurious "Repo session was not found" error during scheduled runs.
+	private readonly inMemorySessionState = new Map<
+		string,
+		CachedRepoSessionState
+	>()
+
+	private async readCachedSessionState(
+		sessionId: string,
+	): Promise<CachedRepoSessionState | null> {
+		const inMemory = this.inMemorySessionState.get(sessionId)
+		if (inMemory) {
+			return inMemory
+		}
+		const persisted =
+			(await this.ctx.storage.get<CachedRepoSessionState | null>(
+				getCachedSessionStateStorageKey(sessionId),
+			)) ?? null
+		if (persisted) {
+			this.inMemorySessionState.set(sessionId, persisted)
+		}
+		return persisted
+	}
+
+	private async writeCachedSessionState(
+		state: CachedRepoSessionState,
+	): Promise<void> {
+		this.inMemorySessionState.set(state.sessionRow.id, state)
+		await this.ctx.storage.put(
+			getCachedSessionStateStorageKey(state.sessionRow.id),
+			state,
+		)
+	}
+
+	private async clearCachedSessionState(sessionId: string): Promise<void> {
+		this.inMemorySessionState.delete(sessionId)
+		await this.ctx.storage.put(getCachedSessionStateStorageKey(sessionId), null)
+	}
+
 	private async getSessionState(sessionId: string, userId: string) {
-		const sessionRow = await getRepoSessionById(this.env.APP_DB, sessionId)
+		const cachedState = await this.readCachedSessionState(sessionId)
+		// Prefer fresh reads from D1 so correctness-sensitive flows like
+		// rebaseSession and publishSession always observe the latest
+		// base_commit and published_commit. The cache is only a fallback for
+		// when a D1 read genuinely cannot see a row (e.g. brief replica lag
+		// immediately after openSession inserted it); this keeps scheduled
+		// jobs from throwing "Repo session was not found" while still letting
+		// concurrent mutations through updateRepoSession / updateEntitySource
+		// drive rebase and publish decisions.
+		const sessionRow =
+			(await readRepoSessionWithRetry(this.env.APP_DB, sessionId)) ??
+			cachedState?.sessionRow ??
+			null
 		if (!sessionRow) {
 			throw new Error(`Repo session "${sessionId}" was not found.`)
 		}
@@ -121,13 +232,18 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Repo session "${sessionId}" was not found for this user.`,
 			)
 		}
-		const source = await getEntitySourceById(
-			this.env.APP_DB,
-			sessionRow.source_id,
-		)
+		const source =
+			(await readEntitySourceWithRetry(
+				this.env.APP_DB,
+				sessionRow.source_id,
+			)) ??
+			(cachedState?.source?.id === sessionRow.source_id
+				? cachedState.source
+				: null)
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}
+		await this.writeCachedSessionState({ sessionRow, source })
 		const sessionRepo = await resolveSessionRepo(this.env, {
 			namespace: sessionRow.session_repo_namespace,
 			name: sessionRow.session_repo_name,
@@ -275,17 +391,50 @@ class RepoSessionBase extends DurableObject<Env> {
 		return commit.oid
 	}
 
-	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
-		const files = (
-			await this.workspace.glob(`${root.replace(/\/+$/, '')}/**/*`)
-		)
+	private async listWorkspaceFileEntries(
+		root = repoSessionWorkspacePrefix,
+	): Promise<Array<{ path: string }>> {
+		const normalizedRoot = root.replace(/\/+$/, '')
+		const entries = await this.workspace.glob(`${normalizedRoot}/**/*`)
+		return entries
 			.filter((entry) => entry.type === 'file')
 			.filter((entry) => !entry.path.includes('/.git/'))
 			.sort((left, right) => left.path.localeCompare(right.path))
+			.map((entry) => ({ path: entry.path }))
+	}
+
+	private async collectWorkspaceFiles(
+		root = repoSessionWorkspacePrefix,
+	): Promise<Record<string, string>> {
+		const entries = await this.listWorkspaceFileEntries(root)
+		const rootPrefix = `${root.replace(/\/+$/, '')}/`
+		const files: Record<string, string> = {}
+		for (const entry of entries) {
+			const content = await this.workspace.readFile(entry.path)
+			// Treat an unreadable file as a hard failure so the caller aborts
+			// and triggers rollback instead of persisting a KV snapshot that
+			// is silently missing files. A null read here usually means the
+			// file was unlinked between glob and read, which means the tree
+			// we are about to publish is not the tree we scanned.
+			if (content == null) {
+				throw new Error(
+					`Failed to read repo session file "${entry.path}" while collecting workspace snapshot.`,
+				)
+			}
+			const relativePath = entry.path.startsWith(rootPrefix)
+				? entry.path.slice(rootPrefix.length)
+				: entry.path
+			files[relativePath] = content
+		}
+		return files
+	}
+
+	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
+		const entries = await this.listWorkspaceFileEntries(root)
 		const chunks: Array<string> = []
-		for (const file of files) {
-			const content = await this.workspace.readFile(file.path)
-			chunks.push(`${file.path}\n${content ?? ''}\n`)
+		for (const entry of entries) {
+			const content = await this.workspace.readFile(entry.path)
+			chunks.push(`${entry.path}\n${content ?? ''}\n`)
 		}
 		const data = new TextEncoder().encode(chunks.join(''))
 		const digest = await crypto.subtle.digest('SHA-256', data)
@@ -451,9 +600,10 @@ class RepoSessionBase extends DurableObject<Env> {
 					`Source "${source.id}" has no published commit yet. Bootstrap the source repo before opening a repo session.`,
 				)
 			}
-			const compactSessionId = input.sessionId.replace(/-/g, '')
-			const repoPrefixLength = Math.max(1, 63 - compactSessionId.length - 1)
-			const sessionRepoName = `${source.repo_id.slice(0, repoPrefixLength)}-${compactSessionId}`
+			const sessionRepoName = buildSessionArtifactsRepoName(
+				source.repo_id,
+				input.sessionId,
+			)
 			const forked = await sourceRepo.fork({
 				name: sessionRepoName,
 				readOnly: false,
@@ -512,6 +662,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!source) {
 			throw new Error(`Source "${sessionRow.source_id}" was not found.`)
 		}
+		await this.writeCachedSessionState({ sessionRow, source })
 		return toRepoSessionInfoResult(sessionRow, source)
 	}
 
@@ -639,6 +790,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 		)
 		if (!sessionRow) {
+			await this.clearCachedSessionState(input.sessionId)
 			await this.resetWorkspace()
 			return {
 				ok: true,
@@ -652,6 +804,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		await deleteRepoSession(this.env.APP_DB, input.sessionId)
+		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace()
 		return {
 			ok: true,
@@ -1012,6 +1165,22 @@ class RepoSessionBase extends DurableObject<Env> {
 			source.manifest_path,
 			source.entity_kind,
 		)
+		// Persist the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream
+		// readers like loadPublishedEntitySource can resolve the freshly
+		// published commit without round-tripping to Artifacts. Without this,
+		// refreshSavedPackageProjection below, as well as every package-backed
+		// job run that reaches for the published snapshot, would throw
+		// "Published snapshot for source ... was not found" because no writer
+		// had stored the snapshot under the new commit.
+		//
+		// Collect the workspace files BEFORE advancing D1 so a failure to
+		// materialize the tree never leaves entity_sources.published_commit
+		// pointing at a commit whose snapshot we never wrote.
+		const shouldPersistSnapshot =
+			sessionHeadCommit != null && hasPublishedRuntimeArtifacts(this.env)
+		const snapshotFiles = shouldPersistSnapshot
+			? await this.collectWorkspaceFiles()
+			: null
 		await updateEntitySource(this.env.APP_DB, {
 			id: source.id,
 			userId: source.user_id,
@@ -1019,6 +1188,46 @@ class RepoSessionBase extends DurableObject<Env> {
 			manifestPath: source.manifest_path,
 			sourceRoot: source.source_root,
 		})
+		if (shouldPersistSnapshot && snapshotFiles != null && sessionHeadCommit) {
+			try {
+				await writePublishedSourceSnapshot({
+					env: this.env,
+					source: {
+						...source,
+						published_commit: sessionHeadCommit,
+					},
+					files: snapshotFiles,
+				})
+			} catch (snapshotError) {
+				// Preserve the original KV failure as the thrown error even if
+				// the compensating D1 revert also fails; surfacing the revert
+				// error would mask the real root cause and make the orphaned
+				// D1 row harder to diagnose.
+				try {
+					await updateEntitySource(this.env.APP_DB, {
+						id: source.id,
+						userId: source.user_id,
+						publishedCommit: source.published_commit,
+						manifestPath: source.manifest_path,
+						sourceRoot: source.source_root,
+					})
+				} catch (revertError) {
+					Sentry.captureException(revertError, {
+						tags: {
+							scope:
+								'repo-session.publishSession.revert-after-snapshot-failure',
+						},
+						extra: {
+							sessionId: input.sessionId,
+							sourceId: source.id,
+							previousPublishedCommit: source.published_commit,
+							attemptedPublishedCommit: sessionHeadCommit,
+						},
+					})
+				}
+				throw snapshotError
+			}
+		}
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,

@@ -8,6 +8,10 @@ import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
+import {
+	buildPublishedSourceSnapshotKvKey,
+	writePublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type EntitySourceRow } from './types.ts'
 
 type SyncArtifactSourceInput = {
@@ -38,17 +42,48 @@ function validateEntitySourceManifest(input: {
 }
 
 function canSyncArtifactSource(env: Env) {
+	const runtimeEnv = env as Env & {
+		REPO_SESSION?: DurableObjectNamespace | undefined
+		APP_DB?: D1Database | undefined
+		BUNDLE_ARTIFACTS_KV?: KVNamespace | undefined
+	}
 	return (
 		hasArtifactsAccess(env) &&
-		(env as Env & { REPO_SESSION?: DurableObjectNamespace | undefined })
-			.REPO_SESSION != null &&
-		typeof (env as Env & { APP_DB?: D1Database | undefined }).APP_DB
-			?.prepare === 'function'
+		runtimeEnv.REPO_SESSION != null &&
+		typeof runtimeEnv.APP_DB?.prepare === 'function' &&
+		runtimeEnv.BUNDLE_ARTIFACTS_KV != null
 	)
 }
 
 function buildSyncSessionId(sourceId: string) {
 	return `source-sync-${sourceId}-${crypto.randomUUID()}`
+}
+
+async function writePublishedSnapshotWithRevert(input: {
+	env: Env
+	source: EntitySourceRow
+	files: Record<string, string>
+	publishedCommit: string
+}) {
+	try {
+		await writePublishedSourceSnapshot({
+			env: input.env,
+			source: {
+				...input.source,
+				published_commit: input.publishedCommit,
+			},
+			files: input.files,
+		})
+	} catch (error) {
+		await updateEntitySource(input.env.APP_DB, {
+			id: input.source.id,
+			userId: input.source.user_id,
+			publishedCommit: input.source.published_commit,
+			manifestPath: input.source.manifest_path,
+			sourceRoot: input.source.source_root,
+		})
+		throw error
+	}
 }
 
 export async function syncArtifactSourceSnapshot(
@@ -88,13 +123,31 @@ export async function syncArtifactSourceSnapshot(
 					content: manifestContent,
 					manifestPath: source.manifest_path,
 				})
-				await updateEntitySource(input.env.APP_DB, {
-					id: source.id,
-					userId: source.user_id,
-					publishedCommit: snapshot.published_commit,
-					manifestPath: source.manifest_path,
-					sourceRoot: source.source_root,
+				await writePublishedSourceSnapshot({
+					env: input.env,
+					source: {
+						...source,
+						published_commit: snapshot.published_commit,
+					},
+					files: input.files,
 				})
+				try {
+					await updateEntitySource(input.env.APP_DB, {
+						id: source.id,
+						userId: source.user_id,
+						publishedCommit: snapshot.published_commit,
+						manifestPath: source.manifest_path,
+						sourceRoot: source.source_root,
+					})
+				} catch (error) {
+					await input.env.BUNDLE_ARTIFACTS_KV.delete(
+						buildPublishedSourceSnapshotKvKey({
+							sourceId: source.id,
+							publishedCommit: snapshot.published_commit,
+						}),
+					)
+					throw error
+				}
 				return snapshot.published_commit
 			}
 			const bootstrapResult = await session.bootstrapSource({
@@ -103,6 +156,12 @@ export async function syncArtifactSourceSnapshot(
 				userId: input.userId,
 				edits,
 				bootstrapAccess: input.bootstrapAccess ?? null,
+			})
+			await writePublishedSnapshotWithRevert({
+				env: input.env,
+				source,
+				files: input.files,
+				publishedCommit: bootstrapResult.publishedCommit,
 			})
 			return bootstrapResult.publishedCommit
 		}
@@ -128,6 +187,16 @@ export async function syncArtifactSourceSnapshot(
 		if (publishResult.status !== 'ok') {
 			throw new Error(publishResult.message)
 		}
+		// publishSession persists the workspace snapshot to
+		// BUNDLE_ARTIFACTS_KV and reverts entity_sources.published_commit
+		// itself if that KV write fails, so a second
+		// writePublishedSnapshotWithRevert here would be redundant on
+		// success and actively harmful on failure: its revert would undo
+		// the consistent D1+KV state that publishSession already
+		// established, while leaving the repo session row marked
+		// status: 'published' with the new base_commit. See
+		// repo-session-do.ts publishSession for the internal snapshot
+		// persistence and rollback.
 		return publishResult.publishedCommit
 	} finally {
 		await session

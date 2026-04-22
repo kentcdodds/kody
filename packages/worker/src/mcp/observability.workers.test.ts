@@ -297,6 +297,41 @@ test('package_save capability logs success for valid invocation', async () => {
 							}
 						},
 					},
+					BUNDLE_ARTIFACTS_KV: {
+						get: async (_key: string, type?: 'text' | 'json') => {
+							if (type === 'json') {
+								return {
+									version: 1,
+									sourceId: 'package-package-1',
+									repoId: 'package-package-1',
+									entityKind: 'package',
+									entityId: 'package-1',
+									publishedCommit: 'published-commit-1',
+									manifestPath: 'package.json',
+									sourceRoot: '/',
+									files: {
+										'package.json': JSON.stringify({
+											name: '@kody/observed',
+											exports: { '.': './src/index.ts' },
+											kody: {
+												id: 'observed-package',
+												description: 'Observation test package.',
+												app: { entry: './src/app.ts' },
+											},
+										}),
+										'src/index.ts':
+											'export default async function main() { return { ok: true } }\n',
+										'src/app.ts':
+											'export default { async fetch() { return new Response("ok") } }\n',
+									},
+									createdAt: '2026-04-13T00:00:00.000Z',
+								}
+							}
+							return null
+						},
+						put: async () => undefined,
+						delete: async () => undefined,
+					},
 					CLOUDFLARE_ACCOUNT_ID: 'acct',
 					CLOUDFLARE_API_TOKEN: 'token',
 					CLOUDFLARE_API_BASE_URL: 'https://example.com',

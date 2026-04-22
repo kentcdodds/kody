@@ -182,6 +182,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 			result: { ok: true },
 			logs: ['ran job'],
 		},
+		deletedAfterRun: false,
 	})
 
 	const result = await jobRunNowCapability.handler(
@@ -245,7 +246,7 @@ test('job_run_now executes an existing job through the job manager', async () =>
 	})
 })
 
-test('job_run_now reports one-off jobs as deleted after the run', async () => {
+test('job_run_now preserves failed one-off jobs for inspection', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -296,6 +297,7 @@ test('job_run_now reports one-off jobs as deleted after the run', async () => {
 			error: 'boom',
 			logs: ['ran job'],
 		},
+		deletedAfterRun: false,
 	})
 
 	const result = await jobRunNowCapability.handler(
@@ -308,7 +310,7 @@ test('job_run_now reports one-off jobs as deleted after the run', async () => {
 		},
 	)
 
-	expect(result.deleted_after_run).toBe(true)
+	expect(result.deleted_after_run).toBe(false)
 	expect(result.execution).toEqual({
 		ok: false,
 		error: 'boom',
@@ -317,7 +319,7 @@ test('job_run_now reports one-off jobs as deleted after the run', async () => {
 	expect(result.job.last_run_error).toBe('boom')
 })
 
-test('job_schedule creates a recurring interval job', async () => {
+test('job_schedule covers recurring schedules and the one-off helper flow', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -328,21 +330,48 @@ test('job_schedule creates a recurring interval job', async () => {
 			displayName: 'User Example',
 		},
 	})
-	mockModule.createJob.mockResolvedValue({
-		id: 'job-interval',
-		name: 'Nightly cleanup',
-		sourceId: 'source-interval',
-		storageId: 'job:job-interval',
-		schedule: {
-			type: 'interval',
-			every: '15m',
-		},
-		scheduleSummary: 'Runs every 15m',
-		createdAt: '2026-04-20T10:00:00.000Z',
-		nextRunAt: '2026-04-20T10:15:00.000Z',
-	} as const)
+	mockModule.createJob
+		.mockResolvedValueOnce({
+			id: 'job-interval',
+			name: 'Nightly cleanup',
+			sourceId: 'source-interval',
+			storageId: 'job:job-interval',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+			scheduleSummary: 'Runs every 15m',
+			createdAt: '2026-04-20T10:00:00.000Z',
+			nextRunAt: '2026-04-20T10:15:00.000Z',
+		} as const)
+		.mockResolvedValueOnce({
+			id: 'job-cron',
+			name: 'Weekly digest',
+			sourceId: 'source-cron',
+			storageId: 'job:job-cron',
+			schedule: {
+				type: 'cron',
+				expression: '0 9 * * 1',
+			},
+			scheduleSummary: 'Runs on cron "0 9 * * 1" in America/Denver',
+			createdAt: '2026-04-20T10:00:00.000Z',
+			nextRunAt: '2026-04-27T15:00:00.000Z',
+		} as const)
+		.mockResolvedValueOnce({
+			id: 'job-once',
+			name: 'One-off job',
+			sourceId: 'source-once',
+			storageId: 'job:job-once',
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-20T18:30:00.000Z',
+			},
+			scheduleSummary: 'Runs once at 2026-04-20T18:30:00.000Z',
+			createdAt: '2026-04-20T10:00:00.000Z',
+			nextRunAt: '2026-04-20T18:30:00.000Z',
+		} as const)
 
-	const result = await jobScheduleCapability.handler(
+	const intervalResult = await jobScheduleCapability.handler(
 		{
 			code: 'export default async () => ({ ok: true })',
 			schedule: {
@@ -355,8 +384,33 @@ test('job_schedule creates a recurring interval job', async () => {
 			callerContext,
 		},
 	)
+	const cronResult = await jobScheduleCapability.handler(
+		{
+			name: 'Weekly digest',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'cron',
+				expression: '0 9 * * 1',
+			},
+			timezone: 'America/Denver',
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
+	const oneOffResult = await jobScheduleOnceCapability.handler(
+		{
+			code: 'export default async () => ({ ok: true })',
+			run_at: '2026-04-20T18:30:00Z',
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
 
-	expect(mockModule.createJob).toHaveBeenCalledWith({
+	expect(mockModule.createJob).toHaveBeenNthCalledWith(1, {
 		env,
 		callerContext,
 		body: {
@@ -370,63 +424,17 @@ test('job_schedule creates a recurring interval job', async () => {
 			timezone: null,
 		},
 	})
-	expect(result).toEqual({
+	expect(intervalResult).toMatchObject({
 		job_id: 'job-interval',
-		name: 'Nightly cleanup',
-		source_id: 'source-interval',
-		storage_id: 'job:job-interval',
 		schedule: {
 			type: 'interval',
 			every: '15m',
 		},
 		schedule_summary: 'Runs every 15m',
-		created_at: '2026-04-20T10:00:00.000Z',
 		next_run_at: '2026-04-20T10:15:00.000Z',
 	})
-})
 
-test('job_schedule creates a recurring cron job', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.createJob.mockResolvedValue({
-		id: 'job-cron',
-		name: 'Weekly digest',
-		sourceId: 'source-cron',
-		storageId: 'job:job-cron',
-		schedule: {
-			type: 'cron',
-			expression: '0 9 * * 1',
-		},
-		scheduleSummary: 'Runs on cron "0 9 * * 1" in America/Denver',
-		createdAt: '2026-04-20T10:00:00.000Z',
-		nextRunAt: '2026-04-27T15:00:00.000Z',
-	} as const)
-
-	const result = await jobScheduleCapability.handler(
-		{
-			name: 'Weekly digest',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'cron',
-				expression: '0 9 * * 1',
-			},
-			timezone: 'America/Denver',
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.createJob).toHaveBeenCalledWith({
+	expect(mockModule.createJob).toHaveBeenNthCalledWith(2, {
 		env,
 		callerContext,
 		body: {
@@ -440,58 +448,17 @@ test('job_schedule creates a recurring cron job', async () => {
 			timezone: 'America/Denver',
 		},
 	})
-	expect(result).toEqual({
+	expect(cronResult).toMatchObject({
 		job_id: 'job-cron',
-		name: 'Weekly digest',
-		source_id: 'source-cron',
-		storage_id: 'job:job-cron',
 		schedule: {
 			type: 'cron',
 			expression: '0 9 * * 1',
 		},
 		schedule_summary: 'Runs on cron "0 9 * * 1" in America/Denver',
-		created_at: '2026-04-20T10:00:00.000Z',
 		next_run_at: '2026-04-27T15:00:00.000Z',
 	})
-})
 
-test('job_schedule_once delegates to the general scheduling capability', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.createJob.mockResolvedValue({
-		id: 'job-once',
-		name: 'One-off job',
-		sourceId: 'source-once',
-		storageId: 'job:job-once',
-		schedule: {
-			type: 'once',
-			runAt: '2026-04-20T18:30:00.000Z',
-		},
-		scheduleSummary: 'Runs once at 2026-04-20T18:30:00.000Z',
-		createdAt: '2026-04-20T10:00:00.000Z',
-		nextRunAt: '2026-04-20T18:30:00.000Z',
-	} as const)
-
-	await jobScheduleOnceCapability.handler(
-		{
-			code: 'export default async () => ({ ok: true })',
-			run_at: '2026-04-20T18:30:00Z',
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.createJob).toHaveBeenCalledWith({
+	expect(mockModule.createJob).toHaveBeenNthCalledWith(3, {
 		env,
 		callerContext,
 		body: {
@@ -505,11 +472,21 @@ test('job_schedule_once delegates to the general scheduling capability', async (
 			timezone: null,
 		},
 	})
+	expect(oneOffResult).toMatchObject({
+		job_id: 'job-once',
+		schedule: {
+			type: 'once',
+			run_at: '2026-04-20T18:30:00.000Z',
+		},
+	})
 })
 
-test('job_schedule requires an authenticated user', async () => {
+test('job capabilities require an authenticated user for scheduling and run-now flows', async () => {
 	resetMocks()
 	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+	})
 
 	await expect(
 		jobScheduleCapability.handler(
@@ -522,16 +499,26 @@ test('job_schedule requires an authenticated user', async () => {
 			},
 			{
 				env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-				}),
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
+		jobRunNowCapability.handler(
+			{
+				id: 'job-123',
+			},
+			{
+				env,
+				callerContext,
 			},
 		),
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 	expect(mockModule.createJob).not.toHaveBeenCalled()
+	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
 })
 
-test('job_list returns inspectable jobs plus alarm state', async () => {
+test('job inspection capabilities expose due-now state, history, and alarm status', async () => {
 	resetMocks()
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
@@ -577,78 +564,6 @@ test('job_list returns inspectable jobs plus alarm state', async () => {
 			nextRunnableJobId: 'job-123',
 			nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
 			alarmInSync: true,
-		},
-	})
-
-	try {
-		const result = await jobListCapability.handler(
-			{},
-			{
-				env,
-				callerContext,
-			},
-		)
-
-		expect(mockModule.inspectJobsForUser).toHaveBeenCalledWith({
-			env,
-			userId: 'user-123',
-		})
-		expect(result).toEqual({
-			jobs: [
-				{
-					id: 'job-123',
-					name: 'Turn lights off',
-					source_id: 'source-123',
-					published_commit: 'commit-123',
-					storage_id: 'job:job-123',
-					schedule: {
-						type: 'once',
-						run_at: '2026-04-20T18:30:00.000Z',
-					},
-					schedule_summary: 'Runs once at 2026-04-20T18:30:00.000Z',
-					timezone: 'UTC',
-					enabled: true,
-					kill_switch_enabled: false,
-					created_at: '2026-04-20T10:00:00.000Z',
-					updated_at: '2026-04-20T10:05:00.000Z',
-					next_run_at: '2026-04-20T18:30:00.000Z',
-					due_now: true,
-					last_run_at: null,
-					last_run_status: null,
-					last_run_error: null,
-					last_duration_ms: null,
-					run_count: 0,
-					success_count: 0,
-					error_count: 0,
-					recent_runs: [],
-				},
-			],
-			alarm: {
-				binding_available: true,
-				status: 'armed',
-				stored_user_id: 'user-123',
-				alarm_scheduled_for: '2026-04-20T18:30:00.000Z',
-				next_runnable_job_id: 'job-123',
-				next_runnable_run_at: '2026-04-20T18:30:00.000Z',
-				alarm_in_sync: true,
-			},
-		})
-	} finally {
-		vi.useRealTimers()
-	}
-})
-
-test('job_get returns one inspectable job plus alarm state', async () => {
-	resetMocks()
-	vi.useFakeTimers()
-	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
 		},
 	})
 	mockModule.getJobInspection.mockResolvedValue({
@@ -698,7 +613,14 @@ test('job_get returns one inspectable job plus alarm state', async () => {
 	})
 
 	try {
-		const result = await jobGetCapability.handler(
+		const listResult = await jobListCapability.handler(
+			{},
+			{
+				env,
+				callerContext,
+			},
+		)
+		const getResult = await jobGetCapability.handler(
 			{ id: 'job-123' },
 			{
 				env,
@@ -706,78 +628,60 @@ test('job_get returns one inspectable job plus alarm state', async () => {
 			},
 		)
 
+		expect(mockModule.inspectJobsForUser).toHaveBeenCalledWith({
+			env,
+			userId: 'user-123',
+		})
+		expect(listResult.jobs).toHaveLength(1)
+		expect(listResult.jobs[0]).toMatchObject({
+			id: 'job-123',
+			source_id: 'source-123',
+			published_commit: 'commit-123',
+			due_now: true,
+			recent_runs: [],
+		})
+		expect(listResult.alarm).toEqual({
+			binding_available: true,
+			status: 'armed',
+			stored_user_id: 'user-123',
+			alarm_scheduled_for: '2026-04-20T18:30:00.000Z',
+			next_runnable_job_id: 'job-123',
+			next_runnable_run_at: '2026-04-20T18:30:00.000Z',
+			alarm_in_sync: true,
+		})
+
 		expect(mockModule.getJobInspection).toHaveBeenCalledWith({
 			env,
 			userId: 'user-123',
 			jobId: 'job-123',
 		})
-		expect(result).toEqual({
-			job: {
-				id: 'job-123',
-				name: 'Turn lights off',
-				source_id: 'source-123',
-				published_commit: null,
-				storage_id: 'job:job-123',
-				schedule: {
-					type: 'once',
-					run_at: '2026-04-20T18:30:00.000Z',
+		expect(getResult.job).toMatchObject({
+			id: 'job-123',
+			source_id: 'source-123',
+			due_now: true,
+			last_run_status: 'error',
+			last_run_error: 'Timed out',
+			last_duration_ms: 1200,
+			recent_runs: [
+				{
+					started_at: '2026-04-20T08:59:58.000Z',
+					finished_at: '2026-04-20T09:00:00.000Z',
+					status: 'error',
+					duration_ms: 1200,
+					error: 'Timed out',
 				},
-				schedule_summary: 'Runs once at 2026-04-20T18:30:00.000Z',
-				timezone: 'UTC',
-				enabled: true,
-				kill_switch_enabled: false,
-				created_at: '2026-04-20T10:00:00.000Z',
-				updated_at: '2026-04-20T10:05:00.000Z',
-				next_run_at: '2026-04-20T18:30:00.000Z',
-				due_now: true,
-				last_run_at: '2026-04-20T09:00:00.000Z',
-				last_run_status: 'error',
-				last_run_error: 'Timed out',
-				last_duration_ms: 1200,
-				run_count: 2,
-				success_count: 1,
-				error_count: 1,
-				recent_runs: [
-					{
-						started_at: '2026-04-20T08:59:58.000Z',
-						finished_at: '2026-04-20T09:00:00.000Z',
-						status: 'error',
-						duration_ms: 1200,
-						error: 'Timed out',
-					},
-				],
-			},
-			alarm: {
-				binding_available: true,
-				status: 'out_of_sync',
-				stored_user_id: 'user-123',
-				alarm_scheduled_for: '2026-04-20T19:00:00.000Z',
-				next_runnable_job_id: 'job-123',
-				next_runnable_run_at: '2026-04-20T18:30:00.000Z',
-				alarm_in_sync: false,
-			},
+			],
+		})
+		expect(getResult.alarm).toEqual({
+			binding_available: true,
+			status: 'out_of_sync',
+			stored_user_id: 'user-123',
+			alarm_scheduled_for: '2026-04-20T19:00:00.000Z',
+			next_runnable_job_id: 'job-123',
+			next_runnable_run_at: '2026-04-20T18:30:00.000Z',
+			alarm_in_sync: false,
 		})
 	} finally {
 		vi.useRealTimers()
 	}
-})
-
-test('job_run_now requires an authenticated user', async () => {
-	resetMocks()
-	const env = {} as Env
-
-	await expect(
-		jobRunNowCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://example.com',
-				}),
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
 })

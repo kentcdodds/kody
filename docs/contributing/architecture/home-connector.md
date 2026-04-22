@@ -9,7 +9,7 @@ and secret configuration for **any** outbound connector are documented in
 
 ## Current adapters
 
-The connector currently exposes these local-device families:
+The connector exposes these local-device families:
 
 - Roku discovery and control over SSDP + ECP HTTP
 - Lutron HomeWorks QSX discovery and control over mDNS + LEAP TLS
@@ -39,7 +39,7 @@ mock fixtures:
 - press keypad buttons
 - set direct zone levels for dimmed/switched loads
 
-The adapter intentionally does not currently promise:
+The adapter intentionally does not promise:
 
 - dealer/programming changes to the Lutron system
 - `8902` support for runtime control
@@ -70,7 +70,7 @@ Frame TV:
 - best-effort power off and power on
 - get and set Art Mode
 
-The adapter does not currently promise:
+The adapter does not promise:
 
 - full installed-app enumeration
 - named app launch for apps without a known app ID
@@ -103,7 +103,7 @@ user flow aligned with the other managed device integrations.
 ## Local persistence
 
 Unlike the Worker-side home connector session, which persists its own view of
-the live socket state in Durable Object storage, the local connector now also
+the live socket state in Durable Object storage, the local connector also
 persists device-family-specific state on disk.
 
 The connector stores a local SQLite database containing:
@@ -134,7 +134,7 @@ Samsung discovery defaults to `mdns://_samsungmsf._tcp.local`.
 
 Lutron discovery defaults to `mdns://_lutron._tcp.local`.
 
-The connector now uses one shared pure-JavaScript mDNS discovery path for both
+The connector uses one shared pure-JavaScript mDNS discovery path for both
 Samsung and Lutron, so discovery behavior is consistent across macOS, Linux, and
 containers. Live discovery still requires the process or container to have
 multicast visibility on the local network.
