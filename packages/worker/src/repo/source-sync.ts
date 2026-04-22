@@ -187,12 +187,16 @@ export async function syncArtifactSourceSnapshot(
 		if (publishResult.status !== 'ok') {
 			throw new Error(publishResult.message)
 		}
-		await writePublishedSnapshotWithRevert({
-			env: input.env,
-			source,
-			files: input.files,
-			publishedCommit: publishResult.publishedCommit,
-		})
+		// publishSession persists the workspace snapshot to
+		// BUNDLE_ARTIFACTS_KV and reverts entity_sources.published_commit
+		// itself if that KV write fails, so a second
+		// writePublishedSnapshotWithRevert here would be redundant on
+		// success and actively harmful on failure: its revert would undo
+		// the consistent D1+KV state that publishSession already
+		// established, while leaving the repo session row marked
+		// status: 'published' with the new base_commit. See
+		// repo-session-do.ts publishSession for the internal snapshot
+		// persistence and rollback.
 		return publishResult.publishedCommit
 	} finally {
 		await session
