@@ -57,12 +57,13 @@ export async function createAgentTurnToolSet(input: {
 								input.env.APP_DB,
 								{ userId: userId! },
 							)
-							return await buildSavedPackageSearchRows({
+							const packageRows = await buildSavedPackageSearchRows({
 								env: input.env,
 								baseUrl: input.callerContext.baseUrl,
 								userId: userId!,
 								records: savedPackages,
 							})
+							return packageRows.rows
 						},
 						loadUserSecrets: () =>
 							listUserSecretsForSearch({

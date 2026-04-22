@@ -159,6 +159,8 @@ function buildFallbackPackageSearchProjection(
 		description: record.description,
 		tags: record.tags,
 		searchText: record.searchText,
+		// Preserve the saved-record app signal for discoverability even when manifest
+		// hydration fails and we cannot recover the concrete app entry path.
 		hasApp: record.hasApp,
 		appEntry: null,
 		exports: [],
@@ -166,13 +168,19 @@ function buildFallbackPackageSearchProjection(
 	}
 }
 
+export type BuildSavedPackageSearchRowsResult = {
+	rows: Array<PackageSearchRow>
+	warnings: Array<string>
+}
+
 export async function buildSavedPackageSearchRows(input: {
 	env: Env
 	baseUrl: string
 	userId: string
 	records: Array<Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]>
-}): Promise<Array<PackageSearchRow>> {
-	return await Promise.all(
+}): Promise<BuildSavedPackageSearchRowsResult> {
+	const warnings: Array<string> = []
+	const rows = await Promise.all(
 		input.records.map(async (record) => {
 			try {
 				const loaded = await loadPackageSourceBySourceId({
@@ -185,7 +193,21 @@ export async function buildSavedPackageSearchRows(input: {
 					record,
 					projection: buildPackageSearchProjection(loaded.manifest),
 				}
-			} catch {
+			} catch (cause) {
+				Sentry.captureException(cause, {
+					tags: {
+						scope: 'search.buildSavedPackageSearchRows',
+					},
+					extra: {
+						kodyId: record.kodyId,
+						sourceId: record.sourceId,
+					},
+				})
+				const message =
+					cause instanceof Error ? cause.message : String(cause)
+				warnings.push(
+					`Saved package "${record.kodyId}" search metadata is partially unavailable; using fallback metadata from source "${record.sourceId}": ${message}`,
+				)
 				return {
 					record,
 					projection: buildFallbackPackageSearchProjection(record),
@@ -193,6 +215,7 @@ export async function buildSavedPackageSearchRows(input: {
 			}
 		}),
 	)
+	return { rows, warnings }
 }
 
 const wellKnownConnectorAliases: Record<string, Array<string>> = {
@@ -239,8 +262,18 @@ function buildRecommendedNextStep(input: SearchGuidanceContext): string | undefi
 	const [topMatch] = input.matches
 	const topPackage = input.matches.find((match) => match.type === 'package')
 	const topConnector = input.matches.find((match) => match.type === 'connector')
+	const connectorMatchesPackage =
+		topPackage &&
+		topConnector &&
+		(topConnector.connectorName.toLowerCase() === topPackage.kodyId.toLowerCase() ||
+			topPackage.kodyId
+				.toLowerCase()
+				.includes(topConnector.connectorName.toLowerCase()) ||
+			getConnectorAliases(topConnector.connectorName).some((alias) =>
+				topPackage.kodyId.toLowerCase().includes(alias.toLowerCase()),
+			))
 
-	if (topPackage && topConnector && input.intent.task.name === 'operate') {
+	if (connectorMatchesPackage && input.intent.task.name === 'operate') {
 		return `Found saved package \`${topPackage.kodyId}\` and connector \`${topConnector.connectorName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the connector detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
 	}
 	if (topMatch?.type === 'package') {
@@ -705,6 +738,7 @@ function buildValueCandidates(input: {
 function buildConnectorCandidates(input: {
 	query: string
 	rows: Array<ValueMetadata>
+	queryEmbedding: ReadonlyArray<number>
 }): Array<SearchCandidate> {
 	return input.rows
 		.flatMap((row) => {
@@ -724,7 +758,7 @@ function buildConnectorCandidates(input: {
 			})
 			const lexical = lexicalScore(input.query, document)
 			const vector = cosineSimilarity(
-				deterministicEmbedding(input.query),
+				input.queryEmbedding,
 				deterministicEmbedding(document),
 			)
 			return [
@@ -863,6 +897,7 @@ export function searchUnified(input: {
 		...buildConnectorCandidates({
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.userValueRows,
+			queryEmbedding,
 		}),
 		...buildSecretCandidates({
 			query: intent.normalizedQuery,
@@ -1166,12 +1201,13 @@ async function loadSearchRowsAndRegistry(input: {
 						userId: input.userId!,
 					},
 				)
-				return await buildSavedPackageSearchRows({
+				const packageRows = await buildSavedPackageSearchRows({
 					env: input.agent.getEnv(),
 					baseUrl: input.callerContext.baseUrl,
 					userId: input.userId!,
 					records: savedPackages,
 				})
+				return packageRows.rows
 			},
 			loadUserSecrets: () =>
 				listUserSecretsForSearch({
