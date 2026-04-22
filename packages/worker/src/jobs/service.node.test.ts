@@ -116,25 +116,31 @@ function mockRepoPersistence() {
 					sourceRoot: String(existing['source_root'] ?? '/'),
 				})
 				if (env.BUNDLE_ARTIFACTS_KV) {
-					const { writePublishedSourceSnapshot } = await import(
-						'#worker/package-runtime/published-runtime-artifacts.ts'
-					)
+					const { writePublishedSourceSnapshot } =
+						await import('#worker/package-runtime/published-runtime-artifacts.ts')
 					await writePublishedSourceSnapshot({
 						env,
 						source: {
 							id: sourceId,
 							user_id: String(existing['user_id']),
 							entity_kind:
-								(existing['entity_kind'] as 'job' | 'package' | 'skill' | 'app') ??
-								'job',
+								(existing['entity_kind'] as
+									| 'job'
+									| 'package'
+									| 'skill'
+									| 'app') ?? 'job',
 							entity_id: String(existing['entity_id'] ?? sourceId),
 							repo_id: String(existing['repo_id'] ?? sourceId),
 							published_commit: 'published-commit-1',
 							indexed_commit: null,
 							manifest_path: String(existing['manifest_path'] ?? 'kody.json'),
 							source_root: String(existing['source_root'] ?? '/'),
-							created_at: String(existing['created_at'] ?? '2026-04-16T00:00:00.000Z'),
-							updated_at: String(existing['updated_at'] ?? '2026-04-16T00:00:00.000Z'),
+							created_at: String(
+								existing['created_at'] ?? '2026-04-16T00:00:00.000Z',
+							),
+							updated_at: String(
+								existing['updated_at'] ?? '2026-04-16T00:00:00.000Z',
+							),
 						},
 						files,
 					})
@@ -344,7 +350,9 @@ function createDatabase() {
 							}
 							if (
 								query.includes('SELECT * FROM entity_sources') &&
-								query.includes('WHERE user_id = ? AND entity_kind = ? AND entity_id = ?')
+								query.includes(
+									'WHERE user_id = ? AND entity_kind = ? AND entity_id = ?',
+								)
 							) {
 								return selectOne(
 									'entity_sources',
@@ -355,7 +363,9 @@ function createDatabase() {
 								) as T | null
 							}
 							if (
-								query.includes('SELECT id FROM archived_job_artifacts WHERE job_id = ? AND user_id = ?')
+								query.includes(
+									'SELECT id FROM archived_job_artifacts WHERE job_id = ? AND user_id = ?',
+								)
 							) {
 								return selectOne(
 									'archived_job_artifacts',
@@ -365,7 +375,9 @@ function createDatabase() {
 							}
 							if (
 								query.includes('FROM published_bundle_artifacts') &&
-								query.includes('WHERE user_id = ? AND source_id = ? AND artifact_kind = ?')
+								query.includes(
+									'WHERE user_id = ? AND source_id = ? AND artifact_kind = ?',
+								)
 							) {
 								return selectOne(
 									'published_bundle_artifacts',
@@ -707,26 +719,23 @@ function createDatabase() {
 								if (!existing) {
 									return { meta: { changes: 0, last_row_id: 0 } }
 								}
-								const row = {
-									...existing,
-									published_commit: params.includes('published_commit')
-										? existing['published_commit']
-										: existing['published_commit'],
-								}
 								// Specific update patterns used in tests/codepaths.
 								const id = params[params.length - 2]
 								const userId = params[params.length - 1]
 								upsert(
 									'entity_sources',
-									(entry) =>
-										entry['id'] === id && entry['user_id'] === userId,
+									(entry) => entry['id'] === id && entry['user_id'] === userId,
 									{
 										...existing,
 										repo_id: params[0] ?? existing['repo_id'],
 										published_commit:
-											params.length > 3 ? params[1] : existing['published_commit'],
+											params.length > 3
+												? params[1]
+												: existing['published_commit'],
 										indexed_commit:
-											params.length > 3 ? params[2] : existing['indexed_commit'],
+											params.length > 3
+												? params[2]
+												: existing['indexed_commit'],
 										manifest_path:
 											params.length > 3 ? params[3] : existing['manifest_path'],
 										source_root:
@@ -742,8 +751,7 @@ function createDatabase() {
 										changes: deleteWhere(
 											'entity_sources',
 											(row) =>
-												row['id'] === params[0] &&
-												row['user_id'] === params[1],
+												row['id'] === params[0] && row['user_id'] === params[1],
 										),
 										last_row_id: 0,
 									},
@@ -836,18 +844,14 @@ function createDatabase() {
 								if (!existing) {
 									return { meta: { changes: 0, last_row_id: 0 } }
 								}
-								upsert(
-									'archived_job_artifacts',
-									(row) => row['id'] === id,
-									{
-										...existing,
-										source_id: params[0],
-										published_commit: params[1],
-										storage_id: params[2],
-										retain_until: params[3],
-										updated_at: params[4],
-									},
-								)
+								upsert('archived_job_artifacts', (row) => row['id'] === id, {
+									...existing,
+									source_id: params[0],
+									published_commit: params[1],
+									storage_id: params[2],
+									retain_until: params[3],
+									updated_at: params[4],
+								})
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (query.startsWith('DELETE FROM archived_job_artifacts')) {
@@ -952,9 +956,8 @@ async function insertPublishedEntitySource(input: {
 				} as Env)
 			: null)
 	if (snapshotEnv && input.files) {
-		const { writePublishedSourceSnapshot } = await import(
-			'#worker/package-runtime/published-runtime-artifacts.ts'
-		)
+		const { writePublishedSourceSnapshot } =
+			await import('#worker/package-runtime/published-runtime-artifacts.ts')
 		await writePublishedSourceSnapshot({
 			env: snapshotEnv,
 			source: {
@@ -973,40 +976,6 @@ async function insertPublishedEntitySource(input: {
 			files: input.files,
 		})
 	}
-}
-
-async function insertEntitySourceFixture(input: {
-	db: ReturnType<typeof createDatabase>
-	id: string
-	userId?: string
-	entityKind?: 'job' | 'package'
-	entityId: string
-	repoId?: string
-	publishedCommit: string
-	manifestPath?: string
-	sourceRoot?: string
-}) {
-	await input.db
-		.prepare(
-			`INSERT INTO entity_sources (
-				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit,
-				manifest_path, source_root, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			input.id,
-			input.userId ?? 'user-123',
-			input.entityKind ?? 'job',
-			input.entityId,
-			input.repoId ?? input.id,
-			input.publishedCommit,
-			null,
-			input.manifestPath ?? 'kody.json',
-			input.sourceRoot ?? '/',
-			'2026-04-16T00:00:00.000Z',
-			'2026-04-16T00:00:00.000Z',
-		)
-		.run()
 }
 
 function createBaseCallerContext(): PersistedJobCallerContext {
@@ -1915,7 +1884,7 @@ test('executeJobOnce preserves codemode secret and value semantics', async () =>
 test('executeJobOnce refreshes repo sessions when base commit moves', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-1',
@@ -1931,7 +1900,8 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 				jobName: 'Repo-backed job',
 				entry: './src/job.ts',
 			}),
-			'src/job.ts': 'export default async () => ({ ok: true, repoBacked: true })',
+			'src/job.ts':
+				'export default async () => ({ ok: true, repoBacked: true })',
 		},
 		env: {
 			APP_DB: db,
@@ -2090,7 +2060,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 test('executeJobOnce executes package-backed jobs from published artifacts', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-strict',
@@ -2186,13 +2156,15 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 	const repoSessionRpcSpy = vi
 		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
 		.mockReturnValue(sessionClient as never)
-	const executeSpy = vi.spyOn(
-		await import('#mcp/run-codemode-registry.ts'),
-		'runBundledModuleWithRegistry',
-	).mockResolvedValue({
-		result: { ok: true, repoBacked: true },
-		logs: ['repo-backed codemode executed'],
-	})
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-codemode-registry.ts'),
+			'runBundledModuleWithRegistry',
+		)
+		.mockResolvedValue({
+			result: { ok: true, repoBacked: true },
+			logs: ['repo-backed codemode executed'],
+		})
 
 	try {
 		const outcome = await executeJobOnce({
@@ -2217,7 +2189,7 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 test('executeJobOnce bypasses typecheck-only failures when the stored repo policy allows it', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-bypass',
@@ -2376,7 +2348,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 test('executeJobOnce preserves bypass audit logs when execution fails after a typecheck-only bypass', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-bypass-failure',
@@ -2538,7 +2510,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute paths and migrated entrypoints', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-absolute-paths',
@@ -2554,7 +2526,8 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 				jobName: 'Repo-backed absolute path job',
 				exportPath: './src/job.ts',
 			}),
-			'src/job.ts': 'export default async () => ({ ok: true, normalized: true })',
+			'src/job.ts':
+				'export default async () => ({ ok: true, normalized: true })',
 		},
 		env: {
 			APP_DB: db,
@@ -2721,7 +2694,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 test('executeJobOnce fails instead of reusing a stale repo session when discard fails', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-1',
@@ -2812,7 +2785,8 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 
 		expect(outcome.execution).toEqual({
 			ok: false,
-			error: 'Published snapshot for source "source-1" at commit "commit-1" was not found.',
+			error:
+				'Published snapshot for source "source-1" at commit "commit-1" was not found.',
 			logs: [],
 		})
 		expect(executeSpy).not.toHaveBeenCalled()
@@ -2827,7 +2801,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-job-repo-module',
@@ -2846,7 +2820,8 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 				description: 'Runs from repo',
 				jobName: 'Repo-backed module job',
 			}),
-			'src/job.ts': 'export default async () => ({ ok: true, repoBacked: "module" })',
+			'src/job.ts':
+				'export default async () => ({ ok: true, repoBacked: "module" })',
 			'src/lib.ts': 'export const value = 1',
 		},
 	})
@@ -3030,7 +3005,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 test('executeJobOnce returns an error when codemode secret policy would reject execution', async () => {
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-secret-policy',
@@ -3375,7 +3350,9 @@ test('runJobNow preserves failed once jobs for inspection', async () => {
 		if (result.execution.ok) {
 			throw new Error('Expected failed execution result.')
 		}
-		expect(result.execution.error).toContain('Cannot read properties of undefined')
+		expect(result.execution.error).toContain(
+			'Cannot read properties of undefined',
+		)
 		expect(result.deletedAfterRun).toBe(false)
 		expect(deleteByIds).not.toHaveBeenCalled()
 		const row = await (
@@ -3387,7 +3364,7 @@ test('runJobNow preserves failed once jobs for inspection', async () => {
 				enabled: false,
 				lastRunStatus: 'error',
 				lastRunError: expect.stringContaining(
-					"Cannot read properties of undefined",
+					'Cannot read properties of undefined',
 				),
 				runCount: 1,
 				successCount: 0,
@@ -3401,7 +3378,7 @@ test('runJobNow preserves failed once jobs for inspection', async () => {
 
 test('runJobNow can use a one-off repo check policy override without changing the stored job', async () => {
 	const db = createDatabase()
-	insertPublishedEntitySource({
+	await insertPublishedEntitySource({
 		db,
 		userId: 'user-123',
 		sourceId: 'source-run-now-override',
@@ -3444,7 +3421,8 @@ test('runJobNow can use a one-off repo check policy override without changing th
 		manifestPath: 'kody.json',
 		files: buildJobSourceFiles({
 			job: jobView,
-			moduleSource: 'export default async function run() { return { ok: true, override: true } }',
+			moduleSource:
+				'export default async function run() { return { ok: true, override: true } }',
 		}),
 	})
 
