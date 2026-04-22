@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntitySource: vi.fn(),
+	loadPublishedEntityManifest: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -13,6 +14,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/repo/published-source.ts', () => ({
 	loadPublishedEntitySource: (...args: Array<unknown>) =>
 		mockModule.loadPublishedEntitySource(...args),
+	loadPublishedEntityManifest: (...args: Array<unknown>) =>
+		mockModule.loadPublishedEntityManifest(...args),
 }))
 
 const { loadPackageSourceBySourceId, loadPackageManifestBySourceId } =
@@ -122,6 +125,7 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 
 test('loadPackageManifestBySourceId reads only the manifest for published sources', async () => {
 	mockModule.getEntitySourceById.mockReset()
+	mockModule.loadPublishedEntityManifest.mockReset()
 	mockModule.loadPublishedEntitySource.mockReset()
 	const bundleKv = {
 		get: vi.fn(async () => null),
@@ -135,27 +139,36 @@ test('loadPackageManifestBySourceId reads only the manifest for published source
 			publishedCommit: 'commit-manifest-only-1',
 		}),
 	)
-	mockModule.loadPublishedEntitySource.mockResolvedValue({
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
 		source: createPackageSourceRow({
 			id: 'source-manifest-only-1',
 			publishedCommit: 'commit-manifest-only-1',
 		}),
-		files: {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/example-package',
-				exports: {
-					'.': './index.js',
+		content: JSON.stringify({
+			name: '@kentcdodds/example-package',
+			exports: {
+				'.': './index.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+				app: {
+					entry: 'app.js',
 				},
-				kody: {
-					id: 'example-package',
-					description: 'Example package',
-					app: {
-						entry: 'app.js',
-					},
+			},
+		}),
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'.': './index.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+				app: {
+					entry: 'app.js',
 				},
-			}),
-			'app.js': 'export default { async fetch() { return new Response("ok") } }',
-			'index.js': 'export const value = "ok"',
+			},
 		},
 	})
 
@@ -178,7 +191,8 @@ test('loadPackageManifestBySourceId reads only the manifest for published source
 		sourceId: 'source-manifest-only-1',
 	})
 
-	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedEntitySource).not.toHaveBeenCalled()
 	expect(first).toStrictEqual(second)
 	expect(first.manifest).toMatchObject({
 		name: '@kentcdodds/example-package',

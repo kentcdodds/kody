@@ -1,6 +1,9 @@
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
-import { loadPublishedEntitySource } from '#worker/repo/published-source.ts'
+import {
+	loadPublishedEntityManifest,
+	loadPublishedEntitySource,
+} from '#worker/repo/published-source.ts'
 import {
 	createPublishedPackageCacheKey,
 	PromiseLruCache,
@@ -20,6 +23,7 @@ export type LoadedPackageManifest = {
 }
 
 const packageSourceCache = new PromiseLruCache<LoadedPackageSource>()
+const packageManifestCache = new PromiseLruCache<LoadedPackageManifest>()
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
 	if (value && typeof value === 'object') {
@@ -50,15 +54,6 @@ function finalizeLoadedSource(input: {
 		manifest: deepFreeze(structuredClone(input.manifest)),
 		files: freezeFiles(input.files),
 	}) as LoadedPackageSource
-}
-
-function deriveLoadedManifest(
-	loadedSource: LoadedPackageSource,
-): LoadedPackageManifest {
-	return Object.freeze({
-		source: loadedSource.source,
-		manifest: loadedSource.manifest,
-	}) as LoadedPackageManifest
 }
 
 function parsePackageManifest(input: {
@@ -201,25 +196,38 @@ export async function loadPackageManifestBySourceId(input: {
 		source,
 	})
 	if (!cacheKey) {
-		return deriveLoadedManifest(
-			await loadPackageSourceUncached({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
+		const published = await loadPublishedEntityManifest({
+			env: input.env,
+			userId: input.userId,
+			sourceId: source.id,
+		})
+		return Object.freeze({
+			source,
+			manifest: parsePackageManifest({
 				source,
+				content: published.content,
 			}),
-		)
+		}) as LoadedPackageManifest
 	}
-	return deriveLoadedManifest(
-		await packageSourceCache.getOrCreate({
-			cacheKey,
-			create: async () =>
-				await loadPackageSourceUncached({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: input.userId,
+	const cachedManifest = packageManifestCache.get(cacheKey)
+	if (cachedManifest) {
+		return await cachedManifest
+	}
+	return await packageManifestCache.getOrCreate({
+		cacheKey,
+		create: async () => {
+			const published = await loadPublishedEntityManifest({
+				env: input.env,
+				userId: input.userId,
+				sourceId: source.id,
+			})
+			return Object.freeze({
+				source,
+				manifest: parsePackageManifest({
 					source,
+					content: published.content,
 				}),
-		}),
-	)
+			}) as LoadedPackageManifest
+		},
+	})
 }
