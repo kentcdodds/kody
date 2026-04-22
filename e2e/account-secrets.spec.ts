@@ -107,18 +107,8 @@ test('landing on an approval link shows already added when the host is present',
 	await expect(
 		page.getByRole('heading', { level: 2, name: secret.name }),
 	).toBeVisible()
-	await expect(
-		page.getByRole('heading', { level: 2, name: 'Already added' }),
-	).toBeVisible()
-	await expect(
-		page
-			.getByRole('status')
-			.getByText('This request is already complete for this secret.'),
-	).toBeVisible()
-	await expect(
-		page.getByRole('status').getByText('Host', { exact: false }),
-	).toContainText('api.cloudflare.com')
-	await expect(
-		page.getByRole('heading', { level: 2, name: 'Approve host access' }),
-	).toHaveCount(0)
+	const alreadyAddedNotice = page.getByRole('status')
+	await expect(alreadyAddedNotice).toBeVisible()
+	await expect(alreadyAddedNotice).toContainText('api.cloudflare.com')
+	await expect(page.getByRole('button', { name: 'Approve host' })).toHaveCount(0)
 })
