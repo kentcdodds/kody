@@ -91,14 +91,35 @@ export function getPackageTags(manifest: AuthoredPackageJson) {
 	return [...(manifest.kody.tags ?? [])]
 }
 
-export function buildPackageSearchProjection(manifest: AuthoredPackageJson) {
+export type PackageSearchProjection = {
+	name: string
+	kodyId: string
+	description: string
+	tags: Array<string>
+	searchText: string | null
+	hasApp: boolean
+	appEntry: string | null
+	exports: Array<string>
+	jobs: Array<{
+		name: string
+		entry: string
+		schedule: string
+		enabled: boolean
+	}>
+}
+
+export function buildPackageSearchProjection(
+	manifest: AuthoredPackageJson,
+): PackageSearchProjection {
+	const appEntry = getPackageAppEntryPath(manifest)
 	return {
 		name: manifest.name,
 		kodyId: manifest.kody.id,
 		description: manifest.kody.description,
 		tags: getPackageTags(manifest),
 		searchText: manifest.kody.searchText?.trim() || null,
-		hasApp: manifest.kody.app !== undefined,
+		hasApp: appEntry !== null,
+		appEntry,
 		exports: Object.keys(manifest.exports).sort(),
 		jobs: Object.entries(manifest.kody.jobs ?? {})
 			.map(([name, job]) => ({
@@ -114,4 +135,28 @@ export function buildPackageSearchProjection(manifest: AuthoredPackageJson) {
 			}))
 			.sort((left, right) => left.name.localeCompare(right.name)),
 	}
+}
+
+export function buildPackageSearchDocument(projection: PackageSearchProjection) {
+	const jobLines = projection.jobs.map((job) =>
+		[job.name, job.entry, job.schedule, job.enabled ? 'enabled' : 'disabled']
+			.filter((value) => value.length > 0)
+			.join(' '),
+	)
+	return [
+		`package ${projection.kodyId}`,
+		projection.name,
+		projection.description,
+		projection.tags.join(' '),
+		projection.searchText ?? '',
+		projection.exports.join('\n'),
+		jobLines.join('\n'),
+		projection.appEntry
+			? `app ${projection.appEntry}`
+			: projection.hasApp
+				? 'app'
+				: '',
+	]
+		.filter((value) => value.trim().length > 0)
+		.join('\n')
 }

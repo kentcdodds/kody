@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shared.ts'
 import {
+	buildSavedPackageSearchRows,
 	loadDownHomeConnectorStatus,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
@@ -55,6 +56,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 				tags: ['delta'],
 				searchText: 'epsilon',
 				hasApp: false,
+				appEntry: null,
 				exports: [],
 				jobs: [],
 			},
@@ -219,6 +221,7 @@ test('optional search rows include saved packages when lookup succeeds', async (
 					tags: ['roku'],
 					searchText: null,
 					hasApp: true,
+					appEntry: 'src/app.ts',
 					exports: ['.'],
 					jobs: [],
 				},
@@ -232,6 +235,239 @@ test('optional search rows include saved packages when lookup succeeds', async (
 	expect(result.userSecretRows).toEqual([])
 	expect(result.userValueRows).toEqual([])
 	expect(result.warnings).toEqual([])
+})
+
+test('optional search rows preserve package fallback warnings', async () => {
+	const result = await loadOptionalSearchRows({
+		userId: 'user-123',
+		loadPackages: async () => ({
+			rows: [
+				{
+					record: {
+						id: 'package-123',
+						userId: 'user-123',
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package',
+						tags: ['observed'],
+						searchText: null,
+						sourceId: 'source-package-123',
+						hasApp: true,
+						createdAt: '2026-03-24T00:00:00.000Z',
+						updatedAt: '2026-03-24T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package',
+						tags: ['observed'],
+						searchText: null,
+						hasApp: true,
+						appEntry: null,
+						exports: [],
+						jobs: [],
+					},
+				},
+			],
+			warnings: ['Saved package "observed-package" fallback metadata was used.'],
+		}),
+		loadUserSecrets: async () => [],
+		loadUserValues: async () => [],
+	})
+
+	expect(result.packageRows).toHaveLength(1)
+	expect(result.warnings).toEqual([
+		'Saved package "observed-package" fallback metadata was used.',
+	])
+})
+
+test('searchUnified uses package exports and connector aliases for operate queries', () => {
+	const registry = buildCapabilityRegistry([])
+	const optionalRows = {
+		packageRows: [
+			{
+				record: {
+					id: 'spotify-pkg',
+					userId: 'user-1',
+					name: '@kentcdodds/spotify',
+					kodyId: 'spotify',
+					description:
+						'Package-first Spotify playback controls, queue helpers, device management, and a hosted remote app.',
+					tags: ['spotify', 'music', 'playback'],
+					searchText: 'spotify remote playback package music queue player',
+					sourceId: 'source-spotify',
+					hasApp: true,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+				},
+				projection: {
+					name: '@kentcdodds/spotify',
+					kodyId: 'spotify',
+					description:
+						'Package-first Spotify playback controls, queue helpers, device management, and a hosted remote app.',
+					tags: ['spotify', 'music', 'playback'],
+					searchText: 'spotify remote playback package music queue player',
+					hasApp: true,
+					appEntry: 'src/app/server.ts',
+					exports: [
+						'./playback-state',
+						'./play-pause',
+						'./transfer-playback',
+						'./add-to-queue',
+						'./playback-controller',
+					],
+					jobs: [],
+				},
+			},
+		],
+		userSecretRows: [],
+		userValueRows: [
+			{
+				name: buildConnectorValueName('spotify'),
+				scope: 'user',
+				value: JSON.stringify({
+					tokenUrl: 'https://accounts.spotify.com/api/token',
+					apiBaseUrl: 'https://api.spotify.com/v1',
+					flow: 'pkce',
+					clientIdValueName: 'spotify-client-id',
+					clientSecretSecretName: null,
+					accessTokenSecretName: 'spotify-access-token',
+					refreshTokenSecretName: 'spotify-refresh-token',
+					requiredHosts: ['api.spotify.com'],
+				}),
+					description: 'Spotify playback and music OAuth connector config',
+				appId: null,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+				ttlMs: null,
+			},
+		],
+		warnings: [],
+	} satisfies OptionalSearchRowsResult
+
+	const result = searchUnified({
+		env: {} as Env,
+		query: 'play a lofi song on spotify',
+		limit: 5,
+		registry,
+		optionalRows,
+	})
+
+	expect(result.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'package',
+				kodyId: 'spotify',
+			}),
+			expect.objectContaining({
+				type: 'connector',
+				connectorName: 'spotify',
+			}),
+		]),
+	)
+	expect(result.guidance).toContain('Found saved package `spotify` and connector `spotify`')
+})
+
+test('buildSavedPackageSearchRows falls back when package source resolution fails', async () => {
+	const result = await buildSavedPackageSearchRows({
+		env: {} as Env,
+		baseUrl: 'http://localhost',
+		userId: 'user-123',
+		records: [
+			{
+				id: 'package-123',
+				userId: 'user-123',
+				name: '@kody/observed',
+				kodyId: 'observed',
+				description: 'Observed package',
+				tags: ['observed'],
+				searchText: 'search text',
+				sourceId: 'missing-source',
+				hasApp: true,
+				createdAt: '2026-03-24T00:00:00.000Z',
+				updatedAt: '2026-03-24T00:00:00.000Z',
+			},
+		],
+	})
+
+	expect(result.rows).toEqual([
+		expect.objectContaining({
+			projection: expect.objectContaining({
+				hasApp: true,
+				appEntry: null,
+				exports: [],
+				jobs: [],
+			}),
+		}),
+	])
+	expect(result.warnings).toEqual([
+		'Saved package "observed" search metadata is partially unavailable; using fallback metadata from source "missing-source": Saved package source bindings are not available.',
+	])
+})
+
+test('search guidance does not pair unrelated package and connector matches', () => {
+	const registry = buildCapabilityRegistry([])
+	const result = searchUnified({
+		env: {} as Env,
+		query: 'play music on spotify',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [
+				{
+					record: {
+						id: 'package-123',
+						userId: 'user-123',
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package with app controls.',
+						tags: ['music'],
+						searchText: 'music remote package',
+						sourceId: 'source-package-123',
+						hasApp: true,
+						createdAt: '2026-03-24T00:00:00.000Z',
+						updatedAt: '2026-03-24T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package with app controls.',
+						tags: ['music'],
+						searchText: 'music remote package',
+						hasApp: true,
+						appEntry: 'src/app.ts',
+						exports: ['./play'],
+						jobs: [],
+					},
+				},
+			],
+			userSecretRows: [],
+			userValueRows: [
+				{
+					name: buildConnectorValueName('github'),
+					scope: 'user',
+					value: JSON.stringify({
+						tokenUrl: 'https://github.com/login/oauth/access_token',
+						apiBaseUrl: 'https://api.github.com',
+						flow: 'confidential',
+						clientIdValueName: 'github-client-id',
+						clientSecretSecretName: 'github-client-secret',
+						accessTokenSecretName: 'github-access-token',
+						refreshTokenSecretName: 'github-refresh-token',
+						requiredHosts: ['api.github.com'],
+					}),
+					description: 'GitHub OAuth connector config',
+					appId: null,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+					ttlMs: null,
+				},
+			],
+			warnings: [],
+		},
+	})
+
+	expect(result.guidance).not.toContain('connector `github`')
 })
 
 test('optional search rows fall back when persisted values lookup fails', async () => {

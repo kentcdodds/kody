@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntitySource: vi.fn(),
+	loadPublishedEntityManifest: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -13,9 +14,12 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/repo/published-source.ts', () => ({
 	loadPublishedEntitySource: (...args: Array<unknown>) =>
 		mockModule.loadPublishedEntitySource(...args),
+	loadPublishedEntityManifest: (...args: Array<unknown>) =>
+		mockModule.loadPublishedEntityManifest(...args),
 }))
 
-const { loadPackageSourceBySourceId } = await import('./source.ts')
+const { loadPackageSourceBySourceId, loadPackageManifestBySourceId } =
+	await import('./source.ts')
 
 function createPackageSourceRow(input: {
 	id: string
@@ -95,7 +99,7 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 	})
 
 	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
-	expect(first).toBe(second)
+	expect(first).toStrictEqual(second)
 	expect(Object.isFrozen(first)).toBe(true)
 	expect(Object.isFrozen(first.source)).toBe(true)
 	expect(Object.isFrozen(first.manifest)).toBe(true)
@@ -116,6 +120,85 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 				},
 			},
 		}),
+	})
+})
+
+test('loadPackageManifestBySourceId reads only the manifest for published sources', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.loadPublishedEntityManifest.mockReset()
+	mockModule.loadPublishedEntitySource.mockReset()
+	const bundleKv = {
+		get: vi.fn(async () => null),
+		put: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	} as unknown as KVNamespace
+
+	mockModule.getEntitySourceById.mockResolvedValue(
+		createPackageSourceRow({
+			id: 'source-manifest-only-1',
+			publishedCommit: 'commit-manifest-only-1',
+		}),
+	)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: createPackageSourceRow({
+			id: 'source-manifest-only-1',
+			publishedCommit: 'commit-manifest-only-1',
+		}),
+		content: JSON.stringify({
+			name: '@kentcdodds/example-package',
+			exports: {
+				'.': './index.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+				app: {
+					entry: 'app.js',
+				},
+			},
+		}),
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'.': './index.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+				app: {
+					entry: 'app.js',
+				},
+			},
+		},
+	})
+
+	const first = await loadPackageManifestBySourceId({
+		env: {
+			APP_DB: {},
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceId: 'source-manifest-only-1',
+	})
+	const second = await loadPackageManifestBySourceId({
+		env: {
+			APP_DB: {},
+			BUNDLE_ARTIFACTS_KV: bundleKv,
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceId: 'source-manifest-only-1',
+	})
+
+	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedEntitySource).not.toHaveBeenCalled()
+	expect(first).toStrictEqual(second)
+	expect(first.manifest).toMatchObject({
+		name: '@kentcdodds/example-package',
+		kody: {
+			id: 'example-package',
+		},
 	})
 })
 

@@ -21,6 +21,8 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
 		warnings: [],
+		guidance:
+			'Inspect connector detail with `search({ entity: "github:connector" })` next.',
 		matches: [
 			{
 				type: 'value',
@@ -56,6 +58,8 @@ test('search markdown and entity detail formatting preserve structured behavior'
 
 	expect(markdown).toContain('`user:preferred_repo:value`')
 	expect(markdown).toContain('`https://api.github.com`')
+	expect(markdown).toContain('## Recommended next step')
+	expect(markdown).toContain('`search({ entity: "github:connector" })`')
 
 	expect(
 		toSlimStructuredMatches({
@@ -116,6 +120,8 @@ test('search markdown and entity detail formatting preserve structured behavior'
 			flow: 'confidential',
 			apiBaseUrl: 'https://api.github.com',
 			requiredHosts: ['api.github.com'],
+			nextStep:
+				'Inspect connector detail with search({ entity: "github:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.',
 		},
 	])
 

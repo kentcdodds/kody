@@ -2,8 +2,10 @@ import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
 const sourceSnapshotVersion = 1
+const sourceManifestSnapshotVersion = 1
 const bundleArtifactVersion = 1
 const sourceSnapshotPrefix = 'source-snapshot'
+const sourceManifestSnapshotPrefix = 'source-manifest-snapshot'
 const bundleArtifactPrefix = 'bundle-artifact'
 
 export type BundleArtifactKind = 'app' | 'job' | 'module'
@@ -34,6 +36,15 @@ export type PublishedSourceSnapshot = {
 	manifestPath: string
 	sourceRoot: string
 	files: Record<string, string>
+	createdAt: string
+}
+
+export type PublishedSourceManifestSnapshot = {
+	version: typeof sourceManifestSnapshotVersion
+	sourceId: string
+	publishedCommit: string
+	manifestPath: string
+	manifestContent: string
 	createdAt: string
 }
 
@@ -145,6 +156,13 @@ export function buildPublishedSourceSnapshotKvKey(input: {
 	return `${sourceSnapshotPrefix}:v${sourceSnapshotVersion}:${input.sourceId}:${input.publishedCommit}`
 }
 
+export function buildPublishedSourceManifestSnapshotKvKey(input: {
+	sourceId: string
+	publishedCommit: string
+}) {
+	return `${sourceManifestSnapshotPrefix}:v${sourceManifestSnapshotVersion}:${input.sourceId}:${input.publishedCommit}`
+}
+
 export function buildPublishedBundleArtifactKvKey(input: {
 	sourceId: string
 	publishedCommit: string
@@ -194,7 +212,31 @@ export async function writePublishedSourceSnapshot(input: {
 		sourceId: input.source.id,
 		publishedCommit: input.source.published_commit,
 	})
-	await getBundleArtifactsKv(input.env).put(key, JSON.stringify(snapshot))
+	const manifestContent = input.files[input.source.manifest_path]
+	if (typeof manifestContent !== 'string') {
+		throw new Error(
+			`Published source snapshot is missing manifest "${input.source.manifest_path}".`,
+		)
+	}
+	const manifestKey = buildPublishedSourceManifestSnapshotKvKey({
+		sourceId: input.source.id,
+		publishedCommit: input.source.published_commit,
+	})
+	const manifestSnapshot: PublishedSourceManifestSnapshot = {
+		version: sourceManifestSnapshotVersion,
+		sourceId: input.source.id,
+		publishedCommit: input.source.published_commit,
+		manifestPath: input.source.manifest_path,
+		manifestContent,
+		createdAt: snapshot.createdAt,
+	}
+	await Promise.all([
+		getBundleArtifactsKv(input.env).put(key, JSON.stringify(snapshot)),
+		getBundleArtifactsKv(input.env).put(
+			manifestKey,
+			JSON.stringify(manifestSnapshot),
+		),
+	])
 	return key
 }
 
@@ -234,6 +276,42 @@ export async function loadPublishedSourceSnapshot(input: {
 	})
 }
 
+export async function readPublishedSourceManifestSnapshot(input: {
+	env: Env
+	sourceId: string
+	publishedCommit: string | null
+}) {
+	if (!input.publishedCommit) return null
+	const key = buildPublishedSourceManifestSnapshotKvKey({
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+	})
+	const stored = await getBundleArtifactsKv(input.env).get(key, 'json')
+	if (!stored || typeof stored !== 'object') return null
+	const snapshot = stored as PublishedSourceManifestSnapshot
+	if (
+		snapshot.version !== sourceManifestSnapshotVersion ||
+		snapshot.sourceId !== input.sourceId ||
+		snapshot.publishedCommit !== input.publishedCommit
+	) {
+		return null
+	}
+	return snapshot
+}
+
+export async function loadPublishedSourceManifestSnapshot(input: {
+	env: Env
+	userId: string
+	source: EntitySourceRow
+}) {
+	void input.userId
+	return await readPublishedSourceManifestSnapshot({
+		env: input.env,
+		sourceId: input.source.id,
+		publishedCommit: input.source.published_commit,
+	})
+}
+
 export async function persistPublishedSourceSnapshot(input: {
 	env: Env
 	userId: string
@@ -248,18 +326,50 @@ export async function persistPublishedSourceSnapshot(input: {
 	})
 }
 
+export async function persistPublishedSourceManifestSnapshot(input: {
+	env: Env
+	userId: string
+	source: EntitySourceRow
+	snapshot: Pick<PublishedSourceManifestSnapshot, 'manifestContent'>
+}) {
+	void input.userId
+	if (!input.source.published_commit) return null
+	const manifestSnapshot: PublishedSourceManifestSnapshot = {
+		version: sourceManifestSnapshotVersion,
+		sourceId: input.source.id,
+		publishedCommit: input.source.published_commit,
+		manifestPath: input.source.manifest_path,
+		manifestContent: input.snapshot.manifestContent,
+		createdAt: new Date().toISOString(),
+	}
+	const key = buildPublishedSourceManifestSnapshotKvKey({
+		sourceId: input.source.id,
+		publishedCommit: input.source.published_commit,
+	})
+	await getBundleArtifactsKv(input.env).put(key, JSON.stringify(manifestSnapshot))
+	return key
+}
+
 export async function deletePublishedSourceSnapshot(input: {
 	env: Env
 	sourceId: string
 	publishedCommit: string | null
 }) {
 	if (!input.publishedCommit) return
-	await getBundleArtifactsKv(input.env).delete(
-		buildPublishedSourceSnapshotKvKey({
-			sourceId: input.sourceId,
-			publishedCommit: input.publishedCommit,
-		}),
-	)
+	await Promise.all([
+		getBundleArtifactsKv(input.env).delete(
+			buildPublishedSourceSnapshotKvKey({
+				sourceId: input.sourceId,
+				publishedCommit: input.publishedCommit,
+			}),
+		),
+		getBundleArtifactsKv(input.env).delete(
+			buildPublishedSourceManifestSnapshotKvKey({
+				sourceId: input.sourceId,
+				publishedCommit: input.publishedCommit,
+			}),
+		),
+	])
 }
 
 export async function writePublishedBundleArtifact(input: {

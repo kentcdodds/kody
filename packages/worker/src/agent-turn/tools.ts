@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import {
+	buildSavedPackageSearchRows,
 	loadDownRemoteConnectorStatuses,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
@@ -56,19 +57,13 @@ export async function createAgentTurnToolSet(input: {
 								input.env.APP_DB,
 								{ userId: userId! },
 							)
-							return savedPackages.map((savedPackage) => ({
-								record: savedPackage,
-								projection: {
-									name: savedPackage.name,
-									kodyId: savedPackage.kodyId,
-									description: savedPackage.description,
-									tags: savedPackage.tags,
-									searchText: savedPackage.searchText,
-									hasApp: savedPackage.hasApp,
-									exports: [],
-									jobs: [],
-								},
-							}))
+							const packageRows = await buildSavedPackageSearchRows({
+								env: input.env,
+								baseUrl: input.callerContext.baseUrl,
+								userId: userId!,
+								records: savedPackages,
+							})
+							return packageRows
 						},
 						loadUserSecrets: () =>
 							listUserSecretsForSearch({
@@ -110,6 +105,7 @@ export async function createAgentTurnToolSet(input: {
 				return {
 					offline: result.offline,
 					warnings: optionalRows.warnings,
+					guidance: result.guidance,
 					memories: memoryToolContext
 						? {
 								surfaced: memoryToolContext.memories,
