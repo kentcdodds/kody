@@ -20,7 +20,7 @@ export const metaGetHomeConnectorStatusCapability = defineDomainCapability(
 	{
 		name: 'meta_get_home_connector_status',
 		description:
-			'Report whether the home connector is connected, when it was last seen, and whether home capabilities are currently usable. Use this when home search results are missing or a home capability fails.',
+			'Report whether the home connector is connected, when it was last seen, and whether home capabilities are usable for this caller. Use this when home search results are missing or a home capability fails.',
 		keywords: [
 			'home',
 			'connector',

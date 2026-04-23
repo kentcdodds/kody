@@ -46,7 +46,7 @@ Recommended baseline permissions for this template (deploy + existing D1/KV):
 Add these permissions when you add the corresponding offering:
 
 - R2: `R2 Storage:Edit`
-- Workers AI: `Workers AI:Read` (for `wrangler ai models`; deploy still uses
+- Workers AI: `Workers AI:Read` (for `wrangler ai models`; deploy uses
   Workers Scripts)
 - AI Gateway (only if you want to manage gateways via API): `AI Gateway:Edit`
 

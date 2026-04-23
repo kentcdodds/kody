@@ -48,8 +48,8 @@ The adapter intentionally does not promise:
 ### Discovery and transport notes
 
 - Discovery defaults to `mdns://_lutron._tcp.local`.
-- Bonjour advertises processor metadata, but runtime LEAP control/auth still
-  uses `8081`.
+- Bonjour advertises processor metadata, but runtime LEAP control/auth uses
+  `8081`.
 - The more privileged QSX endpoint on `8902` is intentionally ignored in this
   integration because it requires client certificates.
 
@@ -81,9 +81,9 @@ Power support is intentionally split:
 - power off uses the Samsung local remote channel with `KEY_POWEROFF`
 - power on uses Wake-on-LAN and the TV's stored MAC address
 
-This works well enough to expose as a connector capability, but it should still
-be treated as best-effort because Samsung Frame firmware can blur the line
-between Art Mode and true standby.
+This works well enough to expose as a connector capability, but it should be
+treated as best-effort because Samsung Frame firmware can blur the line between
+Art Mode and true standby.
 
 ## Venstar thermostat integration
 
@@ -136,8 +136,8 @@ Lutron discovery defaults to `mdns://_lutron._tcp.local`.
 
 The connector uses one shared pure-JavaScript mDNS discovery path for both
 Samsung and Lutron, so discovery behavior is consistent across macOS, Linux, and
-containers. Live discovery still requires the process or container to have
-multicast visibility on the local network.
+containers. Live discovery requires the process or container to have multicast
+visibility on the local network.
 
 In local development with `MOCKS=true`, the connector uses mock Samsung TV and
 Lutron handlers in the same style as the Roku mocks:

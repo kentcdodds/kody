@@ -141,7 +141,7 @@ See `packages/worker/src/env-schema.ts` and
   fallback. At Worker boot, invalid JSON or malformed keys fail env validation
   with a clear error. At runtime, if the value is a plain string in a test
   harness, malformed JSON is logged and ignored for map lookup only.
-- For **`kind: home`**, if a key is missing in the map, the worker still falls
+- For **`kind: home`**, if a key is missing in the map, the worker falls
   back to **`HOME_CONNECTOR_SHARED_SECRET`**. Non-`home` kinds have **no**
   legacy fallback; they must appear in the map (or hello is rejected).
 

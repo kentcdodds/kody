@@ -11,7 +11,7 @@ Additional kinds use the same protocol and routing pattern described below.
 
 ## URLs and session keys
 
-- **Home (legacy URL, still supported):**  
+- **Home (legacy URL, supported):**  
   `wss://<worker-origin>/home/connectors/<instanceId>`  
   Session key = `<instanceId>` (unchanged from historical behavior).
 

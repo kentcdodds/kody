@@ -96,7 +96,7 @@ automatically:
   embeddings in Vectorize. Saved package projections refresh when packages are
   saved or published.)
 
-Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and still read local
+Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local
 secrets from `packages/worker/.env`.
 
 ## GitHub Actions configuration

@@ -54,9 +54,8 @@ Those domains are driven by MCP **`remoteConnectors`** / **`homeConnectorId`**
 rather than by editing `builtinDomains` in-repo.
 
 `defineCapability()` in
-`packages/worker/src/mcp/capabilities/define-capability.ts` is still what
-normalizes Zod → JSON Schema and wraps handlers with logging; domain helpers
-call it for you.
+`packages/worker/src/mcp/capabilities/define-capability.ts` normalizes Zod →
+JSON Schema and wraps handlers with logging; domain helpers call it for you.
 
 ## Capability shape
 
@@ -93,8 +92,8 @@ capability description. Reserve the description for high-level purpose and
 behavior that the schemas do not express well.
 
 Use raw JSON Schema only when you need an escape hatch that Zod does not model
-cleanly. The registry and Code Mode layer still consume normalized JSON Schema
-after normalization runs.
+cleanly. The registry and Code Mode layer consume normalized JSON Schema after
+normalization runs.
 
 ## Secret-capable input fields
 
@@ -106,14 +105,13 @@ This is an explicit opt-in. A field only participates when its JSON Schema marks
 that string property with `x-kody-secret: true`.
 
 At execute time, Kody resolves those placeholders before the capability handler
-runs. Missing secrets still fail with the same "secret not found" guidance used
-elsewhere, and secret-bearing capability inputs still require an authenticated
-user.
+runs. Missing secrets fail with the same "secret not found" guidance used
+elsewhere, and secret-bearing capability inputs require an authenticated user.
 
 Those inputs are also treated as write-only for the rest of that execution: once
 plaintext crosses an `x-kody-secret` capability boundary, Kody redacts that
 plaintext from later execute results and logs before returning them to the
-caller. Capability authors should still avoid returning or logging secret
+caller. Capability authors should avoid returning or logging secret
 material, but the runtime adds this extra defense-in-depth layer.
 
 When a secret has an `allowed_capabilities` policy, Kody also checks that the
@@ -131,7 +129,7 @@ are not themselves the host-approval boundary. Good fits include:
 
 Do not use this as a shortcut for arbitrary remote API calls. If the capability
 is making outbound requests with a user secret, prefer execute-time `fetch(...)`
-placeholders so host approval still happens through the normal policy path.
+placeholders so host approval happens through the normal policy path.
 
 Use the shared helper from `@kody-internal/shared/secret-input-schema.ts` rather
 than mutating schema properties by hand.
@@ -217,7 +215,7 @@ the domain modules.
 3. Add helpful `tags`/`keywords` when they improve search.
 4. Include the capability in that domain’s **`domain.ts`**:
    `capabilities: [..., yourCapability]`.
-5. If the domain uses `index.ts`, ensure it still exports `domain` /
+5. If the domain uses `index.ts`, ensure it exports `domain` /
    `codingCapabilities`-style aliases as needed for local imports.
 6. Add or update focused `*.node.test.ts` or `*.workers.test.ts` coverage beside
    the implementation for most MCP-visible behavior. Touch

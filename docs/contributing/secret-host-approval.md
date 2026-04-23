@@ -111,8 +111,8 @@ Do not treat `x-kody-secret` as a generic replacement for execute-time
 `fetch(...)` placeholders.
 
 If a workflow's real security boundary is outbound network use, keep that flow
-on the fetch placeholder path so host approval still applies before the request
-is sent.
+on the fetch placeholder path so host approval applies before the request is
+sent.
 
 ## Guidance for generated UI flows
 

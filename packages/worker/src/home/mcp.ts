@@ -31,7 +31,7 @@ Internal home connector MCP bridge.
 
 - This MCP server is for Kody's internal agent use only.
 - The underlying home connector stays on the local network and connects outbound.
-- Use 'home_list_tools' to inspect the currently connected home connector tools.
+- Use 'home_list_tools' to inspect the connected home connector tools.
 - Use 'home_call_tool' to invoke a specific raw home connector tool directly.
 	`.trim(),
 } as const
@@ -82,7 +82,7 @@ async function createHomeToolErrorResult(
 
 function createHomeToolSummaryText(tools: Array<HomeToolDescriptor>) {
 	if (tools.length === 0) {
-		return 'No home connector tools are currently available.'
+		return 'No home connector tools are available.'
 	}
 
 	return tools
@@ -102,7 +102,7 @@ async function registerBridgeTools(agent: HomeMcpBridge) {
 		{
 			title: 'List Home Connector Tools',
 			description:
-				'List raw tools currently exposed by the connected home connector.',
+				'List raw tools exposed by the connected home connector.',
 			inputSchema: {},
 		},
 		async () => {
