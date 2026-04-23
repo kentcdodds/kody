@@ -9,8 +9,8 @@ Use these steps to run `kody` locally and on Cloudflare Workers.
 
 If you are here to understand the purpose of this repository rather than set it
 up, read [`docs/contributing/project-intent.md`](./project-intent.md) first.
-This repo still has some template lineage in its docs and structure, but the
-current project intent is to build a personal assistant with an MCP-first
+This repo has some template lineage in its docs and structure, but the
+project intent is to build a personal assistant with an MCP-first
 architecture.
 
 ## Create the project with degit

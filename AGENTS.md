@@ -16,7 +16,7 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   [docs/contributing/documentation.md](./docs/contributing/documentation.md)
 - Commit-time formatting, linting, and typechecking are enforced by Husky +
   lint-staged; see `docs/contributing/setup.md` for the workflow details and
-  what still needs explicit validation.
+  what needs explicit validation.
 
 - Project intent and scope:
   - [docs/contributing/project-intent.md](./docs/contributing/project-intent.md)

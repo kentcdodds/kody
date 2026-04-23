@@ -51,7 +51,7 @@ If a package is added or removed upstream, update
 
 ## 5) Audit export coverage
 
-Confirm `docs/contributing/remix/index.md` package rows still cover all
+Confirm `docs/contributing/remix/index.md` package rows cover all
 top-level exports from the installed `remix` package:
 
 ```sh

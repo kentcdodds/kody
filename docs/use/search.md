@@ -54,8 +54,8 @@ for an empty ranked list.
 
 ## Authentication
 
-Saved **packages** require a signed-in MCP user. Capabilities and builtin
-behavior still work without user-scoped data.
+Saved **packages** require a signed-in MCP user. Capabilities and built-in
+behavior work without user-scoped data.
 
 Package search hits summarize whether the package has an app surface and, when
 they do, include a direct `open_generated_ui({ kody_id: "..." })` hint.
@@ -66,7 +66,6 @@ setup/debugging work can often proceed without an immediate detail lookup.
 Long-term memory retrieval also requires a signed-in MCP user.
 
 Use **search** as the default way to discover whether a connector or secret
-already exists before switching to **execute**. Runtime helpers such as
-**`codemode.secret_list(...)`** are still useful when code running inside
-**execute** needs current secret metadata, but **search** remains the primary
-discovery path.
+already exists before switching to **execute**. Runtime code inside
+**execute** can call **`codemode.secret_list(...)`** when it needs secret
+metadata, but **search** remains the primary discovery path.

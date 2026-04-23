@@ -71,7 +71,7 @@ submissions (`GET`/`POST`) and routes them in-place through the client router.
 Normal app navigations stay in-place through the client router instead of
 requiring a full document refresh.
 
-Full page navigations still occur for:
+Full page navigations occur for:
 
 - Explicit browser reloads/new tab loads
 - Cross-origin links/forms
@@ -86,7 +86,7 @@ Full page navigations still occur for:
 - Allowed methods are `GET, POST, OPTIONS`.
 - Allowed headers include `content-type` and `authorization`.
 
-This keeps cross-origin behavior narrow while still allowing same-origin browser
+This keeps cross-origin behavior narrow while allowing same-origin browser
 and API requests.
 
 ## Observability (Sentry)
@@ -110,9 +110,9 @@ The home automation flow adds two more Durable Objects:
   agent attaches to via `addMcpServer(...)` so the agent can inspect or call raw
   home connector tools when needed.
 
-The chat agent still attaches to the main compact MCP server (`kody`), but it
-also attaches to `home` and the runtime capability registry **merges**
-synthesized domains from **remote connectors** listed in MCP caller context
+The chat agent attaches to the main compact MCP server (`kody`). It also
+attaches to `home`, and the runtime capability registry **merges** synthesized
+domains from **remote connectors** listed in MCP caller context
 (`remoteConnectors` or legacy `homeConnectorId`). A single **`home`** +
 **`default`** instance keeps the builtin `home` domain name; other combinations
 use distinct domain ids. See [Remote connectors](./remote-connectors.md).

@@ -40,8 +40,8 @@ Quick notes for getting a local kody environment running.
   create/get/list/token/fork calls. Those REST calls do not hit the live
   Cloudflare Artifacts control plane during normal local development. The mock
   covers only the REST control plane; repo-session git clone/pull/push
-  flows still need a real Git-capable Artifacts remote and are not fully
-  simulated by the local mock. Unless you already set `CLOUDFLARE_EMAIL_FROM`,
+  flows need a real Git-capable Artifacts remote and are not fully simulated
+  by the local mock. Unless you already set `CLOUDFLARE_EMAIL_FROM`,
   the launcher also defaults it to `reset@kody.dev`. Set
   `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The home
   connector receives the resolved worker origin via `WORKER_BASE_URL`. When
@@ -100,10 +100,10 @@ Quick notes for getting a local kody environment running.
     control.
   - Samsung power support is exposed as best-effort `power off` and
     `power on` actions. Power off uses the local Samsung remote channel and
-    power on uses Wake-on-LAN with the stored TV MAC address. These semantics
-    are still model- and firmware-dependent, especially on Frame TVs where the
-    regular power key may be mapped to Art Mode rather than true standby.
-  - Full installed-app enumeration is still considered model- and
+    power on uses Wake-on-LAN with the stored TV MAC address. These
+    semantics are model- and firmware-dependent, especially on Frame TVs where
+    the regular power key may be mapped to Art Mode rather than true standby.
+  - Full installed-app enumeration is considered model- and
     firmware-dependent.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
@@ -150,7 +150,7 @@ Quick notes for getting a local kody environment running.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts, so `npm run validate` and `npm run test:push` self-heal on a
   fresh machine.
-- `npm run test:e2e:install` still exists when you want to prefetch Playwright
+- Use `npm run test:e2e:install` when you want to prefetch Playwright
   browsers ahead of time instead of waiting for the first E2E run.
 - `npm run test:e2e:run` runs the Playwright suite through Nx and depends on a
   cached `worker:prepare-e2e-env` target for `.env` bootstrap plus an uncached
@@ -211,8 +211,8 @@ Use this script to ensure a known test login exists in any deployed environment:
 - Override credentials when needed:
   - `node tools/seed-test-data.ts --email <email> --password <password>`
 - When changing DB schema/model definitions or migrations, review
-  `tools/seed-test-data.ts` and update it so seeded data still matches the new
-  model and remains useful for local and preview verification.
+  `tools/seed-test-data.ts` and update it so seeded data matches the new model
+  and remains useful for local and preview verification.
 
 ### Reset, re-migrate, then seed
 
@@ -275,7 +275,7 @@ secret with a token that has that permission. Cleanup intentionally fails when
 that secret is missing or under-scoped so permission regressions are visible.
 
 The production deploy workflow can also be started manually from GitHub Actions
-via **Run workflow** on `main`. The manual path still verifies that the selected
+via **Run workflow** on `main`. The manual path verifies that the selected
 commit is the current `origin/main` HEAD before it deploys.
 
 If you ever need to do the same operations manually, use:
