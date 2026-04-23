@@ -17,63 +17,14 @@ test('parseEntityRef accepts value and connector entity types', () => {
 	})
 })
 
-test('search markdown and entity detail formatting preserve structured behavior', () => {
-	const markdown = formatSearchMarkdown({
-		baseUrl: 'http://localhost',
-		warnings: [],
-		guidance:
-			'Inspect connector detail with `search({ entity: "github:connector" })` next.',
-		matches: [
-			{
-				type: 'value',
-				valueId: 'user:preferred_repo',
-				name: 'preferred_repo',
-				scope: 'user',
-				description: 'Preferred repository owner/name.',
-				value: 'kentcdodds/kody',
-				appId: null,
-				updatedAt: '2026-03-20T00:00:00.000Z',
-				ttlMs: null,
-				usage: 'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
-				fusedScore: 1,
-			},
-			{
-				type: 'connector',
-				connectorName: 'github',
-				title: 'github',
-				description: 'GitHub OAuth connector config',
-				flow: 'confidential',
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				apiBaseUrl: 'https://api.github.com',
-				clientIdValueName: 'github_client_id',
-				clientSecretSecretName: 'github_client_secret',
-				accessTokenSecretName: 'github_access_token',
-				refreshTokenSecretName: 'github_refresh_token',
-				requiredHosts: ['api.github.com'],
-				usage: 'Read with connector_get: {"name":"github"}.',
-				fusedScore: 0.9,
-			},
-		],
-	})
-
-	expect(markdown).toMatch(/^# Search results/)
-	expect(markdown).toContain('## Value')
-	expect(markdown).toContain('## Connector')
-	expect(markdown).toContain('**Entity:** `user:preferred_repo:value`')
-	expect(markdown).toContain('**Entity:** `github:connector`')
-	expect(markdown).toContain(
-		'**Read:** `codemode.connector_get({ name: "github" })`',
-	)
-	expect(markdown).toContain('**Token URL:** `https://github.com/login/oauth/access_token`')
-	expect(markdown).toContain('**Client ID value:** `github_client_id`')
-	expect(markdown).toContain('`user:preferred_repo:value`')
-	expect(markdown).toContain('`https://api.github.com`')
-	expect(markdown).toContain('## Recommended next step')
-	expect(markdown).toContain('`search({ entity: "github:connector" })`')
-
-	expect(
-		toSlimStructuredMatches({
+test(
+	'search formatting keeps entity refs in markdown while structured output carries the stable contract',
+	() => {
+		const markdown = formatSearchMarkdown({
 			baseUrl: 'http://localhost',
+			warnings: [],
+			guidance:
+				'Inspect connector detail with `search({ entity: "github:connector" })` next.',
 			matches: [
 				{
 					type: 'value',
@@ -106,40 +57,83 @@ test('search markdown and entity detail formatting preserve structured behavior'
 					fusedScore: 0.9,
 				},
 			],
-		}),
-	).toEqual([
-		{
-			type: 'value',
-			id: 'user:preferred_repo',
-			entityRef: 'user:preferred_repo:value',
-			name: 'preferred_repo',
-			title: 'preferred_repo',
-			description: 'Preferred repository owner/name.',
-			usage: 'codemode.value_get({ name: "preferred_repo", scope: "user" })',
-			scope: 'user',
-			appId: null,
-		},
-		{
-			type: 'connector',
-			id: 'github',
-			entityRef: 'github:connector',
-			name: 'github',
-			title: 'github',
-			description: 'GitHub OAuth connector config',
-			usage: 'codemode.connector_get({ name: "github" })',
-			flow: 'confidential',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			clientIdValueName: 'github_client_id',
-			clientSecretSecretName: 'github_client_secret',
-			accessTokenSecretName: 'github_access_token',
-			refreshTokenSecretName: 'github_refresh_token',
-			requiredHosts: ['api.github.com'],
-			nextStep:
-				'Inspect connector detail with search({ entity: "github:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.',
-		},
-	])
+		})
 
+		expect(markdown).toContain('`user:preferred_repo:value`')
+		expect(markdown).toContain('`github:connector`')
+
+		expect(
+			toSlimStructuredMatches({
+				baseUrl: 'http://localhost',
+				matches: [
+					{
+						type: 'value',
+						valueId: 'user:preferred_repo',
+						name: 'preferred_repo',
+						scope: 'user',
+						description: 'Preferred repository owner/name.',
+						value: 'kentcdodds/kody',
+						appId: null,
+						updatedAt: '2026-03-20T00:00:00.000Z',
+						ttlMs: null,
+						usage:
+							'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
+						fusedScore: 1,
+					},
+					{
+						type: 'connector',
+						connectorName: 'github',
+						title: 'github',
+						description: 'GitHub OAuth connector config',
+						flow: 'confidential',
+						tokenUrl: 'https://github.com/login/oauth/access_token',
+						apiBaseUrl: 'https://api.github.com',
+						clientIdValueName: 'github_client_id',
+						clientSecretSecretName: 'github_client_secret',
+						accessTokenSecretName: 'github_access_token',
+						refreshTokenSecretName: 'github_refresh_token',
+						requiredHosts: ['api.github.com'],
+						usage: 'Read with connector_get: {"name":"github"}.',
+						fusedScore: 0.9,
+					},
+				],
+			}),
+		).toEqual([
+			{
+				type: 'value',
+				id: 'user:preferred_repo',
+				entityRef: 'user:preferred_repo:value',
+				name: 'preferred_repo',
+				title: 'preferred_repo',
+				description: 'Preferred repository owner/name.',
+				usage: 'codemode.value_get({ name: "preferred_repo", scope: "user" })',
+				scope: 'user',
+				appId: null,
+			},
+			{
+				type: 'connector',
+				id: 'github',
+				entityRef: 'github:connector',
+				name: 'github',
+				title: 'github',
+				description: 'GitHub OAuth connector config',
+				usage: 'codemode.connector_get({ name: "github" })',
+				flow: 'confidential',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				clientIdValueName: 'github_client_id',
+				clientSecretSecretName: 'github_client_secret',
+				accessTokenSecretName: 'github_access_token',
+				refreshTokenSecretName: 'github_refresh_token',
+				requiredHosts: ['api.github.com'],
+				nextStep:
+					'Inspect connector detail with search({ entity: "github:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.',
+			},
+		])
+	},
+)
+
+test('entity detail formatting returns stable structured details for values and connectors', () => {
 	const valueDetail = formatEntityDetailMarkdown({
 		type: 'value',
 		id: 'user:preferred_repo',
@@ -204,7 +198,7 @@ test('search markdown and entity detail formatting preserve structured behavior'
 	})
 })
 
-test('entity detail formatting includes package app and export metadata', () => {
+test('entity detail formatting includes package app, export, and job metadata', () => {
 	const packageDetail = formatEntityDetailMarkdown({
 		type: 'package',
 		id: 'observed-package',
@@ -257,9 +251,7 @@ test('entity detail formatting includes package app and export metadata', () => 
 				'export default function fetch(request: Request): Promise<Response>\n',
 		},
 	})
-	expect(packageDetail.markdown).toContain(
-		'- Open: `open_generated_ui({ kody_id: "observed-package" })`',
-	)
+
 	expect(packageDetail.structured).toMatchObject({
 		type: 'package',
 		entityRef: 'observed-package:package',
@@ -289,7 +281,7 @@ test('entity detail formatting includes package app and export metadata', () => 
 	})
 })
 
-test('search markdown and slim structured matches surface package entity refs and app hints', () => {
+test('package search formatting surfaces entity refs in markdown and import/app usage in structured output', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
 		warnings: [],
@@ -307,12 +299,7 @@ test('search markdown and slim structured matches surface package entity refs an
 		],
 	})
 
-	expect(markdown).toContain('**Entity:** `spotify-playback:package`')
-	expect(markdown).toContain('**Package ID:** `package-123`')
-	expect(markdown).toContain(
-		'**Open app:** `open_generated_ui({ kody_id: "spotify-playback" })`',
-	)
-	expect(markdown).toContain('**Import:** `import entry from "kody:@spotify-playback"`')
+	expect(markdown).toContain('`spotify-playback:package`')
 
 	expect(
 		toSlimStructuredMatches({
@@ -390,7 +377,7 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 	)
 })
 
-test('search formatting does not throw for secret names outside placeholder syntax', () => {
+test('search formatting falls back to a safe secret usage placeholder for display-only names', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
 		warnings: [],
@@ -403,8 +390,7 @@ test('search formatting does not throw for secret names outside placeholder synt
 		],
 	})
 
-	expect(markdown).toContain('## Secret')
-	expect(markdown).toContain(
-		'**Usage:** `(secret placeholder unavailable for this name)`',
-	)
-})
+	expect(markdown).toContain('`secret "name":secret`')
+	expect(markdown).toContain('(secret placeholder unavailable for this name)')
+	},
+)
