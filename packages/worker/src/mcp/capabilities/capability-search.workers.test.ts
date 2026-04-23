@@ -24,13 +24,15 @@ test('buildCapabilityEmbedText folds searchable capability fields into one docum
 		inputSchema: {},
 	} satisfies CapabilitySpec
 
-	expect(buildCapabilityEmbedText(spec).split('\n')).toEqual([
-		'deploy_worker',
-		'apps',
-		'Deploy a Worker from saved source.',
-		'deploy worker wrangler',
-		'sourceId environment deploymentId',
-	])
+	expect(buildCapabilityEmbedText(spec)).toBe(
+		[
+			'deploy_worker',
+			'apps',
+			'Deploy a Worker from saved source.',
+			'deploy worker wrangler',
+			'sourceId environment deploymentId',
+		].join('\n'),
+	)
 })
 
 test('deterministicEmbedding has fixed dimension and unit norm', () => {

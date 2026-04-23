@@ -4,66 +4,56 @@ import {
 	normalizeUiArtifactParameters,
 } from './ui-artifact-parameters.ts'
 
-test('normalizeUiArtifactParameters trims names and validates defaults', () => {
-	const params = normalizeUiArtifactParameters([
-		{
-			name: ' owner ',
-			description: 'Repo owner.',
-			type: 'string',
-			required: true,
-			default: 'kody',
-		},
-	])
-	expect(params).toEqual([
-		{
-			name: 'owner',
-			description: 'Repo owner.',
-			type: 'string',
-			required: true,
-			default: 'kody',
-		},
-	])
-})
+test(
+	'ui artifact parameters normalize names, apply defaults, and reject invalid caller input',
+	() => {
+		const defs = normalizeUiArtifactParameters([
+			{
+				name: ' owner ',
+				description: 'Repo owner.',
+				type: 'string',
+				required: true,
+			},
+			{
+				name: 'limit',
+				description: 'Result limit.',
+				type: 'number',
+				default: 5,
+			},
+		])
 
-test('applyUiArtifactParameters enforces required and applies defaults', () => {
-	const defs = normalizeUiArtifactParameters([
-		{
-			name: 'owner',
-			description: 'Repo owner.',
-			type: 'string',
-			required: true,
-		},
-		{
-			name: 'limit',
-			description: 'Result limit.',
-			type: 'number',
-			default: 5,
-		},
-	])!
-	expect(() =>
-		applyUiArtifactParameters({ definitions: defs, values: { limit: 2 } }),
-	).toThrow('Missing required package app parameter: owner.')
-	expect(
-		applyUiArtifactParameters({ definitions: defs, values: { owner: 'kody' } }),
-	).toEqual({
-		owner: 'kody',
-		limit: 5,
-	})
-})
+		expect(defs).toEqual([
+			{
+				name: 'owner',
+				description: 'Repo owner.',
+				type: 'string',
+				required: true,
+			},
+			{
+				name: 'limit',
+				description: 'Result limit.',
+				type: 'number',
+				required: false,
+				default: 5,
+			},
+		])
 
-test('applyUiArtifactParameters rejects unknown names', () => {
-	const defs = normalizeUiArtifactParameters([
-		{
-			name: 'query',
-			description: 'Search query.',
-			type: 'string',
-			required: true,
-		},
-	])!
-	expect(() =>
-		applyUiArtifactParameters({
-			definitions: defs,
-			values: { query: 'hello', extra: true },
-		}),
-	).toThrow('Unknown package app parameter(s): extra.')
-})
+		expect(() =>
+			applyUiArtifactParameters({ definitions: defs, values: { limit: 2 } }),
+		).toThrow('Missing required package app parameter: owner.')
+
+		expect(
+			applyUiArtifactParameters({ definitions: defs, values: { owner: 'kody' } }),
+		).toEqual({
+			owner: 'kody',
+			limit: 5,
+		})
+
+		expect(() =>
+			applyUiArtifactParameters({
+				definitions: defs,
+				values: { owner: 'kody', extra: true },
+			}),
+		).toThrow('Unknown package app parameter(s): extra.')
+	},
+)

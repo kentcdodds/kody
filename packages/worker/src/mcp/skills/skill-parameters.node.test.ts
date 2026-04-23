@@ -5,31 +5,10 @@ import {
 	normalizeSkillParameters,
 } from './skill-parameters.ts'
 
-test('normalizeSkillParameters trims names and validates defaults', () => {
-	const params = normalizeSkillParameters([
+test('skill parameter definitions normalize names and resolve one workflow end to end', () => {
+	const definitions = normalizeSkillParameters([
 		{
 			name: ' owner ',
-			description: 'Repo owner.',
-			type: 'string',
-			required: true,
-			default: 'kody',
-		},
-	])
-	expect(params).toEqual([
-		{
-			name: 'owner',
-			description: 'Repo owner.',
-			type: 'string',
-			required: true,
-			default: 'kody',
-		},
-	])
-})
-
-test('applySkillParameters enforces required and applies defaults', () => {
-	const defs = normalizeSkillParameters([
-		{
-			name: 'owner',
 			description: 'Repo owner.',
 			type: 'string',
 			required: true,
@@ -41,32 +20,40 @@ test('applySkillParameters enforces required and applies defaults', () => {
 			default: 5,
 		},
 	])!
+
+	expect(definitions).toEqual([
+		{
+			name: 'owner',
+			description: 'Repo owner.',
+			type: 'string',
+			required: true,
+		},
+		{
+			name: 'limit',
+			description: 'Result limit.',
+			type: 'number',
+			required: false,
+			default: 5,
+		},
+	])
+
 	expect(() =>
-		applySkillParameters({ definitions: defs, values: { limit: 2 } }),
+		applySkillParameters({ definitions, values: { limit: 2 } }),
 	).toThrow('Missing required skill parameter: owner.')
+
+	expect(() =>
+		applySkillParameters({
+			definitions,
+			values: { owner: 'kody', extra: true },
+		}),
+	).toThrow('Unknown skill parameter(s): extra.')
+
 	expect(
-		applySkillParameters({ definitions: defs, values: { owner: 'kody' } }),
+		applySkillParameters({ definitions, values: { owner: 'kody' } }),
 	).toEqual({
 		owner: 'kody',
 		limit: 5,
 	})
-})
-
-test('applySkillParameters rejects unknown names', () => {
-	const defs = normalizeSkillParameters([
-		{
-			name: 'query',
-			description: 'Search query.',
-			type: 'string',
-			required: true,
-		},
-	])!
-	expect(() =>
-		applySkillParameters({
-			definitions: defs,
-			values: { query: 'hello', extra: true },
-		}),
-	).toThrow('Unknown skill parameter(s): extra.')
 })
 
 test('buildParameterizedSkillCode applies params through the generated wrapper', async () => {

@@ -107,17 +107,6 @@ test(
 		expect(
 			body.result?.some((account) => account.id === 'cf_account_mock_123'),
 		).toBe(true)
-	},
-)
-
-test(
-	'createCloudflareRestClient rejects paths not under /client/v4/',
-	wranglerMockTimeout,
-	async () => {
-		const token = 'coding-cloudflare-reject-token'
-		await using mock = await startCloudflareMock(token)
-		const ctx = mockCloudflareContext(mock.origin, mock.token)
-		const client = createCloudflareRestClient(ctx.env)
 		await expect(
 			client.rawRequest({
 				method: 'GET',
