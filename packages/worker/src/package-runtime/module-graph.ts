@@ -301,7 +301,7 @@ async function ensurePackageLoaded(
 	const entry = {
 		...loaded,
 		row,
-		prefix: joinPath(packageSourcePrefix, row.kodyId),
+		prefix: joinPath(packageSourcePrefix, packageKey),
 	}
 	state.packages.set(packageKey, entry)
 	if (loaded.source.published_commit) {

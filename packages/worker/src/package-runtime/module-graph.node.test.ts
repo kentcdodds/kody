@@ -297,6 +297,104 @@ test('buildKodyModuleBundle keeps dependencies for scoped packages with the same
 	])
 })
 
+test('buildKodyModuleBundle keeps virtual package paths distinct for scoped packages with the same leaf', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('shared-leaf-prefix'))
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (
+			_db: unknown,
+			input: {
+				name: string
+			},
+		) => {
+			if (input.name === '@alice/shared-package') {
+				return createSavedPackageRecord({
+					name: '@alice/shared-package',
+					kodyId: 'shared-package',
+					sourceId: 'source-alice',
+				})
+			}
+			if (input.name === '@bob/shared-package') {
+				return createSavedPackageRecord({
+					name: '@bob/shared-package',
+					kodyId: 'shared-package',
+					sourceId: 'source-bob',
+				})
+			}
+			return null
+		},
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			const sourceName =
+				input.sourceId === 'source-alice'
+					? '@alice/shared-package'
+					: '@bob/shared-package'
+			return {
+				source: {
+					id: input.sourceId,
+					published_commit: `commit-${input.sourceId}`,
+				},
+				manifest: {
+					name: sourceName,
+					exports: {
+						'.': './index.js',
+						'./follow-up-on-pr-agent': './follow-up-on-pr-agent.js',
+					},
+					kody: {
+						id: 'shared-package',
+						description: `${sourceName} package`,
+					},
+				},
+				files: {
+					'index.js': `export const source = ${JSON.stringify(sourceName)}`,
+					'follow-up-on-pr-agent.js': `export default ${JSON.stringify(sourceName)}`,
+				},
+			}
+		},
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js': [
+				'import aliceFn from "kody:@alice/shared-package/follow-up-on-pr-agent"',
+				'import bobFn from "kody:@bob/shared-package/follow-up-on-pr-agent"',
+				'export default [aliceFn, bobFn]',
+			].join('\n'),
+		},
+		entryPoint: 'index.js',
+	})
+
+	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	expect(firstCall?.files).toMatchObject({
+		'.__kody_packages__/@alice/shared-package/index.js':
+			'export const source = "@alice/shared-package"',
+		'.__kody_packages__/@bob/shared-package/index.js':
+			'export const source = "@bob/shared-package"',
+	})
+})
+
 test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('kody-id-import'))
 	mockModule.getSavedPackageByName.mockResolvedValue(null)

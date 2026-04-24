@@ -10,9 +10,9 @@ Kody-specific metadata.
 
 Use `package.json` as the canonical source of truth for saved package metadata.
 
-- `name` — npm-valid package name; for scoped names, the leaf package name must
-  match `kody.id` (for example `@kentcdodds/cursor-cloud-agents` pairs with
-  `kody.id: "cursor-cloud-agents"`)
+- `name` — npm-valid scoped package name (`@scope/<leaf>`); the leaf segment
+  must match `kody.id` (for example `@kentcdodds/cursor-cloud-agents` pairs
+  with `kody.id: "cursor-cloud-agents"`)
 - `exports` — authoritative import/export map
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — package description for search/detail
