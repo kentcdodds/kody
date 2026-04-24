@@ -331,6 +331,10 @@ async function resolvePackageAppWorker(input: {
 export class PackageRealtimeSession extends DurableObject<Env> {
 	private stateSnapshot: PackageRealtimeState = createInitialState()
 	private sessionIds = new WeakMap<WebSocket, string | null>()
+	private cachedAppWorkerKey: string | null = null
+	private cachedAppWorkerPromise: Promise<
+		Awaited<ReturnType<typeof buildPackageAppWorker>>
+	> | null = null
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
@@ -374,6 +378,23 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			}
 			await this.persistState()
 		}
+	}
+
+	private async getCachedPackageAppWorker(binding: PackageRealtimeBindingState) {
+		const cacheKey = JSON.stringify([
+			binding.userId,
+			binding.packageId,
+			binding.sourceId,
+			binding.baseUrl,
+		])
+		if (this.cachedAppWorkerKey !== cacheKey || !this.cachedAppWorkerPromise) {
+			this.cachedAppWorkerKey = cacheKey
+			this.cachedAppWorkerPromise = resolvePackageAppWorker({
+				env: this.env,
+				binding,
+			})
+		}
+		return await this.cachedAppWorkerPromise
 	}
 
 	private stashSessionId(ws: WebSocket, sessionId: string) {
@@ -463,10 +484,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		binding: PackageRealtimeBindingState
 		payload: PackageRealtimeHookInput
 	}) {
-		const appWorker = await resolvePackageAppWorker({
-			env: this.env,
-			binding: input.binding,
-		})
+		const appWorker = await this.getCachedPackageAppWorker(input.binding)
 		const entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName) as {
 			handleRealtimeEvent?: (
 				payload: PackageRealtimeHookInput & PackageRealtimeHookContext,
