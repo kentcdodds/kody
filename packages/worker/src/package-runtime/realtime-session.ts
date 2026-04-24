@@ -643,7 +643,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		ws: WebSocket,
 		message: string | ArrayBuffer,
 	): void | Promise<void> {
-		void this.handleWebSocketMessage(ws, message)
+		return this.handleWebSocketMessage(ws, message)
 	}
 
 	webSocketClose(
@@ -651,8 +651,8 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		_code: number,
 		reason: string,
 		wasClean: boolean,
-	): void {
-		void this.handleDisconnect(ws, {
+	): void | Promise<void> {
+		return this.handleDisconnect(ws, {
 			code: _code,
 			reason,
 			wasClean,
