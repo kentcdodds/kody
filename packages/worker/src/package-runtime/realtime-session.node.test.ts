@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	buildPackageAppWorker: vi.fn(),
 	createMcpCallerContext: vi.fn(),
-	buildFacetName: vi.fn((value?: string | null) => value ?? 'default'),
+	buildFacetName: vi.fn((value?: string | null) => value?.trim() || 'main'),
 	getSavedPackageById: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
