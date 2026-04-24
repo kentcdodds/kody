@@ -1,12 +1,41 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
+	buildPackageAppWorker: vi.fn(),
+	createMcpCallerContext: vi.fn(),
+	buildFacetName: vi.fn((value?: string | null) => value ?? 'default'),
+	getSavedPackageById: vi.fn(),
 	getEntitySourceById: vi.fn(),
+	loadPackageSourceBySourceId: vi.fn(),
+}))
+
+vi.mock('#mcp/context.ts', () => ({
+	createMcpCallerContext: (...args: Array<unknown>) =>
+		mockModule.createMcpCallerContext(...args),
+}))
+
+vi.mock('#mcp/app-runner-facet-names.ts', () => ({
+	buildFacetName: (...args: Array<unknown>) => mockModule.buildFacetName(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
+}))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadPackageSourceBySourceId(...args),
+}))
+
+vi.mock('./package-app.ts', () => ({
+	buildPackageAppWorker: (...args: Array<unknown>) =>
+		mockModule.buildPackageAppWorker(...args),
 }))
 
 const {
