@@ -9,6 +9,9 @@ import { buildPackageAppWorker } from './package-app.ts'
 const sessionStateStorageKey = 'package-realtime-state'
 const sessionTagPrefix = 'session:'
 const facetTagPrefix = 'facet:'
+// Refresh source-version lookups periodically so long-lived sessions can pick up
+// publishes without paying a D1 round trip on every websocket event.
+const packageAppWorkerCacheKeyRefreshMs = 5_000
 
 type PersistedPackageRealtimeSession = {
 	id: string
@@ -278,6 +281,17 @@ function createSessionOutput(
 	}
 }
 
+function createPackageAppWorkerBindingIdentity(
+	binding: PackageRealtimeBindingState,
+) {
+	return JSON.stringify([
+		binding.userId,
+		binding.packageId,
+		binding.sourceId,
+		binding.baseUrl,
+	])
+}
+
 async function resolvePackageAppWorker(input: {
 	env: Env
 	binding: PackageRealtimeBindingState
@@ -350,6 +364,13 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	private stateSnapshot: PackageRealtimeState = createInitialState()
 	private sessionIds = new WeakMap<WebSocket, string | null>()
 	private cachedAppWorkerKey: string | null = null
+	private cachedAppWorkerKeyLookup:
+		| {
+				bindingIdentity: string
+				cacheKey: string
+				expiresAt: number
+		  }
+		| null = null
 	private cachedAppWorkerPromise: Promise<
 		Awaited<ReturnType<typeof buildPackageAppWorker>>
 	> | null = null
@@ -403,10 +424,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	}
 
 	private async getCachedPackageAppWorker(binding: PackageRealtimeBindingState) {
-		const cacheKey = await resolvePackageAppWorkerCacheKey({
-			env: this.env,
-			binding,
-		})
+		const cacheKey = await this.getResolvedPackageAppWorkerCacheKey(binding)
 		if (this.cachedAppWorkerKey !== cacheKey || !this.cachedAppWorkerPromise) {
 			this.cachedAppWorkerKey = cacheKey
 			this.cachedAppWorkerPromise = resolvePackageAppWorker({
@@ -421,6 +439,31 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			})
 		}
 		return await this.cachedAppWorkerPromise
+	}
+
+	private async getResolvedPackageAppWorkerCacheKey(
+		binding: PackageRealtimeBindingState,
+	) {
+		const bindingIdentity = createPackageAppWorkerBindingIdentity(binding)
+		const cachedLookup = this.cachedAppWorkerKeyLookup
+		const now = Date.now()
+		if (
+			cachedLookup &&
+			cachedLookup.bindingIdentity === bindingIdentity &&
+			cachedLookup.expiresAt > now
+		) {
+			return cachedLookup.cacheKey
+		}
+		const cacheKey = await resolvePackageAppWorkerCacheKey({
+			env: this.env,
+			binding,
+		})
+		this.cachedAppWorkerKeyLookup = {
+			bindingIdentity,
+			cacheKey,
+			expiresAt: now + packageAppWorkerCacheKeyRefreshMs,
+		}
+		return cacheKey
 	}
 
 	private stashSessionId(ws: WebSocket, sessionId: string) {
@@ -582,7 +625,11 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 				case 'close': {
 					const socket = this.getSocketBySessionId(sessionId)
 					if (socket) {
-						socket.close(action.code ?? 1000, action.reason ?? 'closed')
+						try {
+							socket.close(action.code ?? 1000, action.reason ?? 'closed')
+						} catch {
+							// Ignore duplicate close attempts on sockets that are already closing.
+						}
 					}
 					break
 				}

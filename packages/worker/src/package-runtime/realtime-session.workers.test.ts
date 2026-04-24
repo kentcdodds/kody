@@ -154,3 +154,44 @@ test('package realtime session broadcast skips sessions whose send throws', asyn
 		})
 	})
 })
+
+test('package realtime session close action swallows socket close errors', async () => {
+	const binding = createBinding()
+	const stub = env.PACKAGE_REALTIME_SESSION.get(
+		env.PACKAGE_REALTIME_SESSION.idFromName(
+			JSON.stringify([binding.userId, binding.packageId]),
+		),
+	)
+
+	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
+		const anyInstance = instance as unknown as {
+			stateSnapshot: {
+				sessions: Record<string, { id: string; topics: Array<string> }>
+			}
+			getSocketBySessionId: (sessionId: string) => { close: () => void }
+			applyHookActions: (
+				sessionId: string,
+				actions: Array<{ type: 'close'; code?: number; reason?: string }>,
+			) => Promise<void>
+		}
+
+		anyInstance.stateSnapshot = {
+			sessions: {
+				'session-1': { id: 'session-1', topics: [] },
+			},
+		}
+		anyInstance.getSocketBySessionId = () => ({
+			close: () => {
+				throw new Error('socket already closing')
+			},
+		})
+
+		await expect(
+			anyInstance.applyHookActions('session-1', [
+				{
+					type: 'close',
+				},
+			]),
+		).resolves.toBeUndefined()
+	})
+})
