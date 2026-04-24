@@ -98,3 +98,18 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
+
+test('handlePackageAppRequest routes websocket paths to realtime session manager when explicitKodyId is provided', async () => {
+	const request = new Request('https://example.com/ws/chat', {
+		headers: {
+			Upgrade: 'websocket',
+		},
+	})
+
+	const response = await handlePackageAppRequest(request, {} as Env, 'example')
+
+	expect(response.status).toBe(200)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
+})
