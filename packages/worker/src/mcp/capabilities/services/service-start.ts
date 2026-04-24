@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requirePackageServiceContext } from './shared.ts'
 
 const inputSchema = z.object({
-	service_name: z.string().min(1),
+	service_name: z.string().trim().min(1),
 	package_id: z.string().min(1).optional(),
 })
 

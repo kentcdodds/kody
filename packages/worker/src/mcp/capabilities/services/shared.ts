@@ -126,8 +126,6 @@ export type PackageServiceStatusRecord = z.infer<
 	typeof packageServiceStatusSchema
 >
 
-export const serviceStatusOutputSchema = packageServiceStatusSchema
-
 export function normalizePackageServiceStatus(
 	input: unknown,
 ): PackageServiceStatusRecord {
