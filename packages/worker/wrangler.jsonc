@@ -48,7 +48,7 @@
 		},
 		{
 			"new_sqlite_classes": ["PackageRealtimeSession"],
-			"tag": "v12",
+			"tag": "v13",
 		},
 	],
 
