@@ -19,11 +19,11 @@
 `kody` is an experimental personal assistant platform built on Cloudflare
 Workers and the Model Context Protocol (MCP). It ships a Remix UI, Worker-based
 request routing, chat-agent plumbing, and OAuth-protected MCP endpoints. The
-current direction favors a compact MCP surface with powerful `search` and Code
-Mode `execute` flows over a large static tool catalog.
+project favors a compact MCP surface with powerful `search` and Code Mode
+`execute` flows over a large static tool catalog.
 
 This project is intentionally single-user and is being built for
-`me@kentcdodds.com`. The repo was generated from the
+`me@kentcdodds.com`. The repo is based on the
 [epicflare](https://github.com/epicweb-dev/epicflare) starter.
 
 The repo is organized as an Nx monorepo, with shared modules in
@@ -61,7 +61,7 @@ If you are trying to understand what this repository is for, start with
 | E2E Testing     | [Playwright](https://playwright.dev/)                                 |
 | Bundler         | [esbuild](https://esbuild.github.io/)                                 |
 
-## Current Scope
+## Scope
 
 - Personal assistant experiment, not a multi-tenant SaaS product
 - MCP-first architecture intended to work across compatible AI agent hosts
