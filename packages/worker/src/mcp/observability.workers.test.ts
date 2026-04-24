@@ -223,7 +223,7 @@ test('package_save capability logs success for valid invocation', async () => {
 					{
 						path: 'package.json',
 						content: JSON.stringify({
-							name: '@kody/observed',
+							name: '@kody/observed-package',
 							exports: {
 								'.': './src/index.ts',
 							},
@@ -261,7 +261,7 @@ test('package_save capability logs success for valid invocation', async () => {
 												? {
 														id: 'package-1',
 														user_id: 'user-1',
-														name: '@kody/observed',
+														name: '@kody/observed-package',
 														kody_id: 'observed-package',
 														description: 'Observation test package.',
 														tags_json: '[]',
@@ -311,7 +311,7 @@ test('package_save capability logs success for valid invocation', async () => {
 									sourceRoot: '/',
 									files: {
 										'package.json': JSON.stringify({
-											name: '@kody/observed',
+											name: '@kody/observed-package',
 											exports: { '.': './src/index.ts' },
 											kody: {
 												id: 'observed-package',
@@ -367,7 +367,7 @@ test('package_save capability logs success for valid invocation', async () => {
 									content:
 										path === 'package.json'
 											? JSON.stringify({
-													name: '@kody/observed',
+													name: '@kody/observed-package',
 													exports: { '.': './src/index.ts' },
 													kody: {
 														id: 'observed-package',
