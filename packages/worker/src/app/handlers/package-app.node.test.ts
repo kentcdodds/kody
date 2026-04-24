@@ -30,6 +30,9 @@ const mockModule = vi.hoisted(() => ({
 	}),
 	createPackageAppCallerContext: vi.fn(),
 	buildPackageAppWorker: vi.fn(),
+	packageRealtimeConnect: vi.fn(
+		async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+	),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -63,6 +66,12 @@ vi.mock('#worker/package-runtime/package-app.ts', () => ({
 		mockModule.buildPackageAppWorker(...args),
 }))
 
+vi.mock('#worker/package-runtime/realtime-session.ts', () => ({
+	packageRealtimeSessionRpc: (..._args: Array<unknown>) => ({
+		connect: (...args: Array<unknown>) => mockModule.packageRealtimeConnect(...args),
+	}),
+}))
+
 const { handlePackageAppRequest } = await import('./package-app.ts')
 
 test('handlePackageAppRequest returns a plain 500 when package app runtime setup fails', async () => {
@@ -73,4 +82,19 @@ test('handlePackageAppRequest returns a plain 500 when package app runtime setup
 
 	expect(response.status).toBe(500)
 	await expect(response.text()).resolves.toBe('Internal Server Error')
+})
+
+test('handlePackageAppRequest routes websocket package paths to realtime session manager', async () => {
+	const request = new Request('https://example.com/packages/example/ws/chat', {
+		headers: {
+			Upgrade: 'websocket',
+		},
+	})
+
+	const response = await handlePackageAppRequest(request, {} as Env)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
