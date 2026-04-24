@@ -1,19 +1,10 @@
-import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requirePackageRealtimeContext } from './shared.ts'
-
-const inputSchema = z.object({
-	data: z.unknown(),
-	topic: z.string().min(1).optional(),
-	facet: z.string().min(1).optional(),
-	package_id: z.string().min(1).optional(),
-})
-
-const outputSchema = z.object({
-	delivered_count: z.number(),
-	session_ids: z.array(z.string()),
-})
+import {
+	requirePackageRealtimeContext,
+	sessionBroadcastInputSchema,
+	sessionBroadcastOutputSchema,
+} from './shared.ts'
 
 export const sessionBroadcastCapability = defineDomainCapability(
 	capabilityDomainNames.apps,
@@ -25,8 +16,8 @@ export const sessionBroadcastCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema,
-		outputSchema,
+		inputSchema: sessionBroadcastInputSchema,
+		outputSchema: sessionBroadcastOutputSchema,
 		async handler(args, ctx) {
 			const realtime = await requirePackageRealtimeContext({
 				env: ctx.env,
