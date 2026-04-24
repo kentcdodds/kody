@@ -59,3 +59,32 @@ test('parseAuthoredPackageJson rejects unscoped package names', () => {
 		'package.json name "cursor-cloud-agents" must be a scoped package name like "@scope/cursor-cloud-agents".',
 	)
 })
+
+test('parseAuthoredPackageJson accepts package service definitions', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'.': './index.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway package',
+				services: {
+					'discord-gateway': {
+						entry: './services/discord-gateway.ts',
+						autoStart: true,
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	expect(manifest.kody.services).toEqual({
+		'discord-gateway': {
+			entry: './services/discord-gateway.ts',
+			autoStart: true,
+		},
+	})
+})

@@ -21,6 +21,7 @@ import {
 } from './published-runtime-artifacts.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
+import { listSavedPackageServices, packageServiceRpc } from './package-service.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -183,6 +184,24 @@ function createRealtimeProxy(runtimeBridge) {
 	};
 }
 
+function createServicesProxy(runtimeBridge) {
+	return {
+		list: async () => await runtimeBridge.serviceList(),
+		get: async (serviceName) =>
+			await runtimeBridge.serviceGet({
+				serviceName,
+			}),
+		start: async (serviceName) =>
+			await runtimeBridge.serviceStart({
+				serviceName,
+			}),
+		stop: async (serviceName) =>
+			await runtimeBridge.serviceStop({
+				serviceName,
+			}),
+	};
+}
+
 function createAuthenticatedFetchHelper(runtimeBridge) {
 	return async function createAuthenticatedFetch(providerName) {
 		return async (input, init) =>
@@ -316,6 +335,7 @@ function createRuntime(runtimeBridge, params, packageContext) {
 		createAuthenticatedFetch: createAuthenticatedFetchHelper(runtimeBridge),
 		agentChatTurnStream: createAgentChatTurnStream(runtimeBridge),
 		realtime: createRealtimeProxy(runtimeBridge),
+		services: createServicesProxy(runtimeBridge),
 		packageContext,
 	};
 }
@@ -469,6 +489,18 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			kodyId: this.ctx.props.kodyId,
 			sourceId: this.ctx.props.sourceId,
 			baseUrl: this.ctx.props.baseUrl,
+		})
+	}
+
+	private getPackageServiceRpc(serviceName: string) {
+		return packageServiceRpc({
+			env: this.env,
+			userId: this.ctx.props.userId,
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+			baseUrl: this.ctx.props.baseUrl,
+			serviceName,
 		})
 	}
 
@@ -667,6 +699,32 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			code: input.code ?? undefined,
 			reason: input.reason ?? undefined,
 		})
+	}
+
+	async serviceList() {
+		const result = await listSavedPackageServices({
+			env: this.env,
+			userId: this.ctx.props.userId,
+			baseUrl: this.ctx.props.baseUrl,
+			packageId: this.ctx.props.packageId,
+		})
+		return {
+			package_id: result.savedPackage.id,
+			kody_id: result.savedPackage.kodyId,
+			services: result.services,
+		}
+	}
+
+	async serviceGet(input: { serviceName: string }) {
+		return await this.getPackageServiceRpc(input.serviceName).status()
+	}
+
+	async serviceStart(input: { serviceName: string }) {
+		return await this.getPackageServiceRpc(input.serviceName).start()
+	}
+
+	async serviceStop(input: { serviceName: string }) {
+		return await this.getPackageServiceRpc(input.serviceName).stop()
 	}
 }
 

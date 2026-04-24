@@ -518,6 +518,9 @@ export function createPublishedBundleArtifact(input: {
 		packageId: string
 		kodyId: string
 	} | null
+	serviceContext?: {
+		serviceName: string
+	} | null
 }): PublishedBundleArtifact {
 	return {
 		version: 1,
@@ -530,6 +533,7 @@ export function createPublishedBundleArtifact(input: {
 		modules: input.modules,
 		dependencies: input.dependencies,
 		packageContext: input.packageContext ?? null,
+		serviceContext: input.serviceContext ?? null,
 		createdAt: new Date().toISOString(),
 	}
 }

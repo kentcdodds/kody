@@ -320,6 +320,9 @@ export async function runBundledModuleWithRegistry(
 			packageId: string
 			kodyId: string
 		} | null
+		serviceContext?: {
+			serviceName: string
+		} | null
 	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
@@ -362,6 +365,7 @@ ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
     createAuthenticatedFetch,
     agentChatTurnStream,
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
+    serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
   };
   try {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});

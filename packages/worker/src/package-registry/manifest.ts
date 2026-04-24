@@ -117,6 +117,26 @@ export function getPackageAppEntryPath(manifest: AuthoredPackageJson) {
 	return normalizePackageWorkspacePath(appEntry)
 }
 
+export function getPackageServiceEntryPath(input: {
+	manifest: AuthoredPackageJson
+	serviceName: string
+}) {
+	const serviceEntry =
+		input.manifest.kody.services?.[input.serviceName]?.entry?.trim()
+	if (!serviceEntry) return null
+	return normalizePackageWorkspacePath(serviceEntry)
+}
+
+export function listPackageServices(manifest: AuthoredPackageJson) {
+	return Object.entries(manifest.kody.services ?? {})
+		.map(([name, service]) => ({
+			name,
+			entry: normalizePackageWorkspacePath(service.entry),
+			autoStart: service.autoStart ?? false,
+		}))
+		.sort((left, right) => left.name.localeCompare(right.name))
+}
+
 export function getPackageTags(manifest: AuthoredPackageJson) {
 	return [...(manifest.kody.tags ?? [])]
 }
@@ -135,6 +155,11 @@ export type PackageSearchProjection = {
 		entry: string
 		schedule: string
 		enabled: boolean
+	}>
+	services: Array<{
+		name: string
+		entry: string
+		autoStart: boolean
 	}>
 }
 
@@ -164,12 +189,22 @@ export function buildPackageSearchProjection(
 				enabled: job.enabled ?? true,
 			}))
 			.sort((left, right) => left.name.localeCompare(right.name)),
+		services: listPackageServices(manifest),
 	}
 }
 
 export function buildPackageSearchDocument(projection: PackageSearchProjection) {
 	const jobLines = projection.jobs.map((job) =>
 		[job.name, job.entry, job.schedule, job.enabled ? 'enabled' : 'disabled']
+			.filter((value) => value.length > 0)
+			.join(' '),
+	)
+	const serviceLines = projection.services.map((service) =>
+		[
+			service.name,
+			service.entry,
+			service.autoStart ? 'auto-start' : 'manual-start',
+		]
 			.filter((value) => value.length > 0)
 			.join(' '),
 	)
@@ -181,6 +216,7 @@ export function buildPackageSearchDocument(projection: PackageSearchProjection) 
 		projection.searchText ?? '',
 		projection.exports.join('\n'),
 		jobLines.join('\n'),
+		serviceLines.join('\n'),
 		projection.appEntry
 			? `app ${projection.appEntry}`
 			: projection.hasApp

@@ -9,6 +9,7 @@ export const capabilityDomainNames = {
 	packages: 'packages',
 	repo: 'repo',
 	secrets: 'secrets',
+	services: 'services',
 	storage: 'storage',
 	values: 'values',
 } as const

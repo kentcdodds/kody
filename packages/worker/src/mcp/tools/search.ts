@@ -170,6 +170,7 @@ function buildFallbackPackageSearchProjection(
 		appEntry: null,
 		exports: [],
 		jobs: [],
+		services: [],
 	}
 }
 

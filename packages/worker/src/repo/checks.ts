@@ -1,5 +1,7 @@
 import {
 	getPackageAppEntryPath,
+	getPackageServiceEntryPath,
+	listPackageServices,
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
@@ -251,6 +253,15 @@ function collectPackageTypecheckTargets(
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
 		remember(job.entry, true)
+	}
+	for (const service of listPackageServices(manifest)) {
+		const serviceEntryPath = getPackageServiceEntryPath({
+			manifest,
+			serviceName: service.name,
+		})
+		if (serviceEntryPath) {
+			remember(serviceEntryPath, true)
+		}
 	}
 	return Array.from(targets.values())
 }

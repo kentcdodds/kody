@@ -21,6 +21,9 @@ and export a default function. These helpers are runtime exports:
   active execute or job params instead of receiving them as a function argument
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
+- use **`import { serviceContext } from 'kody:runtime'`** inside package service
+  code when you need the current service identity; it is **`null`** outside
+  package service runs
 - use **`import thing from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by full package name
 
@@ -52,6 +55,8 @@ module-oriented runtime model:
 - package-specific metadata lives under `package.json#kody`
 - package jobs are schedules declared under `package.json#kody.jobs`
 - package apps are optional UI surfaces declared under `package.json#kody.app`
+- package services are optional long-lived runtimes declared under
+  `package.json#kody.services`
 - non-package jobs can also be scheduled directly with
   **`codemode.job_schedule(...)`** without creating a saved package
 - **`codemode.job_schedule_once(...)`** remains available as a convenience alias
@@ -94,6 +99,8 @@ package-owned jobs and non-package jobs created with `job_schedule` or
 `job_schedule_once`.
 
 - bound storage is execute-, app-, package-, or job-owned durable state
+- package service runs also get writable service-owned durable state scoped to
+  the declared service name
 - import **`storage`** from **`kody:runtime`**
 - use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
   and **`storage.sql(query, params?)`**
