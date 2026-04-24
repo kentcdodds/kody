@@ -392,6 +392,12 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			this.cachedAppWorkerPromise = resolvePackageAppWorker({
 				env: this.env,
 				binding,
+			}).catch((error) => {
+				if (this.cachedAppWorkerKey === cacheKey) {
+					this.cachedAppWorkerKey = null
+					this.cachedAppWorkerPromise = null
+				}
+				throw error
 			})
 		}
 		return await this.cachedAppWorkerPromise
