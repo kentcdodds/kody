@@ -98,3 +98,59 @@ test('package realtime session broadcast only returns delivered session ids', as
 		})
 	})
 })
+
+test('package realtime session broadcast skips sessions whose send throws', async () => {
+	const binding = createBinding()
+	const stub = env.PACKAGE_REALTIME_SESSION.get(
+		env.PACKAGE_REALTIME_SESSION.idFromName(
+			JSON.stringify([binding.userId, binding.packageId]),
+		),
+	)
+
+	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
+		const anyInstance = instance as unknown as {
+			listSessions: (input?: {
+				facet?: string | null
+				topic?: string | null
+			}) => Array<{ session_id: string }>
+			getSocketBySessionId: (sessionId: string) => { send: (data: string) => void }
+			stateSnapshot: {
+				sessions: Record<string, { id: string }>
+			}
+			persistState: () => Promise<void>
+			broadcast: (input: {
+				facet?: string | null
+				topic?: string | null
+				data: unknown
+			}) => Promise<{ deliveredCount: number; sessionIds: Array<string> }>
+		}
+
+		anyInstance.listSessions = () => [
+			{ session_id: 'session-1' },
+			{ session_id: 'session-2' },
+		]
+		anyInstance.stateSnapshot = {
+			sessions: {
+				'session-1': { id: 'session-1' },
+				'session-2': { id: 'session-2' },
+			},
+		}
+		anyInstance.persistState = async () => undefined
+		anyInstance.getSocketBySessionId = (sessionId) => ({
+			send: () => {
+				if (sessionId === 'session-2') {
+					throw new Error('socket closing')
+				}
+			},
+		}
+
+		await expect(
+			anyInstance.broadcast({
+				data: { type: 'broadcast' },
+			}),
+		).resolves.toEqual({
+			deliveredCount: 1,
+			sessionIds: ['session-1'],
+		})
+	})
+})

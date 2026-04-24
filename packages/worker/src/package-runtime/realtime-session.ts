@@ -477,7 +477,15 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			}
 			return { delivered: false, reason: 'session_not_connected' as const }
 		}
-		socket.send(serializeOutboundMessage(data))
+		try {
+			socket.send(serializeOutboundMessage(data))
+		} catch {
+			if (this.stateSnapshot.sessions[sessionId]) {
+				delete this.stateSnapshot.sessions[sessionId]
+				await this.persistState()
+			}
+			return { delivered: false, reason: 'session_not_connected' as const }
+		}
 		return { delivered: true as const }
 	}
 
