@@ -11,21 +11,6 @@ export const packageRealtimeSessionRecordSchema = z.object({
 	last_seen_at: z.string(),
 })
 
-export const packageRealtimeTargetSchema = z.object({
-	package_id: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional saved package id. Defaults to the caller package app/job when available.',
-		),
-	facet: z
-		.string()
-		.min(1)
-		.optional()
-		.describe('Optional facet name. Defaults to "main".'),
-})
-
 export const sessionEmitInputSchema = z.object({
 	session_id: z.string().min(1),
 	data: z.unknown(),
@@ -45,9 +30,6 @@ export const sessionBroadcastInputSchema = z.object({
 })
 
 export const sessionBroadcastOutputSchema = z.object({
-	ok: z.literal(true),
-	package_id: z.string(),
-	kody_id: z.string(),
 	delivered_count: z.number(),
 	session_ids: z.array(z.string()),
 })

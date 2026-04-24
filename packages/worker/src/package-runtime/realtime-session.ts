@@ -677,6 +677,14 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		})
 	}
 
+	webSocketError(ws: WebSocket, error: unknown): void | Promise<void> {
+		return this.handleDisconnect(ws, {
+			code: 1011,
+			reason: error instanceof Error ? error.message : String(error ?? 'error'),
+			wasClean: false,
+		})
+	}
+
 	private async handleWebSocketMessage(
 		ws: WebSocket,
 		message: string | ArrayBuffer,
