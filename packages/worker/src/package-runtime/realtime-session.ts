@@ -38,6 +38,14 @@ type PackageRealtimeSessionRecord = {
 	lastSeenAt: string
 }
 
+type PackageRealtimeSessionOutput = {
+	session_id: string
+	facet: string
+	topics: Array<string>
+	connected_at: string
+	last_seen_at: string
+}
+
 export type PackageRealtimeEmitResult = {
 	delivered: boolean
 	reason?: string
@@ -49,13 +57,7 @@ export type PackageRealtimeBroadcastResult = {
 }
 
 export type PackageRealtimeListResult = {
-	sessions: Array<{
-		session_id: string
-		facet: string
-		topics: Array<string>
-		connected_at: string
-		last_seen_at: string
-	}>
+	sessions: Array<PackageRealtimeSessionOutput>
 }
 
 type PackageRealtimeEventRequestInfo = {
@@ -263,6 +265,18 @@ function createSessionRecord(
 	}
 }
 
+function createSessionOutput(
+	session: PersistedPackageRealtimeSession,
+): PackageRealtimeSessionOutput {
+	return {
+		session_id: session.id,
+		facet: session.facet,
+		topics: [...session.topics],
+		connected_at: session.connectedAt,
+		last_seen_at: session.lastSeenAt,
+	}
+}
+
 async function resolvePackageAppWorker(input: {
 	env: Env
 	binding: PackageRealtimeBindingState
@@ -320,7 +334,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
-		void this.restoreState()
+		this.ctx.blockConcurrencyWhile(async () => {
+			await this.restoreState()
+		})
 	}
 
 	private async restoreState() {
@@ -393,7 +409,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	private listSessions(input?: {
 		facet?: string | null
 		topic?: string | null
-	}): Array<PackageRealtimeSessionRecord> {
+	}): Array<PackageRealtimeSessionOutput> {
 		const facet = buildFacetName(input?.facet)
 		const topic = pickString(input?.topic)
 		return Object.values(this.stateSnapshot.sessions)
@@ -402,7 +418,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 				if (topic && !session.topics.includes(topic)) return false
 				return this.getSocketBySessionId(session.id) != null
 			})
-			.map(createSessionRecord)
+			.map(createSessionOutput)
 	}
 
 	private async emitToSession(sessionId: string, data: unknown) {
@@ -429,14 +445,17 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		})
 		let deliveredCount = 0
 		for (const session of sessions) {
-			const delivered = await this.emitToSession(session.id, input.data)
+			const delivered = await this.emitToSession(
+				session.session_id,
+				input.data,
+			)
 			if (delivered.delivered) {
 				deliveredCount += 1
 			}
 		}
 		return {
 			deliveredCount,
-			sessionIds: sessions.map((session) => session.id),
+			sessionIds: sessions.map((session) => session.session_id),
 		}
 	}
 
@@ -469,8 +488,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	private async applyHookActions(
 		sessionId: string,
 		actions: Array<PackageRealtimeAction>,
+		sessionOverride?: PersistedPackageRealtimeSession | null,
 	) {
-		const session = this.stateSnapshot.sessions[sessionId]
+		const session = sessionOverride ?? this.stateSnapshot.sessions[sessionId]
 		if (!session) return
 		let shouldPersist = false
 		for (const action of actions) {
@@ -514,7 +534,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 				}
 			}
 		}
-		if (shouldPersist) {
+		if (shouldPersist && this.stateSnapshot.sessions[sessionId]) {
 			this.stateSnapshot.sessions[sessionId] = session
 			await this.persistState()
 		}
@@ -686,7 +706,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 				close,
 			},
 		})
-		await this.applyHookActions(sessionId, actions)
+		await this.applyHookActions(sessionId, actions, session)
 	}
 }
 
