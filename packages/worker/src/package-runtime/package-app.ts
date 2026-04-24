@@ -710,16 +710,24 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 		const services = await Promise.all(
 			result.services.map(async (service) => {
-				const status = await this.getPackageServiceRpc(service.name).status()
+				let status: string = 'error'
+				try {
+					const serviceStatus = await this.getPackageServiceRpc(
+						service.name,
+					).status()
+					status =
+						serviceStatus &&
+						typeof serviceStatus === 'object' &&
+						'status' in serviceStatus &&
+						typeof serviceStatus.status === 'string'
+							? serviceStatus.status
+							: 'error'
+				} catch {
+					// Keep the rest of the service list usable if one status lookup fails.
+				}
 				return {
 					...service,
-					status:
-						status &&
-						typeof status === 'object' &&
-						'status' in status &&
-						typeof status.status === 'string'
-							? status.status
-							: 'error',
+					status,
 				}
 			}),
 		)
