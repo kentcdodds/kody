@@ -5,7 +5,6 @@ export const packageSpecifierPrefix = 'kody:@'
 
 export type KodyPackageSpecifier = {
 	packageName: string
-	kodyId: string
 	exportName: string
 }
 
@@ -37,12 +36,10 @@ export function parseKodyPackageSpecifier(
 	}
 
 	const packageName = `@${scope}/${packageLeaf}`
-	const kodyId = packageLeaf
 	const exportName = segments.slice(2).join('/').trim() || '.'
 
 	return {
 		packageName,
-		kodyId,
 		exportName,
 	}
 }
