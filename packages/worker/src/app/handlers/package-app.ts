@@ -7,6 +7,7 @@ import {
 	buildPackageAppWorker,
 	createPackageAppCallerContext,
 } from '#worker/package-runtime/package-app.ts'
+import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 
 function parsePackageAppPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
@@ -22,6 +23,25 @@ function parsePackageAppPath(pathname: string) {
 	return {
 		kodyId,
 		restPath: parts.length > 2 ? `/${parts.slice(2).join('/')}` : '/',
+	}
+}
+
+function parsePackageRealtimePath(restPath: string) {
+	const parts = restPath.split('/').filter(Boolean)
+	if (parts[0] !== 'ws') return null
+	if (parts.length > 2) return null
+	const rawFacet = parts[1]?.trim() ?? ''
+	if (!rawFacet) {
+		return {
+			facet: null,
+		}
+	}
+	try {
+		return {
+			facet: decodeURIComponent(rawFacet),
+		}
+	} catch {
+		return null
 	}
 }
 
@@ -48,6 +68,19 @@ export async function handlePackageAppRequest(
 	}
 	try {
 		const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+		const packageRealtimePath = parsePackageRealtimePath(
+			packagePath?.restPath ?? '/',
+		)
+		if (packageRealtimePath && request.headers.get('Upgrade') === 'websocket') {
+			return await packageRealtimeSessionRpc({
+				env,
+				userId: user.mcpUser.userId,
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				sourceId: savedPackage.sourceId,
+				baseUrl,
+			}).connect(request, packageRealtimePath.facet)
+		}
 		const packageSource = await loadPackageSourceBySourceId({
 			env,
 			baseUrl,

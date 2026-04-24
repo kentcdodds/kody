@@ -28,6 +28,7 @@ Conventions
 - \`job_schedule_once\`: compatibility wrapper for one-off repo-backed jobs when you only need a single run time.
 - \`job_run_now\`: run an existing scheduled job immediately by id and return the updated job view plus execution result for debugging.
 - Package jobs are schedules owned by a package. For ad hoc work that is not tied to a package, use \`job_schedule\`. Package apps are optional UI surfaces declared by the package, not a separate top-level primitive.
+- Package apps can also use Kody-managed realtime websocket sessions through \`session_list\`, \`session_emit\`, and \`session_broadcast\`, and package jobs can emit to those sessions when running under the same package caller context.
 - Memory writes are verify-first: always run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`. Kody retrieves related memories; the consuming agent decides whether to upsert, delete, both, or do nothing. \`meta_memory_upsert\` creates a new memory when \`memory_id\` is omitted and updates an existing memory when \`memory_id\` is provided.
 - User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions (reconnect to refresh what the host shows).
 
