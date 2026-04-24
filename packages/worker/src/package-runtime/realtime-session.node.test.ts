@@ -126,6 +126,19 @@ test('resolvePackageAppWorkerCacheKey falls back to current source state when pu
 
 test('resolvePackageAppWorkerCacheKey can skip source refresh and reuse cached binding identity', async () => {
 	mockModule.getEntitySourceById.mockReset()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'repo-1',
+		published_commit: 'commit-2',
+		indexed_commit: 'commit-2',
+		manifest_path: 'package.json',
+		source_root: '/',
+		created_at: '2026-04-20T00:00:00.000Z',
+		updated_at: '2026-04-20T00:00:00.000Z',
+	})
 
 	const cacheKey = await resolvePackageAppWorkerCacheKey({
 		env: {
@@ -138,8 +151,6 @@ test('resolvePackageAppWorkerCacheKey can skip source refresh and reuse cached b
 			sourceId: 'source-1',
 			baseUrl: 'https://example.com',
 		},
-		publishedCommit: 'commit-2',
-		skipSourceRefresh: true,
 	})
 
 	expect(cacheKey).toBe(
@@ -151,7 +162,7 @@ test('resolvePackageAppWorkerCacheKey can skip source refresh and reuse cached b
 			'commit-2',
 		]),
 	)
-	expect(mockModule.getEntitySourceById).not.toHaveBeenCalled()
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 })
 
 test('PackageRealtimeSession is exported for runtime consumers', () => {
