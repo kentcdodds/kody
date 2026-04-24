@@ -244,6 +244,36 @@ export function parseJsonc<T>(source: string): T {
 	return JSON.parse(json) as T
 }
 
+function getMigrationTagVersion(tag: unknown) {
+	if (typeof tag !== 'string') return undefined
+	const match = /^v(\d+)$/.exec(tag)
+	if (!match) return undefined
+	return Number(match[1])
+}
+
+function sortWranglerMigrations(migrations: Array<Record<string, unknown>>) {
+	const orderedMigrations = migrations
+		.map((migration, index) => ({
+			index,
+			migration,
+			version: getMigrationTagVersion(migration.tag),
+		}))
+		.sort((left, right) => {
+			if (
+				left.version === undefined ||
+				right.version === undefined ||
+				left.version === right.version
+			) {
+				return left.index - right.index
+			}
+
+			return left.version - right.version
+		})
+		.map(({ migration }) => migration)
+
+	migrations.splice(0, migrations.length, ...orderedMigrations)
+}
+
 export async function writeGeneratedWranglerConfig({
 	baseConfigPath,
 	outConfigPath,
@@ -384,6 +414,7 @@ export async function writeGeneratedWranglerConfig({
 				migrationList.push(extraMigration)
 			}
 		}
+		sortWranglerMigrations(migrationList)
 	}
 
 	const resolvedOut = path.resolve(outConfigPath)
