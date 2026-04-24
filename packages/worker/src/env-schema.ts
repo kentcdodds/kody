@@ -196,6 +196,18 @@ export const EnvSchema = object({
 			)
 		},
 	),
+	PACKAGE_REALTIME_SESSION: createSchema<
+		unknown,
+		DurableObjectNamespace
+	>((value, context) => {
+		if (value) {
+			return { value: value as DurableObjectNamespace }
+		}
+		return fail(
+			'Missing PACKAGE_REALTIME_SESSION binding for package realtime websocket sessions.',
+			context.path,
+		)
+	}),
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	CLOUDFLARE_EMAIL_FROM: optionalNonEmptyStringSchema,

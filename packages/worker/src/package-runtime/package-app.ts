@@ -20,6 +20,7 @@ import {
 	writePublishedBundleArtifact,
 } from './published-runtime-artifacts.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
+import { packageRealtimeSessionRpc } from './realtime-session.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -27,6 +28,30 @@ const packageAppRuntimeBindingName = 'KODY_RUNTIME'
 function createPackageAppWorkerSource(input: { mainModule: string }) {
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
+
+function buildFacetName(rawFacetName) {
+	return typeof rawFacetName === 'string' && rawFacetName.trim().length > 0
+		? rawFacetName.trim()
+		: 'main';
+}
+
+function fnv1a32(input) {
+	let hash = 2166136261;
+	for (let i = 0; i < input.length; i += 1) {
+		hash ^= input.charCodeAt(i);
+		hash = Math.imul(hash, 16777619);
+	}
+	return hash >>> 0;
+}
+
+function buildFacetClassExportName(rawFacetName) {
+	const canonicalName = buildFacetName(rawFacetName);
+	const sanitizedFacetName = canonicalName.replace(/[^a-zA-Z0-9_]/g, '_');
+	const hashSuffix = fnv1a32(canonicalName).toString(16).padStart(8, '0');
+	return canonicalName === 'main'
+		? 'App'
+		: \`App_\${sanitizedFacetName}_\${hashSuffix}\`;
+}
 
 function createCodemodeProxy(runtimeBridge) {
 	return new Proxy({}, {
@@ -129,6 +154,33 @@ function createAgentChatTurnStream(runtimeBridge) {
 			}
 		}
 	}
+}
+
+function createRealtimeProxy(runtimeBridge) {
+	return {
+		emit: async (sessionId, data) =>
+			await runtimeBridge.realtimeEmit({
+				sessionId,
+				data,
+			}),
+		broadcast: async (input = {}) =>
+			await runtimeBridge.realtimeBroadcast({
+				data: input.data,
+				topic: input.topic,
+				facet: input.facet,
+			}),
+		listSessions: async (input = {}) =>
+			await runtimeBridge.realtimeListSessions({
+				topic: input.topic,
+				facet: input.facet,
+			}),
+		disconnect: async (sessionId, input = {}) =>
+			await runtimeBridge.realtimeDisconnect({
+				sessionId,
+				code: input.code,
+				reason: input.reason,
+			}),
+	};
 }
 
 function createAuthenticatedFetchHelper(runtimeBridge) {
@@ -263,8 +315,44 @@ function createRuntime(runtimeBridge, params, packageContext) {
 			await runtimeBridge.refreshAccessToken(providerName),
 		createAuthenticatedFetch: createAuthenticatedFetchHelper(runtimeBridge),
 		agentChatTurnStream: createAgentChatTurnStream(runtimeBridge),
+		realtime: createRealtimeProxy(runtimeBridge),
 		packageContext,
 	};
+}
+
+function createFacetStorageId(packageContext, facetName) {
+	const packageId = packageContext?.packageId ?? 'package';
+	return \`\${packageId}:facet:\${buildFacetName(facetName)}\`;
+}
+
+function resolveRealtimeHandler(userModule, facetName) {
+	const facetExportName = buildFacetClassExportName(facetName);
+	if (typeof userModule[facetExportName] === 'function') {
+		return {
+			kind: 'class',
+			exported: userModule[facetExportName],
+		};
+	}
+	if (typeof userModule.handleRealtimeEvent === 'function') {
+		return {
+			kind: 'function',
+			exported: userModule.handleRealtimeEvent,
+		};
+	}
+	const candidate = userModule.default ?? userModule;
+	if (candidate && typeof candidate.onRealtimeEvent === 'function') {
+		return {
+			kind: 'bound-method',
+			exported: candidate,
+		};
+	}
+	if (typeof candidate === 'function' && typeof candidate.prototype?.onRealtimeEvent === 'function') {
+		return {
+			kind: 'class',
+			exported: candidate,
+		};
+	}
+	return null;
 }
 
 export class ${packageAppEntrypointName} extends WorkerEntrypoint {
@@ -294,6 +382,43 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			else globalThis.__kodyRuntime = previousRuntime;
 		}
 	}
+
+	async handleRealtimeEvent(payload) {
+		const previousRuntime = globalThis.__kodyRuntime;
+		globalThis.__kodyRuntime = createRuntime(
+			this.env.${packageAppRuntimeBindingName},
+			this.env.__kodyRuntimeParams ?? null,
+			this.env.__kodyPackageContext ?? null,
+		);
+		try {
+			const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
+			const runtimeEnv = createPackageAppEnv(this.env, userModule);
+			const resolved = resolveRealtimeHandler(userModule, payload?.facet);
+			if (!resolved) {
+				return { actions: [] };
+			}
+			if (resolved.kind === 'function') {
+				return await resolved.exported(payload, runtimeEnv, this.ctx);
+			}
+			if (resolved.kind === 'bound-method') {
+				return await resolved.exported.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+			}
+			const state = createInternalDurableObjectState(
+				this.env.${packageAppRuntimeBindingName},
+				createFacetStorageId(this.env.__kodyPackageContext ?? null, payload?.facet),
+			);
+			const instance = Object.create(resolved.exported.prototype);
+			instance.ctx = state;
+			instance.env = runtimeEnv;
+			if (typeof instance.onRealtimeEvent !== 'function') {
+				throw new Error(\`Package app facet "\${buildFacetName(payload?.facet)}" must implement onRealtimeEvent().\`);
+			}
+			return await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+		} finally {
+			if (previousRuntime === undefined) delete globalThis.__kodyRuntime;
+			else globalThis.__kodyRuntime = previousRuntime;
+		}
+	}
 }
 `.trim()
 }
@@ -305,6 +430,7 @@ type PackageAppRuntimeBridgeProps = {
 	displayName: string
 	packageId: string
 	kodyId: string
+	sourceId: string
 }
 
 export class PackageAppRuntimeBridge extends WorkerEntrypoint<
@@ -332,6 +458,17 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			env: this.env,
 			userId: this.ctx.props.userId,
 			storageId,
+		})
+	}
+
+	private getRealtimeSessionRpc() {
+		return packageRealtimeSessionRpc({
+			env: this.env,
+			userId: this.ctx.props.userId,
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+			baseUrl: this.ctx.props.baseUrl,
 		})
 	}
 
@@ -498,6 +635,39 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			body: input.request.body,
 		})
 	}
+
+	async realtimeEmit(input: {
+		sessionId: string
+		data: unknown
+	}) {
+		return await this.getRealtimeSessionRpc().emit(input.sessionId, input.data)
+	}
+
+	async realtimeBroadcast(input: {
+		data: unknown
+		topic?: string | null
+		facet?: string | null
+	}) {
+		return await this.getRealtimeSessionRpc().broadcast(input)
+	}
+
+	async realtimeListSessions(input?: {
+		topic?: string | null
+		facet?: string | null
+	}) {
+		return await this.getRealtimeSessionRpc().listSessions(input)
+	}
+
+	async realtimeDisconnect(input: {
+		sessionId: string
+		code?: number | null
+		reason?: string | null
+	}) {
+		return await this.getRealtimeSessionRpc().disconnect(input.sessionId, {
+			code: input.code ?? undefined,
+			reason: input.reason ?? undefined,
+		})
+	}
 }
 
 export async function buildPackageAppWorker(input: {
@@ -611,6 +781,7 @@ export async function buildPackageAppWorker(input: {
 							`package:${input.savedPackage.id}`,
 						packageId: input.savedPackage.id,
 						kodyId: input.savedPackage.kodyId,
+						sourceId: input.savedPackage.sourceId,
 					},
 				}),
 				__kodyRuntimeParams: input.params ?? null,

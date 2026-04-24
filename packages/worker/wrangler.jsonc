@@ -46,6 +46,10 @@
 			"new_sqlite_classes": ["RepoSession"],
 			"tag": "v11",
 		},
+		{
+			"new_sqlite_classes": ["PackageRealtimeSession"],
+			"tag": "v12",
+		},
 	],
 
 	"observability": {
@@ -103,6 +107,10 @@
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
+					},
+					{
+						"class_name": "PackageRealtimeSession",
+						"name": "PACKAGE_REALTIME_SESSION",
 					},
 				],
 			},
@@ -185,6 +193,10 @@
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
+					{
+						"class_name": "PackageRealtimeSession",
+						"name": "PACKAGE_REALTIME_SESSION",
+					},
 				],
 			},
 			"d1_databases": [
@@ -265,6 +277,10 @@
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
+					},
+					{
+						"class_name": "PackageRealtimeSession",
+						"name": "PACKAGE_REALTIME_SESSION",
 					},
 				],
 			},

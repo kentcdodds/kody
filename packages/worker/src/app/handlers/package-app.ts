@@ -7,6 +7,7 @@ import {
 	buildPackageAppWorker,
 	createPackageAppCallerContext,
 } from '#worker/package-runtime/package-app.ts'
+import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 
 function parsePackageAppPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
@@ -25,16 +26,40 @@ function parsePackageAppPath(pathname: string) {
 	}
 }
 
+function parsePackageRealtimePath(restPath: string) {
+	const parts = restPath.split('/').filter(Boolean)
+	if (parts[0] !== 'ws') return null
+	if (parts.length > 2) return null
+	const rawFacet = parts[1]?.trim() ?? ''
+	if (!rawFacet) {
+		return {
+			facet: null,
+		}
+	}
+	try {
+		return {
+			facet: decodeURIComponent(rawFacet),
+		}
+	} catch {
+		return null
+	}
+}
+
 export async function handlePackageAppRequest(
 	request: Request,
 	env: Env,
 	explicitKodyId?: string | null,
 ) {
-	const packagePath = parsePackageAppPath(new URL(request.url).pathname)
+	const requestUrl = new URL(request.url)
+	const packagePath = parsePackageAppPath(requestUrl.pathname)
 	const kodyId = explicitKodyId?.trim() || packagePath?.kodyId || null
 	if (!kodyId) {
 		return new Response('Saved package app not found.', { status: 404 })
 	}
+	const packageRealtimeRestPath =
+		packagePath?.kodyId === kodyId ? packagePath.restPath : requestUrl.pathname || '/'
+	const forwardedPackageRestPath =
+		packagePath?.kodyId === kodyId ? packagePath.restPath : '/'
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
 		return redirectToLogin(request)
@@ -48,6 +73,17 @@ export async function handlePackageAppRequest(
 	}
 	try {
 		const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+		const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
+		if (packageRealtimePath && request.headers.get('Upgrade') === 'websocket') {
+			return await packageRealtimeSessionRpc({
+				env,
+				userId: user.mcpUser.userId,
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				sourceId: savedPackage.sourceId,
+				baseUrl,
+			}).connect(request, packageRealtimePath.facet)
+		}
 		const packageSource = await loadPackageSourceBySourceId({
 			env,
 			baseUrl,
@@ -82,13 +118,8 @@ export async function handlePackageAppRequest(
 			},
 		})
 		const entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName)
-		const forwardedUrl = new URL(request.url)
-		const resolvedPackagePath = parsePackageAppPath(forwardedUrl.pathname)
-		if (!resolvedPackagePath || resolvedPackagePath.kodyId !== kodyId) {
-			forwardedUrl.pathname = '/'
-		} else {
-			forwardedUrl.pathname = resolvedPackagePath.restPath
-		}
+		const forwardedUrl = new URL(requestUrl)
+		forwardedUrl.pathname = forwardedPackageRestPath
 		const forwardedRequest = new Request(forwardedUrl.toString(), request)
 		return await entrypoint.fetch(forwardedRequest)
 	} catch (error) {

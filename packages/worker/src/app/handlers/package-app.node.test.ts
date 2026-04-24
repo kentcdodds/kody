@@ -30,6 +30,9 @@ const mockModule = vi.hoisted(() => ({
 	}),
 	createPackageAppCallerContext: vi.fn(),
 	buildPackageAppWorker: vi.fn(),
+	packageRealtimeConnect: vi.fn(
+		async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+	),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -63,6 +66,12 @@ vi.mock('#worker/package-runtime/package-app.ts', () => ({
 		mockModule.buildPackageAppWorker(...args),
 }))
 
+vi.mock('#worker/package-runtime/realtime-session.ts', () => ({
+	packageRealtimeSessionRpc: (..._args: Array<unknown>) => ({
+		connect: (...args: Array<unknown>) => mockModule.packageRealtimeConnect(...args),
+	}),
+}))
+
 const { handlePackageAppRequest } = await import('./package-app.ts')
 
 test('handlePackageAppRequest returns a plain 500 when package app runtime setup fails', async () => {
@@ -73,4 +82,72 @@ test('handlePackageAppRequest returns a plain 500 when package app runtime setup
 
 	expect(response.status).toBe(500)
 	await expect(response.text()).resolves.toBe('Internal Server Error')
+})
+
+test('handlePackageAppRequest routes websocket package paths to realtime session manager', async () => {
+	const request = new Request('https://example.com/packages/example/ws/chat', {
+		headers: {
+			Upgrade: 'websocket',
+		},
+	})
+
+	const response = await handlePackageAppRequest(request, {} as Env)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
+})
+
+test('handlePackageAppRequest routes websocket paths to realtime session manager when explicitKodyId is provided', async () => {
+	const request = new Request('https://example.com/ws/chat', {
+		headers: {
+			Upgrade: 'websocket',
+		},
+	})
+
+	const response = await handlePackageAppRequest(request, {} as Env, 'example')
+
+	expect(response.status).toBe(200)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
+})
+
+test('handlePackageAppRequest preserves root forwarding for non-websocket explicitKodyId requests', async () => {
+	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
+		source: {
+			published_commit: 'commit-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kody/example',
+				kody: { id: 'example', app: { entry: 'app.js' } },
+			}),
+			'app.js': 'export default {}',
+		},
+	})
+	const entrypointFetch = vi.fn(async (forwardedRequest: Request) => {
+		return Response.json({ pathname: new URL(forwardedRequest.url).pathname })
+	})
+	mockModule.buildPackageAppWorker.mockResolvedValueOnce({
+		entrypointName: 'entry',
+		stub: {
+			getEntrypoint: () => ({
+				fetch: entrypointFetch,
+			}),
+		},
+	})
+
+	const response = await handlePackageAppRequest(
+		new Request('https://example.com/custom/path'),
+		{} as Env,
+		'example',
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({ pathname: '/' })
+	expect(entrypointFetch).toHaveBeenCalledTimes(1)
 })
