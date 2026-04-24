@@ -28,7 +28,6 @@ import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	parseKodyPackageSpecifier,
 	resolveSavedPackageImport,
-	packageSpecifierPrefix,
 } from './package-import-resolution.ts'
 
 type DependencyResolutionState = {
@@ -90,6 +89,7 @@ async function resolveDependencyForPackage(input: {
 		sourceId: source.id,
 		publishedCommit: source.published_commit,
 		kodyId: row.kodyId,
+		packageName: row.name,
 	})
 }
 
@@ -108,15 +108,17 @@ async function collectDependenciesFromFiles(input: {
 	for (const content of Object.values(input.files)) {
 		for (const match of content.matchAll(packageSpecifierPattern)) {
 			const specifier = match[1]?.trim()
-			if (!specifier?.startsWith(packageSpecifierPrefix)) continue
+			if (!specifier) continue
 			await resolveDependencyForPackage({
 				state,
 				specifier,
 			})
 		}
 	}
-	return state.dependencies.sort((left, right) =>
-		left.kodyId.localeCompare(right.kodyId),
+	return state.dependencies.sort(
+		(left, right) =>
+			left.kodyId.localeCompare(right.kodyId) ||
+			left.sourceId.localeCompare(right.sourceId),
 	)
 }
 

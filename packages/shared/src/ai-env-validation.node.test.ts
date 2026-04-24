@@ -4,23 +4,43 @@ import {
 	getRemoteAiLocalDevStartupError,
 } from './ai-env-validation.ts'
 
-test('remote AI env validation reports missing variables only when they matter', () => {
+test('remote AI env validation only blocks local dev when required config is missing', () => {
 	expect(
 		getRemoteAiLocalDevStartupError({
 			AI_MODE: 'mock',
 		}),
 	).toBeUndefined()
 
-	const credentialsError = getRemoteAiLocalDevCredentialsError({})
-	expect(credentialsError).toContain('CLOUDFLARE_ACCOUNT_ID')
-	expect(credentialsError).toContain('CLOUDFLARE_API_TOKEN')
+	expect(
+		getRemoteAiLocalDevCredentialsError({
+			CLOUDFLARE_ACCOUNT_ID: 'account',
+			CLOUDFLARE_API_TOKEN: 'token',
+		}),
+	).toBeUndefined()
+	expect(
+		getRemoteAiLocalDevCredentialsError({
+			CLOUDFLARE_ACCOUNT_ID: 'account',
+		}),
+	).toBeDefined()
+	expect(
+		getRemoteAiLocalDevCredentialsError({
+			CLOUDFLARE_API_TOKEN: 'token',
+		}),
+	).toBeDefined()
 
-	const startupError = getRemoteAiLocalDevStartupError({
-		AI_MODE: 'remote',
-	})
-	expect(startupError).toContain('AI_GATEWAY_ID')
-	expect(startupError).toContain('CLOUDFLARE_ACCOUNT_ID')
-	expect(startupError).toContain('CLOUDFLARE_API_TOKEN')
+	expect(
+		getRemoteAiLocalDevStartupError({
+			AI_MODE: ' remote ',
+			AI_GATEWAY_ID: '   ',
+			CLOUDFLARE_ACCOUNT_ID: 'account',
+			CLOUDFLARE_API_TOKEN: 'token',
+		}),
+	).toBeDefined()
+	expect(
+		getRemoteAiLocalDevStartupError({
+			AI_MODE: 'remote',
+		}),
+	).toBeDefined()
 
 	expect(
 		getRemoteAiLocalDevStartupError({

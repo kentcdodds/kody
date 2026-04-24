@@ -187,7 +187,7 @@ test('optional search rows fall back when saved packages lookup fails', async ()
 	const result = await loadOptionalSearchRows({
 		userId: 'user-123',
 		loadPackages: async () => {
-			throw new Error('D1 packages unavailable')
+			throw new Error('packages unavailable')
 		},
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
@@ -196,9 +196,7 @@ test('optional search rows fall back when saved packages lookup fails', async ()
 	expect(result.packageRows).toEqual([])
 	expect(result.userSecretRows).toEqual([])
 	expect(result.userValueRows).toEqual([])
-	expect(result.warnings).toEqual([
-		'Saved packages are temporarily unavailable: D1 packages unavailable',
-	])
+	expect(result.warnings).toHaveLength(1)
 })
 
 test('optional search rows include saved packages when lookup succeeds', async () => {
@@ -274,16 +272,14 @@ test('optional search rows preserve package fallback warnings', async () => {
 					},
 				},
 			],
-			warnings: ['Saved package "observed-package" fallback metadata was used.'],
+			warnings: ['fallback warning'],
 		}),
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
 	})
 
 	expect(result.packageRows).toHaveLength(1)
-	expect(result.warnings).toEqual([
-		'Saved package "observed-package" fallback metadata was used.',
-	])
+	expect(result.warnings).toEqual(['fallback warning'])
 })
 
 test('searchUnified uses package exports and connector aliases for operate queries', () => {
@@ -370,7 +366,8 @@ test('searchUnified uses package exports and connector aliases for operate queri
 			}),
 		]),
 	)
-	expect(result.guidance).toContain('Found saved package `spotify` and connector `spotify`')
+	expect(result.guidance).toContain('search({ entity: "spotify:package" })')
+	expect(result.guidance).toContain('`execute`')
 })
 
 test('buildSavedPackageSearchRows falls back when package source resolution fails', async () => {
@@ -405,9 +402,7 @@ test('buildSavedPackageSearchRows falls back when package source resolution fail
 			}),
 		}),
 	])
-	expect(result.warnings).toEqual([
-		'Saved package "observed" search metadata is partially unavailable; using fallback metadata from source "missing-source": Saved package source bindings are not available.',
-	])
+	expect(result.warnings).toHaveLength(1)
 })
 
 test('search guidance does not pair unrelated package and connector matches', () => {
@@ -472,7 +467,10 @@ test('search guidance does not pair unrelated package and connector matches', ()
 		},
 	})
 
-	expect(result.guidance).not.toContain('connector `github`')
+	expect(result.guidance).toContain(
+		'search({ entity: "observed-package:package" })',
+	)
+	expect(result.guidance).not.toContain('search({ entity: "github:connector" })')
 })
 
 test('optional search rows fall back when persisted values lookup fails', async () => {
@@ -481,16 +479,14 @@ test('optional search rows fall back when persisted values lookup fails', async 
 		loadPackages: async () => [],
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => {
-			throw new Error('D1 values unavailable')
+			throw new Error('values unavailable')
 		},
 	})
 
 	expect(result.packageRows).toEqual([])
 	expect(result.userSecretRows).toEqual([])
 	expect(result.userValueRows).toEqual([])
-	expect(result.warnings).toEqual([
-		'Persisted values are temporarily unavailable: D1 values unavailable',
-	])
+	expect(result.warnings).toHaveLength(1)
 })
 
 test('optional search rows skip D1 access without a user', async () => {

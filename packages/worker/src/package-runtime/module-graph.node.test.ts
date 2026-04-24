@@ -218,6 +218,85 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 	)
 })
 
+test('buildKodyModuleBundle keeps dependencies for scoped packages with the same leaf', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('shared-leaf'))
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (
+			_db: unknown,
+			input: {
+				name: string
+			},
+		) => {
+			if (input.name === '@alice/shared-package') {
+				return createSavedPackageRecord({
+					name: '@alice/shared-package',
+					kodyId: 'shared-package',
+					sourceId: 'source-alice',
+				})
+			}
+			if (input.name === '@bob/shared-package') {
+				return createSavedPackageRecord({
+					name: '@bob/shared-package',
+					kodyId: 'shared-package',
+					sourceId: 'source-bob',
+				})
+			}
+			return null
+		},
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => ({
+			...createLoadedPackageSource(),
+			source: {
+				id: input.sourceId,
+				published_commit: `commit-${input.sourceId}`,
+			},
+		}),
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	const result = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js': [
+				'import aliceFn from "kody:@alice/shared-package/follow-up-on-pr-agent"',
+				'import bobFn from "kody:@bob/shared-package/follow-up-on-pr-agent"',
+				'export default [aliceFn, bobFn]',
+			].join('\n'),
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(result.dependencies).toEqual([
+		{
+			sourceId: 'source-alice',
+			publishedCommit: 'commit-source-alice',
+			kodyId: 'shared-package',
+		},
+		{
+			sourceId: 'source-bob',
+			publishedCommit: 'commit-source-bob',
+			kodyId: 'shared-package',
+		},
+	])
+})
+
 test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('kody-id-import'))
 	mockModule.getSavedPackageByName.mockResolvedValue(null)

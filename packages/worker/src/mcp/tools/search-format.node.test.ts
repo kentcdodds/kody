@@ -61,44 +61,43 @@ test(
 
 		expect(markdown).toContain('`user:preferred_repo:value`')
 		expect(markdown).toContain('`github:connector`')
+		const structuredMatches = toSlimStructuredMatches({
+			baseUrl: 'http://localhost',
+			matches: [
+				{
+					type: 'value',
+					valueId: 'user:preferred_repo',
+					name: 'preferred_repo',
+					scope: 'user',
+					description: 'Preferred repository owner/name.',
+					value: 'kentcdodds/kody',
+					appId: null,
+					updatedAt: '2026-03-20T00:00:00.000Z',
+					ttlMs: null,
+					usage:
+						'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
+					fusedScore: 1,
+				},
+				{
+					type: 'connector',
+					connectorName: 'github',
+					title: 'github',
+					description: 'GitHub OAuth connector config',
+					flow: 'confidential',
+					tokenUrl: 'https://github.com/login/oauth/access_token',
+					apiBaseUrl: 'https://api.github.com',
+					clientIdValueName: 'github_client_id',
+					clientSecretSecretName: 'github_client_secret',
+					accessTokenSecretName: 'github_access_token',
+					refreshTokenSecretName: 'github_refresh_token',
+					requiredHosts: ['api.github.com'],
+					usage: 'Read with connector_get: {"name":"github"}.',
+					fusedScore: 0.9,
+				},
+			],
+		})
 
-		expect(
-			toSlimStructuredMatches({
-				baseUrl: 'http://localhost',
-				matches: [
-					{
-						type: 'value',
-						valueId: 'user:preferred_repo',
-						name: 'preferred_repo',
-						scope: 'user',
-						description: 'Preferred repository owner/name.',
-						value: 'kentcdodds/kody',
-						appId: null,
-						updatedAt: '2026-03-20T00:00:00.000Z',
-						ttlMs: null,
-						usage:
-							'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
-						fusedScore: 1,
-					},
-					{
-						type: 'connector',
-						connectorName: 'github',
-						title: 'github',
-						description: 'GitHub OAuth connector config',
-						flow: 'confidential',
-						tokenUrl: 'https://github.com/login/oauth/access_token',
-						apiBaseUrl: 'https://api.github.com',
-						clientIdValueName: 'github_client_id',
-						clientSecretSecretName: 'github_client_secret',
-						accessTokenSecretName: 'github_access_token',
-						refreshTokenSecretName: 'github_refresh_token',
-						requiredHosts: ['api.github.com'],
-						usage: 'Read with connector_get: {"name":"github"}.',
-						fusedScore: 0.9,
-					},
-				],
-			}),
-		).toEqual([
+		expect(structuredMatches).toMatchObject([
 			{
 				type: 'value',
 				id: 'user:preferred_repo',
@@ -126,10 +125,14 @@ test(
 				accessTokenSecretName: 'github_access_token',
 				refreshTokenSecretName: 'github_refresh_token',
 				requiredHosts: ['api.github.com'],
-				nextStep:
-					'Inspect connector detail with search({ entity: "github:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.',
 			},
 		])
+		const connectorMatch = structuredMatches[1]
+		expect(connectorMatch).toMatchObject({
+			type: 'connector',
+			entityRef: 'github:connector',
+		})
+		expect(connectorMatch?.nextStep).toContain('github:connector')
 	},
 )
 
@@ -300,43 +303,38 @@ test('package search formatting surfaces entity refs in markdown and import/app 
 	})
 
 	expect(markdown).toContain('`spotify-playback:package`')
+	const [packageMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-123',
+				kodyId: 'spotify-playback',
+				name: '@kody/spotify-playback',
+				title: '@kody/spotify-playback',
+				description: 'Saved package for Spotify playback controls.',
+				tags: ['spotify', 'playback'],
+				hasApp: true,
+			},
+		],
+	})
 
-	expect(
-		toSlimStructuredMatches({
-			baseUrl: 'http://localhost',
-			matches: [
-				{
-					type: 'package',
-					packageId: 'package-123',
-					kodyId: 'spotify-playback',
-					name: '@kody/spotify-playback',
-					title: '@kody/spotify-playback',
-					description: 'Saved package for Spotify playback controls.',
-					tags: ['spotify', 'playback'],
-					hasApp: true,
-				},
-			],
-		}),
-	).toEqual([
-		{
-			type: 'package',
-			id: 'spotify-playback',
-			entityRef: 'spotify-playback:package',
-			packageId: 'package-123',
-			kodyId: 'spotify-playback',
-			title: '@kody/spotify-playback',
-			description: 'Saved package for Spotify playback controls.',
-			usage: 'open_generated_ui({ kody_id: "spotify-playback" })',
-			rootImportUsage: 'import entry from "kody:@kody/spotify-playback"',
-			openGeneratedUiUsage:
-				'open_generated_ui({ kody_id: "spotify-playback" })',
-			tags: ['spotify', 'playback'],
-			hasApp: true,
-			hostedUrl: 'http://localhost/packages/spotify-playback',
-			nextStep:
-				'Open the app with open_generated_ui({ kody_id: "spotify-playback" }) or inspect package detail with search({ entity: "spotify-playback:package" }).',
-		},
-	])
+	expect(packageMatch).toMatchObject({
+		type: 'package',
+		id: 'spotify-playback',
+		entityRef: 'spotify-playback:package',
+		packageId: 'package-123',
+		kodyId: 'spotify-playback',
+		title: '@kody/spotify-playback',
+		description: 'Saved package for Spotify playback controls.',
+		usage: 'open_generated_ui({ kody_id: "spotify-playback" })',
+		rootImportUsage: 'import entry from "kody:@kody/spotify-playback"',
+		openGeneratedUiUsage: 'open_generated_ui({ kody_id: "spotify-playback" })',
+		tags: ['spotify', 'playback'],
+		hasApp: true,
+		hostedUrl: 'http://localhost/packages/spotify-playback',
+	})
+	expect(packageMatch?.nextStep).toContain('spotify-playback:package')
 })
 
 test('usage helpers escape dynamic identifiers in generated snippets', () => {

@@ -40,7 +40,7 @@ Saved package surface:
 - \`package_save\`, \`package_get\`, \`package_list\`, \`package_delete\`
 - repo-backed package editing with \`repo_edit_flow\`, \`repo_open_session\`,
   and \`repo_publish_session\`
- - cross-package imports with specifiers such as
+- cross-package imports with specifiers such as
    \`kody:@scope/my-package/export-name\`
 
 Sandbox surface:

@@ -305,7 +305,7 @@ async function ensurePackageLoaded(
 	}
 	state.packages.set(packageKey, entry)
 	if (loaded.source.published_commit) {
-		state.dependencies.set(row.kodyId, {
+		state.dependencies.set(packageKey, {
 			sourceId: loaded.source.id,
 			publishedCommit: loaded.source.published_commit,
 			kodyId: row.kodyId,
