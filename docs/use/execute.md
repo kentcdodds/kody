@@ -21,8 +21,8 @@ and export a default function. These helpers are runtime exports:
   active execute or job params instead of receiving them as a function argument
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
-- use **`import thing from 'kody:@my-package/export-name'`** to reuse a saved
-  package export
+- use **`import thing from 'kody:@scope/my-package/export-name'`** to reuse a
+  saved package export by full package name
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export**.
@@ -46,6 +46,8 @@ Saved packages, scheduled jobs, and one-off **execute** code share the same
 module-oriented runtime model:
 
 - saved packages persist repo-backed source rooted at `package.json`
+- `package.json.name` must end with the same leaf name as `package.json#kody.id`
+  (for example `@scope/my-package` pairs with `kody.id: "my-package"`)
 - package exports are defined by standard `package.json.exports`
 - package-specific metadata lives under `package.json#kody`
 - package jobs are schedules declared under `package.json#kody.jobs`

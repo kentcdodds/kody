@@ -14,6 +14,7 @@ export type BundleArtifactDependency = {
 	sourceId: string
 	publishedCommit: string
 	kodyId: string
+	packageName?: string
 }
 
 type SerializedWorkerLoaderModule =
