@@ -7,12 +7,18 @@ import {
 
 const packageManifestPath = 'package.json'
 
-function getExpectedKodyName(name: string) {
+function isScopedPackageName(name: string) {
 	const trimmed = name.trim()
 	if (!trimmed.startsWith('@')) {
-		return trimmed
+		return false
 	}
 
+	const separator = trimmed.indexOf('/')
+	return separator > 1 && separator < trimmed.length - 1
+}
+
+function getExpectedKodyName(name: string) {
+	const trimmed = name.trim()
 	const separator = trimmed.indexOf('/')
 	return separator === -1 ? trimmed : trimmed.slice(separator + 1)
 }
@@ -40,6 +46,11 @@ export function parseAuthoredPackageJson(input: {
 	}
 
 	const manifest = result.data
+	if (!isScopedPackageName(manifest.name)) {
+		throw new Error(
+			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must be a scoped package name like "@scope/${manifest.kody.id}".`,
+		)
+	}
 	const expectedKodyId = getExpectedKodyName(manifest.name)
 	if (expectedKodyId !== manifest.kody.id) {
 		throw new Error(

@@ -34,8 +34,9 @@ Important fields:
 
 `package.json` is the manifest.
 
-For predictable package resolution, the package name's leaf segment must match
-`kody.id`. For example, `@kentcdodds/cursor-cloud-agents` must use
+For predictable package resolution, saved packages must use a scoped
+`package.json.name`, and the leaf segment must match `kody.id`. For example,
+`@kentcdodds/cursor-cloud-agents` must use
 `"kody": { "id": "cursor-cloud-agents" }`.
 
 ## Package exports
