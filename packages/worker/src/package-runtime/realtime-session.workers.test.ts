@@ -54,3 +54,47 @@ test('package realtime session DO is addressable as a durable object', async () 
 		},
 	)
 })
+
+test('package realtime session broadcast only returns delivered session ids', async () => {
+	const binding = createBinding()
+	const stub = env.PACKAGE_REALTIME_SESSION.get(
+		env.PACKAGE_REALTIME_SESSION.idFromName(
+			JSON.stringify([binding.userId, binding.packageId]),
+		),
+	)
+
+	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
+		const anyInstance = instance as unknown as {
+			listSessions: (input?: {
+				facet?: string | null
+				topic?: string | null
+			}) => Array<{ session_id: string }>
+			emitToSession: (
+				sessionId: string,
+				data: unknown,
+			) => Promise<{ delivered: boolean }>
+			broadcast: (input: {
+				facet?: string | null
+				topic?: string | null
+				data: unknown
+			}) => Promise<{ deliveredCount: number; sessionIds: Array<string> }>
+		}
+
+		anyInstance.listSessions = () => [
+			{ session_id: 'session-1' },
+			{ session_id: 'session-2' },
+		]
+		anyInstance.emitToSession = async (sessionId) => ({
+			delivered: sessionId === 'session-1',
+		})
+
+		await expect(
+			anyInstance.broadcast({
+				data: { type: 'broadcast' },
+			}),
+		).resolves.toEqual({
+			deliveredCount: 1,
+			sessionIds: ['session-1'],
+		})
+	})
+})

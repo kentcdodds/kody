@@ -491,6 +491,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			topic: input.topic,
 		})
 		let deliveredCount = 0
+		const sessionIds: Array<string> = []
 		for (const session of sessions) {
 			const delivered = await this.emitToSession(
 				session.session_id,
@@ -498,11 +499,12 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			)
 			if (delivered.delivered) {
 				deliveredCount += 1
+				sessionIds.push(session.session_id)
 			}
 		}
 		return {
 			deliveredCount,
-			sessionIds: sessions.map((session) => session.session_id),
+			sessionIds,
 		}
 	}
 
