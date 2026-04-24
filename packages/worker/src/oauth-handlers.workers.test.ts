@@ -109,6 +109,7 @@ function createEnv(
 		COOKIE_SECRET: cookieSecretValue,
 		JOB_MANAGER: mockJobDoNamespace('job-manager-test-id'),
 		STORAGE_RUNNER: mockJobDoNamespace('storage-runner-test-id'),
+		PACKAGE_REALTIME_SESSION: mockJobDoNamespace('package-realtime-session-test-id'),
 	} as unknown as Env
 }
 
