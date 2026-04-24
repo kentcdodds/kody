@@ -324,9 +324,9 @@ function buildPackageHostedUrl(baseUrl: string, kodyId: string) {
 
 function buildPackageImportSpecifier(packageName: string, exportName: string) {
 	if (exportName === '.') {
-		return `kody:@${packageName}`
+		return `kody:${packageName}`
 	}
-	return `kody:@${packageName}/${exportName.replace(/^\.\//, '')}`
+	return `kody:${packageName}/${exportName.replace(/^\.\//, '')}`
 }
 
 function buildEntityRef(id: string, type: SearchEntityType) {
@@ -717,7 +717,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				return {
 					subpath: exportName,
 					importSpecifier: buildPackageImportSpecifier(
-						detail.record.kodyId,
+						detail.record.name,
 						exportName,
 					),
 					runtimeTarget,
@@ -793,7 +793,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				description: detail.description,
 				usage: detail.record.hasApp
 					? buildPackageAppUsage(detail.record.kodyId)
-					: buildPackageRootImportUsage(detail.record.kodyId),
+					: buildPackageRootImportUsage(detail.record.name),
 				packageId: detail.record.id,
 				kodyId: detail.record.kodyId,
 				name: detail.record.name,

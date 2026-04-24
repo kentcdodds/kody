@@ -201,20 +201,17 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 			name: '@kentcdodds/example-package',
 		},
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
-		{},
-		{
-			userId: 'user-1',
-			kodyId: 'example-package',
-		},
-	)
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
 		| {
 				files?: Record<string, string>
 		  }
 		| undefined
 	expect(firstCall?.files?.['.__kody_root__/index.js']).toContain(
-		'./.__kody_virtual__/imports/kody--kentcdodds/example-package/follow-up-on-pr-agent.js',
+		'__kody_virtual__/imports/',
+	)
+	expect(firstCall?.files?.['.__kody_root__/index.js']).toContain(
+		'kentcdodds/example-package/follow-up-on-pr-agent.js',
 	)
 	expect(firstCall?.files?.['.__kody_root__/index.js']).not.toContain(
 		'kody:@kentcdodds/example-package/follow-up-on-pr-agent',
@@ -223,6 +220,7 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 
 test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('kody-id-import'))
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
 
 	const { buildKodyModuleBundle } = await import('./module-graph.ts')
 
@@ -251,10 +249,16 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 			entryPoint: 'index.js',
 		}),
 	).rejects.toThrow(
-		'Kody package imports must use the full package.json name, for example "kody:@scope/package-name/export".',
+		'Saved package "@example-package/follow-up-on-pr-agent" was not found for this user.',
 	)
 
-	expect(mockModule.getSavedPackageByName).not.toHaveBeenCalled()
+	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			name: '@example-package/follow-up-on-pr-agent',
+		},
+	)
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 

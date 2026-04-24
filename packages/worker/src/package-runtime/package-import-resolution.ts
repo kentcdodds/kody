@@ -27,32 +27,25 @@ export function parseKodyPackageSpecifier(
 		throw unsupportedSpecifierError(specifier)
 	}
 
-	const scopeSeparator = trimmed.indexOf('/')
-	if (scopeSeparator <= 1) {
+	const segments = trimmed.split('/').map((segment) => segment.trim())
+	if (segments.length < 2 || segments[0] === '' || segments[1] === '') {
 		throw unsupportedSpecifierError(specifier)
 	}
 
-	const exportSeparator = trimmed.indexOf('/', scopeSeparator + 1)
-	const packageName =
-		exportSeparator === -1
-			? trimmed
-			: trimmed.slice(0, exportSeparator).trim()
-	const kodyId =
-		exportSeparator === -1
-			? trimmed.slice(scopeSeparator + 1).trim()
-			: trimmed.slice(scopeSeparator + 1, exportSeparator).trim()
-
-	if (!packageName || !kodyId) {
+	const scope = segments[0]
+	const packageLeaf = segments[1]
+	if (!scope || !packageLeaf) {
 		throw unsupportedSpecifierError(specifier)
 	}
+
+	const packageName = `@${scope}/${packageLeaf}`
+	const kodyId = packageLeaf
+	const exportName = segments.slice(2).join('/').trim() || '.'
 
 	return {
 		packageName,
 		kodyId,
-		exportName:
-			exportSeparator === -1
-				? '.'
-				: trimmed.slice(exportSeparator + 1).trim() || '.',
+		exportName,
 	}
 }
 

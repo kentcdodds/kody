@@ -219,7 +219,7 @@ test('entity detail formatting includes package app, export, and job metadata', 
 			updatedAt: '2026-03-20T00:00:00.000Z',
 		},
 		manifest: {
-			name: '@kody/observed',
+			name: '@kody/observed-package',
 			exports: {
 				'.': './src/index.ts',
 				'./app': {
@@ -264,7 +264,7 @@ test('entity detail formatting includes package app, export, and job metadata', 
 		exports: [
 			expect.objectContaining({
 				subpath: '.',
-				importSpecifier: 'kody:@kody/observed-package',
+				importSpecifier: 'kody:@kody/observed',
 			}),
 			expect.objectContaining({
 				subpath: './app',
