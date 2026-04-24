@@ -142,7 +142,7 @@ test('package realtime session broadcast skips sessions whose send throws', asyn
 					throw new Error('socket closing')
 				}
 			},
-		}
+		})
 
 		await expect(
 			anyInstance.broadcast({
