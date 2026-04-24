@@ -70,8 +70,8 @@ Package source is edited and published through the repo session capabilities.
 
 - prefer `repo_edit_flow` for common package changes
 - open repo sessions by package identity when possible
-- treat the repo snapshot as the durable source of truth after the package
-  exists
+- for an existing package, treat the repo snapshot as the durable source of
+  truth
 
 ## Search and discovery
 
