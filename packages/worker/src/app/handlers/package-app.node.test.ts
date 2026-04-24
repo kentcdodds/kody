@@ -113,3 +113,41 @@ test('handlePackageAppRequest routes websocket paths to realtime session manager
 	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
+
+test('handlePackageAppRequest preserves root forwarding for non-websocket explicitKodyId requests', async () => {
+	mockModule.loadPackageSourceBySourceId.mockResolvedValueOnce({
+		source: {
+			published_commit: 'commit-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kody/example',
+				kody: { id: 'example', app: { entry: 'app.js' } },
+			}),
+			'app.js': 'export default {}',
+		},
+	})
+	const entrypointFetch = vi.fn(async (forwardedRequest: Request) => {
+		return Response.json({ pathname: new URL(forwardedRequest.url).pathname })
+	})
+	mockModule.buildPackageAppWorker.mockResolvedValueOnce({
+		entrypointName: 'entry',
+		stub: {
+			getEntrypoint: () => ({
+				fetch: entrypointFetch,
+			}),
+		},
+	})
+
+	const response = await handlePackageAppRequest(
+		new Request('https://example.com/custom/path'),
+		{} as Env,
+		'example',
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({ pathname: '/' })
+	expect(entrypointFetch).toHaveBeenCalledTimes(1)
+})

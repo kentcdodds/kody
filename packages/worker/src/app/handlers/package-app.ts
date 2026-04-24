@@ -56,8 +56,10 @@ export async function handlePackageAppRequest(
 	if (!kodyId) {
 		return new Response('Saved package app not found.', { status: 404 })
 	}
-	const packageRestPath =
+	const packageRealtimeRestPath =
 		packagePath?.kodyId === kodyId ? packagePath.restPath : requestUrl.pathname || '/'
+	const forwardedPackageRestPath =
+		packagePath?.kodyId === kodyId ? packagePath.restPath : '/'
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
 		return redirectToLogin(request)
@@ -71,7 +73,7 @@ export async function handlePackageAppRequest(
 	}
 	try {
 		const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
-		const packageRealtimePath = parsePackageRealtimePath(packageRestPath)
+		const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
 		if (packageRealtimePath && request.headers.get('Upgrade') === 'websocket') {
 			return await packageRealtimeSessionRpc({
 				env,
@@ -117,7 +119,7 @@ export async function handlePackageAppRequest(
 		})
 		const entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName)
 		const forwardedUrl = new URL(requestUrl)
-		forwardedUrl.pathname = packageRestPath
+		forwardedUrl.pathname = forwardedPackageRestPath
 		const forwardedRequest = new Request(forwardedUrl.toString(), request)
 		return await entrypoint.fetch(forwardedRequest)
 	} catch (error) {
