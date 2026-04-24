@@ -1,5 +1,4 @@
 import { getPackageAppEntryPath } from '#worker/package-registry/manifest.ts'
-import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -26,6 +25,11 @@ import {
 } from '#worker/repo/published-bundle-artifacts-repo.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+import {
+	parseKodyPackageSpecifier,
+	resolveSavedPackageImport,
+	packageSpecifierPrefix,
+} from './package-import-resolution.ts'
 
 type DependencyResolutionState = {
 	env: Env
@@ -62,28 +66,30 @@ function normalizeEntryPoint(entryPoint: string) {
 
 async function resolveDependencyForPackage(input: {
 	state: DependencyResolutionState
-	kodyId: string
+	specifier: string
 }) {
-	const existing = input.state.visited.has(input.kodyId)
+	const parsed = parseKodyPackageSpecifier(input.specifier)
+	const existing = input.state.visited.has(parsed.packageName)
 	if (existing) return
-	input.state.visited.add(input.kodyId)
-	const row = await getSavedPackageByKodyId(input.state.env.APP_DB, {
+	input.state.visited.add(parsed.packageName)
+	const row = await resolveSavedPackageImport({
+		db: input.state.env.APP_DB,
 		userId: input.state.userId,
-		kodyId: input.kodyId,
+		specifier: parsed,
 	})
 	if (!row) {
-		throw new Error(`Saved package "${input.kodyId}" was not found for this user.`)
+		throw new Error(`Saved package "${parsed.packageName}" was not found for this user.`)
 	}
 	const source = await getEntitySourceById(input.state.env.APP_DB, row.sourceId)
 	if (!source?.published_commit) {
 		throw new Error(
-			`Saved package "${input.kodyId}" source "${row.sourceId}" has no published commit.`,
+			`Saved package "${row.name}" source "${row.sourceId}" has no published commit.`,
 		)
 	}
 	input.state.dependencies.push({
 		sourceId: source.id,
 		publishedCommit: source.published_commit,
-		kodyId: input.kodyId,
+		kodyId: row.kodyId,
 	})
 }
 
@@ -92,7 +98,7 @@ async function collectDependenciesFromFiles(input: {
 	userId: string
 	files: Record<string, string>
 }) {
-	const packageSpecifierPattern = /['"]kody:@([^/'"]+)(?:\/[^'"]*)?['"]/g
+	const packageSpecifierPattern = /['"](kody:@[^'"]+)['"]/g
 	const state: DependencyResolutionState = {
 		env: input.env,
 		userId: input.userId,
@@ -101,11 +107,11 @@ async function collectDependenciesFromFiles(input: {
 	}
 	for (const content of Object.values(input.files)) {
 		for (const match of content.matchAll(packageSpecifierPattern)) {
-			const kodyId = match[1]?.trim()
-			if (!kodyId) continue
+			const specifier = match[1]?.trim()
+			if (!specifier?.startsWith(packageSpecifierPrefix)) continue
 			await resolveDependencyForPackage({
 				state,
-				kodyId,
+				specifier,
 			})
 		}
 	}

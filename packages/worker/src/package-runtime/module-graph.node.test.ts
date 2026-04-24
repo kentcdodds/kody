@@ -1,18 +1,40 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createWorker: vi.fn(),
+	getSavedPackageByKodyId: vi.fn(),
+	getSavedPackageByName: vi.fn(),
+	loadPackageSourceBySourceId: vi.fn(),
 }))
 
 vi.mock('@cloudflare/worker-bundler', () => ({
 	createWorker: (...args: Array<unknown>) => mockModule.createWorker(...args),
 }))
 
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageByKodyId: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByKodyId(...args),
+	getSavedPackageByName: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByName(...args),
+}))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadPackageSourceBySourceId(...args),
+}))
+
 const {
 	buildKodyAppBundle,
 	createPublishedPackageAppBundleCacheKey,
 } = await import('./module-graph.ts')
+
+beforeEach(() => {
+	mockModule.createWorker.mockReset()
+	mockModule.getSavedPackageByName.mockReset()
+	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockReset()
+})
 
 function createBundleResult(suffix: string) {
 	return {
@@ -60,6 +82,51 @@ function createBundleInput(input?: {
 	}
 }
 
+function createSavedPackageRecord(input?: {
+	name?: string
+	kodyId?: string
+	sourceId?: string
+}) {
+	return {
+		id: 'pkg-1',
+		userId: 'user-1',
+		name: input?.name ?? '@kentcdodds/example-package',
+		kodyId: input?.kodyId ?? 'example-package',
+		description: 'Example package',
+		tags: [],
+		searchText: null,
+		sourceId: input?.sourceId ?? 'source-1',
+		hasApp: false,
+		createdAt: '2026-04-24T00:00:00.000Z',
+		updatedAt: '2026-04-24T00:00:00.000Z',
+	}
+}
+
+function createLoadedPackageSource() {
+	return {
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'.': './index.js',
+				'./follow-up-on-pr-agent': './follow-up-on-pr-agent.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		},
+		files: {
+			'index.js': 'export const value = "ok"',
+			'follow-up-on-pr-agent.js':
+				'export default async function followUp() { return "ok" }',
+		},
+	}
+}
+
 test('buildKodyAppBundle reuses cached published package app bundles', async () => {
 	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('warm-cache'))
@@ -90,8 +157,108 @@ test('buildKodyAppBundle reuses cached published package app bundles', async () 
 	expect(first).toBe(second)
 })
 
+test('buildKodyModuleBundle resolves scoped package imports by full package name first', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('scoped-import'))
+	mockModule.getSavedPackageByName.mockResolvedValue(
+		createSavedPackageRecord({
+			name: '@kentcdodds/example-package',
+			kodyId: 'example-package',
+		}),
+	)
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(createLoadedPackageSource())
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js':
+				'import followUp from "kody:@kentcdodds/example-package/follow-up-on-pr-agent"\nexport default followUp\n',
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			name: '@kentcdodds/example-package',
+		},
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			kodyId: 'example-package',
+		},
+	)
+	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	expect(firstCall?.files?.['.__kody_root__/index.js']).toContain(
+		'./.__kody_virtual__/imports/kody--kentcdodds/example-package/follow-up-on-pr-agent.js',
+	)
+	expect(firstCall?.files?.['.__kody_root__/index.js']).not.toContain(
+		'kody:@kentcdodds/example-package/follow-up-on-pr-agent',
+	)
+})
+
+test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('kody-id-import'))
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await expect(
+		buildKodyModuleBundle({
+			env: {
+				APP_DB: {},
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/local-package',
+					exports: {
+						'.': './index.js',
+					},
+					kody: {
+						id: 'local-package',
+						description: 'Local package',
+					},
+				}),
+				'index.js':
+					'import followUp from "kody:@example-package/follow-up-on-pr-agent"\nexport default followUp\n',
+			},
+			entryPoint: 'index.js',
+		}),
+	).rejects.toThrow(
+		'Kody package imports must use the full package.json name, for example "kody:@scope/package-name/export".',
+	)
+
+	expect(mockModule.getSavedPackageByName).not.toHaveBeenCalled()
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+})
+
 test('buildKodyAppBundle does not cache unpublished package app bundles', async () => {
-	mockModule.createWorker.mockReset()
 	mockModule.createWorker
 		.mockResolvedValueOnce(createBundleResult('uncached-first'))
 		.mockResolvedValueOnce(createBundleResult('uncached-second'))
@@ -111,7 +278,6 @@ test('buildKodyAppBundle does not cache unpublished package app bundles', async 
 })
 
 test('buildKodyAppBundle shares the same in-flight published bundle build', async () => {
-	mockModule.createWorker.mockReset()
 	let resolveBundle:
 		| ((value: { mainModule: string; modules: WorkerLoaderModules }) => void)
 		| null = null
@@ -154,7 +320,6 @@ test('buildKodyAppBundle shares the same in-flight published bundle build', asyn
 })
 
 test('buildKodyAppBundle evicts rejected published bundle builds before retrying', async () => {
-	mockModule.createWorker.mockReset()
 	mockModule.createWorker
 		.mockRejectedValueOnce(new Error('bundle failed'))
 		.mockResolvedValueOnce(createBundleResult('retry-success'))
@@ -189,7 +354,6 @@ test('buildKodyAppBundle evicts rejected published bundle builds before retrying
 })
 
 test('buildKodyAppBundle keeps separate cache entries for different app entrypoints', async () => {
-	mockModule.createWorker.mockReset()
 	mockModule.createWorker
 		.mockResolvedValueOnce(createBundleResult('entry-app'))
 		.mockResolvedValueOnce(createBundleResult('entry-admin'))
@@ -230,7 +394,6 @@ test('buildKodyAppBundle keeps separate cache entries for different app entrypoi
 })
 
 test('buildKodyAppBundle rewrites kody runtime imports inside TypeScript package apps', async () => {
-	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('ts-app'))
 
 	await buildKodyAppBundle({
@@ -289,7 +452,6 @@ export default {
 })
 
 test('buildKodyAppBundle rewrites dynamic kody runtime imports inside TypeScript package apps', async () => {
-	mockModule.createWorker.mockReset()
 	mockModule.createWorker.mockResolvedValue(createBundleResult('ts-dynamic-app'))
 
 	await buildKodyAppBundle({

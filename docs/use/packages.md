@@ -34,11 +34,16 @@ Important fields:
 
 `package.json` is the manifest.
 
+For predictable package resolution, the package name's leaf segment must match
+`kody.id`. For example, `@kentcdodds/cursor-cloud-agents` must use
+`"kody": { "id": "cursor-cloud-agents" }`.
+
 ## Package exports
 
 `package.json.exports` is the package's callable and importable surface.
 
-- Cross-package imports use specifiers such as `kody:@my-package/export-name`.
+- Cross-package imports use the full package name such as
+  `kody:@scope/my-package/export-name`.
 - Callable exports are exports whose resolved module default export is a
   function.
 - Packages may also export non-callable helper modules and values for reuse.

@@ -1,5 +1,4 @@
 import { createWorker } from '@cloudflare/worker-bundler'
-import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
@@ -23,13 +22,17 @@ import {
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
 } from './published-runtime-artifacts.ts'
+import {
+	parseKodyPackageSpecifier,
+	packageSpecifierPrefix,
+	resolveSavedPackageImport,
+} from './package-import-resolution.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 
 const runtimeModulePath = '.__kody_virtual__/runtime.js'
 const rootSourcePrefix = '.__kody_root__'
 const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
-const packageSpecifierPrefix = 'kody:@'
 const packageAppBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
 
 function joinPath(...parts: Array<string>) {
@@ -78,11 +81,6 @@ type RewriteState = {
 		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
 	>
 	dependencies: Map<string, BundleArtifactDependency>
-}
-
-type KodyPackageSpecifier = {
-	kodyId: string
-	exportName: string
 }
 
 function createRelativeImportSpecifier(fromPath: string, targetPath: string) {
@@ -165,24 +163,6 @@ export * from ${JSON.stringify(input.targetPath)};
 import __default from ${JSON.stringify(input.targetPath)};
 export default __default;
 `.trim()
-}
-
-function parsePackageSpecifier(specifier: string): KodyPackageSpecifier {
-	if (!specifier.startsWith(packageSpecifierPrefix)) {
-		throw new Error(`Unsupported Kody package specifier "${specifier}".`)
-	}
-	const trimmed = specifier.slice(packageSpecifierPrefix.length)
-	const separator = trimmed.indexOf('/')
-	if (separator === -1) {
-		return {
-			kodyId: trimmed.trim(),
-			exportName: '.',
-		}
-	}
-	return {
-		kodyId: trimmed.slice(0, separator).trim(),
-		exportName: trimmed.slice(separator + 1).trim(),
-	}
 }
 
 function sanitizeSpecifier(specifier: string) {
@@ -296,16 +276,21 @@ function applyReplacements(
 
 async function ensurePackageLoaded(
 	state: RewriteState,
-	kodyId: string,
+	specifier: string,
 ): Promise<LoadedPackageSource & { row: SavedPackageRecord; prefix: string }> {
-	const existing = state.packages.get(kodyId)
+	const parsed = parseKodyPackageSpecifier(specifier)
+	const packageKey = parsed.packageName
+	const existing = state.packages.get(packageKey)
 	if (existing) return existing
-	const row = await getSavedPackageByKodyId(state.env.APP_DB, {
+	const row = await resolveSavedPackageImport({
+		db: state.env.APP_DB,
 		userId: state.userId,
-		kodyId,
+		specifier: parsed,
 	})
 	if (!row) {
-		throw new Error(`Saved package "${kodyId}" was not found for this user.`)
+		throw new Error(
+			`Saved package "${parsed.packageName}" was not found for this user.`,
+		)
 	}
 	const loaded = await loadPackageSourceBySourceId({
 		env: state.env,
@@ -316,14 +301,14 @@ async function ensurePackageLoaded(
 	const entry = {
 		...loaded,
 		row,
-		prefix: joinPath(packageSourcePrefix, kodyId),
+		prefix: joinPath(packageSourcePrefix, row.kodyId),
 	}
-	state.packages.set(kodyId, entry)
+	state.packages.set(packageKey, entry)
 	if (loaded.source.published_commit) {
-		state.dependencies.set(kodyId, {
+		state.dependencies.set(row.kodyId, {
 			sourceId: loaded.source.id,
 			publishedCommit: loaded.source.published_commit,
-			kodyId,
+			kodyId: row.kodyId,
 		})
 	}
 	for (const [filePath, content] of Object.entries(loaded.files)) {
@@ -344,8 +329,8 @@ async function ensurePackageProxy(
 ): Promise<string> {
 	const existing = state.proxies.get(specifier)
 	if (existing) return existing
-	const parsed = parsePackageSpecifier(specifier)
-	const loaded = await ensurePackageLoaded(state, parsed.kodyId)
+	const parsed = parseKodyPackageSpecifier(specifier)
+	const loaded = await ensurePackageLoaded(state, specifier)
 	const exportPath = resolvePackageExportPath({
 		manifest: loaded.manifest,
 		exportName: parsed.exportName,

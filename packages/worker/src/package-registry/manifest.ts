@@ -7,6 +7,16 @@ import {
 
 const packageManifestPath = 'package.json'
 
+function getExpectedKodyName(name: string) {
+	const trimmed = name.trim()
+	if (!trimmed.startsWith('@')) {
+		return trimmed
+	}
+
+	const separator = trimmed.indexOf('/')
+	return separator === -1 ? trimmed : trimmed.slice(separator + 1)
+}
+
 export function parseAuthoredPackageJson(input: {
 	content: string
 	manifestPath?: string
@@ -28,7 +38,16 @@ export function parseAuthoredPackageJson(input: {
 			`Invalid ${input.manifestPath ?? packageManifestPath}:\n${formatted}`,
 		)
 	}
-	return result.data
+
+	const manifest = result.data
+	const expectedKodyId = getExpectedKodyName(manifest.name)
+	if (expectedKodyId !== manifest.kody.id) {
+		throw new Error(
+			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must use a leaf package name that matches kody.id "${manifest.kody.id}".`,
+		)
+	}
+
+	return manifest
 }
 
 export function normalizePackageWorkspacePath(path: string) {

@@ -178,6 +178,25 @@ export async function getSavedPackageByKodyId(
 	return row ? mapSavedPackageRow(row) : null
 }
 
+export async function getSavedPackageByName(
+	db: D1Database,
+	input: {
+		userId: string
+		name: string
+	},
+): Promise<SavedPackageRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
+				source_id, has_app, created_at, updated_at
+			FROM saved_packages
+			WHERE name = ? AND user_id = ?`,
+		)
+		.bind(input.name, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapSavedPackageRow(row) : null
+}
+
 export async function listSavedPackagesByUserId(
 	db: D1Database,
 	input: {

@@ -322,11 +322,11 @@ function buildPackageHostedUrl(baseUrl: string, kodyId: string) {
 	return `${baseUrl.replace(/\/+$/, '')}/packages/${encodeURIComponent(kodyId)}`
 }
 
-function buildPackageImportSpecifier(kodyId: string, exportName: string) {
+function buildPackageImportSpecifier(packageName: string, exportName: string) {
 	if (exportName === '.') {
-		return `kody:@${kodyId}`
+		return `kody:@${packageName}`
 	}
-	return `kody:@${kodyId}/${exportName.replace(/^\.\//, '')}`
+	return `kody:@${packageName}/${exportName.replace(/^\.\//, '')}`
 }
 
 function buildEntityRef(id: string, type: SearchEntityType) {
@@ -337,8 +337,8 @@ function buildCapabilityUsage(name: string) {
 	return `execute with codemode.${name}(args)`
 }
 
-function buildPackageRootImportUsage(kodyId: string) {
-	return `import entry from ${JSON.stringify(buildPackageImportSpecifier(kodyId, '.'))}`
+function buildPackageRootImportUsage(packageName: string) {
+	return `import entry from ${JSON.stringify(buildPackageImportSpecifier(packageName, '.'))}`
 }
 
 function buildPackageAppUsage(kodyId: string) {
@@ -427,7 +427,7 @@ export function formatSearchMarkdown(input: {
 			'- Built-in capabilities — `execute` with `import { codemode } from "kody:runtime"`',
 			'- Persisted values — `codemode.value_get({ name, scope })` or `codemode.value_list({ scope })`',
 			'- Saved connectors — `codemode.connector_get({ name })` or `codemode.connector_list({})`',
-			'- Saved packages — import from `kody:@package-id/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app`',
+			'- Saved packages — import from `kody:@scope/package-name/export-name`, edit with `repo_*`, and open package apps with `open_generated_ui({ kody_id })` when the package declares `kody.app`',
 			'- Secrets — placeholders in execute-time fetches or `codemode.secret_list` (never paste raw secrets in chat or embed `{{secret:...}}` literally into visible content such as comments, prompts, or issue bodies)',
 		)
 	}
@@ -497,7 +497,7 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 			? buildPackageHostedUrl(baseUrl, match.kodyId)
 			: null
 		const entityRef = buildEntityRef(match.kodyId, 'package')
-		const rootImportUsage = buildPackageRootImportUsage(match.kodyId)
+		const rootImportUsage = buildPackageRootImportUsage(match.name)
 		const openGeneratedUiUsage = match.hasApp
 			? buildPackageAppUsage(match.kodyId)
 			: null
@@ -576,13 +576,13 @@ export function toSlimStructuredMatches(input: {
 			}
 		}
 		if (match.type === 'package') {
-			const rootImportUsage = buildPackageRootImportUsage(match.kodyId)
+			const rootImportUsage = buildPackageRootImportUsage(match.name)
 			const openGeneratedUiUsage = match.hasApp
 				? buildPackageAppUsage(match.kodyId)
 				: null
 			const nextStep = match.hasApp
 				? `Open the app with open_generated_ui({ kody_id: "${match.kodyId}" }) or inspect package detail with search({ entity: "${match.kodyId}:package" }).`
-				: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.kodyId, '.')}".`
+				: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".`
 			return {
 				type: 'package',
 				id: match.kodyId,

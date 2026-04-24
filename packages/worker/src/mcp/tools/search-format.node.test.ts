@@ -264,7 +264,7 @@ test('entity detail formatting includes package app, export, and job metadata', 
 		exports: [
 			expect.objectContaining({
 				subpath: '.',
-				importSpecifier: 'kody:@observed-package',
+				importSpecifier: 'kody:@kody/observed-package',
 			}),
 			expect.objectContaining({
 				subpath: './app',
@@ -327,7 +327,7 @@ test('package search formatting surfaces entity refs in markdown and import/app 
 			title: '@kody/spotify-playback',
 			description: 'Saved package for Spotify playback controls.',
 			usage: 'open_generated_ui({ kody_id: "spotify-playback" })',
-			rootImportUsage: 'import entry from "kody:@spotify-playback"',
+			rootImportUsage: 'import entry from "kody:@kody/spotify-playback"',
 			openGeneratedUiUsage:
 				'open_generated_ui({ kody_id: "spotify-playback" })',
 			tags: ['spotify', 'playback'],

@@ -10,7 +10,9 @@ Kody-specific metadata.
 
 Use `package.json` as the canonical source of truth for saved package metadata.
 
-- `name` — npm-valid package name
+- `name` — npm-valid package name; for scoped names, the leaf package name must
+  match `kody.id` (for example `@kentcdodds/cursor-cloud-agents` pairs with
+  `kody.id: "cursor-cloud-agents"`)
 - `exports` — authoritative import/export map
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — package description for search/detail
@@ -35,7 +37,8 @@ The top-level saved identity is the package.
 
 `package.json.exports` is the package's callable/importable surface.
 
-- Cross-package imports use specifiers such as `kody:@my-package/export-name`.
+- Cross-package imports use the full package name, for example
+  `kody:@scope/my-package/export-name`.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
