@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildFacetName } from '#mcp/app-runner-facet-names.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { buildPackageAppWorker } from './package-app.ts'
 
@@ -328,6 +329,23 @@ async function resolvePackageAppWorker(input: {
 	})
 }
 
+export async function resolvePackageAppWorkerCacheKey(input: {
+	env: Pick<Env, 'APP_DB'>
+	binding: PackageRealtimeBindingState
+}) {
+	const source = await getEntitySourceById(input.env.APP_DB, input.binding.sourceId)
+	if (!source || source.user_id !== input.binding.userId) {
+		throw new Error('Saved package source was not found.')
+	}
+	return JSON.stringify([
+		input.binding.userId,
+		input.binding.packageId,
+		input.binding.sourceId,
+		input.binding.baseUrl,
+		source.published_commit ?? null,
+	])
+}
+
 export class PackageRealtimeSession extends DurableObject<Env> {
 	private stateSnapshot: PackageRealtimeState = createInitialState()
 	private sessionIds = new WeakMap<WebSocket, string | null>()
@@ -385,12 +403,10 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	}
 
 	private async getCachedPackageAppWorker(binding: PackageRealtimeBindingState) {
-		const cacheKey = JSON.stringify([
-			binding.userId,
-			binding.packageId,
-			binding.sourceId,
-			binding.baseUrl,
-		])
+		const cacheKey = await resolvePackageAppWorkerCacheKey({
+			env: this.env,
+			binding,
+		})
 		if (this.cachedAppWorkerKey !== cacheKey || !this.cachedAppWorkerPromise) {
 			this.cachedAppWorkerKey = cacheKey
 			this.cachedAppWorkerPromise = resolvePackageAppWorker({
