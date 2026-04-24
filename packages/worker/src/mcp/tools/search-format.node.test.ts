@@ -202,13 +202,13 @@ test('entity detail formatting includes package app, export, and job metadata', 
 	const packageDetail = formatEntityDetailMarkdown({
 		type: 'package',
 		id: 'observed-package',
-		title: '@kody/observed',
+		title: '@kody/observed-package',
 		description: 'Observed package with an app surface.',
 		hostedUrl: 'http://localhost/packages/observed-package',
 		record: {
 			id: 'package-123',
 			userId: 'user-123',
-			name: '@kody/observed',
+			name: '@kody/observed-package',
 			kodyId: 'observed-package',
 			description: 'Observed package with an app surface.',
 			tags: ['observed', 'ui'],
@@ -264,7 +264,7 @@ test('entity detail formatting includes package app, export, and job metadata', 
 		exports: [
 			expect.objectContaining({
 				subpath: '.',
-				importSpecifier: 'kody:@kody/observed',
+				importSpecifier: 'kody:@kody/observed-package',
 			}),
 			expect.objectContaining({
 				subpath: './app',

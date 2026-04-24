@@ -9,8 +9,6 @@ export type KodyPackageSpecifier = {
 	exportName: string
 }
 
-const kodyImportLiteralPattern = /['"](kody:@[^'"]+)['"]/g
-
 function unsupportedSpecifierError(specifier: string) {
 	return new Error(`Unsupported Kody package specifier "${specifier}".`)
 }
@@ -47,18 +45,6 @@ export function parseKodyPackageSpecifier(
 		kodyId,
 		exportName,
 	}
-}
-
-export function collectKodyPackageImportSpecifiers(source: string) {
-	const specifiers: Array<KodyPackageSpecifier> = []
-	for (const match of source.matchAll(kodyImportLiteralPattern)) {
-		const specifier = match[1]?.trim()
-		if (!specifier?.startsWith(packageSpecifierPrefix)) {
-			continue
-		}
-		specifiers.push(parseKodyPackageSpecifier(specifier))
-	}
-	return specifiers
 }
 
 export async function resolveSavedPackageImport(input: {
