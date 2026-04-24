@@ -157,18 +157,21 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 		if (!existing) {
 			this.stateSnapshot.binding = binding
-		try {
-			const loaded = await loadSavedPackageService({
-				env: this.env,
-				binding,
-			})
-			this.stateSnapshot.autoStart =
-				loaded.packageSource.manifest.kody.services?.[binding.serviceName]
-					?.autoStart ?? false
-		} catch {
-			this.stateSnapshot.autoStart = false
-		}
+			try {
+				const loaded = await loadSavedPackageService({
+					env: this.env,
+					binding,
+				})
+				this.stateSnapshot.autoStart =
+					loaded.packageSource.manifest.kody.services?.[binding.serviceName]
+						?.autoStart ?? false
+			} catch {
+				this.stateSnapshot.autoStart = false
+			}
 			await this.persistState()
+			if (this.stateSnapshot.autoStart) {
+				await this.ctx.storage.setAlarm(new Date())
+			}
 		}
 	}
 
