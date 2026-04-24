@@ -27,64 +27,36 @@ function installWindowLocation(href: string) {
 	globalThis.location = location as Location
 }
 
-test('injectIntoHtmlDocument inserts content into an existing head', () => {
-	const result = injectIntoHtmlDocument(
+test('document helpers preserve structure while rewriting only supported urls', () => {
+	const injectedIntoExistingHead = injectIntoHtmlDocument(
 		'<!doctype html><html lang="en" class="demo"><head data-shell="true"><title>Demo</title></head><body></body></html>',
 		'<meta name="viewport" content="width=device-width, initial-scale=1" />',
 	)
-
-	expect(result).toContain('<html lang="en" class="demo">')
-	expect(result).toContain(
+	expect(injectedIntoExistingHead).toContain('<html lang="en" class="demo">')
+	expect(injectedIntoExistingHead).toContain('<title>Demo</title>')
+	expect(injectedIntoExistingHead).toContain(
 		'<meta name="viewport" content="width=device-width, initial-scale=1" />',
 	)
-	expect(result).toContain('<title>Demo</title>')
-})
 
-test('injectIntoHtmlDocument adds a head without disturbing existing html attributes', () => {
-	const result = injectIntoHtmlDocument(
+	const injectedWithoutHead = injectIntoHtmlDocument(
 		'<html lang="en" class="demo" data-app="shell"><body><main>Hello</main></body></html>',
 		'<style>body { color: red; }</style>',
 	)
+	expect(injectedWithoutHead).toContain(
+		'<html lang="en" class="demo" data-app="shell">',
+	)
+	expect(injectedWithoutHead).toContain(
+		'<head><style>body { color: red; }</style></head>',
+	)
+	expect(injectedWithoutHead).toContain('<body><main>Hello</main></body>')
 
-	expect(result).toContain('<html lang="en" class="demo" data-app="shell">')
-	expect(result).toContain('<head><style>body { color: red; }</style></head>')
-	expect(result).toContain('<body><main>Hello</main></body>')
-})
-
-test('absolutizeHtmlAttributeUrls resolves worker-relative urls', () => {
-	const result = absolutizeHtmlAttributeUrls(
+	const absolutized = absolutizeHtmlAttributeUrls(
 		[
 			'<html><head><link rel="stylesheet" href="/styles.css" /></head><body>',
 			'<img src="/logo.png" />',
 			'<a href="/chat">Chat</a>',
 			'<form action="/logout"><button>Logout</button></form>',
 			'<img srcset="/logo.png 1x, /logo@2x.png 2x" />',
-			'</body></html>',
-		].join(''),
-		'https://kody-production.kentcdodds.workers.dev/',
-	)
-
-	expect(result).toContain(
-		'href="https://kody-production.kentcdodds.workers.dev/styles.css"',
-	)
-	expect(result).toContain(
-		'src="https://kody-production.kentcdodds.workers.dev/logo.png"',
-	)
-	expect(result).toContain(
-		'href="https://kody-production.kentcdodds.workers.dev/chat"',
-	)
-	expect(result).toContain(
-		'action="https://kody-production.kentcdodds.workers.dev/logout"',
-	)
-	expect(result).toContain(
-		'srcset="https://kody-production.kentcdodds.workers.dev/logo.png 1x, https://kody-production.kentcdodds.workers.dev/logo@2x.png 2x"',
-	)
-})
-
-test('absolutizeHtmlAttributeUrls leaves hash, data, and javascript urls untouched', () => {
-	const result = absolutizeHtmlAttributeUrls(
-		[
-			'<html><body>',
 			'<a href="#section">Jump</a>',
 			'<img src="data:image/png;base64,abc" />',
 			'<a href="javascript:alert(1)">Run</a>',
@@ -93,9 +65,24 @@ test('absolutizeHtmlAttributeUrls leaves hash, data, and javascript urls untouch
 		'https://kody-production.kentcdodds.workers.dev/',
 	)
 
-	expect(result).toContain('href="#section"')
-	expect(result).toContain('src="data:image/png;base64,abc"')
-	expect(result).toContain('href="javascript:alert(1)"')
+	expect(absolutized).toContain(
+		'href="https://kody-production.kentcdodds.workers.dev/styles.css"',
+	)
+	expect(absolutized).toContain(
+		'src="https://kody-production.kentcdodds.workers.dev/logo.png"',
+	)
+	expect(absolutized).toContain(
+		'href="https://kody-production.kentcdodds.workers.dev/chat"',
+	)
+	expect(absolutized).toContain(
+		'action="https://kody-production.kentcdodds.workers.dev/logout"',
+	)
+	expect(absolutized).toContain(
+		'srcset="https://kody-production.kentcdodds.workers.dev/logo.png 1x, https://kody-production.kentcdodds.workers.dev/logo@2x.png 2x"',
+	)
+	expect(absolutized).toContain('href="#section"')
+	expect(absolutized).toContain('src="data:image/png;base64,abc"')
+	expect(absolutized).toContain('href="javascript:alert(1)"')
 })
 
 test('measureRenderedFrameSize uses the largest body and document dimensions', () => {
@@ -440,26 +427,25 @@ test('runtime-backed helpers time out if the runtime never becomes ready', async
 	}
 })
 
-test('buildGeneratedUiRuntimeHeadInjection includes module script by default', () => {
-	const head = buildGeneratedUiRuntimeHeadInjection({
+test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and only includes the module script when needed', () => {
+	const defaultHead = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',
 		params: {},
 		baseHref: 'https://kody.example/',
 	})
-	expect(head).toContain('type="importmap"')
-	expect(head).toMatch(/<script type="module" src="[^"]*kody-ui-utils\.js"/)
-})
+	expect(defaultHead).toContain('type="importmap"')
+	expect(defaultHead).toContain('window.__kodyGeneratedUiBootstrap')
+	expect(defaultHead).toMatch(/<script type="module" src="[^"]*kody-ui-utils\.js"/)
 
-test('buildGeneratedUiRuntimeHeadInjection can omit module script for shell-rendered apps', () => {
-	const head = buildGeneratedUiRuntimeHeadInjection({
+	const shellRenderedHead = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',
 		params: {},
 		baseHref: 'https://kody.example/',
 		includeRuntimeScript: false,
 	})
-	expect(head).toContain('type="importmap"')
-	expect(head).toContain('window.__kodyGeneratedUiBootstrap')
-	expect(head).not.toMatch(/<script type="module"/)
+	expect(shellRenderedHead).toContain('type="importmap"')
+	expect(shellRenderedHead).toContain('window.__kodyGeneratedUiBootstrap')
+	expect(shellRenderedHead).not.toMatch(/<script type="module"/)
 })
 
 test('hosted and mcp runtimes initialize immediately on import', () => {
