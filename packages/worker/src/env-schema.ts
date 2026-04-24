@@ -196,17 +196,15 @@ export const EnvSchema = object({
 			)
 		},
 	),
-	PACKAGE_REALTIME_SESSION: createSchema<unknown, DurableObjectNamespace>(
-		(value, context) => {
-			if (value) {
-				return { value: value as DurableObjectNamespace }
-			}
-			return fail(
-				'Missing PACKAGE_REALTIME_SESSION binding for package realtime sessions.',
-				context.path,
-			)
-		},
-	),
+	PACKAGE_REALTIME_SESSION: createSchema<
+		unknown,
+		DurableObjectNamespace | undefined
+	>((value) => {
+		if (value) {
+			return { value: value as DurableObjectNamespace }
+		}
+		return { value: undefined }
+	}),
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	CLOUDFLARE_EMAIL_FROM: optionalNonEmptyStringSchema,
