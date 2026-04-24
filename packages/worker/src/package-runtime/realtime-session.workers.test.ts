@@ -195,3 +195,49 @@ test('package realtime session close action swallows socket close errors', async
 		).resolves.toBeUndefined()
 	})
 })
+
+test('package realtime disconnect endpoint swallows socket close errors', async () => {
+	const binding = createBinding()
+	const stub = env.PACKAGE_REALTIME_SESSION.get(
+		env.PACKAGE_REALTIME_SESSION.idFromName(
+			JSON.stringify([binding.userId, binding.packageId]),
+		),
+	)
+
+	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
+		const anyInstance = instance as unknown as {
+			initializeBinding: (bindingState: unknown) => Promise<void>
+			getSocketBySessionId: (sessionId: string) => { close: () => void }
+			fetch: (request: Request) => Promise<Response>
+		}
+
+		anyInstance.initializeBinding = async () => undefined
+		anyInstance.getSocketBySessionId = () => ({
+			close: () => {
+				throw new Error('socket already closing')
+			},
+		})
+
+		const response = await anyInstance.fetch(
+			new Request('https://package-realtime.invalid/session/disconnect', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					binding: {
+						userId: 'user-1',
+						packageId: 'package-1',
+						kodyId: 'example',
+						sourceId: 'source-1',
+						baseUrl: 'https://example.com',
+					},
+					sessionId: 'session-1',
+				}),
+			}),
+		)
+
+		expect(response.status).toBe(200)
+		await expect(response.json()).resolves.toEqual({ ok: true })
+	})
+})

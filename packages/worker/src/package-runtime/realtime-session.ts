@@ -743,7 +743,11 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			await this.initializeBinding(body.binding)
 			const socket = this.getSocketBySessionId(body.sessionId)
 			if (socket) {
-				socket.close(body.code ?? 1000, body.reason ?? 'closed')
+				try {
+					socket.close(body.code ?? 1000, body.reason ?? 'closed')
+				} catch {
+					// Ignore duplicate close attempts on sockets that are already closing.
+				}
 			}
 			return Response.json({ ok: true })
 		}
