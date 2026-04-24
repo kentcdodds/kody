@@ -371,10 +371,14 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		) {
 			throw new Error('Realtime session binding mismatch.')
 		}
-		if (existing.baseUrl !== binding.baseUrl) {
+		if (
+			existing.baseUrl !== binding.baseUrl ||
+			existing.kodyId !== binding.kodyId
+		) {
 			this.stateSnapshot.binding = {
 				...existing,
 				baseUrl: binding.baseUrl,
+				kodyId: binding.kodyId,
 			}
 			await this.persistState()
 		}
@@ -586,16 +590,27 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			topics: [],
 		}
 		await this.persistState()
-		const actions = await this.resolveRealtimeHookResult({
-			binding: payload.binding,
-			payload: {
-				event: 'connect',
-				facet,
-				session: createSessionRecord(this.stateSnapshot.sessions[sessionId]),
-				request: payload.request,
-			},
-		})
-		await this.applyHookActions(sessionId, actions)
+		try {
+			const actions = await this.resolveRealtimeHookResult({
+				binding: payload.binding,
+				payload: {
+					event: 'connect',
+					facet,
+					session: createSessionRecord(this.stateSnapshot.sessions[sessionId]),
+					request: payload.request,
+				},
+			})
+			await this.applyHookActions(sessionId, actions)
+		} catch (error) {
+			delete this.stateSnapshot.sessions[sessionId]
+			await this.persistState()
+			try {
+				server.close(1011, 'connect hook failed')
+			} catch {
+				// Best effort cleanup for failed upgrade setup.
+			}
+			throw error
+		}
 		return new Response(null, {
 			status: 101,
 			webSocket: client,
