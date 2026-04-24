@@ -22,6 +22,7 @@ export type PackageServiceBindingState = {
 
 type PackageServiceState = {
 	binding: PackageServiceBindingState | null
+	autoStart: boolean
 	lastStartedAt: string | null
 	lastStoppedAt: string | null
 	status: 'idle' | 'running' | 'stopped' | 'error'
@@ -41,6 +42,7 @@ type PackageServiceRunResult = {
 function createInitialPackageServiceState(): PackageServiceState {
 	return {
 		binding: null,
+		autoStart: false,
 		lastStartedAt: null,
 		lastStoppedAt: null,
 		status: 'idle',
@@ -86,7 +88,7 @@ export function buildPackageServiceStorageId(
 	packageId: string,
 	serviceName: string,
 ) {
-	return `service:${packageId}:${encodeURIComponent(serviceName)}`
+	return `service:${encodeURIComponent(packageId)}:${encodeURIComponent(serviceName)}`
 }
 
 async function loadSavedPackageService(input: {
@@ -155,6 +157,17 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 		if (!existing) {
 			this.stateSnapshot.binding = binding
+		try {
+			const loaded = await loadSavedPackageService({
+				env: this.env,
+				binding,
+			})
+			this.stateSnapshot.autoStart =
+				loaded.packageSource.manifest.kody.services?.[binding.serviceName]
+					?.autoStart ?? false
+		} catch {
+			this.stateSnapshot.autoStart = false
+		}
 			await this.persistState()
 		}
 	}
@@ -187,6 +200,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				sourceFiles: loaded.packageSource.files,
 				entryPoint: loaded.serviceEntry,
 			}))
+		const storageId = buildPackageServiceStorageId(
+			binding.packageId,
+			binding.serviceName,
+		)
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,
 			user: {
@@ -197,10 +214,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			storageContext: {
 				sessionId: null,
 				appId: binding.packageId,
-				storageId: buildPackageServiceStorageId(
-					binding.packageId,
-					binding.serviceName,
-				),
+				storageId,
 			},
 		})
 		const result = await runBundledModuleWithRegistry(
@@ -221,10 +235,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				},
 				storageTools: {
 					userId: binding.userId,
-					storageId: buildPackageServiceStorageId(
-						binding.packageId,
-						binding.serviceName,
-					),
+					storageId,
 					writable: true,
 				},
 			},
@@ -294,18 +305,12 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		binding: PackageServiceBindingState
 	}) {
 		await this.initializeBinding(input.binding)
-		const serviceDefinition = this.stateSnapshot.binding
-			? (await loadSavedPackageService({
-					env: this.env,
-					binding: input.binding,
-				})).packageSource.manifest.kody.services?.[input.binding.serviceName] ?? null
-			: null
 		return Response.json({
 			package_id: input.binding.packageId,
 			kody_id: input.binding.kodyId,
 			service_name: input.binding.serviceName,
 			status: this.stateSnapshot.status,
-			auto_start: serviceDefinition?.autoStart ?? false,
+			auto_start: this.stateSnapshot.autoStart,
 			last_error: this.stateSnapshot.lastError,
 			last_started_at: this.stateSnapshot.lastStartedAt,
 			last_stopped_at: this.stateSnapshot.lastStoppedAt,

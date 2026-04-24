@@ -69,6 +69,14 @@ export type PublishedBundleArtifact = {
 	createdAt: string
 }
 
+type StoredPublishedBundleArtifact = Omit<
+	PublishedBundleArtifact,
+	'modules' | 'serviceContext'
+> & {
+	modules: Record<string, SerializedWorkerLoaderModule>
+	serviceContext?: PublishedBundleArtifact['serviceContext']
+}
+
 function getBundleArtifactsKv(env: Env) {
 	const kv = (env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace }).BUNDLE_ARTIFACTS_KV
 	if (!kv) {
@@ -406,9 +414,7 @@ export async function readPublishedBundleArtifact(input: {
 }) {
 	const stored = await getBundleArtifactsKv(input.env).get(input.kvKey, 'json')
 	if (!stored || typeof stored !== 'object') return null
-	const artifact = stored as Omit<PublishedBundleArtifact, 'modules'> & {
-		modules: Record<string, SerializedWorkerLoaderModule>
-	}
+	const artifact = stored as StoredPublishedBundleArtifact
 	if (
 		artifact.version !== bundleArtifactVersion ||
 		typeof artifact.modules !== 'object' ||
@@ -418,6 +424,7 @@ export async function readPublishedBundleArtifact(input: {
 	}
 	return {
 		...artifact,
+		serviceContext: artifact.serviceContext ?? null,
 		modules: deserializeWorkerLoaderModules(artifact.modules),
 	} satisfies PublishedBundleArtifact
 }

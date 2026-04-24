@@ -2,6 +2,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { z } from 'zod'
 import {
+	normalizePackageServiceStatus,
 	packageServiceStatusSchema,
 	requirePackageServiceContext,
 } from './shared.ts'
@@ -17,7 +18,7 @@ export const serviceGetCapability = defineDomainCapability(
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
-			service_name: z.string().min(1),
+			service_name: z.string().trim().min(1),
 			package_id: z.string().min(1).optional(),
 		}),
 		outputSchema: packageServiceStatusSchema,
@@ -33,7 +34,9 @@ export const serviceGetCapability = defineDomainCapability(
 					`Package service "${args.service_name}" was not found.`,
 				)
 			}
-			return await serviceContext.service.status()
+			return normalizePackageServiceStatus(
+				await serviceContext.service.status(),
+			)
 		},
 	},
 )

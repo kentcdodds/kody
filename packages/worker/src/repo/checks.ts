@@ -1,6 +1,5 @@
 import {
 	getPackageAppEntryPath,
-	getPackageServiceEntryPath,
 	listPackageServices,
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
@@ -255,13 +254,7 @@ function collectPackageTypecheckTargets(
 		remember(job.entry, true)
 	}
 	for (const service of listPackageServices(manifest)) {
-		const serviceEntryPath = getPackageServiceEntryPath({
-			manifest,
-			serviceName: service.name,
-		})
-		if (serviceEntryPath) {
-			remember(serviceEntryPath, true)
-		}
+		remember(service.entry, true)
 	}
 	return Array.from(targets.values())
 }
@@ -401,7 +394,7 @@ function formatBundleCheckMessage(input: {
 			.join(', ')}.`
 	}
 	if (input.targetCount === 0) {
-		return 'Package defines no app entry, exports, or jobs to bundle.'
+		return 'Package defines no app entry, exports, jobs, or services to bundle.'
 	}
 	return `Resolved ${input.targetCount} package runtime entrypoint(s) for bundling.`
 }

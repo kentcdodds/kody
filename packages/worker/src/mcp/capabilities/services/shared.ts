@@ -5,7 +5,6 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	listSavedPackageServices,
 	packageServiceRpc,
-	type PackageServiceBindingState,
 } from '#worker/package-runtime/package-service.ts'
 
 export const packageServiceRecordSchema = z.object({
@@ -139,8 +138,3 @@ export function normalizePackageServiceStatus(
 	return result.data
 }
 
-export function buildPackageServiceBinding(input: {
-	binding: PackageServiceBindingState
-}) {
-	return input.binding
-}

@@ -37,12 +37,19 @@ export const serviceListCapability = defineDomainCapability(
 			})
 			const services = await Promise.all(
 				listed.services.map(async (service) => {
-					const status = normalizePackageServiceStatus(await listed.rpc(service.name).status())
+					let status: z.infer<typeof packageServiceSummarySchema>['status'] = 'error'
+					try {
+						status = normalizePackageServiceStatus(
+							await listed.rpc(service.name).status(),
+						).status
+					} catch {
+						// Keep the rest of the service list usable if one status lookup fails.
+					}
 					return {
 						name: service.name,
 						entry: service.entry,
 						auto_start: service.auto_start,
-						status: status.status,
+						status,
 					}
 				}),
 			)

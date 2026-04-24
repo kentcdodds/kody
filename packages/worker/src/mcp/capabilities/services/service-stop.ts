@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requirePackageServiceContext } from './shared.ts'
 
 const inputSchema = z.object({
-	service_name: z.string().min(1),
+	service_name: z.string().trim().min(1),
 	package_id: z.string().min(1).optional(),
 })
 
@@ -30,7 +30,12 @@ export const serviceStopCapability = defineDomainCapability(
 				serviceName: args.service_name,
 				explicitPackageId: args.package_id,
 			})
-			const result = (await serviceContext.service?.stop()) as { ok?: unknown }
+			if (!serviceContext.service) {
+				throw new Error(
+					`Package service "${args.service_name}" was not found.`,
+				)
+			}
+			const result = (await serviceContext.service.stop()) as { ok?: unknown }
 			return {
 				ok: result?.ok === true,
 			}

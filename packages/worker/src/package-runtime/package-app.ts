@@ -708,10 +708,25 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			baseUrl: this.ctx.props.baseUrl,
 			packageId: this.ctx.props.packageId,
 		})
+		const services = await Promise.all(
+			result.services.map(async (service) => {
+				const status = await this.getPackageServiceRpc(service.name).status()
+				return {
+					...service,
+					status:
+						status &&
+						typeof status === 'object' &&
+						'status' in status &&
+						typeof status.status === 'string'
+							? status.status
+							: 'error',
+				}
+			}),
+		)
 		return {
 			package_id: result.savedPackage.id,
 			kody_id: result.savedPackage.kodyId,
-			services: result.services,
+			services,
 		}
 	}
 
