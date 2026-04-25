@@ -20,12 +20,14 @@ type SecretMountDefinition = {
 	scope?: SecretScope
 }
 
+export class PackageSecretMountError extends Error {}
+
 export function isPackageSecretAccessUnavailableError(error: unknown) {
+	if (error instanceof PackageSecretMountError) return true
 	if (!(error instanceof Error)) return false
 	return (
 		parseMissingSecretMessage(error.message) != null ||
-		parsePackageAccessRequiredMessage(error.message) != null ||
-		error.message.includes('does not declare secret mount')
+		parsePackageAccessRequiredMessage(error.message) != null
 	)
 }
 
@@ -95,7 +97,7 @@ export async function resolvePackageMountedSecret(input: {
 	})
 	const mount = packageInfo.mounts[input.alias]
 	if (!mount) {
-		throw new Error(
+		throw new PackageSecretMountError(
 			`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${input.alias}".`,
 		)
 	}
