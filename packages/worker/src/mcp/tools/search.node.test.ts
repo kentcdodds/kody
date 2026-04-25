@@ -60,7 +60,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 				exports: [],
 				jobs: [],
 				services: [],
-					subscriptions: [],
+				subscriptions: [],
 			},
 		},
 	]
@@ -480,6 +480,10 @@ test('search guidance does not pair unrelated package and connector matches', ()
 		},
 	})
 
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'observed-package',
+	})
 	expect(result.guidance).toContain(
 		'search({ entity: "observed-package:package" })',
 	)
@@ -487,6 +491,7 @@ test('search guidance does not pair unrelated package and connector matches', ()
 		'search({ entity: "github:connector" })',
 	)
 })
+
 test('optional search rows fall back when persisted values lookup fails', async () => {
 	const result = await loadOptionalSearchRows({
 		userId: 'user-123',
