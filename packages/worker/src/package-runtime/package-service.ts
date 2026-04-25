@@ -148,6 +148,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			await this.ctx.storage.get<PackageServiceState>(serviceStateStorageKey)
 		if (!stored) return
 		this.stateSnapshot = stored
+		if (
+			this.stateSnapshot.currentRunId &&
+			(this.stateSnapshot.status === 'running' ||
+				this.stateSnapshot.status === 'stopping')
+		) {
+			// Background execution does not survive Durable Object eviction, so a
+			// restored in-flight run must be downgraded to a recoverable stopped
+			// state.
+			this.stateSnapshot.currentRunId = null
+			this.stateSnapshot.stopRequested = false
+			this.stateSnapshot.status = 'stopped'
+			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
+		}
 	}
 
 	private async persistState() {
