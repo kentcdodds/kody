@@ -22,6 +22,7 @@ import {
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
 import { listSavedPackageServices, packageServiceRpc } from './package-service.ts'
+import { normalizePackageServiceStatus } from '#mcp/capabilities/services/shared.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -712,16 +713,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			result.services.map(async (service) => {
 				let status = 'unknown'
 				try {
-					const serviceStatus = await this.getPackageServiceRpc(
-						service.name,
-					).status()
-					status =
-						serviceStatus &&
-						typeof serviceStatus === 'object' &&
-						'status' in serviceStatus &&
-						typeof serviceStatus.status === 'string'
-							? serviceStatus.status
-							: 'unknown'
+					status = normalizePackageServiceStatus(
+						await this.getPackageServiceRpc(service.name).status(),
+					).status
 				} catch {
 					// Keep the rest of the service list usable if one status lookup fails.
 				}
