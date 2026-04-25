@@ -32,6 +32,11 @@ test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	}
 })
 
+test('kody_official_guide exposes the discord gateway package guide', () => {
+	const url = buildKodyOfficialGuideUrlForTest('discord_gateway_package')
+	expect(url).toMatch(/\/discord-gateway-package\.md$/)
+})
+
 test('kody_official_guide surfaces fetch failures', async () => {
 	const originalFetch = globalThis.fetch
 	try {
