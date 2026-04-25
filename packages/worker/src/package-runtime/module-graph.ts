@@ -104,6 +104,8 @@ export const refreshAccessToken = runtime.refreshAccessToken;
 export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
 export const agentChatTurnStream = runtime.agentChatTurnStream;
 export const packageContext = runtime.packageContext ?? null;
+export const serviceContext = runtime.serviceContext ?? null;
+export const service = runtime.service ?? null;
 
 export default runtime;
 `.trim()
@@ -518,6 +520,9 @@ export function createPublishedBundleArtifact(input: {
 		packageId: string
 		kodyId: string
 	} | null
+	serviceContext?: {
+		serviceName: string
+	} | null
 }): PublishedBundleArtifact {
 	return {
 		version: 1,
@@ -530,6 +535,7 @@ export function createPublishedBundleArtifact(input: {
 		modules: input.modules,
 		dependencies: input.dependencies,
 		packageContext: input.packageContext ?? null,
+		serviceContext: input.serviceContext ?? null,
 		createdAt: new Date().toISOString(),
 	}
 }

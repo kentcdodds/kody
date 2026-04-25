@@ -32,6 +32,11 @@ test('kody_official_guide returns markdown when fetch succeeds', async () => {
 	}
 })
 
+test('kody_official_guide exposes the package service pattern guide', () => {
+	const url = buildKodyOfficialGuideUrlForTest('package_service_pattern')
+	expect(url).toMatch(/\/package-service-pattern\.md$/)
+})
+
 test('kody_official_guide surfaces fetch failures', async () => {
 	const originalFetch = globalThis.fetch
 	try {

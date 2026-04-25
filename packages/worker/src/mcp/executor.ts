@@ -23,6 +23,7 @@ export function createExecuteExecutor(input: {
 	exports?: WorkerLoopbackExports
 	gatewayProps: FetchGatewayProps
 	modules?: WorkerLoaderModules
+	timeoutMs?: number
 }) {
 	const loopbackExports = input.exports ?? workerExports
 	if (!loopbackExports?.CodemodeFetchGateway) {
@@ -32,7 +33,7 @@ export function createExecuteExecutor(input: {
 	}
 	return new DynamicWorkerExecutor({
 		loader: input.env.LOADER,
-		timeout: 90_000,
+		timeout: input.timeoutMs ?? 90_000,
 		globalOutbound: loopbackExports.CodemodeFetchGateway({
 			props: input.gatewayProps,
 		}),

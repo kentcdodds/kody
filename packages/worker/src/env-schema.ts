@@ -208,6 +208,18 @@ export const EnvSchema = object({
 			context.path,
 		)
 	}),
+	PACKAGE_SERVICE_INSTANCE: createSchema<
+		unknown,
+		DurableObjectNamespace
+	>((value, context) => {
+		if (value) {
+			return { value: value as DurableObjectNamespace }
+		}
+		return fail(
+			'Missing PACKAGE_SERVICE_INSTANCE binding for package service runtimes.',
+			context.path,
+		)
+	}),
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	CLOUDFLARE_EMAIL_FROM: optionalNonEmptyStringSchema,

@@ -1,4 +1,7 @@
-import { getPackageAppEntryPath } from '#worker/package-registry/manifest.ts'
+import {
+	getPackageAppEntryPath,
+	listPackageServices,
+} from '#worker/package-registry/manifest.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -168,6 +171,7 @@ export async function persistPublishedBundleArtifact(input: PersistPublishedBund
 		modules: input.modules,
 		dependencies: input.dependencies,
 		packageContext: input.packageContext ?? null,
+		serviceContext: null,
 		createdAt: new Date().toISOString(),
 	}
 	const existing = await getPublishedBundleArtifactByIdentity(input.env.APP_DB, {
@@ -291,6 +295,26 @@ export async function rebuildPublishedPackageArtifacts(input: {
 				},
 			})
 		}
+	}
+	for (const service of listPackageServices(input.manifest)) {
+		const bundle = await input.buildModuleBundle({
+			entryPoint: service.entry,
+		})
+		await persistPublishedBundleArtifact({
+			env: input.env,
+			userId: input.userId,
+			source: input.source,
+			kind: 'service',
+			artifactName: service.name,
+			entryPoint: service.entry,
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+			dependencies: bundle.dependencies ?? fallbackDependencies,
+			packageContext: {
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+			},
+		})
 	}
 	for (const [exportName, exportTarget] of Object.entries(
 		input.manifest.exports,

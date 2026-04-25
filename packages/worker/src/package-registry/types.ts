@@ -35,6 +35,16 @@ export const packageAppDefinitionSchema = z.object({
 
 export type PackageAppDefinition = z.infer<typeof packageAppDefinitionSchema>
 
+export const packageServiceDefinitionSchema = z.object({
+	entry: z.string().min(1),
+	autoStart: z.boolean().optional(),
+	timeoutMs: z.number().int().positive().max(300_000).optional(),
+})
+
+export type PackageServiceDefinition = z.infer<
+	typeof packageServiceDefinitionSchema
+>
+
 const packageExportConditionSchema = z
 	.object({
 		import: z.string().min(1).optional(),
@@ -65,6 +75,9 @@ export const authoredPackageKodySchema = z.object({
 	tags: z.array(z.string().min(1)).optional(),
 	searchText: z.string().min(1).optional(),
 	app: packageAppDefinitionSchema.optional(),
+	services: z
+		.record(z.string().min(1), packageServiceDefinitionSchema)
+		.optional(),
 	jobs: z.record(z.string().min(1), packageJobDefinitionSchema).optional(),
 })
 

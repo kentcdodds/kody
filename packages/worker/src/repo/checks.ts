@@ -1,5 +1,6 @@
 import {
 	getPackageAppEntryPath,
+	listPackageServices,
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
@@ -197,6 +198,16 @@ declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
 declare function agentChatTurnStream(input: KodyCapabilityArgs): AsyncIterable<unknown>;
+declare const packageContext: { packageId: string; kodyId: string } | null;
+declare const serviceContext: { serviceName: string } | null;
+declare const service:
+  | {
+      getStatus(): Promise<unknown>;
+      shouldStop(): Promise<boolean>;
+      setAlarm(runAt: string | Date): Promise<unknown>;
+      clearAlarm(): Promise<unknown>;
+    }
+  | null;
 ${
 	input?.includeStorage === true
 		? `
@@ -251,6 +262,9 @@ function collectPackageTypecheckTargets(
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
 		remember(job.entry, true)
+	}
+	for (const service of listPackageServices(manifest)) {
+		remember(service.entry, true)
 	}
 	return Array.from(targets.values())
 }
@@ -390,7 +404,7 @@ function formatBundleCheckMessage(input: {
 			.join(', ')}.`
 	}
 	if (input.targetCount === 0) {
-		return 'Package defines no app entry, exports, or jobs to bundle.'
+		return 'Package defines no app entry, exports, jobs, or services to bundle.'
 	}
 	return `Resolved ${input.targetCount} package runtime entrypoint(s) for bundling.`
 }

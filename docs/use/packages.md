@@ -13,6 +13,7 @@ Think in terms of:
 - packages
 - package exports
 - package apps
+- package services
 - package-owned jobs
 
 Packages are the saved-entity unit across search, execute, repo editing, and UI
@@ -30,6 +31,7 @@ Important fields:
 - `kody.description` — package description for search/detail
 - `kody.tags` — package tags
 - `kody.app` — optional hosted package app config
+- `kody.services` — optional package-owned service runtimes
 - `kody.jobs` — optional package-owned schedules
 
 `package.json` is the manifest.
@@ -69,6 +71,34 @@ Treat package apps like Worker-style modules:
 - the entry module is declared by `kody.app.entry`
 - internal Durable Objects or facets are implementation details, not the public
   authoring contract
+
+## Package services
+
+A package service is optional.
+
+When `package.json#kody.services` is present, the package can declare one or
+more named service entrypoints that Kody runs with package-owned storage and
+package caller context.
+
+Use the package service model when the package needs:
+
+- long-lived or repeated background work
+- package-owned daemon-like logic
+- package state that is separate from browser sessions
+- a service that should publish updates into a package app
+
+Treat package services like package-owned runtime modules:
+
+- service code lives in the package repo
+- each service entry module is declared by `kody.services.<name>.entry`
+- services may optionally declare `kody.services.<name>.timeoutMs` to raise the
+  executor timeout for long-lived or connector-style runs
+- service lifecycle is controlled through the `services` capability domain
+- service starts return immediately and the service keeps running in the
+  background until it finishes or is stopped
+- service code can inspect its own lifecycle through `serviceContext` and the
+  `service` helper exposed by `kody:runtime`
+- services share the same saved package identity as package apps and jobs
 
 ## Package-owned jobs
 

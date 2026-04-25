@@ -59,3 +59,58 @@ test('parseAuthoredPackageJson rejects unscoped package names', () => {
 		'package.json name "cursor-cloud-agents" must be a scoped package name like "@scope/cursor-cloud-agents".',
 	)
 })
+
+test('parseAuthoredPackageJson accepts package service definitions', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/realtime-supervisor',
+			exports: {
+				'.': './index.ts',
+			},
+			kody: {
+				id: 'realtime-supervisor',
+				description: 'Realtime supervisor package',
+				services: {
+					'realtime-supervisor': {
+						entry: './services/realtime-supervisor.ts',
+						autoStart: true,
+						timeoutMs: 300000,
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	expect(manifest.kody.services).toEqual({
+		'realtime-supervisor': {
+			entry: './services/realtime-supervisor.ts',
+			autoStart: true,
+			timeoutMs: 300000,
+		},
+	})
+})
+
+test('parseAuthoredPackageJson rejects service timeoutMs values above the supported maximum', () => {
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/realtime-supervisor',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'realtime-supervisor',
+					description: 'Realtime supervisor package',
+					services: {
+						'realtime-supervisor': {
+							entry: './services/realtime-supervisor.ts',
+							timeoutMs: 300001,
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow('expected number to be <=300000')
+})

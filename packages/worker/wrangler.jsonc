@@ -50,6 +50,10 @@
 			"new_sqlite_classes": ["PackageRealtimeSession"],
 			"tag": "v13",
 		},
+		{
+			"new_sqlite_classes": ["PackageServiceInstance"],
+			"tag": "v14",
+		},
 	],
 
 	"observability": {
@@ -111,6 +115,10 @@
 					{
 						"class_name": "PackageRealtimeSession",
 						"name": "PACKAGE_REALTIME_SESSION",
+					},
+					{
+						"class_name": "PackageServiceInstance",
+						"name": "PACKAGE_SERVICE_INSTANCE",
 					},
 				],
 			},
@@ -197,6 +205,10 @@
 						"class_name": "PackageRealtimeSession",
 						"name": "PACKAGE_REALTIME_SESSION",
 					},
+					{
+						"class_name": "PackageServiceInstance",
+						"name": "PACKAGE_SERVICE_INSTANCE",
+					},
 				],
 			},
 			"d1_databases": [
@@ -281,6 +293,10 @@
 					{
 						"class_name": "PackageRealtimeSession",
 						"name": "PACKAGE_REALTIME_SESSION",
+					},
+					{
+						"class_name": "PackageServiceInstance",
+						"name": "PACKAGE_SERVICE_INSTANCE",
 					},
 				],
 			},
