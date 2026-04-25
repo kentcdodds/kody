@@ -40,7 +40,7 @@ function resetMocks() {
 	mockModule.listSavedPackageServices.mockReset()
 	mockModule.packageServiceRpc.mockReset()
 	mockModule.getSavedPackageById.mockReset()
-	mockModule.normalizePackageServiceStatus.mockReset()
+	mockModule.normalizePackageServiceStatus.mockClear()
 	mockModule.packageServiceStatusSchema.parse.mockClear()
 	mockModule.packageServiceStatusSchema.safeParse.mockClear()
 }

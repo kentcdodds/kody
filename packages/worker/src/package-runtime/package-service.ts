@@ -343,6 +343,39 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 	}
 
+	private async finalizeServiceRun(input: {
+		runId: string
+		nextStatus: PackageServiceState['status']
+		lastResult?: unknown
+		lastError?: string | null
+	}) {
+		if (this.stateSnapshot.currentRunId !== input.runId) return
+		const stopRequested = this.stateSnapshot.stopRequested
+		this.stateSnapshot.status = input.nextStatus
+		this.stateSnapshot.currentRunId = null
+		this.stateSnapshot.stopRequested = false
+		if ('lastResult' in input) {
+			this.stateSnapshot.lastResult = input.lastResult ?? null
+		}
+		if ('lastError' in input) {
+			this.stateSnapshot.lastError = input.lastError ?? null
+		}
+		this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
+		this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
+		await this.persistState()
+		if (stopRequested) {
+			await this.clearAlarm()
+		} else if (
+			this.stateSnapshot.autoStart &&
+			!this.stateSnapshot.nextAlarmAt
+		) {
+			await this.scheduleAlarm({
+				runAt: buildPackageServiceRetryTime(),
+				source: 'auto-start',
+			})
+		}
+	}
+
 	private async runServiceInBackground(input: {
 		binding: PackageServiceBindingState
 		runId: string
@@ -385,51 +418,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				executorTimeoutMs: loaded.serviceDefinition?.timeoutMs ?? 300_000,
 				storageId,
 			})
-			if (this.stateSnapshot.currentRunId !== input.runId) return
-			const stopRequested = this.stateSnapshot.stopRequested
-			this.stateSnapshot.status = 'stopped'
-			this.stateSnapshot.currentRunId = null
-			this.stateSnapshot.stopRequested = false
-			this.stateSnapshot.lastResult = result
-			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
-			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
-			await this.persistState()
-			if (stopRequested) {
-				await this.clearAlarm()
-			} else if (
-				this.stateSnapshot.autoStart &&
-				!this.stateSnapshot.nextAlarmAt
-			) {
-				await this.scheduleAlarm({
-					runAt: buildPackageServiceRetryTime(),
-					source: 'auto-start',
-				})
-			}
+			await this.finalizeServiceRun({
+				runId: input.runId,
+				nextStatus: 'stopped',
+				lastResult: result,
+			})
 		} catch (error) {
-			if (this.stateSnapshot.currentRunId !== input.runId) return
 			const errorMessage =
 				error instanceof Error ? error.message : String(error)
-			const stopRequested = this.stateSnapshot.stopRequested
-			this.stateSnapshot.status = this.stateSnapshot.stopRequested
-				? 'stopped'
-				: 'error'
-			this.stateSnapshot.currentRunId = null
-			this.stateSnapshot.stopRequested = false
-			this.stateSnapshot.lastError = errorMessage
-			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
-			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
-			await this.persistState()
-			if (stopRequested) {
-				await this.clearAlarm()
-			} else if (
-				this.stateSnapshot.autoStart &&
-				!this.stateSnapshot.nextAlarmAt
-			) {
-				await this.scheduleAlarm({
-					runAt: buildPackageServiceRetryTime(),
-					source: 'auto-start',
-				})
-			}
+			await this.finalizeServiceRun({
+				runId: input.runId,
+				nextStatus: this.stateSnapshot.stopRequested ? 'stopped' : 'error',
+				lastError: errorMessage,
+			})
 		} finally {
 			if (this.activeRunPromise) {
 				this.activeRunPromise = null
