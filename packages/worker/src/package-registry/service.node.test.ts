@@ -370,3 +370,52 @@ test('refreshSavedPackageProjection still syncs job manager when auto-start serv
 		userId: 'user-1',
 	})
 })
+
+test('deleteSavedPackageProjection still completes cleanup when service stop throws synchronously', async () => {
+	const env = createEnv()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: 'package-1',
+			kodyId: 'shade-automation',
+		},
+		services: [
+			{
+				name: 'realtime-supervisor',
+				entry: 'services/realtime-supervisor.ts',
+				autoStart: true,
+				timeoutMs: null,
+			},
+		],
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([
+		{ id: 'job-1', source_id: 'source-1' },
+	])
+	mockModule.packageServiceRpc.mockImplementation(() => {
+		throw new Error('stub unavailable')
+	})
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({}, 'user-1', 'job-1')
+	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith({}, {
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
+		env,
+		'package-1',
+	)
+	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
+})

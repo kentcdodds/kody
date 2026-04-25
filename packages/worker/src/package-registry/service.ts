@@ -153,19 +153,19 @@ export async function refreshSavedPackageProjection(input: {
 		: []) {
 		const definition = loaded.manifest.kody.services?.[service]
 		if (!definition?.autoStart) continue
-		await packageServiceRpc({
-			env: input.env,
-			userId: input.userId,
-			packageId: input.packageId,
-			kodyId: row.kody_id,
-			sourceId: row.source_id,
-			baseUrl: input.baseUrl,
-			serviceName: service,
-		})
-			.start()
-			.catch(() => {
-				// Auto-start failures should not block package job sync/alarm refresh.
-			})
+		try {
+			await packageServiceRpc({
+				env: input.env,
+				userId: input.userId,
+				packageId: input.packageId,
+				kodyId: row.kody_id,
+				sourceId: row.source_id,
+				baseUrl: input.baseUrl,
+				serviceName: service,
+			}).start()
+		} catch {
+			// Auto-start failures should not block package job sync/alarm refresh.
+		}
 	}
 	await syncJobManagerAlarm({
 		env: input.env,
@@ -211,17 +211,19 @@ export async function deleteSavedPackageProjection(input: {
 		}).catch(() => null)
 		if (listedServices) {
 			for (const service of listedServices.services) {
-				await packageServiceRpc({
-					env: input.env,
-					userId: input.userId,
-					packageId: savedPackage.id,
-					kodyId: savedPackage.kodyId,
-					sourceId: savedPackage.sourceId,
-					baseUrl: 'https://package-service.invalid',
-					serviceName: service.name,
-				})
-					.stop()
-					.catch(() => undefined)
+				try {
+					await packageServiceRpc({
+						env: input.env,
+						userId: input.userId,
+						packageId: savedPackage.id,
+						kodyId: savedPackage.kodyId,
+						sourceId: savedPackage.sourceId,
+						baseUrl: 'https://package-service.invalid',
+						serviceName: service.name,
+					}).stop()
+				} catch {
+					// Best-effort shutdown of orphaned services during package deletion.
+				}
 			}
 		}
 		const existingRows = await listJobRowsByUserId(
