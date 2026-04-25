@@ -401,7 +401,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				!this.stateSnapshot.nextAlarmAt
 			) {
 				await this.scheduleAlarm({
-					runAt: new Date(),
+					runAt: buildPackageServiceRetryTime(),
 					source: 'auto-start',
 				})
 			}
@@ -426,7 +426,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				!this.stateSnapshot.nextAlarmAt
 			) {
 				await this.scheduleAlarm({
-					runAt: new Date(),
+					runAt: buildPackageServiceRetryTime(),
 					source: 'auto-start',
 				})
 			}
