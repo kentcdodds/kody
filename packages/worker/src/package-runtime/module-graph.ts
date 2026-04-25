@@ -105,6 +105,7 @@ export const createAuthenticatedFetch = runtime.createAuthenticatedFetch;
 export const agentChatTurnStream = runtime.agentChatTurnStream;
 export const packageContext = runtime.packageContext ?? null;
 export const serviceContext = runtime.serviceContext ?? null;
+export const service = runtime.service ?? null;
 
 export default runtime;
 `.trim()
