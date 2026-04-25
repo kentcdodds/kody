@@ -55,7 +55,14 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 						baseUrl: ctx.callerContext.baseUrl,
 						userId: user.userId,
 						sourceId: savedPackage.sourceId,
-					}).catch(() => null),
+					}).catch((error) => {
+						console.warn('Failed to load package manifest for subscriptions', {
+							packageId: savedPackage.id,
+							sourceId: savedPackage.sourceId,
+							error,
+						})
+						return null
+					}),
 				})),
 			)
 			const subscriptions: Array<z.infer<typeof packageSubscriptionSchema>> = []

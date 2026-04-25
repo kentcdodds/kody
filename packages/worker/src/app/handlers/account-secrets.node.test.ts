@@ -320,7 +320,7 @@ test('connect oauth omits direct host approval links when hosts are already appr
 })
 
 test('account secrets payload preserves app titles and allowed packages', async () => {
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
 			id: 'app-123',
 			userId: 'stable-user-1',
@@ -348,7 +348,7 @@ test('account secrets payload preserves app titles and allowed packages', async 
 			updatedAt: new Date(0).toISOString(),
 		},
 	])
-	mockModule.listSecrets.mockResolvedValue([
+	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'discordBotToken',
 			scope: 'user',
@@ -362,7 +362,7 @@ test('account secrets payload preserves app titles and allowed packages', async 
 			ttlMs: null,
 		},
 	])
-	mockModule.listAppSecretsByAppIds.mockResolvedValue(
+	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(
 		new Map([
 			[
 				'app-123',

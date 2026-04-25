@@ -420,7 +420,7 @@ test('search guidance does not pair unrelated package and connector matches', ()
 	const registry = buildCapabilityRegistry([])
 	const result = searchUnified({
 		env: {} as Env,
-		query: 'play music on spotify',
+		query: 'music remote',
 		limit: 5,
 		registry,
 		optionalRows: {
