@@ -380,8 +380,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if (stopRequested) {
 			await this.clearAlarm()
 		} else if (
-			this.stateSnapshot.mode !== 'persistent' &&
 			this.stateSnapshot.autoStart &&
+			(this.stateSnapshot.mode !== 'persistent' ||
+				input.nextStatus === 'error') &&
 			!this.stateSnapshot.nextAlarmAt
 		) {
 			await this.scheduleAlarm({

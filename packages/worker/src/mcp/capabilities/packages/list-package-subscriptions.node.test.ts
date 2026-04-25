@@ -316,14 +316,14 @@ test('listPackageSubscriptionsCapability skips packages whose manifest load fail
 				},
 			],
 		})
-	expect(warnSpy).toHaveBeenCalledWith(
-		'Failed to load package manifest for subscriptions',
-		{
-			sourceId: 'source-bad',
-			packageId: 'package-2',
-			error: expect.any(Error),
-		},
-	)
+		expect(warnSpy).toHaveBeenCalledWith(
+			'Failed to load package manifest for subscriptions',
+			{
+				sourceId: 'source-bad',
+				packageId: 'package-2',
+				error: expect.any(Error),
+			},
+		)
 	} finally {
 		warnSpy.mockRestore()
 	}
