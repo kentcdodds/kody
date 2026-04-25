@@ -56,3 +56,15 @@ test('package service runtime refreshes manifest-backed service settings for ala
 		'if (!this.stateSnapshot.stopRequested) {\n\t\t\t\tawait this.handleStartRequest({ binding: loaded.resolvedBinding })',
 	)
 })
+
+test('package service runtime persists restored state and surfaces RPC errors', async () => {
+	const fileText = await import('node:fs/promises').then((fs) =>
+		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
+	)
+	expect(fileText).toContain('await this.persistState()')
+	expect(fileText).toContain('export async function readPackageServiceRpcResponse<T>(')
+	expect(fileText).toContain('if (!response.ok) {')
+	expect(fileText).toContain(
+		'text || `Package service request failed with status ${response.status}.`',
+	)
+})

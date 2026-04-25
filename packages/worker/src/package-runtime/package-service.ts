@@ -141,6 +141,22 @@ async function loadSavedPackageService(input: {
 	}
 }
 
+export async function readPackageServiceRpcResponse<T>(
+	response: Response,
+): Promise<T> {
+	const text = await response.text()
+	if (!response.ok) {
+		throw new Error(
+			text || `Package service request failed with status ${response.status}.`,
+		)
+	}
+	try {
+		return JSON.parse(text) as T
+	} catch {
+		throw new Error('Package service returned an invalid JSON response.')
+	}
+}
+
 class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState = createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
@@ -169,6 +185,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.stopRequested = false
 			this.stateSnapshot.status = 'stopped'
 			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
+			await this.persistState()
 		}
 	}
 
@@ -556,7 +573,9 @@ export function packageServiceRpc(input: {
 					body: JSON.stringify({ binding }),
 				}),
 			)
-			return await response.json()
+			return await readPackageServiceRpcResponse<PackageServiceRunResult>(
+				response,
+			)
 		},
 		async status() {
 			const response = await stub.fetch(
@@ -568,7 +587,9 @@ export function packageServiceRpc(input: {
 					body: JSON.stringify({ binding }),
 				}),
 			)
-			return await response.json()
+			return await readPackageServiceRpcResponse<
+				ReturnType<PackageServiceInstanceBase['buildServiceStatusResponse']>
+			>(response)
 		},
 		async stop() {
 			const response = await stub.fetch(
@@ -580,7 +601,7 @@ export function packageServiceRpc(input: {
 					body: JSON.stringify({ binding }),
 				}),
 			)
-			return await response.json()
+			return await readPackageServiceRpcResponse<{ ok: true }>(response)
 		},
 	}
 }
