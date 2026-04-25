@@ -4,8 +4,12 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	listSavedPackageServices,
+	normalizePackageServiceStatus,
 	packageServiceRpc,
+	packageServiceStatusSchema,
 } from '#worker/package-runtime/package-service.ts'
+
+export { normalizePackageServiceStatus, packageServiceStatusSchema }
 
 export const packageServiceRecordSchema = z.object({
 	name: z.string(),
@@ -16,23 +20,6 @@ export const packageServiceRecordSchema = z.object({
 
 export const packageServiceSummarySchema = packageServiceRecordSchema.extend({
 	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error', 'unknown']),
-})
-
-export const packageServiceStatusSchema = z.object({
-	package_id: z.string(),
-	kody_id: z.string(),
-	service_name: z.string(),
-	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error']),
-	auto_start: z.boolean(),
-	timeout_ms: z.number().int().positive().nullable(),
-	stop_requested: z.boolean(),
-	active_run_id: z.string().nullable(),
-	next_alarm_at: z.string().nullable(),
-	last_error: z.string().nullable(),
-	last_started_at: z.string().nullable(),
-	last_stopped_at: z.string().nullable(),
-	last_run_finished_at: z.string().nullable(),
-	last_result: z.unknown(),
 })
 
 function resolvePackageId(
@@ -132,14 +119,4 @@ export async function listPackageServicesForContext(input: {
 export type PackageServiceStatusRecord = z.infer<
 	typeof packageServiceStatusSchema
 >
-
-export function normalizePackageServiceStatus(
-	input: unknown,
-): PackageServiceStatusRecord {
-	const result = packageServiceStatusSchema.safeParse(input)
-	if (!result.success) {
-		throw new Error(z.prettifyError(result.error))
-	}
-	return result.data
-}
 

@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
+import { z } from 'zod'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	getPackageServiceEntryPath,
@@ -42,6 +43,37 @@ type PackageServiceRunResult = {
 	started_at: string
 	status: 'running'
 	already_running?: boolean
+}
+
+export const packageServiceStatusSchema = z.object({
+	package_id: z.string(),
+	kody_id: z.string(),
+	service_name: z.string(),
+	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error']),
+	auto_start: z.boolean(),
+	timeout_ms: z.number().int().positive().nullable(),
+	stop_requested: z.boolean(),
+	active_run_id: z.string().nullable(),
+	next_alarm_at: z.string().nullable(),
+	last_error: z.string().nullable(),
+	last_started_at: z.string().nullable(),
+	last_stopped_at: z.string().nullable(),
+	last_run_finished_at: z.string().nullable(),
+	last_result: z.unknown(),
+})
+
+export type PackageServiceStatusRecord = z.infer<
+	typeof packageServiceStatusSchema
+>
+
+export function normalizePackageServiceStatus(
+	input: unknown,
+): PackageServiceStatusRecord {
+	const result = packageServiceStatusSchema.safeParse(input)
+	if (!result.success) {
+		throw new Error(z.prettifyError(result.error))
+	}
+	return result.data
 }
 
 function createInitialPackageServiceState(): PackageServiceState {

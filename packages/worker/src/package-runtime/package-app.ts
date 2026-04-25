@@ -21,8 +21,11 @@ import {
 } from './published-runtime-artifacts.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
-import { listSavedPackageServices, packageServiceRpc } from './package-service.ts'
-import { normalizePackageServiceStatus } from '#mcp/capabilities/services/shared.ts'
+import {
+	listSavedPackageServices,
+	normalizePackageServiceStatus,
+	packageServiceRpc,
+} from './package-service.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'

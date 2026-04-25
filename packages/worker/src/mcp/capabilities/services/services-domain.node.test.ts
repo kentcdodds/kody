@@ -5,6 +5,14 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackageServices: vi.fn(),
 	packageServiceRpc: vi.fn(),
 	getSavedPackageById: vi.fn(),
+	normalizePackageServiceStatus: vi.fn((input: unknown) => input),
+	packageServiceStatusSchema: {
+		parse: vi.fn((input: unknown) => input),
+		safeParse: vi.fn((input: unknown) => ({
+			success: true,
+			data: input,
+		})),
+	},
 }))
 
 vi.mock('#worker/package-runtime/package-service.ts', () => ({
@@ -12,6 +20,9 @@ vi.mock('#worker/package-runtime/package-service.ts', () => ({
 		mockModule.listSavedPackageServices(...args),
 	packageServiceRpc: (...args: Array<unknown>) =>
 		mockModule.packageServiceRpc(...args),
+	normalizePackageServiceStatus: (...args: Array<unknown>) =>
+		mockModule.normalizePackageServiceStatus(...args),
+	packageServiceStatusSchema: mockModule.packageServiceStatusSchema,
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -29,6 +40,9 @@ function resetMocks() {
 	mockModule.listSavedPackageServices.mockReset()
 	mockModule.packageServiceRpc.mockReset()
 	mockModule.getSavedPackageById.mockReset()
+	mockModule.normalizePackageServiceStatus.mockReset()
+	mockModule.packageServiceStatusSchema.parse.mockClear()
+	mockModule.packageServiceStatusSchema.safeParse.mockClear()
 }
 
 function createCallerContext() {
