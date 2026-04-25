@@ -200,6 +200,14 @@ declare function createAuthenticatedFetch(
 declare function agentChatTurnStream(input: KodyCapabilityArgs): AsyncIterable<unknown>;
 declare const packageContext: { packageId: string; kodyId: string } | null;
 declare const serviceContext: { serviceName: string } | null;
+declare const service:
+  | {
+      getStatus(): Promise<unknown>;
+      shouldStop(): Promise<boolean>;
+      setAlarm(runAt: string | Date): Promise<unknown>;
+      clearAlarm(): Promise<unknown>;
+    }
+  | null;
 ${
 	input?.includeStorage === true
 		? `

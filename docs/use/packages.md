@@ -92,6 +92,10 @@ Treat package services like package-owned runtime modules:
 - service code lives in the package repo
 - each service entry module is declared by `kody.services.<name>.entry`
 - service lifecycle is controlled through the `services` capability domain
+- service starts return immediately and the service keeps running in the
+  background until it finishes or is stopped
+- service code can inspect its own lifecycle through `serviceContext` and the
+  `service` helper exposed by `kody:runtime`
 - services share the same saved package identity as package apps and jobs
 
 ## Package-owned jobs

@@ -14,15 +14,18 @@ export const packageServiceRecordSchema = z.object({
 })
 
 export const packageServiceSummarySchema = packageServiceRecordSchema.extend({
-	status: z.enum(['idle', 'running', 'stopped', 'error']),
+	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error']),
 })
 
 export const packageServiceStatusSchema = z.object({
 	package_id: z.string(),
 	kody_id: z.string(),
 	service_name: z.string(),
-	status: z.enum(['idle', 'running', 'stopped', 'error']),
+	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error']),
 	auto_start: z.boolean(),
+	stop_requested: z.boolean(),
+	active_run_id: z.string().nullable(),
+	next_alarm_at: z.string().nullable(),
 	last_error: z.string().nullable(),
 	last_started_at: z.string().nullable(),
 	last_stopped_at: z.string().nullable(),

@@ -5,6 +5,7 @@ import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
 	buildCodemodeFns,
 	runCodemodeWithRegistry,
+	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-codemode-registry.ts'
 import * as secretService from '#mcp/secrets/service.ts'
@@ -895,6 +896,80 @@ test('runCodemodeWithRegistry keeps legacy snippet execution for non-module code
 		expect(buildBundleMock).not.toHaveBeenCalled()
 		expect(wrapped).toContain('const __kodyUserCode =')
 		expect(wrapped).not.toContain('await import("./entry.js")')
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
+test('runBundledModuleWithRegistry injects service helpers and custom timeout', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	let wrapped = ''
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockImplementation((input) => {
+			expect(input.timeoutMs).toBe(300_000)
+			return {
+				async execute(source) {
+					wrapped = String(source)
+					return {
+						result: 'ok',
+						logs: [],
+					}
+				},
+			} as never
+		})
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js': 'export default async () => "ok"',
+				},
+			},
+			undefined,
+			{
+				serviceContext: {
+					serviceName: 'discord-gateway',
+				},
+				serviceTools: {
+					getStatus: async () => ({ status: 'running' }),
+					shouldStop: async () => false,
+					setAlarm: async () => ({ ok: true, scheduled_at: '2026-04-25T00:00:00.000Z' }),
+					clearAlarm: async () => ({ ok: true }),
+				},
+				executorTimeoutMs: 300_000,
+			},
+		)
+
+		expect(result.result).toBe('ok')
+		expect(wrapped).toContain('const service = {')
+		expect(wrapped).toContain("service_get_status")
+		expect(wrapped).toContain("service_should_stop")
+		expect(wrapped).toContain("service_set_alarm")
+		expect(wrapped).toContain("service_clear_alarm")
+		expect(wrapped).toContain('"serviceName":"discord-gateway"')
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()

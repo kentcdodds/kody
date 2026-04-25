@@ -23,9 +23,12 @@ export type PackageServiceBindingState = {
 type PackageServiceState = {
 	binding: PackageServiceBindingState | null
 	autoStart: boolean
+	stopRequested: boolean
+	currentRunId: string | null
+	nextAlarmAt: string | null
 	lastStartedAt: string | null
 	lastStoppedAt: string | null
-	status: 'idle' | 'running' | 'stopped' | 'error'
+	status: 'idle' | 'running' | 'stopping' | 'stopped' | 'error'
 	lastError: string | null
 	lastResult: unknown
 	lastRunFinishedAt: string | null
@@ -33,16 +36,19 @@ type PackageServiceState = {
 
 type PackageServiceRunResult = {
 	ok: boolean
-	result?: unknown
-	error?: string
+	run_id: string
 	started_at: string
-	finished_at: string
+	status: 'running'
+	already_running?: boolean
 }
 
 function createInitialPackageServiceState(): PackageServiceState {
 	return {
 		binding: null,
 		autoStart: false,
+		stopRequested: false,
+		currentRunId: null,
+		nextAlarmAt: null,
 		lastStartedAt: null,
 		lastStoppedAt: null,
 		status: 'idle',
@@ -126,6 +132,7 @@ async function loadSavedPackageService(input: {
 
 class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState = createInitialPackageServiceState()
+	private activeRunPromise: Promise<void> | null = null
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -170,12 +177,126 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			}
 			await this.persistState()
 			if (this.stateSnapshot.autoStart) {
-				await this.ctx.storage.setAlarm(new Date())
+				const nextAlarmAt = new Date().toISOString()
+				await this.ctx.storage.setAlarm(new Date(nextAlarmAt))
+				this.stateSnapshot.nextAlarmAt = nextAlarmAt
+				await this.persistState()
 			}
 		}
 	}
 
-	private async runService(binding: PackageServiceBindingState) {
+	private async scheduleAlarm(input: { runAt: Date }) {
+		const scheduledAt = input.runAt.toISOString()
+		await this.ctx.storage.setAlarm(new Date(scheduledAt))
+		this.stateSnapshot.nextAlarmAt = scheduledAt
+		await this.persistState()
+		return {
+			ok: true,
+			scheduled_at: scheduledAt,
+		}
+	}
+
+	private async clearAlarm() {
+		await this.ctx.storage.deleteAlarm().catch(() => {
+			// Best effort cleanup.
+		})
+		this.stateSnapshot.nextAlarmAt = null
+		await this.persistState()
+		return {
+			ok: true,
+		}
+	}
+
+	private buildServiceStatusResponse(binding: PackageServiceBindingState) {
+		return {
+			package_id: binding.packageId,
+			kody_id: binding.kodyId,
+			service_name: binding.serviceName,
+			status: this.stateSnapshot.status,
+			auto_start: this.stateSnapshot.autoStart,
+			stop_requested: this.stateSnapshot.stopRequested,
+			active_run_id: this.stateSnapshot.currentRunId,
+			next_alarm_at: this.stateSnapshot.nextAlarmAt,
+			last_error: this.stateSnapshot.lastError,
+			last_started_at: this.stateSnapshot.lastStartedAt,
+			last_stopped_at: this.stateSnapshot.lastStoppedAt,
+			last_run_finished_at: this.stateSnapshot.lastRunFinishedAt,
+			last_result: this.stateSnapshot.lastResult,
+		}
+	}
+
+	private async runServiceInBackground(input: {
+		binding: PackageServiceBindingState
+		runId: string
+	}) {
+		try {
+			const loaded = await loadSavedPackageService({
+				env: this.env,
+				binding: input.binding,
+			})
+			const storageId = buildPackageServiceStorageId(
+				input.binding.packageId,
+				input.binding.serviceName,
+			)
+			const result = await this.runService(input.binding, {
+				getStatus: async () => this.buildServiceStatusResponse(input.binding),
+				shouldStop: async () => this.stateSnapshot.stopRequested,
+				setAlarm: async (runAt) =>
+					(await this.scheduleAlarm({
+						runAt,
+					})) as { ok: true; scheduled_at: string },
+				clearAlarm: async () =>
+					(await this.clearAlarm()) as { ok: true },
+				packageContext: {
+					packageId: loaded.savedPackage.id,
+					kodyId: loaded.savedPackage.kodyId,
+				},
+				storageId,
+			})
+			if (this.stateSnapshot.currentRunId !== input.runId) return
+			this.stateSnapshot.status = this.stateSnapshot.stopRequested
+				? 'stopped'
+				: 'stopped'
+			this.stateSnapshot.currentRunId = null
+			this.stateSnapshot.stopRequested = false
+			this.stateSnapshot.lastResult = result
+			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
+			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
+			await this.persistState()
+		} catch (error) {
+			if (this.stateSnapshot.currentRunId !== input.runId) return
+			const errorMessage =
+				error instanceof Error ? error.message : String(error)
+			this.stateSnapshot.status = this.stateSnapshot.stopRequested
+				? 'stopped'
+				: 'error'
+			this.stateSnapshot.currentRunId = null
+			this.stateSnapshot.stopRequested = false
+			this.stateSnapshot.lastError = errorMessage
+			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
+			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
+			await this.persistState()
+		} finally {
+			if (this.activeRunPromise) {
+				this.activeRunPromise = null
+			}
+		}
+	}
+
+	private async runService(
+		binding: PackageServiceBindingState,
+		runtime: {
+			getStatus: () => Promise<ReturnType<PackageServiceInstanceBase['buildServiceStatusResponse']>>
+			shouldStop: () => Promise<boolean>
+			setAlarm: (runAt: Date) => Promise<{ ok: true; scheduled_at: string }>
+			clearAlarm: () => Promise<{ ok: true }>
+			packageContext: {
+				packageId: string
+				kodyId: string
+			}
+			storageId: string
+		},
+	) {
 		const [{ runBundledModuleWithRegistry }, { buildKodyModuleBundle }, { loadPublishedBundleArtifactByIdentity }] =
 			await Promise.all([
 				import('#mcp/run-codemode-registry.ts'),
@@ -203,10 +324,6 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				sourceFiles: loaded.packageSource.files,
 				entryPoint: loaded.serviceEntry,
 			}))
-		const storageId = buildPackageServiceStorageId(
-			binding.packageId,
-			binding.serviceName,
-		)
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,
 			user: {
@@ -217,7 +334,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			storageContext: {
 				sessionId: null,
 				appId: binding.packageId,
-				storageId,
+				storageId: runtime.storageId,
 			},
 		})
 		const result = await runBundledModuleWithRegistry(
@@ -229,16 +346,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			},
 			undefined,
 			{
-				packageContext: {
-					packageId: loaded.savedPackage.id,
-					kodyId: loaded.savedPackage.kodyId,
-				},
+				packageContext: runtime.packageContext,
 				serviceContext: {
 					serviceName: binding.serviceName,
 				},
+				serviceTools: {
+					getStatus: runtime.getStatus,
+					shouldStop: runtime.shouldStop,
+					setAlarm: runtime.setAlarm,
+					clearAlarm: runtime.clearAlarm,
+				},
 				storageTools: {
 					userId: binding.userId,
-					storageId,
+					storageId: runtime.storageId,
 					writable: true,
 				},
 			},
@@ -263,76 +383,57 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		binding: PackageServiceBindingState
 	}) {
 		await this.initializeBinding(input.binding)
+		if (this.stateSnapshot.currentRunId) {
+			return Response.json({
+				ok: true,
+				run_id: this.stateSnapshot.currentRunId,
+				started_at: this.stateSnapshot.lastStartedAt ?? new Date().toISOString(),
+				status: 'running',
+				already_running: true,
+			} satisfies PackageServiceRunResult)
+		}
 		const startedAt = new Date().toISOString()
+		const runId = crypto.randomUUID()
+		this.stateSnapshot.stopRequested = false
+		this.stateSnapshot.currentRunId = runId
 		this.stateSnapshot.status = 'running'
 		this.stateSnapshot.lastStartedAt = startedAt
 		this.stateSnapshot.lastError = null
 		await this.persistState()
-		try {
-			const result = await this.runService(input.binding)
-			this.stateSnapshot.status = 'stopped'
-			this.stateSnapshot.lastResult = result
-			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
-			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
-			await this.ctx.storage.deleteAlarm().catch(() => {
-				// Best effort cleanup.
-			})
-			await this.persistState()
-			return Response.json({
-				ok: true,
-				result,
-				started_at: startedAt,
-				finished_at: this.stateSnapshot.lastRunFinishedAt,
-			} satisfies PackageServiceRunResult)
-		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message : String(error)
-			this.stateSnapshot.status = 'error'
-			this.stateSnapshot.lastError = errorMessage
-			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
-			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
-			await this.persistState()
-			return Response.json(
-				{
-					ok: false,
-					error: errorMessage,
-					started_at: startedAt,
-					finished_at: this.stateSnapshot.lastRunFinishedAt,
-				} satisfies PackageServiceRunResult,
-				{ status: 500 },
-			)
-		}
+		const task = this.runServiceInBackground({
+			binding: input.binding,
+			runId,
+		})
+		this.activeRunPromise = task
+		this.ctx.waitUntil(task)
+		return Response.json({
+			ok: true,
+			run_id: runId,
+			started_at: startedAt,
+			status: 'running',
+		} satisfies PackageServiceRunResult)
 	}
 
 	private async handleStatusRequest(input: {
 		binding: PackageServiceBindingState
 	}) {
 		await this.initializeBinding(input.binding)
-		return Response.json({
-			package_id: input.binding.packageId,
-			kody_id: input.binding.kodyId,
-			service_name: input.binding.serviceName,
-			status: this.stateSnapshot.status,
-			auto_start: this.stateSnapshot.autoStart,
-			last_error: this.stateSnapshot.lastError,
-			last_started_at: this.stateSnapshot.lastStartedAt,
-			last_stopped_at: this.stateSnapshot.lastStoppedAt,
-			last_run_finished_at: this.stateSnapshot.lastRunFinishedAt,
-			last_result: this.stateSnapshot.lastResult,
-		})
+		return Response.json(this.buildServiceStatusResponse(input.binding))
 	}
 
 	private async handleStopRequest(input: {
 		binding: PackageServiceBindingState
 	}) {
 		await this.initializeBinding(input.binding)
-		this.stateSnapshot.status = 'stopped'
+		this.stateSnapshot.stopRequested = true
+		this.stateSnapshot.status = this.stateSnapshot.currentRunId
+			? 'stopping'
+			: 'stopped'
 		this.stateSnapshot.lastStoppedAt = new Date().toISOString()
-		await this.ctx.storage.deleteAlarm().catch(() => {
-			// Best effort cleanup.
+		await this.clearAlarm()
+		return Response.json({
+			ok: true,
 		})
-		await this.persistState()
-		return Response.json({ ok: true })
 	}
 
 	async fetch(request: Request) {
@@ -353,17 +454,27 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if (request.method === 'POST' && url.pathname.endsWith('/stop')) {
 			return await this.handleStopRequest({ binding })
 		}
+		if (request.method === 'POST' && url.pathname.endsWith('/service-status')) {
+			return Response.json(this.buildServiceStatusResponse(binding))
+		}
 		return new Response('Not found', { status: 404 })
 	}
 
 	async alarm() {
 		const binding = this.stateSnapshot.binding
 		if (!binding) return
+		this.stateSnapshot.nextAlarmAt = null
+		await this.persistState()
+		if (this.stateSnapshot.currentRunId) return
 		const loaded = await loadSavedPackageService({
 			env: this.env,
 			binding,
 		})
-		if (loaded.packageSource.manifest.kody.services?.[binding.serviceName]?.autoStart) {
+		if (
+			loaded.packageSource.manifest.kody.services?.[binding.serviceName]
+				?.autoStart &&
+			!this.stateSnapshot.stopRequested
+		) {
 			await this.handleStartRequest({ binding })
 		}
 	}

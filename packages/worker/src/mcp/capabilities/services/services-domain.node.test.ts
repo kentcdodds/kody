@@ -92,6 +92,9 @@ test('service_list returns declared package services with live status', async ()
 				service_name: 'discord-gateway',
 				status: 'stopped',
 				auto_start: true,
+				stop_requested: false,
+				active_run_id: null,
+				next_alarm_at: null,
 				last_error: null,
 				last_started_at: null,
 				last_stopped_at: null,
@@ -107,6 +110,9 @@ test('service_list returns declared package services with live status', async ()
 			service_name: 'discord-gateway',
 			status: 'stopped',
 			auto_start: true,
+			stop_requested: false,
+			active_run_id: null,
+			next_alarm_at: null,
 			last_error: null,
 			last_started_at: null,
 			last_stopped_at: null,
@@ -158,8 +164,11 @@ test('service_get, service_start, and service_stop delegate to package service R
 			package_id: 'package-123',
 			kody_id: 'example',
 			service_name: 'discord-gateway',
-			status: 'idle',
+			status: 'running',
 			auto_start: false,
+			stop_requested: false,
+			active_run_id: 'run-123',
+			next_alarm_at: null,
 			last_error: null,
 			last_started_at: null,
 			last_stopped_at: null,
@@ -168,8 +177,9 @@ test('service_get, service_start, and service_stop delegate to package service R
 		}),
 		start: async () => ({
 			ok: true,
+			run_id: 'run-123',
 			started_at: '2026-04-24T00:00:00.000Z',
-			finished_at: '2026-04-24T00:00:01.000Z',
+			status: 'running',
 		}),
 		stop: async () => ({
 			ok: true,
@@ -193,7 +203,8 @@ test('service_get, service_start, and service_stop delegate to package service R
 		),
 	).resolves.toMatchObject({
 		service_name: 'discord-gateway',
-		status: 'idle',
+		status: 'running',
+		active_run_id: 'run-123',
 	})
 
 	await expect(
@@ -208,8 +219,9 @@ test('service_get, service_start, and service_stop delegate to package service R
 		),
 	).resolves.toEqual({
 		ok: true,
+		run_id: 'run-123',
 		started_at: '2026-04-24T00:00:00.000Z',
-		finished_at: '2026-04-24T00:00:01.000Z',
+		status: 'running',
 	})
 
 	await expect(

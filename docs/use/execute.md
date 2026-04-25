@@ -24,6 +24,12 @@ and export a default function. These helpers are runtime exports:
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service
   code when you need the current service identity; it is **`null`** outside
   package service runs
+- package service runs also expose **`service`** through **`kody:runtime`** for
+  background lifecycle control:
+  - `await service.getStatus()` — read the current package-service status
+  - `await service.shouldStop()` — cooperatively observe stop requests
+  - `await service.setAlarm(runAt)` — schedule the next service wake-up
+  - `await service.clearAlarm()` — clear a pending service wake-up
 - use **`import thing from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by full package name
 
@@ -101,6 +107,9 @@ package-owned jobs and non-package jobs created with `job_schedule` or
 - bound storage is execute-, app-, package-, or job-owned durable state
 - package service runs also get writable service-owned durable state scoped to
   the declared service name
+- package service runs are background-managed by the service Durable Object, so
+  `service_start` returns immediately with a running state while the service code
+  continues in the background until it finishes, errors, or cooperatively stops
 - import **`storage`** from **`kody:runtime`**
 - use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
   and **`storage.sql(query, params?)`**

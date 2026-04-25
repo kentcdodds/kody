@@ -48,6 +48,31 @@ type StorageToolOptions = {
 	writable: boolean
 }
 
+type ServiceToolOptions = {
+	getStatus: () => Promise<unknown>
+	shouldStop: () => Promise<boolean>
+	setAlarm: (runAt: Date) => Promise<{ ok: true; scheduled_at: string }>
+	clearAlarm: () => Promise<{ ok: true }>
+}
+
+function createServiceHelperPrelude() {
+	return `
+const service = {
+  getStatus: async () => await codemode.service_get_status({}),
+  shouldStop: async () => {
+    const result = await codemode.service_should_stop({});
+    return result?.shouldStop === true;
+  },
+  setAlarm: async (runAt) => {
+    const normalizedRunAt =
+      runAt instanceof Date ? runAt.toISOString() : String(runAt ?? '');
+    return await codemode.service_set_alarm({ runAt: normalizedRunAt });
+  },
+  clearAlarm: async () => await codemode.service_clear_alarm({}),
+};
+	`.trim()
+}
+
 export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -59,6 +84,7 @@ export async function buildCodemodeFns(
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
+		serviceTools?: ServiceToolOptions
 	},
 ) {
 	const { capabilityMap } = await getCapabilityRegistryForContext({
@@ -106,9 +132,39 @@ export async function buildCodemodeFns(
 			})
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, storageCodemodeTools)
+	const serviceCodemodeTools: AdditionalCodemodeTools = options?.serviceTools
+		? {
+				service_get_status: async () =>
+					await options.serviceTools?.getStatus(),
+				service_should_stop: async () => ({
+					shouldStop: await options.serviceTools?.shouldStop(),
+				}),
+				service_set_alarm: async (args: unknown) => {
+					const payload =
+						typeof args === 'object' && args !== null
+							? (args as { runAt?: unknown })
+							: {}
+					const runAtValue = payload.runAt
+					const runAtString =
+						typeof runAtValue === 'string' ? runAtValue.trim() : ''
+					if (!runAtString) {
+						throw new Error('service.setAlarm requires a runAt ISO string.')
+					}
+					const runAt = new Date(runAtString)
+					if (Number.isNaN(runAt.getTime())) {
+						throw new Error('service.setAlarm requires a valid runAt ISO string.')
+					}
+					return await options.serviceTools?.setAlarm(runAt)
+				},
+				service_clear_alarm: async () =>
+					await options.serviceTools?.clearAlarm(),
+		  }
+		: {}
+	assertNoCapabilityCollisions(capabilityMap, serviceCodemodeTools)
 	return {
 		...capabilityCodemodeTools,
 		...storageCodemodeTools,
+		...serviceCodemodeTools,
 		...additionalTools,
 	}
 }
@@ -131,6 +187,7 @@ export async function buildCodemodeProvider(
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
+		serviceTools?: ServiceToolOptions
 	},
 ): Promise<ResolvedProvider> {
 	const tools = await buildCodemodeFns(env, callerContext, options)
@@ -201,7 +258,9 @@ export async function runCodemodeWithRegistry(
 		additionalTools?: AdditionalCodemodeTools
 		helperPrelude?: string
 		storageTools?: StorageToolOptions
+		serviceTools?: ServiceToolOptions
 		executorModules?: WorkerLoaderModules
+		executorTimeoutMs?: number
 	},
 ): Promise<ExecuteResult> {
 	const moduleSource = stripCodeFences(code.trim())
@@ -221,6 +280,7 @@ export async function runCodemodeWithRegistry(
 	const executor = createExecuteExecutor({
 		env,
 		exports: options?.executorExports ?? workerExports,
+		timeoutMs: options?.executorTimeoutMs,
 		gatewayProps: {
 			baseUrl: callerContext.baseUrl,
 			userId: callerContext.user?.userId ?? null,
@@ -234,6 +294,7 @@ export async function runCodemodeWithRegistry(
 		},
 		additionalTools: options?.additionalTools,
 		storageTools: options?.storageTools,
+		serviceTools: options?.serviceTools,
 	})
 	const wrappedCode =
 		params !== undefined
@@ -246,7 +307,14 @@ export async function runCodemodeWithRegistry(
 				writable: options.storageTools.writable,
 			})
 		: ''
-	const helperPrelude = [storageHelperPrelude, options?.helperPrelude ?? '']
+	const serviceHelperPrelude = options?.serviceTools
+		? createServiceHelperPrelude()
+		: ''
+	const helperPrelude = [
+		storageHelperPrelude,
+		serviceHelperPrelude,
+		options?.helperPrelude ?? '',
+	]
 		.filter((value) => value.trim().length > 0)
 		.join('\n')
 	const wrapped = `async () => {
@@ -279,6 +347,8 @@ export async function runModuleWithRegistry(
 		executorExports?: typeof workerExports
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
+		serviceTools?: ServiceToolOptions
+		executorTimeoutMs?: number
 	},
 ): Promise<ExecuteResult> {
 	const userId = callerContext.user?.userId ?? ''
@@ -323,6 +393,8 @@ export async function runBundledModuleWithRegistry(
 		serviceContext?: {
 			serviceName: string
 		} | null
+		serviceTools?: ServiceToolOptions
+		executorTimeoutMs?: number
 	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
@@ -333,6 +405,7 @@ export async function runBundledModuleWithRegistry(
 	const executor = createExecuteExecutor({
 		env,
 		exports: options?.executorExports ?? workerExports,
+		timeoutMs: options?.executorTimeoutMs,
 		gatewayProps: {
 			baseUrl: callerContext.baseUrl,
 			userId: callerContext.user?.userId ?? null,
@@ -346,6 +419,7 @@ export async function runBundledModuleWithRegistry(
 		},
 		additionalTools: options?.additionalTools,
 		storageTools: options?.storageTools,
+		serviceTools: options?.serviceTools,
 	})
 	const storageHelperPrelude = options?.storageTools
 		? createStorageHelperPrelude({
@@ -353,9 +427,13 @@ export async function runBundledModuleWithRegistry(
 				writable: options.storageTools.writable,
 			})
 		: ''
+	const serviceHelperPrelude = options?.serviceTools
+		? createServiceHelperPrelude()
+		: ''
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
+${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
   const __previousRuntime = globalThis.__kodyRuntime;
   globalThis.__kodyRuntime = {
     codemode,
@@ -366,6 +444,7 @@ ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
     agentChatTurnStream,
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
+    service: typeof service === 'undefined' ? null : service,
   };
   try {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});

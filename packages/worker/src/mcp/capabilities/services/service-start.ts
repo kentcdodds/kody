@@ -10,10 +10,10 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	ok: z.boolean(),
-	result: z.unknown().optional(),
-	error: z.string().optional(),
+	run_id: z.string().optional(),
 	started_at: z.string().optional(),
-	finished_at: z.string().optional(),
+	status: z.enum(['running']).optional(),
+	already_running: z.boolean().optional(),
 })
 
 export const serviceStartCapability = defineDomainCapability(
