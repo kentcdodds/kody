@@ -11,11 +11,11 @@ export const packageServiceRecordSchema = z.object({
 	name: z.string(),
 	entry: z.string(),
 	auto_start: z.boolean(),
-	timeout_ms: z.number().int().positive().nullable().optional(),
+	timeout_ms: z.number().int().positive().nullable(),
 })
 
 export const packageServiceSummarySchema = packageServiceRecordSchema.extend({
-	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error']),
+	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error', 'unknown']),
 })
 
 export const packageServiceStatusSchema = z.object({

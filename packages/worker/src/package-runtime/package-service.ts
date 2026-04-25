@@ -562,46 +562,29 @@ export function packageServiceRpc(input: {
 		serviceName: input.serviceName,
 	}
 	const stub = getPackageServiceStub(input)
+	async function callService<T>(path: string): Promise<T> {
+		const response = await stub.fetch(
+			new Request(`https://package-service.invalid${path}`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ binding }),
+			}),
+		)
+		return await readPackageServiceRpcResponse<T>(response)
+	}
 	return {
 		async start() {
-			const response = await stub.fetch(
-				new Request('https://package-service.invalid/service/start', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify({ binding }),
-				}),
-			)
-			return await readPackageServiceRpcResponse<PackageServiceRunResult>(
-				response,
-			)
+			return await callService<PackageServiceRunResult>('/service/start')
 		},
 		async status() {
-			const response = await stub.fetch(
-				new Request('https://package-service.invalid/service/status', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify({ binding }),
-				}),
-			)
-			return await readPackageServiceRpcResponse<
+			return await callService<
 				ReturnType<PackageServiceInstanceBase['buildServiceStatusResponse']>
-			>(response)
+			>('/service/status')
 		},
 		async stop() {
-			const response = await stub.fetch(
-				new Request('https://package-service.invalid/service/stop', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify({ binding }),
-				}),
-			)
-			return await readPackageServiceRpcResponse<{ ok: true }>(response)
+			return await callService<{ ok: true }>('/service/stop')
 		},
 	}
 }

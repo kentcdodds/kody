@@ -148,6 +148,66 @@ test('service_list returns declared package services with live status', async ()
 	})
 })
 
+test('service_list marks status as unknown when a service status lookup fails', async () => {
+	resetMocks()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-123',
+		userId: 'user-123',
+		name: '@scope/example',
+		kodyId: 'example',
+		description: 'Example package',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-123',
+		hasApp: true,
+		createdAt: '2026-04-24T00:00:00.000Z',
+		updatedAt: '2026-04-24T00:00:00.000Z',
+	})
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: 'package-123',
+			kodyId: 'example',
+		},
+		services: [
+			{
+				name: 'realtime-supervisor',
+				entry: 'services/realtime-supervisor.ts',
+				autoStart: false,
+				timeoutMs: null,
+			},
+		],
+		rpc: () => ({
+			status: async () => {
+				throw new Error('worker unavailable')
+			},
+		}),
+	})
+
+	const result = await serviceListCapability.handler(
+		{},
+		{
+			env: {
+				APP_DB: {} as D1Database,
+			} as Env,
+			callerContext: createCallerContext(),
+		},
+	)
+
+	expect(result).toEqual({
+		package_id: 'package-123',
+		kody_id: 'example',
+		services: [
+			{
+				name: 'realtime-supervisor',
+				entry: 'services/realtime-supervisor.ts',
+				auto_start: false,
+				status: 'unknown',
+				timeout_ms: null,
+			},
+		],
+	})
+})
+
 test('service_get, service_start, and service_stop delegate to package service RPC', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById.mockResolvedValue({

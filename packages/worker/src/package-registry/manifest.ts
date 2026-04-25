@@ -196,12 +196,12 @@ export function buildPackageSearchProjection(
 }
 
 export function buildPackageSearchDocument(projection: PackageSearchProjection) {
-	const jobLines = (projection.jobs ?? []).map((job) =>
+	const jobLines = projection.jobs.map((job) =>
 		[job.name, job.entry, job.schedule, job.enabled ? 'enabled' : 'disabled']
 			.filter((value) => value.length > 0)
 			.join(' '),
 	)
-	const serviceLines = (projection.services ?? []).map((service) =>
+	const serviceLines = projection.services.map((service) =>
 		[
 			service.name,
 			service.entry,

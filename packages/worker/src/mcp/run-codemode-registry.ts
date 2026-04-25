@@ -132,12 +132,13 @@ export async function buildCodemodeFns(
 			})
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, storageCodemodeTools)
-	const serviceCodemodeTools: AdditionalCodemodeTools = options?.serviceTools
+	const serviceTools = options?.serviceTools
+	const serviceCodemodeTools: AdditionalCodemodeTools = serviceTools
 		? {
 				service_get_status: async () =>
-					await options.serviceTools?.getStatus(),
+					await serviceTools.getStatus(),
 				service_should_stop: async () => ({
-					shouldStop: await options.serviceTools?.shouldStop(),
+					shouldStop: await serviceTools.shouldStop(),
 				}),
 				service_set_alarm: async (args: unknown) => {
 					const payload =
@@ -154,10 +155,10 @@ export async function buildCodemodeFns(
 					if (Number.isNaN(runAt.getTime())) {
 						throw new Error('service.setAlarm requires a valid runAt ISO string.')
 					}
-					return await options.serviceTools?.setAlarm(runAt)
+					return await serviceTools.setAlarm(runAt)
 				},
 				service_clear_alarm: async () =>
-					await options.serviceTools?.clearAlarm(),
+					await serviceTools.clearAlarm(),
 		  }
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, serviceCodemodeTools)
