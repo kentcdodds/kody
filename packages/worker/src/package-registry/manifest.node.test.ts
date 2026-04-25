@@ -90,3 +90,27 @@ test('parseAuthoredPackageJson accepts package service definitions', () => {
 		},
 	})
 })
+
+test('parseAuthoredPackageJson rejects service timeoutMs values above the supported maximum', () => {
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/discord-gateway',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord gateway package',
+					services: {
+						'discord-gateway': {
+							entry: './services/discord-gateway.ts',
+							timeoutMs: 300001,
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow('expected number to be <=300000')
+})

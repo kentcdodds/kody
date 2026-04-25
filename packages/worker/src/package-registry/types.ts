@@ -38,7 +38,7 @@ export type PackageAppDefinition = z.infer<typeof packageAppDefinitionSchema>
 export const packageServiceDefinitionSchema = z.object({
 	entry: z.string().min(1),
 	autoStart: z.boolean().optional(),
-	timeoutMs: z.number().int().positive().optional(),
+	timeoutMs: z.number().int().positive().max(300_000).optional(),
 })
 
 export type PackageServiceDefinition = z.infer<

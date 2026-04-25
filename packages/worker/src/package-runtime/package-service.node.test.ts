@@ -39,3 +39,20 @@ test('package service runtime preserves explicit stop requests after a run ends'
 	expect(fileText).toContain("if (stopRequested) {\n\t\t\t\tawait this.clearAlarm()")
 	expect(fileText).toContain('!this.stateSnapshot.stopRequested')
 })
+
+test('package service runtime refreshes manifest-backed service settings for alarms and status', async () => {
+	const fileText = await import('node:fs/promises').then((fs) =>
+		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
+	)
+	expect(fileText).toContain('const loaded = await loadSavedPackageService({')
+	expect(fileText).toContain('this.stateSnapshot.binding = loaded.resolvedBinding')
+	expect(fileText).toContain(
+		'this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null',
+	)
+	expect(fileText).toContain(
+		'return Response.json(this.buildServiceStatusResponse(loaded.resolvedBinding))',
+	)
+	expect(fileText).toContain(
+		'if (!this.stateSnapshot.stopRequested) {\n\t\t\t\tawait this.handleStartRequest({ binding: loaded.resolvedBinding })',
+	)
+})
