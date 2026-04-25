@@ -345,6 +345,11 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			await this.persistState()
 			if (stopRequested) {
 				await this.clearAlarm()
+			} else if (
+				this.stateSnapshot.autoStart &&
+				!this.stateSnapshot.nextAlarmAt
+			) {
+				await this.scheduleAlarm({ runAt: new Date() })
 			}
 		} catch (error) {
 			if (this.stateSnapshot.currentRunId !== input.runId) return
@@ -362,6 +367,11 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			await this.persistState()
 			if (stopRequested) {
 				await this.clearAlarm()
+			} else if (
+				this.stateSnapshot.autoStart &&
+				!this.stateSnapshot.nextAlarmAt
+			) {
+				await this.scheduleAlarm({ runAt: new Date() })
 			}
 		} finally {
 			if (this.activeRunPromise) {
@@ -587,7 +597,6 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			if (!this.stateSnapshot.stopRequested) {
 				const startedAt = new Date().toISOString()
 				const runId = crypto.randomUUID()
-				this.stateSnapshot.stopRequested = false
 				this.stateSnapshot.currentRunId = runId
 				this.stateSnapshot.status = 'running'
 				this.stateSnapshot.lastStartedAt = startedAt

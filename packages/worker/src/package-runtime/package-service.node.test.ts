@@ -43,6 +43,15 @@ test('package service runtime preserves explicit stop requests after a run ends'
 	expect(fileText).toContain('!this.stateSnapshot.stopRequested')
 })
 
+test('package service runtime re-arms auto-start after unplanned exit', async () => {
+	const fileText = await import('node:fs/promises').then((fs) =>
+		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
+	)
+	expect(fileText).toContain('loaded.serviceDefinition?.autoStart')
+	expect(fileText).toContain('!this.stateSnapshot.nextAlarmAt')
+	expect(fileText).toContain('await this.scheduleAlarm({ runAt: new Date() })')
+})
+
 test('package service runtime refreshes manifest-backed service settings for alarms and status', async () => {
 	const fileText = await import('node:fs/promises').then((fs) =>
 		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
@@ -77,6 +86,7 @@ test('package service runtime schedules auto-start on save path instead of read-
 	expect(fileText).toContain(
 		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
+	expect(fileText).not.toContain('this.stateSnapshot.stopRequested = false\n\t\t\t\tthis.stateSnapshot.currentRunId = runId')
 })
 
 test('package service runtime persists restored state and surfaces RPC errors', async () => {
