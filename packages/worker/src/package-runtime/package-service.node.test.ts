@@ -60,9 +60,8 @@ test('package service runtime re-arms auto-start after unplanned exit', async ()
 	expect(fileText).toContain('!this.stateSnapshot.nextAlarmAt')
 	expect(fileText).toContain('const packageServiceRetryDelayMs = 5_000')
 	expect(fileText).toContain('buildPackageServiceRetryTime()')
-	expect(fileText).toContain(
-		'await this.scheduleAlarm({ runAt: buildPackageServiceRetryTime() })',
-	)
+	expect(fileText).toContain('runAt: buildPackageServiceRetryTime()')
+	expect(fileText).toContain("source: 'auto-start'")
 	expect(fileText).toContain(
 		"this.stateSnapshot.status = 'error'",
 	)
@@ -102,10 +101,13 @@ test('package service runtime schedules auto-start on save path instead of read-
 	expect(fileText).toContain('options?: { armAutoStart?: boolean }')
 	expect(fileText).toContain('options?.armAutoStart')
 	expect(fileText).toContain('armAutoStart: true')
+	expect(fileText).toContain("source: 'auto-start'")
 	expect(fileText).toContain(
 		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
-	expect(fileText).not.toContain('this.stateSnapshot.stopRequested = false\n\t\t\t\tthis.stateSnapshot.currentRunId = runId')
+	expect(fileText).toContain(
+		'options?.armAutoStart &&',
+	)
 })
 
 test('package service runtime persists restored state and surfaces RPC errors', async () => {

@@ -29,6 +29,7 @@ type PackageServiceState = {
 	stopRequested: boolean
 	currentRunId: string | null
 	nextAlarmAt: string | null
+	nextAlarmSource: 'service' | 'auto-start' | null
 	lastStartedAt: string | null
 	lastStoppedAt: string | null
 	status: 'idle' | 'running' | 'stopping' | 'stopped' | 'error'
@@ -84,6 +85,7 @@ function createInitialPackageServiceState(): PackageServiceState {
 		stopRequested: false,
 		currentRunId: null,
 		nextAlarmAt: null,
+		nextAlarmSource: null,
 		lastStartedAt: null,
 		lastStoppedAt: null,
 		status: 'idle',
@@ -229,7 +231,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				!this.stateSnapshot.stopRequested &&
 				this.stateSnapshot.binding
 			) {
-				await this.scheduleAlarm({ runAt: buildPackageServiceRetryTime() })
+				await this.scheduleAlarm({
+					runAt: buildPackageServiceRetryTime(),
+					source: 'auto-start',
+				})
 			}
 		}
 	}
@@ -265,12 +270,18 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.autoStart &&
 			!this.stateSnapshot.nextAlarmAt
 		) {
-			await this.scheduleAlarm({ runAt: new Date() })
+			await this.scheduleAlarm({
+				runAt: new Date(),
+				source: 'auto-start',
+			})
 		}
 		return loaded
 	}
 
-	private async scheduleAlarm(input: { runAt: Date | string }) {
+	private async scheduleAlarm(input: {
+		runAt: Date | string
+		source?: 'service' | 'auto-start'
+	}) {
 		const runAtDate =
 			typeof input.runAt === 'string' ? new Date(input.runAt) : input.runAt
 		if (Number.isNaN(runAtDate.getTime())) {
@@ -279,6 +290,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		const scheduledAt = runAtDate.toISOString()
 		await this.ctx.storage.setAlarm(runAtDate)
 		this.stateSnapshot.nextAlarmAt = scheduledAt
+		this.stateSnapshot.nextAlarmSource = input.source ?? 'service'
 		await this.persistState()
 		return {
 			ok: true,
@@ -291,6 +303,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			// Best effort cleanup.
 		})
 		this.stateSnapshot.nextAlarmAt = null
+		this.stateSnapshot.nextAlarmSource = null
 		await this.persistState()
 		return {
 			ok: true,
@@ -360,6 +373,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				setAlarm: async (runAt) =>
 					(await this.scheduleAlarm({
 						runAt,
+						source: 'service',
 					})) as { ok: true; scheduled_at: string },
 				clearAlarm: async () =>
 					(await this.clearAlarm()) as { ok: true },
@@ -386,7 +400,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.stateSnapshot.autoStart &&
 				!this.stateSnapshot.nextAlarmAt
 			) {
-				await this.scheduleAlarm({ runAt: new Date() })
+				await this.scheduleAlarm({
+					runAt: new Date(),
+					source: 'auto-start',
+				})
 			}
 		} catch (error) {
 			if (this.stateSnapshot.currentRunId !== input.runId) return
@@ -408,7 +425,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.stateSnapshot.autoStart &&
 				!this.stateSnapshot.nextAlarmAt
 			) {
-				await this.scheduleAlarm({ runAt: new Date() })
+				await this.scheduleAlarm({
+					runAt: new Date(),
+					source: 'auto-start',
+				})
 			}
 		} finally {
 			if (this.activeRunPromise) {
@@ -621,7 +641,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	async alarm() {
 		const binding = this.stateSnapshot.binding
 		if (!binding) return
+		const alarmSource = this.stateSnapshot.nextAlarmSource ?? 'service'
 		this.stateSnapshot.nextAlarmAt = null
+		this.stateSnapshot.nextAlarmSource = null
 		await this.persistState()
 		if (this.stateSnapshot.currentRunId) return
 		try {
@@ -634,7 +656,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.timeoutMs =
 				loaded.serviceDefinition?.timeoutMs ?? null
 			await this.persistState()
-			if (!this.stateSnapshot.stopRequested) {
+			if (
+				!this.stateSnapshot.stopRequested &&
+				(alarmSource === 'service' || this.stateSnapshot.autoStart)
+			) {
 				const startedAt = new Date().toISOString()
 				const runId = crypto.randomUUID()
 				this.stateSnapshot.currentRunId = runId
@@ -660,7 +685,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				!this.stateSnapshot.stopRequested &&
 				!this.stateSnapshot.nextAlarmAt
 			) {
-				await this.scheduleAlarm({ runAt: buildPackageServiceRetryTime() })
+				await this.scheduleAlarm({
+					runAt: buildPackageServiceRetryTime(),
+					source: alarmSource,
+				})
 			}
 		}
 	}
