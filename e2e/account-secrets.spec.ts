@@ -109,7 +109,5 @@ test('landing on an approval link shows already added when the host is present',
 	const alreadyAddedNotice = page.getByRole('status')
 	await expect(alreadyAddedNotice).toBeVisible()
 	await expect(alreadyAddedNotice).toContainText('api.cloudflare.com')
-	await expect(page.getByRole('button', { name: 'Approve host' })).toHaveCount(
-		0,
-	)
+	await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0)
 })

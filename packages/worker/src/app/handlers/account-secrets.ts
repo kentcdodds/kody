@@ -1058,20 +1058,10 @@ async function handleSaveAction(input: {
 		env: input.env,
 		user: input.user,
 	})
-	const packageLookup = new Map(
-		(
-			await listSavedPackagesByUserId(input.env.APP_DB, {
-				userId: input.user.mcpUser.userId,
-			})
-		).map((savedPackage) => [
-			savedPackage.id,
-			{
-				packageId: savedPackage.id,
-				kodyId: savedPackage.kodyId,
-				name: savedPackage.name,
-			} satisfies AllowedPackageView,
-		]),
-	)
+	const packageLookup = await buildAllowedPackageLookup({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+	})
 	const appId = readAppIdForScope({
 		body: input.body,
 		scope,
