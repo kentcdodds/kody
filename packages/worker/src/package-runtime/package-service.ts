@@ -283,13 +283,21 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			timeoutMs?: number | null
 		},
 	) {
+		const autoStart =
+			overrides && 'autoStart' in overrides
+				? overrides.autoStart
+				: this.stateSnapshot.autoStart
+		const timeoutMs =
+			overrides && 'timeoutMs' in overrides
+				? overrides.timeoutMs
+				: this.stateSnapshot.timeoutMs
 		return {
 			package_id: binding.packageId,
 			kody_id: binding.kodyId,
 			service_name: binding.serviceName,
 			status: this.stateSnapshot.status,
-			auto_start: overrides?.autoStart ?? this.stateSnapshot.autoStart,
-			timeout_ms: overrides?.timeoutMs ?? this.stateSnapshot.timeoutMs,
+			auto_start: autoStart,
+			timeout_ms: timeoutMs,
 			stop_requested: this.stateSnapshot.stopRequested,
 			active_run_id: this.stateSnapshot.currentRunId,
 			next_alarm_at: this.stateSnapshot.nextAlarmAt,

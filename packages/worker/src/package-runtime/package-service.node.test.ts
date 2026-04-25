@@ -52,6 +52,7 @@ test('package service runtime refreshes manifest-backed service settings for ala
 	expect(fileText).toContain(
 		'this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null',
 	)
+	expect(fileText).toContain("'timeoutMs' in overrides")
 	expect(fileText).toContain(
 		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
