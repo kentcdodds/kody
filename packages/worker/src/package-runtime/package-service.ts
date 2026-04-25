@@ -10,6 +10,7 @@ import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 
 const serviceStateStorageKey = 'package-service-state'
+const packageServiceRetryDelayMs = 5_000
 
 export type PackageServiceBindingState = {
 	userId: string
@@ -157,6 +158,10 @@ export async function readPackageServiceRpcResponse<T>(
 	}
 }
 
+function buildPackageServiceRetryTime() {
+	return new Date(Date.now() + packageServiceRetryDelayMs)
+}
+
 class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState = createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
@@ -192,7 +197,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				!this.stateSnapshot.stopRequested &&
 				this.stateSnapshot.binding
 			) {
-				await this.scheduleAlarm({ runAt: new Date() })
+				await this.scheduleAlarm({ runAt: buildPackageServiceRetryTime() })
 			}
 		}
 	}
@@ -623,7 +628,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				!this.stateSnapshot.stopRequested &&
 				!this.stateSnapshot.nextAlarmAt
 			) {
-				await this.scheduleAlarm({ runAt: new Date() })
+				await this.scheduleAlarm({ runAt: buildPackageServiceRetryTime() })
 			}
 		}
 	}
