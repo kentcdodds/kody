@@ -163,14 +163,6 @@ export function createAccountSecretsApiHandler(env: Env) {
 					body,
 				})
 			}
-			if (action === 'approve_package') {
-				return handlePackageApprovalAction({
-					request,
-					env,
-					user,
-					body,
-				})
-			}
 			if (action === 'save') {
 				return handleSaveAction({
 					request,
@@ -1031,23 +1023,6 @@ async function handleApprovalAction(input: {
 			400,
 		)
 	}
-}
-
-async function handlePackageApprovalAction(input: {
-	request: Request
-	env: Env
-	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-	body: object
-}) {
-	void input
-	return jsonResponse(
-		{
-			ok: false,
-			error:
-				'Package approvals must use the signed approval request flow with a request token.',
-		},
-		400,
-	)
 }
 
 async function handleSaveAction(input: {

@@ -373,6 +373,7 @@ export async function runCodemodeWithRegistry(
 			additionalTools: options?.additionalTools,
 			storageTools: options?.storageTools,
 			serviceTools: options?.serviceTools,
+			packageContext: options?.packageContext,
 			executorTimeoutMs: options?.executorTimeoutMs,
 		})
 	}
@@ -464,6 +465,10 @@ export async function runModuleWithRegistry(
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
+		packageContext?: {
+			packageId: string
+			kodyId: string
+		} | null
 		executorTimeoutMs?: number | null
 	},
 ): Promise<ExecuteResult> {
@@ -486,7 +491,10 @@ export async function runModuleWithRegistry(
 			modules: bundled.modules,
 		},
 		params,
-		options,
+		{
+			...options,
+			packageContext: options?.packageContext ?? null,
+		},
 	)
 }
 
