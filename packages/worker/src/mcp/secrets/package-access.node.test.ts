@@ -20,7 +20,11 @@ vi.mock('./service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
 }))
 
-const { resolvePackageMountedSecret } = await import('./package-access.ts')
+const {
+	buildPackageApprovalErrorForMounts,
+	isPackageSecretAccessUnavailableError,
+	resolvePackageMountedSecret,
+} = await import('./package-access.ts')
 
 test('resolvePackageMountedSecret rejects calls without package appId context', async () => {
 	await expect(
@@ -141,4 +145,25 @@ test('resolvePackageMountedSecret resolves mounted secret when package appId mat
 			},
 		}),
 	)
+})
+
+test('package access helpers treat missing approvals consistently', () => {
+	expect(buildPackageApprovalErrorForMounts({ entries: [] })).toBeNull()
+	expect(
+		buildPackageApprovalErrorForMounts({
+			entries: [
+				{
+					secretName: 'discordBotTokenKentPersonalAutomation',
+					packageId: 'pkg-1',
+					kodyId: 'discord-gateway',
+					approvalUrl: 'https://example.com/account/secrets/user/discordBotToken',
+				},
+			],
+		}),
+	).toContain('Secret "discordBotTokenKentPersonalAutomation" is not allowed')
+	expect(
+		isPackageSecretAccessUnavailableError(
+			new Error('Secret "discordBotTokenKentPersonalAutomation" was not found.'),
+		),
+	).toBe(true)
 })

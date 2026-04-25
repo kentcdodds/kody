@@ -19,6 +19,7 @@ type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 const charsPerToken = 4
 const maxTokens = 6_000
 const maxChars = maxTokens * charsPerToken
+const maxSupportedExecutorTimeoutMs = 2_147_483_647
 
 export function createExecuteExecutor(input: {
 	env: Env
@@ -35,7 +36,7 @@ export function createExecuteExecutor(input: {
 	}
 	const timeout =
 		input.timeoutMs === null
-			? Number.MAX_SAFE_INTEGER
+			? maxSupportedExecutorTimeoutMs
 			: (input.timeoutMs ?? 90_000)
 	return new DynamicWorkerExecutor({
 		loader: input.env.LOADER,

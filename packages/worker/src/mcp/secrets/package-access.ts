@@ -196,24 +196,27 @@ export async function findMissingPackageApprovals(input: {
 
 export function buildPackageApprovalErrorForMounts(input: {
 	entries: Array<{
-		name: string
+		secretName: string
 		packageId: string
 		kodyId: string
 		approvalUrl: string
 	}>
 }) {
+	if (input.entries.length === 0) {
+		return null
+	}
 	if (input.entries.length === 1) {
 		const only = input.entries[0]
 		if (!only) return null
 		return createPackageSecretAccessDeniedMessage({
-			secretName: only.name,
+			secretName: only.secretName,
 			packageName: only.kodyId,
 			approvalUrl: only.approvalUrl,
 		})
 	}
 	return createPackageSecretAccessDeniedBatchMessage(
 		input.entries.map((entry) => ({
-			secretName: entry.name,
+			secretName: entry.secretName,
 			packageId: entry.packageId,
 			kodyId: entry.kodyId,
 			packageName: entry.kodyId,
