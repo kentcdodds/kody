@@ -80,8 +80,8 @@ test('service_list returns declared package services with live status', async ()
 		},
 		services: [
 			{
-				name: 'discord-gateway',
-				entry: 'services/discord-gateway.ts',
+				name: 'realtime-supervisor',
+				entry: 'services/realtime-supervisor.ts',
 				autoStart: true,
 				timeoutMs: 300000,
 			},
@@ -90,7 +90,7 @@ test('service_list returns declared package services with live status', async ()
 			status: async () => ({
 				package_id: 'package-123',
 				kody_id: 'example',
-				service_name: 'discord-gateway',
+				service_name: 'realtime-supervisor',
 				status: 'stopped',
 				auto_start: true,
 				timeout_ms: 300000,
@@ -109,7 +109,7 @@ test('service_list returns declared package services with live status', async ()
 		status: async () => ({
 			package_id: 'package-123',
 			kody_id: 'example',
-			service_name: 'discord-gateway',
+			service_name: 'realtime-supervisor',
 			status: 'stopped',
 			auto_start: true,
 			timeout_ms: 300000,
@@ -138,8 +138,8 @@ test('service_list returns declared package services with live status', async ()
 		kody_id: 'example',
 		services: [
 			{
-				name: 'discord-gateway',
-				entry: 'services/discord-gateway.ts',
+				name: 'realtime-supervisor',
+				entry: 'services/realtime-supervisor.ts',
 				auto_start: true,
 				status: 'stopped',
 				timeout_ms: 300000,
@@ -167,7 +167,7 @@ test('service_get, service_start, and service_stop delegate to package service R
 		status: async () => ({
 			package_id: 'package-123',
 			kody_id: 'example',
-			service_name: 'discord-gateway',
+			service_name: 'realtime-supervisor',
 			status: 'running',
 			auto_start: false,
 			timeout_ms: 300000,
@@ -199,7 +199,7 @@ test('service_get, service_start, and service_stop delegate to package service R
 	await expect(
 		serviceGetCapability.handler(
 			{
-				service_name: 'discord-gateway',
+				service_name: 'realtime-supervisor',
 			},
 			{
 				env,
@@ -207,7 +207,7 @@ test('service_get, service_start, and service_stop delegate to package service R
 			},
 		),
 	).resolves.toMatchObject({
-		service_name: 'discord-gateway',
+		service_name: 'realtime-supervisor',
 		status: 'running',
 		active_run_id: 'run-123',
 	})
@@ -215,7 +215,7 @@ test('service_get, service_start, and service_stop delegate to package service R
 	await expect(
 		serviceStartCapability.handler(
 			{
-				service_name: 'discord-gateway',
+				service_name: 'realtime-supervisor',
 			},
 			{
 				env,
@@ -232,7 +232,7 @@ test('service_get, service_start, and service_stop delegate to package service R
 	await expect(
 		serviceStopCapability.handler(
 			{
-				service_name: 'discord-gateway',
+				service_name: 'realtime-supervisor',
 			},
 			{
 				env,

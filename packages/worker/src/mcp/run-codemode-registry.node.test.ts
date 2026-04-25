@@ -951,7 +951,7 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 			undefined,
 			{
 				serviceContext: {
-					serviceName: 'discord-gateway',
+					serviceName: 'realtime-supervisor',
 				},
 				serviceTools: {
 					getStatus: async () => ({ status: 'running' }),
@@ -969,7 +969,7 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 		expect(wrapped).toContain("service_should_stop")
 		expect(wrapped).toContain("service_set_alarm")
 		expect(wrapped).toContain("service_clear_alarm")
-		expect(wrapped).toContain('"serviceName":"discord-gateway"')
+		expect(wrapped).toContain('"serviceName":"realtime-supervisor"')
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()

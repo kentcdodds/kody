@@ -1,42 +1,43 @@
-# Discord gateway package pattern
+# Package service pattern
 
-Use this guide when you want a **native Kody package** to own a Discord gateway
-connection instead of relying on a separate external service.
+Use this guide when you want a **native Kody package** to own a long-lived
+runtime instead of relying on a separate external service.
 
 This guide assumes:
 
 - the package runtime already supports `package.json#kody.services`
 - the package will likely also expose a package app for operator UI
-- Discord credentials and downstream delivery details are handled separately
+- protocol credentials and downstream delivery details are handled separately
 
 ## Recommended package shape
 
 Prefer one saved package with:
 
 - `package.json#kody.app.entry` for setup UI, dashboards, and callback endpoints
-- `package.json#kody.services.discord-gateway.entry` for the gateway runtime
+- `package.json#kody.services.realtime-supervisor.entry` for the long-lived
+  runtime
 - package exports for reusable helpers and formatting logic
 
 Example manifest shape:
 
 ```json
 {
-  "name": "@scope/discord-gateway",
+  "name": "@scope/realtime-supervisor",
   "exports": {
     ".": "./src/index.ts",
-    "./format-dispatch": "./src/format-dispatch.ts"
+    "./format-event": "./src/format-event.ts"
   },
   "kody": {
-    "id": "discord-gateway",
-    "description": "Native Discord gateway package",
+    "id": "realtime-supervisor",
+    "description": "Native long-lived service package",
     "app": {
       "entry": "./src/app.ts"
     },
     "services": {
-      "discord-gateway": {
-        "entry": "./src/services/discord-gateway.ts",
+      "realtime-supervisor": {
+        "entry": "./src/services/realtime-supervisor.ts",
         "autoStart": true,
-        "timeoutMs": 600000
+        "timeoutMs": 300000
       }
     }
   }
@@ -45,11 +46,11 @@ Example manifest shape:
 
 ## Runtime model
 
-Package services now run as **background-managed** service instances:
+Package services run as **background-managed** service instances:
 
 - `service_start` returns immediately with a running state
-- the service Durable Object keeps lifecycle state such as
-  `status`, `active_run_id`, `stop_requested`, and `next_alarm_at`
+- the service Durable Object keeps lifecycle state such as `status`,
+  `active_run_id`, `stop_requested`, and `next_alarm_at`
 - the service module runs with:
   - `packageContext`
   - `serviceContext`
@@ -69,27 +70,26 @@ The `service` helper exposes:
 - `await service.setAlarm(runAt)`
 - `await service.clearAlarm()`
 
-## Recommended Discord gateway loop
+## Recommended service loop
 
-Treat the service entry as the **gateway supervisor**, not just a one-shot job.
+Treat the service entry as a **runtime supervisor**, not just a one-shot job.
 
 Recommended loop:
 
 1. Load persisted session state from `storage`
-   - token metadata / config references
-   - Discord session id
-   - last sequence number
-   - resume URL
-   - shard id / shard count
-2. Open the outbound Discord WebSocket
-3. Identify or resume
+   - configuration references
+   - last checkpoint / cursor / offset
+   - reconnect endpoint or transport metadata
+   - topology metadata if applicable
+2. Open the outbound connection or initialize the runtime session
+3. Authenticate, subscribe, or resume
 4. Enter a loop that:
-   - reads gateway events
-   - persists sequence/session updates before acting on them
+   - reads remote events or messages
+   - persists resumable state before acting on them
    - publishes normalized events to the package app or package exports
    - periodically checks `await service.shouldStop()`
 5. On clean shutdown:
-   - close the socket
+   - close the connection
    - clear alarms when no reconnect is desired
 6. On transient disconnect:
    - persist the latest resumable state
@@ -102,11 +102,11 @@ Pseudo-code shape:
 import { service, storage } from 'kody:runtime'
 
 export default async function run() {
-  const session = (await storage.get('gateway-session')) ?? null
-  const socket = new WebSocket('wss://gateway.discord.gg/?v=10&encoding=json')
+  const session = (await storage.get('session-state')) ?? null
+  const socket = new WebSocket('wss://example.com/stream')
 
   try {
-    // Identify or resume here.
+    // Authenticate, subscribe, or resume here.
 
     while (socket.readyState === WebSocket.OPEN) {
       if (await service.shouldStop()) {
@@ -115,9 +115,9 @@ export default async function run() {
         return { stopped: true }
       }
 
-      const event = await readNextDiscordEvent(socket)
-      await persistGatewayState(storage, event)
-      await handleGatewayEvent(event)
+      const event = await readNextEvent(socket)
+      await persistRuntimeState(storage, event)
+      await handleRuntimeEvent(event)
     }
   } catch (error) {
     await persistFailure(storage, error)
@@ -129,14 +129,14 @@ export default async function run() {
 
 ## Use the package app as the operator plane
 
-Do not push all gateway interaction into the service itself.
+Do not push all operational interaction into the service itself.
 
 Use the package app for:
 
-- guild / shard health dashboards
+- health dashboards
 - reconnect / pause / resume controls
 - logs
-- live dispatch inspection
+- live event inspection
 - setup flows
 
 The package app can call the package service lifecycle surface and consume
@@ -152,18 +152,17 @@ do **not** hibernate. Favor a design where the service can:
 - persist resumable state early
 - stop cooperatively
 
-Use `timeoutMs` to give the gateway enough room to run, but do not rely on
+Use `timeoutMs` to give the service enough room to run, but do not rely on
 indefinite execution as the only lifecycle mechanism.
 
 ## What to persist
 
 At minimum, persist:
 
-- `session_id`
-- latest sequence / `s`
-- shard id / count
-- resume URL
-- guild routing metadata if needed
+- reconnect/session identifiers
+- latest offset / sequence / cursor
+- topology metadata if needed
+- reconnect URL or endpoint metadata
 - last error / last disconnect reason
 
 Persist before any expensive or lossy downstream work so reconnects can resume
@@ -171,10 +170,10 @@ from durable state.
 
 ## Downstream delivery
 
-A Discord gateway package usually needs a second delivery plane:
+A long-lived package service usually needs a second delivery plane:
 
 - package app realtime sessions for human/operator UIs
 - package exports or jobs for reusable downstream logic
 
-Keep gateway ingest, downstream formatting, and UI concerns separate so the
+Keep connection ingest, downstream formatting, and UI concerns separate so the
 service can stay focused on connection lifecycle and event normalization.

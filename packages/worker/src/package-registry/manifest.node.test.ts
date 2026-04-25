@@ -63,16 +63,16 @@ test('parseAuthoredPackageJson rejects unscoped package names', () => {
 test('parseAuthoredPackageJson accepts package service definitions', () => {
 	const manifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
-			name: '@kentcdodds/discord-gateway',
+			name: '@kentcdodds/realtime-supervisor',
 			exports: {
 				'.': './index.ts',
 			},
 			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway package',
+				id: 'realtime-supervisor',
+				description: 'Realtime supervisor package',
 				services: {
-					'discord-gateway': {
-						entry: './services/discord-gateway.ts',
+					'realtime-supervisor': {
+						entry: './services/realtime-supervisor.ts',
 						autoStart: true,
 						timeoutMs: 300000,
 					},
@@ -83,8 +83,8 @@ test('parseAuthoredPackageJson accepts package service definitions', () => {
 	})
 
 	expect(manifest.kody.services).toEqual({
-		'discord-gateway': {
-			entry: './services/discord-gateway.ts',
+		'realtime-supervisor': {
+			entry: './services/realtime-supervisor.ts',
 			autoStart: true,
 			timeoutMs: 300000,
 		},
@@ -95,16 +95,16 @@ test('parseAuthoredPackageJson rejects service timeoutMs values above the suppor
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: JSON.stringify({
-				name: '@kentcdodds/discord-gateway',
+				name: '@kentcdodds/realtime-supervisor',
 				exports: {
 					'.': './index.ts',
 				},
 				kody: {
-					id: 'discord-gateway',
-					description: 'Discord gateway package',
+					id: 'realtime-supervisor',
+					description: 'Realtime supervisor package',
 					services: {
-						'discord-gateway': {
-							entry: './services/discord-gateway.ts',
+						'realtime-supervisor': {
+							entry: './services/realtime-supervisor.ts',
 							timeoutMs: 300001,
 						},
 					},

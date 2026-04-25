@@ -52,11 +52,11 @@ export const kodyOfficialGuideCatalog = {
 		summary:
 			'Hosted /connect/secret URL shape, query params, and approval policy for API keys and PATs.',
 	},
-	discord_gateway_package: {
-		file: 'discord-gateway-package.md',
-		title: 'Discord gateway package guide',
+	package_service_pattern: {
+		file: 'package-service-pattern.md',
+		title: 'Package service pattern guide',
 		summary:
-			'Build a package-native Discord gateway using kody.services, package app realtime fanout, service-owned storage, background lifecycle helpers, and reconnect scheduling.',
+			'Build a package-native long-lived service using kody.services, package app realtime fanout, service-owned storage, background lifecycle helpers, and scheduled wake-ups.',
 	},
 } as const
 
@@ -67,7 +67,7 @@ const guideIds = Object.keys(kodyOfficialGuideCatalog) as [
 	'oauth',
 	'generated_ui_oauth',
 	'connect_secret',
-	'discord_gateway_package',
+	'package_service_pattern',
 ]
 
 function buildRawGithubUrl(file: string): string {
@@ -117,7 +117,7 @@ function buildCapabilityDescription(): string {
 		return `- \`${id}\`: ${g.summary}`
 	})
 	return [
-		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native Discord gateway work built on `kody.services`, use `discord_gateway_package`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
+		'Load an official Kody guide from the kody GitHub repository (markdown). **For third-party integrations that will power a package, package app, or workflow, use `guide: "integration_bootstrap"` first.** For non-OAuth APIs backed by saved secrets, then use `guide: "secret_backed_integration"` as the default recipe. After the smoke test passes and you are ready to build a package app, use `guide: "integration_backed_app"` for the default package-app pattern. For OAuth mechanics, then use `guide: "oauth"` (standard `/connect/oauth` path). Use `generated_ui_oauth` only for custom package-app OAuth. For API keys/PATs, use `connect_secret` for secret collection. For package-native long-lived service work built on `kody.services`, use `package_service_pattern`. If you are unsure, **call this capability** with the right `guide` instead of guessing.',
 		'',
 		'Available guides (order matters—start with `integration_bootstrap` for integration-dependent work):',
 		...lines,
@@ -137,7 +137,7 @@ const guideFieldSchema = z
 			'`oauth`: standard third-party OAuth via /connect/oauth (read this first for OAuth).',
 			'`generated_ui_oauth`: edge case—OAuth in a hosted package app.',
 			'`connect_secret`: /connect/secret for API keys, PATs, and other secret collection steps.',
-			'`discord_gateway_package`: package-native Discord gateway architecture built on package services and package app realtime.',
+			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
 		].join(' '),
 	)
 
@@ -183,11 +183,11 @@ const allKeywords = [
 		'api key',
 		'personal access token',
 		'connect secret',
-		'discord',
-		'discord gateway',
-		'gateway package',
 		'package service',
+		'service package',
 		'background service',
+		'long-lived service',
+		'outbound websocket',
 		'heartbeat',
 		'reconnect',
 		'resume',
