@@ -26,7 +26,10 @@ import {
 	normalizePackageServiceStatus,
 	packageServiceRpc,
 } from './package-service.ts'
-import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
+import {
+	isPackageSecretAccessUnavailableError,
+	resolvePackageMountedSecret,
+} from '#mcp/secrets/package-access.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -728,11 +731,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				has: true,
 			}
 		} catch (error) {
-			if (
-				error instanceof Error &&
-				(error.message.startsWith('Secret "') ||
-					error.message.startsWith('Package "'))
-			) {
+			if (isPackageSecretAccessUnavailableError(error)) {
 				return {
 					has: false,
 				}

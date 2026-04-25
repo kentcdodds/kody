@@ -430,6 +430,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				packageContext: {
 					packageId: loaded.savedPackage.id,
 					kodyId: loaded.savedPackage.kodyId,
+					sourceId: loaded.savedPackage.sourceId,
 				},
 				loaded,
 				executorTimeoutMs:
@@ -472,6 +473,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			packageContext: {
 				packageId: string
 				kodyId: string
+				sourceId: string
 			}
 			loaded: Awaited<ReturnType<typeof loadSavedPackageService>>
 			executorTimeoutMs: number | null
