@@ -34,6 +34,9 @@ test('package service runtime preserves explicit stop requests after a run ends'
 		'const stopRequested = this.stateSnapshot.stopRequested',
 	)
 	expect(fileText).toContain(
+		'this.stateSnapshot.stopRequested = false',
+	)
+	expect(fileText).toContain(
 		"this.stateSnapshot.status = this.stateSnapshot.stopRequested\n\t\t\t\t? 'stopped'\n\t\t\t\t: 'error'",
 	)
 	expect(fileText).toContain("if (stopRequested) {\n\t\t\t\tawait this.clearAlarm()")

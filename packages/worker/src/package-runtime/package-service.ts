@@ -305,6 +305,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			const stopRequested = this.stateSnapshot.stopRequested
 			this.stateSnapshot.status = 'stopped'
 			this.stateSnapshot.currentRunId = null
+			this.stateSnapshot.stopRequested = false
 			this.stateSnapshot.lastResult = result
 			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
 			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
@@ -321,6 +322,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				? 'stopped'
 				: 'error'
 			this.stateSnapshot.currentRunId = null
+			this.stateSnapshot.stopRequested = false
 			this.stateSnapshot.lastError = errorMessage
 			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
 			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
