@@ -111,8 +111,9 @@ package-owned jobs and non-package jobs created with `job_schedule` or
 - package service runs also get writable service-owned durable state scoped to
   the declared service name
 - package service runs are background-managed by the service Durable Object, so
-  `service_start` returns immediately with a running state while the service code
-  continues in the background until it finishes, errors, or cooperatively stops
+  `service_start` returns immediately with a running state while the service
+  code continues in the background until it finishes, errors, or cooperatively
+  stops
 - import **`storage`** from **`kody:runtime`**
 - use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
   and **`storage.sql(query, params?)`**

@@ -5,8 +5,8 @@ secret value such as an API key or personal access token. The agent must never
 see the secret value.
 
 If the secret will power a downstream package or package app, load
-`kody_official_guide` with `guide: "integration_bootstrap"` before building
-that package. For the common non-OAuth path after bootstrap, load
+`kody_official_guide` with `guide: "integration_bootstrap"` before building that
+package. For the common non-OAuth path after bootstrap, load
 `kody_official_guide` with `guide: "secret_backed_integration"`. This guide
 covers the secret-collection step only.
 

@@ -100,8 +100,8 @@ Generated UI is the exception when the setup requires something
 - a required transformation step that cannot be represented by saving the raw
   secret plus values directly
 
-Even then, keep the UI focused on setup. The downstream package should wait
-for the post-setup smoke test.
+Even then, keep the UI focused on setup. The downstream package should wait for
+the post-setup smoke test.
 
 ## Recommended chat phrasing
 

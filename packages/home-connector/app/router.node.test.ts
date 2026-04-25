@@ -110,7 +110,9 @@ test('home route toggles worker snapshot link by connector id', async () => {
 		const responseWithoutConnector = await router.fetch('http://example.test/')
 		expect(responseWithoutConnector.status).toBe(200)
 		const htmlWithoutConnector = await responseWithoutConnector.text()
-		expect(htmlWithoutConnector).not.toContain('/home/connectors/default/snapshot')
+		expect(htmlWithoutConnector).not.toContain(
+			'/home/connectors/default/snapshot',
+		)
 	} finally {
 		storage.close()
 	}

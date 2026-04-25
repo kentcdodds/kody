@@ -49,7 +49,8 @@ If those conditions are not met, stop and fix the integration first.
 3. If the required connector or secret is missing, **stop**.
    - Surface the exact `/connect/oauth` or `/connect/secret` URL in chat.
    - Wait for the user to confirm they completed the connect flow.
-   - Do not save a downstream auth-dependent package or package app until integration setup is complete.
+   - Do not save a downstream auth-dependent package or package app until
+     integration setup is complete.
 4. After the user confirms setup, run a minimal authenticated smoke test in
    `execute`.
    - Import OAuth helpers explicitly from `kody:runtime`; they are not ambient
@@ -112,8 +113,7 @@ Avoid these common mistakes:
 
 - building a polished UI first and only discovering later that auth is missing
 - saving a package app that assumes a non-existent secret or connector
-- treating a rendered app as success when the first authenticated API call
-  fails
+- treating a rendered app as success when the first authenticated API call fails
 - using `generated_ui_oauth` by default instead of the standard `/connect/oauth`
   path
 - skipping the authenticated smoke test after the user completes setup

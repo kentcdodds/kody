@@ -274,9 +274,7 @@ async function resolveProductionBindings({
 
 	const bundleArtifactsKvEntry = kvNamespaces.find((entry) => {
 		if (!entry || typeof entry !== 'object') return false
-		return (
-			(entry as Record<string, unknown>).binding === 'BUNDLE_ARTIFACTS_KV'
-		)
+		return (entry as Record<string, unknown>).binding === 'BUNDLE_ARTIFACTS_KV'
 	}) as Record<string, unknown> | undefined
 	if (!bundleArtifactsKvEntry) {
 		fail(

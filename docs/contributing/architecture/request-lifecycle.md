@@ -100,8 +100,8 @@ Full page navigations occur for:
 - Allowed methods are `GET, POST, OPTIONS`.
 - Allowed headers include `content-type` and `authorization`.
 
-This keeps cross-origin behavior narrow while allowing same-origin browser
-and API requests.
+This keeps cross-origin behavior narrow while allowing same-origin browser and
+API requests.
 
 ## Observability (Sentry)
 

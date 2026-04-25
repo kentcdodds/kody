@@ -160,7 +160,9 @@ export async function startDevServer(persistDir: string) {
 		}
 	}
 
-	throw new Error('Failed to start MCP test dev servers after multiple retries.')
+	throw new Error(
+		'Failed to start MCP test dev servers after multiple retries.',
+	)
 }
 
 function isPortAlreadyInUseError(error: unknown) {

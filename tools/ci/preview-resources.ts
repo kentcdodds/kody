@@ -231,9 +231,7 @@ function deleteKvNamespace({
 
 async function ensurePreviewResources(options: CliOptions) {
 	const { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle } =
-		buildPreviewResourceNames(
-		options.workerName,
-		)
+		buildPreviewResourceNames(options.workerName)
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
 		location: options.d1Location,
@@ -273,9 +271,7 @@ async function ensurePreviewResources(options: CliOptions) {
 
 async function cleanupPreviewResources(options: CliOptions) {
 	const { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle } =
-		buildPreviewResourceNames(
-		options.workerName,
-		)
+		buildPreviewResourceNames(options.workerName)
 	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })
 	deleteKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
 	deleteD1Database({ name: d1DatabaseName, dryRun: options.dryRun })

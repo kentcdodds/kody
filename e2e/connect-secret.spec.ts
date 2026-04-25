@@ -24,7 +24,9 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await page.getByPlaceholder('Paste the secret value').fill(secretValue)
 	await page.getByRole('button', { name: 'Review' }).click()
 
-	await expect(page.getByLabel('I confirm these details are correct.')).toBeVisible()
+	await expect(
+		page.getByLabel('I confirm these details are correct.'),
+	).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Save secret' })).toBeDisabled()
 
 	await page.getByLabel('I confirm these details are correct.').check()

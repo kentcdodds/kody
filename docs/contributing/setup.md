@@ -39,17 +39,17 @@ Quick notes for getting a local kody environment running.
   client, local email sending, and Artifacts REST repo
   create/get/list/token/fork calls. Those REST calls do not hit the live
   Cloudflare Artifacts control plane during normal local development. The mock
-  covers only the REST control plane; repo-session git clone/pull/push
-  flows need a real Git-capable Artifacts remote and are not fully simulated
-  by the local mock. Unless you already set `CLOUDFLARE_EMAIL_FROM`,
-  the launcher also defaults it to `reset@kody.dev`. Set
-  `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The home
-  connector receives the resolved worker origin via `WORKER_BASE_URL`. When
-  `HOME_CONNECTOR_SHARED_SECRET` is unset, the launcher generates one and passes
-  it to both the worker and the connector so the outbound registration handshake
-  succeeds in local development. The main worker and home connector stream logs
-  live; the client bundle and background mock workers buffer logs and only print
-  them if that child process exits with an error.)
+  covers only the REST control plane; repo-session git clone/pull/push flows
+  need a real Git-capable Artifacts remote and are not fully simulated by the
+  local mock. Unless you already set `CLOUDFLARE_EMAIL_FROM`, the launcher also
+  defaults it to `reset@kody.dev`. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the
+  local Cloudflare mock entirely. The home connector receives the resolved
+  worker origin via `WORKER_BASE_URL`. When `HOME_CONNECTOR_SHARED_SECRET` is
+  unset, the launcher generates one and passes it to both the worker and the
+  connector so the outbound registration handshake succeeds in local
+  development. The main worker and home connector stream logs live; the client
+  bundle and background mock workers buffer logs and only print them if that
+  child process exits with an error.)
 - The home automation connector lives in `packages/home-connector`.
   - `npm run dev:home-connector` starts the local connector app on Node 24 with
     `node --watch`, so connector code changes automatically restart the local
@@ -98,13 +98,12 @@ Quick notes for getting a local kody environment running.
   - The Samsung TV tool surface intentionally focuses on discovery, pairing,
     remote keys, known-app probing, explicit app launch by app ID, and Art Mode
     control.
-  - Samsung power support is exposed as best-effort `power off` and
-    `power on` actions. Power off uses the local Samsung remote channel and
-    power on uses Wake-on-LAN with the stored TV MAC address. These
-    semantics are model- and firmware-dependent, especially on Frame TVs where
-    the regular power key may be mapped to Art Mode rather than true standby.
-  - Full installed-app enumeration is considered model- and
-    firmware-dependent.
+  - Samsung power support is exposed as best-effort `power off` and `power on`
+    actions. Power off uses the local Samsung remote channel and power on uses
+    Wake-on-LAN with the stored TV MAC address. These semantics are model- and
+    firmware-dependent, especially on Frame TVs where the regular power key may
+    be mapped to Art Mode rather than true standby.
+  - Full installed-app enumeration is considered model- and firmware-dependent.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
@@ -150,8 +149,8 @@ Quick notes for getting a local kody environment running.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts, so `npm run validate` and `npm run test:push` self-heal on a
   fresh machine.
-- Use `npm run test:e2e:install` when you want to prefetch Playwright
-  browsers ahead of time instead of waiting for the first E2E run.
+- Use `npm run test:e2e:install` when you want to prefetch Playwright browsers
+  ahead of time instead of waiting for the first E2E run.
 - `npm run test:e2e:run` runs the Playwright suite through Nx and depends on a
   cached `worker:prepare-e2e-env` target for `.env` bootstrap plus an uncached
   `worker:prepare-playwright` target that checks the local Chromium install.
@@ -248,9 +247,9 @@ When a PR is closed, the cleanup job deletes the preview Worker(s) and these
 resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
-not available for Workers that use Durable Objects. The main app
-Worker binds `MCP_OBJECT`, so app previews continue to use per-PR Worker names.
-Mock Workers do not use Durable Objects, so their Wrangler configs opt into
+not available for Workers that use Durable Objects. The main app Worker binds
+`MCP_OBJECT`, so app previews continue to use per-PR Worker names. Mock Workers
+do not use Durable Objects, so their Wrangler configs opt into
 `preview_urls = true` and the workflow includes mock version preview links when
 Cloudflare returns them.
 

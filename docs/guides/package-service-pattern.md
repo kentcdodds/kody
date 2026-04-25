@@ -22,25 +22,25 @@ Example manifest shape:
 
 ```json
 {
-  "name": "@scope/realtime-supervisor",
-  "exports": {
-    ".": "./src/index.ts",
-    "./format-event": "./src/format-event.ts"
-  },
-  "kody": {
-    "id": "realtime-supervisor",
-    "description": "Native long-lived service package",
-    "app": {
-      "entry": "./src/app.ts"
-    },
-    "services": {
-      "realtime-supervisor": {
-        "entry": "./src/services/realtime-supervisor.ts",
-        "autoStart": true,
-        "timeoutMs": 300000
-      }
-    }
-  }
+	"name": "@scope/realtime-supervisor",
+	"exports": {
+		".": "./src/index.ts",
+		"./format-event": "./src/format-event.ts"
+	},
+	"kody": {
+		"id": "realtime-supervisor",
+		"description": "Native long-lived service package",
+		"app": {
+			"entry": "./src/app.ts"
+		},
+		"services": {
+			"realtime-supervisor": {
+				"entry": "./src/services/realtime-supervisor.ts",
+				"autoStart": true,
+				"timeoutMs": 300000
+			}
+		}
+	}
 }
 ```
 
@@ -102,42 +102,46 @@ Pseudo-code shape:
 import { service, storage } from 'kody:runtime'
 
 async function openSocket(session: unknown) {
-  void session
-  return await new Promise<WebSocket>((resolve, reject) => {
-    const socket = new WebSocket('wss://example.com/stream')
-    socket.addEventListener('open', () => resolve(socket), { once: true })
-    socket.addEventListener('error', () => reject(new Error('Failed to open stream')), {
-      once: true,
-    })
-  })
+	void session
+	return await new Promise<WebSocket>((resolve, reject) => {
+		const socket = new WebSocket('wss://example.com/stream')
+		socket.addEventListener('open', () => resolve(socket), { once: true })
+		socket.addEventListener(
+			'error',
+			() => reject(new Error('Failed to open stream')),
+			{
+				once: true,
+			},
+		)
+	})
 }
 
 export default async function run() {
-  const session = (await storage.get('session-state')) ?? null
-  const socket = await openSocket(session)
+	const session = (await storage.get('session-state')) ?? null
+	const socket = await openSocket(session)
 
-  try {
-    // Authenticate, subscribe, or resume here.
+	try {
+		// Authenticate, subscribe, or resume here.
 
-    while (
-      socket.readyState !== WebSocket.CLOSING &&
-      socket.readyState !== WebSocket.CLOSED
-    ) {
-      if (await service.shouldStop()) {
-        socket.close(1000, 'service stop requested')
-        await service.clearAlarm()
-        return { stopped: true }
-      }
+		while (
+			socket.readyState !== WebSocket.CLOSING &&
+			socket.readyState !== WebSocket.CLOSED
+		) {
+			if (await service.shouldStop()) {
+				socket.close(1000, 'service stop requested')
+				await service.clearAlarm()
+				return { stopped: true }
+			}
 
-      const event = await readNextEvent(socket)
-      await persistRuntimeState(storage, event)
-      await handleRuntimeEvent(event)
-    }
-  } catch (error) {
-    await persistFailure(storage, error)
-    await service.setAlarm(new Date(Date.now() + 5_000))
-    throw error
-  }
+			const event = await readNextEvent(socket)
+			await persistRuntimeState(storage, event)
+			await handleRuntimeEvent(event)
+		}
+	} catch (error) {
+		await persistFailure(storage, error)
+		await service.setAlarm(new Date(Date.now() + 5_000))
+		throw error
+	}
 }
 ```
 

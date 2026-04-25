@@ -15,8 +15,8 @@ The full `edits.edits` array is opt-in through `include_edits: true`.
 
 That keeps the default response small for agent workflows that only need
 session, checks, publish status, or a count of changed files, while allowing
-callers to request the concrete changed content and diff when they need audit
-or explanation detail.
+callers to request the concrete changed content and diff when they need audit or
+explanation detail.
 
 ## Preferred workflow
 

@@ -275,8 +275,8 @@ return {
 - Trunk
 ```
 
-**Example in this repo:** Tools return human-readable markdown in `content`
-and machine-friendly data in `structuredContent`. Tool descriptions should not
+**Example in this repo:** Tools return human-readable markdown in `content` and
+machine-friendly data in `structuredContent`. Tool descriptions should not
 mention these protocol field names.
 
 ---
@@ -433,8 +433,8 @@ Resources provide **read-only data access** with:
 - `media://feeds/{id}` — Individual feed details
 - `media://directories` — Available media directories
 
-**Example in this repo:** Resources are not registered, but this
-pattern is recommended for exposing read-only docs and server metadata.
+**Example in this repo:** Resources are not registered, but this pattern is
+recommended for exposing read-only docs and server metadata.
 
 ---
 
@@ -464,5 +464,5 @@ Available media roots:
 Please ask me some questions to understand what I'm trying to create, then help me set it up.
 ```
 
-**Example in this repo:** Prompts are not registered, but this pattern
-is recommended for guiding multi-step workflows.
+**Example in this repo:** Prompts are not registered, but this pattern is
+recommended for guiding multi-step workflows.

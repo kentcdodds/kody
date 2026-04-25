@@ -69,8 +69,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   suite starts.
 - `npm run test:e2e:ui` and plain `npx playwright test` assume Playwright
   browsers are already installed.
-- Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads
-  `packages/worker/.env` values for local secrets.
+- Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`
+  values for local secrets.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.

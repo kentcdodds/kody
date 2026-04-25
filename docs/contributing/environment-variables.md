@@ -110,8 +110,8 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
   `https://api.cloudflare.com` when unset, including for outbound email sending.
   Local `npm run dev` sets this to the Cloudflare mock Worker unless
-  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`. That same local mock
-  serves the Artifacts REST control-plane endpoints used by
+  `AI_MODE=remote` or `SKIP_CLOUDFLARE_MOCK=1`. That same local mock serves the
+  Artifacts REST control-plane endpoints used by
   `packages/worker/src/repo/artifacts.ts` (`repos`, `tokens`, and `fork`), so
   local repo create/get/list/token/fork calls do not need the live Artifacts
   REST API.
@@ -141,9 +141,9 @@ See `packages/worker/src/env-schema.ts` and
   fallback. At Worker boot, invalid JSON or malformed keys fail env validation
   with a clear error. At runtime, if the value is a plain string in a test
   harness, malformed JSON is logged and ignored for map lookup only.
-- For **`kind: home`**, if a key is missing in the map, the worker falls
-  back to **`HOME_CONNECTOR_SHARED_SECRET`**. Non-`home` kinds have **no**
-  legacy fallback; they must appear in the map (or hello is rejected).
+- For **`kind: home`**, if a key is missing in the map, the worker falls back to
+  **`HOME_CONNECTOR_SHARED_SECRET`**. Non-`home` kinds have **no** legacy
+  fallback; they must appear in the map (or hello is rejected).
 
 Authoring guide for outbound WebSocket services:
 [`architecture/remote-connectors.md`](./architecture/remote-connectors.md).
