@@ -133,9 +133,21 @@ export function listPackageServices(manifest: AuthoredPackageJson) {
 			name,
 			entry: normalizePackageWorkspacePath(service.entry),
 			autoStart: service.autoStart ?? false,
+			mode: service.mode ?? 'bounded',
 			timeoutMs: service.timeoutMs ?? null,
 		}))
 		.sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
+	return Object.entries(manifest.kody.subscriptions ?? {})
+		.map(([topic, subscription]) => ({
+			topic,
+			handler: normalizePackageWorkspacePath(subscription.handler),
+			description: subscription.description?.trim() || null,
+			filters: subscription.filters ?? null,
+		}))
+		.sort((left, right) => left.topic.localeCompare(right.topic))
 }
 
 export function getPackageTags(manifest: AuthoredPackageJson) {
@@ -161,7 +173,14 @@ export type PackageSearchProjection = {
 		name: string
 		entry: string
 		autoStart: boolean
+		mode: 'bounded' | 'persistent'
 		timeoutMs: number | null
+	}>
+	subscriptions: Array<{
+		topic: string
+		handler: string
+		description: string | null
+		filters: Record<string, unknown> | null
 	}>
 }
 
@@ -192,10 +211,13 @@ export function buildPackageSearchProjection(
 			}))
 			.sort((left, right) => left.name.localeCompare(right.name)),
 		services: listPackageServices(manifest),
+		subscriptions: listPackageSubscriptions(manifest),
 	}
 }
 
-export function buildPackageSearchDocument(projection: PackageSearchProjection) {
+export function buildPackageSearchDocument(
+	projection: PackageSearchProjection,
+) {
 	const jobLines = projection.jobs.map((job) =>
 		[job.name, job.entry, job.schedule, job.enabled ? 'enabled' : 'disabled']
 			.filter((value) => value.length > 0)
@@ -205,11 +227,22 @@ export function buildPackageSearchDocument(projection: PackageSearchProjection) 
 		[
 			service.name,
 			service.entry,
+			service.mode,
 			service.autoStart ? 'auto-start' : 'manual-start',
 			service.timeoutMs != null ? `timeout-ms:${service.timeoutMs}` : '',
 		]
 			.filter((value) => value.length > 0)
 			.join(' '),
+	)
+	const subscriptionLines = (projection.subscriptions ?? []).map(
+		(subscription) =>
+			[
+				`subscription:${subscription.topic}`,
+				subscription.handler,
+				subscription.description ?? '',
+			]
+				.filter((value) => value.length > 0)
+				.join(' '),
 	)
 	return [
 		`package ${projection.kodyId}`,
@@ -220,6 +253,7 @@ export function buildPackageSearchDocument(projection: PackageSearchProjection) 
 		projection.exports.join('\n'),
 		jobLines.join('\n'),
 		serviceLines.join('\n'),
+		subscriptionLines.join('\n'),
 		projection.appEntry
 			? `app ${projection.appEntry}`
 			: projection.hasApp

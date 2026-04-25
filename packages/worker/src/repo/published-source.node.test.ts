@@ -30,10 +30,8 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 		mockModule.persistPublishedSourceSnapshot(...args),
 }))
 
-const {
-	loadPublishedEntityManifest,
-	loadPublishedEntitySource,
-} = await import('./published-source.ts')
+const { loadPublishedEntityManifest, loadPublishedEntitySource } =
+	await import('./published-source.ts')
 
 function createSourceRow() {
 	return {
@@ -90,7 +88,9 @@ test('loadPublishedEntityManifest reads only manifest content from stored snapsh
 		sourceId: 'source-1',
 	})
 
-	expect(mockModule.loadPublishedSourceManifestSnapshot).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedSourceManifestSnapshot).toHaveBeenCalledTimes(
+		1,
+	)
 	expect(mockModule.readMockArtifactSnapshot).not.toHaveBeenCalled()
 	expect(
 		mockModule.persistPublishedSourceManifestSnapshot,

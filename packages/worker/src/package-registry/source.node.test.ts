@@ -74,7 +74,8 @@ test('loadPackageSourceBySourceId reuses cached published package sources', asyn
 					},
 				},
 			}),
-			'app.js': 'export default { async fetch() { return new Response("ok") } }',
+			'app.js':
+				'export default { async fetch() { return new Response("ok") } }',
 			'index.js': 'export const value = "ok"',
 		},
 	})
@@ -301,7 +302,8 @@ test('loadPackageSourceBySourceId shares the same in-flight published source loa
 					},
 				},
 			}),
-			'app.js': 'export default { async fetch() { return new Response("ok") } }',
+			'app.js':
+				'export default { async fetch() { return new Response("ok") } }',
 			'index.js': 'export const value = "ok"',
 		},
 	})
@@ -348,7 +350,8 @@ test('loadPackageSourceBySourceId evicts failed published source loads before re
 						},
 					},
 				}),
-				'app.js': 'export default { async fetch() { return new Response("ok") } }',
+				'app.js':
+					'export default { async fetch() { return new Response("ok") } }',
 				'index.js': 'export const value = "ok"',
 			},
 		})

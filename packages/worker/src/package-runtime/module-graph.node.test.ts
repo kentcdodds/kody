@@ -24,10 +24,8 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		mockModule.loadPackageSourceBySourceId(...args),
 }))
 
-const {
-	buildKodyAppBundle,
-	createPublishedPackageAppBundleCacheKey,
-} = await import('./module-graph.ts')
+const { buildKodyAppBundle, createPublishedPackageAppBundleCacheKey } =
+	await import('./module-graph.ts')
 
 beforeEach(() => {
 	mockModule.createWorker.mockReset()
@@ -166,7 +164,9 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 		}),
 	)
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(createLoadedPackageSource())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		createLoadedPackageSource(),
+	)
 
 	const { buildKodyModuleBundle } = await import('./module-graph.ts')
 
@@ -298,7 +298,9 @@ test('buildKodyModuleBundle keeps dependencies for scoped packages with the same
 })
 
 test('buildKodyModuleBundle keeps virtual package paths distinct for scoped packages with the same leaf', async () => {
-	mockModule.createWorker.mockResolvedValue(createBundleResult('shared-leaf-prefix'))
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('shared-leaf-prefix'),
+	)
 	mockModule.getSavedPackageByName.mockImplementation(
 		async (
 			_db: unknown,
@@ -396,7 +398,9 @@ test('buildKodyModuleBundle keeps virtual package paths distinct for scoped pack
 })
 
 test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
-	mockModule.createWorker.mockResolvedValue(createBundleResult('kody-id-import'))
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('kody-id-import'),
+	)
 	mockModule.getSavedPackageByName.mockResolvedValue(null)
 
 	const { buildKodyModuleBundle } = await import('./module-graph.ts')
@@ -633,7 +637,9 @@ export default {
 })
 
 test('buildKodyAppBundle rewrites dynamic kody runtime imports inside TypeScript package apps', async () => {
-	mockModule.createWorker.mockResolvedValue(createBundleResult('ts-dynamic-app'))
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('ts-dynamic-app'),
+	)
 
 	await buildKodyAppBundle({
 		env: {
@@ -684,7 +690,9 @@ test('buildKodyAppBundle rewrites dynamic kody runtime imports inside TypeScript
 })
 
 test('buildKodyAppBundle runtime module exports service helper', async () => {
-	mockModule.createWorker.mockResolvedValue(createBundleResult('runtime-service-helper'))
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('runtime-service-helper'),
+	)
 
 	await buildKodyAppBundle({
 		env: {

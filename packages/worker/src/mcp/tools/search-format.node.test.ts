@@ -17,106 +17,31 @@ test('parseEntityRef accepts value and connector entity types', () => {
 	})
 })
 
-test(
-	'search formatting keeps entity refs in markdown while structured output carries the stable contract',
-	() => {
-		const markdown = formatSearchMarkdown({
-			baseUrl: 'http://localhost',
-			warnings: [],
-			guidance:
-				'Inspect connector detail with `search({ entity: "github:connector" })` next.',
-			matches: [
-				{
-					type: 'value',
-					valueId: 'user:preferred_repo',
-					name: 'preferred_repo',
-					scope: 'user',
-					description: 'Preferred repository owner/name.',
-					value: 'kentcdodds/kody',
-					appId: null,
-					updatedAt: '2026-03-20T00:00:00.000Z',
-					ttlMs: null,
-					usage:
-						'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
-					fusedScore: 1,
-				},
-				{
-					type: 'connector',
-					connectorName: 'github',
-					title: 'github',
-					description: 'GitHub OAuth connector config',
-					flow: 'confidential',
-					tokenUrl: 'https://github.com/login/oauth/access_token',
-					apiBaseUrl: 'https://api.github.com',
-					clientIdValueName: 'github_client_id',
-					clientSecretSecretName: 'github_client_secret',
-					accessTokenSecretName: 'github_access_token',
-					refreshTokenSecretName: 'github_refresh_token',
-					requiredHosts: ['api.github.com'],
-					usage: 'Read with connector_get: {"name":"github"}.',
-					fusedScore: 0.9,
-				},
-			],
-		})
-
-		expect(markdown).toContain('`user:preferred_repo:value`')
-		expect(markdown).toContain('`github:connector`')
-		const structuredMatches = toSlimStructuredMatches({
-			baseUrl: 'http://localhost',
-			matches: [
-				{
-					type: 'value',
-					valueId: 'user:preferred_repo',
-					name: 'preferred_repo',
-					scope: 'user',
-					description: 'Preferred repository owner/name.',
-					value: 'kentcdodds/kody',
-					appId: null,
-					updatedAt: '2026-03-20T00:00:00.000Z',
-					ttlMs: null,
-					usage:
-						'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
-					fusedScore: 1,
-				},
-				{
-					type: 'connector',
-					connectorName: 'github',
-					title: 'github',
-					description: 'GitHub OAuth connector config',
-					flow: 'confidential',
-					tokenUrl: 'https://github.com/login/oauth/access_token',
-					apiBaseUrl: 'https://api.github.com',
-					clientIdValueName: 'github_client_id',
-					clientSecretSecretName: 'github_client_secret',
-					accessTokenSecretName: 'github_access_token',
-					refreshTokenSecretName: 'github_refresh_token',
-					requiredHosts: ['api.github.com'],
-					usage: 'Read with connector_get: {"name":"github"}.',
-					fusedScore: 0.9,
-				},
-			],
-		})
-
-		expect(structuredMatches).toMatchObject([
+test('search formatting keeps entity refs in markdown while structured output carries the stable contract', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		guidance:
+			'Inspect connector detail with `search({ entity: "github:connector" })` next.',
+		matches: [
 			{
 				type: 'value',
-				id: 'user:preferred_repo',
-				entityRef: 'user:preferred_repo:value',
+				valueId: 'user:preferred_repo',
 				name: 'preferred_repo',
-				title: 'preferred_repo',
-				description: 'Preferred repository owner/name.',
-				usage: 'codemode.value_get({ name: "preferred_repo", scope: "user" })',
 				scope: 'user',
+				description: 'Preferred repository owner/name.',
+				value: 'kentcdodds/kody',
 				appId: null,
+				updatedAt: '2026-03-20T00:00:00.000Z',
+				ttlMs: null,
+				usage: 'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
+				fusedScore: 1,
 			},
 			{
 				type: 'connector',
-				id: 'github',
-				entityRef: 'github:connector',
-				name: 'github',
+				connectorName: 'github',
 				title: 'github',
 				description: 'GitHub OAuth connector config',
-				usage: 'codemode.connector_get({ name: "github" })',
 				flow: 'confidential',
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
@@ -125,16 +50,86 @@ test(
 				accessTokenSecretName: 'github_access_token',
 				refreshTokenSecretName: 'github_refresh_token',
 				requiredHosts: ['api.github.com'],
+				usage: 'Read with connector_get: {"name":"github"}.',
+				fusedScore: 0.9,
 			},
-		])
-		const connectorMatch = structuredMatches[1]
-		expect(connectorMatch).toMatchObject({
+		],
+	})
+
+	expect(markdown).toContain('`user:preferred_repo:value`')
+	expect(markdown).toContain('`github:connector`')
+	const structuredMatches = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'value',
+				valueId: 'user:preferred_repo',
+				name: 'preferred_repo',
+				scope: 'user',
+				description: 'Preferred repository owner/name.',
+				value: 'kentcdodds/kody',
+				appId: null,
+				updatedAt: '2026-03-20T00:00:00.000Z',
+				ttlMs: null,
+				usage: 'Read with value_get: {"name":"preferred_repo","scope":"user"}.',
+				fusedScore: 1,
+			},
+			{
+				type: 'connector',
+				connectorName: 'github',
+				title: 'github',
+				description: 'GitHub OAuth connector config',
+				flow: 'confidential',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				clientIdValueName: 'github_client_id',
+				clientSecretSecretName: 'github_client_secret',
+				accessTokenSecretName: 'github_access_token',
+				refreshTokenSecretName: 'github_refresh_token',
+				requiredHosts: ['api.github.com'],
+				usage: 'Read with connector_get: {"name":"github"}.',
+				fusedScore: 0.9,
+			},
+		],
+	})
+
+	expect(structuredMatches).toMatchObject([
+		{
+			type: 'value',
+			id: 'user:preferred_repo',
+			entityRef: 'user:preferred_repo:value',
+			name: 'preferred_repo',
+			title: 'preferred_repo',
+			description: 'Preferred repository owner/name.',
+			usage: 'codemode.value_get({ name: "preferred_repo", scope: "user" })',
+			scope: 'user',
+			appId: null,
+		},
+		{
 			type: 'connector',
+			id: 'github',
 			entityRef: 'github:connector',
-		})
-		expect(connectorMatch?.nextStep).toContain('github:connector')
-	},
-)
+			name: 'github',
+			title: 'github',
+			description: 'GitHub OAuth connector config',
+			usage: 'codemode.connector_get({ name: "github" })',
+			flow: 'confidential',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: 'github_refresh_token',
+			requiredHosts: ['api.github.com'],
+		},
+	])
+	const connectorMatch = structuredMatches[1]
+	expect(connectorMatch).toMatchObject({
+		type: 'connector',
+		entityRef: 'github:connector',
+	})
+	expect(connectorMatch?.nextStep).toContain('github:connector')
+})
 
 test('entity detail formatting returns stable structured details for values and connectors', () => {
 	const valueDetail = formatEntityDetailMarkdown({
@@ -390,5 +385,4 @@ test('search formatting falls back to a safe secret usage placeholder for displa
 
 	expect(markdown).toContain('`secret "name":secret`')
 	expect(markdown).toContain('(secret placeholder unavailable for this name)')
-	},
-)
+})

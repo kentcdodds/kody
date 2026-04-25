@@ -24,7 +24,9 @@ function freezeFiles(files: Record<string, string>) {
 	return Object.freeze({ ...files }) as Record<string, string>
 }
 
-function assertPublishedCommit(source: NonNullable<PublishedEntitySource['source']>) {
+function assertPublishedCommit(
+	source: NonNullable<PublishedEntitySource['source']>,
+) {
 	if (!source.published_commit) {
 		throw new Error(`Source "${source.id}" has no published commit.`)
 	}

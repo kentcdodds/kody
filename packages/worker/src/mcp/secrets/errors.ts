@@ -2,8 +2,11 @@ const hostApprovalRequiredRegex =
 	/^Secret "([^"]+)" is not allowed for host "([^"]+)"/
 const capabilityAccessRequiredRegex =
 	/^Secret "([^"]+)" is not allowed for capability "([^"]+)"/
+const packageAccessRequiredRegex =
+	/^Secret "([^"]+)" is not allowed for package "([^"]+)"/
 const capabilityBatchDeniedPrefix = 'Secrets require capability approval:'
 const hostBatchDeniedPrefix = 'Secrets require host approval:'
+const packageBatchDeniedPrefix = 'Secrets require package approval:'
 const missingSecretRegex = /^Secret "([^"]+)" was not found\.$/
 
 export const fetchSecretAuthRequiredMessage =
@@ -42,6 +45,14 @@ export type HostApprovalEntry = {
 	approvalUrl: string
 }
 
+export type PackageApprovalEntry = {
+	secretName: string
+	packageId: string
+	kodyId: string | null
+	packageName: string | null
+	approvalUrl: string
+}
+
 export function createCapabilitySecretAccessDeniedBatchMessage(
 	entries: Array<CapabilityApprovalEntry>,
 ) {
@@ -54,6 +65,24 @@ export function createHostSecretAccessDeniedBatchMessage(
 ) {
 	const payload = JSON.stringify(entries)
 	return `${hostBatchDeniedPrefix} ${payload}`
+}
+
+export function createPackageSecretAccessDeniedMessage(input: {
+	secretName: string
+	packageName: string
+	approvalUrl?: string | null
+}) {
+	const approvalSuffix = input.approvalUrl
+		? ` Approval link: ${input.approvalUrl}`
+		: ''
+	return `Secret "${input.secretName}" is not allowed for package "${input.packageName}". If this package should be able to use the secret, ask the user whether to approve that package in the account secrets UI, then retry after they approve that policy change.${approvalSuffix}`
+}
+
+export function createPackageSecretAccessDeniedBatchMessage(
+	entries: Array<PackageApprovalEntry>,
+) {
+	const payload = JSON.stringify(entries)
+	return `${packageBatchDeniedPrefix} ${payload}`
 }
 
 export function parseCapabilityAccessRequiredBatchMessage(message: string) {
@@ -114,6 +143,38 @@ export function parseHostApprovalRequiredBatchMessage(message: string) {
 	}
 }
 
+export function parsePackageAccessRequiredBatchMessage(message: string) {
+	if (!message.startsWith(packageBatchDeniedPrefix)) return null
+	const raw = message.slice(packageBatchDeniedPrefix.length).trim()
+	if (!raw) return null
+	try {
+		const parsed = JSON.parse(raw)
+		if (!Array.isArray(parsed)) return null
+		const entries: Array<PackageApprovalEntry> = []
+		for (const entry of parsed) {
+			if (!entry || typeof entry !== 'object') continue
+			if (
+				typeof entry.secretName !== 'string' ||
+				typeof entry.packageId !== 'string' ||
+				typeof entry.approvalUrl !== 'string'
+			) {
+				continue
+			}
+			entries.push({
+				secretName: entry.secretName,
+				packageId: entry.packageId,
+				kodyId: typeof entry.kodyId === 'string' ? entry.kodyId : null,
+				packageName:
+					typeof entry.packageName === 'string' ? entry.packageName : null,
+				approvalUrl: entry.approvalUrl,
+			})
+		}
+		return entries.length > 0 ? entries : null
+	} catch {
+		return null
+	}
+}
+
 export function parseMissingSecretMessage(message: string) {
 	const match = message.match(missingSecretRegex)
 	if (!match?.[1]) return null
@@ -137,6 +198,15 @@ export function parseCapabilityAccessRequiredMessage(message: string) {
 	return {
 		secretName: match[1],
 		capabilityName: match[2],
+	}
+}
+
+export function parsePackageAccessRequiredMessage(message: string) {
+	const match = message.match(packageAccessRequiredRegex)
+	if (!match?.[1] || !match?.[2]) return null
+	return {
+		secretName: match[1],
+		packageName: match[2],
 	}
 }
 

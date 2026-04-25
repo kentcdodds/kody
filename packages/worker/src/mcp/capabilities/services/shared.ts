@@ -15,11 +15,19 @@ export const packageServiceRecordSchema = z.object({
 	name: z.string(),
 	entry: z.string(),
 	auto_start: z.boolean(),
+	mode: z.enum(['bounded', 'persistent']),
 	timeout_ms: z.number().int().positive().nullable(),
 })
 
 export const packageServiceSummarySchema = packageServiceRecordSchema.extend({
-	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error', 'unknown']),
+	status: z.enum([
+		'idle',
+		'running',
+		'stopping',
+		'stopped',
+		'error',
+		'unknown',
+	]),
 })
 
 function resolvePackageId(
@@ -56,7 +64,9 @@ export async function requirePackageServiceContext(input: {
 		packageId,
 	})
 	if (!savedPackage) {
-		throw new Error('Saved package was not found for package service operations.')
+		throw new Error(
+			'Saved package was not found for package service operations.',
+		)
 	}
 	const serviceName = input.serviceName?.trim() || ''
 	return {
@@ -111,6 +121,7 @@ export async function listPackageServicesForContext(input: {
 			name: service.name,
 			entry: service.entry,
 			auto_start: service.autoStart,
+			mode: service.mode ?? 'bounded',
 			timeout_ms: service.timeoutMs ?? null,
 		})),
 	}
@@ -119,4 +130,3 @@ export async function listPackageServicesForContext(input: {
 export type PackageServiceStatusRecord = z.infer<
 	typeof packageServiceStatusSchema
 >
-

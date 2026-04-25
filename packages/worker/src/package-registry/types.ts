@@ -35,14 +35,39 @@ export const packageAppDefinitionSchema = z.object({
 
 export type PackageAppDefinition = z.infer<typeof packageAppDefinitionSchema>
 
+export const packageSecretMountDefinitionSchema = z.object({
+	name: z.string().min(1),
+	scope: z.enum(['user', 'app', 'session']).optional(),
+	required: z.boolean().optional(),
+})
+
+export type PackageSecretMountDefinition = z.infer<
+	typeof packageSecretMountDefinitionSchema
+>
+
+export const packageServiceModeValues = ['bounded', 'persistent'] as const
+export type PackageServiceMode = (typeof packageServiceModeValues)[number]
+
 export const packageServiceDefinitionSchema = z.object({
 	entry: z.string().min(1),
 	autoStart: z.boolean().optional(),
+	mode: z.enum(packageServiceModeValues).optional(),
 	timeoutMs: z.number().int().positive().max(300_000).optional(),
 })
 
 export type PackageServiceDefinition = z.infer<
 	typeof packageServiceDefinitionSchema
+>
+
+export const packageSubscriptionDefinitionSchema = z.object({
+	topic: z.string().min(1),
+	handler: z.string().min(1),
+	description: z.string().min(1).optional(),
+	filters: z.record(z.string().min(1), z.unknown()).optional(),
+})
+
+export type PackageSubscriptionDefinition = z.infer<
+	typeof packageSubscriptionDefinitionSchema
 >
 
 const packageExportConditionSchema = z
@@ -74,6 +99,12 @@ export const authoredPackageKodySchema = z.object({
 	description: z.string().min(1),
 	tags: z.array(z.string().min(1)).optional(),
 	searchText: z.string().min(1).optional(),
+	secretMounts: z
+		.record(z.string().min(1), packageSecretMountDefinitionSchema)
+		.optional(),
+	subscriptions: z
+		.record(z.string().min(1), packageSubscriptionDefinitionSchema)
+		.optional(),
 	app: packageAppDefinitionSchema.optional(),
 	services: z
 		.record(z.string().min(1), packageServiceDefinitionSchema)

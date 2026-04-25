@@ -14,6 +14,7 @@ export const routes = route({
 	accountSecretUserDetail: '/account/secrets/user/:secretName',
 	accountSecretAppDetail: '/account/secrets/app/:appId/:secretName',
 	accountSecretSessionDetail: '/account/secrets/session/:sessionId/:secretName',
+	accountSecretPackageDetail: '/account/secrets/package/:packageId/:secretName',
 	accountSecretsApprove: '/account/secrets/approve',
 	accountSecretsApi: '/account/secrets.json',
 	accountSecretsApiPost: post('/account/secrets.json'),

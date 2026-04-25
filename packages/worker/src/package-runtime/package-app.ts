@@ -26,6 +26,7 @@ import {
 	normalizePackageServiceStatus,
 	packageServiceRpc,
 } from './package-service.ts'
+import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -206,6 +207,33 @@ function createServicesProxy(runtimeBridge) {
 	};
 }
 
+function createPackageSecretsProxy(runtimeBridge) {
+	return {
+		get: async (alias) => {
+			const normalizedAlias =
+				typeof alias === 'string' ? alias.trim() : ''
+			if (!normalizedAlias) {
+				throw new Error('packageSecrets.get requires a non-empty alias.')
+			}
+			const result = await runtimeBridge.packageSecretGet({
+				alias: normalizedAlias,
+			})
+			return typeof result?.value === 'string' ? result.value : ''
+		},
+		has: async (alias) => {
+			const normalizedAlias =
+				typeof alias === 'string' ? alias.trim() : ''
+			if (!normalizedAlias) {
+				throw new Error('packageSecrets.has requires a non-empty alias.')
+			}
+			const result = await runtimeBridge.packageSecretHas({
+				alias: normalizedAlias,
+			})
+			return result?.has === true
+		},
+	};
+}
+
 function createAuthenticatedFetchHelper(runtimeBridge) {
 	return async function createAuthenticatedFetch(providerName) {
 		return async (input, init) =>
@@ -340,6 +368,8 @@ function createRuntime(runtimeBridge, params, packageContext) {
 		agentChatTurnStream: createAgentChatTurnStream(runtimeBridge),
 		realtime: createRealtimeProxy(runtimeBridge),
 		services: createServicesProxy(runtimeBridge),
+		packageSecrets:
+			packageId.length > 0 ? createPackageSecretsProxy(runtimeBridge) : null,
 		packageContext,
 	};
 }
@@ -672,10 +702,39 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
-	async realtimeEmit(input: {
-		sessionId: string
-		data: unknown
-	}) {
+	async packageSecretGet(input: { alias: string }) {
+		const callerContext = this.createCallerContext(this.ctx.props.packageId)
+		const resolved = await resolvePackageMountedSecret({
+			env: this.env,
+			callerContext,
+			packageId: this.ctx.props.packageId,
+			alias: input.alias,
+		})
+		return {
+			value: resolved.value,
+		}
+	}
+
+	async packageSecretHas(input: { alias: string }) {
+		const callerContext = this.createCallerContext(this.ctx.props.packageId)
+		try {
+			await resolvePackageMountedSecret({
+				env: this.env,
+				callerContext,
+				packageId: this.ctx.props.packageId,
+				alias: input.alias,
+			})
+			return {
+				has: true,
+			}
+		} catch {
+			return {
+				has: false,
+			}
+		}
+	}
+
+	async realtimeEmit(input: { sessionId: string; data: unknown }) {
 		return await this.getRealtimeSessionRpc().emit(input.sessionId, input.data)
 	}
 
@@ -829,6 +888,7 @@ export async function buildPackageAppWorker(input: {
 					packageContext: {
 						packageId: input.savedPackage.id,
 						kodyId: input.savedPackage.kodyId,
+						sourceId: input.savedPackage.sourceId,
 					},
 				}),
 				kvKey,

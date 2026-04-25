@@ -23,9 +23,13 @@ import {
 	saveSecret,
 	setSecretAllowedCapabilities,
 	setSecretAllowedHosts,
+	setSecretAllowedPackages,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import {
+	getSavedPackageById,
+	listSavedPackagesByUserId,
+} from '#worker/package-registry/repo.ts'
 import { type routes } from '#app/routes.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
@@ -52,6 +56,7 @@ type AccountSecretListItem = {
 	appTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -67,7 +72,10 @@ type SecretApprovalView = {
 	scope: SecretScope
 	requestedHost: string
 	requestedCapability: string | null
+	requestedPackageId: string | null
+	requestedPackageName: string | null
 	currentAllowedHosts: Array<string>
+	currentAllowedPackages: Array<string>
 }
 
 type AccountSecretsPayload = {
@@ -146,6 +154,14 @@ export function createAccountSecretsApiHandler(env: Env) {
 					env,
 					user,
 					action,
+					body,
+				})
+			}
+			if (action === 'approve_package') {
+				return handlePackageApprovalAction({
+					request,
+					env,
+					user,
 					body,
 				})
 			}
@@ -764,7 +780,10 @@ async function resolveSecretApprovalView(input: {
 		scope: approval.scope,
 		requestedHost: approval.requestedHost,
 		requestedCapability: input.requestedCapability,
+		requestedPackageId: null,
+		requestedPackageName: null,
 		currentAllowedHosts: secret.allowedHosts,
+		currentAllowedPackages: secret.allowedPackages,
 	} satisfies SecretApprovalView
 }
 
@@ -803,6 +822,7 @@ function toAccountSecretListItem(
 		appId: string | null
 		allowedHosts: Array<string>
 		allowedCapabilities: Array<string>
+		allowedPackages: Array<string>
 		createdAt: string
 		updatedAt: string
 		ttlMs: number | null
@@ -827,6 +847,7 @@ function toAccountSecretListItem(
 		appTitle: secret.appId ? (appTitles.get(secret.appId) ?? null) : null,
 		allowedHosts: secret.allowedHosts,
 		allowedCapabilities: secret.allowedCapabilities,
+		allowedPackages: secret.allowedPackages,
 		createdAt: secret.createdAt,
 		updatedAt: secret.updatedAt,
 		ttlMs: secret.ttlMs,
@@ -899,6 +920,65 @@ async function handleApprovalAction(input: {
 			400,
 		)
 	}
+}
+
+async function handlePackageApprovalAction(input: {
+	request: Request
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: object
+}) {
+	const currentId = readString(input.body, 'currentId')
+	const packageId = readString(input.body, 'packageId')
+	if (!currentId || !packageId) {
+		return jsonResponse(
+			{ ok: false, error: 'Secret id and package id are required.' },
+			400,
+		)
+	}
+
+	const secret = parseAccountSecretId(currentId)
+	if (!secret || secret.scope === 'session') {
+		return jsonResponse({ ok: false, error: 'Invalid secret id.' }, 400)
+	}
+
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.user.mcpUser.userId,
+		packageId,
+	})
+	if (!savedPackage) {
+		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
+	}
+
+	const current = await listSecrets({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		scope: secret.scope,
+		storageContext: getSecretContextForAccountSecret(secret),
+	})
+	const currentSecret = current.find(
+		(item) => item.name === secret.name && item.scope === secret.scope,
+	)
+	if (!currentSecret) {
+		return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
+	}
+
+	await setSecretAllowedPackages({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name: secret.name,
+		scope: secret.scope,
+		allowedPackages: [...currentSecret.allowedPackages, savedPackage.id],
+		storageContext: getSecretContextForAccountSecret(secret),
+	})
+
+	const payload = await buildAccountSecretsPayload({
+		request: input.request,
+		env: input.env,
+		user: input.user,
+		selectedSecretId: currentId,
+	})
+	return jsonResponse(payload)
 }
 
 async function handleSaveAction(input: {

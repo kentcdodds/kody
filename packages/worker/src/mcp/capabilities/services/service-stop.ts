@@ -31,9 +31,7 @@ export const serviceStopCapability = defineDomainCapability(
 				explicitPackageId: args.package_id,
 			})
 			if (!serviceContext.service) {
-				throw new Error(
-					`Package service "${args.service_name}" was not found.`,
-				)
+				throw new Error(`Package service "${args.service_name}" was not found.`)
 			}
 			const result = (await serviceContext.service.stop()) as { ok?: unknown }
 			return {

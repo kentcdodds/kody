@@ -3,10 +3,7 @@ import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
 } from '#worker/package-registry/source.ts'
-import {
-	parseModuleSource,
-	type ModuleAstNode,
-} from '#worker/module-source.ts'
+import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
@@ -33,7 +30,8 @@ const runtimeModulePath = '.__kody_virtual__/runtime.js'
 const rootSourcePrefix = '.__kody_root__'
 const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
-const packageAppBundleCache = createPublishedPackagePromiseCache<RuntimeBundle>()
+const packageAppBundleCache =
+	createPublishedPackagePromiseCache<RuntimeBundle>()
 
 function joinPath(...parts: Array<string>) {
 	return parts
@@ -106,6 +104,7 @@ export const agentChatTurnStream = runtime.agentChatTurnStream;
 export const packageContext = runtime.packageContext ?? null;
 export const serviceContext = runtime.serviceContext ?? null;
 export const service = runtime.service ?? null;
+export const packageSecrets = runtime.packageSecrets ?? null;
 
 export default runtime;
 `.trim()
@@ -225,9 +224,9 @@ function collectLiteralImportNodes(source: string): Array<{
 			expression?: unknown
 		}
 		if (
-			(typedNode.type === 'ImportDeclaration' ||
-				typedNode.type === 'ExportAllDeclaration' ||
-				typedNode.type === 'ExportNamedDeclaration')
+			typedNode.type === 'ImportDeclaration' ||
+			typedNode.type === 'ExportAllDeclaration' ||
+			typedNode.type === 'ExportNamedDeclaration'
 		) {
 			const literalNode = readLiteralStringNode(typedNode.source)
 			if (literalNode) {
@@ -519,6 +518,7 @@ export function createPublishedBundleArtifact(input: {
 	packageContext?: {
 		packageId: string
 		kodyId: string
+		sourceId: string
 	} | null
 	serviceContext?: {
 		serviceName: string

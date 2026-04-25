@@ -160,4 +160,3 @@ test('meta_list_capabilities filters by domain', async () => {
 		),
 	).toBe(true)
 })
-

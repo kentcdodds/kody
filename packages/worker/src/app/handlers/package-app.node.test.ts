@@ -68,7 +68,8 @@ vi.mock('#worker/package-runtime/package-app.ts', () => ({
 
 vi.mock('#worker/package-runtime/realtime-session.ts', () => ({
 	packageRealtimeSessionRpc: (..._args: Array<unknown>) => ({
-		connect: (...args: Array<unknown>) => mockModule.packageRealtimeConnect(...args),
+		connect: (...args: Array<unknown>) =>
+			mockModule.packageRealtimeConnect(...args),
 	}),
 }))
 
@@ -95,7 +96,10 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 
 	expect(response.status).toBe(200)
 	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
-	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(
+		request,
+		'chat',
+	)
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
@@ -110,7 +114,10 @@ test('handlePackageAppRequest routes websocket paths to realtime session manager
 
 	expect(response.status).toBe(200)
 	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
-	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(request, 'chat')
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(
+		request,
+		'chat',
+	)
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 

@@ -25,6 +25,7 @@ export type PackageServiceBindingState = {
 type PackageServiceState = {
 	binding: PackageServiceBindingState | null
 	autoStart: boolean
+	mode: 'bounded' | 'persistent'
 	timeoutMs: number | null
 	stopRequested: boolean
 	currentRunId: string | null
@@ -81,6 +82,7 @@ function createInitialPackageServiceState(): PackageServiceState {
 	return {
 		binding: null,
 		autoStart: false,
+		mode: 'bounded',
 		timeoutMs: null,
 		stopRequested: false,
 		currentRunId: null,
@@ -143,7 +145,9 @@ async function loadSavedPackageService(input: {
 		packageId: input.binding.packageId,
 	})
 	if (!savedPackage) {
-		throw new Error('Saved package was not found for package service operations.')
+		throw new Error(
+			'Saved package was not found for package service operations.',
+		)
 	}
 	const packageSource = await loadPackageSourceBySourceId({
 		env: input.env,
@@ -197,7 +201,8 @@ function buildPackageServiceRetryTime() {
 }
 
 class PackageServiceInstanceBase extends DurableObject<Env> {
-	private stateSnapshot: PackageServiceState = createInitialPackageServiceState()
+	private stateSnapshot: PackageServiceState =
+		createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
 
 	constructor(state: DurableObjectState, env: Env) {
@@ -208,8 +213,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	}
 
 	private async restoreState() {
-		const stored =
-			await this.ctx.storage.get<PackageServiceState>(serviceStateStorageKey)
+		const stored = await this.ctx.storage.get<PackageServiceState>(
+			serviceStateStorageKey,
+		)
 		if (!stored) return
 		this.stateSnapshot = stored
 		if (
@@ -314,6 +320,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		binding: PackageServiceBindingState,
 		overrides?: {
 			autoStart?: boolean
+			mode?: 'bounded' | 'persistent'
 			timeoutMs?: number | null
 		},
 	) {
@@ -321,6 +328,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			overrides && 'autoStart' in overrides
 				? overrides.autoStart
 				: this.stateSnapshot.autoStart
+		const mode =
+			overrides && 'mode' in overrides
+				? overrides.mode
+				: this.stateSnapshot.mode
 		const timeoutMs =
 			overrides && 'timeoutMs' in overrides
 				? overrides.timeoutMs
@@ -331,6 +342,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			service_name: binding.serviceName,
 			status: this.stateSnapshot.status,
 			auto_start: autoStart,
+			mode,
 			timeout_ms: timeoutMs,
 			stop_requested: this.stateSnapshot.stopRequested,
 			active_run_id: this.stateSnapshot.currentRunId,
@@ -366,6 +378,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if (stopRequested) {
 			await this.clearAlarm()
 		} else if (
+			this.stateSnapshot.mode !== 'persistent' &&
 			this.stateSnapshot.autoStart &&
 			!this.stateSnapshot.nextAlarmAt
 		) {
@@ -393,13 +406,16 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				input.binding.serviceName,
 			)
 			this.stateSnapshot.binding = loaded.resolvedBinding
-			this.stateSnapshot.autoStart = loaded.serviceDefinition?.autoStart ?? false
+			this.stateSnapshot.autoStart =
+				loaded.serviceDefinition?.autoStart ?? false
+			this.stateSnapshot.mode = loaded.serviceDefinition?.mode ?? 'bounded'
 			this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null
 			await this.persistState()
 			const result = await this.runService(loaded.resolvedBinding, {
 				getStatus: async () =>
 					this.buildServiceStatusResponse(loaded.resolvedBinding, {
 						autoStart: loaded.serviceDefinition?.autoStart ?? false,
+						mode: loaded.serviceDefinition?.mode ?? 'bounded',
 						timeoutMs: loaded.serviceDefinition?.timeoutMs ?? null,
 					}),
 				shouldStop: async () => this.stateSnapshot.stopRequested,
@@ -408,14 +424,16 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 						runAt,
 						source: 'service',
 					})) as { ok: true; scheduled_at: string },
-				clearAlarm: async () =>
-					(await this.clearAlarm()) as { ok: true },
+				clearAlarm: async () => (await this.clearAlarm()) as { ok: true },
 				packageContext: {
 					packageId: loaded.savedPackage.id,
 					kodyId: loaded.savedPackage.kodyId,
 				},
 				loaded,
-				executorTimeoutMs: loaded.serviceDefinition?.timeoutMs ?? 300_000,
+				executorTimeoutMs:
+					loaded.serviceDefinition?.mode === 'persistent'
+						? (null as unknown as number)
+						: (loaded.serviceDefinition?.timeoutMs ?? 300_000),
 				storageId,
 			})
 			await this.finalizeServiceRun({
@@ -441,9 +459,13 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async runService(
 		binding: PackageServiceBindingState,
 		runtime: {
-			getStatus: () => Promise<ReturnType<PackageServiceInstanceBase['buildServiceStatusResponse']>>
+			getStatus: () => Promise<
+				ReturnType<PackageServiceInstanceBase['buildServiceStatusResponse']>
+			>
 			shouldStop: () => Promise<boolean>
-			setAlarm: (runAt: Date | string) => Promise<{ ok: true; scheduled_at: string }>
+			setAlarm: (
+				runAt: Date | string,
+			) => Promise<{ ok: true; scheduled_at: string }>
 			clearAlarm: () => Promise<{ ok: true }>
 			packageContext: {
 				packageId: string
@@ -454,12 +476,15 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			storageId: string
 		},
 	) {
-		const [{ runBundledModuleWithRegistry }, { buildKodyModuleBundle }, { loadPublishedBundleArtifactByIdentity }] =
-			await Promise.all([
-				import('#mcp/run-codemode-registry.ts'),
-				import('./module-graph.ts'),
-				import('./published-bundle-artifacts.ts'),
-			])
+		const [
+			{ runBundledModuleWithRegistry },
+			{ buildKodyModuleBundle },
+			{ loadPublishedBundleArtifactByIdentity },
+		] = await Promise.all([
+			import('#mcp/run-codemode-registry.ts'),
+			import('./module-graph.ts'),
+			import('./published-bundle-artifacts.ts'),
+		])
 		const artifact = await loadPublishedBundleArtifactByIdentity({
 			env: this.env,
 			userId: binding.userId,
@@ -546,7 +571,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			return Response.json({
 				ok: true,
 				run_id: this.stateSnapshot.currentRunId,
-				started_at: this.stateSnapshot.lastStartedAt ?? new Date().toISOString(),
+				started_at:
+					this.stateSnapshot.lastStartedAt ?? new Date().toISOString(),
 				status: 'running',
 				already_running: true,
 			} satisfies PackageServiceRunResult)
@@ -586,11 +612,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		} catch {
 			loaded = undefined
 		}
-		const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding
+		const binding =
+			loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding
 		return Response.json(
 			this.buildServiceStatusResponse(binding, {
-				autoStart: loaded?.serviceDefinition?.autoStart ?? this.stateSnapshot.autoStart,
-				timeoutMs: loaded?.serviceDefinition?.timeoutMs ?? this.stateSnapshot.timeoutMs,
+				autoStart:
+					loaded?.serviceDefinition?.autoStart ?? this.stateSnapshot.autoStart,
+				timeoutMs:
+					loaded?.serviceDefinition?.timeoutMs ?? this.stateSnapshot.timeoutMs,
 			}),
 		)
 	}
@@ -620,9 +649,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 
 	async fetch(request: Request) {
 		const url = new URL(request.url)
-		const body = (await request.json().catch(() => null)) as
-			| { binding?: PackageServiceBindingState }
-			| null
+		const body = (await request.json().catch(() => null)) as {
+			binding?: PackageServiceBindingState
+		} | null
 		const binding = body?.binding
 		if (!binding) {
 			return new Response('Missing package service binding.', { status: 400 })
@@ -653,9 +682,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				binding,
 			})
 			this.stateSnapshot.binding = loaded.resolvedBinding
-			this.stateSnapshot.autoStart = loaded.serviceDefinition?.autoStart ?? false
-			this.stateSnapshot.timeoutMs =
-				loaded.serviceDefinition?.timeoutMs ?? null
+			this.stateSnapshot.autoStart =
+				loaded.serviceDefinition?.autoStart ?? false
+			this.stateSnapshot.mode = loaded.serviceDefinition?.mode ?? 'bounded'
+			this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null
 			await this.persistState()
 			if (
 				!this.stateSnapshot.stopRequested &&

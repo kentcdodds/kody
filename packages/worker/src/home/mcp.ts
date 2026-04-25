@@ -101,8 +101,7 @@ async function registerBridgeTools(agent: HomeMcpBridge) {
 		'home_list_tools',
 		{
 			title: 'List Home Connector Tools',
-			description:
-				'List raw tools exposed by the connected home connector.',
+			description: 'List raw tools exposed by the connected home connector.',
 			inputSchema: {},
 		},
 		async () => {

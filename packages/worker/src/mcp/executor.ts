@@ -10,6 +10,8 @@ import {
 	parseHostApprovalRequiredBatchMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
+	parsePackageAccessRequiredBatchMessage,
+	parsePackageAccessRequiredMessage,
 } from '#mcp/secrets/errors.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
@@ -90,6 +92,33 @@ export type ExecutionErrorDetails =
 			suggestedAction: {
 				type: 'edit_secret_policy'
 				policyField: 'allowed_capabilities'
+			}
+	  }
+	| {
+			kind: 'secret_package_access_required'
+			message: string
+			nextStep: string
+			secretNames: Array<string>
+			packageName: string
+			approvalUrl: string | null
+			suggestedAction: {
+				type: 'edit_secret_policy'
+				policyField: 'allowed_packages'
+			}
+	  }
+	| {
+			kind: 'secret_package_access_required_batch'
+			message: string
+			nextStep: string
+			missingApprovals: Array<{
+				secretName: string
+				packageId: string
+				kodyId: string | null
+				approvalUrl: string
+			}>
+			suggestedAction: {
+				type: 'edit_secret_policy'
+				policyField: 'allowed_packages'
 			}
 	  }
 	| {
@@ -175,6 +204,38 @@ export function getExecutionErrorDetails(
 			suggestedAction: {
 				type: 'edit_secret_policy',
 				policyField: 'allowed_capabilities',
+			},
+		}
+	}
+
+	const packageAccessBatch = parsePackageAccessRequiredBatchMessage(message)
+	if (packageAccessBatch) {
+		return {
+			kind: 'secret_package_access_required_batch',
+			message,
+			nextStep:
+				'Ask the user whether they want to approve these packages for the listed secrets in the account secrets UI, then retry after approval.',
+			missingApprovals: packageAccessBatch,
+			suggestedAction: {
+				type: 'edit_secret_policy',
+				policyField: 'allowed_packages',
+			},
+		}
+	}
+
+	const packageAccessDetails = parsePackageAccessRequiredMessage(message)
+	if (packageAccessDetails) {
+		return {
+			kind: 'secret_package_access_required',
+			message,
+			nextStep:
+				"Ask the user whether this package should be allowed to use the secret. If they approve, help them add this package to the secret's allowed packages in the account secrets UI, then retry.",
+			secretNames: [packageAccessDetails.secretName],
+			packageName: packageAccessDetails.packageName,
+			approvalUrl: extractFirstUrl(message),
+			suggestedAction: {
+				type: 'edit_secret_policy',
+				policyField: 'allowed_packages',
 			},
 		}
 	}

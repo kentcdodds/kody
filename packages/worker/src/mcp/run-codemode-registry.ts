@@ -20,6 +20,7 @@ import {
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
+import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
 import { buildSecretCapabilityApprovalUrl } from '#mcp/secrets/capability-approval-url.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
@@ -55,6 +56,11 @@ type ServiceToolOptions = {
 	clearAlarm: () => Promise<{ ok: true }>
 }
 
+type PackageSecretToolOptions = {
+	get: (alias: string) => Promise<string>
+	has: (alias: string) => Promise<boolean>
+}
+
 function createServiceHelperPrelude() {
 	return `
 const service = {
@@ -73,6 +79,29 @@ const service = {
 	`.trim()
 }
 
+function createPackageSecretsHelperPrelude() {
+	return `
+const packageSecrets = {
+  get: async (alias) => {
+    const normalizedAlias = typeof alias === 'string' ? alias.trim() : '';
+    if (!normalizedAlias) {
+      throw new Error('packageSecrets.get requires a non-empty alias.')
+    }
+    const result = await codemode.package_secret_get({ alias: normalizedAlias });
+    return typeof result?.value === 'string' ? result.value : '';
+  },
+  has: async (alias) => {
+    const normalizedAlias = typeof alias === 'string' ? alias.trim() : '';
+    if (!normalizedAlias) {
+      throw new Error('packageSecrets.has requires a non-empty alias.')
+    }
+    const result = await codemode.package_secret_has({ alias: normalizedAlias });
+    return result?.has === true;
+  },
+};
+	`.trim()
+}
+
 export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -85,6 +114,7 @@ export async function buildCodemodeFns(
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
+		packageSecretTools?: PackageSecretToolOptions
 	},
 ) {
 	const { capabilityMap } = await getCapabilityRegistryForContext({
@@ -135,8 +165,7 @@ export async function buildCodemodeFns(
 	const serviceTools = options?.serviceTools
 	const serviceCodemodeTools: AdditionalCodemodeTools = serviceTools
 		? {
-				service_get_status: async () =>
-					await serviceTools.getStatus(),
+				service_get_status: async () => await serviceTools.getStatus(),
 				service_should_stop: async () => ({
 					shouldStop: await serviceTools.shouldStop(),
 				}),
@@ -153,19 +182,45 @@ export async function buildCodemodeFns(
 					}
 					const runAt = new Date(runAtString)
 					if (Number.isNaN(runAt.getTime())) {
-						throw new Error('service.setAlarm requires a valid runAt ISO string.')
+						throw new Error(
+							'service.setAlarm requires a valid runAt ISO string.',
+						)
 					}
 					return await serviceTools.setAlarm(runAt)
 				},
-				service_clear_alarm: async () =>
-					await serviceTools.clearAlarm(),
-		  }
+				service_clear_alarm: async () => await serviceTools.clearAlarm(),
+			}
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, serviceCodemodeTools)
+	const packageSecretTools = options?.packageSecretTools
+	const packageSecretCodemodeTools: AdditionalCodemodeTools = packageSecretTools
+		? {
+				package_secret_get: async (args: unknown) => {
+					const alias =
+						typeof args === 'object' && args !== null && 'alias' in args
+							? String((args as { alias: unknown }).alias ?? '')
+							: ''
+					return {
+						value: await packageSecretTools.get(alias),
+					}
+				},
+				package_secret_has: async (args: unknown) => {
+					const alias =
+						typeof args === 'object' && args !== null && 'alias' in args
+							? String((args as { alias: unknown }).alias ?? '')
+							: ''
+					return {
+						has: await packageSecretTools.has(alias),
+					}
+				},
+			}
+		: {}
+	assertNoCapabilityCollisions(capabilityMap, packageSecretCodemodeTools)
 	return {
 		...capabilityCodemodeTools,
 		...storageCodemodeTools,
 		...serviceCodemodeTools,
+		...packageSecretCodemodeTools,
 		...additionalTools,
 	}
 }
@@ -189,6 +244,7 @@ export async function buildCodemodeProvider(
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
+		packageSecretTools?: PackageSecretToolOptions
 	},
 ): Promise<ResolvedProvider> {
 	const tools = await buildCodemodeFns(env, callerContext, options)
@@ -260,6 +316,10 @@ export async function runCodemodeWithRegistry(
 		helperPrelude?: string
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
+		packageContext?: {
+			packageId: string
+			kodyId: string
+		} | null
 		executorModules?: WorkerLoaderModules
 		executorTimeoutMs?: number
 	},
@@ -298,6 +358,32 @@ export async function runCodemodeWithRegistry(
 		additionalTools: options?.additionalTools,
 		storageTools: options?.storageTools,
 		serviceTools: options?.serviceTools,
+		packageSecretTools: options?.packageContext
+			? {
+					get: async (alias: string) =>
+						(
+							await resolvePackageMountedSecret({
+								env,
+								callerContext,
+								packageId: options.packageContext!.packageId,
+								alias,
+							})
+						).value,
+					has: async (alias: string) => {
+						try {
+							await resolvePackageMountedSecret({
+								env,
+								callerContext,
+								packageId: options.packageContext!.packageId,
+								alias,
+							})
+							return true
+						} catch {
+							return false
+						}
+					},
+				}
+			: undefined,
 	})
 	const wrappedCode =
 		params !== undefined
@@ -313,9 +399,13 @@ export async function runCodemodeWithRegistry(
 	const serviceHelperPrelude = options?.serviceTools
 		? createServiceHelperPrelude()
 		: ''
+	const packageSecretsHelperPrelude = options?.packageContext
+		? createPackageSecretsHelperPrelude()
+		: ''
 	const helperPrelude = [
 		storageHelperPrelude,
 		serviceHelperPrelude,
+		packageSecretsHelperPrelude,
 		options?.helperPrelude ?? '',
 	]
 		.filter((value) => value.trim().length > 0)
@@ -423,6 +513,32 @@ export async function runBundledModuleWithRegistry(
 		additionalTools: options?.additionalTools,
 		storageTools: options?.storageTools,
 		serviceTools: options?.serviceTools,
+		packageSecretTools: options?.packageContext
+			? {
+					get: async (alias: string) =>
+						(
+							await resolvePackageMountedSecret({
+								env,
+								callerContext,
+								packageId: options.packageContext!.packageId,
+								alias,
+							})
+						).value,
+					has: async (alias: string) => {
+						try {
+							await resolvePackageMountedSecret({
+								env,
+								callerContext,
+								packageId: options.packageContext!.packageId,
+								alias,
+							})
+							return true
+						} catch {
+							return false
+						}
+					},
+				}
+			: undefined,
 	})
 	const storageHelperPrelude = options?.storageTools
 		? createStorageHelperPrelude({
@@ -433,10 +549,14 @@ export async function runBundledModuleWithRegistry(
 	const serviceHelperPrelude = options?.serviceTools
 		? createServiceHelperPrelude()
 		: ''
+	const packageSecretsHelperPrelude = options?.packageContext
+		? createPackageSecretsHelperPrelude()
+		: ''
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
 ${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
+${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
   const __previousRuntime = globalThis.__kodyRuntime;
   globalThis.__kodyRuntime = {
     codemode,
@@ -448,6 +568,7 @@ ${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
     service: typeof service === 'undefined' ? null : service,
+    packageSecrets: typeof packageSecrets === 'undefined' ? null : packageSecrets,
   };
   try {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});

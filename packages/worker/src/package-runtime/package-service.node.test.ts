@@ -33,13 +33,11 @@ test('package service runtime preserves explicit stop requests after a run ends'
 	expect(fileText).toContain(
 		'const stopRequested = this.stateSnapshot.stopRequested',
 	)
+	expect(fileText).toContain('this.stateSnapshot.stopRequested = false')
+	expect(fileText).toContain('await this.finalizeServiceRun({')
 	expect(fileText).toContain(
-		'this.stateSnapshot.stopRequested = false',
+		'if (stopRequested) {\n\t\t\tawait this.clearAlarm()',
 	)
-	expect(fileText).toContain(
-		'await this.finalizeServiceRun({',
-	)
-	expect(fileText).toContain("if (stopRequested) {\n\t\t\tawait this.clearAlarm()")
 	expect(fileText).toContain('!this.stateSnapshot.stopRequested')
 })
 
@@ -62,9 +60,7 @@ test('package service runtime re-arms auto-start after unplanned exit', async ()
 	expect(fileText).toContain('buildPackageServiceRetryTime()')
 	expect(fileText).toContain('runAt: buildPackageServiceRetryTime(),')
 	expect(fileText).toContain("source: 'auto-start'")
-	expect(fileText).toContain(
-		"this.stateSnapshot.status = 'error'",
-	)
+	expect(fileText).toContain("this.stateSnapshot.status = 'error'")
 	expect(fileText).toContain(
 		'this.stateSnapshot.autoStart &&\n\t\t\t\t!this.stateSnapshot.stopRequested &&\n\t\t\t\t!this.stateSnapshot.nextAlarmAt',
 	)
@@ -75,11 +71,17 @@ test('package service runtime refreshes manifest-backed service settings for ala
 		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
 	)
 	expect(fileText).toContain('const loaded = await loadSavedPackageService({')
-	expect(fileText).toContain('this.stateSnapshot.binding = loaded.resolvedBinding')
+	expect(fileText).toContain(
+		'this.stateSnapshot.binding = loaded.resolvedBinding',
+	)
+	expect(fileText).toContain(
+		"this.stateSnapshot.mode = loaded.serviceDefinition?.mode ?? 'bounded'",
+	)
 	expect(fileText).toContain(
 		'this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null',
 	)
 	expect(fileText).toContain("'timeoutMs' in overrides")
+	expect(fileText).toContain("'mode' in overrides")
 	expect(fileText).toContain(
 		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
@@ -105,8 +107,24 @@ test('package service runtime schedules auto-start on save path instead of read-
 	expect(fileText).toContain(
 		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
+	expect(fileText).toContain('options?.armAutoStart &&')
+})
+
+test('package service runtime exposes persistent mode and removes executor timeout for persistent services', async () => {
+	const fileText = await import('node:fs/promises').then((fs) =>
+		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
+	)
+	expect(fileText).toContain("mode: 'bounded' | 'persistent'")
 	expect(fileText).toContain(
-		'options?.armAutoStart &&',
+		"this.stateSnapshot.mode = loaded.serviceDefinition?.mode ?? 'bounded'",
+	)
+	expect(fileText).toContain(
+		"mode: loaded.serviceDefinition?.mode ?? 'bounded'",
+	)
+	expect(fileText).toContain("loaded.serviceDefinition?.mode === 'persistent'")
+	expect(fileText).toContain('? (null as unknown as number)')
+	expect(fileText).toContain(
+		': (loaded.serviceDefinition?.timeoutMs ?? 300_000)',
 	)
 })
 

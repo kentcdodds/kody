@@ -340,7 +340,7 @@ test('searchUnified uses package exports and connector aliases for operate queri
 					refreshTokenSecretName: 'spotify-refresh-token',
 					requiredHosts: ['api.spotify.com'],
 				}),
-					description: 'Spotify playback and music OAuth connector config',
+				description: 'Spotify playback and music OAuth connector config',
 				appId: null,
 				createdAt: '2026-04-20T00:00:00.000Z',
 				updatedAt: '2026-04-20T00:00:00.000Z',
@@ -476,7 +476,9 @@ test('search guidance does not pair unrelated package and connector matches', ()
 	expect(result.guidance).toContain(
 		'search({ entity: "observed-package:package" })',
 	)
-	expect(result.guidance).not.toContain('search({ entity: "github:connector" })')
+	expect(result.guidance).not.toContain(
+		'search({ entity: "github:connector" })',
+	)
 })
 
 test('optional search rows fall back when persisted values lookup fails', async () => {

@@ -956,7 +956,10 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 				serviceTools: {
 					getStatus: async () => ({ status: 'running' }),
 					shouldStop: async () => false,
-					setAlarm: async () => ({ ok: true, scheduled_at: '2026-04-25T00:00:00.000Z' }),
+					setAlarm: async () => ({
+						ok: true,
+						scheduled_at: '2026-04-25T00:00:00.000Z',
+					}),
 					clearAlarm: async () => ({ ok: true }),
 				},
 				executorTimeoutMs: 300_000,
@@ -965,10 +968,10 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 
 		expect(result.result).toBe('ok')
 		expect(wrapped).toContain('const service = {')
-		expect(wrapped).toContain("service_get_status")
-		expect(wrapped).toContain("service_should_stop")
-		expect(wrapped).toContain("service_set_alarm")
-		expect(wrapped).toContain("service_clear_alarm")
+		expect(wrapped).toContain('service_get_status')
+		expect(wrapped).toContain('service_should_stop')
+		expect(wrapped).toContain('service_set_alarm')
+		expect(wrapped).toContain('service_clear_alarm')
 		expect(wrapped).toContain('"serviceName":"realtime-supervisor"')
 	} finally {
 		createExecuteExecutorSpy.mockRestore()

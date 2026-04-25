@@ -59,6 +59,11 @@ type SecretListItem = {
 	appTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<{
+		packageId: string
+		kodyId: string
+		name: string
+	}>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -86,6 +91,7 @@ type EditorState = {
 	value: string
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 }
 
 type SelectionState = {
@@ -127,6 +133,7 @@ function createEmptyEditorState(apps: Array<PackageAppOption>): EditorState {
 		value: '',
 		allowedHosts: [''],
 		allowedCapabilities: [''],
+		allowedPackages: [''],
 	}
 }
 
@@ -162,6 +169,10 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
 			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
+		allowedPackages:
+			secret.allowedPackages.length > 0
+				? secret.allowedPackages.map((pkg) => pkg.packageId)
+				: [''],
 	}
 }
 
@@ -247,6 +258,10 @@ function getAlreadyAddedNotice(input: {
 	const requestedCapability = normalizeSingleAllowedCapability(
 		readCapabilityPrefill(input.href),
 	)
+	const requestedPackageId =
+		new URL(input.href, 'http://localhost').searchParams
+			.get('package_id')
+			?.trim() ?? null
 	const allowedHosts = input.selectedSecret
 		? normalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
 		: input.approval
@@ -257,6 +272,23 @@ function getAlreadyAddedNotice(input: {
 				coerceStringRows(input.selectedSecret.allowedCapabilities),
 			)
 		: []
+	const allowedPackageIds = input.selectedSecret
+		? Array.from(
+				new Set(
+					input.selectedSecret.allowedPackages
+						.map((pkg) => pkg.packageId)
+						.filter((value) => value.length > 0),
+				),
+			).sort((left, right) => left.localeCompare(right))
+		: input.approval
+			? Array.from(
+					new Set(
+						input.approval.currentAllowedPackages
+							.map((pkg) => pkg.packageId)
+							.filter((value) => value.length > 0),
+					),
+				).sort((left, right) => left.localeCompare(right))
+			: []
 	const items: Array<string> = []
 	const hostAlreadyAdded =
 		requestedHost != null && allowedHosts.includes(requestedHost)
@@ -271,10 +303,16 @@ function getAlreadyAddedNotice(input: {
 			`Capability ${requestedCapability} is already in allowed capabilities.`,
 		)
 	}
+	const packageAlreadyAdded =
+		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)
+	if (packageAlreadyAdded) {
+		items.push(`Package ${requestedPackageId} is already in allowed packages.`)
+	}
 	if (items.length === 0) return null
 	return {
 		items,
 		hostAlreadyAdded,
+		packageAlreadyAdded,
 	}
 }
 
@@ -331,7 +369,8 @@ function getDataRefreshKey(href: string) {
 	const request = url.searchParams.get('request') ?? ''
 	const requestedHost = url.searchParams.get('allowed-host') ?? ''
 	const requestedCapability = url.searchParams.get('capability') ?? ''
-	return `${url.pathname}?request=${request}&allowed-host=${requestedHost}&capability=${requestedCapability}`
+	const requestedPackageId = url.searchParams.get('package_id') ?? ''
+	return `${url.pathname}?request=${request}&allowed-host=${requestedHost}&capability=${requestedCapability}&package_id=${requestedPackageId}`
 }
 
 function readFilterState(
@@ -620,6 +659,13 @@ export function AccountSecretsRoute(handle: Handle) {
 			const allowedCapabilities = normalizeAllowedCapabilities(
 				collectRepeatedTextRows(form, 'allowed-capabilities'),
 			)
+			const allowedPackages = Array.from(
+				new Set(
+					editorState.allowedPackages
+						.map((value) => value.trim())
+						.filter((value) => value.length > 0),
+				),
+			).sort((left, right) => left.localeCompare(right))
 			const response = await fetch(accountSecretsApiPath, {
 				method: 'POST',
 				headers: {
@@ -637,6 +683,7 @@ export function AccountSecretsRoute(handle: Handle) {
 					value: editorState.value,
 					allowedHosts,
 					allowedCapabilities,
+					allowedPackages,
 				}),
 			})
 			if (response.status === 401) {
@@ -781,6 +828,35 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 	}
 
+	function updateAllowedPackage(index: number, value: string) {
+		editorState = {
+			...editorState,
+			allowedPackages: editorState.allowedPackages.map((pkg, pkgIndex) =>
+				pkgIndex === index ? value : pkg,
+			),
+		}
+		handle.update()
+	}
+
+	function addAllowedPackage() {
+		editorState = {
+			...editorState,
+			allowedPackages: [...editorState.allowedPackages, ''],
+		}
+		handle.update()
+	}
+
+	function removeAllowedPackage(index: number) {
+		const nextPackages = editorState.allowedPackages.filter(
+			(_pkg, pkgIndex) => pkgIndex !== index,
+		)
+		editorState = {
+			...editorState,
+			allowedPackages: nextPackages.length > 0 ? nextPackages : [''],
+		}
+		handle.update()
+	}
+
 	return () => {
 		const currentHref = getCurrentHref()
 		const selection = getSelectionState(currentHref)
@@ -892,25 +968,48 @@ export function AccountSecretsRoute(handle: Handle) {
 									color: colors.text,
 								}}
 							>
-								Approve host access
+								Approve secret access
 							</h2>
-							<p css={{ margin: 0, color: colors.textMuted }}>
-								Allow <code>{approvalCard.requestedHost}</code> to receive
-								secret <code>{approvalCard.name}</code> from the{' '}
-								{getScopeLabel(approvalCard.scope)} scope.
-							</p>
+							{approvalCard.requestedPackageId ? (
+								<p css={{ margin: 0, color: colors.textMuted }}>
+									Allow package{' '}
+									<code>
+										{approvalCard.requestedPackageKodyId ??
+											approvalCard.requestedPackageId}
+									</code>{' '}
+									to use secret <code>{approvalCard.name}</code> from the{' '}
+									{getScopeLabel(approvalCard.scope)} scope.
+								</p>
+							) : (
+								<p css={{ margin: 0, color: colors.textMuted }}>
+									Allow <code>{approvalCard.requestedHost}</code> to receive
+									secret <code>{approvalCard.name}</code> from the{' '}
+									{getScopeLabel(approvalCard.scope)} scope.
+								</p>
+							)}
 							{approvalCard.requestedCapability ? (
 								<p css={{ margin: 0, color: colors.textMuted }}>
 									Requested capability:{' '}
 									<code>{approvalCard.requestedCapability}</code>
 								</p>
 							) : null}
-							<p css={{ margin: 0, color: colors.textMuted }}>
-								Current allowed hosts:{' '}
-								{approvalCard.currentAllowedHosts.length > 0
-									? approvalCard.currentAllowedHosts.join(', ')
-									: 'none'}
-							</p>
+							{approvalCard.requestedPackageId ? (
+								<p css={{ margin: 0, color: colors.textMuted }}>
+									Current allowed packages:{' '}
+									{approvalCard.currentAllowedPackages.length > 0
+										? approvalCard.currentAllowedPackages
+												.map((pkg) => pkg.kodyId || pkg.packageId)
+												.join(', ')
+										: 'none'}
+								</p>
+							) : (
+								<p css={{ margin: 0, color: colors.textMuted }}>
+									Current allowed hosts:{' '}
+									{approvalCard.currentAllowedHosts.length > 0
+										? approvalCard.currentAllowedHosts.join(', ')
+										: 'none'}
+								</p>
+							)}
 						</div>
 						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
 							<button
@@ -919,7 +1018,7 @@ export function AccountSecretsRoute(handle: Handle) {
 								on={{ click: () => void submitApproval('approve') }}
 								css={primaryButtonCss}
 							>
-								Approve host
+								Approve
 							</button>
 							<button
 								type="button"
@@ -1321,6 +1420,58 @@ export function AccountSecretsRoute(handle: Handle) {
 									allowedHostsListName="allowed-hosts"
 									allowedCapabilitiesListName="allowed-capabilities"
 								/>
+								<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div css={{ display: 'grid', gap: spacing.xs }}>
+										<span css={fieldLabelCss}>Allowed packages</span>
+										<p css={{ margin: 0, color: colors.textMuted }}>
+											Only listed package ids may read this secret via package
+											secret mounts.
+										</p>
+									</div>
+									<div css={{ display: 'grid', gap: spacing.sm }}>
+										{editorState.allowedPackages.map((packageId, index) => (
+											<div
+												key={index}
+												css={{
+													display: 'grid',
+													gridTemplateColumns: 'minmax(0, 1fr) auto',
+													gap: spacing.sm,
+												}}
+											>
+												<input
+													type="text"
+													value={typeof packageId === 'string' ? packageId : ''}
+													placeholder="saved package id"
+													on={{
+														input: (event) => {
+															updateAllowedPackage(
+																index,
+																event.currentTarget.value,
+															)
+														},
+													}}
+													css={inputCss}
+												/>
+												<button
+													type="button"
+													on={{ click: () => removeAllowedPackage(index) }}
+													css={secondaryButtonCss}
+												>
+													Remove
+												</button>
+											</div>
+										))}
+									</div>
+									<div>
+										<button
+											type="button"
+											on={{ click: () => addAllowedPackage() }}
+											css={secondaryButtonCss}
+										>
+											Add package
+										</button>
+									</div>
+								</div>
 
 								{selectedSecret ? (
 									<div

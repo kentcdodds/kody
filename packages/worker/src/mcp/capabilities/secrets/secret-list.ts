@@ -48,6 +48,7 @@ export const secretListCapability = defineDomainCapability(
 					app_id: secret.appId,
 					allowed_hosts: secret.allowedHosts,
 					allowed_capabilities: secret.allowedCapabilities,
+					allowed_packages: secret.allowedPackages,
 					created_at: secret.createdAt,
 					updated_at: secret.updatedAt,
 					ttl_ms: secret.ttlMs,
