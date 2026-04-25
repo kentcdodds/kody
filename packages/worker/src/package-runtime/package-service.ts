@@ -281,26 +281,32 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				storageId,
 			})
 			if (this.stateSnapshot.currentRunId !== input.runId) return
+			const stopRequested = this.stateSnapshot.stopRequested
 			this.stateSnapshot.status = 'stopped'
 			this.stateSnapshot.currentRunId = null
-			this.stateSnapshot.stopRequested = false
 			this.stateSnapshot.lastResult = result
 			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
 			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
 			await this.persistState()
+			if (stopRequested) {
+				await this.clearAlarm()
+			}
 		} catch (error) {
 			if (this.stateSnapshot.currentRunId !== input.runId) return
 			const errorMessage =
 				error instanceof Error ? error.message : String(error)
+			const stopRequested = this.stateSnapshot.stopRequested
 			this.stateSnapshot.status = this.stateSnapshot.stopRequested
 				? 'stopped'
 				: 'error'
 			this.stateSnapshot.currentRunId = null
-			this.stateSnapshot.stopRequested = false
 			this.stateSnapshot.lastError = errorMessage
 			this.stateSnapshot.lastRunFinishedAt = new Date().toISOString()
 			this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
 			await this.persistState()
+			if (stopRequested) {
+				await this.clearAlarm()
+			}
 		} finally {
 			if (this.activeRunPromise) {
 				this.activeRunPromise = null

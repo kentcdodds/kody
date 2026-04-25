@@ -25,3 +25,17 @@ test('package service runtime source clears stale in-flight state on restore', a
 	expect(fileText).toContain('this.stateSnapshot.stopRequested = false')
 	expect(source.buildPackageServiceStorageId).toBeTypeOf('function')
 })
+
+test('package service runtime preserves explicit stop requests after a run ends', async () => {
+	const fileText = await import('node:fs/promises').then((fs) =>
+		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
+	)
+	expect(fileText).toContain(
+		'const stopRequested = this.stateSnapshot.stopRequested',
+	)
+	expect(fileText).toContain(
+		"this.stateSnapshot.status = this.stateSnapshot.stopRequested\n\t\t\t\t? 'stopped'\n\t\t\t\t: 'error'",
+	)
+	expect(fileText).toContain("if (stopRequested) {\n\t\t\t\tawait this.clearAlarm()")
+	expect(fileText).toContain('!this.stateSnapshot.stopRequested')
+})
