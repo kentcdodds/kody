@@ -8,6 +8,7 @@ const secretHostApprovalPurpose = 'secret-host-approval'
 const defaultSecretHostApprovalTtlMs = 1000 * 60 * 60 * 24
 
 export type SecretHostApprovalRequest = {
+	kind: 'host'
 	userId: string
 	name: string
 	scope: SecretScope
@@ -34,6 +35,7 @@ export async function createSecretHostApprovalToken(
 		env,
 		secretHostApprovalPurpose,
 		JSON.stringify({
+			kind: 'host',
 			userId: input.userId,
 			name: input.name.trim(),
 			scope: input.scope,
@@ -56,6 +58,7 @@ export async function verifySecretHostApprovalToken(
 	)
 	const parsed = JSON.parse(raw) as Partial<SecretHostApprovalRequest>
 	if (
+		parsed.kind !== 'host' ||
 		typeof parsed.userId !== 'string' ||
 		typeof parsed.name !== 'string' ||
 		typeof parsed.scope !== 'string' ||
@@ -67,6 +70,7 @@ export async function verifySecretHostApprovalToken(
 		throw new Error('Secret host approval request has expired.')
 	}
 	return {
+		kind: 'host',
 		userId: parsed.userId,
 		name: parsed.name.trim(),
 		scope: parsed.scope as SecretScope,

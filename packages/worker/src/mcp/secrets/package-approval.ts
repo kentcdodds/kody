@@ -7,6 +7,7 @@ const secretPackageApprovalPurpose = 'secret-package-approval'
 const defaultSecretPackageApprovalTtlMs = 1000 * 60 * 60 * 24
 
 export type SecretPackageApprovalRequest = {
+	kind: 'package'
 	userId: string
 	name: string
 	scope: SecretScope
@@ -35,6 +36,7 @@ export async function createSecretPackageApprovalToken(
 		env,
 		secretPackageApprovalPurpose,
 		JSON.stringify({
+			kind: 'package',
 			userId: input.userId,
 			name: input.name.trim(),
 			scope: input.scope,
@@ -58,6 +60,7 @@ export async function verifySecretPackageApprovalToken(
 	)
 	const parsed = JSON.parse(raw) as Partial<SecretPackageApprovalRequest>
 	if (
+		parsed.kind !== 'package' ||
 		typeof parsed.userId !== 'string' ||
 		typeof parsed.name !== 'string' ||
 		typeof parsed.scope !== 'string' ||
@@ -69,6 +72,7 @@ export async function verifySecretPackageApprovalToken(
 		throw new Error('Secret package approval request has expired.')
 	}
 	return {
+		kind: 'package',
 		userId: parsed.userId,
 		name: parsed.name.trim(),
 		scope: parsed.scope as SecretScope,

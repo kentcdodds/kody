@@ -645,17 +645,12 @@ async function buildAccountSecretsPayload(input: {
 	const requestedApprovalHost = readApprovalHost(url)
 	const requestedCapability = readRequestedCapability(url)
 	const requestedPackageId = readRequestedPackageId(url)
-
-	const packageApps =
-		input.packageApps ??
-		(await listPackageAppsForUser({
-			env: input.env,
-			user: input.user,
-		}))
-	const packageLookup = await buildAllowedPackageLookup({
-		env: input.env,
+	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
 		userId: input.user.mcpUser.userId,
 	})
+	const packageApps =
+		input.packageApps ?? toPackageAppOptions(savedPackages)
+	const packageLookup = toAllowedPackageLookup(savedPackages)
 	const secrets = await listAccountSecrets({
 		env: input.env,
 		user: input.user,
@@ -700,23 +695,11 @@ async function listPackageAppsForUser(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 }) {
-	return (
+	return toPackageAppOptions(
 		await listSavedPackagesByUserId(input.env.APP_DB, {
 			userId: input.user.mcpUser.userId,
-		})
+		}),
 	)
-		.filter((savedPackage) => savedPackage.hasApp)
-		.map((savedPackage) => ({
-			id: savedPackage.id,
-			title: savedPackage.name,
-			updatedAt: savedPackage.updatedAt,
-		}))
-		.sort((left, right) => {
-			return (
-				right.updatedAt.localeCompare(left.updatedAt) ||
-				left.title.localeCompare(right.title)
-			)
-		})
 }
 
 async function listAccountSecrets(input: {
@@ -771,14 +754,14 @@ async function resolveSecretApprovalView(input: {
 		throw new Error('Approval request mismatch.')
 	}
 	if (
-		'requestedHost' in approval &&
+		approval.kind === 'host' &&
 		input.requestedHost != null &&
 		approval.requestedHost !== normalizeAllowedHosts([input.requestedHost])[0]
 	) {
 		throw new Error('Approval request host mismatch.')
 	}
 	if (
-		'packageId' in approval &&
+		approval.kind === 'package' &&
 		input.requestedPackageId != null &&
 		approval.packageId !== input.requestedPackageId
 	) {
@@ -800,9 +783,10 @@ async function resolveSecretApprovalView(input: {
 		token: input.token,
 		name: approval.name,
 		scope: approval.scope,
-		requestedHost: 'requestedHost' in approval ? approval.requestedHost : '',
+		requestedHost: approval.kind === 'host' ? approval.requestedHost : '',
 		requestedCapability: input.requestedCapability,
-		requestedPackageId: 'packageId' in approval ? approval.packageId : null,
+		requestedPackageId:
+			approval.kind === 'package' ? approval.packageId : null,
 		currentAllowedHosts: secret.allowedHosts,
 		currentAllowedPackages: secret.allowedPackages,
 	} satisfies SecretApprovalView
@@ -875,13 +859,38 @@ function toAccountSecretListItem(
 	} satisfies AccountSecretListItem
 }
 
-async function buildAllowedPackageLookup(input: { env: Env; userId: string }) {
+function toPackageAppOptions(
+	savedPackages: Array<{
+		id: string
+		name: string
+		hasApp: boolean
+		updatedAt: string
+	}>,
+) {
+	return savedPackages
+		.filter((savedPackage) => savedPackage.hasApp)
+		.map((savedPackage) => ({
+			id: savedPackage.id,
+			title: savedPackage.name,
+			updatedAt: savedPackage.updatedAt,
+		}))
+		.sort((left, right) => {
+			return (
+				right.updatedAt.localeCompare(left.updatedAt) ||
+				left.title.localeCompare(right.title)
+			)
+		})
+}
+
+function toAllowedPackageLookup(
+	savedPackages: Array<{
+		id: string
+		kodyId: string
+		name: string
+	}>,
+) {
 	return new Map(
-		(
-			await listSavedPackagesByUserId(input.env.APP_DB, {
-				userId: input.userId,
-			})
-		).map((savedPackage) => [
+		savedPackages.map((savedPackage) => [
 			savedPackage.id,
 			{
 				packageId: savedPackage.id,
@@ -922,7 +931,7 @@ async function handleApprovalAction(input: {
 			)
 		}
 
-		if ('packageId' in approval) {
+		if (approval.kind === 'package') {
 			const current = await listSecrets({
 				env: input.env,
 				userId: input.user.mcpUser.userId,

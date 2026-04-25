@@ -160,6 +160,7 @@ function collectRepeatedTextRows(
 function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 	const allowedHosts = coerceStringRows(secret.allowedHosts)
 	const allowedCapabilities = coerceStringRows(secret.allowedCapabilities)
+	const allowedPackages = coerceStringRows(secret.allowedPackages)
 	return {
 		currentId: secret.id,
 		name: secret.name,
@@ -170,10 +171,7 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
 			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
-		allowedPackages:
-			secret.allowedPackages.length > 0
-				? secret.allowedPackages
-				: [''],
+		allowedPackages: allowedPackages.length > 0 ? allowedPackages : [''],
 	}
 }
 
@@ -431,14 +429,11 @@ function buildAppOptionDescription(updatedAt: string) {
 	return `Updated ${new Date(updatedAt).toLocaleDateString()}`
 }
 
-function formatAllowedPackageLabel(packageId: string) {
-	return packageId
-}
-
 export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
 	let apps: Array<PackageAppOption> = []
+	let packagesById = new Map<string, { kodyId: string; name: string }>()
 	let secrets: Array<SecretListItem> = []
 	let selectedSecret: SecretDetail | null = null
 	let approval: ApprovalView | null = null
@@ -509,6 +504,12 @@ export function AccountSecretsRoute(handle: Handle) {
 	) {
 		email = payload.email
 		apps = payload.apps
+		packagesById = new Map(
+			payload.packages.map((pkg) => [
+				pkg.id,
+				{ kodyId: pkg.kodyId, name: pkg.name },
+			]),
+		)
 		secrets = payload.secrets
 		selectedSecret = payload.selectedSecret
 		approval = payload.approval
@@ -523,6 +524,11 @@ export function AccountSecretsRoute(handle: Handle) {
 		status = 'ready'
 		submittingApprovalAction = null
 		saveState = 'idle'
+	}
+
+	function formatAllowedPackageLabel(packageId: string) {
+		const meta = packagesById.get(packageId)
+		return meta ? `${meta.name} (${packageId})` : packageId
 	}
 
 	async function loadAccountSecrets() {
