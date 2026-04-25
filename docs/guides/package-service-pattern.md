@@ -101,14 +101,28 @@ Pseudo-code shape:
 ```ts
 import { service, storage } from 'kody:runtime'
 
+async function openSocket(session: unknown) {
+  void session
+  return await new Promise<WebSocket>((resolve, reject) => {
+    const socket = new WebSocket('wss://example.com/stream')
+    socket.addEventListener('open', () => resolve(socket), { once: true })
+    socket.addEventListener('error', () => reject(new Error('Failed to open stream')), {
+      once: true,
+    })
+  })
+}
+
 export default async function run() {
   const session = (await storage.get('session-state')) ?? null
-  const socket = new WebSocket('wss://example.com/stream')
+  const socket = await openSocket(session)
 
   try {
     // Authenticate, subscribe, or resume here.
 
-    while (socket.readyState === WebSocket.OPEN) {
+    while (
+      socket.readyState !== WebSocket.CLOSING &&
+      socket.readyState !== WebSocket.CLOSED
+    ) {
       if (await service.shouldStop()) {
         socket.close(1000, 'service stop requested')
         await service.clearAlarm()

@@ -157,6 +157,22 @@ export async function readPackageServiceRpcResponse<T>(
 	}
 }
 
+export async function schedulePackageServiceAutoStart(input: {
+	env: Env
+	binding: PackageServiceBindingState
+}) {
+	const rpc = packageServiceRpc({
+		env: input.env,
+		userId: input.binding.userId,
+		packageId: input.binding.packageId,
+		kodyId: input.binding.kodyId,
+		sourceId: input.binding.sourceId,
+		baseUrl: input.binding.baseUrl,
+		serviceName: input.binding.serviceName,
+	})
+	await rpc.start()
+}
+
 class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState = createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
@@ -181,11 +197,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			// Background execution does not survive Durable Object eviction, so a
 			// restored in-flight run must be downgraded to a recoverable stopped
 			// state.
+			const wasExplicitlyStopping = this.stateSnapshot.status === 'stopping'
 			this.stateSnapshot.currentRunId = null
-			this.stateSnapshot.stopRequested = false
+			this.stateSnapshot.stopRequested = wasExplicitlyStopping
 			this.stateSnapshot.status = 'stopped'
 			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
 			await this.persistState()
+			if (
+				this.stateSnapshot.autoStart &&
+				!this.stateSnapshot.stopRequested &&
+				this.stateSnapshot.binding
+			) {
+				await this.scheduleAlarm({ runAt: new Date() })
+			}
 		}
 	}
 
@@ -193,7 +217,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		await this.ctx.storage.put(serviceStateStorageKey, this.stateSnapshot)
 	}
 
-	private async initializeBinding(binding: PackageServiceBindingState) {
+	private async initializeBinding(
+		binding: PackageServiceBindingState,
+		options?: { armAutoStart?: boolean },
+	) {
 		const existing = this.stateSnapshot.binding
 		if (
 			existing &&
@@ -211,11 +238,13 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.stateSnapshot.autoStart = loaded.serviceDefinition?.autoStart ?? false
 		this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null
 		await this.persistState()
-		if (!existing && this.stateSnapshot.autoStart) {
-			const nextAlarmAt = new Date().toISOString()
-			await this.ctx.storage.setAlarm(new Date(nextAlarmAt))
-			this.stateSnapshot.nextAlarmAt = nextAlarmAt
-			await this.persistState()
+		if (
+			options?.armAutoStart &&
+			!existing &&
+			this.stateSnapshot.autoStart &&
+			!this.stateSnapshot.nextAlarmAt
+		) {
+			await this.scheduleAlarm({ runAt: new Date() })
 		}
 		return loaded
 	}
@@ -247,14 +276,20 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 	}
 
-	private buildServiceStatusResponse(binding: PackageServiceBindingState) {
+	private buildServiceStatusResponse(
+		binding: PackageServiceBindingState,
+		overrides?: {
+			autoStart?: boolean
+			timeoutMs?: number | null
+		},
+	) {
 		return {
 			package_id: binding.packageId,
 			kody_id: binding.kodyId,
 			service_name: binding.serviceName,
 			status: this.stateSnapshot.status,
-			auto_start: this.stateSnapshot.autoStart,
-			timeout_ms: this.stateSnapshot.timeoutMs,
+			auto_start: overrides?.autoStart ?? this.stateSnapshot.autoStart,
+			timeout_ms: overrides?.timeoutMs ?? this.stateSnapshot.timeoutMs,
 			stop_requested: this.stateSnapshot.stopRequested,
 			active_run_id: this.stateSnapshot.currentRunId,
 			next_alarm_at: this.stateSnapshot.nextAlarmAt,
@@ -269,12 +304,15 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async runServiceInBackground(input: {
 		binding: PackageServiceBindingState
 		runId: string
+		loaded?: Awaited<ReturnType<typeof loadSavedPackageService>>
 	}) {
 		try {
-			const loaded = await loadSavedPackageService({
-				env: this.env,
-				binding: input.binding,
-			})
+			const loaded =
+				input.loaded ??
+				(await loadSavedPackageService({
+					env: this.env,
+					binding: input.binding,
+				}))
 			const storageId = buildPackageServiceStorageId(
 				input.binding.packageId,
 				input.binding.serviceName,
@@ -285,7 +323,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			await this.persistState()
 			const result = await this.runService(loaded.resolvedBinding, {
 				getStatus: async () =>
-					this.buildServiceStatusResponse(loaded.resolvedBinding),
+					this.buildServiceStatusResponse(loaded.resolvedBinding, {
+						autoStart: loaded.serviceDefinition?.autoStart ?? false,
+						timeoutMs: loaded.serviceDefinition?.timeoutMs ?? null,
+					}),
 				shouldStop: async () => this.stateSnapshot.stopRequested,
 				setAlarm: async (runAt) =>
 					(await this.scheduleAlarm({
@@ -342,7 +383,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		runtime: {
 			getStatus: () => Promise<ReturnType<PackageServiceInstanceBase['buildServiceStatusResponse']>>
 			shouldStop: () => Promise<boolean>
-			setAlarm: (runAt: Date) => Promise<{ ok: true; scheduled_at: string }>
+			setAlarm: (runAt: Date | string) => Promise<{ ok: true; scheduled_at: string }>
 			clearAlarm: () => Promise<{ ok: true }>
 			packageContext: {
 				packageId: string
@@ -435,7 +476,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async handleStartRequest(input: {
 		binding: PackageServiceBindingState
 	}) {
-		const loaded = await this.initializeBinding(input.binding)
+		const loaded = await this.initializeBinding(input.binding, {
+			armAutoStart: true,
+		})
 		if (this.stateSnapshot.currentRunId) {
 			return Response.json({
 				ok: true,
@@ -456,6 +499,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		const task = this.runServiceInBackground({
 			binding: loaded.resolvedBinding,
 			runId,
+			loaded,
 		})
 		this.activeRunPromise = task
 		this.ctx.waitUntil(task)
@@ -470,14 +514,33 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private async handleStatusRequest(input: {
 		binding: PackageServiceBindingState
 	}) {
-		const loaded = await this.initializeBinding(input.binding)
-		return Response.json(this.buildServiceStatusResponse(loaded.resolvedBinding))
+		let loaded: Awaited<ReturnType<typeof loadSavedPackageService>> | undefined
+		try {
+			loaded = await loadSavedPackageService({
+				env: this.env,
+				binding: input.binding,
+			})
+		} catch {
+			loaded = undefined
+		}
+		const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding
+		return Response.json(
+			this.buildServiceStatusResponse(binding, {
+				autoStart: loaded?.serviceDefinition?.autoStart ?? this.stateSnapshot.autoStart,
+				timeoutMs: loaded?.serviceDefinition?.timeoutMs ?? this.stateSnapshot.timeoutMs,
+			}),
+		)
 	}
 
 	private async handleStopRequest(input: {
 		binding: PackageServiceBindingState
 	}) {
-		await this.initializeBinding(input.binding)
+		try {
+			await this.initializeBinding(input.binding)
+		} catch {
+			// Allow an in-flight service to be stopped even if its package/source was removed.
+			this.stateSnapshot.binding ??= input.binding
+		}
 		if (this.stateSnapshot.currentRunId) {
 			this.stateSnapshot.stopRequested = true
 			this.stateSnapshot.status = 'stopping'
@@ -530,7 +593,21 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				loaded.serviceDefinition?.timeoutMs ?? null
 			await this.persistState()
 			if (!this.stateSnapshot.stopRequested) {
-				await this.handleStartRequest({ binding: loaded.resolvedBinding })
+				const startedAt = new Date().toISOString()
+				const runId = crypto.randomUUID()
+				this.stateSnapshot.stopRequested = false
+				this.stateSnapshot.currentRunId = runId
+				this.stateSnapshot.status = 'running'
+				this.stateSnapshot.lastStartedAt = startedAt
+				this.stateSnapshot.lastError = null
+				await this.persistState()
+				const task = this.runServiceInBackground({
+					binding: loaded.resolvedBinding,
+					runId,
+					loaded,
+				})
+				this.activeRunPromise = task
+				this.ctx.waitUntil(task)
 			}
 		} catch (error) {
 			this.stateSnapshot.lastError =
@@ -596,11 +673,18 @@ export async function listSavedPackageServices(input: {
 	userId: string
 	baseUrl: string
 	packageId: string
+	savedPackage?: {
+		id: string
+		sourceId: string
+		kodyId?: string
+	}
 }) {
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.userId,
-		packageId: input.packageId,
-	})
+	const savedPackage =
+		input.savedPackage ??
+		(await getSavedPackageById(input.env.APP_DB, {
+			userId: input.userId,
+			packageId: input.packageId,
+		}))
 	if (!savedPackage) {
 		throw new Error('Saved package was not found.')
 	}

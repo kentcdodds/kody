@@ -21,6 +21,7 @@ import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import {
 	rebuildPublishedPackageArtifacts,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
@@ -144,6 +145,21 @@ export async function refreshSavedPackageProjection(input: {
 		sourceId: input.sourceId,
 		manifest: loaded.manifest,
 	})
+	for (const service of loaded.manifest.kody.services
+		? Object.keys(loaded.manifest.kody.services)
+		: []) {
+		const definition = loaded.manifest.kody.services?.[service]
+		if (!definition?.autoStart) continue
+		await packageServiceRpc({
+			env: input.env,
+			userId: input.userId,
+			packageId: input.packageId,
+			kodyId: row.kody_id,
+			sourceId: row.source_id,
+			baseUrl: input.baseUrl,
+			serviceName: service,
+		}).start()
+	}
 	await syncJobManagerAlarm({
 		env: input.env,
 		userId: input.userId,

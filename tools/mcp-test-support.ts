@@ -164,9 +164,17 @@ export async function startDevServer(persistDir: string) {
 }
 
 function isPortAlreadyInUseError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	const message = error.message.toLowerCase()
+	const codeValue =
+		typeof error === 'object' && error !== null
+			? Reflect.get(error, 'code')
+			: undefined
+	const code = typeof codeValue === 'string' ? codeValue.toLowerCase() : ''
 	return (
-		error instanceof Error &&
-		error.message.includes('Address already in use')
+		message.includes('address already in use') ||
+		message.includes('eaddrinuse') ||
+		code === 'eaddrinuse'
 	)
 }
 

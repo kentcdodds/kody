@@ -53,10 +53,28 @@ test('package service runtime refreshes manifest-backed service settings for ala
 		'this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null',
 	)
 	expect(fileText).toContain(
-		'return Response.json(this.buildServiceStatusResponse(loaded.resolvedBinding))',
+		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
 	expect(fileText).toContain(
+		'loaded = await this.initializeBinding(input.binding, {',
+	)
+	expect(fileText).toContain('this.buildServiceStatusResponse(')
+	expect(fileText).toContain('binding,')
+	expect(fileText).toContain('loaded?.serviceDefinition')
+	expect(fileText).not.toContain(
 		'if (!this.stateSnapshot.stopRequested) {\n\t\t\t\tawait this.handleStartRequest({ binding: loaded.resolvedBinding })',
+	)
+})
+
+test('package service runtime schedules auto-start on save path instead of read-only status calls', async () => {
+	const fileText = await import('node:fs/promises').then((fs) =>
+		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
+	)
+	expect(fileText).toContain('options?: { armAutoStart?: boolean }')
+	expect(fileText).toContain('options?.armAutoStart')
+	expect(fileText).toContain('armAutoStart: true')
+	expect(fileText).toContain(
+		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
 })
 

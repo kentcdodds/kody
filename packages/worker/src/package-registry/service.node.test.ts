@@ -1,5 +1,19 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 
+function mockPackageServiceNamespace(): DurableObjectNamespace {
+	return {
+		idFromName(name: string) {
+			return { toString: () => name } as DurableObjectId
+		},
+		get(id: DurableObjectId) {
+			return {
+				fetch: vi.fn(async () => new Response(JSON.stringify({ ok: true }))),
+				id,
+			} as unknown as DurableObjectStub
+		},
+	} as DurableObjectNamespace
+}
+
 const mockModule = vi.hoisted(() => ({
 	buildPackageSearchProjection: vi.fn(),
 	buildSavedPackageEmbedText: vi.fn(),
@@ -82,6 +96,7 @@ const { deleteSavedPackageProjection, refreshSavedPackageProjection } =
 function createEnv() {
 	return {
 		APP_DB: {},
+		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
 	} as Env
 }
 
@@ -122,6 +137,12 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 			description: 'Shade automation package',
 			tags: ['home', 'shades'],
 			searchText: 'shade automation',
+			services: {
+				'realtime-supervisor': {
+					entry: './src/services/realtime-supervisor.ts',
+					autoStart: true,
+				},
+			},
 			jobs: {
 				'event-runner': {
 					entry: './src/jobs/event-runner.ts',
@@ -197,6 +218,7 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 		env,
 		userId: 'user-1',
 	})
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(1)
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
 	).toBeGreaterThan(
