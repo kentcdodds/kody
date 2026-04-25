@@ -77,9 +77,10 @@ routes) are for clients authenticating to Kody itself.
 5. Run the authenticated smoke test from `integration_bootstrap`.
 6. Continue with the package or package app only after the smoke test passes.
 
-## Package-first recommendation after OAuth
+## Package-first recommendation for OAuth integrations
 
-After the hosted `/connect/oauth` flow succeeds and the smoke test passes:
+For OAuth integrations with a successful hosted `/connect/oauth` flow and
+passing smoke test:
 
 - build a package app when the integration needs a hosted UI
 - keep provider API calls in package-owned backend code
