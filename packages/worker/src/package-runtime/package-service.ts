@@ -262,9 +262,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				storageId,
 			})
 			if (this.stateSnapshot.currentRunId !== input.runId) return
-			this.stateSnapshot.status = this.stateSnapshot.stopRequested
-				? 'stopped'
-				: 'stopped'
+			this.stateSnapshot.status = 'stopped'
 			this.stateSnapshot.currentRunId = null
 			this.stateSnapshot.stopRequested = false
 			this.stateSnapshot.lastResult = result

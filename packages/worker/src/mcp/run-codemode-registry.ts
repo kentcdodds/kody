@@ -269,6 +269,8 @@ export async function runCodemodeWithRegistry(
 			executorExports: options?.executorExports,
 			additionalTools: options?.additionalTools,
 			storageTools: options?.storageTools,
+			serviceTools: options?.serviceTools,
+			executorTimeoutMs: options?.executorTimeoutMs,
 		})
 	}
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')
