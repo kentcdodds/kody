@@ -10,12 +10,7 @@ export type ApprovalView = {
 	requestedCapability: string | null
 	currentAllowedHosts: Array<string>
 	requestedPackageId: string | null
-	requestedPackageKodyId: string | null
-	currentAllowedPackages: Array<{
-		packageId: string
-		kodyId: string
-		name: string
-	}>
+	currentAllowedPackages: Array<string>
 }
 
 export const accountSecretsApiPath = '/account/secrets.json'

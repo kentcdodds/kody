@@ -59,11 +59,7 @@ type SecretListItem = {
 	appTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
-	allowedPackages: Array<{
-		packageId: string
-		kodyId: string
-		name: string
-	}>
+	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -77,6 +73,11 @@ type AccountSecretsPayload = {
 	ok: true
 	email: string
 	apps: Array<PackageAppOption>
+	packages: Array<{
+		id: string
+		kodyId: string
+		name: string
+	}>
 	secrets: Array<SecretListItem>
 	selectedSecret: SecretDetail | null
 	approval: ApprovalView | null
@@ -171,7 +172,7 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
 		allowedPackages:
 			secret.allowedPackages.length > 0
-				? secret.allowedPackages.map((pkg) => pkg.packageId)
+				? secret.allowedPackages
 				: [''],
 	}
 }
@@ -275,17 +276,17 @@ function getAlreadyAddedNotice(input: {
 	const allowedPackageIds = input.selectedSecret
 		? Array.from(
 				new Set(
-					input.selectedSecret.allowedPackages
-						.map((pkg) => pkg.packageId)
-						.filter((value) => value.length > 0),
+					input.selectedSecret.allowedPackages.filter(
+						(value) => value.length > 0,
+					),
 				),
 			).sort((left, right) => left.localeCompare(right))
 		: input.approval
 			? Array.from(
 					new Set(
-						input.approval.currentAllowedPackages
-							.map((pkg) => pkg.packageId)
-							.filter((value) => value.length > 0),
+						input.approval.currentAllowedPackages.filter(
+							(value) => value.length > 0,
+						),
 					),
 				).sort((left, right) => left.localeCompare(right))
 			: []
@@ -418,7 +419,7 @@ function filterSecrets(
 			secret.scope,
 			...secret.allowedHosts,
 			...secret.allowedCapabilities,
-			...secret.allowedPackages.map((pkg) => pkg.kodyId || pkg.name || pkg.packageId),
+			...secret.allowedPackages,
 		]
 			.join(' ')
 			.toLowerCase()
@@ -428,6 +429,10 @@ function filterSecrets(
 
 function buildAppOptionDescription(updatedAt: string) {
 	return `Updated ${new Date(updatedAt).toLocaleDateString()}`
+}
+
+function formatAllowedPackageLabel(packageId: string) {
+	return packageId
 }
 
 export function AccountSecretsRoute(handle: Handle) {
@@ -981,10 +986,7 @@ export function AccountSecretsRoute(handle: Handle) {
 							{approvalCard.requestedPackageId ? (
 								<p css={{ margin: 0, color: colors.textMuted }}>
 									Allow package{' '}
-									<code>
-										{approvalCard.requestedPackageKodyId ??
-											approvalCard.requestedPackageId}
-									</code>{' '}
+									<code>{approvalCard.requestedPackageId}</code>{' '}
 									to use secret <code>{approvalCard.name}</code> from the{' '}
 									{getScopeLabel(approvalCard.scope)} scope.
 								</p>
@@ -1006,7 +1008,9 @@ export function AccountSecretsRoute(handle: Handle) {
 									Current allowed packages:{' '}
 									{approvalCard.currentAllowedPackages.length > 0
 										? approvalCard.currentAllowedPackages
-												.map((pkg) => pkg.kodyId || pkg.packageId)
+												.map((packageId) =>
+													formatAllowedPackageLabel(packageId),
+												)
 												.join(', ')
 										: 'none'}
 								</p>

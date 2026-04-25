@@ -399,13 +399,7 @@ test('account secrets payload preserves app titles and allowed packages', async 
 			expect.objectContaining({
 				name: 'discordBotToken',
 				scope: 'user',
-				allowedPackages: [
-					{
-						packageId: 'pkg-allowed',
-						kodyId: 'discord-general-chat',
-						name: '@kentcdodds/discord-general-chat',
-					},
-				],
+				allowedPackages: ['pkg-allowed'],
 			}),
 			expect.objectContaining({
 				name: 'gatewaySigningSecret',
