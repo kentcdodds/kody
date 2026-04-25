@@ -47,6 +47,9 @@ const mockModule = vi.hoisted(() => ({
 	verifySecretHostApprovalToken: vi.fn(async () => {
 		throw new Error('not used')
 	}),
+	verifySecretPackageApprovalToken: vi.fn(async () => {
+		throw new Error('not used')
+	}),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -93,6 +96,11 @@ vi.mock('#mcp/secrets/host-approval.ts', () => ({
 		mockModule.buildSecretHostApprovalUrl(...args),
 	verifySecretHostApprovalToken: (...args: Array<unknown>) =>
 		mockModule.verifySecretHostApprovalToken(...args),
+}))
+
+vi.mock('#mcp/secrets/package-approval.ts', () => ({
+	verifySecretPackageApprovalToken: (...args: Array<unknown>) =>
+		mockModule.verifySecretPackageApprovalToken(...args),
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
@@ -309,4 +317,101 @@ test('connect oauth omits direct host approval links when hosts are already appr
 		]),
 	)
 	expect(mockModule.createSecretHostApprovalToken).not.toHaveBeenCalled()
+})
+
+test('account secrets payload preserves app titles and allowed packages', async () => {
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{
+			id: 'app-123',
+			userId: 'stable-user-1',
+			name: '@kentcdodds/discord-gateway',
+			kodyId: 'discord-gateway',
+			description: 'Discord gateway package',
+			tags: ['discord'],
+			searchText: null,
+			sourceId: 'source-1',
+			hasApp: true,
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+		},
+		{
+			id: 'pkg-allowed',
+			userId: 'stable-user-1',
+			name: '@kentcdodds/discord-general-chat',
+			kodyId: 'discord-general-chat',
+			description: 'Discord subscriber',
+			tags: ['discord'],
+			searchText: null,
+			sourceId: 'source-2',
+			hasApp: false,
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+		},
+	])
+	mockModule.listSecrets.mockResolvedValue([
+		{
+			name: 'discordBotToken',
+			scope: 'user',
+			description: 'Discord bot token',
+			appId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: ['pkg-allowed'],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+	mockModule.listAppSecretsByAppIds.mockResolvedValue(
+		new Map([
+			[
+				'app-123',
+				[
+					{
+						name: 'gatewaySigningSecret',
+						scope: 'app',
+						description: 'Gateway signing secret',
+						appId: 'app-123',
+						allowedHosts: [],
+						allowedCapabilities: [],
+						allowedPackages: [],
+						createdAt: new Date(0).toISOString(),
+						updatedAt: new Date(0).toISOString(),
+						ttlMs: null,
+					},
+				],
+			],
+		]),
+	)
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'GET',
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		secrets: expect.arrayContaining([
+			expect.objectContaining({
+				name: 'discordBotToken',
+				scope: 'user',
+				allowedPackages: [
+					{
+						packageId: 'pkg-allowed',
+						kodyId: 'discord-general-chat',
+						name: '@kentcdodds/discord-general-chat',
+					},
+				],
+			}),
+			expect.objectContaining({
+				name: 'gatewaySigningSecret',
+				scope: 'app',
+				appTitle: '@kentcdodds/discord-gateway',
+			}),
+		]),
+	})
 })

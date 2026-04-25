@@ -61,6 +61,48 @@ type PackageSecretToolOptions = {
 	has: (alias: string) => Promise<boolean>
 }
 
+function isPackageSecretAvailabilityError(error: unknown) {
+	return (
+		error instanceof Error &&
+		(error.message.startsWith('Secret "') ||
+			error.message.startsWith('Package "'))
+	)
+}
+
+function createPackageSecretTools(input: {
+	env: Env
+	callerContext: McpCallerContext
+	packageId: string
+}): PackageSecretToolOptions {
+	return {
+		get: async (alias: string) =>
+			(
+				await resolvePackageMountedSecret({
+					env: input.env,
+					callerContext: input.callerContext,
+					packageId: input.packageId,
+					alias,
+				})
+			).value,
+		has: async (alias: string) => {
+			try {
+				await resolvePackageMountedSecret({
+					env: input.env,
+					callerContext: input.callerContext,
+					packageId: input.packageId,
+					alias,
+				})
+				return true
+			} catch (error) {
+				if (isPackageSecretAvailabilityError(error)) {
+					return false
+				}
+				throw error
+			}
+		},
+	}
+}
+
 function createServiceHelperPrelude() {
 	return `
 const service = {
@@ -359,30 +401,11 @@ export async function runCodemodeWithRegistry(
 		storageTools: options?.storageTools,
 		serviceTools: options?.serviceTools,
 		packageSecretTools: options?.packageContext
-			? {
-					get: async (alias: string) =>
-						(
-							await resolvePackageMountedSecret({
-								env,
-								callerContext,
-								packageId: options.packageContext!.packageId,
-								alias,
-							})
-						).value,
-					has: async (alias: string) => {
-						try {
-							await resolvePackageMountedSecret({
-								env,
-								callerContext,
-								packageId: options.packageContext!.packageId,
-								alias,
-							})
-							return true
-						} catch {
-							return false
-						}
-					},
-				}
+			? createPackageSecretTools({
+					env,
+					callerContext,
+					packageId: options.packageContext.packageId,
+				})
 			: undefined,
 	})
 	const wrappedCode =
@@ -514,30 +537,11 @@ export async function runBundledModuleWithRegistry(
 		storageTools: options?.storageTools,
 		serviceTools: options?.serviceTools,
 		packageSecretTools: options?.packageContext
-			? {
-					get: async (alias: string) =>
-						(
-							await resolvePackageMountedSecret({
-								env,
-								callerContext,
-								packageId: options.packageContext!.packageId,
-								alias,
-							})
-						).value,
-					has: async (alias: string) => {
-						try {
-							await resolvePackageMountedSecret({
-								env,
-								callerContext,
-								packageId: options.packageContext!.packageId,
-								alias,
-							})
-							return true
-						} catch {
-							return false
-						}
-					},
-				}
+			? createPackageSecretTools({
+					env,
+					callerContext,
+					packageId: options.packageContext.packageId,
+				})
 			: undefined,
 	})
 	const storageHelperPrelude = options?.storageTools
