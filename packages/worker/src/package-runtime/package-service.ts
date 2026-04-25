@@ -157,22 +157,6 @@ export async function readPackageServiceRpcResponse<T>(
 	}
 }
 
-export async function schedulePackageServiceAutoStart(input: {
-	env: Env
-	binding: PackageServiceBindingState
-}) {
-	const rpc = packageServiceRpc({
-		env: input.env,
-		userId: input.binding.userId,
-		packageId: input.binding.packageId,
-		kodyId: input.binding.kodyId,
-		sourceId: input.binding.sourceId,
-		baseUrl: input.binding.baseUrl,
-		serviceName: input.binding.serviceName,
-	})
-	await rpc.start()
-}
-
 class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState = createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
