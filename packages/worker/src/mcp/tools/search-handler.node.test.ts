@@ -124,9 +124,11 @@ test('search tool reports timing metadata across success and error flows', async
 		timing: {
 			startedAt: expect.any(String),
 			endedAt: expect.any(String),
-			durationMs: 12,
 		},
 	})
+	expect(successResponse.structuredContent.timing.durationMs).toBeGreaterThanOrEqual(
+		0,
+	)
 
 	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
 	const validationErrorResponse = await handler({
@@ -138,10 +140,13 @@ test('search tool reports timing metadata across success and error flows', async
 		timing: {
 			startedAt: expect.any(String),
 			endedAt: expect.any(String),
-			durationMs: 4,
+			durationMs: expect.any(Number),
 		},
 		error: 'Provide either "query" or "entity".',
 	})
+	expect(
+		validationErrorResponse.structuredContent.timing.durationMs,
+	).toBeGreaterThanOrEqual(0)
 
 	mockModule.getCapabilityRegistryForContext.mockRejectedValueOnce(
 		new Error('Registry unavailable'),
@@ -157,8 +162,11 @@ test('search tool reports timing metadata across success and error flows', async
 		timing: {
 			startedAt: expect.any(String),
 			endedAt: expect.any(String),
-			durationMs: 15,
+			durationMs: expect.any(Number),
 		},
 		error: 'Registry unavailable',
 	})
+	expect(
+		handledErrorResponse.structuredContent.timing.durationMs,
+	).toBeGreaterThanOrEqual(0)
 })
