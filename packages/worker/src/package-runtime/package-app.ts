@@ -723,7 +723,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 					// Keep the rest of the service list usable if one status lookup fails.
 				}
 				return {
-					...service,
+					name: service.name,
+					entry: service.entry,
+					auto_start: service.autoStart,
+					timeout_ms: service.timeoutMs ?? null,
 					status,
 				}
 			}),
