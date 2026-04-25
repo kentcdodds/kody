@@ -82,8 +82,9 @@ test('package service runtime refreshes manifest-backed service settings for ala
 	)
 	expect(fileText).toContain("'timeoutMs' in overrides")
 	expect(fileText).toContain("'mode' in overrides")
+	expect(fileText).toContain('const binding =')
 	expect(fileText).toContain(
-		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
+		'loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
 	expect(fileText).toContain(
 		'loaded = await this.initializeBinding(input.binding, {',
@@ -104,8 +105,9 @@ test('package service runtime schedules auto-start on save path instead of read-
 	expect(fileText).toContain('options?.armAutoStart')
 	expect(fileText).toContain('armAutoStart: true')
 	expect(fileText).toContain("source: 'auto-start'")
+	expect(fileText).toContain('const binding =')
 	expect(fileText).toContain(
-		'const binding = loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
+		'loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
 	expect(fileText).toContain('options?.armAutoStart &&')
 })
