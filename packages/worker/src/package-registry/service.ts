@@ -21,7 +21,10 @@ import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import {
 	rebuildPublishedPackageArtifacts,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
-import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
+import {
+	listSavedPackageServices,
+	packageServiceRpc,
+} from '#worker/package-runtime/package-service.ts'
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
@@ -199,6 +202,28 @@ export async function deleteSavedPackageProjection(input: {
 		packageId: input.packageId,
 	})
 	if (savedPackage) {
+		const listedServices = await listSavedPackageServices({
+			env: input.env,
+			userId: input.userId,
+			baseUrl: 'https://package-service.invalid',
+			packageId: input.packageId,
+			savedPackage,
+		}).catch(() => null)
+		if (listedServices) {
+			for (const service of listedServices.services) {
+				await packageServiceRpc({
+					env: input.env,
+					userId: input.userId,
+					packageId: savedPackage.id,
+					kodyId: savedPackage.kodyId,
+					sourceId: savedPackage.sourceId,
+					baseUrl: 'https://package-service.invalid',
+					serviceName: service.name,
+				})
+					.stop()
+					.catch(() => undefined)
+			}
+		}
 		const existingRows = await listJobRowsByUserId(
 			input.env.APP_DB,
 			input.userId,

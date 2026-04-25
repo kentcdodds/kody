@@ -23,6 +23,7 @@ const mockModule = vi.hoisted(() => ({
 	deleteSavedPackageVector: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	insertSavedPackage: vi.fn(),
+	listSavedPackageServices: vi.fn(),
 	listJobRowsByUserId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	packageServiceRpc: vi.fn(),
@@ -53,6 +54,8 @@ vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 }))
 
 vi.mock('#worker/package-runtime/package-service.ts', () => ({
+	listSavedPackageServices: (...args: Array<unknown>) =>
+		mockModule.listSavedPackageServices(...args),
 	packageServiceRpc: (...args: Array<unknown>) =>
 		mockModule.packageServiceRpc(...args),
 }))
@@ -132,8 +135,16 @@ beforeEach(() => {
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.deleteJobRow.mockResolvedValue(undefined)
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: 'package-1',
+			kodyId: 'shade-automation',
+		},
+		services: [],
+	})
 	mockModule.packageServiceRpc.mockReturnValue({
 		start: vi.fn().mockResolvedValue({ ok: true }),
+		stop: vi.fn().mockResolvedValue({ ok: true }),
 	})
 })
 
@@ -239,7 +250,22 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	const env = createEnv()
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
+		kodyId: 'shade-automation',
 		sourceId: 'source-1',
+	})
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: 'package-1',
+			kodyId: 'shade-automation',
+		},
+		services: [
+			{
+				name: 'realtime-supervisor',
+				entry: './src/services/realtime-supervisor.ts',
+				autoStart: true,
+				timeoutMs: null,
+			},
+		],
 	})
 	mockModule.listJobRowsByUserId.mockResolvedValue([
 		{ id: 'job-1', source_id: 'source-1' },
@@ -252,6 +278,15 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		packageId: 'package-1',
 	})
 
+	expect(mockModule.packageServiceRpc).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+		baseUrl: 'https://package-service.invalid',
+		serviceName: 'realtime-supervisor',
+	})
 	expect(mockModule.deleteJobRow).toHaveBeenCalledTimes(1)
 	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({}, 'user-1', 'job-1')
 	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(
