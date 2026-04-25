@@ -30,6 +30,9 @@ and export a default function. These helpers are runtime exports:
   - `await service.shouldStop()` — cooperatively observe stop requests
   - `await service.setAlarm(runAt)` — schedule the next service wake-up
   - `await service.clearAlarm()` — clear a pending service wake-up
+- package service runs may also declare **`kody.services.<name>.timeoutMs`** in
+  `package.json` when they need a longer executor budget than the default
+  package-service timeout
 - use **`import thing from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by full package name
 

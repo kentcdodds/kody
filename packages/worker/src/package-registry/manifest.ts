@@ -133,6 +133,7 @@ export function listPackageServices(manifest: AuthoredPackageJson) {
 			name,
 			entry: normalizePackageWorkspacePath(service.entry),
 			autoStart: service.autoStart ?? false,
+			timeoutMs: service.timeoutMs ?? null,
 		}))
 		.sort((left, right) => left.name.localeCompare(right.name))
 }
@@ -160,6 +161,7 @@ export type PackageSearchProjection = {
 		name: string
 		entry: string
 		autoStart: boolean
+		timeoutMs: number | null
 	}>
 }
 
@@ -204,6 +206,7 @@ export function buildPackageSearchDocument(projection: PackageSearchProjection) 
 			service.name,
 			service.entry,
 			service.autoStart ? 'auto-start' : 'manual-start',
+			service.timeoutMs != null ? `timeout-ms:${service.timeoutMs}` : '',
 		]
 			.filter((value) => value.length > 0)
 			.join(' '),

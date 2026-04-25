@@ -91,6 +91,8 @@ Treat package services like package-owned runtime modules:
 
 - service code lives in the package repo
 - each service entry module is declared by `kody.services.<name>.entry`
+- services may optionally declare `kody.services.<name>.timeoutMs` to raise the
+  executor timeout for long-lived or connector-style runs
 - service lifecycle is controlled through the `services` capability domain
 - service starts return immediately and the service keeps running in the
   background until it finishes or is stopped

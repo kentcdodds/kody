@@ -74,6 +74,7 @@ test('parseAuthoredPackageJson accepts package service definitions', () => {
 					'discord-gateway': {
 						entry: './services/discord-gateway.ts',
 						autoStart: true,
+						timeoutMs: 300000,
 					},
 				},
 			},
@@ -85,6 +86,7 @@ test('parseAuthoredPackageJson accepts package service definitions', () => {
 		'discord-gateway': {
 			entry: './services/discord-gateway.ts',
 			autoStart: true,
+			timeoutMs: 300000,
 		},
 	})
 })

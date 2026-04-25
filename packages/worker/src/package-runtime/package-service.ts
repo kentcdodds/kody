@@ -23,6 +23,7 @@ export type PackageServiceBindingState = {
 type PackageServiceState = {
 	binding: PackageServiceBindingState | null
 	autoStart: boolean
+	timeoutMs: number | null
 	stopRequested: boolean
 	currentRunId: string | null
 	nextAlarmAt: string | null
@@ -46,6 +47,7 @@ function createInitialPackageServiceState(): PackageServiceState {
 	return {
 		binding: null,
 		autoStart: false,
+		timeoutMs: null,
 		stopRequested: false,
 		currentRunId: null,
 		nextAlarmAt: null,
@@ -172,8 +174,12 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.stateSnapshot.autoStart =
 					loaded.packageSource.manifest.kody.services?.[binding.serviceName]
 						?.autoStart ?? false
+				this.stateSnapshot.timeoutMs =
+					loaded.packageSource.manifest.kody.services?.[binding.serviceName]
+						?.timeoutMs ?? null
 			} catch {
 				this.stateSnapshot.autoStart = false
+				this.stateSnapshot.timeoutMs = null
 			}
 			await this.persistState()
 			if (this.stateSnapshot.autoStart) {
@@ -214,6 +220,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			service_name: binding.serviceName,
 			status: this.stateSnapshot.status,
 			auto_start: this.stateSnapshot.autoStart,
+			timeout_ms: this.stateSnapshot.timeoutMs,
 			stop_requested: this.stateSnapshot.stopRequested,
 			active_run_id: this.stateSnapshot.currentRunId,
 			next_alarm_at: this.stateSnapshot.nextAlarmAt,
@@ -251,6 +258,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					packageId: loaded.savedPackage.id,
 					kodyId: loaded.savedPackage.kodyId,
 				},
+				executorTimeoutMs: this.stateSnapshot.timeoutMs ?? 300_000,
 				storageId,
 			})
 			if (this.stateSnapshot.currentRunId !== input.runId) return
@@ -294,6 +302,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				packageId: string
 				kodyId: string
 			}
+			executorTimeoutMs: number
 			storageId: string
 		},
 	) {
@@ -361,6 +370,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					storageId: runtime.storageId,
 					writable: true,
 				},
+				executorTimeoutMs: runtime.executorTimeoutMs,
 			},
 		)
 		if (result.error) {

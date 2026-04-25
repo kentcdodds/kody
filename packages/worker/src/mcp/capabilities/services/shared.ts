@@ -11,6 +11,7 @@ export const packageServiceRecordSchema = z.object({
 	name: z.string(),
 	entry: z.string(),
 	auto_start: z.boolean(),
+	timeout_ms: z.number().int().positive().nullable().optional(),
 })
 
 export const packageServiceSummarySchema = packageServiceRecordSchema.extend({
@@ -23,6 +24,7 @@ export const packageServiceStatusSchema = z.object({
 	service_name: z.string(),
 	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error']),
 	auto_start: z.boolean(),
+	timeout_ms: z.number().int().positive().nullable(),
 	stop_requested: z.boolean(),
 	active_run_id: z.string().nullable(),
 	next_alarm_at: z.string().nullable(),
@@ -121,6 +123,7 @@ export async function listPackageServicesForContext(input: {
 			name: service.name,
 			entry: service.entry,
 			auto_start: service.autoStart,
+			timeout_ms: service.timeoutMs ?? null,
 		})),
 	}
 }
