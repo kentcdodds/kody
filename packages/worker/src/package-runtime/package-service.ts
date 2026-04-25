@@ -176,7 +176,7 @@ async function loadSavedPackageService(input: {
 	}
 }
 
-export async function readPackageServiceRpcResponse<T>(
+async function readPackageServiceRpcResponse<T>(
 	response: Response,
 ): Promise<T> {
 	const text = await response.text()
