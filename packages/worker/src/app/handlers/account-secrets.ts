@@ -47,6 +47,14 @@ type SavedPackageAppOption = {
 	updatedAt: string
 }
 
+type SavedPackageSummary = {
+	id: string
+	kodyId: string
+	name: string
+	hasApp: boolean
+	updatedAt: string
+}
+
 type AccountSecretListItem = {
 	id: string
 	name: string
@@ -639,15 +647,18 @@ async function buildAccountSecretsPayload(input: {
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 	selectedSecretId?: string | null
 	packageApps?: Array<SavedPackageAppOption>
+	savedPackages?: Array<SavedPackageSummary>
 }): Promise<AccountSecretsPayload> {
 	const url = new URL(input.request.url)
 	const approvalToken = url.searchParams.get('request')
 	const requestedApprovalHost = readApprovalHost(url)
 	const requestedCapability = readRequestedCapability(url)
 	const requestedPackageId = readRequestedPackageId(url)
-	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.user.mcpUser.userId,
-	})
+	const savedPackages =
+		input.savedPackages ??
+		(await listSavedPackagesByUserId(input.env.APP_DB, {
+			userId: input.user.mcpUser.userId,
+		}))
 	const packageApps =
 		input.packageApps ?? toPackageAppOptions(savedPackages)
 	const packageLookup = toAllowedPackageLookup(savedPackages)
@@ -691,17 +702,6 @@ async function buildAccountSecretsPayload(input: {
 	}
 }
 
-async function listPackageAppsForUser(input: {
-	env: Env
-	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-}) {
-	return toPackageAppOptions(
-		await listSavedPackagesByUserId(input.env.APP_DB, {
-			userId: input.user.mcpUser.userId,
-		}),
-	)
-}
-
 async function listAccountSecrets(input: {
 	env: Env
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
@@ -735,6 +735,31 @@ async function listAccountSecrets(input: {
 	})
 }
 
+type ResolvedSecretApproval =
+	| Awaited<ReturnType<typeof verifySecretHostApprovalToken>>
+	| Awaited<ReturnType<typeof verifySecretPackageApprovalToken>>
+
+function isExpiredPackageApprovalError(error: unknown) {
+	return (
+		error instanceof Error &&
+		error.message === 'Secret package approval request has expired.'
+	)
+}
+
+async function resolveApprovalRequest(
+	env: Env,
+	token: string,
+): Promise<ResolvedSecretApproval> {
+	try {
+		return await verifySecretPackageApprovalToken(env, token)
+	} catch (error) {
+		if (isExpiredPackageApprovalError(error)) {
+			throw error
+		}
+	}
+	return await verifySecretHostApprovalToken(env, token)
+}
+
 async function resolveSecretApprovalView(input: {
 	env: Env
 	userId: string
@@ -743,13 +768,7 @@ async function resolveSecretApprovalView(input: {
 	requestedCapability: string | null
 	requestedPackageId: string | null
 }) {
-	const packageApproval = await verifySecretPackageApprovalToken(
-		input.env,
-		input.token,
-	).catch(() => null)
-	const approval = packageApproval
-		? packageApproval
-		: await verifySecretHostApprovalToken(input.env, input.token)
+	const approval = await resolveApprovalRequest(input.env, input.token)
 	if (approval.userId !== input.userId) {
 		throw new Error('Approval request mismatch.')
 	}
@@ -917,13 +936,7 @@ async function handleApprovalAction(input: {
 	}
 
 	try {
-		const packageApproval = await verifySecretPackageApprovalToken(
-			input.env,
-			token,
-		).catch(() => null)
-		const approval = packageApproval
-			? packageApproval
-			: await verifySecretHostApprovalToken(input.env, token)
+		const approval = await resolveApprovalRequest(input.env, token)
 		if (approval.userId !== input.user.mcpUser.userId) {
 			return jsonResponse(
 				{ ok: false, error: 'Approval request mismatch.' },
@@ -1036,10 +1049,10 @@ async function handleSaveAction(input: {
 		return jsonResponse({ ok: false, error: 'Secret scope is required.' }, 400)
 	}
 
-	const packageApps = await listPackageAppsForUser({
-		env: input.env,
-		user: input.user,
+	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
+		userId: input.user.mcpUser.userId,
 	})
+	const packageApps = toPackageAppOptions(savedPackages)
 	const appId = readAppIdForScope({
 		body: input.body,
 		scope,
@@ -1140,6 +1153,7 @@ async function handleSaveAction(input: {
 			env: input.env,
 			user: input.user,
 			packageApps,
+			savedPackages,
 			selectedSecretId: nextId,
 		})
 		return jsonResponse(payload)

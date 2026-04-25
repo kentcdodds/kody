@@ -58,7 +58,7 @@ export async function verifySecretHostApprovalToken(
 	)
 	const parsed = JSON.parse(raw) as Partial<SecretHostApprovalRequest>
 	if (
-		parsed.kind !== 'host' ||
+		(parsed.kind != null && parsed.kind !== 'host') ||
 		typeof parsed.userId !== 'string' ||
 		typeof parsed.name !== 'string' ||
 		typeof parsed.scope !== 'string' ||

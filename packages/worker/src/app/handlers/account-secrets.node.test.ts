@@ -409,3 +409,29 @@ test('account secrets payload preserves app titles and allowed packages', async 
 		]),
 	})
 })
+
+test('package approval expiry surfaces package-token error without host fallback', async () => {
+	mockModule.verifySecretPackageApprovalToken.mockRejectedValueOnce(
+		new Error('Secret package approval request has expired.'),
+	)
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'approve',
+				requestToken: 'expired-package-token',
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Secret package approval request has expired.',
+	})
+	expect(mockModule.verifySecretHostApprovalToken).not.toHaveBeenCalled()
+})
