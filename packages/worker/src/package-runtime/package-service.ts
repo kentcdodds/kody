@@ -618,6 +618,13 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				error instanceof Error ? error.message : String(error)
 			this.stateSnapshot.status = 'error'
 			await this.persistState()
+			if (
+				this.stateSnapshot.autoStart &&
+				!this.stateSnapshot.stopRequested &&
+				!this.stateSnapshot.nextAlarmAt
+			) {
+				await this.scheduleAlarm({ runAt: new Date() })
+			}
 		}
 	}
 }

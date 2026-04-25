@@ -59,6 +59,12 @@ test('package service runtime re-arms auto-start after unplanned exit', async ()
 	expect(fileText).toContain('loaded.serviceDefinition?.autoStart')
 	expect(fileText).toContain('!this.stateSnapshot.nextAlarmAt')
 	expect(fileText).toContain('await this.scheduleAlarm({ runAt: new Date() })')
+	expect(fileText).toContain(
+		"this.stateSnapshot.status = 'error'",
+	)
+	expect(fileText).toContain(
+		'this.stateSnapshot.autoStart &&\n\t\t\t\t!this.stateSnapshot.stopRequested &&\n\t\t\t\t!this.stateSnapshot.nextAlarmAt',
+	)
 })
 
 test('package service runtime refreshes manifest-backed service settings for alarms and status', async () => {
