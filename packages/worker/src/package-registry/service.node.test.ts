@@ -25,6 +25,7 @@ const mockModule = vi.hoisted(() => ({
 	insertSavedPackage: vi.fn(),
 	listJobRowsByUserId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
+	packageServiceRpc: vi.fn(),
 	syncJobManagerAlarm: vi.fn(),
 	syncPackageJobsForPackage: vi.fn(),
 	updateSavedPackage: vi.fn(),
@@ -49,6 +50,11 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
 vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 	buildKodyAppBundle: vi.fn(),
 	buildKodyModuleBundle: vi.fn(),
+}))
+
+vi.mock('#worker/package-runtime/package-service.ts', () => ({
+	packageServiceRpc: (...args: Array<unknown>) =>
+		mockModule.packageServiceRpc(...args),
 }))
 
 vi.mock('./repo.ts', () => ({
@@ -126,6 +132,9 @@ beforeEach(() => {
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.deleteJobRow.mockResolvedValue(undefined)
+	mockModule.packageServiceRpc.mockReturnValue({
+		start: vi.fn().mockResolvedValue({ ok: true }),
+	})
 })
 
 test('refreshSavedPackageProjection resyncs the job manager after syncing package jobs', async () => {
@@ -263,4 +272,66 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
 	).toBeGreaterThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
+})
+
+test('refreshSavedPackageProjection still syncs job manager when auto-start service startup fails', async () => {
+	const env = {
+		APP_DB: {},
+		PACKAGE_SERVICE_INSTANCE: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {} as DurableObjectStub
+			},
+		},
+	} as Env
+	const manifest = {
+		name: '@kentcdodds/shade-automation',
+		kody: {
+			id: 'shade-automation',
+			description: 'Shade automation package',
+			tags: ['home', 'shades'],
+			searchText: 'shade automation',
+			services: {
+				'realtime-supervisor': {
+					entry: './src/services/realtime-supervisor.ts',
+					autoStart: true,
+				},
+			},
+		},
+	}
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest,
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Old description',
+		tags: ['home'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+	mockModule.packageServiceRpc.mockReturnValue({
+		start: vi.fn().mockRejectedValue(new Error('service start failed')),
+	})
+
+	await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+
+	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
 })

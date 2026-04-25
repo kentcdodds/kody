@@ -158,7 +158,11 @@ export async function refreshSavedPackageProjection(input: {
 			sourceId: row.source_id,
 			baseUrl: input.baseUrl,
 			serviceName: service,
-		}).start()
+		})
+			.start()
+			.catch(() => {
+				// Auto-start failures should not block package job sync/alarm refresh.
+			})
 	}
 	await syncJobManagerAlarm({
 		env: input.env,
