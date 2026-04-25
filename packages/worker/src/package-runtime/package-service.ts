@@ -191,9 +191,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 	}
 
-	private async scheduleAlarm(input: { runAt: Date }) {
-		const scheduledAt = input.runAt.toISOString()
-		await this.ctx.storage.setAlarm(new Date(scheduledAt))
+	private async scheduleAlarm(input: { runAt: Date | string }) {
+		const runAtDate =
+			typeof input.runAt === 'string' ? new Date(input.runAt) : input.runAt
+		if (Number.isNaN(runAtDate.getTime())) {
+			throw new Error('Invalid runAt value provided to setAlarm.')
+		}
+		const scheduledAt = runAtDate.toISOString()
+		await this.ctx.storage.setAlarm(runAtDate)
 		this.stateSnapshot.nextAlarmAt = scheduledAt
 		await this.persistState()
 		return {
@@ -258,6 +263,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					packageId: loaded.savedPackage.id,
 					kodyId: loaded.savedPackage.kodyId,
 				},
+				loaded,
 				executorTimeoutMs: this.stateSnapshot.timeoutMs ?? 300_000,
 				storageId,
 			})
@@ -300,6 +306,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				packageId: string
 				kodyId: string
 			}
+			loaded: Awaited<ReturnType<typeof loadSavedPackageService>>
 			executorTimeoutMs: number
 			storageId: string
 		},
@@ -310,17 +317,13 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				import('./module-graph.ts'),
 				import('./published-bundle-artifacts.ts'),
 			])
-		const loaded = await loadSavedPackageService({
-			env: this.env,
-			binding,
-		})
 		const artifact = await loadPublishedBundleArtifactByIdentity({
 			env: this.env,
 			userId: binding.userId,
 			sourceId: binding.sourceId,
 			kind: 'service',
 			artifactName: binding.serviceName,
-			entryPoint: loaded.serviceEntry,
+			entryPoint: runtime.loaded.serviceEntry,
 		})
 		const bundle =
 			artifact?.artifact ??
@@ -328,8 +331,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				env: this.env,
 				baseUrl: binding.baseUrl,
 				userId: binding.userId,
-				sourceFiles: loaded.packageSource.files,
-				entryPoint: loaded.serviceEntry,
+				sourceFiles: runtime.loaded.packageSource.files,
+				entryPoint: runtime.loaded.serviceEntry,
 			}))
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,
@@ -461,9 +464,6 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 		if (request.method === 'POST' && url.pathname.endsWith('/stop')) {
 			return await this.handleStopRequest({ binding })
-		}
-		if (request.method === 'POST' && url.pathname.endsWith('/service-status')) {
-			return Response.json(this.buildServiceStatusResponse(binding))
 		}
 		return new Response('Not found', { status: 404 })
 	}
