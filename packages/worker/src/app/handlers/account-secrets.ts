@@ -15,11 +15,7 @@ import {
 	createSecretHostApprovalToken,
 	verifySecretHostApprovalToken,
 } from '#mcp/secrets/host-approval.ts'
-import {
-	buildSecretPackageApprovalUrl,
-	createSecretPackageApprovalToken,
-	verifySecretPackageApprovalToken,
-} from '#mcp/secrets/package-approval.ts'
+import { verifySecretPackageApprovalToken } from '#mcp/secrets/package-approval.ts'
 import {
 	deleteSecret,
 	listAppSecretsByAppIds,
@@ -32,7 +28,6 @@ import {
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import {
-	getSavedPackageById,
 	listSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
 import { type routes } from '#app/routes.ts'
@@ -687,7 +682,10 @@ async function buildAccountSecretsPayload(input: {
 		]),
 	)
 	const normalizedSecrets = secrets.map((secret) =>
-		normalizeAccountSecretListItem(secret, packageLookup),
+		normalizeAccountSecretListItem(
+			toAccountSecretListItem(secret, new Map()),
+			packageLookup,
+		),
 	)
 	const selectedSecret = input.selectedSecretId
 		? await resolveAccountSecretDetail({
@@ -829,7 +827,7 @@ async function resolveSecretApprovalView(input: {
 		requestedCapability: input.requestedCapability,
 		requestedPackageId: 'packageId' in approval ? approval.packageId : null,
 		requestedPackageKodyId:
-			'packageId' in approval ? approval.kodyId : null,
+			'packageId' in approval ? approval.packageKodyId : null,
 		currentAllowedHosts: secret.allowedHosts,
 		currentAllowedPackages: mapAllowedPackages(
 			secret.allowedPackages,
@@ -898,7 +896,7 @@ function toAccountSecretListItem(
 		appTitle: secret.appId ? (appTitles.get(secret.appId) ?? null) : null,
 		allowedHosts: secret.allowedHosts,
 		allowedCapabilities: secret.allowedCapabilities,
-		allowedPackages: secret.allowedPackages,
+		allowedPackages: [],
 		createdAt: secret.createdAt,
 		updatedAt: secret.updatedAt,
 		ttlMs: secret.ttlMs,
@@ -906,12 +904,21 @@ function toAccountSecretListItem(
 }
 
 function normalizeAccountSecretListItem(
-	secret: AccountSecretListItem,
+	secret: Omit<AccountSecretListItem, 'allowedPackages'> & {
+		allowedPackages: Array<string> | Array<AllowedPackageView>
+	},
 	packageLookup: Map<string, AllowedPackageView>,
 ): AccountSecretListItem {
 	return {
 		...secret,
-		allowedPackages: mapAllowedPackages(secret.allowedPackages, packageLookup),
+		allowedPackages:
+			secret.allowedPackages.length > 0 &&
+			typeof secret.allowedPackages[0] === 'object'
+				? (secret.allowedPackages as Array<AllowedPackageView>)
+				: mapAllowedPackages(
+						secret.allowedPackages as Array<string>,
+						packageLookup,
+					),
 	}
 }
 
