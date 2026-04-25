@@ -482,6 +482,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			armAutoStart: true,
 		})
 		if (this.stateSnapshot.currentRunId) {
+			this.stateSnapshot.stopRequested = false
+			this.stateSnapshot.status = 'running'
+			await this.persistState()
 			return Response.json({
 				ok: true,
 				run_id: this.stateSnapshot.currentRunId,

@@ -43,6 +43,15 @@ test('package service runtime preserves explicit stop requests after a run ends'
 	expect(fileText).toContain('!this.stateSnapshot.stopRequested')
 })
 
+test('package service runtime restart clears a pending stop request', async () => {
+	const fileText = await import('node:fs/promises').then((fs) =>
+		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
+	)
+	expect(fileText).toContain('if (this.stateSnapshot.currentRunId) {')
+	expect(fileText).toContain('this.stateSnapshot.stopRequested = false')
+	expect(fileText).toContain('already_running: true')
+})
+
 test('package service runtime re-arms auto-start after unplanned exit', async () => {
 	const fileText = await import('node:fs/promises').then((fs) =>
 		fs.readFile(new URL('./package-service.ts', import.meta.url), 'utf8'),
