@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getCapabilityRegistryForContext: vi.fn(async () => ({
@@ -67,10 +67,6 @@ vi.mock('#worker/home/status.ts', () => ({
 
 const { registerSearchTool } = await import('./search.ts')
 
-beforeEach(() => {
-	vi.clearAllMocks()
-})
-
 const mockPerformanceNow = vi.spyOn(performance, 'now')
 
 async function getSearchHandler() {
@@ -113,36 +109,31 @@ async function getSearchHandler() {
 	}>
 }
 
-test('search tool includes timing metadata in success responses', async () => {
+test('search tool reports timing metadata across success and error flows', async () => {
+	vi.clearAllMocks()
 	const handler = await getSearchHandler()
-	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
 
-	const response = await handler({
+	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
+	const successResponse = await handler({
 		query: 'search docs',
 		conversationId: 'conv-search',
 	})
-
-	expect(response.isError).toBeUndefined()
-	expect(response.structuredContent).toMatchObject({
+	expect(successResponse.isError).toBeUndefined()
+	expect(successResponse.structuredContent).toMatchObject({
 		conversationId: 'conv-search',
 		timing: {
 			startedAt: expect.any(String),
 			endedAt: expect.any(String),
+			durationMs: 12,
 		},
 	})
-	expect(response.structuredContent.timing.durationMs).toBeGreaterThanOrEqual(0)
-})
 
-test('search tool includes timing metadata in validation errors', async () => {
-	const handler = await getSearchHandler()
 	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
-
-	const response = await handler({
+	const validationErrorResponse = await handler({
 		conversationId: 'conv-search-error',
 	})
-
-	expect(response.isError).toBe(true)
-	expect(response.structuredContent).toEqual({
+	expect(validationErrorResponse.isError).toBe(true)
+	expect(validationErrorResponse.structuredContent).toEqual({
 		conversationId: 'conv-search-error',
 		timing: {
 			startedAt: expect.any(String),
@@ -151,22 +142,17 @@ test('search tool includes timing metadata in validation errors', async () => {
 		},
 		error: 'Provide either "query" or "entity".',
 	})
-})
 
-test('search tool includes timing metadata in handled errors', async () => {
-	const handler = await getSearchHandler()
 	mockModule.getCapabilityRegistryForContext.mockRejectedValueOnce(
 		new Error('Registry unavailable'),
 	)
 	mockPerformanceNow.mockReturnValueOnce(20).mockReturnValueOnce(35)
-
-	const response = await handler({
+	const handledErrorResponse = await handler({
 		query: 'search docs',
 		conversationId: 'conv-search-handled-error',
 	})
-
-	expect(response.isError).toBe(true)
-	expect(response.structuredContent).toEqual({
+	expect(handledErrorResponse.isError).toBe(true)
+	expect(handledErrorResponse.structuredContent).toEqual({
 		conversationId: 'conv-search-handled-error',
 		timing: {
 			startedAt: expect.any(String),

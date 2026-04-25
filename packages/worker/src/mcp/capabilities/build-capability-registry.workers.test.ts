@@ -11,52 +11,57 @@ const noopHandler = async (
 	_ctx: CapabilityContext,
 ) => ({})
 
-test('defineDomain rejects capability registered under wrong domain id', () => {
-	const capability = defineDomainCapability(capabilityDomainNames.packages, {
-		name: 'orphan',
-		description: 'test',
-		inputSchema: z.object({}),
-		handler: noopHandler,
-	})
+test('capability domain registration rejects mismatched and duplicate invariants', () => {
+	const misplacedCapability = defineDomainCapability(
+		capabilityDomainNames.packages,
+		{
+			name: 'orphan',
+			description: 'test',
+			inputSchema: z.object({}),
+			handler: noopHandler,
+		},
+	)
 	expect(() =>
 		defineDomain({
 			name: capabilityDomainNames.coding,
 			description: 'coding bucket',
-			capabilities: [capability],
+			capabilities: [misplacedCapability],
 		}),
 	).toThrow(/registered under domain/)
-})
 
-test('buildCapabilityRegistry rejects duplicate capability names across domains', () => {
-	const packagesSide = defineDomainCapability(capabilityDomainNames.packages, {
-		name: 'collision',
-		description: 'a',
-		inputSchema: z.object({}),
-		handler: noopHandler,
-	})
-	const codingSide = defineDomainCapability(capabilityDomainNames.coding, {
-		name: 'collision',
-		description: 'b',
-		inputSchema: z.object({}),
-		handler: noopHandler,
-	})
+	const packagesCollision = defineDomainCapability(
+		capabilityDomainNames.packages,
+		{
+			name: 'collision',
+			description: 'a',
+			inputSchema: z.object({}),
+			handler: noopHandler,
+		},
+	)
+	const codingCollision = defineDomainCapability(
+		capabilityDomainNames.coding,
+		{
+			name: 'collision',
+			description: 'b',
+			inputSchema: z.object({}),
+			handler: noopHandler,
+		},
+	)
 	expect(() =>
 		buildCapabilityRegistry([
 			defineDomain({
 				name: capabilityDomainNames.packages,
 				description: 'a',
-				capabilities: [packagesSide],
+				capabilities: [packagesCollision],
 			}),
 			defineDomain({
 				name: capabilityDomainNames.coding,
 				description: 'c',
-				capabilities: [codingSide],
+				capabilities: [codingCollision],
 			}),
 		]),
 	).toThrow(/Duplicate capability names/)
-})
 
-test('buildCapabilityRegistry rejects duplicate domain registration', () => {
 	const packagesDomain = defineDomain({
 		name: capabilityDomainNames.packages,
 		description: 'a',
@@ -84,13 +89,13 @@ test('builtin capability domains include packages', async () => {
 })
 
 test('defineDomain rejects duplicate capability names within one domain', () => {
-	const one = defineDomainCapability(capabilityDomainNames.packages, {
+	const firstCapability = defineDomainCapability(capabilityDomainNames.packages, {
 		name: 'dup',
 		description: '1',
 		inputSchema: z.object({}),
 		handler: noopHandler,
 	})
-	const two = defineDomainCapability(capabilityDomainNames.packages, {
+	const secondCapability = defineDomainCapability(capabilityDomainNames.packages, {
 		name: 'dup',
 		description: '2',
 		inputSchema: z.object({}),
@@ -100,7 +105,7 @@ test('defineDomain rejects duplicate capability names within one domain', () => 
 		defineDomain({
 			name: capabilityDomainNames.packages,
 			description: 'a',
-			capabilities: [one, two],
+			capabilities: [firstCapability, secondCapability],
 		}),
 	).toThrow(/Duplicate capability .* in domain/)
 })
