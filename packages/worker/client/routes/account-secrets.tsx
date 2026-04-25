@@ -418,6 +418,7 @@ function filterSecrets(
 			secret.scope,
 			...secret.allowedHosts,
 			...secret.allowedCapabilities,
+			...secret.allowedPackages.map((pkg) => pkg.kodyId || pkg.name || pkg.packageId),
 		]
 			.join(' ')
 			.toLowerCase()
@@ -609,8 +610,12 @@ export function AccountSecretsRoute(handle: Handle) {
 				payload,
 				selection,
 				action === 'approve'
-					? 'Approved requested host.'
-					: 'Rejected host approval request.',
+					? approval.requestedPackageId
+						? 'Approved requested package.'
+						: 'Approved requested host.'
+					: approval.requestedPackageId
+						? 'Rejected package approval request.'
+						: 'Rejected host approval request.',
 			)
 			handle.update()
 
@@ -631,6 +636,8 @@ export function AccountSecretsRoute(handle: Handle) {
 				nextUrl.searchParams.delete('request')
 				nextUrl.searchParams.delete('allowed-host')
 				nextUrl.searchParams.delete('capability')
+				nextUrl.searchParams.delete('package_id')
+				nextUrl.searchParams.delete('package')
 				navigate(`${nextUrl.pathname}${nextUrl.search}`)
 				lastLoadedDataKey = getDataRefreshKey(nextUrl.toString())
 			}
@@ -901,7 +908,8 @@ export function AccountSecretsRoute(handle: Handle) {
 		const approvalCard =
 			approval &&
 			!isRefreshingForLocationChange &&
-			!alreadyAddedNotice?.hostAlreadyAdded
+			!alreadyAddedNotice?.hostAlreadyAdded &&
+			!alreadyAddedNotice?.packageAlreadyAdded
 				? approval
 				: null
 

@@ -63,7 +63,6 @@ test('listPackageSubscriptionsCapability returns declared subscriptions', async 
 							description: 'General Discord thread chat subscriber',
 							subscriptions: {
 								'discord.message.created': {
-									topic: 'discord.message.created',
 									handler: './src/handle-discord-message-created.ts',
 									description: 'General chat handler',
 									filters: {

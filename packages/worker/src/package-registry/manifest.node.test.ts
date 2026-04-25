@@ -129,7 +129,6 @@ test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
 					discordBotToken: {
 						name: 'discordBotTokenKentPersonalAutomation',
 						scope: 'user',
-						required: true,
 					},
 				},
 				services: {
@@ -141,7 +140,6 @@ test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
 				},
 				subscriptions: {
 					'discord.message.created': {
-						topic: 'discord.message.created',
 						handler: './src/handle-discord-message-created.ts',
 						description: 'Personal-history subscriber',
 						filters: {
@@ -158,7 +156,6 @@ test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
 		discordBotToken: {
 			name: 'discordBotTokenKentPersonalAutomation',
 			scope: 'user',
-			required: true,
 		},
 	})
 	expect(manifest.kody.services).toEqual({
@@ -170,7 +167,6 @@ test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
 	})
 	expect(manifest.kody.subscriptions).toEqual({
 		'discord.message.created': {
-			topic: 'discord.message.created',
 			handler: './src/handle-discord-message-created.ts',
 			description: 'Personal-history subscriber',
 			filters: {

@@ -87,6 +87,9 @@ test('package service runtime refreshes manifest-backed service settings for ala
 		'loaded?.resolvedBinding ?? this.stateSnapshot.binding ?? input.binding',
 	)
 	expect(fileText).toContain(
+		"mode: loaded?.serviceDefinition?.mode ?? this.stateSnapshot.mode",
+	)
+	expect(fileText).toContain(
 		'loaded = await this.initializeBinding(input.binding, {',
 	)
 	expect(fileText).toContain('this.buildServiceStatusResponse(')
@@ -124,7 +127,7 @@ test('package service runtime exposes persistent mode and removes executor timeo
 		"mode: loaded.serviceDefinition?.mode ?? 'bounded'",
 	)
 	expect(fileText).toContain("loaded.serviceDefinition?.mode === 'persistent'")
-	expect(fileText).toContain('? (null as unknown as number)')
+	expect(fileText).toContain('? null')
 	expect(fileText).toContain(
 		': (loaded.serviceDefinition?.timeoutMs ?? 300_000)',
 	)

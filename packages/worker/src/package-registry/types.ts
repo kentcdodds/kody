@@ -38,7 +38,6 @@ export type PackageAppDefinition = z.infer<typeof packageAppDefinitionSchema>
 export const packageSecretMountDefinitionSchema = z.object({
 	name: z.string().min(1),
 	scope: z.enum(['user', 'app', 'session']).optional(),
-	required: z.boolean().optional(),
 })
 
 export type PackageSecretMountDefinition = z.infer<
@@ -60,7 +59,6 @@ export type PackageServiceDefinition = z.infer<
 >
 
 export const packageSubscriptionDefinitionSchema = z.object({
-	topic: z.string().min(1),
 	handler: z.string().min(1),
 	description: z.string().min(1).optional(),
 	filters: z.record(z.string().min(1), z.unknown()).optional(),

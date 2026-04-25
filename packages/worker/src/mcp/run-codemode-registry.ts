@@ -321,7 +321,7 @@ export async function runCodemodeWithRegistry(
 			kodyId: string
 		} | null
 		executorModules?: WorkerLoaderModules
-		executorTimeoutMs?: number
+		executorTimeoutMs?: number | null
 	},
 ): Promise<ExecuteResult> {
 	const moduleSource = stripCodeFences(code.trim())
@@ -441,7 +441,7 @@ export async function runModuleWithRegistry(
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
-		executorTimeoutMs?: number
+		executorTimeoutMs?: number | null
 	},
 ): Promise<ExecuteResult> {
 	const userId = callerContext.user?.userId ?? ''
@@ -487,7 +487,7 @@ export async function runBundledModuleWithRegistry(
 			serviceName: string
 		} | null
 		serviceTools?: ServiceToolOptions
-		executorTimeoutMs?: number
+		executorTimeoutMs?: number | null
 	},
 ): Promise<ExecuteResult> {
 	const { createExecuteExecutor } = await import('#mcp/executor.ts')

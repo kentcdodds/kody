@@ -53,6 +53,7 @@ export const packageServiceStatusSchema = z.object({
 	service_name: z.string(),
 	status: z.enum(['idle', 'running', 'stopping', 'stopped', 'error']),
 	auto_start: z.boolean(),
+	mode: z.enum(['bounded', 'persistent']),
 	timeout_ms: z.number().int().positive().nullable(),
 	stop_requested: z.boolean(),
 	active_run_id: z.string().nullable(),
@@ -268,6 +269,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		})
 		this.stateSnapshot.binding = loaded.resolvedBinding
 		this.stateSnapshot.autoStart = loaded.serviceDefinition?.autoStart ?? false
+		this.stateSnapshot.mode = loaded.serviceDefinition?.mode ?? 'bounded'
 		this.stateSnapshot.timeoutMs = loaded.serviceDefinition?.timeoutMs ?? null
 		await this.persistState()
 		if (
@@ -432,7 +434,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				loaded,
 				executorTimeoutMs:
 					loaded.serviceDefinition?.mode === 'persistent'
-						? (null as unknown as number)
+						? null
 						: (loaded.serviceDefinition?.timeoutMs ?? 300_000),
 				storageId,
 			})
@@ -472,7 +474,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				kodyId: string
 			}
 			loaded: Awaited<ReturnType<typeof loadSavedPackageService>>
-			executorTimeoutMs: number
+			executorTimeoutMs: number | null
 			storageId: string
 		},
 	) {
@@ -618,6 +620,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.buildServiceStatusResponse(binding, {
 				autoStart:
 					loaded?.serviceDefinition?.autoStart ?? this.stateSnapshot.autoStart,
+				mode: loaded?.serviceDefinition?.mode ?? this.stateSnapshot.mode,
 				timeoutMs:
 					loaded?.serviceDefinition?.timeoutMs ?? this.stateSnapshot.timeoutMs,
 			}),

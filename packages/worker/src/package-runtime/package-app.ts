@@ -727,10 +727,17 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			return {
 				has: true,
 			}
-		} catch {
-			return {
-				has: false,
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				(error.message.startsWith('Secret "') ||
+					error.message.startsWith('Package "'))
+			) {
+				return {
+					has: false,
+				}
 			}
+			throw error
 		}
 	}
 
@@ -929,6 +936,7 @@ export async function buildPackageAppWorker(input: {
 				__kodyPackageContext: {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,
+					sourceId: input.savedPackage.sourceId,
 				},
 			},
 			globalOutbound: workerExports?.CodemodeFetchGateway

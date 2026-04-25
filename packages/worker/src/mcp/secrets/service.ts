@@ -591,7 +591,6 @@ export async function setSecretAllowedCapabilities(input: {
 			allowed_capabilities: stringifyAllowedCapabilities(
 				input.allowedCapabilities,
 			),
-			allowed_packages: existingEntry.allowed_packages,
 			updated_at: now,
 		},
 	})

@@ -16,6 +16,11 @@ import {
 	verifySecretHostApprovalToken,
 } from '#mcp/secrets/host-approval.ts'
 import {
+	buildSecretPackageApprovalUrl,
+	createSecretPackageApprovalToken,
+	verifySecretPackageApprovalToken,
+} from '#mcp/secrets/package-approval.ts'
+import {
 	deleteSecret,
 	listAppSecretsByAppIds,
 	listSecrets,
@@ -47,6 +52,12 @@ type SavedPackageAppOption = {
 	updatedAt: string
 }
 
+type AllowedPackageView = {
+	packageId: string
+	kodyId: string
+	name: string
+}
+
 type AccountSecretListItem = {
 	id: string
 	name: string
@@ -56,7 +67,7 @@ type AccountSecretListItem = {
 	appTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
-	allowedPackages: Array<string>
+	allowedPackages: Array<AllowedPackageView>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -73,9 +84,9 @@ type SecretApprovalView = {
 	requestedHost: string
 	requestedCapability: string | null
 	requestedPackageId: string | null
-	requestedPackageName: string | null
+	requestedPackageKodyId: string | null
 	currentAllowedHosts: Array<string>
-	currentAllowedPackages: Array<string>
+	currentAllowedPackages: Array<AllowedPackageView>
 }
 
 type AccountSecretsPayload = {
@@ -648,6 +659,7 @@ async function buildAccountSecretsPayload(input: {
 	const approvalToken = url.searchParams.get('request')
 	const requestedApprovalHost = readApprovalHost(url)
 	const requestedCapability = readRequestedCapability(url)
+	const requestedPackageId = readRequestedPackageId(url)
 
 	const packageApps =
 		input.packageApps ??
@@ -660,12 +672,29 @@ async function buildAccountSecretsPayload(input: {
 		user: input.user,
 		packageApps,
 	})
+	const packageLookup = new Map(
+		(
+			await listSavedPackagesByUserId(input.env.APP_DB, {
+				userId: input.user.mcpUser.userId,
+			})
+		).map((savedPackage) => [
+			savedPackage.id,
+			{
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				name: savedPackage.name,
+			} satisfies AllowedPackageView,
+		]),
+	)
+	const normalizedSecrets = secrets.map((secret) =>
+		normalizeAccountSecretListItem(secret, packageLookup),
+	)
 	const selectedSecret = input.selectedSecretId
 		? await resolveAccountSecretDetail({
 				env: input.env,
 				userId: input.user.mcpUser.userId,
 				secretId: input.selectedSecretId,
-				secrets,
+				secrets: normalizedSecrets,
 			})
 		: null
 
@@ -676,6 +705,8 @@ async function buildAccountSecretsPayload(input: {
 				token: approvalToken,
 				requestedHost: requestedApprovalHost,
 				requestedCapability,
+				requestedPackageId,
+				packageLookup,
 			}).catch(() => null)
 		: null
 
@@ -683,7 +714,7 @@ async function buildAccountSecretsPayload(input: {
 		ok: true,
 		email: input.user.email,
 		apps: packageApps,
-		secrets,
+		secrets: normalizedSecrets,
 		selectedSecret,
 		approval,
 	}
@@ -751,16 +782,32 @@ async function resolveSecretApprovalView(input: {
 	token: string
 	requestedHost: string | null
 	requestedCapability: string | null
+	requestedPackageId: string | null
+	packageLookup: Map<string, AllowedPackageView>
 }) {
-	const approval = await verifySecretHostApprovalToken(input.env, input.token)
+	const packageApproval = await verifySecretPackageApprovalToken(
+		input.env,
+		input.token,
+	).catch(() => null)
+	const approval = packageApproval
+		? packageApproval
+		: await verifySecretHostApprovalToken(input.env, input.token)
 	if (approval.userId !== input.userId) {
 		throw new Error('Approval request mismatch.')
 	}
 	if (
+		'requestedHost' in approval &&
 		input.requestedHost != null &&
 		approval.requestedHost !== normalizeAllowedHosts([input.requestedHost])[0]
 	) {
 		throw new Error('Approval request host mismatch.')
+	}
+	if (
+		'packageId' in approval &&
+		input.requestedPackageId != null &&
+		approval.packageId !== input.requestedPackageId
+	) {
+		throw new Error('Approval request package mismatch.')
 	}
 	const secrets = await listSecrets({
 		env: input.env,
@@ -778,12 +825,16 @@ async function resolveSecretApprovalView(input: {
 		token: input.token,
 		name: approval.name,
 		scope: approval.scope,
-		requestedHost: approval.requestedHost,
+		requestedHost: 'requestedHost' in approval ? approval.requestedHost : '',
 		requestedCapability: input.requestedCapability,
-		requestedPackageId: null,
-		requestedPackageName: null,
+		requestedPackageId: 'packageId' in approval ? approval.packageId : null,
+		requestedPackageKodyId:
+			'packageId' in approval ? approval.kodyId : null,
 		currentAllowedHosts: secret.allowedHosts,
-		currentAllowedPackages: secret.allowedPackages,
+		currentAllowedPackages: mapAllowedPackages(
+			secret.allowedPackages,
+			input.packageLookup,
+		),
 	} satisfies SecretApprovalView
 }
 
@@ -854,6 +905,32 @@ function toAccountSecretListItem(
 	} satisfies AccountSecretListItem
 }
 
+function normalizeAccountSecretListItem(
+	secret: AccountSecretListItem,
+	packageLookup: Map<string, AllowedPackageView>,
+): AccountSecretListItem {
+	return {
+		...secret,
+		allowedPackages: mapAllowedPackages(secret.allowedPackages, packageLookup),
+	}
+}
+
+function mapAllowedPackages(
+	allowedPackageIds: Array<string>,
+	packageLookup: Map<string, AllowedPackageView>,
+) {
+	return allowedPackageIds.map((packageId) => {
+		const savedPackage = packageLookup.get(packageId)
+		return (
+			savedPackage ?? {
+				packageId,
+				kodyId: packageId,
+				name: packageId,
+			}
+		)
+	})
+}
+
 async function handleApprovalAction(input: {
 	request: Request
 	env: Env
@@ -870,12 +947,50 @@ async function handleApprovalAction(input: {
 	}
 
 	try {
-		const approval = await verifySecretHostApprovalToken(input.env, token)
+		const packageApproval = await verifySecretPackageApprovalToken(
+			input.env,
+			token,
+		).catch(() => null)
+		const approval = packageApproval
+			? packageApproval
+			: await verifySecretHostApprovalToken(input.env, token)
 		if (approval.userId !== input.user.mcpUser.userId) {
 			return jsonResponse(
 				{ ok: false, error: 'Approval request mismatch.' },
 				403,
 			)
+		}
+
+		if ('packageId' in approval) {
+			const current = await listSecrets({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				scope: approval.scope,
+				storageContext: approval.storageContext,
+			})
+			const secret = current.find(
+				(item) => item.name === approval.name && item.scope === approval.scope,
+			)
+			if (!secret) {
+				return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
+			}
+			if (input.action === 'approve') {
+				await setSecretAllowedPackages({
+					env: input.env,
+					userId: input.user.mcpUser.userId,
+					name: approval.name,
+					scope: approval.scope,
+					allowedPackages: [...secret.allowedPackages, approval.packageId],
+					storageContext: approval.storageContext,
+				})
+			}
+			const payload = await buildAccountSecretsPayload({
+				request: input.request,
+				env: input.env,
+				user: input.user,
+				selectedSecretId: readSelectedSecretId(input.request),
+			})
+			return jsonResponse(payload)
 		}
 
 		if (input.action === 'approve') {
@@ -928,57 +1043,15 @@ async function handlePackageApprovalAction(input: {
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 	body: object
 }) {
-	const currentId = readString(input.body, 'currentId')
-	const packageId = readString(input.body, 'packageId')
-	if (!currentId || !packageId) {
-		return jsonResponse(
-			{ ok: false, error: 'Secret id and package id are required.' },
-			400,
-		)
-	}
-
-	const secret = parseAccountSecretId(currentId)
-	if (!secret || secret.scope === 'session') {
-		return jsonResponse({ ok: false, error: 'Invalid secret id.' }, 400)
-	}
-
-	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId: input.user.mcpUser.userId,
-		packageId,
-	})
-	if (!savedPackage) {
-		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
-	}
-
-	const current = await listSecrets({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		scope: secret.scope,
-		storageContext: getSecretContextForAccountSecret(secret),
-	})
-	const currentSecret = current.find(
-		(item) => item.name === secret.name && item.scope === secret.scope,
+	void input
+	return jsonResponse(
+		{
+			ok: false,
+			error:
+				'Package approvals must use the signed approval request flow with a request token.',
+		},
+		400,
 	)
-	if (!currentSecret) {
-		return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
-	}
-
-	await setSecretAllowedPackages({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		name: secret.name,
-		scope: secret.scope,
-		allowedPackages: [...currentSecret.allowedPackages, savedPackage.id],
-		storageContext: getSecretContextForAccountSecret(secret),
-	})
-
-	const payload = await buildAccountSecretsPayload({
-		request: input.request,
-		env: input.env,
-		user: input.user,
-		selectedSecretId: currentId,
-	})
-	return jsonResponse(payload)
 }
 
 async function handleSaveAction(input: {
@@ -998,6 +1071,7 @@ async function handleSaveAction(input: {
 	const allowedCapabilities = normalizeAllowedCapabilities(
 		readStringArray(input.body, 'allowedCapabilities'),
 	)
+	const allowedPackages = readStringArray(input.body, 'allowedPackages')
 
 	if (!name) {
 		return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)
@@ -1081,6 +1155,17 @@ async function handleSaveAction(input: {
 			name,
 			scope,
 			allowedCapabilities,
+			storageContext: getSecretContextForAccountSecret({
+				scope,
+				appId,
+			}),
+		})
+		await setSecretAllowedPackages({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name,
+			scope,
+			allowedPackages,
 			storageContext: getSecretContextForAccountSecret({
 				scope,
 				appId,
@@ -1173,6 +1258,11 @@ function readSelectedSecretId(request: Request) {
 
 function readApprovalHost(url: URL) {
 	const value = url.searchParams.get('allowed-host')
+	return value?.trim() ? value.trim() : null
+}
+
+function readRequestedPackageId(url: URL) {
+	const value = url.searchParams.get('package_id')
 	return value?.trim() ? value.trim() : null
 }
 

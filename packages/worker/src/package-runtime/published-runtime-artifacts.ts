@@ -429,6 +429,12 @@ export async function readPublishedBundleArtifact(input: {
 	}
 	return {
 		...artifact,
+		packageContext: artifact.packageContext
+			? {
+					...artifact.packageContext,
+					sourceId: artifact.packageContext.sourceId ?? artifact.sourceId,
+				}
+			: null,
 		serviceContext: artifact.serviceContext ?? null,
 		modules: deserializeWorkerLoaderModules(artifact.modules),
 	} satisfies PublishedBundleArtifact

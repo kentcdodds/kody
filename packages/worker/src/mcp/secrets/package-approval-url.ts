@@ -8,8 +8,17 @@ export function buildSecretPackageApprovalUrl(input: {
 	scope: SecretScope
 	packageId: string
 	kodyId: string | null
+	token?: string | null
 	storageContext: StorageContext | null
 }) {
+	if (input.scope === 'app' && !input.storageContext?.appId) {
+		throw new Error('storageContext.appId is required for app-scope approvals.')
+	}
+	if (input.scope === 'session' && !input.storageContext?.sessionId) {
+		throw new Error(
+			'storageContext.sessionId is required for session-scope approvals.',
+		)
+	}
 	const secretPath = buildAccountSecretPath({
 		name: input.name,
 		scope: input.scope,
@@ -20,6 +29,9 @@ export function buildSecretPackageApprovalUrl(input: {
 	url.searchParams.set('package_id', input.packageId)
 	if (input.kodyId) {
 		url.searchParams.set('package', input.kodyId)
+	}
+	if (input.token) {
+		url.searchParams.set('request', input.token)
 	}
 	return url.toString()
 }

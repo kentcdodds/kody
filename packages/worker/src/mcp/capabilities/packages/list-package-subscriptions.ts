@@ -47,14 +47,19 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 			const packages = await listSavedPackagesByUserId(ctx.env.APP_DB, {
 				userId: user.userId,
 			})
-			const subscriptions = []
-			for (const savedPackage of packages) {
-				const loaded = await loadPackageManifestBySourceId({
-					env: ctx.env,
-					baseUrl: ctx.callerContext.baseUrl,
-					userId: user.userId,
-					sourceId: savedPackage.sourceId,
-				}).catch(() => null)
+			const loadedManifests = await Promise.all(
+				packages.map(async (savedPackage) => ({
+					savedPackage,
+					loaded: await loadPackageManifestBySourceId({
+						env: ctx.env,
+						baseUrl: ctx.callerContext.baseUrl,
+						userId: user.userId,
+						sourceId: savedPackage.sourceId,
+					}).catch(() => null),
+				})),
+			)
+			const subscriptions: Array<z.infer<typeof packageSubscriptionSchema>> = []
+			for (const { savedPackage, loaded } of loadedManifests) {
 				if (!loaded) continue
 				const declared = loaded.manifest.kody.subscriptions ?? {}
 				for (const [topic, definition] of Object.entries(declared)) {

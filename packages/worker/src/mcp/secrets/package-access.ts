@@ -4,6 +4,8 @@ import {
 	createMissingSecretMessage,
 	createPackageSecretAccessDeniedBatchMessage,
 	createPackageSecretAccessDeniedMessage,
+	parseMissingSecretMessage,
+	parsePackageAccessRequiredMessage,
 } from './errors.ts'
 import { resolveSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
@@ -16,6 +18,15 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 type SecretMountDefinition = {
 	name: string
 	scope?: SecretScope
+}
+
+export function isPackageSecretAccessUnavailableError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	return (
+		parseMissingSecretMessage(error.message) != null ||
+		parsePackageAccessRequiredMessage(error.message) != null ||
+		error.message.includes('does not declare secret mount')
+	)
 }
 
 export async function loadPackageSecretMounts(input: {
@@ -147,52 +158,52 @@ export async function findMissingPackageApprovals(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
-	const missing = []
-	for (const mount of Object.values(input.mounts)) {
-		const resolved = await resolveSecret({
-			env: input.env,
-			userId: input.userId,
-			name: mount.name,
-			scope: mount.scope,
-			storageContext: {
-				sessionId: input.storageContext?.sessionId ?? null,
-				appId: input.storageContext?.appId ?? null,
-				storageId: input.storageContext?.storageId ?? null,
-			},
-		})
-		if (!resolved.found) continue
-		if (resolved.allowedPackages.includes(packageInfo.savedPackage.id)) continue
-		missing.push({
-			secretName: mount.name,
-			packageId: packageInfo.savedPackage.id,
-			kodyId: packageInfo.savedPackage.kodyId,
-			approvalUrl: buildSecretPackageApprovalUrl({
-				baseUrl: input.baseUrl,
+	const storageContext = {
+		sessionId: input.storageContext?.sessionId ?? null,
+		appId: input.storageContext?.appId ?? null,
+		storageId: input.storageContext?.storageId ?? null,
+	}
+	const entries = await Promise.all(
+		Object.values(input.mounts).map(async (mount) => {
+			const resolved = await resolveSecret({
+				env: input.env,
+				userId: input.userId,
 				name: mount.name,
-				scope: resolved.scope ?? mount.scope ?? 'user',
+				scope: mount.scope,
+				storageContext,
+			})
+			if (!resolved.found) return null
+			if (resolved.allowedPackages.includes(packageInfo.savedPackage.id)) {
+				return null
+			}
+			return {
+				secretName: mount.name,
 				packageId: packageInfo.savedPackage.id,
 				kodyId: packageInfo.savedPackage.kodyId,
-				storageContext: {
-					sessionId: input.storageContext?.sessionId ?? null,
-					appId: input.storageContext?.appId ?? null,
-					storageId: input.storageContext?.storageId ?? null,
-				},
-			}),
-		})
-	}
-	return missing
+				approvalUrl: buildSecretPackageApprovalUrl({
+					baseUrl: input.baseUrl,
+					name: mount.name,
+					scope: resolved.scope ?? mount.scope ?? 'user',
+					packageId: packageInfo.savedPackage.id,
+					kodyId: packageInfo.savedPackage.kodyId,
+					storageContext,
+				}),
+			}
+		}),
+	)
+	return entries.filter((entry) => entry != null)
 }
 
 export function buildPackageApprovalErrorForMounts(input: {
-	secretNames: Array<{
+	entries: Array<{
 		name: string
 		packageId: string
 		kodyId: string
 		approvalUrl: string
 	}>
 }) {
-	if (input.secretNames.length === 1) {
-		const only = input.secretNames[0]
+	if (input.entries.length === 1) {
+		const only = input.entries[0]
 		if (!only) return null
 		return createPackageSecretAccessDeniedMessage({
 			secretName: only.name,
@@ -201,7 +212,7 @@ export function buildPackageApprovalErrorForMounts(input: {
 		})
 	}
 	return createPackageSecretAccessDeniedBatchMessage(
-		input.secretNames.map((entry) => ({
+		input.entries.map((entry) => ({
 			secretName: entry.name,
 			packageId: entry.packageId,
 			kodyId: entry.kodyId,
