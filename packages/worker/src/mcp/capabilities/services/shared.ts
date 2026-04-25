@@ -105,6 +105,7 @@ export async function listPackageServicesForContext(input: {
 		userId: context.user.userId,
 		baseUrl: input.callerContext.baseUrl,
 		packageId: context.savedPackage.id,
+		savedPackage: context.savedPackage,
 	})
 	return {
 		savedPackage: context.savedPackage,
