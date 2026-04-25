@@ -13,7 +13,7 @@ Additional kinds use the same protocol and routing pattern described below.
 
 - **Home (legacy URL, supported):**  
   `wss://<worker-origin>/home/connectors/<instanceId>`  
-  Session key = `<instanceId>` (unchanged from historical behavior).
+  Session key = `<instanceId>`.
 
 - **Generic:**  
   `wss://<worker-origin>/connectors/<kind>/<instanceId>`  

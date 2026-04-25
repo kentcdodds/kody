@@ -36,14 +36,23 @@ const ctx = {
 	},
 } as const
 
-test('agent_turn_start delegates to the runner service', async () => {
+test('agent turn capabilities delegate across start, next, and cancel flows', async () => {
 	mockModule.beginAgentTurn.mockResolvedValueOnce({
 		ok: true,
 		runId: 'run-123',
 		conversationId: 'conversation-123',
 	})
+	mockModule.readNextAgentTurnEvents.mockResolvedValueOnce({
+		events: [{ type: 'assistant_delta', text: 'Hi' }],
+		nextCursor: 1,
+		done: false,
+	})
+	mockModule.cancelAgentTurn.mockResolvedValueOnce({
+		ok: true,
+		cancelled: true,
+	})
 
-	const result = await metaAgentTurnStartCapability.handler(
+	const startResult = await metaAgentTurnStartCapability.handler(
 		{
 			sessionId: 'session-123',
 			system: 'system',
@@ -51,23 +60,14 @@ test('agent_turn_start delegates to the runner service', async () => {
 		},
 		ctx as never,
 	)
-
-	expect(result).toEqual({
+	expect(startResult).toEqual({
 		ok: true,
 		runId: 'run-123',
 		sessionId: 'session-123',
 		conversationId: 'conversation-123',
 	})
-})
 
-test('agent_turn_next returns incremental events', async () => {
-	mockModule.readNextAgentTurnEvents.mockResolvedValueOnce({
-		events: [{ type: 'assistant_delta', text: 'Hi' }],
-		nextCursor: 1,
-		done: false,
-	})
-
-	const result = await metaAgentTurnNextCapability.handler(
+	const nextResult = await metaAgentTurnNextCapability.handler(
 		{
 			sessionId: 'session-123',
 			runId: 'run-123',
@@ -75,30 +75,21 @@ test('agent_turn_next returns incremental events', async () => {
 		},
 		ctx as never,
 	)
-
-	expect(result).toEqual({
+	expect(nextResult).toEqual({
 		ok: true,
 		events: [{ type: 'assistant_delta', text: 'Hi' }],
 		nextCursor: 1,
 		done: false,
 	})
-})
 
-test('agent_turn_cancel forwards cancellation', async () => {
-	mockModule.cancelAgentTurn.mockResolvedValueOnce({
-		ok: true,
-		cancelled: true,
-	})
-
-	const result = await metaAgentTurnCancelCapability.handler(
+	const cancelResult = await metaAgentTurnCancelCapability.handler(
 		{
 			sessionId: 'session-123',
 			runId: 'run-123',
 		},
 		ctx as never,
 	)
-
-	expect(result).toEqual({
+	expect(cancelResult).toEqual({
 		ok: true,
 		cancelled: true,
 	})

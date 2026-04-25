@@ -60,6 +60,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 				exports: [],
 				jobs: [],
 				services: [],
+					subscriptions: [],
 			},
 		},
 	]
@@ -229,6 +230,7 @@ test('optional search rows include saved packages when lookup succeeds', async (
 					exports: ['.'],
 					jobs: [],
 					services: [],
+					subscriptions: [],
 				},
 			},
 		],
@@ -272,6 +274,7 @@ test('optional search rows preserve package fallback warnings', async () => {
 						exports: [],
 						jobs: [],
 						services: [],
+						subscriptions: [],
 					},
 				},
 			],
@@ -285,7 +288,7 @@ test('optional search rows preserve package fallback warnings', async () => {
 	expect(result.warnings).toEqual(['fallback warning'])
 })
 
-test('searchUnified uses package exports and connector aliases for operate queries', () => {
+test('searchUnified ranks related packages and connectors for operate queries', () => {
 	const registry = buildCapabilityRegistry([])
 	const optionalRows = {
 		packageRows: [
@@ -322,6 +325,7 @@ test('searchUnified uses package exports and connector aliases for operate queri
 					],
 					jobs: [],
 					services: [],
+					subscriptions: [],
 				},
 			},
 		],
@@ -370,8 +374,10 @@ test('searchUnified uses package exports and connector aliases for operate queri
 			}),
 		]),
 	)
-	expect(result.guidance).toContain('search({ entity: "spotify:package" })')
-	expect(result.guidance).toContain('`execute`')
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'spotify',
+	})
 })
 
 test('buildSavedPackageSearchRows falls back when package source resolution fails', async () => {
@@ -444,6 +450,7 @@ test('search guidance does not pair unrelated package and connector matches', ()
 						exports: ['./play'],
 						jobs: [],
 						services: [],
+						subscriptions: [],
 					},
 				},
 			],
@@ -480,7 +487,6 @@ test('search guidance does not pair unrelated package and connector matches', ()
 		'search({ entity: "github:connector" })',
 	)
 })
-
 test('optional search rows fall back when persisted values lookup fails', async () => {
 	const result = await loadOptionalSearchRows({
 		userId: 'user-123',

@@ -83,7 +83,6 @@ test('switching secrets updates detail view without a full reload', async ({
 		),
 	).resolves.toBe('still-here')
 })
-
 test('landing on an approval link shows already added when the host is present', async ({
 	page,
 	login,
