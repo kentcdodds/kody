@@ -435,7 +435,9 @@ test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and o
 	})
 	expect(defaultHead).toContain('type="importmap"')
 	expect(defaultHead).toContain('window.__kodyGeneratedUiBootstrap')
-	expect(defaultHead).toMatch(/<script type="module" src="[^"]*kody-ui-utils\.js"/)
+	expect(defaultHead).toMatch(
+		/<script type="module" src="[^"]*kody-ui-utils\.js"/,
+	)
 
 	const shellRenderedHead = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',

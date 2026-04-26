@@ -73,9 +73,7 @@ async function startCloudflareMock(token: string) {
 	}
 }
 
-test(
-	'Cloudflare mock implements the Artifacts REST workflow used in local dev',
-	async () => {
+test('Cloudflare mock implements the Artifacts REST workflow used in local dev', async () => {
 	const token = `cloudflare-artifacts-mock-token-${crypto.randomUUID()}`
 	const repoName = `repo-${crypto.randomUUID()}`
 	const forkName = `repo-copy-${crypto.randomUUID()}`
@@ -151,6 +149,4 @@ test(
 		artifactRepoCount?: number
 	}
 	expect(meta.artifactRepoCount).toBe(2)
-	},
-	40_000,
-)
+}, 40_000)

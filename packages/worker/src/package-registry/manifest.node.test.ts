@@ -114,3 +114,64 @@ test('parseAuthoredPackageJson rejects service timeoutMs values above the suppor
 		}),
 	).toThrow('expected number to be <=300000')
 })
+
+test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'.': './index.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway package',
+				secretMounts: {
+					discordBotToken: {
+						name: 'discordBotTokenKentPersonalAutomation',
+						scope: 'user',
+					},
+				},
+				services: {
+					'gateway-supervisor': {
+						entry: './src/gateway-supervisor.ts',
+						autoStart: true,
+						mode: 'persistent',
+					},
+				},
+				subscriptions: {
+					'discord.message.created': {
+						handler: './src/handle-discord-message-created.ts',
+						description: 'Personal-history subscriber',
+						filters: {
+							channelIds: ['1470913684598423592'],
+						},
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	expect(manifest.kody.secretMounts).toEqual({
+		discordBotToken: {
+			name: 'discordBotTokenKentPersonalAutomation',
+			scope: 'user',
+		},
+	})
+	expect(manifest.kody.services).toEqual({
+		'gateway-supervisor': {
+			entry: './src/gateway-supervisor.ts',
+			autoStart: true,
+			mode: 'persistent',
+		},
+	})
+	expect(manifest.kody.subscriptions).toEqual({
+		'discord.message.created': {
+			handler: './src/handle-discord-message-created.ts',
+			description: 'Personal-history subscriber',
+			filters: {
+				channelIds: ['1470913684598423592'],
+			},
+		},
+	})
+})

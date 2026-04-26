@@ -36,10 +36,7 @@ export class PromiseLruCache<T> {
 		}
 	>()
 
-	constructor(input?: {
-		ttlMs?: number
-		limit?: number
-	}) {
+	constructor(input?: { ttlMs?: number; limit?: number }) {
 		this.ttlMs = input?.ttlMs ?? publishedPackageCacheTtlMs
 		this.limit = input?.limit ?? publishedPackageCacheLimit
 	}
@@ -70,10 +67,7 @@ export class PromiseLruCache<T> {
 		return pending
 	}
 
-	getOrCreate(input: {
-		cacheKey: string
-		create: () => Promise<T>
-	}) {
+	getOrCreate(input: { cacheKey: string; create: () => Promise<T> }) {
 		const cached = this.get(input.cacheKey)
 		if (cached) {
 			return cached

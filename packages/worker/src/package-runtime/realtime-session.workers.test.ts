@@ -1,15 +1,20 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import { packageRealtimeSessionRpc, PackageRealtimeSession } from './realtime-session.ts'
+import {
+	packageRealtimeSessionRpc,
+	PackageRealtimeSession,
+} from './realtime-session.ts'
 
-function createBinding(overrides?: Partial<{
-	userId: string
-	packageId: string
-	kodyId: string
-	sourceId: string
-	baseUrl: string
-}>) {
+function createBinding(
+	overrides?: Partial<{
+		userId: string
+		packageId: string
+		kodyId: string
+		sourceId: string
+		baseUrl: string
+	}>,
+) {
 	return {
 		env,
 		userId: overrides?.userId ?? 'user-1',
@@ -24,18 +29,18 @@ test('package realtime session DO can list, emit, and broadcast with no active s
 	const rpc = packageRealtimeSessionRpc(createBinding())
 
 	await expect(rpc.listSessions()).resolves.toEqual({ sessions: [] })
-	await expect(
-		rpc.emit('missing-session', { type: 'hello' }),
-	).resolves.toEqual({
-		delivered: false,
-		reason: 'session_not_connected',
-	})
-	await expect(
-		rpc.broadcast({ data: { type: 'broadcast' } }),
-	).resolves.toEqual({
-		deliveredCount: 0,
-		sessionIds: [],
-	})
+	await expect(rpc.emit('missing-session', { type: 'hello' })).resolves.toEqual(
+		{
+			delivered: false,
+			reason: 'session_not_connected',
+		},
+	)
+	await expect(rpc.broadcast({ data: { type: 'broadcast' } })).resolves.toEqual(
+		{
+			deliveredCount: 0,
+			sessionIds: [],
+		},
+	)
 })
 
 test('package realtime session DO is addressable as a durable object', async () => {
@@ -113,7 +118,9 @@ test('package realtime session broadcast skips sessions whose send throws', asyn
 				facet?: string | null
 				topic?: string | null
 			}) => Array<{ session_id: string }>
-			getSocketBySessionId: (sessionId: string) => { send: (data: string) => void }
+			getSocketBySessionId: (sessionId: string) => {
+				send: (data: string) => void
+			}
 			stateSnapshot: {
 				sessions: Record<string, { id: string }>
 			}

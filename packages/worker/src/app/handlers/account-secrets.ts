@@ -13,8 +13,13 @@ import { type StorageContext } from '#mcp/storage.ts'
 import {
 	buildSecretHostApprovalUrl,
 	createSecretHostApprovalToken,
+	secretHostApprovalTokenPrefix,
 	verifySecretHostApprovalToken,
 } from '#mcp/secrets/host-approval.ts'
+import {
+	secretPackageApprovalTokenPrefix,
+	verifySecretPackageApprovalToken,
+} from '#mcp/secrets/package-approval.ts'
 import {
 	deleteSecret,
 	listAppSecretsByAppIds,
@@ -23,11 +28,15 @@ import {
 	saveSecret,
 	setSecretAllowedCapabilities,
 	setSecretAllowedHosts,
+	setSecretAllowedPackages,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import {
+	listSavedPackagesByUserId,
+} from '#worker/package-registry/repo.ts'
 import { type routes } from '#app/routes.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
+import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
@@ -43,6 +52,14 @@ type SavedPackageAppOption = {
 	updatedAt: string
 }
 
+type SavedPackageSummary = {
+	id: string
+	kodyId: string
+	name: string
+	hasApp: boolean
+	updatedAt: string
+}
+
 type AccountSecretListItem = {
 	id: string
 	name: string
@@ -52,6 +69,7 @@ type AccountSecretListItem = {
 	appTitle: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
 	ttlMs: number | null
@@ -67,13 +85,20 @@ type SecretApprovalView = {
 	scope: SecretScope
 	requestedHost: string
 	requestedCapability: string | null
+	requestedPackageId: string | null
 	currentAllowedHosts: Array<string>
+	currentAllowedPackages: Array<string>
 }
 
 type AccountSecretsPayload = {
 	ok: true
 	email: string
 	apps: Array<SavedPackageAppOption>
+	packages: Array<{
+		id: string
+		kodyId: string
+		name: string
+	}>
 	secrets: Array<AccountSecretListItem>
 	selectedSecret: AccountSecretDetail | null
 	approval: SecretApprovalView | null
@@ -627,18 +652,21 @@ async function buildAccountSecretsPayload(input: {
 	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
 	selectedSecretId?: string | null
 	packageApps?: Array<SavedPackageAppOption>
+	savedPackages?: Array<SavedPackageSummary>
 }): Promise<AccountSecretsPayload> {
 	const url = new URL(input.request.url)
 	const approvalToken = url.searchParams.get('request')
 	const requestedApprovalHost = readApprovalHost(url)
 	const requestedCapability = readRequestedCapability(url)
-
-	const packageApps =
-		input.packageApps ??
-		(await listPackageAppsForUser({
-			env: input.env,
-			user: input.user,
+	const requestedPackageId = readRequestedPackageId(url)
+	const savedPackages =
+		input.savedPackages ??
+		(await listSavedPackagesByUserId(input.env.APP_DB, {
+			userId: input.user.mcpUser.userId,
 		}))
+	const packageApps =
+		input.packageApps ?? toPackageAppOptions(savedPackages)
+	const packageLookup = toAllowedPackageLookup(savedPackages)
 	const secrets = await listAccountSecrets({
 		env: input.env,
 		user: input.user,
@@ -660,6 +688,7 @@ async function buildAccountSecretsPayload(input: {
 				token: approvalToken,
 				requestedHost: requestedApprovalHost,
 				requestedCapability,
+				requestedPackageId,
 			}).catch(() => null)
 		: null
 
@@ -667,33 +696,15 @@ async function buildAccountSecretsPayload(input: {
 		ok: true,
 		email: input.user.email,
 		apps: packageApps,
+		packages: Array.from(packageLookup.values()).map((packageEntry) => ({
+			id: packageEntry.packageId,
+			kodyId: packageEntry.kodyId,
+			name: packageEntry.name,
+		})),
 		secrets,
 		selectedSecret,
 		approval,
 	}
-}
-
-async function listPackageAppsForUser(input: {
-	env: Env
-	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-}) {
-	return (
-		await listSavedPackagesByUserId(input.env.APP_DB, {
-			userId: input.user.mcpUser.userId,
-		})
-	)
-		.filter((savedPackage) => savedPackage.hasApp)
-		.map((savedPackage) => ({
-			id: savedPackage.id,
-			title: savedPackage.name,
-			updatedAt: savedPackage.updatedAt,
-		}))
-		.sort((left, right) => {
-			return (
-				right.updatedAt.localeCompare(left.updatedAt) ||
-				left.title.localeCompare(right.title)
-			)
-		})
 }
 
 async function listAccountSecrets(input: {
@@ -729,22 +740,62 @@ async function listAccountSecrets(input: {
 	})
 }
 
+type ResolvedSecretApproval =
+	| Awaited<ReturnType<typeof verifySecretHostApprovalToken>>
+	| Awaited<ReturnType<typeof verifySecretPackageApprovalToken>>
+
+function isExpiredPackageApprovalError(error: unknown) {
+	return (
+		error instanceof Error &&
+		error.message === 'Secret package approval request has expired.'
+	)
+}
+
+async function resolveApprovalRequest(
+	env: Env,
+	token: string,
+): Promise<ResolvedSecretApproval> {
+	if (token.startsWith(secretHostApprovalTokenPrefix)) {
+		return await verifySecretHostApprovalToken(env, token)
+	}
+	if (token.startsWith(secretPackageApprovalTokenPrefix)) {
+		return await verifySecretPackageApprovalToken(env, token)
+	}
+	try {
+		return await verifySecretPackageApprovalToken(env, token)
+	} catch (error) {
+		if (isExpiredPackageApprovalError(error)) {
+			throw error
+		}
+	}
+	return await verifySecretHostApprovalToken(env, token)
+}
+
 async function resolveSecretApprovalView(input: {
 	env: Env
 	userId: string
 	token: string
 	requestedHost: string | null
 	requestedCapability: string | null
+	requestedPackageId: string | null
 }) {
-	const approval = await verifySecretHostApprovalToken(input.env, input.token)
+	const approval = await resolveApprovalRequest(input.env, input.token)
 	if (approval.userId !== input.userId) {
 		throw new Error('Approval request mismatch.')
 	}
 	if (
+		approval.kind === 'host' &&
 		input.requestedHost != null &&
 		approval.requestedHost !== normalizeAllowedHosts([input.requestedHost])[0]
 	) {
 		throw new Error('Approval request host mismatch.')
+	}
+	if (
+		approval.kind === 'package' &&
+		input.requestedPackageId != null &&
+		approval.packageId !== input.requestedPackageId
+	) {
+		throw new Error('Approval request package mismatch.')
 	}
 	const secrets = await listSecrets({
 		env: input.env,
@@ -762,9 +813,12 @@ async function resolveSecretApprovalView(input: {
 		token: input.token,
 		name: approval.name,
 		scope: approval.scope,
-		requestedHost: approval.requestedHost,
+		requestedHost: approval.kind === 'host' ? approval.requestedHost : '',
 		requestedCapability: input.requestedCapability,
+		requestedPackageId:
+			approval.kind === 'package' ? approval.packageId : null,
 		currentAllowedHosts: secret.allowedHosts,
+		currentAllowedPackages: secret.allowedPackages,
 	} satisfies SecretApprovalView
 }
 
@@ -803,6 +857,7 @@ function toAccountSecretListItem(
 		appId: string | null
 		allowedHosts: Array<string>
 		allowedCapabilities: Array<string>
+		allowedPackages: Array<string>
 		createdAt: string
 		updatedAt: string
 		ttlMs: number | null
@@ -827,10 +882,53 @@ function toAccountSecretListItem(
 		appTitle: secret.appId ? (appTitles.get(secret.appId) ?? null) : null,
 		allowedHosts: secret.allowedHosts,
 		allowedCapabilities: secret.allowedCapabilities,
+		allowedPackages: secret.allowedPackages,
 		createdAt: secret.createdAt,
 		updatedAt: secret.updatedAt,
 		ttlMs: secret.ttlMs,
 	} satisfies AccountSecretListItem
+}
+
+function toPackageAppOptions(
+	savedPackages: Array<{
+		id: string
+		name: string
+		hasApp: boolean
+		updatedAt: string
+	}>,
+) {
+	return savedPackages
+		.filter((savedPackage) => savedPackage.hasApp)
+		.map((savedPackage) => ({
+			id: savedPackage.id,
+			title: savedPackage.name,
+			updatedAt: savedPackage.updatedAt,
+		}))
+		.sort((left, right) => {
+			return (
+				right.updatedAt.localeCompare(left.updatedAt) ||
+				left.title.localeCompare(right.title)
+			)
+		})
+}
+
+function toAllowedPackageLookup(
+	savedPackages: Array<{
+		id: string
+		kodyId: string
+		name: string
+	}>,
+) {
+	return new Map(
+		savedPackages.map((savedPackage) => [
+			savedPackage.id,
+			{
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				name: savedPackage.name,
+			},
+		]),
+	)
 }
 
 async function handleApprovalAction(input: {
@@ -849,12 +947,46 @@ async function handleApprovalAction(input: {
 	}
 
 	try {
-		const approval = await verifySecretHostApprovalToken(input.env, token)
+		const approval = await resolveApprovalRequest(input.env, token)
 		if (approval.userId !== input.user.mcpUser.userId) {
 			return jsonResponse(
 				{ ok: false, error: 'Approval request mismatch.' },
 				403,
 			)
+		}
+
+		if (approval.kind === 'package') {
+			if (input.action === 'approve') {
+				const current = await listSecrets({
+					env: input.env,
+					userId: input.user.mcpUser.userId,
+					scope: approval.scope,
+					storageContext: approval.storageContext,
+				})
+				const secret = current.find(
+					(item) => item.name === approval.name && item.scope === approval.scope,
+				)
+				if (!secret) {
+					return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
+				}
+				await setSecretAllowedPackages({
+					env: input.env,
+					userId: input.user.mcpUser.userId,
+					name: approval.name,
+					scope: approval.scope,
+					allowedPackages: Array.from(
+						new Set([...secret.allowedPackages, approval.packageId]),
+					),
+					storageContext: approval.storageContext,
+				})
+			}
+			const payload = await buildAccountSecretsPayload({
+				request: input.request,
+				env: input.env,
+				user: input.user,
+				selectedSecretId: readSelectedSecretId(input.request),
+			})
+			return jsonResponse(payload)
 		}
 
 		if (input.action === 'approve') {
@@ -918,6 +1050,9 @@ async function handleSaveAction(input: {
 	const allowedCapabilities = normalizeAllowedCapabilities(
 		readStringArray(input.body, 'allowedCapabilities'),
 	)
+	const allowedPackages = normalizeAllowedPackages(
+		readStringArray(input.body, 'allowedPackages'),
+	)
 
 	if (!name) {
 		return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)
@@ -929,10 +1064,10 @@ async function handleSaveAction(input: {
 		return jsonResponse({ ok: false, error: 'Secret scope is required.' }, 400)
 	}
 
-	const packageApps = await listPackageAppsForUser({
-		env: input.env,
-		user: input.user,
+	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
+		userId: input.user.mcpUser.userId,
 	})
+	const packageApps = toPackageAppOptions(savedPackages)
 	const appId = readAppIdForScope({
 		body: input.body,
 		scope,
@@ -1006,6 +1141,17 @@ async function handleSaveAction(input: {
 				appId,
 			}),
 		})
+		await setSecretAllowedPackages({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name,
+			scope,
+			allowedPackages,
+			storageContext: getSecretContextForAccountSecret({
+				scope,
+				appId,
+			}),
+		})
 
 		if (currentSecret && currentSecret.id !== nextId) {
 			await deleteSecret({
@@ -1022,6 +1168,7 @@ async function handleSaveAction(input: {
 			env: input.env,
 			user: input.user,
 			packageApps,
+			savedPackages,
 			selectedSecretId: nextId,
 		})
 		return jsonResponse(payload)
@@ -1093,6 +1240,11 @@ function readSelectedSecretId(request: Request) {
 
 function readApprovalHost(url: URL) {
 	const value = url.searchParams.get('allowed-host')
+	return value?.trim() ? value.trim() : null
+}
+
+function readRequestedPackageId(url: URL) {
+	const value = url.searchParams.get('package_id')
 	return value?.trim() ? value.trim() : null
 }
 

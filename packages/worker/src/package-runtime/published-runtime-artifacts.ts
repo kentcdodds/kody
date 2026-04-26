@@ -62,6 +62,7 @@ export type PublishedBundleArtifact = {
 	packageContext: {
 		packageId: string
 		kodyId: string
+		sourceId: string
 	} | null
 	serviceContext: {
 		serviceName: string
@@ -78,7 +79,8 @@ type StoredPublishedBundleArtifact = Omit<
 }
 
 function getBundleArtifactsKv(env: Env) {
-	const kv = (env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace }).BUNDLE_ARTIFACTS_KV
+	const kv = (env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace })
+		.BUNDLE_ARTIFACTS_KV
 	if (!kv) {
 		throw new Error(
 			'Missing BUNDLE_ARTIFACTS_KV binding for published runtime artifacts.',
@@ -358,7 +360,10 @@ export async function persistPublishedSourceManifestSnapshot(input: {
 		sourceId: input.source.id,
 		publishedCommit: input.source.published_commit,
 	})
-	await getBundleArtifactsKv(input.env).put(key, JSON.stringify(manifestSnapshot))
+	await getBundleArtifactsKv(input.env).put(
+		key,
+		JSON.stringify(manifestSnapshot),
+	)
 	return key
 }
 
@@ -424,6 +429,12 @@ export async function readPublishedBundleArtifact(input: {
 	}
 	return {
 		...artifact,
+		packageContext: artifact.packageContext
+			? {
+					...artifact.packageContext,
+					sourceId: artifact.packageContext.sourceId ?? artifact.sourceId,
+				}
+			: null,
 		serviceContext: artifact.serviceContext ?? null,
 		modules: deserializeWorkerLoaderModules(artifact.modules),
 	} satisfies PublishedBundleArtifact

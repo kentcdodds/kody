@@ -62,7 +62,9 @@ function createCallerContext() {
 }
 
 test('services domain exposes package service lifecycle capabilities', () => {
-	expect(servicesDomain.capabilities.map((capability) => capability.name)).toEqual(
+	expect(
+		servicesDomain.capabilities.map((capability) => capability.name),
+	).toEqual(
 		expect.arrayContaining([
 			'service_list',
 			'service_get',
@@ -97,6 +99,7 @@ test('service_list returns declared package services with live status', async ()
 				name: 'realtime-supervisor',
 				entry: 'services/realtime-supervisor.ts',
 				autoStart: true,
+				mode: 'persistent',
 				timeoutMs: 300000,
 			},
 		],
@@ -155,6 +158,7 @@ test('service_list returns declared package services with live status', async ()
 				name: 'realtime-supervisor',
 				entry: 'services/realtime-supervisor.ts',
 				auto_start: true,
+				mode: 'persistent',
 				status: 'stopped',
 				timeout_ms: 300000,
 			},
@@ -187,6 +191,7 @@ test('service_list marks status as unknown when a service status lookup fails', 
 				name: 'realtime-supervisor',
 				entry: 'services/realtime-supervisor.ts',
 				autoStart: false,
+				mode: 'bounded',
 				timeoutMs: null,
 			},
 		],
@@ -215,6 +220,7 @@ test('service_list marks status as unknown when a service status lookup fails', 
 				name: 'realtime-supervisor',
 				entry: 'services/realtime-supervisor.ts',
 				auto_start: false,
+				mode: 'bounded',
 				status: 'unknown',
 				timeout_ms: null,
 			},

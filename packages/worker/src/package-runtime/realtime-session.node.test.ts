@@ -15,7 +15,8 @@ vi.mock('#mcp/context.ts', () => ({
 }))
 
 vi.mock('#mcp/app-runner-facet-names.ts', () => ({
-	buildFacetName: (...args: Array<unknown>) => mockModule.buildFacetName(...args),
+	buildFacetName: (...args: Array<unknown>) =>
+		mockModule.buildFacetName(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -38,10 +39,8 @@ vi.mock('./package-app.ts', () => ({
 		mockModule.buildPackageAppWorker(...args),
 }))
 
-const {
-	PackageRealtimeSession,
-	resolvePackageAppWorkerCacheKey,
-} = await import('./realtime-session.ts')
+const { PackageRealtimeSession, resolvePackageAppWorkerCacheKey } =
+	await import('./realtime-session.ts')
 
 test('resolvePackageAppWorkerCacheKey includes latest published commit when available', async () => {
 	mockModule.getEntitySourceById.mockReset()

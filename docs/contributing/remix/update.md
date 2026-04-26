@@ -51,8 +51,8 @@ If a package is added or removed upstream, update
 
 ## 5) Audit export coverage
 
-Confirm `docs/contributing/remix/index.md` package rows cover all
-top-level exports from the installed `remix` package:
+Confirm `docs/contributing/remix/index.md` package rows cover all top-level
+exports from the installed `remix` package:
 
 ```sh
 node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('node_modules/remix/package.json','utf8'));const top=[...new Set(Object.keys(pkg.exports).filter(k=>k!=='./package.json').map(k=>k.slice(2).split('/')[0]))].sort();const idx=fs.readFileSync('docs/contributing/remix/index.md','utf8');const docs=[...new Set([...idx.matchAll(/^\\|\\s*([a-z0-9-]+)\\s*\\|/gm)].map(m=>m[1]).filter(x=>!['Package','--------------------------'].includes(x)))].sort();const missing=top.filter(x=>!docs.includes(x));console.log(missing.length===0?'No missing package docs in index.':'Missing docs for: '+missing.join(', '));"

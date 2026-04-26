@@ -200,6 +200,12 @@ declare function createAuthenticatedFetch(
 declare function agentChatTurnStream(input: KodyCapabilityArgs): AsyncIterable<unknown>;
 declare const packageContext: { packageId: string; kodyId: string } | null;
 declare const serviceContext: { serviceName: string } | null;
+declare const packageSecrets:
+  | {
+      get(alias: string): Promise<string>;
+      has(alias: string): Promise<boolean>;
+    }
+  | null;
 declare const service:
   | {
       getStatus(): Promise<unknown>;
@@ -339,7 +345,8 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 	ok: boolean
 	message: string
 }> {
-	const { createFileSystemSnapshot } = await import('@cloudflare/worker-bundler')
+	const { createFileSystemSnapshot } =
+		await import('@cloudflare/worker-bundler')
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
 			for (const [path, content] of Object.entries(input.sourceFiles)) {
@@ -374,9 +381,11 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
-	const { fileSystem, languageService } = await createTypescriptLanguageService({
-		fileSystem: typecheckFileSystem,
-	})
+	const { fileSystem, languageService } = await createTypescriptLanguageService(
+		{
+			fileSystem: typecheckFileSystem,
+		},
+	)
 	const diagnostics = getPackageTypecheckDiagnostics({
 		targets: input.entryPoints.map((entryPoint) => ({
 			path: entryPoint.path,
@@ -535,4 +544,3 @@ export async function runRepoChecks(input: {
 		manifest,
 	}
 }
-

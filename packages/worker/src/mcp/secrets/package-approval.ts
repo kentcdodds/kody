@@ -1,100 +1,104 @@
 import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { decryptStringWithPurpose, encryptStringWithPurpose } from './crypto.ts'
-import { normalizeHost } from './allowed-hosts.ts'
 import { type SecretScope } from './types.ts'
 
-const secretHostApprovalPurpose = 'secret-host-approval'
-const defaultSecretHostApprovalTtlMs = 1000 * 60 * 60 * 24
-export const secretHostApprovalTokenPrefix = 'host:'
+const secretPackageApprovalPurpose = 'secret-package-approval'
+const defaultSecretPackageApprovalTtlMs = 1000 * 60 * 60 * 24
+export const secretPackageApprovalTokenPrefix = 'pkg:'
 
-export type SecretHostApprovalRequest = {
-	kind: 'host'
+export type SecretPackageApprovalRequest = {
+	kind: 'package'
 	userId: string
 	name: string
 	scope: SecretScope
-	requestedHost: string
+	packageId: string
+	packageKodyId: string | null
 	storageContext: StorageContext | null
 	iat: number
 	exp: number
 }
 
-export async function createSecretHostApprovalToken(
+export async function createSecretPackageApprovalToken(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	input: {
 		userId: string
 		name: string
 		scope: SecretScope
-		requestedHost: string
+		packageId: string
+		packageKodyId: string | null
 		storageContext: StorageContext | null
 		ttlMs?: number
 	},
 ) {
 	const now = Date.now()
-	const ttlMs = input.ttlMs ?? defaultSecretHostApprovalTtlMs
+	const ttlMs = input.ttlMs ?? defaultSecretPackageApprovalTtlMs
 	const token = await encryptStringWithPurpose(
 		env,
-		secretHostApprovalPurpose,
+		secretPackageApprovalPurpose,
 		JSON.stringify({
-			kind: 'host',
+			kind: 'package',
 			userId: input.userId,
 			name: input.name.trim(),
 			scope: input.scope,
-			requestedHost: normalizeHost(input.requestedHost),
+			packageId: input.packageId.trim(),
+			packageKodyId: input.packageKodyId?.trim() || null,
 			storageContext: input.storageContext ?? null,
 			iat: now,
 			exp: now + ttlMs,
-		} satisfies SecretHostApprovalRequest),
+		} satisfies SecretPackageApprovalRequest),
 	)
-	return `${secretHostApprovalTokenPrefix}${token}`
+	return `${secretPackageApprovalTokenPrefix}${token}`
 }
 
-export async function verifySecretHostApprovalToken(
+export async function verifySecretPackageApprovalToken(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	token: string,
 ) {
-	if (token.startsWith('pkg:')) {
-		throw new Error('Invalid secret host approval request.')
-	}
-	const encodedToken = token.startsWith(secretHostApprovalTokenPrefix)
-		? token.slice(secretHostApprovalTokenPrefix.length)
+	const encryptedToken = token.startsWith(secretPackageApprovalTokenPrefix)
+		? token.slice(secretPackageApprovalTokenPrefix.length)
 		: token
 	const raw = await decryptStringWithPurpose(
 		env,
-		secretHostApprovalPurpose,
-		encodedToken,
+		secretPackageApprovalPurpose,
+		encryptedToken,
 	)
-	const parsed = JSON.parse(raw) as Partial<SecretHostApprovalRequest>
+	const parsed = JSON.parse(raw) as Partial<SecretPackageApprovalRequest>
 	if (
-		(parsed.kind != null && parsed.kind !== 'host') ||
+		parsed.kind !== 'package' ||
 		typeof parsed.userId !== 'string' ||
 		typeof parsed.name !== 'string' ||
 		typeof parsed.scope !== 'string' ||
-		typeof parsed.requestedHost !== 'string'
+		typeof parsed.packageId !== 'string'
 	) {
-		throw new Error('Invalid secret host approval request.')
+		throw new Error('Invalid secret package approval request.')
 	}
 	if (typeof parsed.exp === 'number' && Date.now() > parsed.exp) {
-		throw new Error('Secret host approval request has expired.')
+		throw new Error('Secret package approval request has expired.')
 	}
 	return {
-		kind: 'host',
+		kind: 'package',
 		userId: parsed.userId,
 		name: parsed.name.trim(),
 		scope: parsed.scope as SecretScope,
-		requestedHost: normalizeHost(parsed.requestedHost),
+		packageId: parsed.packageId.trim(),
+		packageKodyId:
+			typeof parsed.packageKodyId === 'string'
+				? (parsed.packageKodyId.trim() || null)
+				: null,
 		storageContext: parsed.storageContext ?? null,
 		iat: typeof parsed.iat === 'number' ? parsed.iat : Date.now(),
 		exp: typeof parsed.exp === 'number' ? parsed.exp : Date.now(),
-	} satisfies SecretHostApprovalRequest
+	} satisfies SecretPackageApprovalRequest
 }
 
-export function buildSecretHostApprovalUrl(input: {
+export function buildSecretPackageApprovalTokenUrl(input: {
 	baseUrl: string
 	token: string
 	name: string
 	scope: SecretScope
-	requestedHost: string
+	packageId: string
+	packageKodyId: string | null
 	storageContext: StorageContext | null
 }) {
 	const secretPath = buildAccountSecretPath({
@@ -104,7 +108,10 @@ export function buildSecretHostApprovalUrl(input: {
 		sessionId: input.storageContext?.sessionId ?? null,
 	})
 	const url = new URL(secretPath, input.baseUrl)
-	url.searchParams.set('allowed-host', normalizeHost(input.requestedHost))
+	url.searchParams.set('package_id', input.packageId)
+	if (input.packageKodyId) {
+		url.searchParams.set('package', input.packageKodyId)
+	}
 	url.searchParams.set('request', input.token)
 	return url.toString()
 }

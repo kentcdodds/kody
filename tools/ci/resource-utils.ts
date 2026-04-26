@@ -349,7 +349,10 @@ export async function writeGeneratedWranglerConfig({
 		)
 	}
 
-	const oauthKvEntry = kvNamespaces[oauthKvEntryIndex] as Record<string, unknown>
+	const oauthKvEntry = kvNamespaces[oauthKvEntryIndex] as Record<
+		string,
+		unknown
+	>
 	kvNamespaces[oauthKvEntryIndex] = {
 		...oauthKvEntry,
 		id: oauthKvId,

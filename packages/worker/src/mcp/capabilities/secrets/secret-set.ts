@@ -65,6 +65,7 @@ export const secretSetCapability = defineDomainCapability(
 				app_id: saved.appId,
 				allowed_hosts: saved.allowedHosts,
 				allowed_capabilities: saved.allowedCapabilities,
+				allowed_packages: saved.allowedPackages,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
 				ttl_ms: saved.ttlMs,

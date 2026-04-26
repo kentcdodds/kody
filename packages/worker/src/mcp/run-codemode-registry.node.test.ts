@@ -850,6 +850,69 @@ export default async function run(): Promise<ModuleOutput> {
 	}
 })
 
+test('runCodemodeWithRegistry forwards package context for module syntax', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+		storageContext: {
+			sessionId: null,
+			appId: 'package-123',
+			storageId: 'package-123',
+		},
+	})
+	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
+	buildBundleMock.mockClear()
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	let wrapped = ''
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(input) {
+				wrapped = String(input)
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const code = `import { packageContext } from 'kody:runtime'
+
+export default async function run() {
+	return packageContext?.packageId ?? null
+}`
+		const result = await runCodemodeWithRegistry(env, callerContext, code, undefined, {
+			packageContext: {
+				packageId: 'package-123',
+				kodyId: 'discord-gateway',
+			},
+		})
+
+		expect(result.result).toBe('ok')
+		expect(wrapped).toContain('"packageId":"package-123"')
+		expect(wrapped).toContain('"kodyId":"discord-gateway"')
+		expect(wrapped).toContain('packageSecrets')
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
 test('runCodemodeWithRegistry keeps legacy snippet execution for non-module code', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -956,7 +1019,10 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 				serviceTools: {
 					getStatus: async () => ({ status: 'running' }),
 					shouldStop: async () => false,
-					setAlarm: async () => ({ ok: true, scheduled_at: '2026-04-25T00:00:00.000Z' }),
+					setAlarm: async () => ({
+						ok: true,
+						scheduled_at: '2026-04-25T00:00:00.000Z',
+					}),
 					clearAlarm: async () => ({ ok: true }),
 				},
 				executorTimeoutMs: 300_000,
@@ -965,10 +1031,10 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 
 		expect(result.result).toBe('ok')
 		expect(wrapped).toContain('const service = {')
-		expect(wrapped).toContain("service_get_status")
-		expect(wrapped).toContain("service_should_stop")
-		expect(wrapped).toContain("service_set_alarm")
-		expect(wrapped).toContain("service_clear_alarm")
+		expect(wrapped).toContain('service_get_status')
+		expect(wrapped).toContain('service_should_stop')
+		expect(wrapped).toContain('service_set_alarm')
+		expect(wrapped).toContain('service_clear_alarm')
 		expect(wrapped).toContain('"serviceName":"realtime-supervisor"')
 	} finally {
 		createExecuteExecutorSpy.mockRestore()

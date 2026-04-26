@@ -1,4 +1,7 @@
-import { type JobManagerDebugState, type JobManagerDebugStatus } from './manager-client.ts'
+import {
+	type JobManagerDebugState,
+	type JobManagerDebugStatus,
+} from './manager-client.ts'
 
 export function resolveJobManagerAlarmState(input: {
 	alarmTimestamp: number | null
@@ -19,8 +22,7 @@ export function resolveJobManagerAlarmState(input: {
 		alarmMs != null &&
 		Number.isFinite(nextRunnableMs) &&
 		alarmMs === nextRunnableMs
-	const alarmInSync =
-		nextRunnableMs == null ? alarmMs == null : timestampsMatch
+	const alarmInSync = nextRunnableMs == null ? alarmMs == null : timestampsMatch
 	const status: JobManagerDebugStatus =
 		nextRunnableMs == null
 			? alarmMs == null

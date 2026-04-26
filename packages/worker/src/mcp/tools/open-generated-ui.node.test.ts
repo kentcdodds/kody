@@ -8,7 +8,8 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('@modelcontextprotocol/ext-apps/server', () => ({
-	registerAppTool: (...args: Array<unknown>) => mockModule.registerAppTool(...args),
+	registerAppTool: (...args: Array<unknown>) =>
+		mockModule.registerAppTool(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -94,4 +95,3 @@ test('open_generated_ui reopens saved package apps by kody_id', async () => {
 		hostedUrl: 'https://example.com/packages/observed-package',
 	})
 })
-

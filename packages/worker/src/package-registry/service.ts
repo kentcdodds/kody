@@ -18,9 +18,7 @@ import {
 } from './vectorize.ts'
 import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
-import {
-	rebuildPublishedPackageArtifacts,
-} from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
 	listSavedPackageServices,
 	packageServiceRpc,
@@ -114,9 +112,8 @@ export async function refreshSavedPackageProjection(input: {
 		manifest: loaded.manifest,
 		files: loaded.files,
 		buildAppBundle: async ({ entryPoint }) => {
-			const { buildKodyAppBundle } = await import(
-				'#worker/package-runtime/module-graph.ts'
-			)
+			const { buildKodyAppBundle } =
+				await import('#worker/package-runtime/module-graph.ts')
 			return await buildKodyAppBundle({
 				env: input.env,
 				baseUrl: input.baseUrl,
@@ -127,9 +124,8 @@ export async function refreshSavedPackageProjection(input: {
 			})
 		},
 		buildModuleBundle: async ({ entryPoint }) => {
-			const { buildKodyModuleBundle } = await import(
-				'#worker/package-runtime/module-graph.ts'
-			)
+			const { buildKodyModuleBundle } =
+				await import('#worker/package-runtime/module-graph.ts')
 			return await buildKodyModuleBundle({
 				env: input.env,
 				baseUrl: input.baseUrl,

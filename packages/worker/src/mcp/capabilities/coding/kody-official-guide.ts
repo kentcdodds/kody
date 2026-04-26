@@ -60,9 +60,9 @@ export const kodyOfficialGuideCatalog = {
 	},
 } as const
 
-const guideIds = Object.keys(
-	kodyOfficialGuideCatalog,
-) as Array<keyof typeof kodyOfficialGuideCatalog>
+const guideIds = Object.keys(kodyOfficialGuideCatalog) as Array<
+	keyof typeof kodyOfficialGuideCatalog
+>
 
 function buildRawGithubUrl(file: string): string {
 	const { owner, repo, ref, basePath } = KODY_GUIDES_REPO
@@ -121,12 +121,7 @@ function buildCapabilityDescription(): string {
 }
 
 const guideFieldSchema = z
-	.enum(
-		guideIds as [
-			KodyOfficialGuideId,
-			...Array<KodyOfficialGuideId>,
-		],
-	)
+	.enum(guideIds as [KodyOfficialGuideId, ...Array<KodyOfficialGuideId>])
 	.describe(
 		[
 			'Which guide to load.',

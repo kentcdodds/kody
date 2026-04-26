@@ -36,9 +36,7 @@ export const sessionBroadcastOutputSchema = z.object({
 
 export type PackageRealtimeContext = {
 	user: ReturnType<typeof requireMcpUser>
-	savedPackage: NonNullable<
-		Awaited<ReturnType<typeof getSavedPackageById>>
-	>
+	savedPackage: NonNullable<Awaited<ReturnType<typeof getSavedPackageById>>>
 	realtime: Awaited<ReturnType<typeof createPackageRealtimeClient>>
 }
 
@@ -99,8 +97,7 @@ async function createPackageRealtimeClient(input: {
 	sourceId: string
 	baseUrl: string
 }) {
-	const { packageRealtimeSessionRpc } = await import(
-		'#worker/package-runtime/realtime-session.ts'
-	)
+	const { packageRealtimeSessionRpc } =
+		await import('#worker/package-runtime/realtime-session.ts')
 	return packageRealtimeSessionRpc(input)
 }

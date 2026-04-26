@@ -26,6 +26,10 @@ import {
 	normalizePackageServiceStatus,
 	packageServiceRpc,
 } from './package-service.ts'
+import {
+	isPackageSecretAccessUnavailableError,
+	resolvePackageMountedSecret,
+} from '#mcp/secrets/package-access.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -106,7 +110,7 @@ function createStorageProxy(runtimeBridge, storageId) {
 			await runtimeBridge.storageClear({
 				storageId,
 			}),
-	};
+	}
 }
 
 function createAgentChatTurnStream(runtimeBridge) {
@@ -203,6 +207,47 @@ function createServicesProxy(runtimeBridge) {
 			await runtimeBridge.serviceStop({
 				serviceName,
 			}),
+	};
+}
+
+function createPackageSecretsProxy(runtimeBridge) {
+	return {
+		get: async (alias) => {
+			const normalizedAlias =
+				typeof alias === 'string' ? alias.trim() : ''
+			if (!normalizedAlias) {
+				throw new Error('packageSecrets.get requires a non-empty alias.')
+			}
+			const result = await runtimeBridge.packageSecretGet({
+				alias: normalizedAlias,
+			})
+			if (typeof result?.value !== 'string') {
+				throw new Error(
+					'packageSecretGet returned invalid response for alias "' +
+						normalizedAlias +
+						'".',
+				)
+			}
+			return result.value
+		},
+		has: async (alias) => {
+			const normalizedAlias =
+				typeof alias === 'string' ? alias.trim() : ''
+			if (!normalizedAlias) {
+				throw new Error('packageSecrets.has requires a non-empty alias.')
+			}
+			const result = await runtimeBridge.packageSecretHas({
+				alias: normalizedAlias,
+			})
+			if (typeof result?.has !== 'boolean') {
+				throw new Error(
+					'packageSecretHas returned invalid response for alias "' +
+						normalizedAlias +
+						'".',
+				)
+			}
+			return result.has
+		},
 	};
 }
 
@@ -330,6 +375,21 @@ function createPackageAppEnv(env, userModule) {
 
 function createRuntime(runtimeBridge, params, packageContext) {
 	const packageId = packageContext?.packageId ?? '';
+	const packageSecrets =
+		packageId.length > 0
+			? createPackageSecretsProxy(runtimeBridge)
+			: {
+					get: async () => {
+						throw new Error(
+							'packageSecrets.get requires a package runtime context.',
+						)
+					},
+					has: async () => {
+						throw new Error(
+							'packageSecrets.has requires a package runtime context.',
+						)
+					},
+				}
 	return {
 		codemode: createCodemodeProxy(runtimeBridge),
 		params,
@@ -340,6 +400,7 @@ function createRuntime(runtimeBridge, params, packageContext) {
 		agentChatTurnStream: createAgentChatTurnStream(runtimeBridge),
 		realtime: createRealtimeProxy(runtimeBridge),
 		services: createServicesProxy(runtimeBridge),
+		packageSecrets,
 		packageContext,
 	};
 }
@@ -672,10 +733,42 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
-	async realtimeEmit(input: {
-		sessionId: string
-		data: unknown
-	}) {
+	async packageSecretGet(input: { alias: string }) {
+		const callerContext = this.createCallerContext(this.ctx.props.packageId)
+		const resolved = await resolvePackageMountedSecret({
+			env: this.env,
+			callerContext,
+			packageId: this.ctx.props.packageId,
+			alias: input.alias,
+		})
+		return {
+			value: resolved.value,
+		}
+	}
+
+	async packageSecretHas(input: { alias: string }) {
+		const callerContext = this.createCallerContext(this.ctx.props.packageId)
+		try {
+			await resolvePackageMountedSecret({
+				env: this.env,
+				callerContext,
+				packageId: this.ctx.props.packageId,
+				alias: input.alias,
+			})
+			return {
+				has: true,
+			}
+		} catch (error) {
+			if (isPackageSecretAccessUnavailableError(error)) {
+				return {
+					has: false,
+				}
+			}
+			throw error
+		}
+	}
+
+	async realtimeEmit(input: { sessionId: string; data: unknown }) {
 		return await this.getRealtimeSessionRpc().emit(input.sessionId, input.data)
 	}
 
@@ -829,6 +922,7 @@ export async function buildPackageAppWorker(input: {
 					packageContext: {
 						packageId: input.savedPackage.id,
 						kodyId: input.savedPackage.kodyId,
+						sourceId: input.savedPackage.sourceId,
 					},
 				}),
 				kvKey,
@@ -869,6 +963,7 @@ export async function buildPackageAppWorker(input: {
 				__kodyPackageContext: {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,
+					sourceId: input.savedPackage.sourceId,
 				},
 			},
 			globalOutbound: workerExports?.CodemodeFetchGateway

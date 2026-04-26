@@ -30,7 +30,9 @@ export const sessionEmitCapability = defineDomainCapability(
 			)
 			return {
 				delivered: result?.delivered === true,
-				...(typeof result?.reason === 'string' ? { reason: result.reason } : {}),
+				...(typeof result?.reason === 'string'
+					? { reason: result.reason }
+					: {}),
 			}
 		},
 	},

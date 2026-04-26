@@ -102,8 +102,8 @@ Treat package services like package-owned runtime modules:
 
 ## Package-owned jobs
 
-Packages can own jobs, and Kody also supports schedules that are not owned
-by a package.
+Packages can own jobs, and Kody also supports schedules that are not owned by a
+package.
 
 - Define them under `package.json#kody.jobs`
 - Reference package-local entry modules
@@ -111,10 +111,10 @@ by a package.
 
 Jobs are part of the package definition.
 
-For repo-backed jobs that are not part of a saved package, use
-`job_schedule` instead. `job_schedule_once` remains available as the one-off
-shortcut, and `job_run_now` can trigger an existing scheduled job immediately
-for debugging or ad hoc runs.
+For repo-backed jobs that are not part of a saved package, use `job_schedule`
+instead. `job_schedule_once` remains available as the one-off shortcut, and
+`job_run_now` can trigger an existing scheduled job immediately for debugging or
+ad hoc runs.
 
 ## Save and edit packages
 

@@ -30,9 +30,7 @@ export const serviceGetCapability = defineDomainCapability(
 				explicitPackageId: args.package_id,
 			})
 			if (!serviceContext.service) {
-				throw new Error(
-					`Package service "${args.service_name}" was not found.`,
-				)
+				throw new Error(`Package service "${args.service_name}" was not found.`)
 			}
 			return normalizePackageServiceStatus(
 				await serviceContext.service.status(),

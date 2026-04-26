@@ -75,13 +75,10 @@ const inputSchema = z
 		conversationId: conversationIdInputField,
 		memoryContext: memoryContextInputField,
 	})
-	.refine(
-		(value) => (value.code ? 1 : 0) + (value.kody_id ? 1 : 0) === 1,
-		{
-			message: 'Provide exactly one of `code` or `kody_id`.',
-			path: ['code'],
-		},
-	)
+	.refine((value) => (value.code ? 1 : 0) + (value.kody_id ? 1 : 0) === 1, {
+		message: 'Provide exactly one of `code` or `kody_id`.',
+		path: ['code'],
+	})
 
 export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 	registerAppTool(
@@ -104,8 +101,9 @@ export async function registerOpenGeneratedUiTool(agent: McpRegistrationAgent) {
 			const kodyId = args.kody_id ?? null
 			const title = args.title ?? null
 			const description = args.description ?? null
-			let savedPackage: Awaited<ReturnType<typeof getSavedPackageByKodyId>> | null =
-				null
+			let savedPackage: Awaited<
+				ReturnType<typeof getSavedPackageByKodyId>
+			> | null = null
 			if (kodyId) {
 				if (!callerContext.user) {
 					throw new Error('Authentication required to access saved packages.')

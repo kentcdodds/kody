@@ -228,8 +228,8 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 		buildAppBundle: expect.any(Function),
 		buildModuleBundle: expect.any(Function),
 	})
-	const savedPackageArg = mockModule.buildPublishedPackageArtifacts.mock.calls[0]?.[0]
-		?.savedPackage as { updatedAt: string } | undefined
+	const savedPackageArg = mockModule.buildPublishedPackageArtifacts.mock
+		.calls[0]?.[0]?.savedPackage as { updatedAt: string } | undefined
 	expect(savedPackageArg?.updatedAt).toMatch(
 		/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
 	)
@@ -263,6 +263,7 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 				name: 'realtime-supervisor',
 				entry: './src/services/realtime-supervisor.ts',
 				autoStart: true,
+				mode: 'persistent',
 				timeoutMs: null,
 			},
 		],
@@ -388,6 +389,7 @@ test('deleteSavedPackageProjection still completes cleanup when service stop thr
 				name: 'realtime-supervisor',
 				entry: 'services/realtime-supervisor.ts',
 				autoStart: true,
+				mode: 'persistent',
 				timeoutMs: null,
 			},
 		],
@@ -406,10 +408,13 @@ test('deleteSavedPackageProjection still completes cleanup when service stop thr
 	})
 
 	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({}, 'user-1', 'job-1')
-	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith({}, {
-		userId: 'user-1',
-		packageId: 'package-1',
-	})
+	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			packageId: 'package-1',
+		},
+	)
 	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
 		env,
 		'package-1',

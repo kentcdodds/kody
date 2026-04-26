@@ -16,7 +16,10 @@ test('writeGeneratedWranglerConfig keeps migrations ordered by tag version', asy
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
 
 	try {
-		const outConfigPath = path.join(tempDir, 'wrangler-production.generated.json')
+		const outConfigPath = path.join(
+			tempDir,
+			'wrangler-production.generated.json',
+		)
 		await writeGeneratedWranglerConfig({
 			baseConfigPath: workerWranglerConfigPath,
 			outConfigPath,
@@ -37,7 +40,9 @@ test('writeGeneratedWranglerConfig keeps migrations ordered by tag version', asy
 		const generatedConfig = parseJsonc<{
 			migrations: Array<{ tag: string; new_sqlite_classes?: Array<string> }>
 		}>(generatedConfigText)
-		const migrationTags = generatedConfig.migrations.map((migration) => migration.tag)
+		const migrationTags = generatedConfig.migrations.map(
+			(migration) => migration.tag,
+		)
 		const v12Index = migrationTags.indexOf('v12')
 		const v13Index = migrationTags.indexOf('v13')
 

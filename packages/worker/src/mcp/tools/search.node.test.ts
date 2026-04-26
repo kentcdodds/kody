@@ -60,6 +60,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 				exports: [],
 				jobs: [],
 				services: [],
+				subscriptions: [],
 			},
 		},
 	]
@@ -229,6 +230,7 @@ test('optional search rows include saved packages when lookup succeeds', async (
 					exports: ['.'],
 					jobs: [],
 					services: [],
+					subscriptions: [],
 				},
 			},
 		],
@@ -272,6 +274,7 @@ test('optional search rows preserve package fallback warnings', async () => {
 						exports: [],
 						jobs: [],
 						services: [],
+						subscriptions: [],
 					},
 				},
 			],
@@ -322,6 +325,7 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 					],
 					jobs: [],
 					services: [],
+					subscriptions: [],
 				},
 			},
 		],
@@ -340,7 +344,7 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 					refreshTokenSecretName: 'spotify-refresh-token',
 					requiredHosts: ['api.spotify.com'],
 				}),
-					description: 'Spotify playback and music OAuth connector config',
+				description: 'Spotify playback and music OAuth connector config',
 				appId: null,
 				createdAt: '2026-04-20T00:00:00.000Z',
 				updatedAt: '2026-04-20T00:00:00.000Z',
@@ -410,6 +414,81 @@ test('buildSavedPackageSearchRows falls back when package source resolution fail
 		}),
 	])
 	expect(result.warnings).toHaveLength(1)
+})
+
+test('search guidance does not pair unrelated package and connector matches', () => {
+	const registry = buildCapabilityRegistry([])
+	const result = searchUnified({
+		env: {} as Env,
+		query: 'music remote',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [
+				{
+					record: {
+						id: 'package-123',
+						userId: 'user-123',
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package with app controls.',
+						tags: ['music'],
+						searchText: 'music remote package',
+						sourceId: 'source-package-123',
+						hasApp: true,
+						createdAt: '2026-03-24T00:00:00.000Z',
+						updatedAt: '2026-03-24T00:00:00.000Z',
+					},
+					projection: {
+						name: '@kody/observed',
+						kodyId: 'observed-package',
+						description: 'Observed package with app controls.',
+						tags: ['music'],
+						searchText: 'music remote package',
+						hasApp: true,
+						appEntry: 'src/app.ts',
+						exports: ['./play'],
+						jobs: [],
+						services: [],
+						subscriptions: [],
+					},
+				},
+			],
+			userSecretRows: [],
+			userValueRows: [
+				{
+					name: buildConnectorValueName('github'),
+					scope: 'user',
+					value: JSON.stringify({
+						tokenUrl: 'https://github.com/login/oauth/access_token',
+						apiBaseUrl: 'https://api.github.com',
+						flow: 'confidential',
+						clientIdValueName: 'github-client-id',
+						clientSecretSecretName: 'github-client-secret',
+						accessTokenSecretName: 'github-access-token',
+						refreshTokenSecretName: 'github-refresh-token',
+						requiredHosts: ['api.github.com'],
+					}),
+					description: 'GitHub OAuth connector config',
+					appId: null,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+					ttlMs: null,
+				},
+			],
+			warnings: [],
+		},
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'observed-package',
+	})
+	expect(result.guidance).toContain(
+		'search({ entity: "observed-package:package" })',
+	)
+	expect(result.guidance).not.toMatch(/connector\s+`github`/)
+	expect(result.guidance).not.toContain('Found saved package')
 })
 
 test('optional search rows fall back when persisted values lookup fails', async () => {

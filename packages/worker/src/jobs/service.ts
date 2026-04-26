@@ -33,16 +33,16 @@ import {
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
-import {
-	createJobStorageId,
-	storageRunnerRpc,
-} from '#worker/storage-runner.ts'
+import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
-import { getManifestEntrypointPath, parseRepoManifest } from '#worker/repo/manifest.ts'
+import {
+	getManifestEntrypointPath,
+	parseRepoManifest,
+} from '#worker/repo/manifest.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
@@ -136,9 +136,8 @@ async function buildPublishedJobBundle(input: {
 }) {
 	// Load the worker bundler lazily so registry-only/node test paths that import
 	// jobs/service.ts do not eagerly pull the heavy bundler stack.
-	const { buildKodyModuleBundle } = await import(
-		'#worker/package-runtime/module-graph.ts'
-	)
+	const { buildKodyModuleBundle } =
+		await import('#worker/package-runtime/module-graph.ts')
 	return await buildKodyModuleBundle(input)
 }
 
@@ -153,6 +152,7 @@ async function persistPublishedJobBundleArtifact(input: {
 	packageContext?: {
 		packageId: string
 		kodyId: string
+		sourceId: string
 	} | null
 }) {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
@@ -244,6 +244,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 	let packageContext: {
 		packageId: string
 		kodyId: string
+		sourceId: string
 	} | null = null
 	if (manifestPath === 'kody.json' || publishedSource.entity_kind === 'job') {
 		const manifest = parseRepoManifest({
@@ -251,7 +252,9 @@ async function ensurePublishedBundleArtifactForJob(input: {
 			manifestPath,
 		})
 		if (manifest.kind !== 'job') {
-			throw new Error(`Repo source "${input.job.sourceId}" is not a job manifest.`)
+			throw new Error(
+				`Repo source "${input.job.sourceId}" is not a job manifest.`,
+			)
 		}
 		entryPoint = getManifestEntrypointPath(manifest)
 	} else {
@@ -269,6 +272,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 		packageContext = {
 			packageId: source.entity_id,
 			kodyId: manifest.kody.id,
+			sourceId: input.job.sourceId,
 		}
 	}
 	const artifact = await loadPublishedBundleArtifactByIdentity({
@@ -349,6 +353,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 	packageContext?: {
 		packageId: string
 		kodyId: string
+		sourceId: string
 	} | null
 }) {
 	if (!input.job.sourceId) {
@@ -461,17 +466,17 @@ async function archiveSuccessfulOneOffJob(input: {
 	})
 }
 
-async function cleanupArchivedJobArtifacts(input: {
-	env: Env
-	now?: Date
-}) {
+async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 	const due = await listArchivedJobArtifactsDueBefore(
 		input.env.APP_DB,
 		(input.now ?? new Date()).toISOString(),
 	)
 	for (const artifact of due) {
 		try {
-			const source = await getEntitySourceById(input.env.APP_DB, artifact.sourceId)
+			const source = await getEntitySourceById(
+				input.env.APP_DB,
+				artifact.sourceId,
+			)
 			if (source) {
 				await deletePublishedArtifactsForSource({
 					env: input.env,
@@ -1148,6 +1153,7 @@ async function runRepoBackedJob(input: {
 		packageContext: {
 			packageId: source.entity_id ?? input.job.id,
 			kodyId: manifest.kody.id,
+			sourceId: input.job.sourceId,
 		},
 	})
 }

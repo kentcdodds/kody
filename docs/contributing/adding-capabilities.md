@@ -111,8 +111,8 @@ elsewhere, and secret-bearing capability inputs require an authenticated user.
 Those inputs are also treated as write-only for the rest of that execution: once
 plaintext crosses an `x-kody-secret` capability boundary, Kody redacts that
 plaintext from later execute results and logs before returning them to the
-caller. Capability authors should avoid returning or logging secret
-material, but the runtime adds this extra defense-in-depth layer.
+caller. Capability authors should avoid returning or logging secret material,
+but the runtime adds this extra defense-in-depth layer.
 
 When a secret has an `allowed_capabilities` policy, Kody also checks that the
 current capability name is explicitly listed before resolving the placeholder.

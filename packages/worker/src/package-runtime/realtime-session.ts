@@ -347,7 +347,10 @@ export async function resolvePackageAppWorkerCacheKey(input: {
 	env: Pick<Env, 'APP_DB'>
 	binding: PackageRealtimeBindingState
 }) {
-	const source = await getEntitySourceById(input.env.APP_DB, input.binding.sourceId)
+	const source = await getEntitySourceById(
+		input.env.APP_DB,
+		input.binding.sourceId,
+	)
 	if (!source || source.user_id !== input.binding.userId) {
 		throw new Error('Saved package source was not found.')
 	}
@@ -364,13 +367,11 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	private stateSnapshot: PackageRealtimeState = createInitialState()
 	private sessionIds = new WeakMap<WebSocket, string | null>()
 	private cachedAppWorkerKey: string | null = null
-	private cachedAppWorkerKeyLookup:
-		| {
-				bindingIdentity: string
-				cacheKey: string
-				expiresAt: number
-		  }
-		| null = null
+	private cachedAppWorkerKeyLookup: {
+		bindingIdentity: string
+		cacheKey: string
+		expiresAt: number
+	} | null = null
 	private cachedAppWorkerPromise: Promise<
 		Awaited<ReturnType<typeof buildPackageAppWorker>>
 	> | null = null
@@ -383,8 +384,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	}
 
 	private async restoreState() {
-		const stored =
-			await this.ctx.storage.get<PackageRealtimeState>(sessionStateStorageKey)
+		const stored = await this.ctx.storage.get<PackageRealtimeState>(
+			sessionStateStorageKey,
+		)
 		if (!stored) return
 		this.stateSnapshot = {
 			binding: stored.binding ?? null,
@@ -423,7 +425,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		}
 	}
 
-	private async getCachedPackageAppWorker(binding: PackageRealtimeBindingState) {
+	private async getCachedPackageAppWorker(
+		binding: PackageRealtimeBindingState,
+	) {
 		const cacheKey = await this.getResolvedPackageAppWorkerCacheKey(binding)
 		if (this.cachedAppWorkerKey !== cacheKey || !this.cachedAppWorkerPromise) {
 			this.cachedAppWorkerKey = cacheKey
@@ -544,10 +548,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		let deliveredCount = 0
 		const sessionIds: Array<string> = []
 		for (const session of sessions) {
-			const delivered = await this.emitToSession(
-				session.session_id,
-				input.data,
-			)
+			const delivered = await this.emitToSession(session.session_id, input.data)
 			if (delivered.delivered) {
 				deliveredCount += 1
 				sessionIds.push(session.session_id)
@@ -564,7 +565,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		payload: PackageRealtimeHookInput
 	}) {
 		const appWorker = await this.getCachedPackageAppWorker(input.binding)
-		const entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName) as {
+		const entrypoint = appWorker.stub.getEntrypoint(
+			appWorker.entrypointName,
+		) as {
 			handleRealtimeEvent?: (
 				payload: PackageRealtimeHookInput & PackageRealtimeHookContext,
 			) => Promise<PackageRealtimeHookResult>
@@ -698,9 +701,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/sessions')) {
-			const body = (await request.json().catch(() => null)) as
-				| PackageRealtimeListPayload
-				| null
+			const body = (await request
+				.json()
+				.catch(() => null)) as PackageRealtimeListPayload | null
 			if (!body) {
 				return Response.json({ sessions: [] })
 			}
@@ -716,9 +719,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		if (request.method === 'POST' && url.pathname.endsWith('/emit')) {
 			const body = (await request.json()) as PackageRealtimeEmitPayload
 			await this.initializeBinding(body.binding)
-			return Response.json(
-				await this.emitToSession(body.sessionId, body.data),
-			)
+			return Response.json(await this.emitToSession(body.sessionId, body.data))
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
@@ -960,7 +961,10 @@ export function packageRealtimeSessionRpc(input: {
 			)
 			return (await response.json()) as PackageRealtimeListResult
 		},
-		async disconnect(sessionId: string, input2?: { code?: number; reason?: string }) {
+		async disconnect(
+			sessionId: string,
+			input2?: { code?: number; reason?: string },
+		) {
 			const response = await stub.fetch(
 				new Request('https://package-realtime.invalid/session/disconnect', {
 					method: 'POST',

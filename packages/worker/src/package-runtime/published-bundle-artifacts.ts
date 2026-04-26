@@ -80,7 +80,9 @@ async function resolveDependencyForPackage(input: {
 		specifier: parsed,
 	})
 	if (!row) {
-		throw new Error(`Saved package "${parsed.packageName}" was not found for this user.`)
+		throw new Error(
+			`Saved package "${parsed.packageName}" was not found for this user.`,
+		)
 	}
 	const source = await getEntitySourceById(input.state.env.APP_DB, row.sourceId)
 	if (!source?.published_commit) {
@@ -147,8 +149,13 @@ function toDbRowInput(input: {
 	}
 }
 
-export async function persistPublishedBundleArtifact(input: PersistPublishedBundleArtifactInput) {
-	if (!input.source.published_commit || !hasPublishedRuntimeArtifacts(input.env)) {
+export async function persistPublishedBundleArtifact(
+	input: PersistPublishedBundleArtifactInput,
+) {
+	if (
+		!input.source.published_commit ||
+		!hasPublishedRuntimeArtifacts(input.env)
+	) {
 		return null
 	}
 	const artifactName = normalizeArtifactName(input.artifactName)
@@ -174,13 +181,16 @@ export async function persistPublishedBundleArtifact(input: PersistPublishedBund
 		serviceContext: null,
 		createdAt: new Date().toISOString(),
 	}
-	const existing = await getPublishedBundleArtifactByIdentity(input.env.APP_DB, {
-		userId: input.userId,
-		sourceId: input.source.id,
-		artifactKind: input.kind,
-		artifactName,
-		entryPoint,
-	})
+	const existing = await getPublishedBundleArtifactByIdentity(
+		input.env.APP_DB,
+		{
+			userId: input.userId,
+			sourceId: input.source.id,
+			artifactKind: input.kind,
+			artifactName,
+			entryPoint,
+		},
+	)
 	const rowInput = toDbRowInput({
 		userId: input.userId,
 		sourceId: input.source.id,
@@ -256,16 +266,12 @@ export async function rebuildPublishedPackageArtifacts(input: {
 	savedPackage: SavedPackageRecord
 	manifest: AuthoredPackageJson
 	files: Record<string, string>
-	buildAppBundle: (args: {
-		entryPoint: string
-	}) => Promise<{
+	buildAppBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
 		dependencies?: Array<BundleArtifactDependency>
 	}>
-	buildModuleBundle: (args: {
-		entryPoint: string
-	}) => Promise<{
+	buildModuleBundle: (args: { entryPoint: string }) => Promise<{
 		mainModule: string
 		modules: WorkerLoaderModules
 		dependencies?: Array<BundleArtifactDependency>
@@ -292,6 +298,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 				packageContext: {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,
+					sourceId: input.savedPackage.sourceId,
 				},
 			})
 		}
@@ -313,6 +320,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
 			},
 		})
 	}
@@ -322,7 +330,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 		const entryPoint =
 			typeof exportTarget === 'string'
 				? exportTarget
-				: exportTarget.import ?? exportTarget.default ?? null
+				: (exportTarget.import ?? exportTarget.default ?? null)
 		if (!entryPoint) continue
 		const bundle = await input.buildModuleBundle({
 			entryPoint,
@@ -340,12 +348,15 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
 			},
 		})
 	}
 	for (const [jobName, jobDefinition] of Object.entries(
 		input.manifest.kody.jobs ?? {},
-	) as Array<[string, NonNullable<AuthoredPackageJson['kody']['jobs']>[string]]>) {
+	) as Array<
+		[string, NonNullable<AuthoredPackageJson['kody']['jobs']>[string]]
+	>) {
 		const bundle = await input.buildModuleBundle({
 			entryPoint: jobDefinition.entry,
 		})
@@ -362,6 +373,7 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			packageContext: {
 				packageId: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
 			},
 		})
 	}

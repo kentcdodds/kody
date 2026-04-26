@@ -50,6 +50,7 @@ export const serviceListCapability = defineDomainCapability(
 						name: service.name,
 						entry: service.entry,
 						auto_start: service.auto_start,
+						mode: service.mode,
 						timeout_ms: service.timeout_ms ?? null,
 						status,
 					}

@@ -122,8 +122,8 @@ Production note:
 - During `npm run dev`, those REST calls go to the local Cloudflare mock Worker,
   which implements the Artifacts repo metadata endpoints used by the app
   (`create`, `get`, `list`, `createToken`, and `fork`). The mock only covers the
-  REST control plane; repo session Durable Objects need a Git-capable remote
-  for clone/pull/push flows.
+  REST control plane; repo session Durable Objects need a Git-capable remote for
+  clone/pull/push flows.
 - Durable repo-source creation paths
   (`ensureEntitySource(..., requirePersistence: true)`) fail closed when
   persistence bindings are unavailable so callers do not write orphaned

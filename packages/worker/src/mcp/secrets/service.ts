@@ -4,6 +4,11 @@ import {
 	stringifyAllowedCapabilities,
 } from './allowed-capabilities.ts'
 import {
+	normalizeAllowedPackages,
+	parseAllowedPackages,
+	stringifyAllowedPackages,
+} from './allowed-packages.ts'
+import {
 	normalizeAllowedHosts,
 	normalizeHost,
 	parseAllowedHosts,
@@ -74,6 +79,7 @@ export type ResolvedSecret = {
 	scope: SecretScope | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 }
 
 export async function saveSecret(
@@ -111,6 +117,7 @@ export async function saveSecret(
 			encrypted_value: await encryptSecretValue(input.env, value),
 			allowed_hosts: existingEntry?.allowed_hosts ?? '[]',
 			allowed_capabilities: existingEntry?.allowed_capabilities ?? '[]',
+			allowed_packages: existingEntry?.allowed_packages ?? '[]',
 			created_at: existingEntry?.created_at ?? now,
 			updated_at: now,
 		},
@@ -125,6 +132,9 @@ export async function saveSecret(
 			: [],
 		allowedCapabilities: existingEntry
 			? parseAllowedCapabilities(existingEntry.allowed_capabilities)
+			: [],
+		allowedPackages: existingEntry
+			? parseAllowedPackages(existingEntry.allowed_packages)
 			: [],
 		createdAt: existingEntry?.created_at ?? now,
 		updatedAt: now,
@@ -160,6 +170,7 @@ export async function listSecrets(
 				appId: row.scope === 'app' ? row.binding_key : null,
 				allowedHosts: parseAllowedHosts(row.allowed_hosts),
 				allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
+				allowedPackages: parseAllowedPackages(row.allowed_packages),
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 				expiresAt: row.expires_at,
@@ -194,6 +205,7 @@ export async function resolveSecret(
 			scope,
 			allowedHosts: parseAllowedHosts(entry.allowed_hosts),
 			allowedCapabilities: parseAllowedCapabilities(entry.allowed_capabilities),
+			allowedPackages: parseAllowedPackages(entry.allowed_packages),
 		}
 	}
 	return {
@@ -202,6 +214,7 @@ export async function resolveSecret(
 		scope: null,
 		allowedHosts: [],
 		allowedCapabilities: [],
+		allowedPackages: [],
 	}
 }
 
@@ -282,6 +295,7 @@ export async function updateSecret(
 				: existingEntry.encrypted_value,
 			allowed_hosts: existingEntry.allowed_hosts,
 			allowed_capabilities: existingEntry.allowed_capabilities,
+			allowed_packages: existingEntry.allowed_packages,
 			created_at: existingEntry.created_at,
 			updated_at: now,
 		},
@@ -295,6 +309,7 @@ export async function updateSecret(
 		allowedCapabilities: parseAllowedCapabilities(
 			existingEntry.allowed_capabilities,
 		),
+		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,
@@ -343,6 +358,7 @@ export async function listAppSecretsByAppIds(input: {
 				appId,
 				allowedHosts: parseAllowedHosts(row.allowed_hosts),
 				allowedCapabilities: parseAllowedCapabilities(row.allowed_capabilities),
+				allowedPackages: parseAllowedPackages(row.allowed_packages),
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 				expiresAt: row.expires_at,
@@ -458,6 +474,7 @@ function toSecretMetadata(input: {
 	appId: string | null
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
 	expiresAt: string | null
@@ -471,6 +488,7 @@ function toSecretMetadata(input: {
 		allowedCapabilities: normalizeAllowedCapabilities(
 			input.allowedCapabilities,
 		),
+		allowedPackages: normalizeAllowedPackages(input.allowedPackages),
 		createdAt: input.createdAt,
 		updatedAt: input.updatedAt,
 		ttlMs:
@@ -528,6 +546,7 @@ export async function setSecretAllowedHosts(input: {
 		allowedCapabilities: parseAllowedCapabilities(
 			existingEntry.allowed_capabilities,
 		),
+		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,
@@ -582,6 +601,62 @@ export async function setSecretAllowedCapabilities(input: {
 		appId: input.scope === 'app' ? bucket.binding_key : null,
 		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
 		allowedCapabilities: input.allowedCapabilities,
+		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
+		createdAt: existingEntry.created_at,
+		updatedAt: now,
+		expiresAt: bucket.expires_at,
+	})
+}
+
+export async function setSecretAllowedPackages(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	scope: SecretScope
+	allowedPackages: Array<string>
+	storageContext?: StorageContext | null
+}) {
+	const name = input.name.trim()
+	if (!name) {
+		throw new Error('Secret name is required.')
+	}
+	assertSecretNameAllowed(name)
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: input.scope,
+		storageContext: input.storageContext ?? null,
+	})
+	if (!bucket) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const existingEntry = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name,
+	})
+	if (!existingEntry) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const now = new Date().toISOString()
+	await upsertSecretEntry({
+		db: input.env.APP_DB,
+		row: {
+			...existingEntry,
+			allowed_packages: stringifyAllowedPackages(input.allowedPackages),
+			updated_at: now,
+		},
+	})
+	return toSecretMetadata({
+		name,
+		scope: input.scope,
+		description: existingEntry.description,
+		appId: input.scope === 'app' ? bucket.binding_key : null,
+		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
+		allowedCapabilities: parseAllowedCapabilities(
+			existingEntry.allowed_capabilities,
+		),
+		allowedPackages: input.allowedPackages,
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
 		expiresAt: bucket.expires_at,

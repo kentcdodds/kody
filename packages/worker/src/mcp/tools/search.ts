@@ -91,7 +91,9 @@ export type OptionalSearchRowsResult = {
 	warnings: Array<string>
 }
 
-type LoadedPackageRows = Array<PackageSearchRow> | BuildSavedPackageSearchRowsResult
+type LoadedPackageRows =
+	| Array<PackageSearchRow>
+	| BuildSavedPackageSearchRowsResult
 
 export type SearchScoreComponents = {
 	base: number
@@ -171,6 +173,7 @@ function buildFallbackPackageSearchProjection(
 		exports: [],
 		jobs: [],
 		services: [],
+		subscriptions: [],
 	}
 }
 
@@ -209,8 +212,7 @@ export async function buildSavedPackageSearchRows(input: {
 						sourceId: record.sourceId,
 					},
 				})
-				const message =
-					cause instanceof Error ? cause.message : String(cause)
+				const message = cause instanceof Error ? cause.message : String(cause)
 				warnings.push(
 					`Saved package "${record.kodyId}" search metadata is partially unavailable; using fallback metadata from source "${record.sourceId}": ${message}`,
 				)
@@ -224,15 +226,14 @@ export async function buildSavedPackageSearchRows(input: {
 	return { rows, warnings }
 }
 
-function buildPackageRelationTokens(match: Extract<SearchMatch, { type: 'package' }>) {
+function buildPackageRelationTokens(
+	match: Extract<SearchMatch, { type: 'package' }>,
+) {
 	return new Set(
 		extractSearchTokens(
-			[
-				match.kodyId,
-				match.name,
-				match.description,
-				match.tags.join(' '),
-			].join('\n'),
+			[match.kodyId, match.name, match.description, match.tags.join(' ')].join(
+				'\n',
+			),
 		),
 	)
 }
@@ -254,7 +255,9 @@ function buildConnectorSearchDocument(input: {
 		.join('\n')
 }
 
-function buildRecommendedNextStep(input: SearchGuidanceContext): string | undefined {
+function buildRecommendedNextStep(
+	input: SearchGuidanceContext,
+): string | undefined {
 	const [topMatch] = input.matches
 	const topPackage = input.matches.find((match) => match.type === 'package')
 	const topConnector = input.matches.find((match) => match.type === 'connector')
@@ -264,7 +267,8 @@ function buildRecommendedNextStep(input: SearchGuidanceContext): string | undefi
 	const connectorMatchesPackage =
 		topPackage &&
 		topConnector &&
-		(packageRelationTokens?.has(topConnector.connectorName.toLowerCase()) ?? false)
+		(packageRelationTokens?.has(topConnector.connectorName.toLowerCase()) ??
+			false)
 
 	if (connectorMatchesPackage && input.intent.task.name === 'operate') {
 		return `Found saved package \`${topPackage.kodyId}\` and connector \`${topConnector.connectorName}\`. Inspect the package with \`search({ entity: "${topPackage.kodyId}:package" })\`, then use the connector detail or an authenticated \`execute\` smoke test to confirm the integration path before running API-backed actions.`
