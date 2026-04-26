@@ -218,7 +218,10 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			serviceStateStorageKey,
 		)
 		if (!stored) return
-		this.stateSnapshot = stored
+		this.stateSnapshot = {
+			...createInitialPackageServiceState(),
+			...stored,
+		}
 		if (
 			this.stateSnapshot.currentRunId &&
 			(this.stateSnapshot.status === 'running' ||

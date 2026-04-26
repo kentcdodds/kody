@@ -32,7 +32,7 @@ export async function createSecretPackageApprovalToken(
 ) {
 	const now = Date.now()
 	const ttlMs = input.ttlMs ?? defaultSecretPackageApprovalTtlMs
-	return encryptStringWithPurpose(
+	const token = await encryptStringWithPurpose(
 		env,
 		secretPackageApprovalPurpose,
 		JSON.stringify({
@@ -47,16 +47,18 @@ export async function createSecretPackageApprovalToken(
 			exp: now + ttlMs,
 		} satisfies SecretPackageApprovalRequest),
 	)
+	return `pkg:${token}`
 }
 
 export async function verifySecretPackageApprovalToken(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	token: string,
 ) {
+	const encryptedToken = token.startsWith('pkg:') ? token.slice(4) : token
 	const raw = await decryptStringWithPurpose(
 		env,
 		secretPackageApprovalPurpose,
-		token,
+		encryptedToken,
 	)
 	const parsed = JSON.parse(raw) as Partial<SecretPackageApprovalRequest>
 	if (

@@ -43,6 +43,7 @@ const mockModule = vi.hoisted(() => ({
 	resolveSecret: vi.fn(async () => null),
 	deleteSecret: vi.fn(async () => false),
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
+	setSecretAllowedPackages: vi.fn(async () => undefined),
 	getValue: vi.fn(async () => null),
 	verifySecretHostApprovalToken: vi.fn(async () => {
 		throw new Error('not used')
@@ -114,6 +115,8 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 	deleteSecret: (...args: Array<unknown>) => mockModule.deleteSecret(...args),
 	setSecretAllowedCapabilities: (...args: Array<unknown>) =>
 		mockModule.setSecretAllowedCapabilities(...args),
+	setSecretAllowedPackages: (...args: Array<unknown>) =>
+		mockModule.setSecretAllowedPackages(...args),
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
@@ -434,4 +437,122 @@ test('package approval expiry surfaces package-token error without host fallback
 		error: 'Secret package approval request has expired.',
 	})
 	expect(mockModule.verifySecretHostApprovalToken).not.toHaveBeenCalled()
+})
+
+test('malformed package approval token surfaces package-token error without host fallback', async () => {
+	mockModule.verifySecretPackageApprovalToken.mockRejectedValueOnce(
+		new Error('Invalid secret package approval request.'),
+	)
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'approve',
+				requestToken: 'invalid-package-token',
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Invalid secret package approval request.',
+	})
+	expect(mockModule.verifySecretHostApprovalToken).not.toHaveBeenCalled()
+})
+
+test('package approval reject succeeds even when the secret no longer exists', async () => {
+	mockModule.verifySecretPackageApprovalToken.mockResolvedValueOnce({
+		kind: 'package',
+		userId: 'stable-user-1',
+		name: 'discordBotToken',
+		scope: 'user',
+		packageId: 'pkg-allowed',
+		packageKodyId: 'discord-gateway',
+		storageContext: null,
+		iat: Date.now(),
+		exp: Date.now() + 60_000,
+	})
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listSecrets.mockResolvedValueOnce([])
+	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'reject',
+				requestToken: 'package-token',
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		secrets: [],
+	})
+	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
+	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
+})
+
+test('package approval approve deduplicates allowed package ids', async () => {
+	mockModule.verifySecretPackageApprovalToken.mockResolvedValueOnce({
+		kind: 'package',
+		userId: 'stable-user-1',
+		name: 'discordBotToken',
+		scope: 'user',
+		packageId: 'pkg-new',
+		packageKodyId: 'discord-gateway',
+		storageContext: null,
+		iat: Date.now(),
+		exp: Date.now() + 60_000,
+	})
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'discordBotToken',
+			scope: 'user',
+			description: 'Discord bot token',
+			appId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: ['pkg-allowed', 'pkg-allowed'],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+	mockModule.listSecrets.mockResolvedValueOnce([])
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'approve',
+				requestToken: 'package-token',
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({ ok: true })
+	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'discordBotToken',
+			scope: 'user',
+			allowedPackages: ['pkg-allowed', 'pkg-new'],
+		}),
+	)
 })

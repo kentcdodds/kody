@@ -32,6 +32,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { type routes } from '#app/routes.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
+import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
@@ -756,6 +757,9 @@ async function resolveApprovalRequest(
 		if (isExpiredPackageApprovalError(error)) {
 			throw error
 		}
+		if (error instanceof Error) {
+			throw error
+		}
 	}
 	return await verifySecretHostApprovalToken(env, token)
 }
@@ -945,25 +949,27 @@ async function handleApprovalAction(input: {
 		}
 
 		if (approval.kind === 'package') {
-			const current = await listSecrets({
-				env: input.env,
-				userId: input.user.mcpUser.userId,
-				scope: approval.scope,
-				storageContext: approval.storageContext,
-			})
-			const secret = current.find(
-				(item) => item.name === approval.name && item.scope === approval.scope,
-			)
-			if (!secret) {
-				return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
-			}
 			if (input.action === 'approve') {
+				const current = await listSecrets({
+					env: input.env,
+					userId: input.user.mcpUser.userId,
+					scope: approval.scope,
+					storageContext: approval.storageContext,
+				})
+				const secret = current.find(
+					(item) => item.name === approval.name && item.scope === approval.scope,
+				)
+				if (!secret) {
+					return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
+				}
 				await setSecretAllowedPackages({
 					env: input.env,
 					userId: input.user.mcpUser.userId,
 					name: approval.name,
 					scope: approval.scope,
-					allowedPackages: [...secret.allowedPackages, approval.packageId],
+					allowedPackages: Array.from(
+						new Set([...secret.allowedPackages, approval.packageId]),
+					),
 					storageContext: approval.storageContext,
 				})
 			}
@@ -1037,7 +1043,9 @@ async function handleSaveAction(input: {
 	const allowedCapabilities = normalizeAllowedCapabilities(
 		readStringArray(input.body, 'allowedCapabilities'),
 	)
-	const allowedPackages = readStringArray(input.body, 'allowedPackages')
+	const allowedPackages = normalizeAllowedPackages(
+		readStringArray(input.body, 'allowedPackages'),
+	)
 
 	if (!name) {
 		return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)

@@ -23,6 +23,7 @@ vi.mock('./service.ts', () => ({
 const {
 	buildPackageApprovalErrorForMounts,
 	isPackageSecretAccessUnavailableError,
+	PackageSecretMountError,
 	resolvePackageMountedSecret,
 } = await import('./package-access.ts')
 
@@ -163,7 +164,49 @@ test('package access helpers treat missing approvals consistently', () => {
 	).toContain('Secret "discordBotTokenKentPersonalAutomation" is not allowed')
 	expect(
 		isPackageSecretAccessUnavailableError(
-			new Error('Secret "discordBotTokenKentPersonalAutomation" was not found.'),
+			new PackageSecretMountError('Package "discord-gateway" does not declare secret mount "discordBotToken".'),
 		),
 	).toBe(true)
+})
+
+test('findMissingPackageApprovals reads saved package metadata without loading manifest', async () => {
+	mockModule.getSavedPackageById.mockResolvedValueOnce({
+		id: 'pkg-1',
+		kodyId: 'discord-gateway',
+		name: '@kentcdodds/discord-gateway',
+		sourceId: 'source-1',
+	})
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'bot-token',
+		scope: 'user',
+		allowedPackages: [],
+	})
+
+	const { findMissingPackageApprovals } = await import('./package-access.ts')
+	const entries = await findMissingPackageApprovals({
+		env: { APP_DB: {} as D1Database } as Env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		mounts: {
+			discordBotToken: {
+				name: 'discordBotTokenKentPersonalAutomation',
+				scope: 'user',
+			},
+		},
+		storageContext: {
+			sessionId: null,
+			appId: 'pkg-1',
+			storageId: 'pkg-1',
+		},
+	})
+
+	expect(entries).toHaveLength(1)
+	expect(entries[0]).toMatchObject({
+		secretName: 'discordBotTokenKentPersonalAutomation',
+		packageId: 'pkg-1',
+		kodyId: 'discord-gateway',
+	})
+	expect(mockModule.loadPackageManifestBySourceId).not.toHaveBeenCalled()
 })

@@ -6,6 +6,7 @@ import { type SecretScope } from './types.ts'
 
 const secretHostApprovalPurpose = 'secret-host-approval'
 const defaultSecretHostApprovalTtlMs = 1000 * 60 * 60 * 24
+export const secretHostApprovalTokenPrefix = 'host:'
 
 export type SecretHostApprovalRequest = {
 	kind: 'host'
@@ -31,7 +32,7 @@ export async function createSecretHostApprovalToken(
 ) {
 	const now = Date.now()
 	const ttlMs = input.ttlMs ?? defaultSecretHostApprovalTtlMs
-	return encryptStringWithPurpose(
+	const token = await encryptStringWithPurpose(
 		env,
 		secretHostApprovalPurpose,
 		JSON.stringify({
@@ -45,16 +46,23 @@ export async function createSecretHostApprovalToken(
 			exp: now + ttlMs,
 		} satisfies SecretHostApprovalRequest),
 	)
+	return `${secretHostApprovalTokenPrefix}${token}`
 }
 
 export async function verifySecretHostApprovalToken(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	token: string,
 ) {
+	if (token.startsWith('pkg:')) {
+		throw new Error('Invalid secret host approval request.')
+	}
+	const encodedToken = token.startsWith(secretHostApprovalTokenPrefix)
+		? token.slice(secretHostApprovalTokenPrefix.length)
+		: token
 	const raw = await decryptStringWithPurpose(
 		env,
 		secretHostApprovalPurpose,
-		token,
+		encodedToken,
 	)
 	const parsed = JSON.parse(raw) as Partial<SecretHostApprovalRequest>
 	if (

@@ -487,9 +487,8 @@ test('search guidance does not pair unrelated package and connector matches', ()
 	expect(result.guidance).toContain(
 		'search({ entity: "observed-package:package" })',
 	)
-	expect(result.guidance).not.toContain(
-		'search({ entity: "github:connector" })',
-	)
+	expect(result.guidance).not.toMatch(/connector\s+`github`/)
+	expect(result.guidance).not.toContain('Found saved package')
 })
 
 test('optional search rows fall back when persisted values lookup fails', async () => {

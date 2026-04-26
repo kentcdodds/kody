@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(),
@@ -18,8 +18,13 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 const { listPackageSubscriptionsCapability } =
 	await import('./list-package-subscriptions.ts')
 
+beforeEach(() => {
+	mockModule.listSavedPackagesByUserId.mockReset()
+	mockModule.loadPackageManifestBySourceId.mockReset()
+})
+
 test('listPackageSubscriptionsCapability returns declared subscriptions', async () => {
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
 			id: 'package-1',
 			userId: 'user-1',
@@ -48,47 +53,41 @@ test('listPackageSubscriptionsCapability returns declared subscriptions', async 
 		},
 	])
 
-	mockModule.loadPackageManifestBySourceId.mockImplementation(
-		async ({ sourceId }: { sourceId: string }) => {
-			if (sourceId === 'source-1') {
-				return {
-					source: { id: sourceId },
-					manifest: {
-						name: '@kentcdodds/discord-general-chat',
-						exports: {
-							'.': './src/index.ts',
+	mockModule.loadPackageManifestBySourceId.mockImplementationOnce(async () => ({
+		source: { id: 'source-1' },
+		manifest: {
+			name: '@kentcdodds/discord-general-chat',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'discord-general-chat',
+				description: 'General Discord thread chat subscriber',
+				subscriptions: {
+					'discord.message.created': {
+						handler: './src/handle-discord-message-created.ts',
+						description: 'General chat handler',
+						filters: {
+							channelIds: ['123'],
 						},
-						kody: {
-							id: 'discord-general-chat',
-							description: 'General Discord thread chat subscriber',
-							subscriptions: {
-								'discord.message.created': {
-									handler: './src/handle-discord-message-created.ts',
-									description: 'General chat handler',
-									filters: {
-										channelIds: ['123'],
-									},
-								},
-							},
-						},
-					},
-				}
-			}
-			return {
-				source: { id: sourceId },
-				manifest: {
-					name: '@kentcdodds/other',
-					exports: {
-						'.': './src/index.ts',
-					},
-					kody: {
-						id: 'other',
-						description: 'Other package',
 					},
 				},
-			}
+			},
 		},
-	)
+	}))
+	mockModule.loadPackageManifestBySourceId.mockImplementationOnce(async () => ({
+		source: { id: 'source-2' },
+		manifest: {
+			name: '@kentcdodds/other',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'other',
+				description: 'Other package',
+			},
+		},
+	}))
 
 	const result = await listPackageSubscriptionsCapability.handler(
 		{ topic: 'discord.message.created' },

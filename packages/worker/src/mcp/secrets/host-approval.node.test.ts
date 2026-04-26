@@ -55,3 +55,47 @@ test('verifySecretHostApprovalToken still accepts new tokens with kind', async (
 		storageContext: null,
 	})
 })
+
+test('verifySecretHostApprovalToken rejects tokens with explicit non-host kind', async () => {
+	const now = Date.now()
+	const token = await encryptStringWithPurpose(
+		env,
+		'secret-host-approval',
+		JSON.stringify({
+			kind: 'package',
+			userId: 'user-1',
+			name: 'cloudflareToken',
+			scope: 'user',
+			requestedHost: 'api.cloudflare.com',
+			storageContext: null,
+			iat: now,
+			exp: now + 60_000,
+		}),
+	)
+
+	await expect(verifySecretHostApprovalToken(env, token)).rejects.toThrow(
+		'Invalid secret host approval request.',
+	)
+})
+
+test('verifySecretHostApprovalToken rejects tokens with explicit non-host kind', async () => {
+	const now = Date.now()
+	const token = await encryptStringWithPurpose(
+		env,
+		'secret-host-approval',
+		JSON.stringify({
+			kind: 'package',
+			userId: 'user-1',
+			name: 'cloudflareToken',
+			scope: 'user',
+			requestedHost: 'api.cloudflare.com',
+			storageContext: null,
+			iat: now,
+			exp: now + 60_000,
+		}),
+	)
+
+	await expect(verifySecretHostApprovalToken(env, token)).rejects.toThrow(
+		'Invalid secret host approval request.',
+	)
+})

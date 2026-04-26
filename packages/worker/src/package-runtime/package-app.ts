@@ -221,7 +221,12 @@ function createPackageSecretsProxy(runtimeBridge) {
 			const result = await runtimeBridge.packageSecretGet({
 				alias: normalizedAlias,
 			})
-			return typeof result?.value === 'string' ? result.value : ''
+			if (typeof result?.value !== 'string') {
+				throw new Error(
+					`packageSecretGet returned invalid response for alias "${normalizedAlias}".`,
+				)
+			}
+			return result.value
 		},
 		has: async (alias) => {
 			const normalizedAlias =
@@ -232,7 +237,12 @@ function createPackageSecretsProxy(runtimeBridge) {
 			const result = await runtimeBridge.packageSecretHas({
 				alias: normalizedAlias,
 			})
-			return result?.has === true
+			if (typeof result?.has !== 'boolean') {
+				throw new Error(
+					`packageSecretHas returned invalid response for alias "${normalizedAlias}".`,
+				)
+			}
+			return result.has
 		},
 	};
 }

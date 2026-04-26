@@ -274,7 +274,7 @@ function getAlreadyAddedNotice(input: {
 	const allowedPackageIds = input.selectedSecret
 		? Array.from(
 				new Set(
-					input.selectedSecret.allowedPackages.filter(
+					coerceStringRows(input.selectedSecret.allowedPackages).filter(
 						(value) => value.length > 0,
 					),
 				),
@@ -282,7 +282,7 @@ function getAlreadyAddedNotice(input: {
 		: input.approval
 			? Array.from(
 					new Set(
-						input.approval.currentAllowedPackages.filter(
+						coerceStringRows(input.approval.currentAllowedPackages).filter(
 							(value) => value.length > 0,
 						),
 					),

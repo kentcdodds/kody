@@ -4,8 +4,6 @@ import {
 	createMissingSecretMessage,
 	createPackageSecretAccessDeniedBatchMessage,
 	createPackageSecretAccessDeniedMessage,
-	parseMissingSecretMessage,
-	parsePackageAccessRequiredMessage,
 } from './errors.ts'
 import { resolveSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
@@ -21,13 +19,14 @@ type SecretMountDefinition = {
 }
 
 export class PackageSecretMountError extends Error {}
+export class PackageSecretMissingError extends Error {}
+export class PackageSecretAccessDeniedError extends Error {}
 
 export function isPackageSecretAccessUnavailableError(error: unknown) {
-	if (error instanceof PackageSecretMountError) return true
-	if (!(error instanceof Error)) return false
 	return (
-		parseMissingSecretMessage(error.message) != null ||
-		parsePackageAccessRequiredMessage(error.message) != null
+		error instanceof PackageSecretMountError ||
+		error instanceof PackageSecretMissingError ||
+		error instanceof PackageSecretAccessDeniedError
 	)
 }
 
@@ -113,7 +112,7 @@ export async function resolvePackageMountedSecret(input: {
 		},
 	})
 	if (!resolved.found || typeof resolved.value !== 'string') {
-		throw new Error(createMissingSecretMessage(mount.name))
+		throw new PackageSecretMissingError(createMissingSecretMessage(mount.name))
 	}
 	if (!resolved.allowedPackages.includes(packageInfo.savedPackage.id)) {
 		const approvalUrl = buildSecretPackageApprovalUrl({
@@ -128,7 +127,7 @@ export async function resolvePackageMountedSecret(input: {
 				storageId: input.callerContext.storageContext?.storageId ?? null,
 			},
 		})
-		throw new Error(
+		throw new PackageSecretAccessDeniedError(
 			createPackageSecretAccessDeniedMessage({
 				secretName: mount.name,
 				packageName: packageInfo.savedPackage.kodyId,
@@ -154,12 +153,13 @@ export async function findMissingPackageApprovals(input: {
 	mounts: Record<string, SecretMountDefinition>
 	storageContext: McpCallerContext['storageContext']
 }) {
-	const packageInfo = await loadPackageSecretMounts({
-		env: input.env,
-		baseUrl: input.baseUrl,
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
+	if (!savedPackage) {
+		throw new Error(`Saved package "${input.packageId}" was not found.`)
+	}
 	const storageContext = {
 		sessionId: input.storageContext?.sessionId ?? null,
 		appId: input.storageContext?.appId ?? null,
@@ -175,19 +175,19 @@ export async function findMissingPackageApprovals(input: {
 				storageContext,
 			})
 			if (!resolved.found) return null
-			if (resolved.allowedPackages.includes(packageInfo.savedPackage.id)) {
+			if (resolved.allowedPackages.includes(savedPackage.id)) {
 				return null
 			}
 			return {
 				secretName: mount.name,
-				packageId: packageInfo.savedPackage.id,
-				kodyId: packageInfo.savedPackage.kodyId,
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
 				approvalUrl: buildSecretPackageApprovalUrl({
 					baseUrl: input.baseUrl,
 					name: mount.name,
 					scope: resolved.scope ?? mount.scope ?? 'user',
-					packageId: packageInfo.savedPackage.id,
-					kodyId: packageInfo.savedPackage.kodyId,
+					packageId: savedPackage.id,
+					kodyId: savedPackage.kodyId,
 					storageContext,
 				}),
 			}
