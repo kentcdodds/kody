@@ -4,9 +4,9 @@ This document describes an intended direction for connecting `kody` to systems
 that live on a private local network, such as devices reachable from a Synology
 NAS.
 
-It does **not** describe behavior that exists in the repository today. Treat
-this as planning guidance for the shape of a future architecture, not as a
-description of the current runtime.
+It does **not** describe shipping behavior in this repository. Treat this as
+planning guidance for the shape of a future architecture, not as a description
+of the current runtime.
 
 ## Goal
 

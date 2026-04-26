@@ -9,9 +9,9 @@ This repository maintains two audiences:
 
 ## Principles
 
-**Describe how things work today.** Write in the present tense. Avoid
-changelog-style phrases (“now we…”, “we no longer…”, “previously…”) in both
-usage and contributing docs; those belong in commit messages or release notes.
+**Describe how things work.** Write in the present tense. Avoid changelog-style
+phrases (“now we…”, “we no longer…”, “previously…”) in both usage and
+contributing docs; those belong in commit messages or release notes.
 
 **Stay lightweight but valuable.** Prefer small, accurate pages over large stale
 ones. **Garden** docs when behavior changes: update or delete sections in the

@@ -32,8 +32,7 @@ Keep it brief and factual. Good fields include:
 ## Automatic memory surfacing
 
 When a signed-in agent includes **`memoryContext`**, Kody may return a small
-number of relevant previously-unsurfaced memories alongside the normal tool
-result.
+number of relevant not-yet-surfaced memories alongside the normal tool result.
 
 That retrieval is:
 
