@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { parsePackageAccessRequiredMessage } from './errors.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -150,18 +151,24 @@ test('resolvePackageMountedSecret resolves mounted secret when package appId mat
 
 test('package access helpers treat missing approvals consistently', () => {
 	expect(buildPackageApprovalErrorForMounts({ entries: [] })).toBeNull()
-	expect(
-		buildPackageApprovalErrorForMounts({
-			entries: [
-				{
-					secretName: 'discordBotTokenKentPersonalAutomation',
-					packageId: 'pkg-1',
-					kodyId: 'discord-gateway',
-					approvalUrl: 'https://example.com/account/secrets/user/discordBotToken',
-				},
-			],
-		}),
-	).toContain('Secret "discordBotTokenKentPersonalAutomation" is not allowed')
+	const approvalMessage = buildPackageApprovalErrorForMounts({
+		entries: [
+			{
+				secretName: 'discordBotTokenKentPersonalAutomation',
+				packageId: 'pkg-1',
+				kodyId: 'discord-gateway',
+				approvalUrl: 'https://example.com/account/secrets/user/discordBotToken',
+			},
+		],
+	})
+	expect(approvalMessage).toBeTypeOf('string')
+	expect(parsePackageAccessRequiredMessage(approvalMessage ?? '')).toEqual({
+		secretName: 'discordBotTokenKentPersonalAutomation',
+		packageName: 'discord-gateway',
+	})
+	expect(approvalMessage).toContain(
+		'https://example.com/account/secrets/user/discordBotToken',
+	)
 	expect(
 		isPackageSecretAccessUnavailableError(
 			new PackageSecretMountError('Package "discord-gateway" does not declare secret mount "discordBotToken".'),

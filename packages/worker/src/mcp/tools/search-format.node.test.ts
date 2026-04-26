@@ -384,5 +384,22 @@ test('search formatting falls back to a safe secret usage placeholder for displa
 	})
 
 	expect(markdown).toContain('`secret "name":secret`')
-	expect(markdown).toContain('(secret placeholder unavailable for this name)')
+	const structuredMatches = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'secret',
+				name: 'secret "name"',
+				description: 'Secret with a display name that is not placeholder-safe.',
+			},
+		],
+	})
+	expect(structuredMatches).toMatchObject([
+		{
+			type: 'secret',
+			id: 'secret "name"',
+			entityRef: 'secret "name":secret',
+		},
+	])
+	expect(structuredMatches[0]?.usage).not.toContain('{{secret:')
 })
