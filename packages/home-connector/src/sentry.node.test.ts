@@ -1,8 +1,22 @@
-import { expect, test } from 'vitest'
-import {
+import { expect, test, vi } from 'vitest'
+
+const sentryMock = vi.hoisted(() => ({
+	close: vi.fn(),
+	flush: vi.fn(),
+	init: vi.fn(),
+	isEnabled: vi.fn(() => false),
+	setContext: vi.fn(),
+	setTag: vi.fn(),
+}))
+
+vi.mock('@sentry/node', () => sentryMock)
+
+const {
 	buildHomeConnectorSentryOptions,
+	closeHomeConnectorSentry,
+	flushHomeConnectorSentry,
 	initializeHomeConnectorSentry,
-} from './sentry.ts'
+} = await import('./sentry.ts')
 
 function createTemporaryEnv(values: Record<string, string | undefined>) {
 	const previousValues = Object.fromEntries(
@@ -73,6 +87,7 @@ test('buildHomeConnectorSentryOptions falls back to defaults for invalid sample 
 })
 
 test('initializeHomeConnectorSentry skips initialization without a DSN', () => {
+	sentryMock.isEnabled.mockReturnValue(false)
 	using _env = createTemporaryEnv({
 		SENTRY_DSN: undefined,
 		SENTRY_ENVIRONMENT: undefined,
@@ -81,4 +96,18 @@ test('initializeHomeConnectorSentry skips initialization without a DSN', () => {
 	})
 
 	expect(() => initializeHomeConnectorSentry()).not.toThrow()
+})
+
+test('flushHomeConnectorSentry returns true when Sentry is disabled', async () => {
+	sentryMock.isEnabled.mockReturnValue(false)
+	sentryMock.flush.mockReset()
+	await expect(flushHomeConnectorSentry()).resolves.toBe(true)
+	expect(sentryMock.flush).not.toHaveBeenCalled()
+})
+
+test('closeHomeConnectorSentry returns true when Sentry is disabled', async () => {
+	sentryMock.isEnabled.mockReturnValue(false)
+	sentryMock.close.mockReset()
+	await expect(closeHomeConnectorSentry()).resolves.toBe(true)
+	expect(sentryMock.close).not.toHaveBeenCalled()
 })

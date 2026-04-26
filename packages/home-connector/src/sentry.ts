@@ -119,3 +119,11 @@ export async function flushHomeConnectorSentry(timeout = 2_000) {
 
 	return Sentry.flush(timeout)
 }
+
+export async function closeHomeConnectorSentry(timeout = 2_000) {
+	if (!Sentry.isEnabled()) {
+		return true
+	}
+
+	return Sentry.close(timeout)
+}

@@ -54,6 +54,28 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		void this.restoreState()
 	}
 
+	private clearConnectionState() {
+		this.stateSnapshot.persisted.connectedAt = null
+		this.stateSnapshot.tools = []
+	}
+
+	private captureSessionMessage(
+		message: string,
+		input: {
+			level?: 'warning' | 'error'
+			extra?: Record<string, unknown>
+		} = {},
+	) {
+		Sentry.captureMessage(message, {
+			level: input.level ?? 'warning',
+			tags: {
+				service: 'worker',
+				worker_component: 'home-connector-session',
+			},
+			...(input.extra ? { extra: input.extra } : {}),
+		})
+	}
+
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url)
 		if (request.headers.get('Upgrade') === 'websocket') {
@@ -113,14 +135,11 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		wasClean: boolean,
 	): void {
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
+		this.clearConnectionState()
 		const closeMessage = `Home connector session websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''}`
 		console.warn(closeMessage)
-		Sentry.captureMessage(closeMessage, {
+		this.captureSessionMessage(closeMessage, {
 			level: 'warning',
-			tags: {
-				service: 'worker',
-				worker_component: 'home-connector-session',
-			},
 			extra: {
 				code,
 				reason,
@@ -149,6 +168,9 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		const { connectorId, connectorKind, connectedAt, lastSeenAt } =
 			this.stateSnapshot.persisted
 		if (!connectorId || !connectedAt || !lastSeenAt) return null
+		if (this.ctx.getWebSockets(connectorTag).length === 0) {
+			return null
+		}
 		const kind = (connectorKind && connectorKind.trim()) || ('home' as const)
 		return {
 			...(kind !== 'home' ? { connectorKind: kind } : {}),
@@ -202,6 +224,16 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		try {
 			parsed = parseHomeConnectorMessage(message)
 		} catch (error) {
+			this.captureSessionMessage(
+				'Home connector session received invalid websocket payload.',
+				{
+					level: 'error',
+					extra: {
+						connectorId: this.stateSnapshot.persisted.connectorId,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				},
+			)
 			ws.send(
 				stringifyHomeConnectorMessage({
 					type: 'server.error',
@@ -328,7 +360,23 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			'method' in parsed &&
 			parsed.method === 'notifications/tools/list_changed'
 		) {
-			await this.refreshToolsSnapshot()
+			try {
+				await this.refreshToolsSnapshot()
+			} catch (error) {
+				this.clearConnectionState()
+				this.captureSessionMessage(
+					'Home connector tools snapshot refresh failed.',
+					{
+						level: 'error',
+						extra: {
+							connectorId: this.stateSnapshot.persisted.connectorId,
+							error: error instanceof Error ? error.message : String(error),
+						},
+					},
+				)
+				await this.persistState()
+				throw error
+			}
 		}
 	}
 

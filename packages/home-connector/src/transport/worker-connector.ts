@@ -72,6 +72,19 @@ function getReconnectDelayMs(consecutiveReconnects: number) {
 	)
 }
 
+function createSocketEventContext(input: {
+	config: HomeConnectorConfig
+	connectionAttempt: number
+	consecutiveReconnects: number
+}) {
+	return {
+		attempt: input.connectionAttempt,
+		consecutiveReconnects: input.consecutiveReconnects,
+		connectorId: input.config.homeConnectorId,
+		url: input.config.workerWebSocketUrl,
+	}
+}
+
 async function handleJsonRpcRequest(
 	message: JSONRPCRequest,
 	toolRegistry: HomeConnectorToolRegistry,
@@ -215,6 +228,23 @@ export function createWorkerConnector(input: {
 		console.info(
 			`Scheduling home connector websocket reconnect in ${reconnectDelayMs}ms consecutiveReconnects=${consecutiveReconnects}`,
 		)
+		captureHomeConnectorMessage(
+			'Scheduling home connector websocket reconnect.',
+			{
+				level: 'info',
+				tags: {
+					connector_event: 'websocket.reconnect_scheduled',
+				},
+				extra: {
+					...createSocketEventContext({
+						config: input.config,
+						connectionAttempt,
+						consecutiveReconnects,
+					}),
+					reconnectDelayMs,
+				},
+			},
+		)
 		reconnectTimer = setTimeout(() => {
 			reconnectTimer = null
 			connect()
@@ -237,96 +267,198 @@ export function createWorkerConnector(input: {
 		console.info(
 			`Opening home connector websocket attempt=${connectionAttempt} url=${input.config.workerWebSocketUrl}`,
 		)
+		captureHomeConnectorMessage('Opening home connector websocket.', {
+			level: 'info',
+			tags: {
+				connector_event: 'websocket.connecting',
+			},
+			extra: createSocketEventContext({
+				config: input.config,
+				connectionAttempt,
+				consecutiveReconnects,
+			}),
+		})
 		socket = new WebSocket(input.config.workerWebSocketUrl)
 
 		socket.addEventListener('open', () => {
 			console.info(
 				`Home connector websocket opened attempt=${connectionAttempt} connectorId=${input.config.homeConnectorId}`,
 			)
+			captureHomeConnectorMessage('Home connector websocket opened.', {
+				level: 'info',
+				tags: {
+					connector_event: 'websocket.open',
+				},
+				extra: createSocketEventContext({
+					config: input.config,
+					connectionAttempt,
+					consecutiveReconnects,
+				}),
+			})
 			const hello: HomeConnectorHelloMessage = {
 				type: 'connector.hello',
 				connectorKind: 'home',
 				connectorId: input.config.homeConnectorId,
 				sharedSecret: input.config.sharedSecret!,
 			}
+			captureHomeConnectorMessage('Sending home connector websocket hello.', {
+				level: 'info',
+				tags: {
+					connector_event: 'websocket.hello_sent',
+				},
+				extra: createSocketEventContext({
+					config: input.config,
+					connectionAttempt,
+					consecutiveReconnects,
+				}),
+			})
 			socket?.send(stringifyHomeConnectorMessage(hello))
 		})
 
 		socket.addEventListener('message', async (event) => {
-			const value = JSON.parse(String(event.data)) as
-				| HomeConnectorClientMessage
-				| HomeConnectorJsonRpcEnvelope
-			switch (value.type) {
-				case 'server.ping':
-					hasReportedSocketIssue = false
-					updateConnectionState(input.state, {
-						lastSyncAt: new Date().toISOString(),
-						lastError: null,
-					})
-					return
-				case 'server.error':
-					updateConnectionState(input.state, {
-						connected: false,
-						lastError: value.message,
-					})
-					captureHomeConnectorMessage(value.message, {
-						level: 'error',
-						tags: {
-							connector_event: 'server.error',
-						},
-					})
-					console.error(`Home connector error: ${value.message}`)
-					return
-				case 'server.ack':
-					hasReportedSocketIssue = false
-					consecutiveReconnects = 0
-					updateConnectionState(input.state, {
-						connected: true,
-						lastSyncAt: new Date().toISOString(),
-						lastError: null,
-					})
-					console.info(
-						`Home connector websocket acknowledged connectorId=${value.connectorId}`,
-					)
-					if (isAckMessage(value) && socket?.readyState === WebSocket.OPEN) {
-						socket.send(
-							stringifyHomeConnectorMessage({
-								type: 'connector.jsonrpc',
-								message: createToolsChangedNotification(),
-							}),
-						)
-					}
-					return
-				case 'connector.jsonrpc': {
-					const message = value.message
-					if (isJsonRpcEnvelope(value) && isJsonRpcResponse(message)) {
+			try {
+				const value = JSON.parse(String(event.data)) as
+					| HomeConnectorClientMessage
+					| HomeConnectorJsonRpcEnvelope
+				switch (value.type) {
+					case 'server.ping':
+						hasReportedSocketIssue = false
 						updateConnectionState(input.state, {
 							lastSyncAt: new Date().toISOString(),
 							lastError: null,
 						})
 						return
-					}
-					if (
-						isJsonRpcEnvelope(value) &&
-						isJsonRpcRequest(message) &&
-						socket?.readyState === WebSocket.OPEN
-					) {
-						const response = await handleJsonRpcRequest(
-							message,
-							input.toolRegistry,
-						)
-						socket.send(
-							stringifyHomeConnectorMessage({
-								type: 'connector.jsonrpc',
-								message: response,
-							}),
-						)
+					case 'server.error':
 						updateConnectionState(input.state, {
+							connected: false,
+							lastError: value.message,
+						})
+						captureHomeConnectorMessage(value.message, {
+							level: 'error',
+							tags: {
+								connector_event: 'server.error',
+							},
+							extra: createSocketEventContext({
+								config: input.config,
+								connectionAttempt,
+								consecutiveReconnects,
+							}),
+						})
+						console.error(`Home connector error: ${value.message}`)
+						return
+					case 'server.ack':
+						hasReportedSocketIssue = false
+						consecutiveReconnects = 0
+						updateConnectionState(input.state, {
+							connected: true,
 							lastSyncAt: new Date().toISOString(),
 							lastError: null,
 						})
+						console.info(
+							`Home connector websocket acknowledged connectorId=${value.connectorId}`,
+						)
+						captureHomeConnectorMessage(
+							'Home connector websocket acknowledged.',
+							{
+								level: 'info',
+								tags: {
+									connector_event: 'websocket.ack',
+								},
+								extra: {
+									...createSocketEventContext({
+										config: input.config,
+										connectionAttempt,
+										consecutiveReconnects,
+									}),
+									acknowledgedConnectorId: value.connectorId,
+								},
+							},
+						)
+						if (isAckMessage(value) && socket?.readyState === WebSocket.OPEN) {
+							captureHomeConnectorMessage(
+								'Sending home connector tools changed notification.',
+								{
+									level: 'info',
+									tags: {
+										connector_event: 'tools.list_changed.sent',
+									},
+									extra: createSocketEventContext({
+										config: input.config,
+										connectionAttempt,
+										consecutiveReconnects,
+									}),
+								},
+							)
+							socket.send(
+								stringifyHomeConnectorMessage({
+									type: 'connector.jsonrpc',
+									message: createToolsChangedNotification(),
+								}),
+							)
+						}
+						return
+					case 'connector.jsonrpc': {
+						const message = value.message
+						if (isJsonRpcEnvelope(value) && isJsonRpcResponse(message)) {
+							updateConnectionState(input.state, {
+								lastSyncAt: new Date().toISOString(),
+								lastError: null,
+							})
+							return
+						}
+						if (
+							isJsonRpcEnvelope(value) &&
+							isJsonRpcRequest(message) &&
+							socket?.readyState === WebSocket.OPEN
+						) {
+							const response = await handleJsonRpcRequest(
+								message,
+								input.toolRegistry,
+							)
+							socket.send(
+								stringifyHomeConnectorMessage({
+									type: 'connector.jsonrpc',
+									message: response,
+								}),
+							)
+							updateConnectionState(input.state, {
+								lastSyncAt: new Date().toISOString(),
+								lastError: null,
+							})
+						}
+						return
 					}
 				}
+			} catch (error) {
+				updateConnectionState(input.state, {
+					connected: false,
+					lastError:
+						error instanceof Error
+							? error.message
+							: 'Home connector websocket message handling failed.',
+				})
+				captureHomeConnectorException(error, {
+					tags: {
+						connector_event: 'websocket.message_error',
+					},
+					contexts: {
+						websocket: {
+							...createSocketEventContext({
+								config: input.config,
+								connectionAttempt,
+								consecutiveReconnects,
+							}),
+							readyState: socket?.readyState ?? null,
+						},
+					},
+					extra: {
+						rawMessage: String(event.data),
+					},
+				})
+				console.error(
+					'Home connector websocket message handling failed',
+					error,
+				)
 			}
 		})
 

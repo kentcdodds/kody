@@ -24,4 +24,4 @@ ENV SENTRY_TRACES_SAMPLE_RATE=1.0
 
 EXPOSE 4040
 
-CMD ["node", "index.ts"]
+CMD ["node", "--import", "./src/sentry-init.ts", "index.ts"]
