@@ -17,28 +17,39 @@ function installGracefulShutdownHandlers(input: {
 	server: http.Server
 	connector: Awaited<ReturnType<typeof startHomeConnectorApp>>
 }) {
-	let isShuttingDown = false
+	let shutdownPromise: Promise<void> | null = null
 
-	async function shutdown(reason: string, closeSentry: boolean) {
-		if (isShuttingDown) {
-			return
-		}
-		isShuttingDown = true
-		console.info(`Shutting down home connector reason=${reason}`)
-		input.connector.workerConnector.stop()
+	async function closeServerWithWatchdog() {
 		await new Promise<void>((resolve) => {
-			input.server.close(() => resolve())
+			const watchdog = setTimeout(() => {
+				input.server.closeAllConnections()
+				resolve()
+			}, 5_000)
+			input.server.close(() => {
+				clearTimeout(watchdog)
+				resolve()
+			})
 		})
-		if (closeSentry) {
-			await closeHomeConnectorSentry()
-			return
+	}
+
+	function shutdown(reason: string) {
+		if (shutdownPromise) {
+			return shutdownPromise
 		}
-		await flushHomeConnectorSentry()
+
+		shutdownPromise = (async () => {
+			console.info(`Shutting down home connector reason=${reason}`)
+			input.connector.workerConnector.stop()
+			await closeServerWithWatchdog()
+			await closeHomeConnectorSentry()
+		})()
+
+		return shutdownPromise
 	}
 
 	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 		process.once(signal, () => {
-			void shutdown(`signal:${signal}`, true).finally(() => {
+			void shutdown(`signal:${signal}`).finally(() => {
 				process.exit(signalExitCodeByName[signal])
 			})
 		})
@@ -51,19 +62,22 @@ function installGracefulShutdownHandlers(input: {
 				process_event: 'uncaughtException',
 			},
 		})
-		void shutdown('uncaughtException', true).finally(() => {
+		void shutdown('uncaughtException').finally(() => {
 			process.exit(1)
 		})
 	})
 
-	process.once('unhandledRejection', (reason) => {
+	process.once('unhandledRejection', (reason, promise) => {
 		captureHomeConnectorException(reason, {
 			tags: {
 				area: 'process',
 				process_event: 'unhandledRejection',
 			},
+			extra: {
+				promise: String(promise),
+			},
 		})
-		void shutdown('unhandledRejection', true).finally(() => {
+		void shutdown('unhandledRejection').finally(() => {
 			process.exit(1)
 		})
 	})

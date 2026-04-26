@@ -85,6 +85,21 @@ function createSocketEventContext(input: {
 	}
 }
 
+function createSocketPayloadPreview(data: unknown) {
+	const raw = String(data)
+	const maxPreviewLength = 500
+	if (raw.length <= maxPreviewLength) {
+		return {
+			rawMessagePreview: raw,
+			rawMessageLength: raw.length,
+		}
+	}
+	return {
+		rawMessagePreview: `${raw.slice(0, maxPreviewLength)}...[truncated]`,
+		rawMessageLength: raw.length,
+	}
+}
+
 async function handleJsonRpcRequest(
 	message: JSONRPCRequest,
 	toolRegistry: HomeConnectorToolRegistry,
@@ -374,7 +389,7 @@ export function createWorkerConnector(input: {
 								},
 							},
 						)
-						if (isAckMessage(value) && socket?.readyState === WebSocket.OPEN) {
+						if (socket?.readyState === WebSocket.OPEN) {
 							captureHomeConnectorMessage(
 								'Sending home connector tools changed notification.',
 								{
@@ -399,7 +414,7 @@ export function createWorkerConnector(input: {
 						return
 					case 'connector.jsonrpc': {
 						const message = value.message
-						if (isJsonRpcEnvelope(value) && isJsonRpcResponse(message)) {
+						if (isJsonRpcResponse(message)) {
 							updateConnectionState(input.state, {
 								lastSyncAt: new Date().toISOString(),
 								lastError: null,
@@ -407,7 +422,6 @@ export function createWorkerConnector(input: {
 							return
 						}
 						if (
-							isJsonRpcEnvelope(value) &&
 							isJsonRpcRequest(message) &&
 							socket?.readyState === WebSocket.OPEN
 						) {
@@ -431,7 +445,6 @@ export function createWorkerConnector(input: {
 				}
 			} catch (error) {
 				updateConnectionState(input.state, {
-					connected: false,
 					lastError:
 						error instanceof Error
 							? error.message
@@ -452,7 +465,7 @@ export function createWorkerConnector(input: {
 						},
 					},
 					extra: {
-						rawMessage: String(event.data),
+						...createSocketPayloadPreview(event.data),
 					},
 				})
 				console.error(

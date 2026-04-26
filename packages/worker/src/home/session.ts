@@ -268,14 +268,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		)
 		const ingressSessionKey = this.loadIngressSessionKey(ws)
 		if (ingressSessionKey && ingressSessionKey !== expectedSessionKey) {
-			Sentry.captureMessage(
+			this.captureSessionMessage(
 				'Remote connector session rejected hello (session key mismatch).',
 				{
 					level: 'error',
-					tags: {
-						service: 'worker',
-						worker_component: 'home-connector-session',
-					},
 					extra: {
 						connectorId: canonicalInstanceId,
 						declaredKind,
@@ -300,14 +296,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			this.env,
 		)
 		if (!expectedSecret || message.sharedSecret !== expectedSecret) {
-			Sentry.captureMessage(
+			this.captureSessionMessage(
 				'Home connector session rejected websocket hello.',
 				{
 					level: 'error',
-					tags: {
-						service: 'worker',
-						worker_component: 'home-connector-session',
-					},
 					extra: {
 						connectorId: canonicalInstanceId,
 						declaredKind,
@@ -375,7 +367,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 					},
 				)
 				await this.persistState()
-				throw error
+				return
 			}
 		}
 	}
