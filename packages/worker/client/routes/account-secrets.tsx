@@ -92,7 +92,7 @@ type EditorState = {
 	value: string
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
-	allowedPackages: Array<string>
+	allowedPackages: Array<{ id: string; value: string }>
 }
 
 type SelectionState = {
@@ -109,6 +109,15 @@ type SecretFilterState = {
 }
 
 const secretsBasePath = '/account/secrets'
+
+let nextAllowedPackageRowId = 0
+
+function createAllowedPackageRow(value = '') {
+	return {
+		id: `allowed-package-${nextAllowedPackageRowId++}`,
+		value,
+	}
+}
 
 function formatRelativeTtl(ttlMs: number | null) {
 	if (ttlMs == null) return 'No expiry'
@@ -134,7 +143,7 @@ function createEmptyEditorState(apps: Array<PackageAppOption>): EditorState {
 		value: '',
 		allowedHosts: [''],
 		allowedCapabilities: [''],
-		allowedPackages: [''],
+		allowedPackages: [createAllowedPackageRow()],
 	}
 }
 
@@ -171,7 +180,10 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
 			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
-		allowedPackages: allowedPackages.length > 0 ? allowedPackages : [''],
+		allowedPackages:
+			allowedPackages.length > 0
+				? allowedPackages.map((value) => createAllowedPackageRow(value))
+				: [createAllowedPackageRow()],
 	}
 }
 
@@ -251,6 +263,7 @@ function getAlreadyAddedNotice(input: {
 	selectedSecret: SecretDetail | null
 	approval: ApprovalView | null
 }) {
+	const formatPackageId = (packageId: string) => packageId
 	const requestedHost = normalizeSingleAllowedHost(
 		readRequestedHost(input.href),
 	)
@@ -305,7 +318,9 @@ function getAlreadyAddedNotice(input: {
 	const packageAlreadyAdded =
 		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)
 	if (packageAlreadyAdded) {
-		items.push(`Package ${requestedPackageId} is already in allowed packages.`)
+		items.push(
+			`Package ${formatPackageId(requestedPackageId)} is already in allowed packages.`,
+		)
 	}
 	if (items.length === 0) return null
 	return {
@@ -680,7 +695,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			const allowedPackages = Array.from(
 				new Set(
 					editorState.allowedPackages
-						.map((value) => value.trim())
+						.map((entry) => entry.value.trim())
 						.filter((value) => value.length > 0),
 				),
 			).sort((left, right) => left.localeCompare(right))
@@ -846,11 +861,11 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function updateAllowedPackage(index: number, value: string) {
+	function updateAllowedPackage(id: string, value: string) {
 		editorState = {
 			...editorState,
-			allowedPackages: editorState.allowedPackages.map((pkg, pkgIndex) =>
-				pkgIndex === index ? value : pkg,
+			allowedPackages: editorState.allowedPackages.map((pkg) =>
+				pkg.id === id ? { ...pkg, value } : pkg,
 			),
 		}
 		handle.update()
@@ -859,18 +874,19 @@ export function AccountSecretsRoute(handle: Handle) {
 	function addAllowedPackage() {
 		editorState = {
 			...editorState,
-			allowedPackages: [...editorState.allowedPackages, ''],
+			allowedPackages: [...editorState.allowedPackages, createAllowedPackageRow()],
 		}
 		handle.update()
 	}
 
-	function removeAllowedPackage(index: number) {
+	function removeAllowedPackage(id: string) {
 		const nextPackages = editorState.allowedPackages.filter(
-			(_pkg, pkgIndex) => pkgIndex !== index,
+			(pkg) => pkg.id !== id,
 		)
 		editorState = {
 			...editorState,
-			allowedPackages: nextPackages.length > 0 ? nextPackages : [''],
+			allowedPackages:
+				nextPackages.length > 0 ? nextPackages : [createAllowedPackageRow()],
 		}
 		handle.update()
 	}
@@ -1447,9 +1463,9 @@ export function AccountSecretsRoute(handle: Handle) {
 										</p>
 									</div>
 									<div css={{ display: 'grid', gap: spacing.sm }}>
-										{editorState.allowedPackages.map((packageId, index) => (
+										{editorState.allowedPackages.map((packageEntry) => (
 											<div
-												key={index}
+												key={packageEntry.id}
 												css={{
 													display: 'grid',
 													gridTemplateColumns: 'minmax(0, 1fr) auto',
@@ -1458,12 +1474,12 @@ export function AccountSecretsRoute(handle: Handle) {
 											>
 												<input
 													type="text"
-													value={typeof packageId === 'string' ? packageId : ''}
+													value={packageEntry.value}
 													placeholder="saved package id"
 													on={{
 														input: (event) => {
 															updateAllowedPackage(
-																index,
+																packageEntry.id,
 																event.currentTarget.value,
 															)
 														},
@@ -1472,7 +1488,9 @@ export function AccountSecretsRoute(handle: Handle) {
 												/>
 												<button
 													type="button"
-													on={{ click: () => removeAllowedPackage(index) }}
+													on={{
+														click: () => removeAllowedPackage(packageEntry.id),
+													}}
 													css={secondaryButtonCss}
 												>
 													Remove

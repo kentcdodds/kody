@@ -375,6 +375,21 @@ function createPackageAppEnv(env, userModule) {
 
 function createRuntime(runtimeBridge, params, packageContext) {
 	const packageId = packageContext?.packageId ?? '';
+	const packageSecrets =
+		packageId.length > 0
+			? createPackageSecretsProxy(runtimeBridge)
+			: {
+					get: async () => {
+						throw new Error(
+							'packageSecrets.get requires a package runtime context.',
+						)
+					},
+					has: async () => {
+						throw new Error(
+							'packageSecrets.has requires a package runtime context.',
+						)
+					},
+				}
 	return {
 		codemode: createCodemodeProxy(runtimeBridge),
 		params,
@@ -385,8 +400,7 @@ function createRuntime(runtimeBridge, params, packageContext) {
 		agentChatTurnStream: createAgentChatTurnStream(runtimeBridge),
 		realtime: createRealtimeProxy(runtimeBridge),
 		services: createServicesProxy(runtimeBridge),
-		packageSecrets:
-			packageId.length > 0 ? createPackageSecretsProxy(runtimeBridge) : null,
+		packageSecrets,
 		packageContext,
 	};
 }

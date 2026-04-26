@@ -13,9 +13,13 @@ import { type StorageContext } from '#mcp/storage.ts'
 import {
 	buildSecretHostApprovalUrl,
 	createSecretHostApprovalToken,
+	secretHostApprovalTokenPrefix,
 	verifySecretHostApprovalToken,
 } from '#mcp/secrets/host-approval.ts'
-import { verifySecretPackageApprovalToken } from '#mcp/secrets/package-approval.ts'
+import {
+	secretPackageApprovalTokenPrefix,
+	verifySecretPackageApprovalToken,
+} from '#mcp/secrets/package-approval.ts'
 import {
 	deleteSecret,
 	listAppSecretsByAppIds,
@@ -751,13 +755,16 @@ async function resolveApprovalRequest(
 	env: Env,
 	token: string,
 ): Promise<ResolvedSecretApproval> {
+	if (token.startsWith(secretHostApprovalTokenPrefix)) {
+		return await verifySecretHostApprovalToken(env, token)
+	}
+	if (token.startsWith(secretPackageApprovalTokenPrefix)) {
+		return await verifySecretPackageApprovalToken(env, token)
+	}
 	try {
 		return await verifySecretPackageApprovalToken(env, token)
 	} catch (error) {
 		if (isExpiredPackageApprovalError(error)) {
-			throw error
-		}
-		if (error instanceof Error) {
 			throw error
 		}
 	}

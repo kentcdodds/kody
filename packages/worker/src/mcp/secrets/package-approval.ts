@@ -5,6 +5,7 @@ import { type SecretScope } from './types.ts'
 
 const secretPackageApprovalPurpose = 'secret-package-approval'
 const defaultSecretPackageApprovalTtlMs = 1000 * 60 * 60 * 24
+export const secretPackageApprovalTokenPrefix = 'pkg:'
 
 export type SecretPackageApprovalRequest = {
 	kind: 'package'
@@ -47,14 +48,16 @@ export async function createSecretPackageApprovalToken(
 			exp: now + ttlMs,
 		} satisfies SecretPackageApprovalRequest),
 	)
-	return `pkg:${token}`
+	return `${secretPackageApprovalTokenPrefix}${token}`
 }
 
 export async function verifySecretPackageApprovalToken(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	token: string,
 ) {
-	const encryptedToken = token.startsWith('pkg:') ? token.slice(4) : token
+	const encryptedToken = token.startsWith(secretPackageApprovalTokenPrefix)
+		? token.slice(secretPackageApprovalTokenPrefix.length)
+		: token
 	const raw = await decryptStringWithPurpose(
 		env,
 		secretPackageApprovalPurpose,

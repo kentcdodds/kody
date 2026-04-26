@@ -97,11 +97,13 @@ vi.mock('#mcp/secrets/host-approval.ts', () => ({
 		mockModule.buildSecretHostApprovalUrl(...args),
 	verifySecretHostApprovalToken: (...args: Array<unknown>) =>
 		mockModule.verifySecretHostApprovalToken(...args),
+	secretHostApprovalTokenPrefix: 'host:',
 }))
 
 vi.mock('#mcp/secrets/package-approval.ts', () => ({
 	verifySecretPackageApprovalToken: (...args: Array<unknown>) =>
 		mockModule.verifySecretPackageApprovalToken(...args),
+	secretPackageApprovalTokenPrefix: 'pkg:',
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
@@ -451,7 +453,7 @@ test('malformed package approval token surfaces package-token error without host
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				action: 'approve',
-				requestToken: 'invalid-package-token',
+				requestToken: 'pkg:invalid-package-token',
 			}),
 		}),
 		params: {},
