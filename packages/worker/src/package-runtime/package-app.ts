@@ -110,7 +110,7 @@ function createStorageProxy(runtimeBridge, storageId) {
 			await runtimeBridge.storageClear({
 				storageId,
 			}),
-	};
+	}
 }
 
 function createAgentChatTurnStream(runtimeBridge) {
@@ -223,7 +223,9 @@ function createPackageSecretsProxy(runtimeBridge) {
 			})
 			if (typeof result?.value !== 'string') {
 				throw new Error(
-					`packageSecretGet returned invalid response for alias "${normalizedAlias}".`,
+					'packageSecretGet returned invalid response for alias "' +
+						normalizedAlias +
+						'".',
 				)
 			}
 			return result.value
@@ -239,7 +241,9 @@ function createPackageSecretsProxy(runtimeBridge) {
 			})
 			if (typeof result?.has !== 'boolean') {
 				throw new Error(
-					`packageSecretHas returned invalid response for alias "${normalizedAlias}".`,
+					'packageSecretHas returned invalid response for alias "' +
+						normalizedAlias +
+						'".',
 				)
 			}
 			return result.has
