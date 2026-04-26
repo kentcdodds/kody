@@ -8,6 +8,10 @@ import {
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-codemode-registry.ts'
+import {
+	PackageSecretMountError,
+} from '#mcp/secrets/package-access.ts'
+import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import {
 	createCapabilitySecretAccessDeniedBatchMessage,
@@ -690,12 +694,10 @@ test('runCodemodeWithRegistry routes module-style code through the bundled runti
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let wrapped = ''
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
-			async execute(input) {
-				wrapped = String(input)
+			async execute() {
 				return {
 					result: 'ok',
 					logs: [],
@@ -721,8 +723,6 @@ export default async function run() {
 				entryPoint: 'entry.ts',
 			}),
 		)
-		expect(wrapped).toContain('await import("./entry.js")')
-		expect(wrapped).toContain('globalThis.__kodyRuntime')
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
@@ -877,12 +877,33 @@ test('runCodemodeWithRegistry forwards package context for module syntax', async
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let wrapped = ''
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null = null
+	const resolvePackageMountedSecretSpy = vi
+		.spyOn(packageAccess, 'resolvePackageMountedSecret')
+		.mockImplementation(async ({ alias }) => {
+			if (alias === 'missing-token') {
+				throw new PackageSecretMountError(
+					'Secret "missing-token" was not found.',
+				)
+			}
+			return {
+				alias,
+				name: 'discordBotTokenKentPersonalAutomation',
+				value: 'bot-token',
+				scope: 'user',
+				packageId: 'package-123',
+				kodyId: 'discord-gateway',
+			}
+		})
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
-			async execute(input) {
-				wrapped = String(input)
+			async execute(_input, providers) {
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
 				return {
 					result: 'ok',
 					logs: [],
@@ -904,11 +925,27 @@ export default async function run() {
 		})
 
 		expect(result.result).toBe('ok')
-		expect(wrapped).toContain('"packageId":"package-123"')
-		expect(wrapped).toContain('"kodyId":"discord-gateway"')
-		expect(wrapped).toContain('packageSecrets')
+		expect(providerFns).not.toBeNull()
+		await expect(providerFns?.package_secret_has({ alias: 'token' })).resolves.toEqual({
+			has: true,
+		})
+		await expect(
+			providerFns?.package_secret_has({ alias: 'missing-token' }),
+		).resolves.toEqual({
+			has: false,
+		})
+		await expect(providerFns?.package_secret_get({ alias: 'token' })).resolves.toEqual({
+			value: 'bot-token',
+		})
+		expect(resolvePackageMountedSecretSpy).toHaveBeenCalledWith({
+			env,
+			callerContext,
+			packageId: 'package-123',
+			alias: 'token',
+		})
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
+		resolvePackageMountedSecretSpy.mockRestore()
 		getRegistrySpy.mockRestore()
 	}
 })
@@ -935,12 +972,10 @@ test('runCodemodeWithRegistry keeps legacy snippet execution for non-module code
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let wrapped = ''
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
-			async execute(input) {
-				wrapped = String(input)
+			async execute() {
 				return {
 					result: 'ok',
 					logs: [],
@@ -957,8 +992,6 @@ test('runCodemodeWithRegistry keeps legacy snippet execution for non-module code
 
 		expect(result.result).toBe('ok')
 		expect(buildBundleMock).not.toHaveBeenCalled()
-		expect(wrapped).toContain('const __kodyUserCode =')
-		expect(wrapped).not.toContain('await import("./entry.js")')
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
@@ -985,14 +1018,18 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let wrapped = ''
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null = null
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockImplementation((input) => {
 			expect(input.timeoutMs).toBe(300_000)
 			return {
-				async execute(source) {
-					wrapped = String(source)
+				async execute(_source, providers) {
+					providerFns = (
+						providers[0] as {
+							fns: Record<string, (args: unknown) => Promise<unknown>>
+						}
+					).fns
 					return {
 						result: 'ok',
 						logs: [],
@@ -1030,12 +1067,22 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 		)
 
 		expect(result.result).toBe('ok')
-		expect(wrapped).toContain('const service = {')
-		expect(wrapped).toContain('service_get_status')
-		expect(wrapped).toContain('service_should_stop')
-		expect(wrapped).toContain('service_set_alarm')
-		expect(wrapped).toContain('service_clear_alarm')
-		expect(wrapped).toContain('"serviceName":"realtime-supervisor"')
+		expect(providerFns).not.toBeNull()
+		await expect(providerFns?.service_get_status({})).resolves.toEqual({
+			status: 'running',
+		})
+		await expect(providerFns?.service_should_stop({})).resolves.toEqual({
+			shouldStop: false,
+		})
+		await expect(
+			providerFns?.service_set_alarm({ runAt: '2026-04-25T00:00:00.000Z' }),
+		).resolves.toEqual({
+			ok: true,
+			scheduled_at: '2026-04-25T00:00:00.000Z',
+		})
+		await expect(providerFns?.service_clear_alarm({})).resolves.toEqual({
+			ok: true,
+		})
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()

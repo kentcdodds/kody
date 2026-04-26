@@ -11,17 +11,7 @@ vi.mock('@cloudflare/worker-bundler', () => ({
 
 import {
 	buildRepoCodemodeBundle,
-	createRepoCodemodeModuleTypecheckHarness,
 } from './repo-codemode-execution.ts'
-
-test('createRepoCodemodeModuleTypecheckHarness omits TypeScript file extensions from generated imports', () => {
-	const harness = createRepoCodemodeModuleTypecheckHarness({
-		entryPoint: 'src/job.ts',
-	})
-
-	expect(harness).toContain('import userEntrypoint from "./src/job"')
-	expect(harness).not.toContain('./src/job.ts')
-})
 
 test('buildRepoCodemodeBundle emits an extensionless synthetic ESM re-export for TypeScript entrypoints', async () => {
 	mockModule.createWorker.mockReset()
