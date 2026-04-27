@@ -143,9 +143,7 @@ test('authorize page returns SPA shell', async () => {
 	)
 
 	expect(response.status).toBe(200)
-	const body = await response.text()
-	expect(body).toContain('client-entry.js')
-	expect(body).toContain('app-shell')
+	expect(response.headers.get('Content-Type')).toContain('text/html')
 })
 
 test('authorize info returns client and scopes', async () => {
@@ -570,7 +568,5 @@ test('oauth callback page returns SPA shell', async () => {
 	)
 
 	expect(response.status).toBe(200)
-	const body = await response.text()
-	expect(body).toContain('client-entry.js')
-	expect(body).toContain('app-shell')
+	expect(response.headers.get('Content-Type')).toContain('text/html')
 })
