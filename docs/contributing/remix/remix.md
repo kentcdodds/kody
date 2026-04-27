@@ -21,7 +21,7 @@ The `remix` package is used through subpath imports.
 - ✅ `import { createRouter } from 'remix/fetch-router'`
 - ✅ `import { route } from 'remix/fetch-router/routes'`
 - ✅ `import { createRoot } from 'remix/component'`
-- ❌ `import { ... } from 'remix'` (root import removed in `3.0.0-alpha.3`)
+- ❌ `import { ... } from 'remix'` (use a subpath import instead)
 
 ## Subpath export surface (`3.0.0-alpha.3`)
 
