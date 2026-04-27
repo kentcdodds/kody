@@ -2,6 +2,8 @@ import { expect, test, vi } from 'vitest'
 
 const sentryMock = vi.hoisted(() => ({
 	addBreadcrumb: vi.fn(),
+	captureException: vi.fn(),
+	captureMessage: vi.fn(),
 	close: vi.fn(),
 	flush: vi.fn(),
 	init: vi.fn(),
@@ -15,8 +17,10 @@ vi.mock('@sentry/node', () => sentryMock)
 const {
 	buildHomeConnectorSentryOptions,
 	addHomeConnectorSentryBreadcrumb,
+	captureHomeConnectorException,
 	closeHomeConnectorSentry,
 	flushHomeConnectorSentry,
+	getHomeConnectorErrorCaptureContext,
 	initializeHomeConnectorSentry,
 } = await import('./sentry.ts')
 
@@ -124,4 +128,114 @@ test('addHomeConnectorSentryBreadcrumb is a no-op when Sentry is disabled', () =
 	})
 
 	expect(sentryMock.addBreadcrumb).not.toHaveBeenCalled()
+})
+
+test('getHomeConnectorErrorCaptureContext returns a cloned capture context', () => {
+	const error = new Error('boom') as Error & {
+		homeConnectorCaptureContext?: {
+			tags?: Record<string, string>
+			contexts?: Record<string, Record<string, unknown>>
+			extra?: Record<string, unknown>
+		}
+	}
+	error.homeConnectorCaptureContext = {
+		tags: {
+			connector_family: 'bond',
+		},
+		contexts: {
+			bond: {
+				bridgeId: 'bond-1',
+			},
+		},
+		extra: {
+			durationMs: 48,
+		},
+	}
+
+	const captureContext = getHomeConnectorErrorCaptureContext(error)
+	expect(captureContext).toEqual({
+		tags: {
+			connector_family: 'bond',
+		},
+		contexts: {
+			bond: {
+				bridgeId: 'bond-1',
+			},
+		},
+		extra: {
+			durationMs: 48,
+		},
+	})
+	expect(captureContext.tags).not.toBe(error.homeConnectorCaptureContext.tags)
+	expect(captureContext.contexts).not.toBe(
+		error.homeConnectorCaptureContext.contexts,
+	)
+	expect(captureContext.extra).not.toBe(error.homeConnectorCaptureContext.extra)
+})
+
+test('captureHomeConnectorException merges error capture context', () => {
+	sentryMock.isEnabled.mockReturnValue(true)
+	sentryMock.captureException.mockReset()
+	const error = new Error('boom') as Error & {
+		homeConnectorCaptureContext?: {
+			tags?: Record<string, string>
+			contexts?: Record<string, Record<string, unknown>>
+			extra?: Record<string, unknown>
+		}
+	}
+	error.homeConnectorCaptureContext = {
+		tags: {
+			connector_family: 'bond',
+			connector_tool_name: 'bond_get_device_state',
+		},
+		contexts: {
+			bond: {
+				bridgeId: 'bond-1',
+				host: 'bridge.local',
+			},
+		},
+		extra: {
+			requestId: 'abc123',
+		},
+	}
+
+	captureHomeConnectorException(error, {
+		tags: {
+			connector_event: 'tool_call.failure',
+		},
+		contexts: {
+			mcp_request: {
+				method: 'tools/call',
+			},
+		},
+		extra: {
+			durationMs: 48,
+		},
+	})
+
+	expect(sentryMock.captureException).toHaveBeenCalledTimes(1)
+	const [capturedError, captureContext] =
+		sentryMock.captureException.mock.calls[0] ?? []
+	expect(capturedError).toBe(error)
+	expect(captureContext).toEqual({
+		tags: {
+			service: 'home-connector',
+			connector_family: 'bond',
+			connector_tool_name: 'bond_get_device_state',
+			connector_event: 'tool_call.failure',
+		},
+		contexts: {
+			bond: {
+				bridgeId: 'bond-1',
+				host: 'bridge.local',
+			},
+			mcp_request: {
+				method: 'tools/call',
+			},
+		},
+		extra: {
+			requestId: 'abc123',
+			durationMs: 48,
+		},
+	})
 })

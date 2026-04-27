@@ -1,6 +1,15 @@
 import * as Sentry from '@sentry/node'
 
 type EnvRecord = Record<string, string | undefined>
+export type HomeConnectorErrorCaptureContext = {
+	tags?: Record<string, string>
+	contexts?: Record<string, Record<string, unknown>>
+	extra?: Record<string, unknown>
+}
+
+type HomeConnectorErrorWithCaptureContext = {
+	homeConnectorCaptureContext?: HomeConnectorErrorCaptureContext
+}
 
 const defaultTracesSampleRate = 1.0
 
@@ -22,6 +31,45 @@ function parseSentryTracesSampleRate(value: string | undefined) {
 
 function normalizeError(error: unknown) {
 	return error instanceof Error ? error : new Error(String(error))
+}
+
+function mergeContextRecords(
+	base: Record<string, Record<string, unknown>> | undefined,
+	override: Record<string, Record<string, unknown>> | undefined,
+) {
+	if (!base && !override) return undefined
+	const merged: Record<string, Record<string, unknown>> = {
+		...(base ?? {}),
+	}
+	for (const [key, value] of Object.entries(override ?? {})) {
+		merged[key] = {
+			...(merged[key] ?? {}),
+			...value,
+		}
+	}
+	return merged
+}
+
+export function getHomeConnectorErrorCaptureContext(
+	error: unknown,
+): HomeConnectorErrorCaptureContext {
+	if (!error || typeof error !== 'object') {
+		return {}
+	}
+
+	const captureContext = (error as HomeConnectorErrorWithCaptureContext)
+		.homeConnectorCaptureContext
+	if (!captureContext) {
+		return {}
+	}
+
+	return {
+		...(captureContext.tags ? { tags: { ...captureContext.tags } } : {}),
+		...(captureContext.contexts
+			? { contexts: { ...captureContext.contexts } }
+			: {}),
+		...(captureContext.extra ? { extra: { ...captureContext.extra } } : {}),
+	}
 }
 
 export function buildHomeConnectorSentryOptions(env: EnvRecord = process.env) {
@@ -83,11 +131,25 @@ export function captureHomeConnectorException(
 		return
 	}
 
+	const derivedCaptureContext = getHomeConnectorErrorCaptureContext(error)
+
 	Sentry.captureException(normalizeError(error), {
+		...derivedCaptureContext,
 		...captureContext,
 		tags: {
 			service: 'home-connector',
+			...(derivedCaptureContext.tags ?? {}),
 			...(captureContext.tags ?? {}),
+		},
+		contexts: mergeContextRecords(
+			derivedCaptureContext.contexts,
+			captureContext.contexts as
+				| Record<string, Record<string, unknown>>
+				| undefined,
+		),
+		extra: {
+			...(derivedCaptureContext.extra ?? {}),
+			...(captureContext.extra ?? {}),
 		},
 	})
 }

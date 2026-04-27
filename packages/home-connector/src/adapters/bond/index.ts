@@ -31,6 +31,9 @@ import {
 	type BondGroupSummary,
 	type BondPersistedBridge,
 } from './types.ts'
+import {
+	type HomeConnectorErrorCaptureContext,
+} from '../../sentry.ts'
 
 function normalizeQuery(value: string) {
 	return value.trim().toLowerCase()
@@ -93,6 +96,172 @@ function stripTokenFields(payload: Record<string, unknown>) {
 	return copy
 }
 
+function getBridgeDiscoveredAddress(bridge: BondPersistedBridge) {
+	const rawAddress = bridge.rawDiscovery?.['address']
+	if (typeof rawAddress === 'string' && rawAddress.trim()) {
+		return rawAddress.trim()
+	}
+	const mdns = bridge.rawDiscovery?.['mdns']
+	if (mdns && typeof mdns === 'object' && !Array.isArray(mdns)) {
+		const mdnsRecord = mdns as Record<string, unknown>
+		const mdnsAddress = mdnsRecord['address']
+		if (typeof mdnsAddress === 'string' && mdnsAddress.trim()) {
+			return mdnsAddress.trim()
+		}
+		const mdnsAddresses = mdnsRecord['addresses']
+		if (Array.isArray(mdnsAddresses)) {
+			const firstAddress = mdnsAddresses.find(
+				(entry) => typeof entry === 'string' && entry.trim(),
+			)
+			if (typeof firstAddress === 'string') {
+				return firstAddress.trim()
+			}
+		}
+	}
+	return null
+}
+
+function getBondBridgeConnectionContext(bridge: BondPersistedBridge) {
+	const discoveredAddress = getBridgeDiscoveredAddress(bridge)
+	return {
+		bridgeId: bridge.bridgeId,
+		instanceName: bridge.instanceName,
+		host: bridge.host,
+		port: bridge.port,
+		discoveredAddress,
+		adopted: bridge.adopted,
+		hasStoredToken: bridge.hasStoredToken,
+		lastSeenAt: bridge.lastSeenAt,
+	}
+}
+
+function createBondBaseUrlCandidates(bridge: BondPersistedBridge) {
+	const primary = buildBondBaseUrl(bridge.host, bridge.port)
+	const discoveredAddress = getBridgeDiscoveredAddress(bridge)
+	if (!discoveredAddress) {
+		return [primary]
+	}
+	const fallback = buildBondBaseUrl(discoveredAddress, bridge.port)
+	return fallback === primary ? [primary] : [primary, fallback]
+}
+
+function isBondNetworkFailure(error: unknown) {
+	if (!(error instanceof Error)) {
+		return false
+	}
+	const message = error.message.toLowerCase()
+	if (
+		message.includes('fetch failed') ||
+		message.includes('enotfound') ||
+		message.includes('eai_again') ||
+		message.includes('econnrefused') ||
+		message.includes('ehostunreach') ||
+		message.includes('etimedout')
+	) {
+		return true
+	}
+	const causeMessage =
+		error.cause instanceof Error
+			? error.cause.message.toLowerCase()
+			: typeof error.cause === 'string'
+				? error.cause.toLowerCase()
+				: error.cause && typeof error.cause === 'object'
+					? String((error.cause as { message?: unknown }).message ?? '')
+							.toLowerCase()
+				: ''
+	return (
+		causeMessage.includes('enotfound') ||
+		causeMessage.includes('eai_again') ||
+		causeMessage.includes('econnrefused') ||
+		causeMessage.includes('ehostunreach') ||
+		causeMessage.includes('etimedout') ||
+		causeMessage.includes('getaddrinfo')
+	)
+}
+
+function formatBondFailureReason(error: unknown) {
+	if (error instanceof Error) {
+		const causeMessage =
+			error.cause instanceof Error
+				? error.cause.message
+				: typeof error.cause === 'string'
+					? error.cause
+					: error.cause && typeof error.cause === 'object'
+						? String((error.cause as { message?: unknown }).message ?? '')
+					: null
+		return causeMessage ? `${error.message}; cause=${causeMessage}` : error.message
+	}
+	return String(error)
+}
+
+function createBondActionableError(input: {
+	bridge: BondPersistedBridge
+	operation: string
+	error: unknown
+	baseUrlsTried: Array<string>
+}) {
+	const connection = getBondBridgeConnectionContext(input.bridge)
+	const guidance = connection.host.endsWith('.local')
+		? ' The stored Bond host ends in .local, so this usually means the container cannot resolve mDNS on the LAN. If this connector runs in a NAS/container without mDNS, update the bridge host to a stable IP with bond_update_bridge_connection or restore mDNS/DNS visibility for the container.'
+		: ' Verify the bridge host/IP is still reachable from the home-connector container and update it with bond_update_bridge_connection if it changed.'
+	const errorMessage = `Bond bridge "${input.bridge.bridgeId}" could not be reached while trying to ${input.operation} at ${input.baseUrlsTried.join(', ')}. ${formatBondFailureReason(input.error)}.${guidance}`
+	const wrappedError = new Error(errorMessage, {
+		cause: input.error instanceof Error ? input.error : undefined,
+	}) as Error & {
+		homeConnectorCaptureContext?: HomeConnectorErrorCaptureContext
+	}
+	wrappedError.name = 'BondRequestError'
+	wrappedError.homeConnectorCaptureContext = {
+		tags: {
+			connector_vendor: 'bond',
+			bond_bridge_id: input.bridge.bridgeId,
+			bond_network_failure: isBondNetworkFailure(input.error) ? 'true' : 'false',
+			bond_host_is_local: input.bridge.host.endsWith('.local') ? 'true' : 'false',
+		},
+		contexts: {
+			bond_bridge: {
+				...connection,
+				baseUrlsTried: input.baseUrlsTried,
+				operation: input.operation,
+			},
+		},
+		extra: {
+			bondOperation: input.operation,
+			bondBaseUrlsTried: input.baseUrlsTried,
+			bondFailureReason: formatBondFailureReason(input.error),
+		},
+	}
+	return wrappedError
+}
+
+async function withBondBridgeRequest<T>(input: {
+	bridge: BondPersistedBridge
+	operation: string
+	request: (baseUrl: string) => Promise<T>
+}) {
+	const baseUrls = createBondBaseUrlCandidates(input.bridge)
+	let lastError: unknown = null
+	for (let index = 0; index < baseUrls.length; index += 1) {
+		const baseUrl = baseUrls[index]!
+		try {
+			return await input.request(baseUrl)
+		} catch (error) {
+			lastError = error
+			const canRetryWithFallback =
+				index === 0 && baseUrls.length > 1 && isBondNetworkFailure(error)
+			if (!canRetryWithFallback) {
+				break
+			}
+		}
+	}
+	throw createBondActionableError({
+		bridge: input.bridge,
+		operation: input.operation,
+		error: lastError,
+		baseUrlsTried: baseUrls,
+	})
+}
+
 export function createBondAdapter(input: {
 	config: HomeConnectorConfig
 	state: HomeConnectorState
@@ -146,10 +315,6 @@ export function createBondAdapter(input: {
 		return token
 	}
 
-	function bridgeBaseUrl(bridge: BondPersistedBridge) {
-		return buildBondBaseUrl(bridge.host, bridge.port)
-	}
-
 	async function resolveDeviceId(
 		bridge: BondPersistedBridge,
 		token: string,
@@ -193,13 +358,18 @@ export function createBondAdapter(input: {
 		bridge: BondPersistedBridge,
 		token: string,
 	) {
-		const baseUrl = bridgeBaseUrl(bridge)
-		const ids = await bondListDeviceIds({ baseUrl, token })
-		const docs = await mapPool(ids, 8, async (id) => {
-			const doc = await bondGetDevice({ baseUrl, token, deviceId: id })
-			return summarizeDevice(id, doc)
+		return await withBondBridgeRequest({
+			bridge,
+			operation: 'list devices',
+			request: async (baseUrl) => {
+				const ids = await bondListDeviceIds({ baseUrl, token })
+				const docs = await mapPool(ids, 8, async (id) => {
+					const doc = await bondGetDevice({ baseUrl, token, deviceId: id })
+					return summarizeDevice(id, doc)
+				})
+				return docs
+			},
 		})
-		return docs
 	}
 
 	const bondApi = {
@@ -252,8 +422,10 @@ export function createBondAdapter(input: {
 		},
 		async fetchBridgeVersion(bridgeId?: string) {
 			const bridge = resolveBridge(bridgeId)
-			return await bondGetSysVersion({
-				baseUrl: bridgeBaseUrl(bridge),
+			return await withBondBridgeRequest({
+				bridge,
+				operation: 'fetch bridge version',
+				request: async (baseUrl) => await bondGetSysVersion({ baseUrl }),
 			})
 		},
 		async getTokenStatus(bridgeId?: string) {
@@ -263,9 +435,14 @@ export function createBondAdapter(input: {
 				connectorId,
 				bridge.bridgeId,
 			)
-			const raw = (await bondGetTokenStatus({
-				baseUrl: bridgeBaseUrl(bridge),
-				token: existing,
+			const raw = (await withBondBridgeRequest({
+				bridge,
+				operation: 'read token status',
+				request: async (baseUrl) =>
+					await bondGetTokenStatus({
+						baseUrl,
+						token: existing,
+					}),
 			})) as Record<string, unknown>
 			return stripTokenFields(raw)
 		},
@@ -273,9 +450,14 @@ export function createBondAdapter(input: {
 			const bridge = bridgeId
 				? requireBondBridge(input.storage, connectorId, bridgeId)
 				: resolveBridge()
-			const raw = (await bondGetTokenStatus({
-				baseUrl: bridgeBaseUrl(bridge),
-				token: null,
+			const raw = (await withBondBridgeRequest({
+				bridge,
+				operation: 'retrieve token from bridge',
+				request: async (baseUrl) =>
+					await bondGetTokenStatus({
+						baseUrl,
+						token: null,
+					}),
 			})) as Record<string, unknown>
 			const token =
 				typeof raw['token'] === 'string' ? (raw['token'] as string) : null
@@ -305,10 +487,15 @@ export function createBondAdapter(input: {
 		): Promise<Record<string, unknown>> {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await bondGetDevice({
-				baseUrl: bridgeBaseUrl(bridge),
-				token,
-				deviceId,
+			return await withBondBridgeRequest({
+				bridge,
+				operation: `fetch device ${deviceId}`,
+				request: async (baseUrl) =>
+					await bondGetDevice({
+						baseUrl,
+						token,
+						deviceId,
+					}),
 			})
 		},
 		async getDeviceState(
@@ -317,10 +504,15 @@ export function createBondAdapter(input: {
 		): Promise<Record<string, unknown>> {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await bondGetDeviceState({
-				baseUrl: bridgeBaseUrl(bridge),
-				token,
-				deviceId,
+			return await withBondBridgeRequest({
+				bridge,
+				operation: `fetch device ${deviceId} state`,
+				request: async (baseUrl) =>
+					await bondGetDeviceState({
+						baseUrl,
+						token,
+						deviceId,
+					}),
 			})
 		},
 		async invokeDeviceAction(input: {
@@ -338,10 +530,15 @@ export function createBondAdapter(input: {
 				input.deviceId,
 				input.deviceName,
 			)
-			const doc = await bondGetDevice({
-				baseUrl: bridgeBaseUrl(bridge),
-				token,
-				deviceId,
+			const doc = await withBondBridgeRequest({
+				bridge,
+				operation: `fetch device ${deviceId} before action`,
+				request: async (baseUrl) =>
+					await bondGetDevice({
+						baseUrl,
+						token,
+						deviceId,
+					}),
 			})
 			const rawActions = doc['actions']
 			if (!Array.isArray(rawActions) || rawActions.length === 0) {
@@ -355,12 +552,17 @@ export function createBondAdapter(input: {
 					`Device "${deviceId}" does not advertise action "${input.action}".`,
 				)
 			}
-			return await bondInvokeDeviceAction({
-				baseUrl: bridgeBaseUrl(bridge),
-				token,
-				deviceId,
-				action: input.action,
-				argument: input.argument,
+			return await withBondBridgeRequest({
+				bridge,
+				operation: `invoke device ${deviceId} action ${input.action}`,
+				request: async (baseUrl) =>
+					await bondInvokeDeviceAction({
+						baseUrl,
+						token,
+						deviceId,
+						action: input.action,
+						argument: input.argument,
+					}),
 			})
 		},
 		async shadeOpen(input: {
@@ -416,29 +618,44 @@ export function createBondAdapter(input: {
 		async listGroups(bridgeId?: string) {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			const baseUrl = bridgeBaseUrl(bridge)
-			const ids = await bondListGroupIds({ baseUrl, token })
-			return await mapPool(ids, 6, async (groupId) => {
-				const doc = await bondGetGroup({ baseUrl, token, groupId })
-				return summarizeGroup(groupId, doc)
+			return await withBondBridgeRequest({
+				bridge,
+				operation: 'list groups',
+				request: async (baseUrl) => {
+					const ids = await bondListGroupIds({ baseUrl, token })
+					return await mapPool(ids, 6, async (groupId) => {
+						const doc = await bondGetGroup({ baseUrl, token, groupId })
+						return summarizeGroup(groupId, doc)
+					})
+				},
 			})
 		},
 		async getGroup(bridgeId: string | undefined, groupId: string) {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await bondGetGroup({
-				baseUrl: bridgeBaseUrl(bridge),
-				token,
-				groupId,
+			return await withBondBridgeRequest({
+				bridge,
+				operation: `fetch group ${groupId}`,
+				request: async (baseUrl) =>
+					await bondGetGroup({
+						baseUrl,
+						token,
+						groupId,
+					}),
 			})
 		},
 		async getGroupState(bridgeId: string | undefined, groupId: string) {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await bondGetGroupState({
-				baseUrl: bridgeBaseUrl(bridge),
-				token,
-				groupId,
+			return await withBondBridgeRequest({
+				bridge,
+				operation: `fetch group ${groupId} state`,
+				request: async (baseUrl) =>
+					await bondGetGroupState({
+						baseUrl,
+						token,
+						groupId,
+					}),
 			})
 		},
 		async invokeGroupAction(input: {
@@ -449,11 +666,15 @@ export function createBondAdapter(input: {
 		}) {
 			const bridge = requireAdoptedBridge(input.bridgeId)
 			const token = requireToken(bridge)
-			const baseUrl = bridgeBaseUrl(bridge)
-			const doc = await bondGetGroup({
-				baseUrl,
-				token,
-				groupId: input.groupId,
+			const doc = await withBondBridgeRequest({
+				bridge,
+				operation: `fetch group ${input.groupId} before action`,
+				request: async (baseUrl) =>
+					await bondGetGroup({
+						baseUrl,
+						token,
+						groupId: input.groupId,
+					}),
 			})
 			const rawActions = doc['actions']
 			if (!Array.isArray(rawActions) || rawActions.length === 0) {
@@ -467,12 +688,17 @@ export function createBondAdapter(input: {
 					`Group "${input.groupId}" does not advertise action "${input.action}".`,
 				)
 			}
-			return await bondInvokeGroupAction({
-				baseUrl,
-				token,
-				groupId: input.groupId,
-				action: input.action,
-				argument: input.argument,
+			return await withBondBridgeRequest({
+				bridge,
+				operation: `invoke group ${input.groupId} action ${input.action}`,
+				request: async (baseUrl) =>
+					await bondInvokeGroupAction({
+						baseUrl,
+						token,
+						groupId: input.groupId,
+						action: input.action,
+						argument: input.argument,
+					}),
 			})
 		},
 	}
