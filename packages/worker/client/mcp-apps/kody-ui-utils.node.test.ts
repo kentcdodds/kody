@@ -1,3 +1,4 @@
+import { createContext, Script } from 'node:vm'
 import { expect, test, vi } from 'vitest'
 import * as uiUtils from './kody-ui-utils.ts'
 import {
@@ -27,12 +28,24 @@ function installWindowLocation(href: string) {
 	globalThis.location = location as Location
 }
 
+function executeInlineWindowScript(html: string, scriptPattern: RegExp) {
+	const scriptMatch = html.match(scriptPattern)
+	expect(scriptMatch?.[1]).toBeDefined()
+	const window = {} as Record<string, unknown>
+	const context = createContext({ window })
+	new Script(scriptMatch?.[1] ?? '').runInContext(context)
+	return window
+}
+
 test('document helpers preserve structure while rewriting only supported urls', () => {
 	const injectedIntoExistingHead = injectIntoHtmlDocument(
 		'<!doctype html><html lang="en" class="demo"><head data-shell="true"><title>Demo</title></head><body></body></html>',
 		'<meta name="viewport" content="width=device-width, initial-scale=1" />',
 	)
-	expect(injectedIntoExistingHead).toContain('<html lang="en" class="demo">')
+	expect(injectedIntoExistingHead).toMatch(
+		/<html\b[^>]*lang="en"[^>]*class="demo"[^>]*>/,
+	)
+	expect(injectedIntoExistingHead).toMatch(/<head\b[^>]*data-shell="true"[^>]*>/)
 	expect(injectedIntoExistingHead).toContain('<title>Demo</title>')
 	expect(injectedIntoExistingHead).toContain(
 		'<meta name="viewport" content="width=device-width, initial-scale=1" />',
@@ -42,11 +55,11 @@ test('document helpers preserve structure while rewriting only supported urls', 
 		'<html lang="en" class="demo" data-app="shell"><body><main>Hello</main></body></html>',
 		'<style>body { color: red; }</style>',
 	)
-	expect(injectedWithoutHead).toContain(
-		'<html lang="en" class="demo" data-app="shell">',
+	expect(injectedWithoutHead).toMatch(
+		/<html\b[^>]*lang="en"[^>]*class="demo"[^>]*data-app="shell"[^>]*>/,
 	)
-	expect(injectedWithoutHead).toContain(
-		'<head><style>body { color: red; }</style></head>',
+	expect(injectedWithoutHead).toMatch(
+		/<head><style>body \{ color: red; \}<\/style><\/head>/,
 	)
 	expect(injectedWithoutHead).toContain('<body><main>Hello</main></body>')
 
@@ -114,19 +127,26 @@ test('injectRuntimeStateIntoDocument exposes runtime bootstrap globals', () => {
 		owner: 'kody',
 		limit: 3,
 	})
-	const bootstrapMatch = result.match(
-		/window\.__kodyGeneratedUiBootstrap = (.+);/,
+	expect(result).toContain('<main>Hello</main>')
+	const windowState = executeInlineWindowScript(
+		result,
+		/<script>\s*([\s\S]*?)\s*<\/script>/,
 	)
-	expect(bootstrapMatch?.[1]).toBeDefined()
-	expect(JSON.parse(bootstrapMatch?.[1] ?? 'null')).toEqual({
+	expect(windowState.__kodyGeneratedUiBootstrap).toEqual({
 		mode: 'mcp',
 		params: {
 			owner: 'kody',
 			limit: 3,
 		},
 	})
-	expect(result).toContain('window.__kodyAppParams =')
-	expect(result).toContain('window.params =')
+	expect(windowState.__kodyAppParams).toEqual({
+		owner: 'kody',
+		limit: 3,
+	})
+	expect(windowState.params).toEqual({
+		owner: 'kody',
+		limit: 3,
+	})
 })
 
 test('readSavedPackageAppSourceFromHostToolResult reads a package app source payload', () => {
@@ -434,10 +454,18 @@ test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and o
 		baseHref: 'https://kody.example/',
 	})
 	expect(defaultHead).toContain('type="importmap"')
-	expect(defaultHead).toContain('window.__kodyGeneratedUiBootstrap')
-	expect(defaultHead).toMatch(
-		/<script type="module" src="[^"]*kody-ui-utils\.js"/,
+	const defaultWindowState = executeInlineWindowScript(
+		defaultHead,
+		/<script>\s*(window\.__kodyGeneratedUiBootstrap =[\s\S]*?)\s*<\/script>/,
 	)
+	expect(defaultWindowState.__kodyGeneratedUiBootstrap).toEqual({
+		mode: 'mcp',
+		params: {},
+	})
+	const defaultModuleScript = defaultHead.match(
+		/<script type="module" src="([^"]+)"><\/script>/,
+	)
+	expect(defaultModuleScript?.[1]).toMatch(/kody-ui-utils\.js$/)
 
 	const shellRenderedHead = buildGeneratedUiRuntimeHeadInjection({
 		mode: 'mcp',
@@ -446,7 +474,14 @@ test('buildGeneratedUiRuntimeHeadInjection always bootstraps runtime state and o
 		includeRuntimeScript: false,
 	})
 	expect(shellRenderedHead).toContain('type="importmap"')
-	expect(shellRenderedHead).toContain('window.__kodyGeneratedUiBootstrap')
+	const shellWindowState = executeInlineWindowScript(
+		shellRenderedHead,
+		/<script>\s*(window\.__kodyGeneratedUiBootstrap =[\s\S]*?)\s*<\/script>/,
+	)
+	expect(shellWindowState.__kodyGeneratedUiBootstrap).toEqual({
+		mode: 'mcp',
+		params: {},
+	})
 	expect(shellRenderedHead).not.toMatch(/<script type="module"/)
 })
 

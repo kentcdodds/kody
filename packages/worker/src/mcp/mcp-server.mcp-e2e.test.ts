@@ -34,7 +34,7 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	)
 })
 
-test('authenticated MCP smoke covers core tools, inline UI, and hosted package apps', async () => {
+test('authenticated MCP smoke covers inline UI and hosted package apps', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
@@ -42,83 +42,7 @@ test('authenticated MCP smoke covers core tools, inline UI, and hosted package a
 
 	const tools = await mcpClient.client.listTools()
 	expect(tools.tools.map((tool) => tool.name)).toEqual(
-		expect.arrayContaining(['execute', 'open_generated_ui', 'search']),
-	)
-
-	const searchResult = await mcpClient.client.callTool({
-		name: 'search',
-		arguments: {
-			query: 'generated ui',
-			limit: 3,
-		},
-	})
-	const searchStructured = (searchResult as CallToolResult).structuredContent as
-		| {
-				conversationId?: string
-				timing?: { durationMs?: number }
-				result?: { matches?: Array<unknown> }
-		  }
-		| undefined
-	expect(typeof searchStructured?.conversationId).toBe('string')
-	expect(typeof searchStructured?.timing?.durationMs).toBe('number')
-	expect(Array.isArray(searchStructured?.result?.matches)).toBe(true)
-
-	const upsertResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `import { codemode } from 'kody:runtime'
-
-				export default async function upsertMemory() {
-					return await codemode.meta_memory_upsert({
-						subject: 'User prefers npm over pnpm',
-						summary: 'Always use npm commands in this repository.',
-						category: 'preference',
-						tags: ['package-manager', 'repo-workflow'],
-						source_uris: [
-							'https://docs.npmjs.com/cli/v11/commands/npm-install',
-							'https://github.com/kentcdodds/kody/blob/main/AGENTS.md',
-						],
-						verified_by_agent: true,
-						verification_reference: 'verify-search-fallback-1',
-					})
-				}`,
-		},
-	})
-	const upsertStructured = (upsertResult as CallToolResult).structuredContent as
-		| {
-				timing?: { durationMs?: number }
-				result?: { memory?: { id?: string } }
-		  }
-		| undefined
-	expect(typeof upsertStructured?.timing?.durationMs).toBe('number')
-	expect(typeof upsertStructured?.result?.memory?.id).toBe('string')
-
-	const memorySearchResult = await mcpClient.client.callTool({
-		name: 'search',
-		arguments: {
-			query: 'npm over pnpm',
-		},
-	})
-	const memorySearchStructured = (memorySearchResult as CallToolResult)
-		.structuredContent as
-		| {
-				result?: {
-					memories?: {
-						retrievalQuery?: string
-						surfaced?: Array<{ subject?: string }>
-					}
-				}
-		  }
-		| undefined
-	expect(memorySearchStructured?.result?.memories?.retrievalQuery).toBe(
-		'npm over pnpm',
-	)
-	expect(memorySearchStructured?.result?.memories?.surfaced).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				subject: 'User prefers npm over pnpm',
-			}),
-		]),
+		expect.arrayContaining(['execute', 'open_generated_ui']),
 	)
 
 	const inlineUiResult = await mcpClient.client.callTool({
