@@ -4,7 +4,6 @@ import {
 	type JSONRPCResponse,
 } from '@modelcontextprotocol/sdk/types.js'
 import {
-	type HomeConnectorAckMessage,
 	type HomeConnectorHelloMessage,
 	type HomeConnectorClientMessage,
 	type HomeConnectorJsonRpcEnvelope,
@@ -32,12 +31,6 @@ function isJsonRpcResponse(
 
 function isJsonRpcRequest(message: JSONRPCMessage): message is JSONRPCRequest {
 	return 'id' in message && 'method' in message
-}
-
-function isJsonRpcEnvelope(
-	message: HomeConnectorClientMessage | HomeConnectorJsonRpcEnvelope,
-): message is HomeConnectorJsonRpcEnvelope {
-	return message.type === 'connector.jsonrpc'
 }
 
 function createToolsChangedNotification(): JSONRPCMessage {
