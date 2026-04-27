@@ -34,6 +34,16 @@ type HomeConnectorSessionState = {
 	tools: Array<HomeConnectorSnapshot['tools'][number]>
 }
 
+function summarizeSessionKey(value: string | null) {
+	if (!value) {
+		return null
+	}
+	return {
+		length: value.length,
+		present: true,
+	}
+}
+
 class HomeConnectorSessionBase extends DurableObject<Env> {
 	private stateSnapshot: HomeConnectorSessionState = {
 		persisted: {
@@ -52,6 +62,36 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
 		void this.restoreState()
+	}
+
+	private clearConnectionState() {
+		this.stateSnapshot.persisted.connectedAt = null
+		this.stateSnapshot.tools = []
+	}
+
+	private rejectPendingRequests(reason: string) {
+		for (const [id, pending] of this.pendingRequests) {
+			clearTimeout(pending.timeout)
+			pending.reject(new Error(`${reason} requestId=${id}`))
+		}
+		this.pendingRequests.clear()
+	}
+
+	private captureSessionMessage(
+		message: string,
+		input: {
+			level?: 'warning' | 'error'
+			extra?: Record<string, unknown>
+		} = {},
+	) {
+		Sentry.captureMessage(message, {
+			level: input.level ?? 'warning',
+			tags: {
+				service: 'worker',
+				worker_component: 'home-connector-session',
+			},
+			extra: input.extra ?? {},
+		})
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -107,20 +147,25 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	webSocketClose(
-		_ws: WebSocket,
+		ws: WebSocket,
 		code: number,
 		reason: string,
 		wasClean: boolean,
 	): void {
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
+		const activeSockets = this.ctx
+			.getWebSockets(connectorTag)
+			.filter((socket) => socket !== ws)
+		if (activeSockets.length === 0) {
+			this.clearConnectionState()
+			this.rejectPendingRequests(
+				`Home connector websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''} before RPC response.`,
+			)
+		}
 		const closeMessage = `Home connector session websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''}`
 		console.warn(closeMessage)
-		Sentry.captureMessage(closeMessage, {
+		this.captureSessionMessage(closeMessage, {
 			level: 'warning',
-			tags: {
-				service: 'worker',
-				worker_component: 'home-connector-session',
-			},
 			extra: {
 				code,
 				reason,
@@ -149,6 +194,9 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		const { connectorId, connectorKind, connectedAt, lastSeenAt } =
 			this.stateSnapshot.persisted
 		if (!connectorId || !connectedAt || !lastSeenAt) return null
+		if (this.ctx.getWebSockets(connectorTag).length === 0) {
+			return null
+		}
 		const kind = (connectorKind && connectorKind.trim()) || ('home' as const)
 		return {
 			...(kind !== 'home' ? { connectorKind: kind } : {}),
@@ -202,6 +250,16 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		try {
 			parsed = parseHomeConnectorMessage(message)
 		} catch (error) {
+			this.captureSessionMessage(
+				'Home connector session received invalid websocket payload.',
+				{
+					level: 'error',
+					extra: {
+						connectorId: this.stateSnapshot.persisted.connectorId,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				},
+			)
 			ws.send(
 				stringifyHomeConnectorMessage({
 					type: 'server.error',
@@ -211,16 +269,41 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			return
 		}
 
-		switch (parsed.type) {
-			case 'connector.hello':
-				await this.handleHello(ws, parsed)
-				return
-			case 'connector.heartbeat':
-				await this.handleHeartbeat()
-				return
-			case 'connector.jsonrpc':
-				await this.handleJsonRpcMessage(parsed.message)
-				return
+		try {
+			switch (parsed.type) {
+				case 'connector.hello':
+					await this.handleHello(ws, parsed)
+					return
+				case 'connector.heartbeat':
+					await this.handleHeartbeat()
+					return
+				case 'connector.jsonrpc':
+					await this.handleJsonRpcMessage(parsed.message)
+					return
+			}
+		} catch (error) {
+			this.captureSessionMessage(
+				'Home connector session message handler threw.',
+				{
+					level: 'error',
+					extra: {
+						connectorId: this.stateSnapshot.persisted.connectorId,
+						messageType: parsed.type,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				},
+			)
+			try {
+				ws.send(
+					stringifyHomeConnectorMessage({
+						type: 'server.error',
+						message: error instanceof Error ? error.message : String(error),
+					}),
+				)
+			} catch {
+				// Ignore send failures while we're already handling a websocket error.
+			}
+			return
 		}
 	}
 
@@ -236,19 +319,16 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		)
 		const ingressSessionKey = this.loadIngressSessionKey(ws)
 		if (ingressSessionKey && ingressSessionKey !== expectedSessionKey) {
-			Sentry.captureMessage(
+			this.captureSessionMessage(
 				'Remote connector session rejected hello (session key mismatch).',
 				{
 					level: 'error',
-					tags: {
-						service: 'worker',
-						worker_component: 'home-connector-session',
-					},
 					extra: {
 						connectorId: canonicalInstanceId,
 						declaredKind,
-						ingressSessionKey,
-						expectedSessionKey,
+						ingressSessionKeySummary: summarizeSessionKey(ingressSessionKey),
+						expectedSessionKeySummary: summarizeSessionKey(expectedSessionKey),
+						sessionKeyMatch: false,
 					},
 				},
 			)
@@ -268,14 +348,10 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			this.env,
 		)
 		if (!expectedSecret || message.sharedSecret !== expectedSecret) {
-			Sentry.captureMessage(
+			this.captureSessionMessage(
 				'Home connector session rejected websocket hello.',
 				{
 					level: 'error',
-					tags: {
-						service: 'worker',
-						worker_component: 'home-connector-session',
-					},
 					extra: {
 						connectorId: canonicalInstanceId,
 						declaredKind,
@@ -307,6 +383,22 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 				connectorId: canonicalInstanceId,
 			}),
 		)
+		try {
+			await this.refreshToolsSnapshot()
+		} catch (error) {
+			this.stateSnapshot.tools = []
+			this.captureSessionMessage(
+				'Home connector tools snapshot refresh failed after websocket hello.',
+				{
+					level: 'error',
+					extra: {
+						connectorId: this.stateSnapshot.persisted.connectorId,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				},
+			)
+			await this.persistState()
+		}
 	}
 
 	private async handleHeartbeat() {
@@ -328,7 +420,23 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			'method' in parsed &&
 			parsed.method === 'notifications/tools/list_changed'
 		) {
-			await this.refreshToolsSnapshot()
+			try {
+				await this.refreshToolsSnapshot()
+			} catch (error) {
+				this.stateSnapshot.tools = []
+				this.captureSessionMessage(
+					'Home connector tools snapshot refresh failed.',
+					{
+						level: 'error',
+						extra: {
+							connectorId: this.stateSnapshot.persisted.connectorId,
+							error: error instanceof Error ? error.message : String(error),
+						},
+					},
+				)
+				await this.persistState()
+				return
+			}
 		}
 	}
 

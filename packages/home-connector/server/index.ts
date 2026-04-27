@@ -2,10 +2,98 @@ import http from 'node:http'
 import { createRequestListener } from '@remix-run/node-fetch-server'
 import { createHomeConnectorRouter } from '../app/router.ts'
 import {
+	closeHomeConnectorSentry,
 	captureHomeConnectorException,
 	flushHomeConnectorSentry,
 } from '../src/sentry.ts'
 import { startHomeConnectorApp } from '../src/index.ts'
+
+const signalExitCodeByName = {
+	SIGINT: 130,
+	SIGTERM: 143,
+} as const
+
+function installGracefulShutdownHandlers(input: {
+	server: http.Server
+	connector: Awaited<ReturnType<typeof startHomeConnectorApp>>
+}) {
+	let shutdownPromise: Promise<void> | null = null
+
+	async function closeServerWithWatchdog() {
+		await new Promise<void>((resolve) => {
+			const watchdog = setTimeout(() => {
+				input.server.closeAllConnections()
+				resolve()
+			}, 5_000)
+			input.server.close(() => {
+				clearTimeout(watchdog)
+				resolve()
+			})
+		})
+	}
+
+	function shutdown(reason: string) {
+		if (shutdownPromise) {
+			return shutdownPromise
+		}
+
+		shutdownPromise = (async () => {
+			console.info(`Shutting down home connector reason=${reason}`)
+			input.connector.workerConnector.stop()
+			await closeServerWithWatchdog()
+			await closeHomeConnectorSentry()
+		})()
+
+		return shutdownPromise
+	}
+
+	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+		process.once(signal, () => {
+			// For clean termination, close the client so it stops accepting events
+			// before the process exits.
+			void shutdown(`signal:${signal}`).finally(() => {
+				process.exit(signalExitCodeByName[signal])
+			})
+		})
+	}
+
+	process.once('uncaughtException', (error) => {
+		captureHomeConnectorException(error, {
+			tags: {
+				area: 'process',
+				process_event: 'uncaughtException',
+			},
+		})
+		// On fatal process paths, flush buffered events but avoid relying on a full
+		// async shutdown from an undefined runtime state.
+		void flushHomeConnectorSentry().finally(() => {
+			process.exit(1)
+		})
+	})
+
+	process.once('unhandledRejection', (reason, promise) => {
+		captureHomeConnectorException(reason, {
+			tags: {
+				area: 'process',
+				process_event: 'unhandledRejection',
+			},
+			extra: {
+				...(typeof reason === 'string' ||
+				typeof reason === 'number' ||
+				typeof reason === 'boolean'
+					? { reason: String(reason) }
+					: {}),
+				reasonType: typeof reason,
+				...(reason instanceof Error ? { reasonName: reason.name } : {}),
+			},
+		})
+		// On fatal process paths, flush buffered events but avoid relying on a full
+		// async shutdown from an undefined runtime state.
+		void flushHomeConnectorSentry().finally(() => {
+			process.exit(1)
+		})
+	})
+}
 
 async function main() {
 	const connector = await startHomeConnectorApp()
@@ -50,6 +138,11 @@ async function main() {
 		console.info(
 			`home-connector listening on http://localhost:${connector.config.port}`,
 		)
+	})
+
+	installGracefulShutdownHandlers({
+		server,
+		connector,
 	})
 }
 
