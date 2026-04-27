@@ -14,7 +14,7 @@ vi.mock('@sentry/node', () => sentryMock)
 
 const {
 	buildHomeConnectorSentryOptions,
-	addHomeConnectorBreadcrumb,
+	addHomeConnectorSentryBreadcrumb,
 	closeHomeConnectorSentry,
 	flushHomeConnectorSentry,
 	initializeHomeConnectorSentry,
@@ -114,11 +114,11 @@ test('closeHomeConnectorSentry returns true when Sentry is disabled', async () =
 	expect(sentryMock.close).not.toHaveBeenCalled()
 })
 
-test('addHomeConnectorBreadcrumb is a no-op when Sentry is disabled', () => {
+test('addHomeConnectorSentryBreadcrumb is a no-op when Sentry is disabled', () => {
 	sentryMock.isEnabled.mockReturnValue(false)
 	sentryMock.addBreadcrumb.mockReset()
 
-	addHomeConnectorBreadcrumb({
+	addHomeConnectorSentryBreadcrumb({
 		message: 'Opening home connector websocket.',
 		category: 'websocket.lifecycle',
 	})

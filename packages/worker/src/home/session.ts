@@ -34,6 +34,16 @@ type HomeConnectorSessionState = {
 	tools: Array<HomeConnectorSnapshot['tools'][number]>
 }
 
+function summarizeSessionKey(value: string | null) {
+	if (!value) {
+		return null
+	}
+	return {
+		length: value.length,
+		present: true,
+	}
+}
+
 class HomeConnectorSessionBase extends DurableObject<Env> {
 	private stateSnapshot: HomeConnectorSessionState = {
 		persisted: {
@@ -243,16 +253,41 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			return
 		}
 
-		switch (parsed.type) {
-			case 'connector.hello':
-				await this.handleHello(ws, parsed)
-				return
-			case 'connector.heartbeat':
-				await this.handleHeartbeat()
-				return
-			case 'connector.jsonrpc':
-				await this.handleJsonRpcMessage(parsed.message)
-				return
+		try {
+			switch (parsed.type) {
+				case 'connector.hello':
+					await this.handleHello(ws, parsed)
+					return
+				case 'connector.heartbeat':
+					await this.handleHeartbeat()
+					return
+				case 'connector.jsonrpc':
+					await this.handleJsonRpcMessage(parsed.message)
+					return
+			}
+		} catch (error) {
+			this.captureSessionMessage(
+				'Home connector session message handler threw.',
+				{
+					level: 'error',
+					extra: {
+						connectorId: this.stateSnapshot.persisted.connectorId,
+						messageType: parsed.type,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				},
+			)
+			try {
+				ws.send(
+					stringifyHomeConnectorMessage({
+						type: 'server.error',
+						message: error instanceof Error ? error.message : String(error),
+					}),
+				)
+			} catch {
+				// Ignore send failures while we're already handling a websocket error.
+			}
+			return
 		}
 	}
 
@@ -275,8 +310,9 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 					extra: {
 						connectorId: canonicalInstanceId,
 						declaredKind,
-						ingressSessionKey,
-						expectedSessionKey,
+						ingressSessionKeySummary: summarizeSessionKey(ingressSessionKey),
+						expectedSessionKeySummary: summarizeSessionKey(expectedSessionKey),
+						sessionKeyMatch: false,
 					},
 				},
 			)
@@ -331,6 +367,22 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 				connectorId: canonicalInstanceId,
 			}),
 		)
+		try {
+			await this.refreshToolsSnapshot()
+		} catch (error) {
+			this.stateSnapshot.tools = []
+			this.captureSessionMessage(
+				'Home connector tools snapshot refresh failed after websocket hello.',
+				{
+					level: 'error',
+					extra: {
+						connectorId: this.stateSnapshot.persisted.connectorId,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				},
+			)
+			await this.persistState()
+		}
 	}
 
 	private async handleHeartbeat() {

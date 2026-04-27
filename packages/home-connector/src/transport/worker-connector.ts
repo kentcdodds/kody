@@ -34,12 +34,6 @@ function isJsonRpcRequest(message: JSONRPCMessage): message is JSONRPCRequest {
 	return 'id' in message && 'method' in message
 }
 
-function isAckMessage(
-	message: HomeConnectorClientMessage,
-): message is HomeConnectorAckMessage {
-	return message.type === 'server.ack'
-}
-
 function isJsonRpcEnvelope(
 	message: HomeConnectorClientMessage | HomeConnectorJsonRpcEnvelope,
 ): message is HomeConnectorJsonRpcEnvelope {
@@ -244,23 +238,19 @@ export function createWorkerConnector(input: {
 		console.info(
 			`Scheduling home connector websocket reconnect in ${reconnectDelayMs}ms consecutiveReconnects=${consecutiveReconnects}`,
 		)
-		addHomeConnectorSentryBreadcrumb(
-			'Scheduling home connector websocket reconnect.',
-			{
-				level: 'info',
-				tags: {
-					connector_event: 'websocket.reconnect_scheduled',
-				},
-				extra: {
-					...createSocketEventContext({
-						config: input.config,
-						connectionAttempt,
-						consecutiveReconnects,
-					}),
-					reconnectDelayMs,
-				},
+		addHomeConnectorSentryBreadcrumb({
+			message: 'Scheduling home connector websocket reconnect.',
+			category: 'websocket.reconnect_scheduled',
+			level: 'info',
+			data: {
+				...createSocketEventContext({
+					config: input.config,
+					connectionAttempt,
+					consecutiveReconnects,
+				}),
+				reconnectDelayMs,
 			},
-		)
+		})
 		reconnectTimer = setTimeout(() => {
 			reconnectTimer = null
 			connect()
@@ -283,12 +273,11 @@ export function createWorkerConnector(input: {
 		console.info(
 			`Opening home connector websocket attempt=${connectionAttempt} url=${input.config.workerWebSocketUrl}`,
 		)
-		addHomeConnectorSentryBreadcrumb('Opening home connector websocket.', {
+		addHomeConnectorSentryBreadcrumb({
+			message: 'Opening home connector websocket.',
+			category: 'websocket.connecting',
 			level: 'info',
-			tags: {
-				connector_event: 'websocket.connecting',
-			},
-			extra: createSocketEventContext({
+			data: createSocketEventContext({
 				config: input.config,
 				connectionAttempt,
 				consecutiveReconnects,
@@ -300,12 +289,11 @@ export function createWorkerConnector(input: {
 			console.info(
 				`Home connector websocket opened attempt=${connectionAttempt} connectorId=${input.config.homeConnectorId}`,
 			)
-			addHomeConnectorSentryBreadcrumb('Home connector websocket opened.', {
+			addHomeConnectorSentryBreadcrumb({
+				message: 'Home connector websocket opened.',
+				category: 'websocket.open',
 				level: 'info',
-				tags: {
-					connector_event: 'websocket.open',
-				},
-				extra: createSocketEventContext({
+				data: createSocketEventContext({
 					config: input.config,
 					connectionAttempt,
 					consecutiveReconnects,
@@ -317,12 +305,11 @@ export function createWorkerConnector(input: {
 				connectorId: input.config.homeConnectorId,
 				sharedSecret: input.config.sharedSecret!,
 			}
-			addHomeConnectorSentryBreadcrumb('Sending home connector websocket hello.', {
+			addHomeConnectorSentryBreadcrumb({
+				message: 'Sending home connector websocket hello.',
+				category: 'websocket.hello_sent',
 				level: 'info',
-				tags: {
-					connector_event: 'websocket.hello_sent',
-				},
-				extra: createSocketEventContext({
+				data: createSocketEventContext({
 					config: input.config,
 					connectionAttempt,
 					consecutiveReconnects,
@@ -362,7 +349,7 @@ export function createWorkerConnector(input: {
 						})
 						console.error(`Home connector error: ${value.message}`)
 						return
-					case 'server.ack':
+					case 'server.ack': {
 						hasReportedSocketIssue = false
 						const previousConsecutiveReconnects = consecutiveReconnects
 						updateConnectionState(input.state, {
@@ -373,40 +360,32 @@ export function createWorkerConnector(input: {
 						console.info(
 							`Home connector websocket acknowledged connectorId=${value.connectorId}`,
 						)
-						addHomeConnectorSentryBreadcrumb(
-							'Home connector websocket acknowledged.',
-							{
-								level: 'info',
-								tags: {
-									connector_event: 'websocket.ack',
-								},
-								extra: {
-									...createSocketEventContext({
-										config: input.config,
-										connectionAttempt,
-										consecutiveReconnects:
-											previousConsecutiveReconnects,
-									}),
-									acknowledgedConnectorId: value.connectorId,
-								},
+						addHomeConnectorSentryBreadcrumb({
+							message: 'Home connector websocket acknowledged.',
+							category: 'websocket.ack',
+							level: 'info',
+							data: {
+								...createSocketEventContext({
+									config: input.config,
+									connectionAttempt,
+									consecutiveReconnects:
+										previousConsecutiveReconnects,
+								}),
+								acknowledgedConnectorId: value.connectorId,
 							},
-						)
+						})
 						if (socket?.readyState === WebSocket.OPEN) {
-							addHomeConnectorSentryBreadcrumb(
-								'Sending home connector tools changed notification.',
-								{
-									level: 'info',
-									tags: {
-										connector_event: 'tools.list_changed.sent',
-									},
-									extra: createSocketEventContext({
-										config: input.config,
-										connectionAttempt,
-										consecutiveReconnects:
-											previousConsecutiveReconnects,
-									}),
-								},
-							)
+							addHomeConnectorSentryBreadcrumb({
+								message: 'Sending home connector tools changed notification.',
+								category: 'tools.list_changed.sent',
+								level: 'info',
+								data: createSocketEventContext({
+									config: input.config,
+									connectionAttempt,
+									consecutiveReconnects:
+										previousConsecutiveReconnects,
+								}),
+							})
 							socket.send(
 								stringifyHomeConnectorMessage({
 									type: 'connector.jsonrpc',
@@ -416,6 +395,7 @@ export function createWorkerConnector(input: {
 						}
 						consecutiveReconnects = 0
 						return
+					}
 					case 'connector.jsonrpc': {
 						const message = value.message
 						if (isJsonRpcResponse(message)) {
