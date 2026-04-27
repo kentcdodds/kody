@@ -69,18 +69,28 @@ export async function hashPackageInvocationBearerToken(token: string) {
 	return toHex(new Uint8Array(digest))
 }
 
-function parseStringArrayJson(value: string) {
+function parseStringArrayJson(input: { value: string; field: string }) {
+	let parsed: unknown
 	try {
-		const parsed = JSON.parse(value) as unknown
-		return Array.isArray(parsed)
-			? parsed
-					.filter((entry): entry is string => typeof entry === 'string')
-					.map((entry) => entry.trim())
-					.filter((entry) => entry.length > 0)
-			: []
+		parsed = JSON.parse(input.value) as unknown
 	} catch {
-		return []
+		throw new Error(
+			`Invalid package invocation token record: ${input.field} must be valid JSON.`,
+		)
 	}
+	if (!Array.isArray(parsed)) {
+		throw new Error(
+			`Invalid package invocation token record: ${input.field} must be a JSON array.`,
+		)
+	}
+	return parsed.map((entry) => {
+		if (typeof entry !== 'string' || !entry.trim()) {
+			throw new Error(
+				`Invalid package invocation token record: ${input.field} must contain only non-empty strings.`,
+			)
+		}
+		return entry.trim()
+	})
 }
 
 function parseStoredResponse(
@@ -125,10 +135,22 @@ function mapTokenRow(
 	}
 	return {
 		...parsed.value,
-		packageIds: parseStringArrayJson(parsed.value.package_ids_json),
-		packageKodyIds: parseStringArrayJson(parsed.value.package_kody_ids_json),
-		exportNames: parseStringArrayJson(parsed.value.export_names_json),
-		sources: parseStringArrayJson(parsed.value.sources_json),
+		packageIds: parseStringArrayJson({
+			value: parsed.value.package_ids_json,
+			field: 'package_ids_json',
+		}),
+		packageKodyIds: parseStringArrayJson({
+			value: parsed.value.package_kody_ids_json,
+			field: 'package_kody_ids_json',
+		}),
+		exportNames: parseStringArrayJson({
+			value: parsed.value.export_names_json,
+			field: 'export_names_json',
+		}),
+		sources: parseStringArrayJson({
+			value: parsed.value.sources_json,
+			field: 'sources_json',
+		}),
 	}
 }
 
@@ -200,9 +222,9 @@ export async function insertPackageInvocationRow(input: {
 				body: input.row.response.body,
 			})
 		: null
-	await input.db
+	const result = await input.db
 		.prepare(
-			`INSERT INTO package_invocations (
+			`INSERT OR IGNORE INTO package_invocations (
 				id,
 				user_id,
 				token_id,
@@ -236,6 +258,7 @@ export async function insertPackageInvocationRow(input: {
 			now,
 		)
 		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function getPackageInvocationByKey(input: {

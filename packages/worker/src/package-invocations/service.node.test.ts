@@ -91,7 +91,7 @@ function createDatabase() {
 							return null
 						},
 						async run() {
-							if (query.includes('INSERT INTO package_invocations')) {
+							if (query.includes('INTO package_invocations')) {
 								const table = getTable('package_invocations')
 								const existing = table.find(
 									(row) =>
@@ -102,7 +102,7 @@ function createDatabase() {
 										row['idempotency_key'] === params[6],
 								)
 								if (existing) {
-									throw new Error('UNIQUE constraint failed')
+									return { meta: { changes: 0, last_row_id: 0 } }
 								}
 								table.push(
 									clone({
@@ -437,4 +437,56 @@ test('invokePackageExport serializes execution failures without exposing thrown 
 		},
 		logs: ['before-error'],
 	})
+})
+
+test('invokePackageExport stores export-not-found responses as terminal failures', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'missing-export',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-missing-export',
+		},
+	})
+	const second = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'missing-export',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-missing-export',
+		},
+	})
+
+	expect(first.status).toBe(404)
+	expect(first.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'export_not_found',
+		},
+		idempotency: {
+			key: 'evt-missing-export',
+			replayed: false,
+		},
+	})
+	expect(second.status).toBe(404)
+	expect(second.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'export_not_found',
+		},
+		idempotency: {
+			key: 'evt-missing-export',
+			replayed: true,
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })

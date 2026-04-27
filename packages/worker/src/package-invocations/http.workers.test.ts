@@ -20,7 +20,18 @@ vi.mock('./service.ts', async () => {
 	}
 })
 
-async function createEnv() {
+async function createEnv(
+	options: {
+		tokenRow?: {
+			package_ids_json?: string
+			package_kody_ids_json?: string
+			export_names_json?: string
+			sources_json?: string
+			revoked_at?: string | null
+		}
+		touchChanges?: number
+	} = {},
+) {
 	const tokenRows = [
 		{
 			id: 'discord-gateway',
@@ -29,14 +40,19 @@ async function createEnv() {
 			name: 'Discord gateway',
 			email: 'me@example.com',
 			display_name: 'me',
-			package_ids_json: '[]',
-			package_kody_ids_json: JSON.stringify(['discord-gateway']),
-			export_names_json: JSON.stringify(['./dispatch-message-created']),
-			sources_json: JSON.stringify(['discord-gateway']),
+			package_ids_json: options.tokenRow?.package_ids_json ?? '[]',
+			package_kody_ids_json:
+				options.tokenRow?.package_kody_ids_json ??
+				JSON.stringify(['discord-gateway']),
+			export_names_json:
+				options.tokenRow?.export_names_json ??
+				JSON.stringify(['./dispatch-message-created']),
+			sources_json:
+				options.tokenRow?.sources_json ?? JSON.stringify(['discord-gateway']),
 			created_at: '2026-04-27T00:00:00.000Z',
 			updated_at: '2026-04-27T00:00:00.000Z',
 			last_used_at: null,
-			revoked_at: null,
+			revoked_at: options.tokenRow?.revoked_at ?? null,
 		},
 	]
 	return {
@@ -63,6 +79,14 @@ async function createEnv() {
 									)
 									if (!row) {
 										return { meta: { changes: 0, last_row_id: 0 } }
+									}
+									if (options.touchChanges !== undefined) {
+										return {
+											meta: {
+												changes: options.touchChanges,
+												last_row_id: 0,
+											},
+										}
 									}
 									row.last_used_at = String(params[0])
 									row.updated_at = String(params[1])
@@ -159,6 +183,64 @@ test('package invocation API returns 401 for invalid private tokens', async () =
 			message: 'Invalid package invocation token.',
 		},
 	})
+})
+
+test('package invocation API fails closed when token touch loses revocation race', async () => {
+	const response = await handlePackageInvocationApiRequest(
+		new Request(
+			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer private-token-123',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
+			},
+		),
+		await createEnv({ touchChanges: 0 }),
+	)
+
+	expect(response.status).toBe(401)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: {
+			code: 'unauthorized',
+			message: 'Invalid package invocation token.',
+		},
+	})
+	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
+})
+
+test('package invocation API fails closed when token scope JSON is malformed', async () => {
+	const response = await handlePackageInvocationApiRequest(
+		new Request(
+			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer private-token-123',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
+			},
+		),
+		await createEnv({
+			tokenRow: {
+				package_kody_ids_json: '{bad json',
+			},
+		}),
+	)
+
+	expect(response.status).toBe(401)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: {
+			code: 'unauthorized',
+			message: 'Invalid package invocation token.',
+		},
+	})
+	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
 })
 
 test('package invocation API validates the JSON body shape', async () => {

@@ -484,28 +484,23 @@ export async function invokePackageExport(input: {
 	}
 
 	const invocationId = crypto.randomUUID()
-	try {
-		await insertPackageInvocationRow({
-			db: input.env.APP_DB,
-			row: {
-				id: invocationId,
-				userId: input.token.userId,
-				tokenId: input.token.tokenId,
-				packageId: savedPackage.id,
-				packageKodyId: savedPackage.kodyId,
-				exportName,
-				idempotencyKey,
-				requestHash,
-				source,
-				topic,
-				status: 'in_progress',
-			},
-		})
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		if (!message.toLowerCase().includes('unique')) {
-			throw error
-		}
+	const inserted = await insertPackageInvocationRow({
+		db: input.env.APP_DB,
+		row: {
+			id: invocationId,
+			userId: input.token.userId,
+			tokenId: input.token.tokenId,
+			packageId: savedPackage.id,
+			packageKodyId: savedPackage.kodyId,
+			exportName,
+			idempotencyKey,
+			requestHash,
+			source,
+			topic,
+			status: 'in_progress',
+		},
+	})
+	if (!inserted) {
 		const current = await getPackageInvocationByKey({
 			db: input.env.APP_DB,
 			userId: input.token.userId,
@@ -514,7 +509,11 @@ export async function invokePackageExport(input: {
 			exportName,
 			idempotencyKey,
 		})
-		if (!current) throw error
+		if (!current) {
+			throw new Error(
+				'Package invocation idempotency insert conflicted but no existing row was found.',
+			)
+		}
 		if (current.request_hash !== requestHash) {
 			return buildJsonErrorResponse({
 				status: 409,
@@ -616,12 +615,22 @@ export async function invokePackageExport(input: {
 		return response
 	} catch (error) {
 		if (isMissingPackageExportError(error)) {
-			return buildJsonErrorResponse({
+			const response = buildJsonErrorResponse({
 				status: 404,
 				code: 'export_not_found',
 				message: error instanceof Error ? error.message : String(error),
 				idempotencyKey,
 			})
+			await updatePackageInvocationResult({
+				db: input.env.APP_DB,
+				id: invocationId,
+				userId: input.token.userId,
+				status: 'failed',
+				response,
+			}).catch(() => {
+				// Best effort; preserve the original invocation error.
+			})
+			return response
 		}
 		const response = buildJsonErrorResponse({
 			status: 500,
