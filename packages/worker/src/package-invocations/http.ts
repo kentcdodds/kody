@@ -87,12 +87,11 @@ function parsePackageInvocationPath(pathname: string) {
 	}
 	const rest = pathname.slice(packageInvocationPathPrefix.length)
 	const parts = rest.split('/')
-	if (parts.length !== 2) {
+	if (parts.length < 2) {
 		return null
 	}
-	const [packageIdOrKodyId, exportName] = parts.map((entry) =>
-		decodePathComponent(entry),
-	)
+	const packageIdOrKodyId = decodePathComponent(parts[0] ?? '')
+	const exportName = decodePathComponent(parts.slice(1).join('/'))
 	if (!packageIdOrKodyId || !exportName) {
 		return null
 	}
@@ -112,7 +111,7 @@ async function resolveTokenScope(input: {
 	const touched = await updatePackageInvocationTokenLastUsed({
 		db: input.env.APP_DB,
 		id: record.id,
-	})
+	}).catch(() => false)
 	if (!touched) return null
 	return {
 		tokenId: record.id,

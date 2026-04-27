@@ -30,6 +30,7 @@ async function createEnv(
 			revoked_at?: string | null
 		}
 		touchChanges?: number
+		touchError?: Error
 	} = {},
 ) {
 	const tokenRows = [
@@ -73,6 +74,9 @@ async function createEnv(
 							},
 							async run() {
 								if (query.includes('UPDATE package_invocation_tokens')) {
+									if (options.touchError) {
+										throw options.touchError
+									}
 									const id = String(params[2] ?? '')
 									const row = tokenRows.find(
 										(entry) => entry.id === id && entry.revoked_at === null,
