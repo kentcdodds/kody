@@ -268,7 +268,7 @@ const workerHandler = {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
 		if (isPackageInvocationApiRequest(url.pathname)) {
-			return handlePackageInvocationApiRequest(request, env)
+			return handlePackageInvocationApiRequest(request, env, ctx)
 		}
 
 		// OAuthProvider serves this URL first and defaults `resource` to the origin only.
