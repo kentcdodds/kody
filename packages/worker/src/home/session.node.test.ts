@@ -112,6 +112,7 @@ test('websocket close clears connectedAt and tools from persisted state', async 
 	)
 
 	await new Promise((resolve) => setTimeout(resolve, 0))
+	state.getWebSockets.mockReturnValue([])
 	session.webSocketClose({} as WebSocket, 1006, 'network', false)
 	await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -127,5 +128,44 @@ test('websocket close clears connectedAt and tools from persisted state', async 
 			connectedAt: null,
 		},
 		tools: [],
+	})
+})
+
+test('stale websocket close preserves active connection state', async () => {
+	captureMessageMock.mockReset()
+	const activeSocket = {} as WebSocket
+	const staleSocket = {} as WebSocket
+	const { state, persistedEntries } = createState({
+		storedState: {
+			persisted: {
+				connectorId: 'default',
+				connectorKind: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [activeSocket, staleSocket],
+	})
+	const session = new HomeConnectorSession(
+		{
+			storage: state.storage,
+			getWebSockets: state.getWebSockets,
+			acceptWebSocket: state.acceptWebSocket,
+		} as unknown as DurableObjectState,
+		{} as Env,
+	)
+
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	state.getWebSockets.mockReturnValue([activeSocket])
+	session.webSocketClose(staleSocket, 1006, 'stale-socket', false)
+	await new Promise((resolve) => setTimeout(resolve, 0))
+
+	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
+		persisted: {
+			connectorId: 'default',
+			connectedAt: '2026-04-26T05:00:00.000Z',
+		},
+		tools: [{ name: 'bond_shade_set_position' }],
 	})
 })

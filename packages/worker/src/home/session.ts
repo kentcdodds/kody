@@ -69,6 +69,14 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		this.stateSnapshot.tools = []
 	}
 
+	private rejectPendingRequests(reason: string) {
+		for (const [id, pending] of this.pendingRequests) {
+			clearTimeout(pending.timeout)
+			pending.reject(new Error(`${reason} requestId=${id}`))
+		}
+		this.pendingRequests.clear()
+	}
+
 	private captureSessionMessage(
 		message: string,
 		input: {
@@ -139,13 +147,21 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	webSocketClose(
-		_ws: WebSocket,
+		ws: WebSocket,
 		code: number,
 		reason: string,
 		wasClean: boolean,
 	): void {
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
-		this.clearConnectionState()
+		const activeSockets = this.ctx
+			.getWebSockets(connectorTag)
+			.filter((socket) => socket !== ws)
+		if (activeSockets.length === 0) {
+			this.clearConnectionState()
+			this.rejectPendingRequests(
+				`Home connector websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''} before RPC response.`,
+			)
+		}
 		const closeMessage = `Home connector session websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''}`
 		console.warn(closeMessage)
 		this.captureSessionMessage(closeMessage, {
