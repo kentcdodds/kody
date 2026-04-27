@@ -222,26 +222,7 @@ test('connect oauth returns direct host approval links for saved token secrets',
 			storageContext: null,
 		}),
 	)
-	expect(mockModule.setSecretAllowedHosts).toHaveBeenNthCalledWith(
-		1,
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			name: 'githubAccessToken',
-			scope: 'user',
-			allowedHosts: ['api.github.com', 'github.com'],
-			storageContext: { sessionId: null, appId: null },
-		}),
-	)
-	expect(mockModule.setSecretAllowedHosts).toHaveBeenNthCalledWith(
-		2,
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			name: 'githubRefreshToken',
-			scope: 'user',
-			allowedHosts: ['api.github.com', 'github.com'],
-			storageContext: { sessionId: null, appId: null },
-		}),
-	)
+	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 })
 
 test('connect oauth omits direct host approval links when hosts are already approved', async () => {

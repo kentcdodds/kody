@@ -31,9 +31,7 @@ import {
 	setSecretAllowedPackages,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
-import {
-	listSavedPackagesByUserId,
-} from '#worker/package-registry/repo.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type routes } from '#app/routes.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
@@ -102,6 +100,7 @@ type AccountSecretsPayload = {
 	secrets: Array<AccountSecretListItem>
 	selectedSecret: AccountSecretDetail | null
 	approval: SecretApprovalView | null
+	approvalError: string | null
 }
 
 type ConnectOauthHostApprovalLink = {
@@ -359,14 +358,6 @@ async function handleConnectOauthAction(input: {
 		description: `${provider} OAuth access token`,
 		storageContext: { sessionId: null, appId: null },
 	})
-	await setSecretAllowedHosts({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		name: accessTokenSecretName,
-		scope: 'user',
-		allowedHosts,
-		storageContext: { sessionId: null, appId: null },
-	})
 
 	let refreshSaved = false
 	if (refreshToken && refreshTokenSecretName) {
@@ -377,14 +368,6 @@ async function handleConnectOauthAction(input: {
 			value: refreshToken,
 			scope: 'user',
 			description: `${provider} OAuth refresh token`,
-			storageContext: { sessionId: null, appId: null },
-		})
-		await setSecretAllowedHosts({
-			env: input.env,
-			userId: input.user.mcpUser.userId,
-			name: refreshTokenSecretName,
-			scope: 'user',
-			allowedHosts,
 			storageContext: { sessionId: null, appId: null },
 		})
 		refreshSaved = true
@@ -664,8 +647,7 @@ async function buildAccountSecretsPayload(input: {
 		(await listSavedPackagesByUserId(input.env.APP_DB, {
 			userId: input.user.mcpUser.userId,
 		}))
-	const packageApps =
-		input.packageApps ?? toPackageAppOptions(savedPackages)
+	const packageApps = input.packageApps ?? toPackageAppOptions(savedPackages)
 	const packageLookup = toAllowedPackageLookup(savedPackages)
 	const secrets = await listAccountSecrets({
 		env: input.env,
@@ -681,16 +663,25 @@ async function buildAccountSecretsPayload(input: {
 			})
 		: null
 
-	const approval = approvalToken
-		? await resolveSecretApprovalView({
+	let approval: SecretApprovalView | null = null
+	let approvalError: string | null = null
+	if (approvalToken) {
+		try {
+			approval = await resolveSecretApprovalView({
 				env: input.env,
 				userId: input.user.mcpUser.userId,
 				token: approvalToken,
 				requestedHost: requestedApprovalHost,
 				requestedCapability,
 				requestedPackageId,
-			}).catch(() => null)
-		: null
+			})
+		} catch (error) {
+			approvalError =
+				error instanceof Error
+					? error.message
+					: 'Unable to verify approval request.'
+		}
+	}
 
 	return {
 		ok: true,
@@ -704,6 +695,7 @@ async function buildAccountSecretsPayload(input: {
 		secrets,
 		selectedSecret,
 		approval,
+		approvalError,
 	}
 }
 
@@ -815,8 +807,7 @@ async function resolveSecretApprovalView(input: {
 		scope: approval.scope,
 		requestedHost: approval.kind === 'host' ? approval.requestedHost : '',
 		requestedCapability: input.requestedCapability,
-		requestedPackageId:
-			approval.kind === 'package' ? approval.packageId : null,
+		requestedPackageId: approval.kind === 'package' ? approval.packageId : null,
 		currentAllowedHosts: secret.allowedHosts,
 		currentAllowedPackages: secret.allowedPackages,
 	} satisfies SecretApprovalView
@@ -964,7 +955,8 @@ async function handleApprovalAction(input: {
 					storageContext: approval.storageContext,
 				})
 				const secret = current.find(
-					(item) => item.name === approval.name && item.scope === approval.scope,
+					(item) =>
+						item.name === approval.name && item.scope === approval.scope,
 				)
 				if (!secret) {
 					return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
@@ -1007,7 +999,10 @@ async function handleApprovalAction(input: {
 				userId: input.user.mcpUser.userId,
 				name: approval.name,
 				scope: approval.scope,
-				allowedHosts: [...secret.allowedHosts, approval.requestedHost],
+				allowedHosts: normalizeAllowedHosts([
+					...secret.allowedHosts,
+					approval.requestedHost,
+				]),
 				storageContext: approval.storageContext,
 			})
 		}
