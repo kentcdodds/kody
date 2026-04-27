@@ -49,8 +49,8 @@ Each token row includes:
 - token id and human-readable name
 - owning `user_id`, `email`, and `display_name`
 - package scope (`package_ids_json` and/or `package_kody_ids_json`)
-- optional `export_names_json`
-- optional `sources_json`
+- allowed package exports (`export_names_json`)
+- allowed request sources (`sources_json`)
 - `last_used_at`
 - `revoked_at`
 
@@ -58,8 +58,8 @@ The token is not a global backdoor:
 
 - package lookup is still user-owned
 - package access is scoped by the token row
-- export access can be restricted
-- `source` metadata can be restricted
+- export access requires an explicit allowlist
+- `source` metadata requires an explicit allowlist
 - tokens can be revoked without deploys
 - execution still uses normal package runtime machinery
 

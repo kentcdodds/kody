@@ -103,12 +103,10 @@ function parseStoredResponse(
 			return null
 		}
 		const record = parsed as Record<string, unknown>
-		const status =
-			typeof record['status'] === 'string'
-				? Number.parseInt(record['status'], 10)
-				: Number.NaN
+		const status = record['status']
 		const body = record['body']
 		if (
+			typeof status !== 'number' ||
 			!Number.isInteger(status) ||
 			!body ||
 			typeof body !== 'object' ||
@@ -218,7 +216,7 @@ export async function insertPackageInvocationRow(input: {
 	const now = new Date().toISOString()
 	const responseJson = input.row.response
 		? JSON.stringify({
-				status: String(input.row.response.status),
+				status: input.row.response.status,
 				body: input.row.response.body,
 			})
 		: null
@@ -298,7 +296,7 @@ export async function updatePackageInvocationResult(input: {
 	response: PackageInvocationStoredResponse
 }) {
 	const responseJson = JSON.stringify({
-		status: String(input.response.status),
+		status: input.response.status,
 		body: input.response.body,
 	})
 	const result = await input.db

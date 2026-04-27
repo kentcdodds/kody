@@ -175,10 +175,8 @@ function tokenAllowsExport(input: {
 	token: PackageInvocationTokenScope
 	exportName: string
 }) {
-	if (!input.token.exportNames || input.token.exportNames.length === 0) {
-		return true
-	}
-	return input.token.exportNames
+	const exportNames = input.token.exportNames ?? []
+	return exportNames
 		.map((entry) => normalizeExportName(entry))
 		.includes(input.exportName)
 }
@@ -187,11 +185,9 @@ function tokenAllowsSource(input: {
 	token: PackageInvocationTokenScope
 	source: string | null
 }) {
-	if (!input.token.sources || input.token.sources.length === 0) {
-		return true
-	}
 	if (!input.source) return false
-	return input.token.sources.includes(input.source)
+	const sources = input.token.sources ?? []
+	return sources.includes(input.source)
 }
 
 function isMissingPackageExportError(error: unknown) {

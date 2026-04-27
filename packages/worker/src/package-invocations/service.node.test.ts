@@ -158,13 +158,20 @@ function createEnv(db: D1Database) {
 	} as unknown as Env
 }
 
-function createToken() {
+function createToken(
+	overrides: Partial<{
+		exportNames: Array<string>
+		sources: Array<string>
+	}> = {},
+) {
 	return {
 		tokenId: 'discord-gateway',
 		userId: 'user-123',
 		email: 'me@example.com',
 		displayName: 'me',
 		packageKodyIds: ['discord-gateway'],
+		exportNames: overrides.exportNames ?? ['./dispatch-message-created'],
+		sources: overrides.sources ?? ['discord-gateway'],
 	} as const
 }
 
@@ -425,6 +432,7 @@ test('invokePackageExport serializes execution failures without exposing thrown 
 			exportName: 'dispatch-message-created',
 			params: { content: 'hi' },
 			idempotencyKey: 'evt-2',
+			source: 'discord-gateway',
 		},
 	})
 
@@ -446,23 +454,29 @@ test('invokePackageExport stores export-not-found responses as terminal failures
 	const first = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken(),
+		token: createToken({
+			exportNames: ['./missing-export'],
+		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
 			exportName: 'missing-export',
 			params: { content: 'hi' },
 			idempotencyKey: 'evt-missing-export',
+			source: 'discord-gateway',
 		},
 	})
 	const second = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken(),
+		token: createToken({
+			exportNames: ['./missing-export'],
+		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
 			exportName: 'missing-export',
 			params: { content: 'hi' },
 			idempotencyKey: 'evt-missing-export',
+			source: 'discord-gateway',
 		},
 	})
 
