@@ -345,6 +345,7 @@ export function createWorkerConnector(input: {
 					case 'server.ack': {
 						hasReportedSocketIssue = false
 						const previousConsecutiveReconnects = consecutiveReconnects
+						consecutiveReconnects = 0
 						updateConnectionState(input.state, {
 							connected: true,
 							lastSyncAt: new Date().toISOString(),
@@ -386,7 +387,6 @@ export function createWorkerConnector(input: {
 								}),
 							)
 						}
-						consecutiveReconnects = 0
 						return
 					}
 					case 'connector.jsonrpc': {

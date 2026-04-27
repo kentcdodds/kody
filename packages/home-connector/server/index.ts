@@ -49,6 +49,8 @@ function installGracefulShutdownHandlers(input: {
 
 	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 		process.once(signal, () => {
+			// For clean termination, close the client so it stops accepting events
+			// before the process exits.
 			void shutdown(`signal:${signal}`).finally(() => {
 				process.exit(signalExitCodeByName[signal])
 			})
@@ -62,6 +64,8 @@ function installGracefulShutdownHandlers(input: {
 				process_event: 'uncaughtException',
 			},
 		})
+		// On fatal process paths, flush buffered events but avoid relying on a full
+		// async shutdown from an undefined runtime state.
 		void flushHomeConnectorSentry().finally(() => {
 			process.exit(1)
 		})
@@ -79,16 +83,12 @@ function installGracefulShutdownHandlers(input: {
 				typeof reason === 'boolean'
 					? { reason: String(reason) }
 					: {}),
-				promiseConstructor:
-					promise &&
-					typeof promise === 'object' &&
-					'constructor' in promise &&
-					typeof promise.constructor === 'function' &&
-					promise.constructor.name
-						? promise.constructor.name
-						: 'Promise',
+				reasonType: typeof reason,
+				...(reason instanceof Error ? { reasonName: reason.name } : {}),
 			},
 		})
+		// On fatal process paths, flush buffered events but avoid relying on a full
+		// async shutdown from an undefined runtime state.
 		void flushHomeConnectorSentry().finally(() => {
 			process.exit(1)
 		})
