@@ -377,6 +377,49 @@ function buildJsonErrorResponse(input: {
 	} satisfies PackageInvocationStoredResponse
 }
 
+function buildIdempotencyResponseUnavailable(input: {
+	idempotencyKey: string
+}) {
+	return buildJsonErrorResponse({
+		status: 409,
+		code: 'idempotency_response_unavailable',
+		message:
+			'This idempotency key already has a terminal invocation record, but its stored response could not be replayed.',
+		idempotencyKey: input.idempotencyKey,
+	})
+}
+
+function resolveExistingInvocation(input: {
+	record: NonNullable<Awaited<ReturnType<typeof getPackageInvocationByKey>>>
+	requestHash: string
+	idempotencyKey: string
+}): PackageInvocationStoredResponse {
+	if (input.record.request_hash !== input.requestHash) {
+		return buildJsonErrorResponse({
+			status: 409,
+			code: 'idempotency_mismatch',
+			message:
+				'This idempotency key has already been used for a different package invocation request.',
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
+	if (input.record.status === 'in_progress') {
+		return buildJsonErrorResponse({
+			status: 409,
+			code: 'invocation_in_progress',
+			message:
+				'This idempotency key is already processing for the requested package export.',
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
+	if (input.record.storedResponse) {
+		return markStoredResponseAsReplayed(input.record.storedResponse)
+	}
+	return buildIdempotencyResponseUnavailable({
+		idempotencyKey: input.idempotencyKey,
+	})
+}
+
 export async function invokePackageExport(input: {
 	env: Env
 	baseUrl: string
@@ -447,57 +490,9 @@ export async function invokePackageExport(input: {
 		source,
 		topic,
 	})
-	const existing = await getPackageInvocationByKey({
-		db: input.env.APP_DB,
-		userId: input.token.userId,
-		tokenId: input.token.tokenId,
-		packageId: savedPackage.id,
-		exportName,
-		idempotencyKey,
-	})
-	if (existing) {
-		if (existing.request_hash !== requestHash) {
-			return buildJsonErrorResponse({
-				status: 409,
-				code: 'idempotency_mismatch',
-				message:
-					'This idempotency key has already been used for a different package invocation request.',
-				idempotencyKey,
-			})
-		}
-		if (existing.status === 'in_progress') {
-			return buildJsonErrorResponse({
-				status: 409,
-				code: 'invocation_in_progress',
-				message:
-					'This idempotency key is already processing for the requested package export.',
-				idempotencyKey,
-			})
-		}
-		if (existing.storedResponse) {
-			return markStoredResponseAsReplayed(existing.storedResponse)
-		}
-	}
-
-	const invocationId = crypto.randomUUID()
-	const inserted = await insertPackageInvocationRow({
-		db: input.env.APP_DB,
-		row: {
-			id: invocationId,
-			userId: input.token.userId,
-			tokenId: input.token.tokenId,
-			packageId: savedPackage.id,
-			packageKodyId: savedPackage.kodyId,
-			exportName,
-			idempotencyKey,
-			requestHash,
-			source,
-			topic,
-			status: 'in_progress',
-		},
-	})
-	if (!inserted) {
-		const current = await getPackageInvocationByKey({
+	let existing: Awaited<ReturnType<typeof getPackageInvocationByKey>>
+	try {
+		existing = await getPackageInvocationByKey({
 			db: input.env.APP_DB,
 			userId: input.token.userId,
 			tokenId: input.token.tokenId,
@@ -505,32 +500,82 @@ export async function invokePackageExport(input: {
 			exportName,
 			idempotencyKey,
 		})
+	} catch (error) {
+		return buildJsonErrorResponse({
+			status: 500,
+			code: 'idempotency_lookup_failed',
+			message: error instanceof Error ? error.message : String(error),
+			idempotencyKey,
+		})
+	}
+	if (existing) {
+		return resolveExistingInvocation({
+			record: existing,
+			requestHash,
+			idempotencyKey,
+		})
+	}
+
+	const invocationId = crypto.randomUUID()
+	let inserted: boolean
+	try {
+		inserted = await insertPackageInvocationRow({
+			db: input.env.APP_DB,
+			row: {
+				id: invocationId,
+				userId: input.token.userId,
+				tokenId: input.token.tokenId,
+				packageId: savedPackage.id,
+				packageKodyId: savedPackage.kodyId,
+				exportName,
+				idempotencyKey,
+				requestHash,
+				source,
+				topic,
+				status: 'in_progress',
+			},
+		})
+	} catch (error) {
+		return buildJsonErrorResponse({
+			status: 500,
+			code: 'idempotency_persistence_failed',
+			message: error instanceof Error ? error.message : String(error),
+			idempotencyKey,
+		})
+	}
+	if (!inserted) {
+		let current: Awaited<ReturnType<typeof getPackageInvocationByKey>>
+		try {
+			current = await getPackageInvocationByKey({
+				db: input.env.APP_DB,
+				userId: input.token.userId,
+				tokenId: input.token.tokenId,
+				packageId: savedPackage.id,
+				exportName,
+				idempotencyKey,
+			})
+		} catch (error) {
+			return buildJsonErrorResponse({
+				status: 500,
+				code: 'idempotency_lookup_failed',
+				message: error instanceof Error ? error.message : String(error),
+				idempotencyKey,
+			})
+		}
 		if (!current) {
-			throw new Error(
-				'Package invocation idempotency insert conflicted but no existing row was found.',
-			)
-		}
-		if (current.request_hash !== requestHash) {
 			return buildJsonErrorResponse({
-				status: 409,
-				code: 'idempotency_mismatch',
+				status: 500,
+				code: 'idempotency_conflict_unresolved',
 				message:
-					'This idempotency key has already been used for a different package invocation request.',
+					'Package invocation idempotency insert conflicted but no existing row was found.',
 				idempotencyKey,
 			})
 		}
-		if (current.status === 'in_progress') {
-			return buildJsonErrorResponse({
-				status: 409,
-				code: 'invocation_in_progress',
-				message:
-					'This idempotency key is already processing for the requested package export.',
-				idempotencyKey,
-			})
-		}
-		if (current.storedResponse) {
-			return markStoredResponseAsReplayed(current.storedResponse)
-		}
+		return resolveExistingInvocation({
+			record: current,
+			requestHash,
+			idempotencyKey,
+		})
 	}
 
 	try {

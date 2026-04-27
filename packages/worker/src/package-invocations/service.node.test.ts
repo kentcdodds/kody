@@ -46,7 +46,7 @@ vi.mock('#mcp/run-codemode-registry.ts', () => ({
 		repoMockModule.runBundledModuleWithRegistry(...args),
 }))
 
-function createDatabase() {
+function createDatabase(options: { failInsert?: boolean } = {}) {
 	const tables = new Map<string, Array<Record<string, unknown>>>([
 		['package_invocations', []],
 	])
@@ -68,7 +68,7 @@ function createDatabase() {
 		return clone(getTable(tableName).find(predicate) ?? null)
 	}
 
-	return {
+	const db = {
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
@@ -92,6 +92,9 @@ function createDatabase() {
 						},
 						async run() {
 							if (query.includes('INTO package_invocations')) {
+								if (options.failInsert) {
+									throw new Error('D1 unavailable')
+								}
 								const table = getTable('package_invocations')
 								const existing = table.find(
 									(row) =>
@@ -144,7 +147,13 @@ function createDatabase() {
 				},
 			}
 		},
-	} as unknown as D1Database
+		corruptStoredResponses() {
+			for (const row of getTable('package_invocations')) {
+				row['response_json'] = '{"status":200,"body":null}'
+			}
+		},
+	} as unknown as D1Database & { corruptStoredResponses(): void }
+	return db
 }
 
 function createEnv(db: D1Database) {
@@ -362,6 +371,91 @@ test('invokePackageExport replays the stored response for a duplicate idempotenc
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('invokePackageExport does not re-execute terminal rows with unusable stored responses', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'hello discord' },
+		logs: ['dispatched'],
+	})
+
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-corrupt',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+	;(
+		db as unknown as { corruptStoredResponses(): void }
+	).corruptStoredResponses()
+	const second = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-corrupt',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+
+	expect(first.status).toBe(200)
+	expect(second.status).toBe(409)
+	expect(second.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'idempotency_response_unavailable',
+		},
+		idempotency: {
+			key: 'evt-corrupt',
+			replayed: false,
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('invokePackageExport returns structured errors when idempotency insert fails', async () => {
+	const db = createDatabase({ failInsert: true })
+	seedPackageResolution()
+
+	const response = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-insert-failure',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+
+	expect(response.status).toBe(500)
+	expect(response.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'idempotency_persistence_failed',
+		},
+		idempotency: {
+			key: 'evt-insert-failure',
+			replayed: false,
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
 test('invokePackageExport rejects reusing an idempotency key for a different payload', async () => {
