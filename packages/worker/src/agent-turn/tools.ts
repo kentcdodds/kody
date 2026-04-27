@@ -82,7 +82,7 @@ export async function createAgentTurnToolSet(input: {
 							}),
 					}),
 				])
-				const result = searchUnified({
+				const result = await searchUnified({
 					env: input.env,
 					query: args.query,
 					limit: args.limit ?? defaultSearchLimit,

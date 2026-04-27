@@ -8,12 +8,12 @@ import {
 } from '#mcp/capabilities/values/connector-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import {
-	buildCapabilityEmbedText,
 	blendLexicalAndVectorScore,
 	cosineSimilarity,
 	deterministicEmbedding,
 	isCapabilitySearchOffline,
 	lexicalScore,
+	searchCapabilities,
 } from '#mcp/capabilities/capability-search.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
@@ -147,6 +147,10 @@ type SearchGuidanceContext = {
 	intent: SearchIntent
 	matches: Array<SearchMatch>
 }
+
+type SearchCapabilityMatch = Awaited<
+	ReturnType<typeof searchCapabilities>
+>['matches'][number]
 
 type SearchUnifiedResult = {
 	matches: Array<SearchMatch>
@@ -601,42 +605,26 @@ function rerankCandidates(input: {
 		.slice(0, input.limit)
 }
 
-function buildCapabilityCandidates(input: {
+async function buildCapabilityCandidates(input: {
 	query: string
+	env: Env
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	queryEmbedding: ReadonlyArray<number>
-}): Array<SearchCandidate> {
-	return Object.values(input.registry.capabilitySpecs)
-		.map((spec) => {
-			const document = buildCapabilityEmbedText(spec)
-			const lexical = lexicalScore(input.query, document)
-			const vector = cosineSimilarity(
-				input.queryEmbedding,
-				deterministicEmbedding(document),
-			)
-			return {
-				match: {
-					type: 'capability' as const,
-					name: spec.name,
-					description: spec.description,
-				},
-				type: 'capability' as const,
-				id: spec.name,
-				title: spec.name,
-				searchFields: [
-					spec.name,
-					spec.domain,
-					spec.description,
-					...(spec.keywords ?? []),
-					...(spec.inputFields ?? []),
-					...(spec.outputFields ?? []),
-				],
-				scoreComponents: buildCandidateBaseScore({
-					lexical,
-					vector,
-				}),
-			}
+}): Promise<Array<SearchCandidate>> {
+	const capabilitySearch = await searchCapabilities({
+		env: input.env,
+		query: input.query,
+		limit: Math.max(1, Object.keys(input.registry.capabilitySpecs).length),
+		detail: false,
+		specs: input.registry.capabilitySpecs,
+	})
+
+	return capabilitySearch.matches
+		.map((match) => {
+			const spec = input.registry.capabilitySpecs[match.name]
+			if (!spec) return null
+			return capabilityMatchToCandidate(match, spec)
 		})
+		.filter((candidate): candidate is SearchCandidate => candidate !== null)
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 }
 
@@ -825,7 +813,37 @@ function buildSecretCandidates(input: {
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 }
 
-export function searchUnified(input: {
+function capabilityMatchToCandidate(
+	match: SearchCapabilityMatch,
+	spec: Awaited<
+		ReturnType<typeof getCapabilityRegistryForContext>
+	>['capabilitySpecs'][string],
+): SearchCandidate {
+	return {
+		match: {
+			type: 'capability',
+			name: spec.name,
+			description: spec.description,
+		},
+		type: 'capability',
+		id: spec.name,
+		title: spec.name,
+		searchFields: [
+			spec.name,
+			spec.domain,
+			spec.description,
+			...(spec.keywords ?? []),
+			...(spec.inputFields ?? []),
+			...(spec.outputFields ?? []),
+		],
+		scoreComponents: buildCandidateBaseScore({
+			lexical: match.lexicalScore,
+			vector: match.vectorScore,
+		}),
+	}
+}
+
+export async function searchUnified(input: {
 	env: Env
 	query: string
 	limit: number
@@ -834,7 +852,7 @@ export function searchUnified(input: {
 		OptionalSearchRowsResult,
 		'packageRows' | 'userSecretRows' | 'userValueRows'
 	>
-}): SearchUnifiedResult {
+}): Promise<SearchUnifiedResult> {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
 	if (!query) {
@@ -881,11 +899,11 @@ export function searchUnified(input: {
 	const candidateGenerationStart = performance.now()
 	const queryEmbedding = deterministicEmbedding(intent.normalizedQuery)
 	const candidates = [
-		...buildCapabilityCandidates({
+		...(await buildCapabilityCandidates({
 			query: intent.normalizedQuery,
+			env: input.env,
 			registry: input.registry,
-			queryEmbedding,
-		}),
+		})),
 		...buildPackageCandidates({
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.packageRows,
@@ -950,7 +968,7 @@ export async function searchPackages(input: {
 	limit: number
 	rows: Array<PackageSearchRow>
 }): Promise<{ matches: Array<SearchMatch>; offline: boolean }> {
-	const result = searchUnified({
+	const result = await searchUnified({
 		env: input.env,
 		query: input.query,
 		limit: input.limit,
@@ -1475,7 +1493,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					}
 				}
 
-				const result = searchUnified({
+				const result = await searchUnified({
 					env: agent.getEnv(),
 					query: args.query!,
 					limit,
