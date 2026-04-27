@@ -336,13 +336,20 @@ export async function searchCapabilities(input: {
 	const matches: Array<CapabilitySearchHit> = ordered.map((id) => {
 		const spec = specs[id]!
 		const base = input.detail ? toDetail(spec) : toSummary(spec)
+		const rawVectorScore = vectorScoreById[id]
+		const vectorScore =
+			rawVectorScore !== undefined && Number.isFinite(rawVectorScore)
+				? rawVectorScore
+				: 0
 		return {
 			...base,
 			fusedScore: fused.get(id) ?? 0,
 			lexicalRank: lexicalRankById.get(id),
 			vectorRank: vectorRankById.get(id),
 			lexicalScore: lexicalScoreById[id] ?? 0,
-			vectorScore: vectorScoreById[id] ?? Number.NEGATIVE_INFINITY,
+			// Keep non-finite scores internal to ranking and expose a stable numeric
+			// value on the public hit shape.
+			vectorScore,
 		}
 	})
 

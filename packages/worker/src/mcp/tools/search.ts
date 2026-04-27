@@ -621,10 +621,13 @@ async function buildCapabilityCandidates(input: {
 	return capabilitySearch.matches
 		.map((match) => {
 			const spec = input.registry.capabilitySpecs[match.name]
-			if (!spec) return null
+			if (!spec || spec.name !== match.name) {
+				throw new Error(
+					`Capability search result "${match.name}" did not map to a registry spec by name.`,
+				)
+			}
 			return capabilityMatchToCandidate(match, spec)
 		})
-		.filter((candidate): candidate is SearchCandidate => candidate !== null)
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 }
 
