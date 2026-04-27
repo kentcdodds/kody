@@ -10,6 +10,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Setup](./setup.md), [code style](./code-style.md),
   [testing](./testing-principles.md)
 - [Packages and manifests](./packages-and-manifests.md)
+- [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)
 - [Architecture](./architecture/index.md)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)
