@@ -188,10 +188,10 @@ export async function updatePackageInvocationTokenLastUsed(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE package_invocation_tokens
-			SET last_used_at = ?, updated_at = ?
+			SET last_used_at = ?
 			WHERE id = ? AND revoked_at IS NULL`,
 		)
-		.bind(new Date().toISOString(), new Date().toISOString(), input.id)
+		.bind(new Date().toISOString(), input.id)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

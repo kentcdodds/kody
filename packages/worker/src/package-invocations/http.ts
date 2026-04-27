@@ -174,6 +174,7 @@ export function isPackageInvocationApiRequest(pathname: string) {
 export async function handlePackageInvocationApiRequest(
 	request: Request,
 	env: Env,
+	ctx?: ExecutionContext,
 ) {
 	const route = parsePackageInvocationPath(new URL(request.url).pathname)
 	if (!route) {
@@ -194,7 +195,7 @@ export async function handlePackageInvocationApiRequest(
 	const requestIp = getRequestIp(request) ?? undefined
 	const bearerToken = readBearerToken(request)
 	if (!bearerToken) {
-		void logAuditEvent({
+		logPackageInvocationAudit(ctx, {
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -209,7 +210,7 @@ export async function handlePackageInvocationApiRequest(
 		bearerToken,
 	})
 	if (!tokenScope) {
-		void logAuditEvent({
+		logPackageInvocationAudit(ctx, {
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -306,7 +307,7 @@ export async function handlePackageInvocationApiRequest(
 					] ?? 'request_failed',
 				)
 			: undefined
-	void logAuditEvent({
+	logPackageInvocationAudit(ctx, {
 		category: 'oauth',
 		action: 'package_invoke',
 		result,
@@ -316,4 +317,18 @@ export async function handlePackageInvocationApiRequest(
 		reason,
 	})
 	return jsonResponse(response.body, { status: response.status })
+}
+
+type PackageInvocationAuditEvent = Parameters<typeof logAuditEvent>[0]
+
+function logPackageInvocationAudit(
+	ctx: ExecutionContext | undefined,
+	event: PackageInvocationAuditEvent,
+) {
+	const promise = logAuditEvent(event)
+	if (ctx) {
+		ctx.waitUntil(promise)
+	} else {
+		void promise
+	}
 }

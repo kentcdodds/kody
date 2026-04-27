@@ -185,14 +185,16 @@ function tokenAllowsSource(input: {
 	token: PackageInvocationTokenScope
 	source: string | null
 }) {
-	if (!input.source) return false
+	if (!input.source) return true
 	const sources = input.token.sources ?? []
 	return sources.includes(input.source)
 }
 
 function isMissingPackageExportError(error: unknown) {
 	return (
-		error instanceof Error && error.message.includes('does not define export')
+		error instanceof Error &&
+		(error.message.includes('does not define export') ||
+			error.message.includes('does not define a runtime target'))
 	)
 }
 
@@ -501,10 +503,12 @@ export async function invokePackageExport(input: {
 			idempotencyKey,
 		})
 	} catch (error) {
+		console.error('package invocation idempotency lookup failed', error)
 		return buildJsonErrorResponse({
 			status: 500,
 			code: 'idempotency_lookup_failed',
-			message: error instanceof Error ? error.message : String(error),
+			message:
+				'Unable to look up the package invocation idempotency record. Please retry.',
 			idempotencyKey,
 		})
 	}
@@ -536,10 +540,12 @@ export async function invokePackageExport(input: {
 			},
 		})
 	} catch (error) {
+		console.error('package invocation idempotency persistence failed', error)
 		return buildJsonErrorResponse({
 			status: 500,
 			code: 'idempotency_persistence_failed',
-			message: error instanceof Error ? error.message : String(error),
+			message:
+				'Unable to persist the package invocation idempotency record. Please retry.',
 			idempotencyKey,
 		})
 	}
@@ -555,10 +561,12 @@ export async function invokePackageExport(input: {
 				idempotencyKey,
 			})
 		} catch (error) {
+			console.error('package invocation idempotency lookup failed', error)
 			return buildJsonErrorResponse({
 				status: 500,
 				code: 'idempotency_lookup_failed',
-				message: error instanceof Error ? error.message : String(error),
+				message:
+					'Unable to look up the package invocation idempotency record. Please retry.',
 				idempotencyKey,
 			})
 		}

@@ -307,7 +307,6 @@ test('invokePackageExport executes a scoped package export successfully', async 
 			exportName: 'dispatch-message-created',
 			params: { content: 'hi' },
 			idempotencyKey: 'evt-1',
-			source: 'discord-gateway',
 			topic: 'discord.message.created',
 		},
 	})
@@ -453,6 +452,33 @@ test('invokePackageExport returns structured errors when idempotency insert fail
 		idempotency: {
 			key: 'evt-insert-failure',
 			replayed: false,
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+})
+
+test('invokePackageExport rejects explicitly disallowed source values', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+
+	const response = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-bad-source',
+			source: 'other-gateway',
+		},
+	})
+
+	expect(response.status).toBe(403)
+	expect(response.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'source_not_allowed',
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()

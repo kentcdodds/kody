@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS package_invocations (
 	request_hash TEXT NOT NULL,
 	source TEXT,
 	topic TEXT,
-	status TEXT NOT NULL,
+	status TEXT NOT NULL CHECK (status IN ('in_progress', 'completed', 'failed')),
 	response_json TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL

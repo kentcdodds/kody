@@ -77,7 +77,7 @@ async function createEnv(
 									if (options.touchError) {
 										throw options.touchError
 									}
-									const id = String(params[2] ?? '')
+									const id = String(params[1] ?? '')
 									const row = tokenRows.find(
 										(entry) => entry.id === id && entry.revoked_at === null,
 									)
@@ -93,7 +93,6 @@ async function createEnv(
 										}
 									}
 									row.last_used_at = String(params[0])
-									row.updated_at = String(params[1])
 									return { meta: { changes: 1, last_row_id: 0 } }
 								}
 								return { meta: { changes: 0, last_row_id: 0 } }
@@ -128,6 +127,13 @@ async function createEnv(
 	} as unknown as Env
 }
 
+function createContext() {
+	return {
+		waitUntil: vi.fn(),
+		passThroughOnException: vi.fn(),
+	} as unknown as ExecutionContext
+}
+
 test('isPackageInvocationApiRequest matches the external package invocation route', () => {
 	expect(
 		isPackageInvocationApiRequest(
@@ -148,6 +154,7 @@ test('package invocation API returns 401 when bearer token is missing', async ()
 			},
 		),
 		await createEnv(),
+		createContext(),
 	)
 
 	expect(response.status).toBe(401)
@@ -177,6 +184,7 @@ test('package invocation API returns 401 for invalid private tokens', async () =
 			},
 		),
 		await createEnv(),
+		createContext(),
 	)
 
 	expect(response.status).toBe(401)
@@ -203,6 +211,7 @@ test('package invocation API fails closed when token touch loses revocation race
 			},
 		),
 		await createEnv({ touchChanges: 0 }),
+		createContext(),
 	)
 
 	expect(response.status).toBe(401)
@@ -234,6 +243,7 @@ test('package invocation API fails closed when token scope JSON is malformed', a
 				package_kody_ids_json: '{bad json',
 			},
 		}),
+		createContext(),
 	)
 
 	expect(response.status).toBe(401)
@@ -261,6 +271,7 @@ test('package invocation API validates the JSON body shape', async () => {
 			},
 		),
 		await createEnv(),
+		createContext(),
 	)
 
 	expect(response.status).toBe(400)
@@ -288,6 +299,7 @@ test('package invocation API invokes the package export with the scoped token co
 		},
 	})
 
+	const ctx = createContext()
 	const response = await handlePackageInvocationApiRequest(
 		new Request(
 			'https://example.com/api/package-invocations/discord-gateway/dispatch-message-created',
@@ -306,6 +318,7 @@ test('package invocation API invokes the package export with the scoped token co
 			},
 		),
 		await createEnv(),
+		ctx,
 	)
 
 	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledWith({
@@ -331,6 +344,7 @@ test('package invocation API invokes the package export with the scoped token co
 		},
 	})
 	expect(response.status).toBe(200)
+	expect(ctx.waitUntil).toHaveBeenCalled()
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
 		exportName: './dispatch-message-created',

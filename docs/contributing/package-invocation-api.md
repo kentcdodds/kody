@@ -59,7 +59,7 @@ The token is not a global backdoor:
 - package lookup is still user-owned
 - package access is scoped by the token row
 - export access requires an explicit allowlist
-- `source` metadata requires an explicit allowlist
+- `source` metadata is checked against the allowlist when provided
 - tokens can be revoked without deploys
 - execution still uses normal package runtime machinery
 
@@ -81,7 +81,8 @@ Fields:
 
 - `params` — JSON object passed to the package export as runtime params
 - `idempotencyKey` — required stable key for replay protection
-- `source` — optional source label for auditing and token scoping
+- `source` — optional source label for auditing and token scoping; when present,
+  it must match the token's `sources_json` allowlist
 - `topic` — optional event topic label for downstream logic and logs
 
 ## Idempotency
