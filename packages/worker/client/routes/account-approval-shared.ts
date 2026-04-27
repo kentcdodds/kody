@@ -27,8 +27,12 @@ export async function readJson<T>(response: Response) {
 
 export async function submitApprovalRequest<
 	T extends { ok?: boolean; error?: string },
->(action: ApprovalAction, requestToken: string) {
-	const response = await fetch(accountSecretsApiPath, {
+>(
+	action: ApprovalAction,
+	requestToken: string,
+	requestUrl = accountSecretsApiPath,
+) {
+	const response = await fetch(requestUrl, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',

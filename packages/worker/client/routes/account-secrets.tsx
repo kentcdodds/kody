@@ -81,6 +81,7 @@ type AccountSecretsPayload = {
 	secrets: Array<SecretListItem>
 	selectedSecret: SecretDetail | null
 	approval: ApprovalView | null
+	approvalError: string | null
 }
 
 type EditorState = {
@@ -531,6 +532,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		syncEditorState(selection)
 		message =
 			nextMessage ??
+			payload.approvalError ??
 			(selection.selectedSecretId &&
 			!payload.selectedSecret &&
 			!payload.approval
@@ -626,12 +628,16 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 
 		try {
+			const selection = getSelectionState(getCurrentHref())
+			const requestUrl = new URL(accountSecretsApiPath, getCurrentHref())
+			if (selection.selectedSecretId) {
+				requestUrl.searchParams.set('selected', selection.selectedSecretId)
+			}
 			const payload = await submitApprovalRequest<
 				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(action, approval.token)
+			>(action, approval.token, requestUrl.toString())
 			if (!payload) return
 
-			const selection = getSelectionState(getCurrentHref())
 			applyPayload(
 				payload,
 				selection,
@@ -874,7 +880,10 @@ export function AccountSecretsRoute(handle: Handle) {
 	function addAllowedPackage() {
 		editorState = {
 			...editorState,
-			allowedPackages: [...editorState.allowedPackages, createAllowedPackageRow()],
+			allowedPackages: [
+				...editorState.allowedPackages,
+				createAllowedPackageRow(),
+			],
 		}
 		handle.update()
 	}
@@ -1007,8 +1016,7 @@ export function AccountSecretsRoute(handle: Handle) {
 							</h2>
 							{approvalCard.requestedPackageId ? (
 								<p css={{ margin: 0, color: colors.textMuted }}>
-									Allow package{' '}
-									<code>{approvalCard.requestedPackageId}</code>{' '}
+									Allow package <code>{approvalCard.requestedPackageId}</code>{' '}
 									to use secret <code>{approvalCard.name}</code> from the{' '}
 									{getScopeLabel(approvalCard.scope)} scope.
 								</p>
