@@ -31,9 +31,7 @@ import {
 	type BondGroupSummary,
 	type BondPersistedBridge,
 } from './types.ts'
-import {
-	type HomeConnectorErrorCaptureContext,
-} from '../../sentry.ts'
+import { type HomeConnectorErrorCaptureContext } from '../../sentry.ts'
 
 function normalizeQuery(value: string) {
 	return value.trim().toLowerCase()
@@ -145,6 +143,26 @@ function createBondBaseUrlCandidates(bridge: BondPersistedBridge) {
 	return fallback === primary ? [primary] : [primary, fallback]
 }
 
+function getErrorCauseMessage(error: Error): string | null {
+	const cause = error.cause
+	if (cause instanceof Error) {
+		return cause.message
+	}
+	if (typeof cause === 'string') {
+		return cause
+	}
+	if (cause && typeof cause === 'object') {
+		const message = (cause as { message?: unknown }).message
+		if (typeof message === 'string' && message.trim()) {
+			return message
+		}
+		if (message != null) {
+			return String(message)
+		}
+	}
+	return null
+}
+
 function isBondNetworkFailure(error: unknown) {
 	if (!(error instanceof Error)) {
 		return false
@@ -160,15 +178,7 @@ function isBondNetworkFailure(error: unknown) {
 	) {
 		return true
 	}
-	const causeMessage =
-		error.cause instanceof Error
-			? error.cause.message.toLowerCase()
-			: typeof error.cause === 'string'
-				? error.cause.toLowerCase()
-				: error.cause && typeof error.cause === 'object'
-					? String((error.cause as { message?: unknown }).message ?? '')
-							.toLowerCase()
-				: ''
+	const causeMessage = (getErrorCauseMessage(error) ?? '').toLowerCase()
 	return (
 		causeMessage.includes('enotfound') ||
 		causeMessage.includes('eai_again') ||
@@ -181,14 +191,7 @@ function isBondNetworkFailure(error: unknown) {
 
 function formatBondFailureReason(error: unknown) {
 	if (error instanceof Error) {
-		const causeMessage =
-			error.cause instanceof Error
-				? error.cause.message
-				: typeof error.cause === 'string'
-					? error.cause
-					: error.cause && typeof error.cause === 'object'
-						? String((error.cause as { message?: unknown }).message ?? '')
-					: null
+		const causeMessage = getErrorCauseMessage(error)
 		return causeMessage ? `${error.message}; cause=${causeMessage}` : error.message
 	}
 	return String(error)
@@ -201,10 +204,11 @@ function createBondActionableError(input: {
 	baseUrlsTried: Array<string>
 }) {
 	const connection = getBondBridgeConnectionContext(input.bridge)
+	const failureReason = formatBondFailureReason(input.error)
 	const guidance = connection.host.endsWith('.local')
 		? ' The stored Bond host ends in .local, so this usually means the container cannot resolve mDNS on the LAN. If this connector runs in a NAS/container without mDNS, update the bridge host to a stable IP with bond_update_bridge_connection or restore mDNS/DNS visibility for the container.'
 		: ' Verify the bridge host/IP is still reachable from the home-connector container and update it with bond_update_bridge_connection if it changed.'
-	const errorMessage = `Bond bridge "${input.bridge.bridgeId}" could not be reached while trying to ${input.operation} at ${input.baseUrlsTried.join(', ')}. ${formatBondFailureReason(input.error)}.${guidance}`
+	const errorMessage = `Bond bridge "${input.bridge.bridgeId}" could not be reached while trying to ${input.operation} at ${input.baseUrlsTried.join(', ')}. ${failureReason}.${guidance}`
 	const wrappedError = new Error(errorMessage, {
 		cause: input.error instanceof Error ? input.error : undefined,
 	}) as Error & {
@@ -228,7 +232,7 @@ function createBondActionableError(input: {
 		extra: {
 			bondOperation: input.operation,
 			bondBaseUrlsTried: input.baseUrlsTried,
-			bondFailureReason: formatBondFailureReason(input.error),
+			bondFailureReason: failureReason,
 		},
 	}
 	return wrappedError
@@ -240,15 +244,20 @@ async function withBondBridgeRequest<T>(input: {
 	request: (baseUrl: string) => Promise<T>
 }) {
 	const baseUrls = createBondBaseUrlCandidates(input.bridge)
+	const attemptedBaseUrls: Array<string> = []
 	let lastError: unknown = null
 	for (let index = 0; index < baseUrls.length; index += 1) {
 		const baseUrl = baseUrls[index]!
+		attemptedBaseUrls.push(baseUrl)
 		try {
 			return await input.request(baseUrl)
 		} catch (error) {
 			lastError = error
+			if (!isBondNetworkFailure(error)) {
+				throw error
+			}
 			const canRetryWithFallback =
-				index === 0 && baseUrls.length > 1 && isBondNetworkFailure(error)
+				index === 0 && baseUrls.length > 1
 			if (!canRetryWithFallback) {
 				break
 			}
@@ -258,7 +267,7 @@ async function withBondBridgeRequest<T>(input: {
 		bridge: input.bridge,
 		operation: input.operation,
 		error: lastError,
-		baseUrlsTried: baseUrls,
+		baseUrlsTried: attemptedBaseUrls,
 	})
 }
 

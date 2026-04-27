@@ -1,9 +1,11 @@
 import * as Sentry from '@sentry/node'
 
 type EnvRecord = Record<string, string | undefined>
+type SentryContextValue = Record<string, unknown> | undefined
+type SentryContextMap = Record<string, SentryContextValue>
 export type HomeConnectorErrorCaptureContext = {
 	tags?: Record<string, string>
-	contexts?: Record<string, Record<string, unknown>>
+	contexts?: SentryContextMap
 	extra?: Record<string, unknown>
 }
 
@@ -34,18 +36,22 @@ function normalizeError(error: unknown) {
 }
 
 function mergeContextRecords(
-	base: Record<string, Record<string, unknown>> | undefined,
-	override: Record<string, Record<string, unknown>> | undefined,
+	base: SentryContextMap | undefined,
+	override: SentryContextMap | undefined,
 ) {
 	if (!base && !override) return undefined
-	const merged: Record<string, Record<string, unknown>> = {
-		...(base ?? {}),
+	const merged: SentryContextMap = {}
+	for (const [key, value] of Object.entries(base ?? {})) {
+		merged[key] = value ? { ...value } : undefined
 	}
 	for (const [key, value] of Object.entries(override ?? {})) {
-		merged[key] = {
-			...(merged[key] ?? {}),
-			...value,
-		}
+		merged[key] =
+			value === undefined
+				? undefined
+				: {
+						...(merged[key] ?? {}),
+						...value,
+					}
 	}
 	return merged
 }
@@ -66,7 +72,14 @@ export function getHomeConnectorErrorCaptureContext(
 	return {
 		...(captureContext.tags ? { tags: { ...captureContext.tags } } : {}),
 		...(captureContext.contexts
-			? { contexts: { ...captureContext.contexts } }
+			? {
+					contexts: Object.fromEntries(
+						Object.entries(captureContext.contexts).map(([key, value]) => [
+							key,
+							value ? { ...value } : undefined,
+						]),
+					),
+				}
 			: {}),
 		...(captureContext.extra ? { extra: { ...captureContext.extra } } : {}),
 	}
@@ -143,9 +156,7 @@ export function captureHomeConnectorException(
 		},
 		contexts: mergeContextRecords(
 			derivedCaptureContext.contexts,
-			captureContext.contexts as
-				| Record<string, Record<string, unknown>>
-				| undefined,
+			captureContext.contexts as SentryContextMap | undefined,
 		),
 		extra: {
 			...(derivedCaptureContext.extra ?? {}),

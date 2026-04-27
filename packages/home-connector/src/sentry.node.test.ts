@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 const sentryMock = vi.hoisted(() => ({
 	addBreadcrumb: vi.fn(),
@@ -13,6 +13,10 @@ const sentryMock = vi.hoisted(() => ({
 }))
 
 vi.mock('@sentry/node', () => sentryMock)
+
+afterEach(() => {
+	sentryMock.isEnabled.mockReturnValue(false)
+})
 
 const {
 	buildHomeConnectorSentryOptions,
@@ -169,6 +173,9 @@ test('getHomeConnectorErrorCaptureContext returns a cloned capture context', () 
 	expect(captureContext.tags).not.toBe(error.homeConnectorCaptureContext.tags)
 	expect(captureContext.contexts).not.toBe(
 		error.homeConnectorCaptureContext.contexts,
+	)
+	expect(captureContext.contexts?.bond).not.toBe(
+		error.homeConnectorCaptureContext.contexts?.bond,
 	)
 	expect(captureContext.extra).not.toBe(error.homeConnectorCaptureContext.extra)
 })
