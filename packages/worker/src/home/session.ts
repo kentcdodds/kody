@@ -72,7 +72,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 				service: 'worker',
 				worker_component: 'home-connector-session',
 			},
-			...(input.extra ? { extra: input.extra } : {}),
+			extra: input.extra ?? {},
 		})
 	}
 
@@ -355,7 +355,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			try {
 				await this.refreshToolsSnapshot()
 			} catch (error) {
-				this.clearConnectionState()
+				this.stateSnapshot.tools = []
 				this.captureSessionMessage(
 					'Home connector tools snapshot refresh failed.',
 					{

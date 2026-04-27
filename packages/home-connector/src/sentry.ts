@@ -112,6 +112,28 @@ export function captureHomeConnectorMessage(
 	})
 }
 
+export function addHomeConnectorSentryBreadcrumb(input: {
+	message: string
+	category: string
+	level?: 'info' | 'warning' | 'error'
+	data?: Record<string, unknown>
+}) {
+	if (!Sentry.isEnabled()) {
+		return
+	}
+
+	Sentry.addBreadcrumb({
+		type: 'default',
+		category: input.category,
+		message: input.message,
+		level: input.level ?? 'info',
+		data: {
+			service: 'home-connector',
+			...(input.data ?? {}),
+		},
+	})
+}
+
 export async function flushHomeConnectorSentry(timeout = 2_000) {
 	if (!Sentry.isEnabled()) {
 		return true

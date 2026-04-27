@@ -62,7 +62,7 @@ function installGracefulShutdownHandlers(input: {
 				process_event: 'uncaughtException',
 			},
 		})
-		void shutdown('uncaughtException').finally(() => {
+		void flushHomeConnectorSentry().finally(() => {
 			process.exit(1)
 		})
 	})
@@ -74,10 +74,22 @@ function installGracefulShutdownHandlers(input: {
 				process_event: 'unhandledRejection',
 			},
 			extra: {
-				promise: String(promise),
+				...(typeof reason === 'string' ||
+				typeof reason === 'number' ||
+				typeof reason === 'boolean'
+					? { reason: String(reason) }
+					: {}),
+				promiseConstructor:
+					promise &&
+					typeof promise === 'object' &&
+					'constructor' in promise &&
+					typeof promise.constructor === 'function' &&
+					promise.constructor.name
+						? promise.constructor.name
+						: 'Promise',
 			},
 		})
-		void shutdown('unhandledRejection').finally(() => {
+		void flushHomeConnectorSentry().finally(() => {
 			process.exit(1)
 		})
 	})

@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 
 const sentryMock = vi.hoisted(() => ({
+	addBreadcrumb: vi.fn(),
 	close: vi.fn(),
 	flush: vi.fn(),
 	init: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('@sentry/node', () => sentryMock)
 
 const {
 	buildHomeConnectorSentryOptions,
+	addHomeConnectorBreadcrumb,
 	closeHomeConnectorSentry,
 	flushHomeConnectorSentry,
 	initializeHomeConnectorSentry,
@@ -110,4 +112,16 @@ test('closeHomeConnectorSentry returns true when Sentry is disabled', async () =
 	sentryMock.close.mockReset()
 	await expect(closeHomeConnectorSentry()).resolves.toBe(true)
 	expect(sentryMock.close).not.toHaveBeenCalled()
+})
+
+test('addHomeConnectorBreadcrumb is a no-op when Sentry is disabled', () => {
+	sentryMock.isEnabled.mockReturnValue(false)
+	sentryMock.addBreadcrumb.mockReset()
+
+	addHomeConnectorBreadcrumb({
+		message: 'Opening home connector websocket.',
+		category: 'websocket.lifecycle',
+	})
+
+	expect(sentryMock.addBreadcrumb).not.toHaveBeenCalled()
 })
