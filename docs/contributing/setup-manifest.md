@@ -95,6 +95,14 @@ automatically:
   `POST /__maintenance/reindex-capabilities` to refresh builtin capability
   embeddings in Vectorize. Saved package projections refresh when packages are
   saved or published.)
+- `PACKAGE_INVOCATION_TOKENS` (optional Worker secret; JSON object mapping token
+  ids to scoped private bearer token configs for
+  `POST /api/package-invocations/:packageIdOrKodyId/:exportName`. Each entry
+  declares the raw bearer token, the owning `userId`, `email`, `displayName`,
+  and allowed package scopes via `packageIds` and/or `packageKodyIds`. Optional
+  `exportNames` and `sources` narrow the token further. Use this for trusted
+  first-party service-to-service callers such as an external Discord gateway
+  proxy.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.
@@ -118,6 +126,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
   when set; synced like other optional secrets)
+- `PACKAGE_INVOCATION_TOKENS` (optional; JSON worker secret for scoped private
+  bearer tokens used by external package invocation clients such as a Discord
+  gateway proxy)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
@@ -183,6 +194,29 @@ How to get/set each value:
     `/__maintenance/reindex-capabilities` and `/__maintenance/reindex-skills`
     with `Authorization: Bearer …` to refresh capability and user-skill
     embeddings.
+- `PACKAGE_INVOCATION_TOKENS` (optional)
+  - Store a JSON object as the repository secret `PACKAGE_INVOCATION_TOKENS`.
+  - Each top-level key is a token id for auditing; each value must include:
+    - `token` — the raw bearer token string to send in `Authorization`
+    - `userId` — owning Kody user id
+    - `email` and `displayName` — user context passed into package execution
+    - `packageIds` and/or `packageKodyIds` — allowed saved packages
+  - Optional `exportNames` limits callable exports, and optional `sources`
+    limits request-body `source` values.
+  - Example:
+    ```json
+    {
+    	"discord-gateway-prod": {
+    		"token": "replace-with-long-random-token",
+    		"userId": "stable-user-id",
+    		"email": "me@example.com",
+    		"displayName": "me",
+    		"packageKodyIds": ["discord-gateway"],
+    		"exportNames": ["./dispatch-message-created"],
+    		"sources": ["discord-gateway"]
+    	}
+    }
+    ```
 - `DOCKERHUB_USERNAME`
   - Use your Docker Hub username or organization service account name.
   - Store it as the repository secret `DOCKERHUB_USERNAME`.

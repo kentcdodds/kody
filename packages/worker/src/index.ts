@@ -33,6 +33,10 @@ import {
 	handleGeneratedUiApiRequest,
 	isGeneratedUiApiRequest,
 } from './mcp/generated-ui-api.ts'
+import {
+	handlePackageInvocationApiRequest,
+	isPackageInvocationApiRequest,
+} from './package-invocations/http.ts'
 import { withCors } from './utils.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
@@ -263,6 +267,9 @@ function addOAuthDiscoveryCorsHeaders(
 const workerHandler = {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
+		if (isPackageInvocationApiRequest(url.pathname)) {
+			return handlePackageInvocationApiRequest(request, env)
+		}
 
 		// OAuthProvider serves this URL first and defaults `resource` to the origin only.
 		// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our

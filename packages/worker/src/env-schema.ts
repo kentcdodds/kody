@@ -130,6 +130,177 @@ const optionalRemoteConnectorSecretsSchema = createSchema<
 	return { value: out }
 })
 
+export type PackageInvocationTokenConfig = {
+	token: string
+	userId: string
+	email: string
+	displayName: string
+	packageIds?: Array<string>
+	packageKodyIds?: Array<string>
+	exportNames?: Array<string>
+	sources?: Array<string>
+}
+
+export type PackageInvocationTokensConfig = Record<
+	string,
+	PackageInvocationTokenConfig
+>
+
+const optionalPackageInvocationTokensSchema = createSchema<
+	unknown,
+	PackageInvocationTokensConfig | undefined
+>((value, context) => {
+	if (value === undefined) return { value: undefined }
+	if (typeof value !== 'string') return fail('Expected string', context.path)
+
+	const trimmed = value.trim()
+	if (!trimmed) return { value: undefined }
+
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(trimmed) as unknown
+	} catch {
+		return fail(
+			'PACKAGE_INVOCATION_TOKENS must be valid JSON when set.',
+			context.path,
+		)
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		return fail(
+			'PACKAGE_INVOCATION_TOKENS must be a JSON object mapping token ids to scoped token configs.',
+			context.path,
+		)
+	}
+
+	const normalizeOptionalStringArray = (
+		rawValue: unknown,
+		field: string,
+		tokenId: string,
+	) => {
+		if (rawValue === undefined) return undefined
+		if (!Array.isArray(rawValue)) {
+			throw new Error(
+				`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" field "${field}" must be an array of non-empty strings.`,
+			)
+		}
+		const normalized = rawValue
+			.map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+			.filter((entry) => entry.length > 0)
+		if (normalized.length !== rawValue.length) {
+			throw new Error(
+				`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" field "${field}" must contain only non-empty strings.`,
+			)
+		}
+		return normalized.length > 0 ? normalized : undefined
+	}
+
+	const out: PackageInvocationTokensConfig = {}
+	for (const [rawTokenId, rawTokenConfig] of Object.entries(parsed)) {
+		const tokenId = rawTokenId.trim()
+		if (!tokenId) {
+			return fail(
+				'PACKAGE_INVOCATION_TOKENS keys must be non-empty token ids.',
+				context.path,
+			)
+		}
+		if (
+			!rawTokenConfig ||
+			typeof rawTokenConfig !== 'object' ||
+			Array.isArray(rawTokenConfig)
+		) {
+			return fail(
+				`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" must be an object.`,
+				context.path,
+			)
+		}
+
+		try {
+			const record = rawTokenConfig as Record<string, unknown>
+			const token =
+				typeof record['token'] === 'string' ? record['token'].trim() : ''
+			const userId =
+				typeof record['userId'] === 'string' ? record['userId'].trim() : ''
+			const email =
+				typeof record['email'] === 'string' ? record['email'].trim() : ''
+			const displayName =
+				typeof record['displayName'] === 'string'
+					? record['displayName'].trim()
+					: ''
+			const packageIds = normalizeOptionalStringArray(
+				record['packageIds'],
+				'packageIds',
+				tokenId,
+			)
+			const packageKodyIds = normalizeOptionalStringArray(
+				record['packageKodyIds'],
+				'packageKodyIds',
+				tokenId,
+			)
+			const exportNames = normalizeOptionalStringArray(
+				record['exportNames'],
+				'exportNames',
+				tokenId,
+			)
+			const sources = normalizeOptionalStringArray(
+				record['sources'],
+				'sources',
+				tokenId,
+			)
+
+			if (!token) {
+				return fail(
+					`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" requires a non-empty "token" string.`,
+					context.path,
+				)
+			}
+			if (!userId) {
+				return fail(
+					`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" requires a non-empty "userId" string.`,
+					context.path,
+				)
+			}
+			if (!email) {
+				return fail(
+					`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" requires a non-empty "email" string.`,
+					context.path,
+				)
+			}
+			if (!displayName) {
+				return fail(
+					`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" requires a non-empty "displayName" string.`,
+					context.path,
+				)
+			}
+			if (!packageIds && !packageKodyIds) {
+				return fail(
+					`PACKAGE_INVOCATION_TOKENS entry "${tokenId}" must declare at least one package scope via "packageIds" or "packageKodyIds".`,
+					context.path,
+				)
+			}
+
+			out[tokenId] = {
+				token,
+				userId,
+				email,
+				displayName,
+				...(packageIds ? { packageIds } : {}),
+				...(packageKodyIds ? { packageKodyIds } : {}),
+				...(exportNames ? { exportNames } : {}),
+				...(sources ? { sources } : {}),
+			}
+		} catch (error) {
+			return fail(
+				error instanceof Error
+					? error.message
+					: `Invalid PACKAGE_INVOCATION_TOKENS entry "${tokenId}".`,
+				context.path,
+			)
+		}
+	}
+
+	return { value: out }
+})
+
 const optionalSentryTracesSampleRateSchema = createSchema<
 	unknown,
 	number | undefined
@@ -234,6 +405,7 @@ export const EnvSchema = object({
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	JOB_REINDEX_SECRET: optionalNonEmptyStringSchema,
+	PACKAGE_INVOCATION_TOKENS: optionalPackageInvocationTokensSchema,
 	HOME_CONNECTOR_SHARED_SECRET: optionalNonEmptyStringSchema,
 	REMOTE_CONNECTOR_SECRETS: optionalRemoteConnectorSecretsSchema,
 })
