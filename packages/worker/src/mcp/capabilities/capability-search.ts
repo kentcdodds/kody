@@ -54,7 +54,7 @@ export function cosineSimilarity(
 
 // Keep hybrid lexical+vector scores on the same scale as lexical-only matches.
 export function blendLexicalAndVectorScore(lexical: number, vector: number) {
-	return (lexical + vector) / 2
+	return (lexical + Math.max(0, vector)) / 2
 }
 
 export function buildCapabilityEmbedText(spec: CapabilitySpec): string {
@@ -81,7 +81,7 @@ export function lexicalScore(query: string, doc: string): number {
 }
 
 export function hybridSearchScore(lexical: number, vector: number): number {
-	return (lexical + vector) / 2
+	return blendLexicalAndVectorScore(lexical, vector)
 }
 
 export function normalizeHybridSearchScore(input: {
@@ -137,6 +137,8 @@ export type CapabilitySearchHit = RankedCapabilityHit & {
 	fusedScore: number
 	lexicalRank?: number
 	vectorRank?: number
+	lexicalScore: number
+	vectorScore: number
 }
 
 function toSummary(spec: CapabilitySpec): CapabilitySummaryRow {
@@ -334,11 +336,20 @@ export async function searchCapabilities(input: {
 	const matches: Array<CapabilitySearchHit> = ordered.map((id) => {
 		const spec = specs[id]!
 		const base = input.detail ? toDetail(spec) : toSummary(spec)
+		const rawVectorScore = vectorScoreById[id]
+		const vectorScore =
+			rawVectorScore !== undefined && Number.isFinite(rawVectorScore)
+				? rawVectorScore
+				: 0
 		return {
 			...base,
 			fusedScore: fused.get(id) ?? 0,
 			lexicalRank: lexicalRankById.get(id),
 			vectorRank: vectorRankById.get(id),
+			lexicalScore: lexicalScoreById[id] ?? 0,
+			// Keep non-finite scores internal to ranking and expose a stable numeric
+			// value on the public hit shape.
+			vectorScore,
 		}
 	})
 

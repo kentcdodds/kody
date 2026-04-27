@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { synthesizeRemoteToolDomain } from '#mcp/capabilities/home/index.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shared.ts'
 import {
 	buildSavedPackageSearchRows,
@@ -11,7 +13,7 @@ import {
 	type PackageSearchRow,
 } from './search.ts'
 
-test('searchUnified ranks mixed search rows through one shared pipeline', () => {
+test('searchUnified ranks mixed search rows through one shared pipeline', async () => {
 	const registry = buildCapabilityRegistry([
 		{
 			name: 'meta',
@@ -109,7 +111,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', () => 
 		warnings: [],
 	} satisfies OptionalSearchRowsResult
 
-	const result = searchUnified({
+	const result = await searchUnified({
 		env: {} as Env,
 		query: 'alpha\nbeta\ngamma\ndelta\nepsilon',
 		limit: 5,
@@ -288,7 +290,7 @@ test('optional search rows preserve package fallback warnings', async () => {
 	expect(result.warnings).toEqual(['fallback warning'])
 })
 
-test('searchUnified ranks related packages and connectors for operate queries', () => {
+test('searchUnified ranks related packages and connectors for operate queries', async () => {
 	const registry = buildCapabilityRegistry([])
 	const optionalRows = {
 		packageRows: [
@@ -354,7 +356,7 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 		warnings: [],
 	} satisfies OptionalSearchRowsResult
 
-	const result = searchUnified({
+	const result = await searchUnified({
 		env: {} as Env,
 		query: 'play a lofi song on spotify',
 		limit: 5,
@@ -416,9 +418,9 @@ test('buildSavedPackageSearchRows falls back when package source resolution fail
 	expect(result.warnings).toHaveLength(1)
 })
 
-test('search guidance does not pair unrelated package and connector matches', () => {
+test('search guidance does not pair unrelated package and connector matches', async () => {
 	const registry = buildCapabilityRegistry([])
-	const result = searchUnified({
+	const result = await searchUnified({
 		env: {} as Env,
 		query: 'music remote',
 		limit: 5,
@@ -489,6 +491,152 @@ test('search guidance does not pair unrelated package and connector matches', ()
 	)
 	expect(result.guidance).not.toMatch(/connector\s+`github`/)
 	expect(result.guidance).not.toContain('Found saved package')
+})
+
+const runtimeLutronTools = [
+	{
+		name: 'lutron_set_zone_color',
+		title: 'Set Lutron Zone Color',
+		description: 'Set a Lutron lighting zone to a specific color.',
+		inputSchema: {
+			type: 'object',
+			properties: {
+				zoneId: { type: 'string' },
+				red: { type: 'number' },
+				green: { type: 'number' },
+				blue: { type: 'number' },
+			},
+			required: ['zoneId', 'red', 'green', 'blue'],
+		},
+	},
+	{
+		name: 'lutron_set_zone_level',
+		title: 'Set Lutron Zone Level',
+		description: 'Set a Lutron lighting zone brightness level.',
+		inputSchema: {
+			type: 'object',
+			properties: {
+				zoneId: { type: 'string' },
+				percent: { type: 'number' },
+			},
+			required: ['zoneId', 'percent'],
+		},
+	},
+	{
+		name: 'lutron_set_zone_white_tuning',
+		title: 'Set Lutron Zone White Tuning',
+		description: 'Adjust a tunable white Lutron lighting zone.',
+		inputSchema: {
+			type: 'object',
+			properties: {
+				zoneId: { type: 'string' },
+				kelvin: { type: 'number' },
+			},
+			required: ['zoneId', 'kelvin'],
+		},
+	},
+] as const
+
+async function buildHomeRegistryWithLutronCapabilities() {
+	const env = {
+		SENTRY_ENVIRONMENT: 'test',
+		HOME_CONNECTOR_SESSION: {
+			idFromName(name: string) {
+				return name
+			},
+			get() {
+				return {
+					fetch(input: string | URL | Request) {
+						const url = new URL(
+							typeof input === 'string'
+								? input
+								: input instanceof URL
+									? input.toString()
+									: input.url,
+						)
+						if (url.pathname.endsWith('/snapshot')) {
+							return Promise.resolve(
+								Response.json({
+									connectorId: 'default',
+									connectedAt: '2026-03-25T00:00:00.000Z',
+									lastSeenAt: '2026-03-25T00:00:01.000Z',
+									tools: runtimeLutronTools,
+								}),
+							)
+						}
+						throw new Error(`Unexpected fetch to ${url.pathname}`)
+					},
+				}
+			},
+		},
+	} as unknown as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		homeConnectorId: 'default',
+	})
+	const synthesized = await synthesizeRemoteToolDomain(
+		env,
+		{ kind: 'home', instanceId: 'default' },
+		[{ kind: 'home', instanceId: 'default' }],
+	)
+	if (!synthesized) throw new Error('Expected synthesized Lutron home domain')
+	return {
+		env,
+		registry: buildCapabilityRegistry([synthesized.domain]),
+		callerContext,
+	}
+}
+
+test('searchUnified surfaces home_lutron_set_zone_color for literal lutron queries', async () => {
+	const { env, registry } = await buildHomeRegistryWithLutronCapabilities()
+
+	const result = await searchUnified({
+		env,
+		query: 'lutron lights color',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(result.matches[0]).toMatchObject({
+		type: 'capability',
+		name: 'home_lutron_set_zone_color',
+	})
+})
+
+test('searchUnified keeps home_lutron_set_zone_color near the top for intent-like home lighting queries', async () => {
+	const { env, registry } = await buildHomeRegistryWithLutronCapabilities()
+
+	const result = await searchUnified({
+		env,
+		query: 'turn office lights red',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+
+	expect(
+		result.matches
+			.filter(
+				(match): match is Extract<typeof match, { type: 'capability' }> =>
+					match.type === 'capability',
+			)
+			.slice(0, 3),
+	).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				name: 'home_lutron_set_zone_color',
+			}),
+		]),
+	)
 })
 
 test('optional search rows fall back when persisted values lookup fails', async () => {
