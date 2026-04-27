@@ -5,6 +5,7 @@ import {
 	string,
 	type InferOutput,
 } from 'remix/data-schema'
+import { toHex } from '@kody-internal/shared/hex.ts'
 
 const packageInvocationRowSchema = object({
 	id: string(),
@@ -23,6 +24,23 @@ const packageInvocationRowSchema = object({
 	updated_at: string(),
 })
 
+const packageInvocationTokenRowSchema = object({
+	id: string(),
+	user_id: string(),
+	token_hash: string(),
+	name: string(),
+	email: string(),
+	display_name: string(),
+	package_ids_json: string(),
+	package_kody_ids_json: string(),
+	export_names_json: string(),
+	sources_json: string(),
+	created_at: string(),
+	updated_at: string(),
+	last_used_at: nullable(string()),
+	revoked_at: nullable(string()),
+})
+
 export type PackageInvocationStoredResponse = {
 	status: number
 	body: Record<string, unknown>
@@ -32,6 +50,37 @@ export type PackageInvocationRecord = InferOutput<
 	typeof packageInvocationRowSchema
 > & {
 	storedResponse: PackageInvocationStoredResponse | null
+}
+
+export type PackageInvocationTokenRecord = InferOutput<
+	typeof packageInvocationTokenRowSchema
+> & {
+	packageIds: Array<string>
+	packageKodyIds: Array<string>
+	exportNames: Array<string>
+	sources: Array<string>
+}
+
+export async function hashPackageInvocationBearerToken(token: string) {
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(token),
+	)
+	return toHex(new Uint8Array(digest))
+}
+
+function parseStringArrayJson(value: string) {
+	try {
+		const parsed = JSON.parse(value) as unknown
+		return Array.isArray(parsed)
+			? parsed
+					.filter((entry): entry is string => typeof entry === 'string')
+					.map((entry) => entry.trim())
+					.filter((entry) => entry.length > 0)
+			: []
+	} catch {
+		return []
+	}
 }
 
 function parseStoredResponse(
@@ -66,6 +115,23 @@ function parseStoredResponse(
 	}
 }
 
+function mapTokenRow(
+	row: Record<string, unknown>,
+): PackageInvocationTokenRecord {
+	const parsed = parseSafe(packageInvocationTokenRowSchema, row)
+	if (!parsed.success) {
+		const message = parsed.issues.map((issue) => issue.message).join(', ')
+		throw new Error(`Invalid package invocation token record: ${message}`)
+	}
+	return {
+		...parsed.value,
+		packageIds: parseStringArrayJson(parsed.value.package_ids_json),
+		packageKodyIds: parseStringArrayJson(parsed.value.package_kody_ids_json),
+		exportNames: parseStringArrayJson(parsed.value.export_names_json),
+		sources: parseStringArrayJson(parsed.value.sources_json),
+	}
+}
+
 function mapRow(row: Record<string, unknown>): PackageInvocationRecord {
 	const parsed = parseSafe(packageInvocationRowSchema, row)
 	if (!parsed.success) {
@@ -76,6 +142,38 @@ function mapRow(row: Record<string, unknown>): PackageInvocationRecord {
 		...parsed.value,
 		storedResponse: parseStoredResponse(parsed.value.response_json),
 	}
+}
+
+export async function getActivePackageInvocationTokenByHash(input: {
+	db: D1Database
+	tokenHash: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM package_invocation_tokens
+			WHERE token_hash = ?
+				AND revoked_at IS NULL
+			LIMIT 1`,
+		)
+		.bind(input.tokenHash)
+		.first<Record<string, unknown>>()
+	return row ? mapTokenRow(row) : null
+}
+
+export async function updatePackageInvocationTokenLastUsed(input: {
+	db: D1Database
+	id: string
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE package_invocation_tokens
+			SET last_used_at = ?, updated_at = ?
+			WHERE id = ? AND revoked_at IS NULL`,
+		)
+		.bind(new Date().toISOString(), new Date().toISOString(), input.id)
+		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function insertPackageInvocationRow(input: {

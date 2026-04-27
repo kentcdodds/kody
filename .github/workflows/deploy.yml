@@ -119,14 +119,12 @@ jobs:
           CLOUDFLARE_EMAIL_FROM: ${{ secrets.CLOUDFLARE_EMAIL_FROM }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
-          PACKAGE_INVOCATION_TOKENS: ${{ secrets.PACKAGE_INVOCATION_TOKENS }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env production --config
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET --set-from-env
           AI_GATEWAY_ID --set-from-env-optional CLOUDFLARE_EMAIL_FROM
           --set-from-env-optional SENTRY_DSN --set-from-env-optional
           CLOUDFLARE_API_TOKEN --set-from-env-optional CAPABILITY_REINDEX_SECRET
-          --set-from-env-optional PACKAGE_INVOCATION_TOKENS
 
       - name: 🗄️ Apply D1 Migrations
         env:

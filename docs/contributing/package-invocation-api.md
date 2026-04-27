@@ -33,41 +33,34 @@ The export name is normalized to package export form, so
 
 ## Authentication
 
-Authentication uses a private bearer token configured with the Worker secret
-`PACKAGE_INVOCATION_TOKENS`.
+Authentication uses a private bearer token stored in Kody's database-backed
+package invocation token table.
 
-The secret value is a JSON object that maps a token id to:
+Kody stores only the token hash for request-time lookup. The raw bearer token is
+generated or collected by the token-management surface, shown to the operator
+once, and then sent by the trusted external service as:
 
-- `token` — the actual bearer secret
-- `userId`
-- `email`
-- `displayName`
-- package scope (`packageIds` and/or `packageKodyIds`)
-- optional `exportNames`
-- optional `sources`
-
-Example:
-
-```json
-{
-	"discord-gateway-prod": {
-		"token": "replace-with-a-long-random-secret",
-		"userId": "user_123",
-		"email": "me@example.com",
-		"displayName": "Kent",
-		"packageKodyIds": ["discord-gateway"],
-		"exportNames": ["./dispatch-message-created"],
-		"sources": ["discord-gateway"]
-	}
-}
+```http
+Authorization: Bearer <raw-token>
 ```
+
+Each token row includes:
+
+- token id and human-readable name
+- owning `user_id`, `email`, and `display_name`
+- package scope (`package_ids_json` and/or `package_kody_ids_json`)
+- optional `export_names_json`
+- optional `sources_json`
+- `last_used_at`
+- `revoked_at`
 
 The token is not a global backdoor:
 
 - package lookup is still user-owned
-- package access is scoped by the token config
+- package access is scoped by the token row
 - export access can be restricted
 - `source` metadata can be restricted
+- tokens can be revoked without deploys
 - execution still uses normal package runtime machinery
 
 ## Request body

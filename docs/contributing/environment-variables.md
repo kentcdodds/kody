@@ -129,51 +129,6 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
   to the worker. When unset, the worker rejects home connector registration and
   the internal home MCP bridge cannot route `home` capabilities.
 
-## External package invocation API
-
-Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
-`packages/worker/src/package-invocations/http.ts`):
-
-- `PACKAGE_INVOCATION_TOKENS` — optional Worker **secret** (JSON string) whose
-  value is a JSON object mapping token ids to scoped bearer token configs for
-  `POST /api/package-invocations/:packageIdOrKodyId/:exportName`.
-
-Each token config must include:
-
-- `token` — the bearer token string presented by the trusted external service
-- `userId` — the Kody user who owns the target saved package
-- `email`
-- `displayName`
-- at least one package scope via `packageIds` and/or `packageKodyIds`
-
-Optional narrowing fields:
-
-- `exportNames` — allowed package exports (normalized like
-  `./dispatch-message-created`)
-- `sources` — allowed `source` metadata values from the request body
-
-Example:
-
-```json
-{
-	"discord-gateway-prod": {
-		"token": "replace-with-a-long-random-secret",
-		"userId": "user_123",
-		"email": "me@example.com",
-		"displayName": "Kent",
-		"packageKodyIds": ["discord-gateway"],
-		"exportNames": ["./dispatch-message-created"],
-		"sources": ["discord-gateway"]
-	}
-}
-```
-
-This API is intended for trusted first-party service-to-service callers such as
-an external Discord Gateway proxy. The token scope is enforced against the
-resolved saved package, export name, and optional request source metadata, and
-the worker records idempotency state in D1 so duplicate deliveries can replay
-the original response without re-running package code.
-
 ### Remote connector secrets (Worker)
 
 See `packages/worker/src/env-schema.ts` and

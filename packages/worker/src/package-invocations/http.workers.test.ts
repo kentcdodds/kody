@@ -4,6 +4,7 @@ import {
 	handlePackageInvocationApiRequest,
 	isPackageInvocationApiRequest,
 } from './http.ts'
+import { hashPackageInvocationBearerToken } from './repo.ts'
 
 const invocationMockModule = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),
@@ -19,9 +20,61 @@ vi.mock('./service.ts', async () => {
 	}
 })
 
-function createEnv() {
+async function createEnv() {
+	const tokenRows = [
+		{
+			id: 'discord-gateway',
+			user_id: 'user-123',
+			token_hash: await hashPackageInvocationBearerToken('private-token-123'),
+			name: 'Discord gateway',
+			email: 'me@example.com',
+			display_name: 'me',
+			package_ids_json: '[]',
+			package_kody_ids_json: JSON.stringify(['discord-gateway']),
+			export_names_json: JSON.stringify(['./dispatch-message-created']),
+			sources_json: JSON.stringify(['discord-gateway']),
+			created_at: '2026-04-27T00:00:00.000Z',
+			updated_at: '2026-04-27T00:00:00.000Z',
+			last_used_at: null,
+			revoked_at: null,
+		},
+	]
 	return {
-		APP_DB: {} as D1Database,
+		APP_DB: {
+			prepare(query: string) {
+				return {
+					bind(...params: Array<unknown>) {
+						return {
+							async first<T = Record<string, unknown>>() {
+								if (query.includes('FROM package_invocation_tokens')) {
+									const tokenHash = String(params[0] ?? '')
+									return (tokenRows.find(
+										(row) =>
+											row.token_hash === tokenHash && row.revoked_at === null,
+									) ?? null) as T | null
+								}
+								return null
+							},
+							async run() {
+								if (query.includes('UPDATE package_invocation_tokens')) {
+									const id = String(params[2] ?? '')
+									const row = tokenRows.find(
+										(entry) => entry.id === id && entry.revoked_at === null,
+									)
+									if (!row) {
+										return { meta: { changes: 0, last_row_id: 0 } }
+									}
+									row.last_used_at = String(params[0])
+									row.updated_at = String(params[1])
+									return { meta: { changes: 1, last_row_id: 0 } }
+								}
+								return { meta: { changes: 0, last_row_id: 0 } }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as D1Database,
 		BUNDLE_ARTIFACTS_KV: {
 			get: async () => null,
 			put: async () => undefined,
@@ -44,17 +97,6 @@ function createEnv() {
 			idFromName: () => ({ toString: () => 'package-service-id' }),
 			get: () => ({}) as DurableObjectStub,
 		} as DurableObjectNamespace,
-		PACKAGE_INVOCATION_TOKENS: JSON.stringify({
-			'discord-gateway': {
-				token: 'private-token-123',
-				userId: 'user-123',
-				email: 'me@example.com',
-				displayName: 'me',
-				packageKodyIds: ['discord-gateway'],
-				exportNames: ['./dispatch-message-created'],
-				sources: ['discord-gateway'],
-			},
-		}),
 	} as unknown as Env
 }
 
@@ -77,7 +119,7 @@ test('package invocation API returns 401 when bearer token is missing', async ()
 				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
 			},
 		),
-		createEnv(),
+		await createEnv(),
 	)
 
 	expect(response.status).toBe(401)
@@ -106,7 +148,7 @@ test('package invocation API returns 401 for invalid private tokens', async () =
 				body: JSON.stringify({ idempotencyKey: 'evt-1' }),
 			},
 		),
-		createEnv(),
+		await createEnv(),
 	)
 
 	expect(response.status).toBe(401)
@@ -132,7 +174,7 @@ test('package invocation API validates the JSON body shape', async () => {
 				body: JSON.stringify({ params: [] }),
 			},
 		),
-		createEnv(),
+		await createEnv(),
 	)
 
 	expect(response.status).toBe(400)
@@ -177,7 +219,7 @@ test('package invocation API invokes the package export with the scoped token co
 				}),
 			},
 		),
-		createEnv(),
+		await createEnv(),
 	)
 
 	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledWith({
@@ -188,6 +230,7 @@ test('package invocation API invokes the package export with the scoped token co
 			userId: 'user-123',
 			email: 'me@example.com',
 			displayName: 'me',
+			packageIds: [],
 			packageKodyIds: ['discord-gateway'],
 			exportNames: ['./dispatch-message-created'],
 			sources: ['discord-gateway'],

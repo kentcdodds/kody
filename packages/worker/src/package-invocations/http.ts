@@ -1,11 +1,14 @@
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { getEnv } from '#app/env.ts'
 import {
 	invokePackageExport,
 	type PackageInvocationTokenScope,
 } from './service.ts'
-import { type PackageInvocationTokensConfig } from '#worker/env-schema.ts'
+import {
+	getActivePackageInvocationTokenByHash,
+	hashPackageInvocationBearerToken,
+	updatePackageInvocationTokenLastUsed,
+} from './repo.ts'
 
 const packageInvocationPathPrefix = '/api/package-invocations/'
 
@@ -96,49 +99,30 @@ function parsePackageInvocationPath(pathname: string) {
 	return { packageIdOrKodyId, exportName }
 }
 
-function stringToBytes(value: string) {
-	return new TextEncoder().encode(value)
-}
-
-function tokensMatch(left: string, right: string) {
-	const leftBytes = stringToBytes(left)
-	const rightBytes = stringToBytes(right)
-	if (leftBytes.byteLength !== rightBytes.byteLength) {
-		return false
+async function resolveTokenScope(input: {
+	env: Env
+	bearerToken: string
+}): Promise<PackageInvocationTokenScope | null> {
+	const tokenHash = await hashPackageInvocationBearerToken(input.bearerToken)
+	const record = await getActivePackageInvocationTokenByHash({
+		db: input.env.APP_DB,
+		tokenHash,
+	})
+	if (!record) return null
+	await updatePackageInvocationTokenLastUsed({
+		db: input.env.APP_DB,
+		id: record.id,
+	})
+	return {
+		tokenId: record.id,
+		userId: record.user_id,
+		email: record.email,
+		displayName: record.display_name,
+		packageIds: record.packageIds,
+		packageKodyIds: record.packageKodyIds,
+		exportNames: record.exportNames,
+		sources: record.sources,
 	}
-	let diff = 0
-	for (let index = 0; index < leftBytes.byteLength; index += 1) {
-		const leftByte = leftBytes[index]
-		const rightByte = rightBytes[index]
-		if (leftByte === undefined || rightByte === undefined) {
-			return false
-		}
-		diff |= leftByte ^ rightByte
-	}
-	return diff === 0
-}
-
-function resolveTokenScope(
-	bearerToken: string,
-	envTokens: PackageInvocationTokensConfig | undefined,
-) {
-	if (!envTokens) return null
-	for (const [tokenId, config] of Object.entries(envTokens)) {
-		if (!tokensMatch(bearerToken, config.token)) {
-			continue
-		}
-		return {
-			tokenId,
-			userId: config.userId,
-			email: config.email,
-			displayName: config.displayName,
-			packageIds: config.packageIds,
-			packageKodyIds: config.packageKodyIds,
-			exportNames: config.exportNames,
-			sources: config.sources,
-		} satisfies PackageInvocationTokenScope
-	}
-	return null
 }
 
 async function readRequestBody(
@@ -220,11 +204,10 @@ export async function handlePackageInvocationApiRequest(
 		})
 		return unauthorizedResponse()
 	}
-	const appEnv = getEnv(env)
-	const tokenScope = resolveTokenScope(
+	const tokenScope = await resolveTokenScope({
+		env,
 		bearerToken,
-		appEnv.PACKAGE_INVOCATION_TOKENS,
-	)
+	})
 	if (!tokenScope) {
 		void logAuditEvent({
 			category: 'oauth',
