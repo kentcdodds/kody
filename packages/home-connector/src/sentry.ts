@@ -1,6 +1,17 @@
 import * as Sentry from '@sentry/node'
 
 type EnvRecord = Record<string, string | undefined>
+type SentryContextValue = Record<string, unknown> | undefined
+type SentryContextMap = Record<string, SentryContextValue>
+export type HomeConnectorErrorCaptureContext = {
+	tags?: Record<string, string>
+	contexts?: SentryContextMap
+	extra?: Record<string, unknown>
+}
+
+type HomeConnectorErrorWithCaptureContext = {
+	homeConnectorCaptureContext?: HomeConnectorErrorCaptureContext
+}
 
 const defaultTracesSampleRate = 1.0
 
@@ -22,6 +33,56 @@ function parseSentryTracesSampleRate(value: string | undefined) {
 
 function normalizeError(error: unknown) {
 	return error instanceof Error ? error : new Error(String(error))
+}
+
+function mergeContextRecords(
+	base: SentryContextMap | undefined,
+	override: SentryContextMap | undefined,
+) {
+	if (!base && !override) return undefined
+	const merged: SentryContextMap = {}
+	for (const [key, value] of Object.entries(base ?? {})) {
+		merged[key] = value ? { ...value } : undefined
+	}
+	for (const [key, value] of Object.entries(override ?? {})) {
+		merged[key] =
+			value === undefined
+				? undefined
+				: {
+						...(merged[key] ?? {}),
+						...value,
+					}
+	}
+	return merged
+}
+
+export function getHomeConnectorErrorCaptureContext(
+	error: unknown,
+): HomeConnectorErrorCaptureContext {
+	if (!error || typeof error !== 'object') {
+		return {}
+	}
+
+	const captureContext = (error as HomeConnectorErrorWithCaptureContext)
+		.homeConnectorCaptureContext
+	if (!captureContext) {
+		return {}
+	}
+
+	return {
+		...(captureContext.tags ? { tags: { ...captureContext.tags } } : {}),
+		...(captureContext.contexts
+			? {
+					contexts: Object.fromEntries(
+						Object.entries(captureContext.contexts).map(([key, value]) => [
+							key,
+							value ? { ...value } : undefined,
+						]),
+					),
+				}
+			: {}),
+		...(captureContext.extra ? { extra: { ...captureContext.extra } } : {}),
+	}
 }
 
 export function buildHomeConnectorSentryOptions(env: EnvRecord = process.env) {
@@ -83,11 +144,23 @@ export function captureHomeConnectorException(
 		return
 	}
 
+	const derivedCaptureContext = getHomeConnectorErrorCaptureContext(error)
+
 	Sentry.captureException(normalizeError(error), {
+		...derivedCaptureContext,
 		...captureContext,
 		tags: {
 			service: 'home-connector',
+			...(derivedCaptureContext.tags ?? {}),
 			...(captureContext.tags ?? {}),
+		},
+		contexts: mergeContextRecords(
+			derivedCaptureContext.contexts,
+			captureContext.contexts as SentryContextMap | undefined,
+		),
+		extra: {
+			...(derivedCaptureContext.extra ?? {}),
+			...(captureContext.extra ?? {}),
 		},
 	})
 }
