@@ -4,31 +4,23 @@ import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type AccountStatus,
-	type ApprovalAction,
-	type ApprovalView,
 	accountSecretsApiPath,
 	readJson,
-	submitApprovalRequest,
 } from '#client/routes/account-approval-shared.ts'
 
 type AccountSecretsPayload = {
 	ok: true
 	email: string
-	approval: ApprovalView | null
 }
 
 export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
-	let approval: ApprovalView | null = null
 	let message: string | null = null
-	let submittingApprovalAction: ApprovalAction | null = null
 	let lastLoadedHref = ''
 
 	async function loadAccountSecrets(signal: AbortSignal) {
@@ -54,46 +46,14 @@ export function AccountRoute(handle: Handle) {
 				throw new Error('Unable to load your account secrets.')
 			}
 			email = payload.email
-			approval = payload.approval
 			status = 'ready'
 			message = null
-			submittingApprovalAction = null
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load your account.'
-			handle.update()
-		}
-	}
-
-	async function submitApproval(action: ApprovalAction) {
-		if (!approval || submittingApprovalAction != null) return
-		submittingApprovalAction = action
-		message = null
-		handle.update()
-		try {
-			const payload = await submitApprovalRequest<
-				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(action, approval.token)
-			if (!payload) return
-			email = payload.email
-			approval = payload.approval
-			submittingApprovalAction = null
-			message =
-				action === 'approve'
-					? 'Approved requested host.'
-					: 'Rejected host approval request.'
-			handle.update()
-			if (typeof window !== 'undefined' && window.location.search) {
-				window.history.replaceState(null, '', '/account')
-				lastLoadedHref = window.location.href
-			}
-		} catch (error) {
-			submittingApprovalAction = null
-			message =
-				error instanceof Error ? error.message : 'Unable to process approval.'
 			handle.update()
 		}
 	}
@@ -132,70 +92,8 @@ export function AccountRoute(handle: Handle) {
 					</p>
 				</header>
 
-				{approval && !isRefreshingForLocationChange ? (
-					<section
-						css={{
-							display: 'grid',
-							gap: spacing.md,
-							padding: spacing.lg,
-							borderRadius: '1rem',
-							border: `1px solid ${colors.primary}`,
-							backgroundColor: colors.primarySoftest,
-						}}
-					>
-						<div css={{ display: 'grid', gap: spacing.xs }}>
-							<h2
-								css={{
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-									color: colors.text,
-								}}
-							>
-								Approve host access
-							</h2>
-							<p css={{ margin: 0, color: colors.textMuted }}>
-								Allow <code>{approval.requestedHost}</code> to receive secret{' '}
-								<code>{approval.name}</code> from the {approval.scope} scope.
-							</p>
-							<p css={{ margin: 0, color: colors.textMuted }}>
-								Current allowed hosts:{' '}
-								{approval.currentAllowedHosts.length > 0
-									? approval.currentAllowedHosts.join(', ')
-									: 'none'}
-							</p>
-						</div>
-						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
-							<button
-								type="button"
-								disabled={
-									submittingApprovalAction != null ||
-									isRefreshingForLocationChange
-								}
-								on={{ click: () => void submitApproval('approve') }}
-								css={primaryButtonCss}
-							>
-								Approve host
-							</button>
-							<button
-								type="button"
-								disabled={
-									submittingApprovalAction != null ||
-									isRefreshingForLocationChange
-								}
-								on={{ click: () => void submitApproval('reject') }}
-								css={secondaryButtonCss}
-							>
-								Reject
-							</button>
-						</div>
-					</section>
-				) : null}
-
 				{status === 'loading' ? (
-					<p css={{ color: colors.textMuted, margin: 0 }}>
-						Loading secret approvals…
-					</p>
+					<p css={{ color: colors.textMuted, margin: 0 }}>Loading account…</p>
 				) : null}
 				{message ? (
 					<p
@@ -224,6 +122,3 @@ export function AccountRoute(handle: Handle) {
 		)
 	}
 }
-
-const primaryButtonCss = getPrimaryButtonCss({ mobileFullWidth: true })
-const secondaryButtonCss = getSecondaryButtonCss({ mobileFullWidth: true })

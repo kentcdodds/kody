@@ -8,7 +8,6 @@ export function buildSecretPackageApprovalUrl(input: {
 	scope: SecretScope
 	packageId: string
 	kodyId: string | null
-	token?: string | null
 	storageContext: StorageContext | null
 }) {
 	if (input.scope === 'app' && !input.storageContext?.appId) {
@@ -29,9 +28,6 @@ export function buildSecretPackageApprovalUrl(input: {
 	url.searchParams.set('package_id', input.packageId)
 	if (input.kodyId) {
 		url.searchParams.set('package', input.kodyId)
-	}
-	if (input.token) {
-		url.searchParams.set('request', input.token)
 	}
 	return url.toString()
 }

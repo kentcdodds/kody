@@ -381,11 +381,10 @@ function replaceSecretsLocation(to: string) {
 
 function getDataRefreshKey(href: string) {
 	const url = new URL(href, 'http://localhost')
-	const request = url.searchParams.get('request') ?? ''
 	const requestedHost = url.searchParams.get('allowed-host') ?? ''
 	const requestedCapability = url.searchParams.get('capability') ?? ''
 	const requestedPackageId = url.searchParams.get('package_id') ?? ''
-	return `${url.pathname}?request=${request}&allowed-host=${requestedHost}&capability=${requestedCapability}&package_id=${requestedPackageId}`
+	return `${url.pathname}?allowed-host=${requestedHost}&capability=${requestedCapability}&package_id=${requestedPackageId}`
 }
 
 function readFilterState(
@@ -628,14 +627,16 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			const selection = getSelectionState(getCurrentHref())
-			const requestUrl = new URL(accountSecretsApiPath, getCurrentHref())
+			const currentUrl = new URL(getCurrentHref())
+			const selection = getSelectionState(currentUrl.toString())
+			const requestUrl = new URL(accountSecretsApiPath, currentUrl)
+			requestUrl.search = currentUrl.search
 			if (selection.selectedSecretId) {
 				requestUrl.searchParams.set('selected', selection.selectedSecretId)
 			}
 			const payload = await submitApprovalRequest<
 				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(action, approval.token, requestUrl.toString())
+			>(action, requestUrl.toString())
 			if (!payload) return
 
 			applyPayload(
@@ -665,7 +666,6 @@ export function AccountSecretsRoute(handle: Handle) {
 						)
 					: buildHrefWithUpdatedFilters({}, { pathname: secretsBasePath })
 				const nextUrl = new URL(nextHref, window.location.href)
-				nextUrl.searchParams.delete('request')
 				nextUrl.searchParams.delete('allowed-host')
 				nextUrl.searchParams.delete('capability')
 				nextUrl.searchParams.delete('package_id')

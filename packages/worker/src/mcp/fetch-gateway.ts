@@ -1,8 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import {
-	buildSecretHostApprovalUrl,
-	createSecretHostApprovalToken,
-} from '#mcp/secrets/host-approval.ts'
+import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
 import {
 	buildSecretPlaceholder,
 	parseSecretPlaceholders,
@@ -99,7 +96,6 @@ export async function expandSecretPlaceholders(input: {
 		}
 		const normalizedHost = normalizeHost(requestedHost)
 		const missingApprovals = await collectHostApprovalEntries({
-			env: input.env,
 			props: input.props,
 			requestedHost,
 			normalizedHost,
@@ -167,7 +163,6 @@ function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
 }
 
 async function collectHostApprovalEntries(input: {
-	env: Pick<Env, 'COOKIE_SECRET'>
 	props: FetchGatewayProps
 	requestedHost: string
 	normalizedHost: string
@@ -182,16 +177,8 @@ async function collectHostApprovalEntries(input: {
 				resolved.allowedHosts.length > 0 &&
 				resolved.allowedHosts.includes(input.normalizedHost)
 			if (allowedForHost) return null
-			const approvalToken = await createSecretHostApprovalToken(input.env, {
-				userId: input.props.userId!,
-				name: referenced.name,
-				scope: resolved.scope ?? referenced.scope ?? 'user',
-				requestedHost: input.requestedHost,
-				storageContext: input.props.storageContext,
-			})
 			const approvalUrl = buildSecretHostApprovalUrl({
 				baseUrl: input.props.baseUrl,
-				token: approvalToken,
 				name: referenced.name,
 				scope: resolved.scope ?? referenced.scope ?? 'user',
 				requestedHost: input.requestedHost,

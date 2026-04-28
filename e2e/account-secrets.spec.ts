@@ -1,8 +1,5 @@
 import { expect, test } from './playwright-utils.ts'
 
-const e2eCookieSecret = 'LOCAL_AND_PREVIEW_COOKIE_SECRET_32_CHARS_MINIMUM'
-const secretHostApprovalPurpose = 'secret-host-approval'
-
 async function saveSecret(
 	page: Parameters<Parameters<typeof test>[1]>[0]['page'],
 	input: {
@@ -27,75 +24,6 @@ async function saveSecret(
 		headers: { 'Content-Type': 'application/json' },
 	})
 	expect(response.ok()).toBeTruthy()
-}
-
-function bytesToBase64Url(bytes: Uint8Array) {
-	let binary = ''
-	for (const value of bytes) {
-		binary += String.fromCharCode(value)
-	}
-	return btoa(binary)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replaceAll('=', '')
-}
-
-async function deriveEncryptionKey(cookieSecret: string, purpose: string) {
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(`${purpose}:${cookieSecret}`),
-	)
-	return crypto.subtle.importKey('raw', digest, 'AES-GCM', false, [
-		'encrypt',
-		'decrypt',
-	])
-}
-
-async function encryptStringWithPurpose(purpose: string, value: string) {
-	const key = await deriveEncryptionKey(e2eCookieSecret, purpose)
-	const iv = crypto.getRandomValues(new Uint8Array(12))
-	const ciphertext = await crypto.subtle.encrypt(
-		{
-			name: 'AES-GCM',
-			iv,
-		},
-		key,
-		new TextEncoder().encode(value),
-	)
-	return `${bytesToBase64Url(iv)}.${bytesToBase64Url(
-		new Uint8Array(ciphertext),
-	)}`
-}
-
-async function createHostApprovalToken(input: {
-	userId: string
-	name: string
-	requestedHost: string
-}) {
-	const now = Date.now()
-	const token = await encryptStringWithPurpose(
-		secretHostApprovalPurpose,
-		JSON.stringify({
-			kind: 'host',
-			userId: input.userId,
-			name: input.name,
-			scope: 'user',
-			requestedHost: input.requestedHost,
-			storageContext: null,
-			iat: now,
-			exp: now + 60_000,
-		}),
-	)
-	return `host:${token}`
-}
-
-async function createStableUserIdFromEmail(email: string) {
-	const normalized = email.trim().toLowerCase()
-	const data = new TextEncoder().encode(normalized)
-	const hash = await crypto.subtle.digest('SHA-256', data)
-	return Array.from(new Uint8Array(hash), (byte) =>
-		byte.toString(16).padStart(2, '0'),
-	).join('')
 }
 
 test('switching secrets updates detail view without a full reload', async ({
@@ -172,7 +100,7 @@ test('landing on an approval link shows already added when the host is present',
 	await saveSecret(page, secret)
 
 	await page.goto(
-		`/account/secrets/user/${secret.name}?allowed-host=api.cloudflare.com&request=stale-token`,
+		`/account/secrets/user/${secret.name}?allowed-host=api.cloudflare.com`,
 	)
 
 	await expect(
@@ -188,7 +116,7 @@ test('generated host approval link shows one-click approve and persists host', a
 	page,
 	login,
 }) => {
-	const user = await login()
+	await login()
 	const nonce = Date.now().toString(36)
 	const secret = {
 		name: `fly-token-${nonce}`,
@@ -198,15 +126,8 @@ test('generated host approval link shows one-click approve and persists host', a
 	await saveSecret(page, secret)
 
 	const requestedHost = 'api.fly.io'
-	const token = await createHostApprovalToken({
-		userId: await createStableUserIdFromEmail(user.email),
-		name: secret.name,
-		requestedHost,
-	})
 	await page.goto(
-		`/account/secrets/user/${secret.name}?allowed-host=${requestedHost}&request=${encodeURIComponent(
-			token,
-		)}`,
+		`/account/secrets/user/${secret.name}?allowed-host=${requestedHost}`,
 	)
 
 	const approvalCard = page.getByRole('heading', {

@@ -143,13 +143,13 @@ test('getExecutionErrorDetails returns batch host approvals', () => {
 				secretName: 'cloudflareToken',
 				host: 'api.cloudflare.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com&request=token',
+					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
 			},
 			{
 				secretName: 'slackToken',
 				host: 'slack.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com&request=token',
+					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com',
 			},
 		]),
 	)
@@ -157,7 +157,7 @@ test('getExecutionErrorDetails returns batch host approvals', () => {
 	expect(getExecutionErrorDetails(error)).toEqual({
 		kind: 'host_approval_required_batch',
 		message:
-			'Secrets require host approval: [{"secretName":"cloudflareToken","host":"api.cloudflare.com","approvalUrl":"https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com&request=token"},{"secretName":"slackToken","host":"slack.com","approvalUrl":"https://example.com/account/secrets/user/slackToken?allowed-host=slack.com&request=token"}]',
+			'Secrets require host approval: [{"secretName":"cloudflareToken","host":"api.cloudflare.com","approvalUrl":"https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com"},{"secretName":"slackToken","host":"slack.com","approvalUrl":"https://example.com/account/secrets/user/slackToken?allowed-host=slack.com"}]',
 		nextStep:
 			'Ask the user whether they want to approve these hosts for the listed secrets in the account web UI, then retry after approval.',
 		missingApprovals: [
@@ -165,13 +165,13 @@ test('getExecutionErrorDetails returns batch host approvals', () => {
 				secretName: 'cloudflareToken',
 				host: 'api.cloudflare.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com&request=token',
+					'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
 			},
 			{
 				secretName: 'slackToken',
 				host: 'slack.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com&request=token',
+					'https://example.com/account/secrets/user/slackToken?allowed-host=slack.com',
 			},
 		],
 		suggestedAction: {

@@ -28,14 +28,9 @@ const mockModule = vi.hoisted(() => ({
 	})),
 	setSecretAllowedHosts: vi.fn(async () => undefined),
 	saveValue: vi.fn(async () => undefined),
-	createSecretHostApprovalToken: vi.fn(
-		async (_env: unknown, input: { name: string; requestedHost: string }) => {
-			return `token:${input.name}:${input.requestedHost}`
-		},
-	),
 	buildSecretHostApprovalUrl: vi.fn(
-		(input: { name: string; requestedHost: string; token: string }) =>
-			`https://example.com/account/secrets/user/${input.name}?allowed-host=${input.requestedHost}&request=${input.token}`,
+		(input: { name: string; requestedHost: string }) =>
+			`https://example.com/account/secrets/user/${input.name}?allowed-host=${input.requestedHost}`,
 	),
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	listSecrets: vi.fn(async () => []),
@@ -45,12 +40,6 @@ const mockModule = vi.hoisted(() => ({
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	setSecretAllowedPackages: vi.fn(async () => undefined),
 	getValue: vi.fn(async () => null),
-	verifySecretHostApprovalToken: vi.fn(async () => {
-		throw new Error('not used')
-	}),
-	verifySecretPackageApprovalToken: vi.fn(async () => {
-		throw new Error('not used')
-	}),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -91,19 +80,8 @@ vi.mock('#mcp/secrets/allowed-capabilities.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/host-approval.ts', () => ({
-	createSecretHostApprovalToken: (...args: Array<unknown>) =>
-		mockModule.createSecretHostApprovalToken(...args),
 	buildSecretHostApprovalUrl: (...args: Array<unknown>) =>
 		mockModule.buildSecretHostApprovalUrl(...args),
-	verifySecretHostApprovalToken: (...args: Array<unknown>) =>
-		mockModule.verifySecretHostApprovalToken(...args),
-	secretHostApprovalTokenPrefix: 'host:',
-}))
-
-vi.mock('#mcp/secrets/package-approval.ts', () => ({
-	verifySecretPackageApprovalToken: (...args: Array<unknown>) =>
-		mockModule.verifySecretPackageApprovalToken(...args),
-	secretPackageApprovalTokenPrefix: 'pkg:',
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
@@ -176,52 +154,30 @@ test('connect oauth returns direct host approval links for saved token secrets',
 				secretName: 'githubAccessToken',
 				host: 'api.github.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=api.github.com&request=token:githubAccessToken:api.github.com',
+					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=api.github.com',
 			},
 			{
 				secretName: 'githubAccessToken',
 				host: 'github.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=github.com&request=token:githubAccessToken:github.com',
+					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=github.com',
 			},
 			{
 				secretName: 'githubRefreshToken',
 				host: 'api.github.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=api.github.com&request=token:githubRefreshToken:api.github.com',
+					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=api.github.com',
 			},
 			{
 				secretName: 'githubRefreshToken',
 				host: 'github.com',
 				approvalUrl:
-					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=github.com&request=token:githubRefreshToken:github.com',
+					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=github.com',
 			},
 		],
 		connectorName: 'GitHub',
 	})
-	expect(mockModule.createSecretHostApprovalToken).toHaveBeenCalledTimes(4)
-	expect(mockModule.createSecretHostApprovalToken).toHaveBeenNthCalledWith(
-		1,
-		expect.objectContaining({ COOKIE_SECRET: 'secret' }),
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			name: 'githubAccessToken',
-			scope: 'user',
-			requestedHost: 'api.github.com',
-			storageContext: null,
-		}),
-	)
-	expect(mockModule.createSecretHostApprovalToken).toHaveBeenNthCalledWith(
-		4,
-		expect.objectContaining({ COOKIE_SECRET: 'secret' }),
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			name: 'githubRefreshToken',
-			scope: 'user',
-			requestedHost: 'github.com',
-			storageContext: null,
-		}),
-	)
+	expect(mockModule.buildSecretHostApprovalUrl).toHaveBeenCalledTimes(4)
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 })
 
@@ -302,7 +258,130 @@ test('connect oauth omits direct host approval links when hosts are already appr
 			'fleet-auth.prd.vn.cloud.tesla.com',
 		]),
 	)
-	expect(mockModule.createSecretHostApprovalToken).not.toHaveBeenCalled()
+	expect(mockModule.buildSecretHostApprovalUrl).not.toHaveBeenCalled()
+})
+
+test('host approval view is derived from allowed-host and selected secret', async () => {
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'cloudflareToken',
+			scope: 'user',
+			description: 'Cloudflare token',
+			appId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'secret-value',
+	})
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'cloudflareToken',
+			scope: 'user',
+			description: 'Cloudflare token',
+			appId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
+			{ method: 'GET' },
+		),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		approval: {
+			name: 'cloudflareToken',
+			scope: 'user',
+			requestedHost: 'api.cloudflare.com',
+			requestedPackageId: null,
+			currentAllowedHosts: [],
+		},
+	})
+})
+
+test('host approval approve persists host from allowed-host and selected secret', async () => {
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'cloudflareToken',
+			scope: 'user',
+			description: 'Cloudflare token',
+			appId: null,
+			allowedHosts: ['api.github.com'],
+			allowedCapabilities: [],
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+	mockModule.listSecrets.mockResolvedValueOnce([])
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({ ok: true })
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'cloudflareToken',
+			scope: 'user',
+			allowedHosts: ['api.github.com', 'api.cloudflare.com'],
+			storageContext: { appId: null, sessionId: null },
+		}),
+	)
+})
+
+test('approval request rejects ambiguous host and package targets', async () => {
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=api.cloudflare.com&package_id=pkg-123',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Approval request contains both host and package.',
+	})
+	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
+	expect(mockModule.setSecretAllowedPackages).not.toHaveBeenCalled()
 })
 
 test('account secrets payload preserves app titles and allowed packages', async () => {
@@ -396,84 +475,21 @@ test('account secrets payload preserves app titles and allowed packages', async 
 	})
 })
 
-test('package approval expiry surfaces package-token error without host fallback', async () => {
-	mockModule.verifySecretPackageApprovalToken.mockRejectedValueOnce(
-		new Error('Secret package approval request has expired.'),
-	)
-
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'approve',
-				requestToken: 'expired-package-token',
-			}),
-		}),
-		params: {},
-	} as never)
-
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Secret package approval request has expired.',
-	})
-	expect(mockModule.verifySecretHostApprovalToken).not.toHaveBeenCalled()
-})
-
-test('malformed package approval token surfaces package-token error without host fallback', async () => {
-	mockModule.verifySecretPackageApprovalToken.mockRejectedValueOnce(
-		new Error('Invalid secret package approval request.'),
-	)
-
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'approve',
-				requestToken: 'pkg:invalid-package-token',
-			}),
-		}),
-		params: {},
-	} as never)
-
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Invalid secret package approval request.',
-	})
-	expect(mockModule.verifySecretHostApprovalToken).not.toHaveBeenCalled()
-})
-
 test('package approval reject succeeds even when the secret no longer exists', async () => {
-	mockModule.verifySecretPackageApprovalToken.mockResolvedValueOnce({
-		kind: 'package',
-		userId: 'stable-user-1',
-		name: 'discordBotToken',
-		scope: 'user',
-		packageId: 'pkg-allowed',
-		packageKodyId: 'discord-gateway',
-		storageContext: null,
-		iat: Date.now(),
-		exp: Date.now() + 60_000,
-	})
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
 	const handler = createAccountSecretsApiHandler(createEnv())
 	const response = await handler.action({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'reject',
-				requestToken: 'package-token',
-			}),
-		}),
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-allowed',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'reject' }),
+			},
+		),
 		params: {},
 	} as never)
 
@@ -487,17 +503,6 @@ test('package approval reject succeeds even when the secret no longer exists', a
 })
 
 test('package approval approve deduplicates allowed package ids', async () => {
-	mockModule.verifySecretPackageApprovalToken.mockResolvedValueOnce({
-		kind: 'package',
-		userId: 'stable-user-1',
-		name: 'discordBotToken',
-		scope: 'user',
-		packageId: 'pkg-new',
-		packageKodyId: 'discord-gateway',
-		storageContext: null,
-		iat: Date.now(),
-		exp: Date.now() + 60_000,
-	})
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'discordBotToken',
@@ -518,14 +523,14 @@ test('package approval approve deduplicates allowed package ids', async () => {
 
 	const handler = createAccountSecretsApiHandler(createEnv())
 	const response = await handler.action({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'approve',
-				requestToken: 'package-token',
-			}),
-		}),
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-new',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
 		params: {},
 	} as never)
 
