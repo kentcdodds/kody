@@ -10,8 +10,9 @@ import {
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
 	type PackageRetrieverManifestCache,
-	type PackageRetrieverScope,
+	type PackageRetrieverIndexEntry,
 	type PackageRetrieverScopeIndex,
+	type PackageRetrieverScope,
 	type PackageRetrieverManifestCacheEntry,
 } from './types.ts'
 
@@ -19,6 +20,7 @@ const retrieverManifestCacheVersion = 1
 const retrieverScopeIndexVersion = 1
 const retrieverManifestCachePrefix = 'package-retriever-manifest'
 const retrieverScopeIndexPrefix = 'package-retriever-index'
+const retrieverScopeEntryPrefix = 'package-retriever-index-entry'
 
 function getRetrieverKv(env: Env) {
 	const kv = (env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace })
@@ -84,6 +86,35 @@ export function buildPackageRetrieverScopeIndexKey(input: {
 		input.scope,
 	].join(':')
 }
+function buildPackageRetrieverScopeEntryKey(input: {
+	userId: string
+	scope: PackageRetrieverScope
+	packageId: string
+	retrieverKey: string
+}) {
+	return [
+		retrieverScopeEntryPrefix,
+		`v${retrieverScopeIndexVersion}`,
+		input.userId,
+		input.scope,
+		input.packageId,
+		input.retrieverKey,
+	].join(':')
+}
+
+function buildPackageRetrieverScopeEntryPrefix(input: {
+	userId: string
+	scope: PackageRetrieverScope
+	packageId?: string
+}) {
+	return [
+		retrieverScopeEntryPrefix,
+		`v${retrieverScopeIndexVersion}`,
+		input.userId,
+		input.scope,
+		...(input.packageId ? [input.packageId] : []),
+	].join(':')
+}
 
 function toRegisteredRetriever(input: {
 	savedPackage: SavedPackageRecord
@@ -113,52 +144,87 @@ function toRegisteredRetriever(input: {
 	}
 }
 
-async function readScopeIndex(input: {
+async function writeScopeEntry(input: {
+	env: Env
+	scope: PackageRetrieverScope
+	entry: PackageRetrieverIndexEntry
+}) {
+	await getRetrieverKv(input.env).put(
+		buildPackageRetrieverScopeEntryKey({
+			userId: input.entry.userId,
+			scope: input.scope,
+			packageId: input.entry.packageId,
+			retrieverKey: input.entry.retrieverKey,
+		}),
+		JSON.stringify(input.entry),
+	)
+}
+
+async function listScopeEntryKeys(input: {
 	env: Env
 	userId: string
 	scope: PackageRetrieverScope
-}): Promise<PackageRetrieverScopeIndex> {
-	const key = buildPackageRetrieverScopeIndexKey({
-		userId: input.userId,
-		scope: input.scope,
-	})
-	const stored = await getRetrieverKv(input.env).get(key, 'json')
-	if (!stored || typeof stored !== 'object') {
-		return {
-			version: retrieverScopeIndexVersion,
-			userId: input.userId,
-			scope: input.scope,
-			retrievers: [],
-			updatedAt: new Date().toISOString(),
-		}
-	}
-	const index = stored as PackageRetrieverScopeIndex
-	if (
-		index.version !== retrieverScopeIndexVersion ||
-		index.userId !== input.userId ||
-		index.scope !== input.scope ||
-		!Array.isArray(index.retrievers)
-	) {
-		return {
-			version: retrieverScopeIndexVersion,
-			userId: input.userId,
-			scope: input.scope,
-			retrievers: [],
-			updatedAt: new Date().toISOString(),
-		}
-	}
-	return index
+	packageId?: string
+}) {
+	const keys: Array<string> = []
+	let cursor: string | undefined
+	do {
+		const result = await getRetrieverKv(input.env).list({
+			prefix: buildPackageRetrieverScopeEntryPrefix({
+				userId: input.userId,
+				scope: input.scope,
+				packageId: input.packageId,
+			}),
+			cursor,
+		})
+		keys.push(...result.keys.map((key) => key.name))
+		cursor = result.list_complete ? undefined : result.cursor
+	} while (cursor)
+	return keys
 }
 
-async function writeScopeIndex(input: {
+async function readScopeEntries(input: {
 	env: Env
-	index: PackageRetrieverScopeIndex
+	userId: string
+	scope: PackageRetrieverScope
 }) {
-	const key = buildPackageRetrieverScopeIndexKey({
-		userId: input.index.userId,
-		scope: input.index.scope,
-	})
-	await getRetrieverKv(input.env).put(key, JSON.stringify(input.index))
+	const entryKeys = await listScopeEntryKeys(input)
+	const storedEntries = await Promise.all(
+		entryKeys.map(
+			async (key) => await getRetrieverKv(input.env).get(key, 'json'),
+		),
+	)
+	return storedEntries
+		.filter(
+			(entry): entry is PackageRetrieverIndexEntry =>
+				typeof entry === 'object' && entry !== null,
+		)
+		.filter(
+			(entry) =>
+				entry.userId === input.userId && entry.scopes.includes(input.scope),
+		)
+		.sort(
+			(left, right) =>
+				left.kodyId.localeCompare(right.kodyId) ||
+				left.retrieverKey.localeCompare(right.retrieverKey),
+		)
+}
+
+function toScopeIndexEntry(
+	retriever: PackageRetrieverManifestCacheEntry,
+): PackageRetrieverIndexEntry {
+	return {
+		userId: retriever.userId,
+		packageId: retriever.packageId,
+		kodyId: retriever.kodyId,
+		packageName: retriever.packageName,
+		sourceId: retriever.sourceId,
+		revision: retriever.revision,
+		retrieverKey: retriever.retrieverKey,
+		name: retriever.name,
+		description: retriever.description,
+		scopes: retriever.scopes,
+	}
 }
 
 export async function refreshPackageRetrieverManifestCache(input: {
@@ -209,43 +275,30 @@ export async function refreshPackageRetrieverManifestCache(input: {
 		'search',
 		'context',
 	] satisfies Array<PackageRetrieverScope>) {
-		const existing = await readScopeIndex({
+		const existingScopeEntryKeys = await listScopeEntryKeys({
 			env: input.env,
 			userId: input.userId,
 			scope,
+			packageId: input.savedPackage.id,
 		})
-		const nextRetrievers = [
-			...existing.retrievers.filter(
-				(entry) => entry.packageId !== input.savedPackage.id,
+		await Promise.all([
+			...existingScopeEntryKeys.map(
+				async (key) => await getRetrieverKv(input.env).delete(key),
 			),
 			...registeredRetrievers
 				.filter((retriever) => retriever.scopes.includes(scope))
-				.map((retriever) => ({
-					userId: retriever.userId,
-					packageId: retriever.packageId,
-					kodyId: retriever.kodyId,
-					packageName: retriever.packageName,
-					sourceId: retriever.sourceId,
-					revision: retriever.revision,
-					retrieverKey: retriever.retrieverKey,
-					name: retriever.name,
-					description: retriever.description,
-					scopes: retriever.scopes,
-				})),
-		].sort(
-			(left, right) =>
-				left.kodyId.localeCompare(right.kodyId) ||
-				left.retrieverKey.localeCompare(right.retrieverKey),
-		)
-		await writeScopeIndex({
+				.map((retriever) =>
+					writeScopeEntry({
+						env: input.env,
+						scope,
+						entry: toScopeIndexEntry(retriever),
+					}),
+				),
+		])
+		await writeLegacyScopeIndex({
 			env: input.env,
-			index: {
-				version: retrieverScopeIndexVersion,
-				userId: input.userId,
-				scope,
-				retrievers: nextRetrievers,
-				updatedAt: new Date().toISOString(),
-			},
+			userId: input.userId,
+			scope,
 		})
 	}
 	return manifestCache
@@ -261,24 +314,48 @@ export async function removePackageRetrieverManifestCacheEntries(input: {
 		'search',
 		'context',
 	] satisfies Array<PackageRetrieverScope>) {
-		const existing = await readScopeIndex({
+		const existingScopeEntryKeys = await listScopeEntryKeys({
+			env: input.env,
+			userId: input.userId,
+			scope,
+			packageId: input.packageId,
+		})
+		await Promise.all(
+			existingScopeEntryKeys.map(
+				async (key) => await getRetrieverKv(input.env).delete(key),
+			),
+		)
+		await writeLegacyScopeIndex({
 			env: input.env,
 			userId: input.userId,
 			scope,
 		})
-		const nextRetrievers = existing.retrievers.filter(
-			(entry) => entry.packageId !== input.packageId,
-		)
-		if (nextRetrievers.length === existing.retrievers.length) continue
-		await writeScopeIndex({
-			env: input.env,
-			index: {
-				...existing,
-				retrievers: nextRetrievers,
-				updatedAt: new Date().toISOString(),
-			},
-		})
 	}
+}
+
+async function writeLegacyScopeIndex(input: {
+	env: Env
+	userId: string
+	scope: PackageRetrieverScope
+}) {
+	const entries = await readScopeEntries({
+		env: input.env,
+		userId: input.userId,
+		scope: input.scope,
+	})
+	await getRetrieverKv(input.env).put(
+		buildPackageRetrieverScopeIndexKey({
+			userId: input.userId,
+			scope: input.scope,
+		}),
+		JSON.stringify({
+			version: retrieverScopeIndexVersion,
+			userId: input.userId,
+			scope: input.scope,
+			retrievers: entries,
+			updatedAt: new Date().toISOString(),
+		} satisfies PackageRetrieverScopeIndex),
+	)
 }
 
 export async function listPackageRetrieversForScope(input: {
@@ -288,12 +365,7 @@ export async function listPackageRetrieversForScope(input: {
 	limit?: number
 }): Promise<Array<PackageRetrieverManifestCacheEntry>> {
 	if (!hasRetrieverKv(input.env)) return []
-	const index = await readScopeIndex({
-		env: input.env,
-		userId: input.userId,
-		scope: input.scope,
-	})
-	const references = index.retrievers.slice(0, input.limit ?? 10)
+	const references = await readScopeEntries(input)
 	const manifests = await Promise.all(
 		references.map(async (reference) => {
 			const manifest = await getRetrieverKv(input.env).get(
@@ -321,5 +393,5 @@ export async function listPackageRetrieversForScope(input: {
 			)
 		}),
 	)
-	return manifests.flat()
+	return manifests.flat().slice(0, input.limit ?? 10)
 }

@@ -15,6 +15,21 @@ import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
+import * as Sentry from '@sentry/cloudflare'
+
+function toRetrieverWarning(error: unknown) {
+	console.error(
+		JSON.stringify({
+			message: 'package retriever search unavailable',
+		}),
+	)
+	Sentry.captureException(error, {
+		tags: {
+			scope: 'agent-turn.package-retrievers',
+		},
+	})
+	return 'Package retrievers are temporarily unavailable.'
+}
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -82,20 +97,30 @@ export async function createAgentTurnToolSet(input: {
 							}),
 					}),
 				])
-				const { runPackageRetrievers } =
-					await import('#worker/package-retrievers/service.ts')
-				const retrieverSearch = await runPackageRetrievers({
-					env: input.env,
-					baseUrl: input.callerContext.baseUrl,
-					userId,
-					scope: 'search',
-					query: args.query,
-					memoryContext: resolveSearchMemoryContext({
-						query: args.query,
-						memoryContext: input.memoryContext ?? undefined,
-					}),
-					conversationId: input.conversationId,
-				})
+				const retrieverSearch = await (async () => {
+					if (!userId) return { results: [], warnings: [] }
+					try {
+						const { runPackageRetrievers } =
+							await import('#worker/package-retrievers/service.ts')
+						return await runPackageRetrievers({
+							env: input.env,
+							baseUrl: input.callerContext.baseUrl,
+							userId,
+							scope: 'search',
+							query: args.query,
+							memoryContext: resolveSearchMemoryContext({
+								query: args.query,
+								memoryContext: input.memoryContext ?? undefined,
+							}),
+							conversationId: input.conversationId,
+						})
+					} catch (error) {
+						return {
+							results: [],
+							warnings: [toRetrieverWarning(error)],
+						}
+					}
+				})()
 				const result = await searchUnified({
 					env: input.env,
 					query: args.query,

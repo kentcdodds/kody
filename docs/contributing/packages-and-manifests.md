@@ -105,6 +105,10 @@ Retriever exports receive `params` with `query`, `scope`, `memoryContext`,
 result has `id`, `title`, `summary`, optional `details`, optional `score`,
 optional `source`, optional `url`, and optional `metadata`.
 
+The runtime validates retriever output before surfacing it. A retriever may
+return at most 20 results; payloads with more than 20 results are rejected.
+Retriever implementations should truncate or paginate before returning.
+
 ## Repo-backed workflow
 
 Package source is edited and published through the repo session capabilities.

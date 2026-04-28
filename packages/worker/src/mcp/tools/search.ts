@@ -1571,20 +1571,32 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 
 				const retrieverRun = userId
 					? await (async () => {
-							const { runPackageRetrievers } =
-								await import('#worker/package-retrievers/service.ts')
-							return await runPackageRetrievers({
-								env: agent.getEnv(),
-								baseUrl,
-								userId,
-								scope: 'search',
-								query: args.query!,
-								memoryContext: resolveSearchMemoryContext({
-									query: args.query,
-									memoryContext: args.memoryContext,
-								}),
-								conversationId,
-							})
+							try {
+								const { runPackageRetrievers } =
+									await import('#worker/package-retrievers/service.ts')
+								return await runPackageRetrievers({
+									env: agent.getEnv(),
+									baseUrl,
+									userId,
+									scope: 'search',
+									query: args.query!,
+									memoryContext: resolveSearchMemoryContext({
+										query: args.query,
+										memoryContext: args.memoryContext,
+									}),
+									conversationId,
+								})
+							} catch (error) {
+								Sentry.captureException(error, {
+									tags: {
+										scope: 'search.package-retrievers',
+									},
+								})
+								return {
+									results: [],
+									warnings: ['Package retrievers are temporarily unavailable.'],
+								}
+							}
 						})()
 					: { results: [], warnings: [] }
 				warnings.push(...retrieverRun.warnings)

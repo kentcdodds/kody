@@ -16,8 +16,12 @@ import { listPackageRetrieversForScope } from './manifest-cache.ts'
 
 const defaultSearchLimit = 5
 const defaultContextLimit = 2
+const maxSearchLimit = 20
+const maxContextLimit = 3
 const defaultSearchTimeoutMs = 1_000
 const defaultContextTimeoutMs = 300
+const maxSearchTimeoutMs = 5_000
+const maxContextTimeoutMs = 1_000
 const maxResultSummaryLength = 1_000
 const maxResultDetailsLength = 4_000
 
@@ -43,15 +47,14 @@ function buildPackageRetrieverStorageId(packageId: string) {
 function clampLimit(value: number | null, scope: PackageRetrieverScope) {
 	const fallback =
 		scope === 'context' ? defaultContextLimit : defaultSearchLimit
-	const max = scope === 'context' ? defaultContextLimit : defaultSearchLimit
+	const max = scope === 'context' ? maxContextLimit : maxSearchLimit
 	return Math.min(max, Math.max(1, value ?? fallback))
 }
 
 function clampTimeout(value: number | null, scope: PackageRetrieverScope) {
 	const fallback =
 		scope === 'context' ? defaultContextTimeoutMs : defaultSearchTimeoutMs
-	const max =
-		scope === 'context' ? defaultContextTimeoutMs : defaultSearchTimeoutMs
+	const max = scope === 'context' ? maxContextTimeoutMs : maxSearchTimeoutMs
 	return Math.min(max, Math.max(1, value ?? fallback))
 }
 
@@ -103,8 +106,8 @@ async function invokeRetriever(input: {
 	)
 	if (
 		!source ||
-		(source.published_commit ?? source.indexed_commit ?? source.updated_at) !==
-			input.entry.revision
+		!source.published_commit ||
+		source.published_commit !== input.entry.revision
 	) {
 		return []
 	}
@@ -250,10 +253,6 @@ export async function runPackageRetrievers(input: {
 			results.push(...outcome.value)
 			continue
 		}
-		const message =
-			outcome.reason instanceof Error
-				? outcome.reason.message
-				: String(outcome.reason)
 		console.error(
 			JSON.stringify({
 				message: 'package retriever failed',
@@ -261,7 +260,6 @@ export async function runPackageRetrievers(input: {
 				kodyId: entry.kodyId,
 				retrieverKey: entry.retrieverKey,
 				scope: input.scope,
-				error: message,
 			}),
 		)
 		Sentry.captureException(outcome.reason, {
@@ -277,7 +275,7 @@ export async function runPackageRetrievers(input: {
 		})
 		if (input.scope === 'search') {
 			warnings.push(
-				`Package retriever "${entry.kodyId}/${entry.retrieverKey}" failed: ${message}`,
+				`Package retriever "${entry.kodyId}/${entry.retrieverKey}" failed and was skipped.`,
 			)
 		}
 	}

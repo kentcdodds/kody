@@ -13,7 +13,6 @@ import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/t
 export type SearchEntityType =
 	| 'capability'
 	| 'package'
-	| 'retriever_result'
 	| 'secret'
 	| 'value'
 	| 'connector'
@@ -411,7 +410,7 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new Error(
-			'Entity must use the format "{id}:{type}" where type is capability, package, retriever_result, secret, value, or connector.',
+			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or connector.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
@@ -419,13 +418,12 @@ export function parseEntityRef(entity: string): {
 	if (
 		type !== 'capability' &&
 		type !== 'package' &&
-		type !== 'retriever_result' &&
 		type !== 'secret' &&
 		type !== 'value' &&
 		type !== 'connector'
 	) {
 		throw new Error(
-			'Entity type must be one of: capability, package, retriever_result, secret, value, or connector.',
+			'Entity type must be one of: capability, package, secret, value, or connector.',
 		)
 	}
 	if (!id) {
