@@ -166,10 +166,30 @@ async function listScopeEntryKeys(input: {
 	scope: PackageRetrieverScope
 	packageId?: string
 }) {
+	const kv = getRetrieverKv(input.env)
+	if (typeof kv.list !== 'function') {
+		const legacyEntries = await readLegacyScopeIndex({
+			env: input.env,
+			userId: input.userId,
+			scope: input.scope,
+		})
+		return legacyEntries
+			.filter((entry) =>
+				input.packageId ? entry.packageId === input.packageId : true,
+			)
+			.map((entry) =>
+				buildPackageRetrieverScopeEntryKey({
+					userId: input.userId,
+					scope: input.scope,
+					packageId: entry.packageId,
+					retrieverKey: entry.retrieverKey,
+				}),
+			)
+	}
 	const keys: Array<string> = []
 	let cursor: string | undefined
 	do {
-		const result = await getRetrieverKv(input.env).list({
+		const result = await kv.list({
 			prefix: buildPackageRetrieverScopeEntryPrefix({
 				userId: input.userId,
 				scope: input.scope,
@@ -181,6 +201,31 @@ async function listScopeEntryKeys(input: {
 		cursor = result.list_complete ? undefined : result.cursor
 	} while (cursor)
 	return keys
+}
+
+async function readLegacyScopeIndex(input: {
+	env: Env
+	userId: string
+	scope: PackageRetrieverScope
+}): Promise<Array<PackageRetrieverIndexEntry>> {
+	const stored = await getRetrieverKv(input.env).get(
+		buildPackageRetrieverScopeIndexKey({
+			userId: input.userId,
+			scope: input.scope,
+		}),
+		'json',
+	)
+	if (!stored || typeof stored !== 'object') return []
+	const index = stored as PackageRetrieverScopeIndex
+	if (
+		index.version !== retrieverScopeIndexVersion ||
+		index.userId !== input.userId ||
+		index.scope !== input.scope ||
+		!Array.isArray(index.retrievers)
+	) {
+		return []
+	}
+	return index.retrievers
 }
 
 async function readScopeEntries(input: {
