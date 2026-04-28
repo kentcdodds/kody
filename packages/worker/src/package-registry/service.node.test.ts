@@ -18,6 +18,8 @@ const mockModule = vi.hoisted(() => ({
 	buildPackageSearchProjection: vi.fn(),
 	buildSavedPackageEmbedText: vi.fn(),
 	buildPublishedPackageArtifacts: vi.fn(),
+	refreshPackageRetrieverManifestCache: vi.fn(),
+	removePackageRetrieverManifestCacheEntries: vi.fn(),
 	deleteJobRow: vi.fn(),
 	deleteSavedPackage: vi.fn(),
 	deleteSavedPackageVector: vi.fn(),
@@ -58,6 +60,13 @@ vi.mock('#worker/package-runtime/package-service.ts', () => ({
 		mockModule.listSavedPackageServices(...args),
 	packageServiceRpc: (...args: Array<unknown>) =>
 		mockModule.packageServiceRpc(...args),
+}))
+
+vi.mock('#worker/package-retrievers/manifest-cache.ts', () => ({
+	refreshPackageRetrieverManifestCache: (...args: Array<unknown>) =>
+		mockModule.refreshPackageRetrieverManifestCache(...args),
+	removePackageRetrieverManifestCacheEntries: (...args: Array<unknown>) =>
+		mockModule.removePackageRetrieverManifestCacheEntries(...args),
 }))
 
 vi.mock('./repo.ts', () => ({
@@ -130,6 +139,10 @@ beforeEach(() => {
 	mockModule.buildPublishedPackageArtifacts.mockResolvedValue(undefined)
 	mockModule.syncPackageJobsForPackage.mockResolvedValue(undefined)
 	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
+	mockModule.refreshPackageRetrieverManifestCache.mockResolvedValue(undefined)
+	mockModule.removePackageRetrieverManifestCacheEntries.mockResolvedValue(
+		undefined,
+	)
 	mockModule.updateSavedPackage.mockResolvedValue(undefined)
 	mockModule.insertSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
@@ -228,6 +241,17 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 		buildAppBundle: expect.any(Function),
 		buildModuleBundle: expect.any(Function),
 	})
+	expect(mockModule.refreshPackageRetrieverManifestCache).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		source: undefined,
+		savedPackage: expect.objectContaining({
+			id: 'package-1',
+			kodyId: 'shade-automation',
+			sourceId: 'source-1',
+		}),
+		manifest,
+	})
 	const savedPackageArg = mockModule.buildPublishedPackageArtifacts.mock
 		.calls[0]?.[0]?.savedPackage as { updatedAt: string } | undefined
 	expect(savedPackageArg?.updatedAt).toMatch(
@@ -297,6 +321,13 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 			packageId: 'package-1',
 		},
 	)
+	expect(
+		mockModule.removePackageRetrieverManifestCacheEntries,
+	).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
 	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
 		env,
 		'package-1',

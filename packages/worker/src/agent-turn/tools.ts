@@ -15,6 +15,7 @@ import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
+import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -82,12 +83,25 @@ export async function createAgentTurnToolSet(input: {
 							}),
 					}),
 				])
+				const retrieverSearch = await runPackageRetrievers({
+					env: input.env,
+					baseUrl: input.callerContext.baseUrl,
+					userId,
+					scope: 'search',
+					query: args.query,
+					memoryContext: resolveSearchMemoryContext({
+						query: args.query,
+						memoryContext: input.memoryContext ?? undefined,
+					}),
+					conversationId: input.conversationId,
+				})
 				const result = await searchUnified({
 					env: input.env,
 					query: args.query,
 					limit: args.limit ?? defaultSearchLimit,
 					registry,
 					optionalRows,
+					retrieverResults: retrieverSearch.results,
 				})
 				const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
 					env: input.env,
@@ -104,13 +118,14 @@ export async function createAgentTurnToolSet(input: {
 				})
 				return {
 					offline: result.offline,
-					warnings: optionalRows.warnings,
+					warnings: [...optionalRows.warnings, ...retrieverSearch.warnings],
 					guidance: result.guidance,
 					memories: memoryToolContext
 						? {
 								surfaced: memoryToolContext.memories,
 								suppressedCount: memoryToolContext.suppressedCount,
 								retrievalQuery: memoryToolContext.retrievalQuery,
+								retrieverResults: memoryToolContext.retrieverResults,
 							}
 						: undefined,
 					remoteConnectorStatuses: remoteConnectorStatuses.map((status) => ({
@@ -124,6 +139,7 @@ export async function createAgentTurnToolSet(input: {
 						matches: result.matches,
 						baseUrl: input.callerContext.baseUrl,
 					}),
+					retrieverResults: retrieverSearch.results,
 				}
 			},
 		}),

@@ -68,6 +68,25 @@ export type PackageSubscriptionDefinition = z.infer<
 	typeof packageSubscriptionDefinitionSchema
 >
 
+export const packageRetrieverScopeValues = ['search', 'context'] as const
+export type PackageRetrieverScope = (typeof packageRetrieverScopeValues)[number]
+
+export const packageRetrieverDefinitionSchema = z.object({
+	export: z.string().min(1),
+	name: z.string().min(1),
+	description: z.string().min(1),
+	scopes: z
+		.array(z.enum(packageRetrieverScopeValues))
+		.min(1)
+		.max(packageRetrieverScopeValues.length),
+	timeoutMs: z.number().int().positive().max(5_000).optional(),
+	maxResults: z.number().int().positive().max(20).optional(),
+})
+
+export type PackageRetrieverDefinition = z.infer<
+	typeof packageRetrieverDefinitionSchema
+>
+
 const packageExportConditionSchema = z
 	.object({
 		import: z.string().min(1).optional(),
@@ -108,6 +127,12 @@ export const authoredPackageKodySchema = z.object({
 		.record(z.string().min(1), packageServiceDefinitionSchema)
 		.optional(),
 	jobs: z.record(z.string().min(1), packageJobDefinitionSchema).optional(),
+	retrievers: z
+		.record(
+			z.string().regex(kodyPackageIdPattern),
+			packageRetrieverDefinitionSchema,
+		)
+		.optional(),
 })
 
 export type AuthoredPackageKody = z.infer<typeof authoredPackageKodySchema>

@@ -1,0 +1,83 @@
+import { expect, test, vi } from 'vitest'
+
+const mockModule = vi.hoisted(() => ({
+	surfaceRelevantMemories: vi.fn(),
+	runPackageRetrievers: vi.fn(),
+}))
+
+vi.mock('#mcp/memory/service.ts', () => ({
+	surfaceRelevantMemories: (...args: Array<unknown>) =>
+		mockModule.surfaceRelevantMemories(...args),
+}))
+
+vi.mock('#worker/package-retrievers/service.ts', () => ({
+	runPackageRetrievers: (...args: Array<unknown>) =>
+		mockModule.runPackageRetrievers(...args),
+}))
+
+const { loadRelevantMemoriesForTool } = await import('./memory-tool-context.ts')
+
+function setupMemoryContextMocks() {
+	mockModule.surfaceRelevantMemories.mockReset()
+	mockModule.runPackageRetrievers.mockReset()
+	mockModule.surfaceRelevantMemories.mockResolvedValue({
+		memories: [],
+		suppressedCount: 0,
+		retrievalQuery: 'sprinkler instructions',
+	})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [
+			{
+				id: 'note-1',
+				title: 'Sprinkler controller',
+				summary: 'Hold next and back for setup mode.',
+				packageId: 'package-1',
+				kodyId: 'personal-inbox',
+				retrieverKey: 'notes',
+				retrieverName: 'Personal notes',
+			},
+		],
+		warnings: [],
+	})
+}
+
+test('loadRelevantMemoriesForTool returns context retriever results alongside memories', async () => {
+	setupMemoryContextMocks()
+	const result = await loadRelevantMemoriesForTool({
+		env: { APP_DB: {}, AI: {} } as Env,
+		callerContext: {
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+			},
+			storageContext: null,
+			homeConnectorId: null,
+			remoteConnectors: null,
+			repoContext: null,
+		},
+		conversationId: 'conversation-1',
+		memoryContext: {
+			query: 'sprinkler instructions',
+		},
+	})
+
+	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
+		expect.objectContaining({
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			scope: 'context',
+			query: 'sprinkler instructions',
+			maxProviders: 3,
+		}),
+	)
+	expect(result?.memories).toEqual([])
+	expect(result?.retrieverResults).toEqual([
+		expect.objectContaining({
+			id: 'note-1',
+			kodyId: 'personal-inbox',
+			retrieverKey: 'notes',
+		}),
+	])
+})

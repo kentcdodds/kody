@@ -445,6 +445,64 @@ test('package search formatting surfaces entity refs in markdown and import/app 
 	expect(packageMatch?.nextStep).toContain('spotify-playback:package')
 })
 
+test('search formatting surfaces package retriever results', () => {
+	const markdown = formatSearchMarkdown({
+		baseUrl: 'http://localhost',
+		warnings: [],
+		matches: [
+			{
+				type: 'retriever_result',
+				id: 'note-1',
+				title: 'Toaster oven wattage',
+				summary: 'The toaster oven is 1800 watts.',
+				details: 'Useful for load calculations.',
+				score: 0.92,
+				source: 'personal inbox',
+				url: null,
+				metadata: {},
+				packageId: 'package-1',
+				kodyId: 'personal-inbox',
+				retrieverKey: 'notes',
+				retrieverName: 'Personal notes',
+			},
+		],
+	})
+
+	expect(markdown).toContain('## Retrieved context — Toaster oven wattage')
+	expect(markdown).toContain('The toaster oven is 1800 watts.')
+	expect(markdown).toContain('**Package:** `personal-inbox`')
+
+	const structured = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'retriever_result',
+				id: 'note-1',
+				title: 'Toaster oven wattage',
+				summary: 'The toaster oven is 1800 watts.',
+				details: undefined,
+				score: 0.92,
+				source: undefined,
+				url: undefined,
+				metadata: undefined,
+				packageId: 'package-1',
+				kodyId: 'personal-inbox',
+				retrieverKey: 'notes',
+				retrieverName: 'Personal notes',
+			},
+		],
+	})
+
+	expect(structured).toEqual([
+		expect.objectContaining({
+			type: 'retriever_result',
+			id: 'note-1',
+			kodyId: 'personal-inbox',
+			retrieverKey: 'notes',
+		}),
+	])
+})
+
 test('usage helpers escape dynamic identifiers in generated snippets', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',

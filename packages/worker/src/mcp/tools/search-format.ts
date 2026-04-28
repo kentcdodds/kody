@@ -8,13 +8,23 @@ import {
 	type PackageJobSchedule,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
+import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 
 export type SearchEntityType =
 	| 'capability'
 	| 'package'
+	| 'retriever_result'
 	| 'secret'
 	| 'value'
 	| 'connector'
+
+type SearchMatchType =
+	| 'capability'
+	| 'package'
+	| 'value'
+	| 'connector'
+	| 'secret'
+	| 'retriever_result'
 
 export type SearchResultStructuredContent = {
 	matches: Array<SlimSearchMatch>
@@ -34,15 +44,8 @@ export type SearchResultStructuredContent = {
 				confidence: number
 			}>
 		}
-		candidateCounts: Partial<
-			Record<
-				'capability' | 'package' | 'value' | 'connector' | 'secret',
-				number
-			>
-		>
-		topResultTypes: Array<
-			'capability' | 'package' | 'value' | 'connector' | 'secret'
-		>
+		candidateCounts: Partial<Record<SearchMatchType, number>>
+		topResultTypes: Array<SearchMatchType>
 		trimmedMatchCount?: number
 		responseTrimmed?: boolean
 	}
@@ -144,6 +147,20 @@ export type SlimSearchMatch =
 			refreshTokenSecretName: string | null
 			nextStep?: string
 	  }
+	| {
+			type: 'retriever_result'
+			id: string
+			title: string
+			summary: string
+			details: string | null
+			source: string
+			url: string | null
+			score: number | null
+			packageId: string
+			kodyId: string
+			retrieverKey: string
+			retrieverName: string
+	  }
 
 export type SearchEntityDetailStructured =
 	| {
@@ -190,6 +207,15 @@ export type SearchEntityDetailStructured =
 				entry: string
 				scheduleSummary: string
 				enabled: boolean
+			}>
+			retrievers: Array<{
+				key: string
+				exportName: string
+				name: string
+				description: string
+				scopes: Array<string>
+				timeoutMs: number | null
+				maxResults: number | null
 			}>
 	  }
 	| {
@@ -319,6 +345,9 @@ export type SearchMatch =
 			name: string
 			description: string
 	  }
+	| (PackageRetrieverSurfaceResult & {
+			type: 'retriever_result'
+	  })
 
 function buildPackageHostedUrl(baseUrl: string, kodyId: string) {
 	return `${baseUrl.replace(/\/+$/, '')}/packages/${encodeURIComponent(kodyId)}`
@@ -382,7 +411,7 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new Error(
-			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or connector.',
+			'Entity must use the format "{id}:{type}" where type is capability, package, retriever_result, secret, value, or connector.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
@@ -390,12 +419,13 @@ export function parseEntityRef(entity: string): {
 	if (
 		type !== 'capability' &&
 		type !== 'package' &&
+		type !== 'retriever_result' &&
 		type !== 'secret' &&
 		type !== 'value' &&
 		type !== 'connector'
 	) {
 		throw new Error(
-			'Entity type must be one of: capability, package, secret, value, or connector.',
+			'Entity type must be one of: capability, package, retriever_result, secret, value, or connector.',
 		)
 	}
 	if (!id) {
@@ -417,6 +447,7 @@ export function formatSearchMarkdown(input: {
 			summary: string
 		}>
 		suppressedCount: number
+		retrieverResults?: Array<PackageRetrieverSurfaceResult>
 	}
 }) {
 	const lines: Array<string> = ['# Search results', '']
@@ -450,6 +481,14 @@ export function formatSearchMarkdown(input: {
 		if (input.memories.suppressedCount > 0) {
 			lines.push(
 				`- ${String(input.memories.suppressedCount)} additional memory item(s) were suppressed for this conversation.`,
+			)
+		}
+	}
+	if (input.memories?.retrieverResults?.length) {
+		lines.push('', '## Relevant retriever results', '')
+		for (const result of input.memories.retrieverResults) {
+			lines.push(
+				`- **${result.title}** — ${result.summary} (${result.kodyId}/${result.retrieverKey})`,
 			)
 		}
 	}
@@ -549,6 +588,20 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 			`**Refresh token secret:** ${match.refreshTokenSecretName ? `\`${match.refreshTokenSecretName}\`` : 'none'}`,
 		]
 	}
+	if (match.type === 'retriever_result') {
+		const source = match.source ?? `${match.kodyId}/${match.retrieverKey}`
+		return [
+			`## Retrieved context — ${match.title}`,
+			'',
+			match.summary,
+			...(match.details ? ['', match.details] : []),
+			'',
+			`**Source:** \`${source}\``,
+			`**Package:** \`${match.kodyId}\``,
+			`**Retriever:** \`${match.retrieverName}\``,
+			...(match.url ? [`**URL:** \`${match.url}\``] : []),
+		]
+	}
 	return [
 		`## Secret — \`${match.name}\``,
 		'',
@@ -635,6 +688,22 @@ export function toSlimStructuredMatches(input: {
 				accessTokenSecretName: match.accessTokenSecretName,
 				refreshTokenSecretName: match.refreshTokenSecretName,
 				nextStep: `Inspect connector detail with search({ entity: "${match.connectorName}:connector" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
+			}
+		}
+		if (match.type === 'retriever_result') {
+			return {
+				type: 'retriever_result',
+				id: match.id,
+				title: match.title,
+				summary: match.summary,
+				details: match.details ?? null,
+				source: match.source ?? `${match.kodyId}/${match.retrieverKey}`,
+				url: match.url ?? null,
+				score: match.score ?? null,
+				packageId: match.packageId,
+				kodyId: match.kodyId,
+				retrieverKey: match.retrieverKey,
+				retrieverName: match.retrieverName,
 			}
 		}
 		return {
@@ -759,6 +828,17 @@ export function formatEntityDetailMarkdown(
 				enabled: job.enabled ?? true,
 			}),
 		)
+		const retrievers = Object.entries(
+			detail.manifest.kody.retrievers ?? {},
+		).map(([key, retriever]) => ({
+			key,
+			exportName: retriever.export,
+			name: retriever.name,
+			description: retriever.description,
+			scopes: retriever.scopes,
+			timeoutMs: retriever.timeoutMs ?? null,
+			maxResults: retriever.maxResults ?? null,
+		}))
 		const appEntry = detail.manifest.kody.app?.entry ?? null
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
@@ -807,6 +887,14 @@ export function formatEntityDetailMarkdown(
 				)
 			}
 		}
+		if (retrievers.length > 0) {
+			lines.push('', '## Retrievers', '')
+			for (const retriever of retrievers) {
+				lines.push(
+					`- \`${retriever.key}\` -> \`${retriever.exportName}\` — ${retriever.description} (scopes: ${retriever.scopes.map((scope) => `\`${scope}\``).join(', ')})`,
+				)
+			}
+		}
 		return {
 			markdown: lines.join('\n'),
 			structured: {
@@ -828,6 +916,7 @@ export function formatEntityDetailMarkdown(
 				appEntry,
 				exports: exportDetails,
 				jobs,
+				retrievers,
 			} satisfies SearchEntityDetailStructured,
 		}
 	}

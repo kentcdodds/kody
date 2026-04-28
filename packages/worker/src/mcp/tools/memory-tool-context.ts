@@ -2,6 +2,7 @@ import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { surfaceRelevantMemories } from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
+import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 
 export type MemoryToolSummary = {
 	memories: Array<{
@@ -15,6 +16,7 @@ export type MemoryToolSummary = {
 		sourceUris: Array<string>
 		updatedAt: string
 	}>
+	retrieverResults: Array<PackageRetrieverSurfaceResult>
 	suppressedCount: number
 	retrievalQuery: string
 }
@@ -36,26 +38,42 @@ export async function loadRelevantMemoriesForTool(input: {
 	if (!userId) return null
 	const retrievalQuery = buildMemoryRetrievalQuery(input.memoryContext)
 	if (!retrievalQuery) return null
-	const result = await surfaceRelevantMemories({
-		env: input.env,
-		userId,
-		storageContext: {
-			sessionId: input.callerContext.storageContext?.sessionId ?? null,
-			appId: input.callerContext.storageContext?.appId ?? null,
-		},
-		query: retrievalQuery,
-		conversationId: input.conversationId,
-		limit: input.limit,
-	})
-	if (result.memories.length === 0) {
+	const { runPackageRetrievers } =
+		await import('#worker/package-retrievers/service.ts')
+	const [result, retrieverResult] = await Promise.all([
+		surfaceRelevantMemories({
+			env: input.env,
+			userId,
+			storageContext: {
+				sessionId: input.callerContext.storageContext?.sessionId ?? null,
+				appId: input.callerContext.storageContext?.appId ?? null,
+			},
+			query: retrievalQuery,
+			conversationId: input.conversationId,
+			limit: input.limit,
+		}),
+		runPackageRetrievers({
+			env: input.env as Env,
+			baseUrl: input.callerContext.baseUrl,
+			userId,
+			scope: 'context',
+			query: retrievalQuery,
+			memoryContext: input.memoryContext,
+			conversationId: input.conversationId,
+			maxProviders: 3,
+		}),
+	])
+	if (result.memories.length === 0 && retrieverResult.results.length === 0) {
 		return {
 			memories: [],
+			retrieverResults: [],
 			suppressedCount: result.suppressedCount,
 			retrievalQuery: result.retrievalQuery,
 		}
 	}
 	return {
 		memories: result.memories.map(toMemoryToolSummaryItem),
+		retrieverResults: retrieverResult.results,
 		suppressedCount: result.suppressedCount,
 		retrievalQuery: result.retrievalQuery,
 	}
@@ -73,19 +91,33 @@ export async function surfaceToolMemories(input: {
 	if (!userId) return null
 	const retrievalQuery = input.retrievalQuery.trim()
 	if (!retrievalQuery) return null
-	const result = await surfaceRelevantMemories({
-		env: input.env,
-		userId,
-		storageContext: {
-			sessionId: input.callerContext.storageContext?.sessionId ?? null,
-			appId: input.callerContext.storageContext?.appId ?? null,
-		},
-		query: retrievalQuery,
-		conversationId: input.conversationId,
-		limit: input.limit,
-	})
+	const { runPackageRetrievers } =
+		await import('#worker/package-retrievers/service.ts')
+	const [result, retrieverResult] = await Promise.all([
+		surfaceRelevantMemories({
+			env: input.env,
+			userId,
+			storageContext: {
+				sessionId: input.callerContext.storageContext?.sessionId ?? null,
+				appId: input.callerContext.storageContext?.appId ?? null,
+			},
+			query: retrievalQuery,
+			conversationId: input.conversationId,
+			limit: input.limit,
+		}),
+		runPackageRetrievers({
+			env: input.env as Env,
+			baseUrl: input.callerContext.baseUrl,
+			userId,
+			scope: 'context',
+			query: retrievalQuery,
+			conversationId: input.conversationId,
+			maxProviders: 3,
+		}),
+	])
 	return {
 		memories: result.memories.map(toMemoryToolSummaryItem),
+		retrieverResults: retrieverResult.results,
 		suppressedCount: result.suppressedCount,
 		retrievalQuery: result.retrievalQuery,
 	} satisfies MemoryToolSummary
@@ -115,7 +147,13 @@ export function buildMemoryRetrievalQuery(
 export function formatSurfacedMemoriesMarkdown(
 	memorySummary: MemoryToolSummary | null,
 ) {
-	if (!memorySummary || memorySummary.memories.length === 0) return []
+	if (
+		!memorySummary ||
+		(memorySummary.memories.length === 0 &&
+			memorySummary.retrieverResults.length === 0)
+	) {
+		return []
+	}
 	return [
 		{
 			type: 'text',
@@ -133,6 +171,7 @@ export function buildMemoryStructuredContent(
 			surfaced: memorySummary.memories,
 			suppressedCount: memorySummary.suppressedCount,
 			retrievalQuery: memorySummary.retrievalQuery,
+			retrieverResults: memorySummary.retrieverResults,
 		},
 	}
 }
@@ -155,6 +194,20 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 			)
 		}
 		lines.push(`  - Updated: \`${memory.updatedAt}\``)
+	}
+	if (memorySummary.retrieverResults.length > 0) {
+		lines.push('', '## Relevant retriever results', '')
+		for (const result of memorySummary.retrieverResults) {
+			lines.push(
+				`- **${result.title}** — ${result.summary} (${result.kodyId}/${result.retrieverKey})`,
+			)
+			if (result.source) {
+				lines.push(`  - Source: \`${result.source}\``)
+			}
+			if (result.url) {
+				lines.push(`  - URL: \`${result.url}\``)
+			}
+		}
 	}
 	if (memorySummary.suppressedCount > 0) {
 		lines.push(

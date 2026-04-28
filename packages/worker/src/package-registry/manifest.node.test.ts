@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { parseAuthoredPackageJson } from './manifest.ts'
+import {
+	buildPackageSearchDocument,
+	buildPackageSearchProjection,
+	parseAuthoredPackageJson,
+} from './manifest.ts'
 
 test('parseAuthoredPackageJson accepts package names whose leaf matches kody.id', () => {
 	const manifest = parseAuthoredPackageJson({
@@ -174,4 +178,75 @@ test('parseAuthoredPackageJson accepts secret mounts and subscriptions', () => {
 			},
 		},
 	})
+})
+
+test('parseAuthoredPackageJson accepts retriever definitions and includes them in search projection', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/personal-inbox',
+			exports: {
+				'.': './index.ts',
+				'./search-notes': './src/search-notes.ts',
+			},
+			kody: {
+				id: 'personal-inbox',
+				description: 'Personal inbox for random notes',
+				retrievers: {
+					'notes-search': {
+						export: './search-notes',
+						name: 'Personal notes',
+						description: 'Searches saved notes and snippets.',
+						scopes: ['context', 'search'],
+						timeoutMs: 250,
+						maxResults: 3,
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	const projection = buildPackageSearchProjection(manifest)
+
+	expect(projection.retrievers).toEqual([
+		{
+			key: 'notes-search',
+			exportName: './search-notes',
+			name: 'Personal notes',
+			description: 'Searches saved notes and snippets.',
+			scopes: ['context', 'search'],
+			timeoutMs: 250,
+			maxResults: 3,
+		},
+	])
+	expect(buildPackageSearchDocument(projection)).toContain(
+		'retriever:notes-search',
+	)
+})
+
+test('parseAuthoredPackageJson rejects retriever definitions with no scopes', () => {
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/personal-inbox',
+				exports: {
+					'.': './index.ts',
+					'./search-notes': './src/search-notes.ts',
+				},
+				kody: {
+					id: 'personal-inbox',
+					description: 'Personal inbox for random notes',
+					retrievers: {
+						'notes-search': {
+							export: './search-notes',
+							name: 'Personal notes',
+							description: 'Searches saved notes and snippets.',
+							scopes: [],
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow('Too small')
 })

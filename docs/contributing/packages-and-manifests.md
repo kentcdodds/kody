@@ -19,6 +19,7 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.tags` — search tags
 - `kody.app` — optional hosted package app config
 - `kody.jobs` — optional package-owned schedules
+- `kody.retrievers` — optional package-owned search/context retrievers
 
 The package manifest is `package.json`.
 
@@ -30,6 +31,7 @@ Think in terms of:
 - package exports
 - package apps
 - package-owned jobs
+- package-owned retrievers
 
 The top-level saved identity is the package.
 
@@ -66,6 +68,42 @@ Jobs belong to packages.
 - Treat schedule/runtime state as package-owned implementation detail
 
 Jobs are not their own top-level saved primitive.
+
+## Package-owned retrievers
+
+Retrievers let packages return user-owned documents or facts to Kody search and
+automatic context retrieval without promoting those records to durable memory.
+
+- Define retrievers under `package.json#kody.retrievers`
+- Each retriever names a package export, display name, description, and one or
+  more scopes: `search`, `context`
+- Package metadata remains the source of truth; runtime discovery uses derived
+  KV manifest and scope indexes that are rebuilt on package refresh
+- Retriever exports run read-only against the package storage bucket
+
+Example:
+
+```json
+{
+	"kody": {
+		"retrievers": {
+			"personal-inbox": {
+				"export": "./search",
+				"name": "Personal Inbox",
+				"description": "Searches saved notes and snippets.",
+				"scopes": ["search"],
+				"timeoutMs": 1000,
+				"maxResults": 5
+			}
+		}
+	}
+}
+```
+
+Retriever exports receive `params` with `query`, `scope`, `memoryContext`,
+`limit`, and `conversationId`, and return `{ "results": [...] }` where each
+result has `id`, `title`, `summary`, optional `details`, optional `score`,
+optional `source`, optional `url`, and optional `metadata`.
 
 ## Repo-backed workflow
 

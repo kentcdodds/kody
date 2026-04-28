@@ -1,6 +1,7 @@
 import {
 	getPackageAppEntryPath,
 	listPackageServices,
+	listPackageRetrievers,
 } from '#worker/package-registry/manifest.ts'
 import {
 	type AuthoredPackageJson,
@@ -341,6 +342,34 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			source: input.source,
 			kind: 'module',
 			artifactName: exportName,
+			entryPoint,
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+			dependencies: bundle.dependencies ?? fallbackDependencies,
+			packageContext: {
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
+			},
+		})
+	}
+	for (const retriever of listPackageRetrievers(input.manifest)) {
+		const exportTarget = input.manifest.exports[retriever.exportName]
+		if (!exportTarget) continue
+		const entryPoint =
+			typeof exportTarget === 'string'
+				? exportTarget
+				: (exportTarget.import ?? exportTarget.default ?? null)
+		if (!entryPoint) continue
+		const bundle = await input.buildModuleBundle({
+			entryPoint,
+		})
+		await persistPublishedBundleArtifact({
+			env: input.env,
+			userId: input.userId,
+			source: input.source,
+			kind: 'module',
+			artifactName: retriever.exportName,
 			entryPoint,
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
