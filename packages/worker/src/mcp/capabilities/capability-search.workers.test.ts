@@ -22,6 +22,7 @@ test('buildCapabilityEmbedText folds searchable capability fields into one docum
 		requiredInputFields: ['sourceId'],
 		outputFields: ['deploymentId'],
 		inputSchema: {},
+		inputTypeDefinition: 'type DeployWorkerInput = Record<string, unknown>',
 	} satisfies CapabilitySpec
 
 	expect(buildCapabilityEmbedText(spec)).toBe(
@@ -94,6 +95,8 @@ test('offline search returns provided specs without depending on global ranks', 
 				},
 				required: ['guide'],
 			},
+			inputTypeDefinition:
+				'type KodyOfficialGuideInput = {\n\tguide: "integration_bootstrap" | "secret_backed_integration" | "oauth" | "generated_ui_oauth" | "connect_secret"\n}',
 		},
 	} satisfies Record<string, CapabilitySpec>
 	const env = {
@@ -142,6 +145,8 @@ test('online search semantically ranks runtime-only capabilities missing from Ve
 				},
 				required: ['owner', 'repo'],
 			},
+			inputTypeDefinition:
+				'type GithubEnableIssueNotificationsInput = {\n\towner: string\n\trepo: string\n}',
 		},
 		home_roku_press_key: {
 			name: 'home_roku_press_key',
@@ -163,6 +168,8 @@ test('online search semantically ranks runtime-only capabilities missing from Ve
 				},
 				required: ['deviceId', 'key'],
 			},
+			inputTypeDefinition:
+				'type HomeRokuPressKeyInput = {\n\tdeviceId: string\n\tkey: string\n}',
 		},
 	} satisfies Record<string, CapabilitySpec>
 	const env = {

@@ -17,6 +17,8 @@ const capabilitySummarySchema = z.object({
 const capabilityDetailSchema = capabilitySummarySchema.extend({
 	inputSchema: z.unknown(),
 	outputSchema: z.unknown().optional(),
+	inputTypeDefinition: z.string(),
+	outputTypeDefinition: z.string().optional(),
 	inputFields: z.array(z.string()),
 	outputFields: z.array(z.string()),
 })
@@ -24,7 +26,7 @@ const capabilityDetailSchema = capabilitySummarySchema.extend({
 const outputSchema = z.object({
 	total: z.number().int().nonnegative(),
 	capabilities: z.array(
-		z.union([capabilitySummarySchema, capabilityDetailSchema]),
+		z.union([capabilityDetailSchema, capabilitySummarySchema]),
 	),
 })
 
@@ -113,6 +115,10 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								inputSchema: spec.inputSchema,
 								...(spec.outputSchema
 									? { outputSchema: spec.outputSchema }
+									: {}),
+								inputTypeDefinition: spec.inputTypeDefinition,
+								...(spec.outputTypeDefinition
+									? { outputTypeDefinition: spec.outputTypeDefinition }
 									: {}),
 								inputFields: spec.inputFields,
 								outputFields: spec.outputFields,

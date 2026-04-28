@@ -129,8 +129,18 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 	expect(homeCapability).not.toBeUndefined()
 	expect(homeCapability?.domain).toBe('home')
 	expect(homeCapability?.requiredInputFields).toEqual(['deviceId', 'key'])
+	expect(homeCapability).toMatchObject({
+		inputTypeDefinition: expect.stringContaining(
+			'type HomeRokuPressKeyInput =',
+		),
+	})
 	expect(listAppsCapability).not.toBeUndefined()
 	expect(listAppsCapability?.domain).toBe('home')
+	expect(listAppsCapability).toMatchObject({
+		outputTypeDefinition: expect.stringContaining(
+			'type HomeRokuListAppsOutput =',
+		),
+	})
 	expect(activeAppCapability).not.toBeUndefined()
 	expect(activeAppCapability?.domain).toBe('home')
 })

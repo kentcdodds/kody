@@ -127,6 +127,8 @@ export type CapabilityDetailRow = CapabilitySummaryRow & {
 	destructive: boolean
 	inputSchema: unknown
 	outputSchema?: unknown
+	inputTypeDefinition: string
+	outputTypeDefinition?: string
 	inputFields?: Array<string>
 	outputFields?: Array<string>
 }
@@ -167,6 +169,10 @@ function toDetail(spec: CapabilitySpec): CapabilityDetailRow {
 		destructive: spec.destructive,
 		inputSchema,
 		...(outputSchema ? { outputSchema } : {}),
+		inputTypeDefinition: spec.inputTypeDefinition,
+		...(spec.outputTypeDefinition
+			? { outputTypeDefinition: spec.outputTypeDefinition }
+			: {}),
 	}
 	if (!spec.inputSchema) {
 		row.inputFields = spec.inputFields

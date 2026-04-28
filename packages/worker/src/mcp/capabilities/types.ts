@@ -56,6 +56,8 @@ export type Capability = {
 	destructive: boolean
 	inputSchema: CapabilityJsonSchema
 	outputSchema?: JsonSchemaToolDescriptor['outputSchema']
+	inputTypeDefinition: string
+	outputTypeDefinition?: string
 	handler: (
 		args: Record<string, unknown>,
 		ctx: CapabilityContext,
@@ -75,6 +77,8 @@ export type CapabilitySpec = {
 	outputFields: Array<string>
 	inputSchema: JsonSchemaToolDescriptor['inputSchema']
 	outputSchema?: JsonSchemaToolDescriptor['outputSchema']
+	inputTypeDefinition: string
+	outputTypeDefinition?: string
 }
 
 /** Registry / MCP instruction row derived from a `DomainSpec`. */

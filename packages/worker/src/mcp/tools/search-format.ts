@@ -160,6 +160,8 @@ export type SearchEntityDetailStructured =
 			destructive: boolean
 			inputSchema: unknown
 			outputSchema?: unknown
+			inputTypeDefinition: string
+			outputTypeDefinition?: string
 	  }
 	| {
 			kind: 'entity'
@@ -669,6 +671,15 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 			`- Idempotent: ${detail.spec.idempotent ? 'yes' : 'no'}`,
 			`- Destructive: ${detail.spec.destructive ? 'yes' : 'no'}`,
 			'',
+			'## Type definitions',
+			'',
+			'```ts',
+			detail.spec.inputTypeDefinition,
+			...(detail.spec.outputTypeDefinition
+				? ['', detail.spec.outputTypeDefinition]
+				: []),
+			'```',
+			'',
 			'## Input schema',
 			'',
 			`- \`${JSON.stringify(inputSchema)}\``,
@@ -697,6 +708,10 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				destructive: detail.spec.destructive,
 				inputSchema,
 				...(outputSchema !== undefined ? { outputSchema } : {}),
+				inputTypeDefinition: detail.spec.inputTypeDefinition,
+				...(detail.spec.outputTypeDefinition
+					? { outputTypeDefinition: detail.spec.outputTypeDefinition }
+					: {}),
 			} satisfies SearchEntityDetailStructured,
 		}
 	}
