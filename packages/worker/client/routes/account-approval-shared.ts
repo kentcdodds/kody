@@ -3,7 +3,6 @@ export type ApprovalAction = 'approve' | 'reject'
 export type ApprovalScope = 'session' | 'app' | 'user'
 
 export type ApprovalView = {
-	token: string
 	name: string
 	scope: ApprovalScope
 	requestedHost: string
@@ -27,11 +26,7 @@ export async function readJson<T>(response: Response) {
 
 export async function submitApprovalRequest<
 	T extends { ok?: boolean; error?: string },
->(
-	action: ApprovalAction,
-	requestToken: string,
-	requestUrl = accountSecretsApiPath,
-) {
+>(action: ApprovalAction, requestUrl = accountSecretsApiPath) {
 	const response = await fetch(requestUrl, {
 		method: 'POST',
 		headers: {
@@ -41,7 +36,6 @@ export async function submitApprovalRequest<
 		credentials: 'include',
 		body: JSON.stringify({
 			action,
-			requestToken,
 		}),
 	})
 	if (response.status === 401) {

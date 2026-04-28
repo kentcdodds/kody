@@ -92,13 +92,13 @@ test('batch approval parsers round-trip entries and reject invalid payloads', ()
 			secretName: 'cloudflareToken',
 			host: 'api.cloudflare.com',
 			approvalUrl:
-				'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com&request=token',
+				'https://example.com/account/secrets/user/cloudflareToken?allowed-host=api.cloudflare.com',
 		},
 		{
 			secretName: 'githubToken',
 			host: 'api.github.com',
 			approvalUrl:
-				'https://example.com/account/secrets/user/githubToken?allowed-host=api.github.com&request=token',
+				'https://example.com/account/secrets/user/githubToken?allowed-host=api.github.com',
 		},
 	]
 	expect(

@@ -76,7 +76,7 @@ export function AccountRoute(handle: Handle) {
 		try {
 			const payload = await submitApprovalRequest<
 				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(action, approval.token)
+			>(action)
 			if (!payload) return
 			email = payload.email
 			approval = payload.approval

@@ -46,7 +46,7 @@ test('fetch gateway blocks placeholders when allowed hosts are empty', async () 
 				secretName: 'spotifyRefreshToken',
 				host: 'example.com',
 				approvalUrl: expect.stringMatching(
-					/\/account\/secrets\/user\/spotifyRefreshToken\?[^#]*allowed-host=example\.com[^#]*request=/,
+					/\/account\/secrets\/user\/spotifyRefreshToken\?allowed-host=example\.com$/,
 				),
 			}),
 		])
