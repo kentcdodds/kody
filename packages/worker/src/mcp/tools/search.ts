@@ -1569,20 +1569,24 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					}
 				}
 
-				const { runPackageRetrievers } =
-					await import('#worker/package-retrievers/service.ts')
-				const retrieverRun = await runPackageRetrievers({
-					env: agent.getEnv(),
-					baseUrl,
-					userId,
-					scope: 'search',
-					query: args.query!,
-					memoryContext: resolveSearchMemoryContext({
-						query: args.query,
-						memoryContext: args.memoryContext,
-					}),
-					conversationId,
-				})
+				const retrieverRun = userId
+					? await (async () => {
+							const { runPackageRetrievers } =
+								await import('#worker/package-retrievers/service.ts')
+							return await runPackageRetrievers({
+								env: agent.getEnv(),
+								baseUrl,
+								userId,
+								scope: 'search',
+								query: args.query!,
+								memoryContext: resolveSearchMemoryContext({
+									query: args.query,
+									memoryContext: args.memoryContext,
+								}),
+								conversationId,
+							})
+						})()
+					: { results: [], warnings: [] }
 				warnings.push(...retrieverRun.warnings)
 				const result = await searchUnified({
 					env: agent.getEnv(),

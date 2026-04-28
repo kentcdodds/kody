@@ -15,7 +15,6 @@ import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
-import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -83,6 +82,8 @@ export async function createAgentTurnToolSet(input: {
 							}),
 					}),
 				])
+				const { runPackageRetrievers } =
+					await import('#worker/package-retrievers/service.ts')
 				const retrieverSearch = await runPackageRetrievers({
 					env: input.env,
 					baseUrl: input.callerContext.baseUrl,
