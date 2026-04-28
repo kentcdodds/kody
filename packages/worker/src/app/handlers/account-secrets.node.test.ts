@@ -361,6 +361,29 @@ test('host approval approve persists host from allowed-host and selected secret'
 	)
 })
 
+test('approval request rejects ambiguous host and package targets', async () => {
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.action({
+		request: new Request(
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=api.cloudflare.com&package_id=pkg-123',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Approval request contains both host and package.',
+	})
+	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
+	expect(mockModule.setSecretAllowedPackages).not.toHaveBeenCalled()
+})
+
 test('account secrets payload preserves app titles and allowed packages', async () => {
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{

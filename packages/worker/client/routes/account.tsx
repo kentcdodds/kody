@@ -74,9 +74,14 @@ export function AccountRoute(handle: Handle) {
 		message = null
 		handle.update()
 		try {
+			const href =
+				typeof window === 'undefined' ? '/account' : window.location.href
+			const currentUrl = new URL(href)
+			const requestUrl = new URL(accountSecretsApiPath, currentUrl)
+			requestUrl.search = currentUrl.search
 			const payload = await submitApprovalRequest<
 				AccountSecretsPayload & { error?: string; ok?: boolean }
-			>(action)
+			>(action, requestUrl.toString())
 			if (!payload) return
 			email = payload.email
 			approval = payload.approval

@@ -737,6 +737,9 @@ function resolveApprovalRequest(input: {
 	if (!parsed) {
 		throw new Error('Invalid approval request.')
 	}
+	if (input.requestedHost && input.requestedPackageId) {
+		throw new Error('Approval request contains both host and package.')
+	}
 	const storageContext = getSecretContextForAccountSecret(parsed)
 	if (input.requestedPackageId) {
 		return {

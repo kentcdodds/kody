@@ -627,8 +627,10 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 
 		try {
-			const selection = getSelectionState(getCurrentHref())
-			const requestUrl = new URL(accountSecretsApiPath, getCurrentHref())
+			const currentUrl = new URL(getCurrentHref())
+			const selection = getSelectionState(currentUrl.toString())
+			const requestUrl = new URL(accountSecretsApiPath, currentUrl)
+			requestUrl.search = currentUrl.search
 			if (selection.selectedSecretId) {
 				requestUrl.searchParams.set('selected', selection.selectedSecretId)
 			}
