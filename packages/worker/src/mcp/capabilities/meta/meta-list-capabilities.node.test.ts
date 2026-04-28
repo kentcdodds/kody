@@ -65,8 +65,8 @@ const runtimeHomeTools = [
 	},
 ] as const
 
-test('meta_list_capabilities includes runtime home capabilities from the connected connector', async () => {
-	const env = {
+function buildHomeConnectorEnv() {
+	return {
 		HOME_CONNECTOR_SESSION: {
 			idFromName(name: string) {
 				return name
@@ -97,6 +97,10 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 			},
 		},
 	} as unknown as Env
+}
+
+test('meta_list_capabilities includes runtime home capabilities from the connected connector', async () => {
+	const env = buildHomeConnectorEnv()
 
 	const result = await metaListCapabilitiesCapability.handler(
 		{
@@ -148,27 +152,7 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 })
 
 test('meta_list_capabilities includes schemas only when requested', async () => {
-	const env = {
-		HOME_CONNECTOR_SESSION: {
-			idFromName(name: string) {
-				return name
-			},
-			get() {
-				return {
-					fetch() {
-						return Promise.resolve(
-							Response.json({
-								connectorId: 'default',
-								connectedAt: '2026-03-25T00:00:00.000Z',
-								lastSeenAt: '2026-03-25T00:00:01.000Z',
-								tools: runtimeHomeTools,
-							}),
-						)
-					},
-				}
-			},
-		},
-	} as unknown as Env
+	const env = buildHomeConnectorEnv()
 
 	const result = await metaListCapabilitiesCapability.handler(
 		{

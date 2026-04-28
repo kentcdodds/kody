@@ -80,9 +80,16 @@ function jsonSchemaToType(schema: unknown): string {
 }
 
 function joinSchemaTypes(schemas: Array<unknown>, separator: ' | ' | ' & ') {
-	const types = schemas.map((subschema) => jsonSchemaToType(subschema))
+	const types = schemas.map((subschema) => {
+		const type = jsonSchemaToType(subschema)
+		return separator === ' & ' ? parenthesizeUnion(type) : type
+	})
 	if (types.length === 0) return 'never'
 	return types.join(separator)
+}
+
+function parenthesizeUnion(type: string) {
+	return type.includes(' | ') ? `(${type})` : type
 }
 
 function arraySchemaToType(schema: Record<string, unknown>) {
