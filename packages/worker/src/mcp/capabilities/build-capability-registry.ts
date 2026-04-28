@@ -102,6 +102,10 @@ function createCapabilitySpecs(capabilities: Array<Capability>) {
 					...(capability.outputSchema
 						? { outputSchema: capability.outputSchema }
 						: {}),
+					inputTypeDefinition: capability.inputTypeDefinition,
+					...(capability.outputTypeDefinition
+						? { outputTypeDefinition: capability.outputTypeDefinition }
+						: {}),
 				},
 			] as const,
 	)

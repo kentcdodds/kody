@@ -11,6 +11,10 @@ import {
 	type CapabilitySchemaDefinition,
 	type InferCapabilitySchema,
 } from './types.ts'
+import {
+	createCapabilityTypeName,
+	createSchemaTypeDefinition,
+} from './schema-type-definitions.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
 // consumed by the registry and sandbox search surface.
@@ -23,6 +27,10 @@ export function defineCapability<
 		? createSchemaParser(definition.outputSchema)
 		: null
 	const keywords = mergeKeywords(definition.keywords, definition.tags)
+	const inputSchema = toJsonSchema(definition.inputSchema)
+	const outputSchema = definition.outputSchema
+		? toJsonSchema(definition.outputSchema)
+		: undefined
 
 	return {
 		name: definition.name,
@@ -32,9 +40,19 @@ export function defineCapability<
 		readOnly: definition.readOnly ?? false,
 		idempotent: definition.idempotent ?? false,
 		destructive: definition.destructive ?? false,
-		inputSchema: toJsonSchema(definition.inputSchema),
-		...(definition.outputSchema
-			? { outputSchema: toJsonSchema(definition.outputSchema) }
+		inputSchema,
+		...(outputSchema ? { outputSchema } : {}),
+		inputTypeDefinition: createSchemaTypeDefinition({
+			jsonSchema: inputSchema,
+			typeName: createCapabilityTypeName(definition.name, 'Input'),
+		}),
+		...(definition.outputSchema && outputSchema
+			? {
+					outputTypeDefinition: createSchemaTypeDefinition({
+						jsonSchema: outputSchema,
+						typeName: createCapabilityTypeName(definition.name, 'Output'),
+					}),
+				}
 			: {}),
 		async handler(args, ctx) {
 			const startedAt = performance.now()
