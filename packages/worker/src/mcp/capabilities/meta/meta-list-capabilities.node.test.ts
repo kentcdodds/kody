@@ -134,6 +134,7 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 			'type HomeRokuPressKeyInput =',
 		),
 	})
+	expect(homeCapability).not.toHaveProperty('inputSchema')
 	expect(listAppsCapability).not.toBeUndefined()
 	expect(listAppsCapability?.domain).toBe('home')
 	expect(listAppsCapability).toMatchObject({
@@ -141,8 +142,66 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 			'type HomeRokuListAppsOutput =',
 		),
 	})
+	expect(listAppsCapability).not.toHaveProperty('outputSchema')
 	expect(activeAppCapability).not.toBeUndefined()
 	expect(activeAppCapability?.domain).toBe('home')
+})
+
+test('meta_list_capabilities includes schemas only when requested', async () => {
+	const env = {
+		HOME_CONNECTOR_SESSION: {
+			idFromName(name: string) {
+				return name
+			},
+			get() {
+				return {
+					fetch() {
+						return Promise.resolve(
+							Response.json({
+								connectorId: 'default',
+								connectedAt: '2026-03-25T00:00:00.000Z',
+								lastSeenAt: '2026-03-25T00:00:01.000Z',
+								tools: runtimeHomeTools,
+							}),
+						)
+					},
+				}
+			},
+		},
+	} as unknown as Env
+
+	const result = await metaListCapabilitiesCapability.handler(
+		{
+			detail: true,
+			includeSchemas: true,
+		},
+		{
+			env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				homeConnectorId: 'default',
+			}),
+		},
+	)
+
+	const homeCapability = result.capabilities.find(
+		(capability) => capability.name === 'home_roku_press_key',
+	)
+	const listAppsCapability = result.capabilities.find(
+		(capability) => capability.name === 'home_roku_list_apps',
+	)
+	expect(homeCapability).toMatchObject({
+		inputSchema: expect.objectContaining({ type: 'object' }),
+		inputTypeDefinition: expect.stringContaining(
+			'type HomeRokuPressKeyInput =',
+		),
+	})
+	expect(listAppsCapability).toMatchObject({
+		outputSchema: expect.objectContaining({ type: 'object' }),
+		outputTypeDefinition: expect.stringContaining(
+			'type HomeRokuListAppsOutput =',
+		),
+	})
 })
 
 test('meta_list_capabilities filters by domain', async () => {

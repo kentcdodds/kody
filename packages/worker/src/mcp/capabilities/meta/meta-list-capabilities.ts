@@ -15,7 +15,7 @@ const capabilitySummarySchema = z.object({
 })
 
 const capabilityDetailSchema = capabilitySummarySchema.extend({
-	inputSchema: z.unknown(),
+	inputSchema: z.unknown().optional(),
 	outputSchema: z.unknown().optional(),
 	inputTypeDefinition: z.string(),
 	outputTypeDefinition: z.string().optional(),
@@ -56,7 +56,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 	{
 		name: 'meta_list_capabilities',
 		description:
-			'List the current runtime capability registry, including dynamic capabilities such as connected home tools. Use this when search seems incomplete and you need the exact capability names and schemas available right now.',
+			'List the current runtime capability registry, including dynamic capabilities such as connected home tools. Use this when search seems incomplete and you need exact capability names and TypeScript call shapes.',
 		keywords: [
 			'capabilities',
 			'list',
@@ -86,12 +86,18 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				.boolean()
 				.optional()
 				.describe(
-					'Include schemas and full field lists when true. Defaults to false.',
+					'Include TypeScript type definitions and full field lists when true. Defaults to false.',
+				),
+			includeSchemas: z
+				.boolean()
+				.optional()
+				.describe(
+					'Only used with detail: true. Include raw JSON schemas in addition to TypeScript type definitions. Defaults to false.',
 				),
 		}),
 		outputSchema,
 		async handler(
-			args: { domain?: string; detail?: boolean },
+			args: { domain?: string; detail?: boolean; includeSchemas?: boolean },
 			ctx: CapabilityContext,
 		) {
 			const { getCapabilityRegistryForContext } =
@@ -112,8 +118,10 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								idempotent: spec.idempotent,
 								destructive: spec.destructive,
 								requiredInputFields: spec.requiredInputFields,
-								inputSchema: spec.inputSchema,
-								...(spec.outputSchema
+								...(args.includeSchemas === true
+									? { inputSchema: spec.inputSchema }
+									: {}),
+								...(args.includeSchemas === true && spec.outputSchema
 									? { outputSchema: spec.outputSchema }
 									: {}),
 								inputTypeDefinition: spec.inputTypeDefinition,

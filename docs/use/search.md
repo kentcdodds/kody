@@ -24,9 +24,11 @@ small.
 ## Single-entity detail
 
 To get **full markdown and call shapes for one hit** (for example a capability’s
-`inputTypeDefinition` / `outputTypeDefinition` plus `inputSchema` /
-`outputSchema`), call **search** again with **`entity`** set to `"{id}:{type}"`
-where **`type`** is `capability`, `value`, `connector`, `package`, or `secret`.
+`inputTypeDefinition` / `outputTypeDefinition`), call **search** again with
+**`entity`** set to `"{id}:{type}"` where **`type`** is `capability`, `value`,
+`connector`, `package`, or `secret`. Capability detail omits raw JSON schemas by
+default; pass **`includeSchemas: true`** only when you explicitly need
+`inputSchema` / `outputSchema`.
 
 Examples:
 

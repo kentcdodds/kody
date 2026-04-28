@@ -158,7 +158,7 @@ export type SearchEntityDetailStructured =
 			readOnly: boolean
 			idempotent: boolean
 			destructive: boolean
-			inputSchema: unknown
+			inputSchema?: unknown
 			outputSchema?: unknown
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
@@ -648,15 +648,11 @@ export function toSlimStructuredMatches(input: {
 	})
 }
 
-export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
+export function formatEntityDetailMarkdown(
+	detail: SearchEntityDetail,
+	options?: { includeSchemas?: boolean },
+) {
 	if (detail.type === 'capability') {
-		const inputSchema = compressSchemaForLlm(detail.spec.inputSchema)
-		const outputSchema =
-			detail.spec.outputSchema == null
-				? undefined
-				: compressSchemaForLlm(detail.spec.outputSchema, {
-						stripRootObjectType: false,
-					})
 		const lines = [
 			`# Capability — \`${detail.spec.name}\``,
 			'',
@@ -679,11 +675,25 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				? ['', detail.spec.outputTypeDefinition]
 				: []),
 			'```',
-			'',
-			'## Input schema',
-			'',
-			`- \`${JSON.stringify(inputSchema)}\``,
 		]
+		const includeSchemas = options?.includeSchemas === true
+		const inputSchema = includeSchemas
+			? compressSchemaForLlm(detail.spec.inputSchema)
+			: undefined
+		const outputSchema =
+			includeSchemas && detail.spec.outputSchema != null
+				? compressSchemaForLlm(detail.spec.outputSchema, {
+						stripRootObjectType: false,
+					})
+				: undefined
+		if (includeSchemas) {
+			lines.push(
+				'',
+				'## Input schema',
+				'',
+				`- \`${JSON.stringify(inputSchema)}\``,
+			)
+		}
 		if (outputSchema !== undefined) {
 			lines.push(
 				'',
@@ -706,7 +716,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				readOnly: detail.spec.readOnly,
 				idempotent: detail.spec.idempotent,
 				destructive: detail.spec.destructive,
-				inputSchema,
+				...(includeSchemas ? { inputSchema } : {}),
 				...(outputSchema !== undefined ? { outputSchema } : {}),
 				inputTypeDefinition: detail.spec.inputTypeDefinition,
 				...(detail.spec.outputTypeDefinition

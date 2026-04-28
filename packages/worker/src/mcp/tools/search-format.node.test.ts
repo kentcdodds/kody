@@ -196,7 +196,7 @@ test('entity detail formatting returns stable structured details for values and 
 	})
 })
 
-test('capability entity detail leads with TypeScript definitions and keeps schemas structured', () => {
+test('capability entity detail defaults to TypeScript definitions without schemas', () => {
 	const detail = formatEntityDetailMarkdown({
 		type: 'capability',
 		id: 'github_create_issue',
@@ -237,16 +237,69 @@ test('capability entity detail leads with TypeScript definitions and keeps schem
 		},
 	})
 
-	expect(detail.markdown.indexOf('## Type definitions')).toBeLessThan(
-		detail.markdown.indexOf('## Input schema'),
-	)
+	expect(detail.markdown).toContain('## Type definitions')
 	expect(detail.markdown).toContain('```ts')
 	expect(detail.markdown).toContain('type GithubCreateIssueInput')
 	expect(detail.markdown).toContain('type GithubCreateIssueOutput')
+	expect(detail.markdown).not.toContain('## Input schema')
+	expect(detail.markdown).not.toContain('## Output schema')
 	expect(detail.structured).toMatchObject({
 		type: 'capability',
 		inputTypeDefinition: expect.stringContaining('GithubCreateIssueInput'),
 		outputTypeDefinition: expect.stringContaining('GithubCreateIssueOutput'),
+	})
+	expect(detail.structured).not.toHaveProperty('inputSchema')
+	expect(detail.structured).not.toHaveProperty('outputSchema')
+})
+
+test('capability entity detail includes schemas only when explicitly requested', () => {
+	const detail = formatEntityDetailMarkdown(
+		{
+			type: 'capability',
+			id: 'github_create_issue',
+			title: 'github_create_issue',
+			description: 'Create a GitHub issue.',
+			spec: {
+				name: 'github_create_issue',
+				domain: 'coding',
+				description: 'Create a GitHub issue.',
+				keywords: ['github', 'issue'],
+				readOnly: false,
+				idempotent: false,
+				destructive: false,
+				inputFields: ['owner', 'repo', 'title'],
+				requiredInputFields: ['owner', 'repo', 'title'],
+				outputFields: ['issueUrl'],
+				inputSchema: {
+					type: 'object',
+					properties: {
+						owner: { type: 'string' },
+						repo: { type: 'string' },
+						title: { type: 'string' },
+						body: { type: 'string' },
+					},
+					required: ['owner', 'repo', 'title'],
+				},
+				outputSchema: {
+					type: 'object',
+					properties: {
+						issueUrl: { type: 'string' },
+					},
+					required: ['issueUrl'],
+				},
+				inputTypeDefinition:
+					'type GithubCreateIssueInput = {\n\towner: string\n\trepo: string\n\ttitle: string\n\tbody?: string\n}',
+				outputTypeDefinition:
+					'type GithubCreateIssueOutput = {\n\tissueUrl: string\n}',
+			},
+		},
+		{ includeSchemas: true },
+	)
+
+	expect(detail.markdown).toContain('## Input schema')
+	expect(detail.markdown).toContain('## Output schema')
+	expect(detail.structured).toMatchObject({
+		type: 'capability',
 		inputSchema: expect.objectContaining({
 			properties: expect.objectContaining({
 				owner: expect.objectContaining({ type: 'string' }),

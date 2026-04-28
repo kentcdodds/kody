@@ -119,8 +119,57 @@ test('offline search returns provided specs without depending on global ranks', 
 		expect.arrayContaining(['oauth', 'redirect uri', 'provider registration']),
 	)
 	expect(matches[0]?.outputFields).toEqual(['title', 'body'])
+	expect(matches[0]).not.toHaveProperty('inputSchema')
 	expect(matches[0]?.lexicalRank).toBe(1)
 	expect(matches[0]?.vectorRank).toBe(1)
+})
+
+test('detailed capability search includes schemas only when requested', async () => {
+	const specs = {
+		kody_official_guide: {
+			name: 'kody_official_guide',
+			domain: 'coding',
+			description: 'Load official Kody guides.',
+			keywords: ['guide'],
+			readOnly: true,
+			idempotent: true,
+			destructive: false,
+			inputFields: ['guide'],
+			requiredInputFields: ['guide'],
+			outputFields: [],
+			inputSchema: {
+				type: 'object',
+				properties: {
+					guide: { type: 'string' },
+				},
+				required: ['guide'],
+			},
+			inputTypeDefinition:
+				'type KodyOfficialGuideInput = {\n\tguide: string\n}',
+		},
+	} satisfies Record<string, CapabilitySpec>
+	const env = {
+		SENTRY_ENVIRONMENT: 'test',
+		AI: {} as Ai,
+	} as Env
+
+	const { matches } = await searchCapabilities({
+		env,
+		query: 'guide',
+		limit: 1,
+		detail: true,
+		includeSchemas: true,
+		specs,
+	})
+
+	expect(matches[0]).toMatchObject({
+		inputSchema: expect.objectContaining({
+			properties: expect.objectContaining({
+				guide: expect.objectContaining({ type: 'string' }),
+			}),
+		}),
+		inputTypeDefinition: expect.stringContaining('KodyOfficialGuideInput'),
+	})
 })
 
 test('online search semantically ranks runtime-only capabilities missing from Vectorize', async () => {

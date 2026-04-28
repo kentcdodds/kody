@@ -125,7 +125,7 @@ export type CapabilityDetailRow = CapabilitySummaryRow & {
 	readOnly: boolean
 	idempotent: boolean
 	destructive: boolean
-	inputSchema: unknown
+	inputSchema?: unknown
 	outputSchema?: unknown
 	inputTypeDefinition: string
 	outputTypeDefinition?: string
@@ -152,10 +152,15 @@ function toSummary(spec: CapabilitySpec): CapabilitySummaryRow {
 	}
 }
 
-function toDetail(spec: CapabilitySpec): CapabilityDetailRow {
-	const inputSchema = compressSchemaForLlm(spec.inputSchema)
+function toDetail(
+	spec: CapabilitySpec,
+	includeSchemas: boolean,
+): CapabilityDetailRow {
+	const inputSchema = includeSchemas
+		? compressSchemaForLlm(spec.inputSchema)
+		: undefined
 	const outputSchema =
-		'outputSchema' in spec && spec.outputSchema !== undefined
+		includeSchemas && 'outputSchema' in spec && spec.outputSchema !== undefined
 			? compressSchemaForLlm(spec.outputSchema, {
 					stripRootObjectType: false,
 				})
@@ -167,7 +172,7 @@ function toDetail(spec: CapabilitySpec): CapabilityDetailRow {
 		readOnly: spec.readOnly,
 		idempotent: spec.idempotent,
 		destructive: spec.destructive,
-		inputSchema,
+		...(includeSchemas ? { inputSchema } : {}),
 		...(outputSchema ? { outputSchema } : {}),
 		inputTypeDefinition: spec.inputTypeDefinition,
 		...(spec.outputTypeDefinition
@@ -233,6 +238,7 @@ export async function searchCapabilities(input: {
 	query: string
 	limit: number
 	detail: boolean
+	includeSchemas?: boolean
 	specs: Record<string, CapabilitySpec>
 	/** When set (online only), Vectorize query uses this metadata filter first; falls back to unfiltered if no spec ids match. */
 	vectorMetadataFilter?: VectorizeVectorMetadataFilter
@@ -341,7 +347,9 @@ export async function searchCapabilities(input: {
 
 	const matches: Array<CapabilitySearchHit> = ordered.map((id) => {
 		const spec = specs[id]!
-		const base = input.detail ? toDetail(spec) : toSummary(spec)
+		const base = input.detail
+			? toDetail(spec, input.includeSchemas === true)
+			: toSummary(spec)
 		const rawVectorScore = vectorScoreById[id]
 		const vectorScore =
 			rawVectorScore !== undefined && Number.isFinite(rawVectorScore)
