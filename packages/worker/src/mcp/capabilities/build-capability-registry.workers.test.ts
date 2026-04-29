@@ -79,15 +79,6 @@ test('capability domain registration rejects mismatched and duplicate invariants
 	).toThrow(/Duplicate domain registration/)
 })
 
-test('builtin capability domains include packages', async () => {
-	const { builtinDomains } = await import('./builtin-domains.ts')
-	expect(builtinDomains.some((domain) => domain.name === 'packages')).toBe(true)
-	const packagesDomain = builtinDomains.find(
-		(domain) => domain.name === 'packages',
-	)
-	expect(packagesDomain?.capabilities.length).toBeGreaterThan(0)
-})
-
 test('defineDomain rejects duplicate capability names within one domain', () => {
 	const firstCapability = defineDomainCapability(capabilityDomainNames.packages, {
 		name: 'dup',

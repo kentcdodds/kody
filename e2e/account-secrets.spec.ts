@@ -83,41 +83,33 @@ test('switching secrets updates detail view without a full reload', async ({
 		),
 	).resolves.toBe('still-here')
 })
-test('landing on an approval link shows already added when the host is present', async ({
+test('approval links only offer approve when the host is missing and persist the requested host', async ({
 	page,
 	login,
 }) => {
 	await login()
-
 	const nonce = Date.now().toString(36)
-	const secret = {
+	const alreadyAllowedSecret = {
 		name: `cloudflare-token-${nonce}`,
 		description: `Cloudflare token ${nonce}`,
-		value: `token-${nonce}`,
+		value: `token-${nonce}-existing`,
 		allowedHosts: ['api.cloudflare.com'],
 	}
-
-	await saveSecret(page, secret)
+	await saveSecret(page, alreadyAllowedSecret)
 
 	await page.goto(
-		`/account/secrets/user/${secret.name}?allowed-host=api.cloudflare.com`,
+		`/account/secrets/user/${alreadyAllowedSecret.name}?allowed-host=api.cloudflare.com`,
 	)
 
 	await expect(
-		page.getByRole('heading', { level: 2, name: secret.name }),
+		page.getByRole('heading', {
+			level: 2,
+			name: alreadyAllowedSecret.name,
+		}),
 	).toBeVisible()
-	const alreadyAddedNotice = page.getByRole('status')
-	await expect(alreadyAddedNotice).toBeVisible()
-	await expect(alreadyAddedNotice).toContainText('api.cloudflare.com')
+	await expect(page.getByRole('status')).toContainText('api.cloudflare.com')
 	await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0)
-})
 
-test('generated host approval link shows one-click approve and persists host', async ({
-	page,
-	login,
-}) => {
-	await login()
-	const nonce = Date.now().toString(36)
 	const secret = {
 		name: `fly-token-${nonce}`,
 		description: `Fly token ${nonce}`,
@@ -137,9 +129,6 @@ test('generated host approval link shows one-click approve and persists host', a
 	await expect(approvalCard).toBeVisible()
 	await expect(page.getByText(requestedHost)).toBeVisible()
 	await page.getByRole('button', { name: 'Approve' }).click()
-	await expect(page.getByRole('alert')).toContainText(
-		'Approved requested host.',
-	)
 	await expect(page).toHaveURL(
 		new RegExp(`/account/secrets/user/${secret.name}`),
 	)

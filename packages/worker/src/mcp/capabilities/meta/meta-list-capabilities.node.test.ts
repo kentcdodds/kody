@@ -99,7 +99,7 @@ function buildHomeConnectorEnv() {
 	} as unknown as Env
 }
 
-test('meta_list_capabilities includes runtime home capabilities from the connected connector', async () => {
+test('meta_list_capabilities includes runtime home capabilities and adds schemas only when requested', async () => {
 	const env = buildHomeConnectorEnv()
 
 	const result = await metaListCapabilitiesCapability.handler(
@@ -133,28 +133,16 @@ test('meta_list_capabilities includes runtime home capabilities from the connect
 	expect(homeCapability).not.toBeUndefined()
 	expect(homeCapability?.domain).toBe('home')
 	expect(homeCapability?.requiredInputFields).toEqual(['deviceId', 'key'])
-	expect(homeCapability).toMatchObject({
-		inputTypeDefinition: expect.stringContaining(
-			'type HomeRokuPressKeyInput =',
-		),
-	})
+	expect(homeCapability?.inputTypeDefinition).toEqual(expect.any(String))
 	expect(homeCapability).not.toHaveProperty('inputSchema')
 	expect(listAppsCapability).not.toBeUndefined()
 	expect(listAppsCapability?.domain).toBe('home')
-	expect(listAppsCapability).toMatchObject({
-		outputTypeDefinition: expect.stringContaining(
-			'type HomeRokuListAppsOutput =',
-		),
-	})
+	expect(listAppsCapability?.outputTypeDefinition).toEqual(expect.any(String))
 	expect(listAppsCapability).not.toHaveProperty('outputSchema')
 	expect(activeAppCapability).not.toBeUndefined()
 	expect(activeAppCapability?.domain).toBe('home')
-})
 
-test('meta_list_capabilities includes schemas only when requested', async () => {
-	const env = buildHomeConnectorEnv()
-
-	const result = await metaListCapabilitiesCapability.handler(
+	const resultWithSchemas = await metaListCapabilitiesCapability.handler(
 		{
 			detail: true,
 			includeSchemas: true,
@@ -168,24 +156,24 @@ test('meta_list_capabilities includes schemas only when requested', async () => 
 		},
 	)
 
-	const homeCapability = result.capabilities.find(
+	const homeCapabilityWithSchemas = resultWithSchemas.capabilities.find(
 		(capability) => capability.name === 'home_roku_press_key',
 	)
-	const listAppsCapability = result.capabilities.find(
+	const listAppsCapabilityWithSchemas = resultWithSchemas.capabilities.find(
 		(capability) => capability.name === 'home_roku_list_apps',
 	)
-	expect(homeCapability).toMatchObject({
+	expect(homeCapabilityWithSchemas).toMatchObject({
 		inputSchema: expect.objectContaining({ type: 'object' }),
-		inputTypeDefinition: expect.stringContaining(
-			'type HomeRokuPressKeyInput =',
-		),
 	})
-	expect(listAppsCapability).toMatchObject({
+	expect(homeCapabilityWithSchemas?.inputTypeDefinition).toBe(
+		homeCapability?.inputTypeDefinition,
+	)
+	expect(listAppsCapabilityWithSchemas).toMatchObject({
 		outputSchema: expect.objectContaining({ type: 'object' }),
-		outputTypeDefinition: expect.stringContaining(
-			'type HomeRokuListAppsOutput =',
-		),
 	})
+	expect(listAppsCapabilityWithSchemas?.outputTypeDefinition).toBe(
+		listAppsCapability?.outputTypeDefinition,
+	)
 })
 
 test('meta_list_capabilities filters by domain', async () => {

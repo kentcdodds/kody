@@ -48,7 +48,8 @@ async function runNextTask(tasks: Array<QueueTask>, aborted: boolean) {
 test('aborted refresh does not erase a ready authenticated session', async () => {
 	navigationListeners.length = 0
 	queuedSessionResponses.length = 0
-	queuedSessionResponses.push({ email: 'signed-in@example.com' }, null)
+	const sessionEmail = 'signed-in@example.com'
+	queuedSessionResponses.push({ email: sessionEmail }, null)
 
 	const queuedTasks: Array<QueueTask> = []
 	const handle = {
@@ -71,14 +72,16 @@ test('aborted refresh does not erase a ready authenticated session', async () =>
 	await runNextTask(queuedTasks, false)
 
 	const authenticatedUi = await renderToString(render())
-	expect(authenticatedUi).toContain('signed-in@example.com')
-	expect(authenticatedUi).toContain('Log out')
+	expect(authenticatedUi).toContain('href="/account/secrets"')
+	expect(authenticatedUi).toContain(sessionEmail)
+	expect(authenticatedUi).toContain('<form method="post" action="/logout"')
 
 	// Re-run refresh via navigation, then abort in-flight fetch.
 	navigationListeners[0]!()
 	await runNextTask(queuedTasks, true)
 
 	const uiAfterAbort = await renderToString(render())
-	expect(uiAfterAbort).toContain('signed-in@example.com')
-	expect(uiAfterAbort).toContain('Log out')
+	expect(uiAfterAbort).toContain('href="/account/secrets"')
+	expect(uiAfterAbort).toContain(sessionEmail)
+	expect(uiAfterAbort).toContain('<form method="post" action="/logout"')
 })
