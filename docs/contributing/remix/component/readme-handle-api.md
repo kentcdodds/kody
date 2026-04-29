@@ -141,5 +141,5 @@ function Form(handle: Handle) {
 
 - [Handle listeners and signals](./readme-handle-listeners.md)
 - [Handle context](./readme-handle-context.md)
-- [Fragments and future work](./readme-extras.md)
+- [Fragments and related notes](./readme-extras.md)
 - [Component index](./index.md)

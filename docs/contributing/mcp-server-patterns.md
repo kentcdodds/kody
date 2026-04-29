@@ -412,7 +412,7 @@ Next:
 ```
 
 **Example in this repo:** The example tool does not paginate, but this pattern
-is recommended for future list-style tools.
+fits list-style tools that need pagination.
 
 ---
 

@@ -23,10 +23,10 @@ function List(handle: Handle) {
 - use `Props<'div'>`
 - use `RemixNode` not JSX.Element, etc.
 
-## Future
+## Additional notes
 
-This package is a work in progress. Future features (demo'd at Remix Jam)
-include:
+This package documentation also mentions features demo'd at Remix Jam,
+including:
 
 - Server Rendering
 - Selective Hydration
