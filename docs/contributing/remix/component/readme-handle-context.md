@@ -97,5 +97,5 @@ function ThemedContent(handle: Handle) {
 ## Navigation
 
 - [Handle API reference](./readme-handle-api.md)
-- [Fragments and future work](./readme-extras.md)
+- [Fragments and component notes](./readme-extras.md)
 - [Component index](./index.md)

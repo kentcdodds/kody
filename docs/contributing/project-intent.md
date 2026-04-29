@@ -4,11 +4,11 @@
 AI agent host that supports MCP.
 
 The core idea is to keep the public MCP surface small while making a large
-number of capabilities available behind that surface. The current direction is
-to follow Cloudflare's Code Mode approach for execution: expose a tiny set of
-stable tools such as `search` (capability discovery) and `execute` (sandboxed
-capability calls), then implement the broader capability graph in code rather
-than as hundreds of individually described MCP tools.
+number of capabilities available behind that surface. This repo follows
+Cloudflare's Code Mode approach for execution: expose a tiny set of stable tools
+such as `search` (capability discovery) and `execute` (sandboxed capability
+calls), then implement the broader capability graph in code rather than as
+hundreds of individually described MCP tools.
 
 ## What this repo is
 
@@ -22,8 +22,8 @@ This repository is:
   product.
 
 Some existing docs and code reflect this project's starter/template lineage.
-When those conflict with the direction described here, treat this document as
-the intent for the current project.
+When those conflict with the guidance here, treat this document as the project's
+intent.
 
 ## Who this is for
 
@@ -34,7 +34,7 @@ This project is intentionally single-user.
 - Optimization target: useful behavior for one trusted user, not generic
   multi-tenant safety or broad organizational administration
 
-That means future decisions should usually optimize for:
+Optimize for:
 
 - Fast iteration
 - Personal workflows and preferences
@@ -47,9 +47,9 @@ It does not need to optimize for:
 - Fine-grained permission delegation between many distinct humans
 - Broad consumer onboarding flows
 
-## Product direction
+## Product intent
 
-The intended product direction is:
+This project is meant to:
 
 1. Build a personal assistant that can be reached from MCP-capable AI agents.
 2. Keep the MCP contract compact enough that it does not bloat host context.
@@ -65,15 +65,15 @@ large host-specific app surface for each client.
 
 When working in this repo, do not assume:
 
-- The current example tools define the intended long-term MCP surface.
+- The example tools define the full MCP surface.
 - This project should evolve into a large catalog of explicitly declared MCP
   tools.
 - This project is trying to become a generic starter kit for others.
 - The main goal is enterprise-grade least-privilege design for many users.
 
-Also do not document future capabilities as if they already exist. It is fine to
-describe intent, experiments, and likely direction, but keep present-tense
-claims limited to behavior that exists in the repository.
+Also do not document capabilities as if they already exist. Keep design notes
+and proposals clearly labeled, and keep present-tense claims limited to behavior
+that exists in the repository.
 
 ## Documentation guidance
 
@@ -82,7 +82,7 @@ When updating docs or explaining architecture:
 - Describe the repo as an experiment and foundation for a personal assistant.
 - Mention the single-user assumption when it materially affects product or auth
   decisions.
-- Separate current behavior from intended direction.
+- Keep present behavior separate from design notes and proposals.
 - Prefer focused docs over expanding `AGENTS.md`.
 
 ## Agent guidance

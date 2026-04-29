@@ -11,7 +11,7 @@ Source: https://github.com/remix-run/remix/tree/main/packages/component
 - [Handle API reference](./readme-handle-api.md)
 - [Handle listeners and signals](./readme-handle-listeners.md)
 - [Handle context](./readme-handle-context.md)
-- [Fragments and future work](./readme-extras.md)
+- [Fragments and package notes](./readme-extras.md)
 
 ## Component docs
 
