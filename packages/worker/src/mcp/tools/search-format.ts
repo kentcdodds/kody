@@ -67,6 +67,7 @@ export type SearchResultStructuredContent = {
 		}>
 		suppressedCount: number
 		retrievalQuery: string
+		retrieverResults?: Array<PackageRetrieverSurfaceResult>
 	}
 	homeConnectorStatus?: {
 		connectorKind: string
