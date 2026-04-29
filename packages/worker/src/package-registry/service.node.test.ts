@@ -18,6 +18,8 @@ const mockModule = vi.hoisted(() => ({
 	buildPackageSearchProjection: vi.fn(),
 	buildSavedPackageEmbedText: vi.fn(),
 	buildPublishedPackageArtifacts: vi.fn(),
+	refreshPackageRetrieverManifestCache: vi.fn(),
+	removePackageRetrieverManifestCacheEntries: vi.fn(),
 	deleteJobRow: vi.fn(),
 	deleteSavedPackage: vi.fn(),
 	deleteSavedPackageVector: vi.fn(),
@@ -58,6 +60,13 @@ vi.mock('#worker/package-runtime/package-service.ts', () => ({
 		mockModule.listSavedPackageServices(...args),
 	packageServiceRpc: (...args: Array<unknown>) =>
 		mockModule.packageServiceRpc(...args),
+}))
+
+vi.mock('#worker/package-retrievers/manifest-cache.ts', () => ({
+	refreshPackageRetrieverManifestCache: (...args: Array<unknown>) =>
+		mockModule.refreshPackageRetrieverManifestCache(...args),
+	removePackageRetrieverManifestCacheEntries: (...args: Array<unknown>) =>
+		mockModule.removePackageRetrieverManifestCacheEntries(...args),
 }))
 
 vi.mock('./repo.ts', () => ({
@@ -130,6 +139,10 @@ beforeEach(() => {
 	mockModule.buildPublishedPackageArtifacts.mockResolvedValue(undefined)
 	mockModule.syncPackageJobsForPackage.mockResolvedValue(undefined)
 	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
+	mockModule.refreshPackageRetrieverManifestCache.mockResolvedValue(undefined)
+	mockModule.removePackageRetrieverManifestCacheEntries.mockResolvedValue(
+		undefined,
+	)
 	mockModule.updateSavedPackage.mockResolvedValue(undefined)
 	mockModule.insertSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteSavedPackage.mockResolvedValue(undefined)
@@ -228,6 +241,17 @@ test('refreshSavedPackageProjection resyncs the job manager after syncing packag
 		buildAppBundle: expect.any(Function),
 		buildModuleBundle: expect.any(Function),
 	})
+	expect(mockModule.refreshPackageRetrieverManifestCache).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		source: undefined,
+		savedPackage: expect.objectContaining({
+			id: 'package-1',
+			kodyId: 'shade-automation',
+			sourceId: 'source-1',
+		}),
+		manifest,
+	})
 	const savedPackageArg = mockModule.buildPublishedPackageArtifacts.mock
 		.calls[0]?.[0]?.savedPackage as { updatedAt: string } | undefined
 	expect(savedPackageArg?.updatedAt).toMatch(
@@ -297,6 +321,13 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 			packageId: 'package-1',
 		},
 	)
+	expect(
+		mockModule.removePackageRetrieverManifestCacheEntries,
+	).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
 	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
 		env,
 		'package-1',
@@ -308,6 +339,88 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
 	).toBeGreaterThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
+})
+
+test('refreshSavedPackageProjection continues when retriever cache refresh fails', async () => {
+	const env = createEnv()
+	const manifest = {
+		name: '@kentcdodds/shade-automation',
+		kody: {
+			id: 'shade-automation',
+			description: 'Shade automation package',
+			tags: ['home', 'shades'],
+			searchText: 'shade automation',
+		},
+	}
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest,
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Old description',
+		tags: ['home'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+	mockModule.refreshPackageRetrieverManifestCache.mockRejectedValue(
+		new Error('kv unavailable'),
+	)
+
+	await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+
+	expect(mockModule.syncPackageJobsForPackage).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+		manifest,
+	})
+	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
+})
+
+test('deleteSavedPackageProjection continues when retriever cache removal fails', async () => {
+	const env = createEnv()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([])
+	mockModule.removePackageRetrieverManifestCacheEntries.mockRejectedValue(
+		new Error('kv unavailable'),
+	)
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
+		env,
+		'package-1',
+	)
+	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
 })
 
 test('refreshSavedPackageProjection still syncs job manager when auto-start service startup fails', async () => {

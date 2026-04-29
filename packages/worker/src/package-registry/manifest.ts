@@ -3,6 +3,7 @@ import {
 	authoredPackageJsonSchema,
 	type AuthoredPackageJson,
 	type PackageExportTarget,
+	type PackageRetrieverScope,
 } from './types.ts'
 
 const packageManifestPath = 'package.json'
@@ -150,6 +151,32 @@ export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
 		.sort((left, right) => left.topic.localeCompare(right.topic))
 }
 
+export type PackageRetrieverManifestEntry = {
+	key: string
+	exportName: string
+	name: string
+	description: string
+	scopes: Array<PackageRetrieverScope>
+	timeoutMs: number | null
+	maxResults: number | null
+}
+
+export function listPackageRetrievers(
+	manifest: AuthoredPackageJson,
+): Array<PackageRetrieverManifestEntry> {
+	return Object.entries(manifest.kody.retrievers ?? {})
+		.map(([key, retriever]) => ({
+			key,
+			exportName: normalizePackageExportKey(retriever.export),
+			name: retriever.name,
+			description: retriever.description,
+			scopes: Array.from(new Set(retriever.scopes)).sort(),
+			timeoutMs: retriever.timeoutMs ?? null,
+			maxResults: retriever.maxResults ?? null,
+		}))
+		.sort((left, right) => left.key.localeCompare(right.key))
+}
+
 export function getPackageTags(manifest: AuthoredPackageJson) {
 	return [...(manifest.kody.tags ?? [])]
 }
@@ -182,6 +209,7 @@ export type PackageSearchProjection = {
 		description: string | null
 		filters: Record<string, unknown> | null
 	}>
+	retrievers: Array<PackageRetrieverManifestEntry>
 }
 
 export function buildPackageSearchProjection(
@@ -212,6 +240,7 @@ export function buildPackageSearchProjection(
 			.sort((left, right) => left.name.localeCompare(right.name)),
 		services: listPackageServices(manifest),
 		subscriptions: listPackageSubscriptions(manifest),
+		retrievers: listPackageRetrievers(manifest),
 	}
 }
 
@@ -244,6 +273,17 @@ export function buildPackageSearchDocument(
 				.filter((value) => value.length > 0)
 				.join(' '),
 	)
+	const retrieverLines = projection.retrievers.map((retriever) =>
+		[
+			`retriever:${retriever.key}`,
+			retriever.name,
+			retriever.description,
+			retriever.exportName,
+			...retriever.scopes.map((scope) => `scope:${scope}`),
+		]
+			.filter((value) => value.length > 0)
+			.join(' '),
+	)
 	return [
 		`package ${projection.kodyId}`,
 		projection.name,
@@ -254,6 +294,7 @@ export function buildPackageSearchDocument(
 		jobLines.join('\n'),
 		serviceLines.join('\n'),
 		subscriptionLines.join('\n'),
+		retrieverLines.join('\n'),
 		projection.appEntry
 			? `app ${projection.appEntry}`
 			: projection.hasApp

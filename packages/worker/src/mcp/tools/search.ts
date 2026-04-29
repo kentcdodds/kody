@@ -45,6 +45,7 @@ import {
 } from '#worker/home/status.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
+import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import {
 	callerContextFields,
 	errorFields,
@@ -178,6 +179,7 @@ function buildFallbackPackageSearchProjection(
 		jobs: [],
 		services: [],
 		subscriptions: [],
+		retrievers: [],
 	}
 }
 
@@ -332,6 +334,11 @@ function buildSearchableEntityDescriptors(input: {
 			tertiaryAliases: [
 				...entry.projection.exports,
 				...entry.projection.jobs.map((job) => job.name),
+				...entry.projection.retrievers.flatMap((retriever) => [
+					retriever.key,
+					retriever.name,
+					retriever.description,
+				]),
 				...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
 			],
 		})
@@ -644,6 +651,9 @@ function buildPackageCandidates(input: {
 			const jobs = Array.isArray(entry.projection.jobs)
 				? entry.projection.jobs
 				: []
+			const retrievers = Array.isArray(entry.projection.retrievers)
+				? entry.projection.retrievers
+				: []
 			const document = buildPackageSearchDocument(entry.projection)
 			const lexical = lexicalScore(input.query, document)
 			const vector = cosineSimilarity(
@@ -677,6 +687,13 @@ function buildPackageCandidates(input: {
 						job.schedule,
 						job.enabled ? 'enabled' : 'disabled',
 					]),
+					...retrievers.flatMap((retriever) => [
+						retriever.key,
+						retriever.name,
+						retriever.description,
+						retriever.exportName,
+						...retriever.scopes,
+					]),
 					...(entry.projection.appEntry ? [entry.projection.appEntry] : []),
 					...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
 				],
@@ -685,6 +702,48 @@ function buildPackageCandidates(input: {
 					vector,
 				}),
 			}
+		})
+		.filter((candidate) => candidate.scoreComponents.base > 0)
+}
+
+function buildRetrieverResultCandidates(input: {
+	query: string
+	results: Array<PackageRetrieverSurfaceResult>
+}): Array<SearchCandidate> {
+	return input.results
+		.map((result) => {
+			const lexical = lexicalScore(
+				input.query,
+				[
+					result.title,
+					result.summary,
+					result.details ?? '',
+					result.source ?? '',
+					result.kodyId,
+					result.retrieverName,
+				].join('\n'),
+			)
+			const score = Math.min(1, Math.max(0, result.score ?? 0))
+			return {
+				match: {
+					type: 'retriever_result' as const,
+					...result,
+				},
+				type: 'retriever_result' as const,
+				id: `${result.kodyId}:${result.retrieverKey}:${result.id}`,
+				title: result.title,
+				searchFields: [
+					result.title,
+					result.summary,
+					result.details ?? '',
+					result.source ?? '',
+					result.kodyId,
+					result.retrieverName,
+				],
+				scoreComponents: buildCandidateBaseScore({
+					lexical: Math.max(lexical, score),
+				}),
+			} satisfies SearchCandidate
 		})
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 }
@@ -855,6 +914,7 @@ export async function searchUnified(input: {
 		OptionalSearchRowsResult,
 		'packageRows' | 'userSecretRows' | 'userValueRows'
 	>
+	retrieverResults?: Array<PackageRetrieverSurfaceResult>
 }): Promise<SearchUnifiedResult> {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
@@ -924,6 +984,10 @@ export async function searchUnified(input: {
 		...buildSecretCandidates({
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.userSecretRows,
+		}),
+		...buildRetrieverResultCandidates({
+			query: intent.normalizedQuery,
+			results: input.retrieverResults ?? [],
 		}),
 	]
 	const candidateGenerationMs = Math.max(
@@ -1481,11 +1545,48 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			let remoteConnectorDownStatuses: Array<HomeConnectorStatus> = []
 
 			const searchSpan = async () => {
-				const searchRows = await loadSearchRowsAndRegistry({
-					agent,
-					callerContext,
-					userId,
-				})
+				const query = args.query?.trim() ?? ''
+				const retrieverRunPromise =
+					userId && query
+						? (async () => {
+								try {
+									const { runPackageRetrievers } =
+										await import('#worker/package-retrievers/service.ts')
+									return await runPackageRetrievers({
+										env: agent.getEnv(),
+										baseUrl,
+										userId,
+										scope: 'search',
+										query,
+										memoryContext: resolveSearchMemoryContext({
+											query,
+											memoryContext: args.memoryContext,
+										}),
+										conversationId,
+									})
+								} catch (error) {
+									Sentry.captureException(error, {
+										tags: {
+											scope: 'search.package-retrievers',
+										},
+									})
+									return {
+										results: [],
+										warnings: [
+											'Package retrievers are temporarily unavailable.',
+										],
+									}
+								}
+							})()
+						: Promise.resolve({ results: [], warnings: [] })
+				const [searchRows] = await Promise.all([
+					loadSearchRowsAndRegistry({
+						agent,
+						callerContext,
+						userId,
+					}),
+					retrieverRunPromise,
+				])
 				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
 					env: agent.getEnv(),
 					callerContext,
@@ -1505,12 +1606,15 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					}
 				}
 
+				const retrieverRun = await retrieverRunPromise
+				warnings.push(...retrieverRun.warnings)
 				const result = await searchUnified({
 					env: agent.getEnv(),
 					query: args.query!,
 					limit,
 					registry: searchRows.registry,
 					optionalRows: searchRows,
+					retrieverResults: retrieverRun.results,
 				})
 
 				return {
@@ -1591,8 +1695,12 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							surfaced: memoryToolContext.memories,
 							suppressedCount: memoryToolContext.suppressedCount,
 							retrievalQuery: memoryToolContext.retrievalQuery,
+							retrieverResults: memoryToolContext.retrieverResults,
 						}
 					: undefined
+				if (memoryToolContext) {
+					warnings.push(...memoryToolContext.retrieverWarnings)
+				}
 
 				const payload: {
 					matches: Array<SearchMatch>

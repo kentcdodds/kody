@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
 import {
@@ -23,6 +24,33 @@ import {
 	listSavedPackageServices,
 	packageServiceRpc,
 } from '#worker/package-runtime/package-service.ts'
+import {
+	refreshPackageRetrieverManifestCache,
+	removePackageRetrieverManifestCacheEntries,
+} from '#worker/package-retrievers/manifest-cache.ts'
+
+function logPackageRetrieverProjectionError(input: {
+	action: 'refresh' | 'delete'
+	packageId: string
+	error: unknown
+}) {
+	console.error(
+		JSON.stringify({
+			message: 'package retriever projection update failed',
+			action: input.action,
+			packageId: input.packageId,
+		}),
+	)
+	Sentry.captureException(input.error, {
+		tags: {
+			scope: 'package-retriever-projection',
+			action: input.action,
+		},
+		extra: {
+			packageId: input.packageId,
+		},
+	})
+}
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
@@ -92,23 +120,24 @@ export async function refreshSavedPackageProjection(input: {
 		embedText: buildSavedPackageEmbedText(loaded.manifest),
 	})
 	const refreshedAt = new Date().toISOString()
+	const savedPackage = {
+		id: input.packageId,
+		userId: input.userId,
+		name: row.name,
+		kodyId: row.kody_id,
+		description: row.description,
+		tags: JSON.parse(row.tags_json) as Array<string>,
+		searchText: row.search_text ?? null,
+		sourceId: row.source_id,
+		hasApp: row.has_app === 1,
+		createdAt: existing?.createdAt ?? refreshedAt,
+		updatedAt: refreshedAt,
+	} satisfies SavedPackageRecord
 	await rebuildPublishedPackageArtifacts({
 		env: input.env,
 		userId: input.userId,
 		source: loaded.source,
-		savedPackage: {
-			id: input.packageId,
-			userId: input.userId,
-			name: row.name,
-			kodyId: row.kody_id,
-			description: row.description,
-			tags: JSON.parse(row.tags_json) as Array<string>,
-			searchText: row.search_text ?? null,
-			sourceId: row.source_id,
-			hasApp: row.has_app === 1,
-			createdAt: existing?.createdAt ?? refreshedAt,
-			updatedAt: refreshedAt,
-		},
+		savedPackage,
 		manifest: loaded.manifest,
 		files: loaded.files,
 		buildAppBundle: async ({ entryPoint }) => {
@@ -135,6 +164,21 @@ export async function refreshSavedPackageProjection(input: {
 			})
 		},
 	})
+	try {
+		await refreshPackageRetrieverManifestCache({
+			env: input.env,
+			userId: input.userId,
+			source: loaded.source,
+			savedPackage,
+			manifest: loaded.manifest,
+		})
+	} catch (error) {
+		logPackageRetrieverProjectionError({
+			action: 'refresh',
+			packageId: input.packageId,
+			error,
+		})
+	}
 	const { syncPackageJobsForPackage } = await import('#worker/jobs/service.ts')
 	await syncPackageJobsForPackage({
 		env: input.env,
@@ -237,6 +281,19 @@ export async function deleteSavedPackageProjection(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
+	try {
+		await removePackageRetrieverManifestCacheEntries({
+			env: input.env,
+			userId: input.userId,
+			packageId: input.packageId,
+		})
+	} catch (error) {
+		logPackageRetrieverProjectionError({
+			action: 'delete',
+			packageId: input.packageId,
+			error,
+		})
+	}
 	await deleteSavedPackageVector(input.env, input.packageId)
 	await syncJobManagerAlarm({
 		env: input.env,

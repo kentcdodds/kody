@@ -63,6 +63,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				jobs: [],
 				services: [],
 				subscriptions: [],
+				retrievers: [],
 			},
 		},
 	]
@@ -152,6 +153,105 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 	)
 })
 
+test('searchUnified includes package retriever results as first-class matches', async () => {
+	const registry = buildCapabilityRegistry([])
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'bob phone number',
+		limit: 5,
+		registry,
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+		retrieverResults: [
+			{
+				id: 'note-1',
+				title: 'Bob phone number',
+				summary: 'Bob can be reached at 555-1234.',
+				score: 0.9,
+				source: 'personal inbox',
+				packageId: 'package-1',
+				kodyId: 'personal-inbox',
+				retrieverKey: 'notes',
+				retrieverName: 'Personal inbox notes',
+			},
+		],
+	})
+
+	expect(result.matches).toEqual([
+		expect.objectContaining({
+			type: 'retriever_result',
+			id: 'note-1',
+			kodyId: 'personal-inbox',
+			retrieverKey: 'notes',
+		}),
+	])
+	expect(result.telemetry.candidateCounts.retriever_result).toBe(1)
+})
+
+test('searchUnified clamps package retriever scores into the normal ranking range', async () => {
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'meta',
+			description: 'Meta capabilities',
+			capabilities: [
+				{
+					name: 'bob_phone_lookup',
+					domain: 'meta',
+					description: 'Find Bob phone details',
+					keywords: [],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: {
+						type: 'object',
+						properties: {},
+					},
+					handler: async () => null,
+				},
+			],
+		},
+	])
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'bob phone',
+		limit: 2,
+		registry,
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+		retrieverResults: [
+			{
+				id: 'note-1',
+				title: 'Unrelated appliance note',
+				summary: 'The toaster oven is 1800 watts.',
+				score: 50,
+				packageId: 'package-1',
+				kodyId: 'personal-inbox',
+				retrieverKey: 'notes',
+				retrieverName: 'Personal inbox notes',
+			},
+		],
+	})
+
+	expect(result.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'capability',
+				name: 'bob_phone_lookup',
+			}),
+			expect.objectContaining({
+				type: 'retriever_result',
+				id: 'note-1',
+			}),
+		]),
+	)
+})
+
 test('search memory context falls back to the query when omitted', () => {
 	expect(
 		resolveSearchMemoryContext({
@@ -233,6 +333,7 @@ test('optional search rows include saved packages when lookup succeeds', async (
 					jobs: [],
 					services: [],
 					subscriptions: [],
+					retrievers: [],
 				},
 			},
 		],
@@ -277,6 +378,7 @@ test('optional search rows preserve package fallback warnings', async () => {
 						jobs: [],
 						services: [],
 						subscriptions: [],
+						retrievers: [],
 					},
 				},
 			],
@@ -328,6 +430,7 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 					jobs: [],
 					services: [],
 					subscriptions: [],
+					retrievers: [],
 				},
 			},
 		],
@@ -453,6 +556,7 @@ test('search guidance does not pair unrelated package and connector matches', as
 						jobs: [],
 						services: [],
 						subscriptions: [],
+						retrievers: [],
 					},
 				},
 			],

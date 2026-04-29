@@ -15,6 +15,21 @@ import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { runModuleWithRegistry } from '#mcp/run-codemode-registry.ts'
+import * as Sentry from '@sentry/cloudflare'
+
+function toRetrieverWarning(error: unknown) {
+	console.error(
+		JSON.stringify({
+			message: 'package retriever search unavailable',
+		}),
+	)
+	Sentry.captureException(error, {
+		tags: {
+			scope: 'agent-turn.package-retrievers',
+		},
+	})
+	return 'Package retrievers are temporarily unavailable.'
+}
 
 const defaultSearchLimit = 15
 const defaultMaxResponseSize = 4_000
@@ -45,7 +60,31 @@ export async function createAgentTurnToolSet(input: {
 			}),
 			execute: async (args) => {
 				const userId = input.callerContext.user?.userId ?? null
-				const [registry, optionalRows] = await Promise.all([
+				const retrieverSearchPromise = (async () => {
+					if (!userId) return { results: [], warnings: [] }
+					try {
+						const { runPackageRetrievers } =
+							await import('#worker/package-retrievers/service.ts')
+						return await runPackageRetrievers({
+							env: input.env,
+							baseUrl: input.callerContext.baseUrl,
+							userId,
+							scope: 'search',
+							query: args.query,
+							memoryContext: resolveSearchMemoryContext({
+								query: args.query,
+								memoryContext: input.memoryContext ?? undefined,
+							}),
+							conversationId: input.conversationId,
+						})
+					} catch (error) {
+						return {
+							results: [],
+							warnings: [toRetrieverWarning(error)],
+						}
+					}
+				})()
+				const [registry, optionalRows, retrieverSearch] = await Promise.all([
 					getCapabilityRegistryForContext({
 						env: input.env,
 						callerContext: input.callerContext,
@@ -81,6 +120,7 @@ export async function createAgentTurnToolSet(input: {
 								},
 							}),
 					}),
+					retrieverSearchPromise,
 				])
 				const result = await searchUnified({
 					env: input.env,
@@ -88,6 +128,7 @@ export async function createAgentTurnToolSet(input: {
 					limit: args.limit ?? defaultSearchLimit,
 					registry,
 					optionalRows,
+					retrieverResults: retrieverSearch.results,
 				})
 				const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
 					env: input.env,
@@ -104,13 +145,19 @@ export async function createAgentTurnToolSet(input: {
 				})
 				return {
 					offline: result.offline,
-					warnings: optionalRows.warnings,
+					warnings: [
+						...optionalRows.warnings,
+						...retrieverSearch.warnings,
+						...(memoryToolContext?.retrieverWarnings ?? []),
+					],
 					guidance: result.guidance,
 					memories: memoryToolContext
 						? {
 								surfaced: memoryToolContext.memories,
 								suppressedCount: memoryToolContext.suppressedCount,
 								retrievalQuery: memoryToolContext.retrievalQuery,
+								retrieverResults: memoryToolContext.retrieverResults,
+								retrieverWarnings: memoryToolContext.retrieverWarnings,
 							}
 						: undefined,
 					remoteConnectorStatuses: remoteConnectorStatuses.map((status) => ({
@@ -124,6 +171,7 @@ export async function createAgentTurnToolSet(input: {
 						matches: result.matches,
 						baseUrl: input.callerContext.baseUrl,
 					}),
+					retrieverResults: retrieverSearch.results,
 				}
 			},
 		}),

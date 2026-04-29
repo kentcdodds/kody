@@ -1,7 +1,13 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
+import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { surfaceRelevantMemories } from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
+import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
+import {
+	escapeMarkdownText,
+	formatMarkdownInlineCode,
+} from './markdown-safety.ts'
 
 export type MemoryToolSummary = {
 	memories: Array<{
@@ -15,8 +21,54 @@ export type MemoryToolSummary = {
 		sourceUris: Array<string>
 		updatedAt: string
 	}>
+	retrieverResults: Array<PackageRetrieverSurfaceResult>
+	retrieverWarnings: Array<string>
 	suppressedCount: number
 	retrievalQuery: string
+}
+
+async function runContextPackageRetrievers(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	query: string
+	memoryContext?: {
+		task?: string
+		query?: string
+		entities?: Array<string>
+		constraints?: Array<string>
+	} | null
+	conversationId: string
+}) {
+	try {
+		const { runPackageRetrievers } =
+			await import('#worker/package-retrievers/service.ts')
+		return await runPackageRetrievers({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			scope: 'context',
+			query: input.query,
+			memoryContext: input.memoryContext,
+			conversationId: input.conversationId,
+			maxProviders: 3,
+		})
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				message: 'package context retrievers unavailable',
+			}),
+		)
+		Sentry.captureException(error, {
+			tags: {
+				scope: 'memory-tool-context.package-retrievers',
+			},
+		})
+		return {
+			results: [],
+			warnings: [],
+		}
+	}
 }
 
 export async function loadRelevantMemoriesForTool(input: {
@@ -36,26 +88,40 @@ export async function loadRelevantMemoriesForTool(input: {
 	if (!userId) return null
 	const retrievalQuery = buildMemoryRetrievalQuery(input.memoryContext)
 	if (!retrievalQuery) return null
-	const result = await surfaceRelevantMemories({
-		env: input.env,
-		userId,
-		storageContext: {
-			sessionId: input.callerContext.storageContext?.sessionId ?? null,
-			appId: input.callerContext.storageContext?.appId ?? null,
-		},
-		query: retrievalQuery,
-		conversationId: input.conversationId,
-		limit: input.limit,
-	})
-	if (result.memories.length === 0) {
+	const [result, retrieverResult] = await Promise.all([
+		surfaceRelevantMemories({
+			env: input.env,
+			userId,
+			storageContext: {
+				sessionId: input.callerContext.storageContext?.sessionId ?? null,
+				appId: input.callerContext.storageContext?.appId ?? null,
+			},
+			query: retrievalQuery,
+			conversationId: input.conversationId,
+			limit: input.limit,
+		}),
+		runContextPackageRetrievers({
+			env: input.env as Env,
+			baseUrl: input.callerContext.baseUrl,
+			userId,
+			query: retrievalQuery,
+			memoryContext: input.memoryContext,
+			conversationId: input.conversationId,
+		}),
+	])
+	if (result.memories.length === 0 && retrieverResult.results.length === 0) {
 		return {
 			memories: [],
+			retrieverResults: [],
+			retrieverWarnings: retrieverResult.warnings,
 			suppressedCount: result.suppressedCount,
 			retrievalQuery: result.retrievalQuery,
 		}
 	}
 	return {
 		memories: result.memories.map(toMemoryToolSummaryItem),
+		retrieverResults: retrieverResult.results,
+		retrieverWarnings: retrieverResult.warnings,
 		suppressedCount: result.suppressedCount,
 		retrievalQuery: result.retrievalQuery,
 	}
@@ -73,19 +139,30 @@ export async function surfaceToolMemories(input: {
 	if (!userId) return null
 	const retrievalQuery = input.retrievalQuery.trim()
 	if (!retrievalQuery) return null
-	const result = await surfaceRelevantMemories({
-		env: input.env,
-		userId,
-		storageContext: {
-			sessionId: input.callerContext.storageContext?.sessionId ?? null,
-			appId: input.callerContext.storageContext?.appId ?? null,
-		},
-		query: retrievalQuery,
-		conversationId: input.conversationId,
-		limit: input.limit,
-	})
+	const [result, retrieverResult] = await Promise.all([
+		surfaceRelevantMemories({
+			env: input.env,
+			userId,
+			storageContext: {
+				sessionId: input.callerContext.storageContext?.sessionId ?? null,
+				appId: input.callerContext.storageContext?.appId ?? null,
+			},
+			query: retrievalQuery,
+			conversationId: input.conversationId,
+			limit: input.limit,
+		}),
+		runContextPackageRetrievers({
+			env: input.env as Env,
+			baseUrl: input.callerContext.baseUrl,
+			userId,
+			query: retrievalQuery,
+			conversationId: input.conversationId,
+		}),
+	])
 	return {
 		memories: result.memories.map(toMemoryToolSummaryItem),
+		retrieverResults: retrieverResult.results,
+		retrieverWarnings: retrieverResult.warnings,
 		suppressedCount: result.suppressedCount,
 		retrievalQuery: result.retrievalQuery,
 	} satisfies MemoryToolSummary
@@ -115,7 +192,13 @@ export function buildMemoryRetrievalQuery(
 export function formatSurfacedMemoriesMarkdown(
 	memorySummary: MemoryToolSummary | null,
 ) {
-	if (!memorySummary || memorySummary.memories.length === 0) return []
+	if (
+		!memorySummary ||
+		(memorySummary.memories.length === 0 &&
+			memorySummary.retrieverResults.length === 0)
+	) {
+		return []
+	}
 	return [
 		{
 			type: 'text',
@@ -133,28 +216,54 @@ export function buildMemoryStructuredContent(
 			surfaced: memorySummary.memories,
 			suppressedCount: memorySummary.suppressedCount,
 			retrievalQuery: memorySummary.retrievalQuery,
+			retrieverResults: memorySummary.retrieverResults,
+			retrieverWarnings: memorySummary.retrieverWarnings,
 		},
 	}
 }
 
 function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
-	const lines = ['## Relevant memories', '']
-	for (const memory of memorySummary.memories) {
-		lines.push(`- **${memory.subject}** — ${memory.summary}`)
-		if (memory.category) {
-			lines.push(`  - Category: \`${memory.category}\``)
+	const lines: Array<string> = []
+	if (memorySummary.memories.length > 0) {
+		lines.push('## Relevant memories', '')
+		for (const memory of memorySummary.memories) {
+			lines.push(`- **${memory.subject}** — ${memory.summary}`)
+			if (memory.category) {
+				lines.push(`  - Category: \`${memory.category}\``)
+			}
+			if (memory.tags.length > 0) {
+				lines.push(
+					`  - Tags: ${memory.tags.map((tag) => `\`${tag}\``).join(', ')}`,
+				)
+			}
+			if (memory.sourceUris.length > 0) {
+				lines.push(
+					`  - Sources: ${memory.sourceUris.map((sourceUri) => `\`${sourceUri}\``).join(', ')}`,
+				)
+			}
+			lines.push(`  - Updated: \`${memory.updatedAt}\``)
 		}
-		if (memory.tags.length > 0) {
+	}
+	if (memorySummary.retrieverResults.length > 0) {
+		if (lines.length > 0) lines.push('')
+		lines.push('## Relevant retriever results', '')
+		for (const result of memorySummary.retrieverResults) {
 			lines.push(
-				`  - Tags: ${memory.tags.map((tag) => `\`${tag}\``).join(', ')}`,
+				`- **${escapeMarkdownText(result.title)}** — ${escapeMarkdownText(result.summary)} (${formatMarkdownInlineCode(`${result.kodyId}/${result.retrieverKey}`)})`,
 			)
+			if (result.source) {
+				lines.push(`  - Source: ${formatMarkdownInlineCode(result.source)}`)
+			}
+			if (result.url) {
+				lines.push(`  - URL: ${formatMarkdownInlineCode(result.url)}`)
+			}
 		}
-		if (memory.sourceUris.length > 0) {
-			lines.push(
-				`  - Sources: ${memory.sourceUris.map((sourceUri) => `\`${sourceUri}\``).join(', ')}`,
-			)
+	}
+	if (memorySummary.retrieverWarnings.length > 0) {
+		lines.push('', '## Retriever warnings', '')
+		for (const warning of memorySummary.retrieverWarnings) {
+			lines.push(`- ${escapeMarkdownText(warning)}`)
 		}
-		lines.push(`  - Updated: \`${memory.updatedAt}\``)
 	}
 	if (memorySummary.suppressedCount > 0) {
 		lines.push(
