@@ -723,7 +723,7 @@ function buildRetrieverResultCandidates(input: {
 					result.retrieverName,
 				].join('\n'),
 			)
-			const score = Math.max(0, result.score ?? 0)
+			const score = Math.min(1, Math.max(0, result.score ?? 0))
 			return {
 				match: {
 					type: 'retriever_result' as const,
