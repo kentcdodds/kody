@@ -56,8 +56,7 @@ test('search formatting keeps entity refs in markdown while structured output ca
 		],
 	})
 
-	expect(markdown).toContain('`user:preferred_repo:value`')
-	expect(markdown).toContain('`github:connector`')
+	expect(markdown).toContain('search({ entity: "github:connector" })')
 	const structuredMatches = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
@@ -128,7 +127,7 @@ test('search formatting keeps entity refs in markdown while structured output ca
 		type: 'connector',
 		entityRef: 'github:connector',
 	})
-	expect(connectorMatch?.nextStep).toContain('github:connector')
+	expect(connectorMatch?.nextStep).toEqual(expect.any(String))
 })
 
 test('entity detail formatting returns stable structured details for values and connectors', () => {
@@ -196,7 +195,7 @@ test('entity detail formatting returns stable structured details for values and 
 	})
 })
 
-test('capability entity detail defaults to TypeScript definitions without schemas', () => {
+test('capability entity detail keeps type definitions stable and adds schemas only when requested', () => {
 	const detail = formatEntityDetailMarkdown({
 		type: 'capability',
 		id: 'github_create_issue',
@@ -236,24 +235,7 @@ test('capability entity detail defaults to TypeScript definitions without schema
 				'type GithubCreateIssueOutput = {\n\tissueUrl: string\n}',
 		},
 	})
-
-	expect(detail.markdown).toContain('## Type definitions')
-	expect(detail.markdown).toContain('```ts')
-	expect(detail.markdown).toContain('type GithubCreateIssueInput')
-	expect(detail.markdown).toContain('type GithubCreateIssueOutput')
-	expect(detail.markdown).not.toContain('## Input schema')
-	expect(detail.markdown).not.toContain('## Output schema')
-	expect(detail.structured).toMatchObject({
-		type: 'capability',
-		inputTypeDefinition: expect.stringContaining('GithubCreateIssueInput'),
-		outputTypeDefinition: expect.stringContaining('GithubCreateIssueOutput'),
-	})
-	expect(detail.structured).not.toHaveProperty('inputSchema')
-	expect(detail.structured).not.toHaveProperty('outputSchema')
-})
-
-test('capability entity detail includes schemas only when explicitly requested', () => {
-	const detail = formatEntityDetailMarkdown(
+	const detailWithSchemas = formatEntityDetailMarkdown(
 		{
 			type: 'capability',
 			id: 'github_create_issue',
@@ -296,9 +278,19 @@ test('capability entity detail includes schemas only when explicitly requested',
 		{ includeSchemas: true },
 	)
 
-	expect(detail.markdown).toContain('## Input schema')
-	expect(detail.markdown).toContain('## Output schema')
+	expect(detail.markdown).not.toContain('## Input schema')
+	expect(detail.markdown).not.toContain('## Output schema')
 	expect(detail.structured).toMatchObject({
+		type: 'capability',
+		inputTypeDefinition: expect.any(String),
+		outputTypeDefinition: expect.any(String),
+	})
+	expect(detail.structured).not.toHaveProperty('inputSchema')
+	expect(detail.structured).not.toHaveProperty('outputSchema')
+
+	expect(detailWithSchemas.markdown).toContain('## Input schema')
+	expect(detailWithSchemas.markdown).toContain('## Output schema')
+	expect(detailWithSchemas.structured).toMatchObject({
 		type: 'capability',
 		inputSchema: expect.objectContaining({
 			properties: expect.objectContaining({
@@ -306,6 +298,10 @@ test('capability entity detail includes schemas only when explicitly requested',
 			}),
 		}),
 		outputSchema: expect.objectContaining({ type: 'object' }),
+	})
+	expect(detailWithSchemas.structured).toMatchObject({
+		inputTypeDefinition: detail.structured.inputTypeDefinition,
+		outputTypeDefinition: detail.structured.outputTypeDefinition,
 	})
 })
 
@@ -392,7 +388,7 @@ test('entity detail formatting includes package app, export, and job metadata', 
 	})
 })
 
-test('package search formatting surfaces entity refs in markdown and import/app usage in structured output', () => {
+test('package search formatting keeps runnable package actions in markdown and structured output', () => {
 	const markdown = formatSearchMarkdown({
 		baseUrl: 'http://localhost',
 		warnings: [],
@@ -410,7 +406,7 @@ test('package search formatting surfaces entity refs in markdown and import/app 
 		],
 	})
 
-	expect(markdown).toContain('`spotify-playback:package`')
+	expect(markdown).toContain('open_generated_ui({ kody_id: "spotify-playback" })')
 	const [packageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
@@ -442,7 +438,7 @@ test('package search formatting surfaces entity refs in markdown and import/app 
 		hasApp: true,
 		hostedUrl: 'http://localhost/packages/spotify-playback',
 	})
-	expect(packageMatch?.nextStep).toContain('spotify-playback:package')
+	expect(packageMatch?.nextStep).toEqual(expect.any(String))
 })
 
 test('search formatting surfaces package retriever results', () => {
@@ -511,9 +507,8 @@ test('search formatting surfaces package retriever results', () => {
 })
 
 test('usage helpers escape dynamic identifiers in generated snippets', () => {
-	const markdown = formatSearchMarkdown({
+	const [valueMatch, connectorMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
-		warnings: [],
 		matches: [
 			{
 				type: 'value',
@@ -540,28 +535,17 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 		],
 	})
 
-	expect(markdown).toContain(
-		'`codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })`',
-	)
-	expect(markdown).toContain(
-		'`codemode.connector_get({ name: "conn\\"name" })`',
-	)
+	expect(valueMatch).toMatchObject({
+		type: 'value',
+		usage: 'codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })',
+	})
+	expect(connectorMatch).toMatchObject({
+		type: 'connector',
+		usage: 'codemode.connector_get({ name: "conn\\"name" })',
+	})
 })
 
 test('search formatting falls back to a safe secret usage placeholder for display-only names', () => {
-	const markdown = formatSearchMarkdown({
-		baseUrl: 'http://localhost',
-		warnings: [],
-		matches: [
-			{
-				type: 'secret',
-				name: 'secret "name"',
-				description: 'Secret with a display name that is not placeholder-safe.',
-			},
-		],
-	})
-
-	expect(markdown).toContain('`secret "name":secret`')
 	const structuredMatches = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [

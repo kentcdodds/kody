@@ -1,3 +1,4 @@
+import { buildMockAiScenario } from '@kody-internal/shared/mock-ai.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => {
@@ -86,6 +87,7 @@ test('remote ai runtime sets a multi-step stop condition for tool continuation',
 
 test('mock ai runtime still returns a local fallback response', async () => {
 	const runtime = createAiRuntime({ AI_MODE: 'mock' } as Env)
+	const toolNames = ['search', 'open_generated_ui']
 
 	const result = await runtime.streamChatReply({
 		messages: [
@@ -97,13 +99,15 @@ test('mock ai runtime still returns a local fallback response', async () => {
 		] as never,
 		system: 'system prompt',
 		tools: {} as never,
-		toolNames: ['search', 'open_generated_ui'],
+		toolNames,
 	})
 
-	expect(result).toEqual({
-		kind: 'text',
-		text: expect.stringContaining('This is the mock AI worker.'),
-	})
+	expect(result).toEqual(
+		buildMockAiScenario({
+			lastUserMessage: 'help',
+			toolNames,
+		}).response,
+	)
 })
 
 test('remote ai runtime keeps the local-dev credential error', async () => {
