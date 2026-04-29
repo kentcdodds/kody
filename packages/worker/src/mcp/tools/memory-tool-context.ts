@@ -1,4 +1,5 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
+import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { surfaceRelevantMemories } from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
@@ -58,7 +59,11 @@ async function runContextPackageRetrievers(input: {
 				message: 'package context retrievers unavailable',
 			}),
 		)
-		void error
+		Sentry.captureException(error, {
+			tags: {
+				scope: 'memory-tool-context.package-retrievers',
+			},
+		})
 		return {
 			results: [],
 			warnings: [],
