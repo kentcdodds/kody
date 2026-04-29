@@ -21,6 +21,7 @@ export type MemoryToolSummary = {
 		updatedAt: string
 	}>
 	retrieverResults: Array<PackageRetrieverSurfaceResult>
+	retrieverWarnings: Array<string>
 	suppressedCount: number
 	retrievalQuery: string
 }
@@ -107,6 +108,7 @@ export async function loadRelevantMemoriesForTool(input: {
 		return {
 			memories: [],
 			retrieverResults: [],
+			retrieverWarnings: retrieverResult.warnings,
 			suppressedCount: result.suppressedCount,
 			retrievalQuery: result.retrievalQuery,
 		}
@@ -114,6 +116,7 @@ export async function loadRelevantMemoriesForTool(input: {
 	return {
 		memories: result.memories.map(toMemoryToolSummaryItem),
 		retrieverResults: retrieverResult.results,
+		retrieverWarnings: retrieverResult.warnings,
 		suppressedCount: result.suppressedCount,
 		retrievalQuery: result.retrievalQuery,
 	}
@@ -154,6 +157,7 @@ export async function surfaceToolMemories(input: {
 	return {
 		memories: result.memories.map(toMemoryToolSummaryItem),
 		retrieverResults: retrieverResult.results,
+		retrieverWarnings: retrieverResult.warnings,
 		suppressedCount: result.suppressedCount,
 		retrievalQuery: result.retrievalQuery,
 	} satisfies MemoryToolSummary
@@ -208,6 +212,7 @@ export function buildMemoryStructuredContent(
 			suppressedCount: memorySummary.suppressedCount,
 			retrievalQuery: memorySummary.retrievalQuery,
 			retrieverResults: memorySummary.retrieverResults,
+			retrieverWarnings: memorySummary.retrieverWarnings,
 		},
 	}
 }
@@ -247,6 +252,12 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 			if (result.url) {
 				lines.push(`  - URL: ${formatMarkdownInlineCode(result.url)}`)
 			}
+		}
+	}
+	if (memorySummary.retrieverWarnings.length > 0) {
+		lines.push('', '## Retriever warnings', '')
+		for (const warning of memorySummary.retrieverWarnings) {
+			lines.push(`- ${escapeMarkdownText(warning)}`)
 		}
 	}
 	if (memorySummary.suppressedCount > 0) {

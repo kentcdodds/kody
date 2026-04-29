@@ -39,7 +39,9 @@ function setupMemoryContextMocks() {
 				retrieverName: 'Personal notes',
 			},
 		],
-		warnings: [],
+		warnings: [
+			'Package retriever "personal-inbox/notes" failed and was skipped.',
+		],
 	})
 }
 
@@ -81,6 +83,9 @@ test('loadRelevantMemoriesForTool returns context retriever results alongside me
 			kodyId: 'personal-inbox',
 			retrieverKey: 'notes',
 		}),
+	])
+	expect(result?.retrieverWarnings).toEqual([
+		'Package retriever "personal-inbox/notes" failed and was skipped.',
 	])
 })
 
@@ -134,6 +139,7 @@ test('loadRelevantMemoriesForTool keeps memories when context retrievers fail', 
 		}),
 	])
 	expect(result?.retrieverResults).toEqual([])
+	expect(result?.retrieverWarnings).toEqual([])
 })
 
 test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-only context', () => {
@@ -150,6 +156,7 @@ test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-
 				retrieverName: 'Personal notes',
 			},
 		],
+		retrieverWarnings: [],
 		suppressedCount: 0,
 		retrievalQuery: 'sprinkler instructions',
 	})

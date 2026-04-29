@@ -72,6 +72,7 @@ export type SearchResultStructuredContent = {
 		suppressedCount: number
 		retrievalQuery: string
 		retrieverResults?: Array<PackageRetrieverSurfaceResult>
+		retrieverWarnings?: Array<string>
 	}
 	homeConnectorStatus?: {
 		connectorKind: string
@@ -894,7 +895,7 @@ export function formatEntityDetailMarkdown(
 			lines.push('', '## Retrievers', '')
 			for (const retriever of retrievers) {
 				lines.push(
-					`- \`${retriever.key}\` -> \`${retriever.exportName}\` — ${retriever.description} (scopes: ${retriever.scopes.map((scope) => `\`${scope}\``).join(', ')})`,
+					`- ${formatMarkdownInlineCode(retriever.key)} -> ${formatMarkdownInlineCode(retriever.exportName)} — ${escapeMarkdownText(retriever.description)} (scopes: ${retriever.scopes.map((scope) => formatMarkdownInlineCode(scope)).join(', ')})`,
 				)
 			}
 		}

@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
 import {
@@ -40,7 +41,15 @@ function logPackageRetrieverProjectionError(input: {
 			packageId: input.packageId,
 		}),
 	)
-	void input.error
+	Sentry.captureException(input.error, {
+		tags: {
+			scope: 'package-retriever-projection',
+			action: input.action,
+		},
+		extra: {
+			packageId: input.packageId,
+		},
+	})
 }
 
 function serializeTags(tags: Array<string>) {

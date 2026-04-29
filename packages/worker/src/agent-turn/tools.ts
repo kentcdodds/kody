@@ -153,6 +153,7 @@ export async function createAgentTurnToolSet(input: {
 								suppressedCount: memoryToolContext.suppressedCount,
 								retrievalQuery: memoryToolContext.retrievalQuery,
 								retrieverResults: memoryToolContext.retrieverResults,
+								retrieverWarnings: memoryToolContext.retrieverWarnings,
 							}
 						: undefined,
 					remoteConnectorStatuses: remoteConnectorStatuses.map((status) => ({

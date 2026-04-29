@@ -1690,6 +1690,9 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 							retrieverResults: memoryToolContext.retrieverResults,
 						}
 					: undefined
+				if (memoryToolContext) {
+					warnings.push(...memoryToolContext.retrieverWarnings)
+				}
 
 				const payload: {
 					matches: Array<SearchMatch>
