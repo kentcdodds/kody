@@ -209,23 +209,26 @@ export function buildMemoryStructuredContent(
 }
 
 function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
-	const lines = ['## Relevant memories', '']
-	for (const memory of memorySummary.memories) {
-		lines.push(`- **${memory.subject}** — ${memory.summary}`)
-		if (memory.category) {
-			lines.push(`  - Category: \`${memory.category}\``)
+	const lines: Array<string> = []
+	if (memorySummary.memories.length > 0) {
+		lines.push('## Relevant memories', '')
+		for (const memory of memorySummary.memories) {
+			lines.push(`- **${memory.subject}** — ${memory.summary}`)
+			if (memory.category) {
+				lines.push(`  - Category: \`${memory.category}\``)
+			}
+			if (memory.tags.length > 0) {
+				lines.push(
+					`  - Tags: ${memory.tags.map((tag) => `\`${tag}\``).join(', ')}`,
+				)
+			}
+			if (memory.sourceUris.length > 0) {
+				lines.push(
+					`  - Sources: ${memory.sourceUris.map((sourceUri) => `\`${sourceUri}\``).join(', ')}`,
+				)
+			}
+			lines.push(`  - Updated: \`${memory.updatedAt}\``)
 		}
-		if (memory.tags.length > 0) {
-			lines.push(
-				`  - Tags: ${memory.tags.map((tag) => `\`${tag}\``).join(', ')}`,
-			)
-		}
-		if (memory.sourceUris.length > 0) {
-			lines.push(
-				`  - Sources: ${memory.sourceUris.map((sourceUri) => `\`${sourceUri}\``).join(', ')}`,
-			)
-		}
-		lines.push(`  - Updated: \`${memory.updatedAt}\``)
 	}
 	if (memorySummary.retrieverResults.length > 0) {
 		lines.push('', '## Relevant retriever results', '')

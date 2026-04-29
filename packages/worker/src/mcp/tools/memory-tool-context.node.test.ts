@@ -16,6 +16,8 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 }))
 
 const { loadRelevantMemoriesForTool } = await import('./memory-tool-context.ts')
+const { formatSurfacedMemoriesMarkdown } =
+	await import('./memory-tool-context.ts')
 
 function setupMemoryContextMocks() {
 	mockModule.surfaceRelevantMemories.mockReset()
@@ -132,4 +134,27 @@ test('loadRelevantMemoriesForTool keeps memories when context retrievers fail', 
 		}),
 	])
 	expect(result?.retrieverResults).toEqual([])
+})
+
+test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-only context', () => {
+	const [content] = formatSurfacedMemoriesMarkdown({
+		memories: [],
+		retrieverResults: [
+			{
+				id: 'note-1',
+				title: 'Sprinkler controller',
+				summary: 'Hold next and back for setup mode.',
+				packageId: 'package-1',
+				kodyId: 'personal-inbox',
+				retrieverKey: 'notes',
+				retrieverName: 'Personal notes',
+			},
+		],
+		suppressedCount: 0,
+		retrievalQuery: 'sprinkler instructions',
+	})
+
+	expect(content?.type).toBe('text')
+	expect(content?.text).not.toContain('## Relevant memories')
+	expect(content?.text).toContain('## Relevant retriever results')
 })
