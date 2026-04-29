@@ -235,7 +235,8 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 		}
 	}
 	if (memorySummary.retrieverResults.length > 0) {
-		lines.push('', '## Relevant retriever results', '')
+		if (lines.length > 0) lines.push('')
+		lines.push('## Relevant retriever results', '')
 		for (const result of memorySummary.retrieverResults) {
 			lines.push(
 				`- **${escapeMarkdownText(result.title)}** — ${escapeMarkdownText(result.summary)} (${formatMarkdownInlineCode(`${result.kodyId}/${result.retrieverKey}`)})`,

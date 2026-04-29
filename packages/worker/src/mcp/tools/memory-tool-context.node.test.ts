@@ -156,6 +156,7 @@ test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-
 
 	expect(content?.type).toBe('text')
 	expect(content?.text).not.toContain('## Relevant memories')
+	expect(content?.text?.startsWith('## Relevant retriever results')).toBe(true)
 	expect(content?.text).toContain('## Relevant retriever results')
 	expect(content?.text).not.toContain('## Sprinkler controller')
 	expect(content?.text).not.toContain('```ignore')
