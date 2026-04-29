@@ -120,23 +120,24 @@ export async function refreshSavedPackageProjection(input: {
 		embedText: buildSavedPackageEmbedText(loaded.manifest),
 	})
 	const refreshedAt = new Date().toISOString()
+	const savedPackage = {
+		id: input.packageId,
+		userId: input.userId,
+		name: row.name,
+		kodyId: row.kody_id,
+		description: row.description,
+		tags: JSON.parse(row.tags_json) as Array<string>,
+		searchText: row.search_text ?? null,
+		sourceId: row.source_id,
+		hasApp: row.has_app === 1,
+		createdAt: existing?.createdAt ?? refreshedAt,
+		updatedAt: refreshedAt,
+	} satisfies SavedPackageRecord
 	await rebuildPublishedPackageArtifacts({
 		env: input.env,
 		userId: input.userId,
 		source: loaded.source,
-		savedPackage: {
-			id: input.packageId,
-			userId: input.userId,
-			name: row.name,
-			kodyId: row.kody_id,
-			description: row.description,
-			tags: JSON.parse(row.tags_json) as Array<string>,
-			searchText: row.search_text ?? null,
-			sourceId: row.source_id,
-			hasApp: row.has_app === 1,
-			createdAt: existing?.createdAt ?? refreshedAt,
-			updatedAt: refreshedAt,
-		},
+		savedPackage,
 		manifest: loaded.manifest,
 		files: loaded.files,
 		buildAppBundle: async ({ entryPoint }) => {
@@ -168,19 +169,7 @@ export async function refreshSavedPackageProjection(input: {
 			env: input.env,
 			userId: input.userId,
 			source: loaded.source,
-			savedPackage: {
-				id: input.packageId,
-				userId: input.userId,
-				name: row.name,
-				kodyId: row.kody_id,
-				description: row.description,
-				tags: JSON.parse(row.tags_json) as Array<string>,
-				searchText: row.search_text ?? null,
-				sourceId: row.source_id,
-				hasApp: row.has_app === 1,
-				createdAt: existing?.createdAt ?? refreshedAt,
-				updatedAt: refreshedAt,
-			},
+			savedPackage,
 			manifest: loaded.manifest,
 		})
 	} catch (error) {

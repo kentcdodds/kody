@@ -1545,36 +1545,40 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			let remoteConnectorDownStatuses: Array<HomeConnectorStatus> = []
 
 			const searchSpan = async () => {
-				const retrieverRunPromise = userId
-					? (async () => {
-							try {
-								const { runPackageRetrievers } =
-									await import('#worker/package-retrievers/service.ts')
-								return await runPackageRetrievers({
-									env: agent.getEnv(),
-									baseUrl,
-									userId,
-									scope: 'search',
-									query: args.query!,
-									memoryContext: resolveSearchMemoryContext({
-										query: args.query,
-										memoryContext: args.memoryContext,
-									}),
-									conversationId,
-								})
-							} catch (error) {
-								Sentry.captureException(error, {
-									tags: {
-										scope: 'search.package-retrievers',
-									},
-								})
-								return {
-									results: [],
-									warnings: ['Package retrievers are temporarily unavailable.'],
+				const query = args.query?.trim() ?? ''
+				const retrieverRunPromise =
+					userId && query
+						? (async () => {
+								try {
+									const { runPackageRetrievers } =
+										await import('#worker/package-retrievers/service.ts')
+									return await runPackageRetrievers({
+										env: agent.getEnv(),
+										baseUrl,
+										userId,
+										scope: 'search',
+										query,
+										memoryContext: resolveSearchMemoryContext({
+											query,
+											memoryContext: args.memoryContext,
+										}),
+										conversationId,
+									})
+								} catch (error) {
+									Sentry.captureException(error, {
+										tags: {
+											scope: 'search.package-retrievers',
+										},
+									})
+									return {
+										results: [],
+										warnings: [
+											'Package retrievers are temporarily unavailable.',
+										],
+									}
 								}
-							}
-						})()
-					: Promise.resolve({ results: [], warnings: [] })
+							})()
+						: Promise.resolve({ results: [], warnings: [] })
 				const [searchRows] = await Promise.all([
 					loadSearchRowsAndRegistry({
 						agent,
