@@ -60,7 +60,31 @@ export async function createAgentTurnToolSet(input: {
 			}),
 			execute: async (args) => {
 				const userId = input.callerContext.user?.userId ?? null
-				const [registry, optionalRows] = await Promise.all([
+				const retrieverSearchPromise = (async () => {
+					if (!userId) return { results: [], warnings: [] }
+					try {
+						const { runPackageRetrievers } =
+							await import('#worker/package-retrievers/service.ts')
+						return await runPackageRetrievers({
+							env: input.env,
+							baseUrl: input.callerContext.baseUrl,
+							userId,
+							scope: 'search',
+							query: args.query,
+							memoryContext: resolveSearchMemoryContext({
+								query: args.query,
+								memoryContext: input.memoryContext ?? undefined,
+							}),
+							conversationId: input.conversationId,
+						})
+					} catch (error) {
+						return {
+							results: [],
+							warnings: [toRetrieverWarning(error)],
+						}
+					}
+				})()
+				const [registry, optionalRows, retrieverSearch] = await Promise.all([
 					getCapabilityRegistryForContext({
 						env: input.env,
 						callerContext: input.callerContext,
@@ -96,31 +120,8 @@ export async function createAgentTurnToolSet(input: {
 								},
 							}),
 					}),
+					retrieverSearchPromise,
 				])
-				const retrieverSearch = await (async () => {
-					if (!userId) return { results: [], warnings: [] }
-					try {
-						const { runPackageRetrievers } =
-							await import('#worker/package-retrievers/service.ts')
-						return await runPackageRetrievers({
-							env: input.env,
-							baseUrl: input.callerContext.baseUrl,
-							userId,
-							scope: 'search',
-							query: args.query,
-							memoryContext: resolveSearchMemoryContext({
-								query: args.query,
-								memoryContext: input.memoryContext ?? undefined,
-							}),
-							conversationId: input.conversationId,
-						})
-					} catch (error) {
-						return {
-							results: [],
-							warnings: [toRetrieverWarning(error)],
-						}
-					}
-				})()
 				const result = await searchUnified({
 					env: input.env,
 					query: args.query,

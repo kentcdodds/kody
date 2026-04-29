@@ -326,19 +326,32 @@ export async function refreshPackageRetrieverManifestCache(input: {
 			scope,
 			packageId: input.savedPackage.id,
 		})
-		await Promise.all([
-			...existingScopeEntryKeys.map(
-				async (key) => await getRetrieverKv(input.env).delete(key),
+		const nextEntries = registeredRetrievers
+			.filter((retriever) => retriever.scopes.includes(scope))
+			.map(toScopeIndexEntry)
+		const nextEntryKeys = new Set(
+			nextEntries.map((entry) =>
+				buildPackageRetrieverScopeEntryKey({
+					userId: entry.userId,
+					scope,
+					packageId: entry.packageId,
+					retrieverKey: entry.retrieverKey,
+				}),
 			),
-			...registeredRetrievers
-				.filter((retriever) => retriever.scopes.includes(scope))
-				.map((retriever) =>
-					writeScopeEntry({
-						env: input.env,
-						scope,
-						entry: toScopeIndexEntry(retriever),
-					}),
-				),
+		)
+		await Promise.all([
+			...existingScopeEntryKeys.map(async (key) => {
+				if (!nextEntryKeys.has(key)) {
+					await getRetrieverKv(input.env).delete(key)
+				}
+			}),
+			...nextEntries.map((entry) =>
+				writeScopeEntry({
+					env: input.env,
+					scope,
+					entry,
+				}),
+			),
 		])
 		await writeLegacyScopeIndex({
 			env: input.env,

@@ -261,6 +261,62 @@ test('listPackageRetrieversForScope applies limit after stale cache entries are 
 	])
 })
 
+test('refreshPackageRetrieverManifestCache does not delete persistent entries during refresh', async () => {
+	const { kv } = createKv()
+	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/personal-inbox',
+			exports: {
+				'.': './src/index.ts',
+				'./search-notes': './src/search-notes.ts',
+			},
+			kody: {
+				id: 'personal-inbox',
+				description: 'Personal inbox package',
+				retrievers: {
+					'notes-search': {
+						export: './search-notes',
+						name: 'Notes Search',
+						description: 'Searches saved notes',
+						scopes: ['search'],
+					},
+				},
+			},
+		}),
+	})
+	await refreshPackageRetrieverManifestCache({
+		env,
+		userId: 'user-1',
+		source: createSource(),
+		savedPackage: createSavedPackage(),
+		manifest,
+	})
+	await refreshPackageRetrieverManifestCache({
+		env,
+		userId: 'user-1',
+		source: createSource(),
+		savedPackage: createSavedPackage(),
+		manifest,
+	})
+
+	expect(kv.delete).not.toHaveBeenCalledWith(
+		'package-retriever-index-entry:v1:user-1:search:package-1:notes-search',
+	)
+	await expect(
+		listPackageRetrieversForScope({
+			env,
+			userId: 'user-1',
+			scope: 'search',
+		}),
+	).resolves.toEqual([
+		expect.objectContaining({
+			packageId: 'package-1',
+			retrieverKey: 'notes-search',
+		}),
+	])
+})
+
 test('refreshPackageRetrieverManifestCache does not clobber other package scope entries', async () => {
 	const { kv } = createKv()
 	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
