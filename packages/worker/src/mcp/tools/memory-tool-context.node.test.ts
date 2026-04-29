@@ -81,3 +81,55 @@ test('loadRelevantMemoriesForTool returns context retriever results alongside me
 		}),
 	])
 })
+
+test('loadRelevantMemoriesForTool keeps memories when context retrievers fail', async () => {
+	setupMemoryContextMocks()
+	mockModule.surfaceRelevantMemories.mockResolvedValue({
+		memories: [
+			{
+				id: 'memory-1',
+				category: 'workflow',
+				status: 'active',
+				subject: 'Sprinkler setup',
+				summary: 'Sprinkler instructions are stored in notes.',
+				details: '',
+				tags: ['sprinkler'],
+				sourceUris: [],
+				updatedAt: '2026-04-28T00:00:00.000Z',
+			},
+		],
+		suppressedCount: 0,
+		retrievalQuery: 'sprinkler instructions',
+	})
+	mockModule.runPackageRetrievers.mockRejectedValue(
+		new Error('retriever unavailable'),
+	)
+
+	const result = await loadRelevantMemoriesForTool({
+		env: { APP_DB: {}, AI: {} } as Env,
+		callerContext: {
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+			},
+			storageContext: null,
+			homeConnectorId: null,
+			remoteConnectors: null,
+			repoContext: null,
+		},
+		conversationId: 'conversation-1',
+		memoryContext: {
+			query: 'sprinkler instructions',
+		},
+	})
+
+	expect(result?.memories).toEqual([
+		expect.objectContaining({
+			id: 'memory-1',
+			subject: 'Sprinkler setup',
+		}),
+	])
+	expect(result?.retrieverResults).toEqual([])
+})

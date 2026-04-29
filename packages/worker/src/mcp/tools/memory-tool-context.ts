@@ -21,6 +21,46 @@ export type MemoryToolSummary = {
 	retrievalQuery: string
 }
 
+async function runContextPackageRetrievers(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	query: string
+	memoryContext?: {
+		task?: string
+		query?: string
+		entities?: Array<string>
+		constraints?: Array<string>
+	} | null
+	conversationId: string
+}) {
+	try {
+		const { runPackageRetrievers } =
+			await import('#worker/package-retrievers/service.ts')
+		return await runPackageRetrievers({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			scope: 'context',
+			query: input.query,
+			memoryContext: input.memoryContext,
+			conversationId: input.conversationId,
+			maxProviders: 3,
+		})
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				message: 'package context retrievers unavailable',
+			}),
+		)
+		void error
+		return {
+			results: [],
+			warnings: [],
+		}
+	}
+}
+
 export async function loadRelevantMemoriesForTool(input: {
 	env: Pick<Env, 'APP_DB' | 'AI'> &
 		Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
@@ -38,8 +78,6 @@ export async function loadRelevantMemoriesForTool(input: {
 	if (!userId) return null
 	const retrievalQuery = buildMemoryRetrievalQuery(input.memoryContext)
 	if (!retrievalQuery) return null
-	const { runPackageRetrievers } =
-		await import('#worker/package-retrievers/service.ts')
 	const [result, retrieverResult] = await Promise.all([
 		surfaceRelevantMemories({
 			env: input.env,
@@ -52,15 +90,13 @@ export async function loadRelevantMemoriesForTool(input: {
 			conversationId: input.conversationId,
 			limit: input.limit,
 		}),
-		runPackageRetrievers({
+		runContextPackageRetrievers({
 			env: input.env as Env,
 			baseUrl: input.callerContext.baseUrl,
 			userId,
-			scope: 'context',
 			query: retrievalQuery,
 			memoryContext: input.memoryContext,
 			conversationId: input.conversationId,
-			maxProviders: 3,
 		}),
 	])
 	if (result.memories.length === 0 && retrieverResult.results.length === 0) {
@@ -91,8 +127,6 @@ export async function surfaceToolMemories(input: {
 	if (!userId) return null
 	const retrievalQuery = input.retrievalQuery.trim()
 	if (!retrievalQuery) return null
-	const { runPackageRetrievers } =
-		await import('#worker/package-retrievers/service.ts')
 	const [result, retrieverResult] = await Promise.all([
 		surfaceRelevantMemories({
 			env: input.env,
@@ -105,14 +139,12 @@ export async function surfaceToolMemories(input: {
 			conversationId: input.conversationId,
 			limit: input.limit,
 		}),
-		runPackageRetrievers({
+		runContextPackageRetrievers({
 			env: input.env as Env,
 			baseUrl: input.callerContext.baseUrl,
 			userId,
-			scope: 'context',
 			query: retrievalQuery,
 			conversationId: input.conversationId,
-			maxProviders: 3,
 		}),
 	])
 	return {
