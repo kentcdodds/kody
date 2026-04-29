@@ -9,30 +9,40 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
-function createKv() {
+function createKv(options?: { list?: boolean }) {
 	const store = new Map<string, string>()
-	return {
-		store,
-		kv: {
-			get: vi.fn(async (key: string, type?: 'json') => {
-				const value = store.get(key) ?? null
-				return type === 'json' && value ? JSON.parse(value) : value
-			}),
-			put: vi.fn(async (key: string, value: string) => {
-				store.set(key, value)
-			}),
-			delete: vi.fn(async (key: string) => {
-				store.delete(key)
-			}),
-			list: vi.fn(async (options?: { prefix?: string; cursor?: string }) => ({
+	const kv = {
+		get: vi.fn(async (key: string, type?: 'json') => {
+			const value = store.get(key) ?? null
+			return type === 'json' && value ? JSON.parse(value) : value
+		}),
+		put: vi.fn(async (key: string, value: string) => {
+			store.set(key, value)
+		}),
+		delete: vi.fn(async (key: string) => {
+			store.delete(key)
+		}),
+	} as {
+		get: ReturnType<typeof vi.fn>
+		put: ReturnType<typeof vi.fn>
+		delete: ReturnType<typeof vi.fn>
+		list?: ReturnType<typeof vi.fn>
+	}
+	if (options?.list !== false) {
+		kv.list = vi.fn(
+			async (listOptions?: { prefix?: string; cursor?: string }) => ({
 				keys: Array.from(store.keys())
-					.filter((key) => key.startsWith(options?.prefix ?? ''))
+					.filter((key) => key.startsWith(listOptions?.prefix ?? ''))
 					.sort()
 					.map((name) => ({ name })),
 				list_complete: true,
 				cursor: undefined,
-			})),
-		} as unknown as KVNamespace,
+			}),
+		)
+	}
+	return {
+		store,
+		kv: kv as unknown as KVNamespace,
 	}
 }
 
