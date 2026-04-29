@@ -5,10 +5,10 @@ AI agent host that supports MCP.
 
 The core idea is to keep the public MCP surface small while making a large
 number of capabilities available behind that surface. This repo follows
-Cloudflare's Code Mode approach for execution: expose a tiny set of stable
-tools such as `search` (capability discovery) and `execute` (sandboxed
-capability calls), then implement the broader capability graph in code rather
-than as hundreds of individually described MCP tools.
+Cloudflare's Code Mode approach for execution: expose a tiny set of stable tools
+such as `search` (capability discovery) and `execute` (sandboxed capability
+calls), then implement the broader capability graph in code rather than as
+hundreds of individually described MCP tools.
 
 ## What this repo is
 
@@ -22,8 +22,8 @@ This repository is:
   product.
 
 Some existing docs and code reflect this project's starter/template lineage.
-When those conflict with the guidance here, treat this document as the
-project's intent.
+When those conflict with the guidance here, treat this document as the project's
+intent.
 
 ## Who this is for
 
@@ -72,8 +72,8 @@ When working in this repo, do not assume:
 - The main goal is enterprise-grade least-privilege design for many users.
 
 Also do not document capabilities as if they already exist. Keep design notes
-and proposals clearly labeled, and keep present-tense claims limited to
-behavior that exists in the repository.
+and proposals clearly labeled, and keep present-tense claims limited to behavior
+that exists in the repository.
 
 ## Documentation guidance
 
