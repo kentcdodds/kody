@@ -3,6 +3,10 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { surfaceRelevantMemories } from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
+import {
+	escapeMarkdownText,
+	formatMarkdownInlineCode,
+} from './markdown-safety.ts'
 
 export type MemoryToolSummary = {
 	memories: Array<{
@@ -234,13 +238,13 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 		lines.push('', '## Relevant retriever results', '')
 		for (const result of memorySummary.retrieverResults) {
 			lines.push(
-				`- **${result.title}** — ${result.summary} (${result.kodyId}/${result.retrieverKey})`,
+				`- **${escapeMarkdownText(result.title)}** — ${escapeMarkdownText(result.summary)} (${formatMarkdownInlineCode(`${result.kodyId}/${result.retrieverKey}`)})`,
 			)
 			if (result.source) {
-				lines.push(`  - Source: \`${result.source}\``)
+				lines.push(`  - Source: ${formatMarkdownInlineCode(result.source)}`)
 			}
 			if (result.url) {
-				lines.push(`  - URL: \`${result.url}\``)
+				lines.push(`  - URL: ${formatMarkdownInlineCode(result.url)}`)
 			}
 		}
 	}

@@ -341,6 +341,88 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	).toBeGreaterThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
 })
 
+test('refreshSavedPackageProjection continues when retriever cache refresh fails', async () => {
+	const env = createEnv()
+	const manifest = {
+		name: '@kentcdodds/shade-automation',
+		kody: {
+			id: 'shade-automation',
+			description: 'Shade automation package',
+			tags: ['home', 'shades'],
+			searchText: 'shade automation',
+		},
+	}
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest,
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Old description',
+		tags: ['home'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+	mockModule.refreshPackageRetrieverManifestCache.mockRejectedValue(
+		new Error('kv unavailable'),
+	)
+
+	await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+
+	expect(mockModule.syncPackageJobsForPackage).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+		manifest,
+	})
+	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
+})
+
+test('deleteSavedPackageProjection continues when retriever cache removal fails', async () => {
+	const env = createEnv()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([])
+	mockModule.removePackageRetrieverManifestCacheEntries.mockRejectedValue(
+		new Error('kv unavailable'),
+	)
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
+		env,
+		'package-1',
+	)
+	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+	})
+})
+
 test('refreshSavedPackageProjection still syncs job manager when auto-start service startup fails', async () => {
 	const env = {
 		APP_DB: {},

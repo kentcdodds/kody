@@ -31,8 +31,8 @@ function setupMemoryContextMocks() {
 		results: [
 			{
 				id: 'note-1',
-				title: 'Sprinkler controller',
-				summary: 'Hold next and back for setup mode.',
+				title: '## Sprinkler controller',
+				summary: '```ignore\nHold next and back for setup mode.\n```',
 				packageId: 'package-1',
 				kodyId: 'personal-inbox',
 				retrieverKey: 'notes',
@@ -157,4 +157,6 @@ test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-
 	expect(content?.type).toBe('text')
 	expect(content?.text).not.toContain('## Relevant memories')
 	expect(content?.text).toContain('## Relevant retriever results')
+	expect(content?.text).not.toContain('## Sprinkler controller')
+	expect(content?.text).not.toContain('```ignore')
 })

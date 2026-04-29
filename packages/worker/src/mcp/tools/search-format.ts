@@ -9,6 +9,10 @@ import {
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
+import {
+	escapeMarkdownText,
+	formatMarkdownInlineCode,
+} from './markdown-safety.ts'
 
 export type SearchEntityType =
 	| 'capability'
@@ -487,7 +491,7 @@ export function formatSearchMarkdown(input: {
 		lines.push('', '## Relevant retriever results', '')
 		for (const result of input.memories.retrieverResults) {
 			lines.push(
-				`- **${result.title}** — ${result.summary} (${result.kodyId}/${result.retrieverKey})`,
+				`- **${escapeMarkdownText(result.title)}** — ${escapeMarkdownText(result.summary)} (${formatMarkdownInlineCode(`${result.kodyId}/${result.retrieverKey}`)})`,
 			)
 		}
 	}
@@ -590,15 +594,15 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 	if (match.type === 'retriever_result') {
 		const source = match.source ?? `${match.kodyId}/${match.retrieverKey}`
 		return [
-			`## Retrieved context — ${match.title}`,
+			`## Retrieved context — ${escapeMarkdownText(match.title)}`,
 			'',
-			match.summary,
-			...(match.details ? ['', match.details] : []),
+			escapeMarkdownText(match.summary),
+			...(match.details ? ['', escapeMarkdownText(match.details)] : []),
 			'',
-			`**Source:** \`${source}\``,
-			`**Package:** \`${match.kodyId}\``,
-			`**Retriever:** \`${match.retrieverName}\``,
-			...(match.url ? [`**URL:** \`${match.url}\``] : []),
+			`**Source:** ${formatMarkdownInlineCode(source)}`,
+			`**Package:** ${formatMarkdownInlineCode(match.kodyId)}`,
+			`**Retriever:** ${formatMarkdownInlineCode(match.retrieverName)}`,
+			...(match.url ? [`**URL:** ${formatMarkdownInlineCode(match.url)}`] : []),
 		]
 	}
 	return [

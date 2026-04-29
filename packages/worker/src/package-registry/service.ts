@@ -28,6 +28,21 @@ import {
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
 
+function logPackageRetrieverProjectionError(input: {
+	action: 'refresh' | 'delete'
+	packageId: string
+	error: unknown
+}) {
+	console.error(
+		JSON.stringify({
+			message: 'package retriever projection update failed',
+			action: input.action,
+			packageId: input.packageId,
+		}),
+	)
+	void input.error
+}
+
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
 }
@@ -139,25 +154,33 @@ export async function refreshSavedPackageProjection(input: {
 			})
 		},
 	})
-	await refreshPackageRetrieverManifestCache({
-		env: input.env,
-		userId: input.userId,
-		source: loaded.source,
-		savedPackage: {
-			id: input.packageId,
+	try {
+		await refreshPackageRetrieverManifestCache({
+			env: input.env,
 			userId: input.userId,
-			name: row.name,
-			kodyId: row.kody_id,
-			description: row.description,
-			tags: JSON.parse(row.tags_json) as Array<string>,
-			searchText: row.search_text ?? null,
-			sourceId: row.source_id,
-			hasApp: row.has_app === 1,
-			createdAt: existing?.createdAt ?? refreshedAt,
-			updatedAt: refreshedAt,
-		},
-		manifest: loaded.manifest,
-	})
+			source: loaded.source,
+			savedPackage: {
+				id: input.packageId,
+				userId: input.userId,
+				name: row.name,
+				kodyId: row.kody_id,
+				description: row.description,
+				tags: JSON.parse(row.tags_json) as Array<string>,
+				searchText: row.search_text ?? null,
+				sourceId: row.source_id,
+				hasApp: row.has_app === 1,
+				createdAt: existing?.createdAt ?? refreshedAt,
+				updatedAt: refreshedAt,
+			},
+			manifest: loaded.manifest,
+		})
+	} catch (error) {
+		logPackageRetrieverProjectionError({
+			action: 'refresh',
+			packageId: input.packageId,
+			error,
+		})
+	}
 	const { syncPackageJobsForPackage } = await import('#worker/jobs/service.ts')
 	await syncPackageJobsForPackage({
 		env: input.env,
@@ -260,11 +283,19 @@ export async function deleteSavedPackageProjection(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
-	await removePackageRetrieverManifestCacheEntries({
-		env: input.env,
-		userId: input.userId,
-		packageId: input.packageId,
-	})
+	try {
+		await removePackageRetrieverManifestCacheEntries({
+			env: input.env,
+			userId: input.userId,
+			packageId: input.packageId,
+		})
+	} catch (error) {
+		logPackageRetrieverProjectionError({
+			action: 'delete',
+			packageId: input.packageId,
+			error,
+		})
+	}
 	await deleteSavedPackageVector(input.env, input.packageId)
 	await syncJobManagerAlarm({
 		env: input.env,

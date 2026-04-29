@@ -258,7 +258,22 @@ function isPackageRetrieverIndexEntry(
 		entry !== null &&
 		'userId' in entry &&
 		'packageId' in entry &&
+		'kodyId' in entry &&
+		typeof (entry as { kodyId?: unknown }).kodyId === 'string' &&
 		'retrieverKey' in entry &&
+		typeof (entry as { retrieverKey?: unknown }).retrieverKey === 'string' &&
+		Array.isArray((entry as { scopes?: unknown }).scopes)
+	)
+}
+
+function isPackageRetrieverManifestCacheEntry(
+	entry: unknown,
+): entry is PackageRetrieverManifestCacheEntry {
+	return (
+		typeof entry === 'object' &&
+		entry !== null &&
+		'retrieverKey' in entry &&
+		typeof (entry as { retrieverKey?: unknown }).retrieverKey === 'string' &&
 		Array.isArray((entry as { scopes?: unknown }).scopes)
 	)
 }
@@ -512,12 +527,14 @@ export async function listPackageRetrieversForScope(input: {
 				cached.version !== retrieverManifestCacheVersion ||
 				cached.userId !== input.userId ||
 				cached.packageId !== reference.packageId ||
-				cached.revision !== reference.revision
+				cached.revision !== reference.revision ||
+				!Array.isArray(cached.retrievers)
 			) {
 				return []
 			}
 			return cached.retrievers.filter(
-				(retriever) =>
+				(retriever): retriever is PackageRetrieverManifestCacheEntry =>
+					isPackageRetrieverManifestCacheEntry(retriever) &&
 					retriever.retrieverKey === reference.retrieverKey &&
 					retriever.scopes.includes(input.scope),
 			)
