@@ -1545,32 +1545,8 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			let remoteConnectorDownStatuses: Array<HomeConnectorStatus> = []
 
 			const searchSpan = async () => {
-				const searchRows = await loadSearchRowsAndRegistry({
-					agent,
-					callerContext,
-					userId,
-				})
-				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
-					env: agent.getEnv(),
-					callerContext,
-				})
-				warnings = searchRows.warnings
-
-				if (args.entity) {
-					return {
-						mode: 'entity' as const,
-						detail: await resolveEntityDetail({
-							agent,
-							callerContext,
-							userId,
-							entity: args.entity,
-							searchRows,
-						}),
-					}
-				}
-
-				const retrieverRun = userId
-					? await (async () => {
+				const retrieverRunPromise = userId
+					? (async () => {
 							try {
 								const { runPackageRetrievers } =
 									await import('#worker/package-retrievers/service.ts')
@@ -1598,7 +1574,35 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 								}
 							}
 						})()
-					: { results: [], warnings: [] }
+					: Promise.resolve({ results: [], warnings: [] })
+				const [searchRows] = await Promise.all([
+					loadSearchRowsAndRegistry({
+						agent,
+						callerContext,
+						userId,
+					}),
+					retrieverRunPromise,
+				])
+				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
+					env: agent.getEnv(),
+					callerContext,
+				})
+				warnings = searchRows.warnings
+
+				if (args.entity) {
+					return {
+						mode: 'entity' as const,
+						detail: await resolveEntityDetail({
+							agent,
+							callerContext,
+							userId,
+							entity: args.entity,
+							searchRows,
+						}),
+					}
+				}
+
+				const retrieverRun = await retrieverRunPromise
 				warnings.push(...retrieverRun.warnings)
 				const result = await searchUnified({
 					env: agent.getEnv(),

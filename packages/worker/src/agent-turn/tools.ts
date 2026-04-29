@@ -145,7 +145,11 @@ export async function createAgentTurnToolSet(input: {
 				})
 				return {
 					offline: result.offline,
-					warnings: [...optionalRows.warnings, ...retrieverSearch.warnings],
+					warnings: [
+						...optionalRows.warnings,
+						...retrieverSearch.warnings,
+						...(memoryToolContext?.retrieverWarnings ?? []),
+					],
 					guidance: result.guidance,
 					memories: memoryToolContext
 						? {
