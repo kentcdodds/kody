@@ -176,6 +176,17 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(lutronProcessors.structuredContent).toMatchObject({
 			processors: expect.any(Array),
 		})
+		const missingLutronProcessor = await mcp.callTool('lutron_get_inventory', {
+			processorId: '',
+		})
+		expect(missingLutronProcessor.isError).toBe(true)
+		expect(missingLutronProcessor.structuredContent).toEqual({
+			error: {
+				code: 'lutron_processor_not_found',
+				message: 'Lutron processor "" was not found.',
+				processorId: '',
+			},
+		})
 
 		const sonosPlayers = await mcp.callTool('sonos_list_players')
 		expect(sonosPlayers.structuredContent).toMatchObject({
