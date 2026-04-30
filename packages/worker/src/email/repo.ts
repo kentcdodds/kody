@@ -511,25 +511,38 @@ export async function upsertEmailSenderPolicy(input: {
 		created_at: existing ? String(existing['created_at']) : timestamp,
 		updated_at: timestamp,
 	}
-	await input.db
-		.prepare(
-			`INSERT INTO email_sender_policies (
-				id, user_id, inbox_id, package_id, kind, value, effect, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			row.id,
-			row.user_id,
-			row.inbox_id,
-			row.package_id,
-			row.kind,
-			row.value,
-			row.effect,
-			row.enabled,
-			row.created_at,
-			row.updated_at,
-		)
-		.run()
+	if (existing) {
+		await input.db
+			.prepare(
+				`UPDATE email_sender_policies
+				SET effect = ?,
+					enabled = 1,
+					updated_at = ?
+				WHERE id = ?`,
+			)
+			.bind(row.effect, row.updated_at, row.id)
+			.run()
+	} else {
+		await input.db
+			.prepare(
+				`INSERT INTO email_sender_policies (
+					id, user_id, inbox_id, package_id, kind, value, effect, enabled, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.bind(
+				row.id,
+				row.user_id,
+				row.inbox_id,
+				row.package_id,
+				row.kind,
+				row.value,
+				row.effect,
+				row.enabled,
+				row.created_at,
+				row.updated_at,
+			)
+			.run()
+	}
 	return mapSenderPolicyRow(row)
 }
 
