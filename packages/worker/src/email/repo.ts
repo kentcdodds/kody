@@ -941,7 +941,7 @@ export async function getEmailAttachmentById(input: {
 		attachmentEncoding: 'arraybuffer',
 	})
 	const matched = parsed.attachments.find((candidate) => {
-		if (candidate.filename !== attachment.filename) return false
+		if ((candidate.filename ?? null) !== attachment.filename) return false
 		if (candidate.mimeType !== (attachment.contentType ?? candidate.mimeType)) {
 			return false
 		}

@@ -10,7 +10,10 @@ import {
 	createEmailInbox,
 	createEmailInboxAddress,
 	createEmailThread,
+	insertEmailMessageWithAttachments,
+	getEmailAttachmentById,
 	listEmailMessages,
+	listEmailAttachmentsForMessage,
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import {
@@ -210,6 +213,96 @@ test('inbound email handler rejects malformed messages without persisting them',
 		limit: 10,
 	})
 	expect(messages).toEqual([])
+})
+
+test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `email-attachment-user-${crypto.randomUUID()}`
+	const stored = await insertEmailMessageWithAttachments({
+		db: env.APP_DB,
+		message: {
+			direction: 'inbound',
+			userId,
+			inboxId: null,
+			threadId: null,
+			senderIdentityId: null,
+			fromAddress: 'sender@example.net',
+			envelopeFrom: 'sender@example.net',
+			toAddresses: ['receiver@example.com'],
+			ccAddresses: [],
+			bccAddresses: [],
+			replyToAddresses: [],
+			subject: 'Unnamed attachment',
+			messageIdHeader: '<unnamed-attachment@example.net>',
+			inReplyToHeader: null,
+			references: [],
+			headers: { from: ['Sender <sender@example.net>'] },
+			authResults: null,
+			textBody: 'See attachment.\n',
+			htmlBody: null,
+			rawMime: [
+				'From: Sender <sender@example.net>',
+				'To: Receiver <receiver@example.com>',
+				'Subject: Unnamed attachment',
+				'Message-ID: <unnamed-attachment@example.net>',
+				'Content-Type: multipart/mixed; boundary="mail-boundary"',
+				'',
+				'--mail-boundary',
+				'Content-Type: text/plain; charset="utf-8"',
+				'',
+				'See attachment.',
+				'--mail-boundary',
+				'Content-Type: text/plain',
+				'Content-Disposition: attachment',
+				'',
+				'Attachment without filename',
+				'--mail-boundary--',
+			].join('\r\n'),
+			rawSize: 0,
+			processingStatus: 'stored',
+			providerMessageId: null,
+			error: null,
+			receivedAt: new Date().toISOString(),
+			sentAt: null,
+		},
+		attachments: [
+			{
+				filename: null,
+				contentType: 'text/plain',
+				contentId: null,
+				disposition: 'attachment',
+				size: new TextEncoder().encode('Attachment without filename\n').byteLength,
+				storageKind: 'raw-mime',
+				storageKey: null,
+			},
+		],
+	})
+	const attachments = await listEmailAttachmentsForMessage({
+		db: env.APP_DB,
+		messageId: stored.id,
+	})
+	const attachment = attachments[0]
+	expect(attachment).toBeDefined()
+	if (!attachment) {
+		throw new Error('Expected inserted attachment')
+	}
+
+	const loaded = await getEmailAttachmentById({
+		db: env.APP_DB,
+		userId,
+		attachmentId: attachment.id,
+	})
+
+	expect(loaded).toMatchObject({
+		id: attachment.id,
+		filename: null,
+		contentType: 'text/plain',
+		disposition: 'attachment',
+	})
+	expect(loaded?.contentBase64).toBeTruthy()
+	expect(
+		loaded?.contentBase64 ? atob(loaded.contentBase64) : null,
+	).toBe('Attachment without filename\n')
 })
 
 test('inbound email handler dispatches package subscriptions for stored inbound email', async () => {
