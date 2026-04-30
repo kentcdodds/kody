@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { type createBondAdapter } from '../adapters/bond/index.ts'
 import { type createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
+import { isLutronProcessorNotFoundError } from '../adapters/lutron/errors.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
 import { type createSonosAdapter } from '../adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
@@ -171,7 +172,10 @@ export function createHomeConnectorMcpServer(input: {
 				async (span) => {
 					try {
 						const result = await handler(args, context)
-						span.setAttribute('mcp.tool.result.is_error', false)
+						span.setAttribute(
+							'mcp.tool.result.is_error',
+							Boolean(result.isError),
+						)
 						span.setAttribute(
 							'mcp.tool.result.content_count',
 							getToolResultCount(result),
@@ -230,6 +234,42 @@ export function createHomeConnectorMcpServer(input: {
 				},
 			],
 			structuredContent,
+		}
+	}
+
+	function lutronProcessorNotFoundResult(
+		error: unknown,
+	): CallToolResult | null {
+		if (!isLutronProcessorNotFoundError(error)) {
+			return null
+		}
+		return {
+			isError: true,
+			content: [
+				{
+					type: 'text',
+					text: error.message,
+				},
+			],
+			structuredContent: {
+				error: {
+					code: 'lutron_processor_not_found',
+					message: error.message,
+					processorId: error.processorId,
+				},
+			},
+		}
+	}
+
+	async function handleExpectedLutronError(
+		handler: () => Promise<CallToolResult> | CallToolResult,
+	) {
+		try {
+			return await handler()
+		} catch (error) {
+			const result = lutronProcessorNotFoundResult(error)
+			if (result) return result
+			throw error
 		}
 	}
 
@@ -1123,19 +1163,21 @@ export function createHomeConnectorMcpServer(input: {
 			sdkInputSchema: lutronCredentialsSchema.sdkInputSchema,
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const username = String(args['username'] ?? '')
-			const password = String(args['password'] ?? '')
-			const result = lutron.setCredentials(processorId, username, password)
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Stored Lutron credentials for ${result.name}.`,
-					},
-				],
-				structuredContent: result,
-			}
+			return await handleExpectedLutronError(() => {
+				const processorId = String(args['processorId'] ?? '')
+				const username = String(args['username'] ?? '')
+				const password = String(args['password'] ?? '')
+				const result = lutron.setCredentials(processorId, username, password)
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Stored Lutron credentials for ${result.name}.`,
+						},
+					],
+					structuredContent: result,
+				}
+			})
 		},
 	)
 
@@ -1150,17 +1192,19 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const result = await lutron.authenticate(processorId)
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Authenticated Lutron processor ${result.name}.`,
-					},
-				],
-				structuredContent: result,
-			}
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const result = await lutron.authenticate(processorId)
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Authenticated Lutron processor ${result.name}.`,
+						},
+					],
+					structuredContent: result,
+				}
+			})
 		},
 	)
 
@@ -1178,17 +1222,19 @@ export function createHomeConnectorMcpServer(input: {
 			},
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const result = await lutron.getInventory(processorId)
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Fetched Lutron inventory with ${result.zones.length} zone(s) and ${result.sceneButtons.length} scene button(s).`,
-					},
-				],
-				structuredContent: result,
-			}
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const result = await lutron.getInventory(processorId)
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Fetched Lutron inventory with ${result.zones.length} zone(s) and ${result.sceneButtons.length} scene button(s).`,
+						},
+					],
+					structuredContent: result,
+				}
+			})
 		},
 	)
 
@@ -1204,18 +1250,20 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const buttonId = String(args['buttonId'] ?? '')
-			const result = await lutron.pressButton(processorId, buttonId)
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Pressed Lutron button ${buttonId} on processor ${processorId}.`,
-					},
-				],
-				structuredContent: result,
-			}
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const buttonId = String(args['buttonId'] ?? '')
+				const result = await lutron.pressButton(processorId, buttonId)
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Pressed Lutron button ${buttonId} on processor ${processorId}.`,
+						},
+					],
+					structuredContent: result,
+				}
+			})
 		},
 	)
 
@@ -1231,19 +1279,21 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const zoneId = String(args['zoneId'] ?? '')
-			const level = Number(args['level'] ?? 0)
-			const result = await lutron.setZoneLevel(processorId, zoneId, level)
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Set Lutron zone ${zoneId} to ${level}.`,
-					},
-				],
-				structuredContent: result,
-			}
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const zoneId = String(args['zoneId'] ?? '')
+				const level = Number(args['level'] ?? 0)
+				const result = await lutron.setZoneLevel(processorId, zoneId, level)
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Set Lutron zone ${zoneId} to ${level}.`,
+						},
+					],
+					structuredContent: result,
+				}
+			})
 		},
 	)
 
@@ -1263,28 +1313,30 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const zoneId = String(args['zoneId'] ?? '')
-			const hue = Number(args['hue'] ?? 0)
-			const saturation = Number(args['saturation'] ?? 0)
-			const level = args['level'] == null ? undefined : Number(args['level'])
-			const vibrancy =
-				args['vibrancy'] == null ? undefined : Number(args['vibrancy'])
-			const result = await lutron.setZoneColor(processorId, zoneId, {
-				hue,
-				saturation,
-				level,
-				vibrancy,
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const zoneId = String(args['zoneId'] ?? '')
+				const hue = Number(args['hue'] ?? 0)
+				const saturation = Number(args['saturation'] ?? 0)
+				const level = args['level'] == null ? undefined : Number(args['level'])
+				const vibrancy =
+					args['vibrancy'] == null ? undefined : Number(args['vibrancy'])
+				const result = await lutron.setZoneColor(processorId, zoneId, {
+					hue,
+					saturation,
+					level,
+					vibrancy,
+				})
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Set Lutron zone ${zoneId} to hue ${hue} saturation ${saturation}.`,
+						},
+					],
+					structuredContent: result,
+				}
 			})
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Set Lutron zone ${zoneId} to hue ${hue} saturation ${saturation}.`,
-					},
-				],
-				structuredContent: result,
-			}
 		},
 	)
 
@@ -1302,23 +1354,25 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const zoneId = String(args['zoneId'] ?? '')
-			const kelvin = Number(args['kelvin'] ?? 0)
-			const level = args['level'] == null ? undefined : Number(args['level'])
-			const result = await lutron.setZoneWhiteTuning(processorId, zoneId, {
-				kelvin,
-				level,
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const zoneId = String(args['zoneId'] ?? '')
+				const kelvin = Number(args['kelvin'] ?? 0)
+				const level = args['level'] == null ? undefined : Number(args['level'])
+				const result = await lutron.setZoneWhiteTuning(processorId, zoneId, {
+					kelvin,
+					level,
+				})
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Set Lutron zone ${zoneId} white tuning to ${kelvin}K.`,
+						},
+					],
+					structuredContent: result,
+				}
 			})
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Set Lutron zone ${zoneId} white tuning to ${kelvin}K.`,
-					},
-				],
-				structuredContent: result,
-			}
 		},
 	)
 
@@ -1335,23 +1389,25 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const zoneId = String(args['zoneId'] ?? '')
-			const state = args['state'] === 'Off' ? 'Off' : 'On'
-			const result = await lutron.setZoneSwitchedLevel(
-				processorId,
-				zoneId,
-				state,
-			)
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Set Lutron switched zone ${zoneId} to ${state}.`,
-					},
-				],
-				structuredContent: result,
-			}
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const zoneId = String(args['zoneId'] ?? '')
+				const state = args['state'] === 'Off' ? 'Off' : 'On'
+				const result = await lutron.setZoneSwitchedLevel(
+					processorId,
+					zoneId,
+					state,
+				)
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Set Lutron switched zone ${zoneId} to ${state}.`,
+						},
+					],
+					structuredContent: result,
+				}
+			})
 		},
 	)
 
@@ -1368,19 +1424,21 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			const processorId = String(args['processorId'] ?? '')
-			const zoneId = String(args['zoneId'] ?? '')
-			const level = Number(args['level'] ?? 0)
-			const result = await lutron.setShadeLevel(processorId, zoneId, level)
-			return {
-				content: [
-					{
-						type: 'text',
-						text: `Set Lutron shade ${zoneId} to ${level}.`,
-					},
-				],
-				structuredContent: result,
-			}
+			return await handleExpectedLutronError(async () => {
+				const processorId = String(args['processorId'] ?? '')
+				const zoneId = String(args['zoneId'] ?? '')
+				const level = Number(args['level'] ?? 0)
+				const result = await lutron.setShadeLevel(processorId, zoneId, level)
+				return {
+					content: [
+						{
+							type: 'text',
+							text: `Set Lutron shade ${zoneId} to ${level}.`,
+						},
+					],
+					structuredContent: result,
+				}
+			})
 		},
 	)
 
