@@ -27,7 +27,9 @@ function createConfig(): HomeConnectorConfig {
 	}
 }
 
-function createDnsFetchError(message = 'getaddrinfo ENOTFOUND zpgi01117.local') {
+function createDnsFetchError(
+	message = 'getaddrinfo ENOTFOUND zpgi01117.local',
+) {
 	return new TypeError('fetch failed', {
 		cause: {
 			code: 'ENOTFOUND',
@@ -36,6 +38,12 @@ function createDnsFetchError(message = 'getaddrinfo ENOTFOUND zpgi01117.local') 
 			hostname: 'zpgi01117.local',
 			message,
 		},
+	})
+}
+
+function createTcpResetFetchError(message = 'read ECONNRESET') {
+	return new TypeError('fetch failed', {
+		cause: new Error(message),
 	})
 }
 
@@ -101,6 +109,65 @@ test('bond falls back to the discovered IP when the stored .local host stops res
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 		expect(fetchMock.mock.calls[0]?.[0]).toBe(
 			'http://zpgi01117.local/v2/devices/mockdev1/state',
+		)
+		expect(fetchMock.mock.calls[1]?.[0]).toBe(
+			'http://10.0.0.22/v2/devices/mockdev1/state',
+		)
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
+test('bond retries transient TCP resets when reading device state', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	const fetchMock = vi
+		.fn()
+		.mockRejectedValueOnce(createTcpResetFetchError())
+		.mockResolvedValueOnce(
+			new Response(JSON.stringify({ position: 21, _: 's' }), {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/json',
+				},
+			}),
+		)
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST4',
+				bondid: 'BONDTEST4',
+				instanceName: 'Reset-Prone Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T21:15:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST4')
+		bond.setToken('BONDTEST4', 'bond-token')
+
+		const result = await bond.getDeviceState('BONDTEST4', 'mockdev1')
+
+		expect(result).toMatchObject({
+			position: 21,
+		})
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+		expect(fetchMock.mock.calls[0]?.[0]).toBe(
+			'http://10.0.0.22/v2/devices/mockdev1/state',
 		)
 		expect(fetchMock.mock.calls[1]?.[0]).toBe(
 			'http://10.0.0.22/v2/devices/mockdev1/state',
