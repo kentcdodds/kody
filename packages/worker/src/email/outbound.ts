@@ -9,10 +9,7 @@ import {
 	insertEmailDeliveryEvent,
 	updateEmailMessageDelivery,
 } from './repo.ts'
-import {
-	type EmailMessageRecord,
-	type EmailProcessingStatus,
-} from './types.ts'
+import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
 
 type SendEmailEnv = Pick<
 	Env,
@@ -56,7 +53,7 @@ function normalizeRecipientList(to: string | Array<string>) {
 	return Array.from(new Set(normalized))
 }
 
-function buildHeaders(input: {
+function buildStoredHeaders(input: {
 	messageId: string
 	inReplyTo?: string | null
 	references?: Array<string>
@@ -72,6 +69,19 @@ function buildHeaders(input: {
 	return headers
 }
 
+const cloudflareSendAllowedHeaders = new Set(['in-reply-to', 'references'])
+
+function buildProviderHeaders(headers: Record<string, string>) {
+	return Object.fromEntries(
+		Object.entries(headers).filter(([name]) => {
+			return (
+				name.startsWith('X-') ||
+				cloudflareSendAllowedHeaders.has(name.toLowerCase())
+			)
+		}),
+	)
+}
+
 async function requireStoredEmailMessage(input: {
 	env: SendEmailEnv
 	userId: string
@@ -83,7 +93,9 @@ async function requireStoredEmailMessage(input: {
 		messageId: input.messageId,
 	})
 	if (!stored) {
-		throw new Error(`Email message disappeared after delivery update: ${input.messageId}`)
+		throw new Error(
+			`Email message disappeared after delivery update: ${input.messageId}`,
+		)
 	}
 	return stored
 }
@@ -122,6 +134,10 @@ async function sendViaRestFallback(input: {
 	replyTo?: string | null
 	headers: Record<string, string>
 }) {
+	const html = input.html ?? input.text
+	if (!html) {
+		throw new Error('Email text or HTML body is required.')
+	}
 	const result = await sendCloudflareEmail(
 		{
 			accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
@@ -132,17 +148,15 @@ async function sendViaRestFallback(input: {
 			from: input.from,
 			to: input.to.length === 1 ? input.to[0]! : input.to,
 			subject: input.subject,
-			html: input.html ?? input.text ?? input.subject,
+			html,
 			text: input.text ?? undefined,
 			replyTo: input.replyTo ?? undefined,
-			headers: Object.keys(input.headers).length > 0 ? input.headers : undefined,
+			headers:
+				Object.keys(input.headers).length > 0 ? input.headers : undefined,
 		},
 	)
 	if (!result.ok) {
 		throw new Error(result.error ?? 'Cloudflare email send was skipped.')
-	}
-	if (!input.html && !input.text) {
-		throw new Error('Email text or HTML body is required.')
 	}
 	return result.messageId ?? null
 }
@@ -195,11 +209,12 @@ export async function sendOutboundEmail(
 			})
 	const threadId = existingThreadId ?? thread?.id ?? null
 	const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
-	const sendHeaders = buildHeaders({
+	const storedHeaders = buildStoredHeaders({
 		messageId: messageIdHeader,
 		inReplyTo: input.inReplyToHeader ?? null,
 		references: input.references ?? [],
 	})
+	const providerHeaders = buildProviderHeaders(storedHeaders)
 	const message = await insertEmailMessage({
 		db: input.env.APP_DB,
 		message: {
@@ -222,7 +237,7 @@ export async function sendOutboundEmail(
 			messageIdHeader,
 			inReplyToHeader: input.inReplyToHeader ?? null,
 			references: input.references ?? [],
-			headers: sendHeaders,
+			headers: storedHeaders,
 			authResults: null,
 			textBody: text,
 			htmlBody: html,
@@ -258,22 +273,22 @@ export async function sendOutboundEmail(
 			replyTo: input.replyTo
 				? (normalizeEmailAddress(input.replyTo) ?? undefined)
 				: undefined,
-			headers: sendHeaders,
+			headers: providerHeaders,
 		})
 		const providerMessageId = bindingResult.sent
 			? bindingResult.messageId
 			: await sendViaRestFallback({
-				env: input.env,
-				from,
-				to,
-				subject,
-				text,
-				html,
-				replyTo: input.replyTo
-					? (normalizeEmailAddress(input.replyTo) ?? undefined)
-					: undefined,
-				headers: sendHeaders,
-			})
+					env: input.env,
+					from,
+					to,
+					subject,
+					text,
+					html,
+					replyTo: input.replyTo
+						? (normalizeEmailAddress(input.replyTo) ?? undefined)
+						: undefined,
+					headers: providerHeaders,
+				})
 		await updateEmailMessageDelivery({
 			db: input.env.APP_DB,
 			messageId: message.id,
