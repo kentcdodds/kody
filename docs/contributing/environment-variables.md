@@ -122,8 +122,8 @@ Optional Worker secret/var (see `packages/worker/src/env-schema.ts` and
 `packages/worker/src/home/session.ts`):
 
 - `packages/home-connector` participates in the npm workspace and executes
-  directly on Node 24. Local and container runs therefore need a recent Node
-  release with `node:sqlite` support.
+  directly on Node 24. Local and container runs therefore need Node 24 with
+  `node:sqlite` support.
 - `HOME_CONNECTOR_SHARED_SECRET` — shared secret used by the locally running
   `packages/home-connector` service when it opens the outbound WebSocket session
   to the worker. When unset, the worker rejects home connector registration and
