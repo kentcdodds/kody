@@ -9,6 +9,7 @@ import { handleInboundEmail } from './inbound.ts'
 import {
 	createEmailInbox,
 	createEmailInboxAddress,
+	createEmailThread,
 	listEmailMessages,
 	upsertEmailSenderPolicy,
 } from './repo.ts'
@@ -126,6 +127,32 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		subject: 'Unknown sender',
 		error: null,
 	})
+
+	const normalizedExistingThread = await createEmailThread({
+		db: env.APP_DB,
+		userId,
+		inboxId: inbox.id,
+		subjectNormalized: 'normalized subject',
+	})
+	const subjectMatchedMessage = createForwardableEmailMessage({
+		from: 'agent@trusted.example',
+		to: address,
+		raw: [
+			'From: Agent <agent@trusted.example>',
+			`To: ${address}`,
+			'Subject: Re: Normalized Subject',
+			'',
+			'Subject match body.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(subjectMatchedMessage, env)
+	const subjectMatched = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		inboxId: inbox.id,
+		limit: 1,
+	})
+	expect(subjectMatched[0]?.threadId).toBe(normalizedExistingThread.id)
 })
 
 test('inbound email handler rejects unknown aliases without persisting them', async () => {

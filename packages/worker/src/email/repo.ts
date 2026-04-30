@@ -695,6 +695,26 @@ export async function findThreadForMessage(input: {
 			.first<Record<string, unknown>>()
 		if (row) return mapThreadRow(row)
 	}
+	if (input.subjectNormalized?.trim()) {
+		const row = await input.db
+			.prepare(
+				`SELECT *
+				FROM email_threads
+				WHERE user_id = ?
+					AND (? IS NULL OR inbox_id = ?)
+					AND subject_normalized = ?
+				ORDER BY last_message_at DESC, id DESC
+				LIMIT 1`,
+			)
+			.bind(
+				input.userId,
+				input.inboxId ?? null,
+				input.inboxId ?? null,
+				input.subjectNormalized,
+			)
+			.first<Record<string, unknown>>()
+		if (row) return mapThreadRow(row)
+	}
 	return null
 }
 
@@ -921,22 +941,6 @@ export async function getEmailMessageById(input: {
 }
 
 export const getEmailMessage = getEmailMessageById
-
-export async function getEmailMessageByIdAnyUser(input: {
-	db: D1Database
-	messageId: string
-}) {
-	const row = await input.db
-		.prepare(
-			`SELECT *
-			FROM email_messages
-			WHERE id = ?
-			LIMIT 1`,
-		)
-		.bind(input.messageId)
-		.first<Record<string, unknown>>()
-	return row ? mapMessageRow(row) : null
-}
 
 export async function getEmailMessageByMessageIdHeader(input: {
 	db: D1Database
