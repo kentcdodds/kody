@@ -33,6 +33,9 @@ import {
 } from './types.ts'
 import { type HomeConnectorErrorCaptureContext } from '../../sentry.ts'
 
+const defaultBondTransientAttemptsPerBaseUrl = 4
+const defaultBondTransientRetryBaseDelayMs = 100
+
 function normalizeQuery(value: string) {
 	return value.trim().toLowerCase()
 }
@@ -163,6 +166,18 @@ function getErrorCauseMessage(error: Error): string | null {
 	return null
 }
 
+function getErrorMessages(error: unknown) {
+	if (!(error instanceof Error)) {
+		return [String(error)]
+	}
+	const messages = [error.message]
+	const causeMessage = getErrorCauseMessage(error)
+	if (causeMessage) {
+		messages.push(causeMessage)
+	}
+	return messages
+}
+
 function isBondNetworkFailure(error: unknown) {
 	if (!(error instanceof Error)) {
 		return false
@@ -173,6 +188,7 @@ function isBondNetworkFailure(error: unknown) {
 		message.includes('enotfound') ||
 		message.includes('eai_again') ||
 		message.includes('econnrefused') ||
+		message.includes('econnreset') ||
 		message.includes('ehostunreach') ||
 		message.includes('etimedout')
 	) {
@@ -183,16 +199,40 @@ function isBondNetworkFailure(error: unknown) {
 		causeMessage.includes('enotfound') ||
 		causeMessage.includes('eai_again') ||
 		causeMessage.includes('econnrefused') ||
+		causeMessage.includes('econnreset') ||
 		causeMessage.includes('ehostunreach') ||
 		causeMessage.includes('etimedout') ||
 		causeMessage.includes('getaddrinfo')
 	)
 }
 
+function isBondTransientNetworkFailure(error: unknown) {
+	if (!isBondNetworkFailure(error)) {
+		return false
+	}
+	const messages = getErrorMessages(error).map((message) =>
+		message.toLowerCase(),
+	)
+	return messages.some(
+		(message) =>
+			message.includes('econnreset') || message.includes('socket hang up'),
+	)
+}
+
+function getBondTransientRetryDelayMs(attempt: number) {
+	return defaultBondTransientRetryBaseDelayMs * 2 ** Math.max(0, attempt - 1)
+}
+
+async function wait(ms: number) {
+	await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function formatBondFailureReason(error: unknown) {
 	if (error instanceof Error) {
 		const causeMessage = getErrorCauseMessage(error)
-		return causeMessage ? `${error.message}; cause=${causeMessage}` : error.message
+		return causeMessage
+			? `${error.message}; cause=${causeMessage}`
+			: error.message
 	}
 	return String(error)
 }
@@ -219,8 +259,12 @@ function createBondActionableError(input: {
 		tags: {
 			connector_vendor: 'bond',
 			bond_bridge_id: input.bridge.bridgeId,
-			bond_network_failure: isBondNetworkFailure(input.error) ? 'true' : 'false',
-			bond_host_is_local: input.bridge.host.endsWith('.local') ? 'true' : 'false',
+			bond_network_failure: isBondNetworkFailure(input.error)
+				? 'true'
+				: 'false',
+			bond_host_is_local: input.bridge.host.endsWith('.local')
+				? 'true'
+				: 'false',
 		},
 		contexts: {
 			bond_bridge: {
@@ -242,25 +286,43 @@ async function withBondBridgeRequest<T>(input: {
 	bridge: BondPersistedBridge
 	operation: string
 	request: (baseUrl: string) => Promise<T>
+	maxTransientAttemptsPerBaseUrl?: number
 }) {
 	const baseUrls = createBondBaseUrlCandidates(input.bridge)
 	const attemptedBaseUrls: Array<string> = []
 	let lastError: unknown = null
+	const maxTransientAttemptsPerBaseUrl = Math.max(
+		1,
+		Math.floor(input.maxTransientAttemptsPerBaseUrl ?? 1),
+	)
 	for (let index = 0; index < baseUrls.length; index += 1) {
 		const baseUrl = baseUrls[index]!
 		attemptedBaseUrls.push(baseUrl)
-		try {
-			return await input.request(baseUrl)
-		} catch (error) {
-			lastError = error
-			if (!isBondNetworkFailure(error)) {
-				throw error
-			}
-			const canRetryWithFallback =
-				index === 0 && baseUrls.length > 1
-			if (!canRetryWithFallback) {
+		for (
+			let attempt = 1;
+			attempt <= maxTransientAttemptsPerBaseUrl;
+			attempt += 1
+		) {
+			try {
+				return await input.request(baseUrl)
+			} catch (error) {
+				lastError = error
+				if (!isBondNetworkFailure(error)) {
+					throw error
+				}
+				if (
+					attempt < maxTransientAttemptsPerBaseUrl &&
+					isBondTransientNetworkFailure(error)
+				) {
+					await wait(getBondTransientRetryDelayMs(attempt))
+					continue
+				}
 				break
 			}
+		}
+		const canRetryWithFallback = index === 0 && baseUrls.length > 1
+		if (!canRetryWithFallback) {
+			break
 		}
 	}
 	throw createBondActionableError({
@@ -516,6 +578,7 @@ export function createBondAdapter(input: {
 			return await withBondBridgeRequest({
 				bridge,
 				operation: `fetch device ${deviceId} state`,
+				maxTransientAttemptsPerBaseUrl: defaultBondTransientAttemptsPerBaseUrl,
 				request: async (baseUrl) =>
 					await bondGetDeviceState({
 						baseUrl,
