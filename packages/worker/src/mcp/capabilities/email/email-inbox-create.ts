@@ -10,10 +10,7 @@ import { createEmailInboxWithAddress } from '#worker/email/repo.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import {
-	emailInboxCreateOutputSchema,
-	emailInboxModeSchema,
-} from './shared.ts'
+import { emailInboxCreateOutputSchema, emailInboxModeSchema } from './shared.ts'
 
 export const emailInboxCreateCapability = defineDomainCapability(
 	capabilityDomainNames.email,
@@ -34,11 +31,16 @@ export const emailInboxCreateCapability = defineDomainCapability(
 		outputSchema: emailInboxCreateOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const address = requireNormalizedEmailAddress(args.address, 'Inbox address')
+			const address = requireNormalizedEmailAddress(
+				args.address,
+				'Inbox address',
+			)
 			const replyToken = createReplyToken()
 			const { inbox, address: alias } = await createEmailInboxWithAddress({
 				db: ctx.env.APP_DB,
 				userId: user.userId,
+				ownerEmail: user.email,
+				ownerDisplayName: user.displayName,
 				name: args.name.trim(),
 				description: args.description?.trim() ?? '',
 				mode: args.mode,
@@ -53,14 +55,16 @@ export const emailInboxCreateCapability = defineDomainCapability(
 				description: inbox.description,
 				mode: inbox.mode,
 				enabled: inbox.enabled,
-				addresses: [{
-					id: alias.id,
-					address: alias.address,
-					reply_token_hash: alias.replyTokenHash,
-					reply_token: replyToken,
-					enabled: alias.enabled,
-					created_at: alias.createdAt,
-				}],
+				addresses: [
+					{
+						id: alias.id,
+						address: alias.address,
+						reply_token_hash: alias.replyTokenHash,
+						reply_token: replyToken,
+						enabled: alias.enabled,
+						created_at: alias.createdAt,
+					},
+				],
 				created_at: inbox.createdAt,
 				updated_at: inbox.updatedAt,
 			}

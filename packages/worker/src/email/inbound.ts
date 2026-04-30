@@ -5,6 +5,7 @@ import {
 } from './address.ts'
 import { parseForwardableEmailMessage } from './parser.ts'
 import { evaluateSenderPolicy } from './policy.ts'
+import { runInboundEmailAgentLoop } from './agent-loop.ts'
 import {
 	createEmailThread,
 	findEmailThreadForInboundMessage,
@@ -19,7 +20,23 @@ import {
 
 export async function handleInboundEmail(
 	message: ForwardableEmailMessage,
-	env: Pick<Env, 'APP_DB'>,
+	env: Pick<
+		Env,
+		| 'APP_DB'
+		| 'APP_BASE_URL'
+		| 'APP_DOMAIN'
+		| 'AI'
+		| 'AI_GATEWAY_ID'
+		| 'AI_MODE'
+		| 'AI_MODEL'
+		| 'AI_MOCK_BASE_URL'
+		| 'AI_MOCK_API_KEY'
+		| 'CLOUDFLARE_ACCOUNT_ID'
+		| 'CLOUDFLARE_API_BASE_URL'
+		| 'CLOUDFLARE_API_TOKEN'
+		| 'EMAIL'
+		| 'AGENT_TURN_RUNNER'
+	>,
 	_ctx?: ExecutionContext,
 ) {
 	const recipient = normalizeEmailAddress(message.to)
@@ -183,5 +200,31 @@ export async function handleInboundEmail(
 	})
 	if (policyDecision === 'rejected') {
 		message.setReject(decision.reasons.join(', '))
+		return
+	}
+	if (policyDecision === 'accepted') {
+		const hasInboxOwnerProfile =
+			typeof inbox.ownerEmail === 'string' && inbox.ownerEmail.trim().length > 0
+		if (hasInboxOwnerProfile) {
+			await runInboundEmailAgentLoop({
+				env: env as Env,
+				requestUrl: `https://${recipient}/cdn-cgi/handler/email`,
+				inbox,
+				message: stored,
+			}).catch(async (error) => {
+				await insertEmailDeliveryEvent({
+					db: env.APP_DB,
+					messageId: stored.id,
+					userId,
+					inboxId: inbox.id,
+					eventType: 'agent_loop_failed',
+					provider: 'kody-email-agent',
+					detail: {
+						error: error instanceof Error ? error.message : String(error),
+						phase: 'inbound_dispatch',
+					},
+				}).catch(() => undefined)
+			})
+		}
 	}
 }

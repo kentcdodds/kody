@@ -99,6 +99,7 @@ export type PersistedJobCallerContext = Pick<
 	| 'remoteConnectors'
 	| 'storageContext'
 	| 'repoContext'
+	| 'capabilityRestrictions'
 > & {
 	user: McpUserContext
 }

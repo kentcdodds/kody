@@ -1,5 +1,6 @@
 import {
 	type EmailAttachmentRecord,
+	type EmailAgentRunRecord,
 	type EmailDirection,
 	type EmailDeliveryEventType,
 	type EmailInboxAddressRecord,
@@ -54,6 +55,11 @@ function mapInboxRow(row: Record<string, unknown>): EmailInboxRecord {
 		id: String(row['id']),
 		userId: String(row['user_id']),
 		packageId: row['package_id'] == null ? null : String(row['package_id']),
+		ownerEmail: row['owner_email'] == null ? null : String(row['owner_email']),
+		ownerDisplayName:
+			row['owner_display_name'] == null
+				? null
+				: String(row['owner_display_name']),
 		name: String(row['name']),
 		description: row['description'] == null ? '' : String(row['description']),
 		mode: String(row['mode']) as EmailInboxMode,
@@ -93,8 +99,7 @@ function mapSenderIdentityRow(
 		displayName:
 			row['display_name'] == null ? null : String(row['display_name']),
 		status: String(row['status']) as EmailSenderIdentityRecord['status'],
-		verifiedAt:
-			row['verified_at'] == null ? null : String(row['verified_at']),
+		verifiedAt: row['verified_at'] == null ? null : String(row['verified_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -151,12 +156,12 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 			row['from_address'] == null ? null : String(row['from_address']),
 		envelopeFrom:
 			row['envelope_from'] == null ? null : String(row['envelope_from']),
-		toAddresses: parseJsonArray(String(row['to_addresses_json'] ?? '[]')).filter(
-			(value): value is string => typeof value === 'string',
-		),
-		ccAddresses: parseJsonArray(String(row['cc_addresses_json'] ?? '[]')).filter(
-			(value): value is string => typeof value === 'string',
-		),
+		toAddresses: parseJsonArray(
+			String(row['to_addresses_json'] ?? '[]'),
+		).filter((value): value is string => typeof value === 'string'),
+		ccAddresses: parseJsonArray(
+			String(row['cc_addresses_json'] ?? '[]'),
+		).filter((value): value is string => typeof value === 'string'),
 		bccAddresses: parseJsonArray(
 			String(row['bcc_addresses_json'] ?? '[]'),
 		).filter((value): value is string => typeof value === 'string'),
@@ -185,16 +190,13 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 		rawMime: row['raw_mime'] == null ? null : String(row['raw_mime']),
 		rawSize: row['raw_size'] == null ? null : Number(row['raw_size']),
 		policyDecision: String(row['policy_decision']) as EmailPolicyDecision,
-		processingStatus: String(
-			row['processing_status'],
-		) as EmailProcessingStatus,
+		processingStatus: String(row['processing_status']) as EmailProcessingStatus,
 		providerMessageId:
 			row['provider_message_id'] == null
 				? null
 				: String(row['provider_message_id']),
 		error: row['error'] == null ? null : String(row['error']),
-		receivedAt:
-			row['received_at'] == null ? null : String(row['received_at']),
+		receivedAt: row['received_at'] == null ? null : String(row['received_at']),
 		sentAt: row['sent_at'] == null ? null : String(row['sent_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
@@ -209,8 +211,7 @@ function mapAttachmentRow(row: Record<string, unknown>): EmailAttachmentRecord {
 		contentType:
 			row['content_type'] == null ? null : String(row['content_type']),
 		contentId: row['content_id'] == null ? null : String(row['content_id']),
-		disposition:
-			row['disposition'] == null ? null : String(row['disposition']),
+		disposition: row['disposition'] == null ? null : String(row['disposition']),
 		size: Number(row['size'] ?? 0),
 		storageKind: String(row['storage_kind']),
 		storageKey: row['storage_key'] == null ? null : String(row['storage_key']),
@@ -218,9 +219,41 @@ function mapAttachmentRow(row: Record<string, unknown>): EmailAttachmentRecord {
 	}
 }
 
+function mapAgentRunRow(row: Record<string, unknown>): EmailAgentRunRecord {
+	return {
+		id: String(row['id']),
+		userId: String(row['user_id']),
+		inboxId: row['inbox_id'] == null ? null : String(row['inbox_id']),
+		threadId: row['thread_id'] == null ? null : String(row['thread_id']),
+		inboundMessageId: String(row['inbound_message_id']),
+		replyMessageId:
+			row['reply_message_id'] == null ? null : String(row['reply_message_id']),
+		sessionId: String(row['session_id']),
+		conversationId: String(row['conversation_id']),
+		status: String(row['status']) as EmailAgentRunRecord['status'],
+		toolCallLimit: Number(row['tool_call_limit']),
+		toolCallsUsed: Number(row['tool_calls_used']),
+		traceUrl: row['trace_url'] == null ? null : String(row['trace_url']),
+		summary: row['summary'] == null ? null : String(row['summary']),
+		assistantText:
+			row['assistant_text'] == null ? null : String(row['assistant_text']),
+		stopReason: row['stop_reason'] == null ? null : String(row['stop_reason']),
+		finishReason:
+			row['finish_reason'] == null ? null : String(row['finish_reason']),
+		error: row['error'] == null ? null : String(row['error']),
+		startedAt: String(row['started_at']),
+		completedAt:
+			row['completed_at'] == null ? null : String(row['completed_at']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
 export async function createEmailInbox(input: {
 	db: D1Database
 	userId: string
+	ownerEmail?: string | null
+	ownerDisplayName?: string | null
 	name: string
 	description?: string | null
 	mode: EmailInboxMode
@@ -231,8 +264,10 @@ export async function createEmailInbox(input: {
 		id: crypto.randomUUID(),
 		user_id: input.userId,
 		package_id: input.packageId ?? null,
+		owner_email: input.ownerEmail ?? null,
+		owner_display_name: input.ownerDisplayName ?? null,
 		name: input.name,
-		description: input.description ?? null,
+		description: input.description ?? '',
 		mode: input.mode,
 		enabled: 1,
 		created_at: timestamp,
@@ -241,13 +276,15 @@ export async function createEmailInbox(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO email_inboxes (
-				id, user_id, package_id, name, description, mode, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, user_id, package_id, owner_email, owner_display_name, name, description, mode, enabled, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
 			row.package_id,
+			row.owner_email,
+			row.owner_display_name,
 			row.name,
 			row.description,
 			row.mode,
@@ -319,6 +356,8 @@ export async function deleteEmailInboxById(input: {
 export async function createEmailInboxWithAddress(input: {
 	db: D1Database
 	userId: string
+	ownerEmail?: string | null
+	ownerDisplayName?: string | null
 	name: string
 	description?: string | null
 	mode: EmailInboxMode
@@ -331,8 +370,10 @@ export async function createEmailInboxWithAddress(input: {
 	const inbox = await createEmailInbox({
 		db: input.db,
 		userId: input.userId,
+		ownerEmail: input.ownerEmail ?? null,
+		ownerDisplayName: input.ownerDisplayName ?? null,
 		name: input.name,
-		description: input.description ?? null,
+		description: input.description ?? '',
 		mode: input.mode,
 		packageId: input.packageId ?? null,
 	})
@@ -664,6 +705,24 @@ export async function listEmailSenderPolicies(input: {
 		)
 		.all<Record<string, unknown>>()
 	return (result.results ?? []).map(mapSenderPolicyRow)
+}
+
+export async function getEmailSenderPolicyById(input: {
+	db: D1Database
+	userId: string
+	id: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_sender_policies
+			WHERE id = ?
+				AND user_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.id, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapSenderPolicyRow(row) : null
 }
 
 export async function findThreadForMessage(input: {
@@ -1088,3 +1147,180 @@ export async function insertEmailDeliveryEvent(input: {
 		.run()
 }
 
+export async function createEmailAgentRun(input: {
+	db: D1Database
+	userId: string
+	inboxId?: string | null
+	threadId?: string | null
+	inboundMessageId: string
+	sessionId: string
+	conversationId: string
+	status: EmailAgentRunRecord['status']
+	toolCallLimit: number
+	toolCallsUsed?: number
+	traceUrl?: string | null
+	summary?: string | null
+	assistantText?: string | null
+	stopReason?: string | null
+	finishReason?: string | null
+	error?: string | null
+	startedAt?: string | null
+	completedAt?: string | null
+	replyMessageId?: string | null
+}) {
+	const timestamp = nowIso()
+	const row = {
+		id: crypto.randomUUID(),
+		user_id: input.userId,
+		inbox_id: input.inboxId ?? null,
+		thread_id: input.threadId ?? null,
+		inbound_message_id: input.inboundMessageId,
+		reply_message_id: input.replyMessageId ?? null,
+		session_id: input.sessionId,
+		conversation_id: input.conversationId,
+		status: input.status,
+		tool_call_limit: input.toolCallLimit,
+		tool_calls_used: input.toolCallsUsed ?? 0,
+		trace_url: input.traceUrl ?? null,
+		summary: input.summary ?? null,
+		assistant_text: input.assistantText ?? null,
+		stop_reason: input.stopReason ?? null,
+		finish_reason: input.finishReason ?? null,
+		error: input.error ?? null,
+		started_at: input.startedAt ?? timestamp,
+		completed_at: input.completedAt ?? null,
+		created_at: timestamp,
+		updated_at: timestamp,
+	}
+	await input.db
+		.prepare(
+			`INSERT INTO email_agent_runs (
+				id, user_id, inbox_id, thread_id, inbound_message_id, reply_message_id,
+				session_id, conversation_id, status, tool_call_limit, tool_calls_used,
+				trace_url, summary, assistant_text, stop_reason, finish_reason, error,
+				started_at, completed_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			row.id,
+			row.user_id,
+			row.inbox_id,
+			row.thread_id,
+			row.inbound_message_id,
+			row.reply_message_id,
+			row.session_id,
+			row.conversation_id,
+			row.status,
+			row.tool_call_limit,
+			row.tool_calls_used,
+			row.trace_url,
+			row.summary,
+			row.assistant_text,
+			row.stop_reason,
+			row.finish_reason,
+			row.error,
+			row.started_at,
+			row.completed_at,
+			row.created_at,
+			row.updated_at,
+		)
+		.run()
+	return mapAgentRunRow(row)
+}
+
+export async function updateEmailAgentRun(input: {
+	db: D1Database
+	id: string
+	status?: EmailAgentRunRecord['status']
+	replyMessageId?: string | null
+	toolCallsUsed?: number
+	traceUrl?: string | null
+	summary?: string | null
+	assistantText?: string | null
+	stopReason?: string | null
+	finishReason?: string | null
+	error?: string | null
+	completedAt?: string | null
+}) {
+	await input.db
+		.prepare(
+			`UPDATE email_agent_runs
+			SET status = COALESCE(?, status),
+				reply_message_id = COALESCE(?, reply_message_id),
+				tool_calls_used = COALESCE(?, tool_calls_used),
+				trace_url = COALESCE(?, trace_url),
+				summary = COALESCE(?, summary),
+				assistant_text = COALESCE(?, assistant_text),
+				stop_reason = COALESCE(?, stop_reason),
+				finish_reason = COALESCE(?, finish_reason),
+				error = COALESCE(?, error),
+				completed_at = COALESCE(?, completed_at),
+				updated_at = ?
+			WHERE id = ?`,
+		)
+		.bind(
+			input.status ?? null,
+			input.replyMessageId ?? null,
+			typeof input.toolCallsUsed === 'number' ? input.toolCallsUsed : null,
+			input.traceUrl ?? null,
+			input.summary ?? null,
+			input.assistantText ?? null,
+			input.stopReason ?? null,
+			input.finishReason ?? null,
+			input.error ?? null,
+			input.completedAt ?? null,
+			nowIso(),
+			input.id,
+		)
+		.run()
+}
+
+export async function getLatestEmailAgentRunForMessage(input: {
+	db: D1Database
+	inboundMessageId: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_agent_runs
+			WHERE inbound_message_id = ?
+			ORDER BY created_at DESC, id DESC
+			LIMIT 1`,
+		)
+		.bind(input.inboundMessageId)
+		.first<Record<string, unknown>>()
+	return row ? mapAgentRunRow(row) : null
+}
+
+export async function getLatestEmailAgentRunForThread(input: {
+	db: D1Database
+	threadId: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_agent_runs
+			WHERE thread_id = ?
+			ORDER BY created_at DESC, id DESC
+			LIMIT 1`,
+		)
+		.bind(input.threadId)
+		.first<Record<string, unknown>>()
+	return row ? mapAgentRunRow(row) : null
+}
+
+export async function listEmailAgentRunsForThread(input: {
+	db: D1Database
+	threadId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_agent_runs
+			WHERE thread_id = ?
+			ORDER BY created_at DESC, id DESC`,
+		)
+		.bind(input.threadId)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map(mapAgentRunRow)
+}

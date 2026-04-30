@@ -1,6 +1,10 @@
 import { createRouter } from 'remix/fetch-router'
 import { account } from '#app/handlers/account.ts'
 import {
+	createAccountEmailApiHandler,
+	createAccountEmailHandler,
+} from '#app/handlers/account-email.ts'
+import {
 	createAccountSecretsApiHandler,
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
@@ -51,6 +55,18 @@ export function createAppRouter(appEnv: AppEnv) {
 	router.map(routes.login, login)
 	router.map(routes.signup, signup)
 	router.map(routes.account, account)
+	router.map(
+		routes.accountEmail,
+		createAccountEmailHandler(appEnv as unknown as Env),
+	)
+	router.map(
+		routes.accountEmailApi,
+		createAccountEmailApiHandler(appEnv as unknown as Env),
+	)
+	router.map(
+		routes.accountEmailApiPost,
+		createAccountEmailApiHandler(appEnv as unknown as Env),
+	)
 	router.map(
 		routes.accountSecrets,
 		createAccountSecretsHandler(appEnv as unknown as Env),

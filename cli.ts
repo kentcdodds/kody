@@ -541,7 +541,8 @@ async function ensureMockServers() {
 		AI_MODE: desiredAiMode,
 	}
 	if (!hasEnvValue(process.env.CLOUDFLARE_EMAIL_FROM)) {
-		mockEnvOverrides.CLOUDFLARE_EMAIL_FROM = 'reset@kody.dev'
+		const appDomain = process.env.APP_DOMAIN?.trim() || 'example.com'
+		mockEnvOverrides.CLOUDFLARE_EMAIL_FROM = `reset@${appDomain}`
 	}
 
 	const optionalMocksReady = attachOptionalMocksInParallel(

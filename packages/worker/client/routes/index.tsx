@@ -1,4 +1,5 @@
 import { AccountRoute } from './account.tsx'
+import { AccountEmailRoute } from './account-email.tsx'
 import { AccountSecretsRoute } from './account-secrets.tsx'
 import { ChatRoute } from './chat.tsx'
 import { ConnectSecretRoute } from './connect-secret.tsx'
@@ -15,6 +16,7 @@ export const clientRoutes = {
 	'/chat/:threadId': <ChatRoute />,
 	'/connect/secret': <ConnectSecretRoute />,
 	'/account': <AccountRoute />,
+	'/account/email': <AccountEmailRoute />,
 	'/account/secrets': <AccountSecretsRoute />,
 	'/account/secrets/new': <AccountSecretsRoute />,
 	'/account/secrets/approve': <AccountSecretsRoute />,

@@ -17,6 +17,10 @@ export function createMcpCallerContext(input: {
 	remoteConnectors?: Array<RemoteConnectorRef> | null
 	storageContext?: McpStorageContext | null
 	repoContext?: McpRepoContext | null
+	capabilityRestrictions?: {
+		denyNames?: Array<string> | null
+		denyDomains?: Array<string> | null
+	} | null
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
@@ -25,6 +29,12 @@ export function createMcpCallerContext(input: {
 		remoteConnectors: input.remoteConnectors ?? null,
 		storageContext: input.storageContext ?? null,
 		repoContext: input.repoContext ?? null,
+		capabilityRestrictions: input.capabilityRestrictions
+			? {
+					denyNames: input.capabilityRestrictions.denyNames ?? null,
+					denyDomains: input.capabilityRestrictions.denyDomains ?? null,
+				}
+			: null,
 	}
 }
 

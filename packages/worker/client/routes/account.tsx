@@ -105,18 +105,32 @@ export function AccountRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>Secret management</h2>
-						<p css={descriptionCss}>
-							Create, edit, and delete secrets from the dedicated management
-							page.
-						</p>
-						<div>
-							<a href="/account/secrets" css={primaryLinkCss}>
-								Manage secrets
-							</a>
-						</div>
-					</section>
+					<>
+						<section css={cardCss}>
+							<h2 css={cardTitleCss}>Secret management</h2>
+							<p css={descriptionCss}>
+								Create, edit, and delete secrets from the dedicated management
+								page.
+							</p>
+							<div>
+								<a href="/account/secrets" css={primaryLinkCss}>
+									Manage secrets
+								</a>
+							</div>
+						</section>
+						<section css={cardCss}>
+							<h2 css={cardTitleCss}>Email settings</h2>
+							<p css={descriptionCss}>
+								Manage approved inbound senders and inspect stored inbound email
+								messages, replies, and agent traces.
+							</p>
+							<div>
+								<a href="/account/email" css={primaryLinkCss}>
+									Manage email
+								</a>
+							</div>
+						</section>
+					</>
 				) : null}
 			</section>
 		)

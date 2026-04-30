@@ -48,6 +48,15 @@ types, runtime validation, and documentation in sync.
      - `.github/workflows/deploy.yml` (production deploys)
      - `.github/workflows/preview.yml` (preview deploys)
 
+## App email identity
+
+Optional Worker var (see `packages/worker/src/env-schema.ts`):
+
+- `APP_DOMAIN` — canonical application email domain used for app-owned email
+  identities such as the inbound-email agent loop sender (`kody@<app-domain>`).
+  Keep this aligned with the deployed app domain and email sender/domain
+  verification configured in Cloudflare Email Service.
+
 ## Sentry
 
 Optional Worker secret and vars (see `packages/worker/src/env-schema.ts` and

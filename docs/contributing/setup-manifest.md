@@ -17,8 +17,7 @@ This project uses the following resources:
   - Production domains still need Cloudflare-side sender/domain verification
     before sends succeed.
 - Cloudflare Email Routing for inbound mail
-  - Configure MX records and selected route aliases in the Cloudflare
-    dashboard.
+  - Configure MX records and selected route aliases in the Cloudflare dashboard.
   - Route only test/storage aliases to the Worker until quarantine behavior is
     verified.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
@@ -74,12 +73,15 @@ automatically:
 - `APP_BASE_URL` (optional; defaults to request origin, example
   `https://app.example.com`; also sets the canonical public origin used for MCP
   auth metadata, generated UI resources, and email links)
+- `APP_DOMAIN` (optional; defaults to the hostname from `APP_BASE_URL` or the
+  current request origin. Kody derives automated outbound sender addresses like
+  `kody@<app-domain>` from this value.)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
-- `CLOUDFLARE_EMAIL_FROM` (optional; sender address for outbound email)
-  Existing app email uses this as a default sender. First-class MCP
-  `email_send` additionally requires a verified sender identity created through
-  the email capabilities.
+- `CLOUDFLARE_EMAIL_FROM` (optional; sender address for outbound email) Existing
+  app email uses this as a default sender. First-class MCP `email_send`
+  additionally requires a verified sender identity created through the email
+  capabilities.
 - `AI_GATEWAY_ID` (required when `AI_MODE=remote`; deploy workflows sync a
   gateway ID from GitHub Actions secrets so remote inference goes through
   Cloudflare AI Gateway)
@@ -123,12 +125,14 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
   deploy as the canonical public app origin and written into the generated
   Worker `vars` config before deploy)
+- `APP_DOMAIN` (optional GitHub Actions **variable**, used as the canonical app
+  email domain when deriving automated senders like `kody@<app-domain>`)
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
-- `CLOUDFLARE_EMAIL_FROM` (optional, required to send app email)
-  First-class Kody email also requires the `EMAIL` send binding plus
-  Cloudflare Email Service sender/domain verification.
+- `CLOUDFLARE_EMAIL_FROM` (optional, required to send app email) First-class
+  Kody email also requires the `EMAIL` send binding plus Cloudflare Email
+  Service sender/domain verification.
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex

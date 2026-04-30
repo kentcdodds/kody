@@ -537,6 +537,7 @@ function createPackageJobCallerContext(input: {
 			storageId: null,
 		},
 		repoContext: null,
+		capabilityRestrictions: null,
 	}) as PersistedJobCallerContext
 }
 

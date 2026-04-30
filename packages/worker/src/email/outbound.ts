@@ -1,5 +1,6 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmailAddress } from './address.ts'
+import { buildKodySenderIdentity } from './kody-sender.ts'
 import {
 	createEmailThread,
 	getEmailMessageById,
@@ -7,6 +8,7 @@ import {
 	getVerifiedSenderIdentity,
 	insertEmailMessage,
 	insertEmailDeliveryEvent,
+	upsertEmailSenderIdentity,
 	updateEmailMessageDelivery,
 } from './repo.ts'
 import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
@@ -14,6 +16,8 @@ import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
 type SendEmailEnv = Pick<
 	Env,
 	| 'APP_DB'
+	| 'APP_DOMAIN'
+	| 'APP_BASE_URL'
 	| 'EMAIL'
 	| 'CLOUDFLARE_ACCOUNT_ID'
 	| 'CLOUDFLARE_API_BASE_URL'
@@ -33,6 +37,8 @@ export type EmailSendInput = {
 	references?: Array<string>
 	threadId?: string | null
 	inboxId?: string | null
+	allowSystemSender?: boolean
+	requestUrl?: string | URL
 }
 
 export type EmailSendResult = {
@@ -40,6 +46,41 @@ export type EmailSendResult = {
 	providerMessageId: string | null
 	status: EmailProcessingStatus
 	error: string | null
+}
+
+async function ensureVerifiedSenderIdentity(input: {
+	env: SendEmailEnv
+	userId: string
+	from: string
+	allowSystemSender?: boolean
+	requestUrl?: string | URL
+}) {
+	const senderIdentity = await getVerifiedSenderIdentity({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.from,
+	})
+	if (senderIdentity?.status === 'verified') {
+		return senderIdentity
+	}
+	if (!input.allowSystemSender) {
+		throw new Error(`Sender identity is not verified: ${input.from}`)
+	}
+	const systemSender = buildKodySenderIdentity({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	if (input.from !== systemSender.email) {
+		throw new Error(`Sender identity is not verified: ${input.from}`)
+	}
+	return upsertEmailSenderIdentity({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: systemSender.email,
+		domain: systemSender.domain,
+		displayName: systemSender.displayName,
+		status: 'verified',
+	})
 }
 
 function normalizeRecipientList(to: string | Array<string>) {
@@ -166,14 +207,13 @@ export async function sendOutboundEmail(
 ): Promise<EmailSendResult> {
 	const from = normalizeEmailAddress(input.from)
 	if (!from) throw new Error('A valid from email address is required.')
-	const senderIdentity = await getVerifiedSenderIdentity({
-		db: input.env.APP_DB,
+	const senderIdentity = await ensureVerifiedSenderIdentity({
+		env: input.env,
 		userId: input.userId,
-		email: from,
+		from,
+		allowSystemSender: input.allowSystemSender,
+		requestUrl: input.requestUrl,
 	})
-	if (!senderIdentity || senderIdentity.status !== 'verified') {
-		throw new Error(`Sender identity is not verified: ${from}`)
-	}
 	const original = input.inReplyToHeader
 		? await getEmailMessageByMessageIdHeader({
 				db: input.env.APP_DB,

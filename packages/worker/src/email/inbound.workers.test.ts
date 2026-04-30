@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	getEmailDomain,
 	getEmailLocalPart,
@@ -14,6 +14,18 @@ import {
 	upsertEmailSenderPolicy,
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+
+const mockAgentLoop = vi.hoisted(() => ({
+	runInboundEmailAgentLoop: vi.fn(async () => ({
+		run: null,
+		replyMessageId: null,
+	})),
+}))
+
+vi.mock('./agent-loop.ts', () => ({
+	runInboundEmailAgentLoop: (...args: Array<unknown>) =>
+		mockAgentLoop.runInboundEmailAgentLoop(...args),
+}))
 
 function createForwardableEmailMessage(input: {
 	from: string
@@ -49,6 +61,7 @@ function createForwardableEmailMessage(input: {
 
 test('inbound email handler stores quarantined and accepted messages by sender policy', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	mockAgentLoop.runInboundEmailAgentLoop.mockClear()
 	const userId = `email-user-${crypto.randomUUID()}`
 	const address = requireNormalizedEmailAddress(
 		`support-${crypto.randomUUID()}@example.com`,
@@ -56,6 +69,8 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 	const inbox = await createEmailInbox({
 		db: env.APP_DB,
 		userId,
+		ownerEmail: 'owner@example.com',
+		ownerDisplayName: 'Owner',
 		name: 'Support',
 		description: 'Support inbox',
 		mode: 'quarantine',
@@ -127,6 +142,7 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		subject: 'Unknown sender',
 		error: null,
 	})
+	expect(mockAgentLoop.runInboundEmailAgentLoop).toHaveBeenCalledTimes(1)
 
 	const normalizedExistingThread = await createEmailThread({
 		db: env.APP_DB,
@@ -190,6 +206,8 @@ test('inbound email handler rejects malformed messages without persisting them',
 	const inbox = await createEmailInbox({
 		db: env.APP_DB,
 		userId,
+		ownerEmail: 'parse-owner@example.com',
+		ownerDisplayName: 'Parse Owner',
 		name: 'Parse failures',
 		description: 'Parse failure inbox',
 		mode: 'quarantine',

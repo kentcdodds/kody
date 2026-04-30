@@ -72,6 +72,14 @@ export const mcpCallerContextSchema = object({
 	remoteConnectors: optional(nullable(array(remoteConnectorRefSchema))),
 	storageContext: optional(nullable(mcpStorageContextSchema)),
 	repoContext: optional(nullable(mcpRepoContextSchema)),
+	capabilityRestrictions: optional(
+		nullable(
+			object({
+				denyNames: optional(nullable(array(string()))),
+				denyDomains: optional(nullable(array(string()))),
+			}),
+		),
+	),
 })
 
 export type McpUserContext = InferOutput<typeof mcpUserContextSchema>

@@ -8,7 +8,11 @@ export const emailPolicyKindValues = [
 ] as const
 export type EmailPolicyKind = (typeof emailPolicyKindValues)[number]
 
-export const emailPolicyEffectValues = ['allow', 'quarantine', 'reject'] as const
+export const emailPolicyEffectValues = [
+	'allow',
+	'quarantine',
+	'reject',
+] as const
 export type EmailPolicyEffect = (typeof emailPolicyEffectValues)[number]
 
 export const emailPolicyDecisionValues = [
@@ -34,12 +38,25 @@ export const emailDeliveryEventTypeValues = [
 	'received',
 	'quarantined',
 	'rejected',
+	'agent_loop_started',
+	'agent_loop_completed',
+	'agent_loop_limit_reached',
+	'agent_loop_failed',
 	'send_requested',
 	'sent',
 	'failed',
 	'policy_matched',
 ] as const
-export type EmailDeliveryEventType = (typeof emailDeliveryEventTypeValues)[number]
+export type EmailDeliveryEventType =
+	(typeof emailDeliveryEventTypeValues)[number]
+
+export const emailAgentRunStatusValues = [
+	'running',
+	'completed',
+	'limit_reached',
+	'failed',
+] as const
+export type EmailAgentRunStatus = (typeof emailAgentRunStatusValues)[number]
 
 export type EmailPolicyEvaluation = {
 	decision: EmailPolicyDecision
@@ -87,6 +104,8 @@ export type EmailInboxRecord = {
 	id: string
 	userId: string
 	packageId: string | null
+	ownerEmail: string | null
+	ownerDisplayName: string | null
 	name: string
 	description: string
 	mode: EmailInboxMode
@@ -201,4 +220,28 @@ export type EmailDeliveryEventRecord = {
 	providerMessageId: string | null
 	detailJson: string
 	createdAt: string
+}
+
+export type EmailAgentRunRecord = {
+	id: string
+	userId: string
+	inboxId: string | null
+	threadId: string | null
+	inboundMessageId: string
+	replyMessageId: string | null
+	sessionId: string
+	conversationId: string
+	status: EmailAgentRunStatus
+	toolCallLimit: number
+	toolCallsUsed: number
+	traceUrl: string | null
+	summary: string | null
+	assistantText: string | null
+	stopReason: string | null
+	finishReason: string | null
+	error: string | null
+	startedAt: string
+	completedAt: string | null
+	createdAt: string
+	updatedAt: string
 }

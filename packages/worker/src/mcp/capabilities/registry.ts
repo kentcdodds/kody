@@ -28,6 +28,72 @@ export const capabilityToolDescriptors =
 
 export const capabilityHandlers = staticRegistry.capabilityHandlers
 
+function filterRegistryForPolicy(
+	registry: BuiltCapabilityRegistry,
+	callerContext: McpCallerContext,
+): BuiltCapabilityRegistry {
+	const deniedNames = callerContext.capabilityRestrictions?.denyNames ?? []
+	const deniedDomains = callerContext.capabilityRestrictions?.denyDomains ?? []
+	if (deniedNames.length === 0 && deniedDomains.length === 0) {
+		return registry
+	}
+	const deniedNameSet = new Set(deniedNames)
+	const deniedDomainSet = new Set(deniedDomains)
+	const capabilityList = registry.capabilityList.filter(
+		(capability) =>
+			!deniedNameSet.has(capability.name) &&
+			!deniedDomainSet.has(capability.domain),
+	)
+	const remainingDomains = registry.capabilityDomains.filter((domain) => {
+		return capabilityList.some(
+			(capability) => capability.domain === domain.name,
+		)
+	})
+	const capabilityDomainDescriptionsByName = Object.fromEntries(
+		Object.entries(registry.capabilityDomainDescriptionsByName).filter(
+			([domainName]) =>
+				remainingDomains.some((domain) => domain.name === domainName),
+		),
+	) as BuiltCapabilityRegistry['capabilityDomainDescriptionsByName']
+	const capabilityMap = Object.fromEntries(
+		capabilityList.map((capability) => [capability.name, capability]),
+	)
+	const capabilitySpecs = Object.fromEntries(
+		Object.entries(registry.capabilitySpecs).filter(([name, spec]) => {
+			return !deniedNameSet.has(name) && !deniedDomainSet.has(spec.domain)
+		}),
+	)
+	const capabilityToolDescriptors = Object.fromEntries(
+		Object.entries(registry.capabilityToolDescriptors).filter(([name]) => {
+			const capability = registry.capabilityMap[name]
+			return (
+				capability != null &&
+				!deniedNameSet.has(name) &&
+				!deniedDomainSet.has(capability.domain)
+			)
+		}),
+	)
+	const capabilityHandlers = Object.fromEntries(
+		Object.entries(registry.capabilityHandlers).filter(([name]) => {
+			const capability = registry.capabilityMap[name]
+			return (
+				capability != null &&
+				!deniedNameSet.has(name) &&
+				!deniedDomainSet.has(capability.domain)
+			)
+		}),
+	)
+	return {
+		capabilityList,
+		capabilityDomains: remainingDomains,
+		capabilityDomainDescriptionsByName,
+		capabilityMap,
+		capabilitySpecs,
+		capabilityToolDescriptors,
+		capabilityHandlers,
+	}
+}
+
 export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -52,11 +118,11 @@ export async function getCapabilityRegistryForContext(input: {
 		}
 	}
 	if (synthesizedDomains.length === 0) {
-		return staticRegistry
+		return filterRegistryForPolicy(staticRegistry, input.callerContext)
 	}
 	const registry = buildCapabilityRegistry([
 		...builtinDomains,
 		...synthesizedDomains,
 	])
-	return registry
+	return filterRegistryForPolicy(registry, input.callerContext)
 }
