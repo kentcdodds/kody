@@ -19,8 +19,7 @@ This project uses the following resources:
 - Cloudflare Email Routing for inbound mail
   - Configure MX records and selected route aliases in the Cloudflare
     dashboard.
-  - Route only test/storage aliases to the Worker until quarantine behavior is
-    verified.
+  - Route only aliases that should persist inbound mail to the Worker.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
   - Preview: `kody-capabilities-preview`

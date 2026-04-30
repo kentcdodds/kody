@@ -1,34 +1,31 @@
 # Email primitives
 
-Kody has a storage-only email surface for Cloudflare Email Service and Email
-Routing. It can send from verified identities, receive routed mail, store parsed
-messages, and quarantine unknown senders.
+ Kody has a storage-first email surface for Cloudflare Email Service and Email
+ Routing. It can send from verified identities, receive routed mail, and store
+ parsed messages for later automation.
 
 ## Capabilities
 
 Use the MCP `email` domain:
 
-- `email_inbox_create` creates an inbox and routable alias.
-- `email_inbox_list` lists inboxes and aliases for the signed-in user.
-- `email_sender_approve` verifies an outbound sender identity or allowlists an
-  inbound sender/domain for an inbox.
-- `email_sender_revoke` disables an allow rule.
-- `email_policy_get` inspects effective sender policy.
-- `email_send` sends outbound mail from a verified sender identity.
-- `email_reply` replies to a stored inbound message.
-- `email_message_list` lists stored sent, accepted, quarantined, or failed
-  messages.
-- `email_message_get` returns parsed bodies, headers, thread metadata, and
-  attachment metadata.
+ - `email_inbox_create` creates an inbox and routable alias.
+ - `email_inbox_list` lists inboxes and aliases for the signed-in user.
+ - `email_sender_identity_verify` verifies an outbound sender identity.
+ - `email_send` sends outbound mail from a verified sender identity.
+ - `email_reply` replies to a stored inbound message.
+ - `email_message_list` lists stored inbound and outbound messages.
+ - `email_message_get` returns parsed bodies, headers, thread metadata, and
+   attachment metadata.
 
 ## Safety model
 
-- Unknown inbound senders are quarantined.
+ - Any email routed to a configured Kody inbox is stored.
+ - Unknown aliases are still rejected before storage.
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
 - Outbound sending requires a verified sender identity.
-- Inbound package handlers are intentionally disabled in this first slice. Mail
-  is stored and audited only.
+ - Inbound package handlers are intentionally disabled in this first slice. Mail
+   is stored first; packages and agent loops decide what to do with it later.
 - Attachments are metadata-only for now; raw MIME for small messages is stored so
   the first pass can be tested locally.
 

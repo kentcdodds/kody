@@ -10,18 +10,15 @@ export const emailMessageListCapability = defineDomainCapability(
 	{
 		name: 'email_message_list',
 		description:
-			'List stored inbound, quarantined, and outbound email messages owned by the signed-in user.',
-		keywords: ['email', 'message', 'inbox', 'quarantine', 'list'],
+			'List stored inbound and outbound email messages owned by the signed-in user.',
+		keywords: ['email', 'message', 'inbox', 'list'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
 			inbox_id: z.string().min(1).optional(),
 			direction: z.enum(['inbound', 'outbound']).optional(),
-			processing_status: z.enum(['stored', 'sent', 'failed', 'rejected']).optional(),
-			policy_decision: z
-				.enum(['accepted', 'quarantined', 'rejected'])
-				.optional(),
+			processing_status: z.enum(['stored', 'sent', 'failed']).optional(),
 			limit: z.number().int().positive().max(100).default(25),
 		}),
 		outputSchema: z.object({
@@ -35,7 +32,6 @@ export const emailMessageListCapability = defineDomainCapability(
 				inboxId: args.inbox_id ?? null,
 				direction: args.direction ?? null,
 				processingStatus: args.processing_status ?? null,
-				policyDecision: args.policy_decision ?? null,
 				limit: args.limit,
 			})
 			return { messages: messages.map(toMessageSummary) }

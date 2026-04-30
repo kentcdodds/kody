@@ -4,7 +4,6 @@ import {
 	normalizeSubject,
 } from './address.ts'
 import { parseForwardableEmailMessage } from './parser.ts'
-import { evaluateSenderPolicy } from './policy.ts'
 import {
 	createEmailThread,
 	findEmailThreadForInboundMessage,
@@ -13,7 +12,6 @@ import {
 	getEmailInboxAddressByReplyTokenHash,
 	insertEmailDeliveryEvent,
 	insertEmailMessageWithAttachments,
-	listEmailSenderPolicies,
 	touchEmailThread,
 } from './repo.ts'
 
@@ -85,19 +83,6 @@ export async function handleInboundEmail(
 		}).catch(() => undefined)
 		return
 	}
-	const policies = await listEmailSenderPolicies({
-		db: env.APP_DB,
-		userId,
-		inboxId: inboxAddress.inboxId,
-	})
-	const decision = await evaluateSenderPolicy({
-		envelopeFrom: parsed.envelopeFrom,
-		fromAddress: parsed.headerFrom,
-		replyToken: parsed.replyToken,
-		rules: policies,
-		defaultDecision: inbox.mode === 'accept' ? 'accepted' : 'quarantined',
-	})
-	const policyDecision = decision.decision
 	const now = new Date().toISOString()
 	const subjectNormalized = normalizeSubject(parsed.subject)
 	const existingThread = await findEmailThreadForInboundMessage({
@@ -141,10 +126,9 @@ export async function handleInboundEmail(
 			htmlBody: parsed.htmlBody,
 			rawMime: parsed.rawMime,
 			rawSize: parsed.rawSize,
-			policyDecision,
 			processingStatus: 'stored',
 			providerMessageId: null,
-			error: policyDecision === 'rejected' ? decision.reasons.join(', ') : null,
+			error: null,
 			receivedAt: now,
 			sentAt: null,
 		},
@@ -168,20 +152,12 @@ export async function handleInboundEmail(
 		messageId: stored.id,
 		userId,
 		inboxId: inbox?.id ?? null,
-		eventType:
-			policyDecision === 'accepted'
-				? 'received'
-				: policyDecision === 'quarantined'
-					? 'quarantined'
-					: 'rejected',
+		eventType: 'received',
 		provider: 'cloudflare-email-routing',
 		detail: {
 			recipient,
-			decision: policyDecision,
-			reasons: decision.reasons,
+			envelope_from: parsed.envelopeFrom,
+			from_address: parsed.headerFrom,
 		},
 	})
-	if (policyDecision === 'rejected') {
-		message.setReject(decision.reasons.join(', '))
-	}
 }
