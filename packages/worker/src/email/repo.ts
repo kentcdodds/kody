@@ -1090,7 +1090,7 @@ export async function insertEmailDeliveryEvent(input: {
 			input.eventType,
 			input.provider ?? null,
 			input.providerMessageId ?? null,
-			input.detail ? JSON.stringify(input.detail) : null,
+			JSON.stringify(input.detail ?? {}),
 			nowIso(),
 		)
 		.run()

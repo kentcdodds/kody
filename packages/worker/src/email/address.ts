@@ -65,7 +65,7 @@ export function addressListToJson(values: ReadonlyArray<string>) {
 export function normalizeSubject(subject: string | null | undefined) {
 	const trimmed = subject?.trim() ?? ''
 	return trimmed
-		.replace(/^(?:re|fw|fwd):\s*/gi, '')
+		.replace(/^(?:(?:re|fw|fwd):\s*)+/i, '')
 		.replace(/\s+/g, ' ')
 		.toLowerCase()
 }

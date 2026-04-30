@@ -68,6 +68,22 @@ test('parseForwardableEmailMessage extracts headers, bodies, and attachment meta
 	])
 })
 
+test('parseForwardableEmailMessage deduplicates overlapping to addresses and parses alternate reply token header', async () => {
+	const raw = [
+		'From: Sender <sender@example.com>',
+		'To: Support <support@example.com>',
+		'X-Reply-Token: alternate-token',
+		'Subject: Hello',
+		'',
+		'Plain body',
+	].join('\r\n')
+
+	const parsed = await parseForwardableEmailMessage(createMessage(raw))
+
+	expect(parsed.replyToken).toBe('alternate-token')
+	expect(parsed.to).toEqual([{ name: null, address: 'support@example.com' }])
+})
+
 test('parseForwardableEmailMessage rejects oversized raw MIME', async () => {
 	await expect(
 		parseForwardableEmailMessage(createMessage('Subject: Oversized\n\nbody'), {

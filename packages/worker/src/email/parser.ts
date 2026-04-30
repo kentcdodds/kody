@@ -109,6 +109,17 @@ function parseReplyToken(headers: Headers, toAddresses: Array<EmailMailbox>) {
 	return null
 }
 
+function dedupeMailboxes(addresses: Array<EmailMailbox>) {
+	const seen = new Set<string>()
+	const out: Array<EmailMailbox> = []
+	for (const mailbox of addresses) {
+		if (seen.has(mailbox.address)) continue
+		seen.add(mailbox.address)
+		out.push(mailbox)
+	}
+	return out
+}
+
 export async function parseForwardableEmailMessage(
 	message: ForwardableEmailMessage,
 	options: { maxRawSize?: number } = {},
@@ -137,16 +148,16 @@ export async function parseForwardableEmailMessage(
 		normalizeEmailAddress(message.from) ??
 		null
 	const normalizedEnvelopeTo = normalizeEmailAddress(message.to)
-	const toAddresses: Array<EmailMailbox> = [
+	const toAddresses = dedupeMailboxes([
 		...(normalizedEnvelopeTo
 			? [{ name: null, address: normalizedEnvelopeTo }]
 			: []),
 		...flattenPostalAddresses(parsed.to),
 		...parseHeaderAddressList(getHeader(message.headers, 'To')),
-	]
-	const ccAddresses = flattenPostalAddresses(parsed.cc)
-	const bccAddresses = flattenPostalAddresses(parsed.bcc)
-	const replyToAddresses = flattenPostalAddresses(parsed.replyTo)
+	])
+	const ccAddresses = dedupeMailboxes(flattenPostalAddresses(parsed.cc))
+	const bccAddresses = dedupeMailboxes(flattenPostalAddresses(parsed.bcc))
+	const replyToAddresses = dedupeMailboxes(flattenPostalAddresses(parsed.replyTo))
 	const subject = parsed.subject ?? getHeader(message.headers, 'Subject')
 	const messageIdHeader =
 		parsed.messageId ?? getPostalHeader(parsed.headers, 'message-id')
