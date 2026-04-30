@@ -24,18 +24,33 @@ vi.mock('cloudflare:workers', () => ({
 
 const { HomeConnectorSession } = await import('./session.ts')
 
-function createState(input: {
-	storedState?: {
-		persisted: {
-			connectorId: string | null
-			connectorKind: string | null
-			connectedAt: string | null
-			lastSeenAt: string | null
-		}
-		tools: Array<{ name: string }>
-	} | null
-	webSockets?: Array<WebSocket>
-} = {}) {
+type StoredHomeConnectorSessionState = {
+	persisted: {
+		connectorId: string | null
+		connectorKind: string | null
+		connectedAt: string | null
+		lastSeenAt: string | null
+	}
+	tools: Array<{ name: string }>
+}
+
+async function waitForRestoreState(state: DurableObjectState) {
+	const blockConcurrencyWhile = state.blockConcurrencyWhile as unknown as {
+		mock: { results: Array<{ value: Promise<void> | undefined }> }
+	}
+	const blockPromise = blockConcurrencyWhile.mock.results[0]?.value
+	if (!blockPromise) {
+		throw new Error('Expected blockConcurrencyWhile to return restore promise.')
+	}
+	await blockPromise
+}
+
+function createState(
+	input: {
+		storedState?: StoredHomeConnectorSessionState | null
+		webSockets?: Array<WebSocket>
+	} = {},
+) {
 	const storedState = input.storedState ?? null
 	const webSockets = input.webSockets ?? []
 	const persistedEntries = new Map<string, unknown>()
@@ -53,10 +68,49 @@ function createState(input: {
 			},
 			getWebSockets: vi.fn(() => webSockets),
 			acceptWebSocket: vi.fn(),
+			blockConcurrencyWhile: vi.fn((callback: () => Promise<void>) =>
+				callback(),
+			),
 		} as unknown as DurableObjectState,
 		persistedEntries,
 	}
 }
+
+test('constructor restores persisted state through blockConcurrencyWhile', async () => {
+	captureMessageMock.mockReset()
+	const { state } = createState({
+		storedState: {
+			persisted: {
+				connectorId: 'default',
+				connectorKind: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [{} as WebSocket],
+	})
+
+	const session = new HomeConnectorSession(
+		{
+			storage: state.storage,
+			getWebSockets: state.getWebSockets,
+			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
+		} as unknown as DurableObjectState,
+		{} as Env,
+	)
+	await waitForRestoreState(state)
+
+	expect(state.blockConcurrencyWhile).toHaveBeenCalledTimes(1)
+	const response = await session.fetch(
+		new Request('https://home-connectors/home/connectors/default/snapshot'),
+	)
+	expect(await response.json()).toMatchObject({
+		connectorId: 'default',
+		tools: [{ name: 'bond_shade_set_position' }],
+	})
+})
 
 test('snapshot returns null when persisted connector has no live websocket', async () => {
 	captureMessageMock.mockReset()
@@ -76,11 +130,12 @@ test('snapshot returns null when persisted connector has no live websocket', asy
 			storage: state.storage,
 			getWebSockets: state.getWebSockets,
 			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
 		} as unknown as DurableObjectState,
 		{} as Env,
 	)
 
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 
 	const response = await session.fetch(
 		new Request('https://home-connectors/home/connectors/default/snapshot'),
@@ -107,14 +162,14 @@ test('websocket close clears connectedAt and tools from persisted state', async 
 			storage: state.storage,
 			getWebSockets: state.getWebSockets,
 			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
 		} as unknown as DurableObjectState,
 		{} as Env,
 	)
 
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 	state.getWebSockets.mockReturnValue([])
-	session.webSocketClose({} as WebSocket, 1006, 'network', false)
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await session.webSocketClose({} as WebSocket, 1006, 'network', false)
 
 	expect(captureMessageMock).toHaveBeenCalledWith(
 		'Home connector session websocket closed code=1006 wasClean=false reason=network',
@@ -152,14 +207,14 @@ test('stale websocket close preserves active connection state', async () => {
 			storage: state.storage,
 			getWebSockets: state.getWebSockets,
 			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
 		} as unknown as DurableObjectState,
 		{} as Env,
 	)
 
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 	state.getWebSockets.mockReturnValue([activeSocket])
-	session.webSocketClose(staleSocket, 1006, 'stale-socket', false)
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await session.webSocketClose(staleSocket, 1006, 'stale-socket', false)
 
 	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
 		persisted: {
@@ -167,5 +222,95 @@ test('stale websocket close preserves active connection state', async () => {
 			connectedAt: '2026-04-26T05:00:00.000Z',
 		},
 		tools: [{ name: 'bond_shade_set_position' }],
+	})
+})
+
+test('websocket heartbeat work is returned so the runtime can wait for persistence', async () => {
+	captureMessageMock.mockReset()
+	const { state, persistedEntries } = createState({
+		storedState: {
+			persisted: {
+				connectorId: 'default',
+				connectorKind: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [{} as WebSocket],
+	})
+	const session = new HomeConnectorSession(
+		{
+			storage: state.storage,
+			getWebSockets: state.getWebSockets,
+			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
+		} as unknown as DurableObjectState,
+		{} as Env,
+	)
+	await waitForRestoreState(state)
+
+	const handlerWork = session.webSocketMessage(
+		{} as WebSocket,
+		JSON.stringify({ type: 'connector.heartbeat' }),
+	)
+	expect(handlerWork).toBeInstanceOf(Promise)
+	await handlerWork
+
+	const persisted = persistedEntries.get(
+		'home-connector-session-state',
+	) as StoredHomeConnectorSessionState
+	expect(persisted).toMatchObject({
+		persisted: {
+			connectorId: 'default',
+			connectedAt: '2026-04-26T05:00:00.000Z',
+		},
+		tools: [{ name: 'bond_shade_set_position' }],
+	})
+	expect(
+		(persisted as { persisted: { lastSeenAt: string } }).persisted.lastSeenAt,
+	).not.toBe('2026-04-26T05:01:00.000Z')
+})
+
+test('websocket error clears connected state when the socket is gone', async () => {
+	captureMessageMock.mockReset()
+	const { state, persistedEntries } = createState({
+		storedState: {
+			persisted: {
+				connectorId: 'default',
+				connectorKind: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [{} as WebSocket],
+	})
+	const session = new HomeConnectorSession(
+		{
+			storage: state.storage,
+			getWebSockets: state.getWebSockets,
+			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
+		} as unknown as DurableObjectState,
+		{} as Env,
+	)
+
+	await waitForRestoreState(state)
+	state.getWebSockets.mockReturnValue([])
+	await session.webSocketError({} as WebSocket, new Error('abnormal close'))
+
+	expect(captureMessageMock).toHaveBeenCalledWith(
+		'Home connector session websocket closed code=1011 wasClean=false reason=abnormal close',
+		expect.objectContaining({
+			level: 'warning',
+		}),
+	)
+	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
+		persisted: {
+			connectorId: 'default',
+			connectedAt: null,
+		},
+		tools: [],
 	})
 })
