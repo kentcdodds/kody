@@ -3,7 +3,11 @@ import { createAppState } from '../../state.ts'
 import { type HomeConnectorConfig } from '../../config.ts'
 import { createHomeConnectorStorage } from '../../storage/index.ts'
 import { createBondAdapter } from './index.ts'
-import { adoptBondBridge, upsertDiscoveredBondBridges } from './repository.ts'
+import {
+	adoptBondBridge,
+	requireBondBridge,
+	upsertDiscoveredBondBridges,
+} from './repository.ts'
 
 function createConfig(): HomeConnectorConfig {
 	return {
@@ -47,6 +51,15 @@ function createTcpResetFetchError(message = 'read ECONNRESET') {
 	})
 }
 
+function mockJsonResponse(body: Record<string, unknown>) {
+	return new Response(JSON.stringify(body), {
+		status: 200,
+		headers: {
+			'Content-Type': 'application/json',
+		},
+	})
+}
+
 test('bond falls back to the discovered IP when the stored .local host stops resolving', async () => {
 	const config = createConfig()
 	const state = createAppState()
@@ -63,12 +76,7 @@ test('bond falls back to the discovered IP when the stored .local host stops res
 			throw createDnsFetchError()
 		}
 		if (url === 'http://10.0.0.22/v2/devices/mockdev1/state') {
-			return new Response(JSON.stringify({ position: 55, _: 's' }), {
-				status: 200,
-				headers: {
-					'Content-Type': 'application/json',
-				},
-			})
+			return mockJsonResponse({ position: 55, _: 's' })
 		}
 		throw new Error(`Unexpected fetch URL: ${url}`)
 	})
@@ -101,11 +109,19 @@ test('bond falls back to the discovered IP when the stored .local host stops res
 		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST1')
 		bond.setToken('BONDTEST1', 'bond-token')
 
+		const before = bond
+			.getStatus()
+			.bridges.find((bridge) => bridge.bridgeId === 'BONDTEST1')
 		const result = await bond.getDeviceState('BONDTEST1', 'mockdev1')
+		const after = bond
+			.getStatus()
+			.bridges.find((bridge) => bridge.bridgeId === 'BONDTEST1')
 
 		expect(result).toMatchObject({
 			position: 55,
 		})
+		expect(before?.lastSeenAt).toBe('2026-04-27T21:00:00.000Z')
+		expect(after?.lastSeenAt).not.toBe(before?.lastSeenAt)
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 		expect(fetchMock.mock.calls[0]?.[0]).toBe(
 			'http://zpgi01117.local/v2/devices/mockdev1/state',
@@ -134,14 +150,7 @@ test('bond retries transient TCP resets with exponential backoff when reading de
 		.fn()
 		.mockRejectedValueOnce(createTcpResetFetchError())
 		.mockRejectedValueOnce(createTcpResetFetchError('socket hang up'))
-		.mockResolvedValueOnce(
-			new Response(JSON.stringify({ position: 21, _: 's' }), {
-				status: 200,
-				headers: {
-					'Content-Type': 'application/json',
-				},
-			}),
-		)
+		.mockResolvedValueOnce(mockJsonResponse({ position: 21, _: 's' }))
 	globalThis.fetch = fetchMock as typeof fetch
 
 	try {
@@ -300,6 +309,299 @@ test('bond leaves non-network Bond API errors unwrapped and does not claim fallb
 		expect(fetchMock.mock.calls[0]?.[0]).toBe(
 			'http://zpgi01117.local/v2/devices/mockdev1/state',
 		)
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
+test('bond recovers SetPosition when the action response resets but state reaches the requested position', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	const fetchMock = vi.fn(
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input)
+			if (
+				url === 'http://10.0.0.22/v2/devices/mockdev1' &&
+				init?.method === 'GET'
+			) {
+				return mockJsonResponse({ actions: ['Open', 'SetPosition'] })
+			}
+			if (
+				url === 'http://10.0.0.22/v2/devices/mockdev1/actions/SetPosition' &&
+				init?.method === 'PUT'
+			) {
+				throw createTcpResetFetchError()
+			}
+			if (url === 'http://10.0.0.22/v2/devices/mockdev1/state') {
+				return mockJsonResponse({ position: 40, _: 's' })
+			}
+			throw new Error(`Unexpected fetch URL: ${url}`)
+		},
+	)
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST5',
+				bondid: 'BONDTEST5',
+				instanceName: 'Recoverable Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T21:20:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST5')
+		bond.setToken('BONDTEST5', 'bond-token')
+
+		const result = await bond.shadeSetPosition({
+			bridgeId: 'BONDTEST5',
+			deviceId: 'mockdev1',
+			position: 40,
+		})
+
+		expect(result).toMatchObject({
+			confirmed: true,
+			recoveredFrom: 'transient_action_network_failure',
+			state: { position: 40 },
+		})
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+		expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+			'http://10.0.0.22/v2/devices/mockdev1',
+			'http://10.0.0.22/v2/devices/mockdev1/actions/SetPosition',
+			'http://10.0.0.22/v2/devices/mockdev1/state',
+		])
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
+test('bond still reports SetPosition reset when follow-up state does not match', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	const fetchMock = vi.fn(
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input)
+			if (
+				url === 'http://10.0.0.22/v2/devices/mockdev1' &&
+				init?.method === 'GET'
+			) {
+				return mockJsonResponse({ actions: ['Open', 'SetPosition'] })
+			}
+			if (
+				url === 'http://10.0.0.22/v2/devices/mockdev1/actions/SetPosition' &&
+				init?.method === 'PUT'
+			) {
+				throw createTcpResetFetchError()
+			}
+			if (url === 'http://10.0.0.22/v2/devices/mockdev1/state') {
+				return mockJsonResponse({ position: 20, _: 's' })
+			}
+			throw new Error(`Unexpected fetch URL: ${url}`)
+		},
+	)
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST6',
+				bondid: 'BONDTEST6',
+				instanceName: 'Unrecovered Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T21:25:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST6')
+		bond.setToken('BONDTEST6', 'bond-token')
+
+		await expect(
+			bond.shadeSetPosition({
+				bridgeId: 'BONDTEST6',
+				deviceId: 'mockdev1',
+				position: 40,
+			}),
+		).rejects.toThrow(
+			'Bond bridge "BONDTEST6" could not be reached while trying to invoke device mockdev1 action SetPosition',
+		)
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
+test('bond preserves SetPosition reset when follow-up state read fails', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	const fetchMock = vi.fn(
+		async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input)
+			if (
+				url === 'http://10.0.0.22/v2/devices/mockdev1' &&
+				init?.method === 'GET'
+			) {
+				return mockJsonResponse({ actions: ['Open', 'SetPosition'] })
+			}
+			if (
+				url === 'http://10.0.0.22/v2/devices/mockdev1/actions/SetPosition' &&
+				init?.method === 'PUT'
+			) {
+				throw createTcpResetFetchError()
+			}
+			if (url === 'http://10.0.0.22/v2/devices/mockdev1/state') {
+				throw createDnsFetchError('getaddrinfo ENOTFOUND 10.0.0.22')
+			}
+			throw new Error(`Unexpected fetch URL: ${url}`)
+		},
+	)
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST8',
+				bondid: 'BONDTEST8',
+				instanceName: 'State-Read-Failure Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T21:35:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST8')
+		bond.setToken('BONDTEST8', 'bond-token')
+
+		await expect(
+			bond.shadeSetPosition({
+				bridgeId: 'BONDTEST8',
+				deviceId: 'mockdev1',
+				position: 40,
+			}),
+		).rejects.toThrow(
+			'Bond bridge "BONDTEST8" could not be reached while trying to invoke device mockdev1 action SetPosition',
+		)
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
+test('bond wraps request timeouts as actionable network failures', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	globalThis.fetch = vi.fn(async () => {
+		throw new DOMException('The operation timed out.', 'TimeoutError')
+	}) as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST7',
+				bondid: 'BONDTEST7',
+				instanceName: 'Timeout Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T21:30:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST7')
+		bond.setToken('BONDTEST7', 'bond-token')
+
+		await expect(bond.getDeviceState('BONDTEST7', 'mockdev1')).rejects.toThrow(
+			'Bond bridge "BONDTEST7" could not be reached while trying to fetch device mockdev1 state at http://10.0.0.22. Bond request timed out after 5000ms for /v2/devices/mockdev1/state',
+		)
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
+test('bond does not refresh bridge lastSeenAt after failed requests', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	globalThis.fetch = vi.fn(async () => {
+		throw createDnsFetchError()
+	}) as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST8',
+				bondid: 'BONDTEST8',
+				instanceName: 'Failed Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T21:35:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST8')
+		bond.setToken('BONDTEST8', 'bond-token')
+
+		await bond.getDeviceState('BONDTEST8', 'mockdev1').catch(() => null)
+
+		expect(
+			requireBondBridge(storage, config.homeConnectorId, 'BONDTEST8')
+				.lastSeenAt,
+		).toBe('2026-04-27T21:35:00.000Z')
 	} finally {
 		globalThis.fetch = previousFetch
 		storage.close()
