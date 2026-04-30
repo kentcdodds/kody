@@ -573,6 +573,83 @@ jobs:
           set -euo pipefail
           node tools/ci/preview-resources.ts cleanup --worker-name "$APP_WORKER_NAME"
 
+      - name: 🗑️ Delete GitHub preview deployments
+        if: always()
+        uses: actions/github-script@v8.0.0
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+        with:
+          script: |
+            const eventName = process.env.EVENT_NAME;
+            let envName;
+            if (eventName === "pull_request") {
+              const n = process.env.PR_NUMBER;
+              if (!n) {
+                core.info("No PR number on event; skipping GitHub deployment delete.");
+                return;
+              }
+              envName = `preview-${n}`;
+            } else if (
+              eventName === "workflow_dispatch" &&
+              process.env.INPUT_TARGET === "pr"
+            ) {
+              const n = process.env.INPUT_PR_NUMBER;
+              if (!n) {
+                core.info(
+                  "Manual cleanup without pr_number; skipping GitHub deployment delete.",
+                );
+                return;
+              }
+              envName = `preview-${n}`;
+            } else {
+              core.info(
+                "Skipping GitHub deployment delete (branch-targeted cleanups use a different naming scheme).",
+              );
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const deployments = await github.paginate(
+              github.rest.repos.listDeployments,
+              {
+                owner,
+                repo,
+                environment: envName,
+                per_page: 100,
+              },
+            );
+
+            for (const deployment of deployments) {
+              try {
+                await github.rest.repos.deleteDeployment({
+                  owner,
+                  repo,
+                  deployment_id: deployment.id,
+                });
+              } catch (error) {
+                if (error.status !== 422) throw error;
+                await github.rest.repos.createDeploymentStatus({
+                  owner,
+                  repo,
+                  deployment_id: deployment.id,
+                  state: "inactive",
+                  description: "Cleaning up closed PR preview deployment.",
+                });
+                await github.rest.repos.deleteDeployment({
+                  owner,
+                  repo,
+                  deployment_id: deployment.id,
+                });
+              }
+            }
+
+            core.notice(
+              `Deleted ${deployments.length} GitHub preview deployment(s) for ${envName}.`,
+            );
+
       - name: 🏷️ Delete GitHub preview environment
         if: always()
         uses: actions/github-script@v8.0.0
