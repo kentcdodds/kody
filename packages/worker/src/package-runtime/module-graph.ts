@@ -105,6 +105,7 @@ export const packageContext = runtime.packageContext ?? null;
 export const serviceContext = runtime.serviceContext ?? null;
 export const service = runtime.service ?? null;
 export const packageSecrets = runtime.packageSecrets ?? null;
+export const email = runtime.email ?? null;
 
 export default runtime;
 `.trim()
