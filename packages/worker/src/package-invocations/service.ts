@@ -464,9 +464,7 @@ function resolveExistingInvocation(input: {
 }
 
 function resolvePackageModuleResolution(input: {
-	manifest: Awaited<
-		ReturnType<typeof loadPackageSourceBySourceId>
-	>['manifest']
+	manifest: Awaited<ReturnType<typeof loadPackageSourceBySourceId>>['manifest']
 	selector: PackageModuleSelector
 }): PackageModuleResolution {
 	switch (input.selector.kind) {
@@ -662,7 +660,6 @@ async function invokeSavedPackageModule(input: {
 			},
 			input.params,
 			{
-				skipCapabilityRegistry: true,
 				storageTools: {
 					userId: input.actor.userId,
 					storageId: buildPackageInvocationStorageId(input.savedPackage.id),
@@ -930,7 +927,8 @@ export async function invokePackageSubscription(input: {
 		return buildJsonErrorResponse({
 			status: 400,
 			code: 'missing_idempotency_key',
-			message: 'Package subscription invocations require a non-empty idempotencyKey.',
+			message:
+				'Package subscription invocations require a non-empty idempotencyKey.',
 		})
 	}
 	return await invokeSavedPackageModule({

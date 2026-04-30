@@ -33,6 +33,13 @@ Use the MCP `email` domain:
   stored message id and receipt metadata, then use `email_message_get` or
   `email_attachment_get` (or `import { email } from 'kody:runtime'`) when they
   need bodies or attachment bytes.
+- Subscription handlers run with the normal package runtime context: signed-in
+  package user, package-owned storage `package:<packageId>`, package/repo
+  context, and the standard capability registry subject to the usual secret and
+  capability approval rules. For `email.message.received`, this means handlers
+  can call capabilities such as `agent_chat_turn` and `email_reply` directly,
+  while `import { email } from 'kody:runtime'` remains available as a
+  convenience helper for message lookup, attachment lookup, and replies.
 - Attachments remain metadata-first by default; raw MIME for small messages is
   stored so on-demand attachment lookup can reconstruct bytes locally.
 

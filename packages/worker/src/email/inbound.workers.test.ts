@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	getEmailDomain,
 	getEmailLocalPart,
@@ -14,11 +14,11 @@ import {
 	getEmailAttachmentById,
 	listEmailMessages,
 	listEmailAttachmentsForMessage,
+	upsertEmailSenderIdentity,
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import {
-	buildPublishedSourceManifestSnapshotKvKey,
-} from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import * as agentTurnApi from '#worker/agent-turn/api.ts'
 
 function createForwardableEmailMessage(input: {
 	from: string
@@ -271,7 +271,8 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 				contentType: 'text/plain',
 				contentId: null,
 				disposition: 'attachment',
-				size: new TextEncoder().encode('Attachment without filename\n').byteLength,
+				size: new TextEncoder().encode('Attachment without filename\n')
+					.byteLength,
 				storageKind: 'raw-mime',
 				storageKey: null,
 			},
@@ -300,9 +301,9 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 		disposition: 'attachment',
 	})
 	expect(loaded?.contentBase64).toBeTruthy()
-	expect(
-		loaded?.contentBase64 ? atob(loaded.contentBase64) : null,
-	).toBe('Attachment without filename\n')
+	expect(loaded?.contentBase64 ? atob(loaded.contentBase64) : null).toBe(
+		'Attachment without filename\n',
+	)
 })
 
 test('inbound email handler dispatches package subscriptions for stored inbound email', async () => {
@@ -315,6 +316,32 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 	const packageId = `package-${crypto.randomUUID()}`
 	const bundleKv = new Map<string, string>()
 	const subscriptionCalls: Array<Record<string, unknown>> = []
+	const replyFrom = `package-reply-${crypto.randomUUID()}@example.com`
+	const beginAgentTurnSpy = vi
+		.spyOn(agentTurnApi, 'beginAgentTurn')
+		.mockResolvedValue({
+			ok: true,
+			runId: 'run-subscription-1',
+			conversationId: 'conversation-subscription-1',
+		})
+	const collectAgentTurnEventsSpy = vi
+		.spyOn(agentTurnApi, 'collectAgentTurnEvents')
+		.mockResolvedValue([
+			{
+				type: 'turn_complete',
+				assistantText: 'Thanks for the email.',
+				reasoningText: '',
+				summary: 'Drafted an acknowledgement',
+				continueRecommended: false,
+				needsUserInput: false,
+				stepsUsed: 1,
+				newInformation: true,
+				stopReason: 'completed',
+				finishReason: 'completed',
+				toolCalls: [],
+				conversationId: 'conversation-subscription-1',
+			},
+		])
 
 	const db = env.APP_DB
 	await db
@@ -400,6 +427,14 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 			ON package_invocations(user_id, token_id, package_id, export_name, idempotency_key)`,
 		)
 		.run()
+	await upsertEmailSenderIdentity({
+		db,
+		userId,
+		email: replyFrom,
+		domain: getEmailDomain(replyFrom),
+		status: 'verified',
+		packageId,
+	})
 
 	const now = new Date().toISOString()
 	await db
@@ -484,13 +519,24 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 		modules: {
 			'.__kody_virtual__/runtime.js': `
 const runtime = globalThis.__kodyRuntime ?? {};
+export const codemode = runtime.codemode;
 export const email = runtime.email ?? null;
 export const params = runtime.params ?? null;
 `.trim(),
 			'dist/subscription.js': `
-import { email, params } from '../.__kody_virtual__/runtime.js'
+import { codemode, email, params } from '../.__kody_virtual__/runtime.js'
 
 export default async function run() {
+  const agentResult = await codemode.agent_chat_turn({
+    sessionId: 'email-subscription-session',
+    system: 'Write a short acknowledgement for this inbound email.',
+    messages: [
+      {
+        role: 'user',
+        content: 'Reply with a brief acknowledgement.',
+      },
+    ],
+  })
   const result = await email.getMessage(params.message.id)
   const firstAttachment = Array.isArray(params.attachments) ? params.attachments[0] : null
   const attachment = firstAttachment?.id
@@ -499,11 +545,19 @@ export default async function run() {
   const attachmentText = attachment?.content_base64
     ? atob(attachment.content_base64)
     : null
+  const reply = await email.reply({
+    message_id: params.message.id,
+    from: ${JSON.stringify(replyFrom)},
+    text: agentResult?.result?.assistantText ?? 'Fallback reply',
+  })
   return {
     eventType: 'received',
     messageId: result.id,
     textBody: result.text_body,
     attachmentText,
+    agentReplyText: agentResult?.result?.assistantText ?? null,
+    replyMessageId: reply.id,
+    replyDirection: reply.direction,
   }
 }
 `,
@@ -564,6 +618,7 @@ export default async function run() {
 	} as ExecutionContext
 
 	const originalKv = env.BUNDLE_ARTIFACTS_KV
+	const originalEmailBinding = env.EMAIL
 	Object.assign(env, {
 		BUNDLE_ARTIFACTS_KV: {
 			async get(key: string, type?: string) {
@@ -579,6 +634,11 @@ export default async function run() {
 			},
 			async delete() {
 				return undefined
+			},
+		},
+		EMAIL: {
+			async send() {
+				return { messageId: `provider-${crypto.randomUUID()}` }
 			},
 		},
 	})
@@ -643,6 +703,12 @@ export default async function run() {
 		const responses = (invocations.results ?? []).map((row) =>
 			JSON.parse(String(row['response_json'])),
 		) as Array<{ status: number; body: Record<string, unknown> }>
+		const outboundMessages = await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			direction: 'outbound',
+			limit: 10,
+		})
 		expect(invocations.results?.map((row) => row['export_name'])).toEqual([
 			'subscription:email.message.received',
 			'subscription:email.message.received',
@@ -661,6 +727,8 @@ export default async function run() {
 				eventType: 'received',
 				textBody: 'Stored body.\n',
 				attachmentText: 'Attachment text\n',
+				agentReplyText: 'Thanks for the email.',
+				replyDirection: 'outbound',
 			},
 		})
 		expect(responses[1]?.body).toMatchObject({
@@ -669,11 +737,34 @@ export default async function run() {
 				eventType: 'received',
 				textBody: 'Approved body.\n',
 				attachmentText: null,
+				agentReplyText: 'Thanks for the email.',
+				replyDirection: 'outbound',
 			},
 		})
+		expect(beginAgentTurnSpy).toHaveBeenCalledTimes(2)
+		expect(collectAgentTurnEventsSpy).toHaveBeenCalledTimes(2)
+		expect(outboundMessages).toHaveLength(2)
+		expect(outboundMessages.map((message) => message.fromAddress)).toEqual([
+			replyFrom,
+			replyFrom,
+		])
+		expect(outboundMessages.map((message) => message.processingStatus)).toEqual(
+			['sent', 'sent'],
+		)
+		expect(outboundMessages.map((message) => message.subject).sort()).toEqual([
+			'Re: Approved sender',
+			'Re: Stored mail',
+		])
+		expect(outboundMessages.map((message) => message.textBody).sort()).toEqual([
+			'Thanks for the email.',
+			'Thanks for the email.',
+		])
 	} finally {
+		beginAgentTurnSpy.mockRestore()
+		collectAgentTurnEventsSpy.mockRestore()
 		Object.assign(env, {
 			BUNDLE_ARTIFACTS_KV: originalKv,
+			EMAIL: originalEmailBinding,
 		})
 	}
 })
