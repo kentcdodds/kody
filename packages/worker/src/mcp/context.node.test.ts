@@ -8,6 +8,7 @@ test('createMcpCallerContext normalizes missing user to null', () => {
 		}),
 	).toEqual({
 		baseUrl: 'https://example.com',
+		capabilityRestrictions: null,
 		homeConnectorId: null,
 		remoteConnectors: null,
 		repoContext: null,
