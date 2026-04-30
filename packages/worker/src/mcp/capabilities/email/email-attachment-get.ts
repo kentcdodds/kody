@@ -39,7 +39,7 @@ export const emailAttachmentGetCapability = defineDomainCapability(
 			if (!attachment) {
 				throw new Error(`Email attachment not found: ${args.attachment_id}`)
 			}
-			if (!attachment.contentBase64) {
+			if (attachment.contentBase64 == null) {
 				throw new Error(
 					`Email attachment "${args.attachment_id}" is unavailable because the stored message has no raw MIME payload.`,
 				)

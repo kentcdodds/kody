@@ -13,6 +13,7 @@ Use the MCP `email` domain:
 - `email_sender_identity_verify` verifies an outbound sender identity.
 - `email_send` sends outbound mail from a verified sender identity.
 - `email_reply` replies to a stored inbound message.
+- `email_attachment_get` returns stored attachment bytes by attachment id.
 - `email_message_list` lists stored inbound and outbound messages.
 - `email_message_get` returns parsed bodies, headers, thread metadata, and
   attachment metadata.

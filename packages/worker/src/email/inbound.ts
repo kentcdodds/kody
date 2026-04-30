@@ -169,6 +169,8 @@ export async function handleInboundEmail(
 	if (_ctx) {
 		_ctx.waitUntil(dispatchPromise)
 	} else {
-		await dispatchPromise
+		void dispatchPromise.catch((error) => {
+			console.error('Inbound email package subscription dispatch failed', error)
+		})
 	}
 }
