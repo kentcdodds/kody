@@ -34,7 +34,10 @@ export type CacheAwareModelMessage = ModelMessage & {
 	cache?: PromptCacheHint
 }
 
-type ModelMessageProviderOptions = Exclude<ModelMessage['providerOptions'], undefined>
+type ModelMessageProviderOptions = Exclude<
+	ModelMessage['providerOptions'],
+	undefined
+>
 type PromptCachingProvider = 'anthropic'
 
 export type StreamChatReplyInput = {
@@ -122,7 +125,9 @@ async function toModelMessages(
 	messages: Array<UIMessage> | Array<CacheAwareModelMessage>,
 ): Promise<Array<CacheAwareModelMessage>> {
 	if (isUiMessageArray(messages)) {
-		return (await convertToModelMessages(messages)) as Array<CacheAwareModelMessage>
+		return (await convertToModelMessages(
+			messages,
+		)) as Array<CacheAwareModelMessage>
 	}
 	return messages as Array<CacheAwareModelMessage>
 }
@@ -166,13 +171,16 @@ function mergeProviderOptions(
 	if (!currentOptions) return nextOptions
 	if (!nextOptions) return currentOptions
 
-	const mergedEntries = Object.entries(nextOptions).map(([provider, options]) => [
-		provider,
-		{
-			...((currentOptions[provider] as Record<string, unknown> | undefined) ?? {}),
-			...(options as Record<string, unknown>),
-		},
-	])
+	const mergedEntries = Object.entries(nextOptions).map(
+		([provider, options]) => [
+			provider,
+			{
+				...((currentOptions[provider] as Record<string, unknown> | undefined) ??
+					{}),
+				...(options as Record<string, unknown>),
+			},
+		],
+	)
 
 	return {
 		...currentOptions,
@@ -198,11 +206,14 @@ function normalizeModelMessage(
 	}
 }
 
-async function normalizePromptInput(input: StreamToolLoopInput, modelId: string) {
+async function normalizePromptInput(
+	input: StreamToolLoopInput,
+	modelId: string,
+) {
 	const provider = resolvePromptCachingProvider(modelId)
-	const messages = (await toModelMessages(input.messages)).map((message) =>
-		normalizeModelMessage(message, provider),
-	)
+	const messages: Array<ModelMessage> = (
+		await toModelMessages(input.messages)
+	).map((message) => normalizeModelMessage(message, provider))
 
 	if (typeof input.system === 'string') {
 		return {
@@ -218,15 +229,14 @@ async function normalizePromptInput(input: StreamToolLoopInput, modelId: string)
 		}
 	}
 
+	const systemMessage: ModelMessage = {
+		role: 'system',
+		content: input.system.content,
+		providerOptions: getPromptCacheProviderOptions(provider),
+	}
+
 	return {
-		messages: [
-			{
-				role: 'system',
-				content: input.system.content,
-				providerOptions: getPromptCacheProviderOptions(provider),
-			},
-			...messages,
-		],
+		messages: [systemMessage, ...messages],
 	}
 }
 
