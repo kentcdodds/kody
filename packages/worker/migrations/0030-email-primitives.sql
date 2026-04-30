@@ -163,6 +163,15 @@ ON email_sender_policies(inbox_id, kind, value);
 CREATE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value
 ON email_sender_policies(user_id, kind, value);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_unique
+ON email_sender_policies(
+	user_id,
+	kind,
+	value,
+	COALESCE(inbox_id, ''),
+	COALESCE(package_id, '')
+);
+
 CREATE TABLE IF NOT EXISTS email_delivery_events (
 	id TEXT PRIMARY KEY,
 	message_id TEXT,
