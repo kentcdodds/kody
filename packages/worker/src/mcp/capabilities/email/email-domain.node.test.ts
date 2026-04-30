@@ -19,7 +19,7 @@ function createContext() {
 test('email domain exposes inbox, message, and send capabilities', () => {
 	expect(emailDomain.name).toBe('email')
 	expect(emailDomain.capabilities.map((capability) => capability.name)).toEqual(
-		expect.arrayContaining([
+		[
 			'email_inbox_create',
 			'email_inbox_list',
 			'email_message_list',
@@ -27,7 +27,7 @@ test('email domain exposes inbox, message, and send capabilities', () => {
 			'email_send',
 			'email_reply',
 			'email_sender_identity_verify',
-		]),
+		],
 	)
 })
 

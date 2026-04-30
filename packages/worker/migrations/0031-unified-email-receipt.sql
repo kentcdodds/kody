@@ -102,7 +102,7 @@ CREATE TABLE email_messages_next (
 	sent_at TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL,
-	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE SET NULL,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes_next(id) ON DELETE SET NULL,
 	FOREIGN KEY (thread_id) REFERENCES email_threads(id) ON DELETE SET NULL,
 	FOREIGN KEY (sender_identity_id) REFERENCES email_sender_identities(id) ON DELETE SET NULL
 );
@@ -222,8 +222,8 @@ CREATE TABLE email_delivery_events_next (
 	provider_message_id TEXT,
 	detail_json TEXT NOT NULL DEFAULT '{}',
 	created_at TEXT NOT NULL,
-	FOREIGN KEY (message_id) REFERENCES email_messages(id) ON DELETE SET NULL,
-	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE SET NULL
+	FOREIGN KEY (message_id) REFERENCES email_messages_next(id) ON DELETE SET NULL,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes_next(id) ON DELETE SET NULL
 );
 
 INSERT INTO email_delivery_events_next (

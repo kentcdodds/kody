@@ -1,5 +1,13 @@
 export async function ensureEmailTestSchema(db: D1Database) {
 	const statements = [
+		`DROP TABLE IF EXISTS email_sender_policies;`,
+		`DROP TABLE IF EXISTS email_delivery_events;`,
+		`DROP TABLE IF EXISTS email_attachments;`,
+		`DROP TABLE IF EXISTS email_messages;`,
+		`DROP TABLE IF EXISTS email_threads;`,
+		`DROP TABLE IF EXISTS email_inbox_addresses;`,
+		`DROP TABLE IF EXISTS email_inboxes;`,
+		`DROP TABLE IF EXISTS email_sender_identities;`,
 		`CREATE TABLE IF NOT EXISTS email_sender_identities (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL,
