@@ -1,7 +1,10 @@
 export class LutronProcessorNotFoundError extends Error {
-	constructor(readonly processorId: string) {
+	readonly processorId: string
+
+	constructor(processorId: string) {
 		super(`Lutron processor "${processorId}" was not found.`)
 		this.name = 'LutronProcessorNotFoundError'
+		this.processorId = processorId
 	}
 }
 
