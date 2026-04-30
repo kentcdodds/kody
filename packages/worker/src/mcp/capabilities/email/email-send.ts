@@ -5,6 +5,20 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { sendOutboundEmail } from '#worker/email/outbound.ts'
 import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 
+const emailSendInputSchema = z
+	.object({
+		from: z.string().min(1),
+		to: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+		subject: z.string().min(1),
+		text: z.string().min(1).optional(),
+		html: z.string().min(1).optional(),
+		reply_to: z.string().min(1).optional(),
+	})
+	.refine((value) => value.text || value.html, {
+		message: 'Email text or HTML body is required.',
+		path: ['text'],
+	})
+
 export const emailSendCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
@@ -15,14 +29,7 @@ export const emailSendCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: z.object({
-			from: z.string().min(1),
-			to: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
-			subject: z.string().min(1),
-			text: z.string().min(1).optional(),
-			html: z.string().min(1).optional(),
-			reply_to: z.string().min(1).optional(),
-		}),
+		inputSchema: emailSendInputSchema,
 		outputSchema: z.object({
 			message: emailMessageSummarySchema,
 			provider_message_id: z.string().nullable(),

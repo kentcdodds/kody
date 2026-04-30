@@ -134,7 +134,7 @@ WHERE inbox_id IS NOT NULL AND package_id IS NOT NULL;`,
 	created_at TEXT NOT NULL
 );`,
 	]
-	for (const statement of statements.with(0, statements[0]!)) {
+	for (const statement of statements) {
 		await db.prepare(statement).run()
 	}
 }

@@ -180,3 +180,45 @@ test('inbound email handler rejects unknown aliases without persisting them', as
 	})
 	expect(messages).toEqual([])
 })
+
+test('inbound email handler rejects malformed messages without persisting them', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `email-parse-user-${crypto.randomUUID()}`
+	const address = requireNormalizedEmailAddress(
+		`parse-${crypto.randomUUID()}@example.com`,
+	)
+	const inbox = await createEmailInbox({
+		db: env.APP_DB,
+		userId,
+		name: 'Parse failures',
+		description: 'Parse failure inbox',
+		mode: 'quarantine',
+	})
+	await createEmailInboxAddress({
+		db: env.APP_DB,
+		inboxId: inbox.id,
+		userId,
+		address,
+		localPart: getEmailLocalPart(address),
+		domain: getEmailDomain(address),
+	})
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: 'Subject: Too large\r\n\r\nBody',
+	})
+	Object.defineProperty(message, 'rawSize', {
+		value: 600 * 1024,
+	})
+
+	await handleInboundEmail(message, env)
+
+	expect(message.rejectedReason).toMatch(/too large/)
+	const messages = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		inboxId: inbox.id,
+		limit: 10,
+	})
+	expect(messages).toEqual([])
+})

@@ -64,7 +64,27 @@ export async function handleInboundEmail(
 	}
 
 	const userId = inboxAddress.userId
-	const parsed = await parseForwardableEmailMessage(message)
+	let parsed: Awaited<ReturnType<typeof parseForwardableEmailMessage>>
+	try {
+		parsed = await parseForwardableEmailMessage(message)
+	} catch (error) {
+		const reason =
+			error instanceof Error ? error.message : 'Failed to parse inbound email.'
+		message.setReject(reason)
+		await insertEmailDeliveryEvent({
+			db: env.APP_DB,
+			userId,
+			inboxId: inbox.id,
+			eventType: 'rejected',
+			provider: 'cloudflare-email-routing',
+			detail: {
+				recipient,
+				reason,
+				phase: 'parse',
+			},
+		}).catch(() => undefined)
+		return
+	}
 	const policies = await listEmailSenderPolicies({
 		db: env.APP_DB,
 		userId,

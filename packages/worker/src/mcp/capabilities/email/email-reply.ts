@@ -16,12 +16,17 @@ export const emailReplyCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: z.object({
-			message_id: z.string().min(1),
-			from: z.string().email(),
-			text: z.string().min(1).optional(),
-			html: z.string().min(1).optional(),
-		}),
+		inputSchema: z
+			.object({
+				message_id: z.string().min(1),
+				from: z.string().email(),
+				text: z.string().min(1).optional(),
+				html: z.string().min(1).optional(),
+			})
+			.refine((value) => value.text !== undefined || value.html !== undefined, {
+				message: 'Email text or HTML body is required.',
+				path: ['text'],
+			}),
 		outputSchema: emailMessageSummarySchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
