@@ -33,6 +33,9 @@ import {
 } from './types.ts'
 import { type HomeConnectorErrorCaptureContext } from '../../sentry.ts'
 
+const defaultBondTransientAttemptsPerBaseUrl = 4
+const defaultBondTransientRetryBaseDelayMs = 100
+
 function normalizeQuery(value: string) {
 	return value.trim().toLowerCase()
 }
@@ -216,6 +219,14 @@ function isBondTransientNetworkFailure(error: unknown) {
 	)
 }
 
+function getBondTransientRetryDelayMs(attempt: number) {
+	return defaultBondTransientRetryBaseDelayMs * 2 ** Math.max(0, attempt - 1)
+}
+
+async function wait(ms: number) {
+	await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function formatBondFailureReason(error: unknown) {
 	if (error instanceof Error) {
 		const causeMessage = getErrorCauseMessage(error)
@@ -303,6 +314,7 @@ async function withBondBridgeRequest<T>(input: {
 					attempt < maxTransientAttemptsPerBaseUrl &&
 					isBondTransientNetworkFailure(error)
 				) {
+					await wait(getBondTransientRetryDelayMs(attempt))
 					continue
 				}
 				break
@@ -566,7 +578,7 @@ export function createBondAdapter(input: {
 			return await withBondBridgeRequest({
 				bridge,
 				operation: `fetch device ${deviceId} state`,
-				maxTransientAttemptsPerBaseUrl: 2,
+				maxTransientAttemptsPerBaseUrl: defaultBondTransientAttemptsPerBaseUrl,
 				request: async (baseUrl) =>
 					await bondGetDeviceState({
 						baseUrl,
