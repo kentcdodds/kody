@@ -4,6 +4,11 @@ import {
 	loadHomeConnectorConfig,
 } from './config.ts'
 
+const requiredConfigEnv = {
+	HOME_CONNECTOR_ID: 'default',
+	WORKER_BASE_URL: 'http://localhost:3742',
+}
+
 function createTemporaryEnv(values: Record<string, string | undefined>) {
 	const previousValues = Object.fromEntries(
 		Object.keys(values).map((key) => [key, process.env[key]]),
@@ -30,101 +35,63 @@ function createTemporaryEnv(values: Record<string, string | undefined>) {
 	}
 }
 
-test('live connector defaults Roku discovery to SSDP', () => {
+test('live connector applies discovery defaults when env overrides are absent', () => {
 	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
 		MOCKS: 'false',
 		ROKU_DISCOVERY_URL: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
+		SONOS_DISCOVERY_URL: undefined,
+		SAMSUNG_TV_DISCOVERY_URL: undefined,
+		BOND_DISCOVERY_URL: undefined,
+		LUTRON_DISCOVERY_URL: undefined,
+		JELLYFISH_DISCOVERY_URL: undefined,
 	})
 
 	const config = loadHomeConnectorConfig()
-	expect(config.rokuDiscoveryUrl).toBe('ssdp://239.255.255.250:1900')
+	expect(config).toMatchObject({
+		mocksEnabled: false,
+		rokuDiscoveryUrl: 'ssdp://239.255.255.250:1900',
+		sonosDiscoveryUrl:
+			'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
+		samsungTvDiscoveryUrl: 'mdns://_samsungmsf._tcp.local',
+		bondDiscoveryUrl: 'mdns://_bond._tcp.local',
+		lutronDiscoveryUrl: 'mdns://_lutron._tcp.local',
+		jellyfishDiscoveryUrl: null,
+	})
 })
 
 test('explicit discovery URLs override defaults in mock mode', () => {
 	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
 		MOCKS: 'true',
 		ROKU_DISCOVERY_URL: 'http://roku.mock.local/discovery',
 		SONOS_DISCOVERY_URL: 'http://sonos.mock.local/discovery',
 		SAMSUNG_TV_DISCOVERY_URL: 'http://samsung-tv.mock.local/discovery',
 		LUTRON_DISCOVERY_URL: 'http://lutron.mock.local/discovery',
 		JELLYFISH_DISCOVERY_URL: 'http://jellyfish.mock.local/discovery',
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
 	})
 
 	const config = loadHomeConnectorConfig()
-	expect(config.rokuDiscoveryUrl).toBe('http://roku.mock.local/discovery')
-	expect(config.sonosDiscoveryUrl).toBe('http://sonos.mock.local/discovery')
-	expect(config.samsungTvDiscoveryUrl).toBe(
-		'http://samsung-tv.mock.local/discovery',
-	)
-	expect(config.lutronDiscoveryUrl).toBe('http://lutron.mock.local/discovery')
-	expect(config.jellyfishDiscoveryUrl).toBe(
-		'http://jellyfish.mock.local/discovery',
-	)
-})
-
-test('live connector defaults Sonos discovery to SSDP', () => {
-	using _env = createTemporaryEnv({
-		MOCKS: 'false',
-		SONOS_DISCOVERY_URL: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
+	expect(config).toMatchObject({
+		mocksEnabled: true,
+		rokuDiscoveryUrl: 'http://roku.mock.local/discovery',
+		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
+		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
+		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
+		jellyfishDiscoveryUrl: 'http://jellyfish.mock.local/discovery',
 	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.sonosDiscoveryUrl).toBe(
-		'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
-	)
 })
 
-test('live connector defaults Samsung TV discovery to mDNS', () => {
+test('scan CIDR env vars override derived autoscan CIDRs', () => {
 	using _env = createTemporaryEnv({
-		MOCKS: 'false',
-		SAMSUNG_TV_DISCOVERY_URL: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.samsungTvDiscoveryUrl).toBe('mdns://_samsungmsf._tcp.local')
-})
-
-test('live connector defaults Bond discovery to mDNS', () => {
-	using _env = createTemporaryEnv({
-		MOCKS: 'false',
-		BOND_DISCOVERY_URL: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.bondDiscoveryUrl).toBe('mdns://_bond._tcp.local')
-})
-
-test('VENSTAR_SCAN_CIDRS overrides derived Venstar scan CIDRs', () => {
-	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
 		MOCKS: 'false',
 		VENSTAR_SCAN_CIDRS: '192.168.1.0/24, 10.0.0.5/32',
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
+		JELLYFISH_SCAN_CIDRS: '192.168.2.0/24, 10.0.0.6/32',
 	})
 
 	const config = loadHomeConnectorConfig()
 	expect(config.venstarScanCidrs).toEqual(['192.168.1.0/24', '10.0.0.5/32'])
-})
-
-test('JELLYFISH_SCAN_CIDRS overrides derived JellyFish scan CIDRs', () => {
-	using _env = createTemporaryEnv({
-		MOCKS: 'false',
-		JELLYFISH_SCAN_CIDRS: '192.168.2.0/24, 10.0.0.6/32',
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
 	expect(config.jellyfishScanCidrs).toEqual(['192.168.2.0/24', '10.0.0.6/32'])
 })
 
@@ -162,24 +129,11 @@ test('derived Venstar autoscan CIDRs collapse narrower private ranges to one /24
 	).toEqual(['192.168.4.0/24'])
 })
 
-test('live connector defaults Lutron discovery to mDNS', () => {
-	using _env = createTemporaryEnv({
-		MOCKS: 'false',
-		LUTRON_DISCOVERY_URL: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
-	})
-
-	const config = loadHomeConnectorConfig()
-	expect(config.lutronDiscoveryUrl).toBe('mdns://_lutron._tcp.local')
-})
-
 test('db path can be derived from HOME_CONNECTOR_DATA_PATH', () => {
 	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
 		HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
 		HOME_CONNECTOR_DB_PATH: undefined,
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
 	})
 
 	const config = loadHomeConnectorConfig()
@@ -189,10 +143,9 @@ test('db path can be derived from HOME_CONNECTOR_DATA_PATH', () => {
 
 test('HOME_CONNECTOR_DB_PATH overrides the default sqlite location', () => {
 	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
 		HOME_CONNECTOR_DATA_PATH: '/tmp/kody-home-connector',
 		HOME_CONNECTOR_DB_PATH: '/tmp/custom-home-connector.sqlite',
-		HOME_CONNECTOR_ID: 'default',
-		WORKER_BASE_URL: 'http://localhost:3742',
 	})
 
 	const config = loadHomeConnectorConfig()
