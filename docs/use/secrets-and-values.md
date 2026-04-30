@@ -30,6 +30,18 @@ Placeholders are **not** general-purpose string interpolation. They only work in
 secret-aware **`fetch`** paths and in capability inputs that explicitly allow
 them.
 
+## Signing JWTs with saved private keys
+
+Use **`codemode.jwt_sign(...)`** when a workflow needs a JWT signed by a private
+key stored in a saved secret. The primitive returns **`{ jwt, algorithm }`**:
+use **`result.jwt`** as the compact JWT and **`result.algorithm`** for the
+signing algorithm. It never returns private key material. The saved secret must
+approve the **`jwt_sign`** capability before it can be used.
+
+The caller supplies the JWT header and claims, then performs any provider-
+specific token exchange with ordinary **`fetch`**. For service-account JSON
+secrets, pass **`privateKeyJsonField: "private_key"`** to sign with that field.
+
 Do **not** place literal placeholder tokens into user-visible or
 third-party-visible content such as issue bodies, comments, prompts, logs, or
 returned strings. If you need to describe a placeholder as text, obfuscate it
