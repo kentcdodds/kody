@@ -153,6 +153,13 @@ test('detailed capability search includes schemas only when requested', async ()
 		AI: {} as Ai,
 	} as Env
 
+	const defaultDetail = await searchCapabilities({
+		env,
+		query: 'guide',
+		limit: 1,
+		detail: true,
+		specs,
+	})
 	const { matches } = await searchCapabilities({
 		env,
 		query: 'guide',
@@ -162,6 +169,10 @@ test('detailed capability search includes schemas only when requested', async ()
 		specs,
 	})
 
+	expect(defaultDetail.matches[0]).not.toHaveProperty('inputSchema')
+	expect(defaultDetail.matches[0]).toMatchObject({
+		inputTypeDefinition: expect.stringContaining('KodyOfficialGuideInput'),
+	})
 	expect(matches[0]).toMatchObject({
 		inputSchema: expect.objectContaining({
 			properties: expect.objectContaining({

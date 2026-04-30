@@ -215,10 +215,22 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 			inputSchema: {
 				type: 'object',
 				properties: {
-					owner: { type: 'string' },
-					repo: { type: 'string' },
-					title: { type: 'string' },
-					body: { type: 'string' },
+					owner: {
+						type: 'string',
+						description: 'Repository owner.',
+					},
+					repo: {
+						type: 'string',
+						description: 'Repository name.',
+					},
+					title: {
+						type: 'string',
+						description: 'Issue title.',
+					},
+					body: {
+						type: 'string',
+						description: 'Optional issue body.',
+					},
 				},
 				required: ['owner', 'repo', 'title'],
 			},
@@ -230,7 +242,7 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 				required: ['issueUrl'],
 			},
 			inputTypeDefinition:
-				'type GithubCreateIssueInput = {\n\towner: string\n\trepo: string\n\ttitle: string\n\tbody?: string\n}',
+				'type GithubCreateIssueInput = {\n\t/** Repository owner. */\n\towner: string\n\t/** Repository name. */\n\trepo: string\n\t/** Issue title. */\n\ttitle: string\n\t/** Optional issue body. */\n\tbody?: string\n}',
 			outputTypeDefinition:
 				'type GithubCreateIssueOutput = {\n\tissueUrl: string\n}',
 		},
@@ -255,10 +267,22 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 				inputSchema: {
 					type: 'object',
 					properties: {
-						owner: { type: 'string' },
-						repo: { type: 'string' },
-						title: { type: 'string' },
-						body: { type: 'string' },
+						owner: {
+							type: 'string',
+							description: 'Repository owner.',
+						},
+						repo: {
+							type: 'string',
+							description: 'Repository name.',
+						},
+						title: {
+							type: 'string',
+							description: 'Issue title.',
+						},
+						body: {
+							type: 'string',
+							description: 'Optional issue body.',
+						},
 					},
 					required: ['owner', 'repo', 'title'],
 				},
@@ -270,7 +294,7 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 					required: ['issueUrl'],
 				},
 				inputTypeDefinition:
-					'type GithubCreateIssueInput = {\n\towner: string\n\trepo: string\n\ttitle: string\n\tbody?: string\n}',
+					'type GithubCreateIssueInput = {\n\t/** Repository owner. */\n\towner: string\n\t/** Repository name. */\n\trepo: string\n\t/** Issue title. */\n\ttitle: string\n\t/** Optional issue body. */\n\tbody?: string\n}',
 				outputTypeDefinition:
 					'type GithubCreateIssueOutput = {\n\tissueUrl: string\n}',
 			},
@@ -280,6 +304,7 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 
 	expect(detail.markdown).not.toContain('## Input schema')
 	expect(detail.markdown).not.toContain('## Output schema')
+	expect(detail.markdown).toContain('/** Repository owner. */\n\towner: string')
 	expect(detail.structured).toMatchObject({
 		type: 'capability',
 		inputTypeDefinition: expect.any(String),
@@ -406,7 +431,9 @@ test('package search formatting keeps runnable package actions in markdown and s
 		],
 	})
 
-	expect(markdown).toContain('open_generated_ui({ kody_id: "spotify-playback" })')
+	expect(markdown).toContain(
+		'open_generated_ui({ kody_id: "spotify-playback" })',
+	)
 	const [packageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
@@ -537,7 +564,8 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 
 	expect(valueMatch).toMatchObject({
 		type: 'value',
-		usage: 'codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })',
+		usage:
+			'codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })',
 	})
 	expect(connectorMatch).toMatchObject({
 		type: 'connector',

@@ -25,3 +25,45 @@ test('parenthesizes union members when composing allOf intersections', () => {
 		'type IntersectedInput = (string | number) & {\n\tid: string\n}',
 	)
 })
+
+test('preserves JSON Schema descriptions as type comments', () => {
+	const typeDefinition = createSchemaTypeDefinition({
+		typeName: 'CreateIssueInput',
+		jsonSchema: {
+			type: 'object',
+			description: 'Input for creating an issue.',
+			properties: {
+				owner: {
+					type: 'string',
+					description: 'Repository owner.',
+				},
+				repo: {
+					type: 'string',
+					description: 'Repository name.\nMay include dashes.',
+				},
+				body: {
+					type: 'string',
+					description: 'Issue body with a closing marker */ inside.',
+				},
+			},
+			required: ['owner', 'repo'],
+		} as CapabilityJsonSchema,
+	})
+
+	expect(typeDefinition).toBe(
+		[
+			'/** Input for creating an issue. */',
+			'type CreateIssueInput = {',
+			'\t/** Repository owner. */',
+			'\towner: string',
+			'\t/**',
+			'\t * Repository name.',
+			'\t * May include dashes.',
+			'\t */',
+			'\trepo: string',
+			'\t/** Issue body with a closing marker * / inside. */',
+			'\tbody?: string',
+			'}',
+		].join('\n'),
+	)
+})
