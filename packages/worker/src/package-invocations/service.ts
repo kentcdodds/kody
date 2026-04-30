@@ -698,7 +698,6 @@ async function invokeSavedPackageModule(input: {
 							text_body: loaded.message.textBody,
 							html_body: loaded.message.htmlBody,
 							raw_size: loaded.message.rawSize,
-							policy_decision: loaded.message.policyDecision,
 							processing_status: loaded.message.processingStatus,
 							provider_message_id: loaded.message.providerMessageId,
 							error: loaded.message.error,

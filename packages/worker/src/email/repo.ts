@@ -22,11 +22,6 @@ function bytesToBase64(bytes: Uint8Array) {
 	}
 	return btoa(binary)
 }
-
-function normalizeRunChanges(result: D1RunResult) {
-	const changes = result.meta['changes']
-	return typeof changes === 'number' ? changes : Number(changes ?? 0)
-}
 function parseJsonArray(value: string | null) {
 	if (!value) return []
 	try {
