@@ -57,6 +57,8 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 
 	private ingressSessionKeys = new WeakMap<WebSocket, string | null>()
 
+	private disconnectedSockets = new WeakSet<WebSocket>()
+
 	private pendingRequests = new Map<string, PendingRpcRequest>()
 
 	constructor(state: DurableObjectState, env: Env) {
@@ -154,6 +156,29 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		reason: string,
 		wasClean: boolean,
 	): Promise<void> {
+		return this.handleDisconnect(ws, { code, reason, wasClean })
+	}
+
+	webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+		return this.handleDisconnect(ws, {
+			code: 1011,
+			reason: error instanceof Error ? error.message : String(error ?? 'error'),
+			wasClean: false,
+		})
+	}
+
+	private async handleDisconnect(
+		ws: WebSocket,
+		close: {
+			code: number
+			reason: string
+			wasClean: boolean
+		},
+	) {
+		if (this.disconnectedSockets.has(ws)) return
+		this.disconnectedSockets.add(ws)
+
+		const { code, reason, wasClean } = close
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
 		const activeSockets = this.ctx
 			.getWebSockets(connectorTag)
@@ -176,12 +201,6 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 			},
 		})
 		return this.persistState()
-	}
-
-	webSocketError(ws: WebSocket, error: unknown): Promise<void> {
-		const reason =
-			error instanceof Error ? error.message : String(error ?? 'error')
-		return this.webSocketClose(ws, 1011, reason, false)
 	}
 
 	async getConnectorId() {
