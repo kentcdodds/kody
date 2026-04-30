@@ -10,7 +10,10 @@ import { createEmailInboxWithAddress } from '#worker/email/repo.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { emailInboxModeSchema, emailInboxSchema } from './shared.ts'
+import {
+	emailInboxCreateOutputSchema,
+	emailInboxModeSchema,
+} from './shared.ts'
 
 export const emailInboxCreateCapability = defineDomainCapability(
 	capabilityDomainNames.email,
@@ -28,7 +31,7 @@ export const emailInboxCreateCapability = defineDomainCapability(
 			description: z.string().optional(),
 			mode: emailInboxModeSchema.default('quarantine'),
 		}),
-		outputSchema: emailInboxSchema,
+		outputSchema: emailInboxCreateOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			const address = requireNormalizedEmailAddress(args.address, 'Inbox address')
@@ -54,6 +57,7 @@ export const emailInboxCreateCapability = defineDomainCapability(
 					id: alias.id,
 					address: alias.address,
 					reply_token_hash: alias.replyTokenHash,
+					reply_token: replyToken,
 					enabled: alias.enabled,
 					created_at: alias.createdAt,
 				}],

@@ -40,8 +40,10 @@ export const emailInboxCreateOutputSchema = emailInboxSchema.extend({
 		z.object({
 			id: z.string(),
 			address: z.string(),
+			reply_token_hash: z.string().nullable(),
 			reply_token: z.string(),
 			enabled: z.boolean(),
+			created_at: z.string(),
 		}),
 	),
 })

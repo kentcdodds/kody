@@ -83,7 +83,7 @@ async function sendViaBinding(input: {
 	headers: Record<string, string>
 }) {
 	const binding = input.env.EMAIL
-	if (!binding) return null
+	if (!binding) return { sent: false, messageId: null }
 	const result = await binding.send({
 		from: input.from,
 		to: input.to,
@@ -93,7 +93,7 @@ async function sendViaBinding(input: {
 		...(input.text ? { text: input.text } : {}),
 		...(input.html ? { html: input.html } : {}),
 	})
-	return result.messageId
+	return { sent: true, messageId: result.messageId ?? null }
 }
 
 async function sendViaRestFallback(input: {
@@ -229,8 +229,21 @@ export async function sendOutboundEmail(
 	})
 
 	try {
-		const providerMessageId =
-			(await sendViaBinding({
+		const bindingResult = await sendViaBinding({
+			env: input.env,
+			from,
+			to,
+			subject,
+			text,
+			html,
+			replyTo: input.replyTo
+				? (normalizeEmailAddress(input.replyTo) ?? undefined)
+				: undefined,
+			headers: sendHeaders,
+		})
+		const providerMessageId = bindingResult.sent
+			? bindingResult.messageId
+			: await sendViaRestFallback({
 				env: input.env,
 				from,
 				to,
@@ -241,19 +254,7 @@ export async function sendOutboundEmail(
 					? (normalizeEmailAddress(input.replyTo) ?? undefined)
 					: undefined,
 				headers: sendHeaders,
-			})) ??
-			(await sendViaRestFallback({
-				env: input.env,
-				from,
-				to,
-				subject,
-				text,
-				html,
-				replyTo: input.replyTo
-					? (normalizeEmailAddress(input.replyTo) ?? undefined)
-					: undefined,
-				headers: sendHeaders,
-			}))
+			})
 		await updateEmailMessageDelivery({
 			db: input.env.APP_DB,
 			messageId: message.id,
