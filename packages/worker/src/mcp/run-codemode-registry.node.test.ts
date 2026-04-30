@@ -1088,3 +1088,86 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 		getRegistrySpy.mockRestore()
 	}
 })
+
+test('runBundledModuleWithRegistry injects email helpers', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null = null
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(_source, providers) {
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js': 'export default async () => "ok"',
+				},
+			},
+			undefined,
+			{
+				emailTools: {
+					getMessage: async (messageId) => ({ id: messageId, subject: 'Hello' }),
+					getAttachment: async (attachmentId) => ({
+						id: attachmentId,
+						text: 'hello',
+					}),
+				},
+			},
+		)
+
+		expect(result.result).toBe('ok')
+		expect(providerFns).not.toBeNull()
+		await expect(
+			providerFns?.email_message_get({
+				message_id: 'message-1',
+			}),
+		).resolves.toEqual({
+			id: 'message-1',
+			subject: 'Hello',
+		})
+		await expect(
+			providerFns?.email_attachment_get({
+				attachment_id: 'attachment-1',
+			}),
+		).resolves.toEqual({
+			id: 'attachment-1',
+			text: 'hello',
+		})
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})

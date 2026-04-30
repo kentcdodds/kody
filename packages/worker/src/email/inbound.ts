@@ -14,10 +14,11 @@ import {
 	insertEmailMessageWithAttachments,
 	touchEmailThread,
 } from './repo.ts'
+import { dispatchInboundEmailSubscriptionEvents } from './package-subscriptions.ts'
 
 export async function handleInboundEmail(
 	message: ForwardableEmailMessage,
-	env: Pick<Env, 'APP_DB'>,
+	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>,
 	_ctx?: ExecutionContext,
 ) {
 	const recipient = normalizeEmailAddress(message.to)
@@ -160,4 +161,14 @@ export async function handleInboundEmail(
 			from_address: parsed.headerFrom,
 		},
 	})
+	const dispatchPromise = dispatchInboundEmailSubscriptionEvents({
+		env,
+		userId,
+		message: stored,
+	})
+	if (_ctx) {
+		_ctx.waitUntil(dispatchPromise)
+	} else {
+		await dispatchPromise
+	}
 }

@@ -61,6 +61,11 @@ type PackageSecretToolOptions = {
 	has: (alias: string) => Promise<boolean>
 }
 
+type EmailToolOptions = {
+	getMessage: (messageId: string) => Promise<unknown>
+	getAttachment: (attachmentId: string) => Promise<unknown>
+}
+
 function isPackageSecretAvailabilityError(error: unknown) {
 	return (
 		error instanceof Error &&
@@ -144,6 +149,31 @@ const packageSecrets = {
 	`.trim()
 }
 
+function createEmailHelperPrelude() {
+	return `
+const email = {
+  getMessage: async (messageId) => {
+    const normalizedMessageId =
+      typeof messageId === 'string' ? messageId.trim() : '';
+    if (!normalizedMessageId) {
+      throw new Error('email.getMessage requires a non-empty message id.')
+    }
+    return await codemode.email_message_get({ message_id: normalizedMessageId });
+  },
+  getAttachment: async (attachmentId) => {
+    const normalizedAttachmentId =
+      typeof attachmentId === 'string' ? attachmentId.trim() : '';
+    if (!normalizedAttachmentId) {
+      throw new Error('email.getAttachment requires a non-empty attachment id.')
+    }
+    return await codemode.email_attachment_get({
+      attachment_id: normalizedAttachmentId,
+    });
+  },
+};
+	`.trim()
+}
+
 export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -157,12 +187,18 @@ export async function buildCodemodeFns(
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		emailTools?: EmailToolOptions
+		skipCapabilityRegistry?: boolean
 	},
 ) {
-	const { capabilityMap } = await getCapabilityRegistryForContext({
-		env,
-		callerContext,
-	})
+	const capabilityMap = options?.skipCapabilityRegistry
+		? {}
+		: (
+				await getCapabilityRegistryForContext({
+					env,
+					callerContext,
+				})
+			).capabilityMap
 	const additionalTools = options?.additionalTools ?? {}
 	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
@@ -258,11 +294,32 @@ export async function buildCodemodeFns(
 			}
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, packageSecretCodemodeTools)
+	const emailTools = options?.emailTools
+	const emailCodemodeTools: AdditionalCodemodeTools = emailTools
+		? {
+				email_message_get: async (args: unknown) => {
+					const messageId =
+						typeof args === 'object' && args !== null && 'message_id' in args
+							? String((args as { message_id: unknown }).message_id ?? '')
+							: ''
+					return await emailTools.getMessage(messageId)
+				},
+				email_attachment_get: async (args: unknown) => {
+					const attachmentId =
+						typeof args === 'object' && args !== null && 'attachment_id' in args
+							? String((args as { attachment_id: unknown }).attachment_id ?? '')
+							: ''
+					return await emailTools.getAttachment(attachmentId)
+				},
+			}
+		: {}
+	assertNoCapabilityCollisions(capabilityMap, emailCodemodeTools)
 	return {
 		...capabilityCodemodeTools,
 		...storageCodemodeTools,
 		...serviceCodemodeTools,
 		...packageSecretCodemodeTools,
+		...emailCodemodeTools,
 		...additionalTools,
 	}
 }
@@ -287,6 +344,8 @@ export async function buildCodemodeProvider(
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
+		emailTools?: EmailToolOptions
+		skipCapabilityRegistry?: boolean
 	},
 ): Promise<ResolvedProvider> {
 	const tools = await buildCodemodeFns(env, callerContext, options)
@@ -362,6 +421,7 @@ export async function runCodemodeWithRegistry(
 			packageId: string
 			kodyId: string
 		} | null
+		emailTools?: EmailToolOptions
 		executorModules?: WorkerLoaderModules
 		executorTimeoutMs?: number | null
 	},
@@ -408,6 +468,7 @@ export async function runCodemodeWithRegistry(
 					packageId: options.packageContext.packageId,
 				})
 			: undefined,
+		emailTools: options?.emailTools,
 	})
 	const wrappedCode =
 		params !== undefined
@@ -426,10 +487,12 @@ export async function runCodemodeWithRegistry(
 	const packageSecretsHelperPrelude = options?.packageContext
 		? createPackageSecretsHelperPrelude()
 		: ''
+	const emailHelperPrelude = options?.emailTools ? createEmailHelperPrelude() : ''
 	const helperPrelude = [
 		storageHelperPrelude,
 		serviceHelperPrelude,
 		packageSecretsHelperPrelude,
+		emailHelperPrelude,
 		options?.helperPrelude ?? '',
 	]
 		.filter((value) => value.trim().length > 0)
@@ -518,6 +581,8 @@ export async function runBundledModuleWithRegistry(
 			serviceName: string
 		} | null
 		serviceTools?: ServiceToolOptions
+		emailTools?: EmailToolOptions
+		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
 	},
 ): Promise<ExecuteResult> {
@@ -551,6 +616,8 @@ export async function runBundledModuleWithRegistry(
 					packageId: options.packageContext.packageId,
 				})
 			: undefined,
+		emailTools: options?.emailTools,
+		skipCapabilityRegistry: options?.skipCapabilityRegistry,
 	})
 	const storageHelperPrelude = options?.storageTools
 		? createStorageHelperPrelude({
@@ -564,11 +631,13 @@ export async function runBundledModuleWithRegistry(
 	const packageSecretsHelperPrelude = options?.packageContext
 		? createPackageSecretsHelperPrelude()
 		: ''
+	const emailHelperPrelude = options?.emailTools ? createEmailHelperPrelude() : ''
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
 ${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
 ${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
+${emailHelperPrelude ? `${emailHelperPrelude}\n` : ''}
   const __previousRuntime = globalThis.__kodyRuntime;
   globalThis.__kodyRuntime = {
     codemode,
@@ -581,6 +650,7 @@ ${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
     service: typeof service === 'undefined' ? null : service,
     packageSecrets: typeof packageSecrets === 'undefined' ? null : packageSecrets,
+    email: typeof email === 'undefined' ? null : email,
   };
   try {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});

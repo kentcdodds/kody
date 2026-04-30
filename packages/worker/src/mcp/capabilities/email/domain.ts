@@ -2,6 +2,7 @@ import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { emailInboxCreateCapability } from './email-inbox-create.ts'
 import { emailInboxListCapability } from './email-inbox-list.ts'
+import { emailAttachmentGetCapability } from './email-attachment-get.ts'
 import { emailMessageGetCapability } from './email-message-get.ts'
 import { emailMessageListCapability } from './email-message-list.ts'
 import { emailReplyCapability } from './email-reply.ts'
@@ -16,6 +17,7 @@ export const emailDomain = defineDomain({
 	capabilities: [
 		emailInboxCreateCapability,
 		emailInboxListCapability,
+		emailAttachmentGetCapability,
 		emailMessageListCapability,
 		emailMessageGetCapability,
 		emailSendCapability,

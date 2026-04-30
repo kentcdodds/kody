@@ -24,10 +24,16 @@ Use the MCP `email` domain:
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
 - Outbound sending requires a verified sender identity.
-- Inbound package handlers are intentionally disabled in this first slice. Mail
-  is stored first; packages and agent loops decide what to do with it later.
-- Attachments are metadata-only for now; raw MIME for small messages is stored
-  so the first pass can be tested locally.
+- Stored inbound mail is the source of truth.
+- Packages can subscribe to the stored inbound email topic
+  `email.message.received` using normal package subscriptions. This is package
+  behavior, not a separate Kody-owned email handler or agent-loop primitive.
+- Subscription event payloads are metadata-first. Package handlers receive the
+  stored message id and receipt metadata, then use `email_message_get` or
+  `email_attachment_get` (or `import { email } from 'kody:runtime'`) when they
+  need bodies or attachment bytes.
+- Attachments remain metadata-first by default; raw MIME for small messages is
+  stored so on-demand attachment lookup can reconstruct bytes locally.
 
 ## Local inbound testing
 

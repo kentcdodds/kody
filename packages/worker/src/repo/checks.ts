@@ -1,6 +1,7 @@
 import {
 	getPackageAppEntryPath,
 	listPackageServices,
+	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
@@ -271,6 +272,9 @@ function collectPackageTypecheckTargets(
 	}
 	for (const service of listPackageServices(manifest)) {
 		remember(service.entry, true)
+	}
+	for (const subscription of listPackageSubscriptions(manifest)) {
+		remember(subscription.handler, true)
 	}
 	return Array.from(targets.values())
 }

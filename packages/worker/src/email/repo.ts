@@ -1,3 +1,4 @@
+import PostalMime from 'postal-mime'
 import {
 	type EmailAttachmentRecord,
 	type EmailDirection,
@@ -14,6 +15,18 @@ function nowIso() {
 	return new Date().toISOString()
 }
 
+function bytesToBase64(bytes: Uint8Array) {
+	let binary = ''
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte)
+	}
+	return btoa(binary)
+}
+
+function normalizeRunChanges(result: D1RunResult) {
+	const changes = result.meta['changes']
+	return typeof changes === 'number' ? changes : Number(changes ?? 0)
+}
 function parseJsonArray(value: string | null) {
 	if (!value) return []
 	try {
@@ -746,6 +759,23 @@ export async function getEmailMessageById(input: {
 	return row ? mapMessageRow(row) : null
 }
 
+export async function getEmailMessageWithAttachmentsById(input: {
+	db: D1Database
+	userId: string
+	messageId: string
+}) {
+	const message = await getEmailMessageById(input)
+	if (!message) return null
+	const attachments = await listEmailAttachmentsForMessage({
+		db: input.db,
+		messageId: message.id,
+	})
+	return {
+		message,
+		attachments,
+	}
+}
+
 export async function getEmailMessageByMessageIdHeader(input: {
 	db: D1Database
 	userId: string
@@ -880,6 +910,71 @@ export async function listEmailAttachmentsForMessage(input: {
 		.bind(input.messageId)
 		.all<Record<string, unknown>>()
 	return (result.results ?? []).map(mapAttachmentRow)
+}
+
+export async function getEmailAttachmentById(input: {
+	db: D1Database
+	userId: string
+	attachmentId: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT attachment.*
+			FROM email_attachments attachment
+			JOIN email_messages message ON message.id = attachment.message_id
+			WHERE attachment.id = ?
+				AND message.user_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.attachmentId, input.userId)
+		.first<Record<string, unknown>>()
+	if (!row) return null
+	const attachment = mapAttachmentRow(row)
+	const message = await getEmailMessageById({
+		db: input.db,
+		userId: input.userId,
+		messageId: attachment.messageId,
+	})
+	if (!message?.rawMime) {
+		return {
+			...attachment,
+			content: null,
+			contentBase64: null,
+		}
+	}
+	const parsed = await PostalMime.parse(message.rawMime, {
+		attachmentEncoding: 'arraybuffer',
+	})
+	const matched = parsed.attachments.find((candidate) => {
+		if (candidate.filename !== attachment.filename) return false
+		if (candidate.mimeType !== (attachment.contentType ?? candidate.mimeType)) {
+			return false
+		}
+		if ((candidate.contentId ?? null) !== attachment.contentId) return false
+		if ((candidate.disposition ?? null) !== attachment.disposition) return false
+		const content = candidate.content
+		const size =
+			typeof content === 'string'
+				? new TextEncoder().encode(content).byteLength
+				: content.byteLength
+		return size === attachment.size
+	})
+	if (!matched) {
+		return {
+			...attachment,
+			content: null,
+			contentBase64: null,
+		}
+	}
+	const bytes =
+		typeof matched.content === 'string'
+			? new TextEncoder().encode(matched.content)
+			: new Uint8Array(matched.content)
+	return {
+		...attachment,
+		content: matched.content,
+		contentBase64: bytesToBase64(bytes),
+	}
 }
 
 export async function insertEmailDeliveryEvent(input: {
