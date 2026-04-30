@@ -24,8 +24,8 @@ Use the MCP `email` domain:
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
 - Outbound sending requires a verified sender identity.
-- Stored inbound mail is the source of truth.
-- Packages can subscribe to the stored inbound email topic
+- Stored inbound mail is the source of truth. If a user wants email automation,
+  they can publish a package that subscribes to the stored inbound email topic
   `email.message.received` using normal package subscriptions. This is package
   behavior, not a separate Kody-owned email handler or agent-loop primitive.
 - Subscription event payloads are metadata-first. Package handlers receive the
