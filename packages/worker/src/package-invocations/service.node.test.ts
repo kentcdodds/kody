@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { invokePackageExport } from './service.ts'
+import { invokePackageExport, invokePackageSubscription } from './service.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -742,4 +742,84 @@ test('invokePackageExport stores export-not-found responses as terminal failures
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+})
+
+test('invokePackageSubscription uses the normal capability registry with package storage and source metadata intact', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { ok: true },
+		logs: [],
+	})
+
+	const savedPackage = {
+		id: 'pkg-1',
+		userId: 'user-123',
+		name: '@kentcdodds/discord-gateway',
+		kodyId: 'discord-gateway',
+		description: 'Discord gateway helpers',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: true,
+		createdAt: '2026-04-27T00:00:00.000Z',
+		updatedAt: '2026-04-27T00:00:00.000Z',
+	}
+
+	const response = await invokePackageSubscription({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		savedPackage,
+		topic: 'email.message.received',
+		params: {
+			event: 'email.message.received',
+			message: { id: 'message-123' },
+		},
+		idempotencyKey: 'email:message-123:pkg-1:email.message.received',
+		source: 'email',
+	})
+
+	expect(response.status).toBe(200)
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			baseUrl: 'https://kody.dev',
+			user: expect.objectContaining({
+				userId: 'user-123',
+				displayName: 'package:discord-gateway',
+			}),
+			storageContext: {
+				sessionId: null,
+				appId: 'pkg-1',
+				storageId: 'package:pkg-1',
+			},
+			repoContext: expect.objectContaining({
+				sourceId: 'source-1',
+			}),
+		}),
+		expect.anything(),
+		{
+			event: 'email.message.received',
+			message: { id: 'message-123' },
+		},
+		expect.objectContaining({
+			storageTools: {
+				userId: 'user-123',
+				storageId: 'package:pkg-1',
+				writable: true,
+			},
+			packageContext: {
+				packageId: 'pkg-1',
+				kodyId: 'discord-gateway',
+				sourceId: 'source-1',
+			},
+		}),
+	)
+	const runOptions =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[4]
+	expect(runOptions).toBeDefined()
+	expect(
+		(runOptions as { skipCapabilityRegistry?: boolean }).skipCapabilityRegistry,
+	).toBeUndefined()
 })

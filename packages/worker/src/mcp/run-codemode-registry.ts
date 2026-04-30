@@ -166,10 +166,22 @@ const email = {
     if (!normalizedAttachmentId) {
       throw new Error('email.getAttachment requires a non-empty attachment id.')
     }
-    return await codemode.email_attachment_get({
+    const result = await codemode.email_attachment_get({
       attachment_id: normalizedAttachmentId,
     });
+    if (!result || typeof result !== 'object') {
+      return result;
+    }
+    if ('content_base64' in result) {
+      return result;
+    }
+    return {
+      ...result,
+      content_base64:
+        typeof result.data_base64 === 'string' ? result.data_base64 : null,
+    };
   },
+  reply: async (input) => await codemode.email_reply(input ?? {}),
 };
 	`.trim()
 }
@@ -297,20 +309,35 @@ export async function buildCodemodeFns(
 	const emailTools = options?.emailTools
 	const emailCodemodeTools: AdditionalCodemodeTools = emailTools
 		? {
-				email_message_get: async (args: unknown) => {
-					const messageId =
-						typeof args === 'object' && args !== null && 'message_id' in args
-							? String((args as { message_id: unknown }).message_id ?? '')
-							: ''
-					return await emailTools.getMessage(messageId)
-				},
-				email_attachment_get: async (args: unknown) => {
-					const attachmentId =
-						typeof args === 'object' && args !== null && 'attachment_id' in args
-							? String((args as { attachment_id: unknown }).attachment_id ?? '')
-							: ''
-					return await emailTools.getAttachment(attachmentId)
-				},
+				...(capabilityMap.email_message_get
+					? {}
+					: {
+							email_message_get: async (args: unknown) => {
+								const messageId =
+									typeof args === 'object' &&
+									args !== null &&
+									'message_id' in args
+										? String((args as { message_id: unknown }).message_id ?? '')
+										: ''
+								return await emailTools.getMessage(messageId)
+							},
+						}),
+				...(capabilityMap.email_attachment_get
+					? {}
+					: {
+							email_attachment_get: async (args: unknown) => {
+								const attachmentId =
+									typeof args === 'object' &&
+									args !== null &&
+									'attachment_id' in args
+										? String(
+												(args as { attachment_id: unknown }).attachment_id ??
+													'',
+											)
+										: ''
+								return await emailTools.getAttachment(attachmentId)
+							},
+						}),
 			}
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, emailCodemodeTools)
@@ -487,7 +514,9 @@ export async function runCodemodeWithRegistry(
 	const packageSecretsHelperPrelude = options?.packageContext
 		? createPackageSecretsHelperPrelude()
 		: ''
-	const emailHelperPrelude = options?.emailTools ? createEmailHelperPrelude() : ''
+	const emailHelperPrelude = options?.emailTools
+		? createEmailHelperPrelude()
+		: ''
 	const helperPrelude = [
 		storageHelperPrelude,
 		serviceHelperPrelude,
@@ -632,7 +661,9 @@ export async function runBundledModuleWithRegistry(
 	const packageSecretsHelperPrelude = options?.packageContext
 		? createPackageSecretsHelperPrelude()
 		: ''
-	const emailHelperPrelude = options?.emailTools ? createEmailHelperPrelude() : ''
+	const emailHelperPrelude = options?.emailTools
+		? createEmailHelperPrelude()
+		: ''
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
