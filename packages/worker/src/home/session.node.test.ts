@@ -34,6 +34,17 @@ type StoredHomeConnectorSessionState = {
 	tools: Array<{ name: string }>
 }
 
+async function waitForRestoreState(state: DurableObjectState) {
+	const blockConcurrencyWhile = state.blockConcurrencyWhile as unknown as {
+		mock: { results: Array<{ value: Promise<void> | undefined }> }
+	}
+	const blockPromise = blockConcurrencyWhile.mock.results[0]?.value
+	if (!blockPromise) {
+		throw new Error('Expected blockConcurrencyWhile to return restore promise.')
+	}
+	await blockPromise
+}
+
 function createState(
 	input: {
 		storedState?: StoredHomeConnectorSessionState | null
@@ -89,7 +100,7 @@ test('constructor restores persisted state through blockConcurrencyWhile', async
 		} as unknown as DurableObjectState,
 		{} as Env,
 	)
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 
 	expect(state.blockConcurrencyWhile).toHaveBeenCalledTimes(1)
 	const response = await session.fetch(
@@ -124,7 +135,7 @@ test('snapshot returns null when persisted connector has no live websocket', asy
 		{} as Env,
 	)
 
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 
 	const response = await session.fetch(
 		new Request('https://home-connectors/home/connectors/default/snapshot'),
@@ -156,10 +167,9 @@ test('websocket close clears connectedAt and tools from persisted state', async 
 		{} as Env,
 	)
 
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 	state.getWebSockets.mockReturnValue([])
-	session.webSocketClose({} as WebSocket, 1006, 'network', false)
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await session.webSocketClose({} as WebSocket, 1006, 'network', false)
 
 	expect(captureMessageMock).toHaveBeenCalledWith(
 		'Home connector session websocket closed code=1006 wasClean=false reason=network',
@@ -202,10 +212,9 @@ test('stale websocket close preserves active connection state', async () => {
 		{} as Env,
 	)
 
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 	state.getWebSockets.mockReturnValue([activeSocket])
-	session.webSocketClose(staleSocket, 1006, 'stale-socket', false)
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await session.webSocketClose(staleSocket, 1006, 'stale-socket', false)
 
 	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
 		persisted: {
@@ -239,7 +248,7 @@ test('websocket heartbeat work is returned so the runtime can wait for persisten
 		} as unknown as DurableObjectState,
 		{} as Env,
 	)
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 
 	const handlerWork = session.webSocketMessage(
 		{} as WebSocket,
@@ -287,10 +296,9 @@ test('websocket error clears connected state when the socket is gone', async () 
 		{} as Env,
 	)
 
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await waitForRestoreState(state)
 	state.getWebSockets.mockReturnValue([])
-	session.webSocketError({} as WebSocket, new Error('abnormal close'))
-	await new Promise((resolve) => setTimeout(resolve, 0))
+	await session.webSocketError({} as WebSocket, new Error('abnormal close'))
 
 	expect(captureMessageMock).toHaveBeenCalledWith(
 		'Home connector session websocket closed code=1011 wasClean=false reason=abnormal close',
