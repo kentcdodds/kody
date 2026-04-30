@@ -1,3 +1,4 @@
+PRAGMA foreign_keys = OFF;
 PRAGMA defer_foreign_keys = ON;
 
 CREATE TABLE email_inboxes_next (
@@ -32,14 +33,44 @@ SELECT
 	updated_at
 FROM email_inboxes;
 
-DROP TABLE email_inboxes;
-ALTER TABLE email_inboxes_next RENAME TO email_inboxes;
+CREATE TABLE email_inbox_addresses_next (
+	id TEXT PRIMARY KEY,
+	inbox_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	address TEXT NOT NULL,
+	local_part TEXT NOT NULL,
+	domain TEXT NOT NULL,
+	reply_token_hash TEXT,
+	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes_next(id) ON DELETE CASCADE
+);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_email_inboxes_user_name
-ON email_inboxes(user_id, name);
-
-CREATE INDEX IF NOT EXISTS idx_email_inboxes_user_created_at
-ON email_inboxes(user_id, created_at);
+INSERT INTO email_inbox_addresses_next (
+	id,
+	inbox_id,
+	user_id,
+	address,
+	local_part,
+	domain,
+	reply_token_hash,
+	enabled,
+	created_at,
+	updated_at
+)
+SELECT
+	id,
+	inbox_id,
+	user_id,
+	address,
+	local_part,
+	domain,
+	reply_token_hash,
+	enabled,
+	created_at,
+	updated_at
+FROM email_inbox_addresses;
 
 CREATE TABLE email_messages_next (
 	id TEXT PRIMARY KEY,
@@ -142,22 +173,44 @@ SELECT
 	updated_at
 FROM email_messages;
 
-DROP TABLE email_messages;
-ALTER TABLE email_messages_next RENAME TO email_messages;
+CREATE TABLE email_attachments_next (
+	id TEXT PRIMARY KEY,
+	message_id TEXT NOT NULL,
+	filename TEXT,
+	content_type TEXT NOT NULL,
+	content_id TEXT,
+	disposition TEXT,
+	size INTEGER NOT NULL DEFAULT 0,
+	storage_kind TEXT NOT NULL CHECK (storage_kind IN ('raw-mime', 'external', 'unavailable')),
+	storage_key TEXT,
+	created_at TEXT NOT NULL,
+	FOREIGN KEY (message_id) REFERENCES email_messages_next(id) ON DELETE CASCADE
+);
 
-CREATE INDEX IF NOT EXISTS idx_email_messages_user_created_at
-ON email_messages(user_id, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_email_messages_inbox_created_at
-ON email_messages(inbox_id, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_email_messages_thread_created_at
-ON email_messages(thread_id, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_email_messages_message_id_header
-ON email_messages(message_id_header);
-
-DROP TABLE IF EXISTS email_sender_policies;
+INSERT INTO email_attachments_next (
+	id,
+	message_id,
+	filename,
+	content_type,
+	content_id,
+	disposition,
+	size,
+	storage_kind,
+	storage_key,
+	created_at
+)
+SELECT
+	id,
+	message_id,
+	filename,
+	content_type,
+	content_id,
+	disposition,
+	size,
+	storage_kind,
+	storage_key,
+	created_at
+FROM email_attachments;
 
 CREATE TABLE email_delivery_events_next (
 	id TEXT PRIMARY KEY,
@@ -203,12 +256,52 @@ WHERE event_type != 'policy_matched'
 	OR NOT EXISTS (
 		SELECT 1
 		FROM email_delivery_events existing
-		WHERE existing.id = email_delivery_events.id
-			AND existing.event_type = 'policy_matched'
+		WHERE existing.message_id = email_delivery_events.message_id
+			AND existing.event_type IN ('received', 'quarantined')
 	);
 
 DROP TABLE email_delivery_events;
+DROP TABLE email_attachments;
+DROP TABLE email_messages;
+DROP TABLE IF EXISTS email_sender_policies;
+DROP TABLE email_inbox_addresses;
+DROP TABLE email_inboxes;
+
+ALTER TABLE email_inboxes_next RENAME TO email_inboxes;
+ALTER TABLE email_inbox_addresses_next RENAME TO email_inbox_addresses;
+ALTER TABLE email_messages_next RENAME TO email_messages;
+ALTER TABLE email_attachments_next RENAME TO email_attachments;
 ALTER TABLE email_delivery_events_next RENAME TO email_delivery_events;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_inboxes_user_name
+ON email_inboxes(user_id, name);
+
+CREATE INDEX IF NOT EXISTS idx_email_inboxes_user_created_at
+ON email_inboxes(user_id, created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_inbox_addresses_address
+ON email_inbox_addresses(address);
+
+CREATE INDEX IF NOT EXISTS idx_email_inbox_addresses_inbox_id
+ON email_inbox_addresses(inbox_id);
+
+CREATE INDEX IF NOT EXISTS idx_email_inbox_addresses_reply_token
+ON email_inbox_addresses(reply_token_hash);
+
+CREATE INDEX IF NOT EXISTS idx_email_messages_user_created_at
+ON email_messages(user_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_email_messages_inbox_created_at
+ON email_messages(inbox_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_email_messages_thread_created_at
+ON email_messages(thread_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_email_messages_message_id_header
+ON email_messages(message_id_header);
+
+CREATE INDEX IF NOT EXISTS idx_email_attachments_message_id
+ON email_attachments(message_id);
 
 CREATE INDEX IF NOT EXISTS idx_email_delivery_events_message_id
 ON email_delivery_events(message_id);
@@ -217,3 +310,4 @@ CREATE INDEX IF NOT EXISTS idx_email_delivery_events_user_created_at
 ON email_delivery_events(user_id, created_at);
 
 PRAGMA defer_foreign_keys = OFF;
+PRAGMA foreign_keys = ON;
