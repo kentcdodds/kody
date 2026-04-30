@@ -26,7 +26,7 @@ export const emailInboxCreateCapability = defineDomainCapability(
 		idempotent: false,
 		destructive: false,
 		inputSchema: z.object({
-			name: z.string().min(1),
+			name: z.string().trim().min(1),
 			address: z.string().email(),
 			description: z.string().optional(),
 			mode: emailInboxModeSchema.default('quarantine'),

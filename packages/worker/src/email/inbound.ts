@@ -17,8 +17,6 @@ import {
 	touchEmailThread,
 } from './repo.ts'
 
-const unknownInboxUserId = 'unknown'
-
 export async function handleInboundEmail(
 	message: ForwardableEmailMessage,
 	env: Pick<Env, 'APP_DB'>,
@@ -52,44 +50,43 @@ export async function handleInboundEmail(
 			})
 		: null
 
-	if (inboxAddress && !inbox) {
+	if (!inboxAddress) {
+		message.setReject('Unknown Kody email alias.')
+		return
+	}
+	if (!inbox) {
 		message.setReject('Email inbox is unavailable.')
 		return
 	}
-	if (inbox && !inbox.enabled) {
+	if (!inbox.enabled) {
 		message.setReject('Email inbox is disabled.')
 		return
 	}
 
-	const userId = inboxAddress?.userId ?? inbox?.userId ?? unknownInboxUserId
+	const userId = inboxAddress.userId
 	const parsed = await parseForwardableEmailMessage(message)
-	const policies = inboxAddress
-		? await listEmailSenderPolicies({
-				db: env.APP_DB,
-				userId,
-				inboxId: inboxAddress.inboxId,
-			})
-		: []
+	const policies = await listEmailSenderPolicies({
+		db: env.APP_DB,
+		userId,
+		inboxId: inboxAddress.inboxId,
+	})
 	const decision = await evaluateSenderPolicy({
 		envelopeFrom: parsed.envelopeFrom,
 		fromAddress: parsed.headerFrom,
 		replyToken: parsed.replyToken,
 		rules: policies,
 	})
-	const policyDecision = inboxAddress ? decision.decision : 'quarantined'
+	const policyDecision = decision.decision
 	const now = new Date().toISOString()
 	const subjectNormalized = normalizeSubject(parsed.subject)
-	const existingThread =
-		inboxAddress && inbox
-			? await findEmailThreadForInboundMessage({
-					db: env.APP_DB,
-					userId,
-					inboxId: inbox.id,
-					references: parsed.references,
-					inReplyToHeader: parsed.inReplyTo,
-					subjectNormalized,
-				})
-			: null
+	const existingThread = await findEmailThreadForInboundMessage({
+		db: env.APP_DB,
+		userId,
+		inboxId: inbox.id,
+		references: parsed.references,
+		inReplyToHeader: parsed.inReplyTo,
+		subjectNormalized,
+	})
 	const thread =
 		existingThread ??
 		(await createEmailThread({
@@ -127,12 +124,7 @@ export async function handleInboundEmail(
 			policyDecision,
 			processingStatus: 'stored',
 			providerMessageId: null,
-			error:
-				!inboxAddress
-					? `unknown inbox alias: ${recipient}`
-					: policyDecision === 'rejected'
-						? decision.reasons.join(', ')
-						: null,
+			error: policyDecision === 'rejected' ? decision.reasons.join(', ') : null,
 			receivedAt: now,
 			sentAt: null,
 		},
@@ -166,9 +158,7 @@ export async function handleInboundEmail(
 		detail: {
 			recipient,
 			decision: policyDecision,
-			reasons: inboxAddress
-				? decision.reasons
-				: [`unknown inbox alias: ${recipient}`],
+			reasons: decision.reasons,
 		},
 	})
 	if (policyDecision === 'rejected') {

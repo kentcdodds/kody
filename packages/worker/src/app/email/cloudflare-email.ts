@@ -49,6 +49,12 @@ function normalizeEmailPayload(message: OutboundEmail) {
 }
 
 function logSkippedEmail(reason: string, message: OutboundEmail) {
+	const headers =
+		message.headers ?
+			Object.fromEntries(
+				Object.keys(message.headers).map((key) => [key, '[REDACTED]']),
+			)
+		:	undefined
 	console.warn(
 		reason,
 		JSON.stringify({
@@ -58,7 +64,7 @@ function logSkippedEmail(reason: string, message: OutboundEmail) {
 			html: message.html,
 			text: message.text,
 			replyTo: message.replyTo,
-			headers: message.headers,
+			headers,
 		}),
 	)
 }

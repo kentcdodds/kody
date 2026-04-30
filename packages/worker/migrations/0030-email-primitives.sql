@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS email_messages (
 	message_id_header TEXT,
 	in_reply_to_header TEXT,
 	references_json TEXT NOT NULL DEFAULT '[]',
-	headers_json TEXT NOT NULL DEFAULT '[]',
+	headers_json TEXT NOT NULL DEFAULT '{}',
 	auth_results TEXT,
 	text_body TEXT,
 	html_body TEXT,

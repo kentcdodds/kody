@@ -17,7 +17,13 @@ const optionalHeadersSchema = createSchema<
 	Record<string, string> | undefined
 >((value, context) => {
 	if (value === undefined) return { value: undefined }
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		(Object.getPrototypeOf(value) !== Object.prototype &&
+			Object.getPrototypeOf(value) !== null)
+	) {
 		return fail('Expected headers object', context.path)
 	}
 	const headers: Record<string, string> = {}

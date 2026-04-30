@@ -63,6 +63,50 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 	expect(listed.map((message) => message.id)).toContain(result.message.id)
 })
 
+test('sendOutboundEmail does not fall back when binding sends without message id', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `email-outbound-null-id-user-${crypto.randomUUID()}`
+	const from = `sender-${crypto.randomUUID()}@example.com`
+	let bindingSendCount = 0
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async () => {
+		throw new Error('REST fallback should not be called')
+	}) as typeof fetch
+	try {
+		await upsertEmailSenderIdentity({
+			db: env.APP_DB,
+			userId,
+			email: from,
+			domain: getEmailDomain(from),
+			status: 'verified',
+		})
+		const result = await sendOutboundEmail({
+			env: {
+				...env,
+				EMAIL: {
+					async send() {
+						bindingSendCount += 1
+						return { messageId: null as unknown as string }
+					},
+				},
+			},
+			userId,
+			from,
+			to: 'recipient@example.com',
+			subject: 'No provider id',
+			text: 'Body',
+		})
+		expect(bindingSendCount).toBe(1)
+		expect(result).toMatchObject({
+			status: 'sent',
+			providerMessageId: null,
+			error: null,
+		})
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
 test('sendOutboundEmail preserves reply headers and records failed fallback sends', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `email-outbound-fallback-user-${crypto.randomUUID()}`

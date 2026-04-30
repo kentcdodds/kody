@@ -499,7 +499,20 @@ export async function upsertEmailSenderIdentity(input: {
 			row.updated_at,
 		)
 		.run()
-	return mapSenderIdentityRow(row)
+	const persisted = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_sender_identities
+			WHERE user_id = ?
+				AND email = ?
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.email)
+		.first<Record<string, unknown>>()
+	if (!persisted) {
+		throw new Error('Failed to read saved sender identity.')
+	}
+	return mapSenderIdentityRow(persisted)
 }
 
 export async function getVerifiedSenderIdentity(input: {
@@ -700,7 +713,7 @@ export async function createEmailThread(input: {
 		id: crypto.randomUUID(),
 		user_id: input.userId,
 		inbox_id: input.inboxId ?? null,
-		subject_normalized: input.subjectNormalized ?? null,
+		subject_normalized: input.subjectNormalized ?? '',
 		root_message_id_header: input.rootMessageIdHeader ?? null,
 		last_message_at: input.lastMessageAt ?? timestamp,
 		created_at: timestamp,

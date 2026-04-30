@@ -127,3 +127,29 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		error: null,
 	})
 })
+
+test('inbound email handler rejects unknown aliases without persisting them', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const recipient = `missing-${crypto.randomUUID()}@example.com`
+	const message = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: recipient,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${recipient}`,
+			'Subject: Unknown alias',
+			'',
+			'Please help.',
+		].join('\r\n'),
+	})
+
+	await handleInboundEmail(message, env)
+
+	expect(message.rejectedReason).toBe('Unknown Kody email alias.')
+	const messages = await listEmailMessages({
+		db: env.APP_DB,
+		userId: 'unknown',
+		limit: 10,
+	})
+	expect(messages).toEqual([])
+})
