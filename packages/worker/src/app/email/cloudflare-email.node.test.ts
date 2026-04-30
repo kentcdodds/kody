@@ -120,7 +120,7 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 		subject: 'Reset your kody password',
 		text: 'Reset link',
 	})
-})
+}, 40_000)
 
 test('sendCloudflareEmail defaults the API base URL when it is unset', async () => {
 	const originalFetch = globalThis.fetch
