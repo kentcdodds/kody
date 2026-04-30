@@ -134,7 +134,7 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		inboxId: inbox.id,
 		subjectNormalized: 'normalized subject',
 	})
-	const subjectMatchedMessage = createForwardableEmailMessage({
+	const subjectOnlyMessage = createForwardableEmailMessage({
 		from: 'agent@trusted.example',
 		to: address,
 		raw: [
@@ -142,17 +142,17 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 			`To: ${address}`,
 			'Subject: Re: Normalized Subject',
 			'',
-			'Subject match body.',
+			'Subject-only body.',
 		].join('\r\n'),
 	})
-	await handleInboundEmail(subjectMatchedMessage, env)
-	const subjectMatched = await listEmailMessages({
+	await handleInboundEmail(subjectOnlyMessage, env)
+	const subjectOnly = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
 		inboxId: inbox.id,
 		limit: 1,
 	})
-	expect(subjectMatched[0]?.threadId).toBe(normalizedExistingThread.id)
+	expect(subjectOnly[0]?.threadId).not.toBe(normalizedExistingThread.id)
 })
 
 test('inbound email handler rejects unknown aliases without persisting them', async () => {

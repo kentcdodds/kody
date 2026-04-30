@@ -48,16 +48,6 @@ export type EmailPolicyEvaluation = {
 	policyKind: EmailPolicyKind | null
 }
 
-export type EmailPolicyDecisionResult = EmailPolicyEvaluation
-
-export type EmailPolicyRule = {
-	id: string
-	kind: EmailPolicyKind
-	value: string
-	effect: EmailPolicyEffect
-	enabled: boolean
-}
-
 export type EmailMailbox = {
 	name: string | null
 	address: string
@@ -203,12 +193,12 @@ export type EmailAttachmentRecord = {
 
 export type EmailDeliveryEventRecord = {
 	id: string
-	message_id: string | null
-	user_id: string | null
-	inbox_id: string | null
-	event_type: EmailDeliveryEventType
+	messageId: string | null
+	userId: string | null
+	inboxId: string | null
+	eventType: EmailDeliveryEventType
 	provider: string | null
-	provider_message_id: string | null
-	detail_json: string
-	created_at: string
+	providerMessageId: string | null
+	detailJson: string
+	createdAt: string
 }

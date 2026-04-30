@@ -106,7 +106,6 @@ export async function handleInboundEmail(
 		inboxId: inbox.id,
 		references: parsed.references,
 		inReplyToHeader: parsed.inReplyTo,
-		subjectNormalized,
 	})
 	const thread =
 		existingThread ??

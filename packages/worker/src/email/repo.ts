@@ -672,7 +672,6 @@ export async function findThreadForMessage(input: {
 	inboxId?: string | null
 	references: Array<string>
 	inReplyToHeader?: string | null
-	subjectNormalized?: string | null
 }) {
 	const ids = [
 		...input.references,
@@ -690,26 +689,6 @@ export async function findThreadForMessage(input: {
 				LIMIT 1`,
 			)
 			.bind(input.userId, input.inboxId ?? null, input.inboxId ?? null, id)
-			.first<Record<string, unknown>>()
-		if (row) return mapThreadRow(row)
-	}
-	if (input.subjectNormalized?.trim()) {
-		const row = await input.db
-			.prepare(
-				`SELECT *
-				FROM email_threads
-				WHERE user_id = ?
-					AND (? IS NULL OR inbox_id = ?)
-					AND subject_normalized = ?
-				ORDER BY last_message_at DESC, id DESC
-				LIMIT 1`,
-			)
-			.bind(
-				input.userId,
-				input.inboxId ?? null,
-				input.inboxId ?? null,
-				input.subjectNormalized,
-			)
 			.first<Record<string, unknown>>()
 		if (row) return mapThreadRow(row)
 	}
