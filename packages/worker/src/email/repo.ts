@@ -534,8 +534,6 @@ export async function getVerifiedSenderIdentity(input: {
 	return row ? mapSenderIdentityRow(row) : null
 }
 
-export const findEmailSenderIdentityByEmail = getVerifiedSenderIdentity
-
 export async function upsertEmailSenderPolicy(input: {
 	db: D1Database
 	userId: string
@@ -940,8 +938,6 @@ export async function getEmailMessageById(input: {
 	return row ? mapMessageRow(row) : null
 }
 
-export const getEmailMessage = getEmailMessageById
-
 export async function getEmailMessageByMessageIdHeader(input: {
 	db: D1Database
 	userId: string
@@ -1113,4 +1109,3 @@ export async function insertEmailDeliveryEvent(input: {
 		.run()
 }
 
-export const addEmailDeliveryEvent = insertEmailDeliveryEvent

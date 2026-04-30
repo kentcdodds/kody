@@ -22,8 +22,6 @@ export function getEmailDomain(address: string) {
 	return normalized.slice(at + 1)
 }
 
-export const getAddressDomain = getEmailDomain
-
 export function getEmailLocalPart(address: string) {
 	const normalized = requireNormalizedEmailAddress(address)
 	const at = normalized.lastIndexOf('@')
@@ -50,16 +48,6 @@ export function parseHeaderAddressList(value: string | null | undefined) {
 		name: null,
 		address,
 	}))
-}
-
-export const parseEmailAddressList = parseHeaderEmailAddressList
-
-export function normalizeMailboxAddress(value: string) {
-	return normalizeEmailAddress(value)
-}
-
-export function addressListToJson(values: ReadonlyArray<string>) {
-	return JSON.stringify(normalizeEmailAddressList([...values]))
 }
 
 export function normalizeSubject(subject: string | null | undefined) {
