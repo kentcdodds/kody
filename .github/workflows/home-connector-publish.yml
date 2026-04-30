@@ -22,6 +22,9 @@ jobs:
     name: ✅ Test Home Connector
     timeout-minutes: 4
     steps:
+      - name: ⚙️ Configure Git defaults
+        run: git config --global init.defaultBranch main
+
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
@@ -35,6 +38,8 @@ jobs:
         run: npm ci
 
       - name: ✅ Run Home Connector Tests
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
         run: npm --prefix packages/home-connector run test
 
       - name: ✅ Smoke-test Home Connector on Node
@@ -42,6 +47,7 @@ jobs:
         env:
           PORT: 4041
           HOME_CONNECTOR_SHARED_SECRET: ci-home-connector-secret
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
           WORKER_BASE_URL: http://127.0.0.1:65535
         run: |
           set -euo pipefail
@@ -71,9 +77,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     name: 🐳 Publish Docker image
-    timeout-minutes: 4
+    timeout-minutes: 10
     needs: test
     steps:
+      - name: ⚙️ Configure Git defaults
+        run: git config --global init.defaultBranch main
+
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
 
