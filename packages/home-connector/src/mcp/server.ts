@@ -6,7 +6,6 @@ import { z } from 'zod'
 import { type createBondAdapter } from '../adapters/bond/index.ts'
 import { type createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
-import { isLutronProcessorNotFoundError } from '../adapters/lutron/errors.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
 import { type createSonosAdapter } from '../adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
@@ -234,42 +233,6 @@ export function createHomeConnectorMcpServer(input: {
 				},
 			],
 			structuredContent,
-		}
-	}
-
-	function lutronProcessorNotFoundResult(
-		error: unknown,
-	): CallToolResult | null {
-		if (!isLutronProcessorNotFoundError(error)) {
-			return null
-		}
-		return {
-			isError: true,
-			content: [
-				{
-					type: 'text',
-					text: error.message,
-				},
-			],
-			structuredContent: {
-				error: {
-					code: 'lutron_processor_not_found',
-					message: error.message,
-					processorId: error.processorId,
-				},
-			},
-		}
-	}
-
-	async function handleExpectedLutronError(
-		handler: () => Promise<CallToolResult> | CallToolResult,
-	) {
-		try {
-			return await handler()
-		} catch (error) {
-			const result = lutronProcessorNotFoundResult(error)
-			if (result) return result
-			throw error
 		}
 	}
 
@@ -1163,8 +1126,8 @@ export function createHomeConnectorMcpServer(input: {
 			sdkInputSchema: lutronCredentialsSchema.sdkInputSchema,
 		},
 		async (args) => {
-			return await handleExpectedLutronError(() => {
-				const processorId = String(args['processorId'] ?? '')
+			const processorId = String(args['processorId'] ?? '')
+			try {
 				const username = String(args['username'] ?? '')
 				const password = String(args['password'] ?? '')
 				const result = lutron.setCredentials(processorId, username, password)
@@ -1177,7 +1140,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1192,8 +1173,8 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
+			const processorId = String(args['processorId'] ?? '')
+			try {
 				const result = await lutron.authenticate(processorId)
 				return {
 					content: [
@@ -1204,7 +1185,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1222,8 +1221,8 @@ export function createHomeConnectorMcpServer(input: {
 			},
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
+			const processorId = String(args['processorId'] ?? '')
+			try {
 				const result = await lutron.getInventory(processorId)
 				return {
 					content: [
@@ -1234,7 +1233,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1250,9 +1267,9 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
-				const buttonId = String(args['buttonId'] ?? '')
+			const processorId = String(args['processorId'] ?? '')
+			const buttonId = String(args['buttonId'] ?? '')
+			try {
 				const result = await lutron.pressButton(processorId, buttonId)
 				return {
 					content: [
@@ -1263,7 +1280,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1279,10 +1314,10 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
-				const zoneId = String(args['zoneId'] ?? '')
-				const level = Number(args['level'] ?? 0)
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const level = Number(args['level'] ?? 0)
+			try {
 				const result = await lutron.setZoneLevel(processorId, zoneId, level)
 				return {
 					content: [
@@ -1293,7 +1328,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1313,14 +1366,14 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
-				const zoneId = String(args['zoneId'] ?? '')
-				const hue = Number(args['hue'] ?? 0)
-				const saturation = Number(args['saturation'] ?? 0)
-				const level = args['level'] == null ? undefined : Number(args['level'])
-				const vibrancy =
-					args['vibrancy'] == null ? undefined : Number(args['vibrancy'])
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const hue = Number(args['hue'] ?? 0)
+			const saturation = Number(args['saturation'] ?? 0)
+			const level = args['level'] == null ? undefined : Number(args['level'])
+			const vibrancy =
+				args['vibrancy'] == null ? undefined : Number(args['vibrancy'])
+			try {
 				const result = await lutron.setZoneColor(processorId, zoneId, {
 					hue,
 					saturation,
@@ -1336,7 +1389,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1354,11 +1425,11 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
-				const zoneId = String(args['zoneId'] ?? '')
-				const kelvin = Number(args['kelvin'] ?? 0)
-				const level = args['level'] == null ? undefined : Number(args['level'])
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const kelvin = Number(args['kelvin'] ?? 0)
+			const level = args['level'] == null ? undefined : Number(args['level'])
+			try {
 				const result = await lutron.setZoneWhiteTuning(processorId, zoneId, {
 					kelvin,
 					level,
@@ -1372,7 +1443,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1389,10 +1478,10 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
-				const zoneId = String(args['zoneId'] ?? '')
-				const state = args['state'] === 'Off' ? 'Off' : 'On'
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const state = args['state'] === 'Off' ? 'Off' : 'On'
+			try {
 				const result = await lutron.setZoneSwitchedLevel(
 					processorId,
 					zoneId,
@@ -1407,7 +1496,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 
@@ -1424,10 +1531,10 @@ export function createHomeConnectorMcpServer(input: {
 			}),
 		},
 		async (args) => {
-			return await handleExpectedLutronError(async () => {
-				const processorId = String(args['processorId'] ?? '')
-				const zoneId = String(args['zoneId'] ?? '')
-				const level = Number(args['level'] ?? 0)
+			const processorId = String(args['processorId'] ?? '')
+			const zoneId = String(args['zoneId'] ?? '')
+			const level = Number(args['level'] ?? 0)
+			try {
 				const result = await lutron.setShadeLevel(processorId, zoneId, level)
 				return {
 					content: [
@@ -1438,7 +1545,25 @@ export function createHomeConnectorMcpServer(input: {
 					],
 					structuredContent: result,
 				}
-			})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === `Lutron processor "${processorId}" was not found.`
+				) {
+					return {
+						isError: true,
+						content: [{ type: 'text', text: error.message }],
+						structuredContent: {
+							error: {
+								code: 'lutron_processor_not_found',
+								message: error.message,
+								processorId,
+							},
+						},
+					}
+				}
+				throw error
+			}
 		},
 	)
 

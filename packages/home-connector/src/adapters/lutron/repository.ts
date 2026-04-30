@@ -10,7 +10,6 @@ import {
 	type LutronPublicProcessor,
 	type LutronPersistedProcessor,
 } from './types.ts'
-import { LutronProcessorNotFoundError } from './errors.ts'
 
 type LutronProcessorRow = {
 	connector_id: string
@@ -400,7 +399,7 @@ export function requireLutronProcessor(
 ) {
 	const processor = getLutronProcessor(storage, connectorId, processorId)
 	if (!processor) {
-		throw new LutronProcessorNotFoundError(processorId)
+		throw new Error(`Lutron processor "${processorId}" was not found.`)
 	}
 	return processor
 }
