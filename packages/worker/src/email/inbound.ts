@@ -144,7 +144,7 @@ export async function handleInboundEmail(
 				contentId: attachment.contentId,
 				disposition: attachment.disposition,
 				size: attachment.size,
-				storageKind: 'metadata-only',
+				storageKind: 'raw-mime',
 				storageKey: null,
 			})),
 	})

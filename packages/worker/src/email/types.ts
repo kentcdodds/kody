@@ -22,7 +22,6 @@ export const emailDirectionValues = ['inbound', 'outbound'] as const
 export type EmailDirection = (typeof emailDirectionValues)[number]
 
 export const emailProcessingStatusValues = [
-	'pending',
 	'stored',
 	'sent',
 	'failed',
@@ -126,7 +125,7 @@ export type EmailSenderIdentityRecord = {
 	email: string
 	domain: string
 	displayName: string | null
-	status: 'pending' | 'verified' | 'revoked'
+	status: 'pending' | 'verified' | 'disabled'
 	verifiedAt: string | null
 	createdAt: string
 	updatedAt: string

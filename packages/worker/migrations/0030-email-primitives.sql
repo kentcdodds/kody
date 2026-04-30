@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS email_sender_policies (
 	user_id TEXT NOT NULL,
 	inbox_id TEXT,
 	package_id TEXT,
-	kind TEXT NOT NULL CHECK (kind IN ('sender', 'domain', 'reply-token', 'default')),
+	kind TEXT NOT NULL CHECK (kind IN ('sender', 'domain', 'reply_token')),
 	value TEXT NOT NULL,
 	effect TEXT NOT NULL CHECK (effect IN ('allow', 'quarantine', 'reject')),
 	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
@@ -163,21 +163,28 @@ ON email_sender_policies(inbox_id, kind, value);
 CREATE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value
 ON email_sender_policies(user_id, kind, value);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_unique
-ON email_sender_policies(
-	user_id,
-	kind,
-	value,
-	COALESCE(inbox_id, ''),
-	COALESCE(package_id, '')
-);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_inbox_null_package_null
+ON email_sender_policies(user_id, kind, value)
+WHERE inbox_id IS NULL AND package_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_inbox_package_null
+ON email_sender_policies(user_id, kind, value, inbox_id)
+WHERE inbox_id IS NOT NULL AND package_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_package_inbox_null
+ON email_sender_policies(user_id, kind, value, package_id)
+WHERE inbox_id IS NULL AND package_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_inbox_package
+ON email_sender_policies(user_id, kind, value, inbox_id, package_id)
+WHERE inbox_id IS NOT NULL AND package_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS email_delivery_events (
 	id TEXT PRIMARY KEY,
 	message_id TEXT,
 	user_id TEXT,
 	inbox_id TEXT,
-	event_type TEXT NOT NULL CHECK (event_type IN ('send_requested', 'sent', 'send_failed', 'received', 'accepted', 'quarantined', 'rejected')),
+	event_type TEXT NOT NULL CHECK (event_type IN ('receive_started', 'received', 'quarantined', 'rejected', 'send_requested', 'sent', 'failed', 'policy_matched')),
 	provider TEXT NOT NULL DEFAULT 'kody',
 	provider_message_id TEXT,
 	detail_json TEXT NOT NULL DEFAULT '{}',

@@ -515,11 +515,7 @@ export async function upsertEmailSenderPolicy(input: {
 		.prepare(
 			`INSERT INTO email_sender_policies (
 				id, user_id, inbox_id, package_id, kind, value, effect, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(user_id, kind, value, inbox_id, package_id) DO UPDATE SET
-				effect = excluded.effect,
-				enabled = 1,
-				updated_at = excluded.updated_at`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
