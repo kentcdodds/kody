@@ -178,6 +178,47 @@ test('jwt_sign requires the secret to approve the capability', async () => {
 	}
 })
 
+test('jwt_sign approval URL falls back to user scope when scope metadata is absent', async () => {
+	const { privateKey } = createKeyPair()
+	const resolveSecretSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: privateKey,
+			scope: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: [],
+		})
+
+	try {
+		await expect(
+			jwtSignCapability.handler(
+				{
+					privateKeySecretName: 'serviceAccountKey',
+					algorithm: 'RS256',
+					claims: { iss: 'service@example.com' },
+				},
+				{
+					env: {} as Env,
+					callerContext: createMcpCallerContext({
+						baseUrl: 'https://heykody.dev',
+						user: { userId: 'user-123' },
+					}),
+				},
+			),
+		).rejects.toThrow(
+			createCapabilitySecretAccessDeniedMessage(
+				'serviceAccountKey',
+				'jwt_sign',
+				'https://heykody.dev/account/secrets/user/serviceAccountKey?capability=jwt_sign',
+			),
+		)
+	} finally {
+		resolveSecretSpy.mockRestore()
+	}
+})
+
 test('jwt_sign reports missing secrets without leaking key material', async () => {
 	const resolveSecretSpy = vi
 		.spyOn(secretService, 'resolveSecret')

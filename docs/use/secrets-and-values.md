@@ -33,9 +33,10 @@ them.
 ## Signing JWTs with saved private keys
 
 Use **`codemode.jwt_sign(...)`** when a workflow needs a JWT signed by a private
-key stored in a saved secret. The primitive returns only the compact JWT; it
-never returns the private key material. The saved secret must approve the
-**`jwt_sign`** capability before it can be used.
+key stored in a saved secret. The primitive returns **`{ jwt, algorithm }`**:
+use **`result.jwt`** as the compact JWT and **`result.algorithm`** for the
+signing algorithm. It never returns private key material. The saved secret must
+approve the **`jwt_sign`** capability before it can be used.
 
 The caller supplies the JWT header and claims, then performs any provider-
 specific token exchange with ordinary **`fetch`**. For service-account JSON

@@ -89,10 +89,7 @@ export const jwtSignCapability = defineDomainCapability(
 				const approvalUrl = buildSecretCapabilityApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
 					name: args.privateKeySecretName,
-					scope:
-						resolved.scope ??
-						args.privateKeySecretScope ??
-						secretScopeValues[0],
+					scope: resolved.scope ?? args.privateKeySecretScope ?? 'user',
 					capabilityName: 'jwt_sign',
 					storageContext,
 				})
