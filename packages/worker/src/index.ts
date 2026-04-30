@@ -48,6 +48,7 @@ import {
 } from './remote-connector/connector-session-key.ts'
 import { handlePackageAppRequest } from '#app/handlers/package-app.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
+import { handleInboundEmail } from '#worker/email/inbound.ts'
 
 export {
 	ChatAgent,
@@ -310,6 +311,13 @@ const workerHandler = {
 			}
 		}
 		return oauthProvider.fetch(request, env, ctx)
+	},
+	async email(
+		message: ForwardableEmailMessage,
+		env: Env,
+		ctx: ExecutionContext,
+	) {
+		await handleInboundEmail(message, env, ctx)
 	},
 } satisfies ExportedHandler<Env>
 

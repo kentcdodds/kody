@@ -14,6 +14,13 @@ const d1DatabaseSchema = createSchema<unknown, D1Database>((value, context) => {
 	return fail('Missing APP_DB binding for database access.', context.path)
 })
 
+const optionalSendEmailSchema = createSchema<unknown, SendEmail | undefined>(
+	(value, _context) => {
+		if (value === undefined) return { value: undefined }
+		return { value: value as SendEmail }
+	},
+)
+
 const optionalNonEmptyStringSchema = createSchema<unknown, string | undefined>(
 	(value, context) => {
 		if (value === undefined) return { value: undefined }
@@ -221,6 +228,7 @@ export const EnvSchema = object({
 	APP_BASE_URL: optionalUrlStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	CLOUDFLARE_EMAIL_FROM: optionalNonEmptyStringSchema,
+	EMAIL: optionalSendEmailSchema,
 	AI_MODE: optionalAiModeSchema,
 	AI_MODEL: optionalNonEmptyStringSchema,
 	AI_GATEWAY_ID: optionalNonEmptyStringSchema,

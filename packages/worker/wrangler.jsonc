@@ -1,7 +1,7 @@
 {
 	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "kody",
-	"compatibility_date": "2026-04-13",
+	"compatibility_date": "2026-04-16",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": "./src/index.ts",
 	"upload_source_maps": true,
@@ -129,6 +129,11 @@
 					"migrations_dir": "./migrations",
 				},
 			],
+			"send_email": [
+				{
+					"name": "EMAIL",
+				},
+			],
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
@@ -218,6 +223,11 @@
 					"migrations_dir": "./migrations",
 				},
 			],
+			"send_email": [
+				{
+					"name": "EMAIL",
+				},
+			],
 			"kv_namespaces": [
 				{
 					"binding": "OAUTH_KV",
@@ -305,6 +315,11 @@
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
 					"migrations_dir": "./migrations",
+				},
+			],
+			"send_email": [
+				{
+					"name": "EMAIL",
 				},
 			],
 			"kv_namespaces": [

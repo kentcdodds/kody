@@ -589,6 +589,8 @@ async function handleEmailSend(
 	return envelope(
 		{
 			delivered: Array.isArray(payload.to) ? payload.to : [payload.to],
+			message_id: messageId,
+			messageId,
 			permanent_bounces: [],
 			queued: [],
 		},

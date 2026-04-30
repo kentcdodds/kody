@@ -19,6 +19,7 @@ type CloudflareApiEnvelope = {
 		message?: string
 	}>
 	result?: {
+		message_id?: string
 		delivered?: string[]
 		permanent_bounces?: string[]
 		queued?: string[]
@@ -29,6 +30,7 @@ type CloudflareSendResult = {
 	ok: boolean
 	skipped?: boolean
 	error?: string
+	messageId?: string | null
 }
 
 function normalizeEmailPayload(message: OutboundEmail) {
@@ -49,6 +51,12 @@ function normalizeEmailPayload(message: OutboundEmail) {
 }
 
 function logSkippedEmail(reason: string, message: OutboundEmail) {
+	const headers =
+		message.headers ?
+			Object.fromEntries(
+				Object.keys(message.headers).map((key) => [key, '[REDACTED]']),
+			)
+		:	undefined
 	console.warn(
 		reason,
 		JSON.stringify({
@@ -57,6 +65,8 @@ function logSkippedEmail(reason: string, message: OutboundEmail) {
 			subject: message.subject,
 			html: message.html,
 			text: message.text,
+			replyTo: message.replyTo,
+			headers,
 		}),
 	)
 }
@@ -120,14 +130,20 @@ async function sendViaCloudflareApi(
 
 	return {
 		ok: true,
+		messageId: payload.result?.message_id ?? null,
 	}
 }
 
 export async function sendCloudflareEmail(
 	config: CloudflareEmailClientConfig,
-	message: OutboundEmail,
+	message: Omit<OutboundEmail, 'replyTo' | 'headers'> &
+		Partial<Pick<OutboundEmail, 'replyTo' | 'headers'>>,
 ): Promise<CloudflareSendResult> {
-	const normalized = normalizeEmailPayload(message)
+	const normalized = normalizeEmailPayload({
+		...message,
+		replyTo: message.replyTo,
+		headers: message.headers,
+	})
 	const apiBaseUrl =
 		typeof config.apiBaseUrl === 'string' && config.apiBaseUrl.trim().length > 0
 			? config.apiBaseUrl.trim()

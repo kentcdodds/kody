@@ -99,9 +99,10 @@ test('sendCloudflareEmail posts to the mock Cloudflare email API', async () => {
 		},
 	)
 
-	expect(sendResult).toEqual({
+	expect(sendResult).toMatchObject({
 		ok: true,
 	})
+	expect(sendResult.messageId).toMatch(/^email_/)
 
 	const response = await fetch(`${mock.origin}/__mocks/messages?token=${token}`)
 	expect(response.status).toBe(200)
@@ -156,7 +157,7 @@ test('sendCloudflareEmail defaults the API base URL when it is unset', async () 
 			},
 		)
 
-		expect(result).toEqual({
+		expect(result).toMatchObject({
 			ok: true,
 		})
 		expect(fetchSpy).toHaveBeenCalledTimes(1)

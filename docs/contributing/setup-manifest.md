@@ -11,6 +11,16 @@ This project uses the following resources:
 - KV namespace for OAuth/session storage
   - `binding`: `OAUTH_KV`
   - `title`: `<app-name>-oauth`
+- Cloudflare Email Sending / Email Service Worker binding
+  - `binding`: `EMAIL`
+  - `wrangler` key: `send_email`
+  - Production domains still need Cloudflare-side sender/domain verification
+    before sends succeed.
+- Cloudflare Email Routing for inbound mail
+  - Configure MX records and selected route aliases in the Cloudflare
+    dashboard.
+  - Route only test/storage aliases to the Worker until quarantine behavior is
+    verified.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
   - Preview: `kody-capabilities-preview`
@@ -67,6 +77,9 @@ automatically:
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
 - `CLOUDFLARE_EMAIL_FROM` (optional; sender address for outbound email)
+  Existing app email uses this as a default sender. First-class MCP
+  `email_send` additionally requires a verified sender identity created through
+  the email capabilities.
 - `AI_GATEWAY_ID` (required when `AI_MODE=remote`; deploy workflows sync a
   gateway ID from GitHub Actions secrets so remote inference goes through
   Cloudflare AI Gateway)
@@ -114,6 +127,8 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
 - `CLOUDFLARE_EMAIL_FROM` (optional, required to send app email)
+  First-class Kody email also requires the `EMAIL` send binding plus
+  Cloudflare Email Service sender/domain verification.
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
