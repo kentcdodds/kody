@@ -96,8 +96,5 @@
     "packages/worker",
     "packages/mock-servers/*",
     "docs/talks/*"
-  ],
-  "dependencies": {
-    "postal-mime": "^2.7.4"
-  }
+  ]
 }

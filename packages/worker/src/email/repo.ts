@@ -797,7 +797,7 @@ export async function insertEmailMessage(input: {
 		references_json: JSON.stringify(input.message.references ?? []),
 		headers_json: input.message.headers
 			? JSON.stringify(input.message.headers)
-			: '[]',
+			: '{}',
 		auth_results: input.message.authResults ?? null,
 		text_body: input.message.textBody ?? null,
 		html_body: input.message.htmlBody ?? null,

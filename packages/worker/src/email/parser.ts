@@ -46,14 +46,10 @@ function normalizeReferences(value: string | undefined) {
 }
 
 function headersToRecord(
-	headers: Headers,
+	_headers: Headers,
 	parsedHeaders: Array<{ name: string; value: string }>,
 ) {
 	const record: Record<string, Array<string>> = {}
-	for (const [name, value] of headers) {
-		const key = name.toLowerCase()
-		record[key] = [...(record[key] ?? []), value]
-	}
 	for (const header of parsedHeaders) {
 		const key = header.name.toLowerCase()
 		record[key] = [...(record[key] ?? []), header.value]
