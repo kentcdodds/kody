@@ -4,14 +4,35 @@ import {
 	memoryContextInputField,
 } from '#mcp/tools/tool-call-context.ts'
 
+export const agentTurnPromptCacheSchema = z.literal('prefix')
+
+export const agentTurnSystemPromptSchema = z.union([
+	z.string().min(1),
+	z.object({
+		content: z.string().min(1),
+		cache: agentTurnPromptCacheSchema
+			.optional()
+			.describe(
+				'Optional hint that the prompt prefix through this system prompt is stable and can be cached when supported.',
+			),
+	}),
+])
+
 export const agentTurnMessageSchema = z.object({
 	role: z.enum(['system', 'user', 'assistant']),
 	content: z.string().min(1),
+	cache: agentTurnPromptCacheSchema
+		.optional()
+		.describe(
+			'Optional hint that the prompt prefix through this message is stable and can be cached when supported.',
+		),
 })
 
 export const agentTurnInputSchema = z.object({
 	messages: z.array(agentTurnMessageSchema).min(1),
-	system: z.string().min(1).describe('System prompt to use for this turn.'),
+	system: agentTurnSystemPromptSchema.describe(
+		'System prompt to use for this turn. Accepts a string or { content, cache: "prefix" }.',
+	),
 	sessionId: z
 		.string()
 		.min(1)
@@ -39,6 +60,8 @@ export const agentTurnToolInputSchema = agentTurnInputSchema.extend({
 		.describe('Stable session identifier used to scope the active agent run.'),
 })
 
+export type AgentTurnPromptCache = z.infer<typeof agentTurnPromptCacheSchema>
+export type AgentTurnSystemPrompt = z.infer<typeof agentTurnSystemPromptSchema>
 export type AgentTurnMessage = z.infer<typeof agentTurnMessageSchema>
 export type AgentTurnInput = z.infer<typeof agentTurnInputSchema>
 export type AgentTurnToolInput = z.infer<typeof agentTurnToolInputSchema>
