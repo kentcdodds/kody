@@ -6,6 +6,7 @@ import { logAuditEvent, getRequestIp } from '#app/audit-log.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { type routes } from '#app/routes.ts'
+import { buildKodySenderIdentity } from '#worker/email/kody-sender.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
@@ -55,23 +56,6 @@ async function hashResetToken(token: string) {
 	const data = new TextEncoder().encode(token)
 	const digest = await crypto.subtle.digest('SHA-256', data)
 	return toHex(new Uint8Array(digest))
-}
-
-function logMissingEmailConfig(payload: {
-	to: string
-	from: string
-	subject: string
-	html: string
-}) {
-	console.warn(
-		'cloudflare-email-from-missing',
-		JSON.stringify({
-			to: payload.to,
-			from: payload.from,
-			subject: payload.subject,
-			body: payload.html,
-		}),
-	)
 }
 
 export function createPasswordResetRequestHandler(appEnv: AppEnv) {
@@ -135,34 +119,27 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 				const resetUrl = new URL('/reset-password', appBaseUrl)
 				resetUrl.searchParams.set('token', token)
 				const email = buildResetEmail(resetUrl.toString())
-				const fromEmail = appEnv.CLOUDFLARE_EMAIL_FROM?.trim() ?? ''
+				const sender = buildKodySenderIdentity({
+					env: { APP_BASE_URL: appBaseUrl },
+				})
 
-				if (!fromEmail) {
-					logMissingEmailConfig({
-						to: normalizedEmail,
-						from: fromEmail,
-						subject: email.subject,
-						html: email.html,
-					})
-				} else {
-					try {
-						await sendCloudflareEmail(
-							{
-								accountId: appEnv.CLOUDFLARE_ACCOUNT_ID,
-								apiBaseUrl: appEnv.CLOUDFLARE_API_BASE_URL,
-								apiToken: appEnv.CLOUDFLARE_API_TOKEN,
-							},
-							{
-								to: normalizedEmail,
-								from: fromEmail,
-								subject: email.subject,
-								html: email.html,
-								text: email.text,
-							},
-						)
-					} catch (error) {
-						console.warn('cloudflare-email-error', error)
-					}
+				try {
+					await sendCloudflareEmail(
+						{
+							accountId: appEnv.CLOUDFLARE_ACCOUNT_ID,
+							apiBaseUrl: appEnv.CLOUDFLARE_API_BASE_URL,
+							apiToken: appEnv.CLOUDFLARE_API_TOKEN,
+						},
+						{
+							to: normalizedEmail,
+							from: sender.email,
+							subject: email.subject,
+							html: email.html,
+							text: email.text,
+						},
+					)
+				} catch (error) {
+					console.warn('cloudflare-email-error', error)
 				}
 
 				void logAuditEvent({

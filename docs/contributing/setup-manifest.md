@@ -72,17 +72,10 @@ automatically:
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
 - `APP_BASE_URL` (optional; defaults to request origin, example
   `https://app.example.com`; also sets the canonical public origin used for MCP
-  auth metadata, generated UI resources, and email links)
-- `APP_BASE_URL` (optional; defaults to request origin, example
-  `https://app.example.com`; also sets the canonical public origin used for MCP
   auth metadata, generated UI resources, email links, and automated app-owned
   sender addresses like `kody@<app-domain>`)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
-- `CLOUDFLARE_EMAIL_FROM` (optional; sender address for outbound email) Existing
-  app email uses this as a default sender. First-class MCP `email_send`
-  additionally requires a verified sender identity created through the email
-  capabilities.
 - `AI_GATEWAY_ID` (required when `AI_MODE=remote`; deploy workflows sync a
   gateway ID from GitHub Actions secrets so remote inference goes through
   Cloudflare AI Gateway)
@@ -129,9 +122,6 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
-- `CLOUDFLARE_EMAIL_FROM` (optional, required to send app email) First-class
-  Kody email also requires the `EMAIL` send binding plus Cloudflare Email
-  Service sender/domain verification.
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
@@ -179,9 +169,6 @@ How to get/set each value:
     ID.
   - Store that value as the preview GitHub Actions secret so preview deploys
     sync a different worker secret than production.
-- `CLOUDFLARE_EMAIL_FROM` (optional)
-  - Use a sender address on a domain onboarded to Cloudflare Email Service (for
-    example `noreply@example.com`), then store it as a GitHub Actions secret.
 - `SENTRY_DSN` (optional)
   - In Sentry: create a project, copy the DSN, and add it as the repository
     secret `SENTRY_DSN`. Production and preview deploy workflows sync it with

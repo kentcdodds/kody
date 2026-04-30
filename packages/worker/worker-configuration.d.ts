@@ -21,7 +21,6 @@ declare namespace Cloudflare {
 		SENTRY_ENVIRONMENT: "production";
 		COOKIE_SECRET: string;
 		APP_BASE_URL: string;
-		CLOUDFLARE_EMAIL_FROM: string;
 		MCP_OBJECT: DurableObjectNamespace<import("./src/index").MCP>;
 		ChatAgent: DurableObjectNamespace<import("./src/index").ChatAgent>;
 		HOME_CONNECTOR_SESSION: DurableObjectNamespace<import("./src/index").HomeConnectorSession>;
@@ -39,7 +38,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "AI_MODE" | "AI_MODEL" | "SENTRY_ENVIRONMENT" | "COOKIE_SECRET" | "APP_BASE_URL" | "CLOUDFLARE_EMAIL_FROM">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "AI_MODE" | "AI_MODEL" | "SENTRY_ENVIRONMENT" | "COOKIE_SECRET" | "APP_BASE_URL">> {}
 }
 
 // Begin runtime types

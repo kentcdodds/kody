@@ -17,17 +17,15 @@ const baseOptions = {
 test('buildSpawnEnv removes empty optional vars', () => {
 	const options = {
 		...baseOptions,
-		setFromEnvOptional: ['CLOUDFLARE_API_BASE_URL', 'CLOUDFLARE_EMAIL_FROM'],
+		setFromEnvOptional: ['CLOUDFLARE_API_BASE_URL'],
 	}
 	const spawnEnv = buildSpawnEnv(options, {
 		CLOUDFLARE_API_BASE_URL: '',
-		CLOUDFLARE_EMAIL_FROM: '',
 		COOKIE_SECRET: 'cookie',
 		PATH: '/usr/bin',
 	})
 
 	expect(spawnEnv.CLOUDFLARE_API_BASE_URL).toBeUndefined()
-	expect(spawnEnv.CLOUDFLARE_EMAIL_FROM).toBeUndefined()
 	expect(spawnEnv.COOKIE_SECRET).toBe('cookie')
 	expect(spawnEnv.PATH).toBe('/usr/bin')
 })
