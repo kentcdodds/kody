@@ -13,7 +13,7 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `email-outbound-user-${crypto.randomUUID()}`
 	const from = `sender-${crypto.randomUUID()}@example.com`
-	const sent: Array<unknown> = []
+	const sent: Array<EmailMessage> = []
 	const sendEnv = {
 		...env,
 		EMAIL: {
@@ -41,6 +41,9 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 	})
 
 	expect(sent).toHaveLength(1)
+	expect(sent[0]?.headers).toEqual({
+		'X-Kody-Email-Message-Id': result.message.messageIdHeader,
+	})
 	expect(result.status).toBe('sent')
 	expect(result.providerMessageId).toBe('provider-message-123')
 	const stored = await getEmailMessageById({
@@ -53,6 +56,10 @@ test('sendOutboundEmail uses SendEmail binding and stores sent delivery state', 
 		processingStatus: 'sent',
 		providerMessageId: 'provider-message-123',
 		fromAddress: from,
+		headers: {
+			'Message-ID': result.message.messageIdHeader,
+			'X-Kody-Email-Message-Id': result.message.messageIdHeader,
+		},
 	})
 	const listed = await listEmailMessages({
 		db: env.APP_DB,
@@ -173,12 +180,15 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 		expect(result.error).toBe('provider down')
 		expect(fetchCalls).toHaveLength(1)
 		expect(fetchCalls[0]?.body).toMatchObject({
+			html: 'Body',
 			replyTo: 'reply@example.com',
 			headers: {
+				'X-Kody-Email-Message-Id': result.message.messageIdHeader,
 				'In-Reply-To': original.message.messageIdHeader,
 				References: '<root@example.com>',
 			},
 		})
+		expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
 		const stored = await getEmailMessageById({
 			db: env.APP_DB,
 			userId,
@@ -187,9 +197,53 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 		expect(stored).toMatchObject({
 			processingStatus: 'failed',
 			error: 'provider down',
+			headers: {
+				'Message-ID': result.message.messageIdHeader,
+				'X-Kody-Email-Message-Id': result.message.messageIdHeader,
+				'In-Reply-To': original.message.messageIdHeader,
+				References: '<root@example.com>',
+			},
 		})
 	} finally {
 		globalThis.fetch = originalFetch
 	}
 })
 
+test('sendOutboundEmail rejects blank bodies before REST fallback can synthesize one', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `email-outbound-empty-body-user-${crypto.randomUUID()}`
+	const from = `sender-${crypto.randomUUID()}@example.com`
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async () => {
+		throw new Error('REST fallback should not be called')
+	}) as typeof fetch
+
+	try {
+		await upsertEmailSenderIdentity({
+			db: env.APP_DB,
+			userId,
+			email: from,
+			domain: getEmailDomain(from),
+			status: 'verified',
+		})
+
+		await expect(
+			sendOutboundEmail({
+				env: {
+					...env,
+					EMAIL: undefined as unknown as SendEmail,
+					CLOUDFLARE_ACCOUNT_ID: 'account-123',
+					CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+					CLOUDFLARE_API_TOKEN: 'token-123',
+				},
+				userId,
+				from,
+				to: 'recipient@example.com',
+				subject: 'Missing body',
+				text: '   ',
+			}),
+		).rejects.toThrow('Email text or HTML body is required.')
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
