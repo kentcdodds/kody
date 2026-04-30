@@ -34,7 +34,6 @@ export const emailInboxListCapability = defineDomainCapability(
 					id: inbox.id,
 					name: inbox.name,
 					description: inbox.description,
-					mode: inbox.mode,
 					enabled: inbox.enabled,
 					addresses: addresses
 						.filter((address) => address.inboxId === inbox.id)

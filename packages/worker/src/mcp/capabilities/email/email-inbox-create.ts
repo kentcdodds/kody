@@ -10,18 +10,15 @@ import { createEmailInboxWithAddress } from '#worker/email/repo.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import {
-	emailInboxCreateOutputSchema,
-	emailInboxModeSchema,
-} from './shared.ts'
+import { emailInboxCreateOutputSchema } from './shared.ts'
 
 export const emailInboxCreateCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'email_inbox_create',
 		description:
-			'Create a storage-only email inbox and routable alias for the signed-in user. Unknown senders are quarantined by default.',
-		keywords: ['email', 'inbox', 'alias', 'routing', 'quarantine'],
+			'Create a storage-only email inbox and routable alias for the signed-in user.',
+		keywords: ['email', 'inbox', 'alias', 'routing'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -29,7 +26,6 @@ export const emailInboxCreateCapability = defineDomainCapability(
 			name: z.string().trim().min(1),
 			address: z.string().email(),
 			description: z.string().optional(),
-			mode: emailInboxModeSchema.default('quarantine'),
 		}),
 		outputSchema: emailInboxCreateOutputSchema,
 		async handler(args, ctx) {
@@ -41,7 +37,6 @@ export const emailInboxCreateCapability = defineDomainCapability(
 				userId: user.userId,
 				name: args.name.trim(),
 				description: args.description?.trim() ?? '',
-				mode: args.mode,
 				address,
 				localPart: getEmailLocalPart(address),
 				domain: getEmailDomain(address),
@@ -51,7 +46,6 @@ export const emailInboxCreateCapability = defineDomainCapability(
 				id: inbox.id,
 				name: inbox.name,
 				description: inbox.description,
-				mode: inbox.mode,
 				enabled: inbox.enabled,
 				addresses: [{
 					id: alias.id,

@@ -4,17 +4,15 @@ import { emailInboxCreateCapability } from './email-inbox-create.ts'
 import { emailInboxListCapability } from './email-inbox-list.ts'
 import { emailMessageGetCapability } from './email-message-get.ts'
 import { emailMessageListCapability } from './email-message-list.ts'
-import { emailPolicyGetCapability } from './email-policy-get.ts'
 import { emailReplyCapability } from './email-reply.ts'
 import { emailSendCapability } from './email-send.ts'
-import { emailSenderApproveCapability } from './email-sender-approve.ts'
-import { emailSenderRevokeCapability } from './email-sender-revoke.ts'
+import { emailSenderIdentityVerifyCapability } from './email-sender-identity-verify.ts'
 
 export const emailDomain = defineDomain({
 	name: capabilityDomainNames.email,
 	description:
-		'Cloudflare-backed email primitives for creating inbox aliases, sending verified outbound mail, storing inbound messages, and enforcing sender policies.',
-	keywords: ['email', 'mail', 'inbox', 'quarantine', 'sender policy'],
+		'Cloudflare-backed email primitives for creating inbox aliases, storing inbound messages, and sending verified outbound mail.',
+	keywords: ['email', 'mail', 'inbox', 'routing', 'sender identity'],
 	capabilities: [
 		emailInboxCreateCapability,
 		emailInboxListCapability,
@@ -22,8 +20,6 @@ export const emailDomain = defineDomain({
 		emailMessageGetCapability,
 		emailSendCapability,
 		emailReplyCapability,
-		emailSenderApproveCapability,
-		emailSenderRevokeCapability,
-		emailPolicyGetCapability,
+		emailSenderIdentityVerifyCapability,
 	],
 })

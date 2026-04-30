@@ -89,7 +89,6 @@ export type PackageRetrieverDefinition = z.infer<
 
 export const packageEmailInboxDefinitionSchema = z.object({
 	id: z.string().regex(kodyPackageIdPattern),
-	mode: z.enum(['quarantine', 'accept']).optional(),
 })
 
 export const packageEmailHandlerDefinitionSchema = z.object({

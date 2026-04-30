@@ -1,5 +1,13 @@
 export async function ensureEmailTestSchema(db: D1Database) {
 	const statements = [
+		`DROP TABLE IF EXISTS email_sender_policies;`,
+		`DROP TABLE IF EXISTS email_delivery_events;`,
+		`DROP TABLE IF EXISTS email_attachments;`,
+		`DROP TABLE IF EXISTS email_messages;`,
+		`DROP TABLE IF EXISTS email_threads;`,
+		`DROP TABLE IF EXISTS email_inbox_addresses;`,
+		`DROP TABLE IF EXISTS email_inboxes;`,
+		`DROP TABLE IF EXISTS email_sender_identities;`,
 		`CREATE TABLE IF NOT EXISTS email_sender_identities (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL,
@@ -21,7 +29,6 @@ ON email_sender_identities(user_id, email);`,
 	package_id TEXT,
 	name TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
-	mode TEXT NOT NULL CHECK (mode IN ('quarantine', 'accept')),
 	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
@@ -75,8 +82,7 @@ ON email_sender_identities(user_id, email);`,
 	html_body TEXT,
 	raw_mime TEXT,
 	raw_size INTEGER NOT NULL DEFAULT 0,
-	policy_decision TEXT NOT NULL CHECK (policy_decision IN ('accepted', 'quarantined', 'rejected')),
-	processing_status TEXT NOT NULL CHECK (processing_status IN ('stored', 'sent', 'failed', 'rejected')),
+	processing_status TEXT NOT NULL CHECK (processing_status IN ('stored', 'sent', 'failed')),
 	provider_message_id TEXT,
 	error TEXT,
 	received_at TEXT,
@@ -98,37 +104,12 @@ ON email_sender_identities(user_id, email);`,
 	created_at TEXT NOT NULL
 );`,
 
-		`CREATE TABLE IF NOT EXISTS email_sender_policies (
-	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL,
-	inbox_id TEXT,
-	package_id TEXT,
-	kind TEXT NOT NULL CHECK (kind IN ('sender', 'domain', 'reply_token')),
-	value TEXT NOT NULL,
-	effect TEXT NOT NULL CHECK (effect IN ('allow', 'quarantine', 'reject')),
-	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-);`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_inbox_null_package_null
-ON email_sender_policies(user_id, kind, value)
-WHERE inbox_id IS NULL AND package_id IS NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_inbox_package_null
-ON email_sender_policies(user_id, kind, value, inbox_id)
-WHERE inbox_id IS NOT NULL AND package_id IS NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_package_inbox_null
-ON email_sender_policies(user_id, kind, value, package_id)
-WHERE inbox_id IS NULL AND package_id IS NOT NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_policies_user_kind_value_inbox_package
-ON email_sender_policies(user_id, kind, value, inbox_id, package_id)
-WHERE inbox_id IS NOT NULL AND package_id IS NOT NULL;`,
-
 		`CREATE TABLE IF NOT EXISTS email_delivery_events (
 	id TEXT PRIMARY KEY,
 	message_id TEXT,
 	user_id TEXT,
 	inbox_id TEXT,
-	event_type TEXT NOT NULL CHECK (event_type IN ('receive_started', 'received', 'quarantined', 'rejected', 'send_requested', 'sent', 'failed', 'policy_matched')),
+	event_type TEXT NOT NULL CHECK (event_type IN ('receive_started', 'received', 'rejected', 'send_requested', 'sent', 'failed')),
 	provider TEXT NOT NULL DEFAULT 'kody',
 	provider_message_id TEXT,
 	detail_json TEXT NOT NULL DEFAULT '{}',

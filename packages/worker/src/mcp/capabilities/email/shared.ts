@@ -2,21 +2,13 @@ import { z } from 'zod'
 import {
 	type EmailMessageRecord,
 	emailDirectionValues,
-	emailInboxModeValues,
-	emailPolicyDecisionValues,
-	emailPolicyEffectValues,
-	emailPolicyKindValues,
 	emailProcessingStatusValues,
 } from '#worker/email/types.ts'
-
-export const emailInboxModeSchema = z.enum(emailInboxModeValues)
-export const emailPolicyKindSchema = z.enum(emailPolicyKindValues)
 
 export const emailInboxSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	description: z.string().nullable(),
-	mode: z.enum(emailInboxModeValues),
 	enabled: z.boolean(),
 	addresses: z.array(
 		z.object({
@@ -58,7 +50,6 @@ export const emailMessageSummarySchema = z.object({
 	to_addresses: z.array(z.string()),
 	subject: z.string().nullable(),
 	message_id_header: z.string().nullable(),
-	policy_decision: z.enum(emailPolicyDecisionValues),
 	processing_status: z.enum(emailProcessingStatusValues),
 	provider_message_id: z.string().nullable(),
 	error: z.string().nullable(),
@@ -94,27 +85,6 @@ export const emailMessageDetailSchema = emailMessageSummarySchema.extend({
 	attachments: z.array(emailAttachmentSchema),
 })
 
-export const emailPolicySchema = z.object({
-	id: z.string(),
-	inbox_id: z.string().nullable(),
-	package_id: z.string().nullable(),
-	kind: z.enum(emailPolicyKindValues),
-	value: z.string(),
-	effect: z.enum(emailPolicyEffectValues),
-	enabled: z.boolean(),
-	created_at: z.string(),
-	updated_at: z.string(),
-})
-
-export const senderApprovalSchema = z.object({
-	identity_id: z.string().nullable(),
-	policy: emailPolicySchema.nullable(),
-})
-
-export const revokePolicyOutputSchema = z.object({
-	revoked: z.boolean(),
-})
-
 export function stringArray(values: ReadonlyArray<unknown>) {
 	return values.filter((value): value is string => typeof value === 'string')
 }
@@ -130,7 +100,6 @@ export function toMessageSummary(message: EmailMessageRecord) {
 		to_addresses: stringArray(message.toAddresses),
 		subject: message.subject,
 		message_id_header: message.messageIdHeader,
-		policy_decision: message.policyDecision,
 		processing_status: message.processingStatus,
 		provider_message_id: message.providerMessageId,
 		error: message.error,

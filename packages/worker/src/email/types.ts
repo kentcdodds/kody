@@ -1,23 +1,3 @@
-export const emailInboxModeValues = ['quarantine', 'accept'] as const
-export type EmailInboxMode = (typeof emailInboxModeValues)[number]
-
-export const emailPolicyKindValues = [
-	'sender',
-	'domain',
-	'reply_token',
-] as const
-export type EmailPolicyKind = (typeof emailPolicyKindValues)[number]
-
-export const emailPolicyEffectValues = ['allow', 'quarantine', 'reject'] as const
-export type EmailPolicyEffect = (typeof emailPolicyEffectValues)[number]
-
-export const emailPolicyDecisionValues = [
-	'accepted',
-	'quarantined',
-	'rejected',
-] as const
-export type EmailPolicyDecision = (typeof emailPolicyDecisionValues)[number]
-
 export const emailDirectionValues = ['inbound', 'outbound'] as const
 export type EmailDirection = (typeof emailDirectionValues)[number]
 
@@ -25,28 +5,18 @@ export const emailProcessingStatusValues = [
 	'stored',
 	'sent',
 	'failed',
-	'rejected',
 ] as const
 export type EmailProcessingStatus = (typeof emailProcessingStatusValues)[number]
 
 export const emailDeliveryEventTypeValues = [
 	'receive_started',
 	'received',
-	'quarantined',
 	'rejected',
 	'send_requested',
 	'sent',
 	'failed',
-	'policy_matched',
 ] as const
 export type EmailDeliveryEventType = (typeof emailDeliveryEventTypeValues)[number]
-
-export type EmailPolicyEvaluation = {
-	decision: EmailPolicyDecision
-	reasons: Array<string>
-	ruleId: string | null
-	policyKind: EmailPolicyKind | null
-}
 
 export type EmailMailbox = {
 	name: string | null
@@ -89,7 +59,6 @@ export type EmailInboxRecord = {
 	packageId: string | null
 	name: string
 	description: string
-	mode: EmailInboxMode
 	enabled: boolean
 	createdAt: string
 	updatedAt: string
@@ -117,19 +86,6 @@ export type EmailSenderIdentityRecord = {
 	displayName: string | null
 	status: 'pending' | 'verified' | 'disabled'
 	verifiedAt: string | null
-	createdAt: string
-	updatedAt: string
-}
-
-export type EmailSenderPolicyRecord = {
-	id: string
-	userId: string
-	inboxId: string | null
-	packageId: string | null
-	kind: EmailPolicyKind
-	value: string
-	effect: EmailPolicyEffect
-	enabled: boolean
 	createdAt: string
 	updatedAt: string
 }
@@ -168,7 +124,6 @@ export type EmailMessageRecord = {
 	htmlBody: string | null
 	rawMime: string | null
 	rawSize: number | null
-	policyDecision: EmailPolicyDecision
 	processingStatus: EmailProcessingStatus
 	providerMessageId: string | null
 	error: string | null

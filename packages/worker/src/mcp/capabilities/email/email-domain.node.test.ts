@@ -16,20 +16,18 @@ function createContext() {
 	}
 }
 
-test('email domain exposes storage, sender policy, and send capabilities', () => {
+test('email domain exposes inbox, message, and send capabilities', () => {
 	expect(emailDomain.name).toBe('email')
 	expect(emailDomain.capabilities.map((capability) => capability.name)).toEqual(
-		expect.arrayContaining([
+		[
 			'email_inbox_create',
 			'email_inbox_list',
 			'email_message_list',
 			'email_message_get',
 			'email_send',
 			'email_reply',
-			'email_sender_approve',
-			'email_sender_revoke',
-			'email_policy_get',
-		]),
+			'email_sender_identity_verify',
+		],
 	)
 })
 

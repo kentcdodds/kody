@@ -243,7 +243,6 @@ export async function sendOutboundEmail(
 			htmlBody: html,
 			rawMime: null,
 			rawSize: null,
-			policyDecision: 'accepted',
 			processingStatus: 'stored',
 			providerMessageId: null,
 			error: null,

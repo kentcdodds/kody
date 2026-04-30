@@ -11,7 +11,6 @@ import {
 	createEmailInboxAddress,
 	createEmailThread,
 	listEmailMessages,
-	upsertEmailSenderPolicy,
 } from './repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -47,7 +46,7 @@ function createForwardableEmailMessage(input: {
 	}
 }
 
-test('inbound email handler stores quarantined and accepted messages by sender policy', async () => {
+test('inbound email handler stores all routed inbound messages', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `email-user-${crypto.randomUUID()}`
 	const address = requireNormalizedEmailAddress(
@@ -58,7 +57,6 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		userId,
 		name: 'Support',
 		description: 'Support inbox',
-		mode: 'quarantine',
 	})
 	await createEmailInboxAddress({
 		db: env.APP_DB,
@@ -69,7 +67,7 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		domain: getEmailDomain(address),
 	})
 
-	const quarantinedMessage = createForwardableEmailMessage({
+	const firstMessage = createForwardableEmailMessage({
 		from: 'stranger@example.net',
 		to: address,
 		raw: [
@@ -81,18 +79,10 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 			'Please help.',
 		].join('\r\n'),
 	})
-	await handleInboundEmail(quarantinedMessage, env)
-	expect(quarantinedMessage.rejectedReason).toBeNull()
+	await handleInboundEmail(firstMessage, env)
+	expect(firstMessage.rejectedReason).toBeNull()
 
-	await upsertEmailSenderPolicy({
-		db: env.APP_DB,
-		userId,
-		inboxId: inbox.id,
-		kind: 'domain',
-		value: 'trusted.example',
-		effect: 'allow',
-	})
-	const acceptedMessage = createForwardableEmailMessage({
+	const secondMessage = createForwardableEmailMessage({
 		from: 'agent@trusted.example',
 		to: address,
 		raw: [
@@ -104,8 +94,8 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 			'Approved body.',
 		].join('\r\n'),
 	})
-	await handleInboundEmail(acceptedMessage, env)
-	expect(acceptedMessage.rejectedReason).toBeNull()
+	await handleInboundEmail(secondMessage, env)
+	expect(secondMessage.rejectedReason).toBeNull()
 
 	const messages = await listEmailMessages({
 		db: env.APP_DB,
@@ -113,10 +103,7 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		inboxId: inbox.id,
 		limit: 10,
 	})
-	expect(messages.map((message) => message.policyDecision)).toEqual([
-		'accepted',
-		'quarantined',
-	])
+	expect(messages).toHaveLength(2)
 	expect(messages[0]).toMatchObject({
 		fromAddress: 'agent@trusted.example',
 		subject: 'Approved sender',
@@ -135,10 +122,10 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 		subjectNormalized: 'normalized subject',
 	})
 	const subjectOnlyMessage = createForwardableEmailMessage({
-		from: 'agent@trusted.example',
+		from: 'sender@example.net',
 		to: address,
 		raw: [
-			'From: Agent <agent@trusted.example>',
+			'From: Sender <sender@example.net>',
 			`To: ${address}`,
 			'Subject: Re: Normalized Subject',
 			'',
@@ -192,7 +179,6 @@ test('inbound email handler rejects malformed messages without persisting them',
 		userId,
 		name: 'Parse failures',
 		description: 'Parse failure inbox',
-		mode: 'quarantine',
 	})
 	await createEmailInboxAddress({
 		db: env.APP_DB,

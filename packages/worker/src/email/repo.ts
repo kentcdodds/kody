@@ -3,27 +3,15 @@ import {
 	type EmailDirection,
 	type EmailDeliveryEventType,
 	type EmailInboxAddressRecord,
-	type EmailInboxMode,
 	type EmailInboxRecord,
 	type EmailMessageRecord,
-	type EmailPolicyDecision,
 	type EmailProcessingStatus,
 	type EmailSenderIdentityRecord,
-	type EmailPolicyEffect,
-	type EmailPolicyKind,
-	type EmailSenderPolicyRecord,
 	type EmailThreadRecord,
 } from './types.ts'
 
-type D1RunResult = Awaited<ReturnType<D1PreparedStatement['run']>>
-
 function nowIso() {
 	return new Date().toISOString()
-}
-
-function normalizeRunChanges(result: D1RunResult) {
-	const changes = result.meta['changes']
-	return typeof changes === 'number' ? changes : Number(changes ?? 0)
 }
 
 function parseJsonArray(value: string | null) {
@@ -56,7 +44,6 @@ function mapInboxRow(row: Record<string, unknown>): EmailInboxRecord {
 		packageId: row['package_id'] == null ? null : String(row['package_id']),
 		name: String(row['name']),
 		description: row['description'] == null ? '' : String(row['description']),
-		mode: String(row['mode']) as EmailInboxMode,
 		enabled: Number(row['enabled']) === 1,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
@@ -95,23 +82,6 @@ function mapSenderIdentityRow(
 		status: String(row['status']) as EmailSenderIdentityRecord['status'],
 		verifiedAt:
 			row['verified_at'] == null ? null : String(row['verified_at']),
-		createdAt: String(row['created_at']),
-		updatedAt: String(row['updated_at']),
-	}
-}
-
-function mapSenderPolicyRow(
-	row: Record<string, unknown>,
-): EmailSenderPolicyRecord {
-	return {
-		id: String(row['id']),
-		userId: String(row['user_id']),
-		inboxId: row['inbox_id'] == null ? null : String(row['inbox_id']),
-		packageId: row['package_id'] == null ? null : String(row['package_id']),
-		kind: String(row['kind']) as EmailPolicyKind,
-		value: String(row['value']),
-		effect: String(row['effect']) as EmailPolicyEffect,
-		enabled: Number(row['enabled']) === 1,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -184,7 +154,6 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 		htmlBody: row['html_body'] == null ? null : String(row['html_body']),
 		rawMime: row['raw_mime'] == null ? null : String(row['raw_mime']),
 		rawSize: row['raw_size'] == null ? null : Number(row['raw_size']),
-		policyDecision: String(row['policy_decision']) as EmailPolicyDecision,
 		processingStatus: String(
 			row['processing_status'],
 		) as EmailProcessingStatus,
@@ -223,7 +192,6 @@ export async function createEmailInbox(input: {
 	userId: string
 	name: string
 	description?: string | null
-	mode: EmailInboxMode
 	packageId?: string | null
 }) {
 	const timestamp = nowIso()
@@ -233,7 +201,6 @@ export async function createEmailInbox(input: {
 		package_id: input.packageId ?? null,
 		name: input.name,
 		description: input.description ?? null,
-		mode: input.mode,
 		enabled: 1,
 		created_at: timestamp,
 		updated_at: timestamp,
@@ -241,8 +208,8 @@ export async function createEmailInbox(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO email_inboxes (
-				id, user_id, package_id, name, description, mode, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, user_id, package_id, name, description, enabled, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -250,7 +217,6 @@ export async function createEmailInbox(input: {
 			row.package_id,
 			row.name,
 			row.description,
-			row.mode,
 			row.enabled,
 			row.created_at,
 			row.updated_at,
@@ -321,7 +287,6 @@ export async function createEmailInboxWithAddress(input: {
 	userId: string
 	name: string
 	description?: string | null
-	mode: EmailInboxMode
 	packageId?: string | null
 	address: string
 	localPart: string
@@ -333,7 +298,6 @@ export async function createEmailInboxWithAddress(input: {
 		userId: input.userId,
 		name: input.name,
 		description: input.description ?? null,
-		mode: input.mode,
 		packageId: input.packageId ?? null,
 	})
 	try {
@@ -534,138 +498,6 @@ export async function getVerifiedSenderIdentity(input: {
 	return row ? mapSenderIdentityRow(row) : null
 }
 
-export async function upsertEmailSenderPolicy(input: {
-	db: D1Database
-	userId: string
-	kind: EmailPolicyKind
-	value: string
-	effect: EmailPolicyEffect
-	inboxId?: string | null
-	packageId?: string | null
-}) {
-	const existing = await input.db
-		.prepare(
-			`SELECT *
-			FROM email_sender_policies
-			WHERE user_id = ?
-				AND kind = ?
-				AND value = ?
-				AND COALESCE(inbox_id, '') = COALESCE(?, '')
-				AND COALESCE(package_id, '') = COALESCE(?, '')
-			LIMIT 1`,
-		)
-		.bind(
-			input.userId,
-			input.kind,
-			input.value,
-			input.inboxId ?? null,
-			input.packageId ?? null,
-		)
-		.first<Record<string, unknown>>()
-	const timestamp = nowIso()
-	const row = {
-		id: existing ? String(existing['id']) : crypto.randomUUID(),
-		user_id: input.userId,
-		inbox_id: input.inboxId ?? null,
-		package_id: input.packageId ?? null,
-		kind: input.kind,
-		value: input.value,
-		effect: input.effect,
-		enabled: 1,
-		created_at: existing ? String(existing['created_at']) : timestamp,
-		updated_at: timestamp,
-	}
-	if (existing) {
-		await input.db
-			.prepare(
-				`UPDATE email_sender_policies
-				SET effect = ?,
-					enabled = 1,
-					updated_at = ?
-				WHERE id = ?`,
-			)
-			.bind(row.effect, row.updated_at, row.id)
-			.run()
-	} else {
-		await input.db
-			.prepare(
-				`INSERT INTO email_sender_policies (
-					id, user_id, inbox_id, package_id, kind, value, effect, enabled, created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			)
-			.bind(
-				row.id,
-				row.user_id,
-				row.inbox_id,
-				row.package_id,
-				row.kind,
-				row.value,
-				row.effect,
-				row.enabled,
-				row.created_at,
-				row.updated_at,
-			)
-			.run()
-	}
-	return mapSenderPolicyRow(row)
-}
-
-export async function disableEmailSenderPolicy(input: {
-	db: D1Database
-	userId: string
-	kind: EmailPolicyKind
-	value: string
-	inboxId?: string | null
-	packageId?: string | null
-}) {
-	const result = await input.db
-		.prepare(
-			`UPDATE email_sender_policies
-			SET enabled = 0,
-				updated_at = ?
-			WHERE user_id = ?
-				AND kind = ?
-				AND value = ?
-				AND COALESCE(inbox_id, '') = COALESCE(?, '')
-				AND COALESCE(package_id, '') = COALESCE(?, '')`,
-		)
-		.bind(
-			nowIso(),
-			input.userId,
-			input.kind,
-			input.value,
-			input.inboxId ?? null,
-			input.packageId ?? null,
-		)
-		.run()
-	return normalizeRunChanges(result) > 0
-}
-
-export async function listEmailSenderPolicies(input: {
-	db: D1Database
-	userId: string
-	inboxId?: string | null
-	includeDisabled?: boolean
-}) {
-	const result = await input.db
-		.prepare(
-			`SELECT *
-			FROM email_sender_policies
-			WHERE user_id = ?
-				AND (? IS NULL OR inbox_id IS NULL OR inbox_id = ?)
-				AND (? = 1 OR enabled = 1)
-			ORDER BY inbox_id DESC, kind ASC, value ASC`,
-		)
-		.bind(
-			input.userId,
-			input.inboxId ?? null,
-			input.inboxId ?? null,
-			input.includeDisabled ? 1 : 0,
-		)
-		.all<Record<string, unknown>>()
-	return (result.results ?? []).map(mapSenderPolicyRow)
-}
-
 export async function findThreadForMessage(input: {
 	db: D1Database
 	userId: string
@@ -777,7 +609,6 @@ export async function insertEmailMessage(input: {
 		htmlBody?: string | null
 		rawMime?: string | null
 		rawSize?: number | null
-		policyDecision: EmailPolicyDecision
 		processingStatus: EmailProcessingStatus
 		providerMessageId?: string | null
 		error?: string | null
@@ -813,7 +644,6 @@ export async function insertEmailMessage(input: {
 		html_body: input.message.htmlBody ?? null,
 		raw_mime: input.message.rawMime ?? null,
 		raw_size: input.message.rawSize ?? 0,
-		policy_decision: input.message.policyDecision,
 		processing_status: input.message.processingStatus,
 		provider_message_id: input.message.providerMessageId ?? null,
 		error: input.message.error ?? null,
@@ -829,10 +659,10 @@ export async function insertEmailMessage(input: {
 				from_address, envelope_from, to_addresses_json, cc_addresses_json,
 				bcc_addresses_json, reply_to_addresses_json, subject, message_id_header,
 				in_reply_to_header, references_json, headers_json, auth_results,
-				text_body, html_body, raw_mime, raw_size, policy_decision,
-				processing_status, provider_message_id, error, received_at, sent_at,
+				text_body, html_body, raw_mime, raw_size, processing_status,
+				provider_message_id, error, received_at, sent_at,
 				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -857,7 +687,6 @@ export async function insertEmailMessage(input: {
 			row.html_body,
 			row.raw_mime,
 			row.raw_size,
-			row.policy_decision,
 			row.processing_status,
 			row.provider_message_id,
 			row.error,
@@ -941,7 +770,6 @@ export async function listEmailMessages(input: {
 	inboxId?: string | null
 	direction?: EmailDirection | null
 	processingStatus?: EmailProcessingStatus | null
-	policyDecision?: EmailPolicyDecision | null
 	limit: number
 }) {
 	const result = await input.db
@@ -952,7 +780,6 @@ export async function listEmailMessages(input: {
 				AND (? IS NULL OR inbox_id = ?)
 				AND (? IS NULL OR direction = ?)
 				AND (? IS NULL OR processing_status = ?)
-				AND (? IS NULL OR policy_decision = ?)
 			ORDER BY created_at DESC, id DESC
 			LIMIT ?`,
 		)
@@ -964,8 +791,6 @@ export async function listEmailMessages(input: {
 			input.direction ?? null,
 			input.processingStatus ?? null,
 			input.processingStatus ?? null,
-			input.policyDecision ?? null,
-			input.policyDecision ?? null,
 			input.limit,
 		)
 		.all<Record<string, unknown>>()
