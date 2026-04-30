@@ -19,6 +19,7 @@ type CloudflareApiEnvelope = {
 		message?: string
 	}>
 	result?: {
+		message_id?: string
 		delivered?: string[]
 		permanent_bounces?: string[]
 		queued?: string[]
@@ -29,6 +30,7 @@ type CloudflareSendResult = {
 	ok: boolean
 	skipped?: boolean
 	error?: string
+	messageId?: string | null
 }
 
 function normalizeEmailPayload(message: OutboundEmail) {
@@ -128,6 +130,7 @@ async function sendViaCloudflareApi(
 
 	return {
 		ok: true,
+		messageId: payload.result?.message_id ?? null,
 	}
 }
 

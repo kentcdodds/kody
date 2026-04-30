@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { parseForwardableEmailMessage } from './parser.ts'
 
-function createMessage(raw: string): ForwardableEmailMessage {
+function createMessage(raw: string, to = 'support@example.com'): ForwardableEmailMessage {
 	const headers = new Headers()
 	for (const line of raw.split(/\r?\n/)) {
 		if (!line) break
@@ -12,7 +12,7 @@ function createMessage(raw: string): ForwardableEmailMessage {
 	}
 	return {
 		from: 'sender@example.com',
-		to: 'support@example.com',
+		to,
 		headers,
 		raw: new Response(raw).body!,
 		rawSize: new TextEncoder().encode(raw).byteLength,

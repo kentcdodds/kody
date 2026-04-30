@@ -125,7 +125,7 @@ async function sendViaRestFallback(input: {
 	if (!result.ok) {
 		throw new Error(result.error ?? 'Cloudflare email send was skipped.')
 	}
-	return null
+	return result.messageId ?? null
 }
 
 export async function sendOutboundEmail(
