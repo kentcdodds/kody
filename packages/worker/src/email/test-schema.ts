@@ -37,7 +37,8 @@ ON email_sender_identities(user_id, email);`,
 	reply_token_hash TEXT,
 	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
+	updated_at TEXT NOT NULL,
+	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE CASCADE
 );`,
 
 		`CREATE TABLE IF NOT EXISTS email_threads (

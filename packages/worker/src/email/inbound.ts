@@ -95,6 +95,7 @@ export async function handleInboundEmail(
 		fromAddress: parsed.headerFrom,
 		replyToken: parsed.replyToken,
 		rules: policies,
+		defaultDecision: inbox.mode === 'accept' ? 'accepted' : 'quarantined',
 	})
 	const policyDecision = decision.decision
 	const now = new Date().toISOString()
