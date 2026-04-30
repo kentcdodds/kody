@@ -354,8 +354,11 @@ test('entity detail formatting includes package app, export, and job metadata', 
 		},
 		files: {
 			'package.json': '{}',
-			'src/app.d.ts':
-				'export default function fetch(request: Request): Promise<Response>\n',
+			'src/app.d.ts': `/**
+ * Render the observed app.
+ */
+export declare function fetch(request: Request): Promise<Response>
+`,
 		},
 	})
 
@@ -376,7 +379,15 @@ test('entity detail formatting includes package app, export, and job metadata', 
 			expect.objectContaining({
 				subpath: './app',
 				typesSource:
-					'export default function fetch(request: Request): Promise<Response>\n',
+					'/**\n * Render the observed app.\n */\nexport declare function fetch(request: Request): Promise<Response>\n',
+				functions: [
+					{
+						name: 'fetch',
+						description: 'Render the observed app.',
+						typeDefinition:
+							'export declare function fetch(request: Request): Promise<Response>',
+					},
+				],
 			}),
 		],
 		jobs: [
@@ -386,6 +397,10 @@ test('entity detail formatting includes package app, export, and job metadata', 
 			}),
 		],
 	})
+	expect(packageDetail.markdown).toContain('Render the observed app\\.')
+	expect(packageDetail.markdown).toContain(
+		'export declare function fetch(request: Request): Promise<Response>',
+	)
 })
 
 test('package search formatting keeps runnable package actions in markdown and structured output', () => {
@@ -406,7 +421,9 @@ test('package search formatting keeps runnable package actions in markdown and s
 		],
 	})
 
-	expect(markdown).toContain('open_generated_ui({ kody_id: "spotify-playback" })')
+	expect(markdown).toContain(
+		'open_generated_ui({ kody_id: "spotify-playback" })',
+	)
 	const [packageMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
@@ -537,7 +554,8 @@ test('usage helpers escape dynamic identifiers in generated snippets', () => {
 
 	expect(valueMatch).toMatchObject({
 		type: 'value',
-		usage: 'codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })',
+		usage:
+			'codemode.value_get({ name: "display\\"name", scope: "user\\"scope" })',
 	})
 	expect(connectorMatch).toMatchObject({
 		type: 'connector',

@@ -218,6 +218,65 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 	)
 })
 
+test('buildKodyModuleBundle proxies named-only package module exports', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('named-import'))
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		...createLoadedPackageSource(),
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'./math': './math.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		},
+		files: {
+			'math.js': 'export function add(left, right) { return left + right }',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js':
+				'import { add } from "kody:@kentcdodds/example-package/math"\nexport default () => add(1, 2)\n',
+		},
+		entryPoint: 'index.js',
+	})
+
+	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	const proxy = Object.entries(firstCall?.files ?? {}).find(([path]) =>
+		path.includes('__kody_virtual__/imports/'),
+	)?.[1]
+	expect(proxy).toContain('export * from')
+	expect(proxy).not.toContain('import __default')
+	expect(proxy).not.toContain('export default')
+})
+
 test('buildKodyModuleBundle keeps dependencies for scoped packages with the same leaf', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('shared-leaf'))
 	mockModule.getSavedPackageByName.mockImplementation(

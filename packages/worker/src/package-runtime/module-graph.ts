@@ -162,8 +162,6 @@ export default {
 function createPackageImportProxySource(input: { targetPath: string }) {
 	return `
 export * from ${JSON.stringify(input.targetPath)};
-import __default from ${JSON.stringify(input.targetPath)};
-export default __default;
 `.trim()
 }
 

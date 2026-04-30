@@ -8,6 +8,7 @@ import {
 	type PackageJobSchedule,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
+import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import {
 	escapeMarkdownText,
@@ -205,6 +206,13 @@ export type SearchEntityDetailStructured =
 				importSpecifier: string
 				runtimeTarget: string | null
 				typesPath: string | null
+				description: string | null
+				typeDefinition: string | null
+				functions: Array<{
+					name: string
+					description: string | null
+					typeDefinition: string | null
+				}>
 				typesSource: string | null
 			}>
 			jobs: Array<{
@@ -375,6 +383,10 @@ function buildCapabilityUsage(name: string) {
 
 function buildPackageRootImportUsage(packageName: string) {
 	return `import entry from ${JSON.stringify(buildPackageImportSpecifier(packageName, '.'))}`
+}
+
+function formatInlineTypeDefinition(typeDefinition: string) {
+	return typeDefinition.replace(/\s+/g, ' ').trim()
 }
 
 function buildPackageAppUsage(kodyId: string) {
@@ -800,30 +812,21 @@ export function formatEntityDetailMarkdown(
 	}
 
 	if (detail.type === 'package') {
-		const exportDetails = Object.entries(detail.manifest.exports).map(
-			([exportName, target]) => {
-				const runtimeTarget =
-					typeof target === 'string'
-						? target
-						: (target.import ?? target.default ?? null)
-				const typesPath =
-					typeof target === 'string' ? null : (target.types ?? null)
-				const typesSource =
-					typesPath == null
-						? null
-						: (detail.files[typesPath.replace(/^\.?\//, '')] ?? null)
-				return {
-					subpath: exportName,
-					importSpecifier: buildPackageImportSpecifier(
-						detail.record.name,
-						exportName,
-					),
-					runtimeTarget,
-					typesPath,
-					typesSource,
-				}
-			},
+		const exportProjection = buildPackageSearchProjection(
+			detail.manifest,
+			detail.files,
 		)
+		const exportDetails = exportProjection.exports.map((exportDetail) => ({
+			...exportDetail,
+			importSpecifier: buildPackageImportSpecifier(
+				detail.record.name,
+				exportDetail.subpath,
+			),
+			typesSource:
+				exportDetail.typesPath == null
+					? null
+					: (detail.files[exportDetail.typesPath] ?? null),
+		}))
 		const jobs = Object.entries(detail.manifest.kody.jobs ?? {}).map(
 			([jobName, job]) => ({
 				name: jobName,
@@ -874,6 +877,18 @@ export function formatEntityDetailMarkdown(
 				lines.push(
 					`- \`${exportDetail.subpath}\` -> \`${exportDetail.importSpecifier}\`${exportDetail.runtimeTarget ? ` (runtime target: \`${exportDetail.runtimeTarget}\`)` : ''}${exportDetail.typesPath ? ` (types: \`${exportDetail.typesPath}\`)` : ''}`,
 				)
+				for (const exportedFunction of exportDetail.functions) {
+					if (exportedFunction.description) {
+						lines.push(
+							`  - ${escapeMarkdownText(exportedFunction.description)}`,
+						)
+					}
+					if (exportedFunction.typeDefinition) {
+						lines.push(
+							`  - \`${formatInlineTypeDefinition(exportedFunction.typeDefinition)}\``,
+						)
+					}
+				}
 				if (exportDetail.typesSource) {
 					lines.push('', '  Type definitions:', '', '  ```ts')
 					lines.push(

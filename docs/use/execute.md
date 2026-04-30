@@ -33,7 +33,8 @@ and export a default function. These helpers are runtime exports:
 - package service runs may also declare **`kody.services.<name>.timeoutMs`** in
   `package.json` when they need a longer executor budget than the default
   package-service timeout
-- use **`import thing from 'kody:@scope/my-package/export-name'`** to reuse a
+- use **`import thing from 'kody:@scope/my-package/export-name'`** or
+  **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by full package name
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
@@ -108,22 +109,22 @@ cache-hint form for prompts with a stable prefix:
 
 ```ts
 await codemode.agent_chat_turn({
-  sessionId: 'email-follow-up',
-  system: {
-    content: stableSystemPrompt,
-    cache: 'prefix',
-  },
-  messages: [
-    {
-      role: 'user',
-      content: normalizedThreadContext,
-      cache: 'prefix',
-    },
-    {
-      role: 'user',
-      content: latestInboundEmail,
-    },
-  ],
+	sessionId: 'email-follow-up',
+	system: {
+		content: stableSystemPrompt,
+		cache: 'prefix',
+	},
+	messages: [
+		{
+			role: 'user',
+			content: normalizedThreadContext,
+			cache: 'prefix',
+		},
+		{
+			role: 'user',
+			content: latestInboundEmail,
+		},
+	],
 })
 ```
 

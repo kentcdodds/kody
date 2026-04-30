@@ -224,6 +224,68 @@ test('parseAuthoredPackageJson accepts retriever definitions and includes them i
 	)
 })
 
+test('buildPackageSearchProjection includes exported function signatures and jsdoc', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/weather-tools',
+			exports: {
+				'.': {
+					import: './src/index.ts',
+					types: './src/index.d.ts',
+				},
+			},
+			kody: {
+				id: 'weather-tools',
+				description: 'Weather tools package',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	const projection = buildPackageSearchProjection(manifest, {
+		'src/index.ts':
+			'export const ignored = "types file should be preferred for metadata"',
+		'src/index.d.ts': `/**
+ * Look up the forecast for a city.
+ */
+export declare function forecast(city: string): Promise<string>
+
+/**
+ * Convert Celsius to Fahrenheit.
+ */
+export declare const celsiusToFahrenheit: (value: number) => number
+`,
+	})
+
+	expect(projection.exports).toEqual([
+		expect.objectContaining({
+			subpath: '.',
+			runtimeTarget: 'src/index.ts',
+			typesPath: 'src/index.d.ts',
+			description: 'Look up the forecast for a city.',
+			functions: [
+				{
+					name: 'forecast',
+					description: 'Look up the forecast for a city.',
+					typeDefinition:
+						'export declare function forecast(city: string): Promise<string>',
+				},
+				{
+					name: 'celsiusToFahrenheit',
+					description: 'Convert Celsius to Fahrenheit.',
+					typeDefinition:
+						'export declare const celsiusToFahrenheit: (value: number) => number',
+				},
+			],
+		}),
+	])
+	const document = buildPackageSearchDocument(projection)
+	expect(document).toContain('Look up the forecast for a city.')
+	expect(document).toContain(
+		'export declare function forecast(city: string): Promise<string>',
+	)
+})
+
 test('parseAuthoredPackageJson rejects retriever definitions with no scopes', () => {
 	expect(() =>
 		parseAuthoredPackageJson({

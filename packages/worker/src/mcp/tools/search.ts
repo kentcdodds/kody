@@ -35,10 +35,7 @@ import {
 	buildPackageSearchProjection,
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
-import {
-	loadPackageManifestBySourceId,
-	loadPackageSourceBySourceId,
-} from '#worker/package-registry/source.ts'
+import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	getRemoteConnectorStatus,
 	type HomeConnectorStatus,
@@ -198,7 +195,7 @@ export async function buildSavedPackageSearchRows(input: {
 	const rows = await Promise.all(
 		input.records.map(async (record) => {
 			try {
-				const loaded = await loadPackageManifestBySourceId({
+				const loaded = await loadPackageSourceBySourceId({
 					env: input.env,
 					baseUrl: input.baseUrl,
 					userId: input.userId,
@@ -206,7 +203,10 @@ export async function buildSavedPackageSearchRows(input: {
 				})
 				return {
 					record,
-					projection: buildPackageSearchProjection(loaded.manifest),
+					projection: buildPackageSearchProjection(
+						loaded.manifest,
+						loaded.files,
+					),
 				}
 			} catch (cause) {
 				Sentry.captureException(cause, {
@@ -332,7 +332,20 @@ function buildSearchableEntityDescriptors(input: {
 				...entry.record.tags,
 			],
 			tertiaryAliases: [
-				...entry.projection.exports,
+				...entry.projection.exports.flatMap((exportDetail) =>
+					typeof exportDetail === 'string'
+						? [exportDetail]
+						: [
+								exportDetail.subpath,
+								exportDetail.description ?? '',
+								exportDetail.typeDefinition ?? '',
+								...(exportDetail.functions ?? []).flatMap((fn) => [
+									fn.name,
+									fn.description ?? '',
+									fn.typeDefinition ?? '',
+								]),
+							],
+				),
 				...entry.projection.jobs.map((job) => job.name),
 				...entry.projection.retrievers.flatMap((retriever) => [
 					retriever.key,
@@ -463,6 +476,7 @@ function scoreMatchedTerms(
 	if (matchedTerms.length === 0 || fields.length === 0) return 0
 	const fieldTokens = new Set<string>()
 	for (const field of fields) {
+		if (typeof field !== 'string') continue
 		for (const token of extractSearchTokens(field)) {
 			fieldTokens.add(token)
 		}
@@ -479,7 +493,9 @@ function scoreConstraintBoost(
 	intent: SearchIntent,
 ): number {
 	if (intent.constraints.length === 0) return 0
-	const normalizedFields = fields.map((field) => normalizeSearchText(field))
+	const normalizedFields = fields
+		.filter((field): field is string => typeof field === 'string')
+		.map((field) => normalizeSearchText(field))
 	let score = 0
 	for (const constraint of intent.constraints) {
 		if (
@@ -680,7 +696,18 @@ function buildPackageCandidates(input: {
 					entry.record.description,
 					entry.record.searchText ?? '',
 					...entry.record.tags,
-					...exports,
+					...exports.flatMap((exportDetail) => [
+						exportDetail.subpath,
+						exportDetail.runtimeTarget ?? '',
+						exportDetail.typesPath ?? '',
+						exportDetail.description ?? '',
+						exportDetail.typeDefinition ?? '',
+						...(exportDetail.functions ?? []).flatMap((fn) => [
+							fn.name,
+							fn.description ?? '',
+							fn.typeDefinition ?? '',
+						]),
+					]),
 					...jobs.flatMap((job) => [
 						job.name,
 						job.entry,
