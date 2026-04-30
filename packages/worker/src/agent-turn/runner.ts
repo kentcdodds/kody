@@ -1,6 +1,10 @@
 import { resolveConversationId } from '#mcp/tools/tool-call-context.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { streamRemoteToolLoop } from '#worker/ai-runtime.ts'
+import {
+	streamRemoteToolLoop,
+	type CacheAwareModelMessage,
+	type CacheAwareSystemPrompt,
+} from '#worker/ai-runtime.ts'
 import {
 	agentTurnInputSchema,
 	type AgentToolTrace,
@@ -9,6 +13,7 @@ import {
 	type AgentTurnResult,
 	type AgentTurnStopReason,
 	type AgentTurnStreamEvent,
+	type AgentTurnSystemPrompt,
 } from './types.ts'
 import { createAgentTurnToolSet } from './tools.ts'
 
@@ -72,10 +77,25 @@ function clean(value: unknown) {
 	return String(value ?? '').trim()
 }
 
-function toModelMessages(messages: Array<AgentTurnMessage>) {
+function toSystemPrompt(
+	system: AgentTurnSystemPrompt,
+): CacheAwareSystemPrompt {
+	if (typeof system === 'string') {
+		return system
+	}
+	return {
+		content: system.content,
+		...(system.cache ? { cache: system.cache } : {}),
+	}
+}
+
+function toModelMessages(
+	messages: Array<AgentTurnMessage>,
+): Array<CacheAwareModelMessage> {
 	return messages.map((message) => ({
 		role: message.role,
 		content: message.content,
+		...(message.cache ? { cache: message.cache } : {}),
 	}))
 }
 
@@ -167,6 +187,7 @@ export async function runAgentTurn(input: {
 }) {
 	const parsed = agentTurnInputSchema.parse(input.turn)
 	const conversationId = resolveConversationId(parsed.conversationId)
+	const systemPrompt = toSystemPrompt(parsed.system)
 	const modelMessages = toModelMessages(parsed.messages)
 	const tools = await createAgentTurnToolSet({
 		env: input.env,
@@ -182,7 +203,7 @@ export async function runAgentTurn(input: {
 	let stepsUsed = 0
 
 	const result = await streamRemoteToolLoop(input.env, {
-		system: parsed.system,
+		system: systemPrompt,
 		messages: modelMessages,
 		tools,
 		maxSteps: parsed.maxSteps ?? defaultMaxSteps,

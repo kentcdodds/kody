@@ -36,7 +36,7 @@ vi.mock('workers-ai-provider', () => ({
 		mockModule.createWorkersAI(...args),
 }))
 
-const { createAiRuntime } = await import('./ai-runtime.ts')
+const { createAiRuntime, streamRemoteToolLoop } = await import('./ai-runtime.ts')
 
 test('remote ai runtime sets a multi-step stop condition for tool continuation', async () => {
 	const runtime = createAiRuntime({
@@ -83,6 +83,108 @@ test('remote ai runtime sets a multi-step stop condition for tool continuation',
 		stopWhen: { type: 'step-count-is', count: 5 },
 	})
 	expect(mockModule.toUIMessageStreamResponse).toHaveBeenCalledTimes(1)
+})
+
+test('remote tool loop promotes cached system and message prefixes for Anthropic models', async () => {
+	mockModule.streamText.mockClear()
+	mockModule.model.mockClear()
+
+	await streamRemoteToolLoop(
+		{
+			AI_MODE: 'remote',
+			AI_GATEWAY_ID: 'gateway-id',
+			AI_MODEL: 'anthropic/claude-sonnet-4.5',
+			AI: {} as Ai,
+		} as Env,
+		{
+			system: {
+				content: 'stable system prompt',
+				cache: 'prefix',
+			},
+			messages: [
+				{
+					role: 'user',
+					content: 'normalized thread context',
+					cache: 'prefix',
+				},
+				{
+					role: 'user',
+					content: 'latest inbound email',
+				},
+			],
+			tools: {} as never,
+			maxSteps: 3,
+		},
+	)
+
+	expect(mockModule.model).toHaveBeenCalledWith('anthropic/claude-sonnet-4.5')
+	expect(mockModule.streamText).toHaveBeenCalledWith({
+		model: { provider: 'workers-ai-model' },
+		messages: [
+			{
+				role: 'system',
+				content: 'stable system prompt',
+				providerOptions: {
+					anthropic: { cacheControl: { type: 'ephemeral' } },
+				},
+			},
+			{
+				role: 'user',
+				content: 'normalized thread context',
+				providerOptions: {
+					anthropic: { cacheControl: { type: 'ephemeral' } },
+				},
+			},
+			{
+				role: 'user',
+				content: 'latest inbound email',
+			},
+		],
+		tools: {},
+		stopWhen: { type: 'step-count-is', count: 3 },
+	})
+})
+
+test('remote tool loop keeps cache hints inert for unsupported models', async () => {
+	mockModule.streamText.mockClear()
+	mockModule.model.mockClear()
+
+	await streamRemoteToolLoop(
+		{
+			AI_MODE: 'remote',
+			AI_GATEWAY_ID: 'gateway-id',
+			AI_MODEL: '@cf/zai-org/glm-4.7-flash',
+			AI: {} as Ai,
+		} as Env,
+		{
+			system: {
+				content: 'stable system prompt',
+				cache: 'prefix',
+			},
+			messages: [
+				{
+					role: 'user',
+					content: 'normalized thread context',
+					cache: 'prefix',
+				},
+			],
+			tools: {} as never,
+		},
+	)
+
+	expect(mockModule.model).toHaveBeenCalledWith('@cf/zai-org/glm-4.7-flash')
+	expect(mockModule.streamText).toHaveBeenCalledWith({
+		model: { provider: 'workers-ai-model' },
+		system: 'stable system prompt',
+		messages: [
+			{
+				role: 'user',
+				content: 'normalized thread context',
+			},
+		],
+		tools: {},
+		stopWhen: { type: 'step-count-is', count: 5 },
+	})
 })
 
 test('mock ai runtime still returns a local fallback response', async () => {

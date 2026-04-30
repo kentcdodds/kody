@@ -189,3 +189,86 @@ test('runAgentTurn marks no_new_information for repeated tool calls', async () =
 	expect(completion.stopReason).toBe('no_new_information')
 	expect(completion.continueRecommended).toBe(false)
 })
+
+test('runAgentTurn forwards cache-aware system and message hints to the AI runtime', async () => {
+	mockModule.streamText.mockImplementationOnce(
+		(options: Record<string, unknown>) => {
+			return {
+				async consumeStream() {
+					await (options.onFinish as Function)?.({
+						steps: [],
+						finishReason: 'stop',
+					})
+				},
+				text: Promise.resolve('done'),
+				reasoningText: Promise.resolve(''),
+			}
+		},
+	)
+
+	const turn = await runAgentTurn({
+		env: {
+			AI: {},
+			AI_GATEWAY_ID: 'gateway-id',
+			AI_MODEL: 'anthropic/claude-sonnet-4.5',
+		} as Env,
+		callerContext: {
+			baseUrl: 'https://heykody.dev',
+			user: { userId: 'user-123' },
+			homeConnectorId: null,
+			remoteConnectors: null,
+			storageContext: null,
+		},
+		turn: {
+			system: {
+				content: 'stable system',
+				cache: 'prefix',
+			},
+			messages: [
+				{
+					role: 'user',
+					content: 'normalized thread context',
+					cache: 'prefix',
+				},
+				{
+					role: 'user',
+					content: 'latest inbound email',
+				},
+			],
+			sessionId: 'session-3',
+		},
+	})
+
+	await turn.completion
+
+	expect(mockModule.streamText).toHaveBeenLastCalledWith({
+		model: { provider: 'workers-ai-model' },
+		messages: [
+			{
+				role: 'system',
+				content: 'stable system',
+				providerOptions: {
+					anthropic: { cacheControl: { type: 'ephemeral' } },
+				},
+			},
+			{
+				role: 'user',
+				content: 'normalized thread context',
+				providerOptions: {
+					anthropic: { cacheControl: { type: 'ephemeral' } },
+				},
+			},
+			{
+				role: 'user',
+				content: 'latest inbound email',
+			},
+		],
+		tools: {},
+		abortSignal: undefined,
+		onFinish: expect.any(Function),
+		onChunk: expect.any(Function),
+		onAbort: expect.any(Function),
+		onStepFinish: expect.any(Function),
+		stopWhen: { type: 'step-count-is', count: 8 },
+	})
+})
