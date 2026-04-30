@@ -141,6 +141,9 @@ async function sendViaRestFallback(input: {
 	if (!result.ok) {
 		throw new Error(result.error ?? 'Cloudflare email send was skipped.')
 	}
+	if (!input.html && !input.text) {
+		throw new Error('Email text or HTML body is required.')
+	}
 	return result.messageId ?? null
 }
 
@@ -308,6 +311,8 @@ export async function sendOutboundEmail(
 			providerMessageId: null,
 			error: messageText,
 			sentAt: null,
+		}).catch((updateError) => {
+			console.warn('email-delivery-failure-status-update-failed', updateError)
 		})
 		await insertEmailDeliveryEvent({
 			db: input.env.APP_DB,
@@ -318,13 +323,16 @@ export async function sendOutboundEmail(
 			provider: 'cloudflare-email',
 			providerMessageId: null,
 			detail: { error: messageText },
+		}).catch((eventError) => {
+			console.warn('email-delivery-failure-event-insert-failed', eventError)
 		})
 		return {
-			message: await requireStoredEmailMessage({
-				env: input.env,
-				userId: input.userId,
-				messageId: message.id,
-			}),
+			message:
+				(await getEmailMessageById({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					messageId: message.id,
+				})) ?? message,
 			providerMessageId: null,
 			status: 'failed',
 			error: messageText,

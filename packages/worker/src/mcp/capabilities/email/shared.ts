@@ -106,10 +106,6 @@ export const emailPolicySchema = z.object({
 	updated_at: z.string(),
 })
 
-export const policySchema = z.object({
-	policies: z.array(emailPolicySchema),
-})
-
 export const senderApprovalSchema = z.object({
 	identity_id: z.string().nullable(),
 	policy: emailPolicySchema.nullable(),
@@ -144,8 +140,6 @@ export function toMessageSummary(message: EmailMessageRecord) {
 		updated_at: message.updatedAt,
 	}
 }
-
-export const emailMessageSchema = emailMessageDetailSchema
 
 export function toMessageDetail(
 	message: Parameters<typeof toMessageSummary>[0] & {
