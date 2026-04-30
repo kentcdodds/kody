@@ -532,6 +532,7 @@ export async function runModuleWithRegistry(
 			packageId: string
 			kodyId: string
 		} | null
+		emailTools?: EmailToolOptions
 		executorTimeoutMs?: number | null
 	},
 ): Promise<ExecuteResult> {
