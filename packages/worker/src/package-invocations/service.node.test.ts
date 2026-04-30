@@ -566,6 +566,94 @@ test('invokePackageExport rejects reusing an idempotency key for a different pay
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
+test('invokePackageExport replays responses created with the legacy exportName request hash key', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'hello discord' },
+		logs: ['dispatched'],
+	})
+
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-legacy-hash',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+	expect(first.status).toBe(200)
+
+	const table = (
+		db as unknown as {
+			prepare: (query: string) => {
+				bind: (...params: Array<unknown>) => {
+					run: () => Promise<{ meta: { changes: number; last_row_id: number } }>
+				}
+			}
+		}
+	).prepare(
+		`UPDATE package_invocations
+		SET request_hash = ?, updated_at = ?
+		WHERE user_id = ? AND token_id = ? AND package_id = ? AND export_name = ? AND idempotency_key = ?`,
+	)
+	const legacyDigest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(
+			JSON.stringify({
+				exportName: './dispatch-message-created',
+				packageId: 'pkg-1',
+				params: { content: 'hi' },
+				source: 'discord-gateway',
+				topic: 'discord.message.created',
+			}),
+		),
+	)
+	const legacyHash = Array.from(new Uint8Array(legacyDigest))
+		.map((value) => value.toString(16).padStart(2, '0'))
+		.join('')
+	await table
+		.bind(
+			legacyHash,
+			'2026-04-27T00:00:00.000Z',
+			'user-123',
+			'discord-gateway',
+			'pkg-1',
+			'./dispatch-message-created',
+			'evt-legacy-hash',
+		)
+		.run()
+
+	const replay = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-legacy-hash',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+
+	expect(replay.status).toBe(200)
+	expect(replay.body).toMatchObject({
+		ok: true,
+		idempotency: {
+			key: 'evt-legacy-hash',
+			replayed: true,
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
 test('invokePackageExport serializes execution failures without exposing thrown objects', async () => {
 	const db = createDatabase()
 	seedPackageResolution()

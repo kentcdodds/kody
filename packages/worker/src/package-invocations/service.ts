@@ -150,7 +150,7 @@ function markStoredResponseAsReplayed(
 
 async function createRequestHash(input: {
 	packageId: string
-	invocationName: string
+	exportName: string
 	params?: Record<string, unknown>
 	source: string | null
 	topic: string | null
@@ -525,7 +525,7 @@ async function invokeSavedPackageModule(input: {
 }) {
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
-		invocationName: input.invocationName,
+		exportName: input.invocationName,
 		params: input.params,
 		source: input.source,
 		topic: input.topic,
