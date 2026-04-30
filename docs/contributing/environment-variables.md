@@ -52,10 +52,11 @@ types, runtime validation, and documentation in sync.
 
 Optional Worker var (see `packages/worker/src/env-schema.ts`):
 
-- `APP_DOMAIN` — canonical application email domain used for app-owned email
+- `APP_BASE_URL` — canonical application origin used for app-owned email
   identities such as the inbound-email agent loop sender (`kody@<app-domain>`).
-  Keep this aligned with the deployed app domain and email sender/domain
-  verification configured in Cloudflare Email Service.
+  Kody derives the domain from this URL, so keep it aligned with the deployed
+  app origin and the email sender/domain verification configured in Cloudflare
+  Email Service.
 
 ## Sentry
 

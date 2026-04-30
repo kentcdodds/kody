@@ -27,7 +27,7 @@ vi.mock('#worker/agent-turn/api.ts', () => ({
 function createEmailEnv() {
 	return {
 		...env,
-		APP_DOMAIN: 'example.com',
+		APP_BASE_URL: 'https://app.example.com',
 		EMAIL: {
 			async send() {
 				return { messageId: 'provider-message-123' }
@@ -168,7 +168,7 @@ test('runInboundEmailAgentLoop replies with summary and stores trace linkage on 
 	expect(reply).toMatchObject({
 		direction: 'outbound',
 		processingStatus: 'sent',
-		fromAddress: 'kody@example.com',
+		fromAddress: 'kody@app.example.com',
 	})
 	expect(reply?.textBody).toContain('Here is the completed summary.')
 	expect(reply?.textBody).toContain(run?.traceUrl ?? '')

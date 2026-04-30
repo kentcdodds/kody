@@ -226,7 +226,6 @@ export const EnvSchema = object({
 		},
 	),
 	APP_BASE_URL: optionalUrlStringSchema,
-	APP_DOMAIN: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	CLOUDFLARE_EMAIL_FROM: optionalNonEmptyStringSchema,
 	EMAIL: optionalSendEmailSchema,

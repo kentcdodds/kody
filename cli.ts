@@ -541,7 +541,15 @@ async function ensureMockServers() {
 		AI_MODE: desiredAiMode,
 	}
 	if (!hasEnvValue(process.env.CLOUDFLARE_EMAIL_FROM)) {
-		const appDomain = process.env.APP_DOMAIN?.trim() || 'example.com'
+		let appDomain = 'example.com'
+		const appBaseUrl = process.env.APP_BASE_URL?.trim()
+		if (appBaseUrl) {
+			try {
+				appDomain = new URL(appBaseUrl).hostname || appDomain
+			} catch {
+				// Leave the local fallback in place when APP_BASE_URL is invalid or unset.
+			}
+		}
 		mockEnvOverrides.CLOUDFLARE_EMAIL_FROM = `reset@${appDomain}`
 	}
 

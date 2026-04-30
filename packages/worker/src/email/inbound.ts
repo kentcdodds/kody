@@ -24,7 +24,6 @@ export async function handleInboundEmail(
 		Env,
 		| 'APP_DB'
 		| 'APP_BASE_URL'
-		| 'APP_DOMAIN'
 		| 'AI'
 		| 'AI_GATEWAY_ID'
 		| 'AI_MODE'

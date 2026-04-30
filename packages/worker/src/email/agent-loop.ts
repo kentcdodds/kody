@@ -107,7 +107,6 @@ async function ensureSystemSenderIdentity(input: {
 }): Promise<ReturnType<typeof buildKodySenderIdentity>> {
 	const sender = buildKodySenderIdentity({
 		env: input.env,
-		requestUrl: input.requestUrl,
 	})
 	await upsertEmailSenderIdentity({
 		db: input.env.APP_DB,

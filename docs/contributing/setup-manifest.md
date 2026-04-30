@@ -73,9 +73,10 @@ automatically:
 - `APP_BASE_URL` (optional; defaults to request origin, example
   `https://app.example.com`; also sets the canonical public origin used for MCP
   auth metadata, generated UI resources, and email links)
-- `APP_DOMAIN` (optional; defaults to the hostname from `APP_BASE_URL` or the
-  current request origin. Kody derives automated outbound sender addresses like
-  `kody@<app-domain>` from this value.)
+- `APP_BASE_URL` (optional; defaults to request origin, example
+  `https://app.example.com`; also sets the canonical public origin used for MCP
+  auth metadata, generated UI resources, email links, and automated app-owned
+  sender addresses like `kody@<app-domain>`)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
 - `CLOUDFLARE_EMAIL_FROM` (optional; sender address for outbound email) Existing
@@ -125,8 +126,6 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
   deploy as the canonical public app origin and written into the generated
   Worker `vars` config before deploy)
-- `APP_DOMAIN` (optional GitHub Actions **variable**, used as the canonical app
-  email domain when deriving automated senders like `kody@<app-domain>`)
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)

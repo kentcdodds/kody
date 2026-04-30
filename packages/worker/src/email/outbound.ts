@@ -16,7 +16,6 @@ import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
 type SendEmailEnv = Pick<
 	Env,
 	| 'APP_DB'
-	| 'APP_DOMAIN'
 	| 'APP_BASE_URL'
 	| 'EMAIL'
 	| 'CLOUDFLARE_ACCOUNT_ID'
@@ -68,7 +67,6 @@ async function ensureVerifiedSenderIdentity(input: {
 	}
 	const systemSender = buildKodySenderIdentity({
 		env: input.env,
-		requestUrl: input.requestUrl,
 	})
 	if (input.from !== systemSender.email) {
 		throw new Error(`Sender identity is not verified: ${input.from}`)

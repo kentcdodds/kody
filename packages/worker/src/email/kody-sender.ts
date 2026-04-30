@@ -1,4 +1,3 @@
-import { getAppBaseUrl } from '#app/app-base-url.ts'
 import {
 	getEmailDomain,
 	requireNormalizedEmailAddress,
@@ -25,37 +24,20 @@ function parseDomainFromBaseUrl(value: string | undefined) {
 
 export function resolveAppDomain(input: {
 	env: {
-		APP_DOMAIN?: string | null
 		APP_BASE_URL?: string | null
 	}
-	requestUrl?: string | URL
 }) {
-	const configuredDomain = input.env.APP_DOMAIN?.trim()
-	if (configuredDomain) {
-		return normalizeDomain(configuredDomain)
-	}
 	const fromBaseUrl = parseDomainFromBaseUrl(
 		input.env.APP_BASE_URL ?? undefined,
 	)
 	if (fromBaseUrl) return fromBaseUrl
-	if (input.requestUrl) {
-		const fromRequestUrl = parseDomainFromBaseUrl(
-			getAppBaseUrl({
-				env: input.env,
-				requestUrl: input.requestUrl,
-			}),
-		)
-		if (fromRequestUrl) return fromRequestUrl
-	}
 	return defaultLocalDomain
 }
 
 export function buildKodySenderAddress(input: {
 	env: {
-		APP_DOMAIN?: string | null
 		APP_BASE_URL?: string | null
 	}
-	requestUrl?: string | URL
 }) {
 	const domain = resolveAppDomain(input)
 	return requireNormalizedEmailAddress(`kody@${domain}`, 'Kody sender email')
@@ -63,10 +45,8 @@ export function buildKodySenderAddress(input: {
 
 export function buildKodySenderIdentity(input: {
 	env: {
-		APP_DOMAIN?: string | null
 		APP_BASE_URL?: string | null
 	}
-	requestUrl?: string | URL
 }) {
 	const email = buildKodySenderAddress(input)
 	return {
