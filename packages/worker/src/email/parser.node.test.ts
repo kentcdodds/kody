@@ -75,3 +75,18 @@ test('parseForwardableEmailMessage rejects oversized raw MIME', async () => {
 		}),
 	).rejects.toThrow(/too large/)
 })
+
+test('parseForwardableEmailMessage accepts both explicit reply token headers', async () => {
+	const raw = [
+		'From: Sender <sender@example.com>',
+		'To: Support <support@example.com>',
+		'Subject: Reply token',
+		'X-Reply-Token: token-123',
+		'',
+		'Body',
+	].join('\r\n')
+
+	const parsed = await parseForwardableEmailMessage(createMessage(raw))
+
+	expect(parsed.replyToken).toBe('token-123')
+})

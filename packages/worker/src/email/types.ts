@@ -98,7 +98,7 @@ export type EmailInboxRecord = {
 	userId: string
 	packageId: string | null
 	name: string
-	description: string | null
+	description: string
 	mode: EmailInboxMode
 	enabled: boolean
 	createdAt: string
@@ -195,7 +195,7 @@ export type EmailAttachmentRecord = {
 	contentType: string | null
 	contentId: string | null
 	disposition: string | null
-	size: number | null
+	size: number
 	storageKind: string
 	storageKey: string | null
 	createdAt: string

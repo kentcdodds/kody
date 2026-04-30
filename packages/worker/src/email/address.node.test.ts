@@ -27,4 +27,11 @@ test('email address helpers normalize mailbox strings and reply tokens', async (
 	expect(await findReplyTokenHash({ headers, recipients: [] })).toBe(
 		await hashReplyToken('token-123'),
 	)
+	const alternateHeaders = new Headers({ 'X-Reply-Token': 'alternate-token' })
+	expect(extractReplyToken({ headers: alternateHeaders, recipients: [] })).toBe(
+		'alternate-token',
+	)
+	expect(await findReplyTokenHash({ headers: alternateHeaders, recipients: [] })).toBe(
+		await hashReplyToken('alternate-token'),
+	)
 })

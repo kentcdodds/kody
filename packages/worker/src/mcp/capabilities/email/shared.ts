@@ -166,7 +166,7 @@ export function toMessageDetail(
 		contentType: string | null
 		contentId: string | null
 		disposition: string | null
-		size: number | null
+		size: number
 		storageKind: string
 		storageKey: string | null
 		createdAt: string

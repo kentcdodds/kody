@@ -4,7 +4,7 @@ import {
 	type EmailPolicyDecision,
 	type EmailPolicyKind,
 } from './types.ts'
-import { normalizeEmailAddress } from './address.ts'
+import { hashReplyToken, normalizeEmailAddress } from './address.ts'
 
 type EvaluateSenderPolicyInput = {
 	fromAddress: string | null
@@ -91,7 +91,9 @@ export async function evaluateSenderPolicy(
 	input: EvaluateSenderPolicyInput,
 ): Promise<EmailPolicyEvaluation> {
 	const senderCandidates = getSenderCandidates(input)
-	const replyTokenHash = input.replyToken?.trim().toLowerCase() || null
+	const replyTokenHash = input.replyToken
+		? await hashReplyToken(input.replyToken)
+		: null
 	for (const rule of sortPolicyRules(input.rules)) {
 		if (
 			matchSenderPolicyRule({

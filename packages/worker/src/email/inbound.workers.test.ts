@@ -124,6 +124,6 @@ test('inbound email handler stores quarantined and accepted messages by sender p
 	expect(messages[1]).toMatchObject({
 		fromAddress: 'stranger@example.net',
 		subject: 'Unknown sender',
-		error: 'No sender policy matched.',
+		error: null,
 	})
 })

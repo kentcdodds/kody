@@ -24,6 +24,11 @@ export const emailSenderRevokeCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe('Optional inbox id for inbox-scoped policy.'),
+			package_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Optional package id for package-scoped policy.'),
 		}),
 		outputSchema: revokePolicyOutputSchema,
 		async handler(args, ctx) {
@@ -41,6 +46,7 @@ export const emailSenderRevokeCapability = defineDomainCapability(
 				kind: args.kind,
 				value: normalizedValue,
 				inboxId: args.inbox_id ?? null,
+				packageId: args.package_id ?? null,
 			})
 			return { revoked }
 		},

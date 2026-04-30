@@ -303,6 +303,59 @@ export async function createEmailInboxAddress(input: {
 	return mapInboxAddressRow(row)
 }
 
+export async function deleteEmailInboxById(input: {
+	db: D1Database
+	inboxId: string
+}) {
+	await input.db
+		.prepare(
+			`DELETE FROM email_inboxes
+			WHERE id = ?`,
+		)
+		.bind(input.inboxId)
+		.run()
+}
+
+export async function createEmailInboxWithAddress(input: {
+	db: D1Database
+	userId: string
+	name: string
+	description?: string | null
+	mode: EmailInboxMode
+	packageId?: string | null
+	address: string
+	localPart: string
+	domain: string
+	replyTokenHash?: string | null
+}) {
+	const inbox = await createEmailInbox({
+		db: input.db,
+		userId: input.userId,
+		name: input.name,
+		description: input.description ?? null,
+		mode: input.mode,
+		packageId: input.packageId ?? null,
+	})
+	try {
+		const address = await createEmailInboxAddress({
+			db: input.db,
+			inboxId: inbox.id,
+			userId: input.userId,
+			address: input.address,
+			localPart: input.localPart,
+			domain: input.domain,
+			replyTokenHash: input.replyTokenHash ?? null,
+		})
+		return { inbox, address }
+	} catch (error) {
+		await deleteEmailInboxById({
+			db: input.db,
+			inboxId: inbox.id,
+		}).catch(() => undefined)
+		throw error
+	}
+}
+
 export async function listEmailInboxesForUser(input: {
 	db: D1Database
 	userId: string
@@ -414,7 +467,7 @@ export async function upsertEmailSenderIdentity(input: {
 		package_id: input.packageId ?? null,
 		email: input.email,
 		domain: input.domain,
-		display_name: input.displayName ?? null,
+		display_name: input.displayName ?? '',
 		status: input.status ?? 'verified',
 		verified_at: input.verifiedAt ?? timestamp,
 		created_at: existing ? String(existing['created_at']) : timestamp,
@@ -730,7 +783,7 @@ export async function insertEmailMessage(input: {
 		inbox_id: input.message.inboxId ?? null,
 		thread_id: input.message.threadId ?? null,
 		sender_identity_id: input.message.senderIdentityId ?? null,
-		from_address: input.message.fromAddress ?? null,
+		from_address: input.message.fromAddress ?? '',
 		envelope_from: input.message.envelopeFrom ?? null,
 		to_addresses_json: JSON.stringify(input.message.toAddresses ?? []),
 		cc_addresses_json: JSON.stringify(input.message.ccAddresses ?? []),
@@ -738,18 +791,18 @@ export async function insertEmailMessage(input: {
 		reply_to_addresses_json: JSON.stringify(
 			input.message.replyToAddresses ?? [],
 		),
-		subject: input.message.subject ?? null,
+		subject: input.message.subject ?? '',
 		message_id_header: input.message.messageIdHeader ?? null,
 		in_reply_to_header: input.message.inReplyToHeader ?? null,
 		references_json: JSON.stringify(input.message.references ?? []),
 		headers_json: input.message.headers
 			? JSON.stringify(input.message.headers)
-			: null,
+			: '[]',
 		auth_results: input.message.authResults ?? null,
 		text_body: input.message.textBody ?? null,
 		html_body: input.message.htmlBody ?? null,
 		raw_mime: input.message.rawMime ?? null,
-		raw_size: input.message.rawSize ?? null,
+		raw_size: input.message.rawSize ?? 0,
 		policy_decision: input.message.policyDecision,
 		processing_status: input.message.processingStatus,
 		provider_message_id: input.message.providerMessageId ?? null,
@@ -927,6 +980,16 @@ export async function listEmailMessages(input: {
 	return (result.results ?? []).map(mapMessageRow)
 }
 
+export async function deleteEmailMessageById(input: {
+	db: D1Database
+	messageId: string
+}) {
+	await input.db
+		.prepare(`DELETE FROM email_messages WHERE id = ?`)
+		.bind(input.messageId)
+		.run()
+}
+
 export async function insertEmailAttachments(input: {
 	db: D1Database
 	messageId: string
@@ -962,6 +1025,27 @@ export async function insertEmailAttachments(input: {
 				timestamp,
 			)
 			.run()
+	}
+}
+export async function insertEmailMessageWithAttachments(
+	input: Parameters<typeof insertEmailMessage>[0] & {
+		attachments: Parameters<typeof insertEmailAttachments>[0]['attachments']
+	},
+) {
+	const message = await insertEmailMessage(input)
+	try {
+		await insertEmailAttachments({
+			db: input.db,
+			messageId: message.id,
+			attachments: input.attachments,
+		})
+		return message
+	} catch (error) {
+		await deleteEmailMessageById({
+			db: input.db,
+			messageId: message.id,
+		}).catch(() => undefined)
+		throw error
 	}
 }
 

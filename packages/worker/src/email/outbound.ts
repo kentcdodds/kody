@@ -104,6 +104,7 @@ async function sendViaRestFallback(input: {
 	text?: string | null
 	html?: string | null
 	replyTo?: string | null
+	headers: Record<string, string>
 }) {
 	const result = await sendCloudflareEmail(
 		{
@@ -117,6 +118,8 @@ async function sendViaRestFallback(input: {
 			subject: input.subject,
 			html: input.html ?? input.text ?? input.subject,
 			text: input.text ?? undefined,
+			replyTo: input.replyTo ?? undefined,
+			headers: Object.keys(input.headers).length > 0 ? input.headers : undefined,
 		},
 	)
 	if (!result.ok) {
@@ -160,18 +163,18 @@ export async function sendOutboundEmail(
 	const html = input.html?.trim() || null
 	if (!text && !html) throw new Error('Email text or HTML body is required.')
 
-	const thread =
-		original?.threadId ?? input.threadId
-			? null
-			: await createEmailThread({
-					db: input.env.APP_DB,
-					userId: input.userId,
-					inboxId: original?.inboxId ?? input.inboxId ?? null,
-					subjectNormalized: subject.toLowerCase(),
-					rootMessageIdHeader: input.inReplyToHeader ?? null,
-					lastMessageAt: new Date().toISOString(),
-				})
-	const threadId = original?.threadId ?? input.threadId ?? thread?.id ?? null
+	const existingThreadId = original?.threadId ?? input.threadId ?? null
+	const thread = existingThreadId
+		? null
+		: await createEmailThread({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				inboxId: original?.inboxId ?? input.inboxId ?? null,
+				subjectNormalized: subject.toLowerCase(),
+				rootMessageIdHeader: input.inReplyToHeader ?? null,
+				lastMessageAt: new Date().toISOString(),
+			})
+	const threadId = existingThreadId ?? thread?.id ?? null
 	const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
 	const sendHeaders = buildHeaders({
 		messageId: messageIdHeader,
@@ -246,6 +249,10 @@ export async function sendOutboundEmail(
 				subject,
 				text,
 				html,
+				replyTo: input.replyTo
+					? (normalizeEmailAddress(input.replyTo) ?? undefined)
+					: undefined,
+				headers: sendHeaders,
 			}))
 		await updateEmailMessageDelivery({
 			db: input.env.APP_DB,

@@ -11,9 +11,8 @@ import {
 	getEmailInboxById,
 	getEmailInboxAddressByAddress,
 	getEmailInboxAddressByReplyTokenHash,
-	insertEmailAttachments,
 	insertEmailDeliveryEvent,
-	insertEmailMessage,
+	insertEmailMessageWithAttachments,
 	listEmailSenderPolicies,
 	touchEmailThread,
 } from './repo.ts'
@@ -101,7 +100,7 @@ export async function handleInboundEmail(
 			rootMessageIdHeader: parsed.messageId,
 			lastMessageAt: now,
 		}))
-	const stored = await insertEmailMessage({
+	const stored = await insertEmailMessageWithAttachments({
 		db: env.APP_DB,
 		message: {
 			direction: 'inbound',
@@ -128,25 +127,24 @@ export async function handleInboundEmail(
 			policyDecision,
 			processingStatus: 'stored',
 			providerMessageId: null,
-			error: inboxAddress
-				? decision.reasons.join(', ')
-				: `unknown inbox alias: ${recipient}`,
+			error:
+				!inboxAddress
+					? `unknown inbox alias: ${recipient}`
+					: policyDecision === 'rejected'
+						? decision.reasons.join(', ')
+						: null,
 			receivedAt: now,
 			sentAt: null,
 		},
-	})
-	await insertEmailAttachments({
-		db: env.APP_DB,
-		messageId: stored.id,
 		attachments: parsed.attachments.map((attachment) => ({
-				filename: attachment.filename,
-				contentType: attachment.contentType,
-				contentId: attachment.contentId,
-				disposition: attachment.disposition,
-				size: attachment.size,
-				storageKind: 'raw-mime',
-				storageKey: null,
-			})),
+			filename: attachment.filename,
+			contentType: attachment.contentType,
+			contentId: attachment.contentId,
+			disposition: attachment.disposition,
+			size: attachment.size,
+			storageKind: 'raw-mime',
+			storageKey: null,
+		})),
 	})
 	await touchEmailThread({
 		db: env.APP_DB,
@@ -173,4 +171,7 @@ export async function handleInboundEmail(
 				: [`unknown inbox alias: ${recipient}`],
 		},
 	})
+	if (policyDecision === 'rejected') {
+		message.setReject(decision.reasons.join(', '))
+	}
 }

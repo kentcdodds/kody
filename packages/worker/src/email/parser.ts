@@ -97,7 +97,9 @@ function toAttachmentMetadata(
 }
 
 function parseReplyToken(headers: Headers, toAddresses: Array<EmailMailbox>) {
-	const explicit = getHeader(headers, 'X-Kody-Reply-Token')
+	const explicit =
+		getHeader(headers, 'X-Kody-Reply-Token') ??
+		getHeader(headers, 'X-Reply-Token')
 	if (explicit) return explicit
 	for (const address of toAddresses) {
 		const localPart = address.address.split('@')[0] ?? ''

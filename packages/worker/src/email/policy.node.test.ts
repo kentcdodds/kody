@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { hashReplyToken } from './address.ts'
 import { evaluateSenderPolicy } from './policy.ts'
 import { type EmailSenderPolicyRecord } from './types.ts'
 
@@ -22,6 +23,7 @@ function policy(
 
 test('sender policy accepts exact senders, domains, and reply tokens before default quarantine', async () => {
 	const replyToken = 'reply-token-123'
+	const replyTokenHash = await hashReplyToken(replyToken)
 	const exact = await evaluateSenderPolicy({
 		fromAddress: 'Alice@Example.com',
 		envelopeFrom: 'bounce@mailer.test',
@@ -48,7 +50,7 @@ test('sender policy accepts exact senders, domains, and reply tokens before defa
 		replyToken,
 		rules: [
 			policy({ kind: 'sender', value: 'somebody@example.com' }),
-			policy({ kind: 'reply_token', value: replyToken }),
+			policy({ kind: 'reply_token', value: replyTokenHash }),
 		],
 	})
 	expect(token).toMatchObject({

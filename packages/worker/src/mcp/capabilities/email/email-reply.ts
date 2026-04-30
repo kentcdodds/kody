@@ -46,7 +46,7 @@ export const emailReplyCapability = defineDomainCapability(
 					: `Re: ${original.subject ?? '(no subject)'}`,
 				text: args.text ?? null,
 				html: args.html ?? null,
-				inReplyToHeader: original.messageIdHeader ?? original.id,
+				inReplyToHeader: original.messageIdHeader ?? null,
 				references: [
 					...stringArray(original.references),
 					...(original.messageIdHeader ? [original.messageIdHeader] : []),

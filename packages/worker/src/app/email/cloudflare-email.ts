@@ -57,6 +57,8 @@ function logSkippedEmail(reason: string, message: OutboundEmail) {
 			subject: message.subject,
 			html: message.html,
 			text: message.text,
+			replyTo: message.replyTo,
+			headers: message.headers,
 		}),
 	)
 }
@@ -125,9 +127,14 @@ async function sendViaCloudflareApi(
 
 export async function sendCloudflareEmail(
 	config: CloudflareEmailClientConfig,
-	message: OutboundEmail,
+	message: Omit<OutboundEmail, 'replyTo' | 'headers'> &
+		Partial<Pick<OutboundEmail, 'replyTo' | 'headers'>>,
 ): Promise<CloudflareSendResult> {
-	const normalized = normalizeEmailPayload(message)
+	const normalized = normalizeEmailPayload({
+		...message,
+		replyTo: message.replyTo,
+		headers: message.headers,
+	})
 	const apiBaseUrl =
 		typeof config.apiBaseUrl === 'string' && config.apiBaseUrl.trim().length > 0
 			? config.apiBaseUrl.trim()

@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS email_messages (
 	html_body TEXT,
 	raw_mime TEXT,
 	raw_size INTEGER NOT NULL DEFAULT 0,
-	policy_decision TEXT NOT NULL CHECK (policy_decision IN ('accepted', 'quarantined', 'rejected', 'sent', 'failed')),
+	policy_decision TEXT NOT NULL CHECK (policy_decision IN ('accepted', 'quarantined', 'rejected')),
 	processing_status TEXT NOT NULL CHECK (processing_status IN ('stored', 'sent', 'failed', 'rejected')),
 	provider_message_id TEXT,
 	error TEXT,
