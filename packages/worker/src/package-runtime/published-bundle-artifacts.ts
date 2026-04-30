@@ -1,6 +1,7 @@
 import {
 	getPackageAppEntryPath,
 	listPackageServices,
+	listPackageSubscriptions,
 } from '#worker/package-registry/manifest.ts'
 import {
 	type AuthoredPackageJson,
@@ -32,6 +33,7 @@ import {
 	parseKodyPackageSpecifier,
 	resolveSavedPackageImport,
 } from './package-import-resolution.ts'
+import { buildPackageSubscriptionArtifactName } from './subscription-artifacts.ts'
 
 type DependencyResolutionState = {
 	env: Env
@@ -342,6 +344,27 @@ export async function rebuildPublishedPackageArtifacts(input: {
 			kind: 'module',
 			artifactName: exportName,
 			entryPoint,
+			mainModule: bundle.mainModule,
+			modules: bundle.modules,
+			dependencies: bundle.dependencies ?? fallbackDependencies,
+			packageContext: {
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
+			},
+		})
+	}
+	for (const subscription of listPackageSubscriptions(input.manifest)) {
+		const bundle = await input.buildModuleBundle({
+			entryPoint: subscription.handler,
+		})
+		await persistPublishedBundleArtifact({
+			env: input.env,
+			userId: input.userId,
+			source: input.source,
+			kind: 'module',
+			artifactName: buildPackageSubscriptionArtifactName(subscription.topic),
+			entryPoint: subscription.handler,
 			mainModule: bundle.mainModule,
 			modules: bundle.modules,
 			dependencies: bundle.dependencies ?? fallbackDependencies,

@@ -87,24 +87,6 @@ export type PackageRetrieverDefinition = z.infer<
 	typeof packageRetrieverDefinitionSchema
 >
 
-export const packageEmailInboxDefinitionSchema = z.object({
-	id: z.string().regex(kodyPackageIdPattern),
-})
-
-export const packageEmailHandlerDefinitionSchema = z.object({
-	inbox: z.string().regex(kodyPackageIdPattern),
-	export: z.string().min(1),
-})
-
-export const packageEmailDefinitionSchema = z.object({
-	inboxes: z.array(packageEmailInboxDefinitionSchema).optional(),
-	handlers: z.array(packageEmailHandlerDefinitionSchema).optional(),
-})
-
-export type PackageEmailDefinition = z.infer<
-	typeof packageEmailDefinitionSchema
->
-
 const packageExportConditionSchema = z
 	.object({
 		import: z.string().min(1).optional(),
@@ -151,7 +133,6 @@ export const authoredPackageKodySchema = z.object({
 			packageRetrieverDefinitionSchema,
 		)
 		.optional(),
-	email: packageEmailDefinitionSchema.optional(),
 })
 
 export type AuthoredPackageKody = z.infer<typeof authoredPackageKodySchema>

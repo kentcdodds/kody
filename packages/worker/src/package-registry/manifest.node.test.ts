@@ -250,3 +250,56 @@ test('parseAuthoredPackageJson rejects retriever definitions with no scopes', ()
 		}),
 	).toThrow('Too small')
 })
+
+test('parseAuthoredPackageJson accepts email event subscriptions', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/email-notifier',
+			exports: {
+				'.': './index.ts',
+			},
+			kody: {
+				id: 'email-notifier',
+				description: 'Email notifier package',
+				subscriptions: {
+					'email.message.received': {
+						handler: './src/handle-received-email.ts',
+						description: 'Notify on accepted inbound email',
+						filters: {
+							policy_decisions: ['accepted'],
+						},
+					},
+					'email.message.quarantined': {
+						handler: './src/handle-quarantined-email.ts',
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	const projection = buildPackageSearchProjection(manifest)
+
+	expect(projection.subscriptions).toEqual([
+		{
+			topic: 'email.message.quarantined',
+			handler: 'src/handle-quarantined-email.ts',
+			description: null,
+			filters: null,
+		},
+		{
+			topic: 'email.message.received',
+			handler: 'src/handle-received-email.ts',
+			description: 'Notify on accepted inbound email',
+			filters: {
+				policy_decisions: ['accepted'],
+			},
+		},
+	])
+	expect(buildPackageSearchDocument(projection)).toContain(
+		'subscription:email.message.received',
+	)
+	expect(buildPackageSearchDocument(projection)).toContain(
+		'subscription:email.message.quarantined',
+	)
+})

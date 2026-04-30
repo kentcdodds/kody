@@ -22,6 +22,7 @@ test('email domain exposes inbox, message, and send capabilities', () => {
 		[
 			'email_inbox_create',
 			'email_inbox_list',
+			'email_attachment_get',
 			'email_message_list',
 			'email_message_get',
 			'email_send',

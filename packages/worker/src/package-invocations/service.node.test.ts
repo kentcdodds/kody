@@ -4,6 +4,7 @@ import { invokePackageExport } from './service.ts'
 const repoMockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
+	loadPackageManifestBySourceId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
@@ -20,6 +21,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
+		repoMockModule.loadPackageManifestBySourceId(...args),
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		repoMockModule.loadPackageSourceBySourceId(...args),
 }))
@@ -198,6 +201,34 @@ function seedPackageResolution() {
 		hasApp: true,
 		createdAt: '2026-04-27T00:00:00.000Z',
 		updatedAt: '2026-04-27T00:00:00.000Z',
+	})
+	repoMockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			user_id: 'user-123',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'repo-1',
+			published_commit: 'commit-1',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			created_at: '2026-04-27T00:00:00.000Z',
+			updated_at: '2026-04-27T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'./dispatch-message-created': './src/dispatch-message-created.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway helpers',
+				app: {
+					entry: './src/app.ts',
+				},
+			},
+		},
 	})
 	repoMockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		source: {
@@ -530,6 +561,94 @@ test('invokePackageExport rejects reusing an idempotency key for a different pay
 		idempotency: {
 			key: 'evt-1',
 			replayed: false,
+		},
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('invokePackageExport replays responses created with the legacy exportName request hash key', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'hello discord' },
+		logs: ['dispatched'],
+	})
+
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-legacy-hash',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+	expect(first.status).toBe(200)
+
+	const table = (
+		db as unknown as {
+			prepare: (query: string) => {
+				bind: (...params: Array<unknown>) => {
+					run: () => Promise<{ meta: { changes: number; last_row_id: number } }>
+				}
+			}
+		}
+	).prepare(
+		`UPDATE package_invocations
+		SET request_hash = ?, updated_at = ?
+		WHERE user_id = ? AND token_id = ? AND package_id = ? AND export_name = ? AND idempotency_key = ?`,
+	)
+	const legacyDigest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(
+			JSON.stringify({
+				exportName: './dispatch-message-created',
+				packageId: 'pkg-1',
+				params: { content: 'hi' },
+				source: 'discord-gateway',
+				topic: 'discord.message.created',
+			}),
+		),
+	)
+	const legacyHash = Array.from(new Uint8Array(legacyDigest))
+		.map((value) => value.toString(16).padStart(2, '0'))
+		.join('')
+	await table
+		.bind(
+			legacyHash,
+			'2026-04-27T00:00:00.000Z',
+			'user-123',
+			'discord-gateway',
+			'pkg-1',
+			'./dispatch-message-created',
+			'evt-legacy-hash',
+		)
+		.run()
+
+	const replay = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-legacy-hash',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+
+	expect(replay.status).toBe(200)
+	expect(replay.body).toMatchObject({
+		ok: true,
+		idempotency: {
+			key: 'evt-legacy-hash',
+			replayed: true,
 		},
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)

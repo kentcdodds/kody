@@ -7,16 +7,31 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
-import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
+import {
+	loadPackageManifestBySourceId,
+	loadPackageSourceBySourceId,
+} from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { resolvePackageExportPath } from '#worker/package-registry/manifest.ts'
+import {
+	normalizePackageWorkspacePath,
+	resolvePackageExportPath,
+} from '#worker/package-registry/manifest.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import {
 	loadPublishedBundleArtifactByIdentity,
 	persistPublishedBundleArtifact,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import {
+	buildPackageSubscriptionArtifactName,
+	normalizePackageSubscriptionTopic,
+} from '#worker/package-runtime/subscription-artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+import {
+	getEmailAttachmentById,
+	getEmailMessageById,
+	getEmailMessageWithAttachmentsById,
+} from '#worker/email/repo.ts'
 import {
 	getPackageInvocationByKey,
 	insertPackageInvocationRow,
@@ -45,6 +60,30 @@ export type PackageInvocationRequest = {
 }
 
 export type PackageInvocationResponse = PackageInvocationStoredResponse
+
+type PackageInvocationActor = {
+	tokenId: string
+	userId: string
+	email: string
+	displayName: string
+}
+
+type PackageModuleSelector =
+	| {
+			kind: 'export'
+			exportName: string
+	  }
+	| {
+			kind: 'subscription'
+			topic: string
+	  }
+
+type PackageModuleResolution = {
+	artifactName: string
+	entryPoint: string
+}
+
+const internalEmailSubscriptionTokenId = 'internal:email-subscriptions'
 
 function normalizeExportName(exportName: string) {
 	const trimmed = exportName.trim()
@@ -190,49 +229,47 @@ function tokenAllowsSource(input: {
 	return sources.includes(input.source)
 }
 
-function isMissingPackageExportError(error: unknown) {
-	return (
-		error instanceof Error &&
-		(error.message.includes('does not define export') ||
-			error.message.includes('does not define a runtime target'))
-	)
-}
-
 async function ensureModuleArtifact(input: {
 	env: Env
 	baseUrl: string
 	savedPackage: SavedPackageRecord
-	exportName: string
+	selector: PackageModuleSelector
 	userId: string
 }) {
-	const packageSource = await loadPackageSourceBySourceId({
+	const packageManifest = await loadPackageManifestBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		sourceId: input.savedPackage.sourceId,
 	})
-	const entryPoint = resolvePackageExportPath({
-		manifest: packageSource.manifest,
-		exportName: input.exportName,
+	const resolution = resolvePackageModuleResolution({
+		manifest: packageManifest.manifest,
+		selector: input.selector,
 	})
 	const loaded = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
 		userId: input.userId,
 		sourceId: input.savedPackage.sourceId,
 		kind: 'module',
-		artifactName: input.exportName,
-		entryPoint,
+		artifactName: resolution.artifactName,
+		entryPoint: resolution.entryPoint,
 	})
 	if (loaded?.artifact) {
 		return {
 			artifact: loaded.artifact,
-			source: packageSource.source,
-			entryPoint,
+			source: packageManifest.source,
+			entryPoint: resolution.entryPoint,
 		}
 	}
+	const packageSource = await loadPackageSourceBySourceId({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceId: input.savedPackage.sourceId,
+	})
 	const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
 		sourceFiles: packageSource.files,
-		entryPoints: [{ path: entryPoint, includeStorage: true }],
+		entryPoints: [{ path: resolution.entryPoint, includeStorage: true }],
 	})
 	if (!typecheckResult.ok) {
 		throw new Error(typecheckResult.message)
@@ -244,15 +281,15 @@ async function ensureModuleArtifact(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		sourceFiles: packageSource.files,
-		entryPoint,
+		entryPoint: resolution.entryPoint,
 	})
 	await persistPublishedBundleArtifact({
 		env: input.env,
 		userId: input.userId,
 		source: packageSource.source,
 		kind: 'module',
-		artifactName: input.exportName,
-		entryPoint,
+		artifactName: resolution.artifactName,
+		entryPoint: resolution.entryPoint,
 		mainModule: bundle.mainModule,
 		modules: bundle.modules,
 		dependencies: bundle.dependencies,
@@ -267,24 +304,28 @@ async function ensureModuleArtifact(input: {
 		userId: input.userId,
 		sourceId: input.savedPackage.sourceId,
 		kind: 'module',
-		artifactName: input.exportName,
-		entryPoint,
+		artifactName: resolution.artifactName,
+		entryPoint: resolution.entryPoint,
 	})
 	if (!rebuilt?.artifact) {
+		const moduleLabel =
+			input.selector.kind === 'export'
+				? `export "${input.selector.exportName}"`
+				: `subscription "${input.selector.topic}"`
 		throw new Error(
-			`Published bundle artifact for export "${input.exportName}" could not be loaded after rebuild.`,
+			`Published bundle artifact for ${moduleLabel} could not be loaded after rebuild.`,
 		)
 	}
 	return {
 		artifact: rebuilt.artifact,
 		source: packageSource.source,
-		entryPoint,
+		entryPoint: resolution.entryPoint,
 	}
 }
 
 function buildExecutionSuccessResponse(input: {
 	savedPackage: SavedPackageRecord
-	exportName: string
+	invocationName: string
 	idempotencyKey: string
 	source: string | null
 	topic: string | null
@@ -300,7 +341,7 @@ function buildExecutionSuccessResponse(input: {
 				id: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
 			},
-			exportName: input.exportName,
+			exportName: input.invocationName,
 			source: input.source,
 			topic: input.topic,
 			idempotency: {
@@ -318,7 +359,7 @@ function buildExecutionSuccessResponse(input: {
 
 function buildExecutionErrorResponse(input: {
 	savedPackage: SavedPackageRecord
-	exportName: string
+	invocationName: string
 	idempotencyKey: string
 	source: string | null
 	topic: string | null
@@ -335,7 +376,7 @@ function buildExecutionErrorResponse(input: {
 				id: input.savedPackage.id,
 				kodyId: input.savedPackage.kodyId,
 			},
-			exportName: input.exportName,
+			exportName: input.invocationName,
 			source: input.source,
 			topic: input.topic,
 			idempotency: {
@@ -422,6 +463,372 @@ function resolveExistingInvocation(input: {
 	})
 }
 
+function resolvePackageModuleResolution(input: {
+	manifest: Awaited<
+		ReturnType<typeof loadPackageSourceBySourceId>
+	>['manifest']
+	selector: PackageModuleSelector
+}): PackageModuleResolution {
+	switch (input.selector.kind) {
+		case 'export': {
+			const exportName = normalizeExportName(input.selector.exportName)
+			return {
+				artifactName: exportName,
+				entryPoint: resolvePackageExportPath({
+					manifest: input.manifest,
+					exportName,
+				}),
+			}
+		}
+		case 'subscription': {
+			const topic = normalizePackageSubscriptionTopic(input.selector.topic)
+			const handler = input.manifest.kody.subscriptions?.[topic]?.handler
+			if (!handler) {
+				throw new Error(
+					`Package "${input.manifest.kody.id}" does not define subscription "${topic}".`,
+				)
+			}
+			return {
+				artifactName: buildPackageSubscriptionArtifactName(topic),
+				entryPoint: normalizePackageWorkspacePath(handler),
+			}
+		}
+		default: {
+			const selector = input.selector
+			void selector
+			throw new Error('Unhandled package module selector.')
+		}
+	}
+}
+
+function isMissingPackageModuleError(error: unknown) {
+	return (
+		error instanceof Error &&
+		(error.message.includes('does not define export') ||
+			error.message.includes('does not define a runtime target') ||
+			error.message.includes('does not define subscription'))
+	)
+}
+
+async function invokeSavedPackageModule(input: {
+	env: Env
+	baseUrl: string
+	actor: PackageInvocationActor
+	savedPackage: SavedPackageRecord
+	invocationName: string
+	moduleSelector: PackageModuleSelector
+	params?: Record<string, unknown>
+	idempotencyKey: string
+	source: string | null
+	topic: string | null
+	notFoundCode: 'export_not_found' | 'subscription_not_found'
+}) {
+	const requestHash = await createRequestHash({
+		packageId: input.savedPackage.id,
+		exportName: input.invocationName,
+		params: input.params,
+		source: input.source,
+		topic: input.topic,
+	})
+	let existing: Awaited<ReturnType<typeof getPackageInvocationByKey>>
+	try {
+		existing = await getPackageInvocationByKey({
+			db: input.env.APP_DB,
+			userId: input.actor.userId,
+			tokenId: input.actor.tokenId,
+			packageId: input.savedPackage.id,
+			exportName: input.invocationName,
+			idempotencyKey: input.idempotencyKey,
+		})
+	} catch (error) {
+		console.error('package invocation idempotency lookup failed', error)
+		return buildJsonErrorResponse({
+			status: 500,
+			code: 'idempotency_lookup_failed',
+			message:
+				'Unable to look up the package invocation idempotency record. Please retry.',
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
+	if (existing) {
+		return resolveExistingInvocation({
+			record: existing,
+			requestHash,
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
+
+	const invocationId = crypto.randomUUID()
+	let inserted: boolean
+	try {
+		inserted = await insertPackageInvocationRow({
+			db: input.env.APP_DB,
+			row: {
+				id: invocationId,
+				userId: input.actor.userId,
+				tokenId: input.actor.tokenId,
+				packageId: input.savedPackage.id,
+				packageKodyId: input.savedPackage.kodyId,
+				exportName: input.invocationName,
+				idempotencyKey: input.idempotencyKey,
+				requestHash,
+				source: input.source,
+				topic: input.topic,
+				status: 'in_progress',
+			},
+		})
+	} catch (error) {
+		console.error('package invocation idempotency persistence failed', error)
+		return buildJsonErrorResponse({
+			status: 500,
+			code: 'idempotency_persistence_failed',
+			message:
+				'Unable to persist the package invocation idempotency record. Please retry.',
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
+	if (!inserted) {
+		let current: Awaited<ReturnType<typeof getPackageInvocationByKey>>
+		try {
+			current = await getPackageInvocationByKey({
+				db: input.env.APP_DB,
+				userId: input.actor.userId,
+				tokenId: input.actor.tokenId,
+				packageId: input.savedPackage.id,
+				exportName: input.invocationName,
+				idempotencyKey: input.idempotencyKey,
+			})
+		} catch (error) {
+			console.error('package invocation idempotency lookup failed', error)
+			return buildJsonErrorResponse({
+				status: 500,
+				code: 'idempotency_lookup_failed',
+				message:
+					'Unable to look up the package invocation idempotency record. Please retry.',
+				idempotencyKey: input.idempotencyKey,
+			})
+		}
+		if (!current) {
+			return buildJsonErrorResponse({
+				status: 500,
+				code: 'idempotency_conflict_unresolved',
+				message:
+					'Package invocation idempotency insert conflicted but no existing row was found.',
+				idempotencyKey: input.idempotencyKey,
+			})
+		}
+		return resolveExistingInvocation({
+			record: current,
+			requestHash,
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
+
+	try {
+		const { artifact, source: sourceRow } = await ensureModuleArtifact({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			savedPackage: input.savedPackage,
+			selector: input.moduleSelector,
+			userId: input.actor.userId,
+		})
+		const repoSource =
+			artifact.packageContext?.sourceId != null
+				? await getEntitySourceById(
+						input.env.APP_DB,
+						artifact.packageContext.sourceId,
+					)
+				: sourceRow
+		const callerContext = createMcpCallerContext({
+			baseUrl: input.baseUrl,
+			user: {
+				userId: input.actor.userId,
+				email: input.actor.email,
+				displayName: input.actor.displayName,
+			},
+			storageContext: {
+				sessionId: null,
+				appId: input.savedPackage.id,
+				storageId: buildPackageInvocationStorageId(input.savedPackage.id),
+			},
+			repoContext: repoSource ? createRepoContext(repoSource) : null,
+		})
+		const executionResult = await runBundledModuleWithRegistry(
+			input.env,
+			callerContext,
+			{
+				mainModule: artifact.mainModule,
+				modules: artifact.modules,
+			},
+			input.params,
+			{
+				skipCapabilityRegistry: true,
+				storageTools: {
+					userId: input.actor.userId,
+					storageId: buildPackageInvocationStorageId(input.savedPackage.id),
+					writable: true,
+				},
+				emailTools: {
+					getMessage: async (messageId) => {
+						const loaded = await getEmailMessageWithAttachmentsById({
+							db: input.env.APP_DB,
+							userId: input.actor.userId,
+							messageId,
+						})
+						if (!loaded) {
+							throw new Error(`Email message not found: ${messageId}`)
+						}
+						return {
+							id: loaded.message.id,
+							direction: loaded.message.direction,
+							inbox_id: loaded.message.inboxId,
+							thread_id: loaded.message.threadId,
+							from_address: loaded.message.fromAddress,
+							envelope_from: loaded.message.envelopeFrom,
+							to_addresses: loaded.message.toAddresses,
+							cc_addresses: loaded.message.ccAddresses,
+							bcc_addresses: loaded.message.bccAddresses,
+							reply_to_addresses: loaded.message.replyToAddresses,
+							subject: loaded.message.subject,
+							message_id_header: loaded.message.messageIdHeader,
+							in_reply_to_header: loaded.message.inReplyToHeader,
+							references: loaded.message.references,
+							headers: loaded.message.headers,
+							auth_results: loaded.message.authResults,
+							text_body: loaded.message.textBody,
+							html_body: loaded.message.htmlBody,
+							raw_size: loaded.message.rawSize,
+							processing_status: loaded.message.processingStatus,
+							provider_message_id: loaded.message.providerMessageId,
+							error: loaded.message.error,
+							received_at: loaded.message.receivedAt,
+							sent_at: loaded.message.sentAt,
+							created_at: loaded.message.createdAt,
+							updated_at: loaded.message.updatedAt,
+							attachments: loaded.attachments.map((attachment) => ({
+								id: attachment.id,
+								filename: attachment.filename,
+								content_type: attachment.contentType,
+								content_id: attachment.contentId,
+								disposition: attachment.disposition,
+								size: attachment.size,
+								storage_kind: attachment.storageKind,
+								storage_key: attachment.storageKey,
+								created_at: attachment.createdAt,
+							})),
+						}
+					},
+					getAttachment: async (attachmentId) => {
+						const attachment = await getEmailAttachmentById({
+							db: input.env.APP_DB,
+							userId: input.actor.userId,
+							attachmentId,
+						})
+						if (!attachment) {
+							throw new Error(`Email attachment not found: ${attachmentId}`)
+						}
+						const message = await getEmailMessageById({
+							db: input.env.APP_DB,
+							userId: input.actor.userId,
+							messageId: attachment.messageId,
+						})
+						if (!message) {
+							throw new Error(
+								`Email message not found for attachment: ${attachment.messageId}`,
+							)
+						}
+						return {
+							id: attachment.id,
+							message_id: attachment.messageId,
+							filename: attachment.filename,
+							content_type: attachment.contentType,
+							content_id: attachment.contentId,
+							disposition: attachment.disposition,
+							size: attachment.size,
+							storage_kind: attachment.storageKind,
+							storage_key: attachment.storageKey,
+							created_at: attachment.createdAt,
+							message: {
+								id: message.id,
+								message_id_header: message.messageIdHeader,
+								subject: message.subject,
+							},
+							content: attachment.content,
+							content_base64: attachment.contentBase64,
+						}
+					},
+				},
+				...(artifact.packageContext
+					? { packageContext: artifact.packageContext }
+					: {}),
+			},
+		)
+		const response = executionResult.error
+			? buildExecutionErrorResponse({
+					savedPackage: input.savedPackage,
+					invocationName: input.invocationName,
+					idempotencyKey: input.idempotencyKey,
+					source: input.source,
+					topic: input.topic,
+					error: executionResult.error,
+					logs: executionResult.logs ?? [],
+				})
+			: buildExecutionSuccessResponse({
+					savedPackage: input.savedPackage,
+					invocationName: input.invocationName,
+					idempotencyKey: input.idempotencyKey,
+					source: input.source,
+					topic: input.topic,
+					result: executionResult.result,
+					logs: executionResult.logs ?? [],
+					rawContent: extractRawContent(executionResult.result),
+				})
+		await updatePackageInvocationResult({
+			db: input.env.APP_DB,
+			id: invocationId,
+			userId: input.actor.userId,
+			status: executionResult.error ? 'failed' : 'completed',
+			response,
+		})
+		return response
+	} catch (error) {
+		if (isMissingPackageModuleError(error)) {
+			const response = buildJsonErrorResponse({
+				status: 404,
+				code: input.notFoundCode,
+				message: error instanceof Error ? error.message : String(error),
+				idempotencyKey: input.idempotencyKey,
+			})
+			await updatePackageInvocationResult({
+				db: input.env.APP_DB,
+				id: invocationId,
+				userId: input.actor.userId,
+				status: 'failed',
+				response,
+			}).catch(() => {
+				// Best effort; preserve the original invocation error.
+			})
+			return response
+		}
+		const response = buildJsonErrorResponse({
+			status: 500,
+			code: 'invocation_failed',
+			message: error instanceof Error ? error.message : String(error),
+			idempotencyKey: input.idempotencyKey,
+		})
+		await updatePackageInvocationResult({
+			db: input.env.APP_DB,
+			id: invocationId,
+			userId: input.actor.userId,
+			status: 'failed',
+			response,
+		}).catch(() => {
+			// Best effort; preserve the original invocation error.
+		})
+		return response
+	}
+}
+
 export async function invokePackageExport(input: {
 	env: Env
 	baseUrl: string
@@ -485,217 +892,66 @@ export async function invokePackageExport(input: {
 		})
 	}
 
-	const requestHash = await createRequestHash({
-		packageId: savedPackage.id,
-		exportName,
+	return await invokeSavedPackageModule({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		actor: {
+			tokenId: input.token.tokenId,
+			userId: input.token.userId,
+			email: input.token.email,
+			displayName: input.token.displayName,
+		},
+		savedPackage,
+		invocationName: exportName,
+		moduleSelector: {
+			kind: 'export',
+			exportName,
+		},
 		params: input.request.params,
+		idempotencyKey,
 		source,
 		topic,
+		notFoundCode: 'export_not_found',
 	})
-	let existing: Awaited<ReturnType<typeof getPackageInvocationByKey>>
-	try {
-		existing = await getPackageInvocationByKey({
-			db: input.env.APP_DB,
-			userId: input.token.userId,
-			tokenId: input.token.tokenId,
-			packageId: savedPackage.id,
-			exportName,
-			idempotencyKey,
-		})
-	} catch (error) {
-		console.error('package invocation idempotency lookup failed', error)
-		return buildJsonErrorResponse({
-			status: 500,
-			code: 'idempotency_lookup_failed',
-			message:
-				'Unable to look up the package invocation idempotency record. Please retry.',
-			idempotencyKey,
-		})
-	}
-	if (existing) {
-		return resolveExistingInvocation({
-			record: existing,
-			requestHash,
-			idempotencyKey,
-		})
-	}
+}
 
-	const invocationId = crypto.randomUUID()
-	let inserted: boolean
-	try {
-		inserted = await insertPackageInvocationRow({
-			db: input.env.APP_DB,
-			row: {
-				id: invocationId,
-				userId: input.token.userId,
-				tokenId: input.token.tokenId,
-				packageId: savedPackage.id,
-				packageKodyId: savedPackage.kodyId,
-				exportName,
-				idempotencyKey,
-				requestHash,
-				source,
-				topic,
-				status: 'in_progress',
-			},
-		})
-	} catch (error) {
-		console.error('package invocation idempotency persistence failed', error)
+export async function invokePackageSubscription(input: {
+	env: Env
+	baseUrl: string
+	savedPackage: SavedPackageRecord
+	topic: string
+	params?: Record<string, unknown>
+	idempotencyKey: string
+	source?: string | null
+}) {
+	const topic = normalizePackageSubscriptionTopic(input.topic)
+	const idempotencyKey = input.idempotencyKey.trim()
+	if (!idempotencyKey) {
 		return buildJsonErrorResponse({
-			status: 500,
-			code: 'idempotency_persistence_failed',
-			message:
-				'Unable to persist the package invocation idempotency record. Please retry.',
-			idempotencyKey,
+			status: 400,
+			code: 'missing_idempotency_key',
+			message: 'Package subscription invocations require a non-empty idempotencyKey.',
 		})
 	}
-	if (!inserted) {
-		let current: Awaited<ReturnType<typeof getPackageInvocationByKey>>
-		try {
-			current = await getPackageInvocationByKey({
-				db: input.env.APP_DB,
-				userId: input.token.userId,
-				tokenId: input.token.tokenId,
-				packageId: savedPackage.id,
-				exportName,
-				idempotencyKey,
-			})
-		} catch (error) {
-			console.error('package invocation idempotency lookup failed', error)
-			return buildJsonErrorResponse({
-				status: 500,
-				code: 'idempotency_lookup_failed',
-				message:
-					'Unable to look up the package invocation idempotency record. Please retry.',
-				idempotencyKey,
-			})
-		}
-		if (!current) {
-			return buildJsonErrorResponse({
-				status: 500,
-				code: 'idempotency_conflict_unresolved',
-				message:
-					'Package invocation idempotency insert conflicted but no existing row was found.',
-				idempotencyKey,
-			})
-		}
-		return resolveExistingInvocation({
-			record: current,
-			requestHash,
-			idempotencyKey,
-		})
-	}
-
-	try {
-		const { artifact, source: sourceRow } = await ensureModuleArtifact({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			savedPackage,
-			exportName,
-			userId: input.token.userId,
-		})
-		const repoSource =
-			artifact.packageContext?.sourceId != null
-				? await getEntitySourceById(
-						input.env.APP_DB,
-						artifact.packageContext.sourceId,
-					)
-				: sourceRow
-		const callerContext = createMcpCallerContext({
-			baseUrl: input.baseUrl,
-			user: {
-				userId: input.token.userId,
-				email: input.token.email,
-				displayName: input.token.displayName,
-			},
-			storageContext: {
-				sessionId: null,
-				appId: savedPackage.id,
-				storageId: buildPackageInvocationStorageId(savedPackage.id),
-			},
-			repoContext: repoSource ? createRepoContext(repoSource) : null,
-		})
-		const executionResult = await runBundledModuleWithRegistry(
-			input.env,
-			callerContext,
-			{
-				mainModule: artifact.mainModule,
-				modules: artifact.modules,
-			},
-			input.request.params,
-			{
-				storageTools: {
-					userId: input.token.userId,
-					storageId: buildPackageInvocationStorageId(savedPackage.id),
-					writable: true,
-				},
-				...(artifact.packageContext
-					? { packageContext: artifact.packageContext }
-					: {}),
-			},
-		)
-		const response = executionResult.error
-			? buildExecutionErrorResponse({
-					savedPackage,
-					exportName,
-					idempotencyKey,
-					source,
-					topic,
-					error: executionResult.error,
-					logs: executionResult.logs ?? [],
-				})
-			: buildExecutionSuccessResponse({
-					savedPackage,
-					exportName,
-					idempotencyKey,
-					source,
-					topic,
-					result: executionResult.result,
-					logs: executionResult.logs ?? [],
-					rawContent: extractRawContent(executionResult.result),
-				})
-		await updatePackageInvocationResult({
-			db: input.env.APP_DB,
-			id: invocationId,
-			userId: input.token.userId,
-			status: executionResult.error ? 'failed' : 'completed',
-			response,
-		})
-		return response
-	} catch (error) {
-		if (isMissingPackageExportError(error)) {
-			const response = buildJsonErrorResponse({
-				status: 404,
-				code: 'export_not_found',
-				message: error instanceof Error ? error.message : String(error),
-				idempotencyKey,
-			})
-			await updatePackageInvocationResult({
-				db: input.env.APP_DB,
-				id: invocationId,
-				userId: input.token.userId,
-				status: 'failed',
-				response,
-			}).catch(() => {
-				// Best effort; preserve the original invocation error.
-			})
-			return response
-		}
-		const response = buildJsonErrorResponse({
-			status: 500,
-			code: 'invocation_failed',
-			message: error instanceof Error ? error.message : String(error),
-			idempotencyKey,
-		})
-		await updatePackageInvocationResult({
-			db: input.env.APP_DB,
-			id: invocationId,
-			userId: input.token.userId,
-			status: 'failed',
-			response,
-		}).catch(() => {
-			// Best effort; preserve the original invocation error.
-		})
-		return response
-	}
+	return await invokeSavedPackageModule({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		actor: {
+			tokenId: internalEmailSubscriptionTokenId,
+			userId: input.savedPackage.userId,
+			email: '',
+			displayName: `package:${input.savedPackage.kodyId}`,
+		},
+		savedPackage: input.savedPackage,
+		invocationName: buildPackageSubscriptionArtifactName(topic),
+		moduleSelector: {
+			kind: 'subscription',
+			topic,
+		},
+		params: input.params,
+		idempotencyKey,
+		source: normalizeNullableString(input.source) ?? 'email',
+		topic,
+		notFoundCode: 'subscription_not_found',
+	})
 }
