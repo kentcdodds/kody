@@ -61,7 +61,9 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
-		void this.restoreState()
+		state.blockConcurrencyWhile(async () => {
+			await this.restoreState()
+		})
 	}
 
 	private clearConnectionState() {
@@ -143,7 +145,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		ws: WebSocket,
 		message: string | ArrayBuffer,
 	): void | Promise<void> {
-		void this.handleWebSocketMessage(ws, message)
+		return this.handleWebSocketMessage(ws, message)
 	}
 
 	webSocketClose(
@@ -151,7 +153,7 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 		code: number,
 		reason: string,
 		wasClean: boolean,
-	): void {
+	): Promise<void> {
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
 		const activeSockets = this.ctx
 			.getWebSockets(connectorTag)
@@ -173,7 +175,13 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 				connectorId: this.stateSnapshot.persisted.connectorId,
 			},
 		})
-		void this.persistState()
+		return this.persistState()
+	}
+
+	webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+		const reason =
+			error instanceof Error ? error.message : String(error ?? 'error')
+		return this.webSocketClose(ws, 1011, reason, false)
 	}
 
 	async getConnectorId() {
