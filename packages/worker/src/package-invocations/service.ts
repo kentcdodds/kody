@@ -21,7 +21,10 @@ import {
 	loadPublishedBundleArtifactByIdentity,
 	persistPublishedBundleArtifact,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
-import { buildPackageSubscriptionArtifactName } from '#worker/package-runtime/subscription-artifacts.ts'
+import {
+	buildPackageSubscriptionArtifactName,
+	normalizePackageSubscriptionTopic,
+} from '#worker/package-runtime/subscription-artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
@@ -96,14 +99,6 @@ function normalizeExportName(exportName: string) {
 function normalizeNullableString(value: string | null | undefined) {
 	const trimmed = value?.trim()
 	return trimmed && trimmed.length > 0 ? trimmed : null
-}
-
-function normalizeSubscriptionTopic(topic: string) {
-	const trimmed = topic.trim()
-	if (!trimmed) {
-		throw new Error('Package subscription topic must not be empty.')
-	}
-	return trimmed
 }
 
 function buildPackageInvocationStorageId(packageId: string) {
@@ -486,7 +481,7 @@ function resolvePackageModuleResolution(input: {
 			}
 		}
 		case 'subscription': {
-			const topic = normalizeSubscriptionTopic(input.selector.topic)
+			const topic = normalizePackageSubscriptionTopic(input.selector.topic)
 			const handler = input.manifest.kody.subscriptions?.[topic]?.handler
 			if (!handler) {
 				throw new Error(
@@ -930,7 +925,7 @@ export async function invokePackageSubscription(input: {
 	idempotencyKey: string
 	source?: string | null
 }) {
-	const topic = normalizeSubscriptionTopic(input.topic)
+	const topic = normalizePackageSubscriptionTopic(input.topic)
 	const idempotencyKey = input.idempotencyKey.trim()
 	if (!idempotencyKey) {
 		return buildJsonErrorResponse({

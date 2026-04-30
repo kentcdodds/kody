@@ -4,6 +4,7 @@ import { invokePackageExport } from './service.ts'
 const repoMockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
+	loadPackageManifestBySourceId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
@@ -20,6 +21,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
+		repoMockModule.loadPackageManifestBySourceId(...args),
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		repoMockModule.loadPackageSourceBySourceId(...args),
 }))
@@ -198,6 +201,34 @@ function seedPackageResolution() {
 		hasApp: true,
 		createdAt: '2026-04-27T00:00:00.000Z',
 		updatedAt: '2026-04-27T00:00:00.000Z',
+	})
+	repoMockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			user_id: 'user-123',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'repo-1',
+			published_commit: 'commit-1',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			created_at: '2026-04-27T00:00:00.000Z',
+			updated_at: '2026-04-27T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'./dispatch-message-created': './src/dispatch-message-created.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway helpers',
+				app: {
+					entry: './src/app.ts',
+				},
+			},
+		},
 	})
 	repoMockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		source: {
