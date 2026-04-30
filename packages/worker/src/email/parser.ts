@@ -1,5 +1,4 @@
 import PostalMime, {
-	addressParser,
 	type Address as PostalAddress,
 	type Attachment as PostalAttachment,
 } from 'postal-mime'
@@ -175,6 +174,3 @@ export async function parseForwardableEmailMessage(
 	}
 }
 
-export function parseAddressHeader(value: string) {
-	return flattenPostalAddresses(addressParser(value))
-}

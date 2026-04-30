@@ -123,8 +123,6 @@ export function stringArray(values: ReadonlyArray<unknown>) {
 	return values.filter((value): value is string => typeof value === 'string')
 }
 
-export const stringsOnly = stringArray
-
 export function toMessageSummary(message: EmailMessageRecord) {
 	return {
 		id: message.id,
