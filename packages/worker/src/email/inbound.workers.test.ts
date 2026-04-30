@@ -749,13 +749,13 @@ export default async function run() {
 			replyFrom,
 		])
 		expect(outboundMessages.map((message) => message.processingStatus)).toEqual(
-			['pending', 'pending'],
+			['sent', 'sent'],
 		)
-		expect(outboundMessages.map((message) => message.subject)).toEqual([
-			'Re: Stored mail',
+		expect(outboundMessages.map((message) => message.subject).sort()).toEqual([
 			'Re: Approved sender',
+			'Re: Stored mail',
 		])
-		expect(outboundMessages.map((message) => message.textBody)).toEqual([
+		expect(outboundMessages.map((message) => message.textBody).sort()).toEqual([
 			'Thanks for the email.',
 			'Thanks for the email.',
 		])

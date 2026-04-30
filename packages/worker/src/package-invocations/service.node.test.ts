@@ -747,6 +747,65 @@ test('invokePackageExport stores export-not-found responses as terminal failures
 test('invokePackageSubscription uses the normal capability registry with package storage and source metadata intact', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
+	repoMockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			user_id: 'user-123',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'repo-1',
+			published_commit: 'commit-1',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			created_at: '2026-04-27T00:00:00.000Z',
+			updated_at: '2026-04-27T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'./dispatch-message-created': './src/dispatch-message-created.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway helpers',
+				app: {
+					entry: './src/app.ts',
+				},
+				subscriptions: {
+					'email.message.received': {
+						handler: './src/email-message-received.ts',
+					},
+				},
+			},
+		},
+	})
+	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: {
+			id: 'artifact-subscription-1',
+		},
+		artifact: {
+			version: 1,
+			kind: 'module',
+			artifactName: 'subscription:email.message.received',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/email-message-received.ts',
+			mainModule: 'dist/subscription.js',
+			modules: {
+				'dist/subscription.js':
+					'export default async function run(){ return { ok: true } }',
+			},
+			dependencies: [],
+			packageContext: {
+				packageId: 'pkg-1',
+				kodyId: 'discord-gateway',
+				sourceId: 'source-1',
+			},
+			serviceContext: null,
+			createdAt: '2026-04-27T00:00:00.000Z',
+		},
+	})
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		result: { ok: true },
 		logs: [],
