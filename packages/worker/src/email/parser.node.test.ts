@@ -84,6 +84,22 @@ test('parseForwardableEmailMessage deduplicates overlapping to addresses and par
 	expect(parsed.to).toEqual([{ name: null, address: 'support@example.com' }])
 })
 
+test('parseForwardableEmailMessage parses kody-r reply tokens from recipients', async () => {
+	const raw = [
+		'From: Sender <sender@example.com>',
+		'To: Support <kody-r-0123456789abcdef@example.com>',
+		'Subject: Reply token',
+		'',
+		'Body',
+	].join('\r\n')
+
+	const parsed = await parseForwardableEmailMessage(
+		createMessage(raw, 'kody-r-0123456789abcdef@example.com'),
+	)
+
+	expect(parsed.replyToken).toBe('0123456789abcdef')
+})
+
 test('parseForwardableEmailMessage rejects oversized raw MIME', async () => {
 	await expect(
 		parseForwardableEmailMessage(createMessage('Subject: Oversized\n\nbody'), {

@@ -99,7 +99,9 @@ function parseReplyToken(headers: Headers, toAddresses: Array<EmailMailbox>) {
 	if (explicit) return explicit
 	for (const address of toAddresses) {
 		const localPart = address.address.split('@')[0] ?? ''
-		const match = localPart.match(/\+reply-([a-z0-9_-]+)/i)
+		const match =
+			localPart.match(/\bkody-r-([a-f0-9]{16,128})\b/i) ??
+			localPart.match(/\+reply-([a-z0-9_-]+)/i)
 		if (match?.[1]) return match[1]
 	}
 	return null
