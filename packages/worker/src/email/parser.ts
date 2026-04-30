@@ -4,6 +4,7 @@ import PostalMime, {
 	type Attachment as PostalAttachment,
 } from 'postal-mime'
 import {
+	extractReplyToken,
 	normalizeEmailAddress,
 	parseHeaderAddressList,
 } from './address.ts'
@@ -92,21 +93,6 @@ function toAttachmentMetadata(
 	}))
 }
 
-function parseReplyToken(headers: Headers, toAddresses: Array<EmailMailbox>) {
-	const explicit =
-		getHeader(headers, 'X-Kody-Reply-Token') ??
-		getHeader(headers, 'X-Reply-Token')
-	if (explicit) return explicit
-	for (const address of toAddresses) {
-		const localPart = address.address.split('@')[0] ?? ''
-		const match =
-			localPart.match(/\bkody-r-([a-f0-9]{16,128})\b/i) ??
-			localPart.match(/\+reply-([a-z0-9_-]+)/i)
-		if (match?.[1]) return match[1]
-	}
-	return null
-}
-
 function dedupeMailboxes(addresses: Array<EmailMailbox>) {
 	const seen = new Set<string>()
 	const out: Array<EmailMailbox> = []
@@ -182,7 +168,10 @@ export async function parseForwardableEmailMessage(
 		rawMime,
 		rawSize: message.rawSize,
 		attachments: toAttachmentMetadata(parsed.attachments),
-		replyToken: parseReplyToken(message.headers, toAddresses),
+		replyToken: extractReplyToken({
+			headers: message.headers,
+			recipients: toAddresses.map((address) => address.address),
+		}),
 	}
 }
 

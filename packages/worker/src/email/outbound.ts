@@ -72,6 +72,22 @@ function buildHeaders(input: {
 	return headers
 }
 
+async function requireStoredEmailMessage(input: {
+	env: SendEmailEnv
+	userId: string
+	messageId: string
+}) {
+	const stored = await getEmailMessageById({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		messageId: input.messageId,
+	})
+	if (!stored) {
+		throw new Error(`Email message disappeared after delivery update: ${input.messageId}`)
+	}
+	return stored
+}
+
 async function sendViaBinding(input: {
 	env: SendEmailEnv
 	from: string
@@ -274,11 +290,11 @@ export async function sendOutboundEmail(
 			detail: { providerMessageId },
 		})
 		return {
-			message: (await getEmailMessageById({
-				db: input.env.APP_DB,
+			message: await requireStoredEmailMessage({
+				env: input.env,
 				userId: input.userId,
 				messageId: message.id,
-			}))!,
+			}),
 			providerMessageId,
 			status: 'sent',
 			error: null,
@@ -304,11 +320,11 @@ export async function sendOutboundEmail(
 			detail: { error: messageText },
 		})
 		return {
-			message: (await getEmailMessageById({
-				db: input.env.APP_DB,
+			message: await requireStoredEmailMessage({
+				env: input.env,
 				userId: input.userId,
 				messageId: message.id,
-			}))!,
+			}),
 			providerMessageId: null,
 			status: 'failed',
 			error: messageText,
