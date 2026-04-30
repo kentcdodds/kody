@@ -314,3 +314,44 @@ test('websocket error clears connected state when the socket is gone', async () 
 		tools: [],
 	})
 })
+
+test('websocket error and close only disconnect once for the same socket', async () => {
+	captureMessageMock.mockReset()
+	const socket = {} as WebSocket
+	const { state, persistedEntries } = createState({
+		storedState: {
+			persisted: {
+				connectorId: 'default',
+				connectorKind: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [socket],
+	})
+	const session = new HomeConnectorSession(
+		{
+			storage: state.storage,
+			getWebSockets: state.getWebSockets,
+			acceptWebSocket: state.acceptWebSocket,
+			blockConcurrencyWhile: state.blockConcurrencyWhile,
+		} as unknown as DurableObjectState,
+		{} as Env,
+	)
+
+	await waitForRestoreState(state)
+	state.getWebSockets.mockReturnValue([])
+	await session.webSocketError(socket, new Error('abnormal close'))
+	await session.webSocketClose(socket, 1006, 'runtime close', false)
+
+	expect(captureMessageMock).toHaveBeenCalledTimes(1)
+	expect(state.storage.put).toHaveBeenCalledTimes(1)
+	expect(persistedEntries.get('home-connector-session-state')).toMatchObject({
+		persisted: {
+			connectorId: 'default',
+			connectedAt: null,
+		},
+		tools: [],
+	})
+})
