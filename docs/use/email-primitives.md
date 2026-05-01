@@ -46,11 +46,12 @@ Use the MCP `email` domain:
 ## Local inbound testing
 
 Run the worker locally, create an inbox alias, then post raw MIME to Wrangler's
-email test endpoint:
+email test endpoint. The local worker defaults to port `3742` unless you set
+`PORT`:
 
 ```sh
 curl --request POST \
-  'http://localhost:8787/cdn-cgi/handler/email?from=sender@example.com&to=alias@example.com' \
+  'http://localhost:3742/cdn-cgi/handler/email?from=sender@example.com&to=alias@example.com' \
   --data-raw 'From: Sender <sender@example.com>
 To: Alias <alias@example.com>
 Subject: Hello
