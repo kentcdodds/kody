@@ -10,6 +10,7 @@ import { isLutronProcessorNotFoundError } from '../adapters/lutron/errors.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
 import { type createSonosAdapter } from '../adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
+import { type createTeslaGatewayAdapter } from '../adapters/tesla-gateway/index.ts'
 import { type createVenstarAdapter } from '../adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
 import { registerBondHomeConnectorTools } from './register-bond-tools.ts'
@@ -73,6 +74,7 @@ export function createHomeConnectorMcpServer(input: {
 	bond: ReturnType<typeof createBondAdapter>
 	jellyfish: ReturnType<typeof createJellyfishAdapter>
 	venstar: ReturnType<typeof createVenstarAdapter>
+	teslaGateway: ReturnType<typeof createTeslaGatewayAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
@@ -84,6 +86,7 @@ export function createHomeConnectorMcpServer(input: {
 	const bond = input.bond
 	const jellyfish = input.jellyfish
 	const venstar = input.venstar
+	const teslaGateway = input.teslaGateway
 
 	const server = new McpServer(
 		{
@@ -92,7 +95,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, and Venstar WiFi thermostat control and diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
+				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostats, and Tesla Backup Gateway 2 (Powerwall+ leader) local-API reads. Bond local API tokens and Tesla gateway customer passwords are saved through the admin UI (/bond/setup, /tesla-gateway/setup); use bond_authentication_guide or tesla_gateway_set_credentials when you need to wire them up.',
 		},
 	)
 
@@ -2791,6 +2794,203 @@ export function createHomeConnectorMcpServer(input: {
 		bond,
 		config: input.config,
 	})
+
+	registerTool(
+		{
+			name: 'tesla_gateway_scan',
+			title: 'Scan Tesla Gateways',
+			description:
+				'Scan the local network for Tesla Backup Gateway 2 (BGW2) leaders, persist any matches, and return the discovery diagnostics. Identifies leaders via TLS cert subject + SAN combined with MAC OUI 90:03:71. Powerwall units (OUI 00:d6:cb) are filtered out so only the leader gateways remain.',
+			inputSchema: {},
+		},
+		async () => {
+			const gateways = await teslaGateway.scan()
+			const status = teslaGateway.getStatus()
+			return structuredTextResult(
+				gateways.length === 0
+					? 'No Tesla gateways were discovered.'
+					: `Discovered ${gateways.length} Tesla gateway(s).`,
+				{
+					gateways,
+					diagnostics: status.diagnostics,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'tesla_gateway_list',
+			title: 'List Tesla Gateways',
+			description:
+				'List persisted Tesla gateways with their host, DIN, serial, MAC, and credential status. Does not contact the gateways.',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const gateways = teslaGateway.listGateways()
+			return structuredTextResult(
+				gateways.length === 0
+					? 'No Tesla gateways are currently known.'
+					: gateways
+							.map(
+								(gateway) =>
+									`- ${gateway.label ?? gateway.gatewayId} (${gateway.host}) credentials=${gateway.hasStoredCredentials ? 'set' : 'missing'}`,
+							)
+							.join('\n'),
+				{ gateways },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'tesla_gateway_set_credentials',
+			title: 'Save Tesla Gateway Customer Credentials',
+			description:
+				'Save the customer-role local API password (from the gateway sticker, or whatever the installer set) for a discovered gateway. The "email" field on the Tesla local login is just an audit label; pass any value or omit it to use kody@local.',
+			...buildToolInputSchema(
+				markSecretInputFields(
+					z.object({
+						gatewayId: z.string().min(1),
+						password: z
+							.string()
+							.min(1)
+							.describe('Customer-role gateway password.'),
+						customerEmailLabel: z
+							.string()
+							.optional()
+							.describe(
+								'Optional audit label; defaults to "kody@local". The Tesla gateway does not validate this against tesla.com.',
+							),
+					}),
+					['password'],
+				),
+			),
+		},
+		async (args) => {
+			const gateway = teslaGateway.setCredentials({
+				gatewayId: String(args['gatewayId'] ?? ''),
+				password: String(args['password'] ?? ''),
+				...(typeof args['customerEmailLabel'] === 'string'
+					? { customerEmailLabel: args['customerEmailLabel'] }
+					: {}),
+			})
+			return structuredTextResult(
+				`Saved Tesla gateway credentials for ${gateway.gatewayId}.`,
+				{ gateway },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'tesla_gateway_authenticate',
+			title: 'Authenticate Tesla Gateway',
+			description:
+				'Authenticate against POST /api/login/Basic for a single gateway and cache the resulting session cookie. Returns the public gateway record. Use this to verify a freshly saved password before pulling a live snapshot.',
+			...buildToolInputSchema({
+				gatewayId: z.string().min(1),
+			}),
+		},
+		async (args) => {
+			const gateway = await teslaGateway.authenticate(
+				String(args['gatewayId'] ?? ''),
+			)
+			return structuredTextResult(
+				`Authenticated Tesla gateway ${gateway.gatewayId}.`,
+				{ gateway },
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'tesla_gateway_live_snapshot',
+			title: 'Tesla Gateway Live Snapshot',
+			description:
+				'Fetch every customer-scope endpoint for one gateway in a single call: /api/status, /api/system_status, /api/system_status/grid_status, /api/system_status/soe, /api/meters/aggregates, /api/operation, /api/networks, /api/site_info, /api/powerwalls, /api/solar_powerwall, /api/generators, /api/system/update/status. Errors per endpoint are bucketed under fetchErrors so partial results are still returned.',
+			...buildToolInputSchema({
+				gatewayId: z.string().min(1),
+			}),
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const snapshot = await teslaGateway.getLiveSnapshot(
+				String(args['gatewayId'] ?? ''),
+			)
+			const errorCount = Object.keys(snapshot.fetchErrors).length
+			return structuredTextResult(
+				errorCount === 0
+					? `Loaded full Tesla gateway snapshot for ${snapshot.gateway.gatewayId}.`
+					: `Loaded Tesla gateway snapshot for ${snapshot.gateway.gatewayId} with ${errorCount} per-endpoint error(s).`,
+				snapshot,
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'tesla_gateway_find_export_limit',
+			title: 'Find Tesla Gateway Site Export Limit',
+			description:
+				'Look up the most likely "site export limit" value for one gateway. Prefers site_info.max_site_meter_power_ac, falls back to system_status.solar_real_power_limit, and finally site_info.max_system_power_kW. Useful for confirming a 25 kW (or other) export cap programmed by the installer.',
+			...buildToolInputSchema({
+				gatewayId: z.string().min(1),
+			}),
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async (args) => {
+			const info = await teslaGateway.findExportLimit(
+				String(args['gatewayId'] ?? ''),
+			)
+			return structuredTextResult(
+				info.exportLimitKw === null
+					? `Could not determine a site export limit for ${info.gatewayId}.`
+					: `Site export limit for ${info.gatewayId} appears to be ${info.exportLimitKw} kW (source: ${info.source}).`,
+				info,
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'tesla_gateway_find_all_export_limits',
+			title: 'Find Site Export Limits Across All Gateways',
+			description:
+				'Run findExportLimit across every persisted gateway and return one entry per gateway. Failed gateways are returned with exportLimitKw=null and source="unknown".',
+			inputSchema: {},
+			annotations: {
+				readOnlyHint: true,
+				idempotentHint: true,
+			},
+		},
+		async () => {
+			const results = await teslaGateway.findAllExportLimits()
+			return structuredTextResult(
+				results.length === 0
+					? 'No Tesla gateways are configured.'
+					: results
+							.map(
+								(entry) =>
+									`- ${entry.gatewayId} (${entry.siteName ?? 'no label'}): ${
+										entry.exportLimitKw ?? 'unknown'
+									} kW [${entry.source}]`,
+							)
+							.join('\n'),
+				{ results },
+			)
+		},
+	)
 
 	return {
 		server,

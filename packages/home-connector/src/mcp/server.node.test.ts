@@ -5,6 +5,7 @@ import { createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../adapters/lutron/index.ts'
 import { createSonosAdapter } from '../adapters/sonos/index.ts'
 import { createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
+import { createTeslaGatewayAdapter } from '../adapters/tesla-gateway/index.ts'
 import { createVenstarAdapter } from '../adapters/venstar/index.ts'
 import { upsertVenstarThermostat } from '../adapters/venstar/repository.ts'
 import { loadHomeConnectorConfig } from '../config.ts'
@@ -67,6 +68,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		storage,
 	})
 	const venstar = createVenstarAdapter({ config, state, storage })
+	const teslaGateway = createTeslaGatewayAdapter({ config, state, storage })
 	await samsungTv.scan()
 	await lutron.scan()
 	await sonos.scan()
@@ -80,6 +82,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		bond,
 		jellyfish,
 		venstar,
+		teslaGateway,
 	})
 
 	try {

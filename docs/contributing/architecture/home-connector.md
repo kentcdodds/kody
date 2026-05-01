@@ -16,6 +16,7 @@ The connector exposes these local-device families:
 - Samsung TV / Frame discovery and control over mDNS, REST, and local WebSocket
   channels
 - Venstar WiFi thermostat status and control over the local REST API
+- Tesla Backup Gateway 2 (Powerwall+ leader) customer-scope local-API reads
 
 All surfaces are registered as MCP tools inside the connector and then exposed
 to the Worker through the existing outbound WebSocket session to
@@ -100,6 +101,40 @@ Discovery is subnet-scan-only. The connector probes `/query/info` across
 fragility that showed up on NAS and Docker bridge deployments while keeping the
 user flow aligned with the other managed device integrations.
 
+## Tesla Backup Gateway 2 integration
+
+The Tesla gateway adapter lives under
+`packages/home-connector/src/adapters/tesla-gateway/` and exposes the
+customer-scope local-API endpoints (`/api/status`, `/api/system_status`,
+`/api/system_status/{grid_status,soe}`, `/api/meters/aggregates`,
+`/api/operation`, `/api/networks`, `/api/site_info`, `/api/powerwalls`,
+`/api/solar_powerwall`, `/api/generators`, `/api/system/update/status`).
+Installer-scope endpoints (`/api/installer`, `/api/config`) are deliberately
+excluded — site export limits are surfaced from
+`site_info.max_site_meter_power_ac` or `system_status.solar_real_power_limit`
+instead.
+
+Authentication is `POST /api/login/Basic` with role `customer`. The `email`
+field is a free-form audit label and is not validated against tesla.com. The
+connector caches the resulting `AuthCookie` / `UserRecord` cookies for ~24h and
+single-flights logins per gateway. It also tracks login rate-limit cooldowns —
+Tesla's gateway accepts new TCP connections during a cooldown but blackholes
+login POSTs, so any login timeout marks a 15-minute cooldown that short-circuits
+further attempts before they ever leave the connector.
+
+Discovery probes TCP 443 across `TESLA_GATEWAY_SCAN_CIDRS`, inspects each TLS
+cert for the Tesla `O=Tesla, OU=Tesla Energy Products` subject and SAN entries
+`DNS:teg, DNS:powerwall`, and combines the result with the local ARP cache to
+filter on MAC OUI: `90:03:71` identifies BGW2 leaders, `00:d6:cb` identifies
+Powerwall units (which are filtered out because they do not answer `/api/...`).
+When `TESLA_GATEWAY_DISCOVERY_URL` is set to an HTTP(S) URL the LAN sweep is
+skipped and gateways are read from a JSON feed instead, which is how the
+dev/mock server works.
+
+Hosts ending in `.mock.local` are routed directly through the in-process mock
+driver (`src/adapters/tesla-gateway/mock-driver.ts`) so dev and test runs never
+touch the network stack.
+
 ## Local persistence
 
 Unlike the Worker-side home connector session, which persists its own view of
@@ -118,6 +153,7 @@ The connector stores a local SQLite database containing:
 - discovered Bond bridges and tokens
 - discovered Sonos players
 - managed Venstar thermostats
+- discovered Tesla gateways and their encrypted customer credentials
 
 By default the database is stored at
 `~/.kody/home-connector/home-connector.sqlite`. Operators can override the base

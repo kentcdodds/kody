@@ -25,12 +25,17 @@ import {
 	createVenstarSetupHandler,
 	createVenstarStatusHandler,
 } from './venstar-handlers.ts'
+import {
+	createTeslaGatewaySetupHandler,
+	createTeslaGatewayStatusHandler,
+} from './tesla-gateway-handlers.ts'
 import { routes } from './routes.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { type createBondAdapter } from '../src/adapters/bond/index.ts'
 import { type createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
+import { type createTeslaGatewayAdapter } from '../src/adapters/tesla-gateway/index.ts'
 import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { type HomeConnectorState } from '../src/state.ts'
@@ -44,6 +49,7 @@ export function createHomeConnectorRouter(
 	bond: ReturnType<typeof createBondAdapter>,
 	jellyfish: ReturnType<typeof createJellyfishAdapter>,
 	venstar: ReturnType<typeof createVenstarAdapter>,
+	teslaGateway: ReturnType<typeof createTeslaGatewayAdapter>,
 ) {
 	const router = createRouter({
 		middleware: [],
@@ -59,6 +65,7 @@ export function createHomeConnectorRouter(
 				bond,
 				jellyfish,
 				venstar,
+				teslaGateway,
 			),
 			health: createHealthHandler(state),
 			lutronStatus: createLutronStatusHandler(state, lutron),
@@ -75,6 +82,16 @@ export function createHomeConnectorRouter(
 			jellyfishSetup: createJellyfishSetupHandler(state, config, jellyfish),
 			venstarStatus: createVenstarStatusHandler(state, config, venstar),
 			venstarSetup: createVenstarSetupHandler(state, config, venstar),
+			teslaGatewayStatus: createTeslaGatewayStatusHandler(
+				state,
+				config,
+				teslaGateway,
+			),
+			teslaGatewaySetup: createTeslaGatewaySetupHandler(
+				state,
+				config,
+				teslaGateway,
+			),
 		},
 	})
 

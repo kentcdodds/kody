@@ -14,6 +14,7 @@ import {
 	type VenstarDiscoveredThermostat,
 	type VenstarDiscoveryDiagnostics,
 } from './adapters/venstar/types.ts'
+import { type TeslaGatewayDiscoveryDiagnostics } from './adapters/tesla-gateway/types.ts'
 
 export type HomeConnectorConnectionState = {
 	workerUrl: string
@@ -37,6 +38,7 @@ export type HomeConnectorState = {
 	jellyfishDiscoveredControllers: Array<JellyfishDiscoveredController>
 	venstarDiscoveryDiagnostics: VenstarDiscoveryDiagnostics | null
 	venstarDiscoveredThermostats: Array<VenstarDiscoveredThermostat>
+	teslaGatewayDiscoveryDiagnostics: TeslaGatewayDiscoveryDiagnostics | null
 }
 
 const initialState: HomeConnectorState = {
@@ -59,6 +61,7 @@ const initialState: HomeConnectorState = {
 	jellyfishDiscoveredControllers: [],
 	venstarDiscoveryDiagnostics: null,
 	venstarDiscoveredThermostats: [],
+	teslaGatewayDiscoveryDiagnostics: null,
 }
 
 export function createAppState(): HomeConnectorState {
@@ -154,6 +157,14 @@ export function setVenstarDiscoveredThermostats(
 ) {
 	state.venstarDiscoveredThermostats = [...thermostats]
 	return state.venstarDiscoveredThermostats
+}
+
+export function setTeslaGatewayDiscoveryDiagnostics(
+	state: HomeConnectorState,
+	diagnostics: TeslaGatewayDiscoveryDiagnostics | null,
+) {
+	state.teslaGatewayDiscoveryDiagnostics = diagnostics
+	return state.teslaGatewayDiscoveryDiagnostics
 }
 
 export function getDiscoveredRokuDevices(state: HomeConnectorState) {

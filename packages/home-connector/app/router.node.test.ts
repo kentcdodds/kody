@@ -8,6 +8,7 @@ import { createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { createSonosAdapter } from '../src/adapters/sonos/index.ts'
+import { createTeslaGatewayAdapter } from '../src/adapters/tesla-gateway/index.ts'
 import { createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { upsertVenstarThermostat } from '../src/adapters/venstar/repository.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
@@ -30,6 +31,8 @@ function createConfig(dataPath = '/tmp'): HomeConnectorConfig {
 		jellyfishDiscoveryUrl: 'http://jellyfish.mock.local/discovery',
 		venstarScanCidrs: ['192.168.10.40/32', '192.168.10.41/32'],
 		jellyfishScanCidrs: ['192.168.10.93/32'],
+		teslaGatewayScanCidrs: [],
+		teslaGatewayDiscoveryUrl: null,
 		dataPath,
 		dbPath: ':memory:',
 		port: 4040,
@@ -75,6 +78,7 @@ function createAdapters(config: HomeConnectorConfig) {
 			storage,
 		}),
 		venstar: createVenstarAdapter({ config, state, storage }),
+		teslaGateway: createTeslaGatewayAdapter({ config, state, storage }),
 	}
 }
 
@@ -86,8 +90,17 @@ function createTemporaryDataPath() {
 
 test('home route toggles worker snapshot link by connector id', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		jellyfish,
+		venstar,
+		teslaGateway,
+	} = createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
 	try {
@@ -100,6 +113,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 			bond,
 			jellyfish,
 			venstar,
+			teslaGateway,
 		)
 		const responseWithConnector = await router.fetch('http://example.test/')
 		expect(responseWithConnector.status).toBe(200)
@@ -120,8 +134,17 @@ test('home route toggles worker snapshot link by connector id', async () => {
 
 test('venstar status scan shows discovered thermostats', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		jellyfish,
+		venstar,
+		teslaGateway,
+	} = createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -132,6 +155,7 @@ test('venstar status scan shows discovered thermostats', async () => {
 			bond,
 			jellyfish,
 			venstar,
+			teslaGateway,
 		)
 		const response = await router.fetch('http://example.test/venstar/status', {
 			method: 'POST',
@@ -158,8 +182,17 @@ test('venstar status scan shows discovered thermostats', async () => {
 test('venstar status can adopt a discovered thermostat', async () => {
 	const dataPath = createTemporaryDataPath()
 	const config = createConfig(dataPath)
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		jellyfish,
+		venstar,
+		teslaGateway,
+	} = createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -170,6 +203,7 @@ test('venstar status can adopt a discovered thermostat', async () => {
 			bond,
 			jellyfish,
 			venstar,
+			teslaGateway,
 		)
 
 		await router.fetch('http://example.test/venstar/status', {
@@ -215,8 +249,17 @@ test('venstar status can adopt a discovered thermostat', async () => {
 test('venstar setup can save and remove thermostats directly', async () => {
 	const dataPath = createTemporaryDataPath()
 	const config = createConfig(dataPath)
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		jellyfish,
+		venstar,
+		teslaGateway,
+	} = createAdapters(config)
 	try {
 		venstar.removeThermostat('venstar.mock.local')
 		const router = createHomeConnectorRouter(
@@ -228,6 +271,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 			bond,
 			jellyfish,
 			venstar,
+			teslaGateway,
 		)
 
 		const saveResponse = await router.fetch(
@@ -274,8 +318,17 @@ test('venstar setup can save and remove thermostats directly', async () => {
 
 test('health route returns ok json', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		jellyfish,
+		venstar,
+		teslaGateway,
+	} = createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -286,6 +339,7 @@ test('health route returns ok json', async () => {
 			bond,
 			jellyfish,
 			venstar,
+			teslaGateway,
 		)
 		const response = await router.fetch('http://example.test/health')
 		expect(response.status).toBe(200)

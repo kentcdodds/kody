@@ -190,6 +190,18 @@ Authoring guide for outbound WebSocket services:
   `http://{ip}/query/info` directly. Example:
   `VENSTAR_SCAN_CIDRS=192.168.1.0/24,10.0.0.50/32`. Broader private interface
   CIDRs like `/23` are automatically split into multiple `/24` scan blocks.
+- `TESLA_GATEWAY_SCAN_CIDRS` — optional connector env var. Comma-separated CIDR
+  list for Tesla Backup Gateway 2 leader discovery. Same `a.b.c.0/24` /
+  `a.b.c.d/32` rules as `VENSTAR_SCAN_CIDRS`. The connector probes TCP 443,
+  inspects the TLS cert (Tesla `O=Tesla, OU=Tesla Energy Products` with SAN
+  `DNS:teg, DNS:powerwall`), and combines the result with MAC OUI filtering
+  (`90:03:71` for BGW2 leaders, `00:d6:cb` for Powerwall units, which are
+  filtered out). When unset, the connector derives private `/24` networks from
+  local IPv4 interfaces.
+- `TESLA_GATEWAY_DISCOVERY_URL` — optional connector env var. When set to an
+  HTTP(S) URL, the connector skips the LAN sweep and reads
+  `{ "gateways": [...] }` from the URL. Used by the dev/mock server
+  (`http://tesla-gateway.mock.local/discovery`).
 - `HOME_CONNECTOR_DATA_PATH` — optional connector env var. Directory used for
   connector-owned local data files. When `HOME_CONNECTOR_DB_PATH` is unset, the
   home connector stores its local SQLite database at
@@ -198,8 +210,9 @@ Authoring guide for outbound WebSocket services:
 - `HOME_CONNECTOR_DB_PATH` — optional connector env var. Full path to the local
   SQLite file used by the home connector to persist device integration state
   such as Samsung TV metadata/tokens, Lutron processor credentials, Bond bridge
-  state, Sonos players, and Venstar managed thermostats across restarts.
-  Overrides the derived `HOME_CONNECTOR_DATA_PATH` location.
+  state, Sonos players, Venstar managed thermostats, and Tesla gateway
+  records/credentials across restarts. Overrides the derived
+  `HOME_CONNECTOR_DATA_PATH` location.
 
 ## Why Zod?
 

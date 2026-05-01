@@ -17,4 +17,6 @@ export const routes = route({
 	jellyfishSetup: '/jellyfish/setup',
 	venstarStatus: '/venstar/status',
 	venstarSetup: '/venstar/setup',
+	teslaGatewayStatus: '/tesla-gateway/status',
+	teslaGatewaySetup: '/tesla-gateway/setup',
 })

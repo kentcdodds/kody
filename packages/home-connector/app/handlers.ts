@@ -9,6 +9,7 @@ import { type createBondAdapter } from '../src/adapters/bond/index.ts'
 import { type createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { type createSonosAdapter } from '../src/adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
+import { type createTeslaGatewayAdapter } from '../src/adapters/tesla-gateway/index.ts'
 import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { type HomeConnectorState } from '../src/state.ts'
 import { type RokuDiscoveryDiagnostics } from '../src/adapters/roku/types.ts'
@@ -36,6 +37,8 @@ function renderQuickLinks(state: HomeConnectorState) {
 		<li><a href="/jellyfish/setup">JellyFish setup</a></li>
 		<li><a href="/venstar/status">Venstar status</a></li>
 		<li><a href="/venstar/setup">Venstar setup</a></li>
+		<li><a href="/tesla-gateway/status">Tesla gateway status</a></li>
+		<li><a href="/tesla-gateway/setup">Tesla gateway setup</a></li>
 		<li><a href="/health">Health JSON</a></li>
 		${workerSnapshotUrl
 			? html`<li>
@@ -57,6 +60,7 @@ export function createHomeDashboardHandler(
 	bond: ReturnType<typeof createBondAdapter>,
 	jellyfish: ReturnType<typeof createJellyfishAdapter>,
 	venstar: ReturnType<typeof createVenstarAdapter>,
+	teslaGateway: ReturnType<typeof createTeslaGatewayAdapter>,
 ) {
 	return {
 		middleware: [],
@@ -76,6 +80,7 @@ export function createHomeDashboardHandler(
 			const onlineVenstarCount = venstarStatus.filter(
 				(thermostat) => thermostat.info != null,
 			).length
+			const teslaGatewayStatus = teslaGateway.getStatus()
 
 			return render(
 				RootLayout({
@@ -198,6 +203,16 @@ export function createHomeDashboardHandler(
 									{
 										label: 'Venstar offline',
 										value: String(venstarStatus.length - onlineVenstarCount),
+									},
+									{
+										label: 'Tesla gateways',
+										value: String(teslaGatewayStatus.gateways.length),
+									},
+									{
+										label: 'Tesla gateway credentials',
+										value: String(
+											teslaGatewayStatus.configuredCredentialsCount,
+										),
 									},
 									{
 										label: 'Mocks',

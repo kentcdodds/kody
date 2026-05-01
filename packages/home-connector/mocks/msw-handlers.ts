@@ -5,6 +5,7 @@ import { lutronHandlers } from './lutron.ts'
 import { rokuHandlers } from './roku.ts'
 import { samsungTvHandlers } from './samsung-tv.ts'
 import { sonosHandlers } from './sonos.ts'
+import { teslaGatewayHandlers } from './tesla-gateway.ts'
 import { venstarHandlers } from './venstar.ts'
 
 const loopbackRequestPattern =
@@ -23,5 +24,6 @@ export const mswHandlers: Array<RequestHandler> = [
 	...rokuHandlers,
 	...sonosHandlers,
 	...samsungTvHandlers,
+	...teslaGatewayHandlers,
 	...venstarHandlers,
 ]

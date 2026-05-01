@@ -177,6 +177,44 @@ function initializeSchema(db: SqliteDatabase) {
 			updated_at TEXT NOT NULL,
 			PRIMARY KEY (connector_id, ip)
 		);
+
+		CREATE TABLE IF NOT EXISTS tesla_gateways (
+			connector_id TEXT NOT NULL,
+			gateway_id TEXT NOT NULL,
+			host TEXT NOT NULL,
+			port INTEGER NOT NULL DEFAULT 443,
+			din TEXT,
+			serial_number TEXT,
+			mac_address TEXT,
+			mac_oui TEXT,
+			cert_subject_cn TEXT,
+			cert_subject_o TEXT,
+			cert_subject_ou TEXT,
+			cert_issuer_cn TEXT,
+			cert_issuer_o TEXT,
+			cert_san TEXT,
+			cert_fingerprint_sha256 TEXT,
+			firmware_version TEXT,
+			role TEXT,
+			last_seen_at TEXT,
+			label TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, gateway_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS tesla_gateway_credentials (
+			connector_id TEXT NOT NULL,
+			gateway_id TEXT NOT NULL,
+			customer_email_label TEXT NOT NULL,
+			password TEXT NOT NULL,
+			last_authenticated_at TEXT,
+			last_auth_error TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, gateway_id),
+			FOREIGN KEY (connector_id, gateway_id)
+				REFERENCES tesla_gateways(connector_id, gateway_id)
+				ON DELETE CASCADE
+		);
 	`)
 }
 

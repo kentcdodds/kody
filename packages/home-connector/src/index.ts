@@ -2,6 +2,7 @@ import { createBondAdapter } from './adapters/bond/index.ts'
 import { createJellyfishAdapter } from './adapters/jellyfish/index.ts'
 import { createLutronAdapter } from './adapters/lutron/index.ts'
 import { createSonosAdapter } from './adapters/sonos/index.ts'
+import { createTeslaGatewayAdapter } from './adapters/tesla-gateway/index.ts'
 import { createVenstarAdapter } from './adapters/venstar/index.ts'
 import { createSamsungTvAdapter } from './adapters/samsung-tv/index.ts'
 import { createHomeConnectorMcpServer } from './mcp/server.ts'
@@ -46,6 +47,7 @@ export function createHomeConnectorApp() {
 		storage,
 	})
 	const venstar = createVenstarAdapter({ config, state, storage })
+	const teslaGateway = createTeslaGatewayAdapter({ config, state, storage })
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
@@ -55,6 +57,7 @@ export function createHomeConnectorApp() {
 		bond,
 		jellyfish,
 		venstar,
+		teslaGateway,
 	})
 	const workerConnector = createWorkerConnector({
 		config,
@@ -72,6 +75,7 @@ export function createHomeConnectorApp() {
 		bond,
 		jellyfish,
 		venstar,
+		teslaGateway,
 		mcp,
 		workerConnector,
 	}

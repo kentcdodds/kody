@@ -106,6 +106,7 @@ async function main() {
 		connector.bond,
 		connector.jellyfish,
 		connector.venstar,
+		connector.teslaGateway,
 	)
 
 	const server = http.createServer(

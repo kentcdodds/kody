@@ -25,6 +25,19 @@ export type HomeConnectorConfig = {
 	 * discovery feed.
 	 */
 	jellyfishScanCidrs: Array<string>
+	/**
+	 * Tesla Backup Gateway 2 leaders are discovered by HTTPS port-443 sweeps
+	 * across these CIDRs combined with TLS-cert subject inspection. When unset,
+	 * the connector derives private `/24` networks from local interfaces.
+	 * `TESLA_GATEWAY_SCAN_CIDRS` overrides the derived list.
+	 */
+	teslaGatewayScanCidrs: Array<string>
+	/**
+	 * Optional JSON discovery feed for Tesla gateways. When set to a URL,
+	 * discovery skips the LAN sweep and reads `{ gateways: [...] }` instead.
+	 * Used by the dev/mock server (`http://tesla-gateway.mock.local/discovery`).
+	 */
+	teslaGatewayDiscoveryUrl: string | null
 	dataPath: string
 	dbPath: string
 	port: number
@@ -193,6 +206,11 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		explicitJellyfishCidrs.length > 0
 			? explicitJellyfishCidrs
 			: deriveJellyfishAutoscanCidrs()
+	const explicitTeslaCidrs = resolveScanCidrsFromEnv('TESLA_GATEWAY_SCAN_CIDRS')
+	const teslaGatewayScanCidrs =
+		explicitTeslaCidrs.length > 0
+			? explicitTeslaCidrs
+			: derivePrivateAutoscanCidrsFromInterfaces(networkInterfaces())
 	return {
 		homeConnectorId,
 		workerBaseUrl,
@@ -214,6 +232,9 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		jellyfishDiscoveryUrl: process.env.JELLYFISH_DISCOVERY_URL?.trim() || null,
 		venstarScanCidrs,
 		jellyfishScanCidrs,
+		teslaGatewayScanCidrs,
+		teslaGatewayDiscoveryUrl:
+			process.env.TESLA_GATEWAY_DISCOVERY_URL?.trim() || null,
 		dataPath,
 		dbPath: resolveHomeConnectorDbPath(dataPath),
 		port: Number.isFinite(port) ? port : 4040,

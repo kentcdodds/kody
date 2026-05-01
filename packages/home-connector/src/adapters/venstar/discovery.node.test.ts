@@ -18,6 +18,8 @@ function createConfig(scanCidrs: Array<string>): HomeConnectorConfig {
 		jellyfishDiscoveryUrl: null,
 		venstarScanCidrs: scanCidrs,
 		jellyfishScanCidrs: ['192.168.10.93/32'],
+		teslaGatewayScanCidrs: [],
+		teslaGatewayDiscoveryUrl: null,
 		dataPath: '/tmp',
 		dbPath: ':memory:',
 		port: 4040,

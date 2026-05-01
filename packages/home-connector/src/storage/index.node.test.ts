@@ -38,6 +38,8 @@ function createConfig(dbPath: string) {
 		jellyfishDiscoveryUrl: 'http://jellyfish.mock.local/discovery',
 		venstarScanCidrs: ['192.168.10.40/32'],
 		jellyfishScanCidrs: ['192.168.10.93/32'],
+		teslaGatewayScanCidrs: [],
+		teslaGatewayDiscoveryUrl: null,
 		dataPath: path.dirname(dbPath),
 		dbPath,
 		port: 4040,
