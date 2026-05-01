@@ -12,6 +12,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Remix skills](./remix.md)
 - [Packages and manifests](./packages-and-manifests.md)
 - [External package invocation API](./package-invocation-api.md)
+- [Shade automation Dynamic Workflows pilot](./shade-automation-dynamic-workflows.md)
 - [Adding capabilities](./adding-capabilities.md)
 - [Architecture](./architecture/index.md)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)

@@ -8,6 +8,8 @@ state for Kent's workspace after the package-first production rollout.
 ### `shade-automation`
 
 - Package id: `1a0476b4-c1d6-47ad-802e-dd5f4631c919`
+- Dynamic Workflows pilot direction:
+  [shade-automation-dynamic-workflows.md](./shade-automation-dynamic-workflows.md)
 - Exports: `kody:@shade-automation/plan-day`,
   `kody:@shade-automation/estimate-day`, `kody:@shade-automation/run-event`,
   `kody:@shade-automation/event-runner`, `kody:@shade-automation/tick`,

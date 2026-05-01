@@ -73,6 +73,13 @@
 					"binding": "APP_LOADER",
 				},
 			],
+			"workflows": [
+				{
+					"name": "package-event-workflow",
+					"binding": "PACKAGE_EVENT_WORKFLOW",
+					"class_name": "PackageEventWorkflow",
+				},
+			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
@@ -167,6 +174,13 @@
 					"binding": "APP_LOADER",
 				},
 			],
+			"workflows": [
+				{
+					"name": "package-event-workflow-preview",
+					"binding": "PACKAGE_EVENT_WORKFLOW",
+					"class_name": "PackageEventWorkflow",
+				},
+			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
@@ -259,6 +273,13 @@
 				},
 				{
 					"binding": "APP_LOADER",
+				},
+			],
+			"workflows": [
+				{
+					"name": "package-event-workflow-test",
+					"binding": "PACKAGE_EVENT_WORKFLOW",
+					"class_name": "PackageEventWorkflow",
 				},
 			],
 			"assets": {
