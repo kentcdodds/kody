@@ -23,6 +23,7 @@ vi.mock('cloudflare:workers', () => ({
 }))
 
 const { HomeConnectorSession } = await import('./session.ts')
+const { internalCallToken } = await import('./internal-call-token.ts')
 
 type StoredHomeConnectorSessionState = {
 	persisted: {
@@ -104,7 +105,9 @@ test('constructor restores persisted state through blockConcurrencyWhile', async
 
 	expect(state.blockConcurrencyWhile).toHaveBeenCalledTimes(1)
 	const response = await session.fetch(
-		new Request('https://home-connectors/home/connectors/default/snapshot'),
+		new Request('https://home-connectors/home/connectors/default/snapshot', {
+			headers: { 'X-Kody-Internal': internalCallToken },
+		}),
 	)
 	expect(await response.json()).toMatchObject({
 		connectorId: 'default',
@@ -138,7 +141,9 @@ test('snapshot returns null when persisted connector has no live websocket', asy
 	await waitForRestoreState(state)
 
 	const response = await session.fetch(
-		new Request('https://home-connectors/home/connectors/default/snapshot'),
+		new Request('https://home-connectors/home/connectors/default/snapshot', {
+			headers: { 'X-Kody-Internal': internalCallToken },
+		}),
 	)
 	expect(await response.json()).toBeNull()
 })

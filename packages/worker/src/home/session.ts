@@ -17,6 +17,7 @@ import {
 	stringifyHomeConnectorMessage,
 } from './utils.ts'
 import { connectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
+import { internalCallToken } from './internal-call-token.ts'
 import { resolveRemoteConnectorSharedSecret } from '#worker/remote-connector/resolve-remote-connector-secret.ts'
 
 const connectorTag = 'connector'
@@ -105,6 +106,11 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 				.get('X-Kody-Connector-Session-Key')
 				?.trim()
 			return this.handleWebSocketUpgrade(sessionKeyHeader || null)
+		}
+		const isInternalCall =
+			request.headers.get('X-Kody-Internal') === internalCallToken
+		if (!isInternalCall) {
+			return new Response('Not Found', { status: 404 })
 		}
 		if (request.method === 'GET' && url.pathname.endsWith('/snapshot')) {
 			return jsonResponse(await this.getSnapshot())

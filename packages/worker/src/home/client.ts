@@ -3,6 +3,7 @@ import {
 	connectorIngressPath,
 	connectorSessionKey,
 } from '#worker/remote-connector/connector-session-key.ts'
+import { internalCallHeaders } from './internal-call-token.ts'
 import { type HomeConnectorSnapshot, type HomeToolDescriptor } from './types.ts'
 
 export type HomeMcpTool = HomeToolDescriptor
@@ -52,6 +53,7 @@ export function createRemoteConnectorMcpClient(
 				createSessionUrl(kind, instanceId, '/rpc/tools-list'),
 				{
 					method: 'POST',
+					headers: internalCallHeaders(),
 				},
 			)
 			const result = await parseJsonResponse<{ tools?: Array<HomeMcpTool> }>(
@@ -66,6 +68,7 @@ export function createRemoteConnectorMcpClient(
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
+						...internalCallHeaders(),
 					},
 					body: JSON.stringify({
 						name,
@@ -78,6 +81,7 @@ export function createRemoteConnectorMcpClient(
 		async getSnapshot() {
 			const response = await stub.fetch(
 				createSessionUrl(kind, instanceId, '/snapshot'),
+				{ headers: internalCallHeaders() },
 			)
 			return parseJsonResponse<HomeConnectorSnapshot | null>(response)
 		},
