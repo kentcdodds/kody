@@ -821,6 +821,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			return
 		}
 
+		const capturedSecretId = editorState.currentId
 		revealState = 'revealing'
 		revealError = null
 		handle.update()
@@ -834,10 +835,12 @@ export function AccountSecretsRoute(handle: Handle) {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					secretId: editorState.currentId,
+					secretId: capturedSecretId,
 					password: revealPassword,
 				}),
 			})
+
+			if (editorState.currentId !== capturedSecretId) return
 
 			if (response.status === 401) {
 				const payload = await readJson<{ error?: string }>(response)
@@ -864,6 +867,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			showSecretValue = true
 			handle.update()
 		} catch (error) {
+			if (editorState.currentId !== capturedSecretId) return
 			revealState = 'prompting'
 			revealError =
 				error instanceof Error ? error.message : 'Unable to reveal secret.'
@@ -1592,6 +1596,7 @@ export function AccountSecretsRoute(handle: Handle) {
 												type="password"
 												autoComplete="current-password"
 												placeholder="Account password"
+												aria-label="Account password for reveal"
 												value={revealPassword}
 												disabled={revealState === 'revealing'}
 												mix={[
