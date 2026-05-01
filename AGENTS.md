@@ -45,3 +45,40 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/contributing/architecture/request-lifecycle.md](./docs/contributing/architecture/request-lifecycle.md)
   - [docs/contributing/architecture/authentication.md](./docs/contributing/architecture/authentication.md)
   - [docs/contributing/architecture/data-storage.md](./docs/contributing/architecture/data-storage.md)
+
+
+## Cursor Cloud specific instructions
+
+| Task | Command |
+| ---------------- | ---------------------- |
+| Start dev server | `npm run dev` |
+| Full validation | `npm run validate` |
+| Lint | `npm run lint` |
+| Format | `npm run format` |
+| Type check | `npm run typecheck` |
+| Build | `npm run build` |
+| E2E tests | `npm run test:e2e:run` |
+
+### Services
+
+- **Dev server**: `npm run dev` starts all services (worker at `localhost:3742`,
+  mock AI, mock Cloudflare API, client bundle watcher, and home connector at
+  `localhost:4040`). No external services required.
+- D1 (SQLite), KV, and Durable Objects are emulated locally by Wrangler.
+
+### Non-obvious caveats
+
+- The seed script needs an explicit config path:
+  `node tools/seed-test-data.ts --local --config packages/worker/wrangler.jsonc`
+  (without `--config` it fails to find the D1 binding).
+- `packages/worker/.env` must exist before `npm run dev`. Copy from
+  `.env.example` if missing: `cp packages/worker/.env.example packages/worker/.env`
+- Migrations: `npm run migrate:local` before first dev run or after schema
+  changes.
+- Test credentials: `me@kentcdodds.com` / `iliketwix` (seeded via
+  `node tools/seed-test-data.ts --local --config packages/worker/wrangler.jsonc`).
+- The MCP endpoint at `/mcp` requires OAuth; unauthenticated requests return 401
+  with proper OAuth metadata. This is expected behavior.
+- The `pre-commit` hook runs `lint-staged` + `typecheck`; the `pre-push` hook
+  runs `npm run test:push` (vitest + Playwright E2E). Disable hooks with
+  `--no-verify` when needed for intermediate commits.
