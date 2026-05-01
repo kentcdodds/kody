@@ -28,14 +28,10 @@ async function ensureRateLimitTable(db: D1Database) {
 }
 
 /**
- * D1-backed rate limiter. Counts recent rows first, then inserts
- * only when the request is allowed. Blocked requests do not write
- * rows, preventing attacker traffic from extending lockout windows
- * for legitimate users.
- *
- * D1 batch semantics run all statements in one transaction, and the
- * count-then-insert order means concurrent requests that land in the
- * same batch see a consistent snapshot.
+ * D1-backed rate limiter. Uses a conditional INSERT inside a single
+ * batch transaction so the count check and the row write are atomic
+ * — no TOCTOU gap for concurrent requests to exploit. Blocked
+ * requests do not insert rows.
  */
 export async function checkRateLimit(
 	db: D1Database,
@@ -47,29 +43,26 @@ export async function checkRateLimit(
 	const now = Math.floor(Date.now() / 1000)
 	const windowStart = now - config.windowSeconds
 
-	const [, countResult] = await db.batch([
+	const results = await db.batch([
 		db.prepare(`DELETE FROM _rate_limits WHERE ts <= ?`).bind(windowStart),
 		db
 			.prepare(
-				`SELECT COUNT(*) as cnt FROM _rate_limits WHERE key = ? AND ts > ?`,
+				`INSERT INTO _rate_limits (key, ts)
+				SELECT ?, ?
+				WHERE (SELECT COUNT(*) FROM _rate_limits WHERE key = ? AND ts > ?) < ?`,
 			)
-			.bind(key, windowStart),
+			.bind(key, now, key, windowStart, config.maxRequests),
 	])
 
-	const row = countResult?.results?.[0] as { cnt: number } | undefined
-	const count = row?.cnt ?? 0
+	const insertMeta = results[1]?.meta
+	const inserted = (insertMeta?.changes ?? 0) > 0
 
-	if (count >= config.maxRequests) {
+	if (!inserted) {
 		return {
 			allowed: false,
 			retryAfterSeconds: config.windowSeconds,
 		}
 	}
-
-	await db
-		.prepare(`INSERT INTO _rate_limits (key, ts) VALUES (?, ?)`)
-		.bind(key, now)
-		.run()
 
 	return { allowed: true, retryAfterSeconds: null }
 }
