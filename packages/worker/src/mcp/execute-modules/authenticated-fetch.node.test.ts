@@ -7,6 +7,7 @@ import {
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
 } from './codemode-utils.ts'
+import { assertConnectorHostAllowed } from './connector-host-allowlist.ts'
 
 type SecretSetCall = {
 	name: string
@@ -225,4 +226,81 @@ test('prelude sandbox version allows requests to valid hosts', async () => {
 	expect(lastCall.headers.get('authorization')).toBe(
 		`Bearer ${fakeAccessToken}`,
 	)
+})
+
+test('assertConnectorHostAllowed rejects protocol-relative URLs', () => {
+	expect(() =>
+		assertConnectorHostAllowed('spotify', spotifyConnector, '//evil.com/steal'),
+	).toThrow(ConnectorHostNotAllowedError)
+})
+
+test('assertConnectorHostAllowed allows single-slash relative paths', () => {
+	expect(() =>
+		assertConnectorHostAllowed('spotify', spotifyConnector, '/v1/me'),
+	).not.toThrow()
+})
+
+test('fails closed when connector has no allowlist configured', async () => {
+	const emptyConnector = {
+		...spotifyConnector,
+		requiredHosts: [] as Array<string>,
+		apiBaseUrl: null,
+	}
+	const secretSetCalls: Array<{ name: string; value: string; scope: string }> =
+		[]
+	const codemode = {
+		async connector_get() {
+			return { connector: emptyConnector }
+		},
+		async value_get() {
+			return { value: 'spotify-client-id' }
+		},
+		async secret_set(args: CapabilityArgs) {
+			const call = args as { name: string; value: string; scope: string }
+			secretSetCalls.push(call)
+			return { name: call.name, scope: call.scope }
+		},
+		async agent_turn_start() {
+			return { ok: true, runId: 'r', sessionId: 's', conversationId: 'c' }
+		},
+		async agent_turn_next() {
+			return { ok: true, events: [], nextCursor: 0, done: true }
+		},
+		async agent_turn_cancel() {
+			return { ok: true, cancelled: true }
+		},
+	} satisfies CodemodeNamespace
+
+	const fetchCalls: Array<Request> = []
+	const fetchStub: typeof globalThis.fetch = async (
+		input: ExecuteRequestInput,
+		init?: RequestInit,
+	) => {
+		const request = new Request(input, init)
+		fetchCalls.push(request)
+		if (request.url === emptyConnector.tokenUrl) {
+			return new Response(JSON.stringify({ access_token: fakeAccessToken }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			})
+		}
+		return new Response(JSON.stringify({ ok: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}
+
+	const authenticatedFetch = await withPatchedFetch(fetchStub, () =>
+		createAuthenticatedFetch(codemode, 'spotify'),
+	)
+
+	const fetchCallsBefore = fetchCalls.length
+
+	await expect(
+		withPatchedFetch(fetchStub, () =>
+			authenticatedFetch('https://anything.example/data'),
+		),
+	).rejects.toThrow(/no allowed hosts configured/)
+
+	expect(fetchCalls.length).toBe(fetchCallsBefore)
 })

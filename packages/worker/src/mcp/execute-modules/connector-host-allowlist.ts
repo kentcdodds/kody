@@ -76,7 +76,12 @@ export function assertConnectorHostAllowed(
 	if (!requestHost) return
 
 	const allowedHosts = getConnectorAllowedHosts(connector)
-	if (allowedHosts.length === 0) return // no allowlist defined; cannot enforce
+	if (allowedHosts.length === 0) {
+		throw new Error(
+			`Connector "${connectorName}" has no allowed hosts configured (requiredHosts and apiBaseUrl are both empty). ` +
+				`Cannot attach credentials without a host allowlist.`,
+		)
+	}
 
 	if (!allowedHosts.includes(requestHost)) {
 		throw new ConnectorHostNotAllowedError(connectorName, requestHost)
@@ -85,7 +90,11 @@ export function assertConnectorHostAllowed(
 
 function resolveUrlString(input: string | URL | Request): string | null {
 	if (typeof input === 'string') {
-		if (input.startsWith('/')) return null // relative path
+		if (input.startsWith('//')) {
+			// Protocol-relative URL — resolve with a dummy scheme to extract the host
+			return `https:${input}`
+		}
+		if (input.startsWith('/')) return null
 		return input
 	}
 	if (input instanceof URL) return input.href

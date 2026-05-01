@@ -347,8 +347,13 @@ const __kodyGetConnectorAllowedHosts = (connector) => {
 const __kodyAssertConnectorHostAllowed = (connectorName, connector, url) => {
   let resolvedUrl;
   if (typeof url === 'string') {
-    if (url.startsWith('/')) return;
-    resolvedUrl = url;
+    if (url.startsWith('//')) {
+      resolvedUrl = \`https:\${url}\`;
+    } else if (url.startsWith('/')) {
+      return;
+    } else {
+      resolvedUrl = url;
+    }
   } else if (url instanceof URL) {
     resolvedUrl = url.href;
   } else if (url instanceof Request) {
@@ -364,7 +369,12 @@ const __kodyAssertConnectorHostAllowed = (connectorName, connector, url) => {
   }
   if (!requestHost) return;
   const allowedHosts = __kodyGetConnectorAllowedHosts(connector);
-  if (allowedHosts.length === 0) return;
+  if (allowedHosts.length === 0) {
+    throw new Error(
+      \`Connector "\${connectorName}" has no allowed hosts configured (requiredHosts and apiBaseUrl are both empty). \` +
+        \`Cannot attach credentials without a host allowlist.\`
+    );
+  }
   if (!allowedHosts.includes(requestHost)) {
     throw new ConnectorHostNotAllowedError(connectorName, requestHost);
   }
