@@ -224,9 +224,6 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 	expect(firstCall?.files?.['.__kody_root__/index.js']).toContain(
 		'__kody_virtual__/imports/',
 	)
-	expect(firstCall?.files?.['.__kody_root__/index.js']).toContain(
-		'kentcdodds/example-package/follow-up-on-pr-agent.js',
-	)
 	expect(firstCall?.files?.['.__kody_root__/index.js']).not.toContain(
 		'kody:@kentcdodds/example-package/follow-up-on-pr-agent',
 	)
@@ -415,6 +412,160 @@ test('buildKodyModuleBundle prefers published export artifacts for saved package
 	)
 	expect(proxyEntry?.[1]).toContain('.__published_bundle__')
 	expect(proxyEntry?.[1]).not.toContain('src/html.ts')
+})
+
+test('buildKodyModuleBundle keeps distinct proxy and artifact paths for exports whose names only differ by punctuation', async () => {
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('published-artifact-collision-safe'),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'./foo.bar': './src/foo-dot.ts',
+				'./foo-bar': './src/foo-dash.ts',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'./foo.bar': './src/foo-dot.ts',
+					'./foo-bar': './src/foo-dash.ts',
+				},
+				dependencies: {
+					marked: '18.0.2',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+				},
+			}),
+			'src/foo-dot.ts':
+				'import { marked } from "marked"\nexport default async function fooDot() { return marked.parse("**dot**") }',
+			'src/foo-dash.ts':
+				'import { marked } from "marked"\nexport default async function fooDash() { return marked.parse("**dash**") }',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: { artifactName?: string | null }) => {
+			if (input.artifactName === './foo.bar') {
+				return {
+					row: {
+						id: 'artifact-dot',
+					},
+					artifact: {
+						version: 1,
+						kind: 'module',
+						artifactName: './foo.bar',
+						sourceId: 'source-1',
+						publishedCommit: 'commit-1',
+						entryPoint: 'src/foo-dot.ts',
+						mainModule: 'dist/foo-dot.js',
+						modules: {
+							'dist/foo-dot.js': 'export default "dot"',
+						},
+						dependencies: [],
+						packageContext: {
+							packageId: 'pkg-1',
+							kodyId: 'example-package',
+							sourceId: 'source-1',
+						},
+						serviceContext: null,
+						createdAt: '2026-05-01T00:00:00.000Z',
+					},
+				}
+			}
+			if (input.artifactName === './foo-bar') {
+				return {
+					row: {
+						id: 'artifact-dash',
+					},
+					artifact: {
+						version: 1,
+						kind: 'module',
+						artifactName: './foo-bar',
+						sourceId: 'source-1',
+						publishedCommit: 'commit-1',
+						entryPoint: 'src/foo-dash.ts',
+						mainModule: 'dist/foo-dash.js',
+						modules: {
+							'dist/foo-dash.js': 'export default "dash"',
+						},
+						dependencies: [],
+						packageContext: {
+							packageId: 'pkg-1',
+							kodyId: 'example-package',
+							sourceId: 'source-1',
+						},
+						serviceContext: null,
+						createdAt: '2026-05-01T00:00:00.000Z',
+					},
+				}
+			}
+			return null
+		},
+	)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js': [
+				'import fooDot from "kody:@kentcdodds/example-package/foo.bar"',
+				'import fooDash from "kody:@kentcdodds/example-package/foo-bar"',
+				'export default [fooDot, fooDash]',
+			].join('\n'),
+		},
+		entryPoint: 'index.js',
+	})
+
+	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	const publishedBundlePaths = Object.keys(firstCall?.files ?? {}).filter(
+		(path) => path.includes('.__published_bundle__'),
+	)
+	expect(
+		publishedBundlePaths.filter((path) => path.endsWith('/dist/foo-dot.js')),
+	).toHaveLength(1)
+	expect(
+		publishedBundlePaths.filter((path) => path.endsWith('/dist/foo-dash.js')),
+	).toHaveLength(1)
+	expect(new Set(publishedBundlePaths).size).toBe(publishedBundlePaths.length)
+
+	const proxyPaths = Object.keys(firstCall?.files ?? {}).filter((path) =>
+		path.includes('__kody_virtual__/imports/'),
+	)
+	expect(proxyPaths).toHaveLength(2)
+	expect(new Set(proxyPaths).size).toBe(2)
 })
 
 test('buildKodyModuleBundle requires a published artifact before importing saved package exports with npm dependencies', async () => {

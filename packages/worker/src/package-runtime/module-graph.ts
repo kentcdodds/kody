@@ -213,8 +213,17 @@ export default __kodyPackageModule.default;
 `.trim()
 }
 
-function sanitizeSpecifier(specifier: string) {
-	return specifier.replace(/[^a-zA-Z0-9/_-]+/g, '-')
+function encodePathKey(value: string) {
+	return Array.from(new TextEncoder().encode(value), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('')
+}
+
+function createPackageProxyPathSegment(specifier: string) {
+	const parsed = parseKodyPackageSpecifier(specifier)
+	return encodePathKey(
+		`${parsed.packageName}#${normalizePackageExportKey(parsed.exportName)}`,
+	)
 }
 
 function isBundlerRootConfigPath(path: string) {
@@ -338,7 +347,7 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 	const artifactPrefix = joinPath(
 		input.loaded.prefix,
 		'.__published_bundle__',
-		sanitizeSpecifier(exportName),
+		encodePathKey(exportName),
 	)
 	for (const [modulePath, module] of Object.entries(
 		artifact.artifact.modules,
@@ -447,7 +456,7 @@ async function ensurePackageProxy(
 		})()
 	const proxyPath = joinPath(
 		packageImportProxyPrefix,
-		`${sanitizeSpecifier(specifier)}.js`,
+		`${createPackageProxyPathSegment(specifier)}.js`,
 	)
 	const proxyTarget = createRelativeImportSpecifier(
 		proxyPath,
