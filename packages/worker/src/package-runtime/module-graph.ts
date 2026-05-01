@@ -4,6 +4,7 @@ import {
 } from '#worker/package-registry/source.ts'
 import {
 	normalizePackageWorkspacePath,
+	normalizePackageExportKey,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -22,6 +23,8 @@ import {
 	packageSpecifierPrefix,
 	resolveSavedPackageImport,
 } from './package-import-resolution.ts'
+import { loadPublishedBundleArtifactByIdentity } from './published-bundle-artifacts.ts'
+import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 import {
 	collectLiteralImportNodes,
 	collectLiteralImportSpecifiers,
@@ -95,6 +98,33 @@ type RewriteState = {
 		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
 	>
 	dependencies: Map<string, BundleArtifactDependency>
+}
+
+function createDependencyKey(dependency: BundleArtifactDependency) {
+	return `${dependency.sourceId}:${dependency.publishedCommit}:${dependency.kodyId}`
+}
+
+function rememberDependency(
+	state: RewriteState,
+	dependency: BundleArtifactDependency,
+) {
+	const key = createDependencyKey(dependency)
+	const existing = state.dependencies.get(key)
+	state.dependencies.set(
+		key,
+		existing?.packageName && !dependency.packageName
+			? { ...dependency, packageName: existing.packageName }
+			: dependency,
+	)
+}
+
+function rememberDependencies(
+	state: RewriteState,
+	dependencies: Array<BundleArtifactDependency>,
+) {
+	for (const dependency of dependencies) {
+		rememberDependency(state, dependency)
+	}
 }
 
 function createRelativeImportSpecifier(fromPath: string, targetPath: string) {
@@ -183,8 +213,17 @@ export default __kodyPackageModule.default;
 `.trim()
 }
 
-function sanitizeSpecifier(specifier: string) {
-	return specifier.replace(/[^a-zA-Z0-9/_-]+/g, '-')
+function encodePathKey(value: string) {
+	return Array.from(new TextEncoder().encode(value), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('')
+}
+
+function createPackageProxyPathSegment(specifier: string) {
+	const parsed = parseKodyPackageSpecifier(specifier)
+	return encodePathKey(
+		`${parsed.packageName}#${normalizePackageExportKey(parsed.exportName)}`,
+	)
 }
 
 function isBundlerRootConfigPath(path: string) {
@@ -255,6 +294,73 @@ function assertBundleHasNoUnresolvedBareImports(input: {
 	)
 }
 
+function materializeArtifactModuleSource(input: {
+	modulePath: string
+	module: WorkerLoaderModules[string]
+}): string {
+	if (typeof input.module === 'string') {
+		return input.module
+	}
+	if (typeof input.module.js === 'string') {
+		return input.module.js
+	}
+	if (typeof input.module.cjs === 'string') {
+		return input.module.cjs
+	}
+	if (typeof input.module.text === 'string') {
+		return input.module.text
+	}
+	if (input.module.json !== undefined) {
+		return JSON.stringify(input.module.json)
+	}
+	throw new Error(
+		`Saved package published bundle module "${input.modulePath}" uses an unsupported artifact module shape for import composition.`,
+	)
+}
+
+async function maybeEnsurePublishedArtifactTarget(input: {
+	state: RewriteState
+	specifier: string
+	loaded: LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
+}): Promise<string | null> {
+	if (!input.loaded.source.published_commit) {
+		return null
+	}
+	const parsed = parseKodyPackageSpecifier(input.specifier)
+	const exportName = normalizePackageExportKey(parsed.exportName)
+	const entryPoint = resolvePackageExportPath({
+		manifest: input.loaded.manifest,
+		exportName,
+	})
+	const artifact = await loadPublishedBundleArtifactByIdentity({
+		env: input.state.env,
+		userId: input.state.userId,
+		sourceId: input.loaded.row.sourceId,
+		kind: 'module',
+		artifactName: exportName,
+		entryPoint,
+	})
+	if (!artifact?.artifact) {
+		return null
+	}
+	rememberDependencies(input.state, artifact.artifact.dependencies)
+	const artifactPrefix = joinPath(
+		input.loaded.prefix,
+		'.__published_bundle__',
+		encodePathKey(exportName),
+	)
+	for (const [modulePath, module] of Object.entries(
+		artifact.artifact.modules,
+	)) {
+		input.state.files[joinPath(artifactPrefix, modulePath)] =
+			materializeArtifactModuleSource({
+				modulePath,
+				module,
+			})
+	}
+	return joinPath(artifactPrefix, artifact.artifact.mainModule)
+}
+
 function applyReplacements(
 	source: string,
 	replacements: Array<RewriteReplacement>,
@@ -302,10 +408,11 @@ async function ensurePackageLoaded(
 	}
 	state.packages.set(packageKey, entry)
 	if (loaded.source.published_commit) {
-		state.dependencies.set(packageKey, {
+		rememberDependency(state, {
 			sourceId: loaded.source.id,
 			publishedCommit: loaded.source.published_commit,
 			kodyId: row.kodyId,
+			packageName: row.name,
 		})
 	}
 	for (const [filePath, content] of Object.entries(loaded.files)) {
@@ -328,14 +435,28 @@ async function ensurePackageProxy(
 	if (existing) return existing
 	const parsed = parseKodyPackageSpecifier(specifier)
 	const loaded = await ensurePackageLoaded(state, specifier)
-	const exportPath = resolvePackageExportPath({
-		manifest: loaded.manifest,
-		exportName: parsed.exportName,
-	})
-	const absoluteExportPath = joinPath(loaded.prefix, exportPath)
+	const absoluteExportPath =
+		(await maybeEnsurePublishedArtifactTarget({
+			state,
+			specifier,
+			loaded,
+		})) ??
+		(() => {
+			assertPublishedSourceCanRebuildWithoutInstallingDeps({
+				sourceFiles: loaded.files,
+				bundleLabel: `Saved package export "${normalizePackageExportKey(
+					parsed.exportName,
+				)}"`,
+			})
+			const exportPath = resolvePackageExportPath({
+				manifest: loaded.manifest,
+				exportName: parsed.exportName,
+			})
+			return joinPath(loaded.prefix, exportPath)
+		})()
 	const proxyPath = joinPath(
 		packageImportProxyPrefix,
-		`${sanitizeSpecifier(specifier)}.js`,
+		`${createPackageProxyPathSegment(specifier)}.js`,
 	)
 	const proxyTarget = createRelativeImportSpecifier(
 		proxyPath,
