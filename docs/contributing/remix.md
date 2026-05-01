@@ -1,14 +1,16 @@
 # Remix guidance
 
-Use Remix skills instead of vendoring generated Remix package documentation in
-this repository.
+Use the repo-local Remix skill instead of vendoring generated Remix package
+documentation in this repository.
 
-To refresh local Remix guidance for an agent workspace, run:
+The current skill lives at:
 
-- `npx remix@next skills install`
+- `.agents/skills/remix/SKILL.md`
 
-Then follow the installed skills for current Remix APIs and migration guidance.
+Load that skill before changing Remix routes, controllers, middleware, data
+access, validation, auth, sessions, file uploads, server setup, UI components,
+hydration, navigation, or tests.
 
-As of `remix@3.0.0-beta.0`, the CLI is available through `npx remix@next`, but
-the `skills install` command is not exposed yet. Re-run the command after the
-next Remix CLI update before adding local API reference docs back to this repo.
+As of `remix@3.0.0-beta.0`, `npx remix@next new <app>` copies this skill from
+the Remix CLI bootstrap template, but the standalone `remix skills install`
+command is no longer exposed by the CLI.
