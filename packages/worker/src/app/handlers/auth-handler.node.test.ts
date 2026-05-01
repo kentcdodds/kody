@@ -24,6 +24,21 @@ function createAuthRequest(
 	}
 }
 
+function createAuthTestContext() {
+	const testDb = createTestDb()
+	const handler = createAuthHandler({
+		COOKIE_SECRET: testCookieSecret,
+		APP_DB: testDb.db,
+	})
+
+	return {
+		testDb,
+		request(body: unknown, url = 'http://example.com/auth') {
+			return createAuthRequest(body, url, handler).run()
+		},
+	}
+}
+
 type TestUser = {
 	id: number
 	email: string
@@ -132,176 +147,99 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-test('auth handler returns 400 for invalid JSON', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
-	})
-	const authRequest = createAuthRequest('{', 'http://example.com/auth', handler)
-	const response = await authRequest.run()
-	expect(response.status).toBe(400)
-	const payload = await response.json()
-	expect(payload).toEqual({ error: 'Invalid JSON payload.' })
-})
+test('auth handler rejects malformed request payloads', async () => {
+	const { request } = createAuthTestContext()
 
-test('auth handler returns 400 for missing fields', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
+	const invalidJsonResponse = await request('{')
+	expect(invalidJsonResponse.status).toBe(400)
+	expect(await invalidJsonResponse.json()).toEqual({
+		error: 'Invalid JSON payload.',
 	})
-	const authRequest = createAuthRequest(
-		{ email: 'a@b.com' },
-		'http://example.com/auth',
-		handler,
-	)
-	const response = await authRequest.run()
-	expect(response.status).toBe(400)
-	const payload = await response.json()
-	expect(payload).toEqual({
+
+	const missingFieldsResponse = await request({ email: 'a@b.com' })
+	expect(missingFieldsResponse.status).toBe(400)
+	expect(await missingFieldsResponse.json()).toEqual({
 		error: 'Invalid request body.',
 	})
 })
 
-test('auth handler rejects login with unknown user', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
-	})
-	const authRequest = createAuthRequest(
-		{ email: primaryUserEmail, password: 'secret', mode: 'login' },
-		'http://example.com/auth',
-		handler,
-	)
-	const response = await authRequest.run()
-	expect(response.status).toBe(401)
-	const payload = await response.json()
-	expect(payload).toEqual({ error: 'Invalid email or password.' })
-})
+test('auth handler rejects unauthorized signup and login attempts', async () => {
+	const { request, testDb } = createAuthTestContext()
 
-test('auth handler rejects signup for non-primary email', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
+	const unknownUserLoginResponse = await request({
+		email: primaryUserEmail,
+		password: 'secret',
+		mode: 'login',
 	})
-	const authRequest = createAuthRequest(
-		{ email: 'new@b.com', password: 'secret', mode: 'signup' },
-		'http://example.com/auth',
-		handler,
-	)
-	const response = await authRequest.run()
-	expect(response.status).toBe(403)
-	const payload = await response.json()
-	expect(payload).toEqual({
+	expect(unknownUserLoginResponse.status).toBe(401)
+	expect(await unknownUserLoginResponse.json()).toEqual({
+		error: 'Invalid email or password.',
+	})
+
+	const forbiddenSignupResponse = await request({
+		email: 'new@b.com',
+		password: 'secret',
+		mode: 'signup',
+	})
+	expect(forbiddenSignupResponse.status).toBe(403)
+	expect(await forbiddenSignupResponse.json()).toEqual({
 		error: `Only ${primaryUserEmail} can sign in or sign up.`,
 	})
 	expect(testDb.users.has('new@b.com')).toBe(false)
-})
 
-test('auth handler rejects login for non-primary email', async () => {
-	const testDb = createTestDb()
 	await testDb.addUser('a@b.com', 'secret')
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
+	const forbiddenLoginResponse = await request({
+		email: 'a@b.com',
+		password: 'secret',
+		mode: 'login',
 	})
-	const authRequest = createAuthRequest(
-		{ email: 'a@b.com', password: 'secret', mode: 'login' },
-		'http://example.com/auth',
-		handler,
-	)
-	const response = await authRequest.run()
-	expect(response.status).toBe(403)
-	const payload = await response.json()
-	expect(payload).toEqual({
+	expect(forbiddenLoginResponse.status).toBe(403)
+	expect(await forbiddenLoginResponse.json()).toEqual({
 		error: `Only ${primaryUserEmail} can sign in or sign up.`,
 	})
 })
 
-test('auth handler creates a user and cookie for signup', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
+test('auth handler issues the right session cookies for signup and login flows', async () => {
+	const { request, testDb } = createAuthTestContext()
+
+	const signupResponse = await request({
+		email: primaryUserEmail,
+		password: 'secret',
+		mode: 'signup',
 	})
-	const authRequest = createAuthRequest(
-		{ email: primaryUserEmail, password: 'secret', mode: 'signup' },
-		'http://example.com/auth',
-		handler,
-	)
-	const response = await authRequest.run()
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toEqual({ ok: true, mode: 'signup' })
+	expect(signupResponse.status).toBe(200)
+	expect(await signupResponse.json()).toEqual({ ok: true, mode: 'signup' })
 	expect(testDb.users.has(primaryUserEmail)).toBe(true)
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('kody_session=')
-	expect(setCookie).toContain('Max-Age=604800')
-})
+	const signupCookie = signupResponse.headers.get('Set-Cookie') ?? ''
+	expect(signupCookie).toContain('kody_session=')
+	expect(signupCookie).toContain('Max-Age=604800')
 
-test('auth handler returns ok with a session cookie for login', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
+	const loginResponse = await request({
+		email: primaryUserEmail,
+		password: 'secret',
+		mode: 'login',
 	})
-	await testDb.addUser(primaryUserEmail, 'secret')
-	const authRequest = createAuthRequest(
-		{ email: primaryUserEmail, password: 'secret', mode: 'login' },
-		'http://example.com/auth',
-		handler,
-	)
-	const response = await authRequest.run()
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toEqual({ ok: true, mode: 'login' })
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('kody_session=')
-	expect(setCookie).toContain('Max-Age=604800')
-})
+	expect(loginResponse.status).toBe(200)
+	expect(await loginResponse.json()).toEqual({ ok: true, mode: 'login' })
+	const loginCookie = loginResponse.headers.get('Set-Cookie') ?? ''
+	expect(loginCookie).toContain('kody_session=')
+	expect(loginCookie).toContain('Max-Age=604800')
 
-test('auth handler sets a 30-day cookie when remember me is enabled', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
+	const rememberMeResponse = await request({
+		email: primaryUserEmail,
+		password: 'secret',
+		mode: 'login',
+		rememberMe: true,
 	})
-	await testDb.addUser(primaryUserEmail, 'secret')
-	const authRequest = createAuthRequest(
-		{
-			email: primaryUserEmail,
-			password: 'secret',
-			mode: 'login',
-			rememberMe: true,
-		},
-		'http://example.com/auth',
-		handler,
-	)
-	const response = await authRequest.run()
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toEqual({ ok: true, mode: 'login' })
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('kody_session=')
-	expect(setCookie).toContain('Max-Age=2592000')
-})
+	expect(rememberMeResponse.status).toBe(200)
+	expect(await rememberMeResponse.json()).toEqual({ ok: true, mode: 'login' })
+	const rememberMeCookie = rememberMeResponse.headers.get('Set-Cookie') ?? ''
+	expect(rememberMeCookie).toContain('kody_session=')
+	expect(rememberMeCookie).toContain('Max-Age=2592000')
 
-test('auth handler sets Secure cookie over https', async () => {
-	const testDb = createTestDb()
-	const handler = createAuthHandler({
-		COOKIE_SECRET: testCookieSecret,
-		APP_DB: testDb.db,
-	})
-	await testDb.addUser(primaryUserEmail, 'secret')
-	const authRequest = createAuthRequest(
+	const secureCookieResponse = await request(
 		{ email: primaryUserEmail, password: 'secret', mode: 'login' },
 		'https://example.com/auth',
-		handler,
 	)
-	const response = await authRequest.run()
-	const setCookie = response.headers.get('Set-Cookie') ?? ''
-	expect(setCookie).toContain('Secure')
+	expect(secureCookieResponse.headers.get('Set-Cookie') ?? '').toContain('Secure')
 })
