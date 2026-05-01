@@ -241,6 +241,7 @@ function getNodeEnd(node: unknown) {
 }
 
 function getNodeType(node: unknown) {
+	if (!node || typeof node !== 'object') return null
 	const type = (node as { type?: unknown }).type
 	return typeof type === 'string' ? type : null
 }
@@ -355,7 +356,10 @@ function isFunctionDeclarator(declarator: ModuleAstNode) {
 	const id = (declarator as { id?: unknown }).id
 	if (!readIdentifierName(id)) return false
 	const typeAnnotation = (id as { typeAnnotation?: unknown }).typeAnnotation
-	if (typeAnnotation) return true
+	const declaredType = (
+		typeAnnotation as { typeAnnotation?: unknown } | undefined
+	)?.typeAnnotation
+	if (getNodeType(declaredType) === 'TSFunctionType') return true
 	const init = (declarator as { init?: unknown }).init
 	return (
 		getNodeType(init) === 'ArrowFunctionExpression' ||

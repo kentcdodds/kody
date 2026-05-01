@@ -302,7 +302,12 @@ test('buildPackageSearchProjection uses local declaration kind for exported cons
 	})
 
 	const projection = buildPackageSearchProjection(manifest, {
-		'src/index.ts': `export declare const typed: (value: string) => string
+		'src/index.ts': `/**
+ * Package version metadata.
+ */
+export declare const VERSION: string
+
+export declare const typed: (value: string) => string
 
 /**
  * Runtime formatter.
