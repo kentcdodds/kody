@@ -183,9 +183,12 @@ function isBondNetworkFailure(error: unknown) {
 	if (!(error instanceof Error)) {
 		return false
 	}
+	const errorName = error.name.toLowerCase()
+	if (errorName === 'aborterror' || errorName === 'timeouterror') {
+		return true
+	}
 	const message = error.message.toLowerCase()
 	if (
-		message.includes('aborterror') ||
 		message.includes('bond request timed out') ||
 		message.includes('fetch failed') ||
 		message.includes('enotfound') ||
