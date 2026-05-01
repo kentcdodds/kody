@@ -35,6 +35,7 @@ import {
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
 	normalizePackageWorkspacePath,
 	parseAuthoredPackageJson,
@@ -134,6 +135,12 @@ async function buildPublishedJobBundle(input: {
 	sourceFiles: Record<string, string>
 	entryPoint: string
 }) {
+	assertPublishedSourceCanRebuildWithoutInstallingDeps({
+		sourceFiles: input.sourceFiles,
+		bundleLabel: `Saved package job "${normalizePackageWorkspacePath(
+			input.entryPoint,
+		)}"`,
+	})
 	// Load the worker bundler lazily so registry-only/node test paths that import
 	// jobs/service.ts do not eagerly pull the heavy bundler stack.
 	const { buildKodyModuleBundle } =

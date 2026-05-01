@@ -41,6 +41,24 @@ For predictable package resolution, saved packages must use a scoped
 `@kentcdodds/cursor-cloud-agents` must use
 `"kody": { "id": "cursor-cloud-agents" }`.
 
+### npm dependencies
+
+Saved packages may declare runtime npm dependencies in `package.json`
+`dependencies`.
+
+- Kody bundles those dependencies for package exports, package apps, package
+  services, package-owned jobs, and package subscription handlers.
+- Dependency resolution happens during package checks and publish-time artifact
+  rebuilds, not by ad hoc package installs during normal execution.
+- If a declared dependency cannot be resolved or bundled, package checks fail
+  with the bundling error instead of allowing a publish that only fails later at
+  runtime.
+- After changing `dependencies`, republish the package so Kody can rebuild the
+  published runtime bundle artifacts that execution paths use.
+
+Do not rely on `devDependencies` for saved package runtime code. Only
+`dependencies` are treated as part of the runtime package surface.
+
 ## Package exports
 
 `package.json.exports` is the package's callable and importable surface.

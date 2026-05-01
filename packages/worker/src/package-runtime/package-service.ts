@@ -9,6 +9,7 @@ import {
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 
 const serviceStateStorageKey = 'package-service-state'
 const packageServiceRetryDelayMs = 5_000
@@ -503,13 +504,19 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		})
 		const bundle =
 			artifact?.artifact ??
-			(await buildKodyModuleBundle({
-				env: this.env,
-				baseUrl: binding.baseUrl,
-				userId: binding.userId,
-				sourceFiles: runtime.loaded.packageSource.files,
-				entryPoint: runtime.loaded.serviceEntry,
-			}))
+			(await (async () => {
+				assertPublishedSourceCanRebuildWithoutInstallingDeps({
+					sourceFiles: runtime.loaded.packageSource.files,
+					bundleLabel: `Saved package service "${binding.serviceName}"`,
+				})
+				return await buildKodyModuleBundle({
+					env: this.env,
+					baseUrl: binding.baseUrl,
+					userId: binding.userId,
+					sourceFiles: runtime.loaded.packageSource.files,
+					entryPoint: runtime.loaded.serviceEntry,
+				})
+			})())
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,
 			user: {

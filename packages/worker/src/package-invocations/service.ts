@@ -21,6 +21,7 @@ import {
 	loadPublishedBundleArtifactByIdentity,
 	persistPublishedBundleArtifact,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
@@ -274,6 +275,10 @@ async function ensureModuleArtifact(input: {
 	if (!typecheckResult.ok) {
 		throw new Error(typecheckResult.message)
 	}
+	assertPublishedSourceCanRebuildWithoutInstallingDeps({
+		sourceFiles: packageSource.files,
+		bundleLabel: `Saved package export "${resolution.artifactName}"`,
+	})
 	const { buildKodyModuleBundle } =
 		await import('#worker/package-runtime/module-graph.ts')
 	const bundle = await buildKodyModuleBundle({

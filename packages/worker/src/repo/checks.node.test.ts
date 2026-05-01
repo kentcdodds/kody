@@ -1,8 +1,10 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	createFileSystemSnapshot: vi.fn(),
 	createTypescriptLanguageService: vi.fn(),
+	buildKodyAppBundle: vi.fn(),
+	buildKodyModuleBundle: vi.fn(),
 }))
 
 vi.mock('@cloudflare/worker-bundler', () => ({
@@ -13,6 +15,13 @@ vi.mock('@cloudflare/worker-bundler', () => ({
 vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 	createTypescriptLanguageService: (...args: Array<unknown>) =>
 		mockModule.createTypescriptLanguageService(...args),
+}))
+
+vi.mock('#worker/package-runtime/module-graph.ts', () => ({
+	buildKodyAppBundle: (...args: Array<unknown>) =>
+		mockModule.buildKodyAppBundle(...args),
+	buildKodyModuleBundle: (...args: Array<unknown>) =>
+		mockModule.buildKodyModuleBundle(...args),
 }))
 
 import { runRepoChecks } from './checks.ts'
@@ -30,6 +39,28 @@ function createSnapshotFromFiles(files: Map<string, string>): MockSnapshot {
 		read: vi.fn((path: string) => files.get(path) ?? null),
 	}
 }
+
+beforeEach(() => {
+	mockModule.createFileSystemSnapshot.mockReset()
+	mockModule.createTypescriptLanguageService.mockReset()
+	mockModule.buildKodyAppBundle.mockReset()
+	mockModule.buildKodyModuleBundle.mockReset()
+	mockModule.buildKodyAppBundle.mockResolvedValue({
+		mainModule: 'dist/app.js',
+		modules: {
+			'dist/app.js':
+				'export default { async fetch() { return new Response("ok") } }',
+		},
+		dependencies: [],
+	})
+	mockModule.buildKodyModuleBundle.mockResolvedValue({
+		mainModule: 'dist/module.js',
+		modules: {
+			'dist/module.js': 'export default async function run() { return "ok" }',
+		},
+		dependencies: [],
+	})
+})
 
 async function collectSnapshotFiles(
 	input: AsyncIterable<readonly [string, string]>,
@@ -70,8 +101,6 @@ function createPackageManifest(input: {
 }
 
 test('runRepoChecks normalizes leading slashes in package job entrypoints', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -154,8 +183,6 @@ test('runRepoChecks normalizes leading slashes in package job entrypoints', asyn
 })
 
 test('runRepoChecks strips repo-session workspace prefixes from package snapshot paths', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'/session/package.json',
@@ -235,8 +262,6 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 })
 
 test('runRepoChecks accepts execute runtime globals for package-owned jobs', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -299,7 +324,7 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 			expect.objectContaining({
 				kind: 'dependencies',
 				ok: true,
-				message: 'package.json found for dependency fingerprinting.',
+				message: 'package.json declares no npm dependencies.',
 			}),
 			expect.objectContaining({
 				kind: 'typecheck',
@@ -315,8 +340,6 @@ test('runRepoChecks accepts execute runtime globals for package-owned jobs', asy
 })
 
 test('runRepoChecks typechecks package exports with execute semantics globals', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -392,8 +415,6 @@ test('runRepoChecks typechecks package exports with execute semantics globals', 
 })
 
 test('runRepoChecks still reports unknown globals for package-owned jobs', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -474,8 +495,6 @@ test('runRepoChecks still reports unknown globals for package-owned jobs', async
 })
 
 test('runRepoChecks typechecks ESM package job entrypoints', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -548,8 +567,6 @@ test('runRepoChecks typechecks ESM package job entrypoints', async () => {
 })
 
 test('runRepoChecks injects a synthetic tsconfig that allows optional .ts imports for package entrypoints', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const files = new Map<string, string>([
 		[
 			'package.json',
@@ -629,8 +646,6 @@ test('runRepoChecks injects a synthetic tsconfig that allows optional .ts import
 })
 
 test('runRepoChecks preserves repo tsconfig via extends while enabling optional .ts imports for packages', async () => {
-	mockModule.createFileSystemSnapshot.mockReset()
-	mockModule.createTypescriptLanguageService.mockReset()
 	const repoTsconfig = JSON.stringify({
 		compilerOptions: {
 			module: 'NodeNext',
@@ -709,5 +724,298 @@ test('runRepoChecks preserves repo tsconfig via extends while enabling optional 
 	expect(typeScriptFileSystem.write).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
 		expect.stringContaining('import userEntrypoint from "./src/index"'),
+	)
+})
+
+test('runRepoChecks reports declared npm dependencies in package.json', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			JSON.stringify({
+				name: '@kody/dependency-aware-package',
+				exports: {
+					'.': './src/index.ts',
+				},
+				dependencies: {
+					kleur: '^4.1.5',
+				},
+				kody: {
+					id: 'dependency-aware-package',
+					description: 'Uses npm dependencies',
+				},
+			}),
+		],
+		['src/index.ts', 'export default async () => "ok"\n'],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics: vi.fn(() => []),
+		},
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+
+	expect(result.ok).toBe(true)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: true,
+				message: 'package.json declares 1 npm dependency: "kleur".',
+			}),
+		]),
+	)
+})
+
+test('runRepoChecks fails bundle validation when runtime bundling cannot resolve a declared dependency', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			JSON.stringify({
+				name: '@kody/broken-dependency-package',
+				exports: {
+					'.': './src/index.ts',
+				},
+				dependencies: {
+					marked: '^16.3.0',
+				},
+				kody: {
+					id: 'broken-dependency-package',
+					description: 'Fails to bundle npm dependency',
+				},
+			}),
+		],
+		[
+			'src/index.ts',
+			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics: vi.fn(() => []),
+		},
+	})
+	mockModule.buildKodyModuleBundle.mockRejectedValueOnce(
+		new Error('No such module "marked" imported from bundle.js'),
+	)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env: {} as Env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringContaining(
+					'No such module "marked" imported from bundle.js',
+				),
+			}),
+		]),
+	)
+	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+			userId: 'user-123',
+		}),
+	)
+})
+
+test('runRepoChecks validates package runtime bundles with npm dependencies', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			JSON.stringify({
+				name: '@kody/npm-deps-package',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'npm-deps-package',
+					description: 'Uses npm dependencies',
+					services: {
+						processor: {
+							entry: './src/service.ts',
+						},
+					},
+				},
+				dependencies: {
+					marked: '18.0.2',
+				},
+			}),
+		],
+		['src/index.ts', 'export default async () => "ok"\n'],
+		[
+			'src/service.ts',
+			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	const getSemanticDiagnostics = vi.fn(() => [])
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics,
+		},
+	})
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env: {} as Env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
+	})
+
+	expect(result.ok).toBe(true)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: true,
+				message: 'package.json declares 1 npm dependency: "marked".',
+			}),
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: true,
+				message: 'Bundled 2 package runtime entrypoint(s) successfully.',
+			}),
+		]),
+	)
+	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+			sourceFiles: {
+				'package.json': files.get('package.json'),
+				'src/index.ts': files.get('src/index.ts'),
+				'src/service.ts': files.get('src/service.ts'),
+			},
+		}),
+	)
+	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoint: 'src/service.ts',
+		}),
+	)
+})
+
+test('runRepoChecks fails when package runtime bundle cannot resolve npm dependency', async () => {
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			JSON.stringify({
+				name: '@kody/broken-npm-package',
+				exports: {
+					'.': './src/index.ts',
+				},
+				kody: {
+					id: 'broken-npm-package',
+					description: 'Broken npm dependency',
+				},
+				dependencies: {
+					marked: '18.0.2',
+				},
+			}),
+		],
+		[
+			'src/index.ts',
+			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	const typeScriptFileSystem: MockTypeScriptFileSystem = {
+		...snapshot,
+		write: vi.fn(),
+	}
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+	mockModule.createTypescriptLanguageService.mockResolvedValue({
+		fileSystem: typeScriptFileSystem,
+		languageService: {
+			getSemanticDiagnostics: vi.fn(() => []),
+		},
+	})
+	mockModule.buildKodyModuleBundle.mockRejectedValueOnce(
+		new Error('Could not resolve version for marked@18.0.2'),
+	)
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env: {} as Env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
+	})
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringContaining(
+					'src/index.ts: Could not resolve version for marked@18.0.2',
+				),
+			}),
+		]),
 	)
 })

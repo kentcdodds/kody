@@ -15,6 +15,7 @@ import {
 	createPublishedBundleArtifact,
 	createPublishedPackageAppBundleCacheKey,
 } from './module-graph.ts'
+import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 import {
 	readPublishedBundleArtifact,
 	writePublishedBundleArtifact,
@@ -897,6 +898,10 @@ export async function buildPackageAppWorker(input: {
 	const bundled =
 		artifact ??
 		(await (async () => {
+			assertPublishedSourceCanRebuildWithoutInstallingDeps({
+				sourceFiles: input.sourceFiles,
+				bundleLabel: `Saved package app "${input.savedPackage.kodyId}"`,
+			})
 			const compiled = await buildKodyAppBundle({
 				env: input.env,
 				baseUrl: input.baseUrl,

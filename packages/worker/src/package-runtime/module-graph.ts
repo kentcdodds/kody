@@ -1,9 +1,7 @@
-import { createWorker } from '@cloudflare/worker-bundler'
 import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
 } from '#worker/package-registry/source.ts'
-import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
@@ -24,14 +22,32 @@ import {
 	packageSpecifierPrefix,
 	resolveSavedPackageImport,
 } from './package-import-resolution.ts'
+import {
+	collectLiteralImportNodes,
+	collectLiteralImportSpecifiers,
+	isBarePackageImportSpecifier,
+} from './import-specifiers.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 
 const runtimeModulePath = '.__kody_virtual__/runtime.js'
+const packageManifestPath = 'package.json'
+const wranglerConfigPaths = ['wrangler.toml', 'wrangler.json', 'wrangler.jsonc']
 const rootSourcePrefix = '.__kody_root__'
 const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
+
+async function createWorkerBundle(input: {
+	files: Record<string, string>
+	entryPoint: string
+}) {
+	// Load the experimental worker bundler lazily so node-unit paths that only
+	// import saved-package runtime helpers do not eagerly evaluate the esbuild
+	// WASM bundle.
+	const { createWorker } = await import('@cloudflare/worker-bundler')
+	return await createWorker(input)
+}
 
 function joinPath(...parts: Array<string>) {
 	return parts
@@ -171,93 +187,72 @@ function sanitizeSpecifier(specifier: string) {
 	return specifier.replace(/[^a-zA-Z0-9/_-]+/g, '-')
 }
 
-function collectLiteralImportNodes(source: string): Array<{
-	start: number
-	end: number
-	specifier: string
-}> {
-	const nodes: Array<{ start: number; end: number; specifier: string }> = []
+function isBundlerRootConfigPath(path: string) {
+	return path === packageManifestPath || wranglerConfigPaths.includes(path)
+}
 
-	function readLiteralStringNode(
-		node: unknown,
-	): { start: number; end: number; specifier: string } | null {
-		if (node == null || typeof node !== 'object') return null
-		if (!('type' in node)) return null
-		const typedNode = node as {
-			type?: string
-			value?: unknown
-			start?: number
-			end?: number
-			extra?: { rawValue?: unknown }
-		}
-		const literalValue =
-			typeof typedNode.value === 'string'
-				? typedNode.value
-				: typeof typedNode.extra?.rawValue === 'string'
-					? typedNode.extra.rawValue
-					: null
-		if (
-			(typedNode.type === 'Literal' || typedNode.type === 'StringLiteral') &&
-			typeof literalValue === 'string' &&
-			typeof typedNode.start === 'number' &&
-			typeof typedNode.end === 'number'
-		) {
-			return {
-				start: typedNode.start,
-				end: typedNode.end,
-				specifier: literalValue,
-			}
-		}
-		return null
-	}
+function isBundlerRootDependencyPath(path: string) {
+	return path === 'node_modules' || path.startsWith('node_modules/')
+}
 
-	function visit(node: unknown): void {
-		if (node == null || typeof node !== 'object') return
-		if (Array.isArray(node)) {
-			for (const item of node) visit(item)
-			return
+function* iterateModuleSourceTexts(
+	modules: WorkerLoaderModules,
+): Generator<[modulePath: string, source: string]> {
+	for (const [modulePath, module] of Object.entries(modules)) {
+		if (typeof module === 'string') {
+			yield [modulePath, module]
+			continue
 		}
-		if (!('type' in node)) return
-		const typedNode = node as ModuleAstNode & {
-			source?: { type?: string; value?: unknown; start?: number; end?: number }
-			start?: number
-			end?: number
-			expression?: unknown
+		if (typeof module.js === 'string') {
+			yield [modulePath, module.js]
 		}
-		if (
-			typedNode.type === 'ImportDeclaration' ||
-			typedNode.type === 'ExportAllDeclaration' ||
-			typedNode.type === 'ExportNamedDeclaration'
-		) {
-			const literalNode = readLiteralStringNode(typedNode.source)
-			if (literalNode) {
-				nodes.push(literalNode)
-			}
+		if (typeof module.cjs === 'string') {
+			yield [modulePath, module.cjs]
 		}
-		if (typedNode.type === 'ImportExpression') {
-			const literalNode = readLiteralStringNode(typedNode.source)
-			if (literalNode) {
-				nodes.push(literalNode)
-			}
-		}
-		for (const value of Object.values(
-			typedNode as unknown as Record<string, unknown>,
-		)) {
-			if (value == null) continue
-			if (typeof value === 'object') {
-				visit(value)
-			}
+		if (typeof module.text === 'string') {
+			yield [modulePath, module.text]
 		}
 	}
+}
 
-	try {
-		const program = parseModuleSource(source)
-		visit(program)
-	} catch {
-		return []
+function collectUnresolvedBareImports(modules: WorkerLoaderModules) {
+	const unresolved = new Map<string, Set<string>>()
+	for (const [modulePath, source] of iterateModuleSourceTexts(modules)) {
+		for (const specifier of collectLiteralImportSpecifiers(source)) {
+			if (!isBarePackageImportSpecifier(specifier)) continue
+			let existing = unresolved.get(modulePath)
+			if (!existing) {
+				existing = new Set()
+				unresolved.set(modulePath, existing)
+			}
+			existing.add(specifier)
+		}
 	}
+	return [...unresolved.entries()].map(([modulePath, specifiers]) => ({
+		modulePath,
+		specifiers: [...specifiers].sort((left, right) =>
+			left.localeCompare(right),
+		),
+	}))
+}
 
-	return nodes.sort((left, right) => left.start - right.start)
+function assertBundleHasNoUnresolvedBareImports(input: {
+	modules: WorkerLoaderModules
+	bundleLabel: string
+}) {
+	const unresolved = collectUnresolvedBareImports(input.modules)
+	if (unresolved.length === 0) return
+	const details = unresolved
+		.map(
+			(entry) =>
+				`${entry.modulePath}: ${entry.specifiers
+					.map((specifier) => `"${specifier}"`)
+					.join(', ')}`,
+		)
+		.join('; ')
+	throw new Error(
+		`${input.bundleLabel} still contains unresolved bare package imports after bundling (${details}). Declare supported runtime dependencies in package.json and ensure checks/publish can resolve them before execution.`,
+	)
 }
 
 function applyReplacements(
@@ -413,9 +408,13 @@ export async function buildKodyModuleBundle(input: {
 		),
 		paramsJson: 'globalThis.__kodyRuntime?.params ?? null',
 	})
-	const bundle = await createWorker({
+	const bundle = await createWorkerBundle({
 		files,
 		entryPoint: bootstrapPath,
+	})
+	assertBundleHasNoUnresolvedBareImports({
+		modules: bundle.modules as WorkerLoaderModules,
+		bundleLabel: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
 	})
 	return {
 		mainModule: bundle.mainModule,
@@ -443,10 +442,21 @@ async function prepareKodyGraphFiles(input: {
 		dependencies: new Map(),
 	}
 	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
-		const normalizedPath = joinPath(
-			rootSourcePrefix,
-			normalizePackageWorkspacePath(filePath),
-		)
+		const normalizedSourcePath = normalizePackageWorkspacePath(filePath)
+		if (
+			isBundlerRootConfigPath(normalizedSourcePath) ||
+			isBundlerRootDependencyPath(normalizedSourcePath)
+		) {
+			files[normalizedSourcePath] = content
+		}
+		if (isBundlerRootDependencyPath(normalizedSourcePath)) {
+			continue
+		}
+		const normalizedPath = joinPath(rootSourcePrefix, normalizedSourcePath)
+		if (normalizedSourcePath === packageManifestPath) {
+			files[normalizedPath] = content
+			continue
+		}
 		files[normalizedPath] = await rewriteKodyImports({
 			state,
 			source: content,
@@ -485,9 +495,13 @@ export async function buildKodyAppBundle(input: {
 				normalizedEntrypoint,
 			),
 		})
-		const bundle = await createWorker({
+		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
+		})
+		assertBundleHasNoUnresolvedBareImports({
+			modules: bundle.modules as WorkerLoaderModules,
+			bundleLabel: `Saved package app "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
 		})
 		return {
 			mainModule: bundle.mainModule,

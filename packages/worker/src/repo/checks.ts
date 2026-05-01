@@ -7,6 +7,10 @@ import {
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
+import {
+	buildKodyAppBundle,
+	buildKodyModuleBundle,
+} from '#worker/package-runtime/module-graph.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 import {
 	createRepoCodemodeModuleTypecheckHarness,
@@ -37,6 +41,24 @@ const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
 const repoChecksSyntheticTsconfigPath = 'tsconfig.json'
 const repoChecksSyntheticTsconfigExtendsPath =
 	'./.__kody_repo_tsconfig_base__.json'
+
+async function loadWorkerBundlerSnapshotTools() {
+	// Keep worker-bundler lazy so unrelated node tests can import repo/checks
+	// without eagerly loading the experimental bundler and its wasm payload.
+	const { createFileSystemSnapshot } =
+		await import('@cloudflare/worker-bundler')
+	return {
+		createFileSystemSnapshot,
+	}
+}
+
+async function loadWorkerBundlerTypescriptTools() {
+	const { createTypescriptLanguageService } =
+		await import('@cloudflare/worker-bundler/typescript')
+	return {
+		createTypescriptLanguageService,
+	}
+}
 
 type RepoChecksFileSystem = {
 	read(path: string): string | null
@@ -236,13 +258,18 @@ declare const storage: {
 type PackageTypecheckTarget = {
 	path: string
 	includeStorage: boolean
+	bundleKind: 'app' | 'module'
 }
 
 function collectPackageTypecheckTargets(
 	manifest: AuthoredPackageJson,
 ): Array<PackageTypecheckTarget> {
 	const targets = new Map<string, PackageTypecheckTarget>()
-	const remember = (path: string, includeStorage: boolean) => {
+	const remember = (
+		path: string,
+		includeStorage: boolean,
+		bundleKind: PackageTypecheckTarget['bundleKind'],
+	) => {
 		const normalizedPath = normalizePackageWorkspacePath(path)
 		const existing = targets.get(normalizedPath)
 		if (existing) {
@@ -252,11 +279,12 @@ function collectPackageTypecheckTargets(
 		targets.set(normalizedPath, {
 			path: normalizedPath,
 			includeStorage,
+			bundleKind,
 		})
 	}
 	const appEntryPath = getPackageAppEntryPath(manifest)
 	if (appEntryPath) {
-		remember(appEntryPath, false)
+		remember(appEntryPath, false, 'app')
 	}
 	for (const exportName of Object.keys(manifest.exports)) {
 		remember(
@@ -265,18 +293,80 @@ function collectPackageTypecheckTargets(
 				exportName,
 			}),
 			false,
+			'module',
 		)
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
-		remember(job.entry, true)
+		remember(job.entry, true, 'module')
 	}
 	for (const service of listPackageServices(manifest)) {
-		remember(service.entry, true)
+		remember(service.entry, true, 'module')
 	}
 	for (const subscription of listPackageSubscriptions(manifest)) {
-		remember(subscription.handler, true)
+		remember(subscription.handler, true, 'module')
 	}
 	return Array.from(targets.values())
+}
+
+function parseDeclaredDependencies(packageJsonContent: string | null) {
+	if (!packageJsonContent) return []
+	try {
+		const parsed = JSON.parse(packageJsonContent) as {
+			dependencies?: Record<string, string>
+		}
+		return Object.keys(parsed.dependencies ?? {}).sort((left, right) =>
+			left.localeCompare(right),
+		)
+	} catch {
+		return []
+	}
+}
+
+function createSourceFilesRecord(snapshotFiles: Map<string, string>) {
+	return Object.fromEntries(snapshotFiles) as Record<string, string>
+}
+
+async function validatePackageBundles(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	sourceFiles: Record<string, string>
+	entryPoints: Array<PackageTypecheckTarget>
+}) {
+	const failures: Array<string> = []
+	for (const target of input.entryPoints) {
+		try {
+			if (target.bundleKind === 'app') {
+				await buildKodyAppBundle({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceFiles: input.sourceFiles,
+					entryPoint: target.path,
+					cacheKey: null,
+				})
+			} else {
+				await buildKodyModuleBundle({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+					sourceFiles: input.sourceFiles,
+					entryPoint: target.path,
+				})
+			}
+		} catch (error) {
+			failures.push(
+				`${target.path}: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+	}
+	return {
+		ok: failures.length === 0,
+		message:
+			failures.length === 0
+				? `Bundled ${input.entryPoints.length} package runtime entrypoint(s) successfully.`
+				: failures.join('\n'),
+	}
 }
 
 function getPackageTypecheckDiagnostics(input: {
@@ -349,8 +439,7 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 	ok: boolean
 	message: string
 }> {
-	const { createFileSystemSnapshot } =
-		await import('@cloudflare/worker-bundler')
+	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
 			for (const [path, content] of Object.entries(input.sourceFiles)) {
@@ -369,8 +458,6 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 				.join(', ')}.`,
 		}
 	}
-	const { createTypescriptLanguageService } =
-		await import('@cloudflare/worker-bundler/typescript')
 	const typecheckFileSystem = createRepoChecksFileSystem({
 		fileSystem: snapshot,
 	})
@@ -385,6 +472,8 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
+	const { createTypescriptLanguageService } =
+		await loadWorkerBundlerTypescriptTools()
 	const { fileSystem, languageService } = await createTypescriptLanguageService(
 		{
 			fileSystem: typecheckFileSystem,
@@ -394,6 +483,7 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		targets: input.entryPoints.map((entryPoint) => ({
 			path: entryPoint.path,
 			includeStorage: entryPoint.includeStorage === true,
+			bundleKind: 'module',
 		})),
 		languageService,
 		fileSystem,
@@ -429,6 +519,9 @@ export async function runRepoChecks(input: {
 	}
 	manifestPath: string
 	sourceRoot: string
+	env?: Env
+	baseUrl?: string
+	userId?: string
 }): Promise<RepoCheckRunResult> {
 	const manifestContent = await input.workspace.readFile(input.manifestPath)
 	if (manifestContent == null) {
@@ -450,36 +543,78 @@ export async function runRepoChecks(input: {
 		/\/+$/,
 		'',
 	)
-	const { createFileSystemSnapshot } =
-		await import('@cloudflare/worker-bundler')
-	const snapshot = await createFileSystemSnapshot(
-		workspaceFilesForSnapshot({
+	const snapshotFiles = await (async () => {
+		const collected = new Map<string, string>()
+		for await (const [path, content] of workspaceFilesForSnapshot({
 			workspace: input.workspace,
 			root: sourceRoot,
-		}),
+		})) {
+			collected.set(path, content)
+		}
+		return collected
+	})()
+	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
+	const snapshot = await createFileSystemSnapshot(
+		(async function* () {
+			for (const [path, content] of snapshotFiles) {
+				yield [path, content] as const
+			}
+		})(),
 	)
 
 	const packageJson = snapshot.read('package.json')
+	const declaredDependencies = parseDeclaredDependencies(packageJson)
 	results.push({
 		kind: 'dependencies',
 		ok: true,
 		message:
-			packageJson != null
-				? 'package.json found for dependency fingerprinting.'
-				: 'No package.json found in source root; dependency check skipped.',
+			packageJson == null
+				? 'No package.json found in source root; dependency check skipped.'
+				: declaredDependencies.length === 0
+					? 'package.json declares no npm dependencies.'
+					: `package.json declares ${declaredDependencies.length} npm dependenc${
+							declaredDependencies.length === 1 ? 'y' : 'ies'
+						}: ${declaredDependencies.map((dependency) => `"${dependency}"`).join(', ')}.`,
 	})
 
 	const entryPoints = collectPackageTypecheckTargets(manifest)
 	const missingEntryPoints = entryPoints
 		.map((target) => target.path)
 		.filter((path) => snapshot.read(path) == null)
+	const bundleContext =
+		input.env && input.userId
+			? {
+					env: input.env,
+					baseUrl: input.baseUrl ?? input.sourceRoot,
+					userId: input.userId,
+				}
+			: null
+	const bundleCheckResult =
+		missingEntryPoints.length > 0
+			? {
+					ok: false,
+					message: formatBundleCheckMessage({
+						missingEntryPoints,
+						targetCount: entryPoints.length,
+					}),
+				}
+			: bundleContext
+				? await validatePackageBundles({
+						...bundleContext,
+						sourceFiles: createSourceFilesRecord(snapshotFiles),
+						entryPoints,
+					})
+				: {
+						ok: true,
+						message: formatBundleCheckMessage({
+							missingEntryPoints,
+							targetCount: entryPoints.length,
+						}),
+					}
 	results.push({
 		kind: 'bundle',
-		ok: missingEntryPoints.length === 0,
-		message: formatBundleCheckMessage({
-			missingEntryPoints,
-			targetCount: entryPoints.length,
-		}),
+		ok: bundleCheckResult.ok,
+		message: bundleCheckResult.message,
 	})
 
 	if (missingEntryPoints.length > 0) {
@@ -502,8 +637,6 @@ export async function runRepoChecks(input: {
 		}
 	}
 
-	const { createTypescriptLanguageService } =
-		await import('@cloudflare/worker-bundler/typescript')
 	const typecheckFileSystem = createRepoChecksFileSystem({
 		fileSystem: snapshot,
 	})
@@ -518,6 +651,8 @@ export async function runRepoChecks(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
+	const { createTypescriptLanguageService } =
+		await loadWorkerBundlerTypescriptTools()
 	const { fileSystem, languageService } = await createTypescriptLanguageService(
 		{
 			fileSystem: typecheckFileSystem,
