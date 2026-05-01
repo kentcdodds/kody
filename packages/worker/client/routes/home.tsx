@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
 import {
 	colors,
 	radius,
@@ -11,7 +11,7 @@ import {
 export function HomeRoute(_handle: Handle) {
 	return () => (
 		<section
-			css={{
+			mix={css({
 				display: 'flex',
 				flexDirection: 'column',
 				alignItems: 'center',
@@ -24,10 +24,10 @@ export function HomeRoute(_handle: Handle) {
 					padding: spacing.sm,
 					gap: spacing.xl,
 				},
-			}}
+			})}
 		>
 			<div
-				css={{
+				mix={css({
 					display: 'grid',
 					gap: spacing.lg,
 					padding: spacing['2xl'],
@@ -40,40 +40,41 @@ export function HomeRoute(_handle: Handle) {
 					[mq.mobile]: {
 						padding: spacing.lg,
 					},
-				}}
+				})}
 			>
 				<div
-					css={{
+					mix={css({
 						display: 'grid',
 						gap: spacing.lg,
 						justifyItems: 'center',
-					}}
+					})}
 				>
 					<img
 						src="/logo.png"
 						alt="kody logo"
-						css={{
+						mix={css({
 							width: '220px',
 							maxWidth: '100%',
 							height: 'auto',
 							[mq.mobile]: {
 								width: '160px',
 							},
-						}}
+						})}
 					/>
-					<div css={{ display: 'grid', gap: spacing.md }}>
+
+					<div mix={css({ display: 'grid', gap: spacing.md })}>
 						<h1
-							css={{
+							mix={css({
 								fontSize: typography.fontSize['2xl'],
 								fontWeight: typography.fontWeight.bold,
 								margin: 0,
 								color: colors.text,
-							}}
+							})}
 						>
-							Meet <span css={{ color: colors.primaryText }}>kody</span>
+							Meet <span mix={css({ color: colors.primaryText })}>kody</span>
 						</h1>
 						<p
-							css={{
+							mix={css({
 								margin: 0,
 								color: colors.textMuted,
 								fontSize: typography.fontSize.lg,
@@ -81,7 +82,7 @@ export function HomeRoute(_handle: Handle) {
 								[mq.mobile]: {
 									fontSize: typography.fontSize.base,
 								},
-							}}
+							})}
 						>
 							Your personal assistant, built to work from any AI agent host that
 							supports MCP.
@@ -91,7 +92,7 @@ export function HomeRoute(_handle: Handle) {
 			</div>
 
 			<div
-				css={{
+				mix={css({
 					display: 'grid',
 					gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
 					gap: spacing.lg,
@@ -101,7 +102,7 @@ export function HomeRoute(_handle: Handle) {
 						gridTemplateColumns: '1fr',
 						gap: spacing.md,
 					},
-				}}
+				})}
 			>
 				{renderFeatureCard({
 					title: 'MCP Powered',
@@ -137,7 +138,7 @@ function renderFeatureCard({
 }) {
 	return (
 		<div
-			css={{
+			mix={css({
 				display: 'grid',
 				gap: spacing.sm,
 				padding: spacing.lg,
@@ -154,11 +155,13 @@ function renderFeatureCard({
 				[mq.mobile]: {
 					padding: spacing.md,
 				},
-			}}
+			})}
 		>
-			<div css={{ fontSize: '2rem', marginBottom: spacing.xs }}>{icon}</div>
+			<div mix={css({ fontSize: '2rem', marginBottom: spacing.xs })}>
+				{icon}
+			</div>
 			<h3
-				css={{
+				mix={css({
 					fontSize: typography.fontSize.lg,
 					fontWeight: typography.fontWeight.semibold,
 					margin: 0,
@@ -166,19 +169,19 @@ function renderFeatureCard({
 					[mq.mobile]: {
 						fontSize: typography.fontSize.base,
 					},
-				}}
+				})}
 			>
 				{title}
 			</h3>
 			<p
-				css={{
+				mix={css({
 					margin: 0,
 					color: colors.textMuted,
 					lineHeight: 1.5,
 					[mq.mobile]: {
 						fontSize: typography.fontSize.sm,
 					},
-				}}
+				})}
 			>
 				{description}
 			</p>

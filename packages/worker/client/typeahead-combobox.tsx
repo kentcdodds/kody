@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 
 type ComboboxOption = {
 	id: string
@@ -137,22 +138,22 @@ export function TypeaheadCombobox(handle: Handle) {
 
 		return (
 			<div
-				css={{
+				mix={css({
 					position: 'relative',
 					display: 'grid',
 					gap: 'var(--spacing-xs)',
-				}}
+				})}
 			>
 				<label
 					for={inputId}
-					css={{ display: 'grid', gap: 'var(--spacing-xs)' }}
+					mix={css({ display: 'grid', gap: 'var(--spacing-xs)' })}
 				>
 					<span
-						css={{
+						mix={css({
 							color: 'var(--color-text)',
 							fontWeight: 'var(--font-weight-medium)',
 							fontSize: 'var(--font-size-sm)',
-						}}
+						})}
 					>
 						{props.label}
 					</span>
@@ -173,20 +174,26 @@ export function TypeaheadCombobox(handle: Handle) {
 					placeholder={props.placeholder}
 					value={query}
 					disabled={props.disabled}
-					on={{
-						focus: handleFocus,
-						blur: handleBlur,
-						input: handleInput,
-						keydown: handleKeyDown,
-					}}
-					css={props.inputCss as never}
+					mix={[
+						on(
+							'focus',
+
+							handleFocus,
+						),
+						on('blur', handleBlur),
+						on('input', handleInput),
+						on('keydown', handleKeyDown),
+
+						css(props.inputCss as never),
+					]}
 				/>
+
 				{isOpen ? (
 					<div
 						id={listboxId}
 						role="listbox"
 						aria-label={props.label}
-						css={props.listCss as never}
+						mix={css(props.listCss as never)}
 					>
 						{hasOptions ? (
 							filteredOptions.map((option, index) => {
@@ -198,26 +205,31 @@ export function TypeaheadCombobox(handle: Handle) {
 										type="button"
 										role="option"
 										aria-selected={isActive}
-										on={{
-											mousedown: (event) => {
-												event.preventDefault()
-												selectOption(option)
-											},
-											mouseenter: () => {
+										data-active={isActive ? 'true' : 'false'}
+										mix={[
+											on(
+												'mousedown',
+
+												(event) => {
+													event.preventDefault()
+													selectOption(option)
+												},
+											),
+											on('mouseenter', () => {
 												highlightedIndex = index
 												handle.update()
-											},
-										}}
-										css={props.optionCss as never}
-										data-active={isActive ? 'true' : 'false'}
+											}),
+
+											css(props.optionCss as never),
+										]}
 									>
 										<span>{option.label}</span>
 										{option.description ? (
 											<span
-												css={{
+												mix={css({
 													fontSize: 'var(--font-size-sm)',
 													color: 'var(--color-text-muted)',
-												}}
+												})}
 											>
 												{option.description}
 											</span>
@@ -227,11 +239,11 @@ export function TypeaheadCombobox(handle: Handle) {
 							})
 						) : (
 							<div
-								css={{
+								mix={css({
 									padding: 'var(--spacing-sm)',
 									fontSize: 'var(--font-size-sm)',
 									color: 'var(--color-text-muted)',
-								}}
+								})}
 							>
 								{props.emptyText ?? 'No matches'}
 							</div>

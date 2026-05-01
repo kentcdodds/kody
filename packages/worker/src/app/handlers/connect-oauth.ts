@@ -8,7 +8,7 @@ import { type routes } from '#app/routes.ts'
 export function createConnectOauthHandler(_env: Env) {
 	return {
 		middleware: [],
-		async action({ request }) {
+		async handler({ request }) {
 			const { session, setCookie } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)

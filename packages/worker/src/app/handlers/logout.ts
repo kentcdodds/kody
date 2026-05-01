@@ -4,7 +4,7 @@ import { type routes } from '#app/routes.ts'
 
 export const logout = {
 	middleware: [],
-	async action({ request }) {
+	async handler({ request }) {
 		const cookie = await destroyAuthCookie(isSecureRequest(request))
 		const location = new URL('/login', request.url)
 

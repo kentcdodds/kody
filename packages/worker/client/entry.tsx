@@ -1,4 +1,4 @@
-import { createRoot } from 'remix/component'
+import { createRoot } from 'remix/ui'
 import { App } from './app.tsx'
 
 const rootElement = document.getElementById('root') ?? document.body

@@ -1,5 +1,5 @@
-import { type Handle } from 'remix/component'
-import { renderToString } from 'remix/component/server'
+import { type Handle } from 'remix/ui'
+import { renderToString } from 'remix/ui/server'
 import { expect, test, vi } from 'vitest'
 
 type QueueTask = Parameters<Handle['queueTask']>[0]

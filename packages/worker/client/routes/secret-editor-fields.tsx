@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import { colors, mq, spacing } from '#client/styles/tokens.ts'
 import {
 	fieldCss,
@@ -31,29 +32,34 @@ type SecretEditorFieldsProps = {
 export function SecretEditorFields(_handle: Handle) {
 	return (props: SecretEditorFieldsProps) => (
 		<>
-			<label css={fieldCss}>
-				<span css={fieldLabelCss}>Description</span>
+			<label mix={css(fieldCss)}>
+				<span mix={css(fieldLabelCss)}>Description</span>
 				<textarea
 					value={props.description}
 					rows={3}
 					placeholder="What this secret is used for"
-					on={{
-						input: (event) => {
-							props.onDescriptionChange(event.currentTarget.value)
-						},
-					}}
-					css={textareaCss}
+					mix={[
+						on(
+							'input',
+
+							(event) => {
+								props.onDescriptionChange(event.currentTarget.value)
+							},
+						),
+
+						css(textareaCss),
+					]}
 				/>
 			</label>
 
-			<label css={fieldCss}>
-				<span css={fieldLabelCss}>Secret value</span>
+			<label mix={css(fieldCss)}>
+				<span mix={css(fieldLabelCss)}>Secret value</span>
 				<div
-					css={{
+					mix={css({
 						position: 'relative',
 						display: 'flex',
 						alignItems: 'center',
-					}}
+					})}
 				>
 					{props.showSecretValue ? (
 						<input
@@ -62,15 +68,20 @@ export function SecretEditorFields(_handle: Handle) {
 							autoComplete="new-password"
 							value={props.value}
 							placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
-							on={{
-								input: (event) => {
-									props.onValueChange(event.currentTarget.value)
-								},
-							}}
-							css={{
-								...inputCss,
-								paddingRight: '3rem',
-							}}
+							mix={[
+								on(
+									'input',
+
+									(event) => {
+										props.onValueChange(event.currentTarget.value)
+									},
+								),
+
+								css({
+									...inputCss,
+									paddingRight: '3rem',
+								}),
+							]}
 						/>
 					) : (
 						<input
@@ -79,15 +90,20 @@ export function SecretEditorFields(_handle: Handle) {
 							autoComplete="new-password"
 							value={props.value}
 							placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
-							on={{
-								input: (event) => {
-									props.onValueChange(event.currentTarget.value)
-								},
-							}}
-							css={{
-								...inputCss,
-								paddingRight: '3rem',
-							}}
+							mix={[
+								on(
+									'input',
+
+									(event) => {
+										props.onValueChange(event.currentTarget.value)
+									},
+								),
+
+								css({
+									...inputCss,
+									paddingRight: '3rem',
+								}),
+							]}
 						/>
 					)}
 					<button
@@ -98,8 +114,10 @@ export function SecretEditorFields(_handle: Handle) {
 						title={
 							props.showSecretValue ? 'Hide secret value' : 'Show secret value'
 						}
-						on={{ click: () => props.onToggleShowSecretValue() }}
-						css={iconButtonCss}
+						mix={[
+							on('click', () => props.onToggleShowSecretValue()),
+							css(iconButtonCss),
+						]}
 					>
 						{props.showSecretValue ? (
 							<svg
@@ -138,35 +156,46 @@ export function SecretEditorFields(_handle: Handle) {
 				</div>
 			</label>
 
-			<div css={{ display: 'grid', gap: spacing.sm }}>
-				<div css={{ display: 'grid', gap: spacing.xs }}>
-					<span css={fieldLabelCss}>Allowed hosts</span>
-					<p css={{ margin: 0, color: colors.textMuted }}>
+			<div mix={css({ display: 'grid', gap: spacing.sm })}>
+				<div mix={css({ display: 'grid', gap: spacing.xs })}>
+					<span mix={css(fieldLabelCss)}>Allowed hosts</span>
+					<p mix={css({ margin: 0, color: colors.textMuted })}>
 						Leave this empty to require explicit host approval before a secret
 						can be used.
 					</p>
 				</div>
 				<div
-					css={{ display: 'grid', gap: spacing.sm }}
 					data-repeat-list={props.allowedHostsListName}
+					mix={css({ display: 'grid', gap: spacing.sm })}
 				>
 					{props.allowedHosts.map((host, index) => (
-						<div key={index} css={repeatedRowCss}>
+						<div key={index} mix={css(repeatedRowCss)}>
 							<input
 								type="text"
 								value={typeof host === 'string' ? host : ''}
 								placeholder="api.example.com"
-								on={{
-									input: (event) => {
-										props.onUpdateAllowedHost(index, event.currentTarget.value)
-									},
-								}}
-								css={inputCss}
+								mix={[
+									on(
+										'input',
+
+										(event) => {
+											props.onUpdateAllowedHost(
+												index,
+												event.currentTarget.value,
+											)
+										},
+									),
+
+									css(inputCss),
+								]}
 							/>
+
 							<button
 								type="button"
-								on={{ click: () => props.onRemoveAllowedHost(index) }}
-								css={secondaryButtonCss}
+								mix={[
+									on('click', () => props.onRemoveAllowedHost(index)),
+									css(secondaryButtonCss),
+								]}
 							>
 								Remove
 							</button>
@@ -176,46 +205,56 @@ export function SecretEditorFields(_handle: Handle) {
 				<div>
 					<button
 						type="button"
-						on={{ click: () => props.onAddAllowedHost() }}
-						css={secondaryButtonCss}
+						mix={[
+							on('click', () => props.onAddAllowedHost()),
+							css(secondaryButtonCss),
+						]}
 					>
 						Add host
 					</button>
 				</div>
 			</div>
 
-			<div css={{ display: 'grid', gap: spacing.sm }}>
-				<div css={{ display: 'grid', gap: spacing.xs }}>
-					<span css={fieldLabelCss}>Allowed capabilities</span>
-					<p css={{ margin: 0, color: colors.textMuted }}>
+			<div mix={css({ display: 'grid', gap: spacing.sm })}>
+				<div mix={css({ display: 'grid', gap: spacing.xs })}>
+					<span mix={css(fieldLabelCss)}>Allowed capabilities</span>
+					<p mix={css({ margin: 0, color: colors.textMuted })}>
 						Only capabilities listed here can resolve this secret when used with
 						an <code>x-kody-secret</code> input.
 					</p>
 				</div>
 				<div
-					css={{ display: 'grid', gap: spacing.sm }}
 					data-repeat-list={props.allowedCapabilitiesListName}
+					mix={css({ display: 'grid', gap: spacing.sm })}
 				>
 					{props.allowedCapabilities.map((capabilityName, index) => (
-						<div key={index} css={repeatedRowCss}>
+						<div key={index} mix={css(repeatedRowCss)}>
 							<input
 								type="text"
 								value={typeof capabilityName === 'string' ? capabilityName : ''}
 								placeholder="home_lutron_set_credentials"
-								on={{
-									input: (event) => {
-										props.onUpdateAllowedCapability(
-											index,
-											event.currentTarget.value,
-										)
-									},
-								}}
-								css={inputCss}
+								mix={[
+									on(
+										'input',
+
+										(event) => {
+											props.onUpdateAllowedCapability(
+												index,
+												event.currentTarget.value,
+											)
+										},
+									),
+
+									css(inputCss),
+								]}
 							/>
+
 							<button
 								type="button"
-								on={{ click: () => props.onRemoveAllowedCapability(index) }}
-								css={secondaryButtonCss}
+								mix={[
+									on('click', () => props.onRemoveAllowedCapability(index)),
+									css(secondaryButtonCss),
+								]}
 							>
 								Remove
 							</button>
@@ -225,8 +264,10 @@ export function SecretEditorFields(_handle: Handle) {
 				<div>
 					<button
 						type="button"
-						on={{ click: () => props.onAddAllowedCapability() }}
-						css={secondaryButtonCss}
+						mix={[
+							on('click', () => props.onAddAllowedCapability()),
+							css(secondaryButtonCss),
+						]}
 					>
 						Add capability
 					</button>

@@ -47,7 +47,7 @@ test('session handler renews remembered sessions after two weeks', async () => {
 	)
 
 	const response = await withMockedNow(now, () =>
-		session.action(createSessionRequestContext(cookie)),
+		session.handler(createSessionRequestContext(cookie)),
 	)
 
 	expect(response.status).toBe(200)
@@ -67,7 +67,7 @@ test('session handler keeps remembered sessions unchanged before renewal window'
 	)
 
 	const response = await withMockedNow(now, () =>
-		session.action(createSessionRequestContext(cookie)),
+		session.handler(createSessionRequestContext(cookie)),
 	)
 
 	expect(response.status).toBe(200)

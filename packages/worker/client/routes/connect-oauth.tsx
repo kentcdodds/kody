@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -700,13 +701,13 @@ export function ConnectOauthRoute(handle: Handle) {
 		const instructions = config.providerSetupInstructions
 		if (instructions && instructions.trim()) {
 			return (
-				<p css={{ ...insetCardCss, margin: 0, whiteSpace: 'pre-wrap' }}>
+				<p mix={css({ ...insetCardCss, margin: 0, whiteSpace: 'pre-wrap' })}>
 					{instructions}
 				</p>
 			)
 		}
 		return (
-			<p css={descriptionCss}>
+			<p mix={css(descriptionCss)}>
 				Create an OAuth app with your provider and enter the Client ID below.
 			</p>
 		)
@@ -715,13 +716,13 @@ export function ConnectOauthRoute(handle: Handle) {
 	const renderAllowedHosts = () => {
 		if (!config) return null
 		return (
-			<section css={insetCardCss}>
-				<h3 css={sectionTitleCss}>Allowed hosts</h3>
-				<p css={descriptionCss}>
+			<section mix={css(insetCardCss)}>
+				<h3 mix={css(sectionTitleCss)}>Allowed hosts</h3>
+				<p mix={css(descriptionCss)}>
 					These hosts will be approved for the saved secrets. Host approvals are
 					never automatic.
 				</p>
-				<ul css={listCss}>
+				<ul mix={css(listCss)}>
 					{config.allowedHosts.map((host) => (
 						<li key={host}>{host}</li>
 					))}
@@ -733,9 +734,9 @@ export function ConnectOauthRoute(handle: Handle) {
 	const renderExistingConnectorConfig = () => {
 		if (!existingConnectorConfig) return null
 		return (
-			<section css={cardCss}>
-				<h2 css={cardTitleCss}>Existing connector config</h2>
-				<p css={descriptionCss}>
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Existing connector config</h2>
+				<p mix={css(descriptionCss)}>
 					Loaded from{' '}
 					<code>
 						{existingConnectorValueName ??
@@ -743,52 +744,54 @@ export function ConnectOauthRoute(handle: Handle) {
 					</code>
 					.
 				</p>
-				<div css={detailGridCss}>
-					<div css={detailItemCss}>
-						<span css={detailLabelCss}>Flow</span>
-						<span css={detailValueCss}>{existingConnectorConfig.flow}</span>
+				<div mix={css(detailGridCss)}>
+					<div mix={css(detailItemCss)}>
+						<span mix={css(detailLabelCss)}>Flow</span>
+						<span mix={css(detailValueCss)}>
+							{existingConnectorConfig.flow}
+						</span>
 					</div>
-					<div css={detailItemCss}>
-						<span css={detailLabelCss}>Token URL</span>
+					<div mix={css(detailItemCss)}>
+						<span mix={css(detailLabelCss)}>Token URL</span>
 						<code>{existingConnectorConfig.tokenUrl}</code>
 					</div>
 					{existingConnectorConfig.apiBaseUrl ? (
-						<div css={detailItemCss}>
-							<span css={detailLabelCss}>API base URL</span>
+						<div mix={css(detailItemCss)}>
+							<span mix={css(detailLabelCss)}>API base URL</span>
 							<code>{existingConnectorConfig.apiBaseUrl}</code>
 						</div>
 					) : null}
-					<div css={detailItemCss}>
-						<span css={detailLabelCss}>Client ID value</span>
+					<div mix={css(detailItemCss)}>
+						<span mix={css(detailLabelCss)}>Client ID value</span>
 						<code>{existingConnectorConfig.clientIdValueName}</code>
 					</div>
-					<div css={detailItemCss}>
-						<span css={detailLabelCss}>Client secret secret</span>
+					<div mix={css(detailItemCss)}>
+						<span mix={css(detailLabelCss)}>Client secret secret</span>
 						<code>
 							{existingConnectorConfig.clientSecretSecretName ?? 'Not used'}
 						</code>
 					</div>
-					<div css={detailItemCss}>
-						<span css={detailLabelCss}>Access token secret</span>
+					<div mix={css(detailItemCss)}>
+						<span mix={css(detailLabelCss)}>Access token secret</span>
 						<code>{existingConnectorConfig.accessTokenSecretName}</code>
 					</div>
-					<div css={detailItemCss}>
-						<span css={detailLabelCss}>Refresh token secret</span>
+					<div mix={css(detailItemCss)}>
+						<span mix={css(detailLabelCss)}>Refresh token secret</span>
 						<code>
 							{existingConnectorConfig.refreshTokenSecretName ?? 'Not used'}
 						</code>
 					</div>
 				</div>
-				<div css={insetCardCss}>
-					<strong css={sectionTitleCss}>Required hosts</strong>
+				<div mix={css(insetCardCss)}>
+					<strong mix={css(sectionTitleCss)}>Required hosts</strong>
 					{existingConnectorConfig.requiredHosts.length > 0 ? (
-						<ul css={listCss}>
+						<ul mix={css(listCss)}>
 							{existingConnectorConfig.requiredHosts.map((host) => (
 								<li key={host}>{host}</li>
 							))}
 						</ul>
 					) : (
-						<p css={descriptionCss}>None configured.</p>
+						<p mix={css(descriptionCss)}>None configured.</p>
 					)}
 				</div>
 			</section>
@@ -846,57 +849,57 @@ export function ConnectOauthRoute(handle: Handle) {
 	return () => {
 		if (!config) {
 			return (
-				<section css={pageCss}>
-					<header css={headerCss}>
-						<span css={eyebrowCss}>Kody secure connection</span>
-						<h1 css={pageTitleCss}>Connect OAuth</h1>
-						<p css={pageDescriptionCss}>{statusMessage}</p>
+				<section mix={css(pageCss)}>
+					<header mix={css(headerCss)}>
+						<span mix={css(eyebrowCss)}>Kody secure connection</span>
+						<h1 mix={css(pageTitleCss)}>Connect OAuth</h1>
+						<p mix={css(pageDescriptionCss)}>{statusMessage}</p>
 					</header>
 				</section>
 			)
 		}
 		return (
-			<section css={pageCss}>
-				<header css={headerCss}>
-					<span css={eyebrowCss}>Kody secure connection</span>
-					<h1 css={pageTitleCss}>Connect {config.provider}</h1>
-					<p css={pageDescriptionCss}>
+			<section mix={css(pageCss)}>
+				<header mix={css(headerCss)}>
+					<span mix={css(eyebrowCss)}>Kody secure connection</span>
+					<h1 mix={css(pageTitleCss)}>Connect {config.provider}</h1>
+					<p mix={css(pageDescriptionCss)}>
 						Follow the steps below to connect your account using OAuth.
 					</p>
 				</header>
-				<section css={getStatusCardCss(statusTone)}>
+				<section mix={css(getStatusCardCss(statusTone))}>
 					<div
-						css={{
+						mix={css({
 							display: 'flex',
 							alignItems: 'center',
 							justifyContent: 'space-between',
 							gap: spacing.sm,
 							flexWrap: 'wrap',
-						}}
+						})}
 					>
-						<strong css={sectionTitleCss}>Status</strong>
-						<span css={getStatusBadgeCss(statusTone)}>{currentStep}</span>
+						<strong mix={css(sectionTitleCss)}>Status</strong>
+						<span mix={css(getStatusBadgeCss(statusTone))}>{currentStep}</span>
 					</div>
-					<p css={getStatusMessageCss(statusTone)}>{statusMessage}</p>
+					<p mix={css(getStatusMessageCss(statusTone))}>{statusMessage}</p>
 				</section>
-				<section css={cardCss}>
-					<h2 css={cardTitleCss}>Provider details</h2>
-					<div css={detailGridCss}>
-						<div css={detailItemCss}>
-							<span css={detailLabelCss}>Authorize URL</span>
+				<section mix={css(cardCss)}>
+					<h2 mix={css(cardTitleCss)}>Provider details</h2>
+					<div mix={css(detailGridCss)}>
+						<div mix={css(detailItemCss)}>
+							<span mix={css(detailLabelCss)}>Authorize URL</span>
 							<code>{config.authorizeUrl}</code>
 						</div>
-						<div css={detailItemCss}>
-							<span css={detailLabelCss}>Token URL</span>
+						<div mix={css(detailItemCss)}>
+							<span mix={css(detailLabelCss)}>Token URL</span>
 							<code>{config.tokenUrl}</code>
 						</div>
-						<div css={detailItemCss}>
-							<span css={detailLabelCss}>Flow</span>
-							<span css={detailValueCss}>{config.flow}</span>
+						<div mix={css(detailItemCss)}>
+							<span mix={css(detailLabelCss)}>Flow</span>
+							<span mix={css(detailValueCss)}>{config.flow}</span>
 						</div>
-						<div css={detailItemCss}>
-							<span css={detailLabelCss}>Scopes</span>
-							<span css={detailValueCss}>
+						<div mix={css(detailItemCss)}>
+							<span mix={css(detailLabelCss)}>Scopes</span>
+							<span mix={css(detailValueCss)}>
 								{config.scopes.length ? config.scopes.join(' ') : 'None'}
 							</span>
 						</div>
@@ -906,7 +909,7 @@ export function ConnectOauthRoute(handle: Handle) {
 							href={config.dashboardUrl}
 							target="_blank"
 							rel="noreferrer noopener"
-							css={primaryLinkCss}
+							mix={css(primaryLinkCss)}
 						>
 							Open provider dashboard
 						</a>
@@ -914,77 +917,93 @@ export function ConnectOauthRoute(handle: Handle) {
 				</section>
 				{renderExistingConnectorConfig()}
 				{currentStep === 'setup' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>
 							1. {existingConnectorConfig ? 'Review' : 'Save'} OAuth client
 							configuration
 						</h2>
 						{renderProviderInstructions()}
 						{renderAllowedHosts()}
 						<form
-							on={{ submit: handleSetupSubmit }}
-							css={{ display: 'grid', gap: spacing.md }}
+							mix={[
+								on('submit', handleSetupSubmit),
+								css({ display: 'grid', gap: spacing.md }),
+							]}
 						>
-							<label css={fieldCss}>
-								<span css={fieldLabelCss}>Client ID</span>
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Client ID</span>
 								<input
 									name="clientId"
 									required
 									value={clientIdInput}
-									on={{
-										input: (event) => {
-											clientIdInput = event.currentTarget.value
-											update()
-										},
-									}}
-									css={inputCss}
+									mix={[
+										on(
+											'input',
+
+											(event) => {
+												clientIdInput = event.currentTarget.value
+												update()
+											},
+										),
+
+										css(inputCss),
+									]}
 								/>
 							</label>
-							<p css={descriptionCss}>
+							<p mix={css(descriptionCss)}>
 								Saved as <code>{config.clientIdValueName}</code>
 								{hasStoredClientId ? '.' : ' after you continue.'}
 							</p>
 							{config.flow === 'confidential' ? (
 								hasStoredClientSecret && !revealStoredClientSecretField ? (
-									<section css={insetCardCss}>
-										<p css={{ margin: 0, color: colors.text }}>
+									<section mix={css(insetCardCss)}>
+										<p mix={css({ margin: 0, color: colors.text })}>
 											Using the stored client secret in{' '}
 											<code>
 												{config.clientSecretSecretName ?? 'unknown secret'}
 											</code>
 											.
 										</p>
-										<p css={descriptionCss}>
+										<p mix={css(descriptionCss)}>
 											You can continue without re-entering it.
 										</p>
 										<button
 											type="button"
-											css={secondaryButtonCss}
-											on={{
-												click: () => {
-													revealStoredClientSecretField = true
-													update()
-												},
-											}}
+											mix={[
+												css(secondaryButtonCss),
+												on(
+													'click',
+
+													() => {
+														revealStoredClientSecretField = true
+														update()
+													},
+												),
+											]}
 										>
 											Replace stored client secret
 										</button>
 									</section>
 								) : (
-									<label css={fieldCss}>
-										<span css={fieldLabelCss}>Client Secret</span>
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Client Secret</span>
 										<input
 											name="clientSecret"
 											type="password"
 											required
 											value={clientSecretInput}
-											on={{
-												input: (event) => {
-													clientSecretInput = event.currentTarget.value
-													update()
-												},
-											}}
-											css={inputCss}
+											mix={[
+												on(
+													'input',
+
+													(event) => {
+														clientSecretInput = event.currentTarget.value
+														update()
+													},
+												),
+
+												css(inputCss),
+											]}
 										/>
 									</label>
 								)
@@ -992,7 +1011,7 @@ export function ConnectOauthRoute(handle: Handle) {
 							<button
 								type="submit"
 								disabled={submitting}
-								css={primaryButtonCss}
+								mix={css(primaryButtonCss)}
 							>
 								Save configuration
 							</button>
@@ -1000,13 +1019,13 @@ export function ConnectOauthRoute(handle: Handle) {
 					</section>
 				) : null}
 				{currentStep === 'connect' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>2. Connect</h2>
-						<p css={{ margin: 0, color: colors.text }}>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>2. Connect</h2>
+						<p mix={css({ margin: 0, color: colors.text })}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
 						{existingConnectorConfig ? (
-							<p css={descriptionCss}>
+							<p mix={css(descriptionCss)}>
 								Using stored client ID <code>{config.clientIdValueName}</code>
 								{config.flow === 'confidential' && hasStoredClientSecret
 									? ` and stored client secret ${config.clientSecretSecretName ?? ''}.`
@@ -1015,52 +1034,56 @@ export function ConnectOauthRoute(handle: Handle) {
 						) : null}
 						<button
 							type="button"
-							on={{ click: () => void handleConnect() }}
 							disabled={submitting}
-							css={primaryButtonCss}
+							mix={[
+								on('click', () => void handleConnect()),
+								css(primaryButtonCss),
+							]}
 						>
 							Connect {config.provider}
 						</button>
 					</section>
 				) : null}
 				{currentStep === 'success' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>4. Success</h2>
-						<div css={detailGridCss}>
-							<div css={detailItemCss}>
-								<span css={detailLabelCss}>Access token saved</span>
-								<strong css={detailValueCss}>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>4. Success</h2>
+						<div mix={css(detailGridCss)}>
+							<div mix={css(detailItemCss)}>
+								<span mix={css(detailLabelCss)}>Access token saved</span>
+								<strong mix={css(detailValueCss)}>
 									{accessTokenSaved ? 'Yes' : 'No'}
 								</strong>
 							</div>
-							<div css={detailItemCss}>
-								<span css={detailLabelCss}>Refresh token saved</span>
-								<strong css={detailValueCss}>
+							<div mix={css(detailItemCss)}>
+								<span mix={css(detailLabelCss)}>Refresh token saved</span>
+								<strong mix={css(detailValueCss)}>
 									{refreshTokenSaved ? 'Yes' : 'No'}
 								</strong>
 							</div>
 						</div>
-						<h3 css={sectionTitleCss}>Host approvals</h3>
-						<p css={{ margin: 0, color: colors.text }}>
+						<h3 mix={css(sectionTitleCss)}>Host approvals</h3>
+						<p mix={css({ margin: 0, color: colors.text })}>
 							Hosts are never auto-approved. Review these allowed hosts in your
 							account secrets.
 						</p>
-						<ul css={listCss}>
+						<ul mix={css(listCss)}>
 							{config.allowedHosts.map((host) => (
 								<li key={host}>{host}</li>
 							))}
 						</ul>
 						{hostApprovalLinks.length > 0 ? (
-							<div css={insetCardCss}>
-								<p css={descriptionCss}>Approve each token host directly:</p>
-								<ul css={listCss}>
+							<div mix={css(insetCardCss)}>
+								<p mix={css(descriptionCss)}>
+									Approve each token host directly:
+								</p>
+								<ul mix={css(listCss)}>
 									{hostApprovalLinks.map((link) => (
 										<li key={`${link.secretName}:${link.host}`}>
 											<a
 												href={link.approvalUrl}
 												target="_blank"
 												rel="noreferrer noopener"
-												css={primaryLinkCss}
+												mix={css(primaryLinkCss)}
 											>
 												Approve <code>{link.host}</code> for{' '}
 												<code>{link.secretName}</code>
@@ -1074,7 +1097,7 @@ export function ConnectOauthRoute(handle: Handle) {
 							href="/account/secrets"
 							target="_blank"
 							rel="noreferrer"
-							css={primaryLinkCss}
+							mix={css(primaryLinkCss)}
 						>
 							Open account secrets
 						</a>

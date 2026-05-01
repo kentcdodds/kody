@@ -232,7 +232,7 @@ export function createJellyfishStatusHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			let banner: { tone: 'success' | 'error'; message: string } | null = null
 
 			if (request.method === 'POST') {
@@ -284,7 +284,7 @@ export function createJellyfishSetupHandler(
 ) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			const status = jellyfish.getStatus()
 			return render(
 				RootLayout({

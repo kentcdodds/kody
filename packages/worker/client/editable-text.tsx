@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 
 type EditableTextProps = {
 	id: string
@@ -110,11 +111,13 @@ export function EditableText(handle: Handle) {
 		if (isEditing) {
 			return (
 				<form
-					on={{ submit: submitEditing }}
-					css={{
-						display: 'block',
-						width: '100%',
-					}}
+					mix={[
+						on('submit', submitEditing),
+						css({
+							display: 'block',
+							width: '100%',
+						}),
+					]}
 				>
 					<input
 						required
@@ -126,23 +129,28 @@ export function EditableText(handle: Handle) {
 						autocomplete="off"
 						value={draftValue}
 						disabled={isSaving}
-						on={{
-							input: handleDraftInput,
-							keydown: handleDraftKeyDown,
-						}}
-						css={{
-							display: 'block',
-							width: 'auto',
-							maxWidth: '100%',
-							minWidth: '1ch',
-							padding: 0,
-							border: 'none',
-							background: 'none',
-							outline: 'none',
-							fieldSizing: 'content',
-							...inheritTextStyles,
-							...props.inputCss,
-						}}
+						mix={[
+							on(
+								'input',
+
+								handleDraftInput,
+							),
+							on('keydown', handleDraftKeyDown),
+
+							css({
+								display: 'block',
+								width: 'auto',
+								maxWidth: '100%',
+								minWidth: '1ch',
+								padding: 0,
+								border: 'none',
+								background: 'none',
+								outline: 'none',
+								fieldSizing: 'content',
+								...inheritTextStyles,
+								...props.inputCss,
+							}),
+						]}
 					/>
 				</form>
 			)
@@ -152,17 +160,19 @@ export function EditableText(handle: Handle) {
 			<button
 				id={buttonId}
 				type="button"
-				on={{ click: startEditing }}
-				css={{
-					display: 'block',
-					width: '100%',
-					padding: 0,
-					border: 'none',
-					background: 'none',
-					cursor: 'pointer',
-					...inheritTextStyles,
-					...props.buttonCss,
-				}}
+				mix={[
+					on('click', startEditing),
+					css({
+						display: 'block',
+						width: '100%',
+						padding: 0,
+						border: 'none',
+						background: 'none',
+						cursor: 'pointer',
+						...inheritTextStyles,
+						...props.buttonCss,
+					}),
+				]}
 			>
 				{props.value.trim() || props.emptyText || 'Edit'}
 			</button>

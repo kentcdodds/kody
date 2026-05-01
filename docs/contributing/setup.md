@@ -283,8 +283,7 @@ If you ever need to do the same operations manually, use:
 - `node tools/ci/preview-resources.ts cleanup --worker-name <name>`
 - `node tools/ci/production-resources.ts ensure --out-config <path>`
 
-## Remix package docs
+## Remix skills
 
-Use the Remix package index for quick navigation:
-
-- `docs/contributing/remix/index.md`
+Use [Remix skills](./remix.md) instead of vendoring generated package docs in
+this repo.

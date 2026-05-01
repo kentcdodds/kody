@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 import {
 	getPathname,
@@ -161,14 +162,14 @@ export function LoginRoute(handle: Handle) {
 		const toggleAction = isSignup ? 'Sign in instead' : 'Sign up instead'
 
 		return (
-			<section css={pageCss}>
-				<header css={pageHeaderCss}>
-					<h2 css={pageTitleCss}>{title}</h2>
-					<p css={pageDescriptionCss}>{description}</p>
+			<section mix={css(pageCss)}>
+				<header mix={css(pageHeaderCss)}>
+					<h2 mix={css(pageTitleCss)}>{title}</h2>
+					<p mix={css(pageDescriptionCss)}>{description}</p>
 				</header>
-				<form css={cardCss} on={{ submit: handleSubmit }}>
-					<label css={fieldCss}>
-						<span css={fieldLabelCss}>Email</span>
+				<form mix={[css(cardCss), on('submit', handleSubmit)]}>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Email</span>
 						<input
 							type="email"
 							name="email"
@@ -176,50 +177,51 @@ export function LoginRoute(handle: Handle) {
 							autoFocus
 							autoComplete="email"
 							placeholder="you@example.com"
-							css={inputCss}
+							mix={css(inputCss)}
 						/>
 					</label>
-					<label css={fieldCss}>
-						<span css={fieldLabelCss}>Password</span>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Password</span>
 						<input
 							type="password"
 							name="password"
 							required
 							autoComplete={isSignup ? 'new-password' : 'current-password'}
 							placeholder="At least 8 characters"
-							css={inputCss}
+							mix={css(inputCss)}
 						/>
 					</label>
 					{!isSignup ? (
 						<label
-							css={{
+							mix={css({
 								display: 'flex',
 								gap: spacing.sm,
 								alignItems: 'flex-start',
 								color: colors.text,
-							}}
+							})}
 						>
 							<input
 								type="checkbox"
 								name="rememberMe"
-								css={{
+								mix={css({
 									marginTop: '0.15rem',
-								}}
+								})}
 							/>
-							<span css={{ display: 'grid', gap: spacing.xs }}>
+
+							<span mix={css({ display: 'grid', gap: spacing.xs })}>
 								<span
-									css={{
+									mix={css({
 										fontWeight: typography.fontWeight.medium,
 										fontSize: typography.fontSize.sm,
-									}}
+									})}
 								>
 									Remember me
 								</span>
 								<span
-									css={{
+									mix={css({
 										color: colors.textMuted,
 										fontSize: typography.fontSize.sm,
-									}}
+									})}
 								>
 									Stay signed in for 30 days. Active sessions renew after 14
 									days.
@@ -227,35 +229,39 @@ export function LoginRoute(handle: Handle) {
 							</span>
 						</label>
 					) : null}
-					<button type="submit" disabled={isSubmitting} css={primaryButtonCss}>
+					<button
+						type="submit"
+						disabled={isSubmitting}
+						mix={css(primaryButtonCss)}
+					>
 						{isSubmitting ? 'Submitting...' : submitLabel}
 					</button>
 					{message ? (
 						<p
-							css={{
+							aria-live="polite"
+							mix={css({
 								color: status === 'error' ? colors.error : colors.text,
 								fontSize: typography.fontSize.sm,
-							}}
-							aria-live="polite"
+							})}
 						>
 							{message}
 						</p>
 					) : null}
 				</form>
-				<div css={{ display: 'grid', gap: spacing.sm }}>
+				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 					<a
 						href={buildAuthPath(isSignup ? 'login' : 'signup', redirectTo)}
 						aria-pressed={isSignup}
-						css={actionLinkCss}
+						mix={css(actionLinkCss)}
 					>
 						{toggleLabel} {toggleAction}
 					</a>
 					{!isSignup ? (
-						<a href="/reset-password" css={actionLinkCss}>
+						<a href="/reset-password" mix={css(actionLinkCss)}>
 							Forgot password?
 						</a>
 					) : null}
-					<a href="/" css={mutedLinkCss}>
+					<a href="/" mix={css(mutedLinkCss)}>
 						Back home
 					</a>
 				</div>

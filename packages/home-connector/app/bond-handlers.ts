@@ -151,7 +151,7 @@ export function createBondStatusHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				try {
 					const bridges = await bond.scan()
@@ -337,7 +337,7 @@ export function createBondSetupHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			let banner: { tone: 'success' | 'error'; message: string } | null = null
 
 			if (request.method === 'POST') {

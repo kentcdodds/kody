@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -117,23 +118,27 @@ export function ResetPasswordRoute(handle: Handle) {
 				: 'We will send a reset link to your email.'
 
 		return (
-			<section css={pageCss}>
-				<header css={pageHeaderCss}>
-					<h2 css={pageTitleCss}>{title}</h2>
-					<p css={pageDescriptionCss}>{description}</p>
+			<section mix={css(pageCss)}>
+				<header mix={css(pageHeaderCss)}>
+					<h2 mix={css(pageTitleCss)}>{title}</h2>
+					<p mix={css(pageDescriptionCss)}>{description}</p>
 				</header>
 				<form
-					css={cardCss}
-					on={{
-						submit: (event) =>
-							mode === 'confirm'
-								? submitResetConfirm(event, token)
-								: submitResetRequest(event),
-					}}
+					mix={[
+						css(cardCss),
+						on(
+							'submit',
+
+							(event) =>
+								mode === 'confirm'
+									? submitResetConfirm(event, token)
+									: submitResetRequest(event),
+						),
+					]}
 				>
 					{mode === 'confirm' ? (
-						<label css={fieldCss}>
-							<span css={fieldLabelCss}>New password</span>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>New password</span>
 							<input
 								type="password"
 								name="password"
@@ -141,12 +146,12 @@ export function ResetPasswordRoute(handle: Handle) {
 								autoComplete="new-password"
 								placeholder="At least 8 characters"
 								disabled={isSubmitting}
-								css={inputCss}
+								mix={css(inputCss)}
 							/>
 						</label>
 					) : (
-						<label css={fieldCss}>
-							<span css={fieldLabelCss}>Email</span>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Email</span>
 							<input
 								type="email"
 								name="email"
@@ -154,11 +159,15 @@ export function ResetPasswordRoute(handle: Handle) {
 								autoComplete="email"
 								placeholder="you@example.com"
 								disabled={isSubmitting}
-								css={inputCss}
+								mix={css(inputCss)}
 							/>
 						</label>
 					)}
-					<button type="submit" disabled={isSubmitting} css={primaryButtonCss}>
+					<button
+						type="submit"
+						disabled={isSubmitting}
+						mix={css(primaryButtonCss)}
+					>
 						{isSubmitting
 							? 'Submitting...'
 							: mode === 'confirm'
@@ -167,21 +176,21 @@ export function ResetPasswordRoute(handle: Handle) {
 					</button>
 					{message ? (
 						<p
-							css={{
+							aria-live="polite"
+							mix={css({
 								color: status === 'error' ? colors.error : colors.text,
 								fontSize: typography.fontSize.sm,
-							}}
-							aria-live="polite"
+							})}
 						>
 							{message}
 						</p>
 					) : null}
 				</form>
-				<div css={{ display: 'grid', gap: spacing.sm }}>
-					<a href="/login" css={primaryLinkCss}>
+				<div mix={css({ display: 'grid', gap: spacing.sm })}>
+					<a href="/login" mix={css(primaryLinkCss)}>
 						Back to sign in
 					</a>
-					<a href="/" css={mutedLinkCss}>
+					<a href="/" mix={css(mutedLinkCss)}>
 						Back home
 					</a>
 				</div>

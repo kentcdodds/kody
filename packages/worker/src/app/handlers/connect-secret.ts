@@ -28,7 +28,7 @@ const connectSecretConnectorBindingPrefix = '_connector-secret:'
 export function createConnectSecretHandler(_env: Env) {
 	return {
 		middleware: [],
-		async action({ request }) {
+		async handler({ request }) {
 			const { session, setCookie } = await readAuthSessionResult(request)
 			if (!session) {
 				return redirectToLogin(request)
@@ -48,7 +48,7 @@ export function createConnectSecretHandler(_env: Env) {
 export function createConnectSecretApiHandler(env: Env) {
 	return {
 		middleware: [],
-		async action({ request }) {
+		async handler({ request }) {
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)

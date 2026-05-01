@@ -7,7 +7,7 @@
 		"lib": ["DOM", "DOM.Iterable", "ES2022"],
 		"types": [],
 		"jsx": "react-jsx",
-		"jsxImportSource": "remix/component"
+		"jsxImportSource": "remix/ui"
 	},
 	"include": ["./client/**/*.ts", "./client/**/*.tsx", "./client/**/*.d.ts"],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]

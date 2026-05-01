@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import {
 	buildAccountSecretPath,
 	parseAccountSecretId,
@@ -434,6 +435,7 @@ function filterSecrets(
 			...secret.allowedCapabilities,
 			...secret.allowedPackages,
 		]
+
 			.join(' ')
 			.toLowerCase()
 		return haystack.includes(search)
@@ -918,6 +920,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			},
 			...appOptions,
 		]
+
 		const currentDataKey = getDataRefreshKey(currentHref)
 		const isRefreshingForLocationChange =
 			status !== 'loading' &&
@@ -951,42 +954,44 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		return (
 			<section
-				css={{
+				mix={css({
 					maxWidth: '96rem',
 					margin: '0 auto',
 					display: 'grid',
 					gap: spacing.xl,
-				}}
+				})}
 			>
 				<header
-					css={{
+					mix={css({
 						display: 'flex',
 						justifyContent: 'space-between',
 						alignItems: 'flex-start',
 						gap: spacing.md,
 						flexWrap: 'wrap',
-					}}
+					})}
 				>
-					<div css={{ display: 'grid', gap: spacing.xs }}>
+					<div mix={css({ display: 'grid', gap: spacing.xs })}>
 						<h1
-							css={{
+							mix={css({
 								fontSize: typography.fontSize.xl,
 								fontWeight: typography.fontWeight.semibold,
 								color: colors.text,
 								margin: 0,
-							}}
+							})}
 						>
 							{email ? `${email} secrets` : 'Secrets'}
 						</h1>
-						<p css={{ color: colors.textMuted, margin: 0 }}>
+						<p mix={css({ color: colors.textMuted, margin: 0 })}>
 							Create, update, and delete the secrets available to your account
 							and package apps.
 						</p>
 					</div>
 					<button
 						type="button"
-						on={{ click: () => navigate(buildNewSecretHref()) }}
-						css={primaryButtonCss}
+						mix={[
+							on('click', () => navigate(buildNewSecretHref())),
+							css(primaryButtonCss),
+						]}
 					>
 						New secret
 					</button>
@@ -994,47 +999,47 @@ export function AccountSecretsRoute(handle: Handle) {
 
 				{approvalCard ? (
 					<section
-						css={{
+						mix={css({
 							display: 'grid',
 							gap: spacing.md,
 							padding: spacing.lg,
 							borderRadius: radius.lg,
 							border: `1px solid ${colors.primary}`,
 							backgroundColor: colors.primarySoftest,
-						}}
+						})}
 					>
-						<div css={{ display: 'grid', gap: spacing.xs }}>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
 							<h2
-								css={{
+								mix={css({
 									margin: 0,
 									fontSize: typography.fontSize.lg,
 									fontWeight: typography.fontWeight.semibold,
 									color: colors.text,
-								}}
+								})}
 							>
 								Approve secret access
 							</h2>
 							{approvalCard.requestedPackageId ? (
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Allow package <code>{approvalCard.requestedPackageId}</code>{' '}
 									to use secret <code>{approvalCard.name}</code> from the{' '}
 									{getScopeLabel(approvalCard.scope)} scope.
 								</p>
 							) : (
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Allow <code>{approvalCard.requestedHost}</code> to receive
 									secret <code>{approvalCard.name}</code> from the{' '}
 									{getScopeLabel(approvalCard.scope)} scope.
 								</p>
 							)}
 							{approvalCard.requestedCapability ? (
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Requested capability:{' '}
 									<code>{approvalCard.requestedCapability}</code>
 								</p>
 							) : null}
 							{approvalCard.requestedPackageId ? (
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Current allowed packages:{' '}
 									{approvalCard.currentAllowedPackages.length > 0
 										? approvalCard.currentAllowedPackages
@@ -1045,7 +1050,7 @@ export function AccountSecretsRoute(handle: Handle) {
 										: 'none'}
 								</p>
 							) : (
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Current allowed hosts:{' '}
 									{approvalCard.currentAllowedHosts.length > 0
 										? approvalCard.currentAllowedHosts.join(', ')
@@ -1053,20 +1058,26 @@ export function AccountSecretsRoute(handle: Handle) {
 								</p>
 							)}
 						</div>
-						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+						<div
+							mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
+						>
 							<button
 								type="button"
 								disabled={isMutating || isRefreshingForLocationChange}
-								on={{ click: () => void submitApproval('approve') }}
-								css={primaryButtonCss}
+								mix={[
+									on('click', () => void submitApproval('approve')),
+									css(primaryButtonCss),
+								]}
 							>
 								Approve
 							</button>
 							<button
 								type="button"
 								disabled={isMutating || isRefreshingForLocationChange}
-								on={{ click: () => void submitApproval('reject') }}
-								css={secondaryButtonCss}
+								mix={[
+									on('click', () => void submitApproval('reject')),
+									css(secondaryButtonCss),
+								]}
 							>
 								Reject
 							</button>
@@ -1075,39 +1086,39 @@ export function AccountSecretsRoute(handle: Handle) {
 				) : null}
 				{alreadyAddedNotice ? (
 					<section
-						css={{
+						role="status"
+						mix={css({
 							display: 'grid',
 							gap: spacing.sm,
 							padding: spacing.lg,
 							borderRadius: radius.lg,
 							border: `1px solid ${colors.primary}`,
 							backgroundColor: colors.primarySoftest,
-						}}
-						role="status"
+						})}
 					>
-						<div css={{ display: 'grid', gap: spacing.xs }}>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
 							<h2
-								css={{
+								mix={css({
 									margin: 0,
 									fontSize: typography.fontSize.lg,
 									fontWeight: typography.fontWeight.semibold,
 									color: colors.text,
-								}}
+								})}
 							>
 								Already added
 							</h2>
-							<p css={{ margin: 0, color: colors.textMuted }}>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								This request is already complete for this secret.
 							</p>
 						</div>
 						<ul
-							css={{
+							mix={css({
 								margin: 0,
 								paddingLeft: spacing.lg,
 								color: colors.textMuted,
 								display: 'grid',
 								gap: spacing.xs,
-							}}
+							})}
 						>
 							{alreadyAddedNotice.items.map((item) => (
 								<li key={item}>{item}</li>
@@ -1117,22 +1128,24 @@ export function AccountSecretsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'loading' ? (
-					<p css={{ color: colors.textMuted, margin: 0 }}>Loading secrets…</p>
+					<p mix={css({ color: colors.textMuted, margin: 0 })}>
+						Loading secrets…
+					</p>
 				) : null}
 				{message ? (
 					<p
-						css={{
+						role="alert"
+						mix={css({
 							color: status === 'error' ? colors.error : colors.text,
 							margin: 0,
-						}}
-						role="alert"
+						})}
 					>
 						{message}
 					</p>
 				) : null}
 
 				<section
-					css={{
+					mix={css({
 						display: 'grid',
 						gridTemplateColumns: 'minmax(18rem, 22rem) minmax(0, 1fr)',
 						gap: spacing.lg,
@@ -1140,63 +1153,73 @@ export function AccountSecretsRoute(handle: Handle) {
 						[mq.mobile]: {
 							gridTemplateColumns: '1fr',
 						},
-					}}
+					})}
 				>
 					<aside
-						css={{
+						mix={css({
 							...cardCss,
 							alignSelf: 'start',
-						}}
+						})}
 					>
-						<div css={{ display: 'grid', gap: spacing.xs }}>
-							<h2 css={cardTitleCss}>Saved secrets</h2>
-							<p css={descriptionCss}>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<h2 mix={css(cardTitleCss)}>Saved secrets</h2>
+							<p mix={css(descriptionCss)}>
 								Select a secret to edit its metadata, value, and allowed hosts.
 							</p>
 						</div>
 						<div
-							css={{
+							mix={css({
 								display: 'grid',
 								gap: spacing.sm,
-							}}
+							})}
 						>
-							<label css={fieldCss}>
-								<span css={fieldLabelCss}>Search</span>
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Search</span>
 								<input
 									type="search"
 									value={filters.search}
 									placeholder="Search secrets"
 									aria-label="Search secrets"
-									on={{
-										input: (event) => {
-											replaceSecretsLocation(
-												buildHrefWithUpdatedFilters({
-													search: event.currentTarget.value,
-												}),
-											)
-										},
-									}}
-									css={inputCss}
+									mix={[
+										on(
+											'input',
+
+											(event) => {
+												replaceSecretsLocation(
+													buildHrefWithUpdatedFilters({
+														search: event.currentTarget.value,
+													}),
+												)
+											},
+										),
+
+										css(inputCss),
+									]}
 								/>
 							</label>
-							<label css={fieldCss}>
-								<span css={fieldLabelCss}>Scope</span>
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Scope</span>
 								<select
 									value={filters.scope}
 									aria-label="Filter secrets by scope"
-									on={{
-										change: (event) => {
-											const nextScope = event.currentTarget
-												.value as SecretFilterScope
-											replaceSecretsLocation(
-												buildHrefWithUpdatedFilters({
-													scope: nextScope,
-													appId: nextScope === 'user' ? '' : filters.appId,
-												}),
-											)
-										},
-									}}
-									css={inputCss}
+									mix={[
+										on(
+											'change',
+
+											(event) => {
+												const nextScope = event.currentTarget
+													.value as SecretFilterScope
+												replaceSecretsLocation(
+													buildHrefWithUpdatedFilters({
+														scope: nextScope,
+														appId: nextScope === 'user' ? '' : filters.appId,
+													}),
+												)
+											},
+										),
+
+										css(inputCss),
+									]}
 								>
 									<option value="all">All scopes</option>
 									<option value="user">User</option>
@@ -1225,29 +1248,29 @@ export function AccountSecretsRoute(handle: Handle) {
 								: null}
 						</div>
 						{status === 'ready' && secrets.length === 0 ? (
-							<p css={{ margin: 0, color: colors.textMuted }}>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								No secrets yet. Create one to get started.
 							</p>
 						) : status === 'ready' && filteredSecrets.length === 0 ? (
-							<p css={{ margin: 0, color: colors.textMuted }}>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
 								No secrets match the current filters.
 							</p>
 						) : (
 							<div
-								css={{
+								mix={css({
 									maxHeight: 'min(65vh, 48rem)',
 									overflowY: 'auto',
 									paddingRight: spacing.xs,
-								}}
+								})}
 							>
 								<ul
-									css={{
+									mix={css({
 										listStyle: 'none',
 										padding: 0,
 										margin: 0,
 										display: 'grid',
 										gap: spacing.sm,
-									}}
+									})}
 								>
 									{filteredSecrets.map((secret) => {
 										const isActive = activeSecretId === secret.id
@@ -1255,60 +1278,66 @@ export function AccountSecretsRoute(handle: Handle) {
 											<li key={secret.id}>
 												<button
 													type="button"
-													on={{
-														click: () => navigate(buildSecretHref(secret)),
-													}}
-													css={{
-														width: '100%',
-														textAlign: 'left',
-														display: 'grid',
-														gap: spacing.xs,
-														padding: spacing.md,
-														borderRadius: radius.md,
-														border: `1px solid ${
-															isActive ? colors.primary : colors.border
-														}`,
-														backgroundColor: isActive
-															? colors.primarySoftest
-															: colors.background,
-														color: colors.text,
-														cursor: 'pointer',
-														transition: `background-color ${transitions.normal}, border-color ${transitions.normal}`,
-													}}
+													mix={[
+														on(
+															'click',
+
+															() => navigate(buildSecretHref(secret)),
+														),
+
+														css({
+															width: '100%',
+															textAlign: 'left',
+															display: 'grid',
+															gap: spacing.xs,
+															padding: spacing.md,
+															borderRadius: radius.md,
+															border: `1px solid ${
+																isActive ? colors.primary : colors.border
+															}`,
+
+															backgroundColor: isActive
+																? colors.primarySoftest
+																: colors.background,
+															color: colors.text,
+															cursor: 'pointer',
+															transition: `background-color ${transitions.normal}, border-color ${transitions.normal}`,
+														}),
+													]}
 												>
 													<div
-														css={{
+														mix={css({
 															display: 'flex',
 															justifyContent: 'space-between',
 															gap: spacing.sm,
 															alignItems: 'baseline',
-														}}
+														})}
 													>
 														<strong>{secret.name}</strong>
 														<span
-															css={{
+															mix={css({
 																fontSize: typography.fontSize.xs,
 																color: colors.textMuted,
-															}}
+															})}
 														>
 															{formatRelativeTtl(secret.ttlMs)}
 														</span>
 													</div>
 													<span
-														css={{
+														mix={css({
 															fontSize: typography.fontSize.sm,
 															color: colors.textMuted,
-														}}
+														})}
 													>
 														{getScopeLabel(secret.scope)}
 														{secret.appTitle ? ` - ${secret.appTitle}` : ''}
 													</span>
 													{secret.description ? (
 														<span
-															css={{
+															mix={css({
 																fontSize: typography.fontSize.sm,
 																color: colors.textMuted,
-															}}
+															})}
 														>
 															{secret.description}
 														</span>
@@ -1323,28 +1352,30 @@ export function AccountSecretsRoute(handle: Handle) {
 					</aside>
 
 					<div
-						css={{
+						mix={css({
 							...cardCss,
 							gap: spacing.lg,
-						}}
+						})}
 					>
 						{showEditor ? (
 							<form
-								css={{ display: 'grid', gap: spacing.lg }}
-								on={{ submit: saveSecretChanges }}
+								mix={[
+									css({ display: 'grid', gap: spacing.lg }),
+									on('submit', saveSecretChanges),
+								]}
 							>
-								<div css={{ display: 'grid', gap: spacing.xs }}>
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
 									<h2
-										css={{
+										mix={css({
 											margin: 0,
 											fontSize: typography.fontSize.lg,
 											fontWeight: typography.fontWeight.semibold,
 											color: colors.text,
-										}}
+										})}
 									>
 										{selection.isCreating ? 'New secret' : selectedSecret?.name}
 									</h2>
-									<p css={{ margin: 0, color: colors.textMuted }}>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										{selection.isCreating
 											? 'Create a new user or app secret.'
 											: 'Update the secret value and metadata for this entry.'}
@@ -1352,54 +1383,65 @@ export function AccountSecretsRoute(handle: Handle) {
 								</div>
 
 								<div
-									css={{
+									mix={css({
 										display: 'grid',
 										gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 										gap: spacing.md,
 										[mq.mobile]: {
 											gridTemplateColumns: '1fr',
 										},
-									}}
+									})}
 								>
-									<label css={fieldCss}>
-										<span css={fieldLabelCss}>Name</span>
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Name</span>
 										<input
 											type="text"
 											required
 											value={editorState.name}
 											placeholder="api-token"
-											on={{
-												input: (event) => {
-													editorState = {
-														...editorState,
-														name: event.currentTarget.value,
-													}
-													handle.update()
-												},
-											}}
-											css={inputCss}
+											mix={[
+												on(
+													'input',
+
+													(event) => {
+														editorState = {
+															...editorState,
+															name: event.currentTarget.value,
+														}
+														handle.update()
+													},
+												),
+
+												css(inputCss),
+											]}
 										/>
 									</label>
 
-									<label css={fieldCss}>
-										<span css={fieldLabelCss}>Scope</span>
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Scope</span>
 										<select
 											value={editorState.scope}
-											on={{
-												change: (event) => {
-													const scope = event.currentTarget.value as SecretScope
-													editorState = {
-														...editorState,
-														scope,
-														appId:
-															scope === 'app'
-																? editorState.appId || apps[0]?.id || ''
-																: '',
-													}
-													handle.update()
-												},
-											}}
-											css={inputCss}
+											mix={[
+												on(
+													'change',
+
+													(event) => {
+														const scope = event.currentTarget
+															.value as SecretScope
+														editorState = {
+															...editorState,
+															scope,
+															appId:
+																scope === 'app'
+																	? editorState.appId || apps[0]?.id || ''
+																	: '',
+														}
+														handle.update()
+													},
+												),
+
+												css(inputCss),
+											]}
 										>
 											<option value="user">User</option>
 											{canCreateAppSecrets ? (
@@ -1462,44 +1504,56 @@ export function AccountSecretsRoute(handle: Handle) {
 									allowedHostsListName="allowed-hosts"
 									allowedCapabilitiesListName="allowed-capabilities"
 								/>
-								<div css={{ display: 'grid', gap: spacing.sm }}>
-									<div css={{ display: 'grid', gap: spacing.xs }}>
-										<span css={fieldLabelCss}>Allowed packages</span>
-										<p css={{ margin: 0, color: colors.textMuted }}>
+
+								<div mix={css({ display: 'grid', gap: spacing.sm })}>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<span mix={css(fieldLabelCss)}>Allowed packages</span>
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
 											Only listed package ids may read this secret via package
 											secret mounts.
 										</p>
 									</div>
-									<div css={{ display: 'grid', gap: spacing.sm }}>
+									<div mix={css({ display: 'grid', gap: spacing.sm })}>
 										{editorState.allowedPackages.map((packageEntry) => (
 											<div
 												key={packageEntry.id}
-												css={{
+												mix={css({
 													display: 'grid',
 													gridTemplateColumns: 'minmax(0, 1fr) auto',
 													gap: spacing.sm,
-												}}
+												})}
 											>
 												<input
 													type="text"
 													value={packageEntry.value}
 													placeholder="saved package id"
-													on={{
-														input: (event) => {
-															updateAllowedPackage(
-																packageEntry.id,
-																event.currentTarget.value,
-															)
-														},
-													}}
-													css={inputCss}
+													mix={[
+														on(
+															'input',
+
+															(event) => {
+																updateAllowedPackage(
+																	packageEntry.id,
+																	event.currentTarget.value,
+																)
+															},
+														),
+
+														css(inputCss),
+													]}
 												/>
+
 												<button
 													type="button"
-													on={{
-														click: () => removeAllowedPackage(packageEntry.id),
-													}}
-													css={secondaryButtonCss}
+													mix={[
+														on(
+															'click',
+
+															() => removeAllowedPackage(packageEntry.id),
+														),
+
+														css(secondaryButtonCss),
+													]}
 												>
 													Remove
 												</button>
@@ -1509,8 +1563,10 @@ export function AccountSecretsRoute(handle: Handle) {
 									<div>
 										<button
 											type="button"
-											on={{ click: () => addAllowedPackage() }}
-											css={secondaryButtonCss}
+											mix={[
+												on('click', () => addAllowedPackage()),
+												css(secondaryButtonCss),
+											]}
 										>
 											Add package
 										</button>
@@ -1519,7 +1575,7 @@ export function AccountSecretsRoute(handle: Handle) {
 
 								{selectedSecret ? (
 									<div
-										css={{
+										mix={css({
 											display: 'grid',
 											gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 											gap: spacing.md,
@@ -1530,23 +1586,23 @@ export function AccountSecretsRoute(handle: Handle) {
 											[mq.mobile]: {
 												gridTemplateColumns: '1fr',
 											},
-										}}
+										})}
 									>
-										<div css={{ display: 'grid', gap: spacing.xs }}>
-											<span css={fieldLabelCss}>Created</span>
-											<span css={{ color: colors.textMuted }}>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<span mix={css(fieldLabelCss)}>Created</span>
+											<span mix={css({ color: colors.textMuted })}>
 												{formatTimestamp(selectedSecret.createdAt)}
 											</span>
 										</div>
-										<div css={{ display: 'grid', gap: spacing.xs }}>
-											<span css={fieldLabelCss}>Updated</span>
-											<span css={{ color: colors.textMuted }}>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<span mix={css(fieldLabelCss)}>Updated</span>
+											<span mix={css({ color: colors.textMuted })}>
 												{formatTimestamp(selectedSecret.updatedAt)}
 											</span>
 										</div>
-										<div css={{ display: 'grid', gap: spacing.xs }}>
-											<span css={fieldLabelCss}>Expiry</span>
-											<span css={{ color: colors.textMuted }}>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<span mix={css(fieldLabelCss)}>Expiry</span>
+											<span mix={css({ color: colors.textMuted })}>
 												{formatRelativeTtl(selectedSecret.ttlMs)}
 											</span>
 										</div>
@@ -1554,11 +1610,11 @@ export function AccountSecretsRoute(handle: Handle) {
 								) : null}
 
 								<div
-									css={{
+									mix={css({
 										display: 'flex',
 										gap: spacing.sm,
 										flexWrap: 'wrap',
-									}}
+									})}
 								>
 									<button
 										type="submit"
@@ -1566,7 +1622,7 @@ export function AccountSecretsRoute(handle: Handle) {
 											isMutating ||
 											(editorState.scope === 'app' && !editorState.appId)
 										}
-										css={primaryButtonCss}
+										mix={css(primaryButtonCss)}
 									>
 										{saveState === 'saving' ? 'Saving...' : 'Save'}
 									</button>
@@ -1589,7 +1645,7 @@ export function AccountSecretsRoute(handle: Handle) {
 													? `Click again to delete "${editorState.name}"`
 													: `Delete secret "${editorState.name}"`
 											}
-											css={dangerButtonCss}
+											mix={css(dangerButtonCss)}
 										>
 											{saveState === 'deleting'
 												? 'Deleting...'
@@ -1601,18 +1657,18 @@ export function AccountSecretsRoute(handle: Handle) {
 								</div>
 							</form>
 						) : (
-							<div css={{ display: 'grid', gap: spacing.sm }}>
+							<div mix={css({ display: 'grid', gap: spacing.sm })}>
 								<h2
-									css={{
+									mix={css({
 										margin: 0,
 										fontSize: typography.fontSize.lg,
 										fontWeight: typography.fontWeight.semibold,
 										color: colors.text,
-									}}
+									})}
 								>
 									Select a secret
 								</h2>
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Pick a secret from the list to edit it, or create a new one.
 								</p>
 							</div>

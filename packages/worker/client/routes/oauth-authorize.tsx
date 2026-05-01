@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import {
 	fetchSessionInfo,
 	type SessionInfo,
@@ -241,33 +242,33 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				: 'Delete stored client'
 
 		return (
-			<section css={pageCss}>
-				<header css={headerCss}>
-					<span css={eyebrowCss}>Kody secure connection</span>
-					<h2 css={pageTitleCss}>Authorize access</h2>
-					<p css={pageDescriptionCss}>
+			<section mix={css(pageCss)}>
+				<header mix={css(headerCss)}>
+					<span mix={css(eyebrowCss)}>Kody secure connection</span>
+					<h2 mix={css(pageTitleCss)}>Authorize access</h2>
+					<p mix={css(pageDescriptionCss)}>
 						{clientLabel} wants to access your kody account.
 					</p>
 				</header>
-				<section css={cardCss}>
-					<p css={sectionTitleCss}>Requested scopes</p>
-					<p css={descriptionCss}>{scopeLabel}</p>
+				<section mix={css(cardCss)}>
+					<p mix={css(sectionTitleCss)}>Requested scopes</p>
+					<p mix={css(descriptionCss)}>{scopeLabel}</p>
 				</section>
 				{isSessionLoading ? (
-					<p css={descriptionCss}>Checking your session...</p>
+					<p mix={css(descriptionCss)}>Checking your session...</p>
 				) : null}
 				{isLoggedIn ? (
-					<section css={insetCardCss}>
+					<section mix={css(insetCardCss)}>
 						<p
-							css={{
+							mix={css({
 								margin: 0,
 								fontWeight: typography.fontWeight.medium,
 								color: colors.text,
-							}}
+							})}
 						>
 							Signed in as {sessionEmail}
 						</p>
-						<p css={descriptionCss}>
+						<p mix={css(descriptionCss)}>
 							{resetCompleted
 								? 'Start the connection again from your client to continue with this account.'
 								: 'Approve to continue with this account.'}
@@ -275,20 +276,20 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					</section>
 				) : null}
 				{status === 'loading' ? (
-					<p css={descriptionCss}>Loading authorization details...</p>
+					<p mix={css(descriptionCss)}>Loading authorization details...</p>
 				) : null}
 				{message ? (
 					<p
-						css={getAlertCardCss(message.type)}
 						role={message.type === 'error' ? 'alert' : undefined}
+						mix={css(getAlertCardCss(message.type))}
 					>
 						{message.text}
 					</p>
 				) : null}
 				{showResetClientCard ? (
-					<section css={cardCss}>
-						<p css={sectionTitleCss}>Reset stored connection</p>
-						<p css={descriptionCss}>
+					<section mix={css(cardCss)}>
+						<p mix={css(sectionTitleCss)}>Reset stored connection</p>
+						<p mix={css(descriptionCss)}>
 							Delete this trusted client&apos;s saved registration and grants,
 							then start the connection again from the client to create a fresh
 							record.
@@ -297,13 +298,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							<button
 								type="button"
 								disabled={resetClientDisabled}
-								on={{ click: () => submitDecision('reset-client') }}
-								css={dangerButtonCss}
+								mix={[
+									on('click', () => submitDecision('reset-client')),
+									css(dangerButtonCss),
+								]}
 							>
 								{resetClientLabel}
 							</button>
 						) : isSessionReady ? (
-							<p css={descriptionCss}>
+							<p mix={css(descriptionCss)}>
 								Sign in first, then delete the stored client record.
 							</p>
 						) : null}
@@ -311,16 +314,18 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				) : null}
 				{showAuthorizeForm ? (
 					<form
-						css={{
-							...cardCss,
-							opacity: formReady ? 1 : 0.7,
-						}}
-						on={{ submit: handleSubmit }}
+						mix={[
+							css({
+								...cardCss,
+								opacity: formReady ? 1 : 0.7,
+							}),
+							on('submit', handleSubmit),
+						]}
 					>
 						{!isLoggedIn && isSessionReady ? (
 							<>
-								<label css={fieldCss}>
-									<span css={fieldLabelCss}>Email</span>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Email</span>
 									<input
 										type="email"
 										name="email"
@@ -328,11 +333,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 										autoComplete="email"
 										placeholder="you@example.com"
 										disabled={actionsDisabled}
-										css={inputCss}
+										mix={css(inputCss)}
 									/>
 								</label>
-								<label css={fieldCss}>
-									<span css={fieldLabelCss}>Password</span>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Password</span>
 									<input
 										type="password"
 										name="password"
@@ -340,31 +345,35 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 										autoComplete="current-password"
 										placeholder="Enter your password"
 										disabled={actionsDisabled}
-										css={inputCss}
+										mix={css(inputCss)}
 									/>
 								</label>
 							</>
 						) : null}
-						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+						<div
+							mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
+						>
 							<button
 								type="submit"
 								disabled={actionsDisabled}
-								css={primaryButtonCss}
+								mix={css(primaryButtonCss)}
 							>
 								{authorizeLabel}
 							</button>
 							<button
 								type="button"
 								disabled={actionsDisabled}
-								on={{ click: () => submitDecision('deny') }}
-								css={secondaryButtonCss}
+								mix={[
+									on('click', () => submitDecision('deny')),
+									css(secondaryButtonCss),
+								]}
 							>
 								Deny
 							</button>
 						</div>
 					</form>
 				) : null}
-				<a href="/" css={mutedLinkCss}>
+				<a href="/" mix={css(mutedLinkCss)}>
 					Back home
 				</a>
 			</section>

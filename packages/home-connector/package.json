@@ -14,11 +14,11 @@
     "@sentry/node": "^10.45.0",
     "dns-equal": "^1.0.0",
     "dns-txt": "^2.0.2",
-    "multicast-dns": "^7.2.3",
-    "multicast-dns-service-types": "^1.1.0",
     "dotenv": "^17.3.1",
     "msw": "^2.12.14",
-    "remix": "3.0.0-alpha.3",
+    "multicast-dns": "^7.2.3",
+    "multicast-dns-service-types": "^1.1.0",
+    "remix": "^3.0.0-beta.0",
     "zod": "^4.3.6"
   }
 }

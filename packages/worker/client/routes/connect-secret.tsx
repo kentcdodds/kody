@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import { navigate } from '#client/client-router.tsx'
 import { getScopeLabel } from './account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
@@ -569,62 +570,62 @@ export function ConnectSecretRoute(handle: Handle) {
 
 		return (
 			<section
-				css={{
+				mix={css({
 					maxWidth: '46rem',
 					margin: '0 auto',
 					display: 'grid',
 					gap: spacing.lg,
-				}}
+				})}
 			>
-				<header css={{ display: 'grid', gap: spacing.xs }}>
+				<header mix={css({ display: 'grid', gap: spacing.xs })}>
 					<span
-						css={{
+						mix={css({
 							fontSize: typography.fontSize.xs,
 							letterSpacing: '0.12em',
 							textTransform: 'uppercase',
 							color: colors.textMuted,
-						}}
+						})}
 					>
 						Kody secure connection
 					</span>
 					<h1
-						css={{
+						mix={css({
 							margin: 0,
 							fontSize: typography.fontSize.xl,
 							fontWeight: typography.fontWeight.semibold,
 							color: colors.text,
-						}}
+						})}
 					>
 						Save a secret
 					</h1>
-					<p css={{ margin: 0, color: colors.textMuted }}>
+					<p mix={css({ margin: 0, color: colors.textMuted })}>
 						{params.description ||
 							'This keeps credentials private and out of chat logs.'}
 					</p>
 				</header>
 
 				{state.step === 'loading' ? (
-					<p css={{ color: colors.textMuted }}>Loading secret details…</p>
+					<p mix={css({ color: colors.textMuted })}>Loading secret details…</p>
 				) : null}
 
 				{state.step === 'update-confirm' && state.existingSecret ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>Secret already exists</h2>
-						<p css={{ margin: 0, color: colors.textMuted }}>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>Secret already exists</h2>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
 							A secret named <strong>{state.existingSecret.name}</strong>{' '}
 							already exists in the {state.existingSecret.scope} scope. Updating
 							will replace the stored value.
 						</p>
 						<div
-							css={{
+							mix={css({
 								display: 'grid',
 								gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 								gap: spacing.md,
-							}}
+							})}
 						>
 							<div>
-								<div css={labelCss}>Current allowed hosts</div>
-								<ul css={listCss}>
+								<div mix={css(labelCss)}>Current allowed hosts</div>
+								<ul mix={css(listCss)}>
 									{state.existingSecret.allowed_hosts.length > 0 ? (
 										state.existingSecret.allowed_hosts.map((host) => (
 											<li key={host}>{host}</li>
@@ -635,8 +636,8 @@ export function ConnectSecretRoute(handle: Handle) {
 								</ul>
 							</div>
 							<div>
-								<div css={labelCss}>Current allowed capabilities</div>
-								<ul css={listCss}>
+								<div mix={css(labelCss)}>Current allowed capabilities</div>
+								<ul mix={css(listCss)}>
 									{state.existingSecret.allowed_capabilities.length > 0 ? (
 										state.existingSecret.allowed_capabilities.map((cap) => (
 											<li key={cap}>{cap}</li>
@@ -647,20 +648,28 @@ export function ConnectSecretRoute(handle: Handle) {
 								</ul>
 							</div>
 						</div>
-						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+						<div
+							mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
+						>
 							<button
 								type="button"
-								css={primaryButtonCss}
-								on={{
-									click: () => setState({ step: 'input' }),
-								}}
+								mix={[
+									css(primaryButtonCss),
+									on(
+										'click',
+
+										() => setState({ step: 'input' }),
+									),
+								]}
 							>
 								Update secret
 							</button>
 							<button
 								type="button"
-								css={secondaryButtonCss}
-								on={{ click: () => setState({ step: 'cancelled' }) }}
+								mix={[
+									css(secondaryButtonCss),
+									on('click', () => setState({ step: 'cancelled' })),
+								]}
 							>
 								Cancel
 							</button>
@@ -669,31 +678,35 @@ export function ConnectSecretRoute(handle: Handle) {
 				) : null}
 
 				{state.step === 'cancelled' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>Cancelled</h2>
-						<p css={{ margin: 0, color: colors.textMuted }}>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>Cancelled</h2>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
 							No changes were made. You can close this tab.
 						</p>
 					</section>
 				) : null}
 
 				{state.step === 'success' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>Secret saved</h2>
-						<p css={{ margin: 0, color: colors.textMuted }}>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>Secret saved</h2>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
 							You can close this tab now.
 						</p>
 					</section>
 				) : null}
 
 				{state.step === 'error' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>Something went wrong</h2>
-						<p css={{ margin: 0, color: colors.textMuted }}>{state.error}</p>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>Something went wrong</h2>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
+							{state.error}
+						</p>
 						<button
 							type="button"
-							css={secondaryButtonCss}
-							on={{ click: () => handleErrorBack() }}
+							mix={[
+								css(secondaryButtonCss),
+								on('click', () => handleErrorBack()),
+							]}
 						>
 							Back
 						</button>
@@ -702,12 +715,12 @@ export function ConnectSecretRoute(handle: Handle) {
 
 				{['input', 'review', 'saving'].includes(state.step) ? (
 					<>
-						<section css={cardCss}>
-							<h2 css={cardTitleCss}>Instructions</h2>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Instructions</h2>
 							{hasInstructions ? (
 								<>
 									{params.instructions ? (
-										<p css={{ margin: 0, color: colors.text }}>
+										<p mix={css({ margin: 0, color: colors.text })}>
 											{params.instructions}
 										</p>
 									) : null}
@@ -721,48 +734,53 @@ export function ConnectSecretRoute(handle: Handle) {
 										</a>
 									) : null}
 									{params.dashboardUrl && !isSafeUrl(params.dashboardUrl) ? (
-										<p css={{ margin: 0, color: colors.textMuted }}>
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
 											The provided dashboard link is invalid.
 										</p>
 									) : null}
 								</>
 							) : (
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Enter the secret value below.
 								</p>
 							)}
 						</section>
 
-						<section css={cardCss}>
-							<h2 css={cardTitleCss}>Enter secret</h2>
+						<section mix={css(cardCss)}>
+							<h2 mix={css(cardTitleCss)}>Enter secret</h2>
 							<div
-								css={{
+								mix={css({
 									display: 'grid',
 									gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 									gap: spacing.md,
 									[mq.mobile]: {
 										gridTemplateColumns: '1fr',
 									},
-								}}
+								})}
 							>
-								<label css={fieldCss}>
-									<span css={fieldLabelCss}>Name</span>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Name</span>
 									<input
 										type="text"
 										required
 										value={state.name}
 										placeholder="api-token"
-										on={{
-											input: (event) =>
-												setState({ name: event.currentTarget.value }),
-										}}
-										css={inputCss}
+										mix={[
+											on(
+												'input',
+
+												(event) =>
+													setState({ name: event.currentTarget.value }),
+											),
+
+											css(inputCss),
+										]}
 									/>
 								</label>
 
-								<label css={fieldCss}>
-									<span css={fieldLabelCss}>Scope</span>
-									<select value={params.scope} disabled css={inputCss}>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Scope</span>
+									<select value={params.scope} disabled mix={css(inputCss)}>
 										<option value="user">{getScopeLabel('user')}</option>
 										<option value="app">{getScopeLabel('app')}</option>
 										<option value="session">{getScopeLabel('session')}</option>
@@ -791,40 +809,40 @@ export function ConnectSecretRoute(handle: Handle) {
 						</section>
 
 						{showReview ? (
-							<section css={cardCss}>
-								<h2 css={cardTitleCss}>Review before saving</h2>
+							<section mix={css(cardCss)}>
+								<h2 mix={css(cardTitleCss)}>Review before saving</h2>
 								<div
-									css={{
+									mix={css({
 										display: 'grid',
 										gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 										gap: spacing.md,
-									}}
+									})}
 								>
 									<div>
-										<div css={labelCss}>Secret name</div>
+										<div mix={css(labelCss)}>Secret name</div>
 										<div>{trimmedName}</div>
 									</div>
 									<div>
-										<div css={labelCss}>Scope</div>
+										<div mix={css(labelCss)}>Scope</div>
 										<div>{getScopeLabel(params.scope)}</div>
 									</div>
 									{state.description ? (
-										<div css={{ gridColumn: '1 / -1' }}>
-											<div css={labelCss}>Description</div>
+										<div mix={css({ gridColumn: '1 / -1' })}>
+											<div mix={css(labelCss)}>Description</div>
 											<div>{state.description}</div>
 										</div>
 									) : null}
 								</div>
 								<div
-									css={{
+									mix={css({
 										display: 'grid',
 										gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 										gap: spacing.md,
-									}}
+									})}
 								>
 									<div>
-										<div css={labelCss}>Hosts to approve</div>
-										<ul css={listCss}>
+										<div mix={css(labelCss)}>Hosts to approve</div>
+										<ul mix={css(listCss)}>
 											{normalizedAllowedHosts.length > 0 ? (
 												normalizedAllowedHosts.map((host) => (
 													<li key={host}>{host}</li>
@@ -835,8 +853,8 @@ export function ConnectSecretRoute(handle: Handle) {
 										</ul>
 									</div>
 									<div>
-										<div css={labelCss}>Capabilities to allow</div>
-										<ul css={listCss}>
+										<div mix={css(labelCss)}>Capabilities to allow</div>
+										<ul mix={css(listCss)}>
 											{normalizedAllowedCapabilities.length > 0 ? (
 												normalizedAllowedCapabilities.map((capability) => (
 													<li key={capability}>{capability}</li>
@@ -847,10 +865,10 @@ export function ConnectSecretRoute(handle: Handle) {
 										</ul>
 									</div>
 								</div>
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Host and capability approvals are managed in account settings.
 								</p>
-								<p css={{ margin: 0, color: colors.textMuted }}>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									The secret value stays hidden and cannot be viewed later.
 								</p>
 							</section>
@@ -858,49 +876,56 @@ export function ConnectSecretRoute(handle: Handle) {
 
 						{showReview ? (
 							<label
-								css={{
+								mix={css({
 									display: 'flex',
 									gap: spacing.xs,
 									alignItems: 'center',
-								}}
+								})}
 							>
 								<input
 									type="checkbox"
 									checked={state.confirmedReview}
-									on={{
-										change: (event) =>
-											setState({
-												confirmedReview: event.currentTarget.checked,
-											}),
-									}}
+									mix={on('change', (event) =>
+										setState({
+											confirmedReview: event.currentTarget.checked,
+										}),
+									)}
 								/>
 								I confirm these details are correct.
 							</label>
 						) : null}
 
 						{state.step === 'saving' ? (
-							<p css={{ color: colors.textMuted }}>Saving secret…</p>
+							<p mix={css({ color: colors.textMuted })}>Saving secret…</p>
 						) : null}
 
-						<div css={{ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' }}>
+						<div
+							mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
+						>
 							{showReview ? (
 								<>
 									<button
 										type="button"
-										css={secondaryButtonCss}
 										disabled={state.step === 'saving'}
-										on={{
-											click: () =>
-												setState({ step: 'input', confirmedReview: false }),
-										}}
+										mix={[
+											css(secondaryButtonCss),
+											on(
+												'click',
+
+												() =>
+													setState({ step: 'input', confirmedReview: false }),
+											),
+										]}
 									>
 										Back
 									</button>
 									<button
 										type="button"
-										css={primaryButtonCss}
 										disabled={state.step === 'saving' || !state.confirmedReview}
-										on={{ click: () => void handleSave() }}
+										mix={[
+											css(primaryButtonCss),
+											on('click', () => void handleSave()),
+										]}
 									>
 										Save secret
 									</button>
@@ -908,27 +933,31 @@ export function ConnectSecretRoute(handle: Handle) {
 							) : (
 								<button
 									type="button"
-									css={primaryButtonCss}
-									on={{
-										click: () => {
-											if (!trimmedName) {
-												setState({
-													step: 'error',
-													error: 'Enter the secret name before continuing.',
-												})
-												return
-											}
-											setState(
-												state.secretValue.trim()
-													? { step: 'review', confirmedReview: false }
-													: {
-															step: 'error',
-															error:
-																'Enter the secret value before continuing.',
-														},
-											)
-										},
-									}}
+									mix={[
+										css(primaryButtonCss),
+										on(
+											'click',
+
+											() => {
+												if (!trimmedName) {
+													setState({
+														step: 'error',
+														error: 'Enter the secret name before continuing.',
+													})
+													return
+												}
+												setState(
+													state.secretValue.trim()
+														? { step: 'review', confirmedReview: false }
+														: {
+																step: 'error',
+																error:
+																	'Enter the secret value before continuing.',
+															},
+												)
+											},
+										),
+									]}
 								>
 									Review
 								</button>

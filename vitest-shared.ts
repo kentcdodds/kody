@@ -36,7 +36,7 @@ export const sharedProjectConfig = {
 		target: 'es2023',
 		jsx: {
 			runtime: 'automatic',
-			importSource: 'remix/component',
+			importSource: 'remix/ui',
 		},
 	},
 	test: {

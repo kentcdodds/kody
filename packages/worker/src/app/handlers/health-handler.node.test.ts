@@ -9,7 +9,7 @@ function createHealthRequestContext() {
 test('health handler returns ok with null commit SHA when unset', async () => {
 	const handler = createHealthHandler({ APP_COMMIT_SHA: undefined })
 
-	const response = await handler.action(createHealthRequestContext())
+	const response = await handler.handler(createHealthRequestContext())
 
 	expect(response.status).toBe(200)
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
@@ -22,7 +22,7 @@ test('health handler returns the configured commit SHA', async () => {
 		APP_COMMIT_SHA: 'f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e',
 	})
 
-	const response = await handler.action(createHealthRequestContext())
+	const response = await handler.handler(createHealthRequestContext())
 
 	expect(response.status).toBe(200)
 	expect(response.headers.get('X-App-Commit-Sha')).toBe(
