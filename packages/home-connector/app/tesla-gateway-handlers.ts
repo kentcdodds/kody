@@ -403,7 +403,7 @@ function buildHandler(input: {
 }) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				const formData = await readPostedFormData(request, 'scan')
 				const action =
