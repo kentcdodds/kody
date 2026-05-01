@@ -57,7 +57,8 @@
     "prepare": "husky",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects",
-    "dev:talks": "npm --prefix docs/talks/kody-mcp-runtime run dev"
+    "dev:talks": "npm --prefix docs/talks/kody-mcp-runtime run dev",
+    "audit:prod": "npm audit --omit=dev"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.14.7",
@@ -84,7 +85,10 @@
     "wrangler": "^4.83.0"
   },
   "overrides": {
-    "@modelcontextprotocol/sdk": "1.29.0"
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "hono": ">=4.12.14",
+    "@hono/node-server": ">=1.19.13",
+    "postcss": ">=8.5.10"
   },
   "engines": {
     "node": "24.x"
