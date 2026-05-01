@@ -17,8 +17,7 @@ This project uses the following resources:
   - Production domains still need Cloudflare-side sender/domain verification
     before sends succeed.
 - Cloudflare Email Routing for inbound mail
-  - Configure MX records and selected route aliases in the Cloudflare
-    dashboard.
+  - Configure MX records and selected route aliases in the Cloudflare dashboard.
   - Route only aliases that should persist inbound mail to the Worker.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
@@ -70,15 +69,12 @@ Local development uses `packages/worker/.env`, which Wrangler loads
 automatically:
 
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
-- `APP_BASE_URL` (optional; defaults to request origin, example
-  `https://app.example.com`; also sets the canonical public origin used for MCP
-  auth metadata, generated UI resources, and email links)
+- `APP_BASE_URL` (optional; defaults to request origin for most app URLs,
+  example `https://app.example.com`; also sets the canonical public origin used
+  for MCP auth metadata, generated UI resources, and email links. Password reset
+  email sends require this value and use `kody@<hostname>` as the sender.)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
-- `CLOUDFLARE_EMAIL_FROM` (optional; sender address for outbound email)
-  Existing app email uses this as a default sender. First-class MCP
-  `email_send` additionally requires a verified sender identity created through
-  the email capabilities.
 - `AI_GATEWAY_ID` (required when `AI_MODE=remote`; deploy workflows sync a
   gateway ID from GitHub Actions secrets so remote inference goes through
   Cloudflare AI Gateway)
@@ -120,14 +116,11 @@ Configure these GitHub Actions secrets and variables for workflows:
   account secrets + package workflows)
 - `COOKIE_SECRET` (same format as local)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
-  deploy as the canonical public app origin and written into the generated
-  Worker `vars` config before deploy)
+  deploy as the canonical public app origin, the password-reset email sender
+  hostname, and written into the generated Worker `vars` config before deploy)
 - `AI_GATEWAY_ID` (required for production deploys that use remote AI inference)
 - `AI_GATEWAY_ID_PREVIEW` (required for preview deploys that use remote AI
   inference)
-- `CLOUDFLARE_EMAIL_FROM` (optional, required to send app email)
-  First-class Kody email also requires the `EMAIL` send binding plus
-  Cloudflare Email Service sender/domain verification.
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
 - `CAPABILITY_REINDEX_SECRET` (optional; triggers post-deploy Vectorize reindex
@@ -160,7 +153,9 @@ How to get/set each value:
   - Store the exact value as a repository secret in GitHub Actions.
 - `APP_BASE_URL` (optional)
   - Use your production app URL (for example `https://app.example.com`).
-  - Add only if you want deploy-time health/version checks to use a fixed URL.
+  - Add it when password reset email should send; the sender is derived as
+    `kody@<hostname>`, so verify that sender/domain in Cloudflare Email Service.
+  - It also lets deploy-time health/version checks use a fixed URL.
   - Production CI writes this into the generated Wrangler `vars` config before
     deploy, rather than syncing it as a Worker secret.
   - Do not also upload `APP_BASE_URL` through `wrangler secret bulk` or pass it
@@ -175,9 +170,6 @@ How to get/set each value:
     ID.
   - Store that value as the preview GitHub Actions secret so preview deploys
     sync a different worker secret than production.
-- `CLOUDFLARE_EMAIL_FROM` (optional)
-  - Use a sender address on a domain onboarded to Cloudflare Email Service (for
-    example `noreply@example.com`), then store it as a GitHub Actions secret.
 - `SENTRY_DSN` (optional)
   - In Sentry: create a project, copy the DSN, and add it as the repository
     secret `SENTRY_DSN`. Production and preview deploy workflows sync it with

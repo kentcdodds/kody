@@ -41,8 +41,8 @@ Quick notes for getting a local kody environment running.
   Cloudflare Artifacts control plane during normal local development. The mock
   covers only the REST control plane; repo-session git clone/pull/push flows
   need a real Git-capable Artifacts remote and are not fully simulated by the
-  local mock. Unless you already set `CLOUDFLARE_EMAIL_FROM`, the launcher also
-  defaults it to `reset@kody.dev`. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the
+  local mock. Password reset email sends as `kody@<APP_BASE_URL hostname>` and
+  requires `APP_BASE_URL` to be set. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the
   local Cloudflare mock entirely. The home connector receives the resolved
   worker origin via `WORKER_BASE_URL`. When `HOME_CONNECTOR_SHARED_SECRET` is
   unset, the launcher generates one and passes it to both the worker and the
