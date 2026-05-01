@@ -29,7 +29,9 @@ function createJsonSchemaTypeDefinition(
 	schema: CapabilityJsonSchema,
 	typeName: string,
 ) {
-	return `type ${typeName} = ${jsonSchemaToType(schema)}`
+	const description = isRecord(schema) ? readDescription(schema) : undefined
+	const comment = description ? `${formatComment(description)}\n` : ''
+	return `${comment}type ${typeName} = ${jsonSchemaToType(schema)}`
 }
 
 function jsonSchemaToType(schema: unknown): string {
@@ -121,7 +123,15 @@ function objectSchemaToType(schema: Record<string, unknown>) {
 
 	const lines = propertyEntries.map(([name, propertySchema]) => {
 		const optional = required.has(name) ? '' : '?'
-		return `\t${formatPropertyName(name)}${optional}: ${jsonSchemaToType(propertySchema)}`
+		const propertyDescription = isRecord(propertySchema)
+			? readDescription(propertySchema)
+			: undefined
+		return [
+			...(propertyDescription
+				? [formatComment(propertyDescription, { indent: '\t' })]
+				: []),
+			`\t${formatPropertyName(name)}${optional}: ${jsonSchemaToType(propertySchema)}`,
+		].join('\n')
 	})
 	if (isRecord(additionalProperties)) {
 		lines.push(`\t[key: string]: ${jsonSchemaToType(additionalProperties)}`)
@@ -144,6 +154,34 @@ function literalToType(value: unknown): string {
 		default:
 			return value === null ? 'null' : 'unknown'
 	}
+}
+
+function readDescription(schema: Record<string, unknown>) {
+	const description = schema.description
+	return typeof description === 'string' && description.trim()
+		? description.trim()
+		: undefined
+}
+
+function formatComment(
+	description: string,
+	options?: {
+		indent?: string
+	},
+) {
+	const indent = options?.indent ?? ''
+	const lines = description
+		.replaceAll('*/', '* /')
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+	if (lines.length === 1) {
+		return `${indent}/** ${lines[0]} */`
+	}
+	return [
+		`${indent}/**`,
+		...lines.map((line) => `${indent} * ${line}`),
+		`${indent} */`,
+	].join('\n')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
