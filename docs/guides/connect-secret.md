@@ -24,7 +24,7 @@ Do **not** ask the user to paste secrets into chat.
 
 Provide the user a URL like:
 
-`https://heykody.dev/connect/secret?name=linearApiKey&description=Linear%20API%20key&allowedHosts=api.linear.app&scope=user&dashboardUrl=https://linear.app/settings/api&instructions=Go%20to%20Linear%20Settings%20%E2%86%92%20API%20%E2%86%92%20Personal%20API%20Keys%20%E2%86%92%20Create%20key&allowedCapabilities=linear_issue_list,linear_issue_create&connector=linear`
+`https://heykody.dev/connect/secret?name=linearApiKey&description=Linear%20API%20key&allowedHosts=api.linear.app&scope=user&dashboardUrl=https://linear.app/settings/api&instructions=Go%20to%20Linear%20Settings%20%E2%86%92%20API%20%E2%86%92%20Personal%20API%20Keys%20%E2%86%92%20Create%20key&allowedCapabilities=linear_issue_list,linear_issue_create&allowedPackages=pkg_123&connector=linear`
 
 ## Query params
 
@@ -34,6 +34,7 @@ Provide the user a URL like:
 | `description`         | no       | Human-readable description shown in the UI.                                                                                |
 | `allowedHosts`        | no       | Comma-separated hosts to review for approval.                                                                              |
 | `allowedCapabilities` | no       | Comma-separated capability names to review. Use only real Kody capability names from `search` or `meta_list_capabilities`. |
+| `allowedPackages`     | no       | Comma-separated saved package ids to review for approval.                                                                  |
 | `scope`               | no       | `user` (default), `session`, or `app`.                                                                                     |
 | `appId`               | no       | Required when `scope=app`. Use the saved package id that owns the package app or package-owned secret scope.               |
 | `dashboardUrl`        | no       | Provider settings link for creating the key.                                                                               |
@@ -43,9 +44,9 @@ Provide the user a URL like:
 ## Approval policy reminders
 
 - Saving a secret does **not** approve outbound hosts.
-- The connect page only shows the requested hosts/capabilities for review.
-- Host and capability approvals are handled in the authenticated account secrets
-  UI after the secret is saved.
+- The connect page shows the requested hosts/capabilities/packages for review.
+- Host, capability, and package approvals are handled in the authenticated
+  account secrets UI after the secret is saved.
 
 ## Agent instructions
 

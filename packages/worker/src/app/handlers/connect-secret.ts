@@ -14,11 +14,13 @@ import {
 import { capabilityMap } from '#mcp/capabilities/registry.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
+import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import {
 	resolveSecret,
 	saveSecret,
 	setSecretAllowedCapabilities,
 	setSecretAllowedHosts,
+	setSecretAllowedPackages,
 } from '#mcp/secrets/service.ts'
 import { secretScopeValues, type SecretScope } from '#mcp/secrets/types.ts'
 import { saveValue } from '#mcp/values/service.ts'
@@ -124,6 +126,10 @@ export function createConnectSecretApiHandler(env: Env) {
 				readOptionalStringArray(body, 'allowedHosts') ?? []
 			const requestedAllowedCapabilities =
 				readOptionalStringArray(body, 'allowedCapabilities') ?? []
+			const requestedAllowedPackages = readOptionalStringArray(
+				body,
+				'allowedPackages',
+			)
 			const normalizedAllowedHosts =
 				requestedAllowedHosts.length > 0
 					? normalizeAllowedHosts(requestedAllowedHosts)
@@ -131,6 +137,10 @@ export function createConnectSecretApiHandler(env: Env) {
 			const normalizedAllowedCapabilities =
 				requestedAllowedCapabilities.length > 0
 					? normalizeAllowedCapabilities(requestedAllowedCapabilities)
+					: []
+			const normalizedAllowedPackages =
+				requestedAllowedPackages && requestedAllowedPackages.length > 0
+					? normalizeAllowedPackages(requestedAllowedPackages)
 					: []
 			const unknownCapabilities = normalizedAllowedCapabilities.filter(
 				(capability) => !capabilityMap[capability],
@@ -227,6 +237,14 @@ export function createConnectSecretApiHandler(env: Env) {
 						allowedCapabilities: normalizedAllowedCapabilities,
 						storageContext,
 					})
+					await setSecretAllowedPackages({
+						env,
+						userId: user.mcpUser.userId,
+						name,
+						scope,
+						allowedPackages: normalizedAllowedPackages,
+						storageContext,
+					})
 				}
 				if (connector) {
 					const resolved = await resolveSecret({
@@ -247,6 +265,10 @@ export function createConnectSecretApiHandler(env: Env) {
 						normalizedAllowedCapabilities.length > 0
 							? normalizedAllowedCapabilities
 							: resolved.allowedCapabilities
+					const allowedPackages =
+						requestedAllowedPackages != null
+							? normalizedAllowedPackages
+							: resolved.allowedPackages
 					await saveValue({
 						env,
 						userId: user.mcpUser.userId,
@@ -255,6 +277,7 @@ export function createConnectSecretApiHandler(env: Env) {
 							secretName: name,
 							allowedHosts,
 							allowedCapabilities,
+							allowedPackages,
 						}),
 						description: `Connector secret binding for ${connector}`,
 						scope,
