@@ -332,20 +332,16 @@ function buildSearchableEntityDescriptors(input: {
 				...entry.record.tags,
 			],
 			tertiaryAliases: [
-				...entry.projection.exports.flatMap((exportDetail) =>
-					typeof exportDetail === 'string'
-						? [exportDetail]
-						: [
-								exportDetail.subpath,
-								exportDetail.description ?? '',
-								exportDetail.typeDefinition ?? '',
-								...(exportDetail.functions ?? []).flatMap((fn) => [
-									fn.name,
-									fn.description ?? '',
-									fn.typeDefinition ?? '',
-								]),
-							],
-				),
+				...entry.projection.exports.flatMap((exportDetail) => [
+					exportDetail.subpath,
+					exportDetail.description ?? '',
+					exportDetail.typeDefinition ?? '',
+					...(exportDetail.functions ?? []).flatMap((fn) => [
+						fn.name,
+						fn.description ?? '',
+						fn.typeDefinition ?? '',
+					]),
+				]),
 				...entry.projection.jobs.map((job) => job.name),
 				...entry.projection.retrievers.flatMap((retriever) => [
 					retriever.key,

@@ -13,6 +13,17 @@ import {
 	type PackageSearchRow,
 } from './search.ts'
 
+function createPackageExportProjection(subpath: string) {
+	return {
+		subpath,
+		runtimeTarget: null,
+		typesPath: null,
+		description: null,
+		typeDefinition: null,
+		functions: [],
+	}
+}
+
 const sourceMocks = vi.hoisted(() => ({
 	loadPackageManifestBySourceId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
@@ -347,7 +358,7 @@ test('optional search rows include saved packages when lookup succeeds', async (
 					searchText: null,
 					hasApp: true,
 					appEntry: 'src/app.ts',
-					exports: ['.'],
+					exports: [createPackageExportProjection('.')],
 					jobs: [],
 					services: [],
 					subscriptions: [],
@@ -439,11 +450,11 @@ test('searchUnified ranks related packages and connectors for operate queries', 
 					hasApp: true,
 					appEntry: 'src/app/server.ts',
 					exports: [
-						'./playback-state',
-						'./play-pause',
-						'./transfer-playback',
-						'./add-to-queue',
-						'./playback-controller',
+						createPackageExportProjection('./playback-state'),
+						createPackageExportProjection('./play-pause'),
+						createPackageExportProjection('./transfer-playback'),
+						createPackageExportProjection('./add-to-queue'),
+						createPackageExportProjection('./playback-controller'),
 					],
 					jobs: [],
 					services: [],
@@ -570,7 +581,7 @@ test('search guidance does not pair unrelated package and connector matches', as
 						searchText: 'music remote package',
 						hasApp: true,
 						appEntry: 'src/app.ts',
-						exports: ['./play'],
+						exports: [createPackageExportProjection('./play')],
 						jobs: [],
 						services: [],
 						subscriptions: [],
