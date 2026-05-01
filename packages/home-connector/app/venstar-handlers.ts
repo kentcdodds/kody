@@ -44,7 +44,7 @@ async function readPostedFormData(request: Request, fallbackAction: string) {
 }
 
 async function handleVenstarMutation(input: {
-	action: string
+	handler: string
 	formData: FormData
 	venstar: ReturnType<typeof createVenstarAdapter>
 }) {
@@ -359,7 +359,7 @@ export function createVenstarStatusHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				const formData = await readPostedFormData(request, 'scan')
 				const action =
@@ -526,7 +526,7 @@ export function createVenstarSetupHandler(
 
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				const formData = await readPostedFormData(request, 'save-manual')
 				const action =

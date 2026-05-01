@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/component'
+import { addEventListeners, type Handle } from 'remix/ui'
 
 type RouterSetup = {
 	routes: Record<string, JSX.Element>
@@ -127,6 +127,7 @@ function resolveFormSubmitDetails(
 		form.getAttribute('enctype') ??
 		'application/x-www-form-urlencoded'
 	)
+
 		.trim()
 		.toLowerCase()
 
@@ -249,9 +250,12 @@ function ensureRouter() {
 	document.addEventListener('submit', handleDocumentSubmit)
 }
 
-export function listenToRouterNavigation(handle: Handle, listener: () => void) {
+export function listenToRouterNavigation(
+	handle: Pick<Handle, 'signal' | 'update'>,
+	listener: () => void,
+) {
 	ensureRouter()
-	handle.on(routerEvents, {
+	addEventListeners(routerEvents, handle.signal, {
 		navigate: () => listener(),
 	})
 }
@@ -281,15 +285,17 @@ export function navigate(to: string) {
 	notify()
 }
 
-export function Router(handle: Handle, setup: RouterSetup) {
+type RouterHandle = Pick<Handle, 'signal' | 'update'> & { props: RouterSetup }
+
+export function Router(handle: RouterHandle) {
 	listenToRouterNavigation(handle, () => {
 		void handle.update()
 	})
 
 	return () => {
 		const path = getPathname()
-		const routeElement = matchRoute(path, setup.routes)
+		const routeElement = matchRoute(path, handle.props.routes)
 		if (routeElement) return routeElement
-		return setup.fallback ?? null
+		return handle.props.fallback ?? null
 	}
 }

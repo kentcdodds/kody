@@ -285,6 +285,4 @@ If you ever need to do the same operations manually, use:
 
 ## Remix package docs
 
-Use the Remix package index for quick navigation:
-
-- `docs/contributing/remix/index.md`
+Use [Remix skills](./remix.md) instead of vendoring package docs in this repo.

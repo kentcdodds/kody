@@ -3,7 +3,7 @@ import { type routes } from '../routes.ts'
 
 export const health = {
 	middleware: [],
-	async action() {
+	async handler() {
 		return Response.json(
 			{
 				ok: true,

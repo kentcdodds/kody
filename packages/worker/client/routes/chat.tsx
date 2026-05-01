@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/component'
+import { type Handle, addEventListeners, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import { ChatClient, type ChatClientSnapshot } from '#client/chat-client.ts'
 import { navigate, routerEvents } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
@@ -246,7 +247,7 @@ function renderMessageParts(
 			return (
 				<p
 					key={`${part.type}-${index}`}
-					css={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}
+					mix={css({ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.5 })}
 				>
 					{part.text}
 				</p>
@@ -257,7 +258,7 @@ function renderMessageParts(
 			return (
 				<div
 					key={`${part.type}-${index}`}
-					css={{
+					mix={css({
 						display: 'grid',
 						gap: spacing.xs,
 						padding: spacing.sm,
@@ -265,22 +266,24 @@ function renderMessageParts(
 						border: `1px solid ${colors.border}`,
 						backgroundColor: colors.surface,
 						fontSize: typography.fontSize.sm,
-					}}
+					})}
 				>
 					<strong>{part.type.replace(/^tool-/, '')}</strong>
-					<span css={{ color: colors.textMuted }}>State: {part.state}</span>
+					<span mix={css({ color: colors.textMuted })}>
+						State: {part.state}
+					</span>
 					{part.input !== undefined ? (
-						<code css={{ whiteSpace: 'pre-wrap' }}>
+						<code mix={css({ whiteSpace: 'pre-wrap' })}>
 							Input: {JSON.stringify(part.input)}
 						</code>
 					) : null}
 					{part.output !== undefined ? (
-						<code css={{ whiteSpace: 'pre-wrap' }}>
+						<code mix={css({ whiteSpace: 'pre-wrap' })}>
 							Output: {JSON.stringify(part.output)}
 						</code>
 					) : null}
 					{part.errorText ? (
-						<span css={{ color: colors.error }}>{part.errorText}</span>
+						<span mix={css({ color: colors.error })}>{part.errorText}</span>
 					) : null}
 				</div>
 			)
@@ -295,7 +298,7 @@ function renderPaperAirplaneIcon() {
 		<svg
 			aria-hidden="true"
 			viewBox="0 0 24 24"
-			css={{ width: '1.125rem', height: '1.125rem' }}
+			mix={css({ width: '1.125rem', height: '1.125rem' })}
 		>
 			<path
 				d="M21 3 10 14"
@@ -305,6 +308,7 @@ function renderPaperAirplaneIcon() {
 				strokeLinejoin="round"
 				strokeWidth="1.75"
 			/>
+
 			<path
 				d="m21 3-7 18-4-7-7-4 18-7Z"
 				fill="none"
@@ -322,7 +326,7 @@ function renderTrashIcon() {
 		<svg
 			aria-hidden="true"
 			viewBox="0 0 24 24"
-			css={{ width: '1rem', height: '1rem' }}
+			mix={css({ width: '1rem', height: '1rem' })}
 		>
 			<path
 				d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h2v8H7V9Zm4 0h2v8h-2V9Zm4 0h2v8h-2V9ZM6 7h12v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7Z"
@@ -337,7 +341,7 @@ function renderBackArrowIcon() {
 		<svg
 			aria-hidden="true"
 			viewBox="0 0 24 24"
-			css={{ width: '1rem', height: '1rem' }}
+			mix={css({ width: '1rem', height: '1rem' })}
 		>
 			<path
 				d="M14.707 5.293 8 12l6.707 6.707-1.414 1.414L5.172 12l8.121-8.121z"
@@ -821,7 +825,7 @@ export function ChatRoute(handle: Handle) {
 			queueThreadLocationSync()
 		}
 
-		handle.on(window, {
+		addEventListeners(window, handle.signal, {
 			resize: handleViewportChange,
 		})
 
@@ -846,7 +850,7 @@ export function ChatRoute(handle: Handle) {
 		queueThreadLocationSync()
 	}
 
-	handle.on(routerEvents, {
+	addEventListeners(routerEvents, handle.signal, {
 		navigate: () => {
 			queueThreadLocationSync()
 		},
@@ -992,18 +996,18 @@ export function ChatRoute(handle: Handle) {
 
 		return (
 			<section
-				css={{
+				mix={css({
 					display: 'grid',
 					gap: spacing.lg,
 					minHeight: showEmptyStateComposer ? 'calc(100vh - 7rem)' : undefined,
-				}}
+				})}
 			>
 				{actionError ? (
-					<p css={{ margin: 0, color: colors.error }}>{actionError}</p>
+					<p mix={css({ margin: 0, color: colors.error })}>{actionError}</p>
 				) : null}
 
 				<div
-					css={{
+					mix={css({
 						display: 'grid',
 						gap: spacing.lg,
 						gridTemplateColumns: '18rem minmax(0, 1fr)',
@@ -1014,10 +1018,10 @@ export function ChatRoute(handle: Handle) {
 							gap: 0,
 							minHeight: CHAT_PANEL_HEIGHT_MOBILE,
 						},
-					}}
+					})}
 				>
 					<aside
-						css={{
+						mix={css({
 							display: 'flex',
 							flexDirection: 'column',
 							gap: spacing.md,
@@ -1037,22 +1041,21 @@ export function ChatRoute(handle: Handle) {
 								height: CHAT_PANEL_HEIGHT_MOBILE,
 								borderRadius: radius.md,
 							},
-						}}
+						})}
 					>
 						<button
 							type="button"
-							on={{ click: handleCreateThread }}
-							css={newThreadButtonCss}
+							mix={[on('click', handleCreateThread), css(newThreadButtonCss)]}
 						>
 							New thread
 						</button>
 						<h2
-							css={{
+							mix={css({
 								margin: 0,
 								color: colors.text,
 								fontSize: typography.fontSize.lg,
 								fontWeight: typography.fontWeight.semibold,
-							}}
+							})}
 						>
 							Chats
 						</h2>
@@ -1061,37 +1064,39 @@ export function ChatRoute(handle: Handle) {
 							value={threadSearch}
 							placeholder="Search chats"
 							aria-label="Search chats"
-							on={{ input: handleThreadSearchInput }}
-							css={compactInputCss}
+							mix={[on('input', handleThreadSearchInput), css(compactInputCss)]}
 						/>
+
 						{threadStatus === 'error' ? (
-							<p css={{ margin: 0, color: colors.error }}>{threadError}</p>
+							<p mix={css({ margin: 0, color: colors.error })}>{threadError}</p>
 						) : null}
 						<div
-							css={{
+							mix={css({
 								flex: 1,
 								minHeight: 0,
 								position: 'relative',
-							}}
+							})}
 						>
 							<div
 								id={THREAD_LIST_SCROLL_CONTAINER_ID}
-								on={{ scroll: handleThreadListScroll }}
-								css={{
-									height: '100%',
-									overflowY: 'auto',
-									display: 'grid',
-									gap: spacing.md,
-									alignContent: 'start',
-								}}
+								mix={[
+									on('scroll', handleThreadListScroll),
+									css({
+										height: '100%',
+										overflowY: 'auto',
+										display: 'grid',
+										gap: spacing.md,
+										alignContent: 'start',
+									}),
+								]}
 							>
 								{threadListSnapshot.isLoadingInitial ? (
 									<p
-										css={{
+										mix={css({
 											margin: 0,
 											color: colors.textMuted,
 											fontSize: typography.fontSize.sm,
-										}}
+										})}
 									>
 										Loading chats...
 									</p>
@@ -1106,52 +1111,58 @@ export function ChatRoute(handle: Handle) {
 									return (
 										<div
 											key={thread.id}
-											css={{
+											mix={css({
 												position: 'relative',
 												'&:hover [data-thread-delete-button="true"], &:focus-within [data-thread-delete-button="true"]':
 													{
 														opacity: 1,
 														pointerEvents: 'auto',
 													},
-											}}
+											})}
 										>
 											<button
 												type="button"
-												on={{
-													click: () => navigate(buildThreadHref(thread.id)),
-												}}
-												css={{
-													display: 'grid',
-													gap: spacing.xs,
-													width: '100%',
-													padding: spacing.sm,
-													borderRadius: radius.md,
-													border: `1px solid ${
-														isActive ? colors.primary : colors.border
-													}`,
-													backgroundColor: isActive
-														? colors.primarySoftest
-														: colors.surface,
-													color: colors.text,
-													textAlign: 'left',
-													cursor: 'pointer',
-													transition: `background-color ${transitions.normal}, border-color ${transitions.normal}`,
-												}}
+												mix={[
+													on(
+														'click',
+
+														() => navigate(buildThreadHref(thread.id)),
+													),
+
+													css({
+														display: 'grid',
+														gap: spacing.xs,
+														width: '100%',
+														padding: spacing.sm,
+														borderRadius: radius.md,
+														border: `1px solid ${
+															isActive ? colors.primary : colors.border
+														}`,
+
+														backgroundColor: isActive
+															? colors.primarySoftest
+															: colors.surface,
+														color: colors.text,
+														textAlign: 'left',
+														cursor: 'pointer',
+														transition: `background-color ${transitions.normal}, border-color ${transitions.normal}`,
+													}),
+												]}
 											>
 												<strong
-													css={{
+													mix={css({
 														display: 'block',
 														width: '100%',
 														fontWeight: typography.fontWeight.semibold,
 														fontSize: typography.fontSize.sm,
 														lineHeight: 1.4,
-													}}
+													})}
 												>
 													{thread.title}
 												</strong>
 												{thread.lastMessagePreview ? (
 													<p
-														css={{
+														mix={css({
 															margin: 0,
 															display: 'block',
 															width: '100%',
@@ -1160,19 +1171,19 @@ export function ChatRoute(handle: Handle) {
 															whiteSpace: 'nowrap',
 															overflow: 'hidden',
 															textOverflow: 'ellipsis',
-														}}
+														})}
 													>
 														{thread.lastMessagePreview}
 													</p>
 												) : null}
 												<span
-													css={{
+													mix={css({
 														display: 'block',
 														width: '100%',
 														paddingRight: `calc(${spacing.sm} + 4.5rem)`,
 														color: colors.textMuted,
 														fontSize: typography.fontSize.sm,
-													}}
+													})}
 												>
 													{thread.messageCount} message
 													{thread.messageCount === 1 ? '' : 's'}
@@ -1196,7 +1207,7 @@ export function ChatRoute(handle: Handle) {
 														? `Click again to delete "${thread.title}"`
 														: `Delete chat "${thread.title}"`
 												}
-												css={{
+												mix={css({
 													position: 'absolute',
 													right: spacing.sm,
 													bottom: spacing.sm,
@@ -1216,6 +1227,7 @@ export function ChatRoute(handle: Handle) {
 															? colors.dangerHover
 															: colors.border
 													}`,
+
 													backgroundColor: deleteThreadCheck.doubleCheck
 														? colors.danger
 														: colors.surface,
@@ -1241,7 +1253,7 @@ export function ChatRoute(handle: Handle) {
 													fontSize: typography.fontSize.sm,
 													fontWeight: typography.fontWeight.semibold,
 													whiteSpace: 'nowrap',
-												}}
+												})}
 											>
 												{deleteThreadCheck.doubleCheck
 													? 'Confirm'
@@ -1254,22 +1266,22 @@ export function ChatRoute(handle: Handle) {
 								threads.length === 0 &&
 								threadSearch.trim() ? (
 									<p
-										css={{
+										mix={css({
 											margin: 0,
 											color: colors.textMuted,
 											fontSize: typography.fontSize.sm,
-										}}
+										})}
 									>
 										No chats match your search.
 									</p>
 								) : null}
 								{threadListSnapshot.isLoadingMore ? (
 									<p
-										css={{
+										mix={css({
 											margin: 0,
 											color: colors.textMuted,
 											fontSize: typography.fontSize.sm,
-										}}
+										})}
 									>
 										Loading more chats...
 									</p>
@@ -1278,7 +1290,7 @@ export function ChatRoute(handle: Handle) {
 							{showThreadListScrollFadeTop ? (
 								<div
 									aria-hidden="true"
-									css={{
+									mix={css({
 										position: 'absolute',
 										top: 0,
 										left: 0,
@@ -1286,13 +1298,13 @@ export function ChatRoute(handle: Handle) {
 										height: MESSAGE_SCROLL_FADE_HEIGHT,
 										background: `linear-gradient(to bottom, ${colors.surface}, color-mix(in srgb, ${colors.surface} 0%, transparent))`,
 										pointerEvents: 'none',
-									}}
+									})}
 								/>
 							) : null}
 							{showThreadListScrollFadeBottom ? (
 								<div
 									aria-hidden="true"
-									css={{
+									mix={css({
 										position: 'absolute',
 										left: 0,
 										right: 0,
@@ -1300,14 +1312,14 @@ export function ChatRoute(handle: Handle) {
 										height: MESSAGE_SCROLL_FADE_HEIGHT,
 										background: `linear-gradient(to top, ${colors.surface}, color-mix(in srgb, ${colors.surface} 0%, transparent))`,
 										pointerEvents: 'none',
-									}}
+									})}
 								/>
 							) : null}
 						</div>
 					</aside>
 
 					<div
-						css={{
+						mix={css({
 							display: 'flex',
 							flexDirection: 'column',
 							gap: spacing.md,
@@ -1325,31 +1337,31 @@ export function ChatRoute(handle: Handle) {
 								borderRadius: radius.md,
 								height: CHAT_PANEL_HEIGHT_MOBILE,
 							},
-						}}
+						})}
 					>
 						{activeThread ? (
 							<>
 								<div
-									css={{
+									mix={css({
 										flexShrink: 0,
 										display: 'flex',
 										justifyContent: 'space-between',
 										alignItems: 'center',
 										gap: spacing.md,
-									}}
+									})}
 								>
 									<div
-										css={{
+										mix={css({
 											display: 'flex',
 											alignItems: 'center',
 											gap: spacing.sm,
 											minWidth: 0,
-										}}
+										})}
 									>
 										<a
 											href="/chat"
 											aria-label="Back to chats"
-											css={{
+											mix={css({
 												display: 'none',
 												alignItems: 'center',
 												justifyContent: 'center',
@@ -1364,15 +1376,15 @@ export function ChatRoute(handle: Handle) {
 												[mq.tablet]: {
 													display: 'inline-flex',
 												},
-											}}
+											})}
 										>
 											{renderBackArrowIcon()}
 										</a>
 										<div
-											css={{
+											mix={css({
 												position: 'relative',
 												minWidth: 0,
-											}}
+											})}
 										>
 											<span
 												aria-hidden={!disconnectedIndicator.isShowing}
@@ -1386,7 +1398,7 @@ export function ChatRoute(handle: Handle) {
 														? 'Chat is not connected'
 														: undefined
 												}
-												css={{
+												mix={css({
 													position: 'absolute',
 													left: `calc(-1 * ${spacing.md})`,
 													top: '50%',
@@ -1403,9 +1415,16 @@ export function ChatRoute(handle: Handle) {
 														? 'auto'
 														: 'none',
 													transition: `opacity ${transitions.normal}, transform ${transitions.normal}`,
-												}}
+												})}
 											/>
-											<h3 css={{ margin: 0, color: colors.text, minWidth: 0 }}>
+
+											<h3
+												mix={css({
+													margin: 0,
+													color: colors.text,
+													minWidth: 0,
+												})}
+											>
 												<EditableText
 													id={`thread-title-${activeThread.id}`}
 													ariaLabel="Chat title"
@@ -1425,7 +1444,7 @@ export function ChatRoute(handle: Handle) {
 								</div>
 
 								<div
-									css={{
+									mix={css({
 										position: 'relative',
 										flex: 1,
 										minHeight: 0,
@@ -1435,42 +1454,44 @@ export function ChatRoute(handle: Handle) {
 										[mq.tablet]: {
 											maxWidth: '100%',
 										},
-									}}
+									})}
 								>
 									<div
 										id={MESSAGES_SCROLL_CONTAINER_ID}
-										on={{ scroll: handleMessagesScroll }}
-										css={{
-											overflowY: 'auto',
-											height: '100%',
-											minHeight: 0,
-											display: 'grid',
-											gap: spacing.md,
-											alignContent: 'start',
-										}}
+										mix={[
+											on('scroll', handleMessagesScroll),
+											css({
+												overflowY: 'auto',
+												height: '100%',
+												minHeight: 0,
+												display: 'grid',
+												gap: spacing.md,
+												alignContent: 'start',
+											}),
+										]}
 									>
 										{chatSnapshot.isLoadingOlderMessages ? (
 											<p
-												css={{
+												mix={css({
 													margin: 0,
 													padding: `${spacing.xs} 0`,
 													color: colors.textMuted,
 													fontSize: typography.fontSize.sm,
 													textAlign: 'center',
-												}}
+												})}
 											>
 												Loading earlier messages...
 											</p>
 										) : null}
 										{chatSnapshot.isLoadingMessages ? (
 											<p
-												css={{
+												mix={css({
 													margin: 0,
 													padding: `${spacing.xs} 0`,
 													color: colors.textMuted,
 													fontSize: typography.fontSize.sm,
 													textAlign: 'center',
-												}}
+												})}
 											>
 												Loading messages...
 											</p>
@@ -1478,7 +1499,7 @@ export function ChatRoute(handle: Handle) {
 										{chatSnapshot.messages.map((message) => (
 											<article
 												key={message.id}
-												css={{
+												mix={css({
 													display: 'grid',
 													gap: spacing.xs,
 													padding: spacing.md,
@@ -1488,12 +1509,12 @@ export function ChatRoute(handle: Handle) {
 															? colors.primarySoftest
 															: colors.surface,
 													border: `1px solid ${colors.border}`,
-												}}
+												})}
 											>
-												<strong css={{ color: colors.text }}>
+												<strong mix={css({ color: colors.text })}>
 													{message.role === 'user' ? 'You' : 'Assistant'}
 												</strong>
-												<div css={{ display: 'grid', gap: spacing.sm }}>
+												<div mix={css({ display: 'grid', gap: spacing.sm })}>
 													{renderMessageParts(
 														message.parts as Array<{
 															type: string
@@ -1509,22 +1530,24 @@ export function ChatRoute(handle: Handle) {
 										))}
 										{chatSnapshot.isStreaming || chatSnapshot.streamingText ? (
 											<article
-												css={{
+												mix={css({
 													display: 'grid',
 													gap: spacing.xs,
 													padding: spacing.md,
 													borderRadius: radius.md,
 													border: `1px solid ${colors.border}`,
 													backgroundColor: colors.surface,
-												}}
+												})}
 											>
-												<strong css={{ color: colors.text }}>Assistant</strong>
+												<strong mix={css({ color: colors.text })}>
+													Assistant
+												</strong>
 												<p
-													css={{
+													mix={css({
 														margin: 0,
 														whiteSpace: 'pre-wrap',
 														color: colors.text,
-													}}
+													})}
 												>
 													{chatSnapshot.streamingText || 'Thinking…'}
 												</p>
@@ -1534,7 +1557,7 @@ export function ChatRoute(handle: Handle) {
 									{showMessageScrollFadeTop ? (
 										<div
 											aria-hidden="true"
-											css={{
+											mix={css({
 												position: 'absolute',
 												top: 0,
 												left: 0,
@@ -1542,13 +1565,13 @@ export function ChatRoute(handle: Handle) {
 												height: MESSAGE_SCROLL_FADE_HEIGHT,
 												background: `linear-gradient(to bottom, ${colors.surface}, color-mix(in srgb, ${colors.surface} 0%, transparent))`,
 												pointerEvents: 'none',
-											}}
+											})}
 										/>
 									) : null}
 									{showMessageScrollFadeBottom ? (
 										<div
 											aria-hidden="true"
-											css={{
+											mix={css({
 												position: 'absolute',
 												left: 0,
 												right: 0,
@@ -1556,69 +1579,76 @@ export function ChatRoute(handle: Handle) {
 												height: MESSAGE_SCROLL_FADE_HEIGHT,
 												background: `linear-gradient(to top, ${colors.surface}, color-mix(in srgb, ${colors.surface} 0%, transparent))`,
 												pointerEvents: 'none',
-											}}
+											})}
 										/>
 									) : null}
 								</div>
 
 								{chatSnapshot.error ? (
-									<p css={{ margin: 0, color: colors.error }}>
+									<p mix={css({ margin: 0, color: colors.error })}>
 										{chatSnapshot.error}
 									</p>
 								) : null}
 
 								<form
-									on={{ submit: handleSubmit }}
-									css={{
-										display: 'grid',
-										gap: spacing.sm,
-										maxWidth: '56rem',
-										width: '100%',
-										margin: '0 auto',
-										[mq.tablet]: {
-											maxWidth: '100%',
-										},
-									}}
+									mix={[
+										on('submit', handleSubmit),
+										css({
+											display: 'grid',
+											gap: spacing.sm,
+											maxWidth: '56rem',
+											width: '100%',
+											margin: '0 auto',
+											[mq.tablet]: {
+												maxWidth: '100%',
+											},
+										}),
+									]}
 								>
-									<label css={{ display: 'grid', gap: spacing.xs }}>
+									<label mix={css({ display: 'grid', gap: spacing.xs })}>
 										<span
-											css={{
+											mix={css({
 												color: colors.text,
 												fontWeight: typography.fontWeight.medium,
-											}}
+											})}
 										>
 											Message
 										</span>
 										<div
-											css={{
+											mix={css({
 												position: 'relative',
-											}}
+											})}
 										>
 											<textarea
 												name="message"
 												rows={1}
-												on={{
-													input: (event) =>
-														resizeMessageInput(event.currentTarget),
-													keydown: handleComposerKeyDown,
-												}}
 												placeholder="Send a message…"
-												css={{
-													display: 'block',
-													width: '100%',
-													height: INPUT_MIN_HEIGHT,
-													minHeight: INPUT_MIN_HEIGHT,
-													padding: '0.75rem',
-													paddingRight: INPUT_RIGHT_PADDING,
-													borderRadius: SEND_BUTTON_RADIUS,
-													border: `1px solid ${colors.border}`,
-													fontFamily: typography.fontFamily,
-													fontSize: typography.fontSize.base,
-													lineHeight: 1.4,
-													overflow: 'hidden',
-													resize: 'none',
-												}}
+												mix={[
+													on(
+														'input',
+
+														(event) => resizeMessageInput(event.currentTarget),
+													),
+													on('keydown', handleComposerKeyDown),
+
+													css({
+														display: 'block',
+														width: '100%',
+														height: INPUT_MIN_HEIGHT,
+														minHeight: INPUT_MIN_HEIGHT,
+														padding: '0.75rem',
+														paddingRight: INPUT_RIGHT_PADDING,
+														borderRadius: SEND_BUTTON_RADIUS,
+														border: `1px solid ${colors.border}`,
+														fontFamily: typography.fontFamily,
+														fontSize: typography.fontSize.base,
+														lineHeight: 1.4,
+														overflow: 'hidden',
+														resize: 'none',
+													}),
+												]}
 											/>
+
 											<button
 												type="submit"
 												disabled={chatSnapshot.isStreaming}
@@ -1632,7 +1662,7 @@ export function ChatRoute(handle: Handle) {
 														? 'Streaming'
 														: 'Send message'
 												}
-												css={{
+												mix={css({
 													display: 'inline-flex',
 													alignItems: 'center',
 													justifyContent: 'center',
@@ -1650,7 +1680,7 @@ export function ChatRoute(handle: Handle) {
 														? 'not-allowed'
 														: 'pointer',
 													opacity: chatSnapshot.isStreaming ? 0.7 : 1,
-												}}
+												})}
 											>
 												{renderPaperAirplaneIcon()}
 											</button>
@@ -1660,7 +1690,7 @@ export function ChatRoute(handle: Handle) {
 							</>
 						) : showEmptyStateComposer ? (
 							<div
-								css={{
+								mix={css({
 									flex: 1,
 									minHeight: 0,
 									display: 'flex',
@@ -1673,52 +1703,59 @@ export function ChatRoute(handle: Handle) {
 									[mq.tablet]: {
 										maxWidth: '100%',
 									},
-								}}
+								})}
 							>
 								<form
-									on={{ submit: handleSubmit }}
-									css={{
-										display: 'grid',
-										gap: spacing.sm,
-										width: '100%',
-									}}
+									mix={[
+										on('submit', handleSubmit),
+										css({
+											display: 'grid',
+											gap: spacing.sm,
+											width: '100%',
+										}),
+									]}
 								>
 									<div
-										css={{
+										mix={css({
 											position: 'relative',
-										}}
+										})}
 									>
 										<textarea
 											name="message"
 											rows={1}
 											aria-label="Message"
-											on={{
-												input: (event) =>
-													resizeMessageInput(event.currentTarget),
-												keydown: handleComposerKeyDown,
-											}}
 											placeholder="Send a message…"
-											css={{
-												display: 'block',
-												width: '100%',
-												height: INPUT_MIN_HEIGHT,
-												minHeight: INPUT_MIN_HEIGHT,
-												padding: '0.75rem',
-												paddingRight: INPUT_RIGHT_PADDING,
-												borderRadius: SEND_BUTTON_RADIUS,
-												border: `1px solid ${colors.border}`,
-												fontFamily: typography.fontFamily,
-												fontSize: typography.fontSize.base,
-												lineHeight: 1.4,
-												overflow: 'hidden',
-												resize: 'none',
-											}}
+											mix={[
+												on(
+													'input',
+
+													(event) => resizeMessageInput(event.currentTarget),
+												),
+												on('keydown', handleComposerKeyDown),
+
+												css({
+													display: 'block',
+													width: '100%',
+													height: INPUT_MIN_HEIGHT,
+													minHeight: INPUT_MIN_HEIGHT,
+													padding: '0.75rem',
+													paddingRight: INPUT_RIGHT_PADDING,
+													borderRadius: SEND_BUTTON_RADIUS,
+													border: `1px solid ${colors.border}`,
+													fontFamily: typography.fontFamily,
+													fontSize: typography.fontSize.base,
+													lineHeight: 1.4,
+													overflow: 'hidden',
+													resize: 'none',
+												}),
+											]}
 										/>
+
 										<button
 											type="submit"
 											aria-label="Send message"
 											title="Send message"
-											css={{
+											mix={css({
 												display: 'inline-flex',
 												alignItems: 'center',
 												justifyContent: 'center',
@@ -1733,7 +1770,7 @@ export function ChatRoute(handle: Handle) {
 												backgroundColor: colors.primary,
 												color: colors.onPrimary,
 												cursor: 'pointer',
-											}}
+											})}
 										>
 											{renderPaperAirplaneIcon()}
 										</button>
@@ -1742,26 +1779,26 @@ export function ChatRoute(handle: Handle) {
 							</div>
 						) : hasThreadInUrl ? (
 							<div
-								css={{
+								mix={css({
 									flex: 1,
 									minHeight: 0,
 									display: 'flex',
 									flexDirection: 'column',
 									gap: spacing.md,
-								}}
+								})}
 							>
 								<div
-									css={{
+									mix={css({
 										flexShrink: 0,
 										display: 'flex',
 										alignItems: 'center',
 										gap: spacing.sm,
-									}}
+									})}
 								>
 									<a
 										href="/chat"
 										aria-label="Back to chats"
-										css={{
+										mix={css({
 											display: 'none',
 											alignItems: 'center',
 											justifyContent: 'center',
@@ -1776,16 +1813,16 @@ export function ChatRoute(handle: Handle) {
 											[mq.tablet]: {
 												display: 'inline-flex',
 											},
-										}}
+										})}
 									>
 										{renderBackArrowIcon()}
 									</a>
 									<p
-										css={{
+										mix={css({
 											margin: 0,
 											color: colors.textMuted,
 											fontSize: typography.fontSize.sm,
-										}}
+										})}
 									>
 										Loading chat...
 									</p>

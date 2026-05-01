@@ -7,7 +7,7 @@ import { type routes } from '#app/routes.ts'
 
 export const chat = {
 	middleware: [],
-	async action({ request }) {
+	async handler({ request }) {
 		const { session, setCookie } = await readAuthSessionResult(request)
 
 		if (!session) {

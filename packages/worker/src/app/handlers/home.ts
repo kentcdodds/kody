@@ -5,7 +5,7 @@ import { type routes } from '#app/routes.ts'
 
 export const home = {
 	middleware: [],
-	async action() {
+	async handler() {
 		return render(Layout({}))
 	},
 } satisfies BuildAction<typeof routes.home.method, typeof routes.home.pattern>

@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
 import { clientRoutes } from './routes/index.tsx'
 import {
 	getPathname,
@@ -104,7 +104,7 @@ export function App(handle: Handle) {
 
 		return (
 			<main
-				css={{
+				mix={css({
 					maxWidth: isWideLayout ? 'none' : '52rem',
 					width: '100%',
 					margin: isWideLayout ? 0 : '0 auto',
@@ -128,10 +128,10 @@ export function App(handle: Handle) {
 						: {
 								padding: spacing.md,
 							},
-				}}
+				})}
 			>
 				<nav
-					css={{
+					mix={css({
 						display: 'flex',
 						alignItems: 'center',
 						gap: spacing.md,
@@ -147,41 +147,41 @@ export function App(handle: Handle) {
 							gap: spacing.sm,
 							marginBottom: isWideLayout ? spacing.md : spacing.lg,
 						},
-					}}
+					})}
 				>
-					<a href="/" css={navHomeLinkCss} aria-label="Home">
+					<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
 						<img
 							src="/logo.png"
 							alt=""
 							width={112}
 							height={28}
-							css={{
+							mix={css({
 								display: 'block',
 								height: '1.35em',
 								width: 'auto',
-							}}
+							})}
 						/>
 					</a>
 					{showAuthLinks ? (
 						<>
-							<a href={loginHref} css={navLinkCss}>
+							<a href={loginHref} mix={css(navLinkCss)}>
 								Login
 							</a>
-							<a href={signupHref} css={navLinkCss}>
+							<a href={signupHref} mix={css(navLinkCss)}>
 								Signup
 							</a>
 						</>
 					) : null}
 					{isLoggedIn ? (
 						<>
-							<a href="/chat" css={navLinkCss}>
+							<a href="/chat" mix={css(navLinkCss)}>
 								Chat
 							</a>
-							<a href="/account/secrets" css={navLinkCss}>
+							<a href="/account/secrets" mix={css(navLinkCss)}>
 								{sessionEmail}
 							</a>
-							<form method="post" action="/logout" css={{ margin: 0 }}>
-								<button type="submit" css={logOutButtonCss}>
+							<form method="post" action="/logout" mix={css({ margin: 0 })}>
+								<button type="submit" mix={css(logOutButtonCss)}>
 									Log out
 								</button>
 							</form>
@@ -189,26 +189,24 @@ export function App(handle: Handle) {
 					) : null}
 				</nav>
 				<Router
-					setup={{
-						routes: clientRoutes,
-						fallback: (
-							<section>
-								<h2
-									css={{
-										fontSize: typography.fontSize.lg,
-										fontWeight: typography.fontWeight.semibold,
-										marginBottom: spacing.sm,
-										color: colors.text,
-									}}
-								>
-									Not Found
-								</h2>
-								<p css={{ color: colors.textMuted }}>
-									That route does not exist.
-								</p>
-							</section>
-						),
-					}}
+					routes={clientRoutes}
+					fallback={
+						<section>
+							<h2
+								mix={css({
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+									marginBottom: spacing.sm,
+									color: colors.text,
+								})}
+							>
+								Not Found
+							</h2>
+							<p mix={css({ color: colors.textMuted })}>
+								We could not find that page.
+							</p>
+						</section>
+					}
 				/>
 			</main>
 		)

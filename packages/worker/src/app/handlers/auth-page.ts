@@ -12,7 +12,7 @@ function normalizeRedirectTo(value: string | null) {
 export function createAuthPageHandler() {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			const { session, setCookie } = await readAuthSessionResult(request)
 			if (session) {
 				const url = new URL(request.url)

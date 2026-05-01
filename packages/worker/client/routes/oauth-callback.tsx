@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
 import {
 	cardCss,
 	mutedLinkCss,
@@ -25,15 +25,15 @@ export function OAuthCallbackRoute(_handle: Handle) {
 		const detail = isError ? message : code
 
 		return (
-			<section css={pageCss}>
-				<header css={headerCss}>
-					<span css={eyebrowCss}>Kody secure connection</span>
-					<h2 css={pageTitleCss}>OAuth callback</h2>
-					<p css={pageDescriptionCss}>{title}.</p>
+			<section mix={css(pageCss)}>
+				<header mix={css(headerCss)}>
+					<span mix={css(eyebrowCss)}>Kody secure connection</span>
+					<h2 mix={css(pageTitleCss)}>OAuth callback</h2>
+					<p mix={css(pageDescriptionCss)}>{title}.</p>
 				</header>
-				{detail ? <pre css={detailCardCss}>{detail}</pre> : null}
-				{state ? <p css={pageDescriptionCss}>State: {state}</p> : null}
-				<a href="/" css={mutedLinkCss}>
+				{detail ? <pre mix={css(detailCardCss)}>{detail}</pre> : null}
+				{state ? <p mix={css(pageDescriptionCss)}>State: {state}</p> : null}
+				<a href="/" mix={css(mutedLinkCss)}>
 					Back home
 				</a>
 			</section>

@@ -60,7 +60,7 @@ export function createHomeDashboardHandler(
 ) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			const discoveredCount = state.devices.filter(
 				(device) => !device.adopted,
 			).length
@@ -439,7 +439,7 @@ export function createLutronStatusHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				try {
 					const processors = await lutron.scan()
@@ -477,7 +477,7 @@ export function createLutronSetupHandler(
 ) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			const status = lutron.getStatus()
 			const diagnostics = [
 				`Worker URL: ${state.connection.workerUrl}`,
@@ -612,7 +612,7 @@ function renderBanner(input: { tone: 'success' | 'error'; message: string }) {
 export function createHealthHandler(state: HomeConnectorState) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			return Response.json(
 				{
 					ok: true,
@@ -701,7 +701,7 @@ export function createRokuStatusHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				try {
 					const devices = await scanRokuDevices(state, config)
@@ -743,7 +743,7 @@ export function createRokuStatusHandler(
 export function createRokuSetupHandler(state: HomeConnectorState) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			const diagnostics = [
 				`Worker URL: ${state.connection.workerUrl}`,
 				`Connector ID: ${state.connection.connectorId}`,
@@ -968,7 +968,7 @@ export function createSamsungTvStatusHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				try {
 					const devices = await samsungTv.scan()
@@ -1006,7 +1006,7 @@ export function createSamsungTvSetupHandler(
 ) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			const status = samsungTv.getStatus()
 			const diagnostics = [
 				`Worker URL: ${state.connection.workerUrl}`,

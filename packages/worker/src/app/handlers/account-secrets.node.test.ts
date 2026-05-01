@@ -120,7 +120,7 @@ function createEnv() {
 
 test('connect oauth returns direct host approval links for saved token secrets', async () => {
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -216,7 +216,7 @@ test('connect oauth omits direct host approval links when hosts are already appr
 	])
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -296,7 +296,7 @@ test('host approval view is derived from allowed-host and selected secret', asyn
 	])
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
 			{ method: 'GET' },
@@ -337,7 +337,7 @@ test('host approval approve persists host from allowed-host and selected secret'
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
 			{
@@ -363,7 +363,7 @@ test('host approval approve persists host from allowed-host and selected secret'
 
 test('approval request rejects ambiguous host and package targets', async () => {
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=api.cloudflare.com&package_id=pkg-123',
 			{
@@ -450,7 +450,7 @@ test('account secrets payload preserves app titles and allowed packages', async 
 	)
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'GET',
 		}),
@@ -481,7 +481,7 @@ test('package approval reject succeeds even when the secret no longer exists', a
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-allowed',
 			{
@@ -522,7 +522,7 @@ test('package approval approve deduplicates allowed package ids', async () => {
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
 	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.action({
+	const response = await handler.handler({
 		request: new Request(
 			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-new',
 			{

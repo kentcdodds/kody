@@ -20,7 +20,7 @@ export function createChatThreadsHandler(appEnv: AppEnv) {
 
 	return {
 		middleware: [],
-		async action({ request }) {
+		async handler({ request }) {
 			const user = await readAuthenticatedAppUser(
 				request,
 				appEnv as unknown as Env,
@@ -72,7 +72,7 @@ export function createDeleteChatThreadHandler(appEnv: AppEnv) {
 
 	return {
 		middleware: [],
-		async action({ request }) {
+		async handler({ request }) {
 			const user = await readAuthenticatedAppUser(
 				request,
 				appEnv as unknown as Env,
@@ -128,7 +128,7 @@ export function createUpdateChatThreadHandler(appEnv: AppEnv) {
 
 	return {
 		middleware: [],
-		async action({ request }) {
+		async handler({ request }) {
 			const user = await readAuthenticatedAppUser(
 				request,
 				appEnv as unknown as Env,

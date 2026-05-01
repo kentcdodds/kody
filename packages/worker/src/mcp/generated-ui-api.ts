@@ -80,17 +80,15 @@ function createGeneratedUiApiRouter(env: Env) {
 	})
 
 	const sourceHandler = createGeneratedUiSourceHandler(env)
-	router.map(generatedUiApiRoutes.source, sourceHandler)
-	router.map(generatedUiApiRoutes.sourceWithSuffix, sourceHandler)
-	router.map(generatedUiApiRoutes.execute, createGeneratedUiExecuteHandler(env))
-	router.map(
-		generatedUiApiRoutes.listSecrets,
-		createGeneratedUiSecretsHandler(env),
-	)
-	router.map(
-		generatedUiApiRoutes.deleteSecret,
-		createGeneratedUiDeleteSecretHandler(env),
-	)
+	router.map(generatedUiApiRoutes, {
+		actions: {
+			source: sourceHandler,
+			sourceWithSuffix: sourceHandler,
+			execute: createGeneratedUiExecuteHandler(env),
+			listSecrets: createGeneratedUiSecretsHandler(env),
+			deleteSecret: createGeneratedUiDeleteSecretHandler(env),
+		},
+	})
 
 	return router
 }
@@ -98,7 +96,7 @@ function createGeneratedUiApiRouter(env: Env) {
 function createGeneratedUiSourceHandler(env: Env) {
 	return {
 		middleware: [],
-		async action({ request, params }) {
+		async handler({ request, params }) {
 			const routeId = getGeneratedUiRouteId(params)
 			if (!routeId) {
 				return jsonResponse({ error: 'Not found.' }, 404)
@@ -132,7 +130,7 @@ function createGeneratedUiSourceHandler(env: Env) {
 function createGeneratedUiExecuteHandler(env: Env) {
 	return {
 		middleware: [],
-		async action({ request, params }) {
+		async handler({ request, params }) {
 			const context = await requireGeneratedUiSessionContext({
 				request,
 				env,
@@ -208,7 +206,7 @@ function createGeneratedUiExecuteHandler(env: Env) {
 function createGeneratedUiSecretsHandler(env: Env) {
 	return {
 		middleware: [],
-		async action({ request, params }) {
+		async handler({ request, params }) {
 			const context = await requireGeneratedUiSessionContext({
 				request,
 				env,
@@ -306,7 +304,7 @@ function createGeneratedUiSecretsHandler(env: Env) {
 function createGeneratedUiDeleteSecretHandler(env: Env) {
 	return {
 		middleware: [],
-		async action({ request, params }) {
+		async handler({ request, params }) {
 			const context = await requireGeneratedUiSessionContext({
 				request,
 				env,

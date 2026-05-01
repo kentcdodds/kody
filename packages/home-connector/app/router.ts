@@ -49,51 +49,34 @@ export function createHomeConnectorRouter(
 		middleware: [],
 	})
 
-	router.map(
-		routes.home,
-		createHomeDashboardHandler(
-			state,
-			lutron,
-			samsungTv,
-			sonos,
-			bond,
-			jellyfish,
-			venstar,
-		),
-	)
-	router.map(routes.health, createHealthHandler(state))
-	router.map(routes.lutronStatus, createLutronStatusHandler(state, lutron))
-	router.map(routes.lutronSetup, createLutronSetupHandler(state, lutron))
-	router.map(routes.rokuStatus, createRokuStatusHandler(state, config))
-	router.map(routes.rokuSetup, createRokuSetupHandler(state))
-	router.map(routes.sonosStatus, createSonosStatusHandler(state, sonos))
-	router.map(routes.sonosSetup, createSonosSetupHandler(state, sonos))
-	router.map(
-		routes.samsungTvStatus,
-		createSamsungTvStatusHandler(state, samsungTv),
-	)
-	router.map(
-		routes.samsungTvSetup,
-		createSamsungTvSetupHandler(state, samsungTv),
-	)
-	router.map(routes.bondStatus, createBondStatusHandler(state, bond))
-	router.map(routes.bondSetup, createBondSetupHandler(state, bond))
-	router.map(
-		routes.jellyfishStatus,
-		createJellyfishStatusHandler(state, jellyfish),
-	)
-	router.map(
-		routes.jellyfishSetup,
-		createJellyfishSetupHandler(state, config, jellyfish),
-	)
-	router.map(
-		routes.venstarStatus,
-		createVenstarStatusHandler(state, config, venstar),
-	)
-	router.map(
-		routes.venstarSetup,
-		createVenstarSetupHandler(state, config, venstar),
-	)
+	router.map(routes, {
+		actions: {
+			home: createHomeDashboardHandler(
+				state,
+				lutron,
+				samsungTv,
+				sonos,
+				bond,
+				jellyfish,
+				venstar,
+			),
+			health: createHealthHandler(state),
+			lutronStatus: createLutronStatusHandler(state, lutron),
+			lutronSetup: createLutronSetupHandler(state, lutron),
+			rokuStatus: createRokuStatusHandler(state, config),
+			rokuSetup: createRokuSetupHandler(state),
+			sonosStatus: createSonosStatusHandler(state, sonos),
+			sonosSetup: createSonosSetupHandler(state, sonos),
+			samsungTvStatus: createSamsungTvStatusHandler(state, samsungTv),
+			samsungTvSetup: createSamsungTvSetupHandler(state, samsungTv),
+			bondStatus: createBondStatusHandler(state, bond),
+			bondSetup: createBondSetupHandler(state, bond),
+			jellyfishStatus: createJellyfishStatusHandler(state, jellyfish),
+			jellyfishSetup: createJellyfishSetupHandler(state, config, jellyfish),
+			venstarStatus: createVenstarStatusHandler(state, config, venstar),
+			venstarSetup: createVenstarSetupHandler(state, config, venstar),
+		},
+	})
 
 	return router
 }

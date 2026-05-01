@@ -40,80 +40,58 @@ export function createAppRouter(appEnv: AppEnv) {
 	})
 	const chatThreadsHandler = createChatThreadsHandler(appEnv)
 
-	router.map(routes.home, home)
-	router.map(routes.chat, chat)
-	router.map(routes.chatThread, chat)
-	router.map(routes.chatThreads, chatThreadsHandler)
-	router.map(routes.chatThreadsCreate, chatThreadsHandler)
-	router.map(routes.chatThreadsUpdate, createUpdateChatThreadHandler(appEnv))
-	router.map(routes.chatThreadsDelete, createDeleteChatThreadHandler(appEnv))
-	router.map(routes.health, createHealthHandler(appEnv))
-	router.map(routes.login, login)
-	router.map(routes.signup, signup)
-	router.map(routes.account, account)
-	router.map(
-		routes.accountSecrets,
-		createAccountSecretsHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretNew,
-		createAccountSecretsHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretsApprove,
-		createAccountSecretsHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretDetail,
-		createAccountSecretsHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretUserDetail,
-		createAccountSecretsHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretAppDetail,
-		createAccountSecretsHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretSessionDetail,
-		createAccountSecretsHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretsApi,
-		createAccountSecretsApiHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.accountSecretsApiPost,
-		createAccountSecretsApiHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.connectSecret,
-		createConnectSecretHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.connectSecretApi,
-		createConnectSecretApiHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.connectSecretApiPost,
-		createConnectSecretApiHandler(appEnv as unknown as Env),
-	)
-	router.map(
-		routes.connectOauth,
-		createConnectOauthHandler(appEnv as unknown as Env),
-	)
-	router.map(routes.auth, createAuthHandler(appEnv))
-	router.map(routes.session, session)
-	router.map(routes.logout, logout)
-	router.map(
-		routes.passwordResetRequest,
-		createPasswordResetRequestHandler(appEnv),
-	)
-	router.map(
-		routes.passwordResetConfirm,
-		createPasswordResetConfirmHandler(appEnv),
-	)
+	router.map(routes, {
+		actions: {
+			home,
+			chat,
+			chatThread: chat,
+			chatThreads: chatThreadsHandler,
+			chatThreadsCreate: chatThreadsHandler,
+			chatThreadsUpdate: createUpdateChatThreadHandler(appEnv),
+			chatThreadsDelete: createDeleteChatThreadHandler(appEnv),
+			health: createHealthHandler(appEnv),
+			login,
+			signup,
+			account,
+			accountSecrets: createAccountSecretsHandler(appEnv as unknown as Env),
+			accountSecretNew: createAccountSecretsHandler(appEnv as unknown as Env),
+			accountSecretsApprove: createAccountSecretsHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretDetail: createAccountSecretsHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretUserDetail: createAccountSecretsHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretAppDetail: createAccountSecretsHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretSessionDetail: createAccountSecretsHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretPackageDetail: createAccountSecretsHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretsApi: createAccountSecretsApiHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretsApiPost: createAccountSecretsApiHandler(
+				appEnv as unknown as Env,
+			),
+			connectSecret: createConnectSecretHandler(appEnv as unknown as Env),
+			connectSecretApi: createConnectSecretApiHandler(appEnv as unknown as Env),
+			connectSecretApiPost: createConnectSecretApiHandler(
+				appEnv as unknown as Env,
+			),
+			connectOauth: createConnectOauthHandler(appEnv as unknown as Env),
+			auth: createAuthHandler(appEnv),
+			session,
+			logout,
+			passwordResetRequest: createPasswordResetRequestHandler(appEnv),
+			passwordResetConfirm: createPasswordResetConfirmHandler(appEnv),
+		},
+	})
 
 	return router
 }

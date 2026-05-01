@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/component'
+import { type Handle, css } from 'remix/ui'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -69,50 +69,54 @@ export function AccountRoute(handle: Handle) {
 
 		return (
 			<section
-				css={{
+				mix={css({
 					maxWidth: '64rem',
 					margin: '0 auto',
 					display: 'grid',
 					gap: spacing.xl,
-				}}
+				})}
 			>
-				<header css={{ display: 'grid', gap: spacing.xs }}>
+				<header mix={css({ display: 'grid', gap: spacing.xs })}>
 					<h1
-						css={{
+						mix={css({
 							fontSize: typography.fontSize.xl,
 							fontWeight: typography.fontWeight.semibold,
 							color: colors.text,
 							margin: 0,
-						}}
+						})}
 					>
 						{email ? `${email} account` : 'Account'}
 					</h1>
-					<p css={{ color: colors.textMuted, margin: 0 }}>
+					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Review approval requests and manage your stored secrets.
 					</p>
 				</header>
 
 				{status === 'loading' ? (
-					<p css={{ color: colors.textMuted, margin: 0 }}>Loading account…</p>
+					<p mix={css({ color: colors.textMuted, margin: 0 })}>
+						Loading account…
+					</p>
 				) : null}
 				{message ? (
 					<p
-						css={{ color: status === 'error' ? colors.error : colors.text }}
 						role="alert"
+						mix={css({
+							color: status === 'error' ? colors.error : colors.text,
+						})}
 					>
 						{message}
 					</p>
 				) : null}
 
 				{status === 'ready' ? (
-					<section css={cardCss}>
-						<h2 css={cardTitleCss}>Secret management</h2>
-						<p css={descriptionCss}>
+					<section mix={css(cardCss)}>
+						<h2 mix={css(cardTitleCss)}>Secret management</h2>
+						<p mix={css(descriptionCss)}>
 							Create, edit, and delete secrets from the dedicated management
 							page.
 						</p>
 						<div>
-							<a href="/account/secrets" css={primaryLinkCss}>
+							<a href="/account/secrets" mix={css(primaryLinkCss)}>
 								Manage secrets
 							</a>
 						</div>

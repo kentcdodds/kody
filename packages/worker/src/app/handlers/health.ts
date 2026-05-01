@@ -9,7 +9,7 @@ type HealthEnv = {
 export function createHealthHandler(appEnv: HealthEnv) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			const commitSha = appEnv.APP_COMMIT_SHA ?? null
 			return Response.json(
 				{ ok: true, commitSha },

@@ -6,6 +6,6 @@
     "./*": "./src/*"
   },
   "dependencies": {
-    "remix": "3.0.0-alpha.3"
+    "remix": "^3.0.0-beta.0"
   }
 }

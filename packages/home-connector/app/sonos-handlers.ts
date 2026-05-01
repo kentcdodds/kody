@@ -234,7 +234,7 @@ export function createSonosStatusHandler(
 ) {
 	return {
 		middleware: [],
-		async action({ request }: { request: Request }) {
+		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
 				try {
 					const players = await sonos.scan()
@@ -302,7 +302,7 @@ export function createSonosSetupHandler(
 ) {
 	return {
 		middleware: [],
-		async action() {
+		async handler() {
 			const status = sonos.getStatus()
 			const diagnostics = [
 				`Worker URL: ${state.connection.workerUrl}`,
