@@ -4,6 +4,7 @@ import {
 } from '#worker/package-registry/source.ts'
 import {
 	normalizePackageWorkspacePath,
+	normalizePackageExportKey,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -107,7 +108,14 @@ function rememberDependency(
 	state: RewriteState,
 	dependency: BundleArtifactDependency,
 ) {
-	state.dependencies.set(createDependencyKey(dependency), dependency)
+	const key = createDependencyKey(dependency)
+	const existing = state.dependencies.get(key)
+	state.dependencies.set(
+		key,
+		existing?.packageName && !dependency.packageName
+			? { ...dependency, packageName: existing.packageName }
+			: dependency,
+	)
 }
 
 function rememberDependencies(
@@ -207,17 +215,6 @@ export default __kodyPackageModule.default;
 
 function sanitizeSpecifier(specifier: string) {
 	return specifier.replace(/[^a-zA-Z0-9/_-]+/g, '-')
-}
-
-function normalizeExportArtifactName(exportName: string) {
-	const trimmed = exportName.trim()
-	if (!trimmed) {
-		throw new Error('Package export name must not be empty.')
-	}
-	if (trimmed === '.' || trimmed === './') {
-		return '.'
-	}
-	return trimmed.startsWith('./') ? trimmed : `./${trimmed}`
 }
 
 function isBundlerRootConfigPath(path: string) {
@@ -321,7 +318,7 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 		return null
 	}
 	const parsed = parseKodyPackageSpecifier(input.specifier)
-	const exportName = normalizeExportArtifactName(parsed.exportName)
+	const exportName = normalizePackageExportKey(parsed.exportName)
 	const entryPoint = resolvePackageExportPath({
 		manifest: input.loaded.manifest,
 		exportName,
@@ -438,7 +435,7 @@ async function ensurePackageProxy(
 		(() => {
 			assertPublishedSourceCanRebuildWithoutInstallingDeps({
 				sourceFiles: loaded.files,
-				bundleLabel: `Saved package export "${normalizeExportArtifactName(
+				bundleLabel: `Saved package export "${normalizePackageExportKey(
 					parsed.exportName,
 				)}"`,
 			})

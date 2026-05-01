@@ -67,7 +67,7 @@ export function normalizePackageWorkspacePath(path: string) {
 	return path.trim().replace(/^\.?\//, '')
 }
 
-function normalizePackageExportKey(exportName: string) {
+export function normalizePackageExportKey(exportName: string) {
 	const trimmed = exportName.trim()
 	if (!trimmed) {
 		throw new Error('Package export name must not be empty.')

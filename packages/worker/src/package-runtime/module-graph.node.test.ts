@@ -1,5 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
+import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createWorker: vi.fn(),
@@ -26,9 +27,9 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 
 vi.mock('./published-bundle-artifacts.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('./published-bundle-artifacts.ts')
-	>('./published-bundle-artifacts.ts')
+	const actual = await vi.importActual<typeof PublishedBundleArtifactsModule>(
+		'./published-bundle-artifacts.ts',
+	)
 	return {
 		...actual,
 		loadPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>
