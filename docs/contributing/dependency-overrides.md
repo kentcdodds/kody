@@ -15,7 +15,7 @@ The MCP SDK is pinned to a single version so that all workspaces resolve the
 same copy. Without this override, npm may hoist conflicting versions from
 transitive consumers (`agents`, `@kody/worker`).
 
-### `hono` → `>=4.12.14`
+### `hono` → `>=4.12.14 <5.0.0`
 
 Resolves multiple moderate advisories in hono ≤4.12.13:
 
@@ -33,9 +33,10 @@ Resolves multiple moderate advisories in hono ≤4.12.13:
   incorrect IP matching in `ipRestriction()` for IPv4-mapped IPv6
 
 The transitive consumer is `@modelcontextprotocol/sdk` (declares
-`hono@^4.11.4`), so the override is semver-compatible.
+`hono@^4.11.4`). The upper bound `<5.0.0` keeps the override within the same
+major version to avoid breaking changes.
 
-### `@hono/node-server` → `>=1.19.13`
+### `@hono/node-server` → `>=1.19.13 <2.0.0`
 
 Resolves a moderate advisory in @hono/node-server <1.19.13:
 
@@ -43,9 +44,10 @@ Resolves a moderate advisory in @hono/node-server <1.19.13:
   middleware bypass via repeated slashes in `serveStatic`
 
 The transitive consumer is `@modelcontextprotocol/sdk` (declares
-`@hono/node-server@^1.19.9`), so the override is semver-compatible.
+`@hono/node-server@^1.19.9`). The upper bound `<2.0.0` keeps the override within
+the same major version to avoid breaking changes.
 
-### `postcss` → `>=8.5.10`
+### `postcss` → `>=8.5.10 <9.0.0`
 
 Resolves a moderate advisory in postcss <8.5.10:
 
@@ -53,4 +55,5 @@ Resolves a moderate advisory in postcss <8.5.10:
   via unescaped `</style>` in CSS stringify output
 
 PostCSS is pulled transitively by Vite (via `vitest` in devDependencies and the
-Slidev talk tooling). The override keeps all copies at a safe version.
+Slidev talk tooling). The upper bound `<9.0.0` keeps the override within the
+same major version to avoid breaking changes.
