@@ -218,6 +218,68 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 	)
 })
 
+test('buildKodyModuleBundle proxies package module default and named exports', async () => {
+	mockModule.createWorker.mockResolvedValue(createBundleResult('named-import'))
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		...createLoadedPackageSource(),
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'./math': './math.js',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		},
+		files: {
+			'math.js':
+				'export default function multiply(left, right) { return left * right }\nexport function add(left, right) { return left + right }',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js': [
+				'import multiply, { add } from "kody:@kentcdodds/example-package/math"',
+				'export default () => multiply(2, 3) + add(1, 2)',
+			].join('\n'),
+		},
+		entryPoint: 'index.js',
+	})
+
+	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	const proxy = Object.entries(firstCall?.files ?? {}).find(([path]) =>
+		path.includes('__kody_virtual__/imports/'),
+	)?.[1]
+	expect(proxy).toContain('export * from')
+	expect(proxy).toContain('import * as __kodyPackageModule')
+	expect(proxy).toContain('export default __kodyPackageModule.default')
+})
+
 test('buildKodyModuleBundle keeps dependencies for scoped packages with the same leaf', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('shared-leaf'))
 	mockModule.getSavedPackageByName.mockImplementation(

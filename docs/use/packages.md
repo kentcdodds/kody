@@ -47,9 +47,15 @@ For predictable package resolution, saved packages must use a scoped
 
 - Cross-package imports use the full package name such as
   `kody:@scope/my-package/export-name`.
-- Callable exports are exports whose resolved module default export is a
-  function.
+- Exports are normal modules. They may expose a default export, named exports,
+  or both.
+- Direct package invocation calls the resolved module's default export when that
+  export is a function. Importing a package from `execute` or another package
+  can use any named exports that the module provides.
 - Packages may also export non-callable helper modules and values for reuse.
+- Add JSDoc to exported functions and, when helpful, point the export at a
+  `types` file. Package search detail surfaces package descriptions, export
+  descriptions, function signatures, JSDoc, and type definitions.
 
 ## Package apps
 
