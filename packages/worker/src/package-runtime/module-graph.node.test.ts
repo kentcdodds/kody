@@ -6,6 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageByKodyId: vi.fn(),
 	getSavedPackageByName: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
+	loadPublishedBundleArtifactByIdentity: vi.fn(),
 }))
 
 vi.mock('@cloudflare/worker-bundler', () => ({
@@ -24,6 +25,17 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		mockModule.loadPackageSourceBySourceId(...args),
 }))
 
+vi.mock('./published-bundle-artifacts.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('./published-bundle-artifacts.ts')
+	>('./published-bundle-artifacts.ts')
+	return {
+		...actual,
+		loadPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>
+			mockModule.loadPublishedBundleArtifactByIdentity(...args),
+	}
+})
+
 const { buildKodyAppBundle, createPublishedPackageAppBundleCacheKey } =
 	await import('./module-graph.ts')
 
@@ -32,6 +44,7 @@ beforeEach(() => {
 	mockModule.getSavedPackageByName.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockReset()
+	mockModule.loadPublishedBundleArtifactByIdentity.mockReset()
 })
 
 function createBundleResult(suffix: string) {
@@ -280,6 +293,200 @@ test('buildKodyModuleBundle proxies package module default and named exports', a
 	expect(proxy).toContain('export default __kodyPackageModule.default')
 })
 
+test('buildKodyModuleBundle prefers published export artifacts for saved package imports', async () => {
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('published-artifact'),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'./html': './src/html.ts',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'./html': './src/html.ts',
+				},
+				dependencies: {
+					marked: '18.0.2',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+				},
+			}),
+			'src/html.ts':
+				'import { marked } from "marked"\nexport default async function render() { return marked.parse("**ok**") }',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: {
+			id: 'artifact-1',
+		},
+		artifact: {
+			version: 1,
+			kind: 'module',
+			artifactName: './html',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/html.ts',
+			mainModule: 'dist/html.js',
+			modules: {
+				'dist/html.js':
+					'export default async function render() { return "<p><strong>ok</strong></p>" }',
+			},
+			dependencies: [
+				{
+					sourceId: 'source-1',
+					publishedCommit: 'commit-1',
+					kodyId: 'example-package',
+					packageName: '@kentcdodds/example-package',
+				},
+			],
+			packageContext: {
+				packageId: 'pkg-1',
+				kodyId: 'example-package',
+				sourceId: 'source-1',
+			},
+			serviceContext: null,
+			createdAt: '2026-05-01T00:00:00.000Z',
+		},
+	})
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	const result = await buildKodyModuleBundle({
+		env: {
+			APP_DB: {},
+			REPO_SESSION: {},
+		} as Env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		sourceFiles: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/local-package',
+				exports: {
+					'.': './index.js',
+				},
+				kody: {
+					id: 'local-package',
+					description: 'Local package',
+				},
+			}),
+			'index.js':
+				'import render from "kody:@kentcdodds/example-package/html"\nexport default render\n',
+		},
+		entryPoint: 'index.js',
+	})
+
+	expect(result.dependencies).toEqual([
+		{
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			kodyId: 'example-package',
+			packageName: '@kentcdodds/example-package',
+		},
+	])
+	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| {
+				files?: Record<string, string>
+		  }
+		| undefined
+	const artifactEntry = Object.entries(firstCall?.files ?? {}).find(
+		([path]) =>
+			path.includes('.__published_bundle__') && path.endsWith('/dist/html.js'),
+	)
+	expect(artifactEntry?.[1]).toContain('<p><strong>ok</strong></p>')
+	const proxyEntry = Object.entries(firstCall?.files ?? {}).find(([path]) =>
+		path.includes('__kody_virtual__/imports/'),
+	)
+	expect(proxyEntry?.[1]).toContain('.__published_bundle__')
+	expect(proxyEntry?.[1]).not.toContain('src/html.ts')
+})
+
+test('buildKodyModuleBundle requires a published artifact before importing saved package exports with npm dependencies', async () => {
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('missing-artifact'),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
+		manifest: {
+			name: '@kentcdodds/example-package',
+			exports: {
+				'./html': './src/html.ts',
+			},
+			kody: {
+				id: 'example-package',
+				description: 'Example package',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/example-package',
+				exports: {
+					'./html': './src/html.ts',
+				},
+				dependencies: {
+					marked: '18.0.2',
+				},
+				kody: {
+					id: 'example-package',
+					description: 'Example package',
+				},
+			}),
+			'src/html.ts':
+				'import { marked } from "marked"\nexport default async function render() { return marked.parse("**ok**") }',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+
+	const { buildKodyModuleBundle } = await import('./module-graph.ts')
+
+	await expect(
+		buildKodyModuleBundle({
+			env: {
+				APP_DB: {},
+				REPO_SESSION: {},
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceFiles: {
+				'package.json': JSON.stringify({
+					name: '@kentcdodds/local-package',
+					exports: {
+						'.': './index.js',
+					},
+					kody: {
+						id: 'local-package',
+						description: 'Local package',
+					},
+				}),
+				'index.js':
+					'import render from "kody:@kentcdodds/example-package/html"\nexport default render\n',
+			},
+			entryPoint: 'index.js',
+		}),
+	).rejects.toThrow(
+		'no published runtime bundle artifact is available yet. Republish the package so Kody can install dependencies and persist a fresh runtime bundle artifact.',
+	)
+})
+
 test('buildKodyModuleBundle keeps dependencies for scoped packages with the same leaf', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('shared-leaf'))
 	mockModule.getSavedPackageByName.mockImplementation(
@@ -350,11 +557,13 @@ test('buildKodyModuleBundle keeps dependencies for scoped packages with the same
 			sourceId: 'source-alice',
 			publishedCommit: 'commit-source-alice',
 			kodyId: 'shared-package',
+			packageName: '@alice/shared-package',
 		},
 		{
 			sourceId: 'source-bob',
 			publishedCommit: 'commit-source-bob',
 			kodyId: 'shared-package',
+			packageName: '@bob/shared-package',
 		},
 	])
 })
