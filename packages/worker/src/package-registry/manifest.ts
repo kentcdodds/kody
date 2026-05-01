@@ -368,6 +368,14 @@ function isFunctionDeclaration(node: unknown): node is ModuleAstNode {
 	return type === 'FunctionDeclaration' || type === 'TSDeclareFunction'
 }
 
+function getVariableDeclarationExportKind(
+	declaration: ModuleAstNode,
+): 'export' | 'export declare' {
+	return (declaration as { declare?: unknown }).declare === true
+		? 'export declare'
+		: 'export'
+}
+
 function collectExportedFunctionsFromSource(
 	source: string,
 ): Array<PackageExportFunctionProjection> {
@@ -429,6 +437,7 @@ function collectExportedFunctionsFromSource(
 		const declarations = (declaration as { declarations?: unknown })
 			.declarations
 		if (!Array.isArray(declarations)) continue
+		const exportKind = getVariableDeclarationExportKind(declaration)
 		for (const declarator of (declarations as Array<ModuleAstNode>).filter(
 			isFunctionDeclarator,
 		)) {
@@ -440,9 +449,7 @@ function collectExportedFunctionsFromSource(
 				typeDefinition: getVariableFunctionSignature({
 					source,
 					declarator,
-					exportKind: source.includes('declare const')
-						? 'export declare'
-						: 'export',
+					exportKind,
 				}),
 			})
 		}

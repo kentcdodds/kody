@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { synthesizeRemoteToolDomain } from '#mcp/capabilities/home/index.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -12,6 +12,24 @@ import {
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
 } from './search.ts'
+
+const sourceMocks = vi.hoisted(() => ({
+	loadPackageManifestBySourceId: vi.fn(),
+	loadPackageSourceBySourceId: vi.fn(),
+}))
+
+vi.mock('#worker/package-registry/source.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/package-registry/source.ts')
+	>('#worker/package-registry/source.ts')
+	return {
+		...actual,
+		loadPackageManifestBySourceId: (...args: Array<unknown>) =>
+			sourceMocks.loadPackageManifestBySourceId(...args),
+		loadPackageSourceBySourceId: (...args: Array<unknown>) =>
+			sourceMocks.loadPackageSourceBySourceId(...args),
+	}
+})
 
 test('searchUnified ranks mixed search rows through one shared pipeline', async () => {
 	const registry = buildCapabilityRegistry([

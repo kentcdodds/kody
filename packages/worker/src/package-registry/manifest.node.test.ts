@@ -286,6 +286,45 @@ export declare const celsiusToFahrenheit: (value: number) => number
 	)
 })
 
+test('buildPackageSearchProjection uses local declaration kind for exported const signatures', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/mixed-runtime-tools',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'mixed-runtime-tools',
+				description: 'Mixed runtime tools package',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	const projection = buildPackageSearchProjection(manifest, {
+		'src/index.ts': `export declare const typed: (value: string) => string
+
+/**
+ * Runtime formatter.
+ */
+export const format = (value: string): string => value.trim()
+`,
+	})
+
+	expect(projection.exports[0]?.functions).toEqual([
+		{
+			name: 'typed',
+			description: null,
+			typeDefinition: 'export declare const typed: (value: string) => string',
+		},
+		{
+			name: 'format',
+			description: 'Runtime formatter.',
+			typeDefinition: 'export function format(value: string): string',
+		},
+	])
+})
+
 test('parseAuthoredPackageJson rejects retriever definitions with no scopes', () => {
 	expect(() =>
 		parseAuthoredPackageJson({

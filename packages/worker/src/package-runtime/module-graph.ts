@@ -162,6 +162,8 @@ export default {
 function createPackageImportProxySource(input: { targetPath: string }) {
 	return `
 export * from ${JSON.stringify(input.targetPath)};
+import * as __kodyPackageModule from ${JSON.stringify(input.targetPath)};
+export default __kodyPackageModule.default;
 `.trim()
 }
 
