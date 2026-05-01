@@ -36,7 +36,7 @@ Important behavior:
 - Published bundle artifacts are what package exports, services, jobs,
   subscriptions, retrievers, and apps execute at runtime.
 - If a package declares a dependency that the bundler cannot resolve or bundle,
-  repo checks now fail with the underlying bundling error instead of allowing a
+  repo checks fail with the underlying bundling error instead of allowing a
   publish that will only fail later at runtime.
 - Runtime execution does not invent a new dependency policy or ask callers to
   choose one. Dependency handling is part of the saved-package pipeline itself.
