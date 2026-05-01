@@ -564,6 +564,52 @@ test('bond wraps request timeouts as actionable network failures', async () => {
 	}
 })
 
+test('bond wraps response body timeouts as actionable network failures', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	globalThis.fetch = vi.fn(async () => {
+		return {
+			ok: true,
+			text: async () => {
+				throw new DOMException('The operation timed out.', 'TimeoutError')
+			},
+		} as Response
+	}) as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST9',
+				bondid: 'BONDTEST9',
+				instanceName: 'Body Timeout Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T21:40:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST9')
+		bond.setToken('BONDTEST9', 'bond-token')
+
+		await expect(bond.getDeviceState('BONDTEST9', 'mockdev1')).rejects.toThrow(
+			'Bond bridge "BONDTEST9" could not be reached while trying to fetch device mockdev1 state at http://10.0.0.22. Bond request timed out after 5000ms for /v2/devices/mockdev1/state',
+		)
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
 test('bond does not refresh bridge lastSeenAt after failed requests', async () => {
 	const config = createConfig()
 	const state = createAppState()

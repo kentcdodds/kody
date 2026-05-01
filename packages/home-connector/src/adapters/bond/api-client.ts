@@ -42,6 +42,7 @@ export async function bondRequestJson(input: {
 		headers['Content-Type'] = 'application/json'
 	}
 	let response: Response
+	let text: string
 	try {
 		response = await fetch(`${input.baseUrl}${input.path}`, {
 			method,
@@ -52,6 +53,7 @@ export async function bondRequestJson(input: {
 					? undefined
 					: JSON.stringify(input.body),
 		})
+		text = await response.text()
 	} catch (error) {
 		if (error instanceof Error && error.name === 'TimeoutError') {
 			throw createBondRequestTimeoutError({
@@ -62,7 +64,6 @@ export async function bondRequestJson(input: {
 		}
 		throw error
 	}
-	const text = await response.text()
 	let json: unknown = null
 	if (text) {
 		try {
