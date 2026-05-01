@@ -1,18 +1,22 @@
-import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
 	decryptStringWithPurpose,
 	encryptStringWithPurpose,
 } from '#mcp/secrets/crypto.ts'
 
 const generatedUiSessionPurpose = 'generated-ui-session'
-const defaultGeneratedUiSessionTtlMs = 60 * 60 * 1000
+export const defaultGeneratedUiSessionTtlMs = 15 * 60 * 1000
+
+export type GeneratedUiSessionUser = {
+	userId: string
+	email: string
+}
 
 type GeneratedUiAppSessionPayload = {
 	session_id: string
 	app_id: string | null
 	params: Record<string, unknown>
 	home_connector_id: string | null
-	user: McpUserContext
+	user: GeneratedUiSessionUser
 	iat: number
 	exp: number
 }
@@ -34,7 +38,7 @@ export type GeneratedUiAppSession = {
 export async function createGeneratedUiAppSession(input: {
 	env: Pick<Env, 'COOKIE_SECRET'>
 	baseUrl: string
-	user: McpUserContext
+	user: { userId: string; email: string; displayName?: string }
 	appId?: string | null
 	params?: Record<string, unknown>
 	homeConnectorId?: string | null
@@ -50,7 +54,7 @@ export async function createGeneratedUiAppSession(input: {
 			app_id: input.appId ?? null,
 			params: input.params ?? {},
 			home_connector_id: input.homeConnectorId ?? null,
-			user: input.user,
+			user: { userId: input.user.userId, email: input.user.email },
 			iat: now,
 			exp: expiresAtMs,
 		} satisfies GeneratedUiAppSessionPayload),
@@ -75,6 +79,7 @@ export async function createGeneratedUiAppSession(input: {
 export async function verifyGeneratedUiAppSession(
 	env: Pick<Env, 'COOKIE_SECRET'>,
 	token: string,
+	expectedSessionId?: string,
 ) {
 	const raw = await decryptStringWithPurpose(
 		env,
@@ -85,12 +90,18 @@ export async function verifyGeneratedUiAppSession(
 	if (
 		typeof payload.session_id !== 'string' ||
 		!payload.user ||
-		typeof payload.user.userId !== 'string'
+		typeof payload.user.userId !== 'string' ||
+		typeof payload.user.email !== 'string'
 	) {
 		throw new Error('Invalid generated UI session payload.')
 	}
 	if (typeof payload.exp === 'number' && Date.now() > payload.exp) {
 		throw new Error('Generated UI session has expired.')
+	}
+	if (expectedSessionId && payload.session_id !== expectedSessionId) {
+		throw new Error(
+			'Generated UI session does not match the requested session.',
+		)
 	}
 	if (
 		payload.params == null ||

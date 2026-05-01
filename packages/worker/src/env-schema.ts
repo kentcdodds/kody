@@ -171,6 +171,7 @@ export const EnvSchema = object({
 		(value) => value.length >= 32,
 		'COOKIE_SECRET must be at least 32 characters for session signing.',
 	),
+	SECRET_STORE_KEY: optionalNonEmptyStringSchema,
 	APP_DB: d1DatabaseSchema,
 	BUNDLE_ARTIFACTS_KV: createSchema<unknown, KVNamespace>((value, context) => {
 		if (value) {
