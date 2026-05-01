@@ -12,11 +12,14 @@ and secret configuration for **any** outbound connector are documented in
 The connector URL paths (for example `/home/connectors/default/...`) are
 **WebSocket-only** on the public internet. The Worker entrypoint rejects
 non-WebSocket HTTP requests to connector routes with `404` before they reach the
-`HomeConnectorSession` Durable Object. Worker-internal code that needs snapshot
-or RPC helpers (such as `packages/worker/src/home/client.ts`) uses direct DO
-stub calls with a per-isolate internal token header, bypassing the public
-routing restriction. See
-[Remote connectors § HTTP helper endpoints](./remote-connectors.md#http-helper-endpoints-internal-only)
+`HomeConnectorSession` Durable Object, and the DO `fetch()` handler itself also
+rejects non-upgrade HTTP with `404` as a second layer.
+
+Worker-internal code that needs snapshot or tool data (such as
+`packages/worker/src/home/client.ts`) calls Durable Object RPC methods directly
+on the stub (`getSnapshot()`, `rpcListTools()`, `rpcCallTool()`), bypassing
+`fetch()` entirely. See
+[Remote connectors § Internal access](./remote-connectors.md#internal-access-do-rpc-not-http)
 for details.
 
 ## Current adapters

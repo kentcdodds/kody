@@ -10,18 +10,20 @@ route requests (`/home/connectors/...`, `/connectors/...`) when the request
 carries a `WebSocket` upgrade header. Non-upgrade HTTP requests are rejected
 with `404` before reaching the Durable Object.
 
-As a second layer of defense, the `HomeConnectorSession` Durable Object rejects
-non-WebSocket HTTP requests to `/snapshot` and `/rpc/*` unless they carry a
-per-isolate internal token (`X-Kody-Internal`). Worker-internal callers set this
-header via `internalCallHeaders()` from
-`packages/worker/src/home/internal-call-token.ts`.
+As a second layer, the `HomeConnectorSession` Durable Object `fetch()` handler
+rejects all non-WebSocket requests with `404`. Worker-internal callers use
+Durable Object RPC methods (`getSnapshot()`, `rpcListTools()`, `rpcCallTool()`)
+directly on the stub, bypassing `fetch()` entirely.
 
 ## Auth rate limiting
 
 `POST /auth` and `POST /password-reset` are rate-limited per IP address using a
-KV-backed sliding window (`packages/worker/src/app/rate-limit.ts`). The default
-configuration allows 10 requests per 60-second window per IP. Excess requests
-receive `429 Too Many Requests` with a `Retry-After` header.
+D1-backed atomic rate limiter (`packages/worker/src/app/rate-limit.ts`). The
+default configuration allows 10 requests per 60-second window per IP. Excess
+requests receive `429 Too Many Requests` with a `Retry-After` header. The D1
+approach uses a batched INSERT + COUNT in a single transaction, avoiding the
+read-then-write race condition that KV-backed rate limiters suffer from under
+concurrent requests.
 
 ## Maintenance route guard
 
