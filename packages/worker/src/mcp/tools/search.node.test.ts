@@ -675,25 +675,13 @@ async function buildHomeRegistryWithLutronCapabilities() {
 			},
 			get() {
 				return {
-					fetch(input: string | URL | Request) {
-						const url = new URL(
-							typeof input === 'string'
-								? input
-								: input instanceof URL
-									? input.toString()
-									: input.url,
-						)
-						if (url.pathname.endsWith('/snapshot')) {
-							return Promise.resolve(
-								Response.json({
-									connectorId: 'default',
-									connectedAt: '2026-03-25T00:00:00.000Z',
-									lastSeenAt: '2026-03-25T00:00:01.000Z',
-									tools: runtimeLutronTools,
-								}),
-							)
-						}
-						throw new Error(`Unexpected fetch to ${url.pathname}`)
+					getSnapshot() {
+						return Promise.resolve({
+							connectorId: 'default',
+							connectedAt: '2026-03-25T00:00:00.000Z',
+							lastSeenAt: '2026-03-25T00:00:01.000Z',
+							tools: runtimeLutronTools,
+						})
 					},
 				}
 			},
@@ -813,8 +801,8 @@ test('down home connector status is returned when the connector is disconnected'
 				},
 				get() {
 					return {
-						fetch() {
-							return Promise.resolve(Response.json(null))
+						getSnapshot() {
+							return Promise.resolve(null)
 						},
 					}
 				},
@@ -840,15 +828,13 @@ test('down home connector status stays hidden when the connector is up', async (
 				},
 				get() {
 					return {
-						fetch() {
-							return Promise.resolve(
-								Response.json({
-									connectorId: 'default',
-									connectedAt: '2026-03-25T00:00:00.000Z',
-									lastSeenAt: '2026-03-25T00:00:01.000Z',
-									tools: [{ name: 'roku_press_key' }],
-								}),
-							)
+						getSnapshot() {
+							return Promise.resolve({
+								connectorId: 'default',
+								connectedAt: '2026-03-25T00:00:00.000Z',
+								lastSeenAt: '2026-03-25T00:00:01.000Z',
+								tools: [{ name: 'roku_press_key' }],
+							})
 						},
 					}
 				},

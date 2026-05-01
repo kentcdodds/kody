@@ -73,25 +73,13 @@ function buildHomeConnectorEnv() {
 			},
 			get() {
 				return {
-					fetch(input: string | URL | Request) {
-						const url = new URL(
-							typeof input === 'string'
-								? input
-								: input instanceof URL
-									? input.toString()
-									: input.url,
-						)
-						if (url.pathname.endsWith('/snapshot')) {
-							return Promise.resolve(
-								Response.json({
-									connectorId: 'default',
-									connectedAt: '2026-03-25T00:00:00.000Z',
-									lastSeenAt: '2026-03-25T00:00:01.000Z',
-									tools: runtimeHomeTools,
-								}),
-							)
-						}
-						throw new Error(`Unexpected fetch to ${url.pathname}`)
+					getSnapshot() {
+						return Promise.resolve({
+							connectorId: 'default',
+							connectedAt: '2026-03-25T00:00:00.000Z',
+							lastSeenAt: '2026-03-25T00:00:01.000Z',
+							tools: runtimeHomeTools,
+						})
 					},
 				}
 			},
