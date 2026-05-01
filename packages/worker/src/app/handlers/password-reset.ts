@@ -1,7 +1,6 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { createDb, passwordResetsTable, usersTable } from '#worker/db.ts'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { logAuditEvent, getRequestIp } from '#app/audit-log.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
@@ -59,19 +58,30 @@ async function hashResetToken(token: string) {
 
 function logMissingEmailConfig(payload: {
 	to: string
-	from: string
 	subject: string
 	html: string
 }) {
 	console.warn(
-		'cloudflare-email-from-missing',
+		'password-reset-email-sender-unconfigured',
 		JSON.stringify({
 			to: payload.to,
-			from: payload.from,
 			subject: payload.subject,
 			body: payload.html,
 		}),
 	)
+}
+
+function getPasswordResetEmailConfig(appEnv: Pick<AppEnv, 'APP_BASE_URL'>) {
+	const configuredBaseUrl = appEnv.APP_BASE_URL?.trim()
+	if (!configuredBaseUrl) return null
+
+	try {
+		const appBaseUrl = new URL(configuredBaseUrl).origin
+		const fromEmail = `kody@${new URL(configuredBaseUrl).hostname}`
+		return { appBaseUrl, fromEmail }
+	} catch {
+		return null
+	}
 }
 
 export function createPasswordResetRequestHandler(appEnv: AppEnv) {
@@ -128,19 +138,17 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 			}
 
 			if (userRecord) {
-				const appBaseUrl = getAppBaseUrl({
-					env: appEnv,
-					requestUrl: url,
-				})
-				const resetUrl = new URL('/reset-password', appBaseUrl)
+				const emailConfig = getPasswordResetEmailConfig(appEnv)
+				const resetUrl = new URL(
+					'/reset-password',
+					emailConfig?.appBaseUrl ?? url,
+				)
 				resetUrl.searchParams.set('token', token)
 				const email = buildResetEmail(resetUrl.toString())
-				const fromEmail = appEnv.CLOUDFLARE_EMAIL_FROM?.trim() ?? ''
 
-				if (!fromEmail) {
+				if (!emailConfig) {
 					logMissingEmailConfig({
 						to: normalizedEmail,
-						from: fromEmail,
 						subject: email.subject,
 						html: email.html,
 					})
@@ -154,7 +162,7 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 							},
 							{
 								to: normalizedEmail,
-								from: fromEmail,
+								from: emailConfig.fromEmail,
 								subject: email.subject,
 								html: email.html,
 								text: email.text,
