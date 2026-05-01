@@ -199,20 +199,21 @@ export async function resolveSecret(
 			name: input.name,
 		})
 		if (!entry) continue
-		const decrypted = await decryptSecretValue(
-			input.env,
-			entry.encrypted_value,
-		)
+		const decrypted = await decryptSecretValue(input.env, entry.encrypted_value)
 		if (decrypted.needsReEncrypt) {
-			const reEncrypted = await encryptSecretValue(input.env, decrypted.value)
-			await upsertSecretEntry({
-				db: input.env.APP_DB,
-				row: {
-					...entry,
-					encrypted_value: reEncrypted,
-					updated_at: new Date().toISOString(),
-				},
-			})
+			try {
+				const reEncrypted = await encryptSecretValue(input.env, decrypted.value)
+				await upsertSecretEntry({
+					db: input.env.APP_DB,
+					row: {
+						...entry,
+						encrypted_value: reEncrypted,
+						updated_at: new Date().toISOString(),
+					},
+				})
+			} catch {
+				// Best-effort re-encryption; read still succeeds with the decrypted value
+			}
 		}
 		return {
 			found: true,
