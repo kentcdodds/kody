@@ -230,7 +230,11 @@ export function createAccountSecretRevealHandler(env: Env) {
 			}
 
 			const secretId = readString(body, 'secretId')
-			const password = readString(body, 'password')
+			const rawPassword = (body as Record<string, unknown>)['password']
+			const password =
+				typeof rawPassword === 'string' && rawPassword.length > 0
+					? rawPassword
+					: null
 			if (!secretId) {
 				return jsonResponse({ ok: false, error: 'Secret id is required.' }, 400)
 			}
