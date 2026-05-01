@@ -19,7 +19,6 @@ import { type HomeConnectorState } from '../../state.ts'
 import { type HomeConnectorStorage } from '../../storage/index.ts'
 import { scanTeslaGateways } from './discovery.ts'
 import {
-	authedGet,
 	clearTeslaGatewayRateLimits,
 	extractGatewaySerialFromDin,
 	getTeslaApiStatus,
@@ -579,14 +578,6 @@ export function createTeslaGatewayAdapter(input: {
 				}
 			}
 			return results
-		},
-		async rawAuthedGet<T = unknown>(input: {
-			gatewayId: string
-			path: string
-		}) {
-			const gateway = requireTeslaGateway(storage, connectorId, input.gatewayId)
-			const session = await ensureSession({ storage, connectorId, gateway })
-			return await authedGet<T>({ session, path: input.path })
 		},
 	}
 }

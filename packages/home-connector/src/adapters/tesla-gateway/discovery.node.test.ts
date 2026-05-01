@@ -2,9 +2,9 @@ import { expect, test } from 'vitest'
 import { __testing } from './discovery.ts'
 
 const {
+	decideLeaderStatus,
 	expandSlash24,
 	isTeslaCert,
-	looksLikeLeaderCert,
 	probeLooksLikeTesla,
 	ouiFromMac,
 	TESLA_LEADER_OUIS,
@@ -52,31 +52,6 @@ test('isTeslaCert recognises Tesla Energy Products O/OU/SAN markers', () => {
 	expect(isTeslaCert(null)).toBe(false)
 })
 
-test('looksLikeLeaderCert keys off the SAN entries used by leaders only', () => {
-	expect(
-		looksLikeLeaderCert({
-			subjectCommonName: 'GTW-1234',
-			subjectOrganization: 'Tesla',
-			subjectOrganizationalUnit: 'Tesla Energy Products',
-			issuerCommonName: 'Tesla Manufacturing CA',
-			issuerOrganization: 'Tesla',
-			subjectAltName: 'DNS:teg, DNS:powerwall, DNS:powerpack',
-			fingerprint256: null,
-		}),
-	).toBe(true)
-	expect(
-		looksLikeLeaderCert({
-			subjectCommonName: 'PWR-9999',
-			subjectOrganization: 'Tesla',
-			subjectOrganizationalUnit: 'Tesla Energy Products',
-			issuerCommonName: 'Tesla Manufacturing CA',
-			issuerOrganization: 'Tesla',
-			subjectAltName: 'DNS:powerpack',
-			fingerprint256: null,
-		}),
-	).toBe(false)
-})
-
 test('probeLooksLikeTesla treats 401 + Bad Credentials body as Tesla', () => {
 	expect(
 		probeLooksLikeTesla({
@@ -114,4 +89,54 @@ test('ouiFromMac extracts the manufacturer OUI', () => {
 test('Tesla OUI sets recognise leader and powerwall MACs', () => {
 	expect(TESLA_LEADER_OUIS.has('90:03:71')).toBe(true)
 	expect(TESLA_POWERWALL_OUIS.has('00:d6:cb')).toBe(true)
+})
+
+test('decideLeaderStatus uses OUI as the authoritative leader signal', () => {
+	// Powerwall OUI -> never a leader, even though the cert SAN looks identical.
+	expect(
+		decideLeaderStatus({
+			certIsTesla: true,
+			macAddress: '00:d6:cb:11:22:33',
+			ouiIsLeader: false,
+			ouiIsPowerwall: true,
+		}),
+	).toBe(false)
+	// BGW2 leader OUI -> leader.
+	expect(
+		decideLeaderStatus({
+			certIsTesla: true,
+			macAddress: '90:03:71:11:22:33',
+			ouiIsLeader: true,
+			ouiIsPowerwall: false,
+		}),
+	).toBe(true)
+	// Cert is Tesla but ARP miss left us with no MAC -> candidate leader.
+	// We accept this so a real BGW2 hidden behind ARP issues still surfaces.
+	expect(
+		decideLeaderStatus({
+			certIsTesla: true,
+			macAddress: null,
+			ouiIsLeader: false,
+			ouiIsPowerwall: false,
+		}),
+	).toBe(true)
+	// Cert is NOT Tesla and no MAC -> not a leader.
+	expect(
+		decideLeaderStatus({
+			certIsTesla: false,
+			macAddress: null,
+			ouiIsLeader: false,
+			ouiIsPowerwall: false,
+		}),
+	).toBe(false)
+	// Has a MAC but it's an unknown OUI -> not a leader (cert SAN alone is
+	// insufficient when we have an OUI signal that doesn't match Tesla).
+	expect(
+		decideLeaderStatus({
+			certIsTesla: true,
+			macAddress: 'aa:bb:cc:11:22:33',
+			ouiIsLeader: false,
+			ouiIsPowerwall: false,
+		}),
+	).toBe(false)
 })

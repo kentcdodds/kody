@@ -5,14 +5,15 @@
  * Identification combines three signals:
  *
  * 1. TCP port 443 reachability for each candidate IP.
- * 2. The TLS certificate subject. Tesla gateways present a self-signed cert
- *    where `O=Tesla, OU=Tesla Energy Products` and the SAN list always
- *    contains `DNS:teg`. The leader gateway also exposes `DNS:powerwall` (and
- *    on newer firmwares `DNS:powerpack`).
+ * 2. The TLS certificate. Tesla Energy devices present a self-signed cert
+ *    where `O=Tesla, OU=Tesla Energy Products` and the SAN list contains
+ *    `DNS:teg, DNS:powerwall` (and on newer firmwares `DNS:powerpack`).
+ *    The cert alone identifies the device as Tesla but cannot distinguish a
+ *    BGW2 leader from a Powerwall unit because both expose identical SANs.
  * 3. The MAC OUI from the local ARP cache. Backup Gateway 2 leaders use OUI
- *    `90:03:71`; individual Powerwall units use `00:d6:cb`. We discard the
- *    Powerwall units so callers only see leaders, since only the leader
- *    answers `/api/...` calls.
+ *    `90:03:71`; individual Powerwall units use `00:d6:cb`. The OUI is the
+ *    only reliable way to demote Powerwalls so callers only see leaders,
+ *    since only the leader answers `/api/...` calls.
  *
  * As a final fallback we hit `POST /api/login/Basic` with a deliberately bad
  * password. A real Tesla gateway responds with HTTP 401 + a JSON body that
@@ -152,12 +153,6 @@ function isTeslaCert(cert: TeslaGatewayCertSummary | null) {
 	return san.includes('dns:teg') || san.includes('dns:powerwall')
 }
 
-function looksLikeLeaderCert(cert: TeslaGatewayCertSummary | null) {
-	if (!cert) return false
-	const san = (cert.subjectAltName ?? '').toLowerCase()
-	return san.includes('dns:powerwall') || san.includes('dns:teg')
-}
-
 async function readArpCache(): Promise<Map<string, string>> {
 	const map = new Map<string, string>()
 	try {
@@ -245,6 +240,35 @@ function probeLoginEndpoint(host: string, port: number, timeoutMs: number) {
 	)
 }
 
+/**
+ * Decide whether an identified Tesla host should be treated as a leader.
+ *
+ * Both BGW2 leaders and Powerwall units present identical SANs
+ * (`DNS:teg, DNS:powerwall, DNS:powerpack`), so cert content alone cannot
+ * distinguish them. The MAC OUI is the only definitive signal.
+ *
+ * Rules in priority order:
+ *
+ *   1. OUI matches a known BGW2 leader OUI -> leader.
+ *   2. OUI matches a Powerwall OUI -> not a leader.
+ *   3. ARP gave us no MAC at all but the cert is Tesla -> treat as a
+ *      candidate leader. We prefer surfacing a candidate over silently
+ *      dropping a real leader hidden behind ARP issues. A subsequent
+ *      login-endpoint probe may further refine.
+ *   4. Otherwise -> not a leader.
+ */
+function decideLeaderStatus(input: {
+	certIsTesla: boolean
+	macAddress: string | null
+	ouiIsLeader: boolean
+	ouiIsPowerwall: boolean
+}): boolean {
+	if (input.ouiIsLeader) return true
+	if (input.ouiIsPowerwall) return false
+	if (input.macAddress === null && input.certIsTesla) return true
+	return false
+}
+
 function probeLooksLikeTesla(probe: {
 	status: number
 	bodyPreview: string | null
@@ -290,11 +314,15 @@ async function probeHost(input: {
 	const macAddress = input.arpCache.get(input.host) ?? null
 	const macOui = ouiFromMac(macAddress)
 	const certIsTesla = isTeslaCert(cert)
-	const certIsLeader = looksLikeLeaderCert(cert)
 	const ouiIsLeader = macOui !== null && TESLA_LEADER_OUIS.has(macOui)
 	const ouiIsPowerwall = macOui !== null && TESLA_POWERWALL_OUIS.has(macOui)
 	let identifiedAsTesla = certIsTesla || ouiIsLeader || ouiIsPowerwall
-	let identifiedAsLeader = certIsLeader || ouiIsLeader
+	let identifiedAsLeader = decideLeaderStatus({
+		certIsTesla,
+		macAddress,
+		ouiIsLeader,
+		ouiIsPowerwall,
+	})
 	let loginEndpointResponse: TeslaGatewayHostProbe['loginEndpointResponse'] =
 		null
 	if (certIsTesla && !ouiIsPowerwall) {
@@ -305,13 +333,14 @@ async function probeHost(input: {
 		)
 		if (loginEndpointResponse && probeLooksLikeTesla(loginEndpointResponse)) {
 			identifiedAsTesla = true
-			identifiedAsLeader = true
+			// Note: a 401 / "Bad Credentials" response does not by itself prove
+			// leader status (Powerwall units sometimes respond identically),
+			// so we only upgrade to leader when the OUI confirms it OR we have
+			// no OUI signal at all to contradict the cert.
+			if (ouiIsLeader || (macAddress === null && !ouiIsPowerwall)) {
+				identifiedAsLeader = true
+			}
 		}
-	}
-	if (ouiIsPowerwall) {
-		// Powerwall units sometimes serve the same cert; never treat them as
-		// leaders even if cert looks identical.
-		identifiedAsLeader = false
 	}
 	return {
 		host: input.host,
@@ -549,26 +578,10 @@ export async function scanTeslaGateways(
 	return result
 }
 
-/**
- * Public helper: identify whether a single host looks like a Tesla leader.
- * Useful for ad-hoc verification from the setup UI.
- */
-export async function probeTeslaGatewayHost(input: {
-	host: string
-	port?: number
-}): Promise<TeslaGatewayHostProbe> {
-	const arpCache = await readArpCache()
-	return await probeHost({
-		host: input.host,
-		port: input.port ?? DEFAULT_PORT,
-		arpCache,
-	})
-}
-
 export const __testing = {
+	decideLeaderStatus,
 	expandSlash24,
 	isTeslaCert,
-	looksLikeLeaderCert,
 	probeLooksLikeTesla,
 	ouiFromMac,
 	TESLA_LEADER_OUIS,

@@ -59,6 +59,15 @@ export type TeslaGatewayHttpResponse<T> = {
 	body: T | null
 	rawText: string
 	headers: Record<string, string>
+	/**
+	 * Individual `Set-Cookie` headers preserved as separate entries.
+	 *
+	 * `headers['set-cookie']` joins all entries with `, ` so that the value
+	 * type can stay `Record<string, string>`. That join breaks for cookies
+	 * that contain commas inside attribute values (most commonly
+	 * `Expires=<HTTP date>`), so the login flow needs the unjoined list.
+	 */
+	setCookieHeaders: Array<string>
 }
 
 export class TeslaGatewayHttpError extends Error {
@@ -233,6 +242,7 @@ async function fetchJson<T>(input: {
 		body: parsed,
 		rawText: result.rawText,
 		headers: result.headers,
+		setCookieHeaders: result.setCookieHeaders,
 	}
 }
 
@@ -316,21 +326,13 @@ export async function loginToTeslaGateway(input: {
 			message: `Tesla gateway login failed (HTTP ${response.status}): ${errorMessage}`,
 		})
 	}
-	const cookies = pickCookieValues(
-		response.headers['set-cookie'] ? [response.headers['set-cookie']] : [],
-	)
-	// `set-cookie` is multi-valued. The lowercase header map has joined them with
-	// ", " above, but for cookie purposes we want each individually preserved.
-	const rawSetCookie = response.headers['set-cookie']
-	const splitCookies = rawSetCookie
-		? rawSetCookie
-				.split(/,\s*(?=[A-Za-z_][A-Za-z0-9_-]*=)/g)
-				.map((header) => header.split(';')[0]?.trim())
-				.filter((value): value is string => Boolean(value))
-		: cookies
-	const cookieHeader = splitCookies.join('; ')
+	// Use the unjoined list of `Set-Cookie` headers preserved by `lowLevelRequest`.
+	// Splitting the joined header value by `,` is unsafe because cookie attribute
+	// values (e.g. `Expires=<HTTP date>`) legitimately contain commas.
+	const cookies = pickCookieValues(response.setCookieHeaders)
+	const cookieHeader = cookies.join('; ')
 	return {
-		cookies: splitCookies,
+		cookies,
 		cookieHeader,
 		token: response.body?.token ?? null,
 		email: response.body?.email ?? null,
