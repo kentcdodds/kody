@@ -23,6 +23,32 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 
 The package manifest is `package.json`.
 
+## npm dependencies
+
+Saved packages may declare npm runtime dependencies in
+`package.json#dependencies` when the dependency is compatible with the
+Cloudflare Workers runtime.
+
+Important behavior:
+
+- Kody resolves and bundles saved-package npm dependencies during repo checks
+  and publish-time artifact rebuilds.
+- Published bundle artifacts are what package exports, services, jobs,
+  subscriptions, retrievers, and apps execute at runtime.
+- If a package declares a dependency that the bundler cannot resolve or bundle,
+  repo checks now fail with the underlying bundling error instead of allowing a
+  publish that will only fail later at runtime.
+- Runtime execution does not invent a new dependency policy or ask callers to
+  choose one. Dependency handling is part of the saved-package pipeline itself.
+
+Contributor guidance:
+
+- Prefer Worker-safe ESM packages.
+- Declare runtime dependencies under `dependencies`, not `devDependencies`.
+- When debugging dependency issues, verify both `runRepoChecks(...)` and the
+  published bundle artifact rebuild path, since both must agree on what the
+  saved package can execute.
+
 ## Mental model
 
 Think in terms of:

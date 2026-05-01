@@ -1007,6 +1007,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			workspace: this.workspace,
 			manifestPath,
 			sourceRoot,
+			env: this.env,
+			baseUrl: source.source_root,
+			userId: input.userId,
 		})
 		const runId = crypto.randomUUID()
 		const treeHash = await this.computeTreeHash()

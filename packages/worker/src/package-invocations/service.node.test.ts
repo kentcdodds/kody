@@ -744,6 +744,94 @@ test('invokePackageExport stores export-not-found responses as terminal failures
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
+test('invokePackageExport asks for republish when a published artifact is missing for npm-backed source', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+	repoMockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			user_id: 'user-123',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'repo-1',
+			published_commit: 'commit-1',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			created_at: '2026-04-27T00:00:00.000Z',
+			updated_at: '2026-04-27T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'./dispatch-message-created': './src/dispatch-message-created.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway helpers',
+			},
+		},
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/discord-gateway',
+				dependencies: {
+					kleur: '^4.1.5',
+				},
+				exports: {
+					'./dispatch-message-created': './src/dispatch-message-created.ts',
+				},
+				kody: {
+					id: 'discord-gateway',
+					description: 'Discord gateway helpers',
+				},
+			}),
+			'src/dispatch-message-created.ts':
+				'import kleur from "kleur"\nexport default async function run(){ return kleur.green("ok") }',
+		},
+	})
+
+	const response = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-republish-needed',
+			source: 'discord-gateway',
+		},
+	})
+
+	expect(response.status).toBe(500)
+	expect(response.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'invocation_failed',
+			message: expect.stringContaining(
+				'no published runtime bundle artifact is available yet',
+			),
+		},
+	})
+	expect(
+		repoMockModule.typecheckPackageEntrypointsFromSourceFiles,
+	).toHaveBeenCalledWith({
+		sourceFiles: expect.objectContaining({
+			'package.json': expect.any(String),
+			'src/dispatch-message-created.ts': expect.any(String),
+		}),
+		entryPoints: [
+			{
+				path: 'src/dispatch-message-created.ts',
+				includeStorage: true,
+			},
+		],
+	})
+	expect(repoMockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+})
+
 test('invokePackageSubscription uses the normal capability registry with package storage and source metadata intact', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
