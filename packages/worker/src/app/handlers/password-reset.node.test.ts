@@ -21,11 +21,15 @@ vi.mock('#worker/db.ts', () => ({
 	usersTable: {},
 }))
 
-vi.mock('#app/audit-log.ts', () => ({
-	getRequestIp: () => null,
-	logAuditEvent: (...args: Array<unknown>) =>
-		mockModule.logAuditEvent(...args),
-}))
+vi.mock('#app/audit-log.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	return {
+		...actual,
+		getRequestIp: () => null,
+		logAuditEvent: (...args: Array<unknown>) =>
+			mockModule.logAuditEvent(...args),
+	}
+})
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
 	sendCloudflareEmail: (...args: Array<unknown>) =>

@@ -731,9 +731,7 @@ async function buildAccountSecretsPayload(input: {
 		packageApps,
 	})
 	const selectedSecret = input.selectedSecretId
-		? await resolveAccountSecretDetail({
-				env: input.env,
-				userId: input.user.mcpUser.userId,
+		? resolveAccountSecretDetail({
 				secretId: input.selectedSecretId,
 				secrets,
 			})
@@ -894,9 +892,7 @@ async function resolveSecretApprovalView(input: {
 	} satisfies SecretApprovalView
 }
 
-async function resolveAccountSecretDetail(input: {
-	env: Env
-	userId: string
+function resolveAccountSecretDetail(input: {
 	secretId: string
 	secrets: Array<AccountSecretListItem>
 }) {
@@ -904,18 +900,7 @@ async function resolveAccountSecretDetail(input: {
 	if (!parsed) return null
 
 	const selected = input.secrets.find((secret) => secret.id === input.secretId)
-	if (!selected) return null
-
-	const resolved = await resolveSecret({
-		env: input.env,
-		userId: input.userId,
-		name: parsed.name,
-		scope: parsed.scope,
-		storageContext: getSecretContextForAccountSecret(parsed),
-	})
-	if (!resolved.found || resolved.value == null) return null
-
-	return { ...selected } satisfies AccountSecretDetail
+	return selected ?? null
 }
 
 function toAccountSecretListItem(
@@ -1104,7 +1089,7 @@ async function handleSaveAction(input: {
 }) {
 	const currentId = readOptionalString(input.body, 'currentId')
 	const name = readString(input.body, 'name')
-	const value = readString(input.body, 'value')
+	let value = readString(input.body, 'value')
 	const scope = readAccountSecretScope(input.body)
 	const description = readOptionalString(input.body, 'description') ?? ''
 	const allowedHosts = normalizeAllowedHosts(
@@ -1120,11 +1105,28 @@ async function handleSaveAction(input: {
 	if (!name) {
 		return jsonResponse({ ok: false, error: 'Secret name is required.' }, 400)
 	}
-	if (!value) {
-		return jsonResponse({ ok: false, error: 'Secret value is required.' }, 400)
-	}
 	if (!scope) {
 		return jsonResponse({ ok: false, error: 'Secret scope is required.' }, 400)
+	}
+
+	if (!value && currentId) {
+		const parsed = parseAccountSecretId(currentId)
+		if (parsed) {
+			const existing = await resolveSecret({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				name: parsed.name,
+				scope: parsed.scope,
+				storageContext: getSecretContextForAccountSecret(parsed),
+			})
+			if (existing.found && existing.value != null) {
+				value = existing.value
+			}
+		}
+	}
+
+	if (!value) {
+		return jsonResponse({ ok: false, error: 'Secret value is required.' }, 400)
 	}
 
 	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {

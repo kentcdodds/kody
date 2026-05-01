@@ -17,6 +17,11 @@ async function hashIdentifier(value: string) {
 	return toHex(new Uint8Array(digest))
 }
 
+export function redactEmailRecipient(email: string) {
+	const at = email.indexOf('@')
+	return at >= 0 ? `***@${email.slice(at + 1)}` : '***'
+}
+
 export function getRequestIp(request: Request) {
 	const forwarded = request.headers.get('x-forwarded-for')
 	const forwardedIp = forwarded?.split(',')[0]?.trim()

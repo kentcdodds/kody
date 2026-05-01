@@ -1,7 +1,11 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { createDb, passwordResetsTable, usersTable } from '#worker/db.ts'
-import { logAuditEvent, getRequestIp } from '#app/audit-log.ts'
+import {
+	logAuditEvent,
+	getRequestIp,
+	redactEmailRecipient,
+} from '#app/audit-log.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { type routes } from '#app/routes.ts'
@@ -54,11 +58,6 @@ async function hashResetToken(token: string) {
 	const data = new TextEncoder().encode(token)
 	const digest = await crypto.subtle.digest('SHA-256', data)
 	return toHex(new Uint8Array(digest))
-}
-
-function redactEmailRecipient(email: string) {
-	const at = email.indexOf('@')
-	return at >= 0 ? `***@${email.slice(at + 1)}` : '***'
 }
 
 function logMissingEmailConfig(payload: {

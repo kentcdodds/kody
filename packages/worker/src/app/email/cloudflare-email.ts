@@ -3,6 +3,7 @@ import {
 	outboundEmailSchema,
 	type OutboundEmail,
 } from '@kody-internal/shared/outbound-email.ts'
+import { redactEmailRecipient } from '#app/audit-log.ts'
 
 type CloudflareEmailClientConfig = {
 	accountId?: string
@@ -48,11 +49,6 @@ function normalizeEmailPayload(message: OutboundEmail) {
 		throw new Error(`Invalid outbound email payload: ${issueMessage}`)
 	}
 	return result.value
-}
-
-function redactEmailRecipient(email: string) {
-	const at = email.indexOf('@')
-	return at >= 0 ? `***@${email.slice(at + 1)}` : '***'
 }
 
 function redactRecipients(to: string | Array<string>) {

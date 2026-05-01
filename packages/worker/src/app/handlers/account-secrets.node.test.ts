@@ -299,10 +299,6 @@ test('host approval view is derived from allowed-host and selected secret', asyn
 			ttlMs: null,
 		},
 	])
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'secret-value',
-	})
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'cloudflareToken',
@@ -583,10 +579,6 @@ test('GET /account/secrets.json does not include value in selectedSecret', async
 			ttlMs: null,
 		},
 	])
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'super-secret-value',
-	})
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
 
