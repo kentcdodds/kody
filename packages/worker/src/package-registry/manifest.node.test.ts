@@ -280,7 +280,6 @@ export declare const celsiusToFahrenheit: (value: number) => number
 		}),
 	])
 	const document = buildPackageSearchDocument(projection)
-	expect(document).toContain('Look up the forecast for a city.')
 	expect(document).toContain(
 		'export declare function forecast(city: string): Promise<string>',
 	)

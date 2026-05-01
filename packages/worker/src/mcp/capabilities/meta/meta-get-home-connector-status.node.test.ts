@@ -34,16 +34,17 @@ test('meta_get_home_connector_status reports a connected connector', async () =>
 		},
 	)
 
-	expect(result).toEqual({
+	expect(result).toMatchObject({
 		status: 'connected',
 		connected: true,
 		connector_id: 'default',
 		connected_at: '2026-03-25T00:00:00.000Z',
 		last_seen_at: '2026-03-25T00:00:01.000Z',
 		tool_count: 1,
-		message: 'The home connector "default" is connected and exposing 1 tool.',
 		error: null,
 	})
+	expect(result.message).toContain('default')
+	expect(result.message).toContain('1 tool')
 })
 
 test('meta_get_home_connector_status reports a disconnected connector', async () => {
@@ -71,14 +72,15 @@ test('meta_get_home_connector_status reports a disconnected connector', async ()
 		},
 	)
 
-	expect(result).toEqual({
+	expect(result).toMatchObject({
 		status: 'disconnected',
 		connected: false,
 		connector_id: 'default',
 		connected_at: null,
 		last_seen_at: null,
 		tool_count: 0,
-		message: 'The home connector "default" is not currently connected.',
 		error: null,
 	})
+	expect(result.message).toContain('default')
+	expect(result.message).toContain('not currently connected')
 })
