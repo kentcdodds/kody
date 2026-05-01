@@ -119,7 +119,14 @@ vi.mock('#mcp/secrets/allowed-capabilities.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/allowed-packages.ts', () => ({
-	normalizeAllowedPackages: (packages: Array<string>) => packages,
+	normalizeAllowedPackages: (packages: Array<string>) =>
+		Array.from(
+			new Set(
+				packages
+					.map((value) => value.trim())
+					.filter((value) => value.length > 0),
+			),
+		).sort((left, right) => left.localeCompare(right)),
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
@@ -322,7 +329,7 @@ test('connect secret POST saves secret metadata from editable defaults', async (
 				description: 'Linear API key',
 				allowedHosts: ['API.LINEAR.APP', 'api.linear.app'],
 				allowedCapabilities: ['linear_issue_list'],
-				allowedPackages: ['package-123'],
+				allowedPackages: [' package-123 ', 'package-123'],
 			}),
 		}),
 		params: {},
