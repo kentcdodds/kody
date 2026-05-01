@@ -131,7 +131,7 @@ export async function startPackageEventWorkflow(input: {
 }) {
 	const params = normalizeWorkflowParams(input.params)
 	const id = buildPackageEventWorkflowId(params)
-	const instance = await input.env.PACKAGE_EVENT_WORKFLOW.create({
+	const instance = await input.env.PACKAGE_EVENT_WORKFLOWS.create({
 		id,
 		params,
 	})
