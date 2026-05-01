@@ -56,17 +56,20 @@ async function hashResetToken(token: string) {
 	return toHex(new Uint8Array(digest))
 }
 
+function redactEmailRecipient(email: string) {
+	const at = email.indexOf('@')
+	return at >= 0 ? `***@${email.slice(at + 1)}` : '***'
+}
+
 function logMissingEmailConfig(payload: {
 	to: string
 	subject: string
-	html: string
 }) {
 	console.warn(
 		'password-reset-email-sender-unconfigured',
 		JSON.stringify({
-			to: payload.to,
+			to: redactEmailRecipient(payload.to),
 			subject: payload.subject,
-			body: payload.html,
 		}),
 	)
 }
@@ -150,7 +153,6 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 					logMissingEmailConfig({
 						to: normalizedEmail,
 						subject: email.subject,
-						html: email.html,
 					})
 				} else {
 					try {

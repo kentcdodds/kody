@@ -50,23 +50,23 @@ function normalizeEmailPayload(message: OutboundEmail) {
 	return result.value
 }
 
+function redactEmailRecipient(email: string) {
+	const at = email.indexOf('@')
+	return at >= 0 ? `***@${email.slice(at + 1)}` : '***'
+}
+
+function redactRecipients(to: string | Array<string>) {
+	if (Array.isArray(to)) return to.map(redactEmailRecipient)
+	return redactEmailRecipient(to)
+}
+
 function logSkippedEmail(reason: string, message: OutboundEmail) {
-	const headers =
-		message.headers ?
-			Object.fromEntries(
-				Object.keys(message.headers).map((key) => [key, '[REDACTED]']),
-			)
-		:	undefined
 	console.warn(
 		reason,
 		JSON.stringify({
-			to: message.to,
+			to: redactRecipients(message.to),
 			from: message.from,
 			subject: message.subject,
-			html: message.html,
-			text: message.text,
-			replyTo: message.replyTo,
-			headers,
 		}),
 	)
 }

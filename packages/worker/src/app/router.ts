@@ -1,6 +1,7 @@
 import { createRouter } from 'remix/fetch-router'
 import { account } from '#app/handlers/account.ts'
 import {
+	createAccountSecretRevealHandler,
 	createAccountSecretsApiHandler,
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
@@ -77,6 +78,9 @@ export function createAppRouter(appEnv: AppEnv) {
 				appEnv as unknown as Env,
 			),
 			accountSecretsApiPost: createAccountSecretsApiHandler(
+				appEnv as unknown as Env,
+			),
+			accountSecretsReveal: createAccountSecretRevealHandler(
 				appEnv as unknown as Env,
 			),
 			connectSecret: createConnectSecretHandler(appEnv as unknown as Env),

@@ -65,7 +65,28 @@ Password reset handlers are in
 - `POST /password-reset/confirm` verifies token hash and expiry, then updates
   password
 - reset tokens expire after 1 hour
-- when configured, email delivery is done via Resend
+- when configured, email delivery is done via Cloudflare Email API
+- when `CLOUDFLARE_EMAIL_FROM` is unset, the handler logs a diagnostic without
+  the email body or token URL to prevent token leakage in logs
+
+## Account secret reveal
+
+The account secrets API (`packages/worker/src/app/handlers/account-secrets.ts`)
+never returns plaintext secret values in `GET /account/secrets.json`. To view a
+stored value, the client calls a separate reveal endpoint:
+
+- `POST /account/secrets/reveal` with JSON body `{ secretId, password }`
+- Requires an active `kody_session` cookie (same as all account endpoints)
+- Requires the user's current password for reauthentication (verified via
+  PBKDF2 through `@kody-internal/shared/password-hash.ts`)
+- On success, returns `{ ok: true, value }` with `Cache-Control: no-store`
+- On failure (wrong password), returns 401 and writes an audit log entry with
+  `action: 'secret_reveal'`, `result: 'failure'`
+- Successful reveals also emit an audit log entry with
+  `action: 'secret_reveal'`, `result: 'success'`
+
+The UI prompts for the password on each reveal and does not cache the value in
+memory across navigation events.
 
 ## OAuth for MCP
 
@@ -94,3 +115,5 @@ routed from `packages/worker/src/index.ts`.
 - `packages/worker/src/mcp-auth.ts` for MCP token enforcement
 - `packages/worker/src/app/auth-session.ts` for cookie format/signing
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
+- `packages/worker/src/app/handlers/account-secrets.ts` for secret reveal with
+  reauth
