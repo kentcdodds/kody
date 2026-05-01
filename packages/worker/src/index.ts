@@ -115,9 +115,9 @@ const appHandler = withCors({
 			(url.pathname === '/auth' || url.pathname === '/password-reset')
 		) {
 			const ip = getRequestIp(request) ?? 'unknown'
-			const rateLimitKey = `rate-limit:auth:ip:${ip}`
+			const rateLimitKey = `auth:ip:${ip}`
 			const result = await checkRateLimit(
-				env.OAUTH_KV,
+				env.APP_DB,
 				rateLimitKey,
 				authRateLimitConfig,
 			)

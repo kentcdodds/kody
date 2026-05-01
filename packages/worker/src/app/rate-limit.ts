@@ -9,36 +9,50 @@ type RateLimitResult = {
 }
 
 /**
- * KV-backed sliding window rate limiter. Each key maps to a JSON
- * array of epoch-second timestamps representing recent requests.
- * Stale entries outside the window are pruned on every check.
+ * D1-backed rate limiter using a single atomic SQL transaction.
+ * Each call inserts a new row and counts recent rows in one
+ * statement batch, avoiding the read-then-write race that
+ * KV-backed approaches suffer from under concurrency.
+ *
+ * The table is auto-created on first use if it doesn't exist.
  */
 export async function checkRateLimit(
-	kv: KVNamespace,
+	db: D1Database,
 	key: string,
 	config: RateLimitConfig,
 ): Promise<RateLimitResult> {
 	const now = Math.floor(Date.now() / 1000)
 	const windowStart = now - config.windowSeconds
 
-	const stored = await kv.get(key, 'json')
-	const timestamps: Array<number> = Array.isArray(stored)
-		? (stored as Array<number>).filter((t) => t > windowStart)
-		: []
+	const batch = await db.batch([
+		db.prepare(
+			`CREATE TABLE IF NOT EXISTS _rate_limits (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					key TEXT NOT NULL,
+					ts INTEGER NOT NULL
+				)`,
+		),
+		db.prepare(`DELETE FROM _rate_limits WHERE ts <= ?`).bind(windowStart),
+		db
+			.prepare(`INSERT INTO _rate_limits (key, ts) VALUES (?, ?)`)
+			.bind(key, now),
+		db
+			.prepare(
+				`SELECT COUNT(*) as cnt FROM _rate_limits WHERE key = ? AND ts > ?`,
+			)
+			.bind(key, windowStart),
+	])
 
-	if (timestamps.length >= config.maxRequests) {
-		const oldestInWindow = timestamps[0] ?? now
-		const retryAfterSeconds = Math.max(
-			1,
-			oldestInWindow + config.windowSeconds - now,
-		)
-		return { allowed: false, retryAfterSeconds }
+	const countResult = batch[3]
+	const row = countResult?.results?.[0] as { cnt: number } | undefined
+	const count = row?.cnt ?? 0
+
+	if (count > config.maxRequests) {
+		return {
+			allowed: false,
+			retryAfterSeconds: config.windowSeconds,
+		}
 	}
-
-	timestamps.push(now)
-	await kv.put(key, JSON.stringify(timestamps), {
-		expirationTtl: config.windowSeconds + 60,
-	})
 
 	return { allowed: true, retryAfterSeconds: null }
 }
