@@ -18,6 +18,7 @@ import { SecretEditorFields } from './secret-editor-fields.tsx'
 import {
 	normalizeAllowedCapabilities,
 	normalizeAllowedHosts,
+	normalizeAllowedPackages,
 } from './secret-normalization.ts'
 import { formatConnectorConfigFailureMessage } from './connect-secret-errors.ts'
 
@@ -38,6 +39,7 @@ type SecretMetadata = {
 	description: string
 	allowed_hosts: Array<string>
 	allowed_capabilities: Array<string>
+	allowed_packages: Array<string>
 	created_at: string
 	updated_at: string
 	ttl_ms: number | null
@@ -48,6 +50,7 @@ type ConnectSecretParams = {
 	description: string
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 	scope: StorageScope
 	dashboardUrl: string
 	instructions: string
@@ -62,6 +65,7 @@ type ConnectSecretState = {
 	secretValue: string
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 	showSecretValue: boolean
 	existingSecret: SecretMetadata | null
 	confirmedReview: boolean
@@ -85,6 +89,7 @@ const defaultState: ConnectSecretState = {
 	secretValue: '',
 	allowedHosts: [''],
 	allowedCapabilities: [''],
+	allowedPackages: [''],
 	showSecretValue: false,
 	existingSecret: null,
 	confirmedReview: false,
@@ -128,11 +133,15 @@ function parseConnectSecretParams(): ConnectSecretParams {
 	const allowedCapabilities = parseCommaList(
 		params.get('allowedCapabilities'),
 	).sort((left, right) => left.localeCompare(right))
+	const allowedPackages = parseCommaList(params.get('allowedPackages')).sort(
+		(left, right) => left.localeCompare(right),
+	)
 	return {
 		name,
 		description,
 		allowedHosts,
 		allowedCapabilities,
+		allowedPackages,
 		scope,
 		dashboardUrl,
 		instructions,
@@ -148,14 +157,17 @@ function toEditableRows(values: Array<string> | null | undefined) {
 function normalizeAllowedForState(input: {
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
+	allowedPackages: Array<string>
 }) {
 	return {
 		normalizedAllowedHosts: normalizeAllowedHosts(input.allowedHosts),
 		normalizedAllowedCapabilities: normalizeAllowedCapabilities(
 			input.allowedCapabilities,
 		),
+		normalizedAllowedPackages: normalizeAllowedPackages(input.allowedPackages),
 	}
 }
+
 function createInitialConnectSecretState(
 	params: ConnectSecretParams,
 ): ConnectSecretState {
@@ -165,6 +177,7 @@ function createInitialConnectSecretState(
 		description: params.description,
 		allowedHosts: toEditableRows(params.allowedHosts),
 		allowedCapabilities: toEditableRows(params.allowedCapabilities),
+		allowedPackages: toEditableRows(params.allowedPackages),
 	}
 }
 
@@ -250,6 +263,7 @@ async function saveSecretValue(
 		description: string
 		allowedHosts: Array<string>
 		allowedCapabilities: Array<string>
+		allowedPackages: Array<string>
 	},
 ) {
 	const response = await fetch('/connect/secret.json', {
@@ -267,6 +281,7 @@ async function saveSecretValue(
 			description: input.description,
 			allowedHosts: input.allowedHosts,
 			allowedCapabilities: input.allowedCapabilities,
+			allowedPackages: input.allowedPackages,
 		}),
 	})
 	const payload = (await response.json().catch(() => null)) as {
@@ -284,6 +299,7 @@ async function updateConnectorConfig(
 	input: {
 		allowedHosts: Array<string>
 		allowedCapabilities: Array<string>
+		allowedPackages: Array<string>
 	},
 ) {
 	if (!params.connector) return
@@ -301,6 +317,7 @@ async function updateConnectorConfig(
 			connector: params.connector,
 			allowedHosts: input.allowedHosts,
 			allowedCapabilities: input.allowedCapabilities,
+			allowedPackages: input.allowedPackages,
 		}),
 	})
 	const payload = (await response.json().catch(() => null)) as {
@@ -381,6 +398,7 @@ export function ConnectSecretRoute(handle: Handle) {
 					description: existing.description,
 					allowedHosts: toEditableRows(existing.allowed_hosts),
 					allowedCapabilities: toEditableRows(existing.allowed_capabilities),
+					allowedPackages: toEditableRows(existing.allowed_packages),
 				})
 				return
 			}
@@ -413,8 +431,11 @@ export function ConnectSecretRoute(handle: Handle) {
 		}
 		const params = parseConnectSecretParams()
 		const trimmedName = state.name.trim()
-		const { normalizedAllowedHosts, normalizedAllowedCapabilities } =
-			normalizeAllowedForState(state)
+		const {
+			normalizedAllowedHosts,
+			normalizedAllowedCapabilities,
+			normalizedAllowedPackages,
+		} = normalizeAllowedForState(state)
 		if (!trimmedName) {
 			setState({
 				step: 'error',
@@ -439,6 +460,7 @@ export function ConnectSecretRoute(handle: Handle) {
 				description: state.description,
 				allowedHosts: normalizedAllowedHosts,
 				allowedCapabilities: normalizedAllowedCapabilities,
+				allowedPackages: normalizedAllowedPackages,
 			})
 		} catch (error) {
 			if (isSessionRefreshError(error)) {
@@ -456,6 +478,7 @@ export function ConnectSecretRoute(handle: Handle) {
 			await updateConnectorConfig(currentParams, session, {
 				allowedHosts: normalizedAllowedHosts,
 				allowedCapabilities: normalizedAllowedCapabilities,
+				allowedPackages: normalizedAllowedPackages,
 			})
 			setState({ step: 'success' })
 		} catch (error) {
@@ -549,6 +572,29 @@ export function ConnectSecretRoute(handle: Handle) {
 		})
 	}
 
+	function updateAllowedPackage(index: number, value: string) {
+		setState({
+			allowedPackages: state.allowedPackages.map((packageId, packageIndex) =>
+				packageIndex === index ? value : packageId,
+			),
+		})
+	}
+
+	function addAllowedPackage() {
+		setState({
+			allowedPackages: [...state.allowedPackages, ''],
+		})
+	}
+
+	function removeAllowedPackage(index: number) {
+		const nextPackages = state.allowedPackages.filter(
+			(_packageId, packageIndex) => packageIndex !== index,
+		)
+		setState({
+			allowedPackages: nextPackages.length > 0 ? nextPackages : [''],
+		})
+	}
+
 	return () => {
 		const currentSearch =
 			typeof window === 'undefined' ? '' : window.location.search
@@ -565,8 +611,11 @@ export function ConnectSecretRoute(handle: Handle) {
 		const hasInstructions = Boolean(params.instructions || params.dashboardUrl)
 		const showReview = state.step === 'review' || state.step === 'saving'
 		const trimmedName = state.name.trim()
-		const { normalizedAllowedHosts, normalizedAllowedCapabilities } =
-			normalizeAllowedForState(state)
+		const {
+			normalizedAllowedHosts,
+			normalizedAllowedCapabilities,
+			normalizedAllowedPackages,
+		} = normalizeAllowedForState(state)
 
 		return (
 			<section
@@ -641,6 +690,18 @@ export function ConnectSecretRoute(handle: Handle) {
 									{state.existingSecret.allowed_capabilities.length > 0 ? (
 										state.existingSecret.allowed_capabilities.map((cap) => (
 											<li key={cap}>{cap}</li>
+										))
+									) : (
+										<li>None</li>
+									)}
+								</ul>
+							</div>
+							<div>
+								<div mix={css(labelCss)}>Current allowed packages</div>
+								<ul mix={css(listCss)}>
+									{state.existingSecret.allowed_packages.length > 0 ? (
+										state.existingSecret.allowed_packages.map((packageId) => (
+											<li key={packageId}>{packageId}</li>
 										))
 									) : (
 										<li>None</li>
@@ -804,6 +865,10 @@ export function ConnectSecretRoute(handle: Handle) {
 								onUpdateAllowedCapability={updateAllowedCapability}
 								onAddAllowedCapability={addAllowedCapability}
 								onRemoveAllowedCapability={removeAllowedCapability}
+								allowedPackages={state.allowedPackages}
+								onUpdateAllowedPackage={updateAllowedPackage}
+								onAddAllowedPackage={addAllowedPackage}
+								onRemoveAllowedPackage={removeAllowedPackage}
 								valuePlaceholder="Paste the secret value"
 							/>
 						</section>
@@ -864,9 +929,22 @@ export function ConnectSecretRoute(handle: Handle) {
 											)}
 										</ul>
 									</div>
+									<div>
+										<div mix={css(labelCss)}>Packages to approve</div>
+										<ul mix={css(listCss)}>
+											{normalizedAllowedPackages.length > 0 ? (
+												normalizedAllowedPackages.map((packageId) => (
+													<li key={packageId}>{packageId}</li>
+												))
+											) : (
+												<li>None (approval required later).</li>
+											)}
+										</ul>
+									</div>
 								</div>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Host and capability approvals are managed in account settings.
+									Host, capability, and package approvals are managed in account
+									settings.
 								</p>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									The secret value stays hidden and cannot be viewed later.

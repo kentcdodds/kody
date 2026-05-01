@@ -11,14 +11,16 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	const editedName = `connect-secret-edited-${nonce}`
 	const description = `Connect secret description ${nonce}`
 	const secretValue = `secret-value-${nonce}`
+	const packageId = `pkg-${nonce}`
 
 	await page.goto(
-		`/connect/secret?name=${encodeURIComponent(queryName)}&scope=user&description=${encodeURIComponent(description)}`,
+		`/connect/secret?name=${encodeURIComponent(queryName)}&scope=user&description=${encodeURIComponent(description)}&allowedPackages=${encodeURIComponent(`${packageId}, ${packageId}`)}`,
 	)
 
 	await expect(page.getByLabel('Name')).toHaveValue(queryName)
 	await expect(page.getByLabel('Scope')).toHaveValue('user')
 	await expect(page.getByLabel('Description')).toHaveValue(description)
+	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 
 	await page.getByLabel('Name').fill(editedName)
 	await page.getByPlaceholder('Paste the secret value').fill(secretValue)
@@ -27,6 +29,8 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await expect(
 		page.getByLabel('I confirm these details are correct.'),
 	).toBeVisible()
+	await expect(page.getByText('Packages to approve')).toBeVisible()
+	await expect(page.getByText(packageId)).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Save secret' })).toBeDisabled()
 
 	await page.getByLabel('I confirm these details are correct.').check()
@@ -46,4 +50,5 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await expect(
 		page.getByPlaceholder('Enter the secret value').first(),
 	).toHaveValue(secretValue)
+	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 })

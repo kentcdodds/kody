@@ -36,6 +36,7 @@ const mockModule = vi.hoisted(() => ({
 		found: true,
 		allowedHosts: [],
 		allowedCapabilities: [],
+		allowedPackages: [],
 	})),
 	saveSecret: vi.fn(async () => ({
 		name: 'linearApiKey',
@@ -50,6 +51,7 @@ const mockModule = vi.hoisted(() => ({
 	})),
 	setSecretAllowedHosts: vi.fn(async () => undefined),
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
+	setSecretAllowedPackages: vi.fn(async () => undefined),
 	saveValue: vi.fn(async () => undefined),
 	getSavedPackageById: async (_db: D1Database, input: { packageId: string }) =>
 		input.packageId === 'package-123'
@@ -115,6 +117,10 @@ vi.mock('#mcp/secrets/allowed-capabilities.ts', () => ({
 	normalizeAllowedCapabilities: (capabilities: Array<string>) => capabilities,
 }))
 
+vi.mock('#mcp/secrets/allowed-packages.ts', () => ({
+	normalizeAllowedPackages: (packages: Array<string>) => packages,
+}))
+
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
 	saveSecret: (...args: Array<unknown>) => mockModule.saveSecret(...args),
@@ -122,6 +128,8 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 		mockModule.setSecretAllowedHosts(...args),
 	setSecretAllowedCapabilities: (...args: Array<unknown>) =>
 		mockModule.setSecretAllowedCapabilities(...args),
+	setSecretAllowedPackages: (...args: Array<unknown>) =>
+		mockModule.setSecretAllowedPackages(...args),
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
@@ -219,6 +227,7 @@ test('connect secret POST stores connector binding under dedicated prefix', asyn
 		found: true,
 		allowedHosts: ['api.linear.app'],
 		allowedCapabilities: ['linear_issue_list'],
+		allowedPackages: ['package-123'],
 	})
 
 	const handler = createConnectSecretApiHandler(createEnv())
@@ -245,6 +254,7 @@ test('connect secret POST stores connector binding under dedicated prefix', asyn
 				secretName: 'linearApiKey',
 				allowedHosts: ['api.linear.app'],
 				allowedCapabilities: ['linear_issue_list'],
+				allowedPackages: ['package-123'],
 			}),
 			description: 'Connector secret binding for linear',
 			scope: 'user',
@@ -272,6 +282,7 @@ test('connect secret POST saves secret metadata from editable defaults', async (
 				description: 'Linear API key',
 				allowedHosts: ['API.LINEAR.APP', 'api.linear.app'],
 				allowedCapabilities: ['linear_issue_list'],
+				allowedPackages: ['package-123'],
 			}),
 		}),
 		params: {},
@@ -301,6 +312,14 @@ test('connect secret POST saves secret metadata from editable defaults', async (
 			name: 'linearApiKey',
 			scope: 'user',
 			allowedCapabilities: ['linear_issue_list'],
+			storageContext: { sessionId: 'session-1', appId: null },
+		}),
+	)
+	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'linearApiKey',
+			scope: 'user',
+			allowedPackages: ['package-123'],
 			storageContext: { sessionId: 'session-1', appId: null },
 		}),
 	)

@@ -24,9 +24,14 @@ type SecretEditorFieldsProps = {
 	onUpdateAllowedCapability: (index: number, value: string) => void
 	onAddAllowedCapability: () => void
 	onRemoveAllowedCapability: (index: number) => void
+	allowedPackages?: Array<string>
+	onUpdateAllowedPackage?: (index: number, value: string) => void
+	onAddAllowedPackage?: () => void
+	onRemoveAllowedPackage?: (index: number) => void
 	valuePlaceholder?: string
 	allowedHostsListName?: string
 	allowedCapabilitiesListName?: string
+	allowedPackagesListName?: string
 }
 
 export function SecretEditorFields(_handle: Handle) {
@@ -273,6 +278,70 @@ export function SecretEditorFields(_handle: Handle) {
 					</button>
 				</div>
 			</div>
+
+			{props.allowedPackages &&
+			props.onUpdateAllowedPackage &&
+			props.onAddAllowedPackage &&
+			props.onRemoveAllowedPackage ? (
+				<div mix={css({ display: 'grid', gap: spacing.sm })}>
+					<div mix={css({ display: 'grid', gap: spacing.xs })}>
+						<span mix={css(fieldLabelCss)}>Allowed packages</span>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
+							Only listed package ids may read this secret via package secret
+							mounts.
+						</p>
+					</div>
+					<div
+						data-repeat-list={props.allowedPackagesListName}
+						mix={css({ display: 'grid', gap: spacing.sm })}
+					>
+						{props.allowedPackages.map((packageId, index) => (
+							<div key={index} mix={css(repeatedRowCss)}>
+								<input
+									type="text"
+									value={typeof packageId === 'string' ? packageId : ''}
+									placeholder="saved package id"
+									mix={[
+										on(
+											'input',
+
+											(event) => {
+												props.onUpdateAllowedPackage?.(
+													index,
+													event.currentTarget.value,
+												)
+											},
+										),
+
+										css(inputCss),
+									]}
+								/>
+
+								<button
+									type="button"
+									mix={[
+										on('click', () => props.onRemoveAllowedPackage?.(index)),
+										css(secondaryButtonCss),
+									]}
+								>
+									Remove
+								</button>
+							</div>
+						))}
+					</div>
+					<div>
+						<button
+							type="button"
+							mix={[
+								on('click', () => props.onAddAllowedPackage?.()),
+								css(secondaryButtonCss),
+							]}
+						>
+							Add package
+						</button>
+					</div>
+				</div>
+			) : null}
 		</>
 	)
 }
