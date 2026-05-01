@@ -1,4 +1,3 @@
-import { createWorker } from '@cloudflare/worker-bundler'
 import {
 	loadPackageSourceBySourceId,
 	type LoadedPackageSource,
@@ -38,6 +37,17 @@ const packageSourcePrefix = '.__kody_packages__'
 const packageImportProxyPrefix = '.__kody_virtual__/imports'
 const packageAppBundleCache =
 	createPublishedPackagePromiseCache<RuntimeBundle>()
+
+async function createWorkerBundle(input: {
+	files: Record<string, string>
+	entryPoint: string
+}) {
+	// Load the experimental worker bundler lazily so node-unit paths that only
+	// import saved-package runtime helpers do not eagerly evaluate the esbuild
+	// WASM bundle.
+	const { createWorker } = await import('@cloudflare/worker-bundler')
+	return await createWorker(input)
+}
 
 function joinPath(...parts: Array<string>) {
 	return parts
@@ -398,7 +408,7 @@ export async function buildKodyModuleBundle(input: {
 		),
 		paramsJson: 'globalThis.__kodyRuntime?.params ?? null',
 	})
-	const bundle = await createWorker({
+	const bundle = await createWorkerBundle({
 		files,
 		entryPoint: bootstrapPath,
 	})
@@ -485,7 +495,7 @@ export async function buildKodyAppBundle(input: {
 				normalizedEntrypoint,
 			),
 		})
-		const bundle = await createWorker({
+		const bundle = await createWorkerBundle({
 			files,
 			entryPoint: bootstrapPath,
 		})
