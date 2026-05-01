@@ -297,3 +297,20 @@ export function updateBondBridgeConnection(
 		.run(input.host, port, connectorId, bridgeId)
 	return requireBondBridge(storage, connectorId, bridgeId)
 }
+
+export function updateBondBridgeLastSeen(input: {
+	storage: HomeConnectorStorage
+	connectorId: string
+	bridgeId: string
+	lastSeenAt: string
+}) {
+	input.storage.db
+		.query(
+			`
+		UPDATE bond_bridges
+		SET last_seen_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE connector_id = ? AND bridge_id = ?
+	`,
+		)
+		.run(input.lastSeenAt, input.connectorId, input.bridgeId)
+}

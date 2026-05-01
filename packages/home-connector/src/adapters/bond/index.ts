@@ -24,6 +24,7 @@ import {
 	requireBondBridge,
 	saveBondToken,
 	updateBondBridgeConnection,
+	updateBondBridgeLastSeen,
 	upsertDiscoveredBondBridges,
 } from './repository.ts'
 import {
@@ -182,8 +183,13 @@ function isBondNetworkFailure(error: unknown) {
 	if (!(error instanceof Error)) {
 		return false
 	}
+	const errorName = error.name.toLowerCase()
+	if (errorName === 'aborterror' || errorName === 'timeouterror') {
+		return true
+	}
 	const message = error.message.toLowerCase()
 	if (
+		message.includes('bond request timed out') ||
 		message.includes('fetch failed') ||
 		message.includes('enotfound') ||
 		message.includes('eai_again') ||
@@ -202,7 +208,8 @@ function isBondNetworkFailure(error: unknown) {
 		causeMessage.includes('econnreset') ||
 		causeMessage.includes('ehostunreach') ||
 		causeMessage.includes('etimedout') ||
-		causeMessage.includes('getaddrinfo')
+		causeMessage.includes('getaddrinfo') ||
+		causeMessage.includes('the operation was aborted')
 	)
 }
 
@@ -216,6 +223,28 @@ function isBondTransientNetworkFailure(error: unknown) {
 	return messages.some(
 		(message) =>
 			message.includes('econnreset') || message.includes('socket hang up'),
+	)
+}
+
+function getBondNumericStateValue(state: Record<string, unknown>, key: string) {
+	const rawValue = state[key]
+	if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+		return rawValue
+	}
+	if (typeof rawValue === 'string' && rawValue.trim()) {
+		const parsed = Number(rawValue)
+		return Number.isFinite(parsed) ? parsed : null
+	}
+	return null
+}
+
+function isBondPositionStateReached(
+	state: Record<string, unknown>,
+	position: number,
+) {
+	const statePosition = getBondNumericStateValue(state, 'position')
+	return (
+		statePosition != null && Math.round(statePosition) === Math.round(position)
 	)
 }
 
@@ -340,6 +369,23 @@ export function createBondAdapter(input: {
 }) {
 	const connectorId = input.config.homeConnectorId
 
+	function markBridgeSeen(bridge: BondPersistedBridge) {
+		updateBondBridgeLastSeen({
+			storage: input.storage,
+			connectorId,
+			bridgeId: bridge.bridgeId,
+			lastSeenAt: new Date().toISOString(),
+		})
+	}
+
+	async function withTrackedBondBridgeRequest<T>(
+		requestInput: Parameters<typeof withBondBridgeRequest<T>>[0],
+	) {
+		const result = await withBondBridgeRequest(requestInput)
+		markBridgeSeen(requestInput.bridge)
+		return result
+	}
+
 	function listPublicBridges(): Array<BondPersistedBridge> {
 		return listBondBridges(input.storage, connectorId)
 	}
@@ -429,7 +475,7 @@ export function createBondAdapter(input: {
 		bridge: BondPersistedBridge,
 		token: string,
 	) {
-		return await withBondBridgeRequest({
+		return await withTrackedBondBridgeRequest({
 			bridge,
 			operation: 'list devices',
 			request: async (baseUrl) => {
@@ -493,7 +539,7 @@ export function createBondAdapter(input: {
 		},
 		async fetchBridgeVersion(bridgeId?: string) {
 			const bridge = resolveBridge(bridgeId)
-			return await withBondBridgeRequest({
+			return await withTrackedBondBridgeRequest({
 				bridge,
 				operation: 'fetch bridge version',
 				request: async (baseUrl) => await bondGetSysVersion({ baseUrl }),
@@ -506,7 +552,7 @@ export function createBondAdapter(input: {
 				connectorId,
 				bridge.bridgeId,
 			)
-			const raw = (await withBondBridgeRequest({
+			const raw = (await withTrackedBondBridgeRequest({
 				bridge,
 				operation: 'read token status',
 				request: async (baseUrl) =>
@@ -521,7 +567,7 @@ export function createBondAdapter(input: {
 			const bridge = bridgeId
 				? requireBondBridge(input.storage, connectorId, bridgeId)
 				: resolveBridge()
-			const raw = (await withBondBridgeRequest({
+			const raw = (await withTrackedBondBridgeRequest({
 				bridge,
 				operation: 'retrieve token from bridge',
 				request: async (baseUrl) =>
@@ -558,7 +604,7 @@ export function createBondAdapter(input: {
 		): Promise<Record<string, unknown>> {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await withBondBridgeRequest({
+			return await withTrackedBondBridgeRequest({
 				bridge,
 				operation: `fetch device ${deviceId}`,
 				request: async (baseUrl) =>
@@ -575,7 +621,7 @@ export function createBondAdapter(input: {
 		): Promise<Record<string, unknown>> {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await withBondBridgeRequest({
+			return await withTrackedBondBridgeRequest({
 				bridge,
 				operation: `fetch device ${deviceId} state`,
 				maxTransientAttemptsPerBaseUrl: defaultBondTransientAttemptsPerBaseUrl,
@@ -602,7 +648,7 @@ export function createBondAdapter(input: {
 				input.deviceId,
 				input.deviceName,
 			)
-			const doc = await withBondBridgeRequest({
+			const doc = await withTrackedBondBridgeRequest({
 				bridge,
 				operation: `fetch device ${deviceId} before action`,
 				request: async (baseUrl) =>
@@ -624,18 +670,44 @@ export function createBondAdapter(input: {
 					`Device "${deviceId}" does not advertise action "${input.action}".`,
 				)
 			}
-			return await withBondBridgeRequest({
-				bridge,
-				operation: `invoke device ${deviceId} action ${input.action}`,
-				request: async (baseUrl) =>
-					await bondInvokeDeviceAction({
-						baseUrl,
-						token,
-						deviceId,
-						action: input.action,
-						argument: input.argument,
-					}),
-			})
+			const operation = `invoke device ${deviceId} action ${input.action}`
+			try {
+				return await withTrackedBondBridgeRequest({
+					bridge,
+					operation,
+					request: async (baseUrl) =>
+						await bondInvokeDeviceAction({
+							baseUrl,
+							token,
+							deviceId,
+							action: input.action,
+							argument: input.argument,
+						}),
+				})
+			} catch (error) {
+				if (
+					input.action === 'SetPosition' &&
+					typeof input.argument === 'number' &&
+					isBondTransientNetworkFailure(error)
+				) {
+					try {
+						const state = await bondApi.getDeviceState(
+							bridge.bridgeId,
+							deviceId,
+						)
+						if (isBondPositionStateReached(state, input.argument)) {
+							return {
+								confirmed: true,
+								recoveredFrom: 'transient_action_network_failure',
+								state,
+							}
+						}
+					} catch {
+						// Preserve the action failure; the follow-up read is only diagnostic.
+					}
+				}
+				throw error
+			}
 		},
 		async shadeOpen(input: {
 			bridgeId?: string
@@ -690,7 +762,7 @@ export function createBondAdapter(input: {
 		async listGroups(bridgeId?: string) {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await withBondBridgeRequest({
+			return await withTrackedBondBridgeRequest({
 				bridge,
 				operation: 'list groups',
 				request: async (baseUrl) => {
@@ -705,7 +777,7 @@ export function createBondAdapter(input: {
 		async getGroup(bridgeId: string | undefined, groupId: string) {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await withBondBridgeRequest({
+			return await withTrackedBondBridgeRequest({
 				bridge,
 				operation: `fetch group ${groupId}`,
 				request: async (baseUrl) =>
@@ -719,7 +791,7 @@ export function createBondAdapter(input: {
 		async getGroupState(bridgeId: string | undefined, groupId: string) {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await withBondBridgeRequest({
+			return await withTrackedBondBridgeRequest({
 				bridge,
 				operation: `fetch group ${groupId} state`,
 				request: async (baseUrl) =>
@@ -738,7 +810,7 @@ export function createBondAdapter(input: {
 		}) {
 			const bridge = requireAdoptedBridge(input.bridgeId)
 			const token = requireToken(bridge)
-			const doc = await withBondBridgeRequest({
+			const doc = await withTrackedBondBridgeRequest({
 				bridge,
 				operation: `fetch group ${input.groupId} before action`,
 				request: async (baseUrl) =>
@@ -760,7 +832,7 @@ export function createBondAdapter(input: {
 					`Group "${input.groupId}" does not advertise action "${input.action}".`,
 				)
 			}
-			return await withBondBridgeRequest({
+			return await withTrackedBondBridgeRequest({
 				bridge,
 				operation: `invoke group ${input.groupId} action ${input.action}`,
 				request: async (baseUrl) =>

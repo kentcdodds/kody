@@ -1,3 +1,5 @@
+const defaultBondRequestTimeoutMs = 5_000
+
 function buildBondBaseUrl(host: string, port: number) {
 	const trimmed = host.replace(/\.$/, '')
 	const safePort = Number.isFinite(port) && port > 0 ? port : 80
@@ -7,14 +9,29 @@ function buildBondBaseUrl(host: string, port: number) {
 	return `http://${trimmed}:${String(safePort)}`
 }
 
+function createBondRequestTimeoutError(input: {
+	error: unknown
+	path: string
+	timeoutMs: number
+}) {
+	return new Error(
+		`Bond request timed out after ${String(input.timeoutMs)}ms for ${input.path}`,
+		{
+			cause: input.error instanceof Error ? input.error : undefined,
+		},
+	)
+}
+
 export async function bondRequestJson(input: {
 	baseUrl: string
 	path: string
 	method?: string
 	token?: string | null
 	body?: unknown
+	timeoutMs?: number
 }): Promise<unknown> {
 	const method = input.method ?? 'GET'
+	const timeoutMs = input.timeoutMs ?? defaultBondRequestTimeoutMs
 	const headers: Record<string, string> = {
 		Accept: 'application/json',
 	}
@@ -24,15 +41,29 @@ export async function bondRequestJson(input: {
 	if (input.body !== undefined && method !== 'GET' && method !== 'HEAD') {
 		headers['Content-Type'] = 'application/json'
 	}
-	const response = await fetch(`${input.baseUrl}${input.path}`, {
-		method,
-		headers,
-		body:
-			input.body === undefined || method === 'GET' || method === 'HEAD'
-				? undefined
-				: JSON.stringify(input.body),
-	})
-	const text = await response.text()
+	let response: Response
+	let text: string
+	try {
+		response = await fetch(`${input.baseUrl}${input.path}`, {
+			method,
+			headers,
+			signal: AbortSignal.timeout(timeoutMs),
+			body:
+				input.body === undefined || method === 'GET' || method === 'HEAD'
+					? undefined
+					: JSON.stringify(input.body),
+		})
+		text = await response.text()
+	} catch (error) {
+		if (error instanceof Error && error.name === 'TimeoutError') {
+			throw createBondRequestTimeoutError({
+				error,
+				path: input.path,
+				timeoutMs,
+			})
+		}
+		throw error
+	}
 	let json: unknown = null
 	if (text) {
 		try {
