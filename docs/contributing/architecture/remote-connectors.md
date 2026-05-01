@@ -75,12 +75,19 @@ reference implementation in `packages/home-connector` **proactively** sends
 `notifications/tools/list_changed` **to** the Worker right after
 **`server.ack`** so the session performs an initial tool snapshot refresh.
 
-## HTTP helper endpoints (same origin)
+## HTTP helper endpoints (internal only)
 
 The same Durable Object serves snapshot and RPC helpers on paths **under the
-connector URL** (for example `/snapshot`, `/rpc/tools-list`). External connector
-authors normally only need the **WebSocket**; Worker-internal code uses these
-for bridging.
+connector URL** (for example `/snapshot`, `/rpc/tools-list`). These endpoints
+are **not publicly accessible**. The Worker entrypoint only forwards connector
+route requests that carry a `WebSocket` upgrade header; all other HTTP methods
+are rejected with `404` before reaching the Durable Object.
+
+As a second layer of defense, the Durable Object itself requires a per-isolate
+internal token (`X-Kody-Internal`) on non-WebSocket requests. Worker-internal
+callers (such as `packages/worker/src/home/client.ts`) reach these helpers via
+direct DO stub calls with the internal header. External connector authors only
+need the **WebSocket**.
 
 ## Worker-side attachment (MCP caller context)
 

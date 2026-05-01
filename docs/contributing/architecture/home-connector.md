@@ -7,6 +7,18 @@ It is a **remote connector** with `kind: home`. The wire protocol, URL shapes,
 and secret configuration for **any** outbound connector are documented in
 [Remote connectors](./remote-connectors.md).
 
+## Public-vs-internal boundary
+
+The connector URL paths (for example `/home/connectors/default/...`) are
+**WebSocket-only** on the public internet. The Worker entrypoint rejects
+non-WebSocket HTTP requests to connector routes with `404` before they reach the
+`HomeConnectorSession` Durable Object. Worker-internal code that needs snapshot
+or RPC helpers (such as `packages/worker/src/home/client.ts`) uses direct DO
+stub calls with a per-isolate internal token header, bypassing the public
+routing restriction. See
+[Remote connectors § HTTP helper endpoints](./remote-connectors.md#http-helper-endpoints-internal-only)
+for details.
+
 ## Current adapters
 
 The connector exposes these local-device families:
