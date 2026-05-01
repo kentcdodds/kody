@@ -283,6 +283,15 @@ If you ever need to do the same operations manually, use:
 - `node tools/ci/preview-resources.ts cleanup --worker-name <name>`
 - `node tools/ci/production-resources.ts ensure --out-config <path>`
 
+## Dependency auditing
+
+- `npm run audit:prod` checks production dependencies for known vulnerabilities
+  (runs `npm audit --omit=dev`). This should return zero high or moderate
+  findings before merging to `main`.
+- See [`docs/contributing/dependency-overrides.md`](./dependency-overrides.md)
+  for any `overrides` entries in the root `package.json` and their
+  justifications.
+
 ## Remix skills
 
 Use [Remix skills](./remix.md) instead of vendoring generated package docs in

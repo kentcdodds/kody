@@ -20,7 +20,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@sentry/cloudflare": "^10.45.0",
     "acorn": "^8.16.0",
-    "agents": "^0.11.1",
+    "agents": ">=0.11.5 <0.11.8",
     "croner": "^10.0.1",
     "postal-mime": "^2.7.4",
     "remix": "^3.0.0-beta.0",
