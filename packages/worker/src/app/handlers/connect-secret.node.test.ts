@@ -45,6 +45,7 @@ const mockModule = vi.hoisted(() => ({
 		appId: null,
 		allowedHosts: [],
 		allowedCapabilities: [],
+		allowedPackages: [],
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
 		ttlMs: null,
@@ -264,6 +265,45 @@ test('connect secret POST stores connector binding under dedicated prefix', asyn
 	expect(mockModule.saveValue).not.toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: '_connector:linear',
+		}),
+	)
+})
+
+test('connect secret POST clears connector binding packages when explicitly empty', async () => {
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		allowedHosts: ['api.linear.app'],
+		allowedCapabilities: ['linear_issue_list'],
+		allowedPackages: ['package-123'],
+	})
+
+	const handler = createConnectSecretApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request('https://example.com/connect/secret.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				name: 'linearApiKey',
+				scope: 'user',
+				sessionToken: 'generated-token',
+				connector: 'linear',
+				allowedPackages: [],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(readJson(response)).resolves.toEqual({ ok: true })
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_connector-secret:linear',
+			value: JSON.stringify({
+				secretName: 'linearApiKey',
+				allowedHosts: ['api.linear.app'],
+				allowedCapabilities: ['linear_issue_list'],
+				allowedPackages: [],
+			}),
 		}),
 	)
 })

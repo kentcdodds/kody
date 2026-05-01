@@ -126,8 +126,10 @@ export function createConnectSecretApiHandler(env: Env) {
 				readOptionalStringArray(body, 'allowedHosts') ?? []
 			const requestedAllowedCapabilities =
 				readOptionalStringArray(body, 'allowedCapabilities') ?? []
-			const requestedAllowedPackages =
-				readOptionalStringArray(body, 'allowedPackages') ?? []
+			const requestedAllowedPackages = readOptionalStringArray(
+				body,
+				'allowedPackages',
+			)
 			const normalizedAllowedHosts =
 				requestedAllowedHosts.length > 0
 					? normalizeAllowedHosts(requestedAllowedHosts)
@@ -137,7 +139,7 @@ export function createConnectSecretApiHandler(env: Env) {
 					? normalizeAllowedCapabilities(requestedAllowedCapabilities)
 					: []
 			const normalizedAllowedPackages =
-				requestedAllowedPackages.length > 0
+				requestedAllowedPackages && requestedAllowedPackages.length > 0
 					? normalizeAllowedPackages(requestedAllowedPackages)
 					: []
 			const unknownCapabilities = normalizedAllowedCapabilities.filter(
@@ -264,7 +266,7 @@ export function createConnectSecretApiHandler(env: Env) {
 							? normalizedAllowedCapabilities
 							: resolved.allowedCapabilities
 					const allowedPackages =
-						normalizedAllowedPackages.length > 0
+						requestedAllowedPackages != null
 							? normalizedAllowedPackages
 							: resolved.allowedPackages
 					await saveValue({
