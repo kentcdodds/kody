@@ -23,6 +23,9 @@ async function ensureRateLimitTable(db: D1Database) {
 		db.prepare(
 			`CREATE INDEX IF NOT EXISTS idx_rate_limits_key_ts ON _rate_limits (key, ts)`,
 		),
+		db.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_rate_limits_ts ON _rate_limits (ts)`,
+		),
 	])
 	initializedDbs.add(db)
 }
