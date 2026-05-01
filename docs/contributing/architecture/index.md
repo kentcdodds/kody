@@ -25,6 +25,27 @@ to become.
   for securely reaching local-network systems through an outbound agent
   connection.
 
+## OAuth connector host allowlist
+
+The `createAuthenticatedFetch` helper (and its sandboxed prelude equivalent)
+attaches a materialized OAuth bearer token to outbound requests. Because the
+token is no longer wrapped in a `{{secret:…}}` placeholder at that point, the
+fetch gateway's host-allowlist check cannot see it. To prevent token
+exfiltration to arbitrary hosts:
+
+- Before attaching the `Authorization` header, the helper resolves the
+  connector's allowed host set from `requiredHosts` plus the host of
+  `apiBaseUrl`.
+- If the outbound request URL targets a host **not** in that set, the helper
+  throws `ConnectorHostNotAllowedError` without making the network request and
+  without including the token value in the error message.
+- The reusable enforcement logic lives in
+  `packages/worker/src/mcp/execute-modules/connector-host-allowlist.ts`
+  (`assertConnectorHostAllowed`, `getConnectorAllowedHosts`).
+
+This invariant must hold for any code path that materializes a connector token
+and then attaches it to an outbound request.
+
 ## Source of truth in code
 
 - Worker entrypoint: `packages/worker/src/index.ts`

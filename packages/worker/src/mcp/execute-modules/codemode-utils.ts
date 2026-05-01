@@ -1,3 +1,10 @@
+import {
+	assertConnectorHostAllowed,
+	ConnectorHostNotAllowedError,
+} from './connector-host-allowlist.ts'
+
+export { ConnectorHostNotAllowedError }
+
 type CapabilityResult = unknown
 
 export type CapabilityArgs = Record<string, unknown>
@@ -45,6 +52,17 @@ export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'agent_turn_cancel',
 ] as const
 
+/**
+ * @internal
+ * Refreshes and returns the raw OAuth access token for the named connector.
+ *
+ * **Security boundary**: The returned value is a materialized credential. Once
+ * in caller hands, the fetch gateway's host-allowlist check is bypassed because
+ * the gateway can only inspect secret *placeholders*. Callers that forward this
+ * token in outbound requests MUST enforce the connector's host allowlist
+ * themselves (see `assertConnectorHostAllowed`). Prefer
+ * `createAuthenticatedFetch` which performs this enforcement automatically.
+ */
 export async function refreshAccessToken(
 	codemode: CodemodeNamespace,
 	providerName: string,
@@ -67,7 +85,10 @@ export async function createAuthenticatedFetch(
 	)
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
-		const request = new Request(resolveRequestUrl(input, connector), init)
+		const resolvedUrl = resolveRequestUrl(input, connector)
+		assertConnectorHostAllowed(providerName, connector, resolvedUrl)
+
+		const request = new Request(resolvedUrl, init)
 		const headers = new Headers(request.headers)
 		headers.set('Authorization', `Bearer ${accessToken}`)
 
@@ -296,6 +317,68 @@ export function getExecuteHelperCapabilityNames() {
 
 export function createExecuteHelperPrelude() {
 	return `
+class ConnectorHostNotAllowedError extends Error {
+  constructor(connectorName, disallowedHost) {
+    super(
+      \`Connector "\${connectorName}" does not allow requests to host "\${disallowedHost}". \` +
+        \`The host must be listed in the connector's requiredHosts or match its apiBaseUrl.\`
+    );
+    this.name = 'ConnectorHostNotAllowedError';
+    this.connectorName = connectorName;
+    this.disallowedHost = disallowedHost;
+  }
+}
+const __kodyGetConnectorAllowedHosts = (connector) => {
+  const hosts = new Set();
+  if (connector.requiredHosts) {
+    for (const host of connector.requiredHosts) {
+      const normalized = host.trim().toLowerCase();
+      if (normalized) hosts.add(normalized);
+    }
+  }
+  if (connector.apiBaseUrl) {
+    try {
+      const apiHost = new URL(connector.apiBaseUrl).hostname.trim().toLowerCase();
+      if (apiHost) hosts.add(apiHost);
+    } catch {}
+  }
+  return Array.from(hosts);
+};
+const __kodyAssertConnectorHostAllowed = (connectorName, connector, url) => {
+  let resolvedUrl;
+  if (typeof url === 'string') {
+    if (url.startsWith('//')) {
+      resolvedUrl = \`https:\${url}\`;
+    } else if (url.startsWith('/')) {
+      return;
+    } else {
+      resolvedUrl = url;
+    }
+  } else if (url instanceof URL) {
+    resolvedUrl = url.href;
+  } else if (url instanceof Request) {
+    resolvedUrl = url.url;
+  } else {
+    return;
+  }
+  let requestHost;
+  try {
+    requestHost = new URL(resolvedUrl).hostname.trim().toLowerCase();
+  } catch {
+    return;
+  }
+  if (!requestHost) return;
+  const allowedHosts = __kodyGetConnectorAllowedHosts(connector);
+  if (allowedHosts.length === 0) {
+    throw new Error(
+      \`Connector "\${connectorName}" has no allowed hosts configured (requiredHosts and apiBaseUrl are both empty). \` +
+        \`Cannot attach credentials without a host allowlist.\`
+    );
+  }
+  if (!allowedHosts.includes(requestHost)) {
+    throw new ConnectorHostNotAllowedError(connectorName, requestHost);
+  }
+};
 const __kodyBuildSecretPlaceholder = (name, scope) =>
   \`{{secret:\${name}|scope=\${scope}}}\`;
 const __kodyReadConnectorConfig = async (providerName) => {
@@ -457,7 +540,9 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const connector = await __kodyReadConnectorConfig(providerName);
   const accessToken = await __kodyRefreshAccessToken(providerName);
   return async (input, init) => {
-    const request = new Request(__kodyResolveRequestUrl(input, connector), init);
+    const resolvedUrl = __kodyResolveRequestUrl(input, connector);
+    __kodyAssertConnectorHostAllowed(providerName, connector, resolvedUrl);
+    const request = new Request(resolvedUrl, init);
     const headers = new Headers(request.headers);
     headers.set('Authorization', \`Bearer \${accessToken}\`);
     return fetch(
