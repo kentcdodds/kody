@@ -68,7 +68,15 @@ function ensureSuccessfulCommand(
 	if (result.timedOut) {
 		throw new Error(`${message} timed out after ${result.durationMs}ms.`)
 	}
-	if (result.exitCode !== 0 && result.exitCode !== null) {
+	if (result.exitCode === null) {
+		const reason = result.signal
+			? `signal ${result.signal}`
+			: 'an unknown termination state'
+		throw new Error(
+			`${message} failed because the command exited via ${reason}. ${result.stderr.trim()}`.trim(),
+		)
+	}
+	if (result.exitCode !== 0) {
 		throw new Error(
 			`${message} failed with exit code ${result.exitCode}. ${result.stderr.trim()}`.trim(),
 		)

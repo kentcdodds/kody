@@ -317,6 +317,8 @@ test('fallback interface summary parsing recognizes up and down link states', ()
 })
 
 test('island router adapter forwards explicit timeoutMs to ARP and DHCP lookups', async () => {
+	using _env = withTemporaryEnv({})
+	createConfig()
 	const config = createConfig()
 	const recordedTimeouts: Array<number | undefined> = []
 	const islandRouter = createIslandRouterAdapter({
@@ -338,4 +340,42 @@ test('island router adapter forwards explicit timeoutMs to ARP and DHCP lookups'
 
 	expect(recordedTimeouts).toContain(12_345)
 	expect(recordedTimeouts).toContain(23_456)
+})
+
+test('island router adapter rejects null exit codes for lookup helpers', async () => {
+	using _env = withTemporaryEnv({})
+	const config = createConfig()
+	const nullExitRunner = async (request: IslandRouterCommandRequest) => ({
+		id: request.id,
+		commandLines: [
+			'terminal length 0',
+			request.id === 'show-log' ? 'show log last' : 'show ip neighbors',
+		],
+		stdout: '',
+		stderr: 'signal terminated',
+		exitCode: null,
+		signal: 'SIGTERM' as const,
+		timedOut: false,
+		durationMs: 10,
+	})
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: nullExitRunner,
+	})
+
+	await expect(
+		islandRouter.getArpEntry({
+			host: '192.168.0.52',
+		}),
+	).rejects.toThrow('signal terminated')
+	await expect(
+		islandRouter.getDhcpLease({
+			host: '192.168.0.52',
+		}),
+	).rejects.toThrow('signal terminated')
+	await expect(
+		islandRouter.getRecentEvents({
+			host: '192.168.0.52',
+		}),
+	).rejects.toThrow('signal terminated')
 })
