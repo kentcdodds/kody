@@ -32,6 +32,11 @@ type PingRequest = {
 	timeoutMs?: number
 }
 
+type HostLookupRequest = {
+	host: string
+	timeoutMs?: number
+}
+
 type RecentEventRequest = {
 	host?: string
 	limit?: number
@@ -150,9 +155,12 @@ export function createIslandRouterAdapter(input: {
 	commandRunner?: IslandRouterCommandRunner
 }) {
 	const { config } = input
+	let cachedRunner: IslandRouterCommandRunner | null = null
 
 	function getRunner() {
-		return input.commandRunner ?? createIslandRouterSshCommandRunner(config)
+		if (input.commandRunner) return input.commandRunner
+		cachedRunner ??= createIslandRouterSshCommandRunner(config)
+		return cachedRunner
 	}
 
 	function getConfigStatus() {
@@ -290,14 +298,15 @@ export function createIslandRouterAdapter(input: {
 				timedOut: result.timedOut,
 			})
 		},
-		async getArpEntry(host: string) {
+		async getArpEntry(request: HostLookupRequest) {
 			assertIslandRouterConfigured(config)
-			const identity = validateIslandRouterHost(host)
+			const identity = validateIslandRouterHost(request.host)
 			const runner = getRunner()
+			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
 			const result = ensureSuccessfulCommand(
 				await runner({
 					id: 'show-ip-neighbors',
-					timeoutMs: normalizeTimeoutMs(config),
+					timeoutMs,
 				}),
 				'Island router neighbor lookup',
 			)
@@ -311,14 +320,15 @@ export function createIslandRouterAdapter(input: {
 				entries,
 			}
 		},
-		async getDhcpLease(host: string) {
+		async getDhcpLease(request: HostLookupRequest) {
 			assertIslandRouterConfigured(config)
-			const identity = validateIslandRouterHost(host)
+			const identity = validateIslandRouterHost(request.host)
 			const runner = getRunner()
+			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
 			const result = ensureSuccessfulCommand(
 				await runner({
 					id: 'show-ip-dhcp-reservations',
-					timeoutMs: normalizeTimeoutMs(config),
+					timeoutMs,
 				}),
 				'Island router DHCP reservation lookup',
 			)

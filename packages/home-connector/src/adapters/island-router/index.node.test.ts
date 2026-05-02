@@ -315,3 +315,27 @@ test('fallback interface summary parsing recognizes up and down link states', ()
 		}),
 	])
 })
+
+test('island router adapter forwards explicit timeoutMs to ARP and DHCP lookups', async () => {
+	const config = createConfig()
+	const recordedTimeouts: Array<number | undefined> = []
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: async (request) => {
+			recordedTimeouts.push(request.timeoutMs)
+			return await createFakeRunner()(request)
+		},
+	})
+
+	await islandRouter.getArpEntry({
+		host: '192.168.0.52',
+		timeoutMs: 12_345,
+	})
+	await islandRouter.getDhcpLease({
+		host: '192.168.0.52',
+		timeoutMs: 23_456,
+	})
+
+	expect(recordedTimeouts).toContain(12_345)
+	expect(recordedTimeouts).toContain(23_456)
+})

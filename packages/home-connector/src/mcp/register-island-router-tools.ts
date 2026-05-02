@@ -124,7 +124,11 @@ export function registerIslandRouterHomeConnectorTools(input: {
 			},
 		},
 		async (args) => {
-			const result = await islandRouter.getArpEntry(String(args['host'] ?? ''))
+			const result = await islandRouter.getArpEntry({
+				host: String(args['host'] ?? ''),
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
 			return structuredTextResult(
 				result.entry
 					? `Found an Island router neighbor entry for ${result.host.value}.`
@@ -148,7 +152,11 @@ export function registerIslandRouterHomeConnectorTools(input: {
 			},
 		},
 		async (args) => {
-			const result = await islandRouter.getDhcpLease(String(args['host'] ?? ''))
+			const result = await islandRouter.getDhcpLease({
+				host: String(args['host'] ?? ''),
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
 			return structuredTextResult(
 				result.lease
 					? `Found an Island router DHCP entry for ${result.host.value}.`
