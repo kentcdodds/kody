@@ -4,7 +4,6 @@ import {
 	parseAccountSecretId,
 } from '@kody-internal/shared/account-secret-route.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { logAuditEvent, getRequestIp } from '#app/audit-log.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
@@ -33,8 +32,6 @@ import {
 	buildConnectorValueName,
 	normalizeConnectorConfig,
 } from '#mcp/capabilities/values/connector-shared.ts'
-import { createDb, usersTable } from '#worker/db.ts'
-import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'app' | 'user'>
 
@@ -67,7 +64,9 @@ type AccountSecretListItem = {
 	ttlMs: number | null
 }
 
-type AccountSecretDetail = AccountSecretListItem
+type AccountSecretDetail = AccountSecretListItem & {
+	value: string
+}
 
 type SecretApprovalView = {
 	name: string
@@ -207,105 +206,6 @@ export function createAccountSecretsApiHandler(env: Env) {
 		typeof routes.accountSecretsApi.method,
 		typeof routes.accountSecretsApi.pattern
 	>
-}
-
-export function createAccountSecretRevealHandler(env: Env) {
-	const db = createDb(env.APP_DB)
-
-	return {
-		middleware: [],
-		async handler({ request }: { request: Request }) {
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
-			}
-
-			if (request.method !== 'POST') {
-				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
-			}
-
-			const body = await request.json().catch(() => null)
-			if (!body || typeof body !== 'object') {
-				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
-			}
-
-			const secretId = readString(body, 'secretId')
-			const rawPassword = (body as Record<string, unknown>)['password']
-			const password =
-				typeof rawPassword === 'string' && rawPassword.length > 0
-					? rawPassword
-					: null
-			if (!secretId) {
-				return jsonResponse({ ok: false, error: 'Secret id is required.' }, 400)
-			}
-			if (!password) {
-				return jsonResponse(
-					{ ok: false, error: 'Password is required for reveal.' },
-					401,
-				)
-			}
-
-			const parsed = parseAccountSecretId(secretId)
-			if (!parsed) {
-				return jsonResponse({ ok: false, error: 'Invalid secret id.' }, 400)
-			}
-
-			const userRecord = await db.findOne(usersTable, {
-				where: { id: user.userId },
-			})
-			if (!userRecord) {
-				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
-			}
-			const passwordValid = await verifyPassword(
-				password,
-				userRecord.password_hash,
-			)
-			if (!passwordValid) {
-				void logAuditEvent({
-					category: 'auth',
-					action: 'secret_reveal',
-					result: 'failure',
-					email: user.email,
-					ip: getRequestIp(request) ?? undefined,
-					reason: 'invalid_password',
-				})
-				return jsonResponse(
-					{ ok: false, error: 'Invalid password.' },
-					401,
-				)
-			}
-
-			const resolved = await resolveSecret({
-				env,
-				userId: user.mcpUser.userId,
-				name: parsed.name,
-				scope: parsed.scope,
-				storageContext: getSecretContextForAccountSecret(parsed),
-			})
-			if (!resolved.found || resolved.value == null) {
-				return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
-			}
-
-			void logAuditEvent({
-				category: 'auth',
-				action: 'secret_reveal',
-				result: 'success',
-				email: user.email,
-				ip: getRequestIp(request) ?? undefined,
-			})
-
-			return new Response(
-				JSON.stringify({ ok: true, value: resolved.value }),
-				{
-					status: 200,
-					headers: {
-						'Cache-Control': 'no-store',
-						'Content-Type': 'application/json; charset=utf-8',
-					},
-				},
-			)
-		},
-	}
 }
 
 async function handleValueGetAction(input: {
@@ -735,7 +635,9 @@ async function buildAccountSecretsPayload(input: {
 		packageApps,
 	})
 	const selectedSecret = input.selectedSecretId
-		? resolveAccountSecretDetail({
+		? await resolveAccountSecretDetail({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
 				secretId: input.selectedSecretId,
 				secrets,
 			})
@@ -896,7 +798,9 @@ async function resolveSecretApprovalView(input: {
 	} satisfies SecretApprovalView
 }
 
-function resolveAccountSecretDetail(input: {
+async function resolveAccountSecretDetail(input: {
+	env: Env
+	userId: string
 	secretId: string
 	secrets: Array<AccountSecretListItem>
 }) {
@@ -904,7 +808,18 @@ function resolveAccountSecretDetail(input: {
 	if (!parsed) return null
 
 	const selected = input.secrets.find((secret) => secret.id === input.secretId)
-	return selected ?? null
+	if (!selected) return null
+	const resolved = await resolveSecret({
+		env: input.env,
+		userId: input.userId,
+		name: parsed.name,
+		scope: parsed.scope,
+		storageContext: getSecretContextForAccountSecret(parsed),
+	})
+	return {
+		...selected,
+		value: resolved.found && resolved.value != null ? resolved.value : '',
+	} satisfies AccountSecretDetail
 }
 
 function toAccountSecretListItem(
