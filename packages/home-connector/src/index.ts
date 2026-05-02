@@ -1,4 +1,5 @@
 import { createBondAdapter } from './adapters/bond/index.ts'
+import { createIslandRouterAdapter } from './adapters/island-router/index.ts'
 import { createJellyfishAdapter } from './adapters/jellyfish/index.ts'
 import { createLutronAdapter } from './adapters/lutron/index.ts'
 import { createSonosAdapter } from './adapters/sonos/index.ts'
@@ -40,6 +41,9 @@ export function createHomeConnectorApp() {
 		state,
 		storage,
 	})
+	const islandRouter = createIslandRouterAdapter({
+		config,
+	})
 	const jellyfish = createJellyfishAdapter({
 		config,
 		state,
@@ -53,6 +57,7 @@ export function createHomeConnectorApp() {
 		lutron,
 		sonos,
 		bond,
+		islandRouter,
 		jellyfish,
 		venstar,
 	})
@@ -70,6 +75,7 @@ export function createHomeConnectorApp() {
 		lutron,
 		sonos,
 		bond,
+		islandRouter,
 		jellyfish,
 		venstar,
 		mcp,

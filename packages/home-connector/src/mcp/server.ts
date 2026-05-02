@@ -4,6 +4,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
 import { type createBondAdapter } from '../adapters/bond/index.ts'
+import { type createIslandRouterAdapter } from '../adapters/island-router/index.ts'
 import { type createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { isLutronProcessorNotFoundError } from '../adapters/lutron/errors.ts'
@@ -13,6 +14,7 @@ import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { type createVenstarAdapter } from '../adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
 import { registerBondHomeConnectorTools } from './register-bond-tools.ts'
+import { registerIslandRouterHomeConnectorTools } from './register-island-router-tools.ts'
 import { type HomeConnectorState } from '../state.ts'
 import {
 	buildToolInputSchema,
@@ -73,6 +75,7 @@ export function createHomeConnectorMcpServer(input: {
 	bond: ReturnType<typeof createBondAdapter>
 	jellyfish: ReturnType<typeof createJellyfishAdapter>
 	venstar: ReturnType<typeof createVenstarAdapter>
+	islandRouter: ReturnType<typeof createIslandRouterAdapter>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
@@ -84,6 +87,7 @@ export function createHomeConnectorMcpServer(input: {
 	const bond = input.bond
 	const jellyfish = input.jellyfish
 	const venstar = input.venstar
+	const islandRouter = input.islandRouter
 
 	const server = new McpServer(
 		{
@@ -92,7 +96,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, and Venstar WiFi thermostat control and diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
+				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostat control, and read-only Island router SSH diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
 		},
 	)
 
@@ -2790,6 +2794,11 @@ export function createHomeConnectorMcpServer(input: {
 		registerTool,
 		bond,
 		config: input.config,
+	})
+
+	registerIslandRouterHomeConnectorTools({
+		registerTool,
+		islandRouter,
 	})
 
 	return {

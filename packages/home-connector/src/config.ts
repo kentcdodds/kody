@@ -7,6 +7,13 @@ export type HomeConnectorConfig = {
 	workerSessionUrl: string
 	workerWebSocketUrl: string
 	sharedSecret: string | null
+	islandRouterHost: string | null
+	islandRouterPort: number
+	islandRouterUsername: string | null
+	islandRouterPrivateKeyPath: string | null
+	islandRouterKnownHostsPath: string | null
+	islandRouterHostFingerprint: string | null
+	islandRouterCommandTimeoutMs: number
 	rokuDiscoveryUrl: string
 	samsungTvDiscoveryUrl: string
 	lutronDiscoveryUrl: string
@@ -82,6 +89,15 @@ function resolveNonNegativeIntegerFromEnv(envVar: string, fallback: number) {
 	if (!raw) return fallback
 	const parsed = Number.parseInt(raw, 10)
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function parseStrictIntegerEnv(value: string | undefined) {
+	const trimmed = value?.trim()
+	if (!trimmed) return null
+	if (!/^\d+$/.test(trimmed)) return null
+	const parsed = Number(trimmed)
+	if (!Number.isInteger(parsed)) return null
+	return parsed
 }
 
 function isPrivateRfc1918Ipv4(parts: Array<number>) {
@@ -183,6 +199,11 @@ function deriveJellyfishAutoscanCidrs() {
 
 export function loadHomeConnectorConfig(): HomeConnectorConfig {
 	const port = Number.parseInt(process.env.PORT ?? '4040', 10)
+	const islandRouterPort = parseStrictIntegerEnv(process.env.ISLAND_ROUTER_PORT)
+	const islandRouterCommandTimeoutMs = Number.parseInt(
+		process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS ?? '8000',
+		10,
+	)
 	const homeConnectorId = process.env.HOME_CONNECTOR_ID?.trim() || 'default'
 	const workerBaseUrl =
 		process.env.WORKER_BASE_URL?.trim() || 'http://localhost:3742'
@@ -208,6 +229,25 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerSessionUrl,
 		workerWebSocketUrl: createWorkerWebSocketUrl(workerSessionUrl),
 		sharedSecret: process.env.HOME_CONNECTOR_SHARED_SECRET?.trim() || null,
+		islandRouterHost: process.env.ISLAND_ROUTER_HOST?.trim() || null,
+		islandRouterPort:
+			islandRouterPort != null &&
+			islandRouterPort >= 1 &&
+			islandRouterPort <= 65535
+				? islandRouterPort
+				: 22,
+		islandRouterUsername: process.env.ISLAND_ROUTER_USERNAME?.trim() || null,
+		islandRouterPrivateKeyPath:
+			process.env.ISLAND_ROUTER_PRIVATE_KEY_PATH?.trim() || null,
+		islandRouterKnownHostsPath:
+			process.env.ISLAND_ROUTER_KNOWN_HOSTS_PATH?.trim() || null,
+		islandRouterHostFingerprint:
+			process.env.ISLAND_ROUTER_HOST_FINGERPRINT?.trim() || null,
+		islandRouterCommandTimeoutMs:
+			Number.isFinite(islandRouterCommandTimeoutMs) &&
+			islandRouterCommandTimeoutMs >= 1000
+				? islandRouterCommandTimeoutMs
+				: 8000,
 		rokuDiscoveryUrl:
 			process.env.ROKU_DISCOVERY_URL?.trim() || 'ssdp://239.255.255.250:1900',
 		samsungTvDiscoveryUrl:
