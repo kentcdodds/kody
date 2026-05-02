@@ -67,9 +67,7 @@ type AccountSecretListItem = {
 	ttlMs: number | null
 }
 
-type AccountSecretDetail = AccountSecretListItem & {
-	value: string
-}
+type AccountSecretDetail = AccountSecretListItem
 
 type SecretApprovalView = {
 	name: string
@@ -737,9 +735,7 @@ async function buildAccountSecretsPayload(input: {
 		packageApps,
 	})
 	const selectedSecret = input.selectedSecretId
-		? await resolveAccountSecretDetail({
-				env: input.env,
-				userId: input.user.mcpUser.userId,
+		? resolveAccountSecretDetail({
 				secretId: input.selectedSecretId,
 				secrets,
 			})
@@ -900,9 +896,7 @@ async function resolveSecretApprovalView(input: {
 	} satisfies SecretApprovalView
 }
 
-async function resolveAccountSecretDetail(input: {
-	env: Env
-	userId: string
+function resolveAccountSecretDetail(input: {
 	secretId: string
 	secrets: Array<AccountSecretListItem>
 }) {
@@ -910,21 +904,7 @@ async function resolveAccountSecretDetail(input: {
 	if (!parsed) return null
 
 	const selected = input.secrets.find((secret) => secret.id === input.secretId)
-	if (!selected) return null
-
-	const resolved = await resolveSecret({
-		env: input.env,
-		userId: input.userId,
-		name: parsed.name,
-		scope: parsed.scope,
-		storageContext: getSecretContextForAccountSecret(parsed),
-	})
-	if (!resolved?.found || resolved.value == null) return null
-
-	return {
-		...selected,
-		value: resolved.value,
-	} satisfies AccountSecretDetail
+	return selected ?? null
 }
 
 function toAccountSecretListItem(

@@ -564,7 +564,7 @@ test('package approval approve deduplicates allowed package ids', async () => {
 	)
 })
 
-test('GET /account/secrets.json includes decrypted value in selectedSecret', async () => {
+test('GET /account/secrets.json keeps selected metadata without decrypted value', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'myApiKey',
@@ -581,10 +581,6 @@ test('GET /account/secrets.json includes decrypted value in selectedSecret', asy
 	])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'the-actual-secret-value',
-	})
 
 	const handler = createAccountSecretsApiHandler(createEnv())
 	const response = await handler.handler({
@@ -600,14 +596,9 @@ test('GET /account/secrets.json includes decrypted value in selectedSecret', asy
 	expect(payload.ok).toBe(true)
 	expect(payload.selectedSecret).toBeDefined()
 	expect(payload.selectedSecret.name).toBe('myApiKey')
-	expect(payload.selectedSecret.value).toBe('the-actual-secret-value')
-	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
-		expect.objectContaining({
-			name: 'myApiKey',
-			scope: 'user',
-			storageContext: { appId: null, sessionId: null },
-		}),
-	)
+	expect(payload.selectedSecret.description).toBe('API key')
+	expect(payload.selectedSecret).not.toHaveProperty('value')
+	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
 })
 
 test('POST /account/secrets/reveal without password returns 401', async () => {
