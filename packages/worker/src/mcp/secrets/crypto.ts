@@ -102,34 +102,15 @@ export async function decryptSecretValue(
 	const iv = base64UrlToBytes(ivPart)
 	const ciphertextBytes = base64UrlToBytes(ciphertextPart)
 
-	const primarySecret = getSecretStoreKey(env)
-	const primaryKey = await deriveEncryptionKey(primarySecret, secretStorePurpose)
+	const secret = getSecretStoreKey(env)
+	const key = await deriveEncryptionKey(secret, secretStorePurpose)
 	try {
 		const plaintext = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv },
-			primaryKey,
+			key,
 			ciphertextBytes,
 		)
-		return { value: textDecoder.decode(plaintext), needsReEncrypt: false }
-	} catch {
-		// Primary key failed — attempt legacy COOKIE_SECRET fallback
-	}
-
-	if (primarySecret === env.COOKIE_SECRET) {
-		throw new Error('Unable to decrypt secret value.')
-	}
-
-	const legacyKey = await deriveEncryptionKey(
-		env.COOKIE_SECRET,
-		secretStorePurpose,
-	)
-	try {
-		const plaintext = await crypto.subtle.decrypt(
-			{ name: 'AES-GCM', iv },
-			legacyKey,
-			ciphertextBytes,
-		)
-		return { value: textDecoder.decode(plaintext), needsReEncrypt: true }
+		return textDecoder.decode(plaintext)
 	} catch {
 		throw new Error('Unable to decrypt secret value.')
 	}

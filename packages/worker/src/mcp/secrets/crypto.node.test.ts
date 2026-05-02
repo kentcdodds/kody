@@ -13,8 +13,7 @@ test('encrypt then decrypt with SECRET_STORE_KEY succeeds', async () => {
 	const env = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: primaryKey }
 	const encrypted = await encryptSecretValue(env, 'my-secret-value')
 	const result = await decryptSecretValue(env, encrypted)
-	expect(result.value).toBe('my-secret-value')
-	expect(result.needsReEncrypt).toBe(false)
+	expect(result).toBe('my-secret-value')
 })
 
 test('decrypt with correct SECRET_STORE_KEY ignores COOKIE_SECRET value', async () => {
@@ -26,21 +25,7 @@ test('decrypt with correct SECRET_STORE_KEY ignores COOKIE_SECRET value', async 
 		SECRET_STORE_KEY: primaryKey,
 	}
 	const result = await decryptSecretValue(envWithDifferentCookie, encrypted)
-	expect(result.value).toBe('test-data')
-	expect(result.needsReEncrypt).toBe(false)
-})
-
-test('legacy ciphertext encrypted with COOKIE_SECRET decrypts via fallback', async () => {
-	const legacyEnv = {
-		COOKIE_SECRET: cookieSecret,
-		SECRET_STORE_KEY: undefined,
-	}
-	const legacyCiphertext = await encryptSecretValue(legacyEnv, 'legacy-secret')
-
-	const newEnv = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: primaryKey }
-	const result = await decryptSecretValue(newEnv, legacyCiphertext)
-	expect(result.value).toBe('legacy-secret')
-	expect(result.needsReEncrypt).toBe(true)
+	expect(result).toBe('test-data')
 })
 
 test('rotating COOKIE_SECRET does not brick secrets when SECRET_STORE_KEY is stable', async () => {
@@ -52,17 +37,16 @@ test('rotating COOKIE_SECRET does not brick secrets when SECRET_STORE_KEY is sta
 		SECRET_STORE_KEY: primaryKey,
 	}
 	const result = await decryptSecretValue(rotatedEnv, encrypted)
-	expect(result.value).toBe('important-data')
-	expect(result.needsReEncrypt).toBe(false)
+	expect(result).toBe('important-data')
 })
 
-test('decryption fails when both keys are wrong', async () => {
+test('decryption fails when SECRET_STORE_KEY is wrong', async () => {
 	const env = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: primaryKey }
 	const encrypted = await encryptSecretValue(env, 'data')
 
 	const wrongEnv = {
-		COOKIE_SECRET: 'wrong-cookie-secret-32-chars-minimum-value!!!',
 		SECRET_STORE_KEY: 'wrong-store-key-32-chars-minimum-value-here!!',
+		COOKIE_SECRET: cookieSecret,
 	}
 	await expect(decryptSecretValue(wrongEnv, encrypted)).rejects.toThrow(
 		'Unable to decrypt secret value.',
@@ -76,8 +60,7 @@ test('when SECRET_STORE_KEY is unset, encrypt/decrypt uses COOKIE_SECRET', async
 	}
 	const encrypted = await encryptSecretValue(env, 'fallback-test')
 	const result = await decryptSecretValue(env, encrypted)
-	expect(result.value).toBe('fallback-test')
-	expect(result.needsReEncrypt).toBe(false)
+	expect(result).toBe('fallback-test')
 })
 
 test('general-purpose encrypt/decrypt with purpose uses COOKIE_SECRET', async () => {
