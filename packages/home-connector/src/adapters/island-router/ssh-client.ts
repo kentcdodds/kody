@@ -199,7 +199,14 @@ async function resolveHostVerification(
 	}
 
 	return {
-		args: [],
+		args: [
+			'-o',
+			'StrictHostKeyChecking=no',
+			'-o',
+			'UserKnownHostsFile=/dev/null',
+			'-o',
+			'GlobalKnownHostsFile=/dev/null',
+		],
 		cleanup: async () => {},
 	}
 }
