@@ -753,6 +753,18 @@ test('job capabilities require an authenticated user for scheduling, mutation, a
 		),
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 	await expect(
+		jobScheduleOnceCapability.handler(
+			{
+				code: 'export default async () => ({ ok: true })',
+				run_at: '2026-04-20T18:30:00Z',
+			},
+			{
+				env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
 		jobDeleteCapability.handler(
 			{
 				id: 'job-123',
