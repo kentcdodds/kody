@@ -26,6 +26,8 @@ Conventions
 - \`job_list\` / \`job_get\`: inspect the signed-in user's scheduled jobs, recent run outcomes, and current per-user alarm state when debugging scheduling issues.
 - \`job_schedule\`: schedule a repo-backed job for the signed-in user without creating a saved package first. Supports one-off, interval, and cron schedules.
 - \`job_schedule_once\`: compatibility wrapper for one-off repo-backed jobs when you only need a single run time.
+- \`job_update\`: update an existing scheduled job by id. Supports safe mutable fields such as name, code, params, schedule, timezone, enabled, and kill-switch state.
+- \`job_delete\`: delete one of the signed-in user's scheduled jobs by id.
 - \`job_run_now\`: run an existing scheduled job immediately by id and return the updated job view plus execution result for debugging.
 - Package jobs are schedules owned by a package. For ad hoc work that is not tied to a package, use \`job_schedule\`. Package apps are optional UI surfaces declared by the package, and packages may also declare headless package services for long-lived background runtimes.
 - Package apps can also use Kody-managed realtime websocket sessions through \`session_list\`, \`session_emit\`, and \`session_broadcast\`, and package jobs can emit to those sessions when running under the same package caller context.

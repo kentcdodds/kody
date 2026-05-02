@@ -7,6 +7,7 @@ import {
 	type JobCreateInput,
 	type JobExecutionResult,
 	type JobSchedule,
+	type JobUpdateInput,
 	type JobView,
 } from '#worker/jobs/types.ts'
 
@@ -219,6 +220,74 @@ export const jobRunNowInputSchema = z.object({
 	id: z.string().min(1).describe('Existing job id to execute immediately.'),
 })
 
+export const jobDeleteInputSchema = jobInspectionInputSchema
+
+export const jobDeleteOutputSchema = z.object({
+	job_id: z.string(),
+	deleted: z.literal(true),
+})
+
+export const jobUpdateInputSchema = z
+	.object({
+		id: z
+			.string()
+			.min(1)
+			.describe('Existing job id from job_list output or a prior job response.'),
+		name: z
+			.string()
+			.min(1)
+			.optional()
+			.describe('Optional new human-readable name for the job.'),
+		code: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional replacement ES module source. It must still default export the job entrypoint.',
+			),
+		params: z
+			.record(z.string(), z.unknown())
+			.nullable()
+			.optional()
+			.describe(
+				'Optional replacement params object. Pass null to clear existing params.',
+			),
+		schedule: scheduledJobScheduleSchema
+			.optional()
+			.describe('Optional replacement schedule for the job.'),
+		timezone: z
+			.string()
+			.min(1)
+			.nullable()
+			.optional()
+			.describe(
+				'Optional timezone label for cron display and schedule calculation. Pass null to reset to UTC.',
+			),
+		enabled: z
+			.boolean()
+			.optional()
+			.describe('Enable or disable the job without deleting it.'),
+		kill_switch_enabled: z
+			.boolean()
+			.optional()
+			.describe(
+				'Force the job off regardless of schedule. This remains visible in job_list and job_get for debugging.',
+			),
+	})
+	.refine(
+		(input) =>
+			input.name !== undefined ||
+			input.code !== undefined ||
+			input.params !== undefined ||
+			input.schedule !== undefined ||
+			input.timezone !== undefined ||
+			input.enabled !== undefined ||
+			input.kill_switch_enabled !== undefined,
+		{
+			message: 'Provide at least one mutable field to update.',
+		},
+	)
+
 export const jobRunNowOutputSchema = z.object({
 	job: jobViewOutputSchema,
 	execution: jobExecutionOutputSchema,
@@ -230,7 +299,9 @@ export const jobRunNowOutputSchema = z.object({
 })
 
 export type JobScheduleCapabilityInput = z.infer<typeof jobScheduleInputSchema>
+export type JobDeleteCapabilityInput = z.infer<typeof jobDeleteInputSchema>
 export type JobRunNowCapabilityInput = z.infer<typeof jobRunNowInputSchema>
+export type JobUpdateCapabilityInput = z.infer<typeof jobUpdateInputSchema>
 
 export function buildJobScheduleSummaryOutput(schedule: JobView['schedule']) {
 	switch (schedule.type) {
@@ -333,6 +404,13 @@ export function buildJobViewOutput(job: JobView) {
 	}
 }
 
+export function buildJobDeleteOutput(input: { id: string; deleted: true }) {
+	return {
+		job_id: input.id,
+		deleted: input.deleted,
+	}
+}
+
 export function buildJobInspectionOutput(
 	job: JobView,
 	input: { now?: Date } = {},
@@ -401,6 +479,22 @@ export function buildJobRunNowOutput(input: {
 	}
 }
 
+export function resolveJobUpdateBody(
+	input: JobUpdateCapabilityInput,
+): JobUpdateInput {
+	return {
+		id: input.id,
+		name: input.name,
+		code: input.code,
+		params: input.params,
+		schedule:
+			input.schedule === undefined ? undefined : toJobSchedule(input.schedule),
+		timezone: input.timezone,
+		enabled: input.enabled,
+		killSwitchEnabled: input.kill_switch_enabled,
+	}
+}
+
 export async function createScheduledJobFromArgs(input: {
 	env: Env
 	callerContext: CapabilityContext['callerContext']
@@ -440,4 +534,47 @@ export async function runJobNowFromArgs(input: {
 		callerContext: input.callerContext,
 	})
 	return buildJobRunNowOutput(result)
+}
+
+export async function updateJobFromArgs(input: {
+	env: Env
+	callerContext: CapabilityContext['callerContext']
+	args: JobUpdateCapabilityInput
+}) {
+	const user = requireMcpUser(input.callerContext)
+	const { updateJob } = await import('#worker/jobs/service.ts')
+	const updated = await updateJob({
+		env: input.env,
+		callerContext: input.callerContext,
+		body: resolveJobUpdateBody(input.args),
+	})
+	logJobSchedulerEvent({
+		event: 'job_updated',
+		userId: user.userId,
+		jobId: updated.id,
+		scheduleType: updated.schedule.type,
+		nextRunAt: updated.nextRunAt,
+	})
+	return buildJobViewOutput(updated)
+}
+
+export async function deleteJobFromArgs(input: {
+	env: Env
+	callerContext: CapabilityContext['callerContext']
+	args: JobDeleteCapabilityInput
+}) {
+	const user = requireMcpUser(input.callerContext)
+	const { deleteJob } = await import('#worker/jobs/service.ts')
+	const result = await deleteJob({
+		env: input.env,
+		userId: user.userId,
+		jobId: input.args.id,
+	})
+	logJobSchedulerEvent({
+		event: 'job_deleted',
+		userId: user.userId,
+		jobId: result.id,
+		reason: 'mcp_capability',
+	})
+	return buildJobDeleteOutput(result)
 }
