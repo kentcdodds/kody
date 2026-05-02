@@ -112,6 +112,21 @@ test('findExportLimit prefers the dedicated export cap field and works when dest
 	expect(info.source).toBe('site_info.max_site_export_power_kW')
 })
 
+test('findExportLimit records failed authentication status', async () => {
+	using env = makeAdapter()
+	await env.adapter.scan()
+	const gatewayId = 'tesla-gateway-mock-home-1'
+	env.adapter.setCredentials({ gatewayId, password: 'wrong-password' })
+	await expect(env.adapter.findExportLimit(gatewayId)).rejects.toThrow(
+		/credentials are invalid/i,
+	)
+	const gateway = env.adapter
+		.listGateways()
+		.find((entry) => entry.gatewayId === gatewayId)
+	expect(gateway?.lastAuthError).toBeTruthy()
+	expect(gateway?.lastAuthenticatedAt).toBeNull()
+})
+
 test('findAllExportLimits surfaces the configured cap for every gateway', async () => {
 	using env = makeAdapter()
 	await env.adapter.scan()

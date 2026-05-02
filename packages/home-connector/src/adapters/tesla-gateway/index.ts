@@ -609,12 +609,17 @@ export function createTeslaGatewayAdapter(input: {
 			gatewayId: string,
 		): Promise<TeslaGatewayExportLimitInfo> {
 			const gateway = requireTeslaGateway(storage, connectorId, gatewayId)
-			const snapshot = await fetchLiveFromGateway({
-				storage,
-				connectorId,
-				gateway,
-			})
-			return pickExportLimit(snapshot)
+			try {
+				const snapshot = await fetchLiveFromGateway({
+					storage,
+					connectorId,
+					gateway,
+				})
+				return pickExportLimit(snapshot)
+			} catch (error) {
+				applyFailedAuth({ gateway, error })
+				throw error
+			}
 		},
 		async findAllExportLimits(): Promise<Array<TeslaGatewayExportLimitInfo>> {
 			const gateways = listTeslaGateways(storage, connectorId)
