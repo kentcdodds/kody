@@ -14,6 +14,7 @@ export type HomeConnectorConfig = {
 	islandRouterKnownHostsPath: string | null
 	islandRouterHostFingerprint: string | null
 	islandRouterCommandTimeoutMs: number
+	islandRouterWriteOperationsEnabled: boolean
 	rokuDiscoveryUrl: string
 	samsungTvDiscoveryUrl: string
 	lutronDiscoveryUrl: string
@@ -248,6 +249,8 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 			islandRouterCommandTimeoutMs >= 1000
 				? islandRouterCommandTimeoutMs
 				: 8000,
+		islandRouterWriteOperationsEnabled:
+			process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS === 'true',
 		rokuDiscoveryUrl:
 			process.env.ROKU_DISCOVERY_URL?.trim() || 'ssdp://239.255.255.250:1900',
 		samsungTvDiscoveryUrl:

@@ -96,7 +96,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostat control, and read-only Island router SSH diagnostics. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
+				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostat control, and typed allowlisted Island router SSH operations. Island router support is read-mostly: arbitrary CLI execution is never exposed, and the few opt-in write operations are high risk and must be used only when highly certain. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
 		},
 	)
 

@@ -34,6 +34,10 @@ If Island router diagnostics tools are missing or return configuration errors,
 verify that the home connector runtime has `ISLAND_ROUTER_HOST`,
 `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` set, and prefer
 either `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or `ISLAND_ROUTER_HOST_FINGERPRINT` for
-host verification. The connector only exposes read-only tools such as
-`router_get_status` and `router_diagnose_host`; it does not support arbitrary
-router command execution or configuration changes.
+host verification. The connector never exposes arbitrary router command
+execution. By default it exposes read-oriented tools such as
+`router_get_status` and `router_diagnose_host`. A few high-risk, typed,
+allowlisted write tools are available only when
+`ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true` and SSH host verification is
+configured. Those write tools require explicit risk acknowledgement and exact
+confirmation phrases because mistakes can have severe consequences.

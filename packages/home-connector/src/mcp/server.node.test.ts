@@ -14,7 +14,7 @@ import { createHomeConnectorMcpServer } from './server.ts'
 import { createAppState } from '../state.ts'
 import { createHomeConnectorStorage } from '../storage/index.ts'
 
-function createConfig() {
+function createConfig(options?: { writeOperationsEnabled?: boolean }) {
 	process.env.MOCKS = 'true'
 	process.env.HOME_CONNECTOR_ID = 'default'
 	process.env.HOME_CONNECTOR_SHARED_SECRET =
@@ -35,6 +35,10 @@ function createConfig() {
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
 		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
+	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = options
+		?.writeOperationsEnabled
+		? 'true'
+		: 'false'
 	return loadHomeConnectorConfig()
 }
 
@@ -168,6 +172,39 @@ function createIslandRouterRunner() {
 					timedOut: false,
 					durationMs: 200,
 				}
+			case 'clear-dhcp-client':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'clear dhcp-client'],
+					stdout: 'Renewing DHCP-learned addresses.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'clear-log':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'clear log'],
+					stdout: 'System log buffer cleared.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'write-memory':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'write memory'],
+					stdout: 'Running configuration saved.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
 			default: {
 				const _exhaustive: never = request
 				throw new Error(
@@ -280,6 +317,15 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'router_diagnose_host')).toBe(
 			true,
 		)
+		expect(
+			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
+		).toBe(false)
+		expect(
+			tools.some((tool) => tool.name === 'router_clear_log_buffer'),
+		).toBe(false)
+		expect(
+			tools.some((tool) => tool.name === 'router_save_running_config'),
+		).toBe(false)
 		expect(
 			tools.some((tool) => tool.name === 'jellyfish_scan_controllers'),
 		).toBe(true)
@@ -486,6 +532,103 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		await expect(
 			mcp.callTool('bond_release_bridge', { bridgeId: 'not-a-bridge' }),
 		).rejects.toThrow('not-a-bridge')
+	} finally {
+		storage.close()
+	}
+})
+
+test('mcp server exposes island router write tools only when explicitly enabled', async () => {
+	const config = createConfig({ writeOperationsEnabled: true })
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const samsungTv = createSamsungTvAdapter({
+		config,
+		state,
+		storage,
+	})
+	const lutron = createLutronAdapter({
+		config,
+		state,
+		storage,
+	})
+	const sonos = createSonosAdapter({
+		config,
+		state,
+		storage,
+	})
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: createIslandRouterRunner(),
+	})
+	const jellyfish = createJellyfishAdapter({
+		config,
+		state,
+		storage,
+	})
+	const venstar = createVenstarAdapter({ config, state, storage })
+	const mcp = createHomeConnectorMcpServer({
+		config,
+		state,
+		samsungTv,
+		lutron,
+		sonos,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	})
+
+	try {
+		const tools = mcp.listTools()
+		expect(
+			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_clear_log_buffer'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_save_running_config'),
+		).toBe(true)
+
+		const renewTool = tools.find(
+			(tool) => tool.name === 'router_renew_dhcp_clients',
+		)
+		expect(renewTool).toBeDefined()
+		const renewProperties = (
+			renewTool?.inputSchema as {
+				properties?: Record<string, Record<string, unknown>>
+			}
+		).properties
+		expect(renewProperties?.acknowledgeHighRisk?.const).toBe(true)
+		expect(renewProperties?.confirmation?.const).toBe(
+			'I am highly certain renewing all Island router DHCP clients is necessary right now.',
+		)
+
+		const renewResult = await mcp.callTool('router_renew_dhcp_clients', {
+			acknowledgeHighRisk: true,
+			reason:
+				'The uplink address changed and an immediate DHCP renewal is the explicit recovery step.',
+			confirmation:
+				'I am highly certain renewing all Island router DHCP clients is necessary right now.',
+		})
+		expect(renewResult.structuredContent).toMatchObject({
+			operationId: 'renew-dhcp-clients',
+			commandId: 'clear-dhcp-client',
+		})
+
+		await expect(
+			mcp.callTool('router_save_running_config', {
+				acknowledgeHighRisk: true,
+				reason:
+					'Persist the currently validated maintenance change before the scheduled reboot window.',
+				confirmation: 'wrong',
+			}),
+		).rejects.toThrow('requires the exact acknowledgement')
 	} finally {
 		storage.close()
 	}

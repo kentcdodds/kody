@@ -274,6 +274,12 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 				: ['show log last']
 		case 'ping':
 			return [`ping ${assertSingleCliLine(request.host, 'host')}`]
+		case 'clear-dhcp-client':
+			return ['clear dhcp-client']
+		case 'clear-log':
+			return ['clear log']
+		case 'write-memory':
+			return ['write memory']
 		default: {
 			const _exhaustive: never = request
 			throw new Error(`Unhandled Island router command request: ${String(_exhaustive)}`)

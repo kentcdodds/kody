@@ -235,6 +235,16 @@ Authoring guide for outbound WebSocket services:
   before opening the real session.
 - `ISLAND_ROUTER_COMMAND_TIMEOUT_MS` — optional connector env var. Default
   timeout for Island router SSH commands in milliseconds. Defaults to `8000`.
+- `ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS` — optional connector env var. Defaults
+  to unset/false. When set to `true`, the connector may expose a tiny, typed,
+  allowlisted set of high-risk mutating Island router tools such as renewing all
+  DHCP clients, clearing the in-memory log buffer, and saving the running
+  configuration. Enable this only when you intentionally want those operations,
+  never as a convenience default. The agent must be highly certain before using
+  them because mistakes can have severe consequences. Write operations also
+  require strict SSH host verification via `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
+  `ISLAND_ROUTER_HOST_FINGERPRINT`; they stay unavailable when verification is
+  disabled.
 
 ## Why Zod?
 
