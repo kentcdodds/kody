@@ -257,6 +257,75 @@ test('job_update updates safe mutable fields on an existing job', async () => {
 	})
 })
 
+test('job_update maps one-off schedule run_at to runAt in the service payload', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	mockModule.updateJob.mockResolvedValue({
+		id: 'job-once',
+		name: 'One-off cleanup',
+		sourceId: 'source-once',
+		publishedCommit: null,
+		storageId: 'job:job-once',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-22T18:30:00Z',
+		},
+		scheduleSummary: 'Runs once at 2026-04-22T18:30:00Z',
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-20T10:00:00.000Z',
+		updatedAt: '2026-04-20T12:00:00.000Z',
+		nextRunAt: '2026-04-22T18:30:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	})
+
+	await jobUpdateCapability.handler(
+		{
+			id: 'job-once',
+			schedule: {
+				type: 'once',
+				run_at: '2026-04-22T18:30:00Z',
+			},
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
+
+	expect(mockModule.updateJob).toHaveBeenCalledWith({
+		env,
+		callerContext,
+		body: {
+			id: 'job-once',
+			name: undefined,
+			code: undefined,
+			params: undefined,
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-22T18:30:00Z',
+			},
+			timezone: undefined,
+			enabled: undefined,
+			killSwitchEnabled: undefined,
+		},
+	})
+	const call = mockModule.updateJob.mock.calls.at(-1)?.[0]
+	expect(call?.body.schedule).not.toHaveProperty('run_at')
+})
+
 test('job_delete removes an existing job by id for the signed-in user', async () => {
 	resetMocks()
 	const env = {} as Env
