@@ -2872,12 +2872,14 @@ export function createHomeConnectorMcpServer(input: {
 			),
 		},
 		async (args) => {
+			const customerEmailLabel =
+				typeof args['customerEmailLabel'] === 'string'
+					? args['customerEmailLabel'].trim()
+					: ''
 			const gateway = teslaGateway.setCredentials({
 				gatewayId: String(args['gatewayId'] ?? ''),
 				password: String(args['password'] ?? ''),
-				...(typeof args['customerEmailLabel'] === 'string'
-					? { customerEmailLabel: args['customerEmailLabel'] }
-					: {}),
+				...(customerEmailLabel ? { customerEmailLabel } : {}),
 			})
 			return structuredTextResult(
 				`Saved Tesla gateway credentials for ${gateway.gatewayId}.`,

@@ -7,6 +7,7 @@ const {
 	isTeslaCert,
 	probeLooksLikeTesla,
 	ouiFromMac,
+	validateJsonGateway,
 	TESLA_LEADER_OUIS,
 	TESLA_POWERWALL_OUIS,
 } = __testing
@@ -139,4 +140,31 @@ test('decideLeaderStatus uses OUI as the authoritative leader signal', () => {
 			ouiIsPowerwall: false,
 		}),
 	).toBe(false)
+})
+
+test('validateJsonGateway rejects malformed discovery feed entries', () => {
+	expect(
+		validateJsonGateway({
+			gatewayId: 'tesla-gateway-home-1',
+			host: '192.168.1.10',
+			port: 443,
+			role: 'leader',
+			lastSeenAt: '2026-05-01T00:00:00.000Z',
+		}),
+	).toMatchObject({
+		gatewayId: 'tesla-gateway-home-1',
+		host: '192.168.1.10',
+		port: 443,
+		role: 'leader',
+	})
+	expect(
+		validateJsonGateway({ gatewayId: 'missing-host', port: 443 }),
+	).toBeNull()
+	expect(
+		validateJsonGateway({
+			gatewayId: 'bad-port',
+			host: '192.168.1.10',
+			port: '443',
+		}),
+	).toBeNull()
 })

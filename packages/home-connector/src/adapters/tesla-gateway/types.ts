@@ -88,9 +88,10 @@ export type TeslaGatewayPersistedRecord = TeslaGatewayDiscoveredGateway & {
 
 export type TeslaGatewayPublicRecord = Omit<
 	TeslaGatewayPersistedRecord,
-	'password'
+	'password' | 'customerEmailLabel'
 > & {
 	hasStoredCredentials: boolean
+	hasCustomCustomerEmailLabel: boolean
 }
 
 export type TeslaGatewayLoginResponse = {
@@ -232,6 +233,7 @@ export type TeslaGatewayNetworksResponse = Array<TeslaGatewayNetworkInterface>
 export type TeslaGatewaySiteInfoResponse = {
 	max_system_energy_kWh?: number
 	max_system_power_kW?: number
+	max_site_export_power_kW?: number
 	site_name?: string
 	timezone?: string
 	max_site_meter_power_ac?: number
