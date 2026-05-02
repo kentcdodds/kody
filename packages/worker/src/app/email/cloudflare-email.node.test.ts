@@ -192,9 +192,10 @@ test('sendCloudflareEmail returns skipped when account or token is missing', asy
 		expect(warnSpy).toHaveBeenCalledTimes(1)
 		const [reason, payload] = warnSpy.mock.calls[0]!
 		expect(reason).toBe('cloudflare-email-unconfigured')
-		expect(String(payload)).toContain('secret body')
-		expect(String(payload)).toContain('secret text')
-		expect(String(payload)).toContain('recipient@example.com')
+		expect(String(payload)).not.toContain('secret body')
+		expect(String(payload)).not.toContain('secret text')
+		expect(String(payload)).not.toContain('recipient@example.com')
+		expect(String(payload)).toContain('***@example.com')
 		expect(String(payload)).toContain('Skipped email')
 	} finally {
 		warnSpy.mockRestore()

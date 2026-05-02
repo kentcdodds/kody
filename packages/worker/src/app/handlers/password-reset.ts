@@ -1,7 +1,11 @@
 import { type BuildAction } from 'remix/fetch-router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { createDb, passwordResetsTable, usersTable } from '#worker/db.ts'
-import { logAuditEvent, getRequestIp } from '#app/audit-log.ts'
+import {
+	logAuditEvent,
+	getRequestIp,
+	redactEmailRecipient,
+} from '#app/audit-log.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { type routes } from '#app/routes.ts'
@@ -59,14 +63,12 @@ async function hashResetToken(token: string) {
 function logMissingEmailConfig(payload: {
 	to: string
 	subject: string
-	html: string
 }) {
 	console.warn(
 		'password-reset-email-sender-unconfigured',
 		JSON.stringify({
-			to: payload.to,
+			to: redactEmailRecipient(payload.to),
 			subject: payload.subject,
-			body: payload.html,
 		}),
 	)
 }
@@ -150,7 +152,6 @@ export function createPasswordResetRequestHandler(appEnv: AppEnv) {
 					logMissingEmailConfig({
 						to: normalizedEmail,
 						subject: email.subject,
-						html: email.html,
 					})
 				} else {
 					try {

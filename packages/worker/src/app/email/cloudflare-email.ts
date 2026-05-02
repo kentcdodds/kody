@@ -3,6 +3,7 @@ import {
 	outboundEmailSchema,
 	type OutboundEmail,
 } from '@kody-internal/shared/outbound-email.ts'
+import { redactEmailRecipient } from '#app/audit-log.ts'
 
 type CloudflareEmailClientConfig = {
 	accountId?: string
@@ -50,23 +51,18 @@ function normalizeEmailPayload(message: OutboundEmail) {
 	return result.value
 }
 
+function redactRecipients(to: string | Array<string>) {
+	if (Array.isArray(to)) return to.map(redactEmailRecipient)
+	return redactEmailRecipient(to)
+}
+
 function logSkippedEmail(reason: string, message: OutboundEmail) {
-	const headers =
-		message.headers ?
-			Object.fromEntries(
-				Object.keys(message.headers).map((key) => [key, '[REDACTED]']),
-			)
-		:	undefined
 	console.warn(
 		reason,
 		JSON.stringify({
-			to: message.to,
+			to: redactRecipients(message.to),
 			from: message.from,
 			subject: message.subject,
-			html: message.html,
-			text: message.text,
-			replyTo: message.replyTo,
-			headers,
 		}),
 	)
 }
