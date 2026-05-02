@@ -78,8 +78,12 @@ async function runLocalCommand(input: {
 		}, 1000).unref()
 	}, input.timeoutMs)
 
-	const result = await onceProcessExit(child)
-	clearTimeout(timeout)
+	let result: Awaited<ReturnType<typeof onceProcessExit>>
+	try {
+		result = await onceProcessExit(child)
+	} finally {
+		clearTimeout(timeout)
+	}
 
 	return {
 		stdout,
@@ -195,14 +199,7 @@ async function resolveHostVerification(
 	}
 
 	return {
-		args: [
-			'-o',
-			'StrictHostKeyChecking=no',
-			'-o',
-			'UserKnownHostsFile=/dev/null',
-			'-o',
-			'GlobalKnownHostsFile=/dev/null',
-		],
+		args: [],
 		cleanup: async () => {},
 	}
 }
@@ -239,7 +236,9 @@ function assertSingleCliLine(value: string, field: string) {
 }
 
 function escapeCliQuery(value: string) {
-	return assertSingleCliLine(value, 'query').replaceAll('"', '\\"')
+	return assertSingleCliLine(value, 'query')
+		.replaceAll('\\', '\\\\')
+		.replaceAll('"', '\\"')
 }
 
 function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
@@ -283,6 +282,31 @@ function writeCommandLines(child: ChildProcess, commandLines: Array<string>) {
 
 export function createIslandRouterSshCommandRunner(config: HomeConnectorConfig) {
 	assertIslandRouterConfigured(config)
+	let verificationPromise: Promise<HostVerification> | null = null
+	let cleanupRegistered = false
+
+	async function getVerification() {
+		if (!verificationPromise) {
+			verificationPromise = resolveHostVerification(
+				config,
+				config.islandRouterCommandTimeoutMs,
+			)
+				.then((verification) => {
+					if (!cleanupRegistered) {
+						cleanupRegistered = true
+						process.once('exit', () => {
+							void verification.cleanup().catch(() => {})
+						})
+					}
+					return verification
+				})
+				.catch((error) => {
+					verificationPromise = null
+					throw error
+				})
+		}
+		return await verificationPromise
+	}
 
 	return async (
 		request: IslandRouterCommandRequest,
@@ -291,79 +315,79 @@ export function createIslandRouterSshCommandRunner(config: HomeConnectorConfig) 
 			request.timeoutMs == null
 				? config.islandRouterCommandTimeoutMs
 				: request.timeoutMs
-		const verification = await resolveHostVerification(config, timeoutMs)
+		const verification = await getVerification()
 		const commandLines = ['terminal length 0', ...getCommandLines(request)]
 		const start = Date.now()
 
-		try {
-			const child = spawn('ssh', createSshArgs(config, verification.args), {
-				stdio: 'pipe',
-			})
+		const child = spawn('ssh', createSshArgs(config, verification.args), {
+			stdio: 'pipe',
+		})
 
-			let stdout = ''
-			let stderr = ''
-			child.stdout?.setEncoding('utf8')
-			child.stdout?.on('data', (chunk: string | Buffer) => {
-				stdout += String(chunk)
-			})
-			child.stderr?.setEncoding('utf8')
-			child.stderr?.on('data', (chunk: string | Buffer) => {
-				stderr += String(chunk)
-			})
+		let stdout = ''
+		let stderr = ''
+		child.stdout?.setEncoding('utf8')
+		child.stdout?.on('data', (chunk: string | Buffer) => {
+			stdout += String(chunk)
+		})
+		child.stderr?.setEncoding('utf8')
+		child.stderr?.on('data', (chunk: string | Buffer) => {
+			stderr += String(chunk)
+		})
 
-			writeCommandLines(child, commandLines)
+		writeCommandLines(child, commandLines)
 
-			let timedOut = false
-			let closed = false
-			child.once('close', () => {
-				closed = true
-			})
-			let timeout: NodeJS.Timeout | null = null
-			if (request.id === 'ping' && request.allowTimeout) {
-				timeout = setTimeout(() => {
-					timedOut = true
-					child.stdin?.write('\u0003')
-					child.stdin?.write('\nexit\n')
-					child.stdin?.end()
-					setTimeout(() => {
-						if (closed) return
-						child.kill('SIGTERM')
-						setTimeout(() => {
-							if (!closed) {
-								child.kill('SIGKILL')
-							}
-						}, 1000).unref()
-					}, 1000).unref()
-				}, timeoutMs)
-			} else {
-				child.stdin?.write('exit\n')
+		let timedOut = false
+		let closed = false
+		child.once('close', () => {
+			closed = true
+		})
+		let timeout: NodeJS.Timeout | null = null
+		if (request.id === 'ping' && request.allowTimeout) {
+			timeout = setTimeout(() => {
+				timedOut = true
+				child.stdin?.write('\u0003')
+				child.stdin?.write('\nexit\n')
 				child.stdin?.end()
-				timeout = setTimeout(() => {
-					timedOut = true
+				setTimeout(() => {
+					if (closed) return
 					child.kill('SIGTERM')
 					setTimeout(() => {
 						if (!closed) {
 							child.kill('SIGKILL')
 						}
 					}, 1000).unref()
-				}, timeoutMs)
-			}
+				}, 1000).unref()
+			}, timeoutMs)
+		} else {
+			child.stdin?.write('exit\n')
+			child.stdin?.end()
+			timeout = setTimeout(() => {
+				timedOut = true
+				child.kill('SIGTERM')
+				setTimeout(() => {
+					if (!closed) {
+						child.kill('SIGKILL')
+					}
+				}, 1000).unref()
+			}, timeoutMs)
+		}
 
-			const result = await onceProcessExit(child)
-			if (timeout) clearTimeout(timeout)
-
-			return {
-				id: request.id,
-				commandLines,
-				stdout,
-				stderr,
-				exitCode: result.exitCode,
-				signal: result.signal,
-				timedOut,
-				durationMs: Date.now() - start,
-			}
+		let result: Awaited<ReturnType<typeof onceProcessExit>>
+		try {
+			result = await onceProcessExit(child)
 		} finally {
-			await verification.cleanup()
+			if (timeout) clearTimeout(timeout)
+		}
+
+		return {
+			id: request.id,
+			commandLines,
+			stdout,
+			stderr,
+			exitCode: result.exitCode,
+			signal: result.signal,
+			timedOut,
+			durationMs: Date.now() - start,
 		}
 	}
 }

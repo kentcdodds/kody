@@ -4,6 +4,32 @@ import { createIslandRouterAdapter } from './index.ts'
 import { parseIslandRouterInterfaceSummaries } from './parsing.ts'
 import { type IslandRouterCommandRequest } from './types.ts'
 
+function withTemporaryEnv(values: Record<string, string | undefined>) {
+	const previousValues = Object.fromEntries(
+		Object.keys(values).map((key) => [key, process.env[key]]),
+	)
+
+	for (const [key, value] of Object.entries(values)) {
+		if (value === undefined) {
+			delete process.env[key]
+			continue
+		}
+		process.env[key] = value
+	}
+
+	return {
+		[Symbol.dispose]() {
+			for (const [key, value] of Object.entries(previousValues)) {
+				if (value === undefined) {
+					delete process.env[key]
+					continue
+				}
+				process.env[key] = value
+			}
+		},
+	}
+}
+
 function createConfig() {
 	process.env.MOCKS = 'false'
 	process.env.HOME_CONNECTOR_ID = 'default'
@@ -175,6 +201,7 @@ function createFakeRunner() {
 }
 
 test('island router adapter returns status and diagnoses a host from typed SSH output', async () => {
+	using _env = withTemporaryEnv({})
 	const config = createConfig()
 	const islandRouter = createIslandRouterAdapter({
 		config,
@@ -234,6 +261,8 @@ test('island router adapter returns status and diagnoses a host from typed SSH o
 })
 
 test('island router adapter reports incomplete configuration without opening SSH', async () => {
+	using _env = withTemporaryEnv({})
+	createConfig()
 	process.env.ISLAND_ROUTER_HOST = ''
 	process.env.ISLAND_ROUTER_USERNAME = ''
 	process.env.ISLAND_ROUTER_PRIVATE_KEY_PATH = ''
@@ -250,6 +279,8 @@ test('island router adapter reports incomplete configuration without opening SSH
 })
 
 test('island router adapter marks malformed fingerprint config as not configured', async () => {
+	using _env = withTemporaryEnv({})
+	createConfig()
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT = 'not-a-fingerprint'
 	const config = loadHomeConnectorConfig()
 	const islandRouter = createIslandRouterAdapter({
