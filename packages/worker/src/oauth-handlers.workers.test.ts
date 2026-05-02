@@ -107,6 +107,7 @@ function createEnv(
 			delete: async () => undefined,
 		},
 		COOKIE_SECRET: cookieSecretValue,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		JOB_MANAGER: mockJobDoNamespace('job-manager-test-id'),
 		STORAGE_RUNNER: mockJobDoNamespace('storage-runner-test-id'),
 		PACKAGE_REALTIME_SESSION: mockJobDoNamespace(
