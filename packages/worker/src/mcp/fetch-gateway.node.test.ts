@@ -6,6 +6,7 @@ import * as secretService from '#mcp/secrets/service.ts'
 const env = {
 	APP_DB: {} as D1Database,
 	COOKIE_SECRET: 'test-cookie-secret',
+	SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 }
 
 const props = {

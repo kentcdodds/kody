@@ -98,11 +98,13 @@ export async function decryptSecretValue(
 	if (!ivPart || !ciphertextPart) {
 		throw new Error('Invalid encrypted secret payload.')
 	}
-	const iv = base64UrlToBytes(ivPart)
-	const ciphertextBytes = base64UrlToBytes(ciphertextPart)
-
-	const key = await deriveEncryptionKey(env.SECRET_STORE_KEY, secretStorePurpose)
 	try {
+		const iv = base64UrlToBytes(ivPart)
+		const ciphertextBytes = base64UrlToBytes(ciphertextPart)
+		const key = await deriveEncryptionKey(
+			env.SECRET_STORE_KEY,
+			secretStorePurpose,
+		)
 		const plaintext = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv },
 			key,
