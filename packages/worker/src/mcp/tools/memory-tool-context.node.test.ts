@@ -160,9 +160,9 @@ test('formatSurfacedMemoriesMarkdown omits empty memories heading for retriever-
 	})
 
 	expect(content?.type).toBe('text')
-	expect(content?.text).not.toContain('## Relevant memories')
-	expect(content?.text).toContain('## Relevant retriever results')
-	expect(content?.text).toContain('**Sprinkler controller**')
-	expect(content?.text).not.toContain('```ignore')
-	expect(content?.text).toContain('`personal-inbox/notes`')
+	expect(content?.text?.split('\n')).toEqual([
+		'## Relevant retriever results',
+		'',
+		'- **Sprinkler controller** — Hold next and back for setup mode. (`personal-inbox/notes`)',
+	])
 })
