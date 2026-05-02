@@ -35,7 +35,7 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	listSecrets: vi.fn(async () => []),
 	listAppSecretsByAppIds: vi.fn(async () => []),
-	resolveSecret: vi.fn(async () => null),
+	resolveSecret: vi.fn(async () => ({ found: false, value: null })),
 	deleteSecret: vi.fn(async () => false),
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	setSecretAllowedPackages: vi.fn(async () => undefined),
@@ -564,7 +564,7 @@ test('package approval approve deduplicates allowed package ids', async () => {
 	)
 })
 
-test('GET /account/secrets.json does not include value in selectedSecret', async () => {
+test('GET /account/secrets.json includes decrypted value in selectedSecret', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'myApiKey',
@@ -581,6 +581,10 @@ test('GET /account/secrets.json does not include value in selectedSecret', async
 	])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'the-actual-secret-value',
+	})
 
 	const handler = createAccountSecretsApiHandler(createEnv())
 	const response = await handler.handler({
@@ -596,7 +600,14 @@ test('GET /account/secrets.json does not include value in selectedSecret', async
 	expect(payload.ok).toBe(true)
 	expect(payload.selectedSecret).toBeDefined()
 	expect(payload.selectedSecret.name).toBe('myApiKey')
-	expect(payload.selectedSecret).not.toHaveProperty('value')
+	expect(payload.selectedSecret.value).toBe('the-actual-secret-value')
+	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'myApiKey',
+			scope: 'user',
+			storageContext: { appId: null, sessionId: null },
+		}),
+	)
 })
 
 test('POST /account/secrets/reveal without password returns 401', async () => {

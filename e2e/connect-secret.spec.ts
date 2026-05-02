@@ -49,6 +49,6 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await expect(page.getByLabel('Description')).toHaveValue(description)
 	await expect(
 		page.getByPlaceholder('Enter the secret value').first(),
-	).toHaveValue('')
+	).toHaveValue(secretValue)
 	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 })

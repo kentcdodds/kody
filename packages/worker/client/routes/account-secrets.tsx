@@ -66,7 +66,9 @@ type SecretListItem = {
 	ttlMs: number | null
 }
 
-type SecretDetail = SecretListItem
+type SecretDetail = SecretListItem & {
+	value: string
+}
 
 type AccountSecretsPayload = {
 	ok: true
@@ -176,7 +178,7 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		scope: secret.scope,
 		appId: secret.appId ?? '',
 		description: secret.description,
-		value: '',
+		value: secret.value,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
 			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
@@ -510,6 +512,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				createEditorStateFromSecret(selectedSecret),
 				capabilityPrefill,
 			)
+			revealState = 'revealed'
 			return
 		}
 		editorState = applyCapabilityPrefill(
