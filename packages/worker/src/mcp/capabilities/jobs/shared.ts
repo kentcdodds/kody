@@ -232,7 +232,9 @@ export const jobUpdateInputSchema = z
 		id: z
 			.string()
 			.min(1)
-			.describe('Existing job id from job_list output or a prior job response.'),
+			.describe(
+				'Existing job id from job_list output or a prior job response.',
+			),
 		name: z
 			.string()
 			.min(1)

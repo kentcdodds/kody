@@ -20,8 +20,8 @@ connector, value, or secret reference, then run work through **execute**.
   scheduled work that should not become a saved package, use the built-in
   `job_schedule` capability. `job_schedule_once` remains available as a one-off
   convenience alias, `job_run_now` can trigger an existing job immediately for
-  debugging or catch-up runs, and `job_update` / `job_delete` let you correct
-  or remove an existing scheduled job by id.
+  debugging or catch-up runs, and `job_update` / `job_delete` let you correct or
+  remove an existing scheduled job by id.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Do not paste secrets in chat.** Use saved secrets, generated UI, or the

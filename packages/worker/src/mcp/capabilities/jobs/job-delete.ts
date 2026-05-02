@@ -13,14 +13,7 @@ export const jobDeleteCapability = defineDomainCapability(
 		name: 'job_delete',
 		description:
 			'Delete an existing scheduled job owned by the signed-in user by id. Use this to remove a mistaken or obsolete schedule entirely.',
-		keywords: [
-			'job',
-			'delete',
-			'remove',
-			'cancel',
-			'unschedule',
-			'cleanup',
-		],
+		keywords: ['job', 'delete', 'remove', 'cancel', 'unschedule', 'cleanup'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
