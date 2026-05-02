@@ -22,13 +22,17 @@ const neighborStatePattern =
 	/\b(?:reachable|stale|delay|probe|permanent|failed|incomplete)\b/i
 const timestampPattern =
 	/^(?<timestamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(?<rest>.*)$/
-const macAddressPattern =
-	/\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b/
+const macAddressPattern = /\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b/
 const ipv4Pattern = /\b\d{1,3}(?:\.\d{1,3}){3}\b/
 const pingReplyPattern =
 	/\bicmp_seq=(?<sequence>\d+)\b.*?\btime=(?<timeMs>\d+(?:\.\d+)?)\s*ms\b/i
 const pingSummaryPattern =
 	/(?<transmitted>\d+)\s+packets transmitted,\s+(?<received>\d+)\s+packets received,\s+(?<packetLoss>\d+(?:\.\d+)?)%\s+packet loss/i
+const islandRouterVersionBannerPattern =
+	/^(?<model>.+?)\s+\((?<hardwareModel>[^)]+)\)\s+serial number\s+(?<serialNumber>\S+)\s+Version\s+(?<firmwareVersion>\S+)$/i
+const islandRouterCliFailurePattern =
+	/\b(?:invalid command|unknown command|syntax error|permission denied|host key verification failed|connection refused|connection timed out|connection closed|no route to host|network is unreachable|could not resolve hostname|not found|not recognized)\b/i
+const islandRouterPromptSuffixPattern = '[>#\\]]'
 
 function normalizeHeaderKey(value: string) {
 	return value
@@ -42,35 +46,135 @@ function normalizeWhitespace(value: string) {
 	return value.replaceAll(/\s+/g, ' ').trim()
 }
 
+function escapeRegExp(value: string) {
+	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isPromptEchoLine(line: string, command: string) {
+	const trimmed = normalizeWhitespace(line)
+	const normalizedCommand = normalizeWhitespace(command)
+	if (!trimmed || !normalizedCommand) return false
+	return new RegExp(
+		`^[^\\r\\n]+${islandRouterPromptSuffixPattern}\\s*${escapeRegExp(normalizedCommand)}$`,
+	).test(trimmed)
+}
+
+function isPromptOnlyLine(line: string) {
+	const trimmed = normalizeWhitespace(line)
+	if (!trimmed) return false
+	return new RegExp(`^[^\\r\\n]+${islandRouterPromptSuffixPattern}$`).test(
+		trimmed,
+	)
+}
+
 export function sanitizeIslandRouterOutput(
 	stdout: string,
 	commandLines: Array<string>,
 ) {
-	const normalizedCommands = new Set(
-		commandLines.map((line) => normalizeWhitespace(line)),
-	)
-
-	return stdout
+	const normalizedCommands = commandLines
+		.map((line) => normalizeWhitespace(line))
+		.filter(Boolean)
+	const firstCommandEchoIndex = stdout
 		.replaceAll(/\u001b\[[0-9;]*m/g, '')
 		.split(/\r?\n/)
 		.map((line) => line.replace(/\r/g, ''))
-		.filter((line) => {
-			const trimmed = normalizeWhitespace(line)
-			if (!trimmed) return false
-			if (trimmed === 'exit') return false
-			if (/^[\w.-]+[>#]$/.test(trimmed)) return false
-			if (normalizedCommands.has(trimmed)) return false
-			for (const command of normalizedCommands) {
-				if (
-					trimmed.endsWith(`> ${command}`) ||
-					trimmed.endsWith(`# ${command}`) ||
-					trimmed.endsWith(`] ${command}`)
-				) {
-					return false
-				}
-			}
-			return true
+		.findIndex((line) =>
+			normalizedCommands.some((command) => isPromptEchoLine(line, command)),
+		)
+	const relevantOutput =
+		firstCommandEchoIndex >= 0
+			? stdout
+					.replaceAll(/\u001b\[[0-9;]*m/g, '')
+					.split(/\r?\n/)
+					.map((line) => line.replace(/\r/g, ''))
+					.slice(firstCommandEchoIndex)
+			: stdout
+					.replaceAll(/\u001b\[[0-9;]*m/g, '')
+					.split(/\r?\n/)
+					.map((line) => line.replace(/\r/g, ''))
+
+	return relevantOutput.filter((line) => {
+		const trimmed = normalizeWhitespace(line)
+		if (!trimmed) return false
+		if (trimmed.toLowerCase() === 'goodbye') return false
+		if (trimmed === 'exit') return false
+		if (isPromptOnlyLine(trimmed)) return false
+		if (normalizedCommands.includes(trimmed)) return false
+		if (isPromptEchoLine(trimmed, 'exit')) return false
+		for (const command of normalizedCommands) {
+			if (isPromptEchoLine(trimmed, command)) return false
+		}
+		return true
+	})
+}
+
+export function isSuccessfulIslandRouterCliSession(input: {
+	stdout: string
+	stderr: string
+	commandLines: Array<string>
+	exitCode: number | null
+	signal: NodeJS.Signals | null
+	timedOut: boolean
+}) {
+	if (input.timedOut || input.signal != null || input.exitCode !== 1) {
+		return false
+	}
+	if (normalizeWhitespace(input.stderr).length > 0) {
+		return false
+	}
+
+	const transcriptLines = input.stdout
+		.split(/\r?\n/)
+		.map((line) => normalizeWhitespace(line))
+		.filter(Boolean)
+	const actionableCommands = input.commandLines.filter(
+		(command) => normalizeWhitespace(command) !== 'terminal length 0',
+	)
+	const sawCommandEcho = actionableCommands.some((command) =>
+		transcriptLines.some((line) => isPromptEchoLine(line, command)),
+	)
+	const sawExitPrompt = transcriptLines.some((line) =>
+		isPromptEchoLine(line, 'exit'),
+	)
+	const sawGoodbye = transcriptLines.some(
+		(line) => line.toLowerCase() === 'goodbye',
+	)
+	const sanitizedOutput = sanitizeIslandRouterOutput(
+		input.stdout,
+		input.commandLines,
+	)
+
+	if (
+		sanitizedOutput.some((line) => islandRouterCliFailurePattern.test(line))
+	) {
+		return false
+	}
+
+	return sawCommandEcho && sawExitPrompt && sawGoodbye
+}
+
+export function didIslandRouterCommandSucceed(input: {
+	stdout: string
+	stderr: string
+	commandLines: Array<string>
+	exitCode: number | null
+	signal: NodeJS.Signals | null
+	timedOut: boolean
+}) {
+	if (input.timedOut || input.signal != null) {
+		return false
+	}
+	return (
+		input.exitCode === 0 ||
+		isSuccessfulIslandRouterCliSession({
+			stdout: input.stdout,
+			stderr: input.stderr,
+			commandLines: input.commandLines,
+			exitCode: input.exitCode,
+			signal: input.signal,
+			timedOut: input.timedOut,
 		})
+	)
 }
 
 function splitTableColumns(line: string) {
@@ -107,7 +211,10 @@ function parseTextTable(lines: Array<string>): Array<ParsedTableRow> {
 		const columns = splitTableColumns(line)
 		if (columns.length < 2) continue
 		const fields = Object.fromEntries(
-			headers.map((header, columnIndex) => [header, columns[columnIndex] ?? '']),
+			headers.map((header, columnIndex) => [
+				header,
+				columns[columnIndex] ?? '',
+			]),
 		)
 		rows.push({
 			rawLine: line,
@@ -176,15 +283,55 @@ export function parseIslandRouterVersion(
 	const fieldMap = Object.fromEntries(
 		attributes.map((entry) => [normalizeHeaderKey(entry.key), entry.value]),
 	)
+	let bannerMatch: RegExpExecArray | null = null
+	for (const line of lines) {
+		const match = islandRouterVersionBannerPattern.exec(
+			normalizeWhitespace(line),
+		)
+		if (match?.groups) {
+			bannerMatch = match
+			break
+		}
+	}
+	const fallbackAttributes =
+		bannerMatch?.groups == null
+			? []
+			: [
+					{
+						key: 'Model',
+						value: bannerMatch.groups['model']?.trim() ?? '',
+					},
+					{
+						key: 'Hardware Model',
+						value: bannerMatch.groups['hardwareModel']?.trim() ?? '',
+					},
+					{
+						key: 'Serial Number',
+						value: bannerMatch.groups['serialNumber']?.trim() ?? '',
+					},
+					{
+						key: 'Firmware Version',
+						value: bannerMatch.groups['firmwareVersion']?.trim() ?? '',
+					},
+				].filter((entry) => entry.value.length > 0)
 	return {
-		model: findField(fieldMap, ['model', 'hardware_model']),
-		serialNumber: findField(fieldMap, ['serial_number', 'serial']),
-		firmwareVersion: findField(fieldMap, [
-			'firmware_version',
-			'software_version',
-			'version',
-		]),
-		attributes,
+		model:
+			findField(fieldMap, ['model', 'hardware_model']) ??
+			bannerMatch?.groups['model']?.trim() ??
+			null,
+		serialNumber:
+			findField(fieldMap, ['serial_number', 'serial']) ??
+			bannerMatch?.groups['serialNumber']?.trim() ??
+			null,
+		firmwareVersion:
+			findField(fieldMap, [
+				'firmware_version',
+				'software_version',
+				'version',
+			]) ??
+			bannerMatch?.groups['firmwareVersion']?.trim() ??
+			null,
+		attributes: attributes.length > 0 ? attributes : fallbackAttributes,
 		rawOutput: lines.join('\n'),
 	}
 }
@@ -262,8 +409,11 @@ export function parseIslandRouterNeighbors(
 		return table.map((row) => ({
 			ipAddress: findField(row.fields, ['ip', 'address', 'ip_address']),
 			macAddress:
-				findField(row.fields, ['mac', 'lladdr', 'link_layer_address'])?.toLowerCase() ??
-				null,
+				findField(row.fields, [
+					'mac',
+					'lladdr',
+					'link_layer_address',
+				])?.toLowerCase() ?? null,
 			interfaceName: findField(row.fields, ['interface', 'iface', 'device']),
 			state: findField(row.fields, ['state', 'status'])?.toLowerCase() ?? null,
 			rawLine: row.rawLine,
@@ -298,7 +448,8 @@ export function parseIslandRouterDhcpReservations(
 		return table.map((row) => ({
 			ipAddress: findField(row.fields, ['ip', 'address', 'ip_address']),
 			macAddress:
-				findField(row.fields, ['mac', 'hardware_address'])?.toLowerCase() ?? null,
+				findField(row.fields, ['mac', 'hardware_address'])?.toLowerCase() ??
+				null,
 			hostName: findField(row.fields, ['host', 'hostname', 'name']),
 			interfaceName: findField(row.fields, ['interface', 'iface']),
 			leaseType: 'reservation',
@@ -381,9 +532,7 @@ export function parseIslandRouterPingResult(input: {
 	const replies = parsePingReplies(lines)
 	const summaryLine =
 		lines.find((line) => pingSummaryPattern.test(line)) ??
-		input.stderr
-			.split(/\r?\n/)
-			.find((line) => pingSummaryPattern.test(line)) ??
+		input.stderr.split(/\r?\n/).find((line) => pingSummaryPattern.test(line)) ??
 		''
 	const summaryMatch = pingSummaryPattern.exec(summaryLine)
 	const transmitted = summaryMatch?.groups?.['transmitted']

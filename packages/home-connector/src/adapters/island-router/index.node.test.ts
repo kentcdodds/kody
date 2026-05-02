@@ -1,7 +1,14 @@
 import { expect, test } from 'vitest'
 import { loadHomeConnectorConfig } from '../../config.ts'
 import { createIslandRouterAdapter } from './index.ts'
-import { parseIslandRouterInterfaceSummaries } from './parsing.ts'
+import {
+	parseIslandRouterDhcpReservations,
+	parseIslandRouterInterfaceSummaries,
+	parseIslandRouterNeighbors,
+	parseIslandRouterRecentEvents,
+	parseIslandRouterVersion,
+	sanitizeIslandRouterOutput,
+} from './parsing.ts'
 import { type IslandRouterCommandRequest } from './types.ts'
 
 function withTemporaryEnv(values: Record<string, string | undefined>) {
@@ -147,7 +154,10 @@ function createFakeRunner() {
 			case 'show-interface':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', `show interface ${request.interfaceName}`],
+					commandLines: [
+						'terminal length 0',
+						`show interface ${request.interfaceName}`,
+					],
 					stdout: [
 						`Interface: ${request.interfaceName}`,
 						'Link State: up',
@@ -228,7 +238,9 @@ function createFakeRunner() {
 				}
 			default: {
 				const _exhaustive: never = request
-				throw new Error(`Unhandled fake Island router request: ${String(_exhaustive)}`)
+				throw new Error(
+					`Unhandled fake Island router request: ${String(_exhaustive)}`,
+				)
 			}
 		}
 	}
@@ -452,6 +464,319 @@ test('fallback interface summary parsing recognizes up and down link states', ()
 		expect.objectContaining({
 			name: 'en1',
 			linkState: 'down',
+		}),
+	])
+})
+
+test('parser handles real Island CLI transcript shape with prompt echoes and goodbye', () => {
+	const commandLines = ['terminal length 0', 'show version']
+	const stdout = [
+		'Island Pro (IL-0002-01) serial number 08008A020104 Version 3.2.3',
+		'Copyright 2004-2026 PerfTech, Inc.',
+		'',
+		'Dodds-Island>show version',
+		'',
+		'Island Pro (IL-0002-01) serial number 08008A020104 Version 3.2.3',
+		'Copyright 2004-2026 PerfTech, Inc.',
+		'',
+		'Dodds-Island>exit',
+		'Goodbye',
+	].join('\n')
+
+	expect(sanitizeIslandRouterOutput(stdout, commandLines)).toEqual([
+		'Island Pro (IL-0002-01) serial number 08008A020104 Version 3.2.3',
+		'Copyright 2004-2026 PerfTech, Inc.',
+	])
+	expect(parseIslandRouterVersion(stdout, commandLines)).toMatchObject({
+		model: 'Island Pro',
+		serialNumber: '08008A020104',
+		firmwareVersion: '3.2.3',
+		attributes: expect.arrayContaining([
+			expect.objectContaining({
+				key: 'Hardware Model',
+				value: 'IL-0002-01',
+			}),
+		]),
+	})
+})
+
+test('parser ignores prompt echoes for real neighbor, dhcp, and log transcripts', () => {
+	const neighborsTranscript = [
+		'Dodds-Island>show ip neighbors',
+		'IP Address    MAC Address        Interface  State',
+		'------------  -----------------  ---------  ---------',
+		'192.168.0.52  00:11:22:33:44:55  en0        reachable',
+		'Dodds-Island>exit',
+		'Goodbye',
+	].join('\n')
+	const dhcpTranscript = [
+		'Dodds-Island>show ip dhcp-reservations',
+		'IP Address    MAC Address        Host Name  Interface',
+		'------------  -----------------  ---------  ---------',
+		'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+		'Dodds-Island>exit',
+		'Goodbye',
+	].join('\n')
+	const logTranscript = [
+		'Dodds-Island>show log last where "192.168.0.52"',
+		'2026-05-02 15:50:00 info net: 192.168.0.52 link flap detected on en0',
+		'Dodds-Island>exit',
+		'Goodbye',
+	].join('\n')
+
+	expect(
+		parseIslandRouterNeighbors(neighborsTranscript, [
+			'terminal length 0',
+			'show ip neighbors',
+		]),
+	).toEqual([
+		expect.objectContaining({
+			ipAddress: '192.168.0.52',
+			macAddress: '00:11:22:33:44:55',
+			interfaceName: 'en0',
+			state: 'reachable',
+		}),
+	])
+	expect(
+		parseIslandRouterDhcpReservations(dhcpTranscript, [
+			'terminal length 0',
+			'show ip dhcp-reservations',
+		]),
+	).toEqual([
+		expect.objectContaining({
+			ipAddress: '192.168.0.52',
+			macAddress: '00:11:22:33:44:55',
+			hostName: 'nas-box',
+			interfaceName: 'en0',
+		}),
+	])
+	expect(
+		parseIslandRouterRecentEvents(logTranscript, [
+			'terminal length 0',
+			'show log last where "192.168.0.52"',
+		]),
+	).toEqual([
+		expect.objectContaining({
+			timestamp: '2026-05-02 15:50:00',
+			level: 'info',
+			module: 'net',
+		}),
+	])
+})
+
+test('island router adapter accepts real CLI transcripts that exit with code 1', async () => {
+	using _env = withTemporaryEnv({})
+	const config = createConfig()
+	const realCliExitOneRunner = async (request: IslandRouterCommandRequest) => {
+		switch (request.id) {
+			case 'show-version':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show version'],
+					stdout: [
+						'Island Pro (IL-0002-01) serial number 08008A020104 Version 3.2.3',
+						'Copyright 2004-2026 PerfTech, Inc.',
+						'',
+						'Dodds-Island>show version',
+						'',
+						'Island Pro (IL-0002-01) serial number 08008A020104 Version 3.2.3',
+						'Copyright 2004-2026 PerfTech, Inc.',
+						'',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-clock':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show clock'],
+					stdout: [
+						'Dodds-Island>show clock',
+						'2026-05-02 15:55:00 PDT',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-interface-summary':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show interface summary'],
+					stdout: [
+						'Dodds-Island>show interface summary',
+						'Interface  Link   Speed  Duplex  Description',
+						'---------  -----  -----  ------  -----------',
+						'en0        up     1G     full    LAN uplink',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-neighbors':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip neighbors'],
+					stdout: [
+						'Dodds-Island>show ip neighbors',
+						'IP Address    MAC Address        Interface  State',
+						'------------  -----------------  ---------  ---------',
+						'192.168.0.52  00:11:22:33:44:55  en0        reachable',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-dhcp-reservations':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip dhcp-reservations'],
+					stdout: [
+						'Dodds-Island>show ip dhcp-reservations',
+						'IP Address    MAC Address        Host Name  Interface',
+						'------------  -----------------  ---------  ---------',
+						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-log':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.query
+							? `show log last where "${request.query.replaceAll('"', '\\"')}"`
+							: 'show log last',
+					],
+					stdout: [
+						request.query
+							? `Dodds-Island>show log last where "${request.query.replaceAll('"', '\\"')}"`
+							: 'Dodds-Island>show log last',
+						'2026-05-02 15:50:00 info net: 192.168.0.52 link flap detected on en0',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-interface':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`show interface ${request.interfaceName}`,
+					],
+					stdout: [
+						`Dodds-Island>show interface ${request.interfaceName}`,
+						`Interface: ${request.interfaceName}`,
+						'Link State: up',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-interface':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`show ip interface ${request.interfaceName}`,
+					],
+					stdout: [
+						`Dodds-Island>show ip interface ${request.interfaceName}`,
+						`Interface: ${request.interfaceName}`,
+						'Address: 192.168.0.1/24',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'ping':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', `ping ${request.host}`],
+					stdout: [
+						`Dodds-Island>ping ${request.host}`,
+						'64 bytes from 192.168.0.52: icmp_seq=1 ttl=64 time=1.23 ms',
+						'1 packets transmitted, 1 packets received, 0% packet loss',
+						'Dodds-Island>exit',
+						'Goodbye',
+					].join('\n'),
+					stderr: '',
+					exitCode: 1,
+					signal: null,
+					timedOut: false,
+					durationMs: 200,
+				}
+			default: {
+				const _exhaustive: never = request
+				throw new Error(
+					`Unhandled fake Island router request: ${String(_exhaustive)}`,
+				)
+			}
+		}
+	}
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: realCliExitOneRunner,
+	})
+
+	const status = await islandRouter.getStatus()
+	expect(status.connected).toBe(true)
+	expect(status.router.version).toMatchObject({
+		model: 'Island Pro',
+		serialNumber: '08008A020104',
+		firmwareVersion: '3.2.3',
+	})
+
+	const dhcpLease = await islandRouter.getDhcpLease({
+		host: 'nas-box',
+	})
+	expect(dhcpLease.lease).toMatchObject({
+		hostName: 'nas-box',
+		ipAddress: '192.168.0.52',
+	})
+
+	const recentEvents = await islandRouter.getRecentEvents({
+		host: '192.168.0.52',
+	})
+	expect(recentEvents).toEqual([
+		expect.objectContaining({
+			module: 'net',
+			level: 'info',
 		}),
 	])
 })

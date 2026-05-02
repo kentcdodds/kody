@@ -7,6 +7,7 @@ import {
 	assertIslandRouterConfigured,
 	validateIslandRouterFingerprint,
 } from './validation.ts'
+import { isSuccessfulIslandRouterCliSession } from './parsing.ts'
 import {
 	type IslandRouterCommandRequest,
 	type IslandRouterCommandResult,
@@ -26,17 +27,18 @@ type HostVerification = {
 }
 
 function onceProcessExit(child: ChildProcess) {
-	return new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
-		(resolve, reject) => {
-			child.once('error', reject)
-			child.once('close', (exitCode, signal) => {
-				resolve({
-					exitCode,
-					signal,
-				})
+	return new Promise<{
+		exitCode: number | null
+		signal: NodeJS.Signals | null
+	}>((resolve, reject) => {
+		child.once('error', reject)
+		child.once('close', (exitCode, signal) => {
+			resolve({
+				exitCode,
+				signal,
 			})
-		},
-	)
+		})
+	})
 }
 
 async function runLocalCommand(input: {
@@ -211,7 +213,10 @@ async function resolveHostVerification(
 	}
 }
 
-function createSshArgs(config: HomeConnectorConfig, verificationArgs: Array<string>) {
+function createSshArgs(
+	config: HomeConnectorConfig,
+	verificationArgs: Array<string>,
+) {
 	return [
 		'-T',
 		'-p',
@@ -282,7 +287,9 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 			return ['write memory']
 		default: {
 			const _exhaustive: never = request
-			throw new Error(`Unhandled Island router command request: ${String(_exhaustive)}`)
+			throw new Error(
+				`Unhandled Island router command request: ${String(_exhaustive)}`,
+			)
 		}
 	}
 }
@@ -293,7 +300,9 @@ function writeCommandLines(child: ChildProcess, commandLines: Array<string>) {
 	}
 }
 
-export function createIslandRouterSshCommandRunner(config: HomeConnectorConfig) {
+export function createIslandRouterSshCommandRunner(
+	config: HomeConnectorConfig,
+) {
 	assertIslandRouterConfigured(config)
 	let verificationPromise: Promise<HostVerification> | null = null
 	let cleanupRegistered = false
@@ -397,7 +406,16 @@ export function createIslandRouterSshCommandRunner(config: HomeConnectorConfig) 
 			commandLines,
 			stdout,
 			stderr,
-			exitCode: result.exitCode,
+			exitCode: isSuccessfulIslandRouterCliSession({
+				stdout,
+				stderr,
+				commandLines,
+				exitCode: result.exitCode,
+				signal: result.signal,
+				timedOut,
+			})
+				? 0
+				: result.exitCode,
 			signal: result.signal,
 			timedOut,
 			durationMs: Date.now() - start,
