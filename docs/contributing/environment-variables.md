@@ -165,8 +165,15 @@ Authoring guide for outbound WebSocket services:
   sets `MOCKS=false` for `packages/home-connector`, and
   `HOME_CONNECTOR_ROKU_DISCOVERY_URL=...` sets `ROKU_DISCOVERY_URL=...`. This
   also applies to `HOME_CONNECTOR_LUTRON_DISCOVERY_URL=...`,
-  `HOME_CONNECTOR_SENTRY_DSN`, `HOME_CONNECTOR_SENTRY_ENVIRONMENT`, and
-  `HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE`.
+  `HOME_CONNECTOR_SENTRY_DSN`, `HOME_CONNECTOR_SENTRY_ENVIRONMENT`,
+  `HOME_CONNECTOR_SENTRY_TRACES_SAMPLE_RATE`,
+  `HOME_CONNECTOR_ISLAND_ROUTER_HOST=...`,
+  `HOME_CONNECTOR_ISLAND_ROUTER_PORT=...`,
+  `HOME_CONNECTOR_ISLAND_ROUTER_USERNAME=...`,
+  `HOME_CONNECTOR_ISLAND_ROUTER_PRIVATE_KEY_PATH=...`,
+  `HOME_CONNECTOR_ISLAND_ROUTER_KNOWN_HOSTS_PATH=...`,
+  `HOME_CONNECTOR_ISLAND_ROUTER_HOST_FINGERPRINT=...`, and
+  `HOME_CONNECTOR_ISLAND_ROUTER_COMMAND_TIMEOUT_MS=...`.
 - `ROKU_DISCOVERY_URL` — optional connector env var. Defaults to
   `ssdp://239.255.255.250:1900`. Mocked connector runs should set an explicit
   value such as `http://roku.mock.local/discovery`.
@@ -211,6 +218,23 @@ Authoring guide for outbound WebSocket services:
   such as Samsung TV metadata/tokens, Lutron processor credentials, Bond bridge
   state, Sonos players, and Venstar managed thermostats across restarts.
   Overrides the derived `HOME_CONNECTOR_DATA_PATH` location.
+- `ISLAND_ROUTER_HOST` — optional connector env var. Hostname or IP address of
+  an Island router reachable from the home-connector host over SSH.
+- `ISLAND_ROUTER_PORT` — optional connector env var. SSH port for the Island
+  router. Defaults to `22`.
+- `ISLAND_ROUTER_USERNAME` — optional connector env var. SSH username for the
+  Island router CLI. Prefer Island's read-only `user` account when possible.
+- `ISLAND_ROUTER_PRIVATE_KEY_PATH` — optional connector env var. Absolute path
+  to a mounted private key file used for SSH public-key authentication. Mount
+  the key read-only into the connector container or host environment.
+- `ISLAND_ROUTER_KNOWN_HOSTS_PATH` — optional connector env var. Absolute path
+  to a read-only `known_hosts` file used for strict SSH host verification.
+- `ISLAND_ROUTER_HOST_FINGERPRINT` — optional connector env var. SSH host key
+  fingerprint (`SHA256:...` or `MD5:...`) used when you cannot mount a
+  `known_hosts` file. The connector verifies the fingerprint with `ssh-keyscan`
+  before opening the real session.
+- `ISLAND_ROUTER_COMMAND_TIMEOUT_MS` — optional connector env var. Default
+  timeout for Island router SSH commands in milliseconds. Defaults to `8000`.
 
 ## Why Zod?
 

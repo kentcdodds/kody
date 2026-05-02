@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
 import { createBondAdapter } from '../adapters/bond/index.ts'
+import { createIslandRouterAdapter } from '../adapters/island-router/index.ts'
 import { createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../adapters/lutron/index.ts'
 import { createSonosAdapter } from '../adapters/sonos/index.ts'
@@ -26,7 +27,154 @@ function createConfig() {
 	process.env.JELLYFISH_DISCOVERY_URL = 'http://jellyfish.mock.local/discovery'
 	process.env.VENSTAR_SCAN_CIDRS = '192.168.10.40/32,192.168.10.41/32'
 	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
+	process.env.ISLAND_ROUTER_HOST = 'router.local'
+	process.env.ISLAND_ROUTER_PORT = '22'
+	process.env.ISLAND_ROUTER_USERNAME = 'user'
+	process.env.ISLAND_ROUTER_PRIVATE_KEY_PATH = '/keys/id_ed25519'
+	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
+		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
+	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
 	return loadHomeConnectorConfig()
+}
+
+function createIslandRouterRunner() {
+	return async (
+		request: import('../adapters/island-router/types.ts').IslandRouterCommandRequest,
+	) => {
+		switch (request.id) {
+			case 'show-version':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show version'],
+					stdout: [
+						'Model: Island Pro',
+						'Serial Number: IR-12345',
+						'Firmware Version: 2.3.2',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-clock':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show clock'],
+					stdout: '2026-05-02 15:55:00 PDT',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-interface-summary':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show interface summary'],
+					stdout: [
+						'Interface  Link   Speed  Duplex  Description',
+						'---------  -----  -----  ------  -----------',
+						'en0        up     1G     full    LAN uplink',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-neighbors':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip neighbors'],
+					stdout: [
+						'IP Address    MAC Address        Interface  State',
+						'------------  -----------------  ---------  ---------',
+						'192.168.0.52  00:11:22:33:44:55  en0        reachable',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-dhcp-reservations':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip dhcp-reservations'],
+					stdout: [
+						'IP Address    MAC Address        Host Name  Interface',
+						'------------  -----------------  ---------  ---------',
+						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-log':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.query
+							? `show log last where "${request.query.replaceAll('"', '\\"')}"`
+							: 'show log last',
+					],
+					stdout:
+						'2026-05-02 15:50:00 info net: 192.168.0.52 link flap detected on en0',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-interface':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', `show interface ${request.interfaceName}`],
+					stdout: `Interface: ${request.interfaceName}\nLink State: up`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-interface':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`show ip interface ${request.interfaceName}`,
+					],
+					stdout: `Interface: ${request.interfaceName}\nAddress: 192.168.0.1/24`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'ping':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', `ping ${request.host}`],
+					stdout:
+						'64 bytes from 192.168.0.52: icmp_seq=1 ttl=64 time=1.23 ms\n1 packets transmitted, 1 packets received, 0% packet loss',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 200,
+				}
+			default: {
+				const _exhaustive: never = request
+				throw new Error(
+					`Unhandled fake Island router MCP request: ${String(_exhaustive)}`,
+				)
+			}
+		}
+	}
 }
 
 installHomeConnectorMockServer()
@@ -61,6 +209,10 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		state,
 		storage,
 	})
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: createIslandRouterRunner(),
+	})
 	const jellyfish = createJellyfishAdapter({
 		config,
 		state,
@@ -78,6 +230,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		lutron,
 		sonos,
 		bond,
+		islandRouter,
 		jellyfish,
 		venstar,
 	})
@@ -114,6 +267,18 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
 		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_status')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_ping_host')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_arp_entry')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_dhcp_lease')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_recent_events'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_diagnose_host')).toBe(
+			true,
+		)
 		expect(
 			tools.some((tool) => tool.name === 'jellyfish_scan_controllers'),
 		).toBe(true)
@@ -286,6 +451,35 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		})
 		expect(shadeMove.structuredContent).toMatchObject({
 			argument: 50,
+		})
+
+		const routerStatus = await mcp.callTool('router_get_status')
+		expect(routerStatus.structuredContent).toMatchObject({
+			config: {
+				configured: true,
+			},
+			router: {
+				version: {
+					model: 'Island Pro',
+				},
+			},
+		})
+		const routerDiagnosis = await mcp.callTool('router_diagnose_host', {
+			host: '192.168.0.52',
+		})
+		expect(routerDiagnosis.structuredContent).toMatchObject({
+			host: {
+				value: '192.168.0.52',
+			},
+			ping: {
+				reachable: true,
+			},
+			arpEntry: {
+				interfaceName: 'en0',
+			},
+			dhcpLease: {
+				hostName: 'nas-box',
+			},
 		})
 
 		await expect(

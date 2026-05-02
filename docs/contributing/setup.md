@@ -90,6 +90,26 @@ Quick notes for getting a local kody environment running.
     `~/.kody/home-connector/home-connector.sqlite`. Override the directory with
     `HOME_CONNECTOR_DATA_PATH` or the full file path with
     `HOME_CONNECTOR_DB_PATH`.
+  - Island router SSH diagnostics are optional and read-only. Set
+    `ISLAND_ROUTER_HOST`, `ISLAND_ROUTER_USERNAME`, and
+    `ISLAND_ROUTER_PRIVATE_KEY_PATH` to enable the MCP tools
+    `router_get_status`, `router_ping_host`, `router_get_arp_entry`,
+    `router_get_dhcp_lease`, `router_get_recent_events`, and
+    `router_diagnose_host`.
+  - Prefer mounting the private key read-only into the container or host
+    runtime, for example `-v /path/to/id_ed25519:/run/secrets/island-router-key:ro`
+    plus `HOME_CONNECTOR_ISLAND_ROUTER_PRIVATE_KEY_PATH=/run/secrets/island-router-key`
+    when launching through `npm run dev`, or
+    `ISLAND_ROUTER_PRIVATE_KEY_PATH=/run/secrets/island-router-key` when
+    running `packages/home-connector` directly.
+  - For host verification, set either `ISLAND_ROUTER_KNOWN_HOSTS_PATH` (preferred)
+    or `ISLAND_ROUTER_HOST_FINGERPRINT`. When neither is set, the connector still
+    works but reports a warning because SSH host verification is disabled.
+  - The Island router integration intentionally does not expose arbitrary command
+    execution or mutating router operations over MCP. It only uses a typed
+    allowlist of read-only CLI commands for status, ping, ARP/neighbor cache,
+    DHCP reservation inspection, interface summaries/details, and recent log
+    lookups.
   - Local operational routes live at `/health`, `/roku/status`, `/roku/setup`,
     `/lutron/status`, `/lutron/setup`, `/samsung-tv/status`, and
     `/samsung-tv/setup`.

@@ -31,6 +31,7 @@ The connector exposes these local-device families:
 - Samsung TV / Frame discovery and control over mDNS, REST, and local WebSocket
   channels
 - Venstar WiFi thermostat status and control over the local REST API
+- Island router diagnostics over SSH using a read-only command allowlist
 
 All surfaces are registered as MCP tools inside the connector and then exposed
 to the Worker through the existing outbound WebSocket session to
@@ -114,6 +115,41 @@ Discovery is subnet-scan-only. The connector probes `/query/info` across
 `/24` networks from local IPv4 interfaces. This avoids the SSDP multicast
 fragility that showed up on NAS and Docker bridge deployments while keeping the
 user flow aligned with the other managed device integrations.
+
+## Island router diagnostics integration
+
+The Island router adapter lives under
+`packages/home-connector/src/adapters/island-router/` and intentionally limits
+itself to read-only SSH diagnostics from the connector host to the local
+router. It is designed for situations where Kody only has network reachability
+to the router from the NAS or other machine running the home connector.
+
+The adapter does expose:
+
+- router identity/status via `show version`, `show clock`, and
+  `show interface summary`
+- router-side reachability checks with `ping`
+- ARP / neighbor-cache inspection with `show ip neighbors`
+- DHCP reservation inspection with `show ip dhcp-reservations`
+- recent-event lookups with `show log`
+- a structured `router_diagnose_host` workflow that combines ping, ARP,
+  reservation, interface, and log data for one host
+
+The adapter explicitly does not expose:
+
+- arbitrary shell or CLI command execution over MCP
+- any mutating router commands such as reboot, config edits, PoE control,
+  DHCP renewals, or bridge resets
+- password-based auth flows through MCP
+
+SSH transport is conservative:
+
+- public-key authentication only
+- private key path comes from local connector env/runtime config
+- host verification can use either a mounted `known_hosts` file or an expected
+  host fingerprint
+- the Docker image includes the OpenSSH client utilities needed for `ssh`,
+  `ssh-keyscan`, and fingerprint verification
 
 ## Local persistence
 

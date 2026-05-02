@@ -14,6 +14,8 @@ ARG APP_COMMIT_SHA=unknown
 
 COPY --from=deps /app /app
 
+RUN apk add --no-cache openssh-client
+
 WORKDIR /app/packages/home-connector
 
 ENV NODE_ENV=production

@@ -151,3 +151,53 @@ test('HOME_CONNECTOR_DB_PATH overrides the default sqlite location', () => {
 	const config = loadHomeConnectorConfig()
 	expect(config.dbPath).toBe('/tmp/custom-home-connector.sqlite')
 })
+
+test('island router SSH env vars are loaded with defaults', () => {
+	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
+		ISLAND_ROUTER_HOST: 'router.local',
+		ISLAND_ROUTER_USERNAME: 'user',
+		ISLAND_ROUTER_PRIVATE_KEY_PATH: '/keys/id_ed25519',
+		ISLAND_ROUTER_PORT: undefined,
+		ISLAND_ROUTER_KNOWN_HOSTS_PATH: '/keys/known_hosts',
+		ISLAND_ROUTER_HOST_FINGERPRINT: undefined,
+		ISLAND_ROUTER_COMMAND_TIMEOUT_MS: undefined,
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config).toMatchObject({
+		islandRouterHost: 'router.local',
+		islandRouterPort: 22,
+		islandRouterUsername: 'user',
+		islandRouterPrivateKeyPath: '/keys/id_ed25519',
+		islandRouterKnownHostsPath: '/keys/known_hosts',
+		islandRouterHostFingerprint: null,
+		islandRouterCommandTimeoutMs: 8000,
+	})
+})
+
+test('island router SSH env vars honor explicit port, fingerprint, and timeout', () => {
+	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
+		ISLAND_ROUTER_HOST: '192.168.0.1',
+		ISLAND_ROUTER_USERNAME: 'readonly',
+		ISLAND_ROUTER_PRIVATE_KEY_PATH: '/keys/id_ed25519',
+		ISLAND_ROUTER_PORT: '2222',
+		ISLAND_ROUTER_KNOWN_HOSTS_PATH: undefined,
+		ISLAND_ROUTER_HOST_FINGERPRINT:
+			'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12',
+		ISLAND_ROUTER_COMMAND_TIMEOUT_MS: '12000',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config).toMatchObject({
+		islandRouterHost: '192.168.0.1',
+		islandRouterPort: 2222,
+		islandRouterUsername: 'readonly',
+		islandRouterPrivateKeyPath: '/keys/id_ed25519',
+		islandRouterKnownHostsPath: null,
+		islandRouterHostFingerprint:
+			'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12',
+		islandRouterCommandTimeoutMs: 12000,
+	})
+})

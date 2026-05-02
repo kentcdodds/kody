@@ -29,3 +29,11 @@ If home-related tools appear missing, check connector status with
 **`meta_get_home_connector_status`** (first **`home`** connector only) when
 those capabilities are available. For protocol and URL requirements, see
 [Remote connectors](../contributing/architecture/remote-connectors.md).
+
+If Island router diagnostics tools are missing or return configuration errors,
+verify that the home connector runtime has `ISLAND_ROUTER_HOST`,
+`ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` set, and prefer
+either `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or `ISLAND_ROUTER_HOST_FINGERPRINT` for
+host verification. The connector only exposes read-only tools such as
+`router_get_status` and `router_diagnose_host`; it does not support arbitrary
+router command execution or configuration changes.
