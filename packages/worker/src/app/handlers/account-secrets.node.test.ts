@@ -35,7 +35,7 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	listSecrets: vi.fn(async () => []),
 	listAppSecretsByAppIds: vi.fn(async () => []),
-	resolveSecret: vi.fn(async () => null),
+	resolveSecret: vi.fn(async () => ({ found: false, value: null })),
 	deleteSecret: vi.fn(async () => false),
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	setSecretAllowedPackages: vi.fn(async () => undefined),
@@ -564,7 +564,7 @@ test('package approval approve deduplicates allowed package ids', async () => {
 	)
 })
 
-test('GET /account/secrets.json does not include value in selectedSecret', async () => {
+test('GET /account/secrets.json keeps selected metadata without decrypted value', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'myApiKey',
@@ -596,7 +596,9 @@ test('GET /account/secrets.json does not include value in selectedSecret', async
 	expect(payload.ok).toBe(true)
 	expect(payload.selectedSecret).toBeDefined()
 	expect(payload.selectedSecret.name).toBe('myApiKey')
+	expect(payload.selectedSecret.description).toBe('API key')
 	expect(payload.selectedSecret).not.toHaveProperty('value')
+	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
 })
 
 test('POST /account/secrets/reveal without password returns 401', async () => {
