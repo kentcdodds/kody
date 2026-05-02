@@ -91,6 +91,15 @@ function resolveNonNegativeIntegerFromEnv(envVar: string, fallback: number) {
 	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
 }
 
+function parseStrictIntegerEnv(value: string | undefined) {
+	const trimmed = value?.trim()
+	if (!trimmed) return null
+	if (!/^\d+$/.test(trimmed)) return null
+	const parsed = Number(trimmed)
+	if (!Number.isInteger(parsed)) return null
+	return parsed
+}
+
 function isPrivateRfc1918Ipv4(parts: Array<number>) {
 	const [a, b] = parts
 	return (
@@ -190,10 +199,7 @@ function deriveJellyfishAutoscanCidrs() {
 
 export function loadHomeConnectorConfig(): HomeConnectorConfig {
 	const port = Number.parseInt(process.env.PORT ?? '4040', 10)
-	const islandRouterPort = Number.parseInt(
-		process.env.ISLAND_ROUTER_PORT ?? '22',
-		10,
-	)
+	const islandRouterPort = parseStrictIntegerEnv(process.env.ISLAND_ROUTER_PORT)
 	const islandRouterCommandTimeoutMs = Number.parseInt(
 		process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS ?? '8000',
 		10,
@@ -225,7 +231,9 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		sharedSecret: process.env.HOME_CONNECTOR_SHARED_SECRET?.trim() || null,
 		islandRouterHost: process.env.ISLAND_ROUTER_HOST?.trim() || null,
 		islandRouterPort:
-			Number.isFinite(islandRouterPort) && islandRouterPort > 0
+			islandRouterPort != null &&
+			islandRouterPort >= 1 &&
+			islandRouterPort <= 65535
 				? islandRouterPort
 				: 22,
 		islandRouterUsername: process.env.ISLAND_ROUTER_USERNAME?.trim() || null,

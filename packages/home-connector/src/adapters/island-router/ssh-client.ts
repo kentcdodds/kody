@@ -8,7 +8,6 @@ import {
 	validateIslandRouterFingerprint,
 } from './validation.ts'
 import {
-	type IslandRouterCommandId,
 	type IslandRouterCommandRequest,
 	type IslandRouterCommandResult,
 } from './types.ts'
@@ -28,8 +27,9 @@ type HostVerification = {
 
 function onceProcessExit(child: ChildProcess) {
 	return new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
-		(resolve) => {
-			child.once('exit', (exitCode, signal) => {
+		(resolve, reject) => {
+			child.once('error', reject)
+			child.once('close', (exitCode, signal) => {
 				resolve({
 					exitCode,
 					signal,
@@ -64,11 +64,15 @@ async function runLocalCommand(input: {
 	child.stdin?.end()
 
 	let timedOut = false
+	let closed = false
+	child.once('close', () => {
+		closed = true
+	})
 	const timeout = setTimeout(() => {
 		timedOut = true
 		child.kill('SIGTERM')
 		setTimeout(() => {
-			if (!child.killed) {
+			if (!closed) {
 				child.kill('SIGKILL')
 			}
 		}, 1000).unref()
@@ -223,8 +227,19 @@ function createSshArgs(config: HomeConnectorConfig, verificationArgs: Array<stri
 	]
 }
 
+function assertSingleCliLine(value: string, field: string) {
+	const trimmed = value.trim()
+	if (trimmed.length === 0) {
+		throw new Error(`${field} must not be empty.`)
+	}
+	if (/[\u0000-\u001f\u007f]/u.test(trimmed)) {
+		throw new Error(`${field} must not contain control characters.`)
+	}
+	return trimmed
+}
+
 function escapeCliQuery(value: string) {
-	return value.replaceAll('"', '\\"')
+	return assertSingleCliLine(value, 'query').replaceAll('"', '\\"')
 }
 
 function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
@@ -236,9 +251,13 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 		case 'show-interface-summary':
 			return ['show interface summary']
 		case 'show-interface':
-			return [`show interface ${request.interfaceName}`]
+			return [
+				`show interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
+			]
 		case 'show-ip-interface':
-			return [`show ip interface ${request.interfaceName}`]
+			return [
+				`show ip interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
+			]
 		case 'show-ip-neighbors':
 			return ['show ip neighbors']
 		case 'show-ip-dhcp-reservations':
@@ -248,7 +267,7 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 				? [`show log last where "${escapeCliQuery(request.query)}"`]
 				: ['show log last']
 		case 'ping':
-			return [`ping ${request.host}`]
+			return [`ping ${assertSingleCliLine(request.host, 'host')}`]
 		default: {
 			const _exhaustive: never = request
 			throw new Error(`Unhandled Island router command request: ${String(_exhaustive)}`)
@@ -295,6 +314,10 @@ export function createIslandRouterSshCommandRunner(config: HomeConnectorConfig) 
 			writeCommandLines(child, commandLines)
 
 			let timedOut = false
+			let closed = false
+			child.once('close', () => {
+				closed = true
+			})
 			let timeout: NodeJS.Timeout | null = null
 			if (request.id === 'ping' && request.allowTimeout) {
 				timeout = setTimeout(() => {
@@ -302,6 +325,15 @@ export function createIslandRouterSshCommandRunner(config: HomeConnectorConfig) 
 					child.stdin?.write('\u0003')
 					child.stdin?.write('\nexit\n')
 					child.stdin?.end()
+					setTimeout(() => {
+						if (closed) return
+						child.kill('SIGTERM')
+						setTimeout(() => {
+							if (!closed) {
+								child.kill('SIGKILL')
+							}
+						}, 1000).unref()
+					}, 1000).unref()
 				}, timeoutMs)
 			} else {
 				child.stdin?.write('exit\n')
@@ -310,7 +342,7 @@ export function createIslandRouterSshCommandRunner(config: HomeConnectorConfig) 
 					timedOut = true
 					child.kill('SIGTERM')
 					setTimeout(() => {
-						if (!child.killed) {
+						if (!closed) {
 							child.kill('SIGKILL')
 						}
 					}, 1000).unref()

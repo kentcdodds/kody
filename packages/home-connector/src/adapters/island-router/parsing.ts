@@ -17,6 +17,7 @@ type ParsedTableRow = {
 
 const interfaceNamePattern =
 	/\b(?:en\d+(?:\.\d+)?|eth\d+(?:\.\d+)?|wan\d+|lan\d+|vlan\d+|bond\d+|br\d+)\b/i
+const interfaceLinkStatePattern = /\b(?:up|down)\b/i
 const neighborStatePattern =
 	/\b(?:reachable|stale|delay|probe|permanent|failed|incomplete)\b/i
 const timestampPattern =
@@ -162,6 +163,10 @@ function extractNeighborState(value: string) {
 	return value.match(neighborStatePattern)?.[0]?.toLowerCase() ?? null
 }
 
+function extractInterfaceLinkState(value: string) {
+	return value.match(interfaceLinkStatePattern)?.[0]?.toLowerCase() ?? null
+}
+
 export function parseIslandRouterVersion(
 	stdout: string,
 	commandLines: Array<string>,
@@ -214,7 +219,7 @@ export function parseIslandRouterInterfaceSummaries(
 		const tokens = normalized.split(' ')
 		return {
 			name: extractInterfaceName(line) ?? tokens[0] ?? null,
-			linkState: extractNeighborState(line) ?? null,
+			linkState: extractInterfaceLinkState(line) ?? null,
 			speed:
 				tokens.find((token) => /\b\d+(?:g|m|mbps|gbps)\b/i.test(token)) ?? null,
 			duplex:

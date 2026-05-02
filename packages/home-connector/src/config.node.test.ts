@@ -201,3 +201,16 @@ test('island router SSH env vars honor explicit port, fingerprint, and timeout',
 		islandRouterCommandTimeoutMs: 12000,
 	})
 })
+
+test('invalid island router port falls back to default 22', () => {
+	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
+		ISLAND_ROUTER_HOST: '192.168.0.1',
+		ISLAND_ROUTER_USERNAME: 'readonly',
+		ISLAND_ROUTER_PRIVATE_KEY_PATH: '/keys/id_ed25519',
+		ISLAND_ROUTER_PORT: '22junk',
+	})
+
+	const config = loadHomeConnectorConfig()
+	expect(config.islandRouterPort).toBe(22)
+})

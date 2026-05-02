@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { loadHomeConnectorConfig } from '../../config.ts'
 import { createIslandRouterAdapter } from './index.ts'
+import { parseIslandRouterInterfaceSummaries } from './parsing.ts'
 import { type IslandRouterCommandRequest } from './types.ts'
 
 function createConfig() {
@@ -246,4 +247,40 @@ test('island router adapter reports incomplete configuration without opening SSH
 	expect(status.connected).toBe(false)
 	expect(status.config.configured).toBe(false)
 	expect(status.errors[0]).toContain('ISLAND_ROUTER_HOST')
+})
+
+test('island router adapter marks malformed fingerprint config as not configured', async () => {
+	process.env.ISLAND_ROUTER_HOST_FINGERPRINT = 'not-a-fingerprint'
+	const config = loadHomeConnectorConfig()
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: createFakeRunner(),
+	})
+
+	const status = await islandRouter.getStatus()
+	expect(status.connected).toBe(false)
+	expect(status.config.configured).toBe(false)
+	expect(status.config.warnings).toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('ISLAND_ROUTER_HOST_FINGERPRINT'),
+		]),
+	)
+})
+
+test('fallback interface summary parsing recognizes up and down link states', () => {
+	const summaries = parseIslandRouterInterfaceSummaries(
+		['en0 up 1G full', 'en1 down 1G full'].join('\n'),
+		['show interface summary'],
+	)
+
+	expect(summaries).toEqual([
+		expect.objectContaining({
+			name: 'en0',
+			linkState: 'up',
+		}),
+		expect.objectContaining({
+			name: 'en1',
+			linkState: 'down',
+		}),
+	])
 })

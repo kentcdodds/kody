@@ -164,6 +164,10 @@ export function createIslandRouterAdapter(input: {
 		async getStatus(): Promise<IslandRouterStatus> {
 			const configStatus = getConfigStatus()
 			if (!configStatus.configured) {
+				const missingReasons = [
+					...configStatus.missingFields,
+					...configStatus.warnings,
+				].filter(Boolean)
 				return {
 					config: configStatus,
 					connected: false,
@@ -174,7 +178,7 @@ export function createIslandRouterAdapter(input: {
 					interfaces: [],
 					neighbors: [],
 					errors: [
-						`Island router diagnostics are not configured: ${configStatus.missingFields.join(', ')}.`,
+						`Island router diagnostics are not configured: ${missingReasons.join(', ')}.`,
 					],
 				}
 			}
@@ -245,7 +249,15 @@ export function createIslandRouterAdapter(input: {
 
 			return {
 				config: configStatus,
-				connected: errors.length < 4,
+				connected:
+					versionResult.exitCode === 0 &&
+					!versionResult.timedOut &&
+					clockResult.exitCode === 0 &&
+					!clockResult.timedOut &&
+					interfaceResult.exitCode === 0 &&
+					!interfaceResult.timedOut &&
+					neighborResult.exitCode === 0 &&
+					!neighborResult.timedOut,
 				router: {
 					version,
 					clock,

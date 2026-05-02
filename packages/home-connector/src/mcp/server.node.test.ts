@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
 import { createBondAdapter } from '../adapters/bond/index.ts'
+import { type IslandRouterCommandRequest } from '../adapters/island-router/types.ts'
 import { createIslandRouterAdapter } from '../adapters/island-router/index.ts'
 import { createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../adapters/lutron/index.ts'
@@ -39,7 +40,7 @@ function createConfig() {
 
 function createIslandRouterRunner() {
 	return async (
-		request: import('../adapters/island-router/types.ts').IslandRouterCommandRequest,
+		request: IslandRouterCommandRequest,
 	) => {
 		switch (request.id) {
 			case 'show-version':

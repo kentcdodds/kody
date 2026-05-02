@@ -95,6 +95,7 @@ export function getIslandRouterConfigStatus(
 	}
 
 	const warnings: Array<string> = []
+	let verificationConfigValid = true
 	let verificationMode: IslandRouterConfigStatus['verificationMode'] = 'none'
 
 	if (config.islandRouterKnownHostsPath) {
@@ -109,6 +110,7 @@ export function getIslandRouterConfigStatus(
 		try {
 			validateIslandRouterFingerprint(config.islandRouterHostFingerprint)
 		} catch (error) {
+			verificationConfigValid = false
 			warnings.push(
 				error instanceof Error ? error.message : String(error),
 			)
@@ -120,7 +122,7 @@ export function getIslandRouterConfigStatus(
 	}
 
 	return {
-		configured: missingFields.length === 0,
+		configured: missingFields.length === 0 && verificationConfigValid,
 		missingFields,
 		verificationMode,
 		warnings,
@@ -129,9 +131,15 @@ export function getIslandRouterConfigStatus(
 
 export function assertIslandRouterConfigured(config: HomeConnectorConfig) {
 	const status = getIslandRouterConfigStatus(config)
-	if (status.missingFields.length > 0) {
+	if (!status.configured) {
+		const details = [
+			...(status.missingFields.length > 0
+				? [`Missing: ${status.missingFields.join(', ')}`]
+				: []),
+			...(status.warnings.length > 0 ? status.warnings : []),
+		].join(' ')
 		throw new Error(
-			`Island router SSH diagnostics are not configured. Missing: ${status.missingFields.join(', ')}.`,
+			`Island router SSH diagnostics are not configured. ${details}`.trim(),
 		)
 	}
 	if (
