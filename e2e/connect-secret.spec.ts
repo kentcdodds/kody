@@ -47,8 +47,15 @@ test('connect secret shows editable name and scope and saves the edited name', a
 		page.getByRole('heading', { level: 2, name: editedName }),
 	).toBeVisible()
 	await expect(page.getByLabel('Description')).toHaveValue(description)
-	await expect(
-		page.getByPlaceholder('Enter the secret value').first(),
-	).toHaveValue('')
+	const savedSecretInput = page
+		.getByPlaceholder('Enter the secret value')
+		.first()
+	await expect(savedSecretInput).toHaveAttribute('type', 'password')
+	await expect(savedSecretInput).toHaveValue(secretValue)
+	await expect(page.getByText('Reveal current value')).toBeHidden()
+	await expect(page.getByText('Account password')).toBeHidden()
+	await page.getByRole('button', { name: 'Show secret value' }).click()
+	await expect(savedSecretInput).toHaveAttribute('type', 'text')
+	await expect(savedSecretInput).toHaveValue(secretValue)
 	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 })
