@@ -132,24 +132,20 @@ test('storage runner supports raw SQL with explicit writable access', async () =
 
 test('storage runner blocks mutating SQL when writable is false', async () => {
 	const storageId = createExecuteStorageId()
-	const runner = storageRunnerRpc({
-		env,
-		userId: 'user-123',
-		storageId,
-	})
+	const stub = env.STORAGE_RUNNER.get(
+		env.STORAGE_RUNNER.idFromName(JSON.stringify(['user-123', storageId])),
+	)
 
-	try {
-		await runner.sqlQuery({
-			query: 'delete from counters',
-			writable: false,
-		})
-		throw new Error('Expected read-only SQL mutation to fail.')
-	} catch (error) {
-		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).toBe(
+	await runInDurableObject(stub, async (instance: StorageRunner) => {
+		await expect(
+			instance.sqlQuery({
+				query: 'delete from counters',
+				writable: false,
+			}),
+		).rejects.toThrow(
 			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
 		)
-	}
+	})
 })
 
 test('storage runner blocks multi-statement SQL in read-only mode', async () => {
@@ -165,18 +161,19 @@ test('storage runner blocks multi-statement SQL in read-only mode', async () => 
 		value: 1,
 	})
 
-	try {
-		await runner.sqlQuery({
-			query: 'select 1 as ok; delete from sqlite_schema',
-			writable: false,
-		})
-		throw new Error('Expected multi-statement read-only SQL to fail.')
-	} catch (error) {
-		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).toBe(
+	const stub = env.STORAGE_RUNNER.get(
+		env.STORAGE_RUNNER.idFromName(JSON.stringify(['user-123', storageId])),
+	)
+	await runInDurableObject(stub, async (instance: StorageRunner) => {
+		await expect(
+			instance.sqlQuery({
+				query: 'select 1 as ok; delete from sqlite_schema',
+				writable: false,
+			}),
+		).rejects.toThrow(
 			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
 		)
-	}
+	})
 
 	await expect(
 		runner.getValue({
