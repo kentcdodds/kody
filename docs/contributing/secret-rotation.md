@@ -19,8 +19,8 @@ every user **and** destroyed all encrypted secrets.
 Now:
 
 - **Cookie signing** uses `COOKIE_SECRET` only.
-- **Saved-secret encryption** uses `SECRET_STORE_KEY` when set. There is no
-  legacy decryption fallback anymore.
+- **Saved-secret encryption** requires `SECRET_STORE_KEY`. There is no legacy
+  decryption fallback anymore.
 
 ## Rotating `COOKIE_SECRET`
 
@@ -35,9 +35,8 @@ has no built-in key versioning.
 
 ### Procedure
 
-1. **Keep the old key available** alongside the new key (for example, in a
-   secure migration script or a temporary environment variable) so you can
-   decrypt existing ciphertext.
+1. **Keep the old key available** in a secure migration script so you can
+   decrypt existing ciphertext while preparing the re-encryption pass.
 2. **Decrypt all secrets with the old key** and re-encrypt them with the new
    `SECRET_STORE_KEY`. This can be done via a one-off script against D1 or a
    future `/__maintenance/reencrypt-secrets` endpoint.

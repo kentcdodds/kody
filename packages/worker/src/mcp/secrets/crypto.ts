@@ -77,11 +77,10 @@ export async function decryptStringWithPurpose(
 const secretStorePurpose = 'mcp-secret-store'
 
 export async function encryptSecretValue(
-	env: Pick<Env, 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>,
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	value: string,
 ) {
-	const secret = getSecretStoreKey(env)
-	const key = await deriveEncryptionKey(secret, secretStorePurpose)
+	const key = await deriveEncryptionKey(env.SECRET_STORE_KEY, secretStorePurpose)
 	const iv = crypto.getRandomValues(new Uint8Array(ivBytes))
 	const ciphertext = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv },
@@ -92,7 +91,7 @@ export async function encryptSecretValue(
 }
 
 export async function decryptSecretValue(
-	env: Pick<Env, 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>,
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	payload: string,
 ) {
 	const [ivPart, ciphertextPart] = payload.split('.')
@@ -102,8 +101,7 @@ export async function decryptSecretValue(
 	const iv = base64UrlToBytes(ivPart)
 	const ciphertextBytes = base64UrlToBytes(ciphertextPart)
 
-	const secret = getSecretStoreKey(env)
-	const key = await deriveEncryptionKey(secret, secretStorePurpose)
+	const key = await deriveEncryptionKey(env.SECRET_STORE_KEY, secretStorePurpose)
 	try {
 		const plaintext = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv },
@@ -114,10 +112,4 @@ export async function decryptSecretValue(
 	} catch {
 		throw new Error('Unable to decrypt secret value.')
 	}
-}
-
-function getSecretStoreKey(
-	env: Pick<Env, 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>,
-): string {
-	return env.SECRET_STORE_KEY ?? env.COOKIE_SECRET
 }

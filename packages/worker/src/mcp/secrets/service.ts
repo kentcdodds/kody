@@ -40,7 +40,7 @@ type SecretOwnerContext = {
 }
 
 type SaveSecretInput = SecretOwnerContext & {
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	scope: SecretScope
 	name: string
 	value: string
@@ -54,13 +54,13 @@ type ListSecretsInput = SecretOwnerContext & {
 }
 
 type ResolveSecretInput = SecretOwnerContext & {
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	name: string
 	scope?: SecretScope | null
 }
 
 type UpdateSecretInput = SecretOwnerContext & {
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	name: string
 	scope: SecretScope
 	value?: string | null
