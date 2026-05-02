@@ -1,9 +1,9 @@
-name: 🚀 Deploy (production)
+name: ð Deploy (production)
 
 on:
   workflow_run:
     workflows:
-      - '✅ Validate'
+      - 'â Validate'
     types:
       - completed
     branches:
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   sha-guard:
     runs-on: ubuntu-latest
-    name: 🧾 Production deploy guard
+    name: ð§¾ Production deploy guard
     timeout-minutes: 4
     if: >-
       (github.event_name == 'workflow_run' &&
@@ -33,7 +33,7 @@ jobs:
       deploy_sha: ${{ steps.sha_guard.outputs.deploy_sha }}
       should_deploy: ${{ steps.sha_guard.outputs.should_deploy }}
     steps:
-      - name: 📦 Checkout
+      - name: ð¦ Checkout
         uses: actions/checkout@v6.0.2
         with:
           ref:
@@ -41,7 +41,7 @@ jobs:
             github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: 🧾 Resolve deploy SHA and ensure it is main HEAD
+      - name: ð§¾ Resolve deploy SHA and ensure it is main HEAD
         id: sha_guard
         shell: bash
         env:
@@ -74,7 +74,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
-    name: 🚀 Deploy to production
+    name: ð Deploy to production
     timeout-minutes: 4
     needs: sha-guard
     if: needs.sha-guard.outputs.should_deploy == 'true'
@@ -82,25 +82,25 @@ jobs:
       name: production
       url: ${{ steps.deploy.outputs.url }}
     steps:
-      - name: 📦 Checkout
+      - name: ð¦ Checkout
         uses: actions/checkout@v6.0.2
         with:
           ref: ${{ needs.sha-guard.outputs.deploy_sha }}
           fetch-depth: 0
 
-      - name: 🟢 Setup Node
+      - name: ð¢ Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
 
-      - name: 📥 Install Dependencies
+      - name: ð¥ Install Dependencies
         run: npm ci
 
-      - name: 📝 Prepare worker env
+      - name: ð Prepare worker env
         run: cp packages/worker/.env.example packages/worker/.env
 
-      - name: 🧱 Ensure production resources (D1 + KV)
+      - name: ð§± Ensure production resources (D1 + KV)
         id: resources
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -110,22 +110,24 @@ jobs:
           set -euo pipefail
           node tools/ci/production-resources.ts ensure --out-config packages/worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
 
-      - name: 🔐 Sync Cloudflare Secrets (bulk)
+      - name: ð Sync Cloudflare Secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+          SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env production --config
-          "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET --set-from-env
+          "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET --set-from-env-optional
+          SECRET_STORE_KEY --set-from-env
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
           --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
           CAPABILITY_REINDEX_SECRET
 
-      - name: 🗄️ Apply D1 Migrations
+      - name: ðï¸ Apply D1 Migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
@@ -133,7 +135,7 @@ jobs:
           node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
           "$WRANGLER_CONFIG"
 
-      - name: ☁️ Deploy to Cloudflare Workers
+      - name: âï¸ Deploy to Cloudflare Workers
         id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -154,7 +156,7 @@ jobs:
             echo "url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: 📤 Upload Worker source maps to Sentry
+      - name: ð¤ Upload Worker source maps to Sentry
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
@@ -168,7 +170,7 @@ jobs:
           fi
           npm run sentry:upload-sourcemaps
 
-      - name: 🩺 Healthcheck (production)
+      - name: ð©º Healthcheck (production)
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
@@ -210,7 +212,7 @@ jobs:
           fi
           exit 1
 
-      - name: 🧭 Reindex capability vectors (Vectorize)
+      - name: ð§­ Reindex capability vectors (Vectorize)
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
