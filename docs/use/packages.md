@@ -136,9 +136,11 @@ package.
 Jobs are part of the package definition.
 
 For repo-backed jobs that are not part of a saved package, use `job_schedule`
-instead. `job_schedule_once` remains available as the one-off shortcut, and
-`job_run_now` can trigger an existing scheduled job immediately for debugging or
-ad hoc runs.
+instead. `job_schedule_once` remains available as the one-off shortcut,
+`job_update` can rename a job and adjust safe mutable fields such as schedule,
+timezone, enabled state, kill-switch state, params, or code, `job_delete`
+removes an existing scheduled job by id, and `job_run_now` can trigger an
+existing scheduled job immediately for debugging or ad hoc runs.
 
 ## Save and edit packages
 

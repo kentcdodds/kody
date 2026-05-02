@@ -1,10 +1,12 @@
 import { defineDomain } from '../define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
+import { jobDeleteCapability } from './job-delete.ts'
 import { jobGetCapability } from './job-get.ts'
 import { jobListCapability } from './job-list.ts'
 import { jobRunNowCapability } from './job-run-now.ts'
 import { jobScheduleCapability } from './job-schedule.ts'
 import { jobScheduleOnceCapability } from './job-schedule-once.ts'
+import { jobUpdateCapability } from './job-update.ts'
 
 export const jobsDomain = defineDomain({
 	name: capabilityDomainNames.jobs,
@@ -16,6 +18,10 @@ export const jobsDomain = defineDomain({
 		'one-off',
 		'interval',
 		'cron',
+		'update',
+		'delete',
+		'disable',
+		'enable',
 		'background',
 		'debug',
 		'inspect',
@@ -27,6 +33,8 @@ export const jobsDomain = defineDomain({
 		jobGetCapability,
 		jobScheduleCapability,
 		jobScheduleOnceCapability,
+		jobUpdateCapability,
+		jobDeleteCapability,
 		jobRunNowCapability,
 	],
 })

@@ -4,17 +4,21 @@ import { jobsDomain } from './domain.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createJob: vi.fn(),
+	deleteJob: vi.fn(),
 	getJobInspection: vi.fn(),
 	inspectJobsForUser: vi.fn(),
 	runJobNowViaManager: vi.fn(),
+	updateJob: vi.fn(),
 }))
 
 vi.mock('#worker/jobs/service.ts', () => ({
 	createJob: (...args: Array<unknown>) => mockModule.createJob(...args),
+	deleteJob: (...args: Array<unknown>) => mockModule.deleteJob(...args),
 	getJobInspection: (...args: Array<unknown>) =>
 		mockModule.getJobInspection(...args),
 	inspectJobsForUser: (...args: Array<unknown>) =>
 		mockModule.inspectJobsForUser(...args),
+	updateJob: (...args: Array<unknown>) => mockModule.updateJob(...args),
 }))
 
 vi.mock('#worker/jobs/manager-client.ts', () => ({
@@ -24,15 +28,19 @@ vi.mock('#worker/jobs/manager-client.ts', () => ({
 
 const { jobScheduleCapability } = await import('./job-schedule.ts')
 const { jobScheduleOnceCapability } = await import('./job-schedule-once.ts')
+const { jobDeleteCapability } = await import('./job-delete.ts')
 const { jobGetCapability } = await import('./job-get.ts')
 const { jobListCapability } = await import('./job-list.ts')
 const { jobRunNowCapability } = await import('./job-run-now.ts')
+const { jobUpdateCapability } = await import('./job-update.ts')
 
 function resetMocks() {
 	mockModule.createJob.mockReset()
+	mockModule.deleteJob.mockReset()
 	mockModule.getJobInspection.mockReset()
 	mockModule.inspectJobsForUser.mockReset()
 	mockModule.runJobNowViaManager.mockReset()
+	mockModule.updateJob.mockReset()
 }
 
 test('job_schedule creates a one-off job', async () => {
@@ -114,16 +122,245 @@ test('job_schedule creates a one-off job', async () => {
 	})
 })
 
-test('jobs domain exposes scheduling, inspection, and run-now capabilities', () => {
+test('jobs domain exposes scheduling, inspection, mutation, and run-now capabilities', () => {
 	expect(jobsDomain.capabilities.map((capability) => capability.name)).toEqual(
 		expect.arrayContaining([
 			'job_list',
 			'job_get',
 			'job_schedule',
 			'job_schedule_once',
+			'job_update',
+			'job_delete',
 			'job_run_now',
 		]),
 	)
+})
+
+test('job_update updates safe mutable fields on an existing job', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	mockModule.updateJob.mockResolvedValue({
+		id: 'job-123',
+		name: 'Nightly cleanup v2',
+		sourceId: 'source-123',
+		publishedCommit: 'commit-456',
+		storageId: 'job:job-123',
+		params: {
+			room: 'office',
+		},
+		schedule: {
+			type: 'cron',
+			expression: '0 3 * * *',
+		},
+		scheduleSummary: 'Runs on cron "0 3 * * *" in America/Denver',
+		timezone: 'America/Denver',
+		enabled: false,
+		killSwitchEnabled: true,
+		createdAt: '2026-04-20T10:00:00.000Z',
+		updatedAt: '2026-04-20T12:00:00.000Z',
+		nextRunAt: '2026-04-21T09:00:00.000Z',
+		runCount: 2,
+		successCount: 1,
+		errorCount: 1,
+		runHistory: [
+			{
+				startedAt: '2026-04-20T11:00:00.000Z',
+				finishedAt: '2026-04-20T11:01:00.000Z',
+				status: 'error',
+				durationMs: 60000,
+				error: 'Timed out',
+			},
+		],
+	})
+
+	const result = await jobUpdateCapability.handler(
+		{
+			id: 'job-123',
+			name: 'Nightly cleanup v2',
+			code: 'export default async () => ({ ok: true, updated: true })',
+			params: {
+				room: 'office',
+			},
+			schedule: {
+				type: 'cron',
+				expression: '0 3 * * *',
+			},
+			timezone: 'America/Denver',
+			enabled: false,
+			kill_switch_enabled: true,
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
+
+	expect(mockModule.updateJob).toHaveBeenCalledWith({
+		env,
+		callerContext,
+		body: {
+			id: 'job-123',
+			name: 'Nightly cleanup v2',
+			code: 'export default async () => ({ ok: true, updated: true })',
+			params: {
+				room: 'office',
+			},
+			schedule: {
+				type: 'cron',
+				expression: '0 3 * * *',
+			},
+			timezone: 'America/Denver',
+			enabled: false,
+			killSwitchEnabled: true,
+		},
+	})
+	expect(result).toEqual({
+		job_id: 'job-123',
+		name: 'Nightly cleanup v2',
+		source_id: 'source-123',
+		published_commit: 'commit-456',
+		storage_id: 'job:job-123',
+		params: {
+			room: 'office',
+		},
+		schedule: {
+			type: 'cron',
+			expression: '0 3 * * *',
+		},
+		schedule_summary: 'Runs on cron "0 3 * * *" in America/Denver',
+		timezone: 'America/Denver',
+		enabled: false,
+		kill_switch_enabled: true,
+		created_at: '2026-04-20T10:00:00.000Z',
+		updated_at: '2026-04-20T12:00:00.000Z',
+		next_run_at: '2026-04-21T09:00:00.000Z',
+		run_count: 2,
+		success_count: 1,
+		error_count: 1,
+		run_history: [
+			{
+				started_at: '2026-04-20T11:00:00.000Z',
+				finished_at: '2026-04-20T11:01:00.000Z',
+				status: 'error',
+				duration_ms: 60000,
+				error: 'Timed out',
+			},
+		],
+	})
+})
+
+test('job_update maps one-off schedule run_at to runAt in the service payload', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	mockModule.updateJob.mockResolvedValue({
+		id: 'job-once',
+		name: 'One-off cleanup',
+		sourceId: 'source-once',
+		publishedCommit: null,
+		storageId: 'job:job-once',
+		schedule: {
+			type: 'once',
+			runAt: '2026-04-22T18:30:00Z',
+		},
+		scheduleSummary: 'Runs once at 2026-04-22T18:30:00Z',
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		createdAt: '2026-04-20T10:00:00.000Z',
+		updatedAt: '2026-04-20T12:00:00.000Z',
+		nextRunAt: '2026-04-22T18:30:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+	})
+
+	await jobUpdateCapability.handler(
+		{
+			id: 'job-once',
+			schedule: {
+				type: 'once',
+				run_at: '2026-04-22T18:30:00Z',
+			},
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
+
+	expect(mockModule.updateJob).toHaveBeenCalledWith({
+		env,
+		callerContext,
+		body: {
+			id: 'job-once',
+			name: undefined,
+			code: undefined,
+			params: undefined,
+			schedule: {
+				type: 'once',
+				runAt: '2026-04-22T18:30:00Z',
+			},
+			timezone: undefined,
+			enabled: undefined,
+			killSwitchEnabled: undefined,
+		},
+	})
+	const call = mockModule.updateJob.mock.calls.at(-1)?.[0]
+	expect(call?.body.schedule).not.toHaveProperty('run_at')
+})
+
+test('job_delete removes an existing job by id for the signed-in user', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	mockModule.deleteJob.mockResolvedValue({
+		id: 'job-123',
+		deleted: true,
+	})
+
+	const result = await jobDeleteCapability.handler(
+		{
+			id: 'job-123',
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
+
+	expect(mockModule.deleteJob).toHaveBeenCalledWith({
+		env,
+		userId: 'user-123',
+		jobId: 'job-123',
+	})
+	expect(result).toEqual({
+		job_id: 'job-123',
+		deleted: true,
+	})
 })
 
 test('job_run_now executes an existing job through the job manager', async () => {
@@ -481,7 +718,7 @@ test('job_schedule covers recurring schedules and the one-off helper flow', asyn
 	})
 })
 
-test('job capabilities require an authenticated user for scheduling and run-now flows', async () => {
+test('job capabilities require an authenticated user for scheduling, mutation, and run-now flows', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -504,6 +741,41 @@ test('job capabilities require an authenticated user for scheduling and run-now 
 		),
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+				enabled: false,
+			},
+			{
+				env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
+		jobScheduleOnceCapability.handler(
+			{
+				code: 'export default async () => ({ ok: true })',
+				run_at: '2026-04-20T18:30:00Z',
+			},
+			{
+				env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
+		jobDeleteCapability.handler(
+			{
+				id: 'job-123',
+			},
+			{
+				env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	await expect(
 		jobRunNowCapability.handler(
 			{
 				id: 'job-123',
@@ -515,7 +787,35 @@ test('job capabilities require an authenticated user for scheduling and run-now 
 		),
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 	expect(mockModule.createJob).not.toHaveBeenCalled()
+	expect(mockModule.updateJob).not.toHaveBeenCalled()
+	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
+})
+
+test('job_update rejects requests without any mutable fields', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+			},
+			{
+				env,
+				callerContext,
+			},
+		),
+	).rejects.toThrow('Provide at least one mutable field to update.')
+	expect(mockModule.updateJob).not.toHaveBeenCalled()
 })
 
 test('job inspection capabilities expose due-now state, history, and alarm status', async () => {

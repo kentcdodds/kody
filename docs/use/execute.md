@@ -71,6 +71,11 @@ module-oriented runtime model:
   **`codemode.job_schedule(...)`** without creating a saved package
 - **`codemode.job_schedule_once(...)`** remains available as a convenience alias
   for one-off schedules
+- **`codemode.job_update(...)`** updates an existing scheduled job by id for
+  safe mutable fields such as name, code, params, schedule, timezone,
+  enabled/disabled state, or kill switch state
+- **`codemode.job_delete(...)`** removes an existing scheduled job by id for the
+  signed-in user
 - **`codemode.job_run_now(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging
 

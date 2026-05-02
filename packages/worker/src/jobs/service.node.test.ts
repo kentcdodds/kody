@@ -1151,6 +1151,162 @@ test('deleteJob syncs the job manager alarm after removing a job', async () => {
 	})
 })
 
+test('updateJob rejects another user trying to mutate a job by id', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const ownerCallerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext: ownerCallerContext,
+		body: {
+			name: 'Owner job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	const otherCallerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-999',
+			email: 'other@example.com',
+			displayName: 'Other User',
+		},
+		storageContext: {
+			sessionId: null,
+			appId: 'app-999',
+		},
+	}) as PersistedJobCallerContext
+
+	await expect(
+		updateJob({
+			env,
+			callerContext: otherCallerContext,
+			body: {
+				id: created.id,
+				enabled: false,
+			},
+		}),
+	).rejects.toThrow(`Job "${created.id}" was not found.`)
+
+	const inspection = await getJobInspection({
+		env,
+		userId: ownerCallerContext.user.userId,
+		jobId: created.id,
+	})
+	expect(inspection.job.enabled).toBe(true)
+})
+
+test('deleteJob rejects another user trying to remove a job by id', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const ownerCallerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext: ownerCallerContext,
+		body: {
+			name: 'Owner job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+
+	await expect(
+		deleteJob({
+			env,
+			userId: 'user-999',
+			jobId: created.id,
+		}),
+	).rejects.toThrow(`Job "${created.id}" was not found.`)
+
+	const inspection = await getJobInspection({
+		env,
+		userId: ownerCallerContext.user.userId,
+		jobId: created.id,
+	})
+	expect(inspection.job.id).toBe(created.id)
+})
+
+test('updateJob clears params, updates timezone, and disables a job', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Mutable job',
+			code: 'export default async () => ({ ok: true })',
+			params: {
+				room: 'office',
+			},
+			schedule: {
+				type: 'cron',
+				expression: '0 9 * * 1',
+			},
+			timezone: 'UTC',
+		},
+	})
+
+	const updated = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: created.id,
+			params: null,
+			timezone: 'America/Denver',
+			enabled: false,
+		},
+	})
+
+	expect(updated.params).toBeUndefined()
+	expect(updated.timezone).toBe('America/Denver')
+	expect(updated.enabled).toBe(false)
+	expect(updated.scheduleSummary).toContain('America/Denver')
+})
+
+test('updateJob rejects empty replacement code', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Code validation job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+
+	await expect(
+		updateJob({
+			env,
+			callerContext,
+			body: {
+				id: created.id,
+				code: '   ',
+			},
+		}),
+	).rejects.toThrow('Jobs require non-empty code.')
+})
+
 test('inspectJobsForUser returns persisted job fields with alarm debug state', async () => {
 	const env = {
 		APP_DB: createDatabase(),
