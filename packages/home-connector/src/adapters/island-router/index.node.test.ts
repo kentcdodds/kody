@@ -500,6 +500,23 @@ test('parser handles real Island CLI transcript shape with prompt echoes and goo
 	})
 })
 
+test('sanitizeIslandRouterOutput keeps legitimate lines that end with bracketed text', () => {
+	const commandLines = ['terminal length 0', 'show version']
+	const stdout = [
+		'Dodds-Island>show version',
+		'Firmware: v2.0 [beta]',
+		'VLAN [100]',
+		'Dodds-Island>',
+		'Dodds-Island>exit',
+		'Goodbye',
+	].join('\n')
+
+	expect(sanitizeIslandRouterOutput(stdout, commandLines)).toEqual([
+		'Firmware: v2.0 [beta]',
+		'VLAN [100]',
+	])
+})
+
 test('parser ignores prompt echoes for real neighbor, dhcp, and log transcripts', () => {
 	const neighborsTranscript = [
 		'Dodds-Island>show ip neighbors',

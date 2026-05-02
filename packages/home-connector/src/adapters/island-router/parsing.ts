@@ -33,6 +33,7 @@ const islandRouterVersionBannerPattern =
 const islandRouterCliFailurePattern =
 	/\b(?:invalid command|unknown command|syntax error|permission denied|host key verification failed|connection refused|connection timed out|connection closed|no route to host|network is unreachable|could not resolve hostname|not found|not recognized)\b/i
 const islandRouterPromptSuffixPattern = '[>#\\]]'
+const islandRouterPromptOnlyPattern = /^(?:[a-z0-9_.:@-]+[>#]|\[[^\]\r\n]+\])$/i
 
 function normalizeHeaderKey(value: string) {
 	return value
@@ -62,9 +63,14 @@ function isPromptEchoLine(line: string, command: string) {
 function isPromptOnlyLine(line: string) {
 	const trimmed = normalizeWhitespace(line)
 	if (!trimmed) return false
-	return new RegExp(`^[^\\r\\n]+${islandRouterPromptSuffixPattern}$`).test(
-		trimmed,
-	)
+	return islandRouterPromptOnlyPattern.test(trimmed)
+}
+
+function splitSanitizedStdoutLines(stdout: string) {
+	return stdout
+		.replaceAll(/\u001b\[[0-9;]*m/g, '')
+		.split(/\r?\n/)
+		.map((line) => line.replace(/\r/g, ''))
 }
 
 export function sanitizeIslandRouterOutput(
@@ -74,24 +80,12 @@ export function sanitizeIslandRouterOutput(
 	const normalizedCommands = commandLines
 		.map((line) => normalizeWhitespace(line))
 		.filter(Boolean)
-	const firstCommandEchoIndex = stdout
-		.replaceAll(/\u001b\[[0-9;]*m/g, '')
-		.split(/\r?\n/)
-		.map((line) => line.replace(/\r/g, ''))
-		.findIndex((line) =>
-			normalizedCommands.some((command) => isPromptEchoLine(line, command)),
-		)
+	const lines = splitSanitizedStdoutLines(stdout)
+	const firstCommandEchoIndex = lines.findIndex((line) =>
+		normalizedCommands.some((command) => isPromptEchoLine(line, command)),
+	)
 	const relevantOutput =
-		firstCommandEchoIndex >= 0
-			? stdout
-					.replaceAll(/\u001b\[[0-9;]*m/g, '')
-					.split(/\r?\n/)
-					.map((line) => line.replace(/\r/g, ''))
-					.slice(firstCommandEchoIndex)
-			: stdout
-					.replaceAll(/\u001b\[[0-9;]*m/g, '')
-					.split(/\r?\n/)
-					.map((line) => line.replace(/\r/g, ''))
+		firstCommandEchoIndex >= 0 ? lines.slice(firstCommandEchoIndex) : lines
 
 	return relevantOutput.filter((line) => {
 		const trimmed = normalizeWhitespace(line)
