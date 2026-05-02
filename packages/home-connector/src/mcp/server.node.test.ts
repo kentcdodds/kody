@@ -147,6 +147,17 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'venstar_control_thermostat'),
 		).toBe(true)
+		for (const toolName of [
+			'tesla_gateway_scan',
+			'tesla_gateway_list',
+			'tesla_gateway_set_credentials',
+			'tesla_gateway_authenticate',
+			'tesla_gateway_live_snapshot',
+			'tesla_gateway_find_export_limit',
+			'tesla_gateway_find_all_export_limits',
+		]) {
+			expect(tools.some((tool) => tool.name === toolName)).toBe(true)
+		}
 		const bondAuthGuide = await mcp.callTool('bond_authentication_guide')
 		expect(bondAuthGuide.content[0]?.type).toBe('text')
 		expect(bondAuthGuide.structuredContent).toMatchObject({
@@ -254,6 +265,55 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(venstarScan.structuredContent).toMatchObject({
 			discovered: expect.any(Array),
 			diagnostics: expect.anything(),
+		})
+		const teslaScan = await mcp.callTool('tesla_gateway_scan')
+		expect(teslaScan.structuredContent).toMatchObject({
+			gateways: expect.any(Array),
+			diagnostics: expect.anything(),
+		})
+		const teslaGateways = await mcp.callTool('tesla_gateway_list')
+		expect(teslaGateways.structuredContent).toMatchObject({
+			gateways: expect.arrayContaining([
+				expect.objectContaining({
+					gatewayId: 'tesla-gateway-mock-home-1',
+					hasStoredCredentials: false,
+				}),
+			]),
+		})
+		await mcp.callTool('tesla_gateway_set_credentials', {
+			gatewayId: 'tesla-gateway-mock-home-1',
+			password: 'mock-password',
+			customerEmailLabel: '   ',
+		})
+		const teslaExportLimit = await mcp.callTool(
+			'tesla_gateway_find_export_limit',
+			{ gatewayId: 'tesla-gateway-mock-home-1' },
+		)
+		expect(teslaExportLimit.structuredContent).toMatchObject({
+			gatewayId: 'tesla-gateway-mock-home-1',
+			exportLimitKw: 21,
+			source: 'site_info.max_site_export_power_kW',
+		})
+		const teslaAuthedGateways = await mcp.callTool('tesla_gateway_list')
+		expect(teslaAuthedGateways.structuredContent).toMatchObject({
+			gateways: expect.arrayContaining([
+				expect.objectContaining({
+					gatewayId: 'tesla-gateway-mock-home-1',
+					hasStoredCredentials: true,
+					hasCustomCustomerEmailLabel: false,
+				}),
+			]),
+		})
+		const teslaGatewaysAfterCredentials =
+			await mcp.callTool('tesla_gateway_list')
+		expect(teslaGatewaysAfterCredentials.structuredContent).toMatchObject({
+			gateways: expect.arrayContaining([
+				expect.objectContaining({
+					gatewayId: 'tesla-gateway-mock-home-1',
+					hasStoredCredentials: true,
+					hasCustomCustomerEmailLabel: false,
+				}),
+			]),
 		})
 		const addedVenstar = await mcp.callTool('venstar_add_thermostat', {
 			ip: '192.168.10.41',

@@ -316,6 +316,92 @@ test('venstar setup can save and remove thermostats directly', async () => {
 	}
 })
 
+test('tesla gateway status rejects cross-origin mutations and renders live snapshots', async () => {
+	const dataPath = createTemporaryDataPath()
+	const config = createConfig(dataPath)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		jellyfish,
+		venstar,
+		teslaGateway,
+	} = createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			jellyfish,
+			venstar,
+			teslaGateway,
+		)
+
+		const rejectedResponse = await router.fetch(
+			'http://example.test/tesla-gateway/status',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+					origin: 'http://evil.example',
+				},
+				body: 'action=scan',
+			},
+		)
+		expect(rejectedResponse.status).toBe(403)
+
+		await router.fetch('http://example.test/tesla-gateway/status', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded',
+				origin: 'http://example.test',
+			},
+			body: 'action=scan',
+		})
+		await router.fetch('http://example.test/tesla-gateway/setup', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded',
+				origin: 'http://example.test',
+			},
+			body: new URLSearchParams({
+				action: 'save-credentials',
+				gatewayId: 'tesla-gateway-mock-home-1',
+				password: 'mock-password',
+			}).toString(),
+		})
+		const snapshotResponse = await router.fetch(
+			'http://example.test/tesla-gateway/status',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+					origin: 'http://example.test',
+				},
+				body: new URLSearchParams({
+					action: 'fetch-snapshot',
+					gatewayId: 'tesla-gateway-mock-home-1',
+				}).toString(),
+			},
+		)
+
+		expect(snapshotResponse.status).toBe(200)
+		const html = await snapshotResponse.text()
+		expect(html).toContain('Action result')
+		expect(html).toContain('max_site_export_power_kW')
+		expect(html).toContain('meters')
+	} finally {
+		storage.close()
+		rmSync(dataPath, { recursive: true, force: true })
+	}
+})
+
 test('health route returns ok json', async () => {
 	const config = createConfig()
 	const {

@@ -49,11 +49,6 @@ export type TeslaGatewayCredentials = {
 	password: string
 }
 
-export type TeslaGatewayClientHost = {
-	host: string
-	port?: number
-}
-
 export type TeslaGatewayHttpResponse<T> = {
 	status: number
 	body: T | null

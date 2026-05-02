@@ -5,6 +5,7 @@ import { type HomeConnectorConfig } from '../src/config.ts'
 import { type createTeslaGatewayAdapter } from '../src/adapters/tesla-gateway/index.ts'
 import {
 	type TeslaGatewayDiscoveryDiagnostics,
+	type TeslaGatewayLiveSnapshot,
 	type TeslaGatewayPublicRecord,
 } from '../src/adapters/tesla-gateway/types.ts'
 import { type HomeConnectorState } from '../src/state.ts'
@@ -43,6 +44,32 @@ async function readPostedFormData(request: Request, fallbackAction: string) {
 	return formData
 }
 
+function validateSameOriginPost(request: Request) {
+	const requestOrigin = new URL(request.url).origin
+	const origin = request.headers.get('origin')
+	if (origin) {
+		if (origin === requestOrigin) return
+		throw new Response('Forbidden', { status: 403 })
+	}
+	const referer = request.headers.get('referer')
+	if (referer && new URL(referer).origin === requestOrigin) return
+	throw new Response('Forbidden', { status: 403 })
+}
+
+function summarizeLiveSnapshot(snapshot: TeslaGatewayLiveSnapshot) {
+	return {
+		gateway: snapshot.gateway,
+		status: snapshot.status,
+		systemStatus: snapshot.systemStatus,
+		gridStatus: snapshot.gridStatus,
+		soe: snapshot.soe,
+		meters: snapshot.meters,
+		operation: snapshot.operation,
+		siteInfo: snapshot.siteInfo,
+		fetchErrors: snapshot.fetchErrors,
+	}
+}
+
 async function handleTeslaGatewayMutation(input: {
 	action: string
 	formData: FormData
@@ -54,6 +81,7 @@ async function handleTeslaGatewayMutation(input: {
 		const gateways = await teslaGateway.scan()
 		return {
 			message: `Scan complete. ${gateways.length} gateway(s) known.`,
+			details: null,
 		}
 	}
 
@@ -62,6 +90,7 @@ async function handleTeslaGatewayMutation(input: {
 		const gateway = await teslaGateway.authenticate(gatewayId)
 		return {
 			message: `Authenticated against ${gateway.host} (${gateway.gatewayId}).`,
+			details: null,
 		}
 	}
 
@@ -74,6 +103,7 @@ async function handleTeslaGatewayMutation(input: {
 				errorCount === 0
 					? `Pulled live snapshot for ${snapshot.gateway.gatewayId}.`
 					: `Pulled snapshot for ${snapshot.gateway.gatewayId} with ${errorCount} per-endpoint error(s).`,
+			details: summarizeLiveSnapshot(snapshot),
 		}
 	}
 
@@ -85,6 +115,7 @@ async function handleTeslaGatewayMutation(input: {
 				info.exportLimitKw === null
 					? `Could not determine an export limit for ${info.gatewayId}.`
 					: `${info.gatewayId} export limit ≈ ${info.exportLimitKw} kW (source: ${info.source}).`,
+			details: null,
 		}
 	}
 
@@ -101,6 +132,7 @@ async function handleTeslaGatewayMutation(input: {
 		})
 		return {
 			message: `Saved credentials for ${gateway.host} (${gateway.gatewayId}).`,
+			details: null,
 		}
 	}
 
@@ -116,6 +148,7 @@ async function handleTeslaGatewayMutation(input: {
 			message: label
 				? `Set label for ${gatewayId} to "${label}".`
 				: `Cleared label for ${gatewayId}.`,
+			details: null,
 		}
 	}
 
@@ -256,6 +289,7 @@ function renderTeslaGatewayPage(input: {
 	includeSetupForm?: boolean
 	scanMessage?: string | null
 	scanError?: string | null
+	resultDetails?: unknown
 }) {
 	const status = input.teslaGateway.getStatus()
 	return render(
@@ -311,6 +345,12 @@ function renderTeslaGatewayPage(input: {
 					: ''}
 				${input.scanError
 					? renderBanner({ tone: 'error', message: input.scanError })
+					: ''}
+				${input.resultDetails
+					? html`<section class="card">
+							<h2>Action result</h2>
+							${renderCodeBlock(formatJson(input.resultDetails))}
+						</section>`
 					: ''}
 				<section class="card">
 					<h2>Configured gateways</h2>
@@ -405,12 +445,13 @@ function buildHandler(input: {
 		middleware: [],
 		async handler({ request }: { request: Request }) {
 			if (request.method === 'POST') {
-				const formData = await readPostedFormData(request, 'scan')
-				const action =
-					typeof formData.get('action') === 'string'
-						? String(formData.get('action'))
-						: 'scan'
 				try {
+					validateSameOriginPost(request)
+					const formData = await readPostedFormData(request, 'scan')
+					const action =
+						typeof formData.get('action') === 'string'
+							? String(formData.get('action'))
+							: 'scan'
 					const result = await handleTeslaGatewayMutation({
 						action,
 						formData,
@@ -423,12 +464,13 @@ function buildHandler(input: {
 						title: input.title,
 						includeSetupForm: input.includeSetupForm,
 						scanMessage: result.message,
+						resultDetails: result.details,
 					})
 				} catch (error) {
+					if (error instanceof Response) return error
 					captureHomeConnectorException(error, {
 						tags: {
 							route: `/tesla-gateway/${input.route}`,
-							action,
 						},
 						contexts: {
 							teslaGateway: {

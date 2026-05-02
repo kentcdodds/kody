@@ -47,6 +47,7 @@ const DEFAULT_PORT = 443
 const TCP_PROBE_TIMEOUT_MS = 1_000
 const TLS_PROBE_TIMEOUT_MS = 3_000
 const LOGIN_PROBE_TIMEOUT_MS = 4_000
+const JSON_DISCOVERY_TIMEOUT_MS = 5_000
 const SUBNET_MAX_HOSTS = 254
 const TESLA_LEADER_OUIS = new Set(['90:03:71'])
 const TESLA_POWERWALL_OUIS = new Set(['00:d6:cb'])
@@ -357,7 +358,7 @@ async function probeHost(input: {
 }
 
 function buildGatewayId(input: { host: string; macAddress: string | null }) {
-	const base = input.macAddress ?? input.host
+	const base = input.host
 	return `tesla-gateway-${base.replaceAll(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`
 }
 
@@ -504,13 +505,75 @@ function resolveScanCidrs(config: HomeConnectorConfig): Array<string> {
 	return derivePrivateAutoscanCidrsFromInterfaces(networkInterfaces())
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function nullableString(value: unknown) {
+	return typeof value === 'string' ? value : null
+}
+
+function validateJsonGateway(
+	value: unknown,
+): TeslaGatewayDiscoveredGateway | null {
+	if (!isRecord(value)) return null
+	if (
+		typeof value.gatewayId !== 'string' ||
+		value.gatewayId.trim().length === 0 ||
+		typeof value.host !== 'string' ||
+		value.host.trim().length === 0 ||
+		typeof value.port !== 'number' ||
+		!Number.isInteger(value.port)
+	) {
+		return null
+	}
+	const role =
+		value.role === 'leader' || value.role === 'follower'
+			? value.role
+			: 'unknown'
+	const cert = isRecord(value.cert)
+		? {
+				subjectCommonName: nullableString(value.cert.subjectCommonName),
+				subjectOrganization: nullableString(value.cert.subjectOrganization),
+				subjectOrganizationalUnit: nullableString(
+					value.cert.subjectOrganizationalUnit,
+				),
+				issuerCommonName: nullableString(value.cert.issuerCommonName),
+				issuerOrganization: nullableString(value.cert.issuerOrganization),
+				subjectAltName: nullableString(value.cert.subjectAltName),
+				fingerprint256: nullableString(value.cert.fingerprint256),
+			}
+		: null
+	return {
+		gatewayId: value.gatewayId.trim(),
+		host: value.host.trim(),
+		port: value.port,
+		din: nullableString(value.din),
+		serialNumber: nullableString(value.serialNumber),
+		macAddress: nullableString(value.macAddress),
+		macOui: nullableString(value.macOui),
+		cert,
+		firmwareVersion: nullableString(value.firmwareVersion),
+		role,
+		lastSeenAt:
+			typeof value.lastSeenAt === 'string'
+				? value.lastSeenAt
+				: new Date().toISOString(),
+	}
+}
+
 async function discoverFromJson(
 	discoveryUrl: string,
 ): Promise<TeslaGatewayDiscoveryResult> {
 	const errors: Array<string> = []
 	let payload: Record<string, unknown> | null = null
+	let timeout: ReturnType<typeof setTimeout> | null = null
 	try {
-		const response = await fetch(discoveryUrl)
+		const controller = new AbortController()
+		timeout = setTimeout(() => {
+			controller.abort()
+		}, JSON_DISCOVERY_TIMEOUT_MS)
+		const response = await fetch(discoveryUrl, { signal: controller.signal })
 		if (!response.ok) {
 			errors.push(
 				`Tesla discovery feed returned HTTP ${response.status} for ${discoveryUrl}`,
@@ -519,11 +582,28 @@ async function discoverFromJson(
 			payload = (await response.json()) as Record<string, unknown>
 		}
 	} catch (error) {
-		errors.push(error instanceof Error ? error.message : String(error))
+		errors.push(
+			error instanceof Error && error.name === 'AbortError'
+				? `Tesla discovery feed timed out after ${JSON_DISCOVERY_TIMEOUT_MS}ms for ${discoveryUrl}`
+				: error instanceof Error
+					? error.message
+					: String(error),
+		)
+	} finally {
+		if (timeout) clearTimeout(timeout)
 	}
-	const gateways = Array.isArray(payload?.['gateways'])
-		? (payload['gateways'] as Array<TeslaGatewayDiscoveredGateway>)
+	const rawGateways = Array.isArray(payload?.['gateways'])
+		? payload['gateways']
 		: []
+	const gateways: Array<TeslaGatewayDiscoveredGateway> = []
+	for (const [index, rawGateway] of rawGateways.entries()) {
+		const gateway = validateJsonGateway(rawGateway)
+		if (gateway) {
+			gateways.push(gateway)
+		} else {
+			errors.push(`Tesla discovery feed gateway[${index}] is invalid.`)
+		}
+	}
 	return {
 		gateways,
 		diagnostics: {
@@ -582,6 +662,7 @@ export const __testing = {
 	decideLeaderStatus,
 	expandSlash24,
 	isTeslaCert,
+	validateJsonGateway,
 	probeLooksLikeTesla,
 	ouiFromMac,
 	TESLA_LEADER_OUIS,

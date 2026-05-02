@@ -57,8 +57,11 @@ function buildDefaultGateway(input: {
 	siteName: string
 	macAddress: string
 	exportLimitKw: number
+	systemCapacityKw: number
+	meterLimitKw: number
 }): MockTeslaGatewayState {
 	const exportLimitWatts = input.exportLimitKw * 1_000
+	const meterLimitWatts = input.meterLimitKw * 1_000
 	return {
 		gatewayId: input.gatewayId,
 		host: input.host,
@@ -186,9 +189,10 @@ function buildDefaultGateway(input: {
 			site_name: input.siteName,
 			timezone: 'America/Denver',
 			max_system_energy_kWh: 40.5,
-			max_system_power_kW: 25,
-			max_site_meter_power_ac: exportLimitWatts,
-			min_site_meter_power_ac: -exportLimitWatts,
+			max_system_power_kW: input.systemCapacityKw,
+			max_site_export_power_kW: input.exportLimitKw,
+			max_site_meter_power_ac: meterLimitWatts,
+			min_site_meter_power_ac: -meterLimitWatts,
 			nominal_system_energy_kWh: 40.5,
 			nominal_system_power_kW: 25,
 			panel_max_current: 200,
@@ -273,7 +277,9 @@ function defineDefaultMocks() {
 		serial: 'GF22327600010H',
 		siteName: 'Mock Home 1',
 		macAddress: '90:03:71:11:22:33',
-		exportLimitKw: 25,
+		exportLimitKw: 21,
+		systemCapacityKw: 32,
+		meterLimitKw: 40,
 	})
 	const home2 = buildDefaultGateway({
 		gatewayId: 'tesla-gateway-mock-home-2',
@@ -282,7 +288,9 @@ function defineDefaultMocks() {
 		serial: 'GF22327600011K',
 		siteName: 'Mock Home 2',
 		macAddress: '90:03:71:44:55:66',
-		exportLimitKw: 25,
+		exportLimitKw: 21,
+		systemCapacityKw: 32,
+		meterLimitKw: 40,
 	})
 	mockGateways.set(home1.host, home1)
 	mockGateways.set(home2.host, home2)
@@ -410,7 +418,5 @@ export function setMockTeslaGatewayExportLimitKw(input: {
 	const state = requireMockGateway(input.host)
 	const exportLimitWatts = input.exportLimitKw * 1_000
 	state.systemStatus.solar_real_power_limit = exportLimitWatts
-	state.siteInfo.max_site_meter_power_ac = exportLimitWatts
-	state.siteInfo.min_site_meter_power_ac = -exportLimitWatts
-	state.siteInfo.max_system_power_kW = input.exportLimitKw
+	state.siteInfo.max_site_export_power_kW = input.exportLimitKw
 }

@@ -193,11 +193,25 @@ async function ensureSession(input: {
 async function safeFetch<T>(input: {
 	label: string
 	fn: () => Promise<T>
+	onUnauthorized?: () => Promise<T>
 	errors: Record<string, string>
 }): Promise<T | null> {
 	try {
 		return await input.fn()
 	} catch (error) {
+		if (
+			input.onUnauthorized &&
+			error instanceof TeslaGatewayHttpError &&
+			(error.status === 401 || error.status === 403)
+		) {
+			try {
+				return await input.onUnauthorized()
+			} catch (retryError) {
+				input.errors[input.label] =
+					retryError instanceof Error ? retryError.message : String(retryError)
+				return null
+			}
+		}
 		input.errors[input.label] =
 			error instanceof Error ? error.message : String(error)
 		return null
@@ -210,13 +224,25 @@ async function fetchLiveFromGateway(input: {
 	gateway: TeslaGatewayPersistedRecord
 }): Promise<TeslaGatewayLiveSnapshot> {
 	const errors: Record<string, string> = {}
-	const session = await ensureSession({
+	let session = await ensureSession({
 		storage: input.storage,
 		connectorId: input.connectorId,
 		gateway: input.gateway,
 	})
 
 	const isMock = isMockTeslaGatewayHost(input.gateway.host)
+	async function retryAfterUnauthorized<T>(
+		fn: (session: TeslaGatewaySession) => Promise<T>,
+	): Promise<T> {
+		dropSession(input.connectorId, input.gateway.gatewayId)
+		const freshSession = await ensureSession({
+			storage: input.storage,
+			connectorId: input.connectorId,
+			gateway: input.gateway,
+		})
+		session = freshSession
+		return await fn(session)
+	}
 	const status = isMock
 		? await safeFetch({
 				label: 'status',
@@ -226,6 +252,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'status',
 				fn: () => getTeslaApiStatus(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaApiStatus),
 				errors,
 			})
 	const systemStatus = isMock
@@ -237,6 +264,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'system_status',
 				fn: () => getTeslaSystemStatus(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaSystemStatus),
 				errors,
 			})
 	const gridStatus = isMock
@@ -248,6 +276,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'grid_status',
 				fn: () => getTeslaGridStatus(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaGridStatus),
 				errors,
 			})
 	const soe = isMock
@@ -259,6 +288,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'soe',
 				fn: () => getTeslaSoe(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaSoe),
 				errors,
 			})
 	const meters = isMock
@@ -270,6 +300,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'meters/aggregates',
 				fn: () => getTeslaMetersAggregates(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaMetersAggregates),
 				errors,
 			})
 	const operation = isMock
@@ -281,6 +312,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'operation',
 				fn: () => getTeslaOperation(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaOperation),
 				errors,
 			})
 	const networks = isMock
@@ -292,6 +324,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'networks',
 				fn: () => getTeslaNetworks(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaNetworks),
 				errors,
 			})
 	const siteInfo = isMock
@@ -303,6 +336,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'site_info',
 				fn: () => getTeslaSiteInfo(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaSiteInfo),
 				errors,
 			})
 	const powerwalls = isMock
@@ -314,6 +348,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'powerwalls',
 				fn: () => getTeslaPowerwalls(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaPowerwalls),
 				errors,
 			})
 	const solarPowerwall = isMock
@@ -325,6 +360,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'solar_powerwall',
 				fn: () => getTeslaSolarPowerwall(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaSolarPowerwall),
 				errors,
 			})
 	const generators = isMock
@@ -336,6 +372,7 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'generators',
 				fn: () => getTeslaGenerators(session),
+				onUnauthorized: () => retryAfterUnauthorized(getTeslaGenerators),
 				errors,
 			})
 	const systemUpdateStatus = isMock
@@ -347,6 +384,8 @@ async function fetchLiveFromGateway(input: {
 		: await safeFetch({
 				label: 'system/update/status',
 				fn: () => getTeslaSystemUpdateStatus(session),
+				onUnauthorized: () =>
+					retryAfterUnauthorized(getTeslaSystemUpdateStatus),
 				errors,
 			})
 
@@ -391,6 +430,7 @@ export type TeslaGatewayExportLimitInfo = {
 	exportLimitWatts: number | null
 	exportLimitKw: number | null
 	source:
+		| 'site_info.max_site_export_power_kW'
 		| 'site_info.max_site_meter_power_ac'
 		| 'system_status.solar_real_power_limit'
 		| 'site_info.max_system_power_kW'
@@ -404,6 +444,16 @@ function pickExportLimit(
 		typeof snapshot.siteInfo?.site_name === 'string'
 			? snapshot.siteInfo.site_name
 			: null
+	if (typeof snapshot.siteInfo?.max_site_export_power_kW === 'number') {
+		const kW = snapshot.siteInfo.max_site_export_power_kW
+		return {
+			gatewayId: snapshot.gateway.gatewayId,
+			siteName,
+			exportLimitWatts: Math.round(kW * 1_000),
+			exportLimitKw: kW,
+			source: 'site_info.max_site_export_power_kW',
+		}
+	}
 	if (typeof snapshot.siteInfo?.max_site_meter_power_ac === 'number') {
 		const watts = snapshot.siteInfo.max_site_meter_power_ac
 		return {
@@ -479,7 +529,14 @@ export function createTeslaGatewayAdapter(input: {
 				config.mocksEnabled && result.gateways.length === 0
 					? listMockTeslaGatewayDiscoveryEntries()
 					: result.gateways
-			upsertDiscoveredTeslaGateways(storage, connectorId, gateways)
+			const discoveryWasFallbackToMocks =
+				config.mocksEnabled && result.gateways.length === 0
+			upsertDiscoveredTeslaGateways(storage, connectorId, gateways, {
+				pruneMissing:
+					discoveryWasFallbackToMocks ||
+					result.diagnostics.errors.length === 0 ||
+					result.gateways.length > 0,
+			})
 			return listGateways()
 		},
 		getStatus() {
@@ -499,14 +556,13 @@ export function createTeslaGatewayAdapter(input: {
 			customerEmailLabel?: string
 		}) {
 			requireTeslaGateway(storage, connectorId, input.gatewayId)
+			const customerEmailLabel = input.customerEmailLabel?.trim()
 			saveTeslaGatewayCredentials({
 				storage,
 				connectorId,
 				gatewayId: input.gatewayId,
 				password: input.password,
-				...(input.customerEmailLabel
-					? { customerEmailLabel: input.customerEmailLabel }
-					: {}),
+				...(customerEmailLabel ? { customerEmailLabel } : {}),
 			})
 			dropSession(connectorId, input.gatewayId)
 			return toPublicTeslaGateway(
@@ -552,7 +608,12 @@ export function createTeslaGatewayAdapter(input: {
 		async findExportLimit(
 			gatewayId: string,
 		): Promise<TeslaGatewayExportLimitInfo> {
-			const snapshot = await this.getLiveSnapshot(gatewayId)
+			const gateway = requireTeslaGateway(storage, connectorId, gatewayId)
+			const snapshot = await fetchLiveFromGateway({
+				storage,
+				connectorId,
+				gateway,
+			})
 			return pickExportLimit(snapshot)
 		},
 		async findAllExportLimits(): Promise<Array<TeslaGatewayExportLimitInfo>> {

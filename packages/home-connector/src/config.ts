@@ -206,9 +206,12 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		explicitJellyfishCidrs.length > 0
 			? explicitJellyfishCidrs
 			: deriveJellyfishAutoscanCidrs()
+	const teslaGatewayDiscoveryUrl =
+		process.env.TESLA_GATEWAY_DISCOVERY_URL?.trim() || null
 	const explicitTeslaCidrs = resolveScanCidrsFromEnv('TESLA_GATEWAY_SCAN_CIDRS')
-	const teslaGatewayScanCidrs =
-		explicitTeslaCidrs.length > 0
+	const teslaGatewayScanCidrs = teslaGatewayDiscoveryUrl
+		? explicitTeslaCidrs
+		: explicitTeslaCidrs.length > 0
 			? explicitTeslaCidrs
 			: derivePrivateAutoscanCidrsFromInterfaces(networkInterfaces())
 	return {
@@ -233,8 +236,7 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		venstarScanCidrs,
 		jellyfishScanCidrs,
 		teslaGatewayScanCidrs,
-		teslaGatewayDiscoveryUrl:
-			process.env.TESLA_GATEWAY_DISCOVERY_URL?.trim() || null,
+		teslaGatewayDiscoveryUrl,
 		dataPath,
 		dbPath: resolveHomeConnectorDbPath(dataPath),
 		port: Number.isFinite(port) ? port : 4040,

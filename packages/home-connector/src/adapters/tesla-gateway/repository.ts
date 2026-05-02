@@ -133,10 +133,11 @@ function mapRow(
 export function toPublicTeslaGateway(
 	gateway: TeslaGatewayPersistedRecord,
 ): TeslaGatewayPublicRecord {
-	const { password, ...rest } = gateway
+	const { customerEmailLabel, password, ...rest } = gateway
 	return {
 		...rest,
 		hasStoredCredentials: password !== null && password !== '',
+		hasCustomCustomerEmailLabel: customerEmailLabel !== DEFAULT_EMAIL_LABEL,
 	}
 }
 
@@ -327,6 +328,7 @@ export function upsertDiscoveredTeslaGateways(
 	storage: HomeConnectorStorage,
 	connectorId: string,
 	gateways: Array<TeslaGatewayDiscoveredGateway>,
+	options: { pruneMissing?: boolean } = {},
 ) {
 	const now = new Date().toISOString()
 	const upsert = getUpsertGatewayStatement(storage)
@@ -354,8 +356,10 @@ export function upsertDiscoveredTeslaGateways(
 			now,
 		)
 	}
-	const ids = JSON.stringify(gateways.map((gateway) => gateway.gatewayId))
-	getDeleteMissingGatewaysStatement(storage).run(connectorId, ids)
+	if (options.pruneMissing ?? true) {
+		const ids = JSON.stringify(gateways.map((gateway) => gateway.gatewayId))
+		getDeleteMissingGatewaysStatement(storage).run(connectorId, ids)
+	}
 	return listTeslaGateways(storage, connectorId)
 }
 

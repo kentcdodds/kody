@@ -82,6 +82,8 @@ test('setCredentials, authenticate, and live snapshot exercise the full happy pa
 	})
 	const authed = await env.adapter.authenticate(gatewayId)
 	expect(authed.hasStoredCredentials).toBe(true)
+	expect(authed.hasCustomCustomerEmailLabel).toBe(true)
+	expect('customerEmailLabel' in authed).toBe(false)
 	expect(authed.lastAuthError).toBeNull()
 	expect(authed.lastAuthenticatedAt).toBeTruthy()
 
@@ -89,23 +91,25 @@ test('setCredentials, authenticate, and live snapshot exercise the full happy pa
 	expect(Object.keys(snapshot.fetchErrors)).toEqual([])
 	expect(snapshot.gateway.din).toMatch(/--GF/)
 	expect(snapshot.gateway.serialNumber).toBeTruthy()
-	expect(snapshot.systemStatus?.solar_real_power_limit).toBe(25_000)
-	expect(snapshot.siteInfo?.max_site_meter_power_ac).toBe(25_000)
+	expect(snapshot.systemStatus?.solar_real_power_limit).toBe(21_000)
+	expect(snapshot.siteInfo?.max_site_export_power_kW).toBe(21)
+	expect(snapshot.siteInfo?.max_site_meter_power_ac).toBe(40_000)
 	expect(snapshot.gridStatus?.grid_status).toBe('SystemGridConnected')
 	expect(snapshot.soe?.percentage).toBeGreaterThanOrEqual(0)
 	expect(snapshot.meters?.solar?.instant_power).toBe(6_700)
 	expect(snapshot.powerwalls?.powerwalls?.length ?? 0).toBe(3)
 })
 
-test('findExportLimit prefers max_site_meter_power_ac and reports source', async () => {
+test('findExportLimit prefers the dedicated export cap field and works when destructured', async () => {
 	using env = makeAdapter()
 	await env.adapter.scan()
 	const gatewayId = 'tesla-gateway-mock-home-1'
 	env.adapter.setCredentials({ gatewayId, password: 'mock-password' })
-	const info = await env.adapter.findExportLimit(gatewayId)
-	expect(info.exportLimitKw).toBe(25)
-	expect(info.exportLimitWatts).toBe(25_000)
-	expect(info.source).toBe('site_info.max_site_meter_power_ac')
+	const { findExportLimit } = env.adapter
+	const info = await findExportLimit(gatewayId)
+	expect(info.exportLimitKw).toBe(21)
+	expect(info.exportLimitWatts).toBe(21_000)
+	expect(info.source).toBe('site_info.max_site_export_power_kW')
 })
 
 test('findAllExportLimits surfaces the configured cap for every gateway', async () => {
@@ -126,7 +130,7 @@ test('findAllExportLimits surfaces the configured cap for every gateway', async 
 	expect(
 		results.find((entry) => entry.gatewayId === 'tesla-gateway-mock-home-1')
 			?.exportLimitKw,
-	).toBe(25)
+	).toBe(21)
 	expect(
 		results.find((entry) => entry.gatewayId === 'tesla-gateway-mock-home-2')
 			?.exportLimitKw,
