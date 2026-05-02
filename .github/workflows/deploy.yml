@@ -232,9 +232,3 @@ jobs:
             -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
             -H "Accept: application/json" \
             "${base}/__maintenance/reindex-capabilities"
-          echo "POST ${base}/__maintenance/reindex-skills"
-          curl --fail --silent --show-error --location --max-time 300 \
-            -X POST \
-            -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
-            -H "Accept: application/json" \
-            "${base}/__maintenance/reindex-skills"

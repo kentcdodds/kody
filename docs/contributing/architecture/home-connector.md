@@ -7,6 +7,21 @@ It is a **remote connector** with `kind: home`. The wire protocol, URL shapes,
 and secret configuration for **any** outbound connector are documented in
 [Remote connectors](./remote-connectors.md).
 
+## Public-vs-internal boundary
+
+The connector URL paths (for example `/home/connectors/default/...`) are
+**WebSocket-only** on the public internet. The Worker entrypoint rejects
+non-WebSocket HTTP requests to connector routes with `404` before they reach the
+`HomeConnectorSession` Durable Object, and the DO `fetch()` handler itself also
+rejects non-upgrade HTTP with `404` as a second layer.
+
+Worker-internal code that needs snapshot or tool data (such as
+`packages/worker/src/home/client.ts`) calls Durable Object RPC methods directly
+on the stub (`getSnapshot()`, `rpcListTools()`, `rpcCallTool()`), bypassing
+`fetch()` entirely. See
+[Remote connectors § Internal access](./remote-connectors.md#internal-access-do-rpc-not-http)
+for details.
+
 ## Current adapters
 
 The connector exposes these local-device families:

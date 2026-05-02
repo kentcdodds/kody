@@ -38,6 +38,8 @@ import {
 	isPackageInvocationApiRequest,
 } from './package-invocations/http.ts'
 import { withCors } from './utils.ts'
+import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
+import { getRequestIp } from '#app/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
@@ -108,6 +110,33 @@ const appHandler = withCors({
 	async handler(request, env, ctx) {
 		const url = new URL(request.url)
 
+		if (
+			request.method === 'POST' &&
+			(url.pathname === '/auth' || url.pathname === '/password-reset')
+		) {
+			const ip = getRequestIp(request) ?? 'unknown'
+			const rateLimitKey = `auth:ip:${ip}`
+			const result = await checkRateLimit(
+				env.APP_DB,
+				rateLimitKey,
+				authRateLimitConfig,
+			)
+			if (!result.allowed) {
+				return new Response(
+					JSON.stringify({
+						error: 'Too many requests. Please try again later.',
+					}),
+					{
+						status: 429,
+						headers: {
+							'Content-Type': 'application/json',
+							'Retry-After': String(result.retryAfterSeconds ?? 60),
+						},
+					},
+				)
+			}
+		}
+
 		if (url.pathname === '/__maintenance/reindex-capabilities') {
 			return handleCapabilityReindexRequest(request, env)
 		}
@@ -118,6 +147,13 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/reindex-jobs') {
 			return handleJobReindexRequest(request, env)
+		}
+
+		if (url.pathname.startsWith('/__maintenance/')) {
+			return Response.json(
+				{ error: 'Unknown maintenance endpoint.' },
+				{ status: 404 },
+			)
 		}
 
 		if (url.pathname === oauthPaths.authorize) {
@@ -161,6 +197,9 @@ const appHandler = withCors({
 
 		const connectorRoute = parseConnectorRoutePath(url.pathname)
 		if (connectorRoute) {
+			if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+				return new Response('Not Found', { status: 404 })
+			}
 			const sessionKey = connectorSessionKey(
 				connectorRoute.kind,
 				connectorRoute.instanceId,

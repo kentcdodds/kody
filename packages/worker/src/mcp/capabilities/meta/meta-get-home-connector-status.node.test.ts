@@ -13,15 +13,13 @@ test('meta_get_home_connector_status reports a connected connector', async () =>
 					},
 					get() {
 						return {
-							fetch() {
-								return Promise.resolve(
-									Response.json({
-										connectorId: 'default',
-										connectedAt: '2026-03-25T00:00:00.000Z',
-										lastSeenAt: '2026-03-25T00:00:01.000Z',
-										tools: [{ name: 'roku_press_key' }],
-									}),
-								)
+							getSnapshot() {
+								return Promise.resolve({
+									connectorId: 'default',
+									connectedAt: '2026-03-25T00:00:00.000Z',
+									lastSeenAt: '2026-03-25T00:00:01.000Z',
+									tools: [{ name: 'roku_press_key' }],
+								})
 							},
 						}
 					},
@@ -58,8 +56,8 @@ test('meta_get_home_connector_status reports a disconnected connector', async ()
 					},
 					get() {
 						return {
-							fetch() {
-								return Promise.resolve(Response.json(null))
+							getSnapshot() {
+								return Promise.resolve(null)
 							},
 						}
 					},

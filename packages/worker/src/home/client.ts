@@ -1,8 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import {
-	connectorIngressPath,
-	connectorSessionKey,
-} from '#worker/remote-connector/connector-session-key.ts'
+import { connectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
 import { type HomeConnectorSnapshot, type HomeToolDescriptor } from './types.ts'
 
 export type HomeMcpTool = HomeToolDescriptor
@@ -16,27 +13,11 @@ export type HomeMcpClient = {
 	getSnapshot(): Promise<HomeConnectorSnapshot | null>
 }
 
-function createSessionUrl(
-	kind: string,
-	instanceId: string,
-	pathname: string,
-): string {
-	const base = connectorIngressPath(kind, instanceId)
-	return `https://home-connectors${base}${pathname}`
-}
-
 function getSessionStub(env: Env, kind: string, instanceId: string) {
 	const sessionKey = connectorSessionKey(kind, instanceId)
 	return env.HOME_CONNECTOR_SESSION.get(
 		env.HOME_CONNECTOR_SESSION.idFromName(sessionKey),
 	)
-}
-
-async function parseJsonResponse<T>(response: Response): Promise<T> {
-	if (!response.ok) {
-		throw new Error(await response.text())
-	}
-	return (await response.json()) as T
 }
 
 export function createRemoteConnectorMcpClient(
@@ -48,38 +29,13 @@ export function createRemoteConnectorMcpClient(
 
 	return {
 		async listTools() {
-			const response = await stub.fetch(
-				createSessionUrl(kind, instanceId, '/rpc/tools-list'),
-				{
-					method: 'POST',
-				},
-			)
-			const result = await parseJsonResponse<{ tools?: Array<HomeMcpTool> }>(
-				response,
-			)
-			return result.tools ?? []
+			return stub.rpcListTools()
 		},
 		async callTool(name, args) {
-			const response = await stub.fetch(
-				createSessionUrl(kind, instanceId, '/rpc/tools-call'),
-				{
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify({
-						name,
-						arguments: args ?? {},
-					}),
-				},
-			)
-			return parseJsonResponse<CallToolResult>(response)
+			return (await stub.rpcCallTool(name, args ?? {})) as CallToolResult
 		},
 		async getSnapshot() {
-			const response = await stub.fetch(
-				createSessionUrl(kind, instanceId, '/snapshot'),
-			)
-			return parseJsonResponse<HomeConnectorSnapshot | null>(response)
+			return stub.getSnapshot()
 		},
 	}
 }

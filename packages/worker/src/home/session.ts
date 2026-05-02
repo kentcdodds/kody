@@ -13,7 +13,6 @@ import {
 	createJsonRpcRequest,
 	parseHomeConnectorMessage,
 	parseJsonRpcMessage,
-	jsonResponse,
 	stringifyHomeConnectorMessage,
 } from './utils.ts'
 import { connectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
@@ -99,48 +98,13 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	async fetch(request: Request): Promise<Response> {
-		const url = new URL(request.url)
 		if (request.headers.get('Upgrade') === 'websocket') {
 			const sessionKeyHeader = request.headers
 				.get('X-Kody-Connector-Session-Key')
 				?.trim()
 			return this.handleWebSocketUpgrade(sessionKeyHeader || null)
 		}
-		if (request.method === 'GET' && url.pathname.endsWith('/snapshot')) {
-			return jsonResponse(await this.getSnapshot())
-		}
-		if (request.method === 'POST' && url.pathname.endsWith('/rpc/tools-list')) {
-			const response = await this.sendRpcRequest('tools/list', {})
-			if ('error' in response) {
-				return new Response(response.error.message, { status: 502 })
-			}
-			return jsonResponse(response.result)
-		}
-		if (request.method === 'POST' && url.pathname.endsWith('/rpc/tools-call')) {
-			const body = (await request.json()) as {
-				name: string
-				arguments?: Record<string, unknown>
-			}
-			const response = await this.sendRpcRequest('tools/call', {
-				name: body.name,
-				arguments: body.arguments ?? {},
-			})
-			if ('error' in response) {
-				return new Response(response.error.message, { status: 502 })
-			}
-			return jsonResponse(response.result)
-		}
-		if (request.method === 'POST' && url.pathname.endsWith('/rpc/jsonrpc')) {
-			const body = (await request.json()) as {
-				message?: JSONRPCMessage
-			}
-			if (!body.message) {
-				return new Response('Missing JSON-RPC message.', { status: 400 })
-			}
-			const response = await this.forwardJsonRpc(body.message)
-			return jsonResponse(response)
-		}
-		return new Response('Not found', { status: 404 })
+		return new Response('Not Found', { status: 404 })
 	}
 
 	webSocketMessage(
@@ -205,6 +169,31 @@ class HomeConnectorSessionBase extends DurableObject<Env> {
 
 	async getConnectorId() {
 		return this.stateSnapshot.persisted.connectorId
+	}
+
+	async rpcListTools() {
+		const response = await this.sendRpcRequest('tools/list', {})
+		if ('error' in response) {
+			throw new Error(response.error.message)
+		}
+		return (
+			(
+				response.result as {
+					tools?: Array<HomeConnectorSnapshot['tools'][number]>
+				}
+			).tools ?? []
+		)
+	}
+
+	async rpcCallTool(name: string, args: Record<string, unknown>) {
+		const response = await this.sendRpcRequest('tools/call', {
+			name,
+			arguments: args,
+		})
+		if ('error' in response) {
+			throw new Error(response.error.message)
+		}
+		return response.result
 	}
 
 	async forwardJsonRpc(message: JSONRPCMessage) {

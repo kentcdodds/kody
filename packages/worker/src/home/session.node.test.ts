@@ -103,10 +103,8 @@ test('constructor restores persisted state through blockConcurrencyWhile', async
 	await waitForRestoreState(state)
 
 	expect(state.blockConcurrencyWhile).toHaveBeenCalledTimes(1)
-	const response = await session.fetch(
-		new Request('https://home-connectors/home/connectors/default/snapshot'),
-	)
-	expect(await response.json()).toMatchObject({
+	const snapshot = await session.getSnapshot()
+	expect(snapshot).toMatchObject({
 		connectorId: 'default',
 		tools: [{ name: 'bond_shade_set_position' }],
 	})
@@ -137,10 +135,8 @@ test('snapshot returns null when persisted connector has no live websocket', asy
 
 	await waitForRestoreState(state)
 
-	const response = await session.fetch(
-		new Request('https://home-connectors/home/connectors/default/snapshot'),
-	)
-	expect(await response.json()).toBeNull()
+	const snapshot = await session.getSnapshot()
+	expect(snapshot).toBeNull()
 })
 
 test('websocket close clears connectedAt and tools from persisted state', async () => {

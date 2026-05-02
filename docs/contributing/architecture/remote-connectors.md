@@ -75,12 +75,20 @@ reference implementation in `packages/home-connector` **proactively** sends
 `notifications/tools/list_changed` **to** the Worker right after
 **`server.ack`** so the session performs an initial tool snapshot refresh.
 
-## HTTP helper endpoints (same origin)
+## Internal access (DO RPC, not HTTP)
 
-The same Durable Object serves snapshot and RPC helpers on paths **under the
-connector URL** (for example `/snapshot`, `/rpc/tools-list`). External connector
-authors normally only need the **WebSocket**; Worker-internal code uses these
-for bridging.
+Worker-internal code that needs snapshot or tool data from a connector session
+(such as `packages/worker/src/home/client.ts`) calls **Durable Object RPC
+methods** directly on the stub — `getSnapshot()`, `rpcListTools()`,
+`rpcCallTool()`, `forwardJsonRpc()`. These are plain method calls that never
+pass through the DO's `fetch()` handler.
+
+The DO's `fetch()` handler **only** accepts WebSocket upgrade requests. All
+non-upgrade HTTP requests return `404`. The Worker entrypoint provides the first
+layer of defense by rejecting non-WebSocket connector route requests before they
+reach the DO; the DO `fetch()` handler provides the second layer.
+
+External connector authors only need the **WebSocket**.
 
 ## Worker-side attachment (MCP caller context)
 

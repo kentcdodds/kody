@@ -8,9 +8,7 @@ import {
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-codemode-registry.ts'
-import {
-	PackageSecretMountError,
-} from '#mcp/secrets/package-access.ts'
+import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import {
@@ -36,57 +34,42 @@ test('buildCodemodeFns resolves annotated home capability secret placeholders', 
 			},
 			get() {
 				return {
-					async fetch(input: string | URL | Request, init?: RequestInit) {
-						const url = new URL(
-							typeof input === 'string'
-								? input
-								: input instanceof URL
-									? input.toString()
-									: input.url,
-						)
-						if (url.pathname.endsWith('/snapshot')) {
-							return Response.json({
-								connectorId: 'default',
-								connectedAt: '2026-03-27T00:00:00.000Z',
-								lastSeenAt: '2026-03-27T00:00:01.000Z',
-								tools: [
-									{
-										name: 'lutron_set_credentials',
-										title: 'Set Lutron Credentials',
-										description: 'Store Lutron credentials.',
-										inputSchema: {
-											type: 'object',
-											properties: {
-												processorId: { type: 'string' },
-												username: {
-													type: 'string',
-													'x-kody-secret': true,
-												},
-												password: {
-													type: 'string',
-													'x-kody-secret': true,
-												},
+					async getSnapshot() {
+						return {
+							connectorId: 'default',
+							connectedAt: '2026-03-27T00:00:00.000Z',
+							lastSeenAt: '2026-03-27T00:00:01.000Z',
+							tools: [
+								{
+									name: 'lutron_set_credentials',
+									title: 'Set Lutron Credentials',
+									description: 'Store Lutron credentials.',
+									inputSchema: {
+										type: 'object',
+										properties: {
+											processorId: { type: 'string' },
+											username: {
+												type: 'string',
+												'x-kody-secret': true,
 											},
-											required: ['processorId', 'username', 'password'],
+											password: {
+												type: 'string',
+												'x-kody-secret': true,
+											},
 										},
+										required: ['processorId', 'username', 'password'],
 									},
-								],
-							})
-						}
-
-						if (url.pathname.endsWith('/rpc/tools-call')) {
-							const requestBody = JSON.parse(String(init?.body ?? '{}')) as {
-								arguments?: Record<string, unknown>
-							}
-							toolArguments = requestBody.arguments ?? null
-							return Response.json({
-								structuredContent: {
-									ok: true,
 								},
-							})
+							],
 						}
-
-						throw new Error(`Unexpected fetch to ${url.pathname}`)
+					},
+					async rpcCallTool(name: string, args: Record<string, unknown>) {
+						toolArguments = args
+						return {
+							structuredContent: {
+								ok: true,
+							},
+						}
 					},
 				}
 			},
@@ -136,40 +119,29 @@ test('buildCodemodeFns denies capability secret placeholders for disallowed capa
 			},
 			get() {
 				return {
-					async fetch(input: string | URL | Request) {
-						const url = new URL(
-							typeof input === 'string'
-								? input
-								: input instanceof URL
-									? input.toString()
-									: input.url,
-						)
-						if (url.pathname.endsWith('/snapshot')) {
-							return Response.json({
-								connectorId: 'default',
-								connectedAt: '2026-03-27T00:00:00.000Z',
-								lastSeenAt: '2026-03-27T00:00:01.000Z',
-								tools: [
-									{
-										name: 'lutron_set_credentials',
-										title: 'Set Lutron Credentials',
-										description: 'Store Lutron credentials.',
-										inputSchema: {
-											type: 'object',
-											properties: {
-												username: {
-													type: 'string',
-													'x-kody-secret': true,
-												},
+					async getSnapshot() {
+						return {
+							connectorId: 'default',
+							connectedAt: '2026-03-27T00:00:00.000Z',
+							lastSeenAt: '2026-03-27T00:00:01.000Z',
+							tools: [
+								{
+									name: 'lutron_set_credentials',
+									title: 'Set Lutron Credentials',
+									description: 'Store Lutron credentials.',
+									inputSchema: {
+										type: 'object',
+										properties: {
+											username: {
+												type: 'string',
+												'x-kody-secret': true,
 											},
-											required: ['username'],
 										},
+										required: ['username'],
 									},
-								],
-							})
+								},
+							],
 						}
-
-						throw new Error(`Unexpected fetch to ${url.pathname}`)
 					},
 				}
 			},
@@ -877,7 +849,8 @@ test('runCodemodeWithRegistry forwards package context for module syntax', async
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null = null
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
 	const resolvePackageMountedSecretSpy = vi
 		.spyOn(packageAccess, 'resolvePackageMountedSecret')
 		.mockImplementation(async ({ alias }) => {
@@ -917,16 +890,24 @@ test('runCodemodeWithRegistry forwards package context for module syntax', async
 export default async function run() {
 	return packageContext?.packageId ?? null
 }`
-		const result = await runCodemodeWithRegistry(env, callerContext, code, undefined, {
-			packageContext: {
-				packageId: 'package-123',
-				kodyId: 'discord-gateway',
+		const result = await runCodemodeWithRegistry(
+			env,
+			callerContext,
+			code,
+			undefined,
+			{
+				packageContext: {
+					packageId: 'package-123',
+					kodyId: 'discord-gateway',
+				},
 			},
-		})
+		)
 
 		expect(result.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
-		await expect(providerFns?.package_secret_has({ alias: 'token' })).resolves.toEqual({
+		await expect(
+			providerFns?.package_secret_has({ alias: 'token' }),
+		).resolves.toEqual({
 			has: true,
 		})
 		await expect(
@@ -934,7 +915,9 @@ export default async function run() {
 		).resolves.toEqual({
 			has: false,
 		})
-		await expect(providerFns?.package_secret_get({ alias: 'token' })).resolves.toEqual({
+		await expect(
+			providerFns?.package_secret_get({ alias: 'token' }),
+		).resolves.toEqual({
 			value: 'bot-token',
 		})
 		expect(resolvePackageMountedSecretSpy).toHaveBeenCalledWith({
@@ -1018,7 +1001,8 @@ test('runBundledModuleWithRegistry injects service helpers and custom timeout', 
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null = null
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockImplementation((input) => {
@@ -1109,7 +1093,8 @@ test('runBundledModuleWithRegistry injects email helpers', async () => {
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null = null
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
@@ -1139,7 +1124,10 @@ test('runBundledModuleWithRegistry injects email helpers', async () => {
 			undefined,
 			{
 				emailTools: {
-					getMessage: async (messageId) => ({ id: messageId, subject: 'Hello' }),
+					getMessage: async (messageId) => ({
+						id: messageId,
+						subject: 'Hello',
+					}),
 					getAttachment: async (attachmentId) => ({
 						id: attachmentId,
 						text: 'hello',
@@ -1194,7 +1182,8 @@ test('runModuleWithRegistry injects email helpers for module syntax', async () =
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null = null
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
@@ -1217,15 +1206,24 @@ test('runModuleWithRegistry injects email helpers for module syntax', async () =
 export default async function run() {
 	return await email.getMessage('message-1')
 }`
-		const result = await runModuleWithRegistry(env, callerContext, code, undefined, {
-			emailTools: {
-				getMessage: async (messageId) => ({ id: messageId, subject: 'Hello' }),
-				getAttachment: async (attachmentId) => ({
-					id: attachmentId,
-					text: 'hello',
-				}),
+		const result = await runModuleWithRegistry(
+			env,
+			callerContext,
+			code,
+			undefined,
+			{
+				emailTools: {
+					getMessage: async (messageId) => ({
+						id: messageId,
+						subject: 'Hello',
+					}),
+					getAttachment: async (attachmentId) => ({
+						id: attachmentId,
+						text: 'hello',
+					}),
+				},
 			},
-		})
+		)
 
 		expect(result.result).toEqual({
 			id: 'message-1',
