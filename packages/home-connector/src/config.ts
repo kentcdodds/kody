@@ -12,6 +12,8 @@ export type HomeConnectorConfig = {
 	lutronDiscoveryUrl: string
 	sonosDiscoveryUrl: string
 	bondDiscoveryUrl: string
+	bondRequestPaceMs: number
+	bondCircuitBreakerCooldownMs: number
 	jellyfishDiscoveryUrl: string | null
 	/**
 	 * Venstar discovery uses direct HTTP probes to `/query/info` across these
@@ -73,6 +75,13 @@ function resolveScanCidrsFromEnv(envVar: string): Array<string> {
 		.split(',')
 		.map((entry) => entry.trim())
 		.filter(Boolean)
+}
+
+function resolveNonNegativeIntegerFromEnv(envVar: string, fallback: number) {
+	const raw = process.env[envVar]?.trim()
+	if (!raw) return fallback
+	const parsed = Number.parseInt(raw, 10)
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
 }
 
 function isPrivateRfc1918Ipv4(parts: Array<number>) {
@@ -211,6 +220,14 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 			'ssdp://239.255.255.250:1900?st=urn:schemas-upnp-org:device:ZonePlayer:1',
 		bondDiscoveryUrl:
 			process.env.BOND_DISCOVERY_URL?.trim() || 'mdns://_bond._tcp.local',
+		bondRequestPaceMs: resolveNonNegativeIntegerFromEnv(
+			'BOND_REQUEST_PACE_MS',
+			500,
+		),
+		bondCircuitBreakerCooldownMs: resolveNonNegativeIntegerFromEnv(
+			'BOND_CIRCUIT_BREAKER_COOLDOWN_MS',
+			60_000,
+		),
 		jellyfishDiscoveryUrl: process.env.JELLYFISH_DISCOVERY_URL?.trim() || null,
 		venstarScanCidrs,
 		jellyfishScanCidrs,

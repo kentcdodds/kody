@@ -281,6 +281,36 @@ export function registerBondHomeConnectorTools(input: {
 
 	registerTool(
 		{
+			name: 'bond_get_reliability_status',
+			title: 'Get Bond Reliability Status',
+			description:
+				'Read recent Bond request pacing, cooldown, and network-failure logs for troubleshooting bridge reliability.',
+			...bridgeScopedSchema({
+				limit: z.number().int().min(1).max(200).optional(),
+			}),
+			annotations: {
+				readOnlyHint: true,
+			},
+		},
+		async (args) => {
+			const bridgeId =
+				args['bridgeId'] == null ? undefined : String(args['bridgeId'])
+			const limit = args['limit'] == null ? undefined : Number(args['limit'])
+			const status = bond.getReliabilityStatus({ bridgeId, limit })
+			return {
+				content: [
+					{
+						type: 'text' as const,
+						text: `Read Bond reliability status with ${String(status.recentRequestLogs.length)} recent request(s).`,
+					},
+				],
+				structuredContent: status,
+			}
+		},
+	)
+
+	registerTool(
+		{
 			name: 'bond_list_devices',
 			title: 'List Bond Devices',
 			description:

@@ -133,6 +133,41 @@ function initializeSchema(db: SqliteDatabase) {
 				ON DELETE CASCADE
 		);
 
+		CREATE TABLE IF NOT EXISTS bond_request_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			connector_id TEXT NOT NULL,
+			bridge_id TEXT NOT NULL,
+			operation TEXT NOT NULL,
+			status TEXT NOT NULL,
+			started_at TEXT NOT NULL,
+			finished_at TEXT NOT NULL,
+			duration_ms INTEGER NOT NULL,
+			base_urls_tried_json TEXT,
+			error_name TEXT,
+			error_message TEXT,
+			network_failure INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (connector_id, bridge_id)
+				REFERENCES bond_bridges(connector_id, bridge_id)
+				ON DELETE CASCADE
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_bond_request_logs_bridge_time
+			ON bond_request_logs(connector_id, bridge_id, started_at DESC);
+
+		CREATE TABLE IF NOT EXISTS bond_reliability_state (
+			connector_id TEXT NOT NULL,
+			bridge_id TEXT NOT NULL,
+			cooldown_until TEXT,
+			last_failure_at TEXT,
+			last_failure_reason TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, bridge_id),
+			FOREIGN KEY (connector_id, bridge_id)
+				REFERENCES bond_bridges(connector_id, bridge_id)
+				ON DELETE CASCADE
+		);
+
 		CREATE TABLE IF NOT EXISTS jellyfish_controllers (
 			connector_id TEXT NOT NULL,
 			controller_id TEXT NOT NULL,
