@@ -16,6 +16,8 @@ import { runCodemodeWithRegistry } from '#mcp/run-codemode-registry.ts'
 import { deleteSecret, listSecrets, saveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 
+const generatedUiAllowedScopes = ['session', 'app'] as const
+
 const executeRequestSchema = z.object({
 	code: z.string().min(1),
 	params: z.record(z.string(), z.unknown()).optional(),
@@ -25,12 +27,12 @@ const secretMutationSchema = z.object({
 	name: z.string().min(1),
 	value: z.string().min(1),
 	description: z.string().optional(),
-	scope: z.enum(secretScopeValues).optional(),
+	scope: z.enum(generatedUiAllowedScopes).optional(),
 })
 
 const secretDeleteSchema = z.object({
 	name: z.string().min(1),
-	scope: z.enum(secretScopeValues).optional(),
+	scope: z.enum(generatedUiAllowedScopes).optional(),
 })
 
 const generatedUiApiRoutes = route({
@@ -51,7 +53,6 @@ type GeneratedUiSessionContext = {
 	user: {
 		userId: string
 		email: string
-		displayName: string
 	}
 }
 
@@ -154,7 +155,11 @@ function createGeneratedUiExecuteHandler(env: Env) {
 				env,
 				createMcpCallerContext({
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
-					user: context.user,
+					user: {
+						userId: context.user.userId,
+						email: context.user.email,
+						displayName: '',
+					},
 					homeConnectorId: context.homeConnectorId,
 					storageContext: {
 						sessionId: context.sessionId,
@@ -250,9 +255,22 @@ function createGeneratedUiSecretsHandler(env: Env) {
 				return jsonResponse({ error: 'Method not allowed.' }, 405)
 			}
 
-			const body = secretMutationSchema.safeParse(
-				await request.json().catch(() => null),
-			)
+			const rawBody = await request.json().catch(() => null)
+			if (
+				rawBody &&
+				typeof rawBody === 'object' &&
+				'scope' in rawBody &&
+				(rawBody as Record<string, unknown>).scope === 'user'
+			) {
+				return jsonResponse(
+					{
+						error:
+							'User-scoped secret mutations are not permitted from generated UI sessions.',
+					},
+					403,
+				)
+			}
+			const body = secretMutationSchema.safeParse(rawBody)
 			if (!body.success) {
 				return jsonResponse({ error: body.error.message }, 400)
 			}
@@ -313,9 +331,22 @@ function createGeneratedUiDeleteSecretHandler(env: Env) {
 				routeId: getGeneratedUiRouteId(params),
 			})
 			if (context instanceof Response) return context
-			const body = secretDeleteSchema.safeParse(
-				await request.json().catch(() => null),
-			)
+			const rawBody = await request.json().catch(() => null)
+			if (
+				rawBody &&
+				typeof rawBody === 'object' &&
+				'scope' in rawBody &&
+				(rawBody as Record<string, unknown>).scope === 'user'
+			) {
+				return jsonResponse(
+					{
+						error:
+							'User-scoped secret mutations are not permitted from generated UI sessions.',
+					},
+					403,
+				)
+			}
+			const body = secretDeleteSchema.safeParse(rawBody)
 			if (!body.success) {
 				return jsonResponse({ error: body.error.message }, 400)
 			}

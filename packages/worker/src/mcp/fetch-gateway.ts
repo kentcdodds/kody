@@ -41,7 +41,7 @@ export class CodemodeFetchGateway extends WorkerEntrypoint<
 export async function expandSecretPlaceholders(input: {
 	request: Request
 	props: FetchGatewayProps
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET'>
+	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>
 }) {
 	const headers = new Headers(input.request.headers)
 	const requestBody = await readRequestBody(input.request)

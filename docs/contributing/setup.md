@@ -31,7 +31,10 @@ Quick notes for getting a local kody environment running.
   [`docs/contributing/d1-legacy-export.md`](./d1-legacy-export.md) and
   `tools/export-d1-remote-to-sqlite.sh`.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
-  any work, then update secrets as needed.
+  any work, then update secrets as needed. The example includes placeholder
+  values for `COOKIE_SECRET` and `SECRET_STORE_KEY`; production deploys must set
+  distinct secrets for each (see
+  [`docs/contributing/secret-rotation.md`](./secret-rotation.md)).
 - `npm run dev` (starts mock API servers automatically, the main worker, and the
   local home connector; it sets `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and
   `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
