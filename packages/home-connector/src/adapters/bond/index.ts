@@ -463,6 +463,14 @@ export function createBondAdapter(input: {
 		})
 	}
 
+	function runBestEffortPersistence(description: string, fn: () => void) {
+		try {
+			fn()
+		} catch (error) {
+			console.warn(`Bond reliability persistence failed: ${description}`, error)
+		}
+	}
+
 	function writeRequestLog(inputLog: {
 		bridge: BondPersistedBridge
 		operation: string
@@ -492,6 +500,14 @@ export function createBondAdapter(input: {
 			networkFailure: isBondNetworkFailure(inputLog.error),
 		})
 		pruneRequestLogs(inputLog.bridge.bridgeId)
+	}
+
+	function writeRequestLogBestEffort(
+		inputLog: Parameters<typeof writeRequestLog>[0],
+	) {
+		runBestEffortPersistence('write request log', () => {
+			writeRequestLog(inputLog)
+		})
 	}
 
 	function syncPersistedCooldown(
@@ -536,7 +552,7 @@ export function createBondAdapter(input: {
 					operation: requestInput.operation,
 					cooldownUntil: queueState.cooldownUntil,
 				})
-				writeRequestLog({
+				writeRequestLogBestEffort({
 					bridge: requestInput.bridge,
 					operation: requestInput.operation,
 					status: 'cooldown',
@@ -552,13 +568,17 @@ export function createBondAdapter(input: {
 				await wait(waitMs)
 			}
 			const result = await withBondBridgeRequest(requestInput)
-			markBridgeSeen(requestInput.bridge)
-			clearBondReliabilityCooldown({
-				storage: input.storage,
-				connectorId,
-				bridgeId: requestInput.bridge.bridgeId,
+			runBestEffortPersistence('mark bridge seen', () => {
+				markBridgeSeen(requestInput.bridge)
 			})
-			writeRequestLog({
+			runBestEffortPersistence('clear reliability cooldown', () => {
+				clearBondReliabilityCooldown({
+					storage: input.storage,
+					connectorId,
+					bridgeId: requestInput.bridge.bridgeId,
+				})
+			})
+			writeRequestLogBestEffort({
 				bridge: requestInput.bridge,
 				operation: requestInput.operation,
 				status: 'success',
@@ -578,20 +598,22 @@ export function createBondAdapter(input: {
 					queueState.cooldownUntil,
 					cooldownUntil,
 				)
-				saveBondReliabilityFailure({
-					storage: input.storage,
-					connectorId,
-					bridgeId: requestInput.bridge.bridgeId,
-					cooldownUntil: new Date(queueState.cooldownUntil).toISOString(),
-					failureAt: nowIso(),
-					failureReason: formatBondFailureReason(error),
+				runBestEffortPersistence('save reliability failure', () => {
+					saveBondReliabilityFailure({
+						storage: input.storage,
+						connectorId,
+						bridgeId: requestInput.bridge.bridgeId,
+						cooldownUntil: new Date(queueState.cooldownUntil).toISOString(),
+						failureAt: nowIso(),
+						failureReason: formatBondFailureReason(error),
+					})
 				})
 			}
 			if (
 				!(error instanceof Error) ||
 				error.name !== 'BondCircuitBreakerError'
 			) {
-				writeRequestLog({
+				writeRequestLogBestEffort({
 					bridge: requestInput.bridge,
 					operation: requestInput.operation,
 					status: 'failure',

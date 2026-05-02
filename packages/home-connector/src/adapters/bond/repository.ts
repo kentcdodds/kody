@@ -49,6 +49,18 @@ type BondReliabilityStateRow = {
 	updated_at: string
 }
 
+function parseBondRequestBaseUrls(value: unknown): Array<string> {
+	if (typeof value !== 'string') return []
+	try {
+		const parsed = JSON.parse(value) as unknown
+		return Array.isArray(parsed)
+			? parsed.filter((entry) => typeof entry === 'string')
+			: []
+	} catch {
+		return []
+	}
+}
+
 function mapBondBridgeRow(row: BondBridgeRow): BondPersistedBridge {
 	let rawDiscovery: Record<string, unknown> | null = null
 	if (row.raw_discovery_json) {
@@ -419,10 +431,7 @@ export function listRecentBondRequestLogs(input: {
 		startedAt: String(row['started_at']),
 		finishedAt: String(row['finished_at']),
 		durationMs: Number(row['duration_ms']),
-		baseUrlsTried:
-			typeof row['base_urls_tried_json'] === 'string'
-				? (JSON.parse(row['base_urls_tried_json']) as Array<string>)
-				: [],
+		baseUrlsTried: parseBondRequestBaseUrls(row['base_urls_tried_json']),
 		errorName:
 			typeof row['error_name'] === 'string' ? row['error_name'] : null,
 		errorMessage:
