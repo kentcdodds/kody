@@ -840,7 +840,11 @@ export function AccountSecretsRoute(handle: Handle) {
 				}),
 			})
 
-			if (editorState.currentId !== capturedSecretId) return
+			if (
+				editorState.currentId !== capturedSecretId ||
+				revealState !== 'revealing'
+			)
+				return
 
 			if (response.status === 401) {
 				const payload = await readJson<{ error?: string }>(response)
@@ -867,7 +871,11 @@ export function AccountSecretsRoute(handle: Handle) {
 			showSecretValue = true
 			handle.update()
 		} catch (error) {
-			if (editorState.currentId !== capturedSecretId) return
+			if (
+				editorState.currentId !== capturedSecretId ||
+				revealState !== 'revealing'
+			)
+				return
 			revealState = 'prompting'
 			revealError =
 				error instanceof Error ? error.message : 'Unable to reveal secret.'
