@@ -40,10 +40,6 @@ const mockModule = vi.hoisted(() => ({
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	setSecretAllowedPackages: vi.fn(async () => undefined),
 	getValue: vi.fn(async () => null),
-	logAuditEvent: vi.fn(async () => undefined),
-	getRequestIp: vi.fn(() => null),
-	dbFindOne: vi.fn(async () => null),
-	verifyPassword: vi.fn(async () => false),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -108,31 +104,12 @@ vi.mock('#mcp/values/service.ts', () => ({
 	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
 }))
 
-vi.mock('#app/audit-log.ts', () => ({
-	logAuditEvent: (...args: Array<unknown>) =>
-		mockModule.logAuditEvent(...args),
-	getRequestIp: (...args: Array<unknown>) => mockModule.getRequestIp(...args),
-}))
-
-vi.mock('#worker/db.ts', () => ({
-	createDb: () => ({
-		findOne: (...args: Array<unknown>) => mockModule.dbFindOne(...args),
-	}),
-	usersTable: 'users',
-}))
-
-vi.mock('@kody-internal/shared/password-hash.ts', () => ({
-	verifyPassword: (...args: Array<unknown>) =>
-		mockModule.verifyPassword(...args),
-}))
-
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: (...args: Array<unknown>) =>
 		mockModule.listSavedPackagesByUserId(...args),
 }))
 
-const { createAccountSecretsApiHandler, createAccountSecretRevealHandler } =
-	await import('./account-secrets.ts')
+const { createAccountSecretsApiHandler } = await import('./account-secrets.ts')
 
 function createEnv() {
 	return {
@@ -564,7 +541,7 @@ test('package approval approve deduplicates allowed package ids', async () => {
 	)
 })
 
-test('GET /account/secrets.json keeps selected metadata without decrypted value', async () => {
+test('GET /account/secrets.json includes selected secret value for editing', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'myApiKey',
@@ -581,6 +558,10 @@ test('GET /account/secrets.json keeps selected metadata without decrypted value'
 	])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listAppSecretsByAppIds.mockResolvedValueOnce(new Map())
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'seeded-secret-value',
+	})
 
 	const handler = createAccountSecretsApiHandler(createEnv())
 	const response = await handler.handler({
@@ -597,95 +578,12 @@ test('GET /account/secrets.json keeps selected metadata without decrypted value'
 	expect(payload.selectedSecret).toBeDefined()
 	expect(payload.selectedSecret.name).toBe('myApiKey')
 	expect(payload.selectedSecret.description).toBe('API key')
-	expect(payload.selectedSecret).not.toHaveProperty('value')
-	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
-})
-
-test('POST /account/secrets/reveal without password returns 401', async () => {
-	const handler = createAccountSecretRevealHandler(createEnv())
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets/reveal', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ secretId: 'user::::myApiKey' }),
-		}),
-	})
-
-	expect(response.status).toBe(401)
-	const payload = await response.json()
-	expect(payload.ok).toBe(false)
-})
-
-test('POST /account/secrets/reveal with wrong password returns 401', async () => {
-	mockModule.dbFindOne.mockResolvedValueOnce({
-		id: 42,
-		email: 'user@example.com',
-		password_hash:
-			'pbkdf2_sha256$100000$0000000000000000$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-	})
-	mockModule.verifyPassword.mockResolvedValueOnce(false)
-
-	const handler = createAccountSecretRevealHandler(createEnv())
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets/reveal', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				secretId: 'user::::myApiKey',
-				password: 'wrong-password',
-			}),
-		}),
-	})
-
-	expect(response.status).toBe(401)
-	const payload = await response.json()
-	expect(payload.ok).toBe(false)
-	expect(payload.error).toBe('Invalid password.')
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
+	expect(payload.selectedSecret.value).toBe('seeded-secret-value')
+	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
-			category: 'auth',
-			action: 'secret_reveal',
-			result: 'failure',
-			reason: 'invalid_password',
-		}),
-	)
-})
-
-test('POST /account/secrets/reveal with valid reauth returns plaintext and writes audit log', async () => {
-	mockModule.dbFindOne.mockResolvedValueOnce({
-		id: 42,
-		email: 'user@example.com',
-		password_hash:
-			'pbkdf2_sha256$100000$0000000000000000$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-	})
-	mockModule.verifyPassword.mockResolvedValueOnce(true)
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'the-actual-secret-value',
-	})
-
-	const handler = createAccountSecretRevealHandler(createEnv())
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets/reveal', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				secretId: 'user::::myApiKey',
-				password: 'correct-password',
-			}),
-		}),
-	})
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Cache-Control')).toBe('no-store')
-	const payload = await response.json()
-	expect(payload.ok).toBe(true)
-	expect(payload.value).toBe('the-actual-secret-value')
-	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'secret_reveal',
-			result: 'success',
+			name: 'myApiKey',
+			scope: 'user',
+			storageContext: { appId: null, sessionId: null },
 		}),
 	)
 })

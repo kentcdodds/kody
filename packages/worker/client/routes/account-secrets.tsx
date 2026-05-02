@@ -66,7 +66,9 @@ type SecretListItem = {
 	ttlMs: number | null
 }
 
-type SecretDetail = SecretListItem
+type SecretDetail = SecretListItem & {
+	value: string
+}
 
 type AccountSecretsPayload = {
 	ok: true
@@ -176,7 +178,7 @@ function createEditorStateFromSecret(secret: SecretDetail): EditorState {
 		scope: secret.scope,
 		appId: secret.appId ?? '',
 		description: secret.description,
-		value: '',
+		value: secret.value,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
 			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
@@ -462,9 +464,6 @@ export function AccountSecretsRoute(handle: Handle) {
 	let loadRequestId = 0
 	let retryTimeout: ReturnType<typeof setTimeout> | null = null
 	let showSecretValue = false
-	let revealState: 'idle' | 'prompting' | 'revealing' | 'revealed' = 'idle'
-	let revealPassword = ''
-	let revealError: string | null = null
 	const deleteSecretCheck = createDoubleCheck(handle)
 	const filterAppCombobox = TypeaheadCombobox(handle)
 	const editorAppCombobox = TypeaheadCombobox(handle)
@@ -494,9 +493,6 @@ export function AccountSecretsRoute(handle: Handle) {
 	function syncEditorState(selection: SelectionState) {
 		deleteSecretCheck.reset()
 		showSecretValue = false
-		revealState = 'idle'
-		revealPassword = ''
-		revealError = null
 		const capabilityPrefill = readCapabilityPrefill(getCurrentHref())
 		if (selection.isCreating) {
 			editorState = applyCapabilityPrefill(
@@ -809,76 +805,6 @@ export function AccountSecretsRoute(handle: Handle) {
 			saveState = 'idle'
 			message =
 				error instanceof Error ? error.message : 'Unable to delete secret.'
-			handle.update()
-		}
-	}
-
-	async function revealSecretValue() {
-		if (!editorState.currentId || revealState === 'revealing') return
-		if (!revealPassword.trim()) {
-			revealError = 'Password is required.'
-			handle.update()
-			return
-		}
-
-		const capturedSecretId = editorState.currentId
-		revealState = 'revealing'
-		revealError = null
-		handle.update()
-
-		try {
-			const response = await fetch('/account/secrets/reveal', {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					secretId: capturedSecretId,
-					password: revealPassword,
-				}),
-			})
-
-			if (
-				editorState.currentId !== capturedSecretId ||
-				revealState !== 'revealing'
-			)
-				return
-
-			if (response.status === 401) {
-				const payload = await readJson<{ error?: string }>(response)
-				revealState = 'prompting'
-				revealError = payload?.error ?? 'Invalid password.'
-				revealPassword = ''
-				handle.update()
-				return
-			}
-
-			const payload = await readJson<{
-				ok?: boolean
-				value?: string
-				error?: string
-			}>(response)
-			if (!response.ok || !payload?.ok || typeof payload.value !== 'string') {
-				throw new Error(payload?.error ?? 'Unable to reveal secret.')
-			}
-
-			editorState = { ...editorState, value: payload.value }
-			revealState = 'revealed'
-			revealPassword = ''
-			revealError = null
-			showSecretValue = true
-			handle.update()
-		} catch (error) {
-			if (
-				editorState.currentId !== capturedSecretId ||
-				revealState !== 'revealing'
-			)
-				return
-			revealState = 'prompting'
-			revealError =
-				error instanceof Error ? error.message : 'Unable to reveal secret.'
 			handle.update()
 		}
 	}
@@ -1545,149 +1471,39 @@ export function AccountSecretsRoute(handle: Handle) {
 										})
 									: null}
 
-							<SecretEditorFields
-								description={editorState.description}
-								onDescriptionChange={(description) => {
-									editorState = {
-										...editorState,
-										description,
-									}
-									handle.update()
-								}}
-								value={editorState.value}
-								onValueChange={(value) => {
-									editorState = {
-										...editorState,
-										value,
-									}
-									handle.update()
-								}}
-								showSecretValue={showSecretValue}
-								onToggleShowSecretValue={() => {
-									showSecretValue = !showSecretValue
-									handle.update()
-								}}
-								allowedHosts={editorState.allowedHosts}
-								onUpdateAllowedHost={updateAllowedHost}
-								onAddAllowedHost={addAllowedHost}
-								onRemoveAllowedHost={removeAllowedHost}
-								allowedCapabilities={editorState.allowedCapabilities}
-								onUpdateAllowedCapability={updateAllowedCapability}
-								onAddAllowedCapability={addAllowedCapability}
-								onRemoveAllowedCapability={removeAllowedCapability}
-								allowedHostsListName="allowed-hosts"
-								allowedCapabilitiesListName="allowed-capabilities"
-							/>
-
-							{editorState.currentId &&
-							revealState !== 'revealed' ? (
-								<div
-									mix={css({
-										display: 'grid',
-										gap: spacing.sm,
-										padding: spacing.md,
-										borderRadius: radius.md,
-										border: `1px solid ${colors.border}`,
-										backgroundColor: colors.background,
-									})}
-								>
-									<span mix={css(fieldLabelCss)}>
-										Reveal current value
-									</span>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Re-enter your account password to view the stored value.
-									</p>
-									{revealState === 'prompting' ||
-									revealState === 'revealing' ? (
-										<>
-											<input
-												type="password"
-												autoComplete="current-password"
-												placeholder="Account password"
-												aria-label="Account password for reveal"
-												value={revealPassword}
-												disabled={revealState === 'revealing'}
-												mix={[
-													on(
-														'input',
-														(event) => {
-															revealPassword = event.currentTarget.value
-															revealError = null
-															handle.update()
-														},
-													),
-													on('keydown', (event) => {
-														if (event.key === 'Enter') {
-															event.preventDefault()
-															void revealSecretValue()
-														}
-													}),
-													css(inputCss),
-												]}
-											/>
-											{revealError ? (
-												<p
-													role="alert"
-													mix={css({
-														margin: 0,
-														color: colors.error,
-													})}
-												>
-													{revealError}
-												</p>
-											) : null}
-											<div
-												mix={css({
-													display: 'flex',
-													gap: spacing.sm,
-												})}
-											>
-												<button
-													type="button"
-													disabled={revealState === 'revealing'}
-													mix={[
-														on('click', () => void revealSecretValue()),
-														css(primaryButtonCss),
-													]}
-												>
-													{revealState === 'revealing'
-														? 'Verifying...'
-														: 'Confirm'}
-												</button>
-												<button
-													type="button"
-													mix={[
-														on('click', () => {
-															revealState = 'idle'
-															revealPassword = ''
-															revealError = null
-															handle.update()
-														}),
-														css(secondaryButtonCss),
-													]}
-												>
-													Cancel
-												</button>
-											</div>
-										</>
-									) : (
-										<div>
-											<button
-												type="button"
-												mix={[
-													on('click', () => {
-														revealState = 'prompting'
-														handle.update()
-													}),
-													css(secondaryButtonCss),
-												]}
-											>
-												Reveal value
-											</button>
-										</div>
-									)}
-								</div>
-							) : null}
+								<SecretEditorFields
+									description={editorState.description}
+									onDescriptionChange={(description) => {
+										editorState = {
+											...editorState,
+											description,
+										}
+										handle.update()
+									}}
+									value={editorState.value}
+									onValueChange={(value) => {
+										editorState = {
+											...editorState,
+											value,
+										}
+										handle.update()
+									}}
+									showSecretValue={showSecretValue}
+									onToggleShowSecretValue={() => {
+										showSecretValue = !showSecretValue
+										handle.update()
+									}}
+									allowedHosts={editorState.allowedHosts}
+									onUpdateAllowedHost={updateAllowedHost}
+									onAddAllowedHost={addAllowedHost}
+									onRemoveAllowedHost={removeAllowedHost}
+									allowedCapabilities={editorState.allowedCapabilities}
+									onUpdateAllowedCapability={updateAllowedCapability}
+									onAddAllowedCapability={addAllowedCapability}
+									onRemoveAllowedCapability={removeAllowedCapability}
+									allowedHostsListName="allowed-hosts"
+									allowedCapabilitiesListName="allowed-capabilities"
+								/>
 
 								<div mix={css({ display: 'grid', gap: spacing.sm })}>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
