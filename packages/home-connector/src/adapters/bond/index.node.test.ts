@@ -809,9 +809,14 @@ test('bond cooldown prevents follow-up requests after network failures', async (
 		expect(globalThis.fetch).toHaveBeenCalledTimes(1)
 		const status = bond.getReliabilityStatus({ bridgeId: 'BONDTEST13' })
 		expect(status.persisted?.lastFailureReason).toContain('fetch failed')
-		expect(status.recentRequestLogs.map((log) => log.status)).toEqual([
-			'cooldown',
-			'failure',
+		expect(
+			status.recentRequestLogs.map((log) => ({
+				status: log.status,
+				baseUrlsTried: log.baseUrlsTried,
+			})),
+		).toEqual([
+			{ status: 'cooldown', baseUrlsTried: [] },
+			{ status: 'failure', baseUrlsTried: ['http://10.0.0.22'] },
 		])
 	} finally {
 		vi.useRealTimers()
@@ -952,6 +957,73 @@ test('bond coalesces duplicate device state reads while one is in flight', async
 	}
 })
 
+test('bond coalesces duplicate queued device state reads until the shared request settles', async () => {
+	const config = {
+		...createConfig(),
+		bondRequestPaceMs: 2_000,
+	}
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const bond = createBondAdapter({
+		config,
+		state,
+		storage,
+	})
+	const previousFetch = globalThis.fetch
+	vi.useFakeTimers()
+	const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+		const url = String(input)
+		if (url === 'http://10.0.0.22/v2/devices/blocker/state') {
+			return mockJsonResponse({ position: 1, _: 'blocker' })
+		}
+		if (url === 'http://10.0.0.22/v2/devices/queued/state') {
+			return mockJsonResponse({ position: 2, _: 'queued' })
+		}
+		throw new Error(`Unexpected fetch URL: ${url}`)
+	})
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		upsertDiscoveredBondBridges(storage, config.homeConnectorId, [
+			{
+				bridgeId: 'BONDTEST14',
+				bondid: 'BONDTEST14',
+				instanceName: 'Long Queue Bond',
+				host: '10.0.0.22',
+				port: 80,
+				address: null,
+				model: 'BD-TEST',
+				fwVer: 'v1.0.0',
+				lastSeenAt: '2026-04-27T22:05:00.000Z',
+				rawDiscovery: {},
+			},
+		])
+		adoptBondBridge(storage, config.homeConnectorId, 'BONDTEST14')
+		bond.setToken('BONDTEST14', 'bond-token')
+
+		const blocker = bond.getDeviceState('BONDTEST14', 'blocker')
+		await vi.advanceTimersByTimeAsync(0)
+		await expect(blocker).resolves.toMatchObject({ position: 1 })
+
+		const firstQueued = bond.getDeviceState('BONDTEST14', 'queued')
+		await vi.advanceTimersByTimeAsync(1_500)
+		const secondQueued = bond.getDeviceState('BONDTEST14', 'queued')
+		await vi.advanceTimersByTimeAsync(500)
+
+		await expect(firstQueued).resolves.toMatchObject({ position: 2 })
+		await expect(secondQueued).resolves.toMatchObject({ position: 2 })
+		expect(
+			fetchMock.mock.calls.filter((call) =>
+				String(call[0]).endsWith('/v2/devices/queued/state'),
+			),
+		).toHaveLength(1)
+	} finally {
+		vi.useRealTimers()
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
+
 test('bond enters cooldown after network failure and rejects queued requests', async () => {
 	const config = {
 		...createConfig(),
@@ -1002,9 +1074,14 @@ test('bond enters cooldown after network failure and rejects queued requests', a
 		})
 		expect(status.queue.cooldownUntil).toBeTruthy()
 		expect(status.persisted?.cooldownUntil).toBeTruthy()
-		expect(status.recentRequestLogs.map((log) => log.status)).toEqual([
-			'cooldown',
-			'failure',
+		expect(
+			status.recentRequestLogs.map((log) => ({
+				status: log.status,
+				baseUrlsTried: log.baseUrlsTried,
+			})),
+		).toEqual([
+			{ status: 'cooldown', baseUrlsTried: [] },
+			{ status: 'failure', baseUrlsTried: ['http://10.0.0.22'] },
 		])
 	} finally {
 		vi.useRealTimers()

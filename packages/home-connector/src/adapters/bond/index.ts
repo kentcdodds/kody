@@ -42,7 +42,6 @@ import { type HomeConnectorErrorCaptureContext } from '../../sentry.ts'
 
 const defaultBondTransientAttemptsPerBaseUrl = 4
 const defaultBondTransientRetryBaseDelayMs = 100
-const defaultBondStateReadCoalesceWindowMs = 1_000
 const bondRequestLogLimit = 200
 
 type BondRequestLogStatus = 'success' | 'failure' | 'cooldown'
@@ -54,7 +53,6 @@ type BondQueueState = {
 }
 
 type BondStateReadCacheEntry = {
-	createdAt: number
 	promise: Promise<Record<string, unknown>>
 }
 
@@ -375,6 +373,7 @@ async function withBondBridgeRequest<T>(input: {
 	operation: string
 	request: (baseUrl: string) => Promise<T>
 	maxTransientAttemptsPerBaseUrl?: number
+	attemptedBaseUrls?: Array<string>
 }) {
 	const baseUrls = createBondBaseUrlCandidates(input.bridge)
 	const attemptedBaseUrls: Array<string> = []
@@ -386,6 +385,7 @@ async function withBondBridgeRequest<T>(input: {
 	for (let index = 0; index < baseUrls.length; index += 1) {
 		const baseUrl = baseUrls[index]!
 		attemptedBaseUrls.push(baseUrl)
+		input.attemptedBaseUrls?.push(baseUrl)
 		for (
 			let attempt = 1;
 			attempt <= maxTransientAttemptsPerBaseUrl;
@@ -542,7 +542,7 @@ export function createBondAdapter(input: {
 		await previousTail.catch(() => undefined)
 		const startedAtMs = Date.now()
 		const startedAt = new Date(startedAtMs).toISOString()
-		const baseUrlsTried = createBondBaseUrlCandidates(requestInput.bridge)
+		const baseUrlsTried: Array<string> = []
 		try {
 			syncPersistedCooldown(requestInput.bridge, queueState)
 			const now = Date.now()
@@ -567,7 +567,10 @@ export function createBondAdapter(input: {
 			if (waitMs > 0) {
 				await wait(waitMs)
 			}
-			const result = await withBondBridgeRequest(requestInput)
+			const result = await withBondBridgeRequest({
+				...requestInput,
+				attemptedBaseUrls: baseUrlsTried,
+			})
 			runBestEffortPersistence('mark bridge seen', () => {
 				markBridgeSeen(requestInput.bridge)
 			})
@@ -746,10 +749,7 @@ export function createBondAdapter(input: {
 	) {
 		const cacheKey = `${bridge.bridgeId}:${deviceId}`
 		const cached = stateReadCache.get(cacheKey)
-		if (
-			cached &&
-			Date.now() - cached.createdAt <= defaultBondStateReadCoalesceWindowMs
-		) {
+		if (cached) {
 			return cached.promise
 		}
 		const promise = withTrackedBondBridgeRequest({
@@ -764,7 +764,6 @@ export function createBondAdapter(input: {
 				}),
 		})
 		stateReadCache.set(cacheKey, {
-			createdAt: Date.now(),
 			promise,
 		})
 		const cleanup = () => {
@@ -840,7 +839,7 @@ export function createBondAdapter(input: {
 				config: {
 					requestPaceMs,
 					circuitBreakerCooldownMs,
-					stateReadCoalesceWindowMs: defaultBondStateReadCoalesceWindowMs,
+					coalescesInFlightStateReads: true,
 				},
 				queue: {
 					nextAvailableAt:
