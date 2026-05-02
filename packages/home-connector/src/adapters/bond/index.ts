@@ -17,12 +17,18 @@ import {
 import { scanBondBridges } from './discovery.ts'
 import {
 	adoptBondBridge,
+	clearBondReliabilityCooldown,
+	getBondReliabilityState,
 	getBondTokenSecret,
+	insertBondRequestLog,
+	listRecentBondRequestLogs,
 	listBondBridges,
+	pruneBondRequestLogs,
 	pruneNonAdoptedBondBridges,
 	releaseBondBridge,
 	requireBondBridge,
 	saveBondToken,
+	saveBondReliabilityFailure,
 	updateBondBridgeConnection,
 	updateBondBridgeLastSeen,
 	upsertDiscoveredBondBridges,
@@ -36,6 +42,21 @@ import { type HomeConnectorErrorCaptureContext } from '../../sentry.ts'
 
 const defaultBondTransientAttemptsPerBaseUrl = 4
 const defaultBondTransientRetryBaseDelayMs = 100
+const defaultBondStateReadCoalesceWindowMs = 1_000
+const bondRequestLogLimit = 200
+
+type BondRequestLogStatus = 'success' | 'failure' | 'cooldown'
+
+type BondQueueState = {
+	tail: Promise<void>
+	nextAvailableAt: number
+	cooldownUntil: number
+}
+
+type BondStateReadCacheEntry = {
+	createdAt: number
+	promise: Promise<Record<string, unknown>>
+}
 
 function normalizeQuery(value: string) {
 	return value.trim().toLowerCase()
@@ -256,6 +277,10 @@ async function wait(ms: number) {
 	await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function nowIso() {
+	return new Date().toISOString()
+}
+
 function formatBondFailureReason(error: unknown) {
 	if (error instanceof Error) {
 		const causeMessage = getErrorCauseMessage(error)
@@ -264,6 +289,40 @@ function formatBondFailureReason(error: unknown) {
 			: error.message
 	}
 	return String(error)
+}
+
+function createBondCooldownError(input: {
+	bridge: BondPersistedBridge
+	operation: string
+	cooldownUntil: number
+}) {
+	const cooldownUntilIso = new Date(input.cooldownUntil).toISOString()
+	const error = new Error(
+		`Bond bridge "${input.bridge.bridgeId}" is cooling down after a recent network failure; refusing to ${input.operation} until ${cooldownUntilIso}.`,
+	) as Error & {
+		homeConnectorCaptureContext?: HomeConnectorErrorCaptureContext
+	}
+	error.name = 'BondCircuitBreakerError'
+	error.homeConnectorCaptureContext = {
+		tags: {
+			connector_vendor: 'bond',
+			bond_bridge_id: input.bridge.bridgeId,
+			bond_network_failure: 'true',
+			bond_circuit_breaker: 'true',
+		},
+		contexts: {
+			bond_bridge: {
+				...getBondBridgeConnectionContext(input.bridge),
+				operation: input.operation,
+				cooldownUntil: cooldownUntilIso,
+			},
+		},
+		extra: {
+			bondOperation: input.operation,
+			bondCooldownUntil: cooldownUntilIso,
+		},
+	}
+	return error
 }
 
 function createBondActionableError(input: {
@@ -368,6 +427,23 @@ export function createBondAdapter(input: {
 	storage: HomeConnectorStorage
 }) {
 	const connectorId = input.config.homeConnectorId
+	const requestPaceMs = input.config.bondRequestPaceMs
+	const circuitBreakerCooldownMs = input.config.bondCircuitBreakerCooldownMs
+	const queueStates = new Map<string, BondQueueState>()
+	const stateReadCache = new Map<string, BondStateReadCacheEntry>()
+
+	function getQueueState(bridgeId: string) {
+		let state = queueStates.get(bridgeId)
+		if (!state) {
+			state = {
+				tail: Promise.resolve(),
+				nextAvailableAt: 0,
+				cooldownUntil: 0,
+			}
+			queueStates.set(bridgeId, state)
+		}
+		return state
+	}
 
 	function markBridgeSeen(bridge: BondPersistedBridge) {
 		updateBondBridgeLastSeen({
@@ -378,12 +454,164 @@ export function createBondAdapter(input: {
 		})
 	}
 
+	function pruneRequestLogs(bridgeId: string) {
+		pruneBondRequestLogs({
+			storage: input.storage,
+			connectorId,
+			bridgeId,
+			limit: bondRequestLogLimit,
+		})
+	}
+
+	function writeRequestLog(inputLog: {
+		bridge: BondPersistedBridge
+		operation: string
+		status: BondRequestLogStatus
+		startedAt: string
+		startedAtMs: number
+		baseUrlsTried: Array<string>
+		error?: unknown
+	}) {
+		const finishedAtMs = Date.now()
+		const error =
+			inputLog.error instanceof Error ? inputLog.error : undefined
+		insertBondRequestLog(input.storage, {
+			connectorId,
+			bridgeId: inputLog.bridge.bridgeId,
+			operation: inputLog.operation,
+			status: inputLog.status,
+			startedAt: inputLog.startedAt,
+			finishedAt: nowIso(),
+			durationMs: finishedAtMs - inputLog.startedAtMs,
+			baseUrlsTried: inputLog.baseUrlsTried,
+			errorName: error?.name ?? null,
+			errorMessage:
+				inputLog.error == null
+					? null
+					: formatBondFailureReason(inputLog.error),
+			networkFailure: isBondNetworkFailure(inputLog.error),
+		})
+		pruneRequestLogs(inputLog.bridge.bridgeId)
+	}
+
+	function syncPersistedCooldown(
+		bridge: BondPersistedBridge,
+		queueState: BondQueueState,
+	) {
+		const persisted = getBondReliabilityState(
+			input.storage,
+			connectorId,
+			bridge.bridgeId,
+		)
+		if (!persisted?.cooldownUntil) return
+		const persistedUntil = Date.parse(persisted.cooldownUntil)
+		if (Number.isFinite(persistedUntil) && persistedUntil > Date.now()) {
+			queueState.cooldownUntil = Math.max(
+				queueState.cooldownUntil,
+				persistedUntil,
+			)
+		}
+	}
+
+	async function runQueuedBondBridgeRequest<T>(
+		requestInput: Parameters<typeof withBondBridgeRequest<T>>[0],
+	) {
+		const queueState = getQueueState(requestInput.bridge.bridgeId)
+		const previousTail = queueState.tail
+		let releaseQueue: () => void = () => {}
+		queueState.tail = new Promise<void>((resolve) => {
+			releaseQueue = resolve
+		})
+
+		await previousTail.catch(() => undefined)
+		const startedAtMs = Date.now()
+		const startedAt = new Date(startedAtMs).toISOString()
+		const baseUrlsTried = createBondBaseUrlCandidates(requestInput.bridge)
+		try {
+			syncPersistedCooldown(requestInput.bridge, queueState)
+			const now = Date.now()
+			if (queueState.cooldownUntil > now) {
+				const error = createBondCooldownError({
+					bridge: requestInput.bridge,
+					operation: requestInput.operation,
+					cooldownUntil: queueState.cooldownUntil,
+				})
+				writeRequestLog({
+					bridge: requestInput.bridge,
+					operation: requestInput.operation,
+					status: 'cooldown',
+					startedAt,
+					startedAtMs,
+					baseUrlsTried,
+					error,
+				})
+				throw error
+			}
+			const waitMs = queueState.nextAvailableAt - now
+			if (waitMs > 0) {
+				await wait(waitMs)
+			}
+			const result = await withBondBridgeRequest(requestInput)
+			markBridgeSeen(requestInput.bridge)
+			clearBondReliabilityCooldown({
+				storage: input.storage,
+				connectorId,
+				bridgeId: requestInput.bridge.bridgeId,
+			})
+			writeRequestLog({
+				bridge: requestInput.bridge,
+				operation: requestInput.operation,
+				status: 'success',
+				startedAt,
+				startedAtMs,
+				baseUrlsTried,
+			})
+			return result
+		} catch (error) {
+			if (
+				isBondNetworkFailure(error) &&
+				(!(error instanceof Error) ||
+					error.name !== 'BondCircuitBreakerError')
+			) {
+				const cooldownUntil = Date.now() + circuitBreakerCooldownMs
+				queueState.cooldownUntil = Math.max(
+					queueState.cooldownUntil,
+					cooldownUntil,
+				)
+				saveBondReliabilityFailure({
+					storage: input.storage,
+					connectorId,
+					bridgeId: requestInput.bridge.bridgeId,
+					cooldownUntil: new Date(queueState.cooldownUntil).toISOString(),
+					failureAt: nowIso(),
+					failureReason: formatBondFailureReason(error),
+				})
+			}
+			if (
+				!(error instanceof Error) ||
+				error.name !== 'BondCircuitBreakerError'
+			) {
+				writeRequestLog({
+					bridge: requestInput.bridge,
+					operation: requestInput.operation,
+					status: 'failure',
+					startedAt,
+					startedAtMs,
+					baseUrlsTried,
+					error,
+				})
+			}
+			throw error
+		} finally {
+			queueState.nextAvailableAt = Date.now() + requestPaceMs
+			releaseQueue()
+		}
+	}
+
 	async function withTrackedBondBridgeRequest<T>(
 		requestInput: Parameters<typeof withBondBridgeRequest<T>>[0],
 	) {
-		const result = await withBondBridgeRequest(requestInput)
-		markBridgeSeen(requestInput.bridge)
-		return result
+		return await runQueuedBondBridgeRequest(requestInput)
 	}
 
 	function listPublicBridges(): Array<BondPersistedBridge> {
@@ -489,6 +717,44 @@ export function createBondAdapter(input: {
 		})
 	}
 
+	function readDeviceStateWithCoalescing(
+		bridge: BondPersistedBridge,
+		token: string,
+		deviceId: string,
+	) {
+		const cacheKey = `${bridge.bridgeId}:${deviceId}`
+		const cached = stateReadCache.get(cacheKey)
+		if (
+			cached &&
+			Date.now() - cached.createdAt <= defaultBondStateReadCoalesceWindowMs
+		) {
+			return cached.promise
+		}
+		const promise = withTrackedBondBridgeRequest({
+			bridge,
+			operation: `fetch device ${deviceId} state`,
+			maxTransientAttemptsPerBaseUrl: defaultBondTransientAttemptsPerBaseUrl,
+			request: async (baseUrl) =>
+				await bondGetDeviceState({
+					baseUrl,
+					token,
+					deviceId,
+				}),
+		})
+		stateReadCache.set(cacheKey, {
+			createdAt: Date.now(),
+			promise,
+		})
+		const cleanup = () => {
+			const current = stateReadCache.get(cacheKey)
+			if (current?.promise === promise) {
+				stateReadCache.delete(cacheKey)
+			}
+		}
+		promise.then(cleanup, cleanup)
+		return promise
+	}
+
 	const bondApi = {
 		getStatus() {
 			const bridges = listPublicBridges()
@@ -536,6 +802,46 @@ export function createBondAdapter(input: {
 				bridgeId,
 				connection,
 			)
+		},
+		getReliabilityStatus(inputStatus: {
+			bridgeId?: string
+			limit?: number
+		} = {}) {
+			const bridge = resolveBridge(inputStatus.bridgeId)
+			const queueState = getQueueState(bridge.bridgeId)
+			syncPersistedCooldown(bridge, queueState)
+			const limit =
+				inputStatus.limit == null
+					? 50
+					: Math.max(1, Math.min(200, Math.floor(inputStatus.limit)))
+			return {
+				config: {
+					requestPaceMs,
+					circuitBreakerCooldownMs,
+					stateReadCoalesceWindowMs: defaultBondStateReadCoalesceWindowMs,
+				},
+				queue: {
+					nextAvailableAt:
+						queueState.nextAvailableAt > 0
+							? new Date(queueState.nextAvailableAt).toISOString()
+							: null,
+					cooldownUntil:
+						queueState.cooldownUntil > 0
+							? new Date(queueState.cooldownUntil).toISOString()
+							: null,
+				},
+				persisted: getBondReliabilityState(
+					input.storage,
+					connectorId,
+					bridge.bridgeId,
+				),
+				recentRequestLogs: listRecentBondRequestLogs({
+					storage: input.storage,
+					connectorId,
+					bridgeId: bridge.bridgeId,
+					limit,
+				}),
+			}
 		},
 		async fetchBridgeVersion(bridgeId?: string) {
 			const bridge = resolveBridge(bridgeId)
@@ -621,17 +927,7 @@ export function createBondAdapter(input: {
 		): Promise<Record<string, unknown>> {
 			const bridge = requireAdoptedBridge(bridgeId)
 			const token = requireToken(bridge)
-			return await withTrackedBondBridgeRequest({
-				bridge,
-				operation: `fetch device ${deviceId} state`,
-				maxTransientAttemptsPerBaseUrl: defaultBondTransientAttemptsPerBaseUrl,
-				request: async (baseUrl) =>
-					await bondGetDeviceState({
-						baseUrl,
-						token,
-						deviceId,
-					}),
-			})
+			return await readDeviceStateWithCoalescing(bridge, token, deviceId)
 		},
 		async invokeDeviceAction(input: {
 			bridgeId?: string

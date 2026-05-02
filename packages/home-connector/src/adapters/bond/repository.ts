@@ -1,3 +1,4 @@
+import { type SQLInputValue } from 'node:sqlite'
 import { type HomeConnectorStorage } from '../../storage/index.ts'
 import { type BondDiscoveredBridge, type BondPersistedBridge } from './types.ts'
 
@@ -14,6 +15,38 @@ type BondBridgeRow = {
 	adopted: number
 	last_seen_at: string | null
 	token: string | null
+}
+
+export type BondRequestLogInput = {
+	connectorId: string
+	bridgeId: string
+	operation: string
+	status: 'success' | 'failure' | 'cooldown'
+	startedAt: string
+	finishedAt: string
+	durationMs: number
+	baseUrlsTried: Array<string>
+	errorName?: string | null
+	errorMessage?: string | null
+	networkFailure: boolean
+}
+
+export type BondReliabilityState = {
+	connectorId: string
+	bridgeId: string
+	cooldownUntil: string | null
+	lastFailureAt: string | null
+	lastFailureReason: string | null
+	updatedAt: string
+}
+
+type BondReliabilityStateRow = {
+	connector_id: string
+	bridge_id: string
+	cooldown_until: string | null
+	last_failure_at: string | null
+	last_failure_reason: string | null
+	updated_at: string
 }
 
 function mapBondBridgeRow(row: BondBridgeRow): BondPersistedBridge {
@@ -68,6 +101,19 @@ function selectBondBridgeRows(
 		ORDER BY b.instance_name COLLATE NOCASE, b.bridge_id
 	`)
 	return statement.all(connectorId) as Array<BondBridgeRow>
+}
+
+function mapBondReliabilityStateRow(
+	row: BondReliabilityStateRow,
+): BondReliabilityState {
+	return {
+		connectorId: row.connector_id,
+		bridgeId: row.bridge_id,
+		cooldownUntil: row.cooldown_until,
+		lastFailureAt: row.last_failure_at,
+		lastFailureReason: row.last_failure_reason,
+		updatedAt: row.updated_at,
+	}
 }
 
 function getUpsertBondBridgeStatement(storage: HomeConnectorStorage) {
@@ -132,6 +178,24 @@ function getUpsertBondTokenStatement(storage: HomeConnectorStorage) {
 	`)
 }
 
+function getUpsertBondReliabilityStateStatement(storage: HomeConnectorStorage) {
+	return storage.db.query(`
+		INSERT INTO bond_reliability_state (
+			connector_id,
+			bridge_id,
+			cooldown_until,
+			last_failure_at,
+			last_failure_reason,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(connector_id, bridge_id) DO UPDATE SET
+			cooldown_until = excluded.cooldown_until,
+			last_failure_at = excluded.last_failure_at,
+			last_failure_reason = excluded.last_failure_reason,
+			updated_at = excluded.updated_at
+	`)
+}
+
 export function listBondBridges(
 	storage: HomeConnectorStorage,
 	connectorId: string,
@@ -177,6 +241,196 @@ export function getBondTokenSecret(
 		)
 		.get(connectorId, bridgeId) as { token: string } | undefined
 	return row?.token ?? null
+}
+
+export function insertBondRequestLog(
+	storage: HomeConnectorStorage,
+	input: BondRequestLogInput,
+) {
+	storage.db
+		.query(
+			`
+		INSERT INTO bond_request_logs (
+			connector_id,
+			bridge_id,
+			operation,
+			status,
+			started_at,
+			finished_at,
+			duration_ms,
+			base_urls_tried_json,
+			error_name,
+			error_message,
+			network_failure
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		)
+		.run(
+			input.connectorId,
+			input.bridgeId,
+			input.operation,
+			input.status,
+			input.startedAt,
+			input.finishedAt,
+			Math.max(0, Math.round(input.durationMs)),
+			JSON.stringify(input.baseUrlsTried),
+			input.errorName ?? null,
+			input.errorMessage ?? null,
+			input.networkFailure ? 1 : 0,
+		)
+}
+
+export function pruneBondRequestLogs(input: {
+	storage: HomeConnectorStorage
+	connectorId: string
+	bridgeId: string
+	limit: number
+}) {
+	const limit = Math.max(1, Math.floor(input.limit))
+	input.storage.db
+		.query(
+			`
+		DELETE FROM bond_request_logs
+		WHERE connector_id = ? AND bridge_id = ?
+			AND id NOT IN (
+				SELECT id
+				FROM bond_request_logs
+				WHERE connector_id = ? AND bridge_id = ?
+				ORDER BY started_at DESC, id DESC
+				LIMIT ?
+			)
+	`,
+		)
+		.run(
+			input.connectorId,
+			input.bridgeId,
+			input.connectorId,
+			input.bridgeId,
+			limit,
+		)
+}
+
+export function getBondReliabilityState(
+	storage: HomeConnectorStorage,
+	connectorId: string,
+	bridgeId: string,
+) {
+	const row = storage.db
+		.query(
+			`
+		SELECT
+			connector_id,
+			bridge_id,
+			cooldown_until,
+			last_failure_at,
+			last_failure_reason,
+			updated_at
+		FROM bond_reliability_state
+		WHERE connector_id = ? AND bridge_id = ?
+	`,
+		)
+		.get(connectorId, bridgeId) as BondReliabilityStateRow | undefined
+	return row ? mapBondReliabilityStateRow(row) : null
+}
+
+export function saveBondReliabilityFailure(input: {
+	storage: HomeConnectorStorage
+	connectorId: string
+	bridgeId: string
+	cooldownUntil: string
+	failureAt: string
+	failureReason: string
+}) {
+	getUpsertBondReliabilityStateStatement(input.storage).run(
+		input.connectorId,
+		input.bridgeId,
+		input.cooldownUntil,
+		input.failureAt,
+		input.failureReason,
+		input.failureAt,
+	)
+}
+
+export function clearBondReliabilityCooldown(input: {
+	storage: HomeConnectorStorage
+	connectorId: string
+	bridgeId: string
+}) {
+	const existing = getBondReliabilityState(
+		input.storage,
+		input.connectorId,
+		input.bridgeId,
+	)
+	if (!existing) return
+	getUpsertBondReliabilityStateStatement(input.storage).run(
+		input.connectorId,
+		input.bridgeId,
+		null,
+		existing.lastFailureAt,
+		existing.lastFailureReason,
+		new Date().toISOString(),
+	)
+}
+
+export function listRecentBondRequestLogs(input: {
+	storage: HomeConnectorStorage
+	connectorId: string
+	bridgeId?: string
+	limit?: number
+}) {
+	const limit = Math.max(1, Math.floor(input.limit ?? 100))
+	const params: Array<SQLInputValue> = [input.connectorId]
+	let bridgeFilter = ''
+	if (input.bridgeId) {
+		bridgeFilter = 'AND bridge_id = ?'
+		params.push(input.bridgeId)
+	}
+	params.push(limit)
+	const rows = input.storage.db
+		.query(
+			`
+		SELECT
+			id,
+			connector_id,
+			bridge_id,
+			operation,
+			status,
+			started_at,
+			finished_at,
+			duration_ms,
+			base_urls_tried_json,
+			error_name,
+			error_message,
+			network_failure
+		FROM bond_request_logs
+		WHERE connector_id = ?
+			${bridgeFilter}
+		ORDER BY started_at DESC, id DESC
+		LIMIT ?
+	`,
+		)
+		.all(...params) as Array<Record<string, unknown>>
+	return rows.map((row) => ({
+		id: Number(row['id']),
+		connectorId: String(row['connector_id']),
+		bridgeId: String(row['bridge_id']),
+		operation: String(row['operation']),
+		status: String(row['status']),
+		startedAt: String(row['started_at']),
+		finishedAt: String(row['finished_at']),
+		durationMs: Number(row['duration_ms']),
+		baseUrlsTried:
+			typeof row['base_urls_tried_json'] === 'string'
+				? (JSON.parse(row['base_urls_tried_json']) as Array<string>)
+				: [],
+		errorName:
+			typeof row['error_name'] === 'string' ? row['error_name'] : null,
+		errorMessage:
+			typeof row['error_message'] === 'string'
+				? row['error_message']
+				: null,
+		networkFailure: Boolean(row['network_failure']),
+	}))
 }
 
 export function upsertDiscoveredBondBridges(
