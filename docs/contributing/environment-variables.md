@@ -26,7 +26,7 @@ types, runtime validation, and documentation in sync.
    			32,
    			'COOKIE_SECRET must be at least 32 characters for session signing.',
    		),
-   	SECRET_STORE_KEY: z.string().optional(),
+   	SECRET_STORE_KEY: z.string().min(32),
    	THIRD_PARTY_API_KEY: z
    		.string()
    		.min(
@@ -72,15 +72,11 @@ environment variables.
 
 ## Saved-secret encryption (`SECRET_STORE_KEY`)
 
-Optional Worker secret used to derive the AES-GCM key for encrypting saved
-secrets at rest in D1. When unset, the Worker falls back to `COOKIE_SECRET` for
-backward compatibility.
+Required Worker secret used to derive the AES-GCM key for encrypting saved
+secrets at rest in D1.
 
-- **Production deployments should set a dedicated `SECRET_STORE_KEY`** so that
-  rotating the cookie signing key does not brick encrypted secrets.
-- When both keys are configured, decryption first attempts `SECRET_STORE_KEY`.
-  If that fails (legacy data), it retries with `COOKIE_SECRET` and transparently
-  re-encrypts the value under the new key on the next read.
+- **Every environment must set `SECRET_STORE_KEY`**, including local dev and
+  CI, so saved secrets can be encrypted and decrypted.
 - See [`docs/contributing/secret-rotation.md`](./secret-rotation.md) for
   rotation procedures.
 

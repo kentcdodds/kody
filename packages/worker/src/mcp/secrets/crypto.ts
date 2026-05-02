@@ -77,11 +77,10 @@ export async function decryptStringWithPurpose(
 const secretStorePurpose = 'mcp-secret-store'
 
 export async function encryptSecretValue(
-	env: Pick<Env, 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>,
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	value: string,
 ) {
-	const secret = getSecretStoreKey(env)
-	const key = await deriveEncryptionKey(secret, secretStorePurpose)
+	const key = await deriveEncryptionKey(env.SECRET_STORE_KEY, secretStorePurpose)
 	const iv = crypto.getRandomValues(new Uint8Array(ivBytes))
 	const ciphertext = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv },
@@ -92,51 +91,27 @@ export async function encryptSecretValue(
 }
 
 export async function decryptSecretValue(
-	env: Pick<Env, 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>,
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
 	payload: string,
 ) {
 	const [ivPart, ciphertextPart] = payload.split('.')
 	if (!ivPart || !ciphertextPart) {
 		throw new Error('Invalid encrypted secret payload.')
 	}
-	const iv = base64UrlToBytes(ivPart)
-	const ciphertextBytes = base64UrlToBytes(ciphertextPart)
-
-	const primarySecret = getSecretStoreKey(env)
-	const primaryKey = await deriveEncryptionKey(primarySecret, secretStorePurpose)
 	try {
+		const iv = base64UrlToBytes(ivPart)
+		const ciphertextBytes = base64UrlToBytes(ciphertextPart)
+		const key = await deriveEncryptionKey(
+			env.SECRET_STORE_KEY,
+			secretStorePurpose,
+		)
 		const plaintext = await crypto.subtle.decrypt(
 			{ name: 'AES-GCM', iv },
-			primaryKey,
+			key,
 			ciphertextBytes,
 		)
-		return { value: textDecoder.decode(plaintext), needsReEncrypt: false }
-	} catch {
-		// Primary key failed — attempt legacy COOKIE_SECRET fallback
-	}
-
-	if (primarySecret === env.COOKIE_SECRET) {
-		throw new Error('Unable to decrypt secret value.')
-	}
-
-	const legacyKey = await deriveEncryptionKey(
-		env.COOKIE_SECRET,
-		secretStorePurpose,
-	)
-	try {
-		const plaintext = await crypto.subtle.decrypt(
-			{ name: 'AES-GCM', iv },
-			legacyKey,
-			ciphertextBytes,
-		)
-		return { value: textDecoder.decode(plaintext), needsReEncrypt: true }
+		return textDecoder.decode(plaintext)
 	} catch {
 		throw new Error('Unable to decrypt secret value.')
 	}
-}
-
-function getSecretStoreKey(
-	env: Pick<Env, 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>,
-): string {
-	return env.SECRET_STORE_KEY ?? env.COOKIE_SECRET
 }

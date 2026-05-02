@@ -40,7 +40,7 @@ type SecretOwnerContext = {
 }
 
 type SaveSecretInput = SecretOwnerContext & {
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	scope: SecretScope
 	name: string
 	value: string
@@ -54,13 +54,13 @@ type ListSecretsInput = SecretOwnerContext & {
 }
 
 type ResolveSecretInput = SecretOwnerContext & {
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	name: string
 	scope?: SecretScope | null
 }
 
 type UpdateSecretInput = SecretOwnerContext & {
-	env: Pick<Env, 'APP_DB' | 'COOKIE_SECRET' | 'SECRET_STORE_KEY'>
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	name: string
 	scope: SecretScope
 	value?: string | null
@@ -200,24 +200,9 @@ export async function resolveSecret(
 		})
 		if (!entry) continue
 		const decrypted = await decryptSecretValue(input.env, entry.encrypted_value)
-		if (decrypted.needsReEncrypt) {
-			try {
-				const reEncrypted = await encryptSecretValue(input.env, decrypted.value)
-				await upsertSecretEntry({
-					db: input.env.APP_DB,
-					row: {
-						...entry,
-						encrypted_value: reEncrypted,
-						updated_at: new Date().toISOString(),
-					},
-				})
-			} catch {
-				// Best-effort re-encryption; read still succeeds with the decrypted value
-			}
-		}
 		return {
 			found: true,
-			value: decrypted.value,
+			value: decrypted,
 			scope,
 			allowedHosts: parseAllowedHosts(entry.allowed_hosts),
 			allowedCapabilities: parseAllowedCapabilities(entry.allowed_capabilities),

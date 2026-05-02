@@ -69,6 +69,7 @@ Local development uses `packages/worker/.env`, which Wrangler loads
 automatically:
 
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
+- `SECRET_STORE_KEY` (required; generate with `openssl rand -base64 48`)
 - `APP_BASE_URL` (optional; defaults to request origin for most app URLs,
   example `https://app.example.com`; also sets the canonical public origin used
   for MCP auth metadata, generated UI resources, and email links. Password reset
@@ -115,6 +116,7 @@ Configure these GitHub Actions secrets and variables for workflows:
   account; also reused for remote AI and Cloudflare API workflows that run with
   account secrets + package workflows)
 - `COOKIE_SECRET` (same format as local)
+- `SECRET_STORE_KEY` (same format as local; required for deploys)
 - `APP_BASE_URL` (optional GitHub Actions **variable**, used by the production
   deploy as the canonical public app origin, the password-reset email sender
   hostname, and written into the generated Worker `vars` config before deploy)
