@@ -1,6 +1,5 @@
 import { createRouter } from 'remix/fetch-router'
 import {
-	createHomeDashboardHandler,
 	createHealthHandler,
 	createLutronSetupHandler,
 	createLutronStatusHandler,
@@ -9,6 +8,12 @@ import {
 	createSamsungTvSetupHandler,
 	createSamsungTvStatusHandler,
 } from './handlers.ts'
+import {
+	createDashboardHandler,
+	createDiagnosticsHandler,
+	createIslandRouterStatusHandler,
+	createSystemStatusHandler,
+} from './dashboard-handlers.ts'
 import {
 	createBondSetupHandler,
 	createBondStatusHandler,
@@ -34,6 +39,7 @@ import { type createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts
 import { type createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
 import { type HomeConnectorState } from '../src/state.ts'
+import { type createIslandRouterAdapter } from '../src/adapters/island-router/index.ts'
 
 export function createHomeConnectorRouter(
 	state: HomeConnectorState,
@@ -42,6 +48,7 @@ export function createHomeConnectorRouter(
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
 	bond: ReturnType<typeof createBondAdapter>,
+	islandRouter: ReturnType<typeof createIslandRouterAdapter>,
 	jellyfish: ReturnType<typeof createJellyfishAdapter>,
 	venstar: ReturnType<typeof createVenstarAdapter>,
 ) {
@@ -51,15 +58,50 @@ export function createHomeConnectorRouter(
 
 	router.map(routes, {
 		actions: {
-			home: createHomeDashboardHandler(
+			home: createDashboardHandler({
 				state,
+				config,
 				lutron,
 				samsungTv,
 				sonos,
 				bond,
+				islandRouter,
 				jellyfish,
 				venstar,
-			),
+			}),
+			systemStatus: createSystemStatusHandler({
+				state,
+				config,
+				lutron,
+				samsungTv,
+				sonos,
+				bond,
+				islandRouter,
+				jellyfish,
+				venstar,
+			}),
+			diagnostics: createDiagnosticsHandler({
+				state,
+				config,
+				lutron,
+				samsungTv,
+				sonos,
+				bond,
+				islandRouter,
+				jellyfish,
+				venstar,
+			}),
+			islandRouterStatus: createIslandRouterStatusHandler({
+				state,
+				config,
+				lutron,
+				samsungTv,
+				sonos,
+				bond,
+				islandRouter,
+				jellyfish,
+				venstar,
+			}),
 			health: createHealthHandler(state),
 			lutronStatus: createLutronStatusHandler(state, lutron),
 			lutronSetup: createLutronSetupHandler(state, lutron),

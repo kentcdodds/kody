@@ -71,7 +71,7 @@ function installGracefulShutdownHandlers(input: {
 		})
 	})
 
-	process.once('unhandledRejection', (reason, promise) => {
+	process.once('unhandledRejection', (reason, _promise) => {
 		captureHomeConnectorException(reason, {
 			tags: {
 				area: 'process',
@@ -104,6 +104,7 @@ async function main() {
 		connector.samsungTv,
 		connector.sonos,
 		connector.bond,
+		connector.islandRouter,
 		connector.jellyfish,
 		connector.venstar,
 	)
