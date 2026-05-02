@@ -1567,6 +1567,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									showSecretValue = !showSecretValue
 									handle.update()
 								}}
+								valueRequired={!editorState.currentId || showSecretValue}
 								allowedHosts={editorState.allowedHosts}
 								onUpdateAllowedHost={updateAllowedHost}
 								onAddAllowedHost={addAllowedHost}

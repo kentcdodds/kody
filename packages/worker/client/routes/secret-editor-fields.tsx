@@ -16,6 +16,7 @@ type SecretEditorFieldsProps = {
 	onValueChange: (value: string) => void
 	showSecretValue: boolean
 	onToggleShowSecretValue: () => void
+	valueRequired?: boolean
 	allowedHosts: Array<string>
 	onUpdateAllowedHost: (index: number, value: string) => void
 	onAddAllowedHost: () => void
@@ -35,133 +36,136 @@ type SecretEditorFieldsProps = {
 }
 
 export function SecretEditorFields(_handle: Handle) {
-	return (props: SecretEditorFieldsProps) => (
-		<>
-			<label mix={css(fieldCss)}>
-				<span mix={css(fieldLabelCss)}>Description</span>
-				<textarea
-					value={props.description}
-					rows={3}
-					placeholder="What this secret is used for"
-					mix={[
-						on(
-							'input',
+	return (props: SecretEditorFieldsProps) => {
+		const valueRequired = props.valueRequired ?? true
 
-							(event) => {
-								props.onDescriptionChange(event.currentTarget.value)
-							},
-						),
-
-						css(textareaCss),
-					]}
-				/>
-			</label>
-
-			<label mix={css(fieldCss)}>
-				<span mix={css(fieldLabelCss)}>Secret value</span>
-				<div
-					mix={css({
-						position: 'relative',
-						display: 'flex',
-						alignItems: 'center',
-					})}
-				>
-					{props.showSecretValue ? (
-						<input
-							type="text"
-							required
-							autoComplete="new-password"
-							value={props.value}
-							placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
-							mix={[
-								on(
-									'input',
-
-									(event) => {
-										props.onValueChange(event.currentTarget.value)
-									},
-								),
-
-								css({
-									...inputCss,
-									paddingRight: '3rem',
-								}),
-							]}
-						/>
-					) : (
-						<input
-							type="password"
-							required
-							autoComplete="new-password"
-							value={props.value}
-							placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
-							mix={[
-								on(
-									'input',
-
-									(event) => {
-										props.onValueChange(event.currentTarget.value)
-									},
-								),
-
-								css({
-									...inputCss,
-									paddingRight: '3rem',
-								}),
-							]}
-						/>
-					)}
-					<button
-						type="button"
-						aria-label={
-							props.showSecretValue ? 'Hide secret value' : 'Show secret value'
-						}
-						title={
-							props.showSecretValue ? 'Hide secret value' : 'Show secret value'
-						}
+		return (
+			<>
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Description</span>
+					<textarea
+						value={props.description}
+						rows={3}
+						placeholder="What this secret is used for"
 						mix={[
-							on('click', () => props.onToggleShowSecretValue()),
-							css(iconButtonCss),
+							on(
+								'input',
+
+								(event) => {
+									props.onDescriptionChange(event.currentTarget.value)
+								},
+							),
+
+							css(textareaCss),
 						]}
+					/>
+				</label>
+
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Secret value</span>
+					<div
+						mix={css({
+							position: 'relative',
+							display: 'flex',
+							alignItems: 'center',
+						})}
 					>
 						{props.showSecretValue ? (
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="20"
-								height="20"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							>
-								<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-								<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-								<path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-								<line x1="2" x2="22" y1="2" y2="22" />
-							</svg>
-						) : (
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="20"
-								height="20"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							>
-								<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-								<circle cx="12" cy="12" r="3" />
-							</svg>
-						)}
-					</button>
-				</div>
-			</label>
+							<input
+								type="text"
+								required={valueRequired ? true : undefined}
+								autoComplete="new-password"
+								value={props.value}
+								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
+								mix={[
+									on(
+										'input',
 
-			<div mix={css({ display: 'grid', gap: spacing.sm })}>
+										(event) => {
+											props.onValueChange(event.currentTarget.value)
+										},
+									),
+
+									css({
+										...inputCss,
+										paddingRight: '3rem',
+									}),
+								]}
+							/>
+						) : (
+							<input
+								type="password"
+								required={valueRequired ? true : undefined}
+								autoComplete="new-password"
+								value={props.value}
+								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
+								mix={[
+									on(
+										'input',
+
+										(event) => {
+											props.onValueChange(event.currentTarget.value)
+										},
+									),
+
+									css({
+										...inputCss,
+										paddingRight: '3rem',
+									}),
+								]}
+							/>
+						)}
+						<button
+							type="button"
+							aria-label={
+								props.showSecretValue ? 'Hide secret value' : 'Show secret value'
+							}
+							title={
+								props.showSecretValue ? 'Hide secret value' : 'Show secret value'
+							}
+							mix={[
+								on('click', () => props.onToggleShowSecretValue()),
+								css(iconButtonCss),
+							]}
+						>
+							{props.showSecretValue ? (
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+									<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+									<path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+									<line x1="2" x2="22" y1="2" y2="22" />
+								</svg>
+							) : (
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+									<circle cx="12" cy="12" r="3" />
+								</svg>
+							)}
+						</button>
+					</div>
+				</label>
+
+				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>
 					<span mix={css(fieldLabelCss)}>Allowed hosts</span>
 					<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -218,9 +222,9 @@ export function SecretEditorFields(_handle: Handle) {
 						Add host
 					</button>
 				</div>
-			</div>
+				</div>
 
-			<div mix={css({ display: 'grid', gap: spacing.sm })}>
+				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>
 					<span mix={css(fieldLabelCss)}>Allowed capabilities</span>
 					<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -277,13 +281,13 @@ export function SecretEditorFields(_handle: Handle) {
 						Add capability
 					</button>
 				</div>
-			</div>
+				</div>
 
-			{props.allowedPackages &&
-			props.onUpdateAllowedPackage &&
-			props.onAddAllowedPackage &&
-			props.onRemoveAllowedPackage ? (
-				<div mix={css({ display: 'grid', gap: spacing.sm })}>
+				{props.allowedPackages &&
+				props.onUpdateAllowedPackage &&
+				props.onAddAllowedPackage &&
+				props.onRemoveAllowedPackage ? (
+					<div mix={css({ display: 'grid', gap: spacing.sm })}>
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
 						<span mix={css(fieldLabelCss)}>Allowed packages</span>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -340,10 +344,11 @@ export function SecretEditorFields(_handle: Handle) {
 							Add package
 						</button>
 					</div>
-				</div>
-			) : null}
-		</>
-	)
+					</div>
+				) : null}
+			</>
+		)
+	}
 }
 
 const secondaryButtonCss = getSecondaryButtonCss()
