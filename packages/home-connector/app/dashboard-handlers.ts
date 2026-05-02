@@ -16,7 +16,10 @@ import { render } from './render.ts'
 import { RootLayout } from './root.ts'
 import { routes } from './routes.ts'
 import { type createBondAdapter } from '../src/adapters/bond/index.ts'
-import { type IslandRouterConfigStatus } from '../src/adapters/island-router/types.ts'
+import {
+	type IslandRouterConfigStatus,
+	type IslandRouterStatus,
+} from '../src/adapters/island-router/types.ts'
 import { type createIslandRouterAdapter } from '../src/adapters/island-router/index.ts'
 import { type createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
@@ -106,6 +109,10 @@ type DashboardSnapshot = {
 	}
 }
 
+type LoadDashboardSnapshotInput = {
+	islandRouterStatus?: IslandRouterStatus
+}
+
 function getConnectionTone(state: HomeConnectorState): StatusTone {
 	if (!state.connection.connected) return 'bad'
 	if (!state.connection.sharedSecret) return 'warn'
@@ -175,6 +182,7 @@ function getIslandRouterStatusLabel(input: {
 
 async function loadDashboardSnapshot(
 	deps: DashboardDependencies,
+	input: LoadDashboardSnapshotInput = {},
 ): Promise<DashboardSnapshot> {
 	const rokuAdopted = getAdoptedRokuDevices(deps.state)
 	const rokuDiscovered = getDiscoveredRokuDevices(deps.state)
@@ -183,10 +191,14 @@ async function loadDashboardSnapshot(
 	const sonosStatus = deps.sonos.getStatus()
 	const bondStatus = deps.bond.getStatus()
 	const jellyfishStatus = deps.jellyfish.getStatus()
-	const [venstarStatus, islandRouterStatus] = await Promise.all([
+	const venstarDiscoveryStatus = deps.venstar.getStatus()
+	const [venstarStatus, loadedIslandRouterStatus] = await Promise.all([
 		deps.venstar.listThermostatsWithStatus(),
-		deps.islandRouter.getStatus(),
+		input.islandRouterStatus
+			? Promise.resolve(input.islandRouterStatus)
+			: deps.islandRouter.getStatus(),
 	])
+	const islandRouterStatus = loadedIslandRouterStatus
 	const onlineVenstarCount = venstarStatus.filter(
 		(thermostat) => thermostat.info != null,
 	).length
@@ -241,7 +253,7 @@ async function loadDashboardSnapshot(
 			configured: venstarStatus.length,
 			online: onlineVenstarCount,
 			offline: venstarStatus.length - onlineVenstarCount,
-			discovered: deps.venstar.getStatus().discovered.length,
+			discovered: venstarDiscoveryStatus.discovered.length,
 			diagnosticsCaptured: deps.state.venstarDiscoveryDiagnostics != null,
 		},
 		islandRouter: {
@@ -275,7 +287,7 @@ async function loadDashboardSnapshot(
 				samsungStatus.discovered.length +
 				bondStatus.discovered.length +
 				jellyfishStatus.discovered.length +
-				deps.venstar.getStatus().discovered.length,
+				venstarDiscoveryStatus.discovered.length,
 			diagnosticSources: countDiagnosticSources(deps.state),
 		},
 	}
@@ -1177,7 +1189,13 @@ export function createDiagnosticsHandler(deps: DashboardDependencies) {
 					status: snapshot.venstar.diagnosticsCaptured
 						? 'Captured'
 						: 'No captures',
-					tone: snapshot.venstar.offline > 0 ? 'warn' : 'good',
+					tone:
+						snapshot.venstar.offline > 0
+							? 'warn'
+							: snapshot.venstar.diagnosticsCaptured ||
+								  snapshot.venstar.configured > 0
+								? 'good'
+								: 'neutral',
 					details: deps.state.venstarDiscoveryDiagnostics
 						? `Last scan ${deps.state.venstarDiscoveryDiagnostics.scannedAt} with ${deps.state.venstarDiscoveryDiagnostics.infoLookups.length} info lookup(s).`
 						: 'No Venstar diagnostics captured yet.',
@@ -1343,10 +1361,10 @@ export function createIslandRouterStatusHandler(deps: DashboardDependencies) {
 		middleware: [],
 		async handler({ request }: { request: Request }) {
 			const requestedHost = getRequestedHost(request)
-			const [snapshot, routerStatus] = await Promise.all([
-				loadDashboardSnapshot(deps),
-				deps.islandRouter.getStatus(),
-			])
+			const routerStatus = await deps.islandRouter.getStatus()
+			const snapshot = await loadDashboardSnapshot(deps, {
+				islandRouterStatus: routerStatus,
+			})
 
 			let hostDiagnosis: Awaited<
 				ReturnType<ReturnType<typeof createIslandRouterAdapter>['diagnoseHost']>
