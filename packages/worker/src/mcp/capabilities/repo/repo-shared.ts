@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { repoRunCommandsCommandsFieldDescription } from './repo-run-commands-text.ts'
 
 export const repoSearchModeSchema = z.enum(['literal', 'regex'])
 export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
@@ -274,9 +275,7 @@ export const repoRunCommandsInputSchema = z
 		commands: z
 			.string()
 			.min(1)
-			.describe(
-				'Newline-separated constrained git commands. Supported commands include git status, git diff, git apply heredoc, git add, git rm, git commit -m, git log, git branch, git checkout, git fetch, git pull, git push, and git remote.',
-			),
+			.describe(repoRunCommandsCommandsFieldDescription),
 		dry_run: z
 			.boolean()
 			.optional()

@@ -1,4 +1,6 @@
 import { expect, test } from 'vitest'
+import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { builtinDomains } from '#mcp/capabilities/builtin-domains.ts'
 import {
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
@@ -269,6 +271,65 @@ test('capability entity detail keeps type definitions stable and adds schemas on
 	expect(detailWithSchemas.structured).toMatchObject({
 		inputTypeDefinition: detail.structured.inputTypeDefinition,
 		outputTypeDefinition: detail.structured.outputTypeDefinition,
+	})
+})
+
+test('repo_run_commands capability detail surfaces parsed git-only guidance', () => {
+	const registry = buildCapabilityRegistry(builtinDomains)
+	const repoRunCommands = registry.capabilitySpecs.repo_run_commands
+	if (!repoRunCommands) {
+		throw new Error('Expected repo_run_commands capability to exist')
+	}
+
+	const detail = formatEntityDetailMarkdown(
+		{
+			type: 'capability',
+			id: 'repo_run_commands',
+			title: 'repo_run_commands',
+			description: repoRunCommands.description,
+			spec: repoRunCommands,
+		},
+		{ includeSchemas: true },
+	)
+
+	expect(detail.structured).toMatchObject({
+		type: 'capability',
+		inputTypeDefinition: expect.stringContaining(
+			'Commands are newline-separated and parsed, not shell-executed.',
+		),
+	})
+	expect(detail.structured).toMatchObject({
+		inputTypeDefinition: expect.stringContaining(
+			'Only git commands are accepted.',
+		),
+	})
+	expect(detail.structured).toMatchObject({
+		inputTypeDefinition: expect.stringContaining(
+			'git checkout <ref> / git checkout -b <branch> [--force]',
+		),
+	})
+	expect(detail.structured).toMatchObject({
+		inputTypeDefinition: expect.stringContaining(
+			'git remote, git remote -v, git remote add <name> <url>, git remote remove <name>',
+		),
+	})
+	expect(detail.structured).toMatchObject({
+		inputSchema: expect.objectContaining({
+			properties: expect.objectContaining({
+				commands: expect.objectContaining({
+					description: expect.stringContaining('not shell-executed'),
+				}),
+			}),
+		}),
+	})
+	expect(detail.structured).toMatchObject({
+		inputSchema: expect.objectContaining({
+			properties: expect.objectContaining({
+				commands: expect.objectContaining({
+					description: expect.stringContaining('`git clone` is intentionally unsupported'),
+				}),
+			}),
+		}),
 	})
 })
 

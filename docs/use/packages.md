@@ -149,7 +149,7 @@ Use:
 - `package_save` to create or replace a saved package
 - `package_get` and `package_list` to inspect saved packages
 - `repo_run_commands` to edit, check, and publish repo-backed package source
-  after it exists
+  after it exists using parsed, git-only command forms rather than shell
 
 ## Search and discovery
 

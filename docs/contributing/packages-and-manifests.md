@@ -191,6 +191,9 @@ Retriever implementations should truncate or paginate before returning.
 Package source is edited and published through the repo session capabilities.
 
 - prefer `repo_run_commands` for package changes
+- `repo_run_commands` accepts a newline-separated parsed git-command string, not
+  arbitrary shell; keep agent-facing guidance aligned with the deployed
+  capability schema
 - open repo sessions by package identity when possible
 - for an existing package, treat the repo snapshot as the durable source of
   truth

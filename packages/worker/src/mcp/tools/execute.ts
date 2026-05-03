@@ -24,6 +24,7 @@ import {
 	formatSurfacedMemoriesMarkdown,
 	surfaceToolMemories,
 } from './memory-tool-context.ts'
+import { repoRunCommandsExecuteSummary } from '#mcp/capabilities/repo/repo-run-commands-text.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 
@@ -38,8 +39,7 @@ call \`search\` with \`entity: "{name}:capability"\` or use
 
 Saved package surface:
 - \`package_save\`, \`package_get\`, \`package_list\`, \`package_delete\`
-- repo-backed package editing with \`repo_run_commands\`; commands are parsed,
-  constrained git workflows, not shell execution
+- repo-backed package editing with \`repo_run_commands\`; ${repoRunCommandsExecuteSummary}
 - cross-package imports with specifiers such as
    \`kody:@scope/my-package/export-name\`
 
