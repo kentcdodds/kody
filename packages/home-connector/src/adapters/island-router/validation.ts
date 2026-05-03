@@ -5,19 +5,14 @@ import {
 	type IslandRouterHostIdentity,
 } from './types.ts'
 
-const macAddressPattern =
-	/^(?<octets>[0-9a-fA-F]{2}([:-][0-9a-fA-F]{2}){5})$/
+const macAddressPattern = /^(?<octets>[0-9a-fA-F]{2}([:-][0-9a-fA-F]{2}){5})$/
 const hostnamePattern =
 	/^(?=.{1,253}$)(?!-)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.(?!-)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
 const sha256FingerprintPattern = /^SHA256:[A-Za-z0-9+/]+={0,2}$/
 const md5FingerprintPattern = /^MD5:(?:[0-9a-fA-F]{2}:){15}[0-9a-fA-F]{2}$/
 
 function normalizeMacAddress(value: string) {
-	const octets = value
-		.trim()
-		.toLowerCase()
-		.replaceAll('-', ':')
-		.split(':')
+	const octets = value.trim().toLowerCase().replaceAll('-', ':').split(':')
 	return octets.map((octet) => octet.padStart(2, '0')).join(':')
 }
 
@@ -25,7 +20,9 @@ function normalizeIpv6(value: string) {
 	return value.trim().toLowerCase()
 }
 
-export function validateIslandRouterHost(value: string): IslandRouterHostIdentity {
+export function validateIslandRouterHost(
+	value: string,
+): IslandRouterHostIdentity {
 	const trimmed = value.trim()
 	if (trimmed.length === 0) {
 		throw new Error('Host must not be empty.')
@@ -111,9 +108,7 @@ export function getIslandRouterConfigStatus(
 			validateIslandRouterFingerprint(config.islandRouterHostFingerprint)
 		} catch (error) {
 			verificationConfigValid = false
-			warnings.push(
-				error instanceof Error ? error.message : String(error),
-			)
+			warnings.push(error instanceof Error ? error.message : String(error))
 		}
 	} else {
 		warnings.push(
@@ -126,21 +121,14 @@ export function getIslandRouterConfigStatus(
 		missingFields,
 		verificationMode,
 		warnings,
-		writeToolsEnabled: config.islandRouterWriteOperationsEnabled,
 		writeCapabilitiesAvailable:
-			config.islandRouterWriteOperationsEnabled &&
 			missingFields.length === 0 &&
 			verificationConfigValid &&
 			verificationMode !== 'none',
 		writeWarnings: [
-			...(config.islandRouterWriteOperationsEnabled
-				? []
-				: [
-						'Island router write operations are disabled. Set ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true only if you intentionally want highly restricted mutating router tools.',
-					]),
 			...(verificationMode === 'none'
 				? [
-						'Island router write operations require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before enabling them.',
+						'Island router write operations require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',
 					]
 				: []),
 			...(verificationConfigValid
@@ -176,11 +164,6 @@ export function assertIslandRouterConfigured(config: HomeConnectorConfig) {
 
 export function assertIslandRouterWriteConfigured(config: HomeConnectorConfig) {
 	const status = assertIslandRouterConfigured(config)
-	if (!config.islandRouterWriteOperationsEnabled) {
-		throw new Error(
-			'Island router write operations are disabled. Set ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true only if you intentionally want these high-risk mutating tools.',
-		)
-	}
 	if (status.verificationMode === 'none') {
 		throw new Error(
 			'Island router write operations require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',

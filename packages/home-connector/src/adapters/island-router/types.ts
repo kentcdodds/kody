@@ -16,7 +16,6 @@ export type IslandRouterConfigStatus = {
 	missingFields: Array<string>
 	verificationMode: IslandRouterVerificationMode
 	warnings: Array<string>
-	writeToolsEnabled: boolean
 	writeCapabilitiesAvailable: boolean
 	writeWarnings: Array<string>
 }

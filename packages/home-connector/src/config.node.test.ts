@@ -162,7 +162,6 @@ test('island router SSH env vars are loaded with defaults', () => {
 		ISLAND_ROUTER_KNOWN_HOSTS_PATH: '/keys/known_hosts',
 		ISLAND_ROUTER_HOST_FINGERPRINT: undefined,
 		ISLAND_ROUTER_COMMAND_TIMEOUT_MS: undefined,
-		ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS: undefined,
 	})
 
 	const config = loadHomeConnectorConfig()
@@ -174,7 +173,6 @@ test('island router SSH env vars are loaded with defaults', () => {
 		islandRouterKnownHostsPath: '/keys/known_hosts',
 		islandRouterHostFingerprint: null,
 		islandRouterCommandTimeoutMs: 8000,
-		islandRouterWriteOperationsEnabled: false,
 	})
 })
 
@@ -189,7 +187,6 @@ test('island router SSH env vars honor explicit port, fingerprint, and timeout',
 		ISLAND_ROUTER_HOST_FINGERPRINT:
 			'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12',
 		ISLAND_ROUTER_COMMAND_TIMEOUT_MS: '12000',
-		ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS: 'true',
 	})
 
 	const config = loadHomeConnectorConfig()
@@ -202,7 +199,6 @@ test('island router SSH env vars honor explicit port, fingerprint, and timeout',
 		islandRouterHostFingerprint:
 			'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12',
 		islandRouterCommandTimeoutMs: 12000,
-		islandRouterWriteOperationsEnabled: true,
 	})
 })
 

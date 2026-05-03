@@ -14,7 +14,7 @@ import { createHomeConnectorMcpServer } from './server.ts'
 import { createAppState } from '../state.ts'
 import { createHomeConnectorStorage } from '../storage/index.ts'
 
-function createConfig(options?: { writeOperationsEnabled?: boolean }) {
+function createConfig() {
 	process.env.MOCKS = 'true'
 	process.env.HOME_CONNECTOR_ID = 'default'
 	process.env.HOME_CONNECTOR_SHARED_SECRET =
@@ -35,17 +35,11 @@ function createConfig(options?: { writeOperationsEnabled?: boolean }) {
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
 		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
-	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = options
-		?.writeOperationsEnabled
-		? 'true'
-		: 'false'
 	return loadHomeConnectorConfig()
 }
 
 function createIslandRouterRunner() {
-	return async (
-		request: IslandRouterCommandRequest,
-	) => {
+	return async (request: IslandRouterCommandRequest) => {
 		switch (request.id) {
 			case 'show-version':
 				return {
@@ -138,7 +132,10 @@ function createIslandRouterRunner() {
 			case 'show-interface':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', `show interface ${request.interfaceName}`],
+					commandLines: [
+						'terminal length 0',
+						`show interface ${request.interfaceName}`,
+					],
 					stdout: `Interface: ${request.interfaceName}\nLink State: up`,
 					stderr: '',
 					exitCode: 0,
@@ -307,25 +304,27 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		).toBe(true)
 		expect(tools.some((tool) => tool.name === 'router_get_status')).toBe(true)
 		expect(tools.some((tool) => tool.name === 'router_ping_host')).toBe(true)
-		expect(tools.some((tool) => tool.name === 'router_get_arp_entry')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_arp_entry')).toBe(
+			true,
+		)
 		expect(tools.some((tool) => tool.name === 'router_get_dhcp_lease')).toBe(
 			true,
 		)
-		expect(
-			tools.some((tool) => tool.name === 'router_get_recent_events'),
-		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_recent_events')).toBe(
+			true,
+		)
 		expect(tools.some((tool) => tool.name === 'router_diagnose_host')).toBe(
 			true,
 		)
 		expect(
 			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
-		).toBe(false)
-		expect(
-			tools.some((tool) => tool.name === 'router_clear_log_buffer'),
-		).toBe(false)
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_clear_log_buffer')).toBe(
+			true,
+		)
 		expect(
 			tools.some((tool) => tool.name === 'router_save_running_config'),
-		).toBe(false)
+		).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'jellyfish_scan_controllers'),
 		).toBe(true)
@@ -537,8 +536,8 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 	}
 })
 
-test('mcp server exposes island router write tools only when explicitly enabled', async () => {
-	const config = createConfig({ writeOperationsEnabled: true })
+test('mcp server exposes island router write tools when host verification is configured', async () => {
+	const config = createConfig()
 	const state = createAppState()
 	const storage = createHomeConnectorStorage(config)
 	const samsungTv = createSamsungTvAdapter({
@@ -588,9 +587,9 @@ test('mcp server exposes island router write tools only when explicitly enabled'
 		expect(
 			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
 		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'router_clear_log_buffer'),
-		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_clear_log_buffer')).toBe(
+			true,
+		)
 		expect(
 			tools.some((tool) => tool.name === 'router_save_running_config'),
 		).toBe(true)

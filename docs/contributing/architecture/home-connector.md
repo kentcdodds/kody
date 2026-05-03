@@ -31,8 +31,8 @@ The connector exposes these local-device families:
 - Samsung TV / Frame discovery and control over mDNS, REST, and local WebSocket
   channels
 - Venstar WiFi thermostat status and control over the local REST API
-- Island router diagnostics over SSH using a typed command allowlist plus a
-  tiny opt-in set of high-risk write operations
+- Island router diagnostics over SSH using a typed command allowlist plus a tiny
+  opt-in set of high-risk write operations
 
 All surfaces are registered as MCP tools inside the connector and then exposed
 to the Worker through the existing outbound WebSocket session to
@@ -140,21 +140,19 @@ The adapter does expose:
 - a structured `router_diagnose_host` workflow that combines ping, ARP,
   reservation, interface, and log data for one host
 - a very small typed write allowlist for `clear dhcp-client`, `clear log`, and
-  `write memory` when `ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true` and all
-  write guardrails pass
+  `write memory` when all write guardrails pass
 
 The adapter explicitly does not expose:
 
 - arbitrary shell or CLI command execution over MCP
-- broad or arbitrary mutating router commands such as reboot, config edits,
-  PoE control, bridge resets, factory reset, or network wipe operations
+- broad or arbitrary mutating router commands such as reboot, config edits, PoE
+  control, bridge resets, factory reset, or network wipe operations
 - password-based auth flows through MCP
 
 The write-capable operations are intentionally hard to use because mistakes can
 have severe consequences. Agents must be highly certain before using them. The
 MCP surface requires:
 
-- explicit runtime opt-in (`ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true`)
 - SSH host verification via `known_hosts` or a pinned host fingerprint
 - typed tool-specific inputs instead of free-form CLI
 - an operator reason and an exact acknowledgement phrase per operation
