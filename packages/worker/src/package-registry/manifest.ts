@@ -566,7 +566,7 @@ export function buildPackageSearchDocument(
 			.filter((value) => value.length > 0)
 			.join(' '),
 	)
-	const workflowLines = projection.workflows.map((workflow) =>
+	const workflowLines = (projection.workflows ?? []).map((workflow) =>
 		[
 			`workflow:${workflow.name}`,
 			workflow.exportName,
