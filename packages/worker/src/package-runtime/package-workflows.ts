@@ -171,8 +171,8 @@ export async function createPackageWorkflowInstanceId(input: {
 	idempotencyKey: string
 }) {
 	const canonical = canonicalJsonStringify({
-		userId: input.userId,
-		packageId: input.packageId,
+		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		packageId: normalizeNonEmptyString(input.packageId, 'packageId'),
 		workflowName: normalizeNonEmptyString(input.workflowName, 'workflowName'),
 		idempotencyKey: normalizeNonEmptyString(
 			input.idempotencyKey,

@@ -60,6 +60,12 @@ test('createPackageWorkflowInstanceId is stable and scoped to package workflow i
 		packageId: 'pkg-1',
 		userId: 'user-1',
 	})
+	const withWhitespace = await createPackageWorkflowInstanceId({
+		userId: ' user-1 ',
+		packageId: ' pkg-1 ',
+		workflowName: ' shade-event ',
+		idempotencyKey: ' event-2026-05-03T10:00:00Z ',
+	})
 	const differentPackage = await createPackageWorkflowInstanceId({
 		userId: 'user-1',
 		packageId: 'pkg-2',
@@ -68,6 +74,7 @@ test('createPackageWorkflowInstanceId is stable and scoped to package workflow i
 	})
 
 	expect(first).toBe(second)
+	expect(first).toBe(withWhitespace)
 	expect(first).toMatch(/^pkgwf-[A-Za-z0-9_-]{43}$/)
 	expect(differentPackage).not.toBe(first)
 })
