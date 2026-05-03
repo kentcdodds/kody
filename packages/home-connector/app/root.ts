@@ -206,6 +206,7 @@ const styles = `
 			position: static !important;
 			height: auto !important;
 			padding: var(--spacing-md) !important;
+			gap: var(--spacing-md) !important;
 			border-right: none !important;
 			border-bottom: 1px solid var(--color-border);
 		}
@@ -216,7 +217,7 @@ const styles = `
 
 		.sidebar nav {
 			display: grid;
-			gap: var(--spacing-md);
+			gap: var(--spacing-sm);
 			overflow-x: auto;
 			padding-bottom: var(--spacing-xs);
 			scrollbar-width: thin;
@@ -232,9 +233,13 @@ const styles = `
 		}
 
 		.nav-link {
-			min-width: 9.5rem;
-			max-width: 13rem;
+			min-width: max-content;
 			height: 100%;
+			padding: 0.625rem 0.75rem !important;
+		}
+
+		.nav-link-description {
+			display: none;
 		}
 
 		.layout-main {
