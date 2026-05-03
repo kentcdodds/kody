@@ -3,16 +3,18 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
+import { type createAccessNetworksUnleashedAdapter } from '../adapters/access-networks-unleashed/index.ts'
 import { type createBondAdapter } from '../adapters/bond/index.ts'
 import { type createIslandRouterAdapter } from '../adapters/island-router/index.ts'
 import { type createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
-import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { isLutronProcessorNotFoundError } from '../adapters/lutron/errors.ts'
 import { type createLutronAdapter } from '../adapters/lutron/index.ts'
+import { createRokuAdapter } from '../adapters/roku/index.ts'
 import { type createSonosAdapter } from '../adapters/sonos/index.ts'
 import { type createSamsungTvAdapter } from '../adapters/samsung-tv/index.ts'
 import { type createVenstarAdapter } from '../adapters/venstar/index.ts'
 import { type HomeConnectorConfig } from '../config.ts'
+import { registerAccessNetworksUnleashedHomeConnectorTools } from './register-access-networks-unleashed-tools.ts'
 import { registerBondHomeConnectorTools } from './register-bond-tools.ts'
 import { registerIslandRouterHomeConnectorTools } from './register-island-router-tools.ts'
 import { type HomeConnectorState } from '../state.ts'
@@ -76,6 +78,9 @@ export function createHomeConnectorMcpServer(input: {
 	jellyfish: ReturnType<typeof createJellyfishAdapter>
 	venstar: ReturnType<typeof createVenstarAdapter>
 	islandRouter: ReturnType<typeof createIslandRouterAdapter>
+	accessNetworksUnleashed: ReturnType<
+		typeof createAccessNetworksUnleashedAdapter
+	>
 }): HomeConnectorMcpServer {
 	const roku = createRokuAdapter({
 		config: input.config,
@@ -88,6 +93,7 @@ export function createHomeConnectorMcpServer(input: {
 	const jellyfish = input.jellyfish
 	const venstar = input.venstar
 	const islandRouter = input.islandRouter
+	const accessNetworksUnleashed = input.accessNetworksUnleashed
 
 	const server = new McpServer(
 		{
@@ -96,7 +102,7 @@ export function createHomeConnectorMcpServer(input: {
 		},
 		{
 			instructions:
-				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostat control, and typed allowlisted Island router SSH operations. Island router support is read-mostly: arbitrary CLI execution is never exposed, and the few opt-in write operations are high risk and must be used only when highly certain. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
+				'Home connector MCP server. Tools support Roku, Samsung TV, Lutron, Sonos, Bond (Olibra Bond Bridge / shades, groups, and RF devices), JellyFish Lighting, Venstar WiFi thermostat control, typed allowlisted Island router SSH operations, and Access Networks Unleashed WiFi controller reads/writes. Island router and Access Networks Unleashed write operations are high risk and must be used only when highly certain. Arbitrary CLI execution is never exposed. Bond local API tokens are configured only in the admin UI (/bond/setup); use bond_authentication_guide when you need a reminder.',
 		},
 	)
 
@@ -2799,6 +2805,11 @@ export function createHomeConnectorMcpServer(input: {
 	registerIslandRouterHomeConnectorTools({
 		registerTool,
 		islandRouter,
+	})
+
+	registerAccessNetworksUnleashedHomeConnectorTools({
+		registerTool,
+		accessNetworksUnleashed,
 	})
 
 	return {

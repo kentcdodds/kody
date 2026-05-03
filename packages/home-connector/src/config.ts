@@ -7,6 +7,11 @@ export type HomeConnectorConfig = {
 	workerSessionUrl: string
 	workerWebSocketUrl: string
 	sharedSecret: string | null
+	accessNetworksUnleashedHost: string | null
+	accessNetworksUnleashedUsername: string | null
+	accessNetworksUnleashedPassword: string | null
+	accessNetworksUnleashedAllowInsecureTls: boolean
+	accessNetworksUnleashedRequestTimeoutMs: number
 	islandRouterHost: string | null
 	islandRouterPort: number
 	islandRouterUsername: string | null
@@ -204,6 +209,10 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS ?? '8000',
 		10,
 	)
+	const accessNetworksUnleashedRequestTimeoutMs = Number.parseInt(
+		process.env.ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS ?? '8000',
+		10,
+	)
 	const homeConnectorId = process.env.HOME_CONNECTOR_ID?.trim() || 'default'
 	const workerBaseUrl =
 		process.env.WORKER_BASE_URL?.trim() || 'http://localhost:3742'
@@ -229,6 +238,19 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerSessionUrl,
 		workerWebSocketUrl: createWorkerWebSocketUrl(workerSessionUrl),
 		sharedSecret: process.env.HOME_CONNECTOR_SHARED_SECRET?.trim() || null,
+		accessNetworksUnleashedHost:
+			process.env.ACCESS_NETWORKS_UNLEASHED_HOST?.trim() || null,
+		accessNetworksUnleashedUsername:
+			process.env.ACCESS_NETWORKS_UNLEASHED_USERNAME?.trim() || null,
+		accessNetworksUnleashedPassword:
+			process.env.ACCESS_NETWORKS_UNLEASHED_PASSWORD?.trim() || null,
+		accessNetworksUnleashedAllowInsecureTls:
+			process.env.ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS === 'true',
+		accessNetworksUnleashedRequestTimeoutMs:
+			Number.isFinite(accessNetworksUnleashedRequestTimeoutMs) &&
+			accessNetworksUnleashedRequestTimeoutMs >= 1000
+				? accessNetworksUnleashedRequestTimeoutMs
+				: 8000,
 		islandRouterHost: process.env.ISLAND_ROUTER_HOST?.trim() || null,
 		islandRouterPort:
 			islandRouterPort != null &&

@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
+import { createAccessNetworksUnleashedAdapter } from '../adapters/access-networks-unleashed/index.ts'
+import { type AccessNetworksUnleashedClient } from '../adapters/access-networks-unleashed/types.ts'
 import { createBondAdapter } from '../adapters/bond/index.ts'
 import { type IslandRouterCommandRequest } from '../adapters/island-router/types.ts'
 import { createIslandRouterAdapter } from '../adapters/island-router/index.ts'
@@ -35,6 +37,9 @@ function createConfig() {
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
 		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
+	process.env.ACCESS_NETWORKS_UNLEASHED_HOST = 'https://unleashed.local'
+	process.env.ACCESS_NETWORKS_UNLEASHED_USERNAME = 'admin'
+	process.env.ACCESS_NETWORKS_UNLEASHED_PASSWORD = 'password'
 	return loadHomeConnectorConfig()
 }
 
@@ -570,7 +575,11 @@ function createIslandRouterRunner() {
 			case 'set-interface-description':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'interface en0', 'description "LAN uplink"'],
+					commandLines: [
+						'terminal length 0',
+						'interface en0',
+						'description "LAN uplink"',
+					],
 					stdout: 'Interface description updated.',
 					stderr: '',
 					exitCode: 0,
@@ -592,7 +601,10 @@ function createIslandRouterRunner() {
 			case 'block-host':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'firewall block-host 192.168.0.52'],
+					commandLines: [
+						'terminal length 0',
+						'firewall block-host 192.168.0.52',
+					],
 					stdout: 'Host blocked.',
 					stderr: '',
 					exitCode: 0,
@@ -603,7 +615,10 @@ function createIslandRouterRunner() {
 			case 'unblock-host':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'no firewall block-host 192.168.0.52'],
+					commandLines: [
+						'terminal length 0',
+						'no firewall block-host 192.168.0.52',
+					],
 					stdout: 'Host unblocked.',
 					stderr: '',
 					exitCode: 0,
@@ -654,6 +669,69 @@ function createIslandRouterRunner() {
 	}
 }
 
+function createFakeAccessNetworksUnleashedClient() {
+	const calls: Array<{ name: string; args: Array<unknown> }> = []
+	const client: AccessNetworksUnleashedClient = {
+		async getSystemInfo() {
+			return {
+				name: 'Access Networks Unleashed',
+				version: '200.15.6.212',
+			}
+		},
+		async listClients() {
+			return [
+				{
+					mac: 'aa:bb:cc:dd:ee:ff',
+					hostname: 'phone',
+					wlan: 'Main',
+				},
+			]
+		},
+		async listAccessPoints() {
+			return [
+				{
+					id: 1,
+					mac: '24:79:de:ad:be:ef',
+					name: 'Kitchen AP',
+				},
+			]
+		},
+		async listWlans() {
+			return [
+				{
+					id: 1,
+					name: 'Main',
+					ssid: 'Main',
+				},
+			]
+		},
+		async listEvents(limit) {
+			calls.push({ name: 'listEvents', args: [limit] })
+			return [
+				{
+					message: 'client associated',
+				},
+			]
+		},
+		async blockClient(macAddress) {
+			calls.push({ name: 'blockClient', args: [macAddress] })
+		},
+		async unblockClient(macAddress) {
+			calls.push({ name: 'unblockClient', args: [macAddress] })
+		},
+		async setWlanEnabled(name, enabled) {
+			calls.push({ name: 'setWlanEnabled', args: [name, enabled] })
+		},
+		async restartAccessPoint(macAddress) {
+			calls.push({ name: 'restartAccessPoint', args: [macAddress] })
+		},
+		async setAccessPointLeds(macAddress, enabled) {
+			calls.push({ name: 'setAccessPointLeds', args: [macAddress, enabled] })
+		},
+	}
+	return { client, calls }
+}
+
 installHomeConnectorMockServer()
 
 test('mcp server exposes Samsung tools and executes samsung_list_devices', async () => {
@@ -696,6 +774,11 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		storage,
 	})
 	const venstar = createVenstarAdapter({ config, state, storage })
+	const fakeAccessNetworksUnleashed = createFakeAccessNetworksUnleashedClient()
+	const accessNetworksUnleashed = createAccessNetworksUnleashedAdapter({
+		config,
+		client: fakeAccessNetworksUnleashed.client,
+	})
 	await samsungTv.scan()
 	await lutron.scan()
 	await sonos.scan()
@@ -710,6 +793,7 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		islandRouter,
 		jellyfish,
 		venstar,
+		accessNetworksUnleashed,
 	})
 
 	try {
@@ -758,13 +842,15 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'router_diagnose_host')).toBe(
 			true,
 		)
-		expect(tools.some((tool) => tool.name === 'router_get_wan_config')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_wan_config')).toBe(
+			true,
+		)
 		expect(
 			tools.some((tool) => tool.name === 'router_get_failover_status'),
 		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'router_get_routing_table'),
-		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_routing_table')).toBe(
+			true,
+		)
 		expect(tools.some((tool) => tool.name === 'router_get_nat_rules')).toBe(
 			true,
 		)
@@ -781,9 +867,9 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'router_get_qos_config')).toBe(
 			true,
 		)
-		expect(
-			tools.some((tool) => tool.name === 'router_get_traffic_stats'),
-		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_traffic_stats')).toBe(
+			true,
+		)
 		expect(
 			tools.some((tool) => tool.name === 'router_get_active_sessions'),
 		).toBe(true)
@@ -796,15 +882,15 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'router_get_ntp_config')).toBe(
 			true,
 		)
-		expect(
-			tools.some((tool) => tool.name === 'router_get_syslog_config'),
-		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_syslog_config')).toBe(
+			true,
+		)
 		expect(tools.some((tool) => tool.name === 'router_get_snmp_config')).toBe(
 			true,
 		)
-		expect(
-			tools.some((tool) => tool.name === 'router_get_system_info'),
-		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_system_info')).toBe(
+			true,
+		)
 		expect(
 			tools.some((tool) => tool.name === 'router_get_bandwidth_usage'),
 		).toBe(true)
@@ -830,13 +916,32 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'router_set_interface_description'),
 		).toBe(true)
-		expect(
-			tools.some((tool) => tool.name === 'router_set_dns_server'),
-		).toBe(true)
-		expect(tools.some((tool) => tool.name === 'router_block_host')).toBe(true)
-		expect(tools.some((tool) => tool.name === 'router_unblock_host')).toBe(
+		expect(tools.some((tool) => tool.name === 'router_set_dns_server')).toBe(
 			true,
 		)
+		expect(tools.some((tool) => tool.name === 'router_block_host')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_unblock_host')).toBe(true)
+		expect(
+			tools.some(
+				(tool) => tool.name === 'access_networks_unleashed_get_status',
+			),
+		).toBe(true)
+		expect(
+			tools.some(
+				(tool) => tool.name === 'access_networks_unleashed_list_access_points',
+			),
+		).toBe(true)
+		expect(
+			tools.some(
+				(tool) => tool.name === 'access_networks_unleashed_block_client',
+			),
+		).toBe(true)
+		expect(
+			tools.some(
+				(tool) =>
+					tool.name === 'access_networks_unleashed_restart_access_point',
+			),
+		).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'jellyfish_scan_controllers'),
 		).toBe(true)
@@ -994,6 +1099,41 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			},
 		})
 
+		const accessNetworksStatus = await mcp.callTool(
+			'access_networks_unleashed_get_status',
+		)
+		expect(accessNetworksStatus.structuredContent).toMatchObject({
+			config: {
+				configured: true,
+			},
+			aps: expect.any(Array),
+			wlans: expect.any(Array),
+			clients: expect.any(Array),
+		})
+		const accessNetworksBlock = await mcp.callTool(
+			'access_networks_unleashed_block_client',
+			{
+				macAddress: 'AA-BB-CC-DD-EE-FF',
+				acknowledgeHighRisk: true,
+				reason:
+					'The client was identified as unauthorized and must be blocked now.',
+				confirmation: accessNetworksUnleashed.writeAcknowledgements.blockClient,
+			},
+		)
+		expect(accessNetworksBlock.structuredContent).toMatchObject({
+			operation: 'block-client',
+			target: 'aa:bb:cc:dd:ee:ff',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'blockClient',
+			args: ['aa:bb:cc:dd:ee:ff'],
+		})
+		await mcp.callTool('access_networks_unleashed_list_events', { limit: 1 })
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'listEvents',
+			args: [1],
+		})
+
 		await mcp.callTool('bond_adopt_bridge', { bridgeId: 'MOCKBOND1' })
 		bond.setToken('MOCKBOND1', 'mock-bond-token')
 		const bondDevices = await mcp.callTool('bond_list_devices', {
@@ -1121,6 +1261,11 @@ test('mcp server exposes island router write tools when host verification is con
 		storage,
 	})
 	const venstar = createVenstarAdapter({ config, state, storage })
+	const fakeAccessNetworksUnleashed = createFakeAccessNetworksUnleashedClient()
+	const accessNetworksUnleashed = createAccessNetworksUnleashedAdapter({
+		config,
+		client: fakeAccessNetworksUnleashed.client,
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
@@ -1131,6 +1276,7 @@ test('mcp server exposes island router write tools when host verification is con
 		islandRouter,
 		jellyfish,
 		venstar,
+		accessNetworksUnleashed,
 	})
 
 	try {
