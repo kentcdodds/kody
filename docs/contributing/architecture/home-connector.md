@@ -137,9 +137,13 @@ The adapter does expose:
 - ARP / neighbor-cache inspection with `show ip neighbors`
 - DHCP reservation inspection with `show ip dhcp-reservations`
 - recent-event lookups with `show log`
-- structured WAN, failover, routing, NAT, VLAN, DNS, user, firewall/security,
+- structured WAN/failover, routing, NAT, VLAN, DNS, user, firewall/security,
   QoS, traffic, session, VPN, DHCP-server, NTP, syslog, SNMP, and
-  bandwidth-usage reads from a typed SSH CLI allowlist
+  system/bandwidth reads from a typed SSH CLI allowlist that now prefers the
+  Island-documented `show system`/`show stats`, `show hardware`,
+  `show running-config`, `show vpns`, `show ip sockets`, and
+  `show ntp status|associations` families over unsupported guessed top-level
+  subcommands
 - a structured `router_diagnose_host` workflow that combines ping, ARP,
   reservation, interface, and log data for one host
 - a broader but still typed and explicitly allowlisted high-risk write surface

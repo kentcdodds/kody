@@ -96,7 +96,13 @@ Quick notes for getting a local kody environment running.
     typed MCP tools for router status, host diagnosis, WAN/failover state,
     routing/NAT/session inspection, VLAN/DNS/DHCP policy inspection, VPN/NTP/
     syslog/SNMP/system-health reads, and the other typed read-only router
-    diagnostics exposed by the home connector.
+    diagnostics exposed by the home connector. The current read surface is
+    intentionally aligned to CLI families verified against live Island Pro
+    firmware: config-style reads primarily source from `show running-config`,
+    connection/state reads use commands such as `show ip neighbors`,
+    `show ip routes`, `show ip sockets`, and `show vpns`, while NTP uses
+    `show ntp status` plus `show ntp associations`, and system-health summaries
+    use `show stats` plus `show hardware`.
   - Prefer mounting the private key read-only into the container or host
     runtime, for example
     `-v /path/to/id_ed25519:/run/secrets/island-router-key:ro` plus

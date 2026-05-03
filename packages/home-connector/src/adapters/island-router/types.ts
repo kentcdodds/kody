@@ -24,6 +24,9 @@ export type IslandRouterCommandId =
 	| 'show-version'
 	| 'show-clock'
 	| 'show-system'
+	| 'show-hardware'
+	| 'show-stats'
+	| 'show-running-config'
 	| 'show-interface-summary'
 	| 'show-interface'
 	| 'show-ip-interface'
@@ -47,12 +50,16 @@ export type IslandRouterCommandId =
 	| 'show-qos'
 	| 'show-traffic-policy'
 	| 'show-vpn'
+	| 'show-vpns'
 	| 'show-ipsec'
 	| 'show-gre'
 	| 'show-ip-neighbors'
+	| 'show-ip-sockets'
 	| 'show-ip-dhcp-reservations'
 	| 'show-dhcp-server'
 	| 'show-ntp'
+	| 'show-ntp-status'
+	| 'show-ntp-associations'
 	| 'show-syslog'
 	| 'show-snmp'
 	| 'show-log'
@@ -80,6 +87,18 @@ export type IslandRouterCommandRequest =
 	  }
 	| {
 			id: 'show-system'
+			timeoutMs?: number
+	  }
+	| {
+			id: 'show-hardware'
+			timeoutMs?: number
+	  }
+	| {
+			id: 'show-stats'
+			timeoutMs?: number
+	  }
+	| {
+			id: 'show-running-config'
 			timeoutMs?: number
 	  }
 	| {
@@ -177,6 +196,10 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
+			id: 'show-vpns'
+			timeoutMs?: number
+	  }
+	| {
 			id: 'show-ipsec'
 			timeoutMs?: number
 	  }
@@ -189,6 +212,10 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
+			id: 'show-ip-sockets'
+			timeoutMs?: number
+	  }
+	| {
 			id: 'show-ip-dhcp-reservations'
 			timeoutMs?: number
 	  }
@@ -198,6 +225,14 @@ export type IslandRouterCommandRequest =
 	  }
 	| {
 			id: 'show-ntp'
+			timeoutMs?: number
+	  }
+	| {
+			id: 'show-ntp-status'
+			timeoutMs?: number
+	  }
+	| {
+			id: 'show-ntp-associations'
 			timeoutMs?: number
 	  }
 	| {

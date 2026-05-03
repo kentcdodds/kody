@@ -87,12 +87,92 @@ function createFakeRunner() {
 			case 'show-system':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show system'],
+					commandLines: ['terminal length 0', 'show stats'],
 					stdout: [
 						'Uptime: 5 days 2 hours',
 						'CPU Usage: 17%',
 						'Memory Usage: 42%',
 						'Temperature: 54 C',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-hardware':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show hardware'],
+					stdout: [
+						'Platform Type: Island Pro',
+						'CPU Type: ARM64',
+						'Memory Size: 8 GB',
+						'Power Supply Status: ok',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-stats':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show stats'],
+					stdout: [
+						'Uptime: 5 days 2 hours',
+						'CPU Usage: 17%',
+						'Memory Usage: 42%',
+						'Temperature: 54 C',
+						'Interface  RX Bytes  TX Bytes  RX Packets  TX Packets  RX Errors  TX Errors  Utilization',
+						'---------  --------  --------  ----------  ----------  ---------  ---------  -----------',
+						'en0        1200000   2400000   1000        1500        0          1          37%',
+						'en1        100       200       1           2           0          0          1%',
+						'Interface  RX Rate   TX Rate   Total Rate',
+						'---------  --------  --------  ----------',
+						'en0        12 Mbps   2 Mbps    14 Mbps',
+						'en1        150 Mbps  20 Mbps   170 Mbps',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-running-config':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show running-config'],
+					stdout: [
+						'ip dns mode recursive',
+						'ip dns local-only off',
+						'ip dns server 1.1.1.1',
+						'ip dns server 8.8.8.8',
+						'ip load-sharing random',
+						'ip dhcp-reserve 192.168.0.52 00:11:22:33:44:55',
+						'syslog 192.168.0.60',
+						'syslog port 514',
+						'syslog protocol udp',
+						'syslog facility local0',
+						'snmp community public ro 192.168.0.0/24',
+						'snmp trap-target 192.168.0.61 version 2c community public',
+						'vpn peer name office-ipsec',
+						'interface en0',
+						'ip address 192.168.0.1/24',
+						'ip dhcp-server on',
+						'ip dhcp-scope 50-199',
+						'ip dhcp-lease 1800',
+						'interface en1',
+						'ip autoconfig wan',
+						'ip priority 1',
+						'ip nat4 on',
+						'interface en2',
+						'ip autoconfig wan',
+						'ip priority 2',
+						'interface vlan10',
+						'parent en0',
+						'ip address 192.168.10.1/24',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -119,8 +199,12 @@ function createFakeRunner() {
 			case 'show-interface-statistics':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show interface statistics'],
+					commandLines: ['terminal length 0', 'show stats'],
 					stdout: [
+						'Uptime: 5 days 2 hours',
+						'CPU Usage: 17%',
+						'Memory Usage: 42%',
+						'Temperature: 54 C',
 						'Interface  RX Bytes  TX Bytes  RX Packets  TX Packets  RX Errors  TX Errors  Utilization',
 						'---------  --------  --------  ----------  ----------  ---------  ---------  -----------',
 						'en0        1200000   2400000   1000        1500        0          1          37%',
@@ -135,12 +219,16 @@ function createFakeRunner() {
 			case 'show-bandwidth-usage':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show bandwidth-usage'],
+					commandLines: ['terminal length 0', 'show stats'],
 					stdout: [
-						'Subject            Interface  RX Rate   TX Rate   Total Rate',
-						'-----------------  ---------  --------  --------  ----------',
-						'192.168.0.52       en0        12 Mbps   2 Mbps    14 Mbps',
-						'WAN aggregate      en1        150 Mbps  20 Mbps   170 Mbps',
+						'Uptime: 5 days 2 hours',
+						'CPU Usage: 17%',
+						'Memory Usage: 42%',
+						'Temperature: 54 C',
+						'Interface  RX Rate   TX Rate   Total Rate',
+						'---------  --------  --------  ----------',
+						'en0        12 Mbps   2 Mbps    14 Mbps',
+						'en1        150 Mbps  20 Mbps   170 Mbps',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -151,12 +239,16 @@ function createFakeRunner() {
 			case 'show-wan':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show wan'],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'ISP          Interface  IP Address     Gateway       Type   Role    Priority  Status',
-						'-----------  ---------  -------------  ------------  -----  ------  --------  ------',
-						'Fiber        en1        203.0.113.10   203.0.113.1   DHCP   active  1         up',
-						'LTE Backup   en2        198.51.100.22  198.51.100.1  DHCP   standby   2         up',
+						'ip load-sharing random',
+						'interface en1',
+						'ip autoconfig wan',
+						'ip priority 1',
+						'ip nat4 on',
+						'interface en2',
+						'ip autoconfig wan',
+						'ip priority 2',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -167,15 +259,15 @@ function createFakeRunner() {
 			case 'show-wan-failover':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show wan failover'],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Active Interface: en1',
-						'Active ISP: Fiber',
-						'Policy: priority',
-						'Interface  ISP         Health  Role     Priority  Monitor',
-						'---------  ----------  ------  -------  --------  ----------------',
-						'en1        Fiber       up      active   1         8.8.8.8',
-						'en2        LTE Backup up      standby  2         1.1.1.1',
+						'ip load-sharing random',
+						'interface en1',
+						'ip autoconfig wan',
+						'ip priority 1',
+						'interface en2',
+						'ip autoconfig wan',
+						'ip priority 2',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -186,14 +278,15 @@ function createFakeRunner() {
 			case 'show-multi-wan':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show multi-wan'],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Active Interface: en1',
-						'Policy: priority',
-						'Interface  ISP         Status   Priority',
-						'---------  ----------  -------  --------',
-						'en1        Fiber       active   1',
-						'en2        LTE Backup standby  2',
+						'ip load-sharing random',
+						'interface en1',
+						'ip autoconfig wan',
+						'ip priority 1',
+						'interface en2',
+						'ip autoconfig wan',
+						'ip priority 2',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -237,14 +330,11 @@ function createFakeRunner() {
 			case 'show-ip-nat':
 				return {
 					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.id === 'show-nat' ? 'show nat' : 'show ip nat',
-					],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Rule  Type         Protocol  Interface  External         Internal         Enabled  Description',
-						'----  -----------  --------  ---------  ---------------  ---------------  -------  -----------',
-						'1     port-forward  tcp       en1        203.0.113.10:80  192.168.0.52:80  yes      NAS web',
+						'interface en1',
+						'ip autoconfig wan',
+						'ip nat4 on',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -255,11 +345,11 @@ function createFakeRunner() {
 			case 'show-sessions':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show sessions'],
+					commandLines: ['terminal length 0', 'show ip sockets'],
 					stdout: [
-						'Protocol  Source                Destination           Translated            State        Interface',
-						'--------  --------------------  --------------------  --------------------  -----------  ---------',
-						'tcp       192.168.0.52:51514    93.184.216.34:443     203.0.113.10:51514   established  en1',
+						'Protocol  Local Address         Foreign Address       State',
+						'--------  --------------------  --------------------  -----------',
+						'tcp       192.168.0.52:51514    93.184.216.34:443     established',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -270,11 +360,11 @@ function createFakeRunner() {
 			case 'show-vlan':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show vlan'],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'VLAN  Name    Interface  Members     Status  Address',
-						'----  ------  ---------  ----------  ------  -------------',
-						'10    Main    vlan10     en0,en3     up      192.168.0.1/24',
+						'interface vlan10',
+						'parent en0',
+						'ip address 192.168.10.1/24',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -286,18 +376,12 @@ function createFakeRunner() {
 			case 'show-ip-dns':
 				return {
 					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.id === 'show-dns' ? 'show dns' : 'show ip dns',
-					],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Mode: forwarding',
-						'Search Domains: home.arpa, lan',
-						'Server  Role       Source',
-						'------  ---------  --------',
-						'1.1.1.1  upstream   static',
-						'8.8.8.8  upstream   dhcp',
-						'host=nas.home.arpa value=192.168.0.52 enabled=yes',
+						'ip dns mode recursive',
+						'ip dns local-only off',
+						'ip dns server 1.1.1.1',
+						'ip dns server 8.8.8.8',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -330,18 +414,9 @@ function createFakeRunner() {
 			case 'show-firewall':
 				return {
 					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.id === 'show-security-policy'
-							? 'show security-policy'
-							: request.id === 'show-protection'
-								? 'show protection'
-								: 'show firewall',
-					],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Rule  Name         Action  Source         Destination    Service  Enabled',
-						'----  -----------  ------  -------------  -------------  -------  -------',
-						'10    block-guest  deny    192.168.0.99   any            any      yes',
+						'firewall block-host 192.168.0.99',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -353,14 +428,9 @@ function createFakeRunner() {
 			case 'show-traffic-policy':
 				return {
 					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.id === 'show-qos' ? 'show qos' : 'show traffic-policy',
-					],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Policy   Interface  Class      Priority  Bandwidth  Enabled',
-						'-------  ---------  ---------  --------  ---------  -------',
-						'wan-qos  en1        voice      high      10 Mbps    yes',
+						'qos wan-qos interface en1 bandwidth 10 Mbps priority high',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -371,20 +441,14 @@ function createFakeRunner() {
 			case 'show-vpn':
 			case 'show-ipsec':
 			case 'show-gre':
+			case 'show-vpns':
 				return {
 					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.id === 'show-vpn'
-							? 'show vpn'
-							: request.id === 'show-ipsec'
-								? 'show ipsec'
-								: 'show gre',
-					],
+					commandLines: ['terminal length 0', 'show vpns'],
 					stdout: [
-						'Tunnel      Type   Local          Remote         Status  Interface',
-						'----------  -----  -------------  -------------  ------  ---------',
-						'office-ipsec  ipsec  203.0.113.10   198.51.100.20  up      tun0',
+						'Name          Type   Local Endpoint  Remote Endpoint  Status  Interface',
+						'------------  -----  --------------  ---------------  ------  ---------',
+						'office-ipsec  vpn    203.0.113.10    198.51.100.20   up      wg7',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -410,13 +474,14 @@ function createFakeRunner() {
 			case 'show-dhcp-server':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show dhcp-server'],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Pool  Interface  Network         Range Start    Range End      Gateway       DNS',
-						'----  ---------  --------------  -------------  -------------  ------------  --------',
-						'main  en0        192.168.0.0/24  192.168.0.50   192.168.0.199  192.168.0.1   1.1.1.1,8.8.8.8',
-						'Option 6 value=1.1.1.1,8.8.8.8',
-						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+						'ip dhcp-reserve 192.168.0.52 00:11:22:33:44:55',
+						'interface en0',
+						'ip address 192.168.0.1/24',
+						'ip dhcp-server on',
+						'ip dhcp-scope 50-199',
+						'ip dhcp-lease 1800',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -425,14 +490,20 @@ function createFakeRunner() {
 					durationMs: 10,
 				}
 			case 'show-ntp':
+			case 'show-ntp-status':
+			case 'show-ntp-associations':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show ntp'],
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-ntp-associations'
+							? 'show ntp associations'
+							: 'show ntp status',
+					],
 					stdout: [
-						'Timezone: America/Denver',
-						'Server         Status  Source',
-						'-------------  ------  ------',
-						'162.159.200.1  synced  static',
+						...(request.id === 'show-ntp' || request.id === 'show-ntp-status'
+							? ['Clock State: synchronized', 'Server: 162.159.200.1']
+							: ['Server         Status  Source', '-------------  ------  ------', '162.159.200.1  synced  configured']),
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -443,11 +514,12 @@ function createFakeRunner() {
 			case 'show-syslog':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show syslog'],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Host            Port  Protocol  Facility  Enabled',
-						'--------------  ----  --------  --------  -------',
-						'192.168.0.60    514   udp       local0    yes',
+						'syslog 192.168.0.60',
+						'syslog port 514',
+						'syslog protocol udp',
+						'syslog facility local0',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -458,11 +530,10 @@ function createFakeRunner() {
 			case 'show-snmp':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show snmp'],
+					commandLines: ['terminal length 0', 'show running-config'],
 					stdout: [
-						'Enabled: yes',
-						'community=public access=ro source=192.168.0.0/24',
-						'trap target=192.168.0.61 version=2c community=public',
+						'snmp community public ro 192.168.0.0/24',
+						'snmp trap-target 192.168.0.61 version 2c community public',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -859,18 +930,17 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		expect.arrayContaining([
 			expect.objectContaining({
 				interfaceName: 'en1',
-				ispName: 'Fiber',
 				connectionType: 'dhcp',
-				role: 'active',
+				failoverPriority: 1,
 			}),
 		]),
 	)
 
 	const failover = await islandRouter.getFailoverStatus()
 	expect(failover).toMatchObject({
-		activeInterfaceName: 'en1',
-		activeIspName: 'Fiber',
-		policy: 'priority',
+		activeInterfaceName: null,
+		activeIspName: null,
+		policy: 'random',
 	})
 
 	const routingTable = await islandRouter.getRoutingTable()
@@ -889,8 +959,9 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		expect.arrayContaining([
 			expect.objectContaining({
 				ruleId: '1',
-				externalAddress: '203.0.113.10',
-				internalAddress: '192.168.0.52',
+				interfaceName: 'en1',
+				type: 'nat4',
+				enabled: true,
 			}),
 		]),
 	)
@@ -907,8 +978,8 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 
 	const dnsConfig = await islandRouter.getDnsConfig()
 	expect(dnsConfig).toMatchObject({
-		mode: 'forwarding',
-		searchDomains: ['home.arpa', 'lan'],
+		mode: 'recursive',
+		searchDomains: [],
 		servers: expect.arrayContaining([
 			expect.objectContaining({
 					address: '1.1.1.1',
@@ -929,7 +1000,7 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 	expect(securityPolicy.rules).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
-				action: 'deny',
+				action: 'block',
 			}),
 		]),
 	)
@@ -939,7 +1010,8 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		expect.arrayContaining([
 			expect.objectContaining({
 				policyName: 'wan-qos',
-				className: 'voice',
+				interfaceName: 'en1',
+				bandwidth: '10 Mbps',
 			}),
 		]),
 	)
@@ -971,7 +1043,8 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		expect.arrayContaining([
 			expect.objectContaining({
 				tunnelName: 'office-ipsec',
-				type: 'ipsec',
+				type: 'vpn',
+				status: 'up',
 			}),
 		]),
 	)
@@ -980,7 +1053,8 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 	expect(dhcpServerConfig).toMatchObject({
 		pools: expect.arrayContaining([
 			expect.objectContaining({
-				poolName: 'main',
+				poolName: 'en0',
+				interfaceName: 'en0',
 			}),
 		]),
 		reservations: expect.arrayContaining([
@@ -1025,13 +1099,19 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		cpuUsagePercent: 17,
 		memoryUsagePercent: 42,
 		temperatureCelsius: 54,
+		attributes: expect.arrayContaining([
+			expect.objectContaining({
+				key: 'Platform Type',
+				value: 'Island Pro',
+			}),
+		]),
 	})
 
 	const bandwidthUsage = await islandRouter.getBandwidthUsage()
 	expect(bandwidthUsage.entries).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
-				subject: '192.168.0.52',
+				subject: 'en0',
 				rxRate: '12 Mbps',
 			}),
 		]),

@@ -76,7 +76,7 @@ const pingSummaryPattern =
 const islandRouterVersionBannerPattern =
 	/^(?<model>.+?)\s+\((?<hardwareModel>[^)]+)\)\s+serial number\s+(?<serialNumber>\S+)\s+Version\s+(?<firmwareVersion>\S+)$/i
 const islandRouterCliFailurePattern =
-	/\b(?:invalid command|unknown command|unrecognized command|syntax error|permission denied|host key verification failed|connection refused|no route to host|network is unreachable|could not resolve hostname|command not found|not recognized as an internal or external command)\b/i
+	/\b(?:invalid command|unknown command|unrecognized command|syntax error|permission denied|host key verification failed|connection refused|no route to host|network is unreachable|could not resolve hostname|command not found|not recognized as an internal or external command|ambiguous command|incomplete command|requires additional parameters?)\b|(?:"[^"]+"|\S+)\s+is unknown\.\s+Try "\?"/i
 const islandRouterPromptSuffixPattern = '[>#\\]]'
 const islandRouterPromptOnlyPattern = /^(?:[a-z0-9_.:@-]+[>#]|\[[^\]\r\n]+\])$/i
 const ipv6Pattern = /\b(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F]{0,4}\b/
@@ -90,6 +90,12 @@ const uptimePattern =
 	/\b\d+\s+(?:day|days|hour|hours|minute|minutes|second|seconds)\b/i
 const enabledPattern = /\b(?:enabled|on|up|true|yes|allow|active)\b/i
 const disabledPattern = /\b(?:disabled|off|down|false|no|deny|inactive)\b/i
+const islandRouterHelpHeadingPattern =
+	/^(?:syntax|syntax description|defaults|usage guidelines|examples|related commands)$/i
+const islandRouterHelpSyntaxLinePattern =
+	/^(?:show|help|interface|ip|syslog|snmp|vpn|ntp|qos|traffic-policy|firewall|protection|reload|write|clear|ping)\b.*(?:<[^>]+>|\[[^\]]+\]|\|)/i
+const islandRouterHelpHintPattern =
+	/(?:type "\?"|context-sensitive help|display .* information\.?$)/i
 
 function normalizeHeaderKey(value: string) {
 	return value
@@ -129,6 +135,27 @@ function splitSanitizedStdoutLines(stdout: string) {
 		.map((line) => line.replace(/\r/g, ''))
 }
 
+function isIslandRouterHelpOrUsageOutput(lines: Array<string>) {
+	if (lines.length === 0) return false
+	if (
+		lines.some((line) =>
+			islandRouterHelpHeadingPattern.test(normalizeWhitespace(line)),
+		)
+	) {
+		return true
+	}
+	const syntaxLikeCount = lines.filter((line) =>
+		islandRouterHelpSyntaxLinePattern.test(normalizeWhitespace(line)),
+	).length
+	const hintLikeCount = lines.filter((line) =>
+		islandRouterHelpHintPattern.test(line),
+	).length
+	return (
+		syntaxLikeCount > 0 &&
+		syntaxLikeCount + hintLikeCount >= Math.max(1, Math.ceil(lines.length / 2))
+	)
+}
+
 export function sanitizeIslandRouterOutput(
 	stdout: string,
 	commandLines: Array<string>,
@@ -143,7 +170,7 @@ export function sanitizeIslandRouterOutput(
 	const relevantOutput =
 		firstCommandEchoIndex >= 0 ? lines.slice(firstCommandEchoIndex) : lines
 
-	return relevantOutput.filter((line) => {
+	const sanitized = relevantOutput.filter((line) => {
 		const trimmed = normalizeWhitespace(line)
 		if (!trimmed) return false
 		if (trimmed.toLowerCase() === 'goodbye') return false
@@ -156,6 +183,7 @@ export function sanitizeIslandRouterOutput(
 		}
 		return true
 	})
+	return isIslandRouterHelpOrUsageOutput(sanitized) ? [] : sanitized
 }
 
 export function isSuccessfulIslandRouterCliSession(input: {
@@ -282,6 +310,91 @@ function parseTextTable(lines: Array<string>): Array<ParsedTableRow> {
 	}
 
 	return rows
+}
+
+function parseTextTables(lines: Array<string>): Array<ParsedTable> {
+	const tables: Array<ParsedTable> = []
+	let index = 0
+
+	while (index < lines.length - 1) {
+		const line = lines[index] ?? ''
+		const columns = splitTableColumns(line)
+		const next = lines[index + 1] ?? ''
+		if (
+			columns.length < 2 ||
+			!/^-{3,}(?:\s+-{3,})*$/.test(next.trim())
+		) {
+			index += 1
+			continue
+		}
+
+		const headers = columns.map(normalizeHeaderKey)
+		const rows: Array<ParsedTableRow> = []
+		index += 2
+
+		while (index < lines.length) {
+			const currentLine = lines[index] ?? ''
+			const currentColumns = splitTableColumns(currentLine)
+			const upcomingLine = lines[index + 1] ?? ''
+			if (
+				currentColumns.length >= 2 &&
+				!/^-{3,}(?:\s+-{3,})*$/.test(currentLine.trim()) &&
+				/^-{3,}(?:\s+-{3,})*$/.test(upcomingLine.trim())
+			) {
+				break
+			}
+			if (!currentLine.trim()) {
+				index += 1
+				continue
+			}
+			if (/^-{3,}(?:\s+-{3,})*$/.test(currentLine.trim())) {
+				index += 1
+				continue
+			}
+			if (currentColumns.length < 2) {
+				index += 1
+				continue
+			}
+			if (
+				currentColumns.length === headers.length &&
+				currentColumns.every(
+					(column, columnIndex) =>
+						normalizeHeaderKey(column) === (headers[columnIndex] ?? ''),
+				)
+			) {
+				index += 1
+				continue
+			}
+			rows.push({
+				rawLine: currentLine,
+				fields: Object.fromEntries(
+					headers.map((header, columnIndex) => [
+						header,
+						currentColumns[columnIndex] ?? '',
+					]),
+				),
+			})
+			index += 1
+		}
+
+		tables.push({
+			headers,
+			rows,
+		})
+	}
+
+	return tables
+}
+
+function findTextTableRows(
+	lines: Array<string>,
+	requiredHeaders: Array<string>,
+): Array<ParsedTableRow> {
+	return (
+		parseTextTables(lines).find((table) =>
+			requiredHeaders.every((header) => table.headers.includes(header)),
+		)?.rows ?? []
+	)
 }
 
 function parseKeyValueLines(lines: Array<string>) {
@@ -805,11 +918,520 @@ function selectRowsOrFallback(lines: Array<string>) {
 	}))
 }
 
+function commandLinesContain(
+	commandLines: Array<string>,
+	expectedCommand: string,
+) {
+	const expected = normalizeWhitespace(expectedCommand)
+	return commandLines.some(
+		(command) => normalizeWhitespace(command) === expected,
+	)
+}
+
+type RunningConfigInterfaceContext = {
+	interfaceName: string
+	lines: Array<string>
+}
+
+function parseRunningConfigContexts(lines: Array<string>) {
+	const globals: Array<string> = []
+	const interfaces: Array<RunningConfigInterfaceContext> = []
+	let currentInterface: RunningConfigInterfaceContext | null = null
+
+	for (const line of lines) {
+		const normalized = normalizeWhitespace(line)
+		const interfaceMatch = /^interface\s+(?<name>\S+)$/i.exec(normalized)
+		if (interfaceMatch?.groups?.['name']) {
+			currentInterface = {
+				interfaceName: interfaceMatch.groups['name'],
+				lines: [],
+			}
+			interfaces.push(currentInterface)
+			continue
+		}
+		if (/^(?:end|exit)$/i.test(normalized)) {
+			currentInterface = null
+			continue
+		}
+		if (currentInterface) {
+			currentInterface.lines.push(normalized)
+		} else {
+			globals.push(normalized)
+		}
+	}
+
+	return {
+		globals,
+		interfaces,
+	}
+}
+
+function getLinesBeforeFirstTable(lines: Array<string>) {
+	for (let index = 0; index < lines.length - 1; index += 1) {
+		const columns = splitTableColumns(lines[index] ?? '')
+		const next = lines[index + 1] ?? ''
+		if (
+			columns.length >= 2 &&
+			/^-{3,}(?:\s+-{3,})*$/.test(next.trim())
+		) {
+			return lines.slice(0, index)
+		}
+	}
+	return lines
+}
+
+function getInterfaceConfigLine(
+	context: RunningConfigInterfaceContext,
+	pattern: RegExp,
+) {
+	return context.lines.find((line) => pattern.test(line)) ?? null
+}
+
+function parseRunningConfigWanInterfaces(lines: Array<string>) {
+	const { interfaces } = parseRunningConfigContexts(lines)
+	return interfaces.flatMap((context) => {
+		const autoconfig = getInterfaceConfigLine(
+			context,
+			/^ip autoconfig (?:wan|static-wan|full)\b/i,
+		)
+		const dhcpClient = getInterfaceConfigLine(
+			context,
+			/^ip dhcp-client (?:on|off)\b/i,
+		)
+		const priority = getInterfaceConfigLine(context, /^ip priority \d+\b/i)
+		const looksLikeWan =
+			autoconfig != null ||
+			dhcpClient != null ||
+			priority != null ||
+			/^wan\d+$/i.test(context.interfaceName)
+		if (!looksLikeWan) return []
+
+		const addressLine = getInterfaceConfigLine(
+			context,
+			/^ip address\s+\S+/i,
+		)
+		const connectionType =
+			autoconfig == null
+				? normalizeConnectionType(dhcpClient ?? addressLine ?? '')
+				: /\bstatic-wan\b/i.test(autoconfig)
+					? 'static'
+					: /\bwan\b/i.test(autoconfig)
+						? 'dhcp'
+						: normalizeConnectionType(autoconfig)
+		return [
+			{
+				ispName: null,
+				interfaceName: context.interfaceName,
+				ipAddress:
+					addressLine?.match(/^ip address\s+(?<address>\S+)/i)?.groups?.[
+						'address'
+					] ?? null,
+				gateway: null,
+				connectionType,
+				role: 'unknown' as const,
+				failoverPriority: parseInteger(
+					priority?.match(/^ip priority (?<priority>\d+)$/i)?.groups?.[
+						'priority'
+					] ?? null,
+				),
+				linkState: null,
+				rawLine: [
+					`interface ${context.interfaceName}`,
+					...context.lines,
+				].join(' '),
+				fields: {
+					interface: context.interfaceName,
+					autoconfig:
+						autoconfig?.replace(/^ip autoconfig\s+/i, '') ?? '',
+					priority:
+						priority?.match(/^ip priority (?<priority>\d+)$/i)?.groups?.[
+							'priority'
+						] ?? '',
+				},
+			} satisfies IslandRouterWanInterfaceConfig,
+		]
+	})
+}
+
+function parseRunningConfigFailover(
+	lines: Array<string>,
+): IslandRouterFailoverStatus {
+	const { globals } = parseRunningConfigContexts(lines)
+	const wans = parseRunningConfigWanInterfaces(lines).sort((left, right) => {
+		const leftPriority = left.failoverPriority ?? Number.POSITIVE_INFINITY
+		const rightPriority = right.failoverPriority ?? Number.POSITIVE_INFINITY
+		return leftPriority - rightPriority
+	})
+	const preferredInterfaceName = wans[0]?.interfaceName ?? null
+	const policy =
+		globals
+			.find((line) => /^ip load-sharing /i.test(line))
+			?.replace(/^ip load-sharing\s+/i, '')
+			.trim() ??
+		(wans.length > 0 ? 'priority' : null)
+	const healthChecks = wans.map((wan) => ({
+		interfaceName: wan.interfaceName,
+		ispName: wan.ispName,
+		state: null,
+		role: 'unknown' as const,
+		failoverPriority: wan.failoverPriority,
+		monitor: null,
+		rawLine: wan.rawLine,
+		fields: wan.fields,
+	}))
+	return {
+		activeInterfaceName: null,
+		activeIspName: null,
+		policy,
+		healthChecks,
+		rawOutput: lines.join('\n'),
+	}
+}
+
+function parseRunningConfigDns(
+	lines: Array<string>,
+): IslandRouterDnsConfig {
+	const attributes: Array<{ key: string; value: string }> = []
+	const servers: Array<IslandRouterDnsServer> = []
+	for (const line of lines) {
+		const dnsModeMatch = /^ip dns mode (?<mode>.+)$/i.exec(line)
+		if (dnsModeMatch?.groups?.['mode']) {
+			attributes.push({
+				key: 'Mode',
+				value: dnsModeMatch.groups['mode'],
+			})
+			continue
+		}
+		const localOnlyMatch = /^ip dns local-only (?<value>\S+)$/i.exec(line)
+		if (localOnlyMatch?.groups?.['value']) {
+			attributes.push({
+				key: 'Local Only',
+				value: localOnlyMatch.groups['value'],
+			})
+			continue
+		}
+		const serverMatch =
+			/^ip (?:(?:name-server)|(?:dns server)) (?<server>\S+)$/i.exec(line)
+		if (serverMatch?.groups?.['server']) {
+			servers.push({
+				address: serverMatch.groups['server'],
+				role: 'upstream',
+				source: 'running-config',
+				rawLine: line,
+				fields: {},
+			})
+		}
+	}
+	return {
+		mode:
+			attributes.find((attribute) => attribute.key === 'Mode')?.value ?? null,
+		searchDomains: [],
+		servers,
+		overrides: [],
+		attributes,
+		rawOutput: lines.join('\n'),
+	}
+}
+
+function parseRunningConfigSecurityPolicy(
+	lines: Array<string>,
+): IslandRouterSecurityPolicy {
+	return {
+		rules: lines.flatMap((line, index) => {
+			if (!/^(?:firewall|protection|security-policy)\b/i.test(line)) return []
+			return [
+				{
+					ruleId: String(index + 1),
+					name: line.split(/\s+/).slice(0, 2).join(' '),
+					action:
+						line.match(/\b(allow|deny|drop|reject|block)\b/i)?.[1]?.toLowerCase() ??
+						null,
+					source: null,
+					destination: null,
+					service: null,
+					enabled: !/^no\s+/i.test(line),
+					rawLine: line,
+					fields: {},
+				} satisfies IslandRouterSecurityPolicyRule,
+			]
+		}),
+		rawOutput: lines.join('\n'),
+	}
+}
+
+function parseRunningConfigQos(
+	lines: Array<string>,
+): IslandRouterQosConfig {
+	return {
+		policies: lines.flatMap((line) => {
+			if (!/^(?:qos|traffic-policy)\b/i.test(line)) return []
+			return [
+				{
+					policyName: line.split(/\s+/)[1] ?? null,
+					interfaceName: extractInterfaceName(line),
+					className: null,
+					priority:
+						line.match(/\b(high|medium|low|\d+)\b/i)?.[1]?.toLowerCase() ?? null,
+					bandwidth: extractRate(line),
+					enabled: !/^no\s+/i.test(line),
+					rawLine: line,
+					fields: {},
+				} satisfies IslandRouterQosPolicyEntry,
+			]
+		}),
+		rawOutput: lines.join('\n'),
+	}
+}
+
+function parseRunningConfigNatRules(
+	lines: Array<string>,
+): IslandRouterNatRules {
+	const { interfaces } = parseRunningConfigContexts(lines)
+	const natInterfaces = interfaces.filter((context) =>
+		context.lines.some((line) => /^ip nat[46] on$/i.test(line)),
+	)
+	return {
+		rules: natInterfaces.flatMap((context, index) => {
+			const natLine = context.lines.find((line) => /^ip nat[46] on$/i.test(line))
+			if (!natLine) return []
+			return [
+				{
+					ruleId: String(index + 1),
+					type: natLine.match(/\bnat(?<version>[46])\b/i)?.groups?.['version']
+						? `nat${natLine.match(/\bnat(?<version>[46])\b/i)?.groups?.['version']}`
+						: 'nat',
+					protocol: null,
+					interfaceName: context.interfaceName,
+					externalAddress: null,
+					externalPort: null,
+					internalAddress: null,
+					internalPort: null,
+					enabled: true,
+					description: null,
+					rawLine: [`interface ${context.interfaceName}`, natLine].join(' '),
+					fields: {},
+				} satisfies IslandRouterNatRule,
+			]
+		}),
+	}
+}
+
+function parseRunningConfigDhcpServer(
+	lines: Array<string>,
+): IslandRouterDhcpServerConfig {
+	const { globals, interfaces } = parseRunningConfigContexts(lines)
+	const pools: Array<IslandRouterDhcpServerPool> = []
+	const options: Array<IslandRouterDhcpServerOption> = []
+	const reservations: Array<IslandRouterDhcpLease> = []
+
+	for (const context of interfaces) {
+		const dhcpEnabled = getInterfaceConfigLine(
+			context,
+			/^ip dhcp-server on$/i,
+		)
+		if (!dhcpEnabled) continue
+		const addressLine = getInterfaceConfigLine(
+			context,
+			/^ip address (?<address>\S+)$/i,
+		)
+		const scopeLine = getInterfaceConfigLine(
+			context,
+			/^ip dhcp-scope (?<range>.+)$/i,
+		)
+		const leaseLine = getInterfaceConfigLine(
+			context,
+			/^ip dhcp-lease (?<seconds>\d+)$/i,
+		)
+		pools.push({
+			poolName: context.interfaceName,
+			interfaceName: context.interfaceName,
+			network: addressLine?.match(/^ip address (?<address>\S+)$/i)?.groups?.[
+				'address'
+			] ?? null,
+			rangeStart:
+				scopeLine?.match(/^ip dhcp-scope (?<start>\d+)(?:-(?<end>\d*))?$/i)
+					?.groups?.['start'] ?? null,
+			rangeEnd:
+				scopeLine?.match(/^ip dhcp-scope (?<start>\d+)(?:-(?<end>\d*))?$/i)
+					?.groups?.['end'] ?? null,
+			gateway:
+				addressLine?.match(/^ip address (?<address>\S+)$/i)?.groups?.['address'] ??
+				null,
+			dnsServers: [],
+			rawLine: [`interface ${context.interfaceName}`, ...context.lines].join(' '),
+			fields: {},
+		})
+		if (leaseLine) {
+			options.push({
+				poolName: context.interfaceName,
+				option: 'lease-time',
+				value:
+					leaseLine.match(/^ip dhcp-lease (?<seconds>\d+)$/i)?.groups?.[
+						'seconds'
+					] ?? null,
+				rawLine: leaseLine,
+				fields: {},
+			})
+		}
+	}
+
+	for (const line of globals) {
+		const reserveMatch =
+			/^ip dhcp-reserve (?<ip>\S+) (?<mac>[0-9a-f:]+)$/i.exec(line)
+		if (!reserveMatch?.groups) continue
+		reservations.push({
+			ipAddress: reserveMatch.groups['ip'] ?? null,
+			macAddress: reserveMatch.groups['mac']?.toLowerCase() ?? null,
+			hostName: null,
+			interfaceName: null,
+			leaseType: 'reservation',
+			rawLine: line,
+			fields: {},
+		})
+	}
+
+	return {
+		pools,
+		options,
+		reservations,
+		rawOutput: lines.join('\n'),
+	}
+}
+
+function parseRunningConfigVlans(lines: Array<string>): IslandRouterVlanConfig {
+	const { interfaces } = parseRunningConfigContexts(lines)
+	return {
+		vlans: interfaces.flatMap((context) => {
+			const vlanMatch = /^vlan(?<id>\d+)$/i.exec(context.interfaceName)
+			if (!vlanMatch?.groups?.['id']) return []
+			const addressLine = getInterfaceConfigLine(
+				context,
+				/^ip address (?<address>\S+)$/i,
+			)
+			const parentLine = getInterfaceConfigLine(context, /^parent (?<parent>\S+)$/i)
+			return [
+				{
+					vlanId: Number.parseInt(vlanMatch.groups['id'], 10),
+					name: context.interfaceName,
+					interfaceName: context.interfaceName,
+					memberInterfaces: splitValueList(
+						parentLine?.match(/^parent (?<parent>\S+)$/i)?.groups?.['parent'] ?? null,
+					),
+					status: null,
+					ipAddress:
+						addressLine?.match(/^ip address (?<address>\S+)$/i)?.groups?.['address'] ??
+						null,
+					rawLine: [`interface ${context.interfaceName}`, ...context.lines].join(' '),
+					fields: {},
+				} satisfies IslandRouterVlanConfigEntry,
+			]
+		}),
+	}
+}
+
+function parseRunningConfigSyslog(
+	lines: Array<string>,
+): IslandRouterSyslogConfig {
+	const hostLines: Array<string> = []
+	let defaultPort: number | null = null
+	let defaultProtocol: string | null = null
+	let defaultFacility: string | null = null
+
+	for (const line of lines) {
+		const portMatch = /^syslog port (?<port>\d+)$/i.exec(line)
+		if (portMatch?.groups?.['port']) {
+			defaultPort = Number.parseInt(portMatch.groups['port'], 10)
+			continue
+		}
+		const protocolMatch = /^syslog protocol (?<protocol>\S+)$/i.exec(line)
+		if (protocolMatch?.groups?.['protocol']) {
+			defaultProtocol = protocolMatch.groups['protocol'].toLowerCase()
+			continue
+		}
+		const facilityMatch = /^syslog facility (?<facility>\S+)$/i.exec(line)
+		if (facilityMatch?.groups?.['facility']) {
+			defaultFacility = facilityMatch.groups['facility']
+			continue
+		}
+		const hostMatch =
+			/^syslog (?<host>(?!protocol\b|level\b|facility\b|port\b)\S+)$/i.exec(line)
+		if (hostMatch?.groups?.['host']) {
+			hostLines.push(line)
+		}
+	}
+
+	return {
+		targets: hostLines.map((line) => ({
+			host:
+				/^syslog (?<host>(?!protocol\b|level\b|facility\b|port\b)\S+)$/i.exec(line)
+					?.groups?.['host'] ?? null,
+			port: defaultPort,
+			protocol: defaultProtocol,
+			facility: defaultFacility,
+			enabled: true,
+			rawLine: line,
+			fields: {},
+		})),
+		attributes: [],
+		rawOutput: lines.join('\n'),
+	}
+}
+
+function parseRunningConfigSnmp(
+	lines: Array<string>,
+): IslandRouterSnmpConfig {
+	const communities: Array<IslandRouterSnmpCommunity> = []
+	const trapTargets: Array<IslandRouterSnmpTrapTarget> = []
+
+	for (const line of lines) {
+		const communityMatch =
+			/^snmp community (?<community>\S+)(?:\s+(?<access>\S+))?(?:\s+(?<source>\S+))?$/i.exec(
+				line,
+			)
+		if (communityMatch?.groups?.['community']) {
+			communities.push({
+				community: communityMatch.groups['community'],
+				access: communityMatch.groups['access'] ?? null,
+				source: communityMatch.groups['source'] ?? null,
+				rawLine: line,
+				fields: {},
+			})
+			continue
+		}
+		const trapMatch =
+			/^snmp trap(?:-target)? (?<host>\S+)(?:.*\bversion (?<version>\S+))?(?:.*\bcommunity (?<community>\S+))?$/i.exec(
+				line,
+			)
+		if (trapMatch?.groups?.['host']) {
+			trapTargets.push({
+				host: trapMatch.groups['host'],
+				version: trapMatch.groups['version'] ?? null,
+				community: trapMatch.groups['community'] ?? null,
+				rawLine: line,
+				fields: {},
+			})
+		}
+	}
+
+	return {
+		enabled: communities.length > 0 || trapTargets.length > 0 ? true : null,
+		communities,
+		trapTargets,
+		attributes: [],
+		rawOutput: lines.join('\n'),
+	}
+}
+
 export function parseIslandRouterWanConfig(
 	stdout: string,
 	commandLines: Array<string>,
 ): IslandRouterWanConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return {
+			wans: parseRunningConfigWanInterfaces(lines),
+		}
+	}
 	const rows = selectRowsOrFallback(lines)
 	return {
 		wans: rows.flatMap((row) => {
@@ -854,6 +1476,9 @@ export function parseIslandRouterFailoverStatus(
 	commandLines: Array<string>,
 ): IslandRouterFailoverStatus {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigFailover(lines)
+	}
 	const fieldMap = buildFieldMapFromAttributes(lines)
 	const rows = selectRowsOrFallback(lines)
 	const healthChecks = rows.flatMap((row) => {
@@ -942,6 +1567,9 @@ export function parseIslandRouterNatRules(
 	commandLines: Array<string>,
 ): IslandRouterNatRules {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigNatRules(lines)
+	}
 	const rows = selectRowsOrFallback(lines)
 	return {
 		rules: rows.flatMap((row) => {
@@ -994,6 +1622,9 @@ export function parseIslandRouterVlanConfig(
 	commandLines: Array<string>,
 ): IslandRouterVlanConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigVlans(lines)
+	}
 	const rows = selectRowsOrFallback(lines)
 	return {
 		vlans: rows.flatMap((row) => {
@@ -1028,6 +1659,9 @@ export function parseIslandRouterDnsConfig(
 	commandLines: Array<string>,
 ): IslandRouterDnsConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigDns(lines)
+	}
 	const attributes = parseKeyValueLines(lines)
 	const fieldMap = Object.fromEntries(
 		attributes.map((entry) => [normalizeHeaderKey(entry.key), entry.value]),
@@ -1120,6 +1754,9 @@ export function parseIslandRouterSecurityPolicy(
 	commandLines: Array<string>,
 ): IslandRouterSecurityPolicy {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigSecurityPolicy(lines)
+	}
 	const rows = selectRowsOrFallback(lines)
 	return {
 		rules: rows.flatMap((row) => {
@@ -1159,6 +1796,9 @@ export function parseIslandRouterQosConfig(
 	commandLines: Array<string>,
 ): IslandRouterQosConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigQos(lines)
+	}
 	const rows = selectRowsOrFallback(lines)
 	return {
 		policies: rows.flatMap((row) => {
@@ -1195,7 +1835,9 @@ export function parseIslandRouterTrafficStats(
 	commandLines: Array<string>,
 ): IslandRouterTrafficStats {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
-	const rows = selectRowsOrFallback(lines)
+	const rows = commandLinesContain(commandLines, 'show stats')
+		? findTextTableRows(lines, ['interface', 'rx_bytes', 'tx_bytes'])
+		: selectRowsOrFallback(lines)
 	return {
 		interfaces: rows.flatMap((row) => {
 			const interfaceName =
@@ -1239,12 +1881,25 @@ export function parseIslandRouterActiveSessions(
 	return {
 		sessions: rows.flatMap((row) => {
 			const source = parseHostPort(
-				findField(row.fields, ['source', 'src', 'source_address']) ??
+				findField(row.fields, [
+					'source',
+					'src',
+					'source_address',
+					'local',
+					'local_address',
+				]) ??
 					row.rawLine.match(/\bsrc[:= ]+([^\s,]+)/i)?.[1] ??
 					null,
 			)
 			const destination = parseHostPort(
-				findField(row.fields, ['destination', 'dest', 'dst']) ??
+				findField(row.fields, [
+					'destination',
+					'dest',
+					'dst',
+					'foreign',
+					'foreign_address',
+					'remote',
+				]) ??
 					row.rawLine.match(/\bdst[:= ]+([^\s,]+)/i)?.[1] ??
 					null,
 			)
@@ -1291,7 +1946,14 @@ export function parseIslandRouterVpnConfig(
 			const localEndpoint =
 				findField(row.fields, ['local', 'local_endpoint']) ??
 				extractIpAddress(row.rawLine)
+			const status = findField(row.fields, ['status', 'state'])
+			const interfaceName =
+				findField(row.fields, ['interface', 'iface']) ??
+				extractInterfaceName(row.rawLine)
 			if (!tunnelName && !localEndpoint && !/ipsec|vpn|gre/i.test(row.rawLine)) {
+				return []
+			}
+			if (!localEndpoint && !status && !interfaceName) {
 				return []
 			}
 			const remoteMatch = row.rawLine.match(/\bto\s+([^\s,]+)/i)?.[1] ?? null
@@ -1306,10 +1968,8 @@ export function parseIslandRouterVpnConfig(
 					remoteEndpoint:
 						findField(row.fields, ['remote', 'peer', 'remote_endpoint']) ??
 						remoteMatch,
-					status: findField(row.fields, ['status', 'state']),
-					interfaceName:
-						findField(row.fields, ['interface', 'iface']) ??
-						extractInterfaceName(row.rawLine),
+					status,
+					interfaceName,
 					rawLine: row.rawLine,
 					fields: row.fields,
 				} satisfies IslandRouterVpnTunnel,
@@ -1324,6 +1984,19 @@ export function parseIslandRouterDhcpServerConfig(
 	commandLines: Array<string>,
 ): IslandRouterDhcpServerConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		const base = parseRunningConfigDhcpServer(getLinesBeforeFirstTable(lines))
+		const reservationLines = lines.slice(getLinesBeforeFirstTable(lines).length)
+		const reservations = parseIslandRouterDhcpReservations(
+			reservationLines.join('\n'),
+			['show ip dhcp-reservations'],
+		)
+		return {
+			...base,
+			reservations:
+				reservations.length > 0 ? reservations : base.reservations,
+		}
+	}
 	const rows = selectRowsOrFallback(lines)
 	const pools: Array<IslandRouterDhcpServerPool> = []
 	const options: Array<IslandRouterDhcpServerOption> = []
@@ -1402,23 +2075,38 @@ export function parseIslandRouterNtpConfig(
 		attributes.map((entry) => [normalizeHeaderKey(entry.key), entry.value]),
 	)
 	const rows = selectRowsOrFallback(lines)
+	const parsedServers = rows.flatMap((row) => {
+		const server =
+			findField(row.fields, ['server', 'address', 'host']) ??
+			extractIpAddress(row.rawLine)
+		if (!server) return []
+		return [
+			{
+				server,
+				status: findField(row.fields, ['status', 'state']),
+				source: findField(row.fields, ['source', 'type']),
+				rawLine: row.rawLine,
+				fields: row.fields,
+			} satisfies IslandRouterNtpServer,
+		]
+	})
+	const fallbackServer = findField(fieldMap, ['server'])
 	return {
 		timezone: findField(fieldMap, ['timezone', 'tz']),
-		servers: rows.flatMap((row) => {
-			const server =
-				findField(row.fields, ['server', 'address', 'host']) ??
-				extractIpAddress(row.rawLine)
-			if (!server) return []
-			return [
-				{
-					server,
-					status: findField(row.fields, ['status', 'state']),
-					source: findField(row.fields, ['source', 'type']),
-					rawLine: row.rawLine,
-					fields: row.fields,
-				} satisfies IslandRouterNtpServer,
-			]
-		}),
+		servers:
+			parsedServers.length > 0
+				? parsedServers
+				: fallbackServer == null
+					? []
+					: [
+							{
+								server: fallbackServer,
+								status: findField(fieldMap, ['clock_state', 'status', 'state']),
+								source: 'status',
+								rawLine: `Server: ${fallbackServer}`,
+								fields: {},
+							} satisfies IslandRouterNtpServer,
+						],
 		attributes,
 		rawOutput: lines.join('\n'),
 	}
@@ -1429,6 +2117,9 @@ export function parseIslandRouterSyslogConfig(
 	commandLines: Array<string>,
 ): IslandRouterSyslogConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigSyslog(lines)
+	}
 	const attributes = parseKeyValueLines(lines)
 	const rows = selectRowsOrFallback(lines)
 	return {
@@ -1465,6 +2156,9 @@ export function parseIslandRouterSnmpConfig(
 	commandLines: Array<string>,
 ): IslandRouterSnmpConfig {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
+	if (commandLinesContain(commandLines, 'show running-config')) {
+		return parseRunningConfigSnmp(lines)
+	}
 	const attributes = parseKeyValueLines(lines)
 	const fieldMap = Object.fromEntries(
 		attributes.map((entry) => [normalizeHeaderKey(entry.key), entry.value]),
@@ -1541,7 +2235,9 @@ export function parseIslandRouterBandwidthUsage(
 	commandLines: Array<string>,
 ): IslandRouterBandwidthUsage {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
-	const rows = selectRowsOrFallback(lines)
+	const rows = commandLinesContain(commandLines, 'show stats')
+		? findTextTableRows(lines, ['interface', 'rx_rate', 'tx_rate'])
+		: selectRowsOrFallback(lines)
 	return {
 		entries: rows.flatMap((row) => {
 			const interfaceName =
@@ -1557,14 +2253,18 @@ export function parseIslandRouterBandwidthUsage(
 			const txRate =
 				findField(row.fields, ['tx_rate', 'upload', 'out']) ??
 				null
-			if (!subject && !rxRate && !txRate) return []
+			const totalRate = findField(
+				row.fields,
+				['total_rate', 'rate', 'throughput'],
+			)
+			if (!rxRate && !txRate && !totalRate) return []
 			return [
 				{
 					subject,
 					interfaceName,
 					rxRate,
 					txRate,
-					totalRate: findField(row.fields, ['total_rate', 'rate', 'throughput']),
+					totalRate,
 					rawLine: row.rawLine,
 					fields: row.fields,
 				} satisfies IslandRouterBandwidthUsageEntry,
