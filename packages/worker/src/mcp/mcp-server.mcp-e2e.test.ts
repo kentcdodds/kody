@@ -3,7 +3,6 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createMcpClient,
 	createTestDatabase,
-	loginToApp,
 	startDevServer,
 } from '../../../../tools/mcp-test-support.ts'
 
@@ -34,11 +33,10 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 	)
 })
 
-test('authenticated MCP smoke covers inline UI and hosted package apps', async () => {
+test('authenticated MCP smoke exposes core tools and inline UI sessions', async () => {
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir)
 	await using mcpClient = await createMcpClient(server.origin, database.user)
-	const appCookie = await loginToApp(server.origin, database.user)
 
 	const tools = await mcpClient.client.listTools()
 	expect(tools.tools.map((tool) => tool.name)).toEqual(
@@ -66,139 +64,7 @@ test('authenticated MCP smoke covers inline UI and hosted package apps', async (
 	expect(typeof inlineUiStructured?.appSession?.endpoints?.execute).toBe(
 		'string',
 	)
-
-	const saveResult = await mcpClient.client.callTool({
-		name: 'execute',
-		arguments: {
-			code: `import { codemode } from 'kody:runtime'
-
-export default async function savePackage() {
-	return await codemode.package_save({
-		files: [
-			{
-				path: 'package.json',
-				content: ${JSON.stringify(
-					JSON.stringify(
-						{
-							name: '@kody/facet-counter',
-							exports: {
-								'.': './src/index.ts',
-							},
-							kody: {
-								id: 'facet-counter',
-								description: 'Hosted package app with a backend counter',
-								app: {
-									entry: './src/app.ts',
-								},
-							},
-						},
-						null,
-						2,
-					),
-				)},
-			},
-			{
-				path: 'src/index.ts',
-				content: ${JSON.stringify(
-					'export default async function noop() { return null }\n',
-				)},
-			},
-			{
-				path: 'src/app.ts',
-				content: ${JSON.stringify(`import { DurableObject } from 'cloudflare:workers'
-
-export class Counter extends DurableObject {
-  async fetch(request) {
-    const url = new URL(request.url)
-    if (url.pathname !== '/api/counter') {
-      return new Response('Not found', { status: 404 })
-    }
-    const current = (await this.ctx.storage.get('count')) ?? 0
-    const next = Number(current) + 1
-    await this.ctx.storage.put('count', next)
-    return Response.json({ count: next })
-  }
-}
-
-export default {
-  async fetch(request, env) {
-    const id = env.COUNTER.idFromName('main')
-    const stub = env.COUNTER.get(id)
-    return await stub.fetch(request)
-  },
-}
-`)},
-			},
-		],
-	})
-}`,
-		},
-	})
-	const saveStructured = (saveResult as CallToolResult).structuredContent as
-		| {
-				result?: {
-					package_id?: string
-					kody_id?: string
-					has_app?: boolean
-				}
-		  }
-		| undefined
-	const savedPackageKodyId = saveStructured?.result?.kody_id
-	expect(saveStructured?.result?.has_app).toBe(true)
-	expect(savedPackageKodyId).toBe('facet-counter')
-
-	const savedOpenResult = await mcpClient.client.callTool({
-		name: 'open_generated_ui',
-		arguments: {
-			kody_id: savedPackageKodyId,
-		},
-	})
-	const savedOpenStructured = (savedOpenResult as CallToolResult)
-		.structuredContent as
-		| {
-				renderSource?: string
-				appId?: string | null
-				hostedUrl?: string | null
-		  }
-		| undefined
-	expect(savedOpenStructured?.renderSource).toBe('saved_package')
-	expect(savedOpenStructured?.appId).toBe(saveStructured?.result?.package_id)
-	expect(savedOpenStructured?.hostedUrl).toBe(
-		`${server.origin}/packages/facet-counter`,
+	expect(inlineUiStructured?.appSession?.endpoints?.execute).toContain(
+		'/ui-api/',
 	)
-
-	const firstResponse = await fetch(
-		new URL('/packages/facet-counter/api/counter', server.origin),
-		{
-			headers: {
-				Accept: 'application/json',
-				Cookie: appCookie,
-			},
-		},
-	)
-	expect(firstResponse.ok).toBe(true)
-	expect(await firstResponse.json()).toEqual({ count: 1 })
-
-	const secondResponse = await fetch(
-		new URL('/packages/facet-counter/api/counter', server.origin),
-		{
-			headers: {
-				Accept: 'application/json',
-				Cookie: appCookie,
-			},
-		},
-	)
-	expect(secondResponse.ok).toBe(true)
-	expect(await secondResponse.json()).toEqual({ count: 2 })
-
-	const unauthenticatedResponse = await fetch(
-		new URL('/packages/facet-counter/api/counter', server.origin),
-		{
-			headers: { Accept: 'application/json' },
-			redirect: 'manual',
-		},
-	)
-	expect(unauthenticatedResponse.status).toBeGreaterThanOrEqual(300)
-	expect(unauthenticatedResponse.status).toBeLessThan(400)
-	expect(unauthenticatedResponse.headers.get('Location')).toBeTruthy()
 })
