@@ -996,6 +996,12 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 				(tool) => tool.name === 'access_networks_unleashed_scan_controllers',
 			),
 		).toBe(true)
+		const accessNetworksScanTool = tools.find(
+			(tool) => tool.name === 'access_networks_unleashed_scan_controllers',
+		)
+		expect(
+			accessNetworksScanTool?.annotations?.['readOnlyHint'],
+		).toBeUndefined()
 		expect(
 			tools.some(
 				(tool) => tool.name === 'access_networks_unleashed_set_credentials',

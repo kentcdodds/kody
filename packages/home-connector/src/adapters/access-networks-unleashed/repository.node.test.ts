@@ -126,6 +126,69 @@ test('sqlite storage persists Unleashed controllers and encrypted credentials', 
 			.get('default', '192.168.1.11') as { password: string } | undefined
 		expect(rawPasswordRow?.password).toMatch(/^enc:v1:/)
 		expect(rawPasswordRow?.password).not.toContain('admin-pass')
+
+		const mismatchedSecretStorage = createHomeConnectorStorage(
+			createConfig(path.join(directory, 'wrong-secret.sqlite')),
+		)
+		try {
+			upsertDiscoveredAccessNetworksUnleashedControllers(
+				mismatchedSecretStorage,
+				'default',
+				[
+					{
+						controllerId: '192.168.1.11',
+						name: 'Unleashed Office',
+						host: '192.168.1.11',
+						loginUrl: 'https://192.168.1.11/admin/wsg/login.jsp',
+						lastSeenAt: '2026-05-03T19:21:00.000Z',
+						rawDiscovery: { probeUrl: 'https://192.168.1.11/' },
+					},
+				],
+			)
+			const copiedCiphertext = rawPasswordRow?.password
+			if (!copiedCiphertext) {
+				throw new Error('Expected encrypted password row to exist')
+			}
+			mismatchedSecretStorage.db
+				.query(
+					`
+						INSERT INTO access_networks_unleashed_credentials (
+							connector_id,
+							controller_id,
+							username,
+							password,
+							last_authenticated_at,
+							last_auth_error,
+							updated_at
+						) VALUES (?, ?, ?, ?, ?, ?, ?)
+					`,
+				)
+				.run(
+					'default',
+					'192.168.1.11',
+					'admin-user',
+					copiedCiphertext,
+					'2026-05-03T19:22:00.000Z',
+					null,
+					'2026-05-03T19:22:00.000Z',
+				)
+
+			expect(
+				listAccessNetworksUnleashedPublicControllers(
+					mismatchedSecretStorage,
+					'default',
+				),
+			).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						controllerId: '192.168.1.11',
+						hasStoredCredentials: true,
+					}),
+				]),
+			)
+		} finally {
+			mismatchedSecretStorage.close()
+		}
 	} finally {
 		storage.close()
 		rmSync(directory, {

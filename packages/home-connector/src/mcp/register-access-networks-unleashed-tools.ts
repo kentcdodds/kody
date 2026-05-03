@@ -108,27 +108,28 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 }) {
 	const { registerTool, accessNetworksUnleashed } = input
 
-	registerUnleashedReadTool({
-		registerTool,
-		name: 'access_networks_unleashed_scan_controllers',
-		title: 'Scan Access Networks Unleashed Controllers',
-		description:
-			'Probe local-network scan CIDRs for Access Networks / RUCKUS Unleashed controllers, persist discovered controllers locally, and return discovery diagnostics.',
-		handler: async () => {
+	registerTool(
+		{
+			name: 'access_networks_unleashed_scan_controllers',
+			title: 'Scan Access Networks Unleashed Controllers',
+			description:
+				'Probe local-network scan CIDRs for Access Networks / RUCKUS Unleashed controllers, persist discovered controllers locally, and return discovery diagnostics.',
+			inputSchema: {},
+		},
+		async () => {
 			const controllers = await accessNetworksUnleashed.scan()
 			const status = await accessNetworksUnleashed.getStatus()
-			return {
-				text:
-					controllers.length === 0
-						? 'No Access Networks Unleashed controllers were discovered.'
-						: `Discovered ${controllers.length} Access Networks Unleashed controller(s).`,
-				structuredContent: {
+			return structuredTextResult(
+				controllers.length === 0
+					? 'No Access Networks Unleashed controllers were discovered.'
+					: `Discovered ${controllers.length} Access Networks Unleashed controller(s).`,
+				{
 					controllers,
 					diagnostics: status.diagnostics,
 				},
-			}
+			)
 		},
-	})
+	)
 
 	registerUnleashedReadTool({
 		registerTool,

@@ -106,16 +106,11 @@ function mapControllerRow(
 function toPublicController(
 	controller: AccessNetworksUnleashedPersistedController,
 ): AccessNetworksUnleashedPublicController {
-	const {
-		username,
-		password: _password,
-		lastAuthenticatedAt,
-		lastAuthError,
-		...rest
-	} = controller
+	const { username, password, lastAuthenticatedAt, lastAuthError, ...rest } =
+		controller
 	return {
 		...rest,
-		hasStoredCredentials: Boolean(username),
+		hasStoredCredentials: Boolean(username && password),
 		lastAuthenticatedAt,
 		lastAuthError,
 	}
