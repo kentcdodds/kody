@@ -186,9 +186,9 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 			'Read recent controller events from the configured Access Networks Unleashed controller.',
 		inputSchema: eventsSchema,
 		handler: async (args) => {
-			const events = await accessNetworksUnleashed.listEvents({
-				limit: args['limit'] == null ? undefined : Number(args['limit']),
-			})
+			const events = await accessNetworksUnleashed.listEvents(
+				args['limit'] == null ? undefined : Number(args['limit']),
+			)
 			return {
 				text: `Loaded ${events.length} Access Networks Unleashed event(s).`,
 				structuredContent: { events },

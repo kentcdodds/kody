@@ -202,6 +202,40 @@ test('island router SSH env vars honor explicit port, fingerprint, and timeout',
 	})
 })
 
+test('Access Networks Unleashed insecure TLS is opt-in', () => {
+	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
+		ACCESS_NETWORKS_UNLEASHED_HOST: 'https://unleashed.local',
+		ACCESS_NETWORKS_UNLEASHED_USERNAME: 'admin',
+		ACCESS_NETWORKS_UNLEASHED_PASSWORD: 'password',
+		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: undefined,
+	})
+
+	expect(loadHomeConnectorConfig()).toMatchObject({
+		accessNetworksUnleashedHost: 'https://unleashed.local',
+		accessNetworksUnleashedUsername: 'admin',
+		accessNetworksUnleashedPassword: 'password',
+		accessNetworksUnleashedAllowInsecureTls: false,
+		accessNetworksUnleashedRequestTimeoutMs: 8000,
+	})
+})
+
+test('Access Networks Unleashed insecure TLS honors explicit true', () => {
+	using _env = createTemporaryEnv({
+		...requiredConfigEnv,
+		ACCESS_NETWORKS_UNLEASHED_HOST: 'https://unleashed.local',
+		ACCESS_NETWORKS_UNLEASHED_USERNAME: 'admin',
+		ACCESS_NETWORKS_UNLEASHED_PASSWORD: 'password',
+		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: 'true',
+		ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS: '12000',
+	})
+
+	expect(loadHomeConnectorConfig()).toMatchObject({
+		accessNetworksUnleashedAllowInsecureTls: true,
+		accessNetworksUnleashedRequestTimeoutMs: 12000,
+	})
+})
+
 test('invalid island router port falls back to default 22', () => {
 	using _env = createTemporaryEnv({
 		...requiredConfigEnv,

@@ -705,7 +705,8 @@ function createFakeAccessNetworksUnleashedClient() {
 				},
 			]
 		},
-		async listEvents() {
+		async listEvents(limit) {
+			calls.push({ name: 'listEvents', args: [limit] })
 			return [
 				{
 					message: 'client associated',
@@ -1126,6 +1127,11 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
 			name: 'blockClient',
 			args: ['aa:bb:cc:dd:ee:ff'],
+		})
+		await mcp.callTool('access_networks_unleashed_list_events', { limit: 1 })
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'listEvents',
+			args: [1],
 		})
 
 		await mcp.callTool('bond_adopt_bridge', { bridgeId: 'MOCKBOND1' })

@@ -69,7 +69,7 @@ function parseAttributes(value: string): AccessNetworksUnleashedRecord {
 function parseElements(xml: string, tagName: string) {
 	const records: Array<AccessNetworksUnleashedRecord> = []
 	const elementRegex = new RegExp(
-		`<${tagName}\\b(?<attributes>[^>]*)>(?<body>[\\s\\S]*?)<\\/${tagName}>|<${tagName}\\b(?<selfClosingAttributes>[^>]*)\\/>`,
+		`<${tagName}(?=[\\s>/])(?<attributes>[^>]*)>(?<body>[\\s\\S]*?)<\\/${tagName}>|<${tagName}(?=[\\s>/])(?<selfClosingAttributes>[^>]*)\\/>`,
 		'gi',
 	)
 	for (const match of xml.matchAll(elementRegex)) {
@@ -83,7 +83,7 @@ function parseElements(xml: string, tagName: string) {
 			rawXml?: string
 		}
 		record.rawXml = match[0]
-		const childRegex = /<([:\w-]+)\b[^>]*>([\s\S]*?)<\/\1>/g
+		const childRegex = /<([:\w-]+)(?=[\s>/])[^>]*>([\s\S]*?)<\/\1>/g
 		for (const childMatch of body.matchAll(childRegex)) {
 			const key = normalizeFieldName(childMatch[1] ?? '')
 			if (!key || key in record) continue
@@ -102,6 +102,29 @@ function pickFirstRecords(xml: string, tagNames: Array<string>) {
 		if (records.length > 0) return records
 	}
 	return []
+}
+
+function extractElementByAttribute(input: {
+	xml: string
+	tagName: string
+	attributeName: string
+	attributeValue: string
+}) {
+	const elementRegex = new RegExp(
+		`<${input.tagName}(?=[\\s>/])(?<attributes>[^>]*)>(?<body>[\\s\\S]*?)<\\/${input.tagName}>|<${input.tagName}(?=[\\s>/])(?<selfClosingAttributes>[^>]*)\\/>`,
+		'gi',
+	)
+	for (const match of input.xml.matchAll(elementRegex)) {
+		const attributes =
+			match.groups?.['attributes'] ??
+			match.groups?.['selfClosingAttributes'] ??
+			''
+		const record = parseAttributes(attributes)
+		if (String(record[input.attributeName] ?? '') === input.attributeValue) {
+			return match[0]
+		}
+	}
+	return null
 }
 
 function escapeXmlAttribute(value: string) {
@@ -170,7 +193,7 @@ function createDispatcher(config: HomeConnectorConfig) {
 	if (!config.accessNetworksUnleashedAllowInsecureTls) return undefined
 	return new Agent({
 		connect: {
-			rejectUnauthorized: false,
+			rejectUnauthorized: !config.accessNetworksUnleashedAllowInsecureTls,
 		},
 	})
 }
@@ -295,7 +318,19 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		await login()
 	}
 
-	async function postXml(path: string, xml: string, timeoutMs?: number) {
+	function resetSession() {
+		state.baseUrl = null
+		state.loginUrl = null
+		state.csrfToken = null
+		state.cookie = null
+	}
+
+	async function postXml(
+		path: string,
+		xml: string,
+		timeoutMs?: number,
+		redirectCount = 0,
+	) {
 		await ensureSession()
 		if (!state.baseUrl)
 			throw new Error('Access Networks Unleashed session has no base URL.')
@@ -312,9 +347,15 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			timeoutMs,
 		)
 		if (response.status === 302) {
-			state.baseUrl = null
+			if (redirectCount >= 1) {
+				resetSession()
+				throw new Error(
+					'Access Networks Unleashed redirected after reauthentication.',
+				)
+			}
+			resetSession()
 			await ensureSession()
-			return await postXml(path, xml, timeoutMs)
+			return await postXml(path, xml, timeoutMs, redirectCount + 1)
 		}
 		const text = await response.text()
 		if (!response.ok) {
@@ -346,6 +387,13 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			`<ajax-request action='getconf' DECRYPT_X='true' updater='${escapeXmlAttribute(component)}.0.5' comp='${escapeXmlAttribute(component)}'/>`,
 		)
 		return pickFirstRecords(response, tagNames)
+	}
+
+	async function getConfXml(component: string) {
+		return await postXml(
+			'_conf.jsp',
+			`<ajax-request action='getconf' DECRYPT_X='true' updater='${escapeXmlAttribute(component)}.0.5' comp='${escapeXmlAttribute(component)}'/>`,
+		)
 	}
 
 	async function findWlan(name: string) {
@@ -404,24 +452,28 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			)
 		},
 		async unblockClient(macAddress) {
-			const mac = escapeXmlAttribute(macAddress.toLowerCase())
-			const aclRecords = await getConf('acl-list', ['acl'])
-			const systemAcl = aclRecords.find(
-				(acl) => String(acl['id'] ?? '') === '1',
+			const mac = macAddress.toLowerCase()
+			const aclResponse = await postXml(
+				'_conf.jsp',
+				"<ajax-request action='getconf' DECRYPT_X='true' updater='acl-list.0.5' comp='acl-list'/>",
 			)
-			const existingDenied = systemAcl
-				? parseElements(String(systemAcl['raw_xml'] ?? ''), 'deny')
-				: []
-			const remaining = existingDenied
-				.filter((deny) => String(deny['mac'] ?? '').toLowerCase() !== mac)
-				.map(
-					(deny) =>
-						`<deny mac='${escapeXmlAttribute(String(deny['mac'] ?? ''))}' type='single'/>`,
-				)
-				.join('')
+			const rawXml = extractElementByAttribute({
+				xml: aclResponse,
+				tagName: 'acl',
+				attributeName: 'id',
+				attributeValue: '1',
+			})
+			if (!rawXml) {
+				throw new Error('Access Networks Unleashed system ACL was not found.')
+			}
+			const updatedAclXml = rawXml.replace(
+				/<deny\b[^>]*\bmac\s*=\s*(["'])(?<mac>.*?)\1[^>]*\/?>/gi,
+				(match, _quote, deniedMac: string) =>
+					deniedMac.toLowerCase() === mac ? '' : match,
+			)
 			await postXml(
 				'_conf.jsp',
-				`<ajax-request action='updobj' comp='acl-list' updater='blocked-clients'><acl id='1' name='System' description='System' default-mode='allow' EDITABLE='false'>${remaining}</acl></ajax-request>`,
+				`<ajax-request action='updobj' comp='acl-list' updater='blocked-clients'>${updatedAclXml}</ajax-request>`,
 			)
 		},
 		async setWlanEnabled(name, enabled) {

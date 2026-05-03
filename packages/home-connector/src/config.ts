@@ -245,7 +245,7 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		accessNetworksUnleashedPassword:
 			process.env.ACCESS_NETWORKS_UNLEASHED_PASSWORD?.trim() || null,
 		accessNetworksUnleashedAllowInsecureTls:
-			process.env.ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS !== 'false',
+			process.env.ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS === 'true',
 		accessNetworksUnleashedRequestTimeoutMs:
 			Number.isFinite(accessNetworksUnleashedRequestTimeoutMs) &&
 			accessNetworksUnleashedRequestTimeoutMs >= 1000
