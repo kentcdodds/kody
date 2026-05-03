@@ -204,8 +204,74 @@ const styles = `
 
 		.sidebar {
 			position: static !important;
+			height: auto !important;
+			padding: var(--spacing-md) !important;
 			border-right: none !important;
 			border-bottom: 1px solid var(--color-border);
+		}
+
+		.sidebar-brand-copy {
+			display: none;
+		}
+
+		.sidebar nav {
+			display: grid;
+			gap: var(--spacing-md);
+			overflow-x: auto;
+			padding-bottom: var(--spacing-xs);
+			scrollbar-width: thin;
+		}
+
+		.nav-section {
+			min-width: max-content;
+		}
+
+		.nav-list {
+			display: flex !important;
+			gap: var(--spacing-sm) !important;
+		}
+
+		.nav-link {
+			min-width: 9.5rem;
+			max-width: 13rem;
+			height: 100%;
+		}
+
+		.layout-main {
+			padding: var(--spacing-md) !important;
+			overflow-x: hidden;
+		}
+
+		.page-intro,
+		.card,
+		.metric-card,
+		.action-card,
+		.summary-card {
+			padding: var(--spacing-md) !important;
+		}
+
+		.card-grid,
+		.metric-grid,
+		.action-grid,
+		.status-grid,
+		.summary-card-metrics {
+			grid-template-columns: minmax(0, 1fr) !important;
+		}
+
+		.title-row,
+		.card-heading,
+		.summary-card-heading,
+		.split-row,
+		.inline-links,
+		.form-actions {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.inline-link,
+		button {
+			justify-content: center;
+			width: 100%;
 		}
 	}
 
@@ -217,6 +283,7 @@ const styles = `
 
 	html {
 		background: var(--color-background);
+		overflow-x: hidden;
 	}
 
 	body {
@@ -229,6 +296,7 @@ const styles = `
 		background:
 			radial-gradient(circle at top left, rgb(37 99 235 / 0.08), transparent 28%),
 			var(--color-background);
+		overflow-x: hidden;
 	}
 
 	h1,
@@ -241,6 +309,7 @@ const styles = `
 
 	h1 {
 		font-size: var(--font-size-2xl);
+		overflow-wrap: anywhere;
 	}
 
 	h2 {
@@ -249,6 +318,11 @@ const styles = `
 
 	h3 {
 		font-size: 1rem;
+	}
+
+	p,
+	li {
+		overflow-wrap: anywhere;
 	}
 
 	p,
@@ -415,6 +489,7 @@ const styles = `
 	}
 
 	.page {
+		min-width: 0;
 		width: min(100%, 92rem);
 		margin: 0 auto;
 		display: grid;
@@ -426,6 +501,7 @@ const styles = `
 	.page-header,
 	.page-intro,
 	.section-stack {
+		min-width: 0;
 		display: grid;
 		gap: var(--spacing-lg);
 	}
@@ -718,7 +794,10 @@ const styles = `
 	}
 
 	.data-table {
+		display: block;
 		width: 100%;
+		max-width: 100%;
+		overflow-x: auto;
 		border-collapse: collapse;
 		font-size: var(--font-size-sm);
 	}
@@ -729,6 +808,7 @@ const styles = `
 		text-align: left;
 		vertical-align: top;
 		border-bottom: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+		overflow-wrap: anywhere;
 	}
 
 	.data-table th {
