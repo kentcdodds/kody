@@ -40,7 +40,6 @@ import {
 import {
 	type EntityKind,
 	type EntitySourceRow,
-	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
 	type RepoSourceBootstrapResult,
@@ -524,7 +523,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				switch (edit.kind) {
 					case 'write':
 						if (typeof edit.content !== 'string') {
-							throw new Error('repo_apply_patch write edits require content.')
+							throw new Error('Workspace write edits require content.')
 						}
 						return {
 							kind: 'write' as const,
@@ -533,7 +532,7 @@ class RepoSessionBase extends DurableObject<Env> {
 						}
 					case 'replace':
 						if (typeof edit.search !== 'string') {
-							throw new Error('repo_apply_patch replace edits require search.')
+							throw new Error('Workspace replace edits require search.')
 						}
 						return {
 							kind: 'replace' as const,
@@ -887,44 +886,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			toExternalPath: (path) =>
 				toExternalRepoPath(path, repoSessionWorkspacePrefix),
 		})
-	}
-
-	async applyPatch(input: {
-		sessionId: string
-		userId: string
-		edits: Array<
-			| {
-					kind: 'write'
-					path: string
-					content: string
-			  }
-			| {
-					kind: 'replace'
-					path: string
-					search: string
-					replacement: string
-					options?: {
-						caseSensitive?: boolean
-						regex?: boolean
-						wholeWord?: boolean
-						contextBefore?: number
-						contextAfter?: number
-						maxMatches?: number
-					}
-			  }
-			| {
-					kind: 'writeJson'
-					path: string
-					value: unknown
-					options?: {
-						spaces?: number
-					}
-			  }
-		>
-		dryRun?: boolean
-		rollbackOnError?: boolean
-	}): Promise<RepoApplyPatchResult> {
-		return this.applyEdits(input)
 	}
 
 	async tree(input: {

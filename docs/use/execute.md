@@ -79,14 +79,12 @@ module-oriented runtime model:
 - **`codemode.job_run_now(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging
 
-When you need to edit saved source, prefer the repo-backed workflow in
-[Repo-backed editing sessions](./repo-sessions.md). Open by package identity
-instead of internal source ids whenever possible.
-
-For common edit-and-check workflows, `repo_edit_flow` returns session, checks,
-and publish detail in one response. The nested `edits.edits` array is omitted by
-default to keep that response smaller, and can be requested explicitly when a
-caller needs the concrete diff in the same call.
+When you need to edit saved package source, use the shell-first workflow in
+[Packages](./packages.md): open `package_shell_open`, run commands with
+`package_shell_exec`, then validate and publish with `package_check` and
+`package_publish`. Use [Repo-backed editing sessions](./repo-sessions.md) for
+inspection, checks, publish, rebase, and discard controls around repo-backed
+sources.
 
 ## Agent turns
 
