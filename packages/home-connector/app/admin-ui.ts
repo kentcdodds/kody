@@ -153,23 +153,30 @@ export function renderEmptyState(message: string | ReturnType<typeof html>) {
 export function renderDataTable(input: {
 	headers: Array<string>
 	rows: Array<Array<string | number | ReturnType<typeof html>>>
+	className?: 'data-table-diagnostics'
 }) {
 	if (input.rows.length === 0) {
 		return renderEmptyState('No rows to display.')
 	}
 
-	return html`<table class="data-table">
-		<thead>
-			<tr>
-				${input.headers.map((header) => html`<th scope="col">${header}</th>`)}
-			</tr>
-		</thead>
-		<tbody>
-			${input.rows.map(
-				(row) => html`<tr>
-					${row.map((value) => html`<td>${value}</td>`)}
-				</tr>`,
-			)}
-		</tbody>
-	</table>`
+	const className = input.className
+		? `data-table ${input.className}`
+		: 'data-table'
+
+	return html`<div class="data-table-scroll">
+		<table class="${className}">
+			<thead>
+				<tr>
+					${input.headers.map((header) => html`<th scope="col">${header}</th>`)}
+				</tr>
+			</thead>
+			<tbody>
+				${input.rows.map(
+					(row) => html`<tr>
+						${row.map((value) => html`<td>${value}</td>`)}
+					</tr>`,
+				)}
+			</tbody>
+		</table>
+	</div>`
 }
