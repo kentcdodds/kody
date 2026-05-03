@@ -1,10 +1,11 @@
+import { createAccessNetworksUnleashedAdapter } from './adapters/access-networks-unleashed/index.ts'
 import { createBondAdapter } from './adapters/bond/index.ts'
 import { createIslandRouterAdapter } from './adapters/island-router/index.ts'
 import { createJellyfishAdapter } from './adapters/jellyfish/index.ts'
 import { createLutronAdapter } from './adapters/lutron/index.ts'
+import { createSamsungTvAdapter } from './adapters/samsung-tv/index.ts'
 import { createSonosAdapter } from './adapters/sonos/index.ts'
 import { createVenstarAdapter } from './adapters/venstar/index.ts'
-import { createSamsungTvAdapter } from './adapters/samsung-tv/index.ts'
 import { createHomeConnectorMcpServer } from './mcp/server.ts'
 import { loadHomeConnectorConfig } from './config.ts'
 import { createAppState, updateConnectionState } from './state.ts'
@@ -50,6 +51,9 @@ export function createHomeConnectorApp() {
 		storage,
 	})
 	const venstar = createVenstarAdapter({ config, state, storage })
+	const accessNetworksUnleashed = createAccessNetworksUnleashedAdapter({
+		config,
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
@@ -60,6 +64,7 @@ export function createHomeConnectorApp() {
 		islandRouter,
 		jellyfish,
 		venstar,
+		accessNetworksUnleashed,
 	})
 	const workerConnector = createWorkerConnector({
 		config,
@@ -78,6 +83,7 @@ export function createHomeConnectorApp() {
 		islandRouter,
 		jellyfish,
 		venstar,
+		accessNetworksUnleashed,
 		mcp,
 		workerConnector,
 	}

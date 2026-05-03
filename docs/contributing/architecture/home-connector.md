@@ -33,6 +33,8 @@ The connector exposes these local-device families:
 - Venstar WiFi thermostat status and control over the local REST API
 - Island router diagnostics over SSH using a typed command allowlist plus a tiny
   opt-in set of high-risk write operations
+- Access Networks Unleashed / RUCKUS Unleashed WiFi controller reads and typed
+  high-risk writes over the local AJAX management interface
 
 All surfaces are registered as MCP tools inside the connector and then exposed
 to the Worker through the existing outbound WebSocket session to
@@ -147,8 +149,8 @@ The adapter does expose:
 - a structured `router_diagnose_host` workflow that combines ping, ARP,
   reservation, interface, and log data for one host
 - a broader but still typed and explicitly allowlisted high-risk write surface
-  for failover selection, DHCP reservations, reboot, interface descriptions,
-  DNS servers, host blocking/unblocking, `clear dhcp-client`, `clear log`, and
+  for failover selection, DHCP reservations, reboot, interface descriptions, DNS
+  servers, host blocking/unblocking, `clear dhcp-client`, `clear log`, and
   `write memory` when all write guardrails pass
 
 The adapter explicitly does not expose:
@@ -174,6 +176,36 @@ SSH transport is conservative:
   host fingerprint
 - the Docker image includes the OpenSSH client utilities needed for `ssh`,
   `ssh-keyscan`, and fingerprint verification
+
+## Access Networks Unleashed WiFi integration
+
+The Access Networks Unleashed adapter lives under
+`packages/home-connector/src/adapters/access-networks-unleashed/` and targets
+controllers reachable from the local connector host through the Unleashed AJAX
+management interface. Configure it with:
+
+- `ACCESS_NETWORKS_UNLEASHED_HOST`
+- `ACCESS_NETWORKS_UNLEASHED_USERNAME`
+- `ACCESS_NETWORKS_UNLEASHED_PASSWORD`
+- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS=false` when the controller uses
+  a certificate trusted by the connector host. The default allows self-signed
+  LAN certificates.
+- `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` when the default 8s request
+  timeout is too short.
+
+The adapter exposes read-only tools for controller status, access point
+inventory, active clients, WLAN/SSID configuration, and recent events. It also
+exposes a small typed write surface for client block/unblock, WLAN
+enable/disable, AP restart, and AP LED visibility changes.
+
+The write tools are deliberately warning-heavy. Each requires:
+
+- `acknowledgeHighRisk: true`
+- an operator reason
+- an exact operation-specific confirmation phrase
+
+The adapter does not expose arbitrary Unleashed CLI or arbitrary AJAX payload
+execution.
 
 ## Local persistence
 
