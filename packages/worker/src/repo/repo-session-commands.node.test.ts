@@ -50,6 +50,25 @@ test('parseRepoGitCommands reports line-specific unsupported command errors', ()
 	)
 })
 
+test('parseRepoGitCommands does not treat indented delimiter text as heredoc close', () => {
+	const commands = [
+		"git apply <<'PATCH'",
+		'--- a/src/index.ts',
+		'+++ b/src/index.ts',
+		'@@ -1,2 +1,2 @@',
+		' PATCH',
+		'-old',
+		'+new',
+		'PATCH',
+	].join('\n')
+
+	const parsed = parseRepoGitCommands(commands)
+
+	expect(parsed).toHaveLength(1)
+	expect(parsed[0]).toMatchObject({ kind: 'apply' })
+	expect(parsed[0]?.kind === 'apply' ? parsed[0].patch : '').toContain(' PATCH')
+})
+
 test('parseRepoGitCommands explains malformed git apply usage', () => {
 	expect(() => parseRepoGitCommands('git apply patch.diff')).toThrow(
 		/git apply requires heredoc form/,

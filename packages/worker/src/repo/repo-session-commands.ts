@@ -115,7 +115,7 @@ export function parseRepoGitCommands(commands: string) {
 			let foundDelimiter = false
 			for (index += 1; index < lines.length; index += 1) {
 				const patchLine = lines[index] ?? ''
-				if (patchLine.trim() === delimiter) {
+				if (patchLine.trimEnd() === delimiter) {
 					foundDelimiter = true
 					break
 				}

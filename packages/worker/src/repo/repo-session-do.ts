@@ -905,24 +905,33 @@ class RepoSessionBase extends DurableObject<Env> {
 			diff: string
 		}> = []
 		for (const patch of patches) {
-			const targetPath =
+			const oldPath =
+				patch.oldFileName && patch.oldFileName !== '/dev/null'
+					? patch.oldFileName.replace(/^[ab]\//, '')
+					: null
+			const newPath =
 				patch.newFileName && patch.newFileName !== '/dev/null'
-					? patch.newFileName
-					: patch.oldFileName
-			if (!targetPath || targetPath === '/dev/null') {
+					? patch.newFileName.replace(/^[ab]\//, '')
+					: null
+			const targetPath = newPath ?? oldPath
+			const sourcePath = oldPath ?? newPath
+			if (!targetPath || !sourcePath) {
 				throw new Error('git apply patch is missing a target file path.')
 			}
-			const externalPath = targetPath.replace(/^[ab]\//, '')
 			const workspacePath = resolveRepoWorkspacePath(
-				externalPath,
+				targetPath,
+				repoSessionWorkspacePrefix,
+			)
+			const sourceWorkspacePath = resolveRepoWorkspacePath(
+				sourcePath,
 				repoSessionWorkspacePrefix,
 			)
 			const currentContent =
-				(await this.workspace.readFile(workspacePath)) ?? ''
+				(await this.workspace.readFile(sourceWorkspacePath)) ?? ''
 			const nextContent = applyPatch(currentContent, patch)
 			if (nextContent === false) {
 				throw new Error(
-					`git apply patch did not apply cleanly to ${externalPath}.`,
+					`git apply patch did not apply cleanly to ${targetPath}.`,
 				)
 			}
 			if (!input.dryRun) {
@@ -930,10 +939,13 @@ class RepoSessionBase extends DurableObject<Env> {
 					await this.workspace.rm(workspacePath, { force: true })
 				} else {
 					await this.workspace.writeFile(workspacePath, nextContent)
+					if (oldPath && newPath && oldPath !== newPath) {
+						await this.workspace.rm(sourceWorkspacePath, { force: true })
+					}
 				}
 			}
 			edits.push({
-				path: externalPath,
+				path: targetPath,
 				changed: nextContent !== currentContent,
 				content: nextContent,
 				diff: formatPatch(patch),

@@ -406,6 +406,55 @@ test('runCommands applies deletion patches and returns per-file diffs', async ()
 	expect(edits.edits[1]?.diff).not.toContain('src/keep.ts')
 })
 
+test('runCommands applies rename patches from the old file path', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/old-name.ts')
+			return 'export const name = "old"\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.runCommands({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		runChecks: false,
+		publish: false,
+		commands: [
+			"git apply <<'PATCH'",
+			'--- a/src/old-name.ts',
+			'+++ b/src/new-name.ts',
+			'@@ -1 +1 @@',
+			'-export const name = "old"',
+			'+export const name = "new"',
+			'PATCH',
+		].join('\n'),
+	})
+
+	expect(mockModule.workspaceReadFile).toHaveBeenCalledWith(
+		'/session/src/old-name.ts',
+	)
+	expect(mockModule.workspaceRm).toHaveBeenCalledWith(
+		'/session/src/old-name.ts',
+		{
+			force: true,
+		},
+	)
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/new-name.ts',
+		'export const name = "new"\n',
+	)
+	const edits = result.commands[0]?.output as {
+		edits: Array<{ path: string; content: string; diff: string }>
+	}
+	expect(edits.edits[0]).toEqual(
+		expect.objectContaining({
+			path: 'src/new-name.ts',
+			content: 'export const name = "new"\n',
+		}),
+	)
+})
+
 test('runCommands fetches session metadata after publish side effects', async () => {
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published'
