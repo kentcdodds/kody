@@ -1083,18 +1083,11 @@ class RepoSessionBase extends DurableObject<Env> {
 					'Publishing requires checks. Set runChecks to true when publish is true.',
 				)
 			}
-			const publish = shouldPublish
-				? {
-						status: 'blocked_by_checks' as const,
-						message:
-							'Publishing requires checks. Set run_checks to true when publish is true.',
-					}
-				: { status: 'not_requested' as const }
 			return {
 				session: await this.getSessionInfo(input),
 				commands: results,
 				checks: { status: 'not_requested' },
-				publish,
+				publish: { status: 'not_requested' },
 			}
 		}
 		const checkRun = await this.runChecks(input)
