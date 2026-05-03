@@ -12,7 +12,17 @@ import {
 	adoptAccessNetworksUnleashedController,
 } from './repository.ts'
 
-function createConfig(dbPath: string) {
+function createConfig(
+	dbPath: string,
+	overrides: Partial<ReturnType<typeof createConfigBase>> = {},
+) {
+	return {
+		...createConfigBase(dbPath),
+		...overrides,
+	}
+}
+
+function createConfigBase(dbPath: string) {
 	return {
 		homeConnectorId: 'default',
 		workerBaseUrl: 'http://localhost:3742',
@@ -128,7 +138,9 @@ test('sqlite storage persists Unleashed controllers and encrypted credentials', 
 		expect(rawPasswordRow?.password).not.toContain('admin-pass')
 
 		const mismatchedSecretStorage = createHomeConnectorStorage(
-			createConfig(path.join(directory, 'wrong-secret.sqlite')),
+			createConfig(path.join(directory, 'wrong-secret.sqlite'), {
+				sharedSecret: 'wrong-secret',
+			}),
 		)
 		try {
 			upsertDiscoveredAccessNetworksUnleashedControllers(

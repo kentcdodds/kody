@@ -203,15 +203,28 @@ export function createAccessNetworksUnleashedAdapter(input: {
 		return controller
 	}
 
+	let cachedClientKey: string | null = null
+	let cachedClient: AccessNetworksUnleashedClient | null = null
+
 	function createClient() {
 		const controller = requireControllerWithCredentials()
-		return (
+		const cacheKey = JSON.stringify({
+			controllerId: controller.controllerId,
+			host: controller.host,
+			username: controller.username,
+			password: controller.password,
+		})
+		if (cachedClient && cachedClientKey === cacheKey) {
+			return cachedClient
+		}
+		cachedClient =
 			input.clientFactory?.(controller) ??
 			createAccessNetworksUnleashedAjaxClient({
 				config,
 				controller,
 			})
-		)
+		cachedClientKey = cacheKey
+		return cachedClient
 	}
 
 	return {

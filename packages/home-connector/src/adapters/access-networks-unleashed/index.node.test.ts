@@ -146,6 +146,12 @@ test('access networks unleashed adapter supports scan, adopt, credentials, and s
 			lastAuthError: null,
 		})
 
+		const loginAttempts = fetchMock.mock.calls.filter(
+			([url, init]) =>
+				init?.method === 'HEAD' && String(url).includes('username=admin'),
+		)
+		expect(loginAttempts).toHaveLength(1)
+
 		const status = await adapter.getStatus()
 		expect(status).toMatchObject({
 			config: {
