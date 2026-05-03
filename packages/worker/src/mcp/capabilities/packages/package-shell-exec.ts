@@ -7,6 +7,7 @@ import {
 	packageShellExecOutputSchema,
 	requirePackageSession,
 } from './package-shell-shared.ts'
+import { resolveRepoTargetFromSource } from '../repo/repo-resolve-target.ts'
 
 export const packageShellExecCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
@@ -27,17 +28,16 @@ export const packageShellExecCapability = defineDomainCapability(
 				userId: user.userId,
 				sessionId: args.session_id,
 			})
+			const resolvedTarget = await resolveRepoTargetFromSource({
+				db: ctx.env.APP_DB,
+				userId: user.userId,
+				sourceId: session.source_id,
+			})
 			return runPackageShellCommand({
 				env: ctx.env,
 				userId: user.userId,
 				session,
-				resolvedTarget: {
-					kind: 'package',
-					source_id: session.source_id,
-					package_id: session.source_id,
-					kody_id: 'package',
-					name: 'package',
-				},
+				resolvedTarget,
 				command: args.command,
 				cwd: args.cwd ?? null,
 				commandTimeoutMs: args.command_timeout_ms ?? null,

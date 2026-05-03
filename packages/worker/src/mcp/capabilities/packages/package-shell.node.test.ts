@@ -1,13 +1,23 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { type getSavedPackageById } from '#worker/package-registry/repo.ts'
+import type * as ArtifactsModule from '#worker/repo/artifacts.ts'
+import { type resolveSessionRepo } from '#worker/repo/artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
+	getSavedPackageById: vi.fn<
+		Parameters<typeof getSavedPackageById>,
+		ReturnType<typeof getSavedPackageById>
+	>(),
 	repoSessionRpc: vi.fn(),
 	getSandbox: vi.fn(),
-	resolveSessionRepo: vi.fn(),
+	resolveSessionRepo: vi.fn<
+		Parameters<typeof resolveSessionRepo>,
+		ReturnType<typeof resolveSessionRepo>
+	>(),
 }))
 
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
@@ -22,7 +32,7 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+		mockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
 }))
@@ -33,9 +43,9 @@ vi.mock('#worker/repo/repo-session-do.ts', () => ({
 }))
 
 vi.mock('#worker/repo/artifacts.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/repo/artifacts.ts')
-	>('#worker/repo/artifacts.ts')
+	const actual = await vi.importActual<typeof ArtifactsModule>(
+		'#worker/repo/artifacts.ts',
+	)
 	return {
 		...actual,
 		resolveSessionRepo: (...args: Array<unknown>) =>
@@ -109,11 +119,25 @@ function setupPackageShellMocks() {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.getSavedPackageById.mockReset()
 	mockModule.repoSessionRpc.mockReset()
 	mockModule.getSandbox.mockReset()
 	mockModule.resolveSessionRepo.mockReset()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
 	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kody/example-package',
+		kodyId: 'example-package',
+		description: 'Example package',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-package-1',
+		hasApp: false,
+		createdAt: '2026-04-18T00:00:00.000Z',
+		updatedAt: '2026-04-18T00:00:00.000Z',
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		userId: 'user-1',
 		name: '@kody/example-package',
@@ -222,6 +246,13 @@ test('package_shell_exec runs the command as-is and syncs the repo session after
 		expect.objectContaining({
 			success: true,
 			exit_code: 0,
+			resolved_target: {
+				kind: 'package',
+				source_id: 'source-package-1',
+				package_id: 'package-1',
+				kody_id: 'example-package',
+				name: '@kody/example-package',
+			},
 			stdout: 'ok',
 			synced_session: {
 				ok: true,

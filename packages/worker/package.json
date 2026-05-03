@@ -9,7 +9,7 @@
     "@babel/parser": "^7.29.2",
     "@cloudflare/ai-chat": "^0.4.4",
     "@cloudflare/codemode": "^0.3.4",
-    "@cloudflare/sandbox": "^0.9.2",
+    "@cloudflare/sandbox": "0.9.2",
     "@cloudflare/shell": "^0.3.2",
     "@cloudflare/think": "^0.2.4",
     "@cloudflare/worker-bundler": "^0.1.1",

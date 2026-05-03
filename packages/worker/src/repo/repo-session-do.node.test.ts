@@ -316,6 +316,9 @@ test('syncSessionFromRemote pulls shell-pushed session commits into the workspac
 			password: 'art_session_secret',
 		}),
 	)
+	expect(mockModule.git.pull).toHaveBeenCalledWith(
+		expect.not.objectContaining({ token: expect.anything() }),
+	)
 	expect(mockModule.updateRepoSession).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({

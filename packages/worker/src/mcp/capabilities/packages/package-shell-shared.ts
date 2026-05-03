@@ -12,13 +12,19 @@ import {
 	repoSessionIdSchema,
 } from '../repo/repo-shared.ts'
 
+export const packageShellMaxCommandTimeoutMs = 86_400_000
+
+const packageShellCommandTimeoutSchema = z
+	.number()
+	.int()
+	.min(1_000)
+	.max(packageShellMaxCommandTimeoutMs)
+	.describe(
+		'Optional shell command timeout in milliseconds, capped at one day.',
+	)
+
 export const packageShellOpenInputSchema = repoOpenSessionInputSchema.extend({
-	command_timeout_ms: z
-		.number()
-		.int()
-		.min(1_000)
-		.optional()
-		.describe('Optional default shell command timeout in milliseconds.'),
+	command_timeout_ms: packageShellCommandTimeoutSchema.optional(),
 })
 
 export const packageShellOpenOutputSchema = z.object({
@@ -42,12 +48,7 @@ export const packageShellExecInputSchema = repoSessionIdSchema.extend({
 		.min(1)
 		.optional()
 		.describe('Optional command working directory. Defaults to /workspace.'),
-	command_timeout_ms: z
-		.number()
-		.int()
-		.min(1_000)
-		.optional()
-		.describe('Optional command timeout in milliseconds.'),
+	command_timeout_ms: packageShellCommandTimeoutSchema.optional(),
 	sync_after: z
 		.boolean()
 		.optional()
