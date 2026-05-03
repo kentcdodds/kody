@@ -470,6 +470,8 @@ test('runCommands rejects publish without checks for direct RPC callers', async 
 	).rejects.toThrow(
 		'Publishing requires checks. Set runChecks to true when publish is true.',
 	)
+	expect(mockModule.git.status).not.toHaveBeenCalled()
+	expect(mockModule.updateRepoSession).not.toHaveBeenCalled()
 })
 
 test('runCommands fetches session metadata after publish side effects', async () => {

@@ -1060,6 +1060,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.sessionId,
 			input.userId,
 		)
+		const shouldRunChecks = input.runChecks ?? false
+		const shouldPublish = input.publish ?? false
+		if (!shouldRunChecks && shouldPublish) {
+			throw new Error(
+				'Publishing requires checks. Set runChecks to true when publish is true.',
+			)
+		}
 		const commands = parseRepoGitCommands(input.commands)
 		const results = []
 		for (const command of commands) {
@@ -1075,14 +1082,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
 		})
-		const shouldRunChecks = input.runChecks ?? false
-		const shouldPublish = input.publish ?? false
 		if (!shouldRunChecks) {
-			if (shouldPublish) {
-				throw new Error(
-					'Publishing requires checks. Set runChecks to true when publish is true.',
-				)
-			}
 			return {
 				session: await this.getSessionInfo(input),
 				commands: results,
