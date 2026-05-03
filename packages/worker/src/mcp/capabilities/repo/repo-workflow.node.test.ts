@@ -32,9 +32,9 @@ vi.mock('#worker/repo/repo-session-do.ts', () => ({
 }))
 
 const { repoOpenSessionCapability } = await import('./repo-open-session.ts')
-const { repoEditFlowCapability } = await import('./repo-edit-flow.ts')
 const { repoPublishSessionCapability } =
 	await import('./repo-publish-session.ts')
+const { repoRunCommandsCapability } = await import('./repo-run-commands.ts')
 
 function createCapabilityContext() {
 	return {
@@ -50,7 +50,7 @@ function createRepoRpc(overrides?: Partial<Record<string, unknown>>) {
 	return {
 		openSession: vi.fn(),
 		getSessionInfo: vi.fn(),
-		applyEdits: vi.fn(),
+		runCommands: vi.fn(),
 		runChecks: vi.fn(),
 		publishSession: vi.fn(),
 		...overrides,
@@ -175,7 +175,25 @@ test('repo_open_session rejects an active conversation session for a different t
 	).rejects.toThrow()
 })
 
-test('repo_open_session reuses resolved target metadata when resuming an existing session', async () => {
+test('repo_run_commands rejects source-only options when opening by target', async () => {
+	resetMocks()
+
+	await expect(
+		repoRunCommandsCapability.handler(
+			{
+				target: { kind: 'package', kody_id: 'triage-github-pr' },
+				conversation_id: 'conversation-1',
+				commands: 'git status',
+			},
+			createCapabilityContext(),
+		),
+	).rejects.toThrow(
+		'`conversation_id`, `source_root`, and `default_branch` only apply when opening a session by source identity.',
+	)
+	expect(mockModule.repoSessionRpc).not.toHaveBeenCalled()
+})
+
+test('repo_run_commands reuses resolved target metadata when resuming an existing session', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackageRow())
@@ -222,41 +240,53 @@ test('repo_open_session reuses resolved target metadata when resuming an existin
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.applyEdits.mockResolvedValueOnce({
-		dryRun: false,
-		totalChanged: 1,
-		edits: [
-			{
-				path: 'src/index.ts',
-				changed: true,
-				content: 'export default async function run() { return { ok: true } }',
-				diff: '@@',
-			},
-		],
+	rpc.runCommands.mockResolvedValueOnce({
+		session: {
+			id: 'session-existing',
+			source_id: 'source-package-1',
+			source_root: '/',
+			base_commit: 'commit-package-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'repo-package-1-session-1',
+			session_repo_namespace: 'default',
+			conversation_id: 'conversation-1',
+			last_checkpoint_commit: 'commit-package-1',
+			last_check_run_id: null,
+			last_check_tree_hash: null,
+			expires_at: null,
+			created_at: '2026-04-18T00:01:00.000Z',
+			updated_at: '2026-04-18T00:02:00.000Z',
+			published_commit: 'commit-package-1',
+			manifest_path: 'package.json',
+			entity_type: 'package',
+		},
+		commands: [{ line: 1, command: 'git status', ok: true, output: [] }],
+		checks: { status: 'not_requested' },
+		publish: { status: 'not_requested' },
 	})
 	mockModule.repoSessionRpc.mockReturnValue(rpc)
 
-	const result = await repoEditFlowCapability.handler(
+	const result = await repoRunCommandsCapability.handler(
 		{
 			session_id: 'session-existing',
-			instructions: [
-				{
-					kind: 'replace',
-					path: 'src/index.ts',
-					search: 'return { ok: false }',
-					replacement: 'return { ok: true }',
-				},
-			],
+			commands: 'git status',
 			run_checks: false,
 			publish: false,
 		},
 		createCapabilityContext(),
 	)
 
-	expect(result.edits).toEqual({
-		dry_run: false,
-		total_changed: 1,
+	expect(rpc.runCommands).toHaveBeenCalledWith({
+		sessionId: 'session-existing',
+		userId: 'user-1',
+		commands: 'git status',
+		dryRun: undefined,
+		runChecks: false,
+		publish: false,
 	})
+	expect(result.commands).toEqual([
+		{ line: 1, command: 'git status', ok: true, output: [] },
+	])
 	expect(result.resolved_target).toEqual({
 		kind: 'package',
 		source_id: 'source-package-1',
@@ -266,7 +296,7 @@ test('repo_open_session reuses resolved target metadata when resuming an existin
 	})
 })
 
-test('repo_edit_flow applies edits, runs checks, and skips publish when checks fail', async () => {
+test('repo_run_commands opens by target and returns failed checks without publish', async () => {
 	resetMocks()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
@@ -296,77 +326,80 @@ test('repo_edit_flow applies edits, runs checks, and skips publish when checks f
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.applyEdits.mockResolvedValueOnce({
-		dryRun: false,
-		totalChanged: 1,
-		edits: [
-			{
-				path: 'src/index.ts',
-				changed: true,
-				content: 'export default async () => ({ ok: true })',
-				diff: '@@',
-			},
-		],
-	})
-	rpc.runChecks.mockResolvedValueOnce({
-		ok: false,
-		results: [
-			{ kind: 'typecheck', ok: false, message: 'Typecheck failed' },
-			{ kind: 'manifest', ok: true, message: 'Manifest ok' },
-		],
-		manifest: {
-			name: '@kody/triage-github-pr',
-			kody: {
-				id: 'triage-github-pr',
-				description: 'Triages one PR',
-			},
+	rpc.runCommands.mockResolvedValueOnce({
+		session: {
+			id: 'session-1',
+			source_id: 'source-package-1',
+			source_root: '/',
+			base_commit: 'commit-package-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'repo-package-1-session-1',
+			session_repo_namespace: 'default',
+			conversation_id: null,
+			last_checkpoint_commit: 'commit-package-1',
+			last_check_run_id: 'check-1',
+			last_check_tree_hash: 'tree-1',
+			expires_at: null,
+			created_at: '2026-04-18T00:01:00.000Z',
+			updated_at: '2026-04-18T00:02:00.000Z',
+			published_commit: 'commit-package-1',
+			manifest_path: 'package.json',
+			entity_type: 'package',
 		},
-		runId: 'check-1',
-		treeHash: 'tree-1',
-		checkedAt: '2026-04-18T00:02:00.000Z',
-	})
-	rpc.getSessionInfo.mockResolvedValueOnce({
-		id: 'session-1',
-		source_id: 'source-package-1',
-		source_root: '/',
-		base_commit: 'commit-package-1',
-		session_repo_id: 'session-repo-1',
-		session_repo_name: 'repo-package-1-session-1',
-		session_repo_namespace: 'default',
-		conversation_id: null,
-		last_checkpoint_commit: 'commit-package-1',
-		last_check_run_id: 'check-1',
-		last_check_tree_hash: 'tree-1',
-		expires_at: null,
-		created_at: '2026-04-18T00:01:00.000Z',
-		updated_at: '2026-04-18T00:02:00.000Z',
-		published_commit: 'commit-package-1',
-		manifest_path: 'package.json',
-		entity_type: 'package',
+		commands: [
+			{ line: 1, command: "git apply <<'PATCH'", ok: true, output: {} },
+		],
+		checks: {
+			status: 'failed',
+			ok: false,
+			results: [
+				{ kind: 'typecheck', ok: false, message: 'Typecheck failed' },
+				{ kind: 'manifest', ok: true, message: 'Manifest ok' },
+			],
+			failedChecks: [
+				{ kind: 'typecheck', ok: false, message: 'Typecheck failed' },
+			],
+			manifest: {
+				name: '@kody/triage-github-pr',
+				kody: {
+					id: 'triage-github-pr',
+					description: 'Triages one PR',
+				},
+			},
+			runId: 'check-1',
+			treeHash: 'tree-1',
+			checkedAt: '2026-04-18T00:02:00.000Z',
+		},
+		publish: {
+			status: 'blocked_by_checks',
+			message: 'Publishing skipped because repo checks failed.',
+		},
 	})
 	mockModule.repoSessionRpc.mockReturnValue(rpc)
 
-	const result = await repoEditFlowCapability.handler(
+	const commands = [
+		"git apply <<'PATCH'",
+		'--- a/src/index.ts',
+		'+++ b/src/index.ts',
+		'PATCH',
+	].join('\n')
+	const result = await repoRunCommandsCapability.handler(
 		{
 			target: { kind: 'package', kody_id: 'triage-github-pr' },
-			instructions: [
-				{
-					kind: 'replace',
-					path: 'src/index.ts',
-					search: 'return { ok: false }',
-					replacement: 'return { ok: true }',
-				},
-			],
+			commands,
+			run_checks: true,
+			publish: true,
 		},
 		createCapabilityContext(),
 	)
 
-	expect(rpc.applyEdits).toHaveBeenCalledTimes(1)
-	expect(rpc.runChecks).toHaveBeenCalledTimes(1)
-	expect(rpc.publishSession).not.toHaveBeenCalled()
-	expect(result.edits).toEqual({
-		dry_run: false,
-		total_changed: 1,
+	expect(rpc.runCommands).toHaveBeenCalledWith({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		commands,
+		dryRun: undefined,
+		runChecks: true,
+		publish: true,
 	})
 	expect(result.checks).toEqual({
 		status: 'failed',
@@ -390,17 +423,11 @@ test('repo_edit_flow applies edits, runs checks, and skips publish when checks f
 	})
 	expect(result.publish).toEqual({
 		status: 'blocked_by_checks',
-		message: 'Publishing skipped because repo checks failed in this flow.',
-		failed_checks: [
-			{ kind: 'typecheck', ok: false, message: 'Typecheck failed' },
-		],
-		run_id: 'check-1',
-		tree_hash: 'tree-1',
-		checked_at: '2026-04-18T00:02:00.000Z',
+		message: 'Publishing skipped because repo checks failed.',
 	})
 })
 
-test('repo_edit_flow includes edit details when include_edits is true', async () => {
+test('repo_run_commands returns published result after checks pass', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackageRow())
@@ -447,49 +474,80 @@ test('repo_edit_flow includes edit details when include_edits is true', async ()
 		manifest_path: 'package.json',
 		entity_type: 'package',
 	})
-	rpc.applyEdits.mockResolvedValueOnce({
-		dryRun: false,
-		totalChanged: 1,
-		edits: [
-			{
-				path: 'src/index.ts',
-				changed: true,
-				content: 'export default async function run() { return { ok: true } }',
-				diff: '@@',
+	rpc.runCommands.mockResolvedValueOnce({
+		session: {
+			id: 'session-existing',
+			source_id: 'source-package-1',
+			source_root: '/',
+			base_commit: 'commit-package-1',
+			session_repo_id: 'session-repo-1',
+			session_repo_name: 'repo-package-1-session-1',
+			session_repo_namespace: 'default',
+			conversation_id: 'conversation-1',
+			last_checkpoint_commit: 'commit-package-1',
+			last_check_run_id: 'check-1',
+			last_check_tree_hash: 'tree-1',
+			expires_at: null,
+			created_at: '2026-04-18T00:01:00.000Z',
+			updated_at: '2026-04-18T00:02:00.000Z',
+			published_commit: 'commit-published',
+			manifest_path: 'package.json',
+			entity_type: 'package',
+		},
+		commands: [{ line: 1, command: 'git status', ok: true, output: [] }],
+		checks: {
+			status: 'passed',
+			ok: true,
+			results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
+			manifest: {
+				name: '@kody/triage-github-pr',
+				kody: {
+					id: 'triage-github-pr',
+					description: 'Triages one PR',
+				},
 			},
-		],
+			runId: 'check-1',
+			treeHash: 'tree-1',
+			checkedAt: '2026-04-18T00:02:00.000Z',
+		},
+		publish: {
+			status: 'ok',
+			sessionId: 'session-existing',
+			publishedCommit: 'commit-published',
+			message: 'Published session.',
+		},
 	})
 	mockModule.repoSessionRpc.mockReturnValue(rpc)
 
-	const result = await repoEditFlowCapability.handler(
+	const result = await repoRunCommandsCapability.handler(
 		{
 			session_id: 'session-existing',
-			instructions: [
-				{
-					kind: 'replace',
-					path: 'src/index.ts',
-					search: 'return { ok: false }',
-					replacement: 'return { ok: true }',
-				},
-			],
-			include_edits: true,
-			run_checks: false,
-			publish: false,
+			commands: 'git status',
+			run_checks: true,
+			publish: true,
 		},
 		createCapabilityContext(),
 	)
 
-	expect(result.edits).toEqual({
-		dry_run: false,
-		total_changed: 1,
-		edits: [
-			{
-				path: 'src/index.ts',
-				changed: true,
-				content: 'export default async function run() { return { ok: true } }',
-				diff: '@@',
-			},
-		],
+	expect(result.checks).toEqual({
+		status: 'passed',
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
+		manifest: {
+			name: '@kody/triage-github-pr',
+			kody_id: 'triage-github-pr',
+			description: 'Triages one PR',
+			has_app: false,
+		},
+		run_id: 'check-1',
+		tree_hash: 'tree-1',
+		checked_at: '2026-04-18T00:02:00.000Z',
+	})
+	expect(result.publish).toEqual({
+		status: 'ok',
+		session_id: 'session-existing',
+		published_commit: 'commit-published',
+		message: 'Published session.',
 	})
 })
 
@@ -525,4 +583,48 @@ test('repo_publish_session returns structured base_moved repair details', async 
 		session_base_commit: 'commit-old',
 		current_published_commit: 'commit-new',
 	})
+})
+
+test('repo_run_commands surfaces line-specific command parse errors', async () => {
+	resetMocks()
+	const rpc = createRepoRpc()
+	rpc.getSessionInfo.mockResolvedValueOnce({
+		id: 'session-existing',
+		source_id: 'source-package-1',
+		source_root: '/',
+		base_commit: 'commit-package-1',
+		session_repo_id: 'session-repo-1',
+		session_repo_name: 'repo-package-1-session-1',
+		session_repo_namespace: 'default',
+		conversation_id: 'conversation-1',
+		last_checkpoint_commit: 'commit-package-1',
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		expires_at: null,
+		created_at: '2026-04-18T00:01:00.000Z',
+		updated_at: '2026-04-18T00:02:00.000Z',
+		published_commit: 'commit-package-1',
+		manifest_path: 'package.json',
+		entity_type: 'package',
+	})
+	rpc.runCommands.mockRejectedValueOnce(
+		new Error(
+			'Unable to parse repo command on line 2: unsupported git subcommand "merge".',
+		),
+	)
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	mockModule.getSavedPackageById.mockResolvedValueOnce(createSavedPackageRow())
+	mockModule.getEntitySourceById.mockResolvedValueOnce(createPackageSourceRow())
+
+	await expect(
+		repoRunCommandsCapability.handler(
+			{
+				session_id: 'session-existing',
+				commands: 'git status\ngit merge main',
+			},
+			createCapabilityContext(),
+		),
+	).rejects.toThrow(
+		'Unable to parse repo command on line 2: unsupported git subcommand "merge".',
+	)
 })

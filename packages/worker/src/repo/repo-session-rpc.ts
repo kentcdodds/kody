@@ -1,4 +1,5 @@
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
+import { type RepoRunCommandsResult } from './repo-session-commands.ts'
 import {
 	type RepoSourceBootstrapResult,
 	type RepoSearchMode,
@@ -70,6 +71,14 @@ export type RepoSessionRpc = {
 		dryRun?: boolean
 		rollbackOnError?: boolean
 	}) => Promise<RepoSessionApplyEditsResult>
+	runCommands: (payload: {
+		sessionId: string
+		userId: string
+		commands: string
+		dryRun?: boolean
+		runChecks?: boolean
+		publish?: boolean
+	}) => Promise<RepoRunCommandsResult>
 	bootstrapSource: (payload: {
 		sessionId: string
 		sourceId: string

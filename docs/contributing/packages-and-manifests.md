@@ -190,7 +190,7 @@ Retriever implementations should truncate or paginate before returning.
 
 Package source is edited and published through the repo session capabilities.
 
-- prefer `repo_edit_flow` for common package changes
+- prefer `repo_run_commands` for package changes
 - open repo sessions by package identity when possible
 - for an existing package, treat the repo snapshot as the durable source of
   truth

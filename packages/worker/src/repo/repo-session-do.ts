@@ -5,6 +5,7 @@ import {
 	WorkspaceFileSystem,
 	createWorkspaceStateBackend,
 } from '@cloudflare/shell'
+import { applyPatch, formatPatch, parsePatch } from 'diff'
 import { createGit } from '@cloudflare/shell/git'
 import {
 	deleteRepoSession,
@@ -40,7 +41,6 @@ import {
 import {
 	type EntityKind,
 	type EntitySourceRow,
-	type RepoApplyPatchResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
 	type RepoSourceBootstrapResult,
@@ -55,6 +55,11 @@ import {
 	type RepoSessionTreeResult,
 } from './types.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import {
+	type RepoGitCommand,
+	type RepoRunCommandsResult,
+	parseRepoGitCommands,
+} from './repo-session-commands.ts'
 
 const repoSessionWorkspacePrefix = '/session'
 const lastCheckStatusStorageKey = 'repo-session:last-check-status'
@@ -523,7 +528,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				switch (edit.kind) {
 					case 'write':
 						if (typeof edit.content !== 'string') {
-							throw new Error('repo_apply_patch write edits require content.')
+							throw new Error('repo session write edits require content.')
 						}
 						return {
 							kind: 'write' as const,
@@ -532,7 +537,7 @@ class RepoSessionBase extends DurableObject<Env> {
 						}
 					case 'replace':
 						if (typeof edit.search !== 'string') {
-							throw new Error('repo_apply_patch replace edits require search.')
+							throw new Error('repo session replace edits require search.')
 						}
 						return {
 							kind: 'replace' as const,
@@ -888,42 +893,236 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 	}
 
-	async applyPatch(input: {
+	private async applyUnifiedDiff(input: { patch: string; dryRun?: boolean }) {
+		const patches = parsePatch(input.patch)
+		if (patches.length === 0) {
+			throw new Error('git apply patch did not contain any file changes.')
+		}
+		const edits: Array<{
+			path: string
+			changed: boolean
+			content: string
+			diff: string
+		}> = []
+		for (const patch of patches) {
+			const oldPath =
+				patch.oldFileName && patch.oldFileName !== '/dev/null'
+					? patch.oldFileName.replace(/^[ab]\//, '')
+					: null
+			const newPath =
+				patch.newFileName && patch.newFileName !== '/dev/null'
+					? patch.newFileName.replace(/^[ab]\//, '')
+					: null
+			const targetPath = newPath ?? oldPath
+			const sourcePath = oldPath ?? newPath
+			if (!targetPath || !sourcePath) {
+				throw new Error('git apply patch is missing a target file path.')
+			}
+			const workspacePath = resolveRepoWorkspacePath(
+				targetPath,
+				repoSessionWorkspacePrefix,
+			)
+			const sourceWorkspacePath = resolveRepoWorkspacePath(
+				sourcePath,
+				repoSessionWorkspacePrefix,
+			)
+			const currentContent =
+				(await this.workspace.readFile(sourceWorkspacePath)) ?? ''
+			const nextContent = applyPatch(currentContent, patch)
+			if (nextContent === false) {
+				throw new Error(
+					`git apply patch did not apply cleanly to ${targetPath}.`,
+				)
+			}
+			if (!input.dryRun) {
+				if (patch.newFileName === '/dev/null') {
+					await this.workspace.rm(workspacePath, { force: true })
+				} else {
+					await this.workspace.writeFile(workspacePath, nextContent)
+					if (oldPath && newPath && oldPath !== newPath) {
+						await this.workspace.rm(sourceWorkspacePath, { force: true })
+					}
+				}
+			}
+			edits.push({
+				path: targetPath,
+				changed: nextContent !== currentContent,
+				content: nextContent,
+				diff: formatPatch(patch),
+			})
+		}
+		return {
+			dryRun: input.dryRun ?? false,
+			totalChanged: edits.filter((edit) => edit.changed).length,
+			edits,
+		}
+	}
+
+	private async executeGitCommand(command: RepoGitCommand, dryRun?: boolean) {
+		switch (command.kind) {
+			case 'apply':
+				return this.applyUnifiedDiff({ patch: command.patch, dryRun })
+			case 'status':
+				return this.git.status({ dir: repoSessionWorkspacePrefix })
+			case 'diff':
+				return this.git.diff({ dir: repoSessionWorkspacePrefix })
+			case 'add':
+				return this.git.add({
+					dir: repoSessionWorkspacePrefix,
+					filepath: command.filepath,
+				})
+			case 'rm':
+				return this.git.rm({
+					dir: repoSessionWorkspacePrefix,
+					filepath: command.filepath,
+				})
+			case 'commit':
+				return this.git.commit({
+					dir: repoSessionWorkspacePrefix,
+					message: command.message,
+					author: sessionCommitAuthor,
+				})
+			case 'log':
+				return this.git.log({
+					dir: repoSessionWorkspacePrefix,
+					depth: command.depth,
+				})
+			case 'branch':
+				return this.git.branch({
+					dir: repoSessionWorkspacePrefix,
+					name: command.name,
+					delete: command.delete,
+					list: command.name == null && command.delete == null,
+				})
+			case 'checkout':
+				return this.git.checkout({
+					dir: repoSessionWorkspacePrefix,
+					ref: command.ref,
+					branch: command.branch,
+					force: command.force,
+				})
+			case 'fetch':
+				return this.git.fetch({
+					dir: repoSessionWorkspacePrefix,
+					remote: command.remote,
+					ref: command.ref,
+				})
+			case 'pull':
+				return this.git.pull({
+					dir: repoSessionWorkspacePrefix,
+					remote: command.remote,
+					ref: command.ref,
+					author: sessionCommitAuthor,
+				})
+			case 'push':
+				return this.git.push({
+					dir: repoSessionWorkspacePrefix,
+					remote: command.remote,
+					ref: command.ref,
+					force: command.force,
+				})
+			case 'remote':
+				if (command.action === 'add') {
+					return this.git.remote({
+						dir: repoSessionWorkspacePrefix,
+						add: {
+							name: command.name ?? '',
+							url: command.url ?? '',
+						},
+					})
+				}
+				if (command.action === 'remove') {
+					return this.git.remote({
+						dir: repoSessionWorkspacePrefix,
+						remove: command.name,
+					})
+				}
+				return this.git.remote({
+					dir: repoSessionWorkspacePrefix,
+					list: true,
+				})
+			default: {
+				const exhaustive: never = command
+				return exhaustive
+			}
+		}
+	}
+
+	async runCommands(input: {
 		sessionId: string
 		userId: string
-		edits: Array<
-			| {
-					kind: 'write'
-					path: string
-					content: string
-			  }
-			| {
-					kind: 'replace'
-					path: string
-					search: string
-					replacement: string
-					options?: {
-						caseSensitive?: boolean
-						regex?: boolean
-						wholeWord?: boolean
-						contextBefore?: number
-						contextAfter?: number
-						maxMatches?: number
-					}
-			  }
-			| {
-					kind: 'writeJson'
-					path: string
-					value: unknown
-					options?: {
-						spaces?: number
-					}
-			  }
-		>
+		commands: string
 		dryRun?: boolean
-		rollbackOnError?: boolean
-	}): Promise<RepoApplyPatchResult> {
-		return this.applyEdits(input)
+		runChecks?: boolean
+		publish?: boolean
+	}): Promise<RepoRunCommandsResult> {
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		const shouldRunChecks = input.runChecks ?? false
+		const shouldPublish = input.publish ?? false
+		if (!shouldRunChecks && shouldPublish) {
+			throw new Error(
+				'Publishing requires checks. Set runChecks to true when publish is true.',
+			)
+		}
+		const commands = parseRepoGitCommands(input.commands)
+		const results = []
+		for (const command of commands) {
+			results.push({
+				line: command.line,
+				command: command.raw,
+				ok: true as const,
+				output: await this.executeGitCommand(command, input.dryRun),
+			})
+		}
+		await updateRepoSession(this.env.APP_DB, {
+			id: input.sessionId,
+			userId: sessionRow.user_id,
+			lastCheckpointAt: nowIso(),
+		})
+		if (!shouldRunChecks) {
+			return {
+				session: await this.getSessionInfo(input),
+				commands: results,
+				checks: { status: 'not_requested' },
+				publish: { status: 'not_requested' },
+			}
+		}
+		const checkRun = await this.runChecks(input)
+		if (!checkRun.ok) {
+			const publish = shouldPublish
+				? {
+						status: 'blocked_by_checks' as const,
+						message: 'Publishing skipped because repo checks failed.',
+					}
+				: { status: 'not_requested' as const }
+			return {
+				session: await this.getSessionInfo(input),
+				commands: results,
+				checks: {
+					...checkRun,
+					status: 'failed',
+					ok: false,
+					failedChecks: checkRun.results.filter((entry) => !entry.ok),
+				},
+				publish,
+			}
+		}
+		const publish = shouldPublish
+			? await this.publishSession(input)
+			: { status: 'not_requested' as const }
+		return {
+			session: await this.getSessionInfo(input),
+			commands: results,
+			checks: {
+				...checkRun,
+				status: 'passed',
+				ok: true,
+			},
+			publish,
+		}
 	}
 
 	async tree(input: {

@@ -38,8 +38,8 @@ call \`search\` with \`entity: "{name}:capability"\` or use
 
 Saved package surface:
 - \`package_save\`, \`package_get\`, \`package_list\`, \`package_delete\`
-- repo-backed package editing with \`repo_edit_flow\`, \`repo_open_session\`,
-  and \`repo_publish_session\`
+- repo-backed package editing with \`repo_run_commands\`; commands are parsed,
+  constrained git workflows, not shell execution
 - cross-package imports with specifiers such as
    \`kody:@scope/my-package/export-name\`
 

@@ -161,18 +161,6 @@ export const repoTreeNodeSchema: z.ZodType<unknown> = z.lazy(() =>
 
 export const repoTreeOutputSchema = repoTreeNodeSchema
 
-export const repoWriteFileInputSchema = repoSessionIdSchema.extend({
-	path: z.string().min(1).describe('Repo-relative file path to write.'),
-	content: z
-		.string()
-		.describe('Full file contents to persist in the repo session.'),
-})
-
-export const repoWriteFileOutputSchema = z.object({
-	ok: z.literal(true),
-	path: z.string(),
-})
-
 export const repoSearchInputSchema = repoSessionIdSchema.extend({
 	pattern: z.string().min(1).describe('Literal text or regex to search for.'),
 	mode: repoSearchModeSchema
@@ -245,67 +233,100 @@ export const repoDiscardSessionOutputSchema = z.object({
 
 export const repoDiscardSessionInputSchema = repoSessionIdSchema
 
-const repoPatchSearchOptionsSchema = z.object({
-	case_sensitive: z.boolean().optional(),
-	regex: z.boolean().optional(),
-	whole_word: z.boolean().optional(),
-	context_before: z.number().int().min(0).optional(),
-	context_after: z.number().int().min(0).optional(),
-	max_matches: z.number().int().min(1).optional(),
-})
-
-export const repoPatchInstructionSchema = z.discriminatedUnion('kind', [
-	z.object({
-		kind: z.literal('write'),
-		path: z.string().min(1),
-		content: z.string(),
-	}),
-	z.object({
-		kind: z.literal('replace'),
-		path: z.string().min(1),
-		search: z.string().min(1),
-		replacement: z.string(),
-		options: repoPatchSearchOptionsSchema.optional(),
-	}),
-	z.object({
-		kind: z.literal('write_json'),
-		path: z.string().min(1),
-		value: z.unknown(),
-		spaces: z.number().int().min(0).optional(),
-	}),
-])
-
-export const repoApplyPatchInputSchema = repoSessionIdSchema.extend({
-	instructions: z
-		.array(repoPatchInstructionSchema)
-		.min(1)
-		.describe('Ordered structured edit instructions to apply transactionally.'),
-	dry_run: z
-		.boolean()
-		.optional()
-		.describe('Preview the edit plan without mutating the session workspace.'),
-	rollback_on_error: z
-		.boolean()
-		.optional()
-		.describe(
-			'Whether to roll back all edits when one instruction fails. Defaults to true.',
-		),
-})
-
-export const repoApplyPatchResultSchema = z.object({
-	dry_run: z.boolean(),
-	total_changed: z.number().int().min(0),
-	edits: z.array(
-		z.object({
-			path: z.string(),
-			changed: z.boolean(),
-			content: z.string(),
-			diff: z.string(),
-		}),
-	),
-})
-
 export const repoRunChecksInputSchema = repoSessionIdSchema
+
+export const repoRunCommandsInputSchema = z
+	.object({
+		session_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Existing repo session id to run commands in. When provided, omit `source_id` and `target`.',
+			),
+		source_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Internal repo source id to open when not reusing an existing session. Prefer `target` for saved packages.',
+			),
+		target: repoTargetSchema
+			.optional()
+			.describe('User-facing repo-backed package identity to open.'),
+		conversation_id: z
+			.string()
+			.min(1)
+			.optional()
+			.describe('Optional conversation id for newly opened sessions.'),
+		source_root: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Optional repo subdirectory to treat as the working source root.',
+			),
+		default_branch: z
+			.string()
+			.min(1)
+			.optional()
+			.describe('Optional default branch name hint for session creation.'),
+		commands: z
+			.string()
+			.min(1)
+			.describe(
+				'Newline-separated constrained git commands. Supported commands include git status, git diff, git apply heredoc, git add, git rm, git commit -m, git log, git branch, git checkout, git fetch, git pull, git push, and git remote.',
+			),
+		dry_run: z
+			.boolean()
+			.optional()
+			.describe('Preview git apply changes without writing patched files.'),
+		run_checks: z
+			.boolean()
+			.optional()
+			.describe('Run repo checks after commands. Defaults to false.'),
+		publish: z
+			.boolean()
+			.optional()
+			.describe(
+				'Publish after successful checks. Requires run_checks to be true.',
+			),
+	})
+	.superRefine((value, ctx) => {
+		const openRefCount =
+			(value.session_id !== undefined ? 1 : 0) +
+			(value.source_id !== undefined ? 1 : 0) +
+			(value.target !== undefined ? 1 : 0)
+		if (openRefCount !== 1) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['session_id'],
+				message:
+					'Provide exactly one of `session_id`, `source_id`, or `target`.',
+			})
+		}
+		if (value.source_id === undefined) {
+			if (
+				value.conversation_id !== undefined ||
+				value.source_root !== undefined ||
+				value.default_branch !== undefined
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['source_id'],
+					message:
+						'`conversation_id`, `source_root`, and `default_branch` only apply when opening a session by source identity.',
+				})
+			}
+		}
+		if (value.publish === true && value.run_checks !== true) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['publish'],
+				message: '`publish` requires `run_checks: true`.',
+			})
+		}
+	})
 
 export const repoCheckResultSchema = z.object({
 	kind: z.enum([
@@ -329,6 +350,13 @@ export const repoRunChecksOutputSchema = z.object({
 		description: z.string(),
 		has_app: z.boolean(),
 	}),
+})
+
+const repoRunCommandResultSchema = z.object({
+	line: z.number().int().min(1),
+	command: z.string(),
+	ok: z.literal(true),
+	output: z.unknown(),
 })
 
 export function normalizeRepoManifestSummary(manifest: {
@@ -395,122 +423,7 @@ export const repoCheckStatusOutputSchema = z.object({
 	results: z.array(repoCheckResultSchema),
 })
 
-export const repoEditFlowInputSchema = z
-	.object({
-		session_id: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Existing repo session id to continue editing. When provided, omit `source_id` and `target`.',
-			),
-		source_id: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Internal repo source id to open when not reusing an existing session. Prefer `target` for user-facing identities.',
-			),
-		target: repoTargetSchema
-			.optional()
-			.describe(
-				'User-facing repo-backed entity identity to open when not reusing an existing session.',
-			),
-		conversation_id: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Optional conversation id used when opening or resuming a session by source identity.',
-			),
-		source_root: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Optional repo subdirectory to treat as the working source root when opening a session.',
-			),
-		default_branch: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(
-				'Optional default branch hint used when opening a new session.',
-			),
-		instructions: z
-			.array(repoPatchInstructionSchema)
-			.min(1)
-			.describe('Ordered structured edit instructions to apply.'),
-		rollback_on_error: z
-			.boolean()
-			.optional()
-			.describe(
-				'Whether to roll back all edits when one instruction fails. Defaults to true.',
-			),
-		include_edits: z
-			.boolean()
-			.optional()
-			.describe(
-				'Whether to include the full applied edits array in the response. Defaults to false.',
-			),
-		run_checks: z
-			.boolean()
-			.optional()
-			.describe(
-				'Whether to run Worker-native repo checks after applying edits. Defaults to true.',
-			),
-		publish: z
-			.boolean()
-			.optional()
-			.describe(
-				'Whether to publish after successful checks. Defaults to true. Publishing requires `run_checks` to stay enabled.',
-			),
-	})
-	.superRefine((value, ctx) => {
-		const openRefCount =
-			(value.session_id !== undefined ? 1 : 0) +
-			(value.source_id !== undefined ? 1 : 0) +
-			(value.target !== undefined ? 1 : 0)
-		if (openRefCount !== 1) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ['session_id'],
-				message:
-					'Provide exactly one of `session_id`, `source_id`, or `target`.',
-			})
-		}
-		if (value.session_id !== undefined) {
-			if (value.source_id !== undefined || value.target !== undefined) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					path: ['session_id'],
-					message: 'Do not combine `session_id` with `source_id` or `target`.',
-				})
-			}
-			if (
-				value.conversation_id !== undefined ||
-				value.source_root !== undefined ||
-				value.default_branch !== undefined
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					path: ['session_id'],
-					message:
-						'`conversation_id`, `source_root`, and `default_branch` only apply when opening a session by source identity.',
-				})
-			}
-		}
-		if (value.publish === true && value.run_checks === false) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ['publish'],
-				message:
-					'`publish` requires checks to run in the same flow. Keep `run_checks` enabled or disable `publish`.',
-			})
-		}
-	})
-
-export const repoEditFlowChecksSchema = z.union([
+export const repoCommandChecksSchema = z.union([
 	z.object({
 		status: z.literal('not_requested'),
 	}),
@@ -545,12 +458,12 @@ export const repoEditFlowChecksSchema = z.union([
 	}),
 ])
 
-export const repoEditFlowPublishSchema = z.union([
+export const repoCommandPublishSchema = z.union([
 	z.object({
 		status: z.literal('not_requested'),
 	}),
 	z.object({
-		status: z.literal('published'),
+		status: z.literal('ok'),
 		session_id: z.string(),
 		published_commit: z.string(),
 		message: z.string(),
@@ -558,10 +471,10 @@ export const repoEditFlowPublishSchema = z.union([
 	z.object({
 		status: z.literal('blocked_by_checks'),
 		message: z.string(),
-		failed_checks: z.array(repoCheckResultSchema),
-		run_id: z.string(),
-		tree_hash: z.string(),
-		checked_at: z.string(),
+		failed_checks: z.array(repoCheckResultSchema).optional(),
+		run_id: z.string().optional(),
+		tree_hash: z.string().optional(),
+		checked_at: z.string().optional(),
 	}),
 	z.object({
 		status: z.literal('checks_outdated'),
@@ -580,14 +493,132 @@ export const repoEditFlowPublishSchema = z.union([
 	}),
 ])
 
-export const repoEditFlowOutputSchema = z.object({
+export const repoRunCommandsOutputSchema = z.object({
 	session: repoSessionInfoSchema,
 	resolved_target: repoResolvedTargetSchema,
-	edits: z.object({
-		dry_run: z.boolean(),
-		total_changed: z.number().int().min(0),
-		edits: repoApplyPatchResultSchema.shape.edits.optional(),
-	}),
-	checks: repoEditFlowChecksSchema,
-	publish: repoEditFlowPublishSchema,
+	commands: z.array(repoRunCommandResultSchema),
+	checks: repoCommandChecksSchema,
+	publish: repoCommandPublishSchema,
 })
+
+export function normalizeRepoCommandChecks(input: {
+	status: 'not_requested' | 'passed' | 'failed'
+	ok?: boolean
+	results?: Array<z.infer<typeof repoCheckResultSchema>>
+	failedChecks?: Array<z.infer<typeof repoCheckResultSchema>>
+	manifest?: unknown
+	runId?: string
+	treeHash?: string
+	checkedAt?: string
+}) {
+	if (input.status === 'not_requested') return { status: input.status }
+	if (input.status === 'passed') {
+		return {
+			status: input.status,
+			ok: true as const,
+			results: input.results ?? [],
+			manifest: normalizeRepoManifestSummary(
+				input.manifest && typeof input.manifest === 'object'
+					? input.manifest
+					: {},
+			),
+			run_id: input.runId ?? '',
+			tree_hash: input.treeHash ?? '',
+			checked_at: input.checkedAt ?? '',
+		}
+	}
+	if (input.status === 'failed') {
+		return {
+			status: input.status,
+			ok: false as const,
+			results: input.results ?? [],
+			failed_checks: input.failedChecks ?? [],
+			manifest: normalizeRepoManifestSummary(
+				input.manifest && typeof input.manifest === 'object'
+					? input.manifest
+					: {},
+			),
+			run_id: input.runId ?? '',
+			tree_hash: input.treeHash ?? '',
+			checked_at: input.checkedAt ?? '',
+		}
+	}
+	const exhaustive: never = input.status
+	return exhaustive
+}
+
+export function normalizeRepoCommandPublish(
+	input:
+		| { status: 'not_requested' }
+		| {
+				status: 'blocked_by_checks'
+				message: string
+				failedChecks?: Array<z.infer<typeof repoCheckResultSchema>>
+				runId?: string
+				treeHash?: string
+				checkedAt?: string
+		  }
+		| {
+				status: 'ok'
+				sessionId: string
+				publishedCommit: string
+				message: string
+		  }
+		| {
+				status: 'checks_outdated'
+				sessionId: string
+				publishedCommit: null
+				message: string
+		  }
+		| {
+				status: 'base_moved'
+				sessionId: string
+				publishedCommit: null
+				message: string
+				repairHint: 'repo_rebase_session'
+				sessionBaseCommit: string
+				currentPublishedCommit: string | null
+		  },
+) {
+	switch (input.status) {
+		case 'not_requested':
+			return input
+		case 'blocked_by_checks':
+			return {
+				status: input.status,
+				message: input.message,
+				failed_checks: input.failedChecks,
+				run_id: input.runId,
+				tree_hash: input.treeHash,
+				checked_at: input.checkedAt,
+			}
+		case 'ok':
+			return {
+				status: input.status,
+				session_id: input.sessionId,
+				published_commit: input.publishedCommit,
+				message: input.message,
+			}
+		case 'checks_outdated':
+			return {
+				status: input.status,
+				session_id: input.sessionId,
+				published_commit: null,
+				message: input.message,
+			}
+		case 'base_moved':
+			return {
+				status: input.status,
+				session_id: input.sessionId,
+				published_commit: null,
+				message: input.message,
+				repair_hint: input.repairHint,
+				session_base_commit: input.sessionBaseCommit,
+				current_published_commit: input.currentPublishedCommit,
+			}
+		default: {
+			const exhaustive: never = input
+			return exhaustive
+		}
+	}
+}

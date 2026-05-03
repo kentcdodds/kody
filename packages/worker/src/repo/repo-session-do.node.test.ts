@@ -43,6 +43,7 @@ const mockModule = vi.hoisted(() => {
 		init: vi.fn(async () => ({ initialized: '/session' })),
 		status: vi.fn(async () => gitState.statusEntries),
 		add: vi.fn(async () => ({ added: '.' })),
+		rm: vi.fn(async () => ({ removed: 'src/old.ts' })),
 		commit: vi.fn(async () => ({
 			oid: gitState.headCommit,
 			message: 'commit',
@@ -52,8 +53,14 @@ const mockModule = vi.hoisted(() => {
 			branches: [gitState.currentBranch],
 			current: gitState.currentBranch,
 		})),
+		checkout: vi.fn(async () => ({ ref: gitState.currentBranch })),
+		fetch: vi.fn(async () => ({
+			fetchHead: gitState.headCommit,
+			fetchHeadDescription: 'main',
+		})),
 		pull: vi.fn(async () => ({ pulled: true })),
 		push: vi.fn(async () => ({ ok: true, refs: {} })),
+		diff: vi.fn(async () => []),
 	}
 
 	return {
@@ -62,7 +69,11 @@ const mockModule = vi.hoisted(() => {
 		workspaceExists: vi.fn(
 			async (path: string) => path === '/session/.git/config',
 		),
-		workspaceReadFile: vi.fn(async () => '{"version":1,"kind":"app"}'),
+		workspaceFiles: new Map<string, string>(),
+		workspaceReadFile: vi.fn(
+			async (path: string) =>
+				mockModule.workspaceFiles.get(path) ?? '{"version":1,"kind":"app"}',
+		),
 		workspaceWriteFile: vi.fn(async () => undefined),
 		workspaceMkdir: vi.fn(async () => undefined),
 		workspaceRm: vi.fn(async () => undefined),
@@ -82,6 +93,15 @@ const mockModule = vi.hoisted(() => {
 		resolveSessionRepo: vi.fn(),
 		resolveArtifactSourceRepo: vi.fn(),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
+		runRepoChecks: vi.fn(async () => ({
+			ok: true,
+			results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
+			manifest: {
+				name: '@kody/demo',
+				exports: { '.': './index.ts' },
+				kody: { id: 'demo', description: 'Demo package' },
+			},
+		})),
 		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
 	}
 })
@@ -168,6 +188,11 @@ vi.mock('./artifacts.ts', async () => {
 vi.mock('./manifest.ts', () => ({
 	parseRepoManifest: (...args: Array<unknown>) =>
 		mockModule.parseRepoManifest(...args),
+	normalizeRepoWorkspacePath: (path: string) => path.trim().replace(/^\/+/, ''),
+}))
+
+vi.mock('./checks.ts', () => ({
+	runRepoChecks: (...args: Array<unknown>) => mockModule.runRepoChecks(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
@@ -321,6 +346,188 @@ test('publishSession uses Artifacts username/password auth for both origin and s
 	for (const call of mockModule.git.push.mock.calls) {
 		expect(call[0]).not.toHaveProperty('token')
 	}
+})
+
+test('runCommands applies deletion patches and returns per-file diffs', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/keep.ts') return 'export const keep = false\n'
+		if (path === '/session/src/delete.ts') return 'export const remove = true\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.runCommands({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		runChecks: false,
+		publish: false,
+		commands: [
+			"git apply <<'PATCH'",
+			'--- a/src/keep.ts',
+			'+++ b/src/keep.ts',
+			'@@ -1 +1 @@',
+			'-export const keep = false',
+			'+export const keep = true',
+			'--- a/src/delete.ts',
+			'+++ /dev/null',
+			'@@ -1 +0,0 @@',
+			'-export const remove = true',
+			'PATCH',
+		].join('\n'),
+	})
+
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/keep.ts',
+		'export const keep = true\n',
+	)
+	expect(mockModule.workspaceRm).toHaveBeenCalledWith(
+		'/session/src/delete.ts',
+		{
+			force: true,
+		},
+	)
+	const edits = result.commands[0]?.output as {
+		edits: Array<{ path: string; content: string; diff: string }>
+	}
+	expect(edits.edits).toEqual([
+		expect.objectContaining({
+			path: 'src/keep.ts',
+			content: 'export const keep = true\n',
+		}),
+		expect.objectContaining({
+			path: 'src/delete.ts',
+			content: '',
+		}),
+	])
+	expect(edits.edits[0]?.diff).toContain('src/keep.ts')
+	expect(edits.edits[0]?.diff).not.toContain('src/delete.ts')
+	expect(edits.edits[1]?.diff).toContain('src/delete.ts')
+	expect(edits.edits[1]?.diff).not.toContain('src/keep.ts')
+})
+
+test('runCommands applies rename patches from the old file path', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/old-name.ts')
+			return 'export const name = "old"\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.runCommands({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		runChecks: false,
+		publish: false,
+		commands: [
+			"git apply <<'PATCH'",
+			'--- a/src/old-name.ts',
+			'+++ b/src/new-name.ts',
+			'@@ -1 +1 @@',
+			'-export const name = "old"',
+			'+export const name = "new"',
+			'PATCH',
+		].join('\n'),
+	})
+
+	expect(mockModule.workspaceReadFile).toHaveBeenCalledWith(
+		'/session/src/old-name.ts',
+	)
+	expect(mockModule.workspaceRm).toHaveBeenCalledWith(
+		'/session/src/old-name.ts',
+		{
+			force: true,
+		},
+	)
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/new-name.ts',
+		'export const name = "new"\n',
+	)
+	const edits = result.commands[0]?.output as {
+		edits: Array<{ path: string; content: string; diff: string }>
+	}
+	expect(edits.edits[0]).toEqual(
+		expect.objectContaining({
+			path: 'src/new-name.ts',
+			content: 'export const name = "new"\n',
+		}),
+	)
+})
+
+test('runCommands rejects publish without checks for direct RPC callers', async () => {
+	setCommonSessionFixtures()
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.runCommands({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			commands: 'git status',
+			runChecks: false,
+			publish: true,
+		}),
+	).rejects.toThrow(
+		'Publishing requires checks. Set runChecks to true when publish is true.',
+	)
+	expect(mockModule.git.status).not.toHaveBeenCalled()
+	expect(mockModule.updateRepoSession).not.toHaveBeenCalled()
+})
+
+test('runCommands fetches session metadata after publish side effects', async () => {
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-published'
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/kody.json' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockResolvedValue(
+		'{"name":"@kody/demo","exports":{"./index":"./src/index.ts"},"kody":{"id":"demo","description":"Demo package"}}',
+	)
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_namespace: 'default',
+		session_repo_name: 'session-repo',
+		base_commit: 'commit-base',
+		last_checkpoint_commit: 'commit-base',
+	})
+	let source = {
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		entity_kind: 'app',
+		published_commit: 'commit-base',
+		manifest_path: 'kody.json',
+		source_root: '/',
+	}
+	mockModule.getEntitySourceById.mockImplementation(async () => source)
+	mockModule.updateEntitySource.mockImplementationOnce(async (_db, update) => {
+		source = {
+			...source,
+			published_commit: update.publishedCommit,
+		}
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+	} as Env)
+
+	const result = await repoSession.runCommands({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		commands: 'git status',
+		runChecks: true,
+		publish: true,
+	})
+
+	expect(result.publish).toEqual(
+		expect.objectContaining({
+			status: 'ok',
+			publishedCommit: 'commit-published',
+		}),
+	)
+	expect(result.session.published_commit).toBe('commit-published')
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
