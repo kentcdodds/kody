@@ -305,7 +305,7 @@ export const repoRunCommandsInputSchema = z
 					'Provide exactly one of `session_id`, `source_id`, or `target`.',
 			})
 		}
-		if (value.session_id !== undefined) {
+		if (value.source_id === undefined) {
 			if (
 				value.conversation_id !== undefined ||
 				value.source_root !== undefined ||
@@ -313,7 +313,7 @@ export const repoRunCommandsInputSchema = z
 			) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
-					path: ['session_id'],
+					path: ['source_id'],
 					message:
 						'`conversation_id`, `source_root`, and `default_branch` only apply when opening a session by source identity.',
 				})

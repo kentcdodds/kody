@@ -175,6 +175,24 @@ test('repo_open_session rejects an active conversation session for a different t
 	).rejects.toThrow()
 })
 
+test('repo_run_commands rejects source-only options when opening by target', async () => {
+	resetMocks()
+
+	await expect(
+		repoRunCommandsCapability.handler(
+			{
+				target: { kind: 'package', kody_id: 'triage-github-pr' },
+				conversation_id: 'conversation-1',
+				commands: 'git status',
+			},
+			createCapabilityContext(),
+		),
+	).rejects.toThrow(
+		'`conversation_id`, `source_root`, and `default_branch` only apply when opening a session by source identity.',
+	)
+	expect(mockModule.repoSessionRpc).not.toHaveBeenCalled()
+})
+
 test('repo_run_commands reuses resolved target metadata when resuming an existing session', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById
