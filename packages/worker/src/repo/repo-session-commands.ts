@@ -230,9 +230,11 @@ function tokenizeCommand(raw: string, line: number) {
 	let current = ''
 	let quote: '"' | "'" | null = null
 	let escaping = false
+	let hasTokenContent = false
 	for (const char of raw.trim()) {
 		if (escaping) {
 			current += char
+			hasTokenContent = true
 			escaping = false
 			continue
 		}
@@ -242,6 +244,7 @@ function tokenizeCommand(raw: string, line: number) {
 		}
 		if ((char === '"' || char === "'") && quote === null) {
 			quote = char
+			hasTokenContent = true
 			continue
 		}
 		if (char === quote) {
@@ -249,13 +252,18 @@ function tokenizeCommand(raw: string, line: number) {
 			continue
 		}
 		if (/\s/.test(char) && quote === null) {
-			if (current) tokens.push(current)
+			if (hasTokenContent) tokens.push(current)
 			current = ''
+			hasTokenContent = false
 			continue
 		}
 		current += char
+		hasTokenContent = true
 	}
-	if (escaping) current += '\\'
+	if (escaping) {
+		current += '\\'
+		hasTokenContent = true
+	}
 	if (quote !== null) {
 		throw new RepoCommandParseError({
 			line,
@@ -263,7 +271,7 @@ function tokenizeCommand(raw: string, line: number) {
 			reason: `unterminated ${quote} quote.`,
 		})
 	}
-	if (current) tokens.push(current)
+	if (hasTokenContent) tokens.push(current)
 	return tokens
 }
 
@@ -302,7 +310,7 @@ function parseOnePath(raw: string, line: number, args: Array<string>) {
 			reason: 'expected exactly one path argument.',
 		})
 	}
-	return args[0] ?? ''
+	return requireNonEmptyValue(raw, line, args[0], 'path')
 }
 
 function parseCommitMessage(raw: string, line: number, args: Array<string>) {
@@ -322,6 +330,22 @@ function parseCommitMessage(raw: string, line: number, args: Array<string>) {
 		})
 	}
 	return message
+}
+
+function requireNonEmptyValue(
+	raw: string,
+	line: number,
+	value: string | undefined,
+	label: string,
+) {
+	if (!value?.trim()) {
+		throw new RepoCommandParseError({
+			line,
+			command: raw,
+			reason: `${label} cannot be empty.`,
+		})
+	}
+	return value
 }
 
 function parseOptionalDepth(raw: string, line: number, args: Array<string>) {
@@ -350,9 +374,21 @@ function parseBranch(
 	args: Array<string>,
 ): RepoGitCommand {
 	if (args.length === 0) return { kind: 'branch', line, raw }
-	if (args.length === 1) return { kind: 'branch', line, raw, name: args[0] }
+	if (args.length === 1) {
+		return {
+			kind: 'branch',
+			line,
+			raw,
+			name: requireNonEmptyValue(raw, line, args[0], 'branch name'),
+		}
+	}
 	if (args.length === 2 && (args[0] === '-d' || args[0] === '--delete')) {
-		return { kind: 'branch', line, raw, delete: args[1] }
+		return {
+			kind: 'branch',
+			line,
+			raw,
+			delete: requireNonEmptyValue(raw, line, args[1], 'branch name'),
+		}
 	}
 	throw new RepoCommandParseError({
 		line,
@@ -375,10 +411,22 @@ function parseCheckout(
 		return true
 	})
 	if (remaining.length === 1) {
-		return { kind: 'checkout', line, raw, ref: remaining[0], force }
+		return {
+			kind: 'checkout',
+			line,
+			raw,
+			ref: requireNonEmptyValue(raw, line, remaining[0], 'checkout ref'),
+			force,
+		}
 	}
 	if (remaining.length === 2 && remaining[0] === '-b') {
-		return { kind: 'checkout', line, raw, branch: remaining[1], force }
+		return {
+			kind: 'checkout',
+			line,
+			raw,
+			branch: requireNonEmptyValue(raw, line, remaining[1], 'branch name'),
+			force,
+		}
 	}
 	throw new RepoCommandParseError({
 		line,
@@ -401,7 +449,19 @@ function parseRemoteRefCommand(
 			reason: `git ${kind} supports optional remote and ref arguments only.`,
 		})
 	}
-	return { kind, line, raw, remote: args[0], ref: args[1] }
+	return {
+		kind,
+		line,
+		raw,
+		remote:
+			args[0] === undefined
+				? undefined
+				: requireNonEmptyValue(raw, line, args[0], 'remote'),
+		ref:
+			args[1] === undefined
+				? undefined
+				: requireNonEmptyValue(raw, line, args[1], 'ref'),
+	}
 }
 
 function parsePush(
@@ -429,8 +489,14 @@ function parsePush(
 		kind: 'push',
 		line,
 		raw,
-		remote: remaining[0],
-		ref: remaining[1],
+		remote:
+			remaining[0] === undefined
+				? undefined
+				: requireNonEmptyValue(raw, line, remaining[0], 'remote'),
+		ref:
+			remaining[1] === undefined
+				? undefined
+				: requireNonEmptyValue(raw, line, remaining[1], 'ref'),
 		force,
 	}
 }
@@ -449,12 +515,18 @@ function parseRemote(
 			line,
 			raw,
 			action: 'add',
-			name: args[1],
-			url: args[2],
+			name: requireNonEmptyValue(raw, line, args[1], 'remote name'),
+			url: requireNonEmptyValue(raw, line, args[2], 'remote URL'),
 		}
 	}
 	if (args.length === 2 && (args[0] === 'remove' || args[0] === 'rm')) {
-		return { kind: 'remote', line, raw, action: 'remove', name: args[1] }
+		return {
+			kind: 'remote',
+			line,
+			raw,
+			action: 'remove',
+			name: requireNonEmptyValue(raw, line, args[1], 'remote name'),
+		}
 	}
 	throw new RepoCommandParseError({
 		line,

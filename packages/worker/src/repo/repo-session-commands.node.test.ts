@@ -74,3 +74,12 @@ test('parseRepoGitCommands explains malformed git apply usage', () => {
 		/git apply requires heredoc form/,
 	)
 })
+
+test('parseRepoGitCommands rejects empty quoted operands without misparsing flags', () => {
+	expect(() => parseRepoGitCommands('git checkout -b ""')).toThrow(
+		/branch name cannot be empty/,
+	)
+	expect(() => parseRepoGitCommands("git branch -d ''")).toThrow(
+		/branch name cannot be empty/,
+	)
+})
