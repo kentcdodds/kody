@@ -83,9 +83,12 @@ When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
 instead of internal source ids whenever possible.
 
-For common edit-and-check workflows, `repo_run_commands` accepts a constrained
-git-command string, returns command outputs, and can run checks plus publish in
-one response. Commands are parsed by Kody; they are not arbitrary shell.
+For common edit-and-check workflows, `repo_run_commands` accepts a
+newline-separated parsed git-command string, returns command outputs, and can
+run checks plus publish in one response. Commands are parsed by Kody; they are
+not arbitrary shell, only the documented git forms are supported, and
+`git clone` remains intentionally unsupported because Kody opens repo sessions
+for you.
 
 ## Agent turns
 

@@ -4,6 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveRepoTargetFromSource } from './repo-resolve-target.ts'
+import { repoRunCommandsCapabilityDescription } from './repo-run-commands-text.ts'
 import {
 	normalizeRepoCommandChecks,
 	normalizeRepoCommandPublish,
@@ -41,8 +42,7 @@ export const repoRunCommandsCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repo_run_commands',
-		description:
-			'Run a constrained git-command workflow in a repo session. Commands are parsed, not shell-executed; unsupported syntax returns line-specific parse errors.',
+		description: repoRunCommandsCapabilityDescription,
 		keywords: [
 			'repo',
 			'git',

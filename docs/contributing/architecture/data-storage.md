@@ -107,9 +107,9 @@ Operational notes:
   projections of that repo-backed package rather than a competing second source
   of truth.
 - `repo_run_commands` parses a constrained git-command string and runs it inside
-  the repo session Durable Object. It does not run shell syntax, and package
-  runtime bundles are still loaded from published artifacts rather than a
-  mounted checkout.
+  the repo session Durable Object. It accepts only parsed git command forms,
+  not arbitrary shell syntax, and package runtime bundles are still loaded from
+  published artifacts rather than a mounted checkout.
 
 Production note:
 

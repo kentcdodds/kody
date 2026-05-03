@@ -22,21 +22,26 @@ Commands are parsed, not shell-executed. Unsupported syntax returns a
 line-specific parse error with examples so agents can correct the command
 string.
 
+Only git commands are accepted. Non-git commands and shell syntax such as
+pipes, command substitution, `&&`, or tools like `npm`, `cat`, and `sed` are
+not supported.
+
 Supported commands:
 
-- `git status`
+- `git status [--short]`
 - `git diff`
 - `git apply <<'PATCH' ... PATCH`
 - `git add <path>`
 - `git rm <path>`
 - `git commit -m "message"`
 - `git log [--depth N]`
-- `git branch [name]`
-- `git checkout <ref>` / `git checkout -b <branch>`
+- `git branch [name]` / `git branch -d <name>`
+- `git checkout <ref>` / `git checkout -b <branch> [--force]`
 - `git fetch [remote] [ref]`
 - `git pull [remote] [ref]`
-- `git push [remote] [ref]`
-- `git remote`, `git remote add <name> <url>`, `git remote remove <name>`
+- `git push [remote] [ref] [--force]`
+- `git remote`, `git remote -v`, `git remote add <name> <url>`,
+  `git remote remove <name>`
 
 `git clone` is intentionally unsupported because repo sessions are opened and
 cloned by Kody.
