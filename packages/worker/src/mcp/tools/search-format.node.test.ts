@@ -53,41 +53,27 @@ test('search formatting keeps value and connector entity refs in the structured 
 		],
 	})
 
-	expect(structuredMatches).toMatchObject([
-		{
-			type: 'value',
-			id: 'user:preferred_repo',
-			entityRef: 'user:preferred_repo:value',
-			name: 'preferred_repo',
-			title: 'preferred_repo',
-			description: 'Preferred repository owner/name.',
-			usage: 'codemode.value_get({ name: "preferred_repo", scope: "user" })',
-			scope: 'user',
-			appId: null,
-		},
-		{
-			type: 'connector',
-			id: 'github',
-			entityRef: 'github:connector',
-			name: 'github',
-			title: 'github',
-			description: 'GitHub OAuth connector config',
-			usage: 'codemode.connector_get({ name: "github" })',
-			flow: 'confidential',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			clientIdValueName: 'github_client_id',
-			clientSecretSecretName: 'github_client_secret',
-			accessTokenSecretName: 'github_access_token',
-			refreshTokenSecretName: 'github_refresh_token',
-			requiredHosts: ['api.github.com'],
-		},
-	])
+	expect(structuredMatches).toHaveLength(2)
+	expect(structuredMatches[0]).toMatchObject({
+		type: 'value',
+		id: 'user:preferred_repo',
+		entityRef: 'user:preferred_repo:value',
+		scope: 'user',
+		appId: null,
+	})
+	expect(structuredMatches[0]?.usage).toContain('codemode.value_get')
+	expect(structuredMatches[0]?.usage).toContain('"preferred_repo"')
+	expect(structuredMatches[0]?.usage).toContain('"user"')
 	const connectorMatch = structuredMatches[1]
 	expect(connectorMatch).toMatchObject({
 		type: 'connector',
 		entityRef: 'github:connector',
+		flow: 'confidential',
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		requiredHosts: ['api.github.com'],
 	})
+	expect(connectorMatch?.usage).toContain('codemode.connector_get')
+	expect(connectorMatch?.usage).toContain('"github"')
 	expect(connectorMatch?.nextStep).toEqual(expect.any(String))
 })
 

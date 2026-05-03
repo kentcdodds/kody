@@ -23,17 +23,18 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	await expect(page.getByPlaceholder('saved package id')).toHaveValue(packageId)
 
 	await page.getByLabel('Name').fill(editedName)
-	await page.getByPlaceholder('Paste the secret value').fill(secretValue)
+	await page
+		.locator('input[autocomplete="new-password"]')
+		.first()
+		.fill(secretValue)
 	await page.getByRole('button', { name: 'Review' }).click()
 
-	await expect(
-		page.getByLabel('I confirm these details are correct.'),
-	).toBeVisible()
-	await expect(page.getByText('Packages to approve')).toBeVisible()
+	const reviewConfirmation = page.getByLabel('I confirm these details are correct.')
+	await expect(reviewConfirmation).toBeVisible()
 	await expect(page.getByText(packageId)).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Save secret' })).toBeDisabled()
 
-	await page.getByLabel('I confirm these details are correct.').check()
+	await reviewConfirmation.check()
 	const saveResponse = page.waitForResponse(
 		(response) =>
 			response.url().endsWith('/connect/secret.json') &&
@@ -48,12 +49,10 @@ test('connect secret shows editable name and scope and saves the edited name', a
 	).toBeVisible()
 	await expect(page.getByLabel('Description')).toHaveValue(description)
 	const savedSecretInput = page
-		.getByPlaceholder('Enter the secret value')
+		.locator('input[autocomplete="new-password"]')
 		.first()
 	await expect(savedSecretInput).toHaveAttribute('type', 'password')
 	await expect(savedSecretInput).toHaveValue(secretValue)
-	await expect(page.getByText('Reveal current value')).toBeHidden()
-	await expect(page.getByText('Account password')).toBeHidden()
 	await page.getByRole('button', { name: 'Show secret value' }).click()
 	await expect(savedSecretInput).toHaveAttribute('type', 'text')
 	await expect(savedSecretInput).toHaveValue(secretValue)

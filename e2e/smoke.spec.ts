@@ -6,14 +6,13 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await page.context().clearCookies()
 
 	await page.goto('/')
-	await expect(page).toHaveTitle('kody')
-	await expect(page.getByRole('heading', { name: /meet kody/i })).toBeVisible()
+	await expect(page.getByRole('link', { name: 'Home' })).toBeVisible()
+	await expect(page.getByRole('img', { name: 'kody logo' })).toBeVisible()
 
 	await page.goto('/account')
 	await expect(page).toHaveURL(/\/login\?redirectTo=%2Faccount$/)
-	await expect(
-		page.getByRole('heading', { name: 'Welcome back' }),
-	).toBeVisible()
+	await expect(page.getByLabel('Email')).toBeVisible()
+	await expect(page.getByLabel('Password')).toBeVisible()
 
 	await page.getByLabel('Email').fill(primaryTestUser.email)
 	await page.getByLabel('Password').fill(primaryTestUser.password)
@@ -21,13 +20,13 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(
-		page.getByRole('heading', {
-			name: `${primaryTestUser.email} account`,
-		}),
-	).toBeVisible()
-	await expect(
 		page.getByRole('link', {
-			name: 'Manage secrets',
+			name: primaryTestUser.email,
 		}),
 	).toBeVisible()
+	await expect(page.getByRole('link', { name: 'Chat' })).toBeVisible()
+	await expect(page.getByRole('link', { name: primaryTestUser.email })).toHaveAttribute(
+		'href',
+		'/account/secrets',
+	)
 })
