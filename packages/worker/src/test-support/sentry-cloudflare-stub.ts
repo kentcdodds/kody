@@ -37,6 +37,13 @@ export function instrumentDurableObjectWithSentry<TClass>(
 	return durableObjectClass
 }
 
+export function instrumentWorkflowWithSentry<TClass>(
+	_optionsCallback: unknown,
+	workflowClass: TClass,
+) {
+	return workflowClass
+}
+
 export async function startSpan<TResult>(
 	_options: unknown,
 	callback: (span: { setStatus(_status: unknown): void }) => Promise<TResult>,

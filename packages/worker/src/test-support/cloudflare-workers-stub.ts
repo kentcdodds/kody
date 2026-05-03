@@ -18,6 +18,20 @@ export class WorkerEntrypoint<TEnv = unknown, TProps = unknown> {
 	}
 }
 
+export class WorkflowEntrypoint<TEnv = unknown, TPayload = unknown> {
+	protected readonly ctx: unknown
+	protected readonly env: TEnv
+
+	constructor(ctx: unknown, env: TEnv) {
+		this.ctx = ctx
+		this.env = env
+	}
+
+	run(_event: { payload: TPayload }, _step: unknown): Promise<unknown> {
+		throw new Error('WorkflowEntrypoint.run must be implemented by tests.')
+	}
+}
+
 export class RpcTarget {}
 
 export const exports = {

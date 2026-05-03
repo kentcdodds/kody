@@ -178,6 +178,7 @@ function buildFallbackPackageSearchProjection(
 		exports: [],
 		jobs: [],
 		services: [],
+		workflows: [],
 		subscriptions: [],
 		retrievers: [],
 	}

@@ -4,6 +4,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
 	buildCodemodeFns,
+	createWorkflowTools,
 	runCodemodeWithRegistry,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
@@ -15,6 +16,137 @@ import {
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createCapabilitySecretAccessDeniedMessage,
 } from '#mcp/secrets/errors.ts'
+
+test('createWorkflowTools creates package workflow instances from package context', async () => {
+	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const workflowTools = createWorkflowTools({
+		env: {
+			PACKAGE_WORKFLOWS: {
+				get: async () => {
+					throw new Error('not found')
+				},
+				create: async (options?: WorkflowInstanceCreateOptions<unknown>) => {
+					if (!options) throw new Error('missing options')
+					created.push(options)
+					return {
+						id: options.id ?? 'generated',
+						status: async () => ({ status: 'queued' }),
+					} as WorkflowInstance
+				},
+			} as Workflow<unknown>,
+		} as Env,
+		callerContext: {
+			baseUrl: 'https://app.example.com',
+			user: {
+				userId: 'user-1',
+				email: 'me@example.com',
+				displayName: 'Me',
+			},
+			storageContext: null,
+			repoContext: null,
+		},
+		packageContext: {
+			packageId: 'pkg-1',
+			kodyId: 'shade-automation',
+			sourceId: 'source-1',
+		},
+	})
+
+	const result = await workflowTools?.create({
+		workflowName: 'shade-event',
+		exportName: './run-event',
+		runAt: '2026-05-03T12:00:00.000Z',
+		idempotencyKey: 'event-key',
+		params: { eventId: 'event-1' },
+	})
+
+	expect(result).toMatchObject({
+		ok: true,
+		workflow_name: 'shade-event',
+		export_name: './run-event',
+		run_at: '2026-05-03T12:00:00.000Z',
+	})
+	expect(created).toHaveLength(1)
+	expect(created[0]?.params).toEqual(
+		expect.objectContaining({
+			userId: 'user-1',
+			packageId: 'pkg-1',
+			kodyId: 'shade-automation',
+			sourceId: 'source-1',
+			workflowName: 'shade-event',
+			params: { eventId: 'event-1' },
+		}),
+	)
+})
+
+test('runModuleWithRegistry preserves caller-provided workflow tools', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://app.example.com',
+		user: {
+			userId: 'user-1',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+		storageContext: null,
+	})
+	const customWorkflowTools = {
+		create: vi.fn(async () => ({ ok: true, id: 'custom-workflow' })),
+	}
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped, providers) {
+				expect(wrapped).toContain(
+					'codemode.package_workflow_create(input ?? {})',
+				)
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		await runModuleWithRegistry(
+			env,
+			callerContext,
+			`import { workflows } from 'kody:runtime'
+export default async function run() {
+	await workflows.create({
+		workflowName: 'shade-event',
+		exportName: './run-event',
+		runAt: '2026-05-03T12:00:00.000Z',
+		idempotencyKey: 'event-key',
+	})
+}`,
+			undefined,
+			{
+				packageContext: {
+					packageId: 'pkg-1',
+					kodyId: 'shade-automation',
+					sourceId: 'source-1',
+				},
+				workflowTools: customWorkflowTools,
+			},
+		)
+		await expect(
+			providerFns?.package_workflow_create({ workflowName: 'custom' }),
+		).resolves.toEqual({ ok: true, id: 'custom-workflow' })
+		expect(customWorkflowTools.create).toHaveBeenCalledWith({
+			workflowName: 'custom',
+		})
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
 
 vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 	buildKodyModuleBundle: vi.fn(async () => ({
@@ -1153,6 +1285,80 @@ test('runBundledModuleWithRegistry injects email helpers', async () => {
 		).resolves.toEqual({
 			id: 'attachment-1',
 			text: 'hello',
+		})
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
+test('runBundledModuleWithRegistry injects workflow helper when custom workflow tools are provided', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped, providers) {
+				expect(wrapped).toContain('const workflows = {')
+				expect(wrapped).toContain(
+					'workflows: typeof workflows === \'undefined\' ? null : workflows',
+				)
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js': 'export default async () => "ok"',
+				},
+			},
+			undefined,
+			{
+				workflowTools: {
+					create: async (input) => ({ ok: true, input }),
+				},
+			},
+		)
+
+		expect(result.result).toBe('ok')
+		expect(providerFns).not.toBeNull()
+		await expect(
+			providerFns?.package_workflow_create({ workflowName: 'custom' }),
+		).resolves.toEqual({
+			ok: true,
+			input: { workflowName: 'custom' },
 		})
 	} finally {
 		createExecuteExecutorSpy.mockRestore()

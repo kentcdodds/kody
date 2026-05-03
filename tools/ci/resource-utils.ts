@@ -278,6 +278,8 @@ export async function writeGeneratedWranglerConfig({
 	baseConfigPath,
 	outConfigPath,
 	envName,
+	workerName,
+	packageWorkflowName,
 	d1DatabaseName,
 	d1DatabaseId,
 	oauthKvId,
@@ -288,6 +290,8 @@ export async function writeGeneratedWranglerConfig({
 	baseConfigPath: string
 	outConfigPath: string
 	envName: WranglerEnvName
+	workerName?: string
+	packageWorkflowName?: string
 	d1DatabaseName: string
 	d1DatabaseId: string
 	oauthKvId: string
@@ -306,6 +310,37 @@ export async function writeGeneratedWranglerConfig({
 	const targetEnv = (env as Record<string, unknown>)[envName]
 	if (!targetEnv || typeof targetEnv !== 'object') {
 		fail(`wrangler config "${baseConfigPath}" is missing "env.${envName}".`)
+	}
+
+	if (workerName) {
+		config.name = workerName
+	}
+
+	const resolvedPackageWorkflowName =
+		packageWorkflowName ??
+		(workerName
+			? truncateWithSuffix(workerName, '-package-workflows', 63)
+			: null)
+	if (resolvedPackageWorkflowName) {
+		const workflows = (targetEnv as Record<string, unknown>).workflows
+		if (!Array.isArray(workflows)) {
+			fail(
+				`wrangler config "${baseConfigPath}" is missing "env.${envName}.workflows".`,
+			)
+		}
+		const packageWorkflowIndex = workflows.findIndex((workflow) => {
+			if (!workflow || typeof workflow !== 'object') return false
+			return (
+				(workflow as Record<string, unknown>).binding === 'PACKAGE_WORKFLOWS'
+			)
+		})
+		if (packageWorkflowIndex < 0) {
+			fail(
+				`wrangler config "${baseConfigPath}" has no ${envName} workflow binding for "PACKAGE_WORKFLOWS".`,
+			)
+		}
+		;(workflows[packageWorkflowIndex] as Record<string, unknown>).name =
+			resolvedPackageWorkflowName
 	}
 
 	const d1Databases = (targetEnv as Record<string, unknown>).d1_databases

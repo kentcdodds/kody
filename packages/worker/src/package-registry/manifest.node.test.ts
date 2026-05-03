@@ -95,6 +95,46 @@ test('parseAuthoredPackageJson accepts package service definitions', () => {
 	})
 })
 
+test('parseAuthoredPackageJson accepts package workflow definitions and search projection includes them', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/shade-automation',
+			exports: {
+				'./run-event': './src/run-event.ts',
+			},
+			kody: {
+				id: 'shade-automation',
+				description: 'Shade automation package',
+				workflows: {
+					'shade-event': {
+						export: './run-event',
+						description: 'Runs one planned shade event.',
+					},
+				},
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const projection = buildPackageSearchProjection(manifest)
+
+	expect(manifest.kody.workflows).toEqual({
+		'shade-event': {
+			export: './run-event',
+			description: 'Runs one planned shade event.',
+		},
+	})
+	expect(projection.workflows).toEqual([
+		{
+			name: 'shade-event',
+			exportName: './run-event',
+			description: 'Runs one planned shade event.',
+		},
+	])
+	expect(buildPackageSearchDocument(projection)).toContain(
+		'workflow:shade-event ./run-event Runs one planned shade event.',
+	)
+})
+
 test('parseAuthoredPackageJson rejects service timeoutMs values above the supported maximum', () => {
 	expect(() =>
 		parseAuthoredPackageJson({

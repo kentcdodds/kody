@@ -22,6 +22,7 @@ import {
 } from './published-runtime-artifacts.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
+import { createPackageWorkflow } from './package-workflows.ts'
 import {
 	listSavedPackageServices,
 	normalizePackageServiceStatus,
@@ -252,6 +253,51 @@ function createPackageSecretsProxy(runtimeBridge) {
 	};
 }
 
+function createWorkflowsProxy(runtimeBridge) {
+	const isoRunAtPattern =
+		/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/;
+	const normalizeRequiredString = (input, fieldName) => {
+		const value = input?.[fieldName];
+		if (typeof value !== 'string' || !value.trim()) {
+			throw new Error(
+				'workflows.create requires a non-empty ' + fieldName + '.',
+			);
+		}
+		return value;
+	};
+	const normalizeRunAt = (input) => {
+		const value = input?.runAt;
+		const date =
+			value instanceof Date
+				? value
+				: typeof value === 'string'
+					? isoRunAtPattern.test(value)
+						? new Date(value)
+						: null
+					: null;
+		if (!date || Number.isNaN(date.getTime())) {
+			throw new Error(
+				'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
+			);
+		}
+		return date;
+	};
+	return {
+		create: async (input) => {
+			if (!input || typeof input !== 'object' || Array.isArray(input)) {
+				throw new Error('workflows.create requires a workflow input object.');
+			}
+			return await runtimeBridge.workflowCreate({
+				...input,
+				workflowName: normalizeRequiredString(input, 'workflowName'),
+				exportName: normalizeRequiredString(input, 'exportName'),
+				runAt: normalizeRunAt(input),
+				idempotencyKey: normalizeRequiredString(input, 'idempotencyKey'),
+			});
+		},
+	};
+}
+
 function createAuthenticatedFetchHelper(runtimeBridge) {
 	return async function createAuthenticatedFetch(providerName) {
 		return async (input, init) =>
@@ -402,6 +448,7 @@ function createRuntime(runtimeBridge, params, packageContext) {
 		realtime: createRealtimeProxy(runtimeBridge),
 		services: createServicesProxy(runtimeBridge),
 		packageSecrets,
+		workflows: createWorkflowsProxy(runtimeBridge),
 		packageContext,
 	};
 }
@@ -842,6 +889,17 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async serviceStop(input: { serviceName: string }) {
 		return await this.getPackageServiceRpc(input.serviceName).stop()
+	}
+
+	async workflowCreate(input: unknown) {
+		return await createPackageWorkflow({
+			env: this.env,
+			userId: this.ctx.props.userId,
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+			body: input as Parameters<typeof createPackageWorkflow>[0]['body'],
+		})
 	}
 }
 
