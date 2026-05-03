@@ -269,6 +269,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 
 	async function login() {
 		const credentials = requireConfig()
+		let csrfToken: string | null = null
 		const head = await request(credentials.host, { method: 'HEAD' }, 3_000)
 		const location = head.headers.get('location')
 		if (!location) {
@@ -277,8 +278,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			)
 		}
 		const loginUrl = new URL(location, head.url || credentials.host).toString()
-		state.loginUrl = loginUrl
-		state.baseUrl = new URL('.', loginUrl).toString().replace(/\/$/, '')
+		const baseUrl = new URL('.', loginUrl).toString().replace(/\/$/, '')
 		const login = await request(loginUrl, {
 			method: 'HEAD',
 			headers: {
@@ -300,18 +300,18 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			loginResult.headers.get('HTTP_X_CSRF_TOKEN') ??
 			loginResult.headers.get('x-csrf-token')
 		if (csrfHeader) {
-			state.csrfToken = csrfHeader
-		} else if (state.baseUrl) {
-			const tokenResponse = await request(
-				`${state.baseUrl}/_csrfTokenVar.jsp`,
-				{
-					method: 'GET',
-				},
-			)
+			csrfToken = csrfHeader
+		} else {
+			const tokenResponse = await request(`${baseUrl}/_csrfTokenVar.jsp`, {
+				method: 'GET',
+			})
 			if (tokenResponse.ok) {
-				state.csrfToken = extractCsrfToken(await tokenResponse.text())
+				csrfToken = extractCsrfToken(await tokenResponse.text())
 			}
 		}
+		state.loginUrl = loginUrl
+		state.baseUrl = baseUrl
+		state.csrfToken = csrfToken
 	}
 
 	async function ensureSession() {

@@ -249,3 +249,56 @@ test('concurrent reads share one login flow', async () => {
 	)
 	expect(loginAttempts).toHaveLength(1)
 })
+
+test('failed login does not leave a partial session', async () => {
+	const config = createConfig()
+	let rejectedLogin = true
+	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+		const href = String(url)
+		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+			return response(null, {
+				status: 302,
+				headers: { Location: '/admin/wsg/login.jsp' },
+				url: 'https://unleashed.local/',
+			})
+		}
+		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+			if (rejectedLogin) {
+				rejectedLogin = false
+				return response(null, {
+					status: 200,
+					url: href,
+				})
+			}
+			return response(null, {
+				status: 302,
+				headers: {
+					HTTP_X_CSRF_TOKEN: 'csrf-token',
+					'set-cookie': 'JSESSIONID=abc; Path=/admin',
+				},
+				url: href,
+			})
+		}
+		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+			return response(null, {
+				status: 200,
+				url: 'https://unleashed.local/admin/wsg/login.jsp',
+			})
+		}
+		if (href.endsWith('/_cmdstat.jsp')) {
+			return response(
+				'<ajax-response><client mac="aa:bb:cc:dd:ee:ff"/></ajax-response>',
+			)
+		}
+		throw new Error(`Unexpected fetch ${href}`)
+	})
+	globalThis.fetch = fetchMock as typeof fetch
+	const client = createAccessNetworksUnleashedAjaxClient({ config })
+
+	await expect(client.listClients()).rejects.toThrow('login was rejected')
+	await expect(client.listClients()).resolves.toEqual([
+		expect.objectContaining({
+			mac: 'aa:bb:cc:dd:ee:ff',
+		}),
+	])
+})
