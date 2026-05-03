@@ -188,6 +188,7 @@ async function probeHost(input: {
 	controller: AccessNetworksUnleashedDiscoveredController | null
 	diagnostic: AccessNetworksUnleashedProbeDiagnostic
 }> {
+	let lastDiagnostic: AccessNetworksUnleashedProbeDiagnostic | null = null
 	for (const url of buildProbeUrls(input.host)) {
 		try {
 			const response = await fetchWithTimeout({
@@ -208,6 +209,7 @@ async function probeHost(input: {
 				index: input.index,
 			})
 			if (match.controller) return match
+			lastDiagnostic = match.diagnostic
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				return {
@@ -242,7 +244,7 @@ async function probeHost(input: {
 
 	return {
 		controller: null,
-		diagnostic: {
+		diagnostic: lastDiagnostic ?? {
 			host: input.host,
 			url: `https://${input.host}/`,
 			matched: false,

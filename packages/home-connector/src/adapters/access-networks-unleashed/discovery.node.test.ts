@@ -120,3 +120,51 @@ test('access networks unleashed subnet discovery skips invalid CIDRs and keeps s
 		globalThis.fetch = previousFetch
 	}
 })
+
+test('access networks unleashed discovery keeps the last non-match diagnostic details', async () => {
+	const previousFetch = globalThis.fetch
+	const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+		const url = typeof input === 'string' ? input : input.toString()
+		if (url === 'https://10.0.0.90/') {
+			return new Response('<html><title>Welcome</title></html>', {
+				status: 200,
+				headers: {
+					'Content-Type': 'text/html',
+				},
+			})
+		}
+		if (url === 'https://10.0.0.90/admin/') {
+			return new Response('forbidden', {
+				status: 403,
+				headers: {
+					'Content-Type': 'text/plain',
+				},
+			})
+		}
+		if (url === 'https://10.0.0.90/admin/login.jsp') {
+			return new Response('still not a controller', {
+				status: 404,
+			})
+		}
+		return new Response('not found', { status: 404 })
+	})
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		const state = createAppState()
+		const config = createConfig(['10.0.0.90/32'])
+
+		const result = await scanAccessNetworksUnleashedControllers(state, config)
+
+		expect(result.controllers).toHaveLength(0)
+		expect(result.diagnostics.probes[0]).toMatchObject({
+			host: '10.0.0.90',
+			url: 'https://10.0.0.90/admin/login.jsp',
+			status: 404,
+			matched: false,
+			bodySnippet: 'still not a controller',
+		})
+	} finally {
+		globalThis.fetch = previousFetch
+	}
+})

@@ -413,7 +413,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					storage,
 					connectorId,
 					controllerId: adoptedController.controllerId,
-					lastAuthenticatedAt: null,
+					lastAuthenticatedAt: adoptedController.lastAuthenticatedAt,
 					lastAuthError: message,
 				})
 				return {
