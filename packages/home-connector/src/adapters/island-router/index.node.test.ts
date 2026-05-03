@@ -295,8 +295,8 @@ function createFakeRunner() {
 						'Search Domains: home.arpa, lan',
 						'Server  Role       Source',
 						'------  ---------  --------',
-						'1.1.1.1 upstream   static',
-						'8.8.8.8 upstream   dhcp',
+						'1.1.1.1  upstream   static',
+						'8.8.8.8  upstream   dhcp',
 						'host=nas.home.arpa value=192.168.0.52 enabled=yes',
 					].join('\n'),
 					stderr: '',
@@ -911,7 +911,7 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		searchDomains: ['home.arpa', 'lan'],
 		servers: expect.arrayContaining([
 			expect.objectContaining({
-				address: '1.1.1.1 upstream',
+					address: '1.1.1.1',
 			}),
 		]),
 	})
