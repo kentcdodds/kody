@@ -218,6 +218,12 @@ test('repo_open_session reuses resolved target metadata when resuming an existin
 		createCapabilityContext(),
 	)
 
+	expect(rpc.getSessionInfo).toHaveBeenCalledWith({
+		sessionId: 'session-existing',
+		userId: 'user-1',
+	})
+	expect(rpc.openSession).not.toHaveBeenCalled()
+	expect(result.id).toBe('session-existing')
 	expect(result.resolved_target).toEqual({
 		kind: 'package',
 		source_id: 'source-package-1',

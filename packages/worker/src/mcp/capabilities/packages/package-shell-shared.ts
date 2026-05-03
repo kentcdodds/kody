@@ -12,7 +12,7 @@ import {
 	repoSessionIdSchema,
 } from '../repo/repo-shared.ts'
 
-export const packageShellMaxCommandTimeoutMs = 86_400_000
+export const packageShellMaxCommandTimeoutMs = 3_300_000
 
 const packageShellCommandTimeoutSchema = z
 	.number()
@@ -20,7 +20,7 @@ const packageShellCommandTimeoutSchema = z
 	.min(1_000)
 	.max(packageShellMaxCommandTimeoutMs)
 	.describe(
-		'Optional shell command timeout in milliseconds, capped at one day.',
+		'Optional shell command timeout in milliseconds, capped below the one-hour git token lifetime.',
 	)
 
 export const packageShellOpenInputSchema = repoOpenSessionInputSchema.extend({
@@ -69,8 +69,8 @@ export const packageShellExecOutputSchema = packageShellOpenOutputSchema.extend(
 		synced_session: z
 			.object({
 				ok: z.literal(true),
-				sessionId: z.string(),
-				headCommit: z.string().nullable(),
+				session_id: z.string(),
+				head_commit: z.string().nullable(),
 				changed: z.boolean(),
 			})
 			.nullable(),

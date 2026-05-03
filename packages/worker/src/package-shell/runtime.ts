@@ -3,10 +3,7 @@ import {
 	resolveSessionRepo,
 } from '#worker/repo/artifacts.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import {
-	type RepoSessionInfoResult,
-	type RepoSessionSyncResult,
-} from '#worker/repo/types.ts'
+import { type RepoSessionInfoResult } from '#worker/repo/types.ts'
 import { type z } from 'zod'
 import { type repoResolvedTargetSchema } from '#mcp/capabilities/repo/repo-shared.ts'
 
@@ -52,7 +49,7 @@ async function buildPackageShellEnvironment(input: {
 	if (!info?.remote) {
 		throw new Error('Package shell session repo remote URL is unavailable.')
 	}
-	const token = await repo.createToken('write', 3600)
+	const token = await repo.createToken('write', 900)
 	return {
 		remote: buildAuthenticatedArtifactsRemote({
 			remote: info.remote,
@@ -123,7 +120,7 @@ export async function runPackageShellCommand(input: PackageShellExecInput) {
 		cwd: input.cwd ?? '/workspace',
 		timeout: input.commandTimeoutMs ?? defaultCommandTimeoutMs,
 	})
-	const sync =
+	const syncResult =
 		input.syncAfter === false
 			? null
 			: await repoSessionRpc(input.env, input.session.id).syncSessionFromRemote(
@@ -141,6 +138,14 @@ export async function runPackageShellCommand(input: PackageShellExecInput) {
 		stderr: result.stderr,
 		duration_ms: result.duration,
 		started_at: result.timestamp,
-		synced_session: sync satisfies RepoSessionSyncResult | null,
+		synced_session:
+			syncResult == null
+				? null
+				: {
+						ok: true as const,
+						session_id: syncResult.sessionId,
+						head_commit: syncResult.headCommit,
+						changed: syncResult.changed,
+					},
 	}
 }

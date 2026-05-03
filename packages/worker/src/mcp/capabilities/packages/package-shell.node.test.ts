@@ -256,8 +256,8 @@ test('package_shell_exec runs the command as-is and syncs the repo session after
 			stdout: 'ok',
 			synced_session: {
 				ok: true,
-				sessionId: 'session-1',
-				headCommit: 'commit-shell',
+				session_id: 'session-1',
+				head_commit: 'commit-shell',
 				changed: true,
 			},
 		}),
