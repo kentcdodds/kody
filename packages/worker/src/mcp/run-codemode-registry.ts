@@ -546,6 +546,11 @@ export async function runCodemodeWithRegistry(
 		},
 		modules: options?.executorModules,
 	})
+	const workflowTools = createWorkflowTools({
+		env,
+		callerContext,
+		packageContext: options?.packageContext ?? null,
+	})
 	const provider = await buildCodemodeProvider(env, callerContext, {
 		trackSecretInputValue: (value) => {
 			secretRedactor.track(value)
@@ -561,11 +566,7 @@ export async function runCodemodeWithRegistry(
 				})
 			: undefined,
 		emailTools: options?.emailTools,
-		workflowTools: createWorkflowTools({
-			env,
-			callerContext,
-			packageContext: options?.packageContext ?? null,
-		}),
+		workflowTools,
 	})
 	const wrappedCode =
 		params !== undefined
@@ -587,9 +588,7 @@ export async function runCodemodeWithRegistry(
 	const emailHelperPrelude = options?.emailTools
 		? createEmailHelperPrelude()
 		: ''
-	const workflowsHelperPrelude = options?.packageContext
-		? createWorkflowsHelperPrelude()
-		: ''
+	const workflowsHelperPrelude = workflowTools ? createWorkflowsHelperPrelude() : ''
 	const helperPrelude = [
 		storageHelperPrelude,
 		serviceHelperPrelude,
@@ -709,6 +708,13 @@ export async function runBundledModuleWithRegistry(
 		},
 		modules: bundle.modules,
 	})
+	const workflowTools =
+		options?.workflowTools ??
+		createWorkflowTools({
+			env,
+			callerContext,
+			packageContext: options?.packageContext ?? null,
+		})
 	const provider = await buildCodemodeProvider(env, callerContext, {
 		trackSecretInputValue: (value) => {
 			secretRedactor.track(value)
@@ -724,13 +730,7 @@ export async function runBundledModuleWithRegistry(
 				})
 			: undefined,
 		emailTools: options?.emailTools,
-		workflowTools:
-			options?.workflowTools ??
-			createWorkflowTools({
-				env,
-				callerContext,
-				packageContext: options?.packageContext ?? null,
-			}),
+		workflowTools,
 		skipCapabilityRegistry: options?.skipCapabilityRegistry,
 	})
 	const storageHelperPrelude = options?.storageTools
@@ -748,9 +748,7 @@ export async function runBundledModuleWithRegistry(
 	const emailHelperPrelude = options?.emailTools
 		? createEmailHelperPrelude()
 		: ''
-	const workflowsHelperPrelude = options?.packageContext
-		? createWorkflowsHelperPrelude()
-		: ''
+	const workflowsHelperPrelude = workflowTools ? createWorkflowsHelperPrelude() : ''
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}

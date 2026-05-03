@@ -1280,6 +1280,80 @@ test('runBundledModuleWithRegistry injects email helpers', async () => {
 	}
 })
 
+test('runBundledModuleWithRegistry injects workflow helper when custom workflow tools are provided', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [],
+			capabilityMap: {},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped, providers) {
+				expect(wrapped).toContain('const workflows = {')
+				expect(wrapped).toContain(
+					'workflows: typeof workflows === \'undefined\' ? null : workflows',
+				)
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js': 'export default async () => "ok"',
+				},
+			},
+			undefined,
+			{
+				workflowTools: {
+					create: async (input) => ({ ok: true, input }),
+				},
+			},
+		)
+
+		expect(result.result).toBe('ok')
+		expect(providerFns).not.toBeNull()
+		await expect(
+			providerFns?.package_workflow_create({ workflowName: 'custom' }),
+		).resolves.toEqual({
+			ok: true,
+			input: { workflowName: 'custom' },
+		})
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+	}
+})
+
 test('runModuleWithRegistry injects email helpers for module syntax', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
