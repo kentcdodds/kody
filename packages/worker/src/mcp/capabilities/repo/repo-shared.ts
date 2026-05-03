@@ -550,7 +550,14 @@ export function normalizeRepoCommandChecks(input: {
 export function normalizeRepoCommandPublish(
 	input:
 		| { status: 'not_requested' }
-		| { status: 'blocked_by_checks'; message: string }
+		| {
+				status: 'blocked_by_checks'
+				message: string
+				failedChecks?: Array<z.infer<typeof repoCheckResultSchema>>
+				runId?: string
+				treeHash?: string
+				checkedAt?: string
+		  }
 		| {
 				status: 'ok'
 				sessionId: string
@@ -575,8 +582,16 @@ export function normalizeRepoCommandPublish(
 ) {
 	switch (input.status) {
 		case 'not_requested':
-		case 'blocked_by_checks':
 			return input
+		case 'blocked_by_checks':
+			return {
+				status: input.status,
+				message: input.message,
+				failed_checks: input.failedChecks,
+				run_id: input.runId,
+				tree_hash: input.treeHash,
+				checked_at: input.checkedAt,
+			}
 		case 'ok':
 			return {
 				status: input.status,

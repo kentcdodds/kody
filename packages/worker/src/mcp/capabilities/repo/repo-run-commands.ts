@@ -54,7 +54,7 @@ export const repoRunCommandsCapability = defineDomainCapability(
 		],
 		readOnly: false,
 		idempotent: false,
-		destructive: false,
+		destructive: true,
 		inputSchema: repoRunCommandsInputSchema,
 		outputSchema: repoRunCommandsOutputSchema,
 		async handler(args, ctx): Promise<RepoRunCommandsOutput> {
