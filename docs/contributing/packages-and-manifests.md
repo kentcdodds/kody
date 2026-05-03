@@ -19,6 +19,7 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.tags` — search tags
 - `kody.app` — optional hosted package app config
 - `kody.jobs` — optional package-owned schedules
+- `kody.workflows` — optional package-owned durable workflow declarations
 - `kody.retrievers` — optional package-owned search/context retrievers
 
 The package manifest is `package.json`.
@@ -57,6 +58,7 @@ Think in terms of:
 - package exports
 - package apps
 - package-owned jobs
+- package-owned workflows
 - package-owned retrievers
 
 The top-level saved identity is the package.
@@ -94,6 +96,55 @@ Jobs belong to packages.
 - Treat schedule/runtime state as package-owned implementation detail
 
 Jobs are not their own top-level saved primitive.
+
+## Package-owned workflows
+
+Workflows belong to packages.
+
+Use `package.json#kody.workflows` to name durable workflow entrypoints that
+package code can schedule through `kody:runtime`:
+
+```json
+{
+	"kody": {
+		"workflows": {
+			"shade-event": {
+				"export": "./run-event",
+				"description": "Runs one planned shade event."
+			}
+		}
+	}
+}
+```
+
+Runtime code calls `workflows.create(...)` with routing metadata and small
+parameters:
+
+```ts
+import { workflows } from 'kody:runtime'
+
+await workflows.create({
+	workflowName: 'shade-event',
+	exportName: './run-event',
+	runAt: '2026-05-03T12:00:00.000Z',
+	idempotencyKey: 'shade-event:2026-05-03T12:00:00.000Z:office',
+	params: { eventId: 'event-123', roomId: 'office' },
+})
+```
+
+Kody stores Cloudflare Workflow instance payloads as package-routing metadata:
+`userId`, package id, `kody.id`, source id, workflow name, export name,
+idempotency key, `runAt`/plan date, and small non-secret params. Do not place
+secrets, OAuth tokens, full connector configuration, or full device action
+payloads in workflow params or metadata. The package export should look up
+current secrets/configuration from normal package runtime helpers when it runs.
+
+Workflow instance ids are deterministic for
+`(userId, packageId, workflowName, idempotencyKey)`, so repeated planners can
+safely attempt to create the same instance without duplicating it. The host
+workflow sleeps until `runAt`, then invokes the saved package export through the
+same package execution path used by package invocations. Workflow instances are
+not search results and are not saved as a new top-level Kody entity.
 
 ## Package-owned retrievers
 

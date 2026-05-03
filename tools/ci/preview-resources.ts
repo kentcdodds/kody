@@ -88,6 +88,7 @@ function buildPreviewResourceNames(workerName: string) {
 	const d1Suffix = '-db'
 	const oauthKvSuffix = '-oauth-kv'
 	const bundleKvSuffix = '-bundle-artifacts-kv'
+	const packageWorkflowSuffix = '-package-workflows'
 
 	const d1DatabaseName = truncateWithSuffix(workerName, d1Suffix, maxLen)
 	const oauthKvTitle = truncateWithSuffix(workerName, oauthKvSuffix, maxLen)
@@ -96,8 +97,18 @@ function buildPreviewResourceNames(workerName: string) {
 		bundleKvSuffix,
 		maxLen,
 	)
+	const packageWorkflowName = truncateWithSuffix(
+		workerName,
+		packageWorkflowSuffix,
+		maxLen,
+	)
 
-	return { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle }
+	return {
+		d1DatabaseName,
+		oauthKvTitle,
+		bundleArtifactsKvTitle,
+		packageWorkflowName,
+	}
 }
 
 function ensureD1Database({
@@ -230,8 +241,12 @@ function deleteKvNamespace({
 }
 
 async function ensurePreviewResources(options: CliOptions) {
-	const { d1DatabaseName, oauthKvTitle, bundleArtifactsKvTitle } =
-		buildPreviewResourceNames(options.workerName)
+	const {
+		d1DatabaseName,
+		oauthKvTitle,
+		bundleArtifactsKvTitle,
+		packageWorkflowName,
+	} = buildPreviewResourceNames(options.workerName)
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
 		location: options.d1Location,
@@ -250,10 +265,12 @@ async function ensurePreviewResources(options: CliOptions) {
 		baseConfigPath: options.wranglerConfigPath,
 		outConfigPath: options.outConfigPath,
 		envName: 'preview',
+		workerName: options.workerName,
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		oauthKvId: oauthKv.id,
 		bundleArtifactsKvId: bundleArtifactsKv.id,
+		packageWorkflowName,
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},

@@ -22,6 +22,7 @@ import {
 } from './published-runtime-artifacts.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
+import { createPackageWorkflow } from './package-workflows.ts'
 import {
 	listSavedPackageServices,
 	normalizePackageServiceStatus,
@@ -252,6 +253,12 @@ function createPackageSecretsProxy(runtimeBridge) {
 	};
 }
 
+function createWorkflowsProxy(runtimeBridge) {
+	return {
+		create: async (input) => await runtimeBridge.workflowCreate(input ?? {}),
+	};
+}
+
 function createAuthenticatedFetchHelper(runtimeBridge) {
 	return async function createAuthenticatedFetch(providerName) {
 		return async (input, init) =>
@@ -402,6 +409,7 @@ function createRuntime(runtimeBridge, params, packageContext) {
 		realtime: createRealtimeProxy(runtimeBridge),
 		services: createServicesProxy(runtimeBridge),
 		packageSecrets,
+		workflows: createWorkflowsProxy(runtimeBridge),
 		packageContext,
 	};
 }
@@ -842,6 +850,17 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async serviceStop(input: { serviceName: string }) {
 		return await this.getPackageServiceRpc(input.serviceName).stop()
+	}
+
+	async workflowCreate(input: unknown) {
+		return await createPackageWorkflow({
+			env: this.env,
+			userId: this.ctx.props.userId,
+			packageId: this.ctx.props.packageId,
+			kodyId: this.ctx.props.kodyId,
+			sourceId: this.ctx.props.sourceId,
+			body: input as Parameters<typeof createPackageWorkflow>[0]['body'],
+		})
 	}
 }
 

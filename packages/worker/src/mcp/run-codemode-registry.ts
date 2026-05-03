@@ -33,6 +33,10 @@ import {
 } from '#worker/module-source.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
+	createPackageWorkflow,
+	type PackageWorkflowCreateInput,
+} from '#worker/package-runtime/package-workflows.ts'
+import {
 	createStorageCodemodeTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
@@ -65,6 +69,16 @@ type EmailToolOptions = {
 	getMessage: (messageId: string) => Promise<unknown>
 	getAttachment: (attachmentId: string) => Promise<unknown>
 }
+
+export type PackageWorkflowTools = {
+	create: (input: PackageWorkflowCreateInput) => Promise<unknown>
+}
+
+export type PackageContextOptions = {
+	packageId: string
+	kodyId: string
+	sourceId?: string | null
+} | null
 
 function isPackageSecretAvailabilityError(error: unknown) {
 	return (
@@ -104,6 +118,36 @@ function createPackageSecretTools(input: {
 				}
 				throw error
 			}
+		},
+	}
+}
+
+export function createWorkflowTools(input: {
+	env: Env
+	callerContext: McpCallerContext
+	packageContext: PackageContextOptions
+}): PackageWorkflowTools | undefined {
+	const packageContext = input.packageContext
+	if (!packageContext) return undefined
+	return {
+		create: async (body) => {
+			const userId = input.callerContext.user?.userId
+			if (!userId) {
+				throw new Error('Package workflows require an authenticated user.')
+			}
+			if (!packageContext.sourceId) {
+				throw new Error(
+					'Package workflows require a sourceId in package context.',
+				)
+			}
+			return await createPackageWorkflow({
+				env: input.env,
+				userId,
+				packageId: packageContext.packageId,
+				kodyId: packageContext.kodyId,
+				sourceId: packageContext.sourceId,
+				body,
+			})
 		},
 	}
 }
@@ -186,6 +230,14 @@ const email = {
 	`.trim()
 }
 
+function createWorkflowsHelperPrelude() {
+	return `
+const workflows = {
+  create: async (input) => await codemode.package_workflow_create(input ?? {}),
+};
+	`.trim()
+}
+
 export async function buildCodemodeFns(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -200,6 +252,7 @@ export async function buildCodemodeFns(
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
+		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
 	},
 ) {
@@ -341,12 +394,21 @@ export async function buildCodemodeFns(
 			}
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, emailCodemodeTools)
+	const workflowTools = options?.workflowTools
+	const workflowCodemodeTools: AdditionalCodemodeTools = workflowTools
+		? {
+				package_workflow_create: async (args: unknown) =>
+					await workflowTools.create(args as PackageWorkflowCreateInput),
+			}
+		: {}
+	assertNoCapabilityCollisions(capabilityMap, workflowCodemodeTools)
 	return {
 		...capabilityCodemodeTools,
 		...storageCodemodeTools,
 		...serviceCodemodeTools,
 		...packageSecretCodemodeTools,
 		...emailCodemodeTools,
+		...workflowCodemodeTools,
 		...additionalTools,
 	}
 }
@@ -372,6 +434,7 @@ export async function buildCodemodeProvider(
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
+		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
 	},
 ): Promise<ResolvedProvider> {
@@ -444,10 +507,7 @@ export async function runCodemodeWithRegistry(
 		helperPrelude?: string
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
-		packageContext?: {
-			packageId: string
-			kodyId: string
-		} | null
+		packageContext?: PackageContextOptions
 		emailTools?: EmailToolOptions
 		executorModules?: WorkerLoaderModules
 		executorTimeoutMs?: number | null
@@ -461,6 +521,11 @@ export async function runCodemodeWithRegistry(
 			storageTools: options?.storageTools,
 			serviceTools: options?.serviceTools,
 			packageContext: options?.packageContext,
+			workflowTools: createWorkflowTools({
+				env,
+				callerContext,
+				packageContext: options?.packageContext ?? null,
+			}),
 			executorTimeoutMs: options?.executorTimeoutMs,
 		})
 	}
@@ -496,6 +561,11 @@ export async function runCodemodeWithRegistry(
 				})
 			: undefined,
 		emailTools: options?.emailTools,
+		workflowTools: createWorkflowTools({
+			env,
+			callerContext,
+			packageContext: options?.packageContext ?? null,
+		}),
 	})
 	const wrappedCode =
 		params !== undefined
@@ -517,11 +587,15 @@ export async function runCodemodeWithRegistry(
 	const emailHelperPrelude = options?.emailTools
 		? createEmailHelperPrelude()
 		: ''
+	const workflowsHelperPrelude = options?.packageContext
+		? createWorkflowsHelperPrelude()
+		: ''
 	const helperPrelude = [
 		storageHelperPrelude,
 		serviceHelperPrelude,
 		packageSecretsHelperPrelude,
 		emailHelperPrelude,
+		workflowsHelperPrelude,
 		options?.helperPrelude ?? '',
 	]
 		.filter((value) => value.trim().length > 0)
@@ -557,11 +631,9 @@ export async function runModuleWithRegistry(
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
 		serviceTools?: ServiceToolOptions
-		packageContext?: {
-			packageId: string
-			kodyId: string
-		} | null
+		packageContext?: PackageContextOptions
 		emailTools?: EmailToolOptions
+		workflowTools?: PackageWorkflowTools
 		executorTimeoutMs?: number | null
 	},
 ): Promise<ExecuteResult> {
@@ -587,6 +659,11 @@ export async function runModuleWithRegistry(
 		{
 			...options,
 			packageContext: options?.packageContext ?? null,
+			workflowTools: createWorkflowTools({
+				env,
+				callerContext,
+				packageContext: options?.packageContext ?? null,
+			}),
 		},
 	)
 }
@@ -603,15 +680,13 @@ export async function runBundledModuleWithRegistry(
 		executorExports?: typeof workerExports
 		additionalTools?: AdditionalCodemodeTools
 		storageTools?: StorageToolOptions
-		packageContext?: {
-			packageId: string
-			kodyId: string
-		} | null
+		packageContext?: PackageContextOptions
 		serviceContext?: {
 			serviceName: string
 		} | null
 		serviceTools?: ServiceToolOptions
 		emailTools?: EmailToolOptions
+		workflowTools?: PackageWorkflowTools
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
 	},
@@ -647,6 +722,13 @@ export async function runBundledModuleWithRegistry(
 				})
 			: undefined,
 		emailTools: options?.emailTools,
+		workflowTools:
+			options?.workflowTools ??
+			createWorkflowTools({
+				env,
+				callerContext,
+				packageContext: options?.packageContext ?? null,
+			}),
 		skipCapabilityRegistry: options?.skipCapabilityRegistry,
 	})
 	const storageHelperPrelude = options?.storageTools
@@ -664,12 +746,16 @@ export async function runBundledModuleWithRegistry(
 	const emailHelperPrelude = options?.emailTools
 		? createEmailHelperPrelude()
 		: ''
+	const workflowsHelperPrelude = options?.packageContext
+		? createWorkflowsHelperPrelude()
+		: ''
 	const wrapped = `async () => {
 ${createExecuteHelperPrelude()}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
 ${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
 ${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
 ${emailHelperPrelude ? `${emailHelperPrelude}\n` : ''}
+${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
   const __previousRuntime = globalThis.__kodyRuntime;
   globalThis.__kodyRuntime = {
     codemode,
@@ -683,6 +769,7 @@ ${emailHelperPrelude ? `${emailHelperPrelude}\n` : ''}
     service: typeof service === 'undefined' ? null : service,
     packageSecrets: typeof packageSecrets === 'undefined' ? null : packageSecrets,
     email: typeof email === 'undefined' ? null : email,
+    workflows: typeof workflows === 'undefined' ? null : workflows,
   };
   try {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});

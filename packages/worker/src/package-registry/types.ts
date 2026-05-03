@@ -58,6 +58,15 @@ export type PackageServiceDefinition = z.infer<
 	typeof packageServiceDefinitionSchema
 >
 
+export const packageWorkflowDefinitionSchema = z.object({
+	export: z.string().min(1),
+	description: z.string().min(1).optional(),
+})
+
+export type PackageWorkflowDefinition = z.infer<
+	typeof packageWorkflowDefinitionSchema
+>
+
 export const packageSubscriptionDefinitionSchema = z.object({
 	handler: z.string().min(1),
 	description: z.string().min(1).optional(),
@@ -125,6 +134,9 @@ export const authoredPackageKodySchema = z.object({
 	app: packageAppDefinitionSchema.optional(),
 	services: z
 		.record(z.string().min(1), packageServiceDefinitionSchema)
+		.optional(),
+	workflows: z
+		.record(z.string().min(1), packageWorkflowDefinitionSchema)
 		.optional(),
 	jobs: z.record(z.string().min(1), packageJobDefinitionSchema).optional(),
 	retrievers: z

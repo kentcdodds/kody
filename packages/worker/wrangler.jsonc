@@ -73,6 +73,13 @@
 					"binding": "APP_LOADER",
 				},
 			],
+			"workflows": [
+				{
+					"binding": "PACKAGE_WORKFLOWS",
+					"name": "kody-package-workflows",
+					"class_name": "PackageWorkflowEntrypoint",
+				},
+			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
@@ -167,6 +174,13 @@
 					"binding": "APP_LOADER",
 				},
 			],
+			"workflows": [
+				{
+					"binding": "PACKAGE_WORKFLOWS",
+					"name": "kody-preview-package-workflows",
+					"class_name": "PackageWorkflowEntrypoint",
+				},
+			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
@@ -259,6 +273,13 @@
 				},
 				{
 					"binding": "APP_LOADER",
+				},
+			],
+			"workflows": [
+				{
+					"binding": "PACKAGE_WORKFLOWS",
+					"name": "kody-test-package-workflows",
+					"class_name": "PackageWorkflowEntrypoint",
 				},
 			],
 			"assets": {

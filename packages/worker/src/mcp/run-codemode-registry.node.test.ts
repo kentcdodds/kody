@@ -4,6 +4,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import {
 	buildCodemodeFns,
+	createWorkflowTools,
 	runCodemodeWithRegistry,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
@@ -15,6 +16,68 @@ import {
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createCapabilitySecretAccessDeniedMessage,
 } from '#mcp/secrets/errors.ts'
+
+test('createWorkflowTools creates package workflow instances from package context', async () => {
+	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const workflowTools = createWorkflowTools({
+		env: {
+			PACKAGE_WORKFLOWS: {
+				get: async () => {
+					throw new Error('not found')
+				},
+				create: async (options?: WorkflowInstanceCreateOptions<unknown>) => {
+					if (!options) throw new Error('missing options')
+					created.push(options)
+					return {
+						id: options.id ?? 'generated',
+						status: async () => ({ status: 'queued' }),
+					} as WorkflowInstance
+				},
+			} as Workflow<unknown>,
+		} as Env,
+		callerContext: {
+			baseUrl: 'https://app.example.com',
+			user: {
+				userId: 'user-1',
+				email: 'me@example.com',
+				displayName: 'Me',
+			},
+			storageContext: null,
+			repoContext: null,
+		},
+		packageContext: {
+			packageId: 'pkg-1',
+			kodyId: 'shade-automation',
+			sourceId: 'source-1',
+		},
+	})
+
+	const result = await workflowTools?.create({
+		workflowName: 'shade-event',
+		exportName: './run-event',
+		runAt: '2026-05-03T12:00:00.000Z',
+		idempotencyKey: 'event-key',
+		params: { eventId: 'event-1' },
+	})
+
+	expect(result).toMatchObject({
+		ok: true,
+		workflow_name: 'shade-event',
+		export_name: './run-event',
+		run_at: '2026-05-03T12:00:00.000Z',
+	})
+	expect(created).toHaveLength(1)
+	expect(created[0]?.params).toEqual(
+		expect.objectContaining({
+			userId: 'user-1',
+			packageId: 'pkg-1',
+			kodyId: 'shade-automation',
+			sourceId: 'source-1',
+			workflowName: 'shade-event',
+			params: { eventId: 'event-1' },
+		}),
+	)
+})
 
 vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 	buildKodyModuleBundle: vi.fn(async () => ({

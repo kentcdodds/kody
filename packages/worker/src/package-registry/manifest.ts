@@ -141,6 +141,16 @@ export function listPackageServices(manifest: AuthoredPackageJson) {
 		.sort((left, right) => left.name.localeCompare(right.name))
 }
 
+export function listPackageWorkflows(manifest: AuthoredPackageJson) {
+	return Object.entries(manifest.kody.workflows ?? {})
+		.map(([name, workflow]) => ({
+			name,
+			exportName: normalizePackageExportKey(workflow.export),
+			description: workflow.description?.trim() || null,
+		}))
+		.sort((left, right) => left.name.localeCompare(right.name))
+}
+
 export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
 	return Object.entries(manifest.kody.subscriptions ?? {})
 		.map(([topic, subscription]) => ({
@@ -218,6 +228,11 @@ export type PackageSearchProjection = {
 		autoStart: boolean
 		mode: 'bounded' | 'persistent'
 		timeoutMs: number | null
+	}>
+	workflows: Array<{
+		name: string
+		exportName: string
+		description: string | null
 	}>
 	subscriptions: Array<{
 		topic: string
@@ -523,6 +538,7 @@ export function buildPackageSearchProjection(
 			}))
 			.sort((left, right) => left.name.localeCompare(right.name)),
 		services: listPackageServices(manifest),
+		workflows: listPackageWorkflows(manifest),
 		subscriptions: listPackageSubscriptions(manifest),
 		retrievers: listPackageRetrievers(manifest),
 	}
@@ -546,6 +562,15 @@ export function buildPackageSearchDocument(
 			service.mode,
 			service.autoStart ? 'auto-start' : 'manual-start',
 			service.timeoutMs != null ? `timeout-ms:${service.timeoutMs}` : '',
+		]
+			.filter((value) => value.length > 0)
+			.join(' '),
+	)
+	const workflowLines = projection.workflows.map((workflow) =>
+		[
+			`workflow:${workflow.name}`,
+			workflow.exportName,
+			workflow.description ?? '',
 		]
 			.filter((value) => value.length > 0)
 			.join(' '),
@@ -604,6 +629,7 @@ export function buildPackageSearchDocument(
 		exportLines.join('\n'),
 		jobLines.join('\n'),
 		serviceLines.join('\n'),
+		workflowLines.join('\n'),
 		subscriptionLines.join('\n'),
 		retrieverLines.join('\n'),
 		projection.appEntry
