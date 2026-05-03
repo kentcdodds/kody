@@ -581,6 +581,61 @@ test('parser ignores prompt echoes for real neighbor, dhcp, and log transcripts'
 	])
 })
 
+test('real CLI exit-code-1 transcripts remain successful when log output includes not-found text', async () => {
+	using _env = withTemporaryEnv({})
+	const config = createConfig()
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: async (request) => {
+			switch (request.id) {
+				case 'show-log':
+					return {
+						id: request.id,
+						commandLines: [
+							'terminal length 0',
+							request.query
+								? `show log last where "${request.query.replaceAll('"', '\\"')}"`
+								: 'show log last',
+						],
+						stdout: [
+							request.query
+								? `Dodds-Island>show log last where "${request.query.replaceAll('"', '\\"')}"`
+								: 'Dodds-Island>show log last',
+							'2026-05-02 15:50:00 warning arp: ARP entry not found for 192.168.0.52',
+							'2026-05-02 15:50:01 err net: TCP connection timed out while probing uplink',
+							'Dodds-Island>exit',
+							'Goodbye',
+						].join('\n'),
+						stderr: '',
+						exitCode: 1,
+						signal: null,
+						timedOut: false,
+						durationMs: 10,
+					}
+				default:
+					return await createFakeRunner()(request)
+			}
+		},
+	})
+
+	const recentEvents = await islandRouter.getRecentEvents({
+		host: '192.168.0.52',
+	})
+
+	expect(recentEvents).toEqual([
+		expect.objectContaining({
+			level: 'warning',
+			module: 'arp',
+			message: 'warning arp: ARP entry not found for 192.168.0.52',
+		}),
+		expect.objectContaining({
+			level: 'err',
+			module: 'net',
+			message: 'err net: TCP connection timed out while probing uplink',
+		}),
+	])
+})
+
 test('island router adapter accepts real CLI transcripts that exit with code 1', async () => {
 	using _env = withTemporaryEnv({})
 	const config = createConfig()
@@ -603,7 +658,7 @@ test('island router adapter accepts real CLI transcripts that exit with code 1',
 						'Goodbye',
 					].join('\n'),
 					stderr: '',
-					exitCode: 0,
+					exitCode: 1,
 					signal: null,
 					timedOut: false,
 					durationMs: 10,

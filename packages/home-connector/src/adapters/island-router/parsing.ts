@@ -31,7 +31,7 @@ const pingSummaryPattern =
 const islandRouterVersionBannerPattern =
 	/^(?<model>.+?)\s+\((?<hardwareModel>[^)]+)\)\s+serial number\s+(?<serialNumber>\S+)\s+Version\s+(?<firmwareVersion>\S+)$/i
 const islandRouterCliFailurePattern =
-	/\b(?:invalid command|unknown command|syntax error|permission denied|host key verification failed|connection refused|connection timed out|connection closed|no route to host|network is unreachable|could not resolve hostname|not found|not recognized)\b/i
+	/\b(?:invalid command|unknown command|unrecognized command|syntax error|permission denied|host key verification failed|connection refused|no route to host|network is unreachable|could not resolve hostname|command not found|not recognized as an internal or external command)\b/i
 const islandRouterPromptSuffixPattern = '[>#\\]]'
 const islandRouterPromptOnlyPattern = /^(?:[a-z0-9_.:@-]+[>#]|\[[^\]\r\n]+\])$/i
 
