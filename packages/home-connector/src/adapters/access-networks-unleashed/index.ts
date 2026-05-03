@@ -392,14 +392,13 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					lastAuthenticatedAt: new Date().toISOString(),
 					lastAuthError: null,
 				})
+				const latestAdoptedController =
+					getAdoptedAccessNetworksUnleashedController(storage, connectorId)
 				return {
-					config: getConfigStatus(
-						config,
-						getAdoptedAccessNetworksUnleashedController(storage, connectorId),
-					),
-					controller: toAccessNetworksUnleashedPublicController(
-						requireAdoptedController(),
-					),
+					config: getConfigStatus(config, latestAdoptedController),
+					controller: latestAdoptedController
+						? toAccessNetworksUnleashedPublicController(latestAdoptedController)
+						: null,
 					controllers: listControllers(),
 					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
 					error: null,
@@ -418,14 +417,13 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					lastAuthenticatedAt: adoptedController.lastAuthenticatedAt,
 					lastAuthError: message,
 				})
+				const latestAdoptedController =
+					getAdoptedAccessNetworksUnleashedController(storage, connectorId)
 				return {
-					config: getConfigStatus(
-						config,
-						getAdoptedAccessNetworksUnleashedController(storage, connectorId),
-					),
-					controller: toAccessNetworksUnleashedPublicController(
-						requireAdoptedController(),
-					),
+					config: getConfigStatus(config, latestAdoptedController),
+					controller: latestAdoptedController
+						? toAccessNetworksUnleashedPublicController(latestAdoptedController)
+						: null,
 					controllers: listControllers(),
 					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
 					error: message,

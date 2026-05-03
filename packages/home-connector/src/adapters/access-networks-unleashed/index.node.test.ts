@@ -341,3 +341,118 @@ test('access networks unleashed status errors preserve last successful authentic
 		storage.close()
 	}
 })
+
+test('access networks unleashed status tolerates concurrent controller removal', async () => {
+	const previousFetch = globalThis.fetch
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const adapter = createAccessNetworksUnleashedAdapter({
+		config,
+		state,
+		storage,
+	})
+	let removeControllerBeforeStatusReturn = false
+
+	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+		const href = String(url)
+		if (href === 'https://192.168.10.60/') {
+			return response(null, {
+				status: 302,
+				headers: { Location: '/admin/wsg/login.jsp' },
+				url: 'https://192.168.10.60/',
+			})
+		}
+		if (init?.method === 'HEAD' && href === 'https://192.168.10.60') {
+			return response(null, {
+				status: 302,
+				headers: { Location: '/admin/wsg/login.jsp' },
+				url: 'https://192.168.10.60/',
+			})
+		}
+		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+			return response(null, {
+				status: 200,
+				url: 'https://192.168.10.60/admin/wsg/login.jsp',
+			})
+		}
+		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+			return response(null, {
+				status: 302,
+				headers: {
+					HTTP_X_CSRF_TOKEN: 'csrf-token',
+					'set-cookie': 'JSESSIONID=abc; Path=/admin',
+				},
+				url: href,
+			})
+		}
+		if (href.endsWith('/_cmdstat.jsp')) {
+			const body = String(init?.body ?? '')
+			if (body.includes("comp='system'")) {
+				if (removeControllerBeforeStatusReturn) {
+					adapter.removeController({
+						controllerId: '192.168.10.60',
+					})
+					removeControllerBeforeStatusReturn = false
+				}
+				return response(
+					'<ajax-response><system name="Access Networks Unleashed" version="200.15.6.212"/></ajax-response>',
+				)
+			}
+			if (body.includes('<client LEVEL=')) {
+				return response(
+					'<ajax-response><client mac="aa:bb:cc:dd:ee:ff" hostname="phone" wlan="Main"/></ajax-response>',
+				)
+			}
+			if (body.includes('<ap LEVEL=')) {
+				return response(
+					'<ajax-response><ap id="1" mac="24:79:de:ad:be:ef" name="Kitchen AP"/></ajax-response>',
+				)
+			}
+			if (body.includes('<xevent />')) {
+				return response(
+					'<ajax-response><xevent message="client associated"/></ajax-response>',
+				)
+			}
+		}
+		if (href.endsWith('/_conf.jsp')) {
+			const body = String(init?.body ?? '')
+			if (body.includes("comp='wlansvc-list'")) {
+				return response(
+					'<ajax-response><wlansvc-list><wlansvc id="1" name="Main" ssid="Main"/></wlansvc-list></ajax-response>',
+				)
+			}
+			return response('<ajax-response><xmsg status="0"/></ajax-response>')
+		}
+		throw new Error(`Unexpected fetch ${href}`)
+	})
+	globalThis.fetch = fetchMock as typeof fetch
+
+	try {
+		await adapter.scan()
+		adapter.adoptController({
+			controllerId: '192.168.10.60',
+		})
+		adapter.setCredentials({
+			controllerId: '192.168.10.60',
+			username: 'admin',
+			password: 'secret-password',
+		})
+
+		removeControllerBeforeStatusReturn = true
+		const status = await adapter.getStatus()
+		expect(status.controller).toBeNull()
+		expect(status.config).toMatchObject({
+			configured: false,
+			hasAdoptedController: false,
+			hasStoredCredentials: false,
+			missingRequirements: ['controller', 'credentials'],
+		})
+		expect(status.system).toMatchObject({
+			name: 'Access Networks Unleashed',
+		})
+	} finally {
+		globalThis.fetch = previousFetch
+		storage.close()
+	}
+})
