@@ -45,12 +45,26 @@ function createConfig() {
 	using _env = createTemporaryEnv({
 		HOME_CONNECTOR_ID: 'default',
 		WORKER_BASE_URL: 'http://localhost:3742',
-		ACCESS_NETWORKS_UNLEASHED_HOST: 'https://unleashed.local',
-		ACCESS_NETWORKS_UNLEASHED_USERNAME: 'admin',
-		ACCESS_NETWORKS_UNLEASHED_PASSWORD: 'password',
+		ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.10.88/32',
 		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: 'true',
 	})
 	return loadHomeConnectorConfig()
+}
+
+function createController() {
+	return {
+		controllerId: 'unleashed-1',
+		name: 'Access Networks Unleashed',
+		host: 'https://unleashed.local',
+		loginUrl: 'https://unleashed.local/admin/wsg/login.jsp',
+		lastSeenAt: '2026-05-03T19:00:00.000Z',
+		rawDiscovery: null,
+		adopted: true,
+		username: 'admin',
+		password: 'password',
+		lastAuthenticatedAt: null,
+		lastAuthError: null,
+	}
 }
 
 afterEach(() => {
@@ -106,9 +120,10 @@ test('unblock client preserves unrelated system ACL XML', async () => {
 	})
 	globalThis.fetch = fetchMock as typeof fetch
 
-	await createAccessNetworksUnleashedAjaxClient({ config }).unblockClient(
-		'aa:bb:cc:dd:ee:ff',
-	)
+	await createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	}).unblockClient('aa:bb:cc:dd:ee:ff')
 
 	const updateBody = fetchMock.mock.calls
 		.map((call) => String(call[1]?.body ?? ''))
@@ -154,7 +169,10 @@ test('post XML redirects reset session and stop after one reauthentication', asy
 	globalThis.fetch = fetchMock as typeof fetch
 
 	await expect(
-		createAccessNetworksUnleashedAjaxClient({ config }).listWlans(),
+		createAccessNetworksUnleashedAjaxClient({
+			config,
+			controller: createController(),
+		}).listWlans(),
 	).rejects.toThrow('redirected after reauthentication')
 })
 
@@ -193,9 +211,10 @@ test('mutating post XML does not retry after session redirect', async () => {
 	globalThis.fetch = fetchMock as typeof fetch
 
 	await expect(
-		createAccessNetworksUnleashedAjaxClient({ config }).restartAccessPoint(
-			'24:79:de:ad:be:ef',
-		),
+		createAccessNetworksUnleashedAjaxClient({
+			config,
+			controller: createController(),
+		}).restartAccessPoint('24:79:de:ad:be:ef'),
 	).rejects.toThrow('redirected during a command')
 
 	const loginAttempts = fetchMock.mock.calls.filter((call) =>
@@ -240,7 +259,10 @@ test('concurrent reads share one login flow', async () => {
 		throw new Error(`Unexpected fetch ${href}`)
 	})
 	globalThis.fetch = fetchMock as typeof fetch
-	const client = createAccessNetworksUnleashedAjaxClient({ config })
+	const client = createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	})
 
 	await Promise.all([client.listClients(), client.listClients()])
 
@@ -293,7 +315,10 @@ test('failed login does not leave a partial session', async () => {
 		throw new Error(`Unexpected fetch ${href}`)
 	})
 	globalThis.fetch = fetchMock as typeof fetch
-	const client = createAccessNetworksUnleashedAjaxClient({ config })
+	const client = createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	})
 
 	await expect(client.listClients()).rejects.toThrow('login was rejected')
 	await expect(client.listClients()).resolves.toEqual([

@@ -1,4 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
 import { type createAccessNetworksUnleashedAdapter } from '../adapters/access-networks-unleashed/index.ts'
 import {
@@ -107,18 +108,169 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 }) {
 	const { registerTool, accessNetworksUnleashed } = input
 
+	registerTool(
+		{
+			name: 'access_networks_unleashed_scan_controllers',
+			title: 'Scan Access Networks Unleashed Controllers',
+			description:
+				'Probe local-network scan CIDRs for Access Networks / RUCKUS Unleashed controllers, persist discovered controllers locally, and return discovery diagnostics.',
+			inputSchema: {},
+		},
+		async () => {
+			const controllers = await accessNetworksUnleashed.scan()
+			return structuredTextResult(
+				controllers.length === 0
+					? 'No Access Networks Unleashed controllers were discovered.'
+					: `Discovered ${controllers.length} Access Networks Unleashed controller(s).`,
+				{
+					controllers,
+					diagnostics: accessNetworksUnleashed.getDiscoveryDiagnostics(),
+				},
+			)
+		},
+	)
+
+	registerUnleashedReadTool({
+		registerTool,
+		name: 'access_networks_unleashed_list_controllers',
+		title: 'List Access Networks Unleashed Controllers',
+		description:
+			'List locally persisted Access Networks Unleashed controllers, whether one is adopted, and whether credentials are stored.',
+		handler: async () => {
+			const controllers = accessNetworksUnleashed.listControllers()
+			return {
+				text:
+					controllers.length === 0
+						? 'No Access Networks Unleashed controllers are currently known.'
+						: controllers
+								.map(
+									(controller) =>
+										`- ${controller.name} (${controller.controllerId}) adopted=${String(controller.adopted)} credentials=${String(controller.hasStoredCredentials)}`,
+								)
+								.join('\n'),
+				structuredContent: {
+					controllers,
+				},
+			}
+		},
+	})
+
+	const controllerIdSchema = buildToolInputSchema({
+		controllerId: z.string().min(1),
+	})
+
+	registerTool(
+		{
+			name: 'access_networks_unleashed_adopt_controller',
+			title: 'Adopt Access Networks Unleashed Controller',
+			description:
+				'Mark a discovered Access Networks Unleashed controller as the adopted controller for live reads and write operations.',
+			inputSchema: controllerIdSchema.inputSchema,
+			sdkInputSchema: controllerIdSchema.sdkInputSchema,
+		},
+		async (args) => {
+			const controller = accessNetworksUnleashed.adoptController({
+				controllerId: String(args['controllerId'] ?? ''),
+			})
+			return structuredTextResult(
+				`Adopted Access Networks Unleashed controller ${controller.name}.`,
+				{
+					controller,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'access_networks_unleashed_remove_controller',
+			title: 'Remove Access Networks Unleashed Controller',
+			description:
+				'Remove a locally persisted Access Networks Unleashed controller and any stored credentials.',
+			inputSchema: controllerIdSchema.inputSchema,
+			sdkInputSchema: controllerIdSchema.sdkInputSchema,
+		},
+		async (args) => {
+			const controller = accessNetworksUnleashed.removeController({
+				controllerId: String(args['controllerId'] ?? ''),
+			})
+			return structuredTextResult(
+				`Removed Access Networks Unleashed controller ${controller.name}.`,
+				{
+					controller,
+				},
+			)
+		},
+	)
+
+	const credentialsSchema = buildToolInputSchema({
+		controllerId: z.string().min(1),
+		username: z.string().min(1),
+		password: z.string().min(1),
+	})
+
+	registerTool(
+		{
+			name: 'access_networks_unleashed_set_credentials',
+			title: 'Set Access Networks Unleashed Credentials',
+			description:
+				'Store username/password locally for an Access Networks Unleashed controller so the connector can authenticate later.',
+			inputSchema: markSecretInputFields(credentialsSchema.inputSchema, [
+				'username',
+				'password',
+			]) as Record<string, unknown>,
+			sdkInputSchema: credentialsSchema.sdkInputSchema,
+		},
+		async (args) => {
+			const controller = accessNetworksUnleashed.setCredentials({
+				controllerId: String(args['controllerId'] ?? ''),
+				username: String(args['username'] ?? ''),
+				password: String(args['password'] ?? ''),
+			})
+			return structuredTextResult(
+				`Stored Access Networks Unleashed credentials for ${controller.name}.`,
+				{
+					controller,
+				},
+			)
+		},
+	)
+
+	registerTool(
+		{
+			name: 'access_networks_unleashed_authenticate_controller',
+			title: 'Authenticate Access Networks Unleashed Controller',
+			description:
+				'Attempt an Access Networks Unleashed login using stored credentials for the adopted controller or the specified controller.',
+			...buildToolInputSchema({
+				controllerId: z.string().min(1).optional(),
+			}),
+		},
+		async (args) => {
+			const controller = await accessNetworksUnleashed.authenticate(
+				args['controllerId'] == null ? undefined : String(args['controllerId']),
+			)
+			return structuredTextResult(
+				`Authenticated Access Networks Unleashed controller ${controller.name}.`,
+				{
+					controller,
+				},
+			)
+		},
+	)
+
 	registerUnleashedReadTool({
 		registerTool,
 		name: 'access_networks_unleashed_get_status',
 		title: 'Get Access Networks Unleashed Status',
 		description:
-			'Read-only Access Networks Unleashed status summary including configuration readiness, system info, access points, WLANs, active clients, and recent events.',
+			'Read-only Access Networks Unleashed status summary including adopted-controller readiness, discovery diagnostics, system info, access points, WLANs, active clients, and recent events.',
 		handler: async () => {
 			const status = await accessNetworksUnleashed.getStatus()
 			return {
 				text: status.config.configured
 					? `Access Networks Unleashed status loaded with ${status.aps.length} AP(s), ${status.wlans.length} WLAN(s), and ${status.clients.length} active client(s).`
-					: `Access Networks Unleashed is not fully configured: ${status.config.missingFields.join(', ')}.`,
+					: `Access Networks Unleashed is not fully configured: ${status.config.missingRequirements.join(', ')}.`,
 				structuredContent: status,
 			}
 		},

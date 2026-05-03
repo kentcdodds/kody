@@ -2,6 +2,7 @@ import { Agent } from 'undici'
 import { type HomeConnectorConfig } from '../../config.ts'
 import {
 	type AccessNetworksUnleashedClient,
+	type AccessNetworksUnleashedPersistedController,
 	type AccessNetworksUnleashedRecord,
 } from './types.ts'
 
@@ -217,6 +218,7 @@ async function fetchWithTimeout(input: {
 
 export function createAccessNetworksUnleashedAjaxClient(input: {
 	config: HomeConnectorConfig
+	controller: AccessNetworksUnleashedPersistedController
 }) {
 	const { config } = input
 	const state: SessionState = {
@@ -229,12 +231,18 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 	let loginPromise: Promise<void> | null = null
 
 	function requireConfig() {
-		const host = config.accessNetworksUnleashedHost?.trim()
-		const username = config.accessNetworksUnleashedUsername?.trim()
-		const password = config.accessNetworksUnleashedPassword?.trim()
-		if (!host || !username || !password) {
+		const host = input.controller.host.trim()
+		const username = input.controller.username
+		const password = input.controller.password
+		if (
+			!host ||
+			username == null ||
+			password == null ||
+			username.length === 0 ||
+			password.length === 0
+		) {
 			throw new Error(
-				'Access Networks Unleashed is not configured. Set ACCESS_NETWORKS_UNLEASHED_HOST, ACCESS_NETWORKS_UNLEASHED_USERNAME, and ACCESS_NETWORKS_UNLEASHED_PASSWORD on the home connector.',
+				'Access Networks Unleashed requires an adopted controller with stored credentials. Run access_networks_unleashed_scan_controllers, access_networks_unleashed_adopt_controller, then access_networks_unleashed_set_credentials.',
 			)
 		}
 		return {

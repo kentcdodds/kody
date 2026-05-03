@@ -201,6 +201,24 @@ Authoring guide for outbound WebSocket services:
   value such as `http://lutron.mock.local/discovery`. Live discovery uses a
   single pure-JS mDNS path that works across macOS and Linux/container
   environments.
+- `ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS` — optional connector env var.
+  Comma-separated CIDR list for Access Networks / RUCKUS Unleashed subnet
+  scanning. Each entry must be `a.b.c.0/24` (scan `.1`–`.254`) or `a.b.c.d/32`
+  (single host). When unset, the connector derives private `/24` networks from
+  local IPv4 interfaces and probes common Unleashed HTTPS admin endpoints
+  directly. Example:
+  `ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS=192.168.1.0/24,10.0.0.50/32`. Broader
+  private interface CIDRs like `/23` are automatically split into multiple `/24`
+  scan blocks, but autoscan skips any derived interface range that would expand
+  past 16 `/24` blocks. On larger LANs, set
+  `ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS` explicitly to cover the desired ranges
+  and override that cap.
+- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS` — optional connector env var.
+  Set to `true` when the controller uses a self-signed or otherwise untrusted
+  LAN certificate. When unset, the connector requires normal TLS verification.
+- `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` — optional connector env var.
+  Default timeout for Access Networks Unleashed HTTPS probes and AJAX requests
+  in milliseconds. Defaults to `8000`.
 - `VENSTAR_SCAN_CIDRS` — optional connector env var. Comma-separated CIDR list
   for Venstar subnet scanning. Each entry must be `a.b.c.0/24` (scan
   `.1`–`.254`) or `a.b.c.d/32` (single host). When unset, the connector derives
@@ -215,9 +233,10 @@ Authoring guide for outbound WebSocket services:
   `~/.kody/home-connector`.
 - `HOME_CONNECTOR_DB_PATH` — optional connector env var. Full path to the local
   SQLite file used by the home connector to persist device integration state
-  such as Samsung TV metadata/tokens, Lutron processor credentials, Bond bridge
-  state, Sonos players, and Venstar managed thermostats across restarts.
-  Overrides the derived `HOME_CONNECTOR_DATA_PATH` location.
+  such as Samsung TV metadata/tokens, Lutron processor credentials, Access
+  Networks Unleashed controller inventory/credentials, Bond bridge state, Sonos
+  players, and Venstar managed thermostats across restarts. Overrides the
+  derived `HOME_CONNECTOR_DATA_PATH` location.
 - `ISLAND_ROUTER_HOST` — optional connector env var. Hostname or IP address of
   an Island router reachable from the home-connector host over SSH.
 - `ISLAND_ROUTER_PORT` — optional connector env var. SSH port for the Island

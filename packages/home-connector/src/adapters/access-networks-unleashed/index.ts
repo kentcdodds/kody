@@ -1,11 +1,26 @@
 import { type HomeConnectorConfig } from '../../config.ts'
+import { type HomeConnectorState } from '../../state.ts'
+import { type HomeConnectorStorage } from '../../storage/index.ts'
 import {
 	createAccessNetworksUnleashedAjaxClient,
 	normalizeAccessNetworksUnleashedMacAddress,
 } from './client.ts'
+import { scanAccessNetworksUnleashedControllers } from './discovery.ts'
 import {
-	type AccessNetworksUnleashedClient,
+	adoptAccessNetworksUnleashedController,
+	getAccessNetworksUnleashedController,
+	getAdoptedAccessNetworksUnleashedController,
+	listAccessNetworksUnleashedPublicControllers,
+	removeAccessNetworksUnleashedController,
+	saveAccessNetworksUnleashedCredentials,
+	toAccessNetworksUnleashedPublicController,
+	updateAccessNetworksUnleashedAuthStatus,
+	upsertDiscoveredAccessNetworksUnleashedControllers,
+} from './repository.ts'
+import {
 	type AccessNetworksUnleashedConfigStatus,
+	type AccessNetworksUnleashedDiscoveredController,
+	type AccessNetworksUnleashedPersistedController,
 	type AccessNetworksUnleashedRecord,
 	type AccessNetworksUnleashedSystemStatus,
 	type AccessNetworksUnleashedWriteOperationId,
@@ -16,6 +31,16 @@ type WriteOperationRequest = {
 	acknowledgeHighRisk: boolean
 	reason: string
 	confirmation: string
+}
+
+type ControllerCredentialsRequest = {
+	controllerId: string
+	username: string
+	password: string
+}
+
+type ControllerSelectionRequest = {
+	controllerId: string
 }
 
 type ClientWriteRequest = WriteOperationRequest & {
@@ -51,33 +76,25 @@ const accessNetworksUnleashedWriteAcknowledgements = {
 
 function getConfigStatus(
 	config: HomeConnectorConfig,
+	controller: AccessNetworksUnleashedPersistedController | null,
 ): AccessNetworksUnleashedConfigStatus {
-	const missingFields: Array<string> = []
-	if (!config.accessNetworksUnleashedHost) {
-		missingFields.push('ACCESS_NETWORKS_UNLEASHED_HOST')
+	const missingRequirements: Array<'controller' | 'credentials'> = []
+	if (!controller) {
+		missingRequirements.push('controller')
 	}
-	if (!config.accessNetworksUnleashedUsername) {
-		missingFields.push('ACCESS_NETWORKS_UNLEASHED_USERNAME')
-	}
-	if (!config.accessNetworksUnleashedPassword) {
-		missingFields.push('ACCESS_NETWORKS_UNLEASHED_PASSWORD')
+	if (!controller?.username || !controller?.password) {
+		missingRequirements.push('credentials')
 	}
 	return {
-		configured: missingFields.length === 0,
-		host: config.accessNetworksUnleashedHost,
-		usernameConfigured: Boolean(config.accessNetworksUnleashedUsername),
-		passwordConfigured: Boolean(config.accessNetworksUnleashedPassword),
+		configured: missingRequirements.length === 0,
+		adoptedControllerId: controller?.controllerId ?? null,
+		host: controller?.host ?? null,
+		hasAdoptedController: Boolean(controller),
+		hasStoredCredentials: Boolean(controller?.username && controller?.password),
 		allowInsecureTls: config.accessNetworksUnleashedAllowInsecureTls,
-		missingFields,
-	}
-}
-
-function assertConfigured(config: HomeConnectorConfig) {
-	const status = getConfigStatus(config)
-	if (!status.configured) {
-		throw new Error(
-			`Access Networks Unleashed is not configured. Missing: ${status.missingFields.join(', ')}.`,
-		)
+		missingRequirements,
+		lastAuthenticatedAt: controller?.lastAuthenticatedAt ?? null,
+		lastAuthError: controller?.lastAuthError ?? null,
 	}
 }
 
@@ -128,27 +145,215 @@ function writeResult(input: {
 
 export function createAccessNetworksUnleashedAdapter(input: {
 	config: HomeConnectorConfig
-	client?: AccessNetworksUnleashedClient
+	state: HomeConnectorState
+	storage: HomeConnectorStorage
+	clientFactory?: (
+		controller: AccessNetworksUnleashedPersistedController,
+	) => AccessNetworksUnleashedClient
+	scanControllers?: () => Promise<{
+		controllers: Array<AccessNetworksUnleashedDiscoveredController>
+		diagnostics: HomeConnectorState['accessNetworksUnleashedDiscoveryDiagnostics']
+	}>
 }) {
-	const { config } = input
-	const client =
-		input.client ?? createAccessNetworksUnleashedAjaxClient({ config })
+	const { config, state, storage } = input
+	const connectorId = config.homeConnectorId
 
 	async function read<T>(operation: () => Promise<T>) {
-		assertConfigured(config)
+		requireControllerWithCredentials()
 		return await operation()
+	}
+
+	function listControllers() {
+		return listAccessNetworksUnleashedPublicControllers(storage, connectorId)
+	}
+
+	function requireController(controllerId: string) {
+		const controller = getAccessNetworksUnleashedController(
+			storage,
+			connectorId,
+			controllerId,
+		)
+		if (!controller) {
+			throw new Error(
+				`Access Networks Unleashed controller "${controllerId}" was not found.`,
+			)
+		}
+		return controller
+	}
+
+	function requireAdoptedController() {
+		const controller = getAdoptedAccessNetworksUnleashedController(
+			storage,
+			connectorId,
+		)
+		if (!controller) {
+			throw new Error(
+				'No Access Networks Unleashed controller is adopted yet. Run access_networks_unleashed_scan_controllers, then access_networks_unleashed_adopt_controller.',
+			)
+		}
+		return controller
+	}
+
+	function requireControllerWithCredentials() {
+		const controller = requireAdoptedController()
+		if (!controller.username || !controller.password) {
+			throw new Error(
+				'The adopted Access Networks Unleashed controller is missing stored credentials. Run access_networks_unleashed_set_credentials first.',
+			)
+		}
+		return controller
+	}
+
+	let cachedClientKey: string | null = null
+	let cachedClient: AccessNetworksUnleashedClient | null = null
+
+	function createClient() {
+		const controller = requireControllerWithCredentials()
+		const cacheKey = JSON.stringify({
+			controllerId: controller.controllerId,
+			host: controller.host,
+			username: controller.username,
+			password: controller.password,
+		})
+		if (cachedClient && cachedClientKey === cacheKey) {
+			return cachedClient
+		}
+		cachedClient =
+			input.clientFactory?.(controller) ??
+			createAccessNetworksUnleashedAjaxClient({
+				config,
+				controller,
+			})
+		cachedClientKey = cacheKey
+		return cachedClient
 	}
 
 	return {
 		writeAcknowledgements: accessNetworksUnleashedWriteAcknowledgements,
 		getConfigStatus() {
-			return getConfigStatus(config)
+			return getConfigStatus(
+				config,
+				getAdoptedAccessNetworksUnleashedController(storage, connectorId),
+			)
+		},
+		getDiscoveryDiagnostics() {
+			return state.accessNetworksUnleashedDiscoveryDiagnostics
+		},
+		listControllers,
+		async scan() {
+			if (input.scanControllers) {
+				const result = await input.scanControllers()
+				state.accessNetworksUnleashedDiscoveryDiagnostics = result.diagnostics
+				upsertDiscoveredAccessNetworksUnleashedControllers(
+					storage,
+					connectorId,
+					result.controllers,
+				)
+				return listControllers()
+			}
+			const result = await scanAccessNetworksUnleashedControllers(state, config)
+			upsertDiscoveredAccessNetworksUnleashedControllers(
+				storage,
+				connectorId,
+				result.controllers,
+			)
+			return listControllers()
+		},
+		adoptController(request: ControllerSelectionRequest) {
+			const controller = requireController(request.controllerId)
+			adoptAccessNetworksUnleashedController(
+				storage,
+				connectorId,
+				controller.controllerId,
+			)
+			cachedClient = null
+			cachedClientKey = null
+			return toAccessNetworksUnleashedPublicController({
+				...controller,
+				adopted: true,
+			})
+		},
+		removeController(request: ControllerSelectionRequest) {
+			const controller = requireController(request.controllerId)
+			removeAccessNetworksUnleashedController({
+				storage,
+				connectorId,
+				controllerId: controller.controllerId,
+			})
+			cachedClient = null
+			cachedClientKey = null
+			return toAccessNetworksUnleashedPublicController(controller)
+		},
+		setCredentials(request: ControllerCredentialsRequest) {
+			requireController(request.controllerId)
+			const username = assertNonEmpty(request.username, 'username')
+			const password = assertNonEmpty(request.password, 'password')
+			saveAccessNetworksUnleashedCredentials({
+				storage,
+				connectorId,
+				controllerId: request.controllerId,
+				username,
+				password,
+			})
+			cachedClient = null
+			cachedClientKey = null
+			return toAccessNetworksUnleashedPublicController(
+				requireController(request.controllerId),
+			)
+		},
+		async authenticate(controllerId?: string) {
+			const controller = controllerId
+				? requireController(controllerId)
+				: requireAdoptedController()
+			if (!controller.username || !controller.password) {
+				throw new Error(
+					`Access Networks Unleashed controller "${controller.controllerId}" is missing stored credentials. Run access_networks_unleashed_set_credentials first.`,
+				)
+			}
+			try {
+				cachedClient = null
+				cachedClientKey = null
+				await (
+					input.clientFactory?.(controller) ??
+					createAccessNetworksUnleashedAjaxClient({
+						config,
+						controller,
+					})
+				).getSystemInfo()
+				updateAccessNetworksUnleashedAuthStatus({
+					storage,
+					connectorId,
+					controllerId: controller.controllerId,
+					lastAuthenticatedAt: new Date().toISOString(),
+					lastAuthError: null,
+				})
+			} catch (error) {
+				updateAccessNetworksUnleashedAuthStatus({
+					storage,
+					connectorId,
+					controllerId: controller.controllerId,
+					lastAuthenticatedAt: controller.lastAuthenticatedAt,
+					lastAuthError: error instanceof Error ? error.message : String(error),
+				})
+				throw error
+			}
+			return toAccessNetworksUnleashedPublicController(
+				requireController(controller.controllerId),
+			)
 		},
 		async getStatus(): Promise<AccessNetworksUnleashedSystemStatus> {
-			const configStatus = getConfigStatus(config)
-			if (!configStatus.configured) {
+			const adoptedController = getAdoptedAccessNetworksUnleashedController(
+				storage,
+				connectorId,
+			)
+			const configStatus = getConfigStatus(config, adoptedController)
+			if (!configStatus.hasAdoptedController) {
 				return {
 					config: configStatus,
+					controller: null,
+					controllers: listControllers(),
+					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
+					error: null,
 					system: {},
 					aps: [],
 					wlans: [],
@@ -156,39 +361,98 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					events: [],
 				}
 			}
-			const [system, aps, wlans, clients, events] = await Promise.all([
-				client.getSystemInfo(),
-				client.listAccessPoints(),
-				client.listWlans(),
-				client.listClients(),
-				client.listEvents(25),
-			])
-			return {
-				config: configStatus,
-				system,
-				aps,
-				wlans,
-				clients,
-				events,
+			if (!configStatus.hasStoredCredentials) {
+				return {
+					config: configStatus,
+					controller:
+						toAccessNetworksUnleashedPublicController(adoptedController),
+					controllers: listControllers(),
+					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
+					error: null,
+					system: {},
+					aps: [],
+					wlans: [],
+					clients: [],
+					events: [],
+				}
+			}
+			try {
+				const client = createClient()
+				const [system, aps, wlans, clients, events] = await Promise.all([
+					client.getSystemInfo(),
+					client.listAccessPoints(),
+					client.listWlans(),
+					client.listClients(),
+					client.listEvents(25),
+				])
+				updateAccessNetworksUnleashedAuthStatus({
+					storage,
+					connectorId,
+					controllerId: adoptedController.controllerId,
+					lastAuthenticatedAt: new Date().toISOString(),
+					lastAuthError: null,
+				})
+				const latestAdoptedController =
+					getAdoptedAccessNetworksUnleashedController(storage, connectorId)
+				return {
+					config: getConfigStatus(config, latestAdoptedController),
+					controller: latestAdoptedController
+						? toAccessNetworksUnleashedPublicController(latestAdoptedController)
+						: null,
+					controllers: listControllers(),
+					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
+					error: null,
+					system,
+					aps,
+					wlans,
+					clients,
+					events,
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				updateAccessNetworksUnleashedAuthStatus({
+					storage,
+					connectorId,
+					controllerId: adoptedController.controllerId,
+					lastAuthenticatedAt: adoptedController.lastAuthenticatedAt,
+					lastAuthError: message,
+				})
+				const latestAdoptedController =
+					getAdoptedAccessNetworksUnleashedController(storage, connectorId)
+				return {
+					config: getConfigStatus(config, latestAdoptedController),
+					controller: latestAdoptedController
+						? toAccessNetworksUnleashedPublicController(latestAdoptedController)
+						: null,
+					controllers: listControllers(),
+					diagnostics: state.accessNetworksUnleashedDiscoveryDiagnostics,
+					error: message,
+					system: {},
+					aps: [],
+					wlans: [],
+					clients: [],
+					events: [],
+				}
 			}
 		},
 		async getSystemInfo(): Promise<AccessNetworksUnleashedRecord> {
-			return await read(() => client.getSystemInfo())
+			return await read(() => createClient().getSystemInfo())
 		},
 		async listAccessPoints() {
-			return await read(() => client.listAccessPoints())
+			return await read(() => createClient().listAccessPoints())
 		},
 		async listClients() {
-			return await read(() => client.listClients())
+			return await read(() => createClient().listClients())
 		},
 		async listWlans() {
-			return await read(() => client.listWlans())
+			return await read(() => createClient().listWlans())
 		},
 		async listEvents(limit?: number) {
-			return await read(() => client.listEvents(normalizeLimit(limit, 50, 300)))
+			return await read(() =>
+				createClient().listEvents(normalizeLimit(limit, 50, 300)),
+			)
 		},
 		async blockClient(request: ClientWriteRequest) {
-			assertConfigured(config)
 			const reason = assertWriteAllowed(
 				request,
 				accessNetworksUnleashedWriteAcknowledgements.blockClient,
@@ -196,7 +460,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
 				request.macAddress,
 			)
-			await read(() => client.blockClient(macAddress))
+			await read(() => createClient().blockClient(macAddress))
 			return writeResult({
 				operation: 'block-client',
 				target: macAddress,
@@ -204,7 +468,6 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			})
 		},
 		async unblockClient(request: ClientWriteRequest) {
-			assertConfigured(config)
 			const reason = assertWriteAllowed(
 				request,
 				accessNetworksUnleashedWriteAcknowledgements.unblockClient,
@@ -212,7 +475,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
 				request.macAddress,
 			)
-			await read(() => client.unblockClient(macAddress))
+			await read(() => createClient().unblockClient(macAddress))
 			return writeResult({
 				operation: 'unblock-client',
 				target: macAddress,
@@ -220,13 +483,12 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			})
 		},
 		async enableWlan(request: WlanWriteRequest) {
-			assertConfigured(config)
 			const reason = assertWriteAllowed(
 				request,
 				accessNetworksUnleashedWriteAcknowledgements.enableWlan,
 			)
 			const name = assertNonEmpty(request.name, 'name')
-			await read(() => client.setWlanEnabled(name, true))
+			await read(() => createClient().setWlanEnabled(name, true))
 			return writeResult({
 				operation: 'enable-wlan',
 				target: name,
@@ -234,13 +496,12 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			})
 		},
 		async disableWlan(request: WlanWriteRequest) {
-			assertConfigured(config)
 			const reason = assertWriteAllowed(
 				request,
 				accessNetworksUnleashedWriteAcknowledgements.disableWlan,
 			)
 			const name = assertNonEmpty(request.name, 'name')
-			await read(() => client.setWlanEnabled(name, false))
+			await read(() => createClient().setWlanEnabled(name, false))
 			return writeResult({
 				operation: 'disable-wlan',
 				target: name,
@@ -248,7 +509,6 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			})
 		},
 		async restartAccessPoint(request: AccessPointWriteRequest) {
-			assertConfigured(config)
 			const reason = assertWriteAllowed(
 				request,
 				accessNetworksUnleashedWriteAcknowledgements.restartAccessPoint,
@@ -256,7 +516,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
 				request.macAddress,
 			)
-			await read(() => client.restartAccessPoint(macAddress))
+			await read(() => createClient().restartAccessPoint(macAddress))
 			return writeResult({
 				operation: 'restart-ap',
 				target: macAddress,
@@ -264,7 +524,6 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			})
 		},
 		async setAccessPointLeds(request: SetAccessPointLedsRequest) {
-			assertConfigured(config)
 			const reason = assertWriteAllowed(
 				request,
 				accessNetworksUnleashedWriteAcknowledgements.setAccessPointLeds,
@@ -272,7 +531,9 @@ export function createAccessNetworksUnleashedAdapter(input: {
 			const macAddress = normalizeAccessNetworksUnleashedMacAddress(
 				request.macAddress,
 			)
-			await read(() => client.setAccessPointLeds(macAddress, request.enabled))
+			await read(() =>
+				createClient().setAccessPointLeds(macAddress, request.enabled),
+			)
 			return writeResult({
 				operation: 'set-ap-leds',
 				target: macAddress,

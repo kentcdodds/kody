@@ -16,6 +16,8 @@ export const routes = route({
 	samsungTvSetup: '/samsung-tv/setup',
 	bondStatus: '/bond/status',
 	bondSetup: '/bond/setup',
+	accessNetworksUnleashedStatus: '/access-networks-unleashed/status',
+	accessNetworksUnleashedSetup: '/access-networks-unleashed/setup',
 	jellyfishStatus: '/jellyfish/status',
 	jellyfishSetup: '/jellyfish/setup',
 	venstarStatus: '/venstar/status',

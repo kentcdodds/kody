@@ -1,5 +1,9 @@
 import { createRouter } from 'remix/fetch-router'
 import {
+	createAccessNetworksUnleashedSetupHandler,
+	createAccessNetworksUnleashedStatusHandler,
+} from './access-networks-unleashed-handlers.ts'
+import {
 	createHealthHandler,
 	createLutronSetupHandler,
 	createLutronStatusHandler,
@@ -31,6 +35,7 @@ import {
 	createVenstarStatusHandler,
 } from './venstar-handlers.ts'
 import { routes } from './routes.ts'
+import { type createAccessNetworksUnleashedAdapter } from '../src/adapters/access-networks-unleashed/index.ts'
 import { type createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { type createBondAdapter } from '../src/adapters/bond/index.ts'
 import { type createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
@@ -48,6 +53,7 @@ export function createHomeConnectorRouter(
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>,
 	sonos: ReturnType<typeof createSonosAdapter>,
 	bond: ReturnType<typeof createBondAdapter>,
+	accessNetworksUnleashed: ReturnType<typeof createAccessNetworksUnleashedAdapter>,
 	islandRouter: ReturnType<typeof createIslandRouterAdapter>,
 	jellyfish: ReturnType<typeof createJellyfishAdapter>,
 	venstar: ReturnType<typeof createVenstarAdapter>,
@@ -61,6 +67,7 @@ export function createHomeConnectorRouter(
 			home: createDashboardHandler({
 				state,
 				config,
+				accessNetworksUnleashed,
 				lutron,
 				samsungTv,
 				sonos,
@@ -72,6 +79,7 @@ export function createHomeConnectorRouter(
 			systemStatus: createSystemStatusHandler({
 				state,
 				config,
+				accessNetworksUnleashed,
 				lutron,
 				samsungTv,
 				sonos,
@@ -83,6 +91,7 @@ export function createHomeConnectorRouter(
 			diagnostics: createDiagnosticsHandler({
 				state,
 				config,
+				accessNetworksUnleashed,
 				lutron,
 				samsungTv,
 				sonos,
@@ -94,6 +103,7 @@ export function createHomeConnectorRouter(
 			islandRouterStatus: createIslandRouterStatusHandler({
 				state,
 				config,
+				accessNetworksUnleashed,
 				lutron,
 				samsungTv,
 				sonos,
@@ -103,6 +113,14 @@ export function createHomeConnectorRouter(
 				venstar,
 			}),
 			health: createHealthHandler(state),
+			accessNetworksUnleashedStatus: createAccessNetworksUnleashedStatusHandler(
+				state,
+				accessNetworksUnleashed,
+			),
+			accessNetworksUnleashedSetup: createAccessNetworksUnleashedSetupHandler(
+				state,
+				accessNetworksUnleashed,
+			),
 			lutronStatus: createLutronStatusHandler(state, lutron),
 			lutronSetup: createLutronSetupHandler(state, lutron),
 			rokuStatus: createRokuStatusHandler(state, config),

@@ -4,11 +4,13 @@ import path from 'node:path'
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../mocks/test-server.ts'
 import { createBondAdapter } from '../src/adapters/bond/index.ts'
+import { createAccessNetworksUnleashedAdapter } from '../src/adapters/access-networks-unleashed/index.ts'
 import { createIslandRouterAdapter } from '../src/adapters/island-router/index.ts'
 import { createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
 import { createSonosAdapter } from '../src/adapters/sonos/index.ts'
+import { upsertDiscoveredAccessNetworksUnleashedControllers } from '../src/adapters/access-networks-unleashed/repository.ts'
 import { createVenstarAdapter } from '../src/adapters/venstar/index.ts'
 import { upsertVenstarThermostat } from '../src/adapters/venstar/repository.ts'
 import { type HomeConnectorConfig } from '../src/config.ts'
@@ -35,6 +37,11 @@ function createConfig(dataPath = '/tmp'): HomeConnectorConfig {
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
 		samsungTvDiscoveryUrl: 'http://samsung-tv.mock.local/discovery',
 		bondDiscoveryUrl: 'http://bond.mock.local/discovery',
+		accessNetworksUnleashedScanCidrs: ['192.168.1.10/32'],
+		accessNetworksUnleashedAllowInsecureTls: true,
+		accessNetworksUnleashedRequestTimeoutMs: 8_000,
+		bondRequestPaceMs: 0,
+		bondCircuitBreakerCooldownMs: 0,
 		jellyfishDiscoveryUrl: 'http://jellyfish.mock.local/discovery',
 		venstarScanCidrs: ['192.168.10.40/32', '192.168.10.41/32'],
 		jellyfishScanCidrs: ['192.168.10.93/32'],
@@ -77,6 +84,11 @@ function createAdapters(config: HomeConnectorConfig) {
 			state,
 			storage,
 		}),
+		accessNetworksUnleashed: createAccessNetworksUnleashedAdapter({
+			config,
+			state,
+			storage,
+		}),
 		islandRouter: createIslandRouterAdapter({
 			config,
 		}),
@@ -104,6 +116,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 		sonos,
 		samsungTv,
 		bond,
+		accessNetworksUnleashed,
 		islandRouter,
 		jellyfish,
 		venstar,
@@ -118,6 +131,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			accessNetworksUnleashed,
 			islandRouter,
 			jellyfish,
 			venstar,
@@ -150,6 +164,7 @@ test('venstar status scan shows discovered thermostats', async () => {
 		sonos,
 		samsungTv,
 		bond,
+		accessNetworksUnleashed,
 		islandRouter,
 		jellyfish,
 		venstar,
@@ -162,6 +177,7 @@ test('venstar status scan shows discovered thermostats', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			accessNetworksUnleashed,
 			islandRouter,
 			jellyfish,
 			venstar,
@@ -198,6 +214,7 @@ test('venstar status can adopt a discovered thermostat', async () => {
 		sonos,
 		samsungTv,
 		bond,
+		accessNetworksUnleashed,
 		islandRouter,
 		jellyfish,
 		venstar,
@@ -210,6 +227,7 @@ test('venstar status can adopt a discovered thermostat', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			accessNetworksUnleashed,
 			islandRouter,
 			jellyfish,
 			venstar,
@@ -265,6 +283,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 		sonos,
 		samsungTv,
 		bond,
+		accessNetworksUnleashed,
 		islandRouter,
 		jellyfish,
 		venstar,
@@ -278,6 +297,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			accessNetworksUnleashed,
 			islandRouter,
 			jellyfish,
 			venstar,
@@ -325,6 +345,96 @@ test('venstar setup can save and remove thermostats directly', async () => {
 	}
 })
 
+test('access networks unleashed setup can adopt a controller and save auth information', async () => {
+	const config = createConfig()
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		accessNetworksUnleashed,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
+	try {
+		upsertDiscoveredAccessNetworksUnleashedControllers(storage, 'default', [
+			{
+				controllerId: '192.168.1.10',
+				name: 'Unleashed Demo',
+				host: '192.168.1.10',
+				loginUrl: 'https://192.168.1.10/admin/login.jsp',
+				lastSeenAt: '2026-05-03T21:40:00.000Z',
+				rawDiscovery: { probeUrl: 'https://192.168.1.10/' },
+			},
+		])
+
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			accessNetworksUnleashed,
+			islandRouter,
+			jellyfish,
+			venstar,
+		)
+
+		const adoptResponse = await router.fetch(
+			'http://example.test/access-networks-unleashed/setup',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					intent: 'adopt-controller',
+					controllerId: '192.168.1.10',
+				}).toString(),
+			},
+		)
+		expect(adoptResponse.status).toBe(200)
+		expect(await adoptResponse.text()).toContain(
+			'Adopted Access Networks Unleashed controller Unleashed Demo.',
+		)
+
+		const saveResponse = await router.fetch(
+			'http://example.test/access-networks-unleashed/setup',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					intent: 'save-credentials',
+					controllerId: '192.168.1.10',
+					username: 'admin-user',
+					password: 'admin-pass',
+				}).toString(),
+			},
+		)
+		expect(saveResponse.status).toBe(200)
+		const saveHtml = await saveResponse.text()
+		expect(saveHtml).toContain('Saved auth information for Unleashed Demo.')
+		expect(saveHtml).toContain('stored locally')
+		expect(accessNetworksUnleashed.listControllers()).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					controllerId: '192.168.1.10',
+					adopted: true,
+					hasStoredCredentials: true,
+				}),
+			]),
+		)
+	} finally {
+		storage.close()
+	}
+})
+
 test('health route returns ok json', async () => {
 	const config = createConfig()
 	const {
@@ -334,6 +444,7 @@ test('health route returns ok json', async () => {
 		sonos,
 		samsungTv,
 		bond,
+		accessNetworksUnleashed,
 		islandRouter,
 		jellyfish,
 		venstar,
@@ -346,6 +457,7 @@ test('health route returns ok json', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			accessNetworksUnleashed,
 			islandRouter,
 			jellyfish,
 			venstar,
@@ -371,6 +483,7 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 		sonos,
 		samsungTv,
 		bond,
+		accessNetworksUnleashed,
 		islandRouter,
 		jellyfish,
 		venstar,
@@ -388,6 +501,7 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 			samsungTv,
 			sonos,
 			bond,
+			accessNetworksUnleashed,
 			islandRouter,
 			jellyfish,
 			venstar,
@@ -400,6 +514,10 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 		expect(systemHtml).toContain('System status')
 		expect(systemHtml).toContain('Connector identity')
 		expect(systemHtml).toContain('Island router readiness')
+		expect(systemHtml).toContain('Managed endpoints')
+		expect(systemHtml).toContain('2')
+		expect(systemHtml).toContain('Unmanaged discoveries')
+		expect(systemHtml).toContain('1')
 
 		const diagnosticsResponse = await router.fetch(
 			'http://example.test/diagnostics',
@@ -418,6 +536,83 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 	}
 })
 
+test('dashboard starts Unleashed, Venstar, and router reads in parallel', async () => {
+	const config = createConfig()
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		accessNetworksUnleashed,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
+	const started: Array<string> = []
+	let resolveUnleashed: (() => void) | null = null
+	let resolveVenstar: (() => void) | null = null
+	let resolveRouter: (() => void) | null = null
+	const unleashedPromise = new Promise<void>((resolve) => {
+		resolveUnleashed = resolve
+	})
+	const venstarPromise = new Promise<void>((resolve) => {
+		resolveVenstar = resolve
+	})
+	const routerPromise = new Promise<void>((resolve) => {
+		resolveRouter = resolve
+	})
+
+	const originalUnleashedGetStatus = accessNetworksUnleashed.getStatus
+	const originalVenstarList = venstar.listThermostatsWithStatus
+	const originalIslandRouterGetStatus = islandRouter.getStatus
+
+	accessNetworksUnleashed.getStatus = async () => {
+		started.push('unleashed')
+		await unleashedPromise
+		return await originalUnleashedGetStatus.call(accessNetworksUnleashed)
+	}
+	venstar.listThermostatsWithStatus = async () => {
+		started.push('venstar')
+		await venstarPromise
+		return await originalVenstarList.call(venstar)
+	}
+	islandRouter.getStatus = async () => {
+		started.push('router')
+		await routerPromise
+		return await originalIslandRouterGetStatus.call(islandRouter)
+	}
+
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			accessNetworksUnleashed,
+			islandRouter,
+			jellyfish,
+			venstar,
+		)
+		const responsePromise = router.fetch('http://example.test/')
+		await Promise.resolve()
+		expect(started).toEqual(['unleashed', 'venstar', 'router'])
+		resolveUnleashed?.()
+		resolveVenstar?.()
+		resolveRouter?.()
+		const response = await responsePromise
+		expect(response.status).toBe(200)
+	} finally {
+		accessNetworksUnleashed.getStatus = originalUnleashedGetStatus
+		venstar.listThermostatsWithStatus = originalVenstarList
+		islandRouter.getStatus = originalIslandRouterGetStatus
+		storage.close()
+	}
+})
+
 test('island router status route renders configuration details and host diagnosis errors', async () => {
 	const config = createConfig()
 	const {
@@ -427,6 +622,7 @@ test('island router status route renders configuration details and host diagnosi
 		sonos,
 		samsungTv,
 		bond,
+		accessNetworksUnleashed,
 		islandRouter,
 		jellyfish,
 		venstar,
@@ -439,6 +635,7 @@ test('island router status route renders configuration details and host diagnosi
 			samsungTv,
 			sonos,
 			bond,
+			accessNetworksUnleashed,
 			islandRouter,
 			jellyfish,
 			venstar,

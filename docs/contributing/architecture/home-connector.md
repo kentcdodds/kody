@@ -182,16 +182,20 @@ SSH transport is conservative:
 The Access Networks Unleashed adapter lives under
 `packages/home-connector/src/adapters/access-networks-unleashed/` and targets
 controllers reachable from the local connector host through the Unleashed AJAX
-management interface. Configure it with:
+management interface. Unlike the original env-only integration, controllers are
+now managed locally through the connector's SQLite database:
 
-- `ACCESS_NETWORKS_UNLEASHED_HOST`
-- `ACCESS_NETWORKS_UNLEASHED_USERNAME`
-- `ACCESS_NETWORKS_UNLEASHED_PASSWORD`
-- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS=false` when the controller uses
-  a certificate trusted by the connector host. The default allows self-signed
-  LAN certificates.
-- `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` when the default 8s request
-  timeout is too short.
+- `access_networks_unleashed_scan_controllers` probes local private `/24`
+  networks derived from the connector host's IPv4 interfaces, unless
+  `ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS` overrides the scan list
+- `access_networks_unleashed_adopt_controller` marks one discovered controller
+  as the active controller for reads and writes
+- `access_networks_unleashed_set_credentials` stores controller credentials
+  locally, encrypted with `HOME_CONNECTOR_SHARED_SECRET`
+- `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS=true` remains available when the
+  controller uses a self-signed LAN certificate
+- `ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS` can still raise the default 8s
+  request timeout for slower controllers or networks
 
 The adapter exposes read-only tools for controller status, access point
 inventory, active clients, WLAN/SSID configuration, and recent events. It also
@@ -222,6 +226,11 @@ The connector stores a local SQLite database containing:
 - discovered Lutron processor metadata
 - Lutron credentials associated with each discovered processor
 - last Lutron authentication success/error details
+- discovered Access Networks Unleashed controller metadata
+- which Access Networks Unleashed controller is currently adopted
+- Access Networks Unleashed credentials encrypted locally with
+  `HOME_CONNECTOR_SHARED_SECRET`
+- last Access Networks Unleashed authentication success/error details
 - discovered Bond bridges and tokens
 - discovered Sonos players
 - managed Venstar thermostats
