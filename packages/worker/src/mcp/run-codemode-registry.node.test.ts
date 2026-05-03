@@ -93,13 +93,20 @@ test('runModuleWithRegistry preserves caller-provided workflow tools', async () 
 	const customWorkflowTools = {
 		create: vi.fn(async () => ({ ok: true, id: 'custom-workflow' })),
 	}
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
-			async execute(wrapped) {
+			async execute(wrapped, providers) {
 				expect(wrapped).toContain(
 					'codemode.package_workflow_create(input ?? {})',
 				)
+				providerFns = (
+					providers[0] as {
+						fns: Record<string, (args: unknown) => Promise<unknown>>
+					}
+				).fns
 				return {
 					result: 'ok',
 					logs: [],
@@ -130,7 +137,12 @@ export default async function run() {
 				workflowTools: customWorkflowTools,
 			},
 		)
-		expect(customWorkflowTools.create).not.toHaveBeenCalled()
+		await expect(
+			providerFns?.package_workflow_create({ workflowName: 'custom' }),
+		).resolves.toEqual({ ok: true, id: 'custom-workflow' })
+		expect(customWorkflowTools.create).toHaveBeenCalledWith({
+			workflowName: 'custom',
+		})
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 	}
