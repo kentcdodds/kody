@@ -212,6 +212,13 @@ function getDeleteControllerStatement(storage: HomeConnectorStorage) {
 	`)
 }
 
+function getDeleteCredentialsStatement(storage: HomeConnectorStorage) {
+	return storage.db.query(`
+		DELETE FROM access_networks_unleashed_credentials
+		WHERE connector_id = ? AND controller_id = ?
+	`)
+}
+
 function getUpsertCredentialsStatement(storage: HomeConnectorStorage) {
 	return storage.db.query(`
 		INSERT INTO access_networks_unleashed_credentials (
@@ -340,6 +347,10 @@ export function removeAccessNetworksUnleashedController(input: {
 	connectorId: string
 	controllerId: string
 }) {
+	getDeleteCredentialsStatement(input.storage).run(
+		input.connectorId,
+		input.controllerId,
+	)
 	getDeleteControllerStatement(input.storage).run(
 		input.connectorId,
 		input.controllerId,

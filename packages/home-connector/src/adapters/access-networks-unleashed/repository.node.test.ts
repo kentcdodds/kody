@@ -137,6 +137,23 @@ test('sqlite storage persists Unleashed controllers and encrypted credentials', 
 		expect(rawPasswordRow?.password).toMatch(/^enc:v1:/)
 		expect(rawPasswordRow?.password).not.toContain('admin-pass')
 
+		removeAccessNetworksUnleashedController({
+			storage,
+			connectorId: 'default',
+			controllerId: '192.168.1.11',
+		})
+		expect(
+			storage.db
+				.query(
+					`
+						SELECT password
+						FROM access_networks_unleashed_credentials
+						WHERE connector_id = ? AND controller_id = ?
+					`,
+				)
+				.get('default', '192.168.1.11'),
+		).toBeUndefined()
+
 		const mismatchedSecretStorage = createHomeConnectorStorage(
 			createConfig(path.join(directory, 'wrong-secret.sqlite'), {
 				sharedSecret: 'wrong-secret',

@@ -19,6 +19,7 @@ import {
 } from './repository.ts'
 import {
 	type AccessNetworksUnleashedConfigStatus,
+	type AccessNetworksUnleashedDiscoveredController,
 	type AccessNetworksUnleashedPersistedController,
 	type AccessNetworksUnleashedRecord,
 	type AccessNetworksUnleashedSystemStatus,
@@ -150,7 +151,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 		controller: AccessNetworksUnleashedPersistedController,
 	) => AccessNetworksUnleashedClient
 	scanControllers?: () => Promise<{
-		controllers: Array<AccessNetworksUnleashedPersistedController>
+		controllers: Array<AccessNetworksUnleashedDiscoveredController>
 		diagnostics: HomeConnectorState['accessNetworksUnleashedDiscoveryDiagnostics']
 	}>
 }) {
