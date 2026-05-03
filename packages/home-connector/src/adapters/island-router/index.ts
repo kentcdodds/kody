@@ -14,6 +14,7 @@ import { createIslandRouterSshCommandRunner } from './ssh-client.ts'
 import {
 	findMatchingDhcpLease,
 	findMatchingNeighbor,
+	didIslandRouterCommandSucceed,
 	parseIslandRouterClock,
 	parseIslandRouterDhcpReservations,
 	parseIslandRouterInterfaceDetails,
@@ -95,7 +96,7 @@ function ensureSuccessfulCommand(
 			`${message} failed because the command exited via ${reason}. ${result.stderr.trim()}`.trim(),
 		)
 	}
-	if (result.exitCode !== 0) {
+	if (!didIslandRouterCommandSucceed(result)) {
 		throw new Error(
 			`${message} failed with exit code ${result.exitCode}. ${result.stderr.trim()}`.trim(),
 		)
@@ -138,20 +139,18 @@ async function maybeGetInterfaceDetails(input: {
 		}),
 	])
 
-	const interfaceDetails =
-		interfaceResult.exitCode === 0 && !interfaceResult.timedOut
-			? parseIslandRouterInterfaceDetails(
-					interfaceResult.stdout,
-					interfaceResult.commandLines,
-				)
-			: null
-	const ipInterfaceDetails =
-		ipInterfaceResult.exitCode === 0 && !ipInterfaceResult.timedOut
-			? parseIslandRouterInterfaceDetails(
-					ipInterfaceResult.stdout,
-					ipInterfaceResult.commandLines,
-				)
-			: null
+	const interfaceDetails = didIslandRouterCommandSucceed(interfaceResult)
+		? parseIslandRouterInterfaceDetails(
+				interfaceResult.stdout,
+				interfaceResult.commandLines,
+			)
+		: null
+	const ipInterfaceDetails = didIslandRouterCommandSucceed(ipInterfaceResult)
+		? parseIslandRouterInterfaceDetails(
+				ipInterfaceResult.stdout,
+				ipInterfaceResult.commandLines,
+			)
+		: null
 
 	return {
 		interfaceDetails,
@@ -166,7 +165,9 @@ function getPreferredInterfaceName(input: {
 	return input.neighbor?.interfaceName ?? input.dhcpLease?.interfaceName ?? null
 }
 
-function dedupeRecentEvents(messages: Array<ReturnType<typeof parseIslandRouterRecentEvents>>) {
+function dedupeRecentEvents(
+	messages: Array<ReturnType<typeof parseIslandRouterRecentEvents>>,
+) {
 	const seen = new Set<string>()
 	const merged = messages.flat()
 	return merged.filter((event) => {
@@ -311,7 +312,7 @@ export function createIslandRouterAdapter(input: {
 				])
 
 			let version = null
-			if (versionResult.exitCode === 0 && !versionResult.timedOut) {
+			if (didIslandRouterCommandSucceed(versionResult)) {
 				version = parseIslandRouterVersion(
 					versionResult.stdout,
 					versionResult.commandLines,
@@ -321,45 +322,42 @@ export function createIslandRouterAdapter(input: {
 			}
 
 			let clock = null
-			if (clockResult.exitCode === 0 && !clockResult.timedOut) {
-				clock = parseIslandRouterClock(clockResult.stdout, clockResult.commandLines)
+			if (didIslandRouterCommandSucceed(clockResult)) {
+				clock = parseIslandRouterClock(
+					clockResult.stdout,
+					clockResult.commandLines,
+				)
 			} else {
 				errors.push('Failed to load Island router clock information.')
 			}
 
-			const interfaces =
-				interfaceResult.exitCode === 0 && !interfaceResult.timedOut
-					? parseIslandRouterInterfaceSummaries(
-							interfaceResult.stdout,
-							interfaceResult.commandLines,
-						)
-					: []
+			const interfaces = didIslandRouterCommandSucceed(interfaceResult)
+				? parseIslandRouterInterfaceSummaries(
+						interfaceResult.stdout,
+						interfaceResult.commandLines,
+					)
+				: []
 			if (interfaces.length === 0) {
 				errors.push('No Island router interface summary data was returned.')
 			}
 
-			const neighbors =
-				neighborResult.exitCode === 0 && !neighborResult.timedOut
-					? parseIslandRouterNeighbors(
-							neighborResult.stdout,
-							neighborResult.commandLines,
-						)
-					: []
-			if (neighborResult.exitCode !== 0 || neighborResult.timedOut) {
+			const neighbors = didIslandRouterCommandSucceed(neighborResult)
+				? parseIslandRouterNeighbors(
+						neighborResult.stdout,
+						neighborResult.commandLines,
+					)
+				: []
+			if (!didIslandRouterCommandSucceed(neighborResult)) {
 				errors.push('Failed to load Island router neighbor cache.')
 			}
 
 			return {
 				config: configStatus,
 				connected:
-					versionResult.exitCode === 0 &&
-					!versionResult.timedOut &&
-					clockResult.exitCode === 0 &&
-					!clockResult.timedOut &&
-					interfaceResult.exitCode === 0 &&
-					!interfaceResult.timedOut &&
-					neighborResult.exitCode === 0 &&
-					!neighborResult.timedOut,
+					didIslandRouterCommandSucceed(versionResult) &&
+					didIslandRouterCommandSucceed(clockResult) &&
+					didIslandRouterCommandSucceed(interfaceResult) &&
+					didIslandRouterCommandSucceed(neighborResult),
 				router: {
 					version,
 					clock,
@@ -373,7 +371,9 @@ export function createIslandRouterAdapter(input: {
 			assertIslandRouterConfigured(config)
 			const host = validateIslandRouterHost(request.host)
 			if (host.kind === 'mac') {
-				throw new Error('router_ping_host requires an IP address or hostname, not a MAC address.')
+				throw new Error(
+					'router_ping_host requires an IP address or hostname, not a MAC address.',
+				)
 			}
 
 			const runner = getRunner()
@@ -438,7 +438,9 @@ export function createIslandRouterAdapter(input: {
 		},
 		async getRecentEvents(request: RecentEventRequest = {}) {
 			assertIslandRouterConfigured(config)
-			const query = request.host ? validateIslandRouterHost(request.host).value : ''
+			const query = request.host
+				? validateIslandRouterHost(request.host).value
+				: ''
 			const limit = normalizeLimit(request.limit, 50, 200)
 			const runner = getRunner()
 			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
@@ -505,38 +507,35 @@ export function createIslandRouterAdapter(input: {
 					}),
 				])
 
-			const neighbors =
-				neighborResult.exitCode === 0 && !neighborResult.timedOut
-					? parseIslandRouterNeighbors(
-							neighborResult.stdout,
-							neighborResult.commandLines,
-						)
-					: []
-			if (neighborResult.exitCode !== 0 || neighborResult.timedOut) {
+			const neighbors = didIslandRouterCommandSucceed(neighborResult)
+				? parseIslandRouterNeighbors(
+						neighborResult.stdout,
+						neighborResult.commandLines,
+					)
+				: []
+			if (!didIslandRouterCommandSucceed(neighborResult)) {
 				errors.push('Failed to read the Island router neighbor cache.')
 			}
 			const arpEntry = findMatchingNeighbor(neighbors, host)
 
-			const leases =
-				dhcpResult.exitCode === 0 && !dhcpResult.timedOut
-					? parseIslandRouterDhcpReservations(
-							dhcpResult.stdout,
-							dhcpResult.commandLines,
-						)
-					: []
-			if (dhcpResult.exitCode !== 0 || dhcpResult.timedOut) {
+			const leases = didIslandRouterCommandSucceed(dhcpResult)
+				? parseIslandRouterDhcpReservations(
+						dhcpResult.stdout,
+						dhcpResult.commandLines,
+					)
+				: []
+			if (!didIslandRouterCommandSucceed(dhcpResult)) {
 				errors.push('Failed to read Island router DHCP reservations.')
 			}
 			const dhcpLease = findMatchingDhcpLease(leases, host)
 
-			const interfaceSummaries =
-				interfaceResult.exitCode === 0 && !interfaceResult.timedOut
-					? parseIslandRouterInterfaceSummaries(
-							interfaceResult.stdout,
-							interfaceResult.commandLines,
-						)
-					: []
-			if (interfaceResult.exitCode !== 0 || interfaceResult.timedOut) {
+			const interfaceSummaries = didIslandRouterCommandSucceed(interfaceResult)
+				? parseIslandRouterInterfaceSummaries(
+						interfaceResult.stdout,
+						interfaceResult.commandLines,
+					)
+				: []
+			if (!didIslandRouterCommandSucceed(interfaceResult)) {
 				errors.push('Failed to read Island router interface summary.')
 			}
 			const preferredInterfaceName = getPreferredInterfaceName({
@@ -549,14 +548,14 @@ export function createIslandRouterAdapter(input: {
 			)
 
 			const recentEventSets = [
-				eventResult.exitCode === 0 && !eventResult.timedOut
+				didIslandRouterCommandSucceed(eventResult)
 					? parseIslandRouterRecentEvents(
 							eventResult.stdout,
 							eventResult.commandLines,
 						)
 					: [],
 			]
-			if (eventResult.exitCode !== 0 || eventResult.timedOut) {
+			if (!didIslandRouterCommandSucceed(eventResult)) {
 				errors.push('Failed to read Island router recent events.')
 			}
 
@@ -570,7 +569,7 @@ export function createIslandRouterAdapter(input: {
 					query: arpEntry.macAddress,
 					timeoutMs,
 				})
-				if (macEventResult.exitCode === 0 && !macEventResult.timedOut) {
+				if (didIslandRouterCommandSucceed(macEventResult)) {
 					recentEventSets.push(
 						parseIslandRouterRecentEvents(
 							macEventResult.stdout,
@@ -579,7 +578,10 @@ export function createIslandRouterAdapter(input: {
 					)
 				}
 			}
-			const recentEvents = dedupeRecentEvents(recentEventSets).slice(0, logLimit)
+			const recentEvents = dedupeRecentEvents(recentEventSets).slice(
+				0,
+				logLimit,
+			)
 
 			const { interfaceDetails, ipInterfaceDetails } =
 				await maybeGetInterfaceDetails({
