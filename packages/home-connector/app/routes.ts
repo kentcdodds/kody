@@ -2,6 +2,9 @@ import { route } from 'remix/fetch-router/routes'
 
 export const routes = route({
 	home: '/',
+	systemStatus: '/system-status',
+	diagnostics: '/diagnostics',
+	islandRouterStatus: '/island-router/status',
 	health: '/health',
 	rokuStatus: '/roku/status',
 	rokuSetup: '/roku/setup',

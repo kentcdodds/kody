@@ -4,6 +4,7 @@ import path from 'node:path'
 import { expect, test } from 'vitest'
 import { installHomeConnectorMockServer } from '../mocks/test-server.ts'
 import { createBondAdapter } from '../src/adapters/bond/index.ts'
+import { createIslandRouterAdapter } from '../src/adapters/island-router/index.ts'
 import { createJellyfishAdapter } from '../src/adapters/jellyfish/index.ts'
 import { createLutronAdapter } from '../src/adapters/lutron/index.ts'
 import { createSamsungTvAdapter } from '../src/adapters/samsung-tv/index.ts'
@@ -22,6 +23,13 @@ function createConfig(dataPath = '/tmp'): HomeConnectorConfig {
 		workerSessionUrl: 'http://localhost:3742/home/connectors/default',
 		workerWebSocketUrl: 'ws://localhost:3742/home/connectors/default',
 		sharedSecret: 'secret',
+		islandRouterHost: null,
+		islandRouterPort: 22,
+		islandRouterUsername: null,
+		islandRouterPrivateKeyPath: null,
+		islandRouterKnownHostsPath: null,
+		islandRouterHostFingerprint: null,
+		islandRouterCommandTimeoutMs: 8000,
 		rokuDiscoveryUrl: 'http://roku.mock.local/discovery',
 		lutronDiscoveryUrl: 'http://lutron.mock.local/discovery',
 		sonosDiscoveryUrl: 'http://sonos.mock.local/discovery',
@@ -69,6 +77,9 @@ function createAdapters(config: HomeConnectorConfig) {
 			state,
 			storage,
 		}),
+		islandRouter: createIslandRouterAdapter({
+			config,
+		}),
 		jellyfish: createJellyfishAdapter({
 			config,
 			state,
@@ -86,8 +97,17 @@ function createTemporaryDataPath() {
 
 test('home route toggles worker snapshot link by connector id', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
 	state.connection.connectorId = 'default'
 	state.connection.workerUrl = 'http://localhost:3742'
 	try {
@@ -98,6 +118,7 @@ test('home route toggles worker snapshot link by connector id', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			islandRouter,
 			jellyfish,
 			venstar,
 		)
@@ -113,6 +134,8 @@ test('home route toggles worker snapshot link by connector id', async () => {
 		expect(htmlWithoutConnector).not.toContain(
 			'/home/connectors/default/snapshot',
 		)
+		expect(htmlWithConnector).toContain('Home connector dashboard')
+		expect(htmlWithConnector).toContain('Island router diagnostics')
 	} finally {
 		storage.close()
 	}
@@ -120,8 +143,17 @@ test('home route toggles worker snapshot link by connector id', async () => {
 
 test('venstar status scan shows discovered thermostats', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -130,6 +162,7 @@ test('venstar status scan shows discovered thermostats', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			islandRouter,
 			jellyfish,
 			venstar,
 		)
@@ -158,8 +191,17 @@ test('venstar status scan shows discovered thermostats', async () => {
 test('venstar status can adopt a discovered thermostat', async () => {
 	const dataPath = createTemporaryDataPath()
 	const config = createConfig(dataPath)
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -168,6 +210,7 @@ test('venstar status can adopt a discovered thermostat', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			islandRouter,
 			jellyfish,
 			venstar,
 		)
@@ -215,8 +258,17 @@ test('venstar status can adopt a discovered thermostat', async () => {
 test('venstar setup can save and remove thermostats directly', async () => {
 	const dataPath = createTemporaryDataPath()
 	const config = createConfig(dataPath)
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
 	try {
 		venstar.removeThermostat('venstar.mock.local')
 		const router = createHomeConnectorRouter(
@@ -226,6 +278,7 @@ test('venstar setup can save and remove thermostats directly', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			islandRouter,
 			jellyfish,
 			venstar,
 		)
@@ -274,8 +327,17 @@ test('venstar setup can save and remove thermostats directly', async () => {
 
 test('health route returns ok json', async () => {
 	const config = createConfig()
-	const { state, storage, lutron, sonos, samsungTv, bond, jellyfish, venstar } =
-		createAdapters(config)
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -284,6 +346,7 @@ test('health route returns ok json', async () => {
 			samsungTv,
 			sonos,
 			bond,
+			islandRouter,
 			jellyfish,
 			venstar,
 		)
@@ -294,6 +357,101 @@ test('health route returns ok json', async () => {
 			service: 'home-connector',
 			connectorId: '',
 		})
+	} finally {
+		storage.close()
+	}
+})
+
+test('system and diagnostics routes render aggregated admin surfaces', async () => {
+	const config = createConfig()
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
+	state.connection.connectorId = 'default'
+	state.connection.workerUrl = 'http://localhost:3742'
+	state.connection.connected = true
+	state.connection.lastSyncAt = '2026-05-02T22:47:00.000Z'
+	state.connection.sharedSecret = 'top-secret-value'
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			islandRouter,
+			jellyfish,
+			venstar,
+		)
+		const systemResponse = await router.fetch(
+			'http://example.test/system-status',
+		)
+		expect(systemResponse.status).toBe(200)
+		const systemHtml = await systemResponse.text()
+		expect(systemHtml).toContain('System status')
+		expect(systemHtml).toContain('Connector identity')
+		expect(systemHtml).toContain('Island router readiness')
+
+		const diagnosticsResponse = await router.fetch(
+			'http://example.test/diagnostics',
+		)
+		expect(diagnosticsResponse.status).toBe(200)
+		const diagnosticsHtml = await diagnosticsResponse.text()
+		expect(diagnosticsHtml).toContain('Diagnostics overview')
+		expect(diagnosticsHtml).toContain('Diagnostics matrix')
+		expect(diagnosticsHtml).toContain('Island router')
+		expect(diagnosticsHtml).toContain(
+			'&quot;sharedSecret&quot;: &quot;configured&quot;',
+		)
+		expect(diagnosticsHtml).not.toContain('top-secret-value')
+	} finally {
+		storage.close()
+	}
+})
+
+test('island router status route renders configuration details and host diagnosis errors', async () => {
+	const config = createConfig()
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			islandRouter,
+			jellyfish,
+			venstar,
+		)
+		const response = await router.fetch(
+			'http://example.test/island-router/status?host=192.168.1.10',
+		)
+		expect(response.status).toBe(200)
+		const pageHtml = await response.text()
+		expect(pageHtml).toContain('Island router status')
+		expect(pageHtml).toContain('SSH configuration')
+		expect(pageHtml).toContain('Host diagnosis')
+		expect(pageHtml).toContain('Host diagnosis failed')
 	} finally {
 		storage.close()
 	}
