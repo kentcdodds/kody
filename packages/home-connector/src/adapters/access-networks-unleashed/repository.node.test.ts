@@ -209,3 +209,52 @@ test('sqlite storage persists Unleashed controllers and encrypted credentials', 
 		})
 	}
 })
+
+test('adopting a lexicographically earlier controller still succeeds with the unique adopted index', () => {
+	const directory = mkdtempSync(path.join(tmpdir(), 'kody-home-connector-'))
+	const dbPath = path.join(directory, 'home-connector.sqlite')
+	const storage = createHomeConnectorStorage(createConfig(dbPath))
+
+	try {
+		upsertDiscoveredAccessNetworksUnleashedControllers(storage, 'default', [
+			{
+				controllerId: '192.168.1.2',
+				name: 'Later Controller',
+				host: '192.168.1.2',
+				loginUrl: 'https://192.168.1.2/admin/wsg/login.jsp',
+				lastSeenAt: '2026-05-03T19:30:00.000Z',
+				rawDiscovery: null,
+			},
+			{
+				controllerId: '192.168.1.10',
+				name: 'Earlier Controller',
+				host: '192.168.1.10',
+				loginUrl: 'https://192.168.1.10/admin/wsg/login.jsp',
+				lastSeenAt: '2026-05-03T19:31:00.000Z',
+				rawDiscovery: null,
+			},
+		])
+
+		adoptAccessNetworksUnleashedController(storage, 'default', '192.168.1.2')
+		adoptAccessNetworksUnleashedController(storage, 'default', '192.168.1.10')
+
+		expect(
+			getAdoptedAccessNetworksUnleashedController(storage, 'default'),
+		).toMatchObject({
+			controllerId: '192.168.1.10',
+			adopted: true,
+		})
+
+		expect(
+			listAccessNetworksUnleashedControllers(storage, 'default').filter(
+				(controller) => controller.adopted,
+			),
+		).toHaveLength(1)
+	} finally {
+		storage.close()
+		rmSync(directory, {
+			force: true,
+			recursive: true,
+		})
+	}
+})

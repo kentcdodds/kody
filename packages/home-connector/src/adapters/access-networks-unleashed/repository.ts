@@ -196,6 +196,24 @@ function getAdoptControllerStatement(storage: HomeConnectorStorage) {
 	`)
 }
 
+function getClearAdoptedControllerStatement(storage: HomeConnectorStorage) {
+	return storage.db.query(`
+		UPDATE access_networks_unleashed_controllers
+		SET adopted = 0,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE connector_id = ? AND adopted = 1
+	`)
+}
+
+function getMarkControllerAdoptedStatement(storage: HomeConnectorStorage) {
+	return storage.db.query(`
+		UPDATE access_networks_unleashed_controllers
+		SET adopted = 1,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE connector_id = ? AND controller_id = ?
+	`)
+}
+
 function getDeleteControllerStatement(storage: HomeConnectorStorage) {
 	return storage.db.query(`
 		DELETE FROM access_networks_unleashed_controllers
@@ -317,7 +335,8 @@ export function adoptAccessNetworksUnleashedController(
 	connectorId: string,
 	controllerId: string,
 ) {
-	getAdoptControllerStatement(storage).run(controllerId, connectorId)
+	getClearAdoptedControllerStatement(storage).run(connectorId)
+	getMarkControllerAdoptedStatement(storage).run(connectorId, controllerId)
 	return getAccessNetworksUnleashedController(
 		storage,
 		connectorId,
