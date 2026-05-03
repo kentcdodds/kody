@@ -1078,6 +1078,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		const shouldRunChecks = input.runChecks ?? false
 		const shouldPublish = input.publish ?? false
 		if (!shouldRunChecks) {
+			if (shouldPublish) {
+				throw new Error(
+					'Publishing requires checks. Set runChecks to true when publish is true.',
+				)
+			}
 			const publish = shouldPublish
 				? {
 						status: 'blocked_by_checks' as const,

@@ -455,6 +455,23 @@ test('runCommands applies rename patches from the old file path', async () => {
 	)
 })
 
+test('runCommands rejects publish without checks for direct RPC callers', async () => {
+	setCommonSessionFixtures()
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	await expect(
+		repoSession.runCommands({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			commands: 'git status',
+			runChecks: false,
+			publish: true,
+		}),
+	).rejects.toThrow(
+		'Publishing requires checks. Set runChecks to true when publish is true.',
+	)
+})
+
 test('runCommands fetches session metadata after publish side effects', async () => {
 	setCommonSessionFixtures()
 	mockModule.gitState.headCommit = 'commit-published'
