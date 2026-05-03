@@ -15,6 +15,7 @@ import { formatJson, renderCodeBlock, renderInfoRows } from './handler-utils.ts'
 import { render } from './render.ts'
 import { RootLayout } from './root.ts'
 import { routes } from './routes.ts'
+import { type createAccessNetworksUnleashedAdapter } from '../src/adapters/access-networks-unleashed/index.ts'
 import { type createBondAdapter } from '../src/adapters/bond/index.ts'
 import {
 	type IslandRouterConfigStatus,
@@ -36,6 +37,7 @@ import {
 type DashboardDependencies = {
 	state: HomeConnectorState
 	config: HomeConnectorConfig
+	accessNetworksUnleashed: ReturnType<typeof createAccessNetworksUnleashedAdapter>
 	lutron: ReturnType<typeof createLutronAdapter>
 	samsungTv: ReturnType<typeof createSamsungTvAdapter>
 	sonos: ReturnType<typeof createSonosAdapter>
@@ -58,6 +60,12 @@ type DashboardSnapshot = {
 	lutron: {
 		processors: number
 		credentials: number
+		diagnosticsCaptured: boolean
+	}
+	accessNetworksUnleashed: {
+		controllers: number
+		adopted: number
+		withCredentials: number
 		diagnosticsCaptured: boolean
 	}
 	sonos: {
@@ -158,6 +166,7 @@ function countDiagnosticSources(state: HomeConnectorState) {
 	return [
 		state.rokuDiscoveryDiagnostics,
 		state.lutronDiscoveryDiagnostics,
+		state.accessNetworksUnleashedDiscoveryDiagnostics,
 		state.sonosDiscoveryDiagnostics,
 		state.samsungTvDiscoveryDiagnostics,
 		state.bondDiscoveryDiagnostics,
@@ -194,6 +203,7 @@ async function loadDashboardSnapshot(
 	const rokuAdopted = getAdoptedRokuDevices(deps.state)
 	const rokuDiscovered = getDiscoveredRokuDevices(deps.state)
 	const lutronStatus = deps.lutron.getStatus()
+	const accessNetworksUnleashedStatus = await deps.accessNetworksUnleashed.getStatus()
 	const samsungStatus = deps.samsungTv.getStatus()
 	const sonosStatus = deps.sonos.getStatus()
 	const bondStatus = deps.bond.getStatus()
@@ -231,6 +241,15 @@ async function loadDashboardSnapshot(
 			processors: lutronStatus.processors.length,
 			credentials: lutronStatus.configuredCredentialsCount,
 			diagnosticsCaptured: deps.state.lutronDiscoveryDiagnostics != null,
+		},
+		accessNetworksUnleashed: {
+			controllers: accessNetworksUnleashedStatus.controllers.length,
+			adopted: accessNetworksUnleashedStatus.controller ? 1 : 0,
+			withCredentials: accessNetworksUnleashedStatus.controllers.filter(
+				(controller) => controller.hasStoredCredentials,
+			).length,
+			diagnosticsCaptured:
+				deps.state.accessNetworksUnleashedDiscoveryDiagnostics != null,
 		},
 		sonos: {
 			adopted: sonosStatus.adopted.length,
@@ -283,6 +302,7 @@ async function loadDashboardSnapshot(
 			managedEndpoints:
 				rokuAdopted.length +
 				lutronStatus.processors.length +
+				accessNetworksUnleashedStatus.controllers.length +
 				sonosStatus.adopted.length +
 				samsungStatus.adopted.length +
 				bondStatus.adopted.length +
@@ -290,6 +310,11 @@ async function loadDashboardSnapshot(
 				venstarStatus.length,
 			unmanagedDiscoveries:
 				rokuDiscovered.length +
+				Math.max(
+					accessNetworksUnleashedStatus.controllers.length -
+						(accessNetworksUnleashedStatus.controller ? 1 : 0),
+					0,
+				) +
 				sonosStatus.discovered.length +
 				samsungStatus.discovered.length +
 				bondStatus.discovered.length +

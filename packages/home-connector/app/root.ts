@@ -58,6 +58,12 @@ const navigationSections: Array<{
 				matchPaths: [routes.lutronSetup.pattern],
 			},
 			{
+				href: routes.accessNetworksUnleashedStatus.pattern,
+				label: 'Access Networks Unleashed',
+				description: 'Controller discovery and auth information',
+				matchPaths: [routes.accessNetworksUnleashedSetup.pattern],
+			},
+			{
 				href: routes.sonosStatus.pattern,
 				label: 'Sonos',
 				description: 'Players and groups',

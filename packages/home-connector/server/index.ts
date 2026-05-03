@@ -104,6 +104,7 @@ async function main() {
 		connector.samsungTv,
 		connector.sonos,
 		connector.bond,
+		connector.accessNetworksUnleashed,
 		connector.islandRouter,
 		connector.jellyfish,
 		connector.venstar,
