@@ -187,15 +187,6 @@ function getDeleteMissingControllersStatement(storage: HomeConnectorStorage) {
 	`)
 }
 
-function getAdoptControllerStatement(storage: HomeConnectorStorage) {
-	return storage.db.query(`
-		UPDATE access_networks_unleashed_controllers
-		SET adopted = CASE WHEN controller_id = ? THEN 1 ELSE 0 END,
-			updated_at = CURRENT_TIMESTAMP
-		WHERE connector_id = ?
-	`)
-}
-
 function getClearAdoptedControllerStatement(storage: HomeConnectorStorage) {
 	return storage.db.query(`
 		UPDATE access_networks_unleashed_controllers
