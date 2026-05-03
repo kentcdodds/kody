@@ -203,13 +203,17 @@ async function loadDashboardSnapshot(
 	const rokuAdopted = getAdoptedRokuDevices(deps.state)
 	const rokuDiscovered = getDiscoveredRokuDevices(deps.state)
 	const lutronStatus = deps.lutron.getStatus()
-	const accessNetworksUnleashedStatus = await deps.accessNetworksUnleashed.getStatus()
 	const samsungStatus = deps.samsungTv.getStatus()
 	const sonosStatus = deps.sonos.getStatus()
 	const bondStatus = deps.bond.getStatus()
 	const jellyfishStatus = deps.jellyfish.getStatus()
 	const venstarDiscoveryStatus = deps.venstar.getStatus()
-	const [venstarStatus, loadedIslandRouterStatus] = await Promise.all([
+	const [
+		accessNetworksUnleashedStatus,
+		venstarStatus,
+		loadedIslandRouterStatus,
+	] = await Promise.all([
+		deps.accessNetworksUnleashed.getStatus(),
 		deps.venstar.listThermostatsWithStatus(),
 		input.islandRouterStatus
 			? Promise.resolve(input.islandRouterStatus)

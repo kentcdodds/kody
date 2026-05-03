@@ -536,6 +536,83 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 	}
 })
 
+test('dashboard starts Unleashed, Venstar, and router reads in parallel', async () => {
+	const config = createConfig()
+	const {
+		state,
+		storage,
+		lutron,
+		sonos,
+		samsungTv,
+		bond,
+		accessNetworksUnleashed,
+		islandRouter,
+		jellyfish,
+		venstar,
+	} = createAdapters(config)
+	const started: Array<string> = []
+	let resolveUnleashed: (() => void) | null = null
+	let resolveVenstar: (() => void) | null = null
+	let resolveRouter: (() => void) | null = null
+	const unleashedPromise = new Promise<void>((resolve) => {
+		resolveUnleashed = resolve
+	})
+	const venstarPromise = new Promise<void>((resolve) => {
+		resolveVenstar = resolve
+	})
+	const routerPromise = new Promise<void>((resolve) => {
+		resolveRouter = resolve
+	})
+
+	const originalUnleashedGetStatus = accessNetworksUnleashed.getStatus
+	const originalVenstarList = venstar.listThermostatsWithStatus
+	const originalIslandRouterGetStatus = islandRouter.getStatus
+
+	accessNetworksUnleashed.getStatus = async () => {
+		started.push('unleashed')
+		await unleashedPromise
+		return await originalUnleashedGetStatus.call(accessNetworksUnleashed)
+	}
+	venstar.listThermostatsWithStatus = async () => {
+		started.push('venstar')
+		await venstarPromise
+		return await originalVenstarList.call(venstar)
+	}
+	islandRouter.getStatus = async () => {
+		started.push('router')
+		await routerPromise
+		return await originalIslandRouterGetStatus.call(islandRouter)
+	}
+
+	try {
+		const router = createHomeConnectorRouter(
+			state,
+			config,
+			lutron,
+			samsungTv,
+			sonos,
+			bond,
+			accessNetworksUnleashed,
+			islandRouter,
+			jellyfish,
+			venstar,
+		)
+		const responsePromise = router.fetch('http://example.test/')
+		await Promise.resolve()
+		expect(started).toEqual(['unleashed', 'venstar', 'router'])
+		resolveUnleashed?.()
+		resolveVenstar?.()
+		resolveRouter?.()
+		const response = await responsePromise
+		expect(response.status).toBe(200)
+	} finally {
+		accessNetworksUnleashed.getStatus = originalUnleashedGetStatus
+		venstar.listThermostatsWithStatus = originalVenstarList
+		islandRouter.getStatus = originalIslandRouterGetStatus
+		storage.close()
+	}
+})
+
 test('island router status route renders configuration details and host diagnosis errors', async () => {
 	const config = createConfig()
 	const {
