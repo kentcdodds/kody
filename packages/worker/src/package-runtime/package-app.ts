@@ -36,7 +36,7 @@ import {
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
 
-export function createPackageAppWorkerSource(input: { mainModule: string }) {
+function createPackageAppWorkerSource(input: { mainModule: string }) {
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 
