@@ -284,9 +284,8 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 			},
 		},
 		async (args) => {
-			const result = await accessNetworksUnleashed.setWlanEnabled({
+			const result = await accessNetworksUnleashed.enableWlan({
 				name: String(args['name'] ?? ''),
-				enabled: true,
 				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
 				reason: String(args['reason'] ?? ''),
 				confirmation: String(args['confirmation'] ?? ''),
@@ -310,9 +309,8 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 			},
 		},
 		async (args) => {
-			const result = await accessNetworksUnleashed.setWlanEnabled({
+			const result = await accessNetworksUnleashed.disableWlan({
 				name: String(args['name'] ?? ''),
-				enabled: false,
 				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
 				reason: String(args['reason'] ?? ''),
 				confirmation: String(args['confirmation'] ?? ''),

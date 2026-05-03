@@ -42,12 +42,14 @@ function response(
 }
 
 function createConfig() {
-	process.env.HOME_CONNECTOR_ID = 'default'
-	process.env.WORKER_BASE_URL = 'http://localhost:3742'
-	process.env.ACCESS_NETWORKS_UNLEASHED_HOST = 'https://unleashed.local'
-	process.env.ACCESS_NETWORKS_UNLEASHED_USERNAME = 'admin'
-	process.env.ACCESS_NETWORKS_UNLEASHED_PASSWORD = 'password'
-	process.env.ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS = 'true'
+	using _env = createTemporaryEnv({
+		HOME_CONNECTOR_ID: 'default',
+		WORKER_BASE_URL: 'http://localhost:3742',
+		ACCESS_NETWORKS_UNLEASHED_HOST: 'https://unleashed.local',
+		ACCESS_NETWORKS_UNLEASHED_USERNAME: 'admin',
+		ACCESS_NETWORKS_UNLEASHED_PASSWORD: 'password',
+		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: 'true',
+	})
 	return loadHomeConnectorConfig()
 }
 
@@ -118,7 +120,6 @@ test('unblock client preserves unrelated system ACL XML', async () => {
 })
 
 test('post XML redirects reset session and stop after one reauthentication', async () => {
-	using _env = createTemporaryEnv({})
 	const config = createConfig()
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
@@ -155,4 +156,96 @@ test('post XML redirects reset session and stop after one reauthentication', asy
 	await expect(
 		createAccessNetworksUnleashedAjaxClient({ config }).listWlans(),
 	).rejects.toThrow('redirected after reauthentication')
+})
+
+test('mutating post XML does not retry after session redirect', async () => {
+	const config = createConfig()
+	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+		const href = String(url)
+		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+			return response(null, {
+				status: 302,
+				headers: { Location: '/admin/wsg/login.jsp' },
+				url: 'https://unleashed.local/',
+			})
+		}
+		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+			return response(null, {
+				status: 302,
+				headers: {
+					HTTP_X_CSRF_TOKEN: 'csrf-token',
+					'set-cookie': 'JSESSIONID=abc; Path=/admin',
+				},
+				url: href,
+			})
+		}
+		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+			return response(null, {
+				status: 200,
+				url: 'https://unleashed.local/admin/wsg/login.jsp',
+			})
+		}
+		if (href.endsWith('/_cmdstat.jsp')) {
+			return response(null, { status: 302 })
+		}
+		throw new Error(`Unexpected fetch ${href}`)
+	})
+	globalThis.fetch = fetchMock as typeof fetch
+
+	await expect(
+		createAccessNetworksUnleashedAjaxClient({ config }).restartAccessPoint(
+			'24:79:de:ad:be:ef',
+		),
+	).rejects.toThrow('redirected during a command')
+
+	const loginAttempts = fetchMock.mock.calls.filter((call) =>
+		String(call[0]).includes('username=admin'),
+	)
+	expect(loginAttempts).toHaveLength(1)
+})
+
+test('concurrent reads share one login flow', async () => {
+	const config = createConfig()
+	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+		const href = String(url)
+		if (init?.method === 'HEAD' && href === 'https://unleashed.local') {
+			return response(null, {
+				status: 302,
+				headers: { Location: '/admin/wsg/login.jsp' },
+				url: 'https://unleashed.local/',
+			})
+		}
+		if (init?.method === 'HEAD' && href.includes('username=admin')) {
+			return response(null, {
+				status: 302,
+				headers: {
+					HTTP_X_CSRF_TOKEN: 'csrf-token',
+					'set-cookie': 'JSESSIONID=abc; Path=/admin',
+				},
+				url: href,
+			})
+		}
+		if (init?.method === 'HEAD' && href.endsWith('/admin/wsg/login.jsp')) {
+			await new Promise((resolve) => setTimeout(resolve, 5))
+			return response(null, {
+				status: 200,
+				url: 'https://unleashed.local/admin/wsg/login.jsp',
+			})
+		}
+		if (href.endsWith('/_cmdstat.jsp')) {
+			return response(
+				'<ajax-response><client mac="aa:bb:cc:dd:ee:ff"/></ajax-response>',
+			)
+		}
+		throw new Error(`Unexpected fetch ${href}`)
+	})
+	globalThis.fetch = fetchMock as typeof fetch
+	const client = createAccessNetworksUnleashedAjaxClient({ config })
+
+	await Promise.all([client.listClients(), client.listClients()])
+
+	const loginAttempts = fetchMock.mock.calls.filter((call) =>
+		String(call[0]).includes('username=admin'),
+	)
+	expect(loginAttempts).toHaveLength(1)
 })

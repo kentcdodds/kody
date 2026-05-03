@@ -226,6 +226,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		cookie: null,
 	}
 	const dispatcher = createDispatcher(config)
+	let loginPromise: Promise<void> | null = null
 
 	function requireConfig() {
 		const host = config.accessNetworksUnleashedHost?.trim()
@@ -315,7 +316,10 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 
 	async function ensureSession() {
 		if (state.baseUrl) return
-		await login()
+		loginPromise ??= login().finally(() => {
+			loginPromise = null
+		})
+		await loginPromise
 	}
 
 	function resetSession() {
@@ -329,6 +333,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		path: string,
 		xml: string,
 		timeoutMs?: number,
+		allowRedirectRetry = false,
 		redirectCount = 0,
 	) {
 		await ensureSession()
@@ -347,15 +352,25 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			timeoutMs,
 		)
 		if (response.status === 302) {
+			resetSession()
+			if (!allowRedirectRetry) {
+				throw new Error(
+					'Access Networks Unleashed redirected during a command. The session was reset; retry after confirming the command did not already apply.',
+				)
+			}
 			if (redirectCount >= 1) {
-				resetSession()
 				throw new Error(
 					'Access Networks Unleashed redirected after reauthentication.',
 				)
 			}
-			resetSession()
 			await ensureSession()
-			return await postXml(path, xml, timeoutMs, redirectCount + 1)
+			return await postXml(
+				path,
+				xml,
+				timeoutMs,
+				allowRedirectRetry,
+				redirectCount + 1,
+			)
 		}
 		const text = await response.text()
 		if (!response.ok) {
@@ -377,7 +392,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 	}
 
 	async function cmdstat(xml: string, tagNames: Array<string>) {
-		const response = await postXml('_cmdstat.jsp', xml)
+		const response = await postXml('_cmdstat.jsp', xml, undefined, true)
 		return pickFirstRecords(response, tagNames)
 	}
 
@@ -385,15 +400,10 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		const response = await postXml(
 			'_conf.jsp',
 			`<ajax-request action='getconf' DECRYPT_X='true' updater='${escapeXmlAttribute(component)}.0.5' comp='${escapeXmlAttribute(component)}'/>`,
+			undefined,
+			true,
 		)
 		return pickFirstRecords(response, tagNames)
-	}
-
-	async function getConfXml(component: string) {
-		return await postXml(
-			'_conf.jsp',
-			`<ajax-request action='getconf' DECRYPT_X='true' updater='${escapeXmlAttribute(component)}.0.5' comp='${escapeXmlAttribute(component)}'/>`,
-		)
 	}
 
 	async function findWlan(name: string) {
@@ -456,6 +466,8 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 			const aclResponse = await postXml(
 				'_conf.jsp',
 				"<ajax-request action='getconf' DECRYPT_X='true' updater='acl-list.0.5' comp='acl-list'/>",
+				undefined,
+				true,
 			)
 			const rawXml = extractElementByAttribute({
 				xml: aclResponse,
