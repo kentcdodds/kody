@@ -1101,7 +1101,7 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		temperatureCelsius: 54,
 		attributes: expect.arrayContaining([
 			expect.objectContaining({
-				key: 'Platform',
+				key: 'Platform Type',
 				value: 'Island Pro',
 			}),
 		]),
