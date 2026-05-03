@@ -35,7 +35,9 @@ verify that the home connector runtime has `ISLAND_ROUTER_HOST`,
 `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` set, and prefer
 either `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or `ISLAND_ROUTER_HOST_FINGERPRINT` for
 host verification. The connector never exposes arbitrary router command
-execution. It exposes read-oriented tools such as `router_get_status` and
-`router_diagnose_host`, plus a few high-risk, typed, allowlisted write tools.
-Those write tools require SSH host verification, explicit risk acknowledgement,
-and exact confirmation phrases because mistakes can have severe consequences.
+execution. It exposes a broader typed read surface (status, WAN/failover,
+routing, NAT, VLAN, DNS, users, security policy, QoS, traffic stats, sessions,
+VPN, DHCP server, NTP, syslog, SNMP, system info, and bandwidth usage) plus a
+set of high-risk, typed, allowlisted write tools. Those write tools require SSH
+host verification, explicit risk acknowledgement, and exact confirmation
+phrases because mistakes can have severe consequences.

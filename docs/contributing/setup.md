@@ -93,9 +93,10 @@ Quick notes for getting a local kody environment running.
     `HOME_CONNECTOR_DB_PATH`.
   - Island router SSH diagnostics are optional. Set `ISLAND_ROUTER_HOST`,
     `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` to enable the
-    typed MCP tools `router_get_status`, `router_ping_host`,
-    `router_get_arp_entry`, `router_get_dhcp_lease`, `router_get_recent_events`,
-    and `router_diagnose_host`.
+    typed MCP tools for router status, host diagnosis, WAN/failover state,
+    routing/NAT/session inspection, VLAN/DNS/DHCP policy inspection, VPN/NTP/
+    syslog/SNMP/system-health reads, and the other typed read-only router
+    diagnostics exposed by the home connector.
   - Prefer mounting the private key read-only into the container or host
     runtime, for example
     `-v /path/to/id_ed25519:/run/secrets/island-router-key:ro` plus
@@ -112,9 +113,11 @@ Quick notes for getting a local kody environment running.
     commands.
   - High-risk Island router write tools are available when SSH host verification
     is configured with `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
-    `ISLAND_ROUTER_HOST_FINGERPRINT`. The allowlisted mutating tools are
-    `router_renew_dhcp_clients`, `router_clear_log_buffer`, and
-    `router_save_running_config`.
+    `ISLAND_ROUTER_HOST_FINGERPRINT`. The allowlisted mutating tools include
+    targeted operational actions such as WAN failover forcing, DHCP reservation
+    changes, reboot, interface-description changes, DNS-server changes,
+    block/unblock-host actions, DHCP client renewal, log clearing, config save,
+    and a narrowly allowlisted router CLI escape hatch.
   - These write tools exist for carefully scoped operational recovery only.
     Their tool descriptions intentionally use strong language because mistakes
     can disrupt connectivity, erase diagnostics, or persist a bad router state
