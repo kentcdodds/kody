@@ -807,10 +807,6 @@ export function createIslandRouterAdapter(input: {
 						id: 'show-wan-failover',
 						timeoutMs: request.timeoutMs,
 					},
-					{
-						id: 'show-multi-wan',
-						timeoutMs: request.timeoutMs,
-					},
 				],
 				message: 'Island router failover status lookup',
 				parser: parseIslandRouterFailoverStatus,
@@ -833,10 +829,6 @@ export function createIslandRouterAdapter(input: {
 						id: 'show-nat',
 						timeoutMs: request.timeoutMs,
 					},
-					{
-						id: 'show-ip-nat',
-						timeoutMs: request.timeoutMs,
-					},
 				],
 				message: 'Island router NAT rule lookup',
 				parser: parseIslandRouterNatRules,
@@ -857,10 +849,6 @@ export function createIslandRouterAdapter(input: {
 				requests: [
 					{
 						id: 'show-dns',
-						timeoutMs: request.timeoutMs,
-					},
-					{
-						id: 'show-ip-dns',
 						timeoutMs: request.timeoutMs,
 					},
 				],
@@ -891,14 +879,6 @@ export function createIslandRouterAdapter(input: {
 						id: 'show-security-policy',
 						timeoutMs: request.timeoutMs,
 					},
-					{
-						id: 'show-protection',
-						timeoutMs: request.timeoutMs,
-					},
-					{
-						id: 'show-firewall',
-						timeoutMs: request.timeoutMs,
-					},
 				],
 				message: 'Island router security policy lookup',
 				parser: parseIslandRouterSecurityPolicy,
@@ -909,10 +889,6 @@ export function createIslandRouterAdapter(input: {
 				requests: [
 					{
 						id: 'show-qos',
-						timeoutMs: request.timeoutMs,
-					},
-					{
-						id: 'show-traffic-policy',
 						timeoutMs: request.timeoutMs,
 					},
 				],
@@ -947,14 +923,6 @@ export function createIslandRouterAdapter(input: {
 						id: 'show-vpn',
 						timeoutMs: request.timeoutMs,
 					},
-					{
-						id: 'show-ipsec',
-						timeoutMs: request.timeoutMs,
-					},
-					{
-						id: 'show-gre',
-						timeoutMs: request.timeoutMs,
-					},
 				],
 				message: 'Island router VPN configuration lookup',
 				parser: parseIslandRouterVpnConfig,
@@ -977,14 +945,20 @@ export function createIslandRouterAdapter(input: {
 			})
 		},
 		async getNtpConfig(request: ReadRequest = {}) {
-			return await executeReadCommand(
-				{
-					id: 'show-ntp',
-					timeoutMs: request.timeoutMs,
-				},
-				'Island router NTP configuration lookup',
-				parseIslandRouterNtpConfig,
-			)
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-ntp-status',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-ntp-associations',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router NTP configuration lookup',
+				parser: parseIslandRouterNtpConfig,
+			})
 		},
 		async getSyslogConfig(request: ReadRequest = {}) {
 			return await executeReadCommand(
@@ -1007,14 +981,20 @@ export function createIslandRouterAdapter(input: {
 			)
 		},
 		async getSystemInfo(request: ReadRequest = {}) {
-			return await executeReadCommand(
-				{
-					id: 'show-system',
-					timeoutMs: request.timeoutMs,
-				},
-				'Island router system info lookup',
-				parseIslandRouterSystemInfo,
-			)
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-system',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-hardware',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router system info lookup',
+				parser: parseIslandRouterSystemInfo,
+			})
 		},
 		async getBandwidthUsage(request: ReadRequest = {}) {
 			return await executeReadCommand(

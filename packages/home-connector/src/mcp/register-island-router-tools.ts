@@ -370,7 +370,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_wan_config',
 		title: 'Get Island Router WAN Config',
 		description:
-			'Read WAN interface configuration for all WAN ports, including ISP/provider labels, addressing, failover role, and priority.',
+			'Read WAN interface configuration inferred from the Island running configuration, including detected WAN interfaces, addressing, and failover priority when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getWanConfig({
@@ -392,7 +392,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_failover_status',
 		title: 'Get Island Router Failover Status',
 		description:
-			'Read multi-WAN failover status including the active ISP/interface, health state per WAN, and failover policy.',
+			'Read multi-WAN preference and failover intent inferred from the Island running configuration, including interface priority and load-sharing policy when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getFailoverStatus({
@@ -434,7 +434,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_nat_rules',
 		title: 'Get Island Router NAT Rules',
 		description:
-			'Read Island router NAT and port-forwarding rules from the typed allowlisted CLI views.',
+			'Read Island router NAT-related configuration from supported CLI views, including interface NAT enablement when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getNatRules({
@@ -456,7 +456,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_vlan_config',
 		title: 'Get Island Router VLAN Config',
 		description:
-			'Read Island router VLAN definitions, interface assignments, and parsed addressing details when present.',
+			'Read Island router VLAN definitions inferred from supported CLI views, including interface assignments and parsed addressing details when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getVlanConfig({
@@ -478,7 +478,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_dns_config',
 		title: 'Get Island Router DNS Config',
 		description:
-			'Read Island router DNS server configuration and parsed local DNS override records when present.',
+			'Read Island router DNS resolver configuration from supported CLI views, including DNS mode and configured upstream resolvers when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getDnsConfig({
@@ -519,7 +519,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_security_policy',
 		title: 'Get Island Router Security Policy',
 		description:
-			'Read Island router firewall, protection, or security-policy rules from the typed allowlisted CLI views.',
+			'Read Island router firewall, protection, or security-policy configuration from supported CLI views.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getSecurityPolicy({
@@ -541,7 +541,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_qos_config',
 		title: 'Get Island Router QoS Config',
 		description:
-			'Read Island router QoS or traffic-shaping policy configuration from the typed allowlisted CLI views.',
+			'Read Island router QoS or traffic-shaping configuration from supported CLI views.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getQosConfig({
@@ -563,7 +563,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_traffic_stats',
 		title: 'Get Island Router Traffic Stats',
 		description:
-			'Read per-interface Island router traffic statistics including bytes, packets, errors, and utilization when present.',
+			'Read Island router packet-processing or interface traffic statistics from supported diagnostic CLI views when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getTrafficStats({
@@ -585,7 +585,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_active_sessions',
 		title: 'Get Island Router Active Sessions',
 		description:
-			'Read the Island router active session or connection-state table, including parsed protocol and endpoint tuples.',
+			'Read the Island router active control-plane socket table from the supported `show ip sockets` CLI view, including parsed protocol and endpoint tuples.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getActiveSessions({
@@ -607,7 +607,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_vpn_config',
 		title: 'Get Island Router VPN Config',
 		description:
-			'Read Island router VPN or tunnel configuration (such as IPSec or GRE) from the typed allowlisted CLI views.',
+			'Read Island router VPN configuration from the supported `show vpns` CLI view, including tunnel status and statistics when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getVpnConfig({
@@ -629,7 +629,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_dhcp_server_config',
 		title: 'Get Island Router DHCP Server Config',
 		description:
-			'Read Island router DHCP server pools, options, and static reservation configuration.',
+			'Read Island router DHCP server configuration from supported CLI views, including interface DHCP server state, lease settings, and static reservations when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getDhcpServerConfig({
@@ -648,7 +648,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_ntp_config',
 		title: 'Get Island Router NTP Config',
 		description:
-			'Read Island router NTP or time-sync configuration including parsed upstream servers when present.',
+			'Read Island router NTP status and peer information from the supported `show ntp status` and `show ntp associations` CLI views.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getNtpConfig({
@@ -670,7 +670,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_syslog_config',
 		title: 'Get Island Router Syslog Config',
 		description:
-			'Read Island router remote syslog target configuration when present.',
+			'Read Island router remote syslog configuration inferred from supported CLI views when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getSyslogConfig({
@@ -692,7 +692,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_snmp_config',
 		title: 'Get Island Router SNMP Config',
 		description:
-			'Read Island router SNMP community and trap-target configuration when present.',
+			'Read Island router SNMP configuration inferred from supported CLI views when present.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getSnmpConfig({
@@ -711,7 +711,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_system_info',
 		title: 'Get Island Router System Info',
 		description:
-			'Read Island router system-health information such as uptime, CPU usage, memory usage, and temperature when available.',
+			'Read Island router system-health and hardware summary information from the supported `show stats` and `show hardware` CLI views when available.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getSystemInfo({
@@ -732,7 +732,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		name: 'router_get_bandwidth_usage',
 		title: 'Get Island Router Bandwidth Usage',
 		description:
-			'Read Island router real-time or historical bandwidth usage entries when the CLI exposes them.',
+			'Read Island router throughput-related summary entries from supported diagnostic CLI views when available.',
 		inputSchema: readTimeoutSchema,
 		handler: async (args) => {
 			const result = await islandRouter.getBandwidthUsage({

@@ -266,23 +266,25 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 		case 'show-clock':
 			return ['show clock']
 		case 'show-system':
-			return ['show system']
+			return ['show stats']
+		case 'show-hardware':
+			return ['show hardware']
+		case 'show-stats':
+			return ['show stats']
+		case 'show-running-config':
+			return ['show running-config']
 		case 'show-interface-summary':
 			return ['show interface summary']
 		case 'show-interface-statistics':
-			return ['show interface statistics']
+			return ['show stats']
 		case 'show-bandwidth-usage':
-			// Best-effort guess; public docs were not found for realtime bandwidth usage.
-			return ['show bandwidth-usage']
+			return ['show stats']
 		case 'show-wan':
-			// Best-effort guess; public docs were not found for WAN summary inspection.
-			return ['show wan']
+			return ['show running-config']
 		case 'show-wan-failover':
-			// Best-effort guess; public docs were not found for WAN failover status.
-			return ['show wan failover']
+			return ['show running-config']
 		case 'show-multi-wan':
-			// Best-effort guess; public docs were not found for multi-WAN state.
-			return ['show multi-wan']
+			return ['show running-config']
 		case 'show-interface':
 			return [
 				`show interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
@@ -294,68 +296,58 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 		case 'show-ip-routes':
 			return ['show ip routes']
 		case 'show-nat':
-			// Best-effort guess; public docs were not found for NAT inspection.
-			return ['show nat']
+			return ['show running-config']
 		case 'show-ip-nat':
-			// Best-effort guess; public docs were not found for IP NAT inspection.
-			return ['show ip nat']
+			return ['show running-config']
 		case 'show-sessions':
-			// Best-effort guess; public docs were not found for session table inspection.
-			return ['show sessions']
+			return ['show ip sockets']
 		case 'show-vlan':
-			// Best-effort guess; public docs were not found for VLAN inspection.
-			return ['show vlan']
+			return ['show running-config']
 		case 'show-dns':
-			// Best-effort guess; public docs were not found for DNS inspection.
-			return ['show dns']
+			return ['show running-config']
 		case 'show-ip-dns':
-			// Best-effort guess; public docs were not found for IP DNS inspection.
-			return ['show ip dns']
+			return ['show running-config']
 		case 'show-users':
 			return ['show users']
 		case 'show-user':
 			// Best-effort guess; public docs were not found for per-user detail output.
 			return ['show user']
 		case 'show-security-policy':
-			// Best-effort guess; public docs were not found for security policy inspection.
-			return ['show security-policy']
+			return ['show running-config']
 		case 'show-protection':
-			// Best-effort guess; public docs were not found for protection inspection.
-			return ['show protection']
+			return ['show running-config']
 		case 'show-firewall':
-			// Best-effort guess; public docs were not found for firewall inspection.
-			return ['show firewall']
+			return ['show running-config']
 		case 'show-qos':
-			// Best-effort guess; public docs were not found for QoS inspection.
-			return ['show qos']
+			return ['show running-config']
 		case 'show-traffic-policy':
-			// Best-effort guess; public docs were not found for traffic policy inspection.
-			return ['show traffic-policy']
+			return ['show running-config']
 		case 'show-vpn':
-			// Best-effort guess; public docs were not found for VPN inspection.
-			return ['show vpn']
+			return ['show vpns']
+		case 'show-vpns':
+			return ['show vpns']
 		case 'show-ipsec':
-			// Best-effort guess; public docs were not found for IPsec inspection.
-			return ['show ipsec']
+			return ['show vpns']
 		case 'show-gre':
-			// Best-effort guess; public docs were not found for GRE inspection.
-			return ['show gre']
+			return ['show vpns']
 		case 'show-ip-neighbors':
 			return ['show ip neighbors']
+		case 'show-ip-sockets':
+			return ['show ip sockets']
 		case 'show-ip-dhcp-reservations':
 			return ['show ip dhcp-reservations']
 		case 'show-dhcp-server':
-			// Best-effort guess; public docs were not found for DHCP server inspection.
-			return ['show dhcp-server']
+			return ['show running-config']
 		case 'show-ntp':
-			// Best-effort guess; public docs were not found for NTP inspection.
-			return ['show ntp']
+			return ['show ntp status']
+		case 'show-ntp-status':
+			return ['show ntp status']
+		case 'show-ntp-associations':
+			return ['show ntp associations']
 		case 'show-syslog':
-			// Best-effort guess; public docs were not found for syslog inspection.
-			return ['show syslog']
+			return ['show running-config']
 		case 'show-snmp':
-			// Best-effort guess; public docs were not found for SNMP inspection.
-			return ['show snmp']
+			return ['show running-config']
 		case 'show-log':
 			return request.query
 				? [`show log last where "${escapeCliQuery(request.query)}"`]

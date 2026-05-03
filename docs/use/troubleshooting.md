@@ -41,3 +41,19 @@ VPN, DHCP server, NTP, syslog, SNMP, system info, and bandwidth usage) plus a
 set of high-risk, typed, allowlisted write tools. Those write tools require SSH
 host verification, explicit risk acknowledgement, and exact confirmation
 phrases because mistakes can have severe consequences.
+
+Several of the typed read tools are intentionally derived from the documented
+Island CLI families instead of guessed one-off `show` commands:
+
+- WAN, failover, NAT, VLAN, DNS, DHCP server, syslog, and SNMP reads are
+  derived from `show running-config`.
+- VPN reads are derived from `show vpns`.
+- Active-session reads are derived from `show ip sockets`.
+- NTP reads are derived from `show ntp status` and
+  `show ntp associations`.
+- System-health and bandwidth-style summaries are derived from `show stats`
+  plus `show hardware` when available.
+
+If a router command returns Island help, usage, or unknown-command output, the
+connector now treats that as unsupported or inconclusive output instead of
+trying to parse it as structured data.

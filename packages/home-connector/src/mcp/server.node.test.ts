@@ -70,12 +70,28 @@ function createIslandRouterRunner() {
 			case 'show-system':
 				return {
 					id: request.id,
-					commandLines: ['terminal length 0', 'show system'],
+					commandLines: ['terminal length 0', 'show stats'],
 					stdout: [
 						'Uptime: 4 days 03 hours',
 						'CPU Usage: 17%',
 						'Memory Usage: 41%',
 						'Temperature: 46 C',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-hardware':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show hardware'],
+					stdout: [
+						'Platform Type: Island Pro',
+						'CPU Type: ARM64',
+						'Memory Size: 8 GB',
+						'Power Supply Status: ok',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
