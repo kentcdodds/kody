@@ -16,6 +16,9 @@ export type IslandRouterConfigStatus = {
 	missingFields: Array<string>
 	verificationMode: IslandRouterVerificationMode
 	warnings: Array<string>
+	writeToolsEnabled: boolean
+	writeCapabilitiesAvailable: boolean
+	writeWarnings: Array<string>
 }
 
 export type IslandRouterCommandId =
@@ -28,6 +31,9 @@ export type IslandRouterCommandId =
 	| 'show-ip-dhcp-reservations'
 	| 'show-log'
 	| 'ping'
+	| 'clear-dhcp-client'
+	| 'clear-log'
+	| 'write-memory'
 
 export type IslandRouterCommandRequest =
 	| {
@@ -71,6 +77,18 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 			allowTimeout?: boolean
 	  }
+	| {
+			id: 'clear-dhcp-client'
+			timeoutMs?: number
+	  }
+	| {
+			id: 'clear-log'
+			timeoutMs?: number
+	  }
+	| {
+			id: 'write-memory'
+			timeoutMs?: number
+	  }
 
 export type IslandRouterCommandResult = {
 	id: IslandRouterCommandId
@@ -86,6 +104,26 @@ export type IslandRouterCommandResult = {
 export type IslandRouterCommandRunner = (
 	request: IslandRouterCommandRequest,
 ) => Promise<IslandRouterCommandResult>
+
+export type IslandRouterWriteOperationId =
+	| 'renew-dhcp-clients'
+	| 'clear-log-buffer'
+	| 'save-running-config'
+
+export type IslandRouterWriteOperationResult = {
+	operationId: IslandRouterWriteOperationId
+	commandId: Extract<
+		IslandRouterCommandId,
+		'clear-dhcp-client' | 'clear-log' | 'write-memory'
+	>
+	commandLines: Array<string>
+	stdout: string
+	stderr: string
+	exitCode: number | null
+	signal: NodeJS.Signals | null
+	timedOut: boolean
+	durationMs: number
+}
 
 export type IslandRouterKeyValue = {
 	key: string

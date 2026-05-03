@@ -217,7 +217,7 @@ How to get/set each value:
     published Docker image)
   - `APP_COMMIT_SHA` is also baked into the published Docker image and used by
     the connector’s Sentry setup as the release identifier
-  - Island router SSH diagnostics (optional, read-only):
+  - Island router SSH diagnostics (optional, typed allowlist):
     - `HOME_CONNECTOR_ISLAND_ROUTER_HOST`
     - `HOME_CONNECTOR_ISLAND_ROUTER_PORT`
     - `HOME_CONNECTOR_ISLAND_ROUTER_USERNAME`
@@ -225,6 +225,9 @@ How to get/set each value:
     - `HOME_CONNECTOR_ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
       `HOME_CONNECTOR_ISLAND_ROUTER_HOST_FINGERPRINT`
     - `HOME_CONNECTOR_ISLAND_ROUTER_COMMAND_TIMEOUT_MS`
+    - `HOME_CONNECTOR_ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS` (optional, defaults
+      to disabled; enables a tiny set of high-risk mutating router tools only
+      after explicit opt-in)
   - When enabling Island router diagnostics in Docker, mount the SSH private key
     (and optionally the known-hosts file) read-only into the container and point
     the env vars at those mounted paths.

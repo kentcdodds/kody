@@ -126,6 +126,29 @@ export function getIslandRouterConfigStatus(
 		missingFields,
 		verificationMode,
 		warnings,
+		writeToolsEnabled: config.islandRouterWriteOperationsEnabled,
+		writeCapabilitiesAvailable:
+			config.islandRouterWriteOperationsEnabled &&
+			missingFields.length === 0 &&
+			verificationConfigValid &&
+			verificationMode !== 'none',
+		writeWarnings: [
+			...(config.islandRouterWriteOperationsEnabled
+				? []
+				: [
+						'Island router write operations are disabled. Set ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true only if you intentionally want highly restricted mutating router tools.',
+					]),
+			...(verificationMode === 'none'
+				? [
+						'Island router write operations require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before enabling them.',
+					]
+				: []),
+			...(verificationConfigValid
+				? []
+				: [
+						'Island router write operations remain unavailable until SSH host verification is configured correctly.',
+					]),
+		],
 	}
 }
 
@@ -147,6 +170,27 @@ export function assertIslandRouterConfigured(config: HomeConnectorConfig) {
 		!config.islandRouterKnownHostsPath
 	) {
 		validateIslandRouterFingerprint(config.islandRouterHostFingerprint)
+	}
+	return status
+}
+
+export function assertIslandRouterWriteConfigured(config: HomeConnectorConfig) {
+	const status = assertIslandRouterConfigured(config)
+	if (!config.islandRouterWriteOperationsEnabled) {
+		throw new Error(
+			'Island router write operations are disabled. Set ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true only if you intentionally want these high-risk mutating tools.',
+		)
+	}
+	if (status.verificationMode === 'none') {
+		throw new Error(
+			'Island router write operations require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',
+		)
+	}
+	if (!status.writeCapabilitiesAvailable) {
+		const details = status.writeWarnings.filter(Boolean).join(' ')
+		throw new Error(
+			`Island router write operations are unavailable. ${details}`.trim(),
+		)
 	}
 	return status
 }

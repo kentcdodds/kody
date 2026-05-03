@@ -7,6 +7,8 @@ import {
 	type IslandRouterInterfaceSummary,
 	type IslandRouterNeighborEntry,
 	type IslandRouterStatus,
+	type IslandRouterWriteOperationId,
+	type IslandRouterWriteOperationResult,
 } from './types.ts'
 import { createIslandRouterSshCommandRunner } from './ssh-client.ts'
 import {
@@ -23,6 +25,7 @@ import {
 } from './parsing.ts'
 import {
 	assertIslandRouterConfigured,
+	assertIslandRouterWriteConfigured,
 	getIslandRouterConfigStatus,
 	validateIslandRouterHost,
 } from './validation.ts'
@@ -48,6 +51,22 @@ type DiagnoseHostRequest = {
 	timeoutMs?: number
 	logLimit?: number
 }
+
+type WriteOperationRequest = {
+	timeoutMs?: number
+	acknowledgeHighRisk: boolean
+	reason: string
+	confirmation: string
+}
+
+const islandRouterWriteAcknowledgements = {
+	renewDhcpClients:
+		'I am highly certain renewing all Island router DHCP clients is necessary right now.',
+	clearLogBuffer:
+		'I am highly certain clearing the Island router log buffer is necessary right now.',
+	saveRunningConfig:
+		'I am highly certain saving the Island router running configuration is necessary right now.',
+} as const
 
 function normalizeLimit(value: number | undefined, fallback: number, max: number) {
 	if (value == null || !Number.isFinite(value)) return fallback
@@ -158,6 +177,72 @@ function dedupeRecentEvents(messages: Array<ReturnType<typeof parseIslandRouterR
 	})
 }
 
+function assertWriteAcknowledgement(
+	received: string,
+	expected: string,
+	operationLabel: string,
+) {
+	if (received.trim() !== expected) {
+		throw new Error(
+			`${operationLabel} requires the exact acknowledgement: "${expected}"`,
+		)
+	}
+}
+
+function assertWriteReason(reason: string, operationLabel: string) {
+	const trimmed = reason.trim()
+	if (trimmed.length < 20) {
+		throw new Error(
+			`${operationLabel} requires a specific operator reason of at least 20 characters.`,
+		)
+	}
+}
+
+async function runWriteOperation(input: {
+	config: HomeConnectorConfig
+	runner: IslandRouterCommandRunner
+	timeoutMs?: number
+	operationId: IslandRouterWriteOperationId
+	commandId: 'clear-dhcp-client' | 'clear-log' | 'write-memory'
+	message: string
+	acknowledgeHighRisk: boolean
+	reason: string
+	confirmation: string
+	expectedAcknowledgement: string
+}) {
+	assertIslandRouterWriteConfigured(input.config)
+	if (!input.acknowledgeHighRisk) {
+		throw new Error(
+			`${input.message} requires acknowledgeHighRisk=true because this is a high-risk mutating router operation.`,
+		)
+	}
+	assertWriteReason(input.reason, input.message)
+	assertWriteAcknowledgement(
+		input.confirmation,
+		input.expectedAcknowledgement,
+		input.message,
+	)
+	const timeoutMs = normalizeTimeoutMs(input.config, input.timeoutMs)
+	const result = ensureSuccessfulCommand(
+		await input.runner({
+			id: input.commandId,
+			timeoutMs,
+		}),
+		input.message,
+	)
+	return {
+		operationId: input.operationId,
+		commandId: input.commandId,
+		commandLines: result.commandLines,
+		stdout: result.stdout,
+		stderr: result.stderr,
+		exitCode: result.exitCode,
+		signal: result.signal,
+		timedOut: result.timedOut,
+		durationMs: result.durationMs,
+	} satisfies IslandRouterWriteOperationResult
+}
+
 export function createIslandRouterAdapter(input: {
 	config: HomeConnectorConfig
 	commandRunner?: IslandRouterCommandRunner
@@ -177,6 +262,7 @@ export function createIslandRouterAdapter(input: {
 
 	return {
 		getConfigStatus,
+		writeAcknowledgements: islandRouterWriteAcknowledgements,
 		async getStatus(): Promise<IslandRouterStatus> {
 			const configStatus = getConfigStatus()
 			if (!configStatus.configured) {
@@ -524,6 +610,51 @@ export function createIslandRouterAdapter(input: {
 				recentEvents,
 				errors,
 			}
+		},
+		async renewDhcpClients(request: WriteOperationRequest) {
+			return await runWriteOperation({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'renew-dhcp-clients',
+				commandId: 'clear-dhcp-client',
+				message: 'Island router DHCP client renewal',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.renewDhcpClients,
+			})
+		},
+		async clearLogBuffer(request: WriteOperationRequest) {
+			return await runWriteOperation({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'clear-log-buffer',
+				commandId: 'clear-log',
+				message: 'Island router log clear',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.clearLogBuffer,
+			})
+		},
+		async saveRunningConfig(request: WriteOperationRequest) {
+			return await runWriteOperation({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'save-running-config',
+				commandId: 'write-memory',
+				message: 'Island router configuration save',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.saveRunningConfig,
+			})
 		},
 	}
 }

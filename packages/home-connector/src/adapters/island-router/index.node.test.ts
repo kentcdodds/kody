@@ -44,6 +44,7 @@ function createConfig() {
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
 		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
+	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = 'false'
 	process.env.VENSTAR_SCAN_CIDRS = '192.168.10.40/32'
 	return loadHomeConnectorConfig()
 }
@@ -192,6 +193,39 @@ function createFakeRunner() {
 					timedOut: false,
 					durationMs: 200,
 				}
+			case 'clear-dhcp-client':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'clear dhcp-client'],
+					stdout: 'DHCP client renewal requested.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'clear-log':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'clear log'],
+					stdout: 'Log buffer cleared.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'write-memory':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'write memory'],
+					stdout: 'Running configuration saved.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
 			default: {
 				const _exhaustive: never = request
 				throw new Error(`Unhandled fake Island router request: ${String(_exhaustive)}`)
@@ -296,6 +330,112 @@ test('island router adapter marks malformed fingerprint config as not configured
 			expect.stringContaining('ISLAND_ROUTER_HOST_FINGERPRINT'),
 		]),
 	)
+})
+
+test('island router adapter exposes write capability status and runs typed write operations only when explicitly enabled', async () => {
+	using _env = withTemporaryEnv({})
+	createConfig()
+	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = 'true'
+	const config = loadHomeConnectorConfig()
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: createFakeRunner(),
+	})
+
+	expect(islandRouter.getConfigStatus()).toMatchObject({
+		writeToolsEnabled: true,
+		writeCapabilitiesAvailable: true,
+	})
+
+	const renewResult = await islandRouter.renewDhcpClients({
+		acknowledgeHighRisk: true,
+		reason:
+			'The WAN DHCP lease is stale after an upstream change and must be renewed intentionally.',
+		confirmation: islandRouter.writeAcknowledgements.renewDhcpClients,
+	})
+	expect(renewResult).toMatchObject({
+		operationId: 'renew-dhcp-clients',
+		commandId: 'clear-dhcp-client',
+		commandLines: ['terminal length 0', 'clear dhcp-client'],
+	})
+
+	const clearLogResult = await islandRouter.clearLogBuffer({
+		acknowledgeHighRisk: true,
+		reason:
+			'The current in-memory log spam was already collected and must be cleared before reproducing the issue.',
+		confirmation: islandRouter.writeAcknowledgements.clearLogBuffer,
+	})
+	expect(clearLogResult).toMatchObject({
+		operationId: 'clear-log-buffer',
+		commandId: 'clear-log',
+		commandLines: ['terminal length 0', 'clear log'],
+	})
+
+	const saveConfigResult = await islandRouter.saveRunningConfig({
+		acknowledgeHighRisk: true,
+		reason:
+			'The intended network change was validated manually and now needs to be persisted across reboot.',
+		confirmation: islandRouter.writeAcknowledgements.saveRunningConfig,
+	})
+	expect(saveConfigResult).toMatchObject({
+		operationId: 'save-running-config',
+		commandId: 'write-memory',
+		commandLines: ['terminal length 0', 'write memory'],
+	})
+})
+
+test('island router adapter rejects write operations without explicit enablement and exact confirmation', async () => {
+	using _env = withTemporaryEnv({})
+	const config = createConfig()
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: createFakeRunner(),
+	})
+
+	expect(islandRouter.getConfigStatus()).toMatchObject({
+		writeToolsEnabled: false,
+		writeCapabilitiesAvailable: false,
+	})
+
+	await expect(
+		islandRouter.renewDhcpClients({
+			acknowledgeHighRisk: true,
+			reason:
+				'The WAN DHCP lease is stale after an upstream change and must be renewed intentionally.',
+			confirmation: islandRouter.writeAcknowledgements.renewDhcpClients,
+		}),
+	).rejects.toThrow('ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true')
+
+	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = 'true'
+	const enabledConfig = loadHomeConnectorConfig()
+	const enabledIslandRouter = createIslandRouterAdapter({
+		config: enabledConfig,
+		commandRunner: createFakeRunner(),
+	})
+
+	await expect(
+		enabledIslandRouter.saveRunningConfig({
+			acknowledgeHighRisk: false,
+			reason:
+				'The intended network change was validated manually and now needs to be persisted across reboot.',
+			confirmation: enabledIslandRouter.writeAcknowledgements.saveRunningConfig,
+		}),
+	).rejects.toThrow('acknowledgeHighRisk=true')
+	await expect(
+		enabledIslandRouter.saveRunningConfig({
+			acknowledgeHighRisk: true,
+			reason: 'too short',
+			confirmation: enabledIslandRouter.writeAcknowledgements.saveRunningConfig,
+		}),
+	).rejects.toThrow('specific operator reason')
+	await expect(
+		enabledIslandRouter.saveRunningConfig({
+			acknowledgeHighRisk: true,
+			reason:
+				'The intended network change was validated manually and now needs to be persisted across reboot.',
+			confirmation: 'I think this is probably okay.',
+		}),
+	).rejects.toThrow('exact acknowledgement')
 })
 
 test('fallback interface summary parsing recognizes up and down link states', () => {
