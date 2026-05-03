@@ -225,9 +225,6 @@ How to get/set each value:
     - `HOME_CONNECTOR_ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
       `HOME_CONNECTOR_ISLAND_ROUTER_HOST_FINGERPRINT`
     - `HOME_CONNECTOR_ISLAND_ROUTER_COMMAND_TIMEOUT_MS`
-    - `HOME_CONNECTOR_ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS` (optional, defaults
-      to disabled; enables a tiny set of high-risk mutating router tools only
-      after explicit opt-in)
   - When enabling Island router diagnostics in Docker, mount the SSH private key
     (and optionally the known-hosts file) read-only into the container and point
     the env vars at those mounted paths.

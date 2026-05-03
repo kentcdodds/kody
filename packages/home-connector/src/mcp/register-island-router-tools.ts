@@ -22,7 +22,10 @@ type IslandRouterToolHandler = (
 	args: Record<string, unknown>,
 ) => Promise<CallToolResult>
 
-function structuredTextResult(text: string, structuredContent: unknown): CallToolResult {
+function structuredTextResult(
+	text: string,
+	structuredContent: unknown,
+): CallToolResult {
 	return {
 		content: [
 			{
@@ -45,7 +48,6 @@ export function registerIslandRouterHomeConnectorTools(input: {
 	islandRouter: ReturnType<typeof createIslandRouterAdapter>
 }) {
 	const { registerTool, islandRouter } = input
-	const islandRouterConfig = islandRouter.getConfigStatus()
 
 	const hostSchema = buildToolInputSchema({
 		host: z
@@ -282,121 +284,119 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		},
 	)
 
-	if (islandRouterConfig.writeCapabilitiesAvailable) {
-		const createRouterWriteSchema = (confirmationPhrase: string) =>
-			buildToolInputSchema({
-				acknowledgeHighRisk: z
-					.literal(true)
-					.describe(
-						'Must be true. Set this only when you are highly certain the requested router mutation is necessary and correct.',
-					),
-				reason: z
-					.string()
-					.min(20)
-					.max(500)
-					.describe(
-						'Short operator justification. Be specific about why this mutation is necessary right now.',
-					),
-				confirmation: z
-					.literal(confirmationPhrase)
-					.describe(
-						'Exact confirmation phrase required by the tool. The tool rejects any other value.',
-					),
-				timeoutMs: z
-					.number()
-					.int()
-					.min(1000)
-					.max(60_000)
-					.optional()
-					.describe('Optional command timeout in milliseconds.'),
+	const createRouterWriteSchema = (confirmationPhrase: string) =>
+		buildToolInputSchema({
+			acknowledgeHighRisk: z
+				.literal(true)
+				.describe(
+					'Must be true. Set this only when you are highly certain the requested router mutation is necessary and correct.',
+				),
+			reason: z
+				.string()
+				.min(20)
+				.max(500)
+				.describe(
+					'Short operator justification. Be specific about why this mutation is necessary right now.',
+				),
+			confirmation: z
+				.literal(confirmationPhrase)
+				.describe(
+					'Exact confirmation phrase required by the tool. The tool rejects any other value.',
+				),
+			timeoutMs: z
+				.number()
+				.int()
+				.min(1000)
+				.max(60_000)
+				.optional()
+				.describe('Optional command timeout in milliseconds.'),
+		})
+
+	const renewDhcpClientsSchema = createRouterWriteSchema(
+		islandRouter.writeAcknowledgements.renewDhcpClients,
+	)
+	const clearLogBufferSchema = createRouterWriteSchema(
+		islandRouter.writeAcknowledgements.clearLogBuffer,
+	)
+	const saveRunningConfigSchema = createRouterWriteSchema(
+		islandRouter.writeAcknowledgements.saveRunningConfig,
+	)
+
+	registerTool(
+		{
+			name: 'router_renew_dhcp_clients',
+			title: 'Renew DHCP Clients On Island Router',
+			description: `${routerWriteDangerNotice} This typed allowlisted operation runs the documented Island CLI command \`clear dhcp-client\` to request immediate renewal of DHCP-learned addresses. Never use it as a guess or for broad troubleshooting.`,
+			inputSchema: renewDhcpClientsSchema.inputSchema,
+			sdkInputSchema: renewDhcpClientsSchema.sdkInputSchema,
+			annotations: {
+				destructiveHint: true,
+			},
+		},
+		async (args) => {
+			const result = await islandRouter.renewDhcpClients({
+				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
+				reason: String(args['reason'] ?? ''),
+				confirmation: String(args['confirmation'] ?? ''),
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
 			})
+			return structuredTextResult(
+				'Triggered an immediate renewal of DHCP-learned addresses on the Island router.',
+				result,
+			)
+		},
+	)
 
-		const renewDhcpClientsSchema = createRouterWriteSchema(
-			islandRouter.writeAcknowledgements.renewDhcpClients,
-		)
-		const clearLogBufferSchema = createRouterWriteSchema(
-			islandRouter.writeAcknowledgements.clearLogBuffer,
-		)
-		const saveRunningConfigSchema = createRouterWriteSchema(
-			islandRouter.writeAcknowledgements.saveRunningConfig,
-		)
+	registerTool(
+		{
+			name: 'router_clear_log_buffer',
+			title: 'Clear Island Router Log Buffer',
+			description: `${routerWriteDangerNotice} This typed allowlisted operation runs the documented Island CLI command \`clear log\` and permanently removes the in-memory system log buffer. Use it only when you are highly certain existing log data is no longer needed.`,
+			inputSchema: clearLogBufferSchema.inputSchema,
+			sdkInputSchema: clearLogBufferSchema.sdkInputSchema,
+			annotations: {
+				destructiveHint: true,
+			},
+		},
+		async (args) => {
+			const result = await islandRouter.clearLogBuffer({
+				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
+				reason: String(args['reason'] ?? ''),
+				confirmation: String(args['confirmation'] ?? ''),
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
+			return structuredTextResult(
+				'Cleared the Island router in-memory log buffer.',
+				result,
+			)
+		},
+	)
 
-		registerTool(
-			{
-				name: 'router_renew_dhcp_clients',
-				title: 'Renew DHCP Clients On Island Router',
-				description: `${routerWriteDangerNotice} This typed allowlisted operation runs the documented Island CLI command \`clear dhcp-client\` to request immediate renewal of DHCP-learned addresses. Never use it as a guess or for broad troubleshooting.`,
-				inputSchema: renewDhcpClientsSchema.inputSchema,
-				sdkInputSchema: renewDhcpClientsSchema.sdkInputSchema,
-				annotations: {
-					destructiveHint: true,
-				},
+	registerTool(
+		{
+			name: 'router_save_running_config',
+			title: 'Save Island Router Running Config',
+			description: `${routerWriteDangerNotice} This typed allowlisted operation runs the documented Island CLI command \`write memory\` to persist the current running configuration to startup storage. A mistake can permanently preserve a bad router state, so the agent must be highly certain before using it.`,
+			inputSchema: saveRunningConfigSchema.inputSchema,
+			sdkInputSchema: saveRunningConfigSchema.sdkInputSchema,
+			annotations: {
+				destructiveHint: true,
 			},
-			async (args) => {
-				const result = await islandRouter.renewDhcpClients({
-					acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
-					reason: String(args['reason'] ?? ''),
-					confirmation: String(args['confirmation'] ?? ''),
-					timeoutMs:
-						args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
-				})
-				return structuredTextResult(
-					'Triggered an immediate renewal of DHCP-learned addresses on the Island router.',
-					result,
-				)
-			},
-		)
-
-		registerTool(
-			{
-				name: 'router_clear_log_buffer',
-				title: 'Clear Island Router Log Buffer',
-				description: `${routerWriteDangerNotice} This typed allowlisted operation runs the documented Island CLI command \`clear log\` and permanently removes the in-memory system log buffer. Use it only when you are highly certain existing log data is no longer needed.`,
-				inputSchema: clearLogBufferSchema.inputSchema,
-				sdkInputSchema: clearLogBufferSchema.sdkInputSchema,
-				annotations: {
-					destructiveHint: true,
-				},
-			},
-			async (args) => {
-				const result = await islandRouter.clearLogBuffer({
-					acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
-					reason: String(args['reason'] ?? ''),
-					confirmation: String(args['confirmation'] ?? ''),
-					timeoutMs:
-						args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
-				})
-				return structuredTextResult(
-					'Cleared the Island router in-memory log buffer.',
-					result,
-				)
-			},
-		)
-
-		registerTool(
-			{
-				name: 'router_save_running_config',
-				title: 'Save Island Router Running Config',
-				description: `${routerWriteDangerNotice} This typed allowlisted operation runs the documented Island CLI command \`write memory\` to persist the current running configuration to startup storage. A mistake can permanently preserve a bad router state, so the agent must be highly certain before using it.`,
-				inputSchema: saveRunningConfigSchema.inputSchema,
-				sdkInputSchema: saveRunningConfigSchema.sdkInputSchema,
-				annotations: {
-					destructiveHint: true,
-				},
-			},
-			async (args) => {
-				const result = await islandRouter.saveRunningConfig({
-					acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
-					reason: String(args['reason'] ?? ''),
-					confirmation: String(args['confirmation'] ?? ''),
-					timeoutMs:
-						args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
-				})
-				return structuredTextResult(
-					'Saved the Island router running configuration to startup storage.',
-					result,
-				)
-			},
-		)
-	}
+		},
+		async (args) => {
+			const result = await islandRouter.saveRunningConfig({
+				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
+				reason: String(args['reason'] ?? ''),
+				confirmation: String(args['confirmation'] ?? ''),
+				timeoutMs:
+					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
+			})
+			return structuredTextResult(
+				'Saved the Island router running configuration to startup storage.',
+				result,
+			)
+		},
+	)
 }

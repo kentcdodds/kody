@@ -33,7 +33,8 @@ Quick notes for getting a local kody environment running.
 - Copy `packages/worker/.env.example` to `packages/worker/.env` before starting
   any work, then update secrets as needed. The example includes placeholder
   values for `COOKIE_SECRET` and `SECRET_STORE_KEY`; all environments must set
-  both secrets (see [`docs/contributing/secret-rotation.md`](./secret-rotation.md)).
+  both secrets (see
+  [`docs/contributing/secret-rotation.md`](./secret-rotation.md)).
 - `npm run dev` (starts mock API servers automatically, the main worker, and the
   local home connector; it sets `AI_MODE=mock`, `AI_MOCK_BASE_URL`, and
   `CLOUDFLARE_API_BASE_URL` + `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
@@ -91,28 +92,29 @@ Quick notes for getting a local kody environment running.
     `HOME_CONNECTOR_DATA_PATH` or the full file path with
     `HOME_CONNECTOR_DB_PATH`.
   - Island router SSH diagnostics are optional. Set `ISLAND_ROUTER_HOST`,
-    `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` to enable
-    the typed read-oriented MCP tools `router_get_status`,
-    `router_ping_host`, `router_get_arp_entry`, `router_get_dhcp_lease`,
-    `router_get_recent_events`, and `router_diagnose_host`.
+    `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` to enable the
+    typed MCP tools `router_get_status`, `router_ping_host`,
+    `router_get_arp_entry`, `router_get_dhcp_lease`, `router_get_recent_events`,
+    and `router_diagnose_host`.
   - Prefer mounting the private key read-only into the container or host
-    runtime, for example `-v /path/to/id_ed25519:/run/secrets/island-router-key:ro`
-    plus `HOME_CONNECTOR_ISLAND_ROUTER_PRIVATE_KEY_PATH=/run/secrets/island-router-key`
+    runtime, for example
+    `-v /path/to/id_ed25519:/run/secrets/island-router-key:ro` plus
+    `HOME_CONNECTOR_ISLAND_ROUTER_PRIVATE_KEY_PATH=/run/secrets/island-router-key`
     when launching through `npm run dev`, or
-    `ISLAND_ROUTER_PRIVATE_KEY_PATH=/run/secrets/island-router-key` when
-    running `packages/home-connector` directly.
-  - For host verification, set either `ISLAND_ROUTER_KNOWN_HOSTS_PATH` (preferred)
-    or `ISLAND_ROUTER_HOST_FINGERPRINT`. When neither is set, the connector still
-    works but reports a warning because SSH host verification is disabled.
+    `ISLAND_ROUTER_PRIVATE_KEY_PATH=/run/secrets/island-router-key` when running
+    `packages/home-connector` directly.
+  - For host verification, set either `ISLAND_ROUTER_KNOWN_HOSTS_PATH`
+    (preferred) or `ISLAND_ROUTER_HOST_FINGERPRINT`. When neither is set, the
+    connector still works but reports a warning because SSH host verification is
+    disabled.
   - The Island router integration intentionally does not expose arbitrary
     command execution over MCP. It uses a typed allowlist of documented CLI
     commands.
-  - High-risk Island router write tools are disabled by default. To expose the
-    allowlisted mutating tools `router_renew_dhcp_clients`,
-    `router_clear_log_buffer`, and `router_save_running_config`, set
-    `ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true` and configure SSH host
-    verification with `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
-    `ISLAND_ROUTER_HOST_FINGERPRINT`.
+  - High-risk Island router write tools are available when SSH host verification
+    is configured with `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
+    `ISLAND_ROUTER_HOST_FINGERPRINT`. The allowlisted mutating tools are
+    `router_renew_dhcp_clients`, `router_clear_log_buffer`, and
+    `router_save_running_config`.
   - These write tools exist for carefully scoped operational recovery only.
     Their tool descriptions intentionally use strong language because mistakes
     can disrupt connectivity, erase diagnostics, or persist a bad router state

@@ -51,7 +51,6 @@ function createConfig() {
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
 		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
-	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = 'false'
 	process.env.VENSTAR_SCAN_CIDRS = '192.168.10.40/32'
 	return loadHomeConnectorConfig()
 }
@@ -344,18 +343,15 @@ test('island router adapter marks malformed fingerprint config as not configured
 	)
 })
 
-test('island router adapter exposes write capability status and runs typed write operations only when explicitly enabled', async () => {
+test('island router adapter exposes write capability status and runs typed write operations with verified SSH config', async () => {
 	using _env = withTemporaryEnv({})
-	createConfig()
-	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = 'true'
-	const config = loadHomeConnectorConfig()
+	const config = createConfig()
 	const islandRouter = createIslandRouterAdapter({
 		config,
 		commandRunner: createFakeRunner(),
 	})
 
 	expect(islandRouter.getConfigStatus()).toMatchObject({
-		writeToolsEnabled: true,
 		writeCapabilitiesAvailable: true,
 	})
 
@@ -396,16 +392,17 @@ test('island router adapter exposes write capability status and runs typed write
 	})
 })
 
-test('island router adapter rejects write operations without explicit enablement and exact confirmation', async () => {
+test('island router adapter rejects write operations without host verification and exact confirmation', async () => {
 	using _env = withTemporaryEnv({})
-	const config = createConfig()
+	createConfig()
+	process.env.ISLAND_ROUTER_HOST_FINGERPRINT = ''
+	const config = loadHomeConnectorConfig()
 	const islandRouter = createIslandRouterAdapter({
 		config,
 		commandRunner: createFakeRunner(),
 	})
 
 	expect(islandRouter.getConfigStatus()).toMatchObject({
-		writeToolsEnabled: false,
 		writeCapabilitiesAvailable: false,
 	})
 
@@ -416,9 +413,10 @@ test('island router adapter rejects write operations without explicit enablement
 				'The WAN DHCP lease is stale after an upstream change and must be renewed intentionally.',
 			confirmation: islandRouter.writeAcknowledgements.renewDhcpClients,
 		}),
-	).rejects.toThrow('ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS=true')
+	).rejects.toThrow('SSH host verification')
 
-	process.env.ISLAND_ROUTER_ENABLE_WRITE_OPERATIONS = 'true'
+	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
+		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	const enabledConfig = loadHomeConnectorConfig()
 	const enabledIslandRouter = createIslandRouterAdapter({
 		config: enabledConfig,
