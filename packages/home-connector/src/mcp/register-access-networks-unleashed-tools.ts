@@ -118,14 +118,15 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 		},
 		async () => {
 			const controllers = await accessNetworksUnleashed.scan()
-			const status = await accessNetworksUnleashed.getStatus()
 			return structuredTextResult(
 				controllers.length === 0
 					? 'No Access Networks Unleashed controllers were discovered.'
 					: `Discovered ${controllers.length} Access Networks Unleashed controller(s).`,
 				{
 					controllers,
-					diagnostics: status.diagnostics,
+					diagnostics: accessNetworksUnleashed.getStatus().then
+						? undefined
+						: undefined,
 				},
 			)
 		},

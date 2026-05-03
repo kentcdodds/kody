@@ -230,6 +230,7 @@ test('access networks unleashed status errors preserve last successful authentic
 		state,
 		storage,
 	})
+	let shouldFailSystemStatus = false
 	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
 		const href = String(url)
 		if (href === 'https://192.168.10.60/') {
@@ -265,13 +266,7 @@ test('access networks unleashed status errors preserve last successful authentic
 		if (href.endsWith('/_cmdstat.jsp')) {
 			const body = String(init?.body ?? '')
 			if (body.includes("comp='system'")) {
-				if (
-					fetchMock.mock.calls.some(
-						([calledUrl, calledInit]) =>
-							String(calledUrl).endsWith('/_cmdstat.jsp') &&
-							String(calledInit?.body ?? '').includes('<xevent />'),
-					)
-				) {
+				if (shouldFailSystemStatus) {
 					throw new Error('temporary network outage')
 				}
 				return response(
@@ -322,12 +317,24 @@ test('access networks unleashed status errors preserve last successful authentic
 		const previousAuthTime = authenticated.lastAuthenticatedAt
 		expect(previousAuthTime).toEqual(expect.any(String))
 
+		shouldFailSystemStatus = true
 		const status = await adapter.getStatus()
 		expect(status.error).toBe('temporary network outage')
 		expect(status.controller).toMatchObject({
 			controllerId: '192.168.10.60',
 			lastAuthenticatedAt: previousAuthTime,
 			lastAuthError: 'temporary network outage',
+		})
+
+		await expect(adapter.authenticate()).rejects.toThrow(
+			'temporary network outage',
+		)
+		expect(await adapter.getStatus()).toMatchObject({
+			controller: {
+				controllerId: '192.168.10.60',
+				lastAuthenticatedAt: previousAuthTime,
+				lastAuthError: 'temporary network outage',
+			},
 		})
 	} finally {
 		globalThis.fetch = previousFetch

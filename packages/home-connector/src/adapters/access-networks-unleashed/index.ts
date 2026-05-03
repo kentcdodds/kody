@@ -235,6 +235,9 @@ export function createAccessNetworksUnleashedAdapter(input: {
 				getAdoptedAccessNetworksUnleashedController(storage, connectorId),
 			)
 		},
+		getDiscoveryDiagnostics() {
+			return state.accessNetworksUnleashedDiscoveryDiagnostics
+		},
 		listControllers,
 		async scan() {
 			if (input.scanControllers) {
@@ -330,7 +333,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 					storage,
 					connectorId,
 					controllerId: controller.controllerId,
-					lastAuthenticatedAt: null,
+					lastAuthenticatedAt: controller.lastAuthenticatedAt,
 					lastAuthError: error instanceof Error ? error.message : String(error),
 				})
 				throw error
