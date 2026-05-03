@@ -158,18 +158,20 @@ export function renderDataTable(input: {
 		return renderEmptyState('No rows to display.')
 	}
 
-	return html`<table class="data-table">
-		<thead>
-			<tr>
-				${input.headers.map((header) => html`<th scope="col">${header}</th>`)}
-			</tr>
-		</thead>
-		<tbody>
-			${input.rows.map(
-				(row) => html`<tr>
-					${row.map((value) => html`<td>${value}</td>`)}
-				</tr>`,
-			)}
-		</tbody>
-	</table>`
+	return html`<div class="data-table-scroll">
+		<table class="data-table">
+			<thead>
+				<tr>
+					${input.headers.map((header) => html`<th scope="col">${header}</th>`)}
+				</tr>
+			</thead>
+			<tbody>
+				${input.rows.map(
+					(row) => html`<tr>
+						${row.map((value) => html`<td>${value}</td>`)}
+					</tr>`,
+				)}
+			</tbody>
+		</table>
+	</div>`
 }
