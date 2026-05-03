@@ -10,17 +10,13 @@ saved-secret confidentiality.
 | `COOKIE_SECRET` | Signs auth session cookies (Remix `createCookie`) | Invalidates all active browser sessions; users must re-authenticate. |
 | `SECRET_STORE_KEY` | Derives the AES-GCM KEK for saved secrets in D1 | Bricks all saved secrets encrypted under the old key unless a re-encryption migration runs. |
 
-## Decoupling cookie and secret-store keys
+## Separate cookie and secret-store keys
 
-Prior to this change, both session signing and saved-secret encryption derived
-from `COOKIE_SECRET`. Rotating that single secret simultaneously logged out
-every user **and** destroyed all encrypted secrets.
-
-Now:
+Cookie signing and saved-secret encryption use separate Worker secrets:
 
 - **Cookie signing** uses `COOKIE_SECRET` only.
 - **Saved-secret encryption** requires `SECRET_STORE_KEY`. There is no legacy
-  decryption fallback anymore.
+  decryption fallback.
 
 ## Rotating `COOKIE_SECRET`
 
