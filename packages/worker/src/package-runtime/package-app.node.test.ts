@@ -6,16 +6,15 @@ async function extractCreatePackageAppWorkerSource() {
 		new URL('./package-app.ts', import.meta.url),
 		'utf8',
 	)
-	const match = sourceText.match(
-		/function createWorkflowsProxy\(runtimeBridge\) \{[\s\S]*?\n\}\n\nfunction createAuthenticatedFetchHelper/,
+	const start = sourceText.indexOf('function createWorkflowsProxy(runtimeBridge) {')
+	const end = sourceText.indexOf(
+		'\nfunction createAuthenticatedFetchHelper',
+		start,
 	)
-	if (!match?.[0]) {
+	if (start < 0 || end < 0) {
 		throw new Error('createWorkflowsProxy source was not found.')
 	}
-	const proxySource = match[0].replace(
-		'\n\nfunction createAuthenticatedFetchHelper',
-		'',
-	)
+	const proxySource = sourceText.slice(start, end).replaceAll('\\\\', '\\')
 	return `${proxySource}; return createWorkflowsProxy(runtimeBridge);`
 }
 
@@ -47,7 +46,17 @@ test('package app workflows proxy validates required workflow input fields', asy
 			idempotencyKey: 'event-key',
 		}),
 	).rejects.toThrow(
-		'workflows.create requires a valid runAt date or ISO string.',
+		'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
+	)
+	await expect(
+		workflows.create({
+			workflowName: 'shade-event',
+			exportName: './run-event',
+			runAt: 'May 3, 2026 12:00:00',
+			idempotencyKey: 'event-key',
+		}),
+	).rejects.toThrow(
+		'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
 	)
 })
 
@@ -66,7 +75,7 @@ test('package app workflows proxy forwards validated input to runtime bridge', a
 	expect(result).toEqual({
 		workflowName: ' shade-event ',
 		exportName: './run-event',
-		runAt: '2026-05-03T12:00:00.000Z',
+		runAt: new Date('2026-05-03T12:00:00.000Z'),
 		idempotencyKey: 'event-key',
 		params: { eventId: 'event-1' },
 	})

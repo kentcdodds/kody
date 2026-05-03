@@ -254,6 +254,8 @@ function createPackageSecretsProxy(runtimeBridge) {
 }
 
 function createWorkflowsProxy(runtimeBridge) {
+	const isoRunAtPattern =
+		/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2})$/;
 	const normalizeRequiredString = (input, fieldName) => {
 		const value = input?.[fieldName];
 		if (typeof value !== 'string' || !value.trim()) {
@@ -269,12 +271,16 @@ function createWorkflowsProxy(runtimeBridge) {
 			value instanceof Date
 				? value
 				: typeof value === 'string'
-					? new Date(value)
+					? isoRunAtPattern.test(value)
+						? new Date(value)
+						: null
 					: null;
 		if (!date || Number.isNaN(date.getTime())) {
-			throw new Error('workflows.create requires a valid runAt date or ISO string.');
+			throw new Error(
+				'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
+			);
 		}
-		return value;
+		return date;
 	};
 	return {
 		create: async (input) => {
