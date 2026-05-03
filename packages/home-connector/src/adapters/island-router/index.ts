@@ -1,28 +1,68 @@
 import { type HomeConnectorConfig } from '../../config.ts'
 import {
+	type IslandRouterActiveSessions,
+	type IslandRouterAllowlistedCliCommand,
+	type IslandRouterAllowlistedCliCommandResult,
+	type IslandRouterBandwidthUsage,
+	type IslandRouterCommandRequest,
 	type IslandRouterCommandResult,
 	type IslandRouterCommandRunner,
 	type IslandRouterDhcpLease,
+	type IslandRouterDhcpServerConfig,
+	type IslandRouterDnsConfig,
+	type IslandRouterFailoverStatus,
 	type IslandRouterHostDiagnosis,
+	type IslandRouterInterfaceDetails,
 	type IslandRouterInterfaceSummary,
+	type IslandRouterNatRules,
 	type IslandRouterNeighborEntry,
+	type IslandRouterNtpConfig,
+	type IslandRouterQosConfig,
+	type IslandRouterRoutingTable,
+	type IslandRouterSecurityPolicy,
+	type IslandRouterSnmpConfig,
 	type IslandRouterStatus,
+	type IslandRouterSyslogConfig,
+	type IslandRouterSystemInfo,
+	type IslandRouterTrafficStats,
+	type IslandRouterUsers,
+	type IslandRouterVlanConfig,
+	type IslandRouterVpnConfig,
+	type IslandRouterWanConfig,
 	type IslandRouterWriteOperationId,
 	type IslandRouterWriteOperationResult,
 } from './types.ts'
 import { createIslandRouterSshCommandRunner } from './ssh-client.ts'
 import {
+	didIslandRouterCommandSucceed,
 	findMatchingDhcpLease,
 	findMatchingNeighbor,
-	didIslandRouterCommandSucceed,
+	parseIslandRouterActiveSessions,
+	parseIslandRouterBandwidthUsage,
 	parseIslandRouterClock,
 	parseIslandRouterDhcpReservations,
+	parseIslandRouterDhcpServerConfig,
+	parseIslandRouterDnsConfig,
+	parseIslandRouterFailoverStatus,
 	parseIslandRouterInterfaceDetails,
 	parseIslandRouterInterfaceSummaries,
+	parseIslandRouterNatRules,
 	parseIslandRouterNeighbors,
+	parseIslandRouterNtpConfig,
 	parseIslandRouterPingResult,
+	parseIslandRouterQosConfig,
 	parseIslandRouterRecentEvents,
+	parseIslandRouterRoutingTable,
+	parseIslandRouterSecurityPolicy,
+	parseIslandRouterSnmpConfig,
+	parseIslandRouterSyslogConfig,
+	parseIslandRouterSystemInfo,
+	parseIslandRouterTrafficStats,
+	parseIslandRouterUsers,
 	parseIslandRouterVersion,
+	parseIslandRouterVlanConfig,
+	parseIslandRouterVpnConfig,
+	parseIslandRouterWanConfig,
 } from './parsing.ts'
 import {
 	assertIslandRouterConfigured,
@@ -53,6 +93,10 @@ type DiagnoseHostRequest = {
 	logLimit?: number
 }
 
+type ReadRequest = {
+	timeoutMs?: number
+}
+
 type WriteOperationRequest = {
 	timeoutMs?: number
 	acknowledgeHighRisk: boolean
@@ -60,7 +104,54 @@ type WriteOperationRequest = {
 	confirmation: string
 }
 
+type SetWanFailoverRequest = WriteOperationRequest & {
+	interfaceName: string
+}
+
+type RunAllowlistedCliCommandRequest = WriteOperationRequest & {
+	command: IslandRouterAllowlistedCliCommand
+	interfaceName?: string
+}
+
+type SetDhcpReservationRequest = WriteOperationRequest & {
+	action: 'set' | 'remove'
+	macAddress: string
+	ipAddress?: string
+	hostName?: string
+	interfaceName?: string
+}
+
+type SetInterfaceDescriptionRequest = WriteOperationRequest & {
+	interfaceName: string
+	description: string
+}
+
+type SetDnsServerRequest = WriteOperationRequest & {
+	servers: Array<string>
+	interfaceName?: string
+}
+
+type HostWriteRequest = WriteOperationRequest & {
+	host: string
+}
+
 const islandRouterWriteAcknowledgements = {
+	setWanFailover:
+		'I am highly certain forcing Island router WAN failover to a specific interface is necessary right now.',
+	runAllowlistedCliCommand:
+		'I am highly certain running this allowlisted Island router CLI command is necessary right now.',
+	setDhcpReservation:
+		'I am highly certain changing Island router DHCP reservations is necessary right now.',
+	reboot:
+		'I am highly certain rebooting the Island router is necessary right now.',
+	setInterfaceDescription:
+		'I am highly certain changing an Island router interface description is necessary right now.',
+	setDnsServer:
+		'I am highly certain changing Island router DNS server configuration is necessary right now.',
+	blockHost:
+		'I am highly certain blocking this host on the Island router is necessary right now.',
+	unblockHost:
+		'I am highly certain unblocking this host on the Island router is necessary right now.',
 	renewDhcpClients:
 		'I am highly certain renewing all Island router DHCP clients is necessary right now.',
 	clearLogBuffer:
@@ -79,6 +170,50 @@ function normalizeTimeoutMs(config: HomeConnectorConfig, timeoutMs?: number) {
 		return config.islandRouterCommandTimeoutMs
 	}
 	return Math.max(1000, Math.trunc(timeoutMs))
+}
+
+function assertNonEmpty(value: string, field: string) {
+	const trimmed = value.trim()
+	if (trimmed.length === 0) {
+		throw new Error(`${field} must not be empty.`)
+	}
+	return trimmed
+}
+
+function normalizeInterfaceName(value: string) {
+	return assertNonEmpty(value, 'interfaceName')
+}
+
+function normalizeIpv4Address(value: string, field: string) {
+	const host = validateIslandRouterHost(value)
+	if (host.kind !== 'ipv4') {
+		throw new Error(`${field} must be a valid IPv4 address.`)
+	}
+	return host.value
+}
+
+function normalizeMacAddress(value: string) {
+	const host = validateIslandRouterHost(value)
+	if (host.kind !== 'mac') {
+		throw new Error('macAddress must be a valid MAC address.')
+	}
+	return host.normalizedValue
+}
+
+function normalizeDnsServers(servers: Array<string>) {
+	const normalized = servers
+		.map((server) => assertNonEmpty(server, 'servers'))
+		.map((server) => {
+			const host = validateIslandRouterHost(server)
+			if (host.kind === 'mac') {
+				throw new Error('DNS servers must be IP addresses or hostnames, not MAC addresses.')
+			}
+			return host.value
+		})
+	if (normalized.length === 0) {
+		throw new Error('servers must include at least one DNS server.')
+	}
+	return normalized
 }
 
 function ensureSuccessfulCommand(
@@ -199,12 +334,23 @@ function assertWriteReason(reason: string, operationLabel: string) {
 	}
 }
 
-async function runWriteOperation(input: {
+function combineSuccessfulCommandOutputs(
+	results: Array<IslandRouterCommandResult>,
+) {
+	const successful = results.filter((result) => didIslandRouterCommandSucceed(result))
+	return {
+		successful,
+		stdout: successful.map((result) => result.stdout).join('\n'),
+		commandLines: successful.flatMap((result) => result.commandLines),
+	}
+}
+
+async function runHighRiskCommand(input: {
 	config: HomeConnectorConfig
 	runner: IslandRouterCommandRunner
 	timeoutMs?: number
 	operationId: IslandRouterWriteOperationId
-	commandId: 'clear-dhcp-client' | 'clear-log' | 'write-memory'
+	commandRequest: IslandRouterCommandRequest
 	message: string
 	acknowledgeHighRisk: boolean
 	reason: string
@@ -224,16 +370,18 @@ async function runWriteOperation(input: {
 		input.message,
 	)
 	const timeoutMs = normalizeTimeoutMs(input.config, input.timeoutMs)
+	const commandRequest = {
+		...input.commandRequest,
+		timeoutMs,
+	} as IslandRouterCommandRequest
 	const result = ensureSuccessfulCommand(
-		await input.runner({
-			id: input.commandId,
-			timeoutMs,
-		}),
+		await input.runner(commandRequest),
 		input.message,
 	)
 	return {
 		operationId: input.operationId,
-		commandId: input.commandId,
+		commandId:
+			result.id as IslandRouterWriteOperationResult['commandId'],
 		commandLines: result.commandLines,
 		stdout: result.stdout,
 		stderr: result.stderr,
@@ -259,6 +407,43 @@ export function createIslandRouterAdapter(input: {
 
 	function getConfigStatus() {
 		return getIslandRouterConfigStatus(config)
+	}
+
+	async function executeReadCommand<T>(
+		request: IslandRouterCommandRequest,
+		message: string,
+		parser: (stdout: string, commandLines: Array<string>) => T,
+	) {
+		assertIslandRouterConfigured(config)
+		const result = ensureSuccessfulCommand(
+			await getRunner()({
+				...request,
+				timeoutMs: normalizeTimeoutMs(config, request.timeoutMs),
+			} as IslandRouterCommandRequest),
+			message,
+		)
+		return parser(result.stdout, result.commandLines)
+	}
+
+	async function executeCompoundReadCommand<T>(input: {
+		requests: Array<IslandRouterCommandRequest>
+		message: string
+		parser: (stdout: string, commandLines: Array<string>) => T
+	}) {
+		assertIslandRouterConfigured(config)
+		const results = await Promise.all(
+			input.requests.map((request) =>
+				getRunner()({
+					...request,
+					timeoutMs: normalizeTimeoutMs(config, request.timeoutMs),
+				} as IslandRouterCommandRequest),
+			),
+		)
+		const combined = combineSuccessfulCommandOutputs(results)
+		if (combined.successful.length === 0) {
+			throw ensureSuccessfulCommand(results[0]!, input.message)
+		}
+		return input.parser(combined.stdout, combined.commandLines)
 	}
 
 	return {
@@ -376,12 +561,10 @@ export function createIslandRouterAdapter(input: {
 				)
 			}
 
-			const runner = getRunner()
-			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
-			const result = await runner({
+			const result = await getRunner()({
 				id: 'ping',
 				host: host.value,
-				timeoutMs,
+				timeoutMs: normalizeTimeoutMs(config, request.timeoutMs),
 				allowTimeout: true,
 			})
 			return parseIslandRouterPingResult({
@@ -395,12 +578,10 @@ export function createIslandRouterAdapter(input: {
 		async getArpEntry(request: HostLookupRequest) {
 			assertIslandRouterConfigured(config)
 			const identity = validateIslandRouterHost(request.host)
-			const runner = getRunner()
-			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
 			const result = ensureSuccessfulCommand(
-				await runner({
+				await getRunner()({
 					id: 'show-ip-neighbors',
-					timeoutMs,
+					timeoutMs: normalizeTimeoutMs(config, request.timeoutMs),
 				}),
 				'Island router neighbor lookup',
 			)
@@ -417,12 +598,10 @@ export function createIslandRouterAdapter(input: {
 		async getDhcpLease(request: HostLookupRequest) {
 			assertIslandRouterConfigured(config)
 			const identity = validateIslandRouterHost(request.host)
-			const runner = getRunner()
-			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
 			const result = ensureSuccessfulCommand(
-				await runner({
+				await getRunner()({
 					id: 'show-ip-dhcp-reservations',
-					timeoutMs,
+					timeoutMs: normalizeTimeoutMs(config, request.timeoutMs),
 				}),
 				'Island router DHCP reservation lookup',
 			)
@@ -442,13 +621,11 @@ export function createIslandRouterAdapter(input: {
 				? validateIslandRouterHost(request.host).value
 				: ''
 			const limit = normalizeLimit(request.limit, 50, 200)
-			const runner = getRunner()
-			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
 			const result = ensureSuccessfulCommand(
-				await runner({
+				await getRunner()({
 					id: 'show-log',
 					query: query.length > 0 ? query : undefined,
-					timeoutMs,
+					timeoutMs: normalizeTimeoutMs(config, request.timeoutMs),
 				}),
 				'Island router recent event lookup',
 			)
@@ -578,11 +755,11 @@ export function createIslandRouterAdapter(input: {
 					)
 				}
 			}
+
 			const recentEvents = dedupeRecentEvents(recentEventSets).slice(
 				0,
 				logLimit,
 			)
-
 			const { interfaceDetails, ipInterfaceDetails } =
 				await maybeGetInterfaceDetails({
 					runner,
@@ -613,13 +790,502 @@ export function createIslandRouterAdapter(input: {
 				errors,
 			}
 		},
+		async getWanConfig(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-wan',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router WAN configuration lookup',
+				parseIslandRouterWanConfig,
+			)
+		},
+		async getFailoverStatus(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-wan-failover',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-multi-wan',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router failover status lookup',
+				parser: parseIslandRouterFailoverStatus,
+			})
+		},
+		async getRoutingTable(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-ip-routes',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router routing table lookup',
+				parseIslandRouterRoutingTable,
+			)
+		},
+		async getNatRules(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-nat',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-ip-nat',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router NAT rule lookup',
+				parser: parseIslandRouterNatRules,
+			})
+		},
+		async getVlanConfig(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-vlan',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router VLAN configuration lookup',
+				parseIslandRouterVlanConfig,
+			)
+		},
+		async getDnsConfig(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-dns',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-ip-dns',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router DNS configuration lookup',
+				parser: parseIslandRouterDnsConfig,
+			})
+		},
+		async getUsers(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-users',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-user',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router user lookup',
+				parser: parseIslandRouterUsers,
+			})
+		},
+		async getSecurityPolicy(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-security-policy',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-protection',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-firewall',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router security policy lookup',
+				parser: parseIslandRouterSecurityPolicy,
+			})
+		},
+		async getQosConfig(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-qos',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-traffic-policy',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router QoS configuration lookup',
+				parser: parseIslandRouterQosConfig,
+			})
+		},
+		async getTrafficStats(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-interface-statistics',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router traffic statistics lookup',
+				parseIslandRouterTrafficStats,
+			)
+		},
+		async getActiveSessions(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-sessions',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router active session lookup',
+				parseIslandRouterActiveSessions,
+			)
+		},
+		async getVpnConfig(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-vpn',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-ipsec',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-gre',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router VPN configuration lookup',
+				parser: parseIslandRouterVpnConfig,
+			})
+		},
+		async getDhcpServerConfig(request: ReadRequest = {}) {
+			return await executeCompoundReadCommand({
+				requests: [
+					{
+						id: 'show-dhcp-server',
+						timeoutMs: request.timeoutMs,
+					},
+					{
+						id: 'show-ip-dhcp-reservations',
+						timeoutMs: request.timeoutMs,
+					},
+				],
+				message: 'Island router DHCP server lookup',
+				parser: parseIslandRouterDhcpServerConfig,
+			})
+		},
+		async getNtpConfig(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-ntp',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router NTP configuration lookup',
+				parseIslandRouterNtpConfig,
+			)
+		},
+		async getSyslogConfig(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-syslog',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router syslog configuration lookup',
+				parseIslandRouterSyslogConfig,
+			)
+		},
+		async getSnmpConfig(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-snmp',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router SNMP configuration lookup',
+				parseIslandRouterSnmpConfig,
+			)
+		},
+		async getSystemInfo(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-system',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router system info lookup',
+				parseIslandRouterSystemInfo,
+			)
+		},
+		async getBandwidthUsage(request: ReadRequest = {}) {
+			return await executeReadCommand(
+				{
+					id: 'show-bandwidth-usage',
+					timeoutMs: request.timeoutMs,
+				},
+				'Island router bandwidth usage lookup',
+				parseIslandRouterBandwidthUsage,
+			)
+		},
+		async setWanFailover(request: SetWanFailoverRequest) {
+			return await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'set-wan-failover',
+				commandRequest: {
+					id: 'force-wan-failover',
+					interfaceName: normalizeInterfaceName(request.interfaceName),
+				},
+				message: 'Island router WAN failover change',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.setWanFailover,
+			})
+		},
+		async runAllowlistedCliCommand(request: RunAllowlistedCliCommandRequest) {
+			let commandRequest: IslandRouterCommandRequest
+			switch (request.command) {
+				case 'show-version':
+					commandRequest = { id: 'show-version' }
+					break
+				case 'show-clock':
+					commandRequest = { id: 'show-clock' }
+					break
+				case 'show-interface-summary':
+					commandRequest = { id: 'show-interface-summary' }
+					break
+				case 'show-interface':
+					commandRequest = {
+						id: 'show-interface',
+						interfaceName: normalizeInterfaceName(
+							assertNonEmpty(request.interfaceName ?? '', 'interfaceName'),
+						),
+					}
+					break
+				case 'show-ip-interface':
+					commandRequest = {
+						id: 'show-ip-interface',
+						interfaceName: normalizeInterfaceName(
+							assertNonEmpty(request.interfaceName ?? '', 'interfaceName'),
+						),
+					}
+					break
+				default: {
+					const _exhaustive: never = request.command
+					throw new Error(
+						`Unhandled allowlisted CLI command: ${String(_exhaustive)}`,
+					)
+				}
+			}
+
+			const result = await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'run-allowlisted-cli-command',
+				commandRequest,
+				message: 'Island router allowlisted CLI command',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.runAllowlistedCliCommand,
+			})
+
+			let parsedResult: IslandRouterAllowlistedCliCommandResult['result']
+			switch (request.command) {
+				case 'show-version':
+					parsedResult = parseIslandRouterVersion(
+						result.stdout,
+						result.commandLines,
+					)
+					break
+				case 'show-clock':
+					parsedResult = {
+						clock: parseIslandRouterClock(result.stdout, result.commandLines),
+					}
+					break
+				case 'show-interface-summary':
+					parsedResult = {
+						interfaces: parseIslandRouterInterfaceSummaries(
+							result.stdout,
+							result.commandLines,
+						),
+					}
+					break
+				case 'show-interface':
+				case 'show-ip-interface':
+					parsedResult = parseIslandRouterInterfaceDetails(
+						result.stdout,
+						result.commandLines,
+					)
+					break
+				default: {
+					const _exhaustive: never = request.command
+					throw new Error(
+						`Unhandled allowlisted CLI parser: ${String(_exhaustive)}`,
+					)
+				}
+			}
+
+			return {
+				command: request.command,
+				commandId:
+					result.commandId as IslandRouterAllowlistedCliCommandResult['commandId'],
+				commandLines: result.commandLines,
+				result: parsedResult,
+				stdout: result.stdout,
+				stderr: result.stderr,
+				exitCode: result.exitCode,
+				signal: result.signal,
+				timedOut: result.timedOut,
+				durationMs: result.durationMs,
+			} satisfies IslandRouterAllowlistedCliCommandResult
+		},
+		async setDhcpReservation(request: SetDhcpReservationRequest) {
+			const macAddress = normalizeMacAddress(request.macAddress)
+			const commandRequest: IslandRouterCommandRequest =
+				request.action === 'remove'
+					? {
+							id: 'remove-dhcp-reservation',
+							macAddress,
+							ipAddress:
+								request.ipAddress == null
+									? undefined
+									: normalizeIpv4Address(request.ipAddress, 'ipAddress'),
+						}
+					: {
+							id: 'set-dhcp-reservation',
+							macAddress,
+							ipAddress: normalizeIpv4Address(
+								assertNonEmpty(request.ipAddress ?? '', 'ipAddress'),
+								'ipAddress',
+							),
+							hostName:
+								request.hostName == null
+									? undefined
+									: assertNonEmpty(request.hostName, 'hostName'),
+							interfaceName:
+								request.interfaceName == null
+									? undefined
+									: normalizeInterfaceName(request.interfaceName),
+						}
+			return await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'set-dhcp-reservation',
+				commandRequest,
+				message: 'Island router DHCP reservation change',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.setDhcpReservation,
+			})
+		},
+		async rebootRouter(request: WriteOperationRequest) {
+			return await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'reboot',
+				commandRequest: {
+					id: 'reboot',
+				},
+				message: 'Island router reboot',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement: islandRouterWriteAcknowledgements.reboot,
+			})
+		},
+		async setInterfaceDescription(request: SetInterfaceDescriptionRequest) {
+			return await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'set-interface-description',
+				commandRequest: {
+					id: 'set-interface-description',
+					interfaceName: normalizeInterfaceName(request.interfaceName),
+					description: assertNonEmpty(request.description, 'description'),
+				},
+				message: 'Island router interface description change',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.setInterfaceDescription,
+			})
+		},
+		async setDnsServer(request: SetDnsServerRequest) {
+			return await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'set-dns-server',
+				commandRequest: {
+					id: 'set-dns-server',
+					servers: normalizeDnsServers(request.servers),
+					interfaceName:
+						request.interfaceName == null
+							? undefined
+							: normalizeInterfaceName(request.interfaceName),
+				},
+				message: 'Island router DNS server change',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement:
+					islandRouterWriteAcknowledgements.setDnsServer,
+			})
+		},
+		async blockHost(request: HostWriteRequest) {
+			return await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'block-host',
+				commandRequest: {
+					id: 'block-host',
+					host: validateIslandRouterHost(request.host).value,
+				},
+				message: 'Island router host block',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement: islandRouterWriteAcknowledgements.blockHost,
+			})
+		},
+		async unblockHost(request: HostWriteRequest) {
+			return await runHighRiskCommand({
+				config,
+				runner: getRunner(),
+				timeoutMs: request.timeoutMs,
+				operationId: 'unblock-host',
+				commandRequest: {
+					id: 'unblock-host',
+					host: validateIslandRouterHost(request.host).value,
+				},
+				message: 'Island router host unblock',
+				acknowledgeHighRisk: request.acknowledgeHighRisk,
+				reason: request.reason,
+				confirmation: request.confirmation,
+				expectedAcknowledgement: islandRouterWriteAcknowledgements.unblockHost,
+			})
+		},
 		async renewDhcpClients(request: WriteOperationRequest) {
-			return await runWriteOperation({
+			return await runHighRiskCommand({
 				config,
 				runner: getRunner(),
 				timeoutMs: request.timeoutMs,
 				operationId: 'renew-dhcp-clients',
-				commandId: 'clear-dhcp-client',
+				commandRequest: {
+					id: 'clear-dhcp-client',
+				},
 				message: 'Island router DHCP client renewal',
 				acknowledgeHighRisk: request.acknowledgeHighRisk,
 				reason: request.reason,
@@ -629,12 +1295,14 @@ export function createIslandRouterAdapter(input: {
 			})
 		},
 		async clearLogBuffer(request: WriteOperationRequest) {
-			return await runWriteOperation({
+			return await runHighRiskCommand({
 				config,
 				runner: getRunner(),
 				timeoutMs: request.timeoutMs,
 				operationId: 'clear-log-buffer',
-				commandId: 'clear-log',
+				commandRequest: {
+					id: 'clear-log',
+				},
 				message: 'Island router log clear',
 				acknowledgeHighRisk: request.acknowledgeHighRisk,
 				reason: request.reason,
@@ -644,12 +1312,14 @@ export function createIslandRouterAdapter(input: {
 			})
 		},
 		async saveRunningConfig(request: WriteOperationRequest) {
-			return await runWriteOperation({
+			return await runHighRiskCommand({
 				config,
 				runner: getRunner(),
 				timeoutMs: request.timeoutMs,
 				operationId: 'save-running-config',
-				commandId: 'write-memory',
+				commandRequest: {
+					id: 'write-memory',
+				},
 				message: 'Island router configuration save',
 				acknowledgeHighRisk: request.acknowledgeHighRisk,
 				reason: request.reason,

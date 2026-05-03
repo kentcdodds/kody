@@ -253,14 +253,36 @@ function escapeCliQuery(value: string) {
 		.replaceAll('"', '\\"')
 }
 
+function escapeCliValue(value: string, field: string) {
+	return assertSingleCliLine(value, field)
+		.replaceAll('\\', '\\\\')
+		.replaceAll('"', '\\"')
+}
+
 function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 	switch (request.id) {
 		case 'show-version':
 			return ['show version']
 		case 'show-clock':
 			return ['show clock']
+		case 'show-system':
+			return ['show system']
 		case 'show-interface-summary':
 			return ['show interface summary']
+		case 'show-interface-statistics':
+			return ['show interface statistics']
+		case 'show-bandwidth-usage':
+			// Best-effort guess; public docs were not found for realtime bandwidth usage.
+			return ['show bandwidth-usage']
+		case 'show-wan':
+			// Best-effort guess; public docs were not found for WAN summary inspection.
+			return ['show wan']
+		case 'show-wan-failover':
+			// Best-effort guess; public docs were not found for WAN failover status.
+			return ['show wan failover']
+		case 'show-multi-wan':
+			// Best-effort guess; public docs were not found for multi-WAN state.
+			return ['show multi-wan']
 		case 'show-interface':
 			return [
 				`show interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
@@ -269,16 +291,133 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 			return [
 				`show ip interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
 			]
+		case 'show-ip-routes':
+			return ['show ip routes']
+		case 'show-nat':
+			// Best-effort guess; public docs were not found for NAT inspection.
+			return ['show nat']
+		case 'show-ip-nat':
+			// Best-effort guess; public docs were not found for IP NAT inspection.
+			return ['show ip nat']
+		case 'show-sessions':
+			// Best-effort guess; public docs were not found for session table inspection.
+			return ['show sessions']
+		case 'show-vlan':
+			// Best-effort guess; public docs were not found for VLAN inspection.
+			return ['show vlan']
+		case 'show-dns':
+			// Best-effort guess; public docs were not found for DNS inspection.
+			return ['show dns']
+		case 'show-ip-dns':
+			// Best-effort guess; public docs were not found for IP DNS inspection.
+			return ['show ip dns']
+		case 'show-users':
+			return ['show users']
+		case 'show-user':
+			// Best-effort guess; public docs were not found for per-user detail output.
+			return ['show user']
+		case 'show-security-policy':
+			// Best-effort guess; public docs were not found for security policy inspection.
+			return ['show security-policy']
+		case 'show-protection':
+			// Best-effort guess; public docs were not found for protection inspection.
+			return ['show protection']
+		case 'show-firewall':
+			// Best-effort guess; public docs were not found for firewall inspection.
+			return ['show firewall']
+		case 'show-qos':
+			// Best-effort guess; public docs were not found for QoS inspection.
+			return ['show qos']
+		case 'show-traffic-policy':
+			// Best-effort guess; public docs were not found for traffic policy inspection.
+			return ['show traffic-policy']
+		case 'show-vpn':
+			// Best-effort guess; public docs were not found for VPN inspection.
+			return ['show vpn']
+		case 'show-ipsec':
+			// Best-effort guess; public docs were not found for IPsec inspection.
+			return ['show ipsec']
+		case 'show-gre':
+			// Best-effort guess; public docs were not found for GRE inspection.
+			return ['show gre']
 		case 'show-ip-neighbors':
 			return ['show ip neighbors']
 		case 'show-ip-dhcp-reservations':
 			return ['show ip dhcp-reservations']
+		case 'show-dhcp-server':
+			// Best-effort guess; public docs were not found for DHCP server inspection.
+			return ['show dhcp-server']
+		case 'show-ntp':
+			// Best-effort guess; public docs were not found for NTP inspection.
+			return ['show ntp']
+		case 'show-syslog':
+			// Best-effort guess; public docs were not found for syslog inspection.
+			return ['show syslog']
+		case 'show-snmp':
+			// Best-effort guess; public docs were not found for SNMP inspection.
+			return ['show snmp']
 		case 'show-log':
 			return request.query
 				? [`show log last where "${escapeCliQuery(request.query)}"`]
 				: ['show log last']
 		case 'ping':
 			return [`ping ${assertSingleCliLine(request.host, 'host')}`]
+		case 'force-wan-failover':
+			// Best-effort guess; public docs only confirmed priority-based WAN selection,
+			// not an explicit "force now" command.
+			return [
+				`wan failover force ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
+			]
+		case 'set-dhcp-reservation': {
+			const command = [
+				'dhcp-server reservation',
+				assertSingleCliLine(request.macAddress, 'macAddress'),
+				assertSingleCliLine(request.ipAddress, 'ipAddress'),
+			]
+			if (request.hostName) {
+				command.push(`host-name "${escapeCliValue(request.hostName, 'hostName')}"`)
+			}
+			if (request.interfaceName) {
+				command.push(
+					`interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
+				)
+			}
+			return [command.join(' ')]
+		}
+		case 'remove-dhcp-reservation':
+			return [
+				request.ipAddress
+					? `no dhcp-server reservation ${assertSingleCliLine(request.macAddress, 'macAddress')} ${assertSingleCliLine(request.ipAddress, 'ipAddress')}`
+					: `no dhcp-server reservation ${assertSingleCliLine(request.macAddress, 'macAddress')}`,
+			]
+		case 'reboot':
+			return ['reload']
+		case 'set-interface-description':
+			return [
+				`interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
+				`description "${escapeCliValue(request.description, 'description')}"`,
+			]
+		case 'set-dns-server':
+			return request.interfaceName
+				? [
+						`interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
+						...request.servers.map(
+							(server) =>
+								`ip name-server ${assertSingleCliLine(server, 'servers')}`,
+						),
+					]
+				: request.servers.map(
+						(server) =>
+							`ip dns server ${assertSingleCliLine(server, 'servers')}`,
+					)
+		case 'block-host':
+			return [
+				`firewall block-host ${assertSingleCliLine(request.host, 'host')}`,
+			]
+		case 'unblock-host':
+			return [
+				`no firewall block-host ${assertSingleCliLine(request.host, 'host')}`,
+			]
 		case 'clear-dhcp-client':
 			return ['clear dhcp-client']
 		case 'clear-log':

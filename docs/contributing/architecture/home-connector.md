@@ -131,22 +131,26 @@ connector.
 
 The adapter does expose:
 
-- router identity/status via `show version`, `show clock`, and
+- router identity/status via `show version`, `show clock`, `show system`, and
   `show interface summary`
 - router-side reachability checks with `ping`
 - ARP / neighbor-cache inspection with `show ip neighbors`
 - DHCP reservation inspection with `show ip dhcp-reservations`
 - recent-event lookups with `show log`
+- structured WAN, failover, routing, NAT, VLAN, DNS, user, firewall/security,
+  QoS, traffic, session, VPN, DHCP-server, NTP, syslog, SNMP, and
+  bandwidth-usage reads from a typed SSH CLI allowlist
 - a structured `router_diagnose_host` workflow that combines ping, ARP,
   reservation, interface, and log data for one host
-- a very small typed write allowlist for `clear dhcp-client`, `clear log`, and
+- a broader but still typed and explicitly allowlisted high-risk write surface
+  for failover selection, DHCP reservations, reboot, interface descriptions,
+  DNS servers, host blocking/unblocking, `clear dhcp-client`, `clear log`, and
   `write memory` when all write guardrails pass
 
 The adapter explicitly does not expose:
 
 - arbitrary shell or CLI command execution over MCP
-- broad or arbitrary mutating router commands such as reboot, config edits, PoE
-  control, bridge resets, factory reset, or network wipe operations
+- arbitrary mutating router commands beyond the typed allowlist
 - password-based auth flows through MCP
 
 The write-capable operations are intentionally hard to use because mistakes can

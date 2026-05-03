@@ -84,6 +84,22 @@ function createFakeRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
+			case 'show-system':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show system'],
+					stdout: [
+						'Uptime: 5 days 2 hours',
+						'CPU Usage: 17%',
+						'Memory Usage: 42%',
+						'Temperature: 54 C',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
 			case 'show-interface-summary':
 				return {
 					id: request.id,
@@ -93,6 +109,91 @@ function createFakeRunner() {
 						'---------  -----  -----  ------  -----------',
 						'en0        up     1G     full    LAN uplink',
 						'en1        down   1G     full    spare port',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-interface-statistics':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show interface statistics'],
+					stdout: [
+						'Interface  RX Bytes  TX Bytes  RX Packets  TX Packets  RX Errors  TX Errors  Utilization',
+						'---------  --------  --------  ----------  ----------  ---------  ---------  -----------',
+						'en0        1200000   2400000   1000        1500        0          1          37%',
+						'en1        100       200       1           2           0          0          1%',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-bandwidth-usage':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show bandwidth-usage'],
+					stdout: [
+						'Subject            Interface  RX Rate   TX Rate   Total Rate',
+						'-----------------  ---------  --------  --------  ----------',
+						'192.168.0.52       en0        12 Mbps   2 Mbps    14 Mbps',
+						'WAN aggregate      en1        150 Mbps  20 Mbps   170 Mbps',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-wan':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show wan'],
+					stdout: [
+						'ISP          Interface  IP Address     Gateway       Type   Role    Priority  Status',
+						'-----------  ---------  -------------  ------------  -----  ------  --------  ------',
+						'Fiber        en1        203.0.113.10   203.0.113.1   DHCP   active  1         up',
+						'LTE Backup   en2        198.51.100.22  198.51.100.1  DHCP   standby   2         up',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-wan-failover':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show wan failover'],
+					stdout: [
+						'Active Interface: en1',
+						'Active ISP: Fiber',
+						'Policy: priority',
+						'Interface  ISP         Health  Role     Priority  Monitor',
+						'---------  ----------  ------  -------  --------  ----------------',
+						'en1        Fiber       up      active   1         8.8.8.8',
+						'en2        LTE Backup up      standby  2         1.1.1.1',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-multi-wan':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show multi-wan'],
+					stdout: [
+						'Active Interface: en1',
+						'Policy: priority',
+						'Interface  ISP         Status   Priority',
+						'---------  ----------  -------  --------',
+						'en1        Fiber       active   1',
+						'en2        LTE Backup standby  2',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -116,6 +217,181 @@ function createFakeRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
+			case 'show-ip-routes':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip routes'],
+					stdout: [
+						'Destination      Gateway       Interface  Protocol  Metric  Selected',
+						'---------------  ------------  ---------  --------  ------  --------',
+						'default          203.0.113.1   en1        static    1       yes',
+						'192.168.0.0/24   0.0.0.0       en0        kernel    0       yes',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-nat':
+			case 'show-ip-nat':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-nat' ? 'show nat' : 'show ip nat',
+					],
+					stdout: [
+						'Rule  Type         Protocol  Interface  External         Internal         Enabled  Description',
+						'----  -----------  --------  ---------  ---------------  ---------------  -------  -----------',
+						'1     port-forward  tcp       en1        203.0.113.10:80  192.168.0.52:80  yes      NAS web',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-sessions':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show sessions'],
+					stdout: [
+						'Protocol  Source                Destination           Translated            State        Interface',
+						'--------  --------------------  --------------------  --------------------  -----------  ---------',
+						'tcp       192.168.0.52:51514    93.184.216.34:443     203.0.113.10:51514   established  en1',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-vlan':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show vlan'],
+					stdout: [
+						'VLAN  Name    Interface  Members     Status  Address',
+						'----  ------  ---------  ----------  ------  -------------',
+						'10    Main    vlan10     en0,en3     up      192.168.0.1/24',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-dns':
+			case 'show-ip-dns':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-dns' ? 'show dns' : 'show ip dns',
+					],
+					stdout: [
+						'Mode: forwarding',
+						'Search Domains: home.arpa, lan',
+						'Server  Role       Source',
+						'------  ---------  --------',
+						'1.1.1.1  upstream   static',
+						'8.8.8.8  upstream   dhcp',
+						'host=nas.home.arpa value=192.168.0.52 enabled=yes',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-users':
+			case 'show-user':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-users' ? 'show users' : 'show user',
+					],
+					stdout: [
+						'Username  Group   Role       Connection  Address        Connected',
+						'--------  ------  ---------  ----------  -------------  ---------',
+						'admin     admins  admin      ssh         192.168.0.20   yes',
+						'user      users   readonly   web         192.168.0.30   yes',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-security-policy':
+			case 'show-protection':
+			case 'show-firewall':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-security-policy'
+							? 'show security-policy'
+							: request.id === 'show-protection'
+								? 'show protection'
+								: 'show firewall',
+					],
+					stdout: [
+						'Rule  Name         Action  Source         Destination    Service  Enabled',
+						'----  -----------  ------  -------------  -------------  -------  -------',
+						'10    block-guest  deny    192.168.0.99   any            any      yes',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-qos':
+			case 'show-traffic-policy':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-qos' ? 'show qos' : 'show traffic-policy',
+					],
+					stdout: [
+						'Policy   Interface  Class      Priority  Bandwidth  Enabled',
+						'-------  ---------  ---------  --------  ---------  -------',
+						'wan-qos  en1        voice      high      10 Mbps    yes',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-vpn':
+			case 'show-ipsec':
+			case 'show-gre':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-vpn'
+							? 'show vpn'
+							: request.id === 'show-ipsec'
+								? 'show ipsec'
+								: 'show gre',
+					],
+					stdout: [
+						'Tunnel      Type   Local          Remote         Status  Interface',
+						'----------  -----  -------------  -------------  ------  ---------',
+						'office-ipsec  ipsec  203.0.113.10   198.51.100.20  up      tun0',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
 			case 'show-ip-dhcp-reservations':
 				return {
 					id: request.id,
@@ -124,6 +400,69 @@ function createFakeRunner() {
 						'IP Address    MAC Address        Host Name  Interface',
 						'------------  -----------------  ---------  ---------',
 						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-dhcp-server':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show dhcp-server'],
+					stdout: [
+						'Pool  Interface  Network         Range Start    Range End      Gateway       DNS',
+						'----  ---------  --------------  -------------  -------------  ------------  --------',
+						'main  en0        192.168.0.0/24  192.168.0.50   192.168.0.199  192.168.0.1   1.1.1.1,8.8.8.8',
+						'Option 6 value=1.1.1.1,8.8.8.8',
+						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ntp':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ntp'],
+					stdout: [
+						'Timezone: America/Denver',
+						'Server         Status  Source',
+						'-------------  ------  ------',
+						'162.159.200.1  synced  static',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-syslog':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show syslog'],
+					stdout: [
+						'Host            Port  Protocol  Facility  Enabled',
+						'--------------  ----  --------  --------  -------',
+						'192.168.0.60    514   udp       local0    yes',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-snmp':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show snmp'],
+					stdout: [
+						'Enabled: yes',
+						'community=public access=ro source=192.168.0.0/24',
+						'trap target=192.168.0.61 version=2c community=public',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -201,6 +540,121 @@ function createFakeRunner() {
 					signal: null,
 					timedOut: false,
 					durationMs: 200,
+				}
+			case 'force-wan-failover':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`wan failover force ${request.interfaceName}`,
+					],
+					stdout: `Forced WAN failover to ${request.interfaceName}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'set-dhcp-reservation':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`dhcp-server reservation ${request.macAddress} ${request.ipAddress}`,
+					],
+					stdout: `Reservation set for ${request.macAddress}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'remove-dhcp-reservation':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.ipAddress
+							? `no dhcp-server reservation ${request.macAddress} ${request.ipAddress}`
+							: `no dhcp-server reservation ${request.macAddress}`,
+					],
+					stdout: `Reservation removed for ${request.macAddress}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'reboot':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'reload'],
+					stdout: 'System reboot scheduled.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'set-interface-description':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`interface ${request.interfaceName}`,
+						`description "${request.description}"`,
+					],
+					stdout: `Description updated for ${request.interfaceName}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'set-dns-server':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						...(request.interfaceName
+							? [`interface ${request.interfaceName}`]
+							: []),
+						...request.servers.map((server) => `ip name-server ${server}`),
+					],
+					stdout: `DNS servers updated to ${request.servers.join(', ')}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'block-host':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`firewall block host ${request.host}`,
+					],
+					stdout: `Blocked ${request.host}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
+				}
+			case 'unblock-host':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`no firewall block host ${request.host}`,
+					],
+					stdout: `Unblocked ${request.host}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 15,
 				}
 			case 'clear-dhcp-client':
 				return {
@@ -389,6 +843,308 @@ test('island router adapter exposes write capability status and runs typed write
 		operationId: 'save-running-config',
 		commandId: 'write-memory',
 		commandLines: ['terminal length 0', 'write memory'],
+	})
+})
+
+test('island router adapter exposes expanded read and high-risk write capabilities', async () => {
+	using _env = withTemporaryEnv({})
+	const config = createConfig()
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: createFakeRunner(),
+	})
+
+	const wanConfig = await islandRouter.getWanConfig()
+	expect(wanConfig.wans).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				interfaceName: 'en1',
+				ispName: 'Fiber',
+				connectionType: 'dhcp',
+				role: 'active',
+			}),
+		]),
+	)
+
+	const failover = await islandRouter.getFailoverStatus()
+	expect(failover).toMatchObject({
+		activeInterfaceName: 'en1',
+		activeIspName: 'Fiber',
+		policy: 'priority',
+	})
+
+	const routingTable = await islandRouter.getRoutingTable()
+	expect(routingTable.routes).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				destination: 'default',
+				gateway: '203.0.113.1',
+				interfaceName: 'en1',
+			}),
+		]),
+	)
+
+	const natRules = await islandRouter.getNatRules()
+	expect(natRules.rules).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				ruleId: '1',
+				externalAddress: '203.0.113.10',
+				internalAddress: '192.168.0.52',
+			}),
+		]),
+	)
+
+	const vlanConfig = await islandRouter.getVlanConfig()
+	expect(vlanConfig.vlans).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				vlanId: 10,
+				interfaceName: 'vlan10',
+			}),
+		]),
+	)
+
+	const dnsConfig = await islandRouter.getDnsConfig()
+	expect(dnsConfig).toMatchObject({
+		mode: 'forwarding',
+		searchDomains: ['home.arpa', 'lan'],
+		servers: expect.arrayContaining([
+			expect.objectContaining({
+					address: '1.1.1.1',
+			}),
+		]),
+	})
+
+	const users = await islandRouter.getUsers()
+	expect(users.users).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				username: 'admin',
+			}),
+		]),
+	)
+
+	const securityPolicy = await islandRouter.getSecurityPolicy()
+	expect(securityPolicy.rules).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				action: 'deny',
+			}),
+		]),
+	)
+
+	const qos = await islandRouter.getQosConfig()
+	expect(qos.policies).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				policyName: 'wan-qos',
+				className: 'voice',
+			}),
+		]),
+	)
+
+	const trafficStats = await islandRouter.getTrafficStats()
+	expect(trafficStats.interfaces).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				interfaceName: 'en0',
+				rxBytes: 1_200_000,
+				txBytes: 2_400_000,
+			}),
+		]),
+	)
+
+	const activeSessions = await islandRouter.getActiveSessions()
+	expect(activeSessions.sessions).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				sourceAddress: '192.168.0.52',
+				destinationAddress: '93.184.216.34',
+				destinationPort: 443,
+			}),
+		]),
+	)
+
+	const vpn = await islandRouter.getVpnConfig()
+	expect(vpn.tunnels).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				tunnelName: 'office-ipsec',
+				type: 'ipsec',
+			}),
+		]),
+	)
+
+	const dhcpServerConfig = await islandRouter.getDhcpServerConfig()
+	expect(dhcpServerConfig).toMatchObject({
+		pools: expect.arrayContaining([
+			expect.objectContaining({
+				poolName: 'main',
+			}),
+		]),
+		reservations: expect.arrayContaining([
+			expect.objectContaining({
+				macAddress: '00:11:22:33:44:55',
+			}),
+		]),
+	})
+
+	const ntpConfig = await islandRouter.getNtpConfig()
+	expect(ntpConfig.servers).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				server: '162.159.200.1',
+			}),
+		]),
+	)
+
+	const syslogConfig = await islandRouter.getSyslogConfig()
+	expect(syslogConfig.targets).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				host: '192.168.0.60',
+				port: 514,
+			}),
+		]),
+	)
+
+	const snmpConfig = await islandRouter.getSnmpConfig()
+	expect(snmpConfig).toMatchObject({
+		enabled: true,
+		trapTargets: expect.arrayContaining([
+			expect.objectContaining({
+				host: '192.168.0.61',
+			}),
+		]),
+	})
+
+	const systemInfo = await islandRouter.getSystemInfo()
+	expect(systemInfo).toMatchObject({
+		uptime: expect.stringContaining('days'),
+		cpuUsagePercent: 17,
+		memoryUsagePercent: 42,
+		temperatureCelsius: 54,
+	})
+
+	const bandwidthUsage = await islandRouter.getBandwidthUsage()
+	expect(bandwidthUsage.entries).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				subject: '192.168.0.52',
+				rxRate: '12 Mbps',
+			}),
+		]),
+	)
+
+	const allowlistedCommand = await islandRouter.runAllowlistedCliCommand({
+		command: 'show-version',
+		acknowledgeHighRisk: true,
+		reason:
+			'A targeted allowlisted diagnostic is needed because the typed version tool output must be compared during incident response.',
+		confirmation: islandRouter.writeAcknowledgements.runAllowlistedCliCommand,
+	})
+	expect(allowlistedCommand).toMatchObject({
+		command: 'show-version',
+		commandId: 'show-version',
+		result: {
+			model: 'Island Pro',
+		},
+	})
+
+	const wanFailover = await islandRouter.setWanFailover({
+		interfaceName: 'en1',
+		acknowledgeHighRisk: true,
+		reason:
+			'The primary WAN is degraded and traffic must be forced to the backup interface during a maintenance window.',
+		confirmation: islandRouter.writeAcknowledgements.setWanFailover,
+	})
+	expect(wanFailover).toMatchObject({
+		operationId: 'set-wan-failover',
+		commandId: 'force-wan-failover',
+	})
+
+	const setReservation = await islandRouter.setDhcpReservation({
+		action: 'set',
+		macAddress: '00:11:22:33:44:66',
+		ipAddress: '192.168.0.60',
+		hostName: 'printer',
+		interfaceName: 'en0',
+		acknowledgeHighRisk: true,
+		reason:
+			'The printer requires a fixed IP reservation to restore LAN printing and the intended mapping was validated out of band.',
+		confirmation: islandRouter.writeAcknowledgements.setDhcpReservation,
+	})
+	expect(setReservation).toMatchObject({
+		commandId: 'set-dhcp-reservation',
+	})
+
+	const removeReservation = await islandRouter.setDhcpReservation({
+		action: 'remove',
+		macAddress: '00:11:22:33:44:66',
+		ipAddress: '192.168.0.60',
+		acknowledgeHighRisk: true,
+		reason:
+			'The old reservation must be removed because the device was decommissioned and the address needs to return to the DHCP pool.',
+		confirmation: islandRouter.writeAcknowledgements.setDhcpReservation,
+	})
+	expect(removeReservation).toMatchObject({
+		commandId: 'remove-dhcp-reservation',
+	})
+
+	const rebootResult = await islandRouter.rebootRouter({
+		acknowledgeHighRisk: true,
+		reason:
+			'The router must be rebooted now because configuration drift persists after validated changes and an outage window is active.',
+		confirmation: islandRouter.writeAcknowledgements.reboot,
+	})
+	expect(rebootResult).toMatchObject({
+		commandId: 'reboot',
+	})
+
+	const descriptionResult = await islandRouter.setInterfaceDescription({
+		interfaceName: 'en0',
+		description: 'Main LAN uplink',
+		acknowledgeHighRisk: true,
+		reason:
+			'The interface label needs to be corrected to avoid operator error during maintenance and the updated description is known-good.',
+		confirmation: islandRouter.writeAcknowledgements.setInterfaceDescription,
+	})
+	expect(descriptionResult).toMatchObject({
+		commandId: 'set-interface-description',
+	})
+
+	const dnsServerResult = await islandRouter.setDnsServer({
+		servers: ['1.1.1.1', '8.8.8.8'],
+		acknowledgeHighRisk: true,
+		reason:
+			'The resolver list must be updated intentionally because the upstream DNS providers changed and validation was completed already.',
+		confirmation: islandRouter.writeAcknowledgements.setDnsServer,
+	})
+	expect(dnsServerResult).toMatchObject({
+		commandId: 'set-dns-server',
+	})
+
+	const blockResult = await islandRouter.blockHost({
+		host: '192.168.0.99',
+		acknowledgeHighRisk: true,
+		reason:
+			'A compromised device must be isolated immediately and this IP was confirmed by incident response before enforcement.',
+		confirmation: islandRouter.writeAcknowledgements.blockHost,
+	})
+	expect(blockResult).toMatchObject({
+		commandId: 'block-host',
+	})
+
+	const unblockResult = await islandRouter.unblockHost({
+		host: '192.168.0.99',
+		acknowledgeHighRisk: true,
+		reason:
+			'The device was remediated and network access needs to be restored intentionally after post-incident validation.',
+		confirmation: islandRouter.writeAcknowledgements.unblockHost,
+	})
+	expect(unblockResult).toMatchObject({
+		commandId: 'unblock-host',
 	})
 })
 

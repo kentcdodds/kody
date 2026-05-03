@@ -67,6 +67,22 @@ function createIslandRouterRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
+			case 'show-system':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show system'],
+					stdout: [
+						'Uptime: 4 days 03 hours',
+						'CPU Usage: 17%',
+						'Memory Usage: 41%',
+						'Temperature: 46 C',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
 			case 'show-interface-summary':
 				return {
 					id: request.id,
@@ -75,6 +91,88 @@ function createIslandRouterRunner() {
 						'Interface  Link   Speed  Duplex  Description',
 						'---------  -----  -----  ------  -----------',
 						'en0        up     1G     full    LAN uplink',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-interface-statistics':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show interface statistics'],
+					stdout: [
+						'Interface  RX Bytes  TX Bytes  RX Packets  TX Packets  RX Errors  TX Errors  Utilization',
+						'---------  --------  --------  ----------  ----------  ---------  ---------  -----------',
+						'en0        1000      2000      10          20          0          0          12%',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-bandwidth-usage':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show bandwidth-usage'],
+					stdout: [
+						'Interface  RX Rate   TX Rate   Total Rate',
+						'---------  --------  --------  ----------',
+						'en0        12 Mbps   4 Mbps    16 Mbps',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-wan':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show wan'],
+					stdout: [
+						'ISP  Interface  IP Address     Gateway       Type   Role    Priority',
+						'---  ---------  -------------  ------------  -----  ------  --------',
+						'Fiber       en1      203.0.113.10   203.0.113.1   dhcp   active   1',
+						'LTE         en2      198.51.100.10  198.51.100.1  dhcp   standby  2',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-wan-failover':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show wan failover'],
+					stdout: [
+						'Active Interface: en1',
+						'Policy: priority',
+						'Interface  ISP    State    Role    Priority  Monitor',
+						'---------  -----  -------  ------  --------  -------',
+						'en1        Fiber  healthy  active   1         ping',
+						'en2        LTE    healthy  standby  2         ping',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-multi-wan':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show multi-wan'],
+					stdout: [
+						'Active WAN: en1',
+						'Policy: priority',
+						'Interface  ISP    State    Role    Priority  Monitor',
+						'---------  -----  -------  ------  --------  -------',
+						'en1        Fiber  healthy  active   1         ping',
+						'en2        LTE    healthy  standby  2         ping',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -105,6 +203,243 @@ function createIslandRouterRunner() {
 						'IP Address    MAC Address        Host Name  Interface',
 						'------------  -----------------  ---------  ---------',
 						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ip-routes':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ip routes'],
+					stdout: [
+						'Destination      Gateway       Interface  Protocol  Metric',
+						'---------------  ------------  ---------  --------  ------',
+						'default          203.0.113.1   en1        static    1',
+						'192.168.0.0/24   0.0.0.0       en0        kernel    0',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-nat':
+			case 'show-ip-nat':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-nat' ? 'show nat' : 'show ip nat',
+					],
+					stdout: [
+						'Rule  Type        Protocol  Interface  External        Internal         Enabled  Description',
+						'----  ----------  --------  ---------  --------------  ---------------  -------  -----------',
+						'1     port-forward  tcp       en1        203.0.113.10:443  192.168.0.52:443  enabled  NAS HTTPS',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-sessions':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show sessions'],
+					stdout: [
+						'Protocol  Source              Destination         State        Interface',
+						'--------  ------------------  ------------------  -----------  ---------',
+						'tcp       192.168.0.52:54321  1.1.1.1:443         established  en1',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-vlan':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show vlan'],
+					stdout: [
+						'VLAN  Name    Interface  Members      Status  IP Address',
+						'----  ------  ---------  -----------  ------  ----------',
+						'10    IOT     vlan10     en3,en4      up      192.168.10.1',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-dns':
+			case 'show-ip-dns':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-dns' ? 'show dns' : 'show ip dns',
+					],
+					stdout: [
+						'Mode: manual',
+						'Address',
+						'-------',
+						'1.1.1.1',
+						'8.8.8.8',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-users':
+			case 'show-user':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-users' ? 'show users' : 'show user',
+					],
+					stdout: [
+						'Username  Role   Connection  Address',
+						'--------  -----  ----------  -------',
+						'admin     admin  ssh         192.168.0.20',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-security-policy':
+			case 'show-protection':
+			case 'show-firewall':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-security-policy'
+							? 'show security-policy'
+							: request.id === 'show-protection'
+								? 'show protection'
+								: 'show firewall',
+					],
+					stdout: [
+						'Rule  Action  Source        Destination  Service  Enabled',
+						'----  ------  ------------  -----------  -------  -------',
+						'10    allow   192.168.0.0/24 any         any      enabled',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-qos':
+			case 'show-traffic-policy':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-qos' ? 'show qos' : 'show traffic-policy',
+					],
+					stdout: [
+						'Policy  Interface  Class   Priority  Bandwidth  Enabled',
+						'------  ---------  ------  --------  ---------  -------',
+						'video   en1        voice   high      50 Mbps    enabled',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-vpn':
+			case 'show-ipsec':
+			case 'show-gre':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						request.id === 'show-vpn'
+							? 'show vpn'
+							: request.id === 'show-ipsec'
+								? 'show ipsec'
+								: 'show gre',
+					],
+					stdout: [
+						'Name    Type   Local Endpoint  Remote Endpoint  Status  Interface',
+						'------  -----  --------------  ---------------  ------  ---------',
+						's2s     ipsec  203.0.113.10    203.0.113.20     up      en1',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-dhcp-server':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show dhcp-server'],
+					stdout: [
+						'Pool  Interface  Network         Range Start    Range End      Gateway      DNS Servers',
+						'----  ---------  --------------  -------------  -------------  -----------  ----------------',
+						'LAN   en0        192.168.0.0/24  192.168.0.100  192.168.0.199  192.168.0.1  1.1.1.1,8.8.8.8',
+						'IP Address    MAC Address        Host Name  Interface',
+						'------------  -----------------  ---------  ---------',
+						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-ntp':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show ntp'],
+					stdout: [
+						'Timezone: America/Denver',
+						'Server',
+						'------',
+						'time.cloudflare.com',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-syslog':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show syslog'],
+					stdout: [
+						'Host              Port  Protocol  Facility  Enabled',
+						'----------------  ----  --------  --------  -------',
+						'192.168.0.10      514   udp       local0    enabled',
+					].join('\n'),
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 10,
+				}
+			case 'show-snmp':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'show snmp'],
+					stdout: [
+						'Enabled: true',
+						'Community  Access  Source',
+						'---------  ------  -------',
+						'public     ro      192.168.0.0/24',
 					].join('\n'),
 					stderr: '',
 					exitCode: 0,
@@ -168,6 +503,97 @@ function createIslandRouterRunner() {
 					signal: null,
 					timedOut: false,
 					durationMs: 200,
+				}
+			case 'force-wan-failover':
+				return {
+					id: request.id,
+					commandLines: [
+						'terminal length 0',
+						`wan failover force ${request.interfaceName}`,
+					],
+					stdout: `Forced WAN failover to ${request.interfaceName}.`,
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'set-dhcp-reservation':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'dhcp-server reservation'],
+					stdout: 'DHCP reservation updated.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'remove-dhcp-reservation':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'no dhcp-server reservation'],
+					stdout: 'DHCP reservation removed.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'reboot':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'reload'],
+					stdout: 'Reload requested.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'set-interface-description':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'interface en0', 'description "LAN uplink"'],
+					stdout: 'Interface description updated.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'set-dns-server':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'ip name-server 1.1.1.1'],
+					stdout: 'DNS servers updated.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'block-host':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'firewall block-host 192.168.0.52'],
+					stdout: 'Host blocked.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
+				}
+			case 'unblock-host':
+				return {
+					id: request.id,
+					commandLines: ['terminal length 0', 'no firewall block-host 192.168.0.52'],
+					stdout: 'Host unblocked.',
+					stderr: '',
+					exitCode: 0,
+					signal: null,
+					timedOut: false,
+					durationMs: 150,
 				}
 			case 'clear-dhcp-client':
 				return {
@@ -316,6 +742,56 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'router_diagnose_host')).toBe(
 			true,
 		)
+		expect(tools.some((tool) => tool.name === 'router_get_wan_config')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_failover_status'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_routing_table'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_nat_rules')).toBe(
+			true,
+		)
+		expect(tools.some((tool) => tool.name === 'router_get_vlan_config')).toBe(
+			true,
+		)
+		expect(tools.some((tool) => tool.name === 'router_get_dns_config')).toBe(
+			true,
+		)
+		expect(tools.some((tool) => tool.name === 'router_get_users')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_security_policy'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_qos_config')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_traffic_stats'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_active_sessions'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_vpn_config')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_dhcp_server_config'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_ntp_config')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_syslog_config'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_get_snmp_config')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_system_info'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_get_bandwidth_usage'),
+		).toBe(true)
 		expect(
 			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
 		).toBe(true)
@@ -325,6 +801,26 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(
 			tools.some((tool) => tool.name === 'router_save_running_config'),
 		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_set_wan_failover')).toBe(
+			true,
+		)
+		expect(
+			tools.some((tool) => tool.name === 'router_run_allowlisted_cli_command'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_set_dhcp_reservation'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_reboot')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_set_interface_description'),
+		).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_set_dns_server'),
+		).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_block_host')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_unblock_host')).toBe(
+			true,
+		)
 		expect(
 			tools.some((tool) => tool.name === 'jellyfish_scan_controllers'),
 		).toBe(true)
@@ -526,6 +1022,45 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			dhcpLease: {
 				hostName: 'nas-box',
 			},
+		})
+		const wanConfig = await mcp.callTool('router_get_wan_config')
+		expect(wanConfig.structuredContent).toMatchObject({
+			wans: expect.arrayContaining([
+				expect.objectContaining({
+					interfaceName: 'en1',
+					connectionType: 'dhcp',
+				}),
+			]),
+		})
+		const systemInfo = await mcp.callTool('router_get_system_info')
+		expect(systemInfo.structuredContent).toMatchObject({
+			uptime: expect.any(String),
+			cpuUsagePercent: 17,
+		})
+		const activeSessions = await mcp.callTool('router_get_active_sessions')
+		expect(activeSessions.structuredContent).toMatchObject({
+			sessions: expect.arrayContaining([
+				expect.objectContaining({
+					sourceAddress: '192.168.0.52',
+					destinationAddress: '1.1.1.1',
+				}),
+			]),
+		})
+		const allowlistedRouterCommand = await mcp.callTool(
+			'router_run_allowlisted_cli_command',
+			{
+				acknowledgeHighRisk: true,
+				reason:
+					'The typed status tool is not sufficient and the allowlisted interface detail command is needed for diagnosis.',
+				confirmation:
+					'I am highly certain running this allowlisted Island router CLI command is necessary right now.',
+				command: 'show-interface',
+				interfaceName: 'en0',
+			},
+		)
+		expect(allowlistedRouterCommand.structuredContent).toMatchObject({
+			command: 'show-interface',
+			commandId: 'show-interface',
 		})
 
 		await expect(
