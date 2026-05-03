@@ -7,35 +7,43 @@ publishes.
 Use the repo capabilities when you want to inspect or modify package source
 directly.
 
-## `edits` payload
-
-`repo_edit_flow` returns `edits.dry_run` and `edits.total_changed` by default.
-
-The full `edits.edits` array is opt-in through `include_edits: true`.
-
-That keeps the default response small for agent workflows that only need
-session, checks, publish status, or a count of changed files, while allowing
-callers to request the concrete changed content and diff when they need audit or
-explanation detail.
-
 ## Preferred workflow
 
-For common edits, prefer **`repo_edit_flow`**.
+For package edits, use **`repo_run_commands`**.
 
 It combines the usual sequence into one capability:
 
 1. open or reuse a repo session
-2. apply structured edits
-3. run Worker-native checks
-4. optionally publish
+2. parse and run constrained git commands
+3. run Worker-native checks when requested
+4. publish when requested and checks pass
 
-That keeps normal edit workflows to one capability call instead of separate
-`repo_open_session` + `repo_apply_patch` + `repo_run_checks` +
-`repo_publish_session` calls.
+Commands are parsed, not shell-executed. Unsupported syntax returns a
+line-specific parse error with examples so agents can correct the command
+string.
+
+Supported commands:
+
+- `git status`
+- `git diff`
+- `git apply <<'PATCH' ... PATCH`
+- `git add <path>`
+- `git rm <path>`
+- `git commit -m "message"`
+- `git log [--depth N]`
+- `git branch [name]`
+- `git checkout <ref>` / `git checkout -b <branch>`
+- `git fetch [remote] [ref]`
+- `git pull [remote] [ref]`
+- `git push [remote] [ref]`
+- `git remote`, `git remote add <name> <url>`, `git remote remove <name>`
+
+`git clone` is intentionally unsupported because repo sessions are opened and
+cloned by Kody.
 
 ## Opening by package identity
 
-`repo_open_session` and `repo_edit_flow` can open repo-backed packages by
+`repo_open_session` and `repo_run_commands` can open repo-backed packages by
 user-facing identity instead of requiring the internal `source_id`.
 
 Examples:
@@ -56,7 +64,7 @@ Pass `source_id` when you already have it, but most callers should prefer
 Publish-oriented repo flows return structured detail for important failure
 states:
 
-- **`blocked_by_checks`** when checks fail inside `repo_edit_flow`
+- **`blocked_by_checks`** when checks fail inside `repo_run_commands`
 - **`checks_outdated`** when a session changed after the last successful check
 - **`base_moved`** with `repair_hint: "repo_rebase_session"` plus both the
   session base commit and current published commit
@@ -71,7 +79,6 @@ session:
 
 - browse files with `repo_tree` and `repo_read_file`
 - search the workspace with `repo_search`
-- apply multiple edit batches over time
 - inspect file contents or diffs only when you decide to read them
 - run checks separately from publish
 - inspect status with `repo_get_check_status`
@@ -80,20 +87,21 @@ session:
 ## Example
 
 ```ts
-await codemode.repo_edit_flow({
+await codemode.repo_run_commands({
 	target: { kind: 'package', kody_id: 'triage-github-pr' },
-	include_edits: true,
-	instructions: [
-		{
-			kind: 'replace',
-			path: 'src/index.ts',
-			search: 'return { status: "todo" }',
-			replacement: 'return { status: "done" }',
-		},
-	],
+	commands: `git apply <<'PATCH'
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1 @@
+-return { status: "todo" }
++return { status: "done" }
+PATCH
+git add .
+git commit -m "Mark triage complete"`,
+	run_checks: true,
+	publish: true,
 })
 ```
 
-This returns the session metadata, edit summary, check outcome, and publish
-result in one structured response. Set `include_edits: true` when you also want
-the full applied edit list with file content and diffs.
+This returns the session metadata, per-command results, check outcome, and
+publish result in one structured response.

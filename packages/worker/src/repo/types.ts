@@ -274,8 +274,6 @@ export type RepoSessionApplyEditsResult = {
 	}>
 }
 
-export type RepoApplyPatchResult = RepoSessionApplyEditsResult
-
 export type RepoSessionCheckStatus = {
 	runId: string | null
 	treeHash: string | null

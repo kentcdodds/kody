@@ -148,8 +148,8 @@ Use:
 
 - `package_save` to create or replace a saved package
 - `package_get` and `package_list` to inspect saved packages
-- `repo_edit_flow` / `repo_open_session` / `repo_publish_session` to edit the
-  repo-backed package source after it exists
+- `repo_run_commands` to edit, check, and publish repo-backed package source
+  after it exists
 
 ## Search and discovery
 

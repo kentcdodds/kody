@@ -43,6 +43,7 @@ const mockModule = vi.hoisted(() => {
 		init: vi.fn(async () => ({ initialized: '/session' })),
 		status: vi.fn(async () => gitState.statusEntries),
 		add: vi.fn(async () => ({ added: '.' })),
+		rm: vi.fn(async () => ({ removed: 'src/old.ts' })),
 		commit: vi.fn(async () => ({
 			oid: gitState.headCommit,
 			message: 'commit',
@@ -52,8 +53,14 @@ const mockModule = vi.hoisted(() => {
 			branches: [gitState.currentBranch],
 			current: gitState.currentBranch,
 		})),
+		checkout: vi.fn(async () => ({ ref: gitState.currentBranch })),
+		fetch: vi.fn(async () => ({
+			fetchHead: gitState.headCommit,
+			fetchHeadDescription: 'main',
+		})),
 		pull: vi.fn(async () => ({ pulled: true })),
 		push: vi.fn(async () => ({ ok: true, refs: {} })),
+		diff: vi.fn(async () => []),
 	}
 
 	return {
@@ -62,7 +69,11 @@ const mockModule = vi.hoisted(() => {
 		workspaceExists: vi.fn(
 			async (path: string) => path === '/session/.git/config',
 		),
-		workspaceReadFile: vi.fn(async () => '{"version":1,"kind":"app"}'),
+		workspaceFiles: new Map<string, string>(),
+		workspaceReadFile: vi.fn(
+			async (path: string) =>
+				mockModule.workspaceFiles.get(path) ?? '{"version":1,"kind":"app"}',
+		),
 		workspaceWriteFile: vi.fn(async () => undefined),
 		workspaceMkdir: vi.fn(async () => undefined),
 		workspaceRm: vi.fn(async () => undefined),

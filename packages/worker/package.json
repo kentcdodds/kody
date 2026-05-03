@@ -22,6 +22,7 @@
     "acorn": "^8.16.0",
     "agents": ">=0.11.5 <0.11.8",
     "croner": "^10.0.1",
+    "diff": "^9.0.0",
     "postal-mime": "^2.7.4",
     "remix": "^3.0.0-beta.0",
     "workers-ai-provider": "^3.1.11",
