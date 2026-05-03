@@ -242,9 +242,7 @@ export function createAccessNetworksUnleashedAdapter(input: {
 		async scan() {
 			if (input.scanControllers) {
 				const result = await input.scanControllers()
-				if (result.diagnostics) {
-					state.accessNetworksUnleashedDiscoveryDiagnostics = result.diagnostics
-				}
+				state.accessNetworksUnleashedDiscoveryDiagnostics = result.diagnostics
 				upsertDiscoveredAccessNetworksUnleashedControllers(
 					storage,
 					connectorId,

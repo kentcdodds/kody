@@ -124,9 +124,7 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 					: `Discovered ${controllers.length} Access Networks Unleashed controller(s).`,
 				{
 					controllers,
-					diagnostics: accessNetworksUnleashed.getStatus().then
-						? undefined
-						: undefined,
+					diagnostics: accessNetworksUnleashed.getDiscoveryDiagnostics(),
 				},
 			)
 		},
