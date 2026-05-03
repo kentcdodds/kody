@@ -7,6 +7,7 @@ import {
 	getAdoptedAccessNetworksUnleashedController,
 	listAccessNetworksUnleashedControllers,
 	listAccessNetworksUnleashedPublicControllers,
+	removeAccessNetworksUnleashedController,
 	saveAccessNetworksUnleashedCredentials,
 	upsertDiscoveredAccessNetworksUnleashedControllers,
 	adoptAccessNetworksUnleashedController,
