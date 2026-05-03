@@ -175,15 +175,6 @@
 			},
 		},
 		"preview": {
-			"containers": [
-				{
-					"name": "kody-package-shell-sandbox",
-					"class_name": "Sandbox",
-					"image": "./package-shell-sandbox.dockerfile",
-					"instance_type": "lite",
-					"max_instances": 10,
-				},
-			],
 			"ai": {
 				"binding": "AI",
 				"remote": true,
@@ -282,15 +273,6 @@
 			},
 		},
 		"test": {
-			"containers": [
-				{
-					"name": "kody-package-shell-sandbox",
-					"class_name": "Sandbox",
-					"image": "./package-shell-sandbox.dockerfile",
-					"instance_type": "lite",
-					"max_instances": 10,
-				},
-			],
 			"ai": {
 				"binding": "AI",
 				"remote": true,
