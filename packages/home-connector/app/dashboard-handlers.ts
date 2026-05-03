@@ -302,7 +302,7 @@ async function loadDashboardSnapshot(
 			managedEndpoints:
 				rokuAdopted.length +
 				lutronStatus.processors.length +
-				accessNetworksUnleashedStatus.controllers.length +
+				(accessNetworksUnleashedStatus.controller ? 1 : 0) +
 				sonosStatus.adopted.length +
 				samsungStatus.adopted.length +
 				bondStatus.adopted.length +

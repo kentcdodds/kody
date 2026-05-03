@@ -514,6 +514,10 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 		expect(systemHtml).toContain('System status')
 		expect(systemHtml).toContain('Connector identity')
 		expect(systemHtml).toContain('Island router readiness')
+		expect(systemHtml).toContain('Managed endpoints')
+		expect(systemHtml).toContain('2')
+		expect(systemHtml).toContain('Unmanaged discoveries')
+		expect(systemHtml).toContain('1')
 
 		const diagnosticsResponse = await router.fetch(
 			'http://example.test/diagnostics',
