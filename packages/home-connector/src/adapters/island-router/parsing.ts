@@ -312,6 +312,91 @@ function parseTextTable(lines: Array<string>): Array<ParsedTableRow> {
 	return rows
 }
 
+function parseTextTables(lines: Array<string>): Array<ParsedTable> {
+	const tables: Array<ParsedTable> = []
+	let index = 0
+
+	while (index < lines.length - 1) {
+		const line = lines[index] ?? ''
+		const columns = splitTableColumns(line)
+		const next = lines[index + 1] ?? ''
+		if (
+			columns.length < 2 ||
+			!/^-{3,}(?:\s+-{3,})*$/.test(next.trim())
+		) {
+			index += 1
+			continue
+		}
+
+		const headers = columns.map(normalizeHeaderKey)
+		const rows: Array<ParsedTableRow> = []
+		index += 2
+
+		while (index < lines.length) {
+			const currentLine = lines[index] ?? ''
+			const currentColumns = splitTableColumns(currentLine)
+			const upcomingLine = lines[index + 1] ?? ''
+			if (
+				currentColumns.length >= 2 &&
+				!/^-{3,}(?:\s+-{3,})*$/.test(currentLine.trim()) &&
+				/^-{3,}(?:\s+-{3,})*$/.test(upcomingLine.trim())
+			) {
+				break
+			}
+			if (!currentLine.trim()) {
+				index += 1
+				continue
+			}
+			if (/^-{3,}(?:\s+-{3,})*$/.test(currentLine.trim())) {
+				index += 1
+				continue
+			}
+			if (currentColumns.length < 2) {
+				index += 1
+				continue
+			}
+			if (
+				currentColumns.length === headers.length &&
+				currentColumns.every(
+					(column, columnIndex) =>
+						normalizeHeaderKey(column) === (headers[columnIndex] ?? ''),
+				)
+			) {
+				index += 1
+				continue
+			}
+			rows.push({
+				rawLine: currentLine,
+				fields: Object.fromEntries(
+					headers.map((header, columnIndex) => [
+						header,
+						currentColumns[columnIndex] ?? '',
+					]),
+				),
+			})
+			index += 1
+		}
+
+		tables.push({
+			headers,
+			rows,
+		})
+	}
+
+	return tables
+}
+
+function findTextTableRows(
+	lines: Array<string>,
+	requiredHeaders: Array<string>,
+): Array<ParsedTableRow> {
+	return (
+		parseTextTables(lines).find((table) =>
+			requiredHeaders.every((header) => table.headers.includes(header)),
+		)?.rows ?? []
+	)
+}
+
 function parseKeyValueLines(lines: Array<string>) {
 	return lines.flatMap((line) => {
 		const match = /^(?<key>[^:]+):\s*(?<value>.+)$/.exec(line)
@@ -1107,8 +1192,11 @@ function parseRunningConfigNatRules(
 	lines: Array<string>,
 ): IslandRouterNatRules {
 	const { interfaces } = parseRunningConfigContexts(lines)
+	const natInterfaces = interfaces.filter((context) =>
+		context.lines.some((line) => /^ip nat[46] on$/i.test(line)),
+	)
 	return {
-		rules: interfaces.flatMap((context, index) => {
+		rules: natInterfaces.flatMap((context, index) => {
 			const natLine = context.lines.find((line) => /^ip nat[46] on$/i.test(line))
 			if (!natLine) return []
 			return [
@@ -1752,7 +1840,9 @@ export function parseIslandRouterTrafficStats(
 	commandLines: Array<string>,
 ): IslandRouterTrafficStats {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
-	const rows = selectRowsOrFallback(lines)
+	const rows = commandLinesContain(commandLines, 'show stats')
+		? findTextTableRows(lines, ['interface', 'rx_bytes', 'tx_bytes'])
+		: selectRowsOrFallback(lines)
 	return {
 		interfaces: rows.flatMap((row) => {
 			const interfaceName =
@@ -2143,7 +2233,9 @@ export function parseIslandRouterBandwidthUsage(
 	commandLines: Array<string>,
 ): IslandRouterBandwidthUsage {
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
-	const rows = selectRowsOrFallback(lines)
+	const rows = commandLinesContain(commandLines, 'show stats')
+		? findTextTableRows(lines, ['interface', 'rx_rate', 'tx_rate'])
+		: selectRowsOrFallback(lines)
 	return {
 		entries: rows.flatMap((row) => {
 			const interfaceName =

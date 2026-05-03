@@ -501,7 +501,7 @@ function createFakeRunner() {
 							: 'show ntp status',
 					],
 					stdout: [
-						...(request.id === 'show-ntp-status'
+						...(request.id === 'show-ntp' || request.id === 'show-ntp-status'
 							? ['Clock State: synchronized', 'Server: 162.159.200.1']
 							: ['Server         Status  Source', '-------------  ------  ------', '162.159.200.1  synced  configured']),
 					].join('\n'),
