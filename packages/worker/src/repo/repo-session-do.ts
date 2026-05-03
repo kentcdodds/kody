@@ -1066,21 +1066,28 @@ class RepoSessionBase extends DurableObject<Env> {
 		const shouldRunChecks = input.runChecks ?? false
 		const shouldPublish = input.publish ?? false
 		if (!shouldRunChecks) {
+			const publish = shouldPublish
+				? {
+						status: 'blocked_by_checks' as const,
+						message:
+							'Publishing requires checks. Set run_checks to true when publish is true.',
+					}
+				: { status: 'not_requested' as const }
 			return {
 				session: await this.getSessionInfo(input),
 				commands: results,
 				checks: { status: 'not_requested' },
-				publish: shouldPublish
-					? {
-							status: 'blocked_by_checks',
-							message:
-								'Publishing requires checks. Set run_checks to true when publish is true.',
-						}
-					: { status: 'not_requested' },
+				publish,
 			}
 		}
 		const checkRun = await this.runChecks(input)
 		if (!checkRun.ok) {
+			const publish = shouldPublish
+				? {
+						status: 'blocked_by_checks' as const,
+						message: 'Publishing skipped because repo checks failed.',
+					}
+				: { status: 'not_requested' as const }
 			return {
 				session: await this.getSessionInfo(input),
 				commands: results,
@@ -1090,14 +1097,12 @@ class RepoSessionBase extends DurableObject<Env> {
 					ok: false,
 					failedChecks: checkRun.results.filter((entry) => !entry.ok),
 				},
-				publish: shouldPublish
-					? {
-							status: 'blocked_by_checks',
-							message: 'Publishing skipped because repo checks failed.',
-						}
-					: { status: 'not_requested' },
+				publish,
 			}
 		}
+		const publish = shouldPublish
+			? await this.publishSession(input)
+			: { status: 'not_requested' as const }
 		return {
 			session: await this.getSessionInfo(input),
 			commands: results,
@@ -1106,9 +1111,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				status: 'passed',
 				ok: true,
 			},
-			publish: shouldPublish
-				? await this.publishSession(input)
-				: { status: 'not_requested' },
+			publish,
 		}
 	}
 

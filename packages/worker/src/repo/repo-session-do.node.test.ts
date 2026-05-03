@@ -93,6 +93,15 @@ const mockModule = vi.hoisted(() => {
 		resolveSessionRepo: vi.fn(),
 		resolveArtifactSourceRepo: vi.fn(),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
+		runRepoChecks: vi.fn(async () => ({
+			ok: true,
+			results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
+			manifest: {
+				name: '@kody/demo',
+				exports: { '.': './index.ts' },
+				kody: { id: 'demo', description: 'Demo package' },
+			},
+		})),
 		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
 	}
 })
@@ -179,6 +188,11 @@ vi.mock('./artifacts.ts', async () => {
 vi.mock('./manifest.ts', () => ({
 	parseRepoManifest: (...args: Array<unknown>) =>
 		mockModule.parseRepoManifest(...args),
+	normalizeRepoWorkspacePath: (path: string) => path.trim().replace(/^\/+/, ''),
+}))
+
+vi.mock('./checks.ts', () => ({
+	runRepoChecks: (...args: Array<unknown>) => mockModule.runRepoChecks(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
@@ -390,6 +404,62 @@ test('runCommands applies deletion patches and returns per-file diffs', async ()
 	expect(edits.edits[0]?.diff).not.toContain('src/delete.ts')
 	expect(edits.edits[1]?.diff).toContain('src/delete.ts')
 	expect(edits.edits[1]?.diff).not.toContain('src/keep.ts')
+})
+
+test('runCommands fetches session metadata after publish side effects', async () => {
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-published'
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/kody.json' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockResolvedValue(
+		'{"name":"@kody/demo","exports":{"./index":"./src/index.ts"},"kody":{"id":"demo","description":"Demo package"}}',
+	)
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+		session_repo_namespace: 'default',
+		session_repo_name: 'session-repo',
+		base_commit: 'commit-base',
+		last_checkpoint_commit: 'commit-base',
+	})
+	let source = {
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		entity_kind: 'app',
+		published_commit: 'commit-base',
+		manifest_path: 'kody.json',
+		source_root: '/',
+	}
+	mockModule.getEntitySourceById.mockImplementation(async () => source)
+	mockModule.updateEntitySource.mockImplementationOnce(async (_db, update) => {
+		source = {
+			...source,
+			published_commit: update.publishedCommit,
+		}
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+	} as Env)
+
+	const result = await repoSession.runCommands({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		commands: 'git status',
+		runChecks: true,
+		publish: true,
+	})
+
+	expect(result.publish).toEqual(
+		expect.objectContaining({
+			status: 'ok',
+			publishedCommit: 'commit-published',
+		}),
+	)
+	expect(result.session.published_commit).toBe('commit-published')
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
