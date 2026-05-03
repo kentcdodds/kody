@@ -1073,20 +1073,15 @@ function parseRunningConfigFailover(
 		interfaceName: wan.interfaceName,
 		ispName: wan.ispName,
 		state: null,
-		role:
-			wan.interfaceName != null && wan.interfaceName === preferredInterfaceName
-				? ('active' as const)
-				: ('standby' as const),
+		role: 'unknown' as const,
 		failoverPriority: wan.failoverPriority,
 		monitor: null,
 		rawLine: wan.rawLine,
 		fields: wan.fields,
 	}))
 	return {
-		activeInterfaceName: preferredInterfaceName,
-		activeIspName:
-			wans.find((wan) => wan.interfaceName === preferredInterfaceName)?.ispName ??
-			null,
+		activeInterfaceName: null,
+		activeIspName: null,
 		policy,
 		healthChecks,
 		rawOutput: lines.join('\n'),
@@ -1991,8 +1986,15 @@ export function parseIslandRouterDhcpServerConfig(
 	const lines = sanitizeIslandRouterOutput(stdout, commandLines)
 	if (commandLinesContain(commandLines, 'show running-config')) {
 		const base = parseRunningConfigDhcpServer(getLinesBeforeFirstTable(lines))
+		const reservationLines = lines.slice(getLinesBeforeFirstTable(lines).length)
+		const reservations = parseIslandRouterDhcpReservations(
+			reservationLines.join('\n'),
+			['show ip dhcp-reservations'],
+		)
 		return {
 			...base,
+			reservations:
+				reservations.length > 0 ? reservations : base.reservations,
 		}
 	}
 	const rows = selectRowsOrFallback(lines)

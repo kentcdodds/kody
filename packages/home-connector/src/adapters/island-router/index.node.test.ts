@@ -938,7 +938,7 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 
 	const failover = await islandRouter.getFailoverStatus()
 	expect(failover).toMatchObject({
-		activeInterfaceName: 'en1',
+		activeInterfaceName: null,
 		activeIspName: null,
 		policy: 'random',
 	})
@@ -1099,6 +1099,12 @@ test('island router adapter exposes expanded read and high-risk write capabiliti
 		cpuUsagePercent: 17,
 		memoryUsagePercent: 42,
 		temperatureCelsius: 54,
+		attributes: expect.arrayContaining([
+			expect.objectContaining({
+				key: 'Platform',
+				value: 'Island Pro',
+			}),
+		]),
 	})
 
 	const bandwidthUsage = await islandRouter.getBandwidthUsage()
