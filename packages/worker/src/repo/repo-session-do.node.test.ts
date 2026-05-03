@@ -334,6 +334,64 @@ test('publishSession uses Artifacts username/password auth for both origin and s
 	}
 })
 
+test('runCommands applies deletion patches and returns per-file diffs', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/keep.ts') return 'export const keep = false\n'
+		if (path === '/session/src/delete.ts') return 'export const remove = true\n'
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.runCommands({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		runChecks: false,
+		publish: false,
+		commands: [
+			"git apply <<'PATCH'",
+			'--- a/src/keep.ts',
+			'+++ b/src/keep.ts',
+			'@@ -1 +1 @@',
+			'-export const keep = false',
+			'+export const keep = true',
+			'--- a/src/delete.ts',
+			'+++ /dev/null',
+			'@@ -1 +0,0 @@',
+			'-export const remove = true',
+			'PATCH',
+		].join('\n'),
+	})
+
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/keep.ts',
+		'export const keep = true\n',
+	)
+	expect(mockModule.workspaceRm).toHaveBeenCalledWith(
+		'/session/src/delete.ts',
+		{
+			force: true,
+		},
+	)
+	const edits = result.commands[0]?.output as {
+		edits: Array<{ path: string; content: string; diff: string }>
+	}
+	expect(edits.edits).toEqual([
+		expect.objectContaining({
+			path: 'src/keep.ts',
+			content: 'export const keep = true\n',
+		}),
+		expect.objectContaining({
+			path: 'src/delete.ts',
+			content: '',
+		}),
+	])
+	expect(edits.edits[0]?.diff).toContain('src/keep.ts')
+	expect(edits.edits[0]?.diff).not.toContain('src/delete.ts')
+	expect(edits.edits[1]?.diff).toContain('src/delete.ts')
+	expect(edits.edits[1]?.diff).not.toContain('src/keep.ts')
+})
+
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {
 	// Regression test: repo_publish_session was throwing
 	// "Published snapshot for source ... was not found" because the publish

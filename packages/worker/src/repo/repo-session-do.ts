@@ -5,7 +5,7 @@ import {
 	WorkspaceFileSystem,
 	createWorkspaceStateBackend,
 } from '@cloudflare/shell'
-import { applyPatch, parsePatch } from 'diff'
+import { applyPatch, formatPatch, parsePatch } from 'diff'
 import { createGit } from '@cloudflare/shell/git'
 import {
 	deleteRepoSession,
@@ -905,7 +905,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			diff: string
 		}> = []
 		for (const patch of patches) {
-			const targetPath = patch.newFileName ?? patch.oldFileName
+			const targetPath =
+				patch.newFileName && patch.newFileName !== '/dev/null'
+					? patch.newFileName
+					: patch.oldFileName
 			if (!targetPath || targetPath === '/dev/null') {
 				throw new Error('git apply patch is missing a target file path.')
 			}
@@ -923,13 +926,17 @@ class RepoSessionBase extends DurableObject<Env> {
 				)
 			}
 			if (!input.dryRun) {
-				await this.workspace.writeFile(workspacePath, nextContent)
+				if (patch.newFileName === '/dev/null') {
+					await this.workspace.rm(workspacePath, { force: true })
+				} else {
+					await this.workspace.writeFile(workspacePath, nextContent)
+				}
 			}
 			edits.push({
 				path: externalPath,
 				changed: nextContent !== currentContent,
 				content: nextContent,
-				diff: input.patch,
+				diff: formatPatch(patch),
 			})
 		}
 		return {
