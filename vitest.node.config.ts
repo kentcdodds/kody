@@ -6,7 +6,7 @@ export default mergeConfig(
 	sharedProjectConfig,
 	defineProject({
 		ssr: {
-			noExternal: ['@cloudflare/codemode'],
+			noExternal: ['@cloudflare/codemode', '@cloudflare/containers'],
 		},
 		resolve: {
 			alias: [

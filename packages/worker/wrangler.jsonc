@@ -54,6 +54,10 @@
 			"new_sqlite_classes": ["PackageServiceInstance"],
 			"tag": "v14",
 		},
+		{
+			"new_sqlite_classes": ["Sandbox"],
+			"tag": "v15",
+		},
 	],
 
 	"observability": {
@@ -61,6 +65,15 @@
 	},
 	"env": {
 		"production": {
+			"containers": [
+				{
+					"name": "kody-package-shell-sandbox",
+					"class_name": "Sandbox",
+					"image": "./package-shell-sandbox.dockerfile",
+					"instance_type": "lite",
+					"max_instances": 10,
+				},
+			],
 			"ai": {
 				"binding": "AI",
 				"remote": true,
@@ -119,6 +132,10 @@
 					{
 						"class_name": "PackageServiceInstance",
 						"name": "PACKAGE_SERVICE_INSTANCE",
+					},
+					{
+						"class_name": "Sandbox",
+						"name": "Sandbox",
 					},
 				],
 			},
@@ -155,6 +172,15 @@
 			},
 		},
 		"preview": {
+			"containers": [
+				{
+					"name": "kody-package-shell-sandbox",
+					"class_name": "Sandbox",
+					"image": "./package-shell-sandbox.dockerfile",
+					"instance_type": "lite",
+					"max_instances": 10,
+				},
+			],
 			"ai": {
 				"binding": "AI",
 				"remote": true,
@@ -213,6 +239,10 @@
 					{
 						"class_name": "PackageServiceInstance",
 						"name": "PACKAGE_SERVICE_INSTANCE",
+					},
+					{
+						"class_name": "Sandbox",
+						"name": "Sandbox",
 					},
 				],
 			},
@@ -249,6 +279,15 @@
 			},
 		},
 		"test": {
+			"containers": [
+				{
+					"name": "kody-package-shell-sandbox",
+					"class_name": "Sandbox",
+					"image": "./package-shell-sandbox.dockerfile",
+					"instance_type": "lite",
+					"max_instances": 10,
+				},
+			],
 			"ai": {
 				"binding": "AI",
 				"remote": true,
@@ -307,6 +346,10 @@
 					{
 						"class_name": "PackageServiceInstance",
 						"name": "PACKAGE_SERVICE_INSTANCE",
+					},
+					{
+						"class_name": "Sandbox",
+						"name": "Sandbox",
 					},
 				],
 			},

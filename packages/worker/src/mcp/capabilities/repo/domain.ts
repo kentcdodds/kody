@@ -1,8 +1,6 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { repoApplyPatchCapability } from './repo-apply-patch.ts'
 import { repoDiscardSessionCapability } from './repo-discard-session.ts'
-import { repoEditFlowCapability } from './repo-edit-flow.ts'
 import { repoGetCheckStatusCapability } from './repo-get-check-status.ts'
 import { repoGetSessionCapability } from './repo-get-session.ts'
 import { repoOpenSessionCapability } from './repo-open-session.ts'
@@ -12,21 +10,17 @@ import { repoRebaseSessionCapability } from './repo-rebase-session.ts'
 import { repoRunChecksCapability } from './repo-run-checks.ts'
 import { repoSearchCapability } from './repo-search.ts'
 import { repoTreeCapability } from './repo-tree.ts'
-import { repoWriteFileCapability } from './repo-write-file.ts'
 
 export const repoDomain = defineDomain({
 	name: capabilityDomainNames.repo,
 	description:
-		'Repo-backed source sessions for opening entity workspaces, reading files, applying edits, and searching code inside live session overlays.',
-	keywords: ['repo', 'artifact', 'session', 'workspace', 'edit', 'search'],
+		'Repo-backed source sessions for inspecting, validating, publishing, rebasing, and discarding live source overlays. For saved package authoring, use package_shell_open and package_shell_exec.',
+	keywords: ['repo', 'artifact', 'session', 'workspace', 'search', 'publish'],
 	capabilities: [
 		repoOpenSessionCapability,
-		repoEditFlowCapability,
 		repoGetSessionCapability,
 		repoTreeCapability,
 		repoReadFileCapability,
-		repoWriteFileCapability,
-		repoApplyPatchCapability,
 		repoSearchCapability,
 		repoRunChecksCapability,
 		repoGetCheckStatusCapability,

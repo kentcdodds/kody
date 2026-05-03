@@ -148,8 +148,10 @@ Use:
 
 - `package_save` to create or replace a saved package
 - `package_get` and `package_list` to inspect saved packages
-- `repo_edit_flow` / `repo_open_session` / `repo_publish_session` to edit the
-  repo-backed package source after it exists
+- `package_shell_open` and `package_shell_exec` to edit the repo-backed package
+  source through a trusted shell workbench after it exists
+- `package_check` and `package_publish` to validate and publish pushed shell
+  changes through Kody's package gates
 
 ## Search and discovery
 

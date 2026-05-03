@@ -12,6 +12,7 @@ import {
 	type RepoSessionPublishResult,
 	type RepoSessionRebaseResult,
 	type RepoSessionSearchResult,
+	type RepoSessionSyncResult,
 	type RepoSessionTreeResult,
 } from './types.ts'
 
@@ -89,6 +90,10 @@ export type RepoSessionRpc = {
 		sessionId: string
 		userId: string
 	}) => Promise<RepoSessionRebaseResult>
+	syncSessionFromRemote: (payload: {
+		sessionId: string
+		userId: string
+	}) => Promise<RepoSessionSyncResult>
 	publishSession: (payload: {
 		sessionId: string
 		userId: string

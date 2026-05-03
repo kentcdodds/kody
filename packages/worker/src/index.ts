@@ -51,6 +51,7 @@ import {
 import { handlePackageAppRequest } from '#app/handlers/package-app.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
+import { Sandbox } from '@cloudflare/sandbox'
 
 export {
 	ChatAgent,
@@ -64,6 +65,7 @@ export {
 	PackageRealtimeSession,
 	PackageServiceInstance,
 	PackageAppRuntimeBridge,
+	Sandbox,
 	StorageRunner,
 }
 

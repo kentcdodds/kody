@@ -349,3 +349,10 @@ export type RepoSessionRebaseResult = {
 	headCommit: string | null
 	merged: boolean
 }
+
+export type RepoSessionSyncResult = {
+	ok: true
+	sessionId: string
+	headCommit: string | null
+	changed: boolean
+}

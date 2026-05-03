@@ -288,6 +288,44 @@ test('rebaseSession uses Artifacts username/password auth without token override
 	)
 })
 
+test('syncSessionFromRemote pulls shell-pushed session commits into the workspace', async () => {
+	setCommonSessionFixtures()
+	mockModule.gitState.headCommit = 'commit-before'
+	mockModule.git.pull.mockImplementationOnce(async () => {
+		mockModule.gitState.headCommit = 'commit-after'
+		return { pulled: true }
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.syncSessionFromRemote({
+		sessionId: 'session-1',
+		userId: 'user-1',
+	})
+
+	expect(result).toEqual({
+		ok: true,
+		sessionId: 'session-1',
+		headCommit: 'commit-after',
+		changed: true,
+	})
+	expect(mockModule.git.pull).toHaveBeenCalledWith(
+		expect.objectContaining({
+			remote: 'origin',
+			ref: 'main',
+			username: 'x',
+			password: 'art_session_secret',
+		}),
+	)
+	expect(mockModule.updateRepoSession).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'session-1',
+			userId: 'user-1',
+			lastCheckpointCommit: 'commit-after',
+		}),
+	)
+})
+
 test('publishSession uses Artifacts username/password auth for both origin and source pushes', async () => {
 	setCommonSessionFixtures()
 	mockModule.writePublishedSourceSnapshot.mockClear()

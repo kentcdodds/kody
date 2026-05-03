@@ -137,10 +137,16 @@ Retriever implementations should truncate or paginate before returning.
 
 ## Repo-backed workflow
 
-Package source is edited and published through the repo session capabilities.
+Package source is authored through trusted package shell workbenches and
+published through Kody platform gates.
 
-- prefer `repo_edit_flow` for common package changes
-- open repo sessions by package identity when possible
+- use `package_shell_open` to create or resume a shell workbench for an existing
+  saved package
+- use `package_shell_exec` for package source edits, installs, generators,
+  codemods, tests, commits, and pushes
+- use `package_check` after shell edits so Kody validates the pushed package
+  commit
+- use `package_publish` only after checks pass
 - for an existing package, treat the repo snapshot as the durable source of
   truth
 

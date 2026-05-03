@@ -52,6 +52,7 @@ import {
 	type RepoSessionRebaseResult,
 	type RepoSessionRow,
 	type RepoSessionSearchResult,
+	type RepoSessionSyncResult,
 	type RepoSessionTreeResult,
 } from './types.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
@@ -1094,6 +1095,38 @@ class RepoSessionBase extends DurableObject<Env> {
 			baseCommit: source.published_commit ?? '',
 			headCommit,
 			merged: pullResult.pulled,
+		}
+	}
+
+	async syncSessionFromRemote(input: {
+		sessionId: string
+		userId: string
+	}): Promise<RepoSessionSyncResult> {
+		const { sessionRow, sessionAccess } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		const defaultBranch = await this.getCurrentBranch()
+		const beforeHead = await this.getHeadCommit()
+		await this.git.pull({
+			dir: repoSessionWorkspacePrefix,
+			remote: 'origin',
+			ref: defaultBranch,
+			author: sessionCommitAuthor,
+			...buildArtifactsGitAuth({ token: sessionAccess.token }),
+		})
+		const headCommit = await this.getHeadCommit()
+		await updateRepoSession(this.env.APP_DB, {
+			id: sessionRow.id,
+			userId: sessionRow.user_id,
+			lastCheckpointCommit: headCommit,
+			lastCheckpointAt: nowIso(),
+		})
+		return {
+			ok: true,
+			sessionId: sessionRow.id,
+			headCommit,
+			changed: beforeHead !== headCommit,
 		}
 	}
 
