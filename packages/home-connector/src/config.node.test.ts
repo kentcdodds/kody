@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	deriveAccessNetworksUnleashedAutoscanCidrsFromInterfaces,
 	deriveVenstarAutoscanCidrsFromInterfaces,
 	loadHomeConnectorConfig,
 } from './config.ts'
@@ -86,13 +87,35 @@ test('scan CIDR env vars override derived autoscan CIDRs', () => {
 	using _env = createTemporaryEnv({
 		...requiredConfigEnv,
 		MOCKS: 'false',
+		ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.9.0/24, 10.0.0.9/32',
 		VENSTAR_SCAN_CIDRS: '192.168.1.0/24, 10.0.0.5/32',
 		JELLYFISH_SCAN_CIDRS: '192.168.2.0/24, 10.0.0.6/32',
 	})
 
 	const config = loadHomeConnectorConfig()
+	expect(config.accessNetworksUnleashedScanCidrs).toEqual([
+		'192.168.9.0/24',
+		'10.0.0.9/32',
+	])
 	expect(config.venstarScanCidrs).toEqual(['192.168.1.0/24', '10.0.0.5/32'])
 	expect(config.jellyfishScanCidrs).toEqual(['192.168.2.0/24', '10.0.0.6/32'])
+})
+
+test('derived Access Networks Unleashed autoscan CIDRs split a /23 into /24 scan blocks', () => {
+	expect(
+		deriveAccessNetworksUnleashedAutoscanCidrsFromInterfaces({
+			en0: [
+				{
+					address: '192.168.6.10',
+					netmask: '255.255.254.0',
+					family: 'IPv4',
+					mac: '00:00:00:00:00:00',
+					internal: false,
+					cidr: '192.168.6.10/23',
+				},
+			],
+		}),
+	).toEqual(['192.168.6.0/24', '192.168.7.0/24'])
 })
 
 test('derived Venstar autoscan CIDRs split a /23 into /24 scan blocks', () => {
@@ -205,16 +228,12 @@ test('island router SSH env vars honor explicit port, fingerprint, and timeout',
 test('Access Networks Unleashed insecure TLS is opt-in', () => {
 	using _env = createTemporaryEnv({
 		...requiredConfigEnv,
-		ACCESS_NETWORKS_UNLEASHED_HOST: 'https://unleashed.local',
-		ACCESS_NETWORKS_UNLEASHED_USERNAME: 'admin',
-		ACCESS_NETWORKS_UNLEASHED_PASSWORD: 'password',
+		ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.1.0/24',
 		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: undefined,
 	})
 
 	expect(loadHomeConnectorConfig()).toMatchObject({
-		accessNetworksUnleashedHost: 'https://unleashed.local',
-		accessNetworksUnleashedUsername: 'admin',
-		accessNetworksUnleashedPassword: 'password',
+		accessNetworksUnleashedScanCidrs: ['192.168.1.0/24'],
 		accessNetworksUnleashedAllowInsecureTls: false,
 		accessNetworksUnleashedRequestTimeoutMs: 8000,
 	})
@@ -223,14 +242,13 @@ test('Access Networks Unleashed insecure TLS is opt-in', () => {
 test('Access Networks Unleashed insecure TLS honors explicit true', () => {
 	using _env = createTemporaryEnv({
 		...requiredConfigEnv,
-		ACCESS_NETWORKS_UNLEASHED_HOST: 'https://unleashed.local',
-		ACCESS_NETWORKS_UNLEASHED_USERNAME: 'admin',
-		ACCESS_NETWORKS_UNLEASHED_PASSWORD: 'password',
+		ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.50.0/24,10.0.0.8/32',
 		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: 'true',
 		ACCESS_NETWORKS_UNLEASHED_REQUEST_TIMEOUT_MS: '12000',
 	})
 
 	expect(loadHomeConnectorConfig()).toMatchObject({
+		accessNetworksUnleashedScanCidrs: ['192.168.50.0/24', '10.0.0.8/32'],
 		accessNetworksUnleashedAllowInsecureTls: true,
 		accessNetworksUnleashedRequestTimeoutMs: 12000,
 	})

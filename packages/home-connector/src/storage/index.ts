@@ -183,6 +183,33 @@ function initializeSchema(db: SqliteDatabase) {
 			PRIMARY KEY (connector_id, controller_id)
 		);
 
+		CREATE TABLE IF NOT EXISTS access_networks_unleashed_controllers (
+			connector_id TEXT NOT NULL,
+			controller_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			host TEXT NOT NULL,
+			login_url TEXT NOT NULL,
+			raw_discovery_json TEXT,
+			adopted INTEGER NOT NULL DEFAULT 0,
+			last_seen_at TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, controller_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS access_networks_unleashed_credentials (
+			connector_id TEXT NOT NULL,
+			controller_id TEXT NOT NULL,
+			username TEXT NOT NULL,
+			password TEXT NOT NULL,
+			last_authenticated_at TEXT,
+			last_auth_error TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (connector_id, controller_id),
+			FOREIGN KEY (connector_id, controller_id)
+				REFERENCES access_networks_unleashed_controllers(connector_id, controller_id)
+				ON DELETE CASCADE
+		);
+
 		CREATE TABLE IF NOT EXISTS sonos_players (
 			connector_id TEXT NOT NULL,
 			player_id TEXT NOT NULL,

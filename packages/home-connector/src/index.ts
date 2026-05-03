@@ -53,6 +53,8 @@ export function createHomeConnectorApp() {
 	const venstar = createVenstarAdapter({ config, state, storage })
 	const accessNetworksUnleashed = createAccessNetworksUnleashedAdapter({
 		config,
+		state,
+		storage,
 	})
 	const mcp = createHomeConnectorMcpServer({
 		config,

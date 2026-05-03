@@ -7,9 +7,13 @@ export type HomeConnectorConfig = {
 	workerSessionUrl: string
 	workerWebSocketUrl: string
 	sharedSecret: string | null
-	accessNetworksUnleashedHost: string | null
-	accessNetworksUnleashedUsername: string | null
-	accessNetworksUnleashedPassword: string | null
+	/**
+	 * Access Networks / RUCKUS Unleashed discovery probes these CIDRs over HTTPS.
+	 * When unset, the connector derives private `/24` networks from local IPv4
+	 * interfaces. `ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS` can override the derived
+	 * list.
+	 */
+	accessNetworksUnleashedScanCidrs: Array<string>
 	accessNetworksUnleashedAllowInsecureTls: boolean
 	accessNetworksUnleashedRequestTimeoutMs: number
 	islandRouterHost: string | null
@@ -194,8 +198,20 @@ export function deriveVenstarAutoscanCidrsFromInterfaces(
 	return derivePrivateAutoscanCidrsFromInterfaces(interfaces)
 }
 
+export function deriveAccessNetworksUnleashedAutoscanCidrsFromInterfaces(
+	interfaces: ReturnType<typeof networkInterfaces>,
+) {
+	return derivePrivateAutoscanCidrsFromInterfaces(interfaces)
+}
+
 function deriveVenstarAutoscanCidrs() {
 	return deriveVenstarAutoscanCidrsFromInterfaces(networkInterfaces())
+}
+
+function deriveAccessNetworksUnleashedAutoscanCidrs() {
+	return deriveAccessNetworksUnleashedAutoscanCidrsFromInterfaces(
+		networkInterfaces(),
+	)
 }
 
 function deriveJellyfishAutoscanCidrs() {
@@ -222,6 +238,13 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerBaseUrl,
 		homeConnectorId,
 	)
+	const explicitAccessNetworksUnleashedCidrs = resolveScanCidrsFromEnv(
+		'ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS',
+	)
+	const accessNetworksUnleashedScanCidrs =
+		explicitAccessNetworksUnleashedCidrs.length > 0
+			? explicitAccessNetworksUnleashedCidrs
+			: deriveAccessNetworksUnleashedAutoscanCidrs()
 	const explicitVenstarCidrs = resolveScanCidrsFromEnv('VENSTAR_SCAN_CIDRS')
 	const venstarScanCidrs =
 		explicitVenstarCidrs.length > 0
@@ -238,12 +261,7 @@ export function loadHomeConnectorConfig(): HomeConnectorConfig {
 		workerSessionUrl,
 		workerWebSocketUrl: createWorkerWebSocketUrl(workerSessionUrl),
 		sharedSecret: process.env.HOME_CONNECTOR_SHARED_SECRET?.trim() || null,
-		accessNetworksUnleashedHost:
-			process.env.ACCESS_NETWORKS_UNLEASHED_HOST?.trim() || null,
-		accessNetworksUnleashedUsername:
-			process.env.ACCESS_NETWORKS_UNLEASHED_USERNAME?.trim() || null,
-		accessNetworksUnleashedPassword:
-			process.env.ACCESS_NETWORKS_UNLEASHED_PASSWORD?.trim() || null,
+		accessNetworksUnleashedScanCidrs,
 		accessNetworksUnleashedAllowInsecureTls:
 			process.env.ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS === 'true',
 		accessNetworksUnleashedRequestTimeoutMs:

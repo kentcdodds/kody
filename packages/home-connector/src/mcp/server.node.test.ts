@@ -37,9 +37,7 @@ function createConfig() {
 	process.env.ISLAND_ROUTER_HOST_FINGERPRINT =
 		'SHA256:abcDEF1234567890abcDEF1234567890abcDEF12'
 	process.env.ISLAND_ROUTER_COMMAND_TIMEOUT_MS = '5000'
-	process.env.ACCESS_NETWORKS_UNLEASHED_HOST = 'https://unleashed.local'
-	process.env.ACCESS_NETWORKS_UNLEASHED_USERNAME = 'admin'
-	process.env.ACCESS_NETWORKS_UNLEASHED_PASSWORD = 'password'
+	process.env.ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS = '192.168.10.88/32'
 	return loadHomeConnectorConfig()
 }
 
@@ -732,6 +730,61 @@ function createFakeAccessNetworksUnleashedClient() {
 	return { client, calls }
 }
 
+function createAccessNetworksUnleashedFixture(input: {
+	config: ReturnType<typeof loadHomeConnectorConfig>
+	state: ReturnType<typeof createAppState>
+	storage: ReturnType<typeof createHomeConnectorStorage>
+}) {
+	const fakeClient = createFakeAccessNetworksUnleashedClient()
+	const scannedControllers = [
+		{
+			controllerId: 'unleashed-1',
+			name: 'Access Networks Unleashed',
+			host: '192.168.10.88',
+			loginUrl: 'https://192.168.10.88/admin/wsg/login.jsp',
+			lastSeenAt: '2026-05-03T19:00:00.000Z',
+			rawDiscovery: {
+				probeUrl: 'https://192.168.10.88/',
+			},
+		},
+	]
+	const accessNetworksUnleashed = createAccessNetworksUnleashedAdapter({
+		config: input.config,
+		state: input.state,
+		storage: input.storage,
+		clientFactory: () => fakeClient.client,
+		scanControllers: async () => ({
+			controllers: scannedControllers,
+			diagnostics: {
+				protocol: 'subnet',
+				discoveryUrl: input.config.accessNetworksUnleashedScanCidrs.join(', '),
+				scannedAt: '2026-05-03T19:00:00.000Z',
+				probes: [
+					{
+						host: '192.168.10.88',
+						url: 'https://192.168.10.88/',
+						matched: true,
+						status: 302,
+						location: '/admin/wsg/login.jsp',
+						matchReason: 'redirect',
+						error: null,
+						bodySnippet: null,
+					},
+				],
+				subnetProbe: {
+					cidrs: input.config.accessNetworksUnleashedScanCidrs,
+					hostsProbed: 1,
+					controllerMatches: 1,
+				},
+			},
+		}),
+	})
+	return {
+		accessNetworksUnleashed,
+		fakeClient,
+	}
+}
+
 installHomeConnectorMockServer()
 
 test('mcp server exposes Samsung tools and executes samsung_list_devices', async () => {
@@ -774,15 +827,32 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		storage,
 	})
 	const venstar = createVenstarAdapter({ config, state, storage })
-	const fakeAccessNetworksUnleashed = createFakeAccessNetworksUnleashedClient()
-	const accessNetworksUnleashed = createAccessNetworksUnleashedAdapter({
-		config,
-		client: fakeAccessNetworksUnleashed.client,
-	})
+	const { accessNetworksUnleashed, fakeClient: fakeAccessNetworksUnleashed } =
+		createAccessNetworksUnleashedFixture({
+			config,
+			state,
+			storage,
+		})
 	await samsungTv.scan()
 	await lutron.scan()
 	await sonos.scan()
 	await bond.scan()
+	await accessNetworksUnleashed.scan()
+	const accessNetworksController =
+		accessNetworksUnleashed.listControllers()[0]?.controllerId
+	if (!accessNetworksController) {
+		throw new Error(
+			'Expected a discovered Access Networks Unleashed controller',
+		)
+	}
+	accessNetworksUnleashed.adoptController({
+		controllerId: accessNetworksController,
+	})
+	accessNetworksUnleashed.setCredentials({
+		controllerId: accessNetworksController,
+		username: 'admin',
+		password: 'password',
+	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
 		state,
@@ -923,23 +993,22 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(tools.some((tool) => tool.name === 'router_unblock_host')).toBe(true)
 		expect(
 			tools.some(
+				(tool) => tool.name === 'access_networks_unleashed_scan_controllers',
+			),
+		).toBe(true)
+		expect(
+			tools.some(
+				(tool) => tool.name === 'access_networks_unleashed_set_credentials',
+			),
+		).toBe(true)
+		expect(
+			tools.some(
 				(tool) => tool.name === 'access_networks_unleashed_get_status',
 			),
 		).toBe(true)
 		expect(
 			tools.some(
-				(tool) => tool.name === 'access_networks_unleashed_list_access_points',
-			),
-		).toBe(true)
-		expect(
-			tools.some(
 				(tool) => tool.name === 'access_networks_unleashed_block_client',
-			),
-		).toBe(true)
-		expect(
-			tools.some(
-				(tool) =>
-					tool.name === 'access_networks_unleashed_restart_access_point',
 			),
 		).toBe(true)
 		expect(
@@ -994,6 +1063,25 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		).properties
 		expect(lutronCredentialProperties?.username?.['x-kody-secret']).toBe(true)
 		expect(lutronCredentialProperties?.password?.['x-kody-secret']).toBe(true)
+		const accessNetworksCredentialsTool = tools.find(
+			(tool) => tool.name === 'access_networks_unleashed_set_credentials',
+		)
+		if (!accessNetworksCredentialsTool) {
+			throw new Error(
+				'Expected access_networks_unleashed_set_credentials tool to be defined',
+			)
+		}
+		const accessNetworksCredentialProperties = (
+			accessNetworksCredentialsTool.inputSchema as {
+				properties?: Record<string, Record<string, unknown>>
+			}
+		).properties
+		expect(
+			accessNetworksCredentialProperties?.username?.['x-kody-secret'],
+		).toBe(true)
+		expect(
+			accessNetworksCredentialProperties?.password?.['x-kody-secret'],
+		).toBe(true)
 
 		const result = await mcp.callTool('samsung_list_devices')
 		expect(result.structuredContent).toMatchObject({
@@ -1099,12 +1187,34 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			},
 		})
 
+		const accessNetworksScan = await mcp.callTool(
+			'access_networks_unleashed_scan_controllers',
+		)
+		expect(accessNetworksScan.structuredContent).toMatchObject({
+			controllers: expect.any(Array),
+			diagnostics: expect.anything(),
+		})
+		const accessNetworksControllers = await mcp.callTool(
+			'access_networks_unleashed_list_controllers',
+		)
+		expect(accessNetworksControllers.structuredContent).toMatchObject({
+			controllers: expect.arrayContaining([
+				expect.objectContaining({
+					controllerId: 'unleashed-1',
+					adopted: true,
+					hasStoredCredentials: true,
+				}),
+			]),
+		})
 		const accessNetworksStatus = await mcp.callTool(
 			'access_networks_unleashed_get_status',
 		)
 		expect(accessNetworksStatus.structuredContent).toMatchObject({
 			config: {
 				configured: true,
+			},
+			controller: {
+				controllerId: 'unleashed-1',
 			},
 			aps: expect.any(Array),
 			wlans: expect.any(Array),
@@ -1261,10 +1371,10 @@ test('mcp server exposes island router write tools when host verification is con
 		storage,
 	})
 	const venstar = createVenstarAdapter({ config, state, storage })
-	const fakeAccessNetworksUnleashed = createFakeAccessNetworksUnleashedClient()
-	const accessNetworksUnleashed = createAccessNetworksUnleashedAdapter({
+	const { accessNetworksUnleashed } = createAccessNetworksUnleashedFixture({
 		config,
-		client: fakeAccessNetworksUnleashed.client,
+		state,
+		storage,
 	})
 	const mcp = createHomeConnectorMcpServer({
 		config,
@@ -1294,9 +1404,11 @@ test('mcp server exposes island router write tools when host verification is con
 		const renewTool = tools.find(
 			(tool) => tool.name === 'router_renew_dhcp_clients',
 		)
-		expect(renewTool).toBeDefined()
+		if (!renewTool) {
+			throw new Error('Expected router_renew_dhcp_clients tool to be defined')
+		}
 		const renewProperties = (
-			renewTool?.inputSchema as {
+			renewTool.inputSchema as {
 				properties?: Record<string, Record<string, unknown>>
 			}
 		).properties
