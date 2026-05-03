@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { parseJsonc, writeGeneratedWranglerConfig } from './resource-utils.ts'
 
@@ -51,6 +51,73 @@ test('writeGeneratedWranglerConfig keeps migrations ordered by tag version', asy
 		expect(generatedConfig.migrations[v13Index]?.new_sqlite_classes).toContain(
 			'PackageRealtimeSession',
 		)
+	} finally {
+		await rm(tempDir, { force: true, recursive: true })
+	}
+})
+
+test('writeGeneratedWranglerConfig fails when package workflows binding is missing', async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-resource-utils-'))
+
+	try {
+		const baseConfigPath = path.join(tempDir, 'wrangler.jsonc')
+		const outConfigPath = path.join(tempDir, 'wrangler-preview.generated.json')
+		await writeFile(
+			baseConfigPath,
+			JSON.stringify(
+				{
+					name: 'kody',
+					env: {
+						preview: {
+							d1_databases: [{ binding: 'APP_DB' }],
+							kv_namespaces: [
+								{ binding: 'OAUTH_KV' },
+								{ binding: 'BUNDLE_ARTIFACTS_KV' },
+							],
+							workflows: [
+								{
+									binding: 'OTHER_WORKFLOW',
+									name: 'other-workflow',
+								},
+							],
+						},
+					},
+					migrations: [],
+				},
+				null,
+				2,
+			),
+		)
+
+		const consoleErrorSpy = vi
+			.spyOn(console, 'error')
+			.mockImplementation(() => undefined)
+		const processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+			throw new Error('process.exit')
+		})
+
+		try {
+			await expect(
+				writeGeneratedWranglerConfig({
+					baseConfigPath,
+					outConfigPath,
+					envName: 'preview',
+					workerName: 'kody-pr-123',
+					d1DatabaseName: 'kody-pr-123-db',
+					d1DatabaseId: 'dry-run-db',
+					oauthKvId: 'dry-run-oauth',
+					bundleArtifactsKvId: 'dry-run-bundle',
+				}),
+			).rejects.toThrow('process.exit')
+			expect(consoleErrorSpy).toHaveBeenCalledWith(
+				expect.stringContaining(
+					'has no preview workflow binding for "PACKAGE_WORKFLOWS"',
+				),
+			)
+		} finally {
+			processExitSpy.mockRestore()
+			consoleErrorSpy.mockRestore()
+		}
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

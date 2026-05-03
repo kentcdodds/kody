@@ -79,6 +79,63 @@ test('createWorkflowTools creates package workflow instances from package contex
 	)
 })
 
+test('runModuleWithRegistry preserves caller-provided workflow tools', async () => {
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://app.example.com',
+		user: {
+			userId: 'user-1',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+		storageContext: null,
+	})
+	const customWorkflowTools = {
+		create: vi.fn(async () => ({ ok: true, id: 'custom-workflow' })),
+	}
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute(wrapped) {
+				expect(wrapped).toContain(
+					'codemode.package_workflow_create(input ?? {})',
+				)
+				return {
+					result: 'ok',
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		await runModuleWithRegistry(
+			env,
+			callerContext,
+			`import { workflows } from 'kody:runtime'
+export default async function run() {
+	await workflows.create({
+		workflowName: 'shade-event',
+		exportName: './run-event',
+		runAt: '2026-05-03T12:00:00.000Z',
+		idempotencyKey: 'event-key',
+	})
+}`,
+			undefined,
+			{
+				packageContext: {
+					packageId: 'pkg-1',
+					kodyId: 'shade-automation',
+					sourceId: 'source-1',
+				},
+				workflowTools: customWorkflowTools,
+			},
+		)
+		expect(customWorkflowTools.create).not.toHaveBeenCalled()
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
 vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 	buildKodyModuleBundle: vi.fn(async () => ({
 		mainModule: 'entry.js',

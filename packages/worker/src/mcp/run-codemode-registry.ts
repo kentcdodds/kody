@@ -659,11 +659,13 @@ export async function runModuleWithRegistry(
 		{
 			...options,
 			packageContext: options?.packageContext ?? null,
-			workflowTools: createWorkflowTools({
-				env,
-				callerContext,
-				packageContext: options?.packageContext ?? null,
-			}),
+			workflowTools:
+				options?.workflowTools ??
+				createWorkflowTools({
+					env,
+					callerContext,
+					packageContext: options?.packageContext ?? null,
+				}),
 		},
 	)
 }

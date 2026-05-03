@@ -6,6 +6,7 @@ import {
 	createPackageWorkflowInstanceId,
 	createPackageWorkflowPayload,
 	createPackageWorkflowPlanDate,
+	normalizePackageWorkflowParams,
 } from './package-workflows.ts'
 
 const invocationMocks = vi.hoisted(() => ({
@@ -20,11 +21,15 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 function createWorkflowBinding(options?: {
 	existing?: { id: string; status?: string } | null
 	getThrows?: Error
+	createThrows?: Error
 }) {
-	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => ({
-		id: input.id,
-		status: async () => ({ status: 'queued' }),
-	}))
+	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
+		if (options?.createThrows) throw options.createThrows
+		return {
+			id: input.id,
+			status: async () => ({ status: 'queued' }),
+		}
+	})
 	const get = vi.fn(async (id: string) => {
 		if (options?.getThrows) throw options.getThrows
 		if (!options || options.existing === null) {
@@ -69,6 +74,12 @@ test('createPackageWorkflowInstanceId is stable and scoped to package workflow i
 })
 
 test('createPackageWorkflowPayload keeps only safe routing metadata and small params', () => {
+	const inputParams = {
+		eventId: 'event-1',
+		roomId: 'office',
+		nested: { startedAt: new Date('2026-05-03T00:00:00.000Z') },
+		ignored: undefined,
+	}
 	const payload = createPackageWorkflowPayload({
 		userId: 'user-1',
 		packageId: 'pkg-1',
@@ -78,10 +89,7 @@ test('createPackageWorkflowPayload keeps only safe routing metadata and small pa
 		exportName: 'run-event',
 		idempotencyKey: 'event-key',
 		runAt: '2026-05-03T12:34:56.000Z',
-		params: {
-			eventId: 'event-1',
-			roomId: 'office',
-		},
+		params: inputParams,
 	})
 
 	expect(payload).toEqual({
@@ -98,8 +106,10 @@ test('createPackageWorkflowPayload keeps only safe routing metadata and small pa
 		params: {
 			eventId: 'event-1',
 			roomId: 'office',
+			nested: { startedAt: '2026-05-03T00:00:00.000Z' },
 		},
 	})
+	expect(payload.params).not.toBe(inputParams)
 	expect(createPackageWorkflowPlanDate(payload.runAt)).toBe('2026-05-03')
 })
 
@@ -158,6 +168,45 @@ test('createPackageWorkflowInstance creates deterministic instance and returns e
 	expect(existingBinding.create).not.toHaveBeenCalled()
 	expect(replayed).toMatchObject({
 		id: created.id,
+		status: 'waiting',
+	})
+})
+
+test('createPackageWorkflowInstance returns existing instance after duplicate create race', async () => {
+	const binding = createWorkflowBinding({
+		existing: null,
+		createThrows: new Error('Workflow instance already exists'),
+	})
+	let lookupCount = 0
+	binding.get.mockImplementation(async (id: string) => {
+		lookupCount += 1
+		if (lookupCount === 1) {
+			throw new Error('workflow instance does not exist')
+		}
+		return {
+			id,
+			status: async () => ({ status: 'waiting' }),
+		}
+	})
+
+	const result = await createPackageWorkflowInstance({
+		workflow: binding.workflow,
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+		workflowName: 'shade-event',
+		exportName: './run-event',
+		runAt: '2026-05-03T12:34:56.000Z',
+		idempotencyKey: 'event-key',
+	})
+
+	expect(binding.create).toHaveBeenCalledTimes(1)
+	expect(binding.get).toHaveBeenCalledTimes(2)
+	expect(result).toMatchObject({
+		ok: true,
+		id: expect.stringMatching(/^pkgwf-/),
+		workflow_name: 'shade-event',
 		status: 'waiting',
 	})
 })

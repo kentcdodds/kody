@@ -153,7 +153,15 @@ export function normalizePackageWorkflowParams(
 			`workflow params must be ${maxPackageWorkflowParamsJsonBytes} bytes or less when serialized.`,
 		)
 	}
-	return params
+	const normalized = JSON.parse(paramsJson) as unknown
+	if (
+		!normalized ||
+		typeof normalized !== 'object' ||
+		Array.isArray(normalized)
+	) {
+		throw new Error('workflow params must be a JSON object when provided.')
+	}
+	return normalized as PackageWorkflowParams
 }
 
 export async function createPackageWorkflowInstanceId(input: {
@@ -263,6 +271,28 @@ async function getExistingWorkflowInstance(
 	}
 }
 
+function isDuplicateWorkflowInstanceError(error: unknown) {
+	return (
+		error instanceof Error &&
+		/already exists|duplicate|conflict|409/i.test(error.message)
+	)
+}
+
+function createPackageWorkflowCreateResult(input: {
+	summary: { id: string; status?: string }
+	payload: PackageWorkflowPayload
+}): PackageWorkflowCreateResult {
+	return {
+		ok: true,
+		id: input.summary.id,
+		workflow_name: input.payload.workflowName,
+		export_name: input.payload.exportName,
+		run_at: input.payload.runAt,
+		plan_date: input.payload.planDate,
+		status: input.summary.status,
+	}
+}
+
 export async function createPackageWorkflowInstance(input: {
 	workflow: Workflow<PackageWorkflowPayload> | undefined
 	userId: string
@@ -283,34 +313,32 @@ export async function createPackageWorkflowInstance(input: {
 	const id = await createPackageWorkflowInstanceId(payload)
 	const existing = await getExistingWorkflowInstance(input.workflow, id)
 	if (existing) {
-		return {
-			ok: true,
-			id: existing.id,
-			workflow_name: payload.workflowName,
-			export_name: payload.exportName,
-			run_at: payload.runAt,
-			plan_date: payload.planDate,
-			status: existing.status,
+		return createPackageWorkflowCreateResult({ summary: existing, payload })
+	}
+	let instance: WorkflowInstance
+	try {
+		instance = await input.workflow.create({
+			id,
+			params: payload,
+			retention: {
+				successRetention: '30 days',
+				errorRetention: '30 days',
+			},
+		})
+	} catch (error) {
+		if (isDuplicateWorkflowInstanceError(error)) {
+			const concurrent = await getExistingWorkflowInstance(input.workflow, id)
+			if (concurrent) {
+				return createPackageWorkflowCreateResult({
+					summary: concurrent,
+					payload,
+				})
+			}
 		}
+		throw error
 	}
-	const instance = await input.workflow.create({
-		id,
-		params: payload,
-		retention: {
-			successRetention: '30 days',
-			errorRetention: '30 days',
-		},
-	})
 	const summary = await readWorkflowInstanceSummary(instance)
-	return {
-		ok: true,
-		id: summary.id,
-		workflow_name: payload.workflowName,
-		export_name: payload.exportName,
-		run_at: payload.runAt,
-		plan_date: payload.planDate,
-		status: summary.status,
-	}
+	return createPackageWorkflowCreateResult({ summary, payload })
 }
 
 export async function createPackageWorkflow(input: {

@@ -323,14 +323,24 @@ export async function writeGeneratedWranglerConfig({
 			: null)
 	if (resolvedPackageWorkflowName) {
 		const workflows = (targetEnv as Record<string, unknown>).workflows
-		if (Array.isArray(workflows)) {
-			for (const workflow of workflows) {
-				if (!workflow || typeof workflow !== 'object') continue
-				const workflowRecord = workflow as Record<string, unknown>
-				if (workflowRecord.binding !== 'PACKAGE_WORKFLOWS') continue
-				workflowRecord.name = resolvedPackageWorkflowName
-			}
+		if (!Array.isArray(workflows)) {
+			fail(
+				`wrangler config "${baseConfigPath}" is missing "env.${envName}.workflows".`,
+			)
 		}
+		const packageWorkflowIndex = workflows.findIndex((workflow) => {
+			if (!workflow || typeof workflow !== 'object') return false
+			return (
+				(workflow as Record<string, unknown>).binding === 'PACKAGE_WORKFLOWS'
+			)
+		})
+		if (packageWorkflowIndex < 0) {
+			fail(
+				`wrangler config "${baseConfigPath}" has no ${envName} workflow binding for "PACKAGE_WORKFLOWS".`,
+			)
+		}
+		;(workflows[packageWorkflowIndex] as Record<string, unknown>).name =
+			resolvedPackageWorkflowName
 	}
 
 	const d1Databases = (targetEnv as Record<string, unknown>).d1_databases

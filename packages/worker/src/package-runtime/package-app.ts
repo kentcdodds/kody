@@ -36,7 +36,7 @@ import {
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
 
-function createPackageAppWorkerSource(input: { mainModule: string }) {
+export function createPackageAppWorkerSource(input: { mainModule: string }) {
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 
@@ -254,8 +254,41 @@ function createPackageSecretsProxy(runtimeBridge) {
 }
 
 function createWorkflowsProxy(runtimeBridge) {
+	const normalizeRequiredString = (input, fieldName) => {
+		const value = input?.[fieldName];
+		if (typeof value !== 'string' || !value.trim()) {
+			throw new Error(
+				'workflows.create requires a non-empty ' + fieldName + '.',
+			);
+		}
+		return value;
+	};
+	const normalizeRunAt = (input) => {
+		const value = input?.runAt;
+		const date =
+			value instanceof Date
+				? value
+				: typeof value === 'string'
+					? new Date(value)
+					: null;
+		if (!date || Number.isNaN(date.getTime())) {
+			throw new Error('workflows.create requires a valid runAt date or ISO string.');
+		}
+		return value;
+	};
 	return {
-		create: async (input) => await runtimeBridge.workflowCreate(input ?? {}),
+		create: async (input) => {
+			if (!input || typeof input !== 'object' || Array.isArray(input)) {
+				throw new Error('workflows.create requires a workflow input object.');
+			}
+			return await runtimeBridge.workflowCreate({
+				...input,
+				workflowName: normalizeRequiredString(input, 'workflowName'),
+				exportName: normalizeRequiredString(input, 'exportName'),
+				runAt: normalizeRunAt(input),
+				idempotencyKey: normalizeRequiredString(input, 'idempotencyKey'),
+			});
+		},
 	};
 }
 
