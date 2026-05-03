@@ -209,7 +209,10 @@ Authoring guide for outbound WebSocket services:
   directly. Example:
   `ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS=192.168.1.0/24,10.0.0.50/32`. Broader
   private interface CIDRs like `/23` are automatically split into multiple `/24`
-  scan blocks.
+  scan blocks, but autoscan skips any derived interface range that would expand
+  past 16 `/24` blocks. On larger LANs, set
+  `ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS` explicitly to cover the desired ranges
+  and override that cap.
 - `ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS` — optional connector env var.
   Set to `true` when the controller uses a self-signed or otherwise untrusted
   LAN certificate. When unset, the connector requires normal TLS verification.

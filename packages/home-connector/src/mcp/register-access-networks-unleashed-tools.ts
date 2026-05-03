@@ -243,17 +243,9 @@ export function registerAccessNetworksUnleashedHomeConnectorTools(input: {
 			title: 'Authenticate Access Networks Unleashed Controller',
 			description:
 				'Attempt an Access Networks Unleashed login using stored credentials for the adopted controller or the specified controller.',
-			inputSchema: {
-				type: 'object',
-				properties: {
-					controllerId: {
-						type: 'string',
-					},
-				},
-			},
-			sdkInputSchema: {
+			...buildToolInputSchema({
 				controllerId: z.string().min(1).optional(),
-			},
+			}),
 		},
 		async (args) => {
 			const controller = await accessNetworksUnleashed.authenticate(

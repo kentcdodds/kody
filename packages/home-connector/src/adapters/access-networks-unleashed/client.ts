@@ -232,9 +232,15 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 
 	function requireConfig() {
 		const host = input.controller.host.trim()
-		const username = input.controller.username?.trim()
-		const password = input.controller.password?.trim()
-		if (!host || !username || !password) {
+		const username = input.controller.username
+		const password = input.controller.password
+		if (
+			!host ||
+			username == null ||
+			password == null ||
+			username.length === 0 ||
+			password.length === 0
+		) {
 			throw new Error(
 				'Access Networks Unleashed requires an adopted controller with stored credentials. Run access_networks_unleashed_scan_controllers, access_networks_unleashed_adopt_controller, then access_networks_unleashed_set_credentials.',
 			)

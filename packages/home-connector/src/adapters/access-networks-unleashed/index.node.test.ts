@@ -4,15 +4,42 @@ import { createAppState } from '../../state.ts'
 import { createHomeConnectorStorage } from '../../storage/index.ts'
 import { createAccessNetworksUnleashedAdapter } from './index.ts'
 
+function createTemporaryEnv(values: Record<string, string | undefined>) {
+	const previousValues = Object.fromEntries(
+		Object.keys(values).map((key) => [key, process.env[key]]),
+	)
+
+	for (const [key, value] of Object.entries(values)) {
+		if (typeof value === 'undefined') {
+			delete process.env[key]
+			continue
+		}
+		process.env[key] = value
+	}
+
+	return {
+		[Symbol.dispose]: () => {
+			for (const [key, value] of Object.entries(previousValues)) {
+				if (typeof value === 'undefined') {
+					delete process.env[key]
+					continue
+				}
+				process.env[key] = value
+			}
+		},
+	}
+}
+
 function createConfig() {
-	process.env.MOCKS = 'false'
-	process.env.HOME_CONNECTOR_ID = 'default'
-	process.env.HOME_CONNECTOR_SHARED_SECRET =
-		'home-connector-secret-home-connector-secret'
-	process.env.WORKER_BASE_URL = 'http://localhost:3742'
-	process.env.ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS = '192.168.10.60/32'
-	process.env.ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS = 'true'
-	process.env.HOME_CONNECTOR_DB_PATH = ':memory:'
+	using _env = createTemporaryEnv({
+		MOCKS: 'false',
+		HOME_CONNECTOR_ID: 'default',
+		HOME_CONNECTOR_SHARED_SECRET: 'home-connector-secret-home-connector-secret',
+		WORKER_BASE_URL: 'http://localhost:3742',
+		ACCESS_NETWORKS_UNLEASHED_SCAN_CIDRS: '192.168.10.60/32',
+		ACCESS_NETWORKS_UNLEASHED_ALLOW_INSECURE_TLS: 'true',
+		HOME_CONNECTOR_DB_PATH: ':memory:',
+	})
 	return loadHomeConnectorConfig()
 }
 

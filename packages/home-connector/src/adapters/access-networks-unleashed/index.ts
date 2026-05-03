@@ -264,6 +264,8 @@ export function createAccessNetworksUnleashedAdapter(input: {
 				connectorId,
 				controller.controllerId,
 			)
+			cachedClient = null
+			cachedClientKey = null
 			return toAccessNetworksUnleashedPublicController({
 				...controller,
 				adopted: true,
@@ -276,17 +278,23 @@ export function createAccessNetworksUnleashedAdapter(input: {
 				connectorId,
 				controllerId: controller.controllerId,
 			})
+			cachedClient = null
+			cachedClientKey = null
 			return toAccessNetworksUnleashedPublicController(controller)
 		},
 		setCredentials(request: ControllerCredentialsRequest) {
 			requireController(request.controllerId)
+			const username = assertNonEmpty(request.username, 'username')
+			const password = assertNonEmpty(request.password, 'password')
 			saveAccessNetworksUnleashedCredentials({
 				storage,
 				connectorId,
 				controllerId: request.controllerId,
-				username: request.username,
-				password: request.password,
+				username,
+				password,
 			})
+			cachedClient = null
+			cachedClientKey = null
 			return toAccessNetworksUnleashedPublicController(
 				requireController(request.controllerId),
 			)
@@ -301,10 +309,15 @@ export function createAccessNetworksUnleashedAdapter(input: {
 				)
 			}
 			try {
-				await createAccessNetworksUnleashedAjaxClient({
-					config,
-					controller,
-				}).getSystemInfo()
+				cachedClient = null
+				cachedClientKey = null
+				await (
+					input.clientFactory?.(controller) ??
+					createAccessNetworksUnleashedAjaxClient({
+						config,
+						controller,
+					})
+				).getSystemInfo()
 				updateAccessNetworksUnleashedAuthStatus({
 					storage,
 					connectorId,

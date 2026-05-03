@@ -194,7 +194,7 @@ test('sqlite storage persists Unleashed controllers and encrypted credentials', 
 				expect.arrayContaining([
 					expect.objectContaining({
 						controllerId: '192.168.1.11',
-						hasStoredCredentials: true,
+						hasStoredCredentials: false,
 					}),
 				]),
 			)

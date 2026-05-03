@@ -208,9 +208,6 @@ async function probeHost(input: {
 				index: input.index,
 			})
 			if (match.controller) return match
-			if (response.ok || response.status === 401 || response.status === 403) {
-				return match
-			}
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				return {
@@ -294,6 +291,9 @@ async function discoverControllers(
 	}
 
 	await Promise.all(Array.from({ length: concurrency }, () => worker()))
+	if (dispatcher) {
+		await dispatcher.close()
+	}
 	const summary: AccessNetworksUnleashedSubnetProbeSummary = {
 		cidrs: config.accessNetworksUnleashedScanCidrs,
 		hostsProbed: targets.length,

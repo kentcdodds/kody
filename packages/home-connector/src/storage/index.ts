@@ -196,6 +196,10 @@ function initializeSchema(db: SqliteDatabase) {
 			PRIMARY KEY (connector_id, controller_id)
 		);
 
+		CREATE UNIQUE INDEX IF NOT EXISTS ux_access_networks_unleashed_adopted_controller
+			ON access_networks_unleashed_controllers(connector_id)
+			WHERE adopted = 1;
+
 		CREATE TABLE IF NOT EXISTS access_networks_unleashed_credentials (
 			connector_id TEXT NOT NULL,
 			controller_id TEXT NOT NULL,
