@@ -1036,6 +1036,7 @@ type DiagnosticRow = {
 
 function renderDiagnosticRows(rows: Array<DiagnosticRow>) {
 	return renderDataTable({
+		className: 'data-table-diagnostics',
 		headers: ['Surface', 'Status', 'Details', 'Links'],
 		rows: rows.map((row) => [
 			row.name,

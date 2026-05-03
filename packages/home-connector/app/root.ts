@@ -746,13 +746,13 @@ const styles = `
 		white-space: nowrap;
 	}
 
-	.data-table th:nth-child(3),
-	.data-table td:nth-child(3) {
+	.data-table-diagnostics th:nth-child(3),
+	.data-table-diagnostics td:nth-child(3) {
 		min-width: 16rem;
 	}
 
-	.data-table th:nth-child(4),
-	.data-table td:nth-child(4) {
+	.data-table-diagnostics th:nth-child(4),
+	.data-table-diagnostics td:nth-child(4) {
 		min-width: 12rem;
 	}
 
