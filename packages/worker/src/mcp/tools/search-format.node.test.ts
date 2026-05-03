@@ -294,8 +294,14 @@ test('repo_run_commands capability detail surfaces parsed git-only guidance', ()
 
 	expect(detail.structured).toMatchObject({
 		type: 'capability',
-		inputTypeDefinition: expect.stringContaining(
+		description: expect.stringContaining(
 			'Commands are newline-separated and parsed, not shell-executed.',
+		),
+	})
+	expect(detail.structured).toMatchObject({
+		type: 'capability',
+		inputTypeDefinition: expect.stringContaining(
+			'Newline-separated commands parsed by Kody; this field is not shell-executed.',
 		),
 	})
 	expect(detail.structured).toMatchObject({
