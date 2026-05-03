@@ -379,6 +379,7 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 	state.connection.workerUrl = 'http://localhost:3742'
 	state.connection.connected = true
 	state.connection.lastSyncAt = '2026-05-02T22:47:00.000Z'
+	state.connection.sharedSecret = 'top-secret-value'
 	try {
 		const router = createHomeConnectorRouter(
 			state,
@@ -408,6 +409,10 @@ test('system and diagnostics routes render aggregated admin surfaces', async () 
 		expect(diagnosticsHtml).toContain('Diagnostics overview')
 		expect(diagnosticsHtml).toContain('Diagnostics matrix')
 		expect(diagnosticsHtml).toContain('Island router')
+		expect(diagnosticsHtml).toContain(
+			'&quot;sharedSecret&quot;: &quot;configured&quot;',
+		)
+		expect(diagnosticsHtml).not.toContain('top-secret-value')
 	} finally {
 		storage.close()
 	}

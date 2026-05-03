@@ -141,6 +141,13 @@ function getConnectionIssues(state: HomeConnectorState) {
 	return issues
 }
 
+function getSafeConnectionSnapshot(state: HomeConnectorState) {
+	return {
+		...state.connection,
+		sharedSecret: state.connection.sharedSecret ? 'configured' : 'missing',
+	}
+}
+
 function getWorkerSnapshotUrl(state: HomeConnectorState) {
 	return state.connection.connectorId
 		? `${state.connection.workerUrl}/home/connectors/${encodeURIComponent(state.connection.connectorId)}/snapshot`
@@ -1239,7 +1246,9 @@ export function createDiagnosticsHandler(deps: DashboardDependencies) {
 									<h2>Connection raw snapshot</h2>
 									<p class="muted">Current in-memory connector state.</p>
 								</div>
-								${renderCodeBlock(formatJson(deps.state.connection))}
+								${renderCodeBlock(
+									formatJson(getSafeConnectionSnapshot(deps.state)),
+								)}
 							</section>
 							<section class="card">
 								<div class="card-heading">
