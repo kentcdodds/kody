@@ -1,172 +1,22 @@
+import {
+	type IslandRouterCommandCatalogEntry,
+	type IslandRouterCommandId,
+	type IslandRouterCommandRiskLevel,
+} from './command-catalog.ts'
+
+export {
+	islandRouterCommandCatalog,
+	islandRouterCommandConfirmation,
+	islandRouterCommandIds,
+	type IslandRouterCommandCatalogEntry,
+	type IslandRouterCommandId,
+	type IslandRouterCommandRiskLevel,
+} from './command-catalog.ts'
+
 export type IslandRouterVerificationMode =
 	| 'known-hosts'
 	| 'fingerprint'
 	| 'none'
-
-export const islandRouterReadCommandStrings = [
-	'show ip neighbors',
-	'show ip sockets',
-	'show stats',
-	'show interface <iface>',
-	'show ip interface <iface>',
-	'show log',
-	'show running-config',
-	'show running-config differences',
-	'show ip dhcp',
-	'show ip routes',
-	'show ip recommendations',
-] as const
-
-export type IslandRouterReadCommand =
-	(typeof islandRouterReadCommandStrings)[number]
-
-export type IslandRouterReadCommandCatalogEntry = {
-	command: IslandRouterReadCommand
-	readOnly: true
-	params: Array<'interfaceName' | 'query' | 'limit'>
-	riskLevel: 'low' | 'medium'
-	description: string
-	riskNotes: string
-}
-
-export const islandRouterReadCommandCatalog = [
-	{
-		command: 'show ip neighbors',
-		readOnly: true,
-		params: [],
-		riskLevel: 'low',
-		description: 'Read the IP neighbor cache.',
-		riskNotes: 'May reveal LAN device IP and MAC addresses.',
-	},
-	{
-		command: 'show ip sockets',
-		readOnly: true,
-		params: [],
-		riskLevel: 'low',
-		description: 'Read local/control-plane socket state.',
-		riskNotes:
-			'This is not a LAN client session table; it may reveal router-local listening and connected sockets.',
-	},
-	{
-		command: 'show stats',
-		readOnly: true,
-		params: [],
-		riskLevel: 'low',
-		description: 'Read system and interface statistics.',
-		riskNotes: 'May reveal interface traffic counters and rates.',
-	},
-	{
-		command: 'show interface <iface>',
-		readOnly: true,
-		params: ['interfaceName'],
-		riskLevel: 'low',
-		description: 'Read details for one named interface.',
-		riskNotes: 'May reveal interface link state and labels.',
-	},
-	{
-		command: 'show ip interface <iface>',
-		readOnly: true,
-		params: ['interfaceName'],
-		riskLevel: 'low',
-		description: 'Read IP details for one named interface.',
-		riskNotes: 'May reveal addressing and DHCP state for the interface.',
-	},
-	{
-		command: 'show log',
-		readOnly: true,
-		params: ['query', 'limit'],
-		riskLevel: 'medium',
-		description: 'Read router log output with optional Kody-side filtering.',
-		riskNotes:
-			'May reveal host identifiers, addresses, policy names, and operational history.',
-	},
-	{
-		command: 'show running-config',
-		readOnly: true,
-		params: [],
-		riskLevel: 'medium',
-		description: 'Read the live running configuration.',
-		riskNotes:
-			'May reveal complete network topology, policy, resolver, VPN, and service configuration.',
-	},
-	{
-		command: 'show running-config differences',
-		readOnly: true,
-		params: [],
-		riskLevel: 'medium',
-		description: 'Read pending differences from saved configuration.',
-		riskNotes:
-			'May reveal unsaved operational changes and sensitive configuration context.',
-	},
-	{
-		command: 'show ip dhcp',
-		readOnly: true,
-		params: [],
-		riskLevel: 'low',
-		description: 'Read documented DHCP information.',
-		riskNotes: 'May reveal DHCP leases or reservations when firmware includes them.',
-	},
-	{
-		command: 'show ip routes',
-		readOnly: true,
-		params: [],
-		riskLevel: 'low',
-		description: 'Read the IP routing table.',
-		riskNotes: 'May reveal WAN gateways and internal prefixes.',
-	},
-	{
-		command: 'show ip recommendations',
-		readOnly: true,
-		params: [],
-		riskLevel: 'low',
-		description: 'Read documented IP recommendations.',
-		riskNotes: 'May reveal router-generated network diagnostics.',
-	},
-] as const satisfies ReadonlyArray<IslandRouterReadCommandCatalogEntry>
-
-export const islandRouterWriteOperationStrings = [
-	'renew dhcp clients',
-	'clear log buffer',
-	'save running config',
-] as const
-
-export type IslandRouterWriteOperation =
-	(typeof islandRouterWriteOperationStrings)[number]
-
-export type IslandRouterWriteOperationCatalogEntry = {
-	operation: IslandRouterWriteOperation
-	command: string
-	riskLevel: 'high'
-	description: string
-	blastRadius: string
-}
-
-export const islandRouterWriteOperationCatalog = [
-	{
-		operation: 'renew dhcp clients',
-		command: 'clear dhcp-client',
-		riskLevel: 'high',
-		description: 'Request immediate renewal of DHCP-learned router addresses.',
-		blastRadius:
-			'Can briefly disrupt DHCP-learned WAN or interface addressing and may interrupt connectivity while leases renew.',
-	},
-	{
-		operation: 'clear log buffer',
-		command: 'clear log',
-		riskLevel: 'high',
-		description: 'Clear the in-memory Island router log buffer.',
-		blastRadius:
-			'Permanently removes current local diagnostics, making recent incident reconstruction harder.',
-	},
-	{
-		operation: 'save running config',
-		command: 'write memory',
-		riskLevel: 'high',
-		description: 'Persist the current running configuration to startup storage.',
-		blastRadius:
-			'Can make a bad live configuration survive reboot until manually corrected.',
-	},
-] as const satisfies ReadonlyArray<IslandRouterWriteOperationCatalogEntry>
 
 export type IslandRouterConfigStatus = {
 	configured: boolean
@@ -177,96 +27,11 @@ export type IslandRouterConfigStatus = {
 	writeWarnings: Array<string>
 }
 
-export type IslandRouterCommandId =
-	| 'show-version'
-	| 'show-clock'
-	| 'show-stats'
-	| 'show-running-config'
-	| 'show-running-config-differences'
-	| 'show-interface-summary'
-	| 'show-interface'
-	| 'show-ip-interface'
-	| 'show-ip-routes'
-	| 'show-ip-neighbors'
-	| 'show-ip-sockets'
-	| 'show-log'
-	| 'show-ip-dhcp'
-	| 'show-ip-recommendations'
-	| 'clear-dhcp-client'
-	| 'clear-log'
-	| 'write-memory'
-
-export type IslandRouterCommandRequest =
-	| {
-			id: 'show-version'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-clock'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-stats'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-running-config'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-running-config-differences'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-interface-summary'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-interface'
-			interfaceName: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-interface'
-			interfaceName: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-routes'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-neighbors'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-sockets'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-log'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-dhcp'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-recommendations'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'clear-dhcp-client'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'clear-log'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'write-memory'
-			timeoutMs?: number
-	  }
+export type IslandRouterCommandRequest = {
+	id: IslandRouterCommandId
+	params?: Record<string, unknown>
+	timeoutMs?: number
+}
 
 export type IslandRouterCommandResult = {
 	id: IslandRouterCommandId
@@ -282,27 +47,6 @@ export type IslandRouterCommandResult = {
 export type IslandRouterCommandRunner = (
 	request: IslandRouterCommandRequest,
 ) => Promise<IslandRouterCommandResult>
-
-export type IslandRouterWriteOperationId =
-	| 'renew-dhcp-clients'
-	| 'clear-log-buffer'
-	| 'save-running-config'
-
-export type IslandRouterWriteOperationResult = {
-	operationId: IslandRouterWriteOperationId
-	commandId: Extract<
-		IslandRouterCommandId,
-		'clear-dhcp-client' | 'clear-log' | 'write-memory'
-	>
-	catalogEntry: IslandRouterWriteOperationCatalogEntry
-	commandLines: Array<string>
-	stdout: string
-	stderr: string
-	exitCode: number | null
-	signal: NodeJS.Signals | null
-	timedOut: boolean
-	durationMs: number
-}
 
 export type IslandRouterKeyValue = {
 	key: string
@@ -685,23 +429,10 @@ export type IslandRouterBandwidthUsage = {
 	rawOutput: string
 }
 
-export type IslandRouterReadCommandResult = {
-	command: IslandRouterReadCommand
-	commandId: Extract<
-		IslandRouterCommandId,
-		| 'show-ip-neighbors'
-		| 'show-ip-sockets'
-		| 'show-stats'
-		| 'show-interface'
-		| 'show-ip-interface'
-		| 'show-log'
-		| 'show-running-config'
-		| 'show-running-config-differences'
-		| 'show-ip-dhcp'
-		| 'show-ip-routes'
-		| 'show-ip-recommendations'
-	>
-	catalogEntry: IslandRouterReadCommandCatalogEntry
+export type IslandRouterRunCommandResult = {
+	commandId: IslandRouterCommandId
+	catalogEntry: IslandRouterCommandCatalogEntry
+	params: Record<string, string>
 	commandLines: Array<string>
 	rawOutput: string
 	filteredOutput: string

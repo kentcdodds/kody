@@ -3,6 +3,7 @@ import { installHomeConnectorMockServer } from '../../mocks/test-server.ts'
 import { createAccessNetworksUnleashedAdapter } from '../adapters/access-networks-unleashed/index.ts'
 import { type AccessNetworksUnleashedClient } from '../adapters/access-networks-unleashed/types.ts'
 import { createBondAdapter } from '../adapters/bond/index.ts'
+import { renderIslandRouterCommand } from '../adapters/island-router/command-catalog.ts'
 import { type IslandRouterCommandRequest } from '../adapters/island-router/types.ts'
 import { createIslandRouterAdapter } from '../adapters/island-router/index.ts'
 import { createJellyfishAdapter } from '../adapters/jellyfish/index.ts'
@@ -59,7 +60,7 @@ function createIslandRouterRunner() {
 
 	return async (request: IslandRouterCommandRequest) => {
 		switch (request.id) {
-			case 'show-version':
+			case 'show version':
 				return createResult(
 					request,
 					['show version'],
@@ -69,9 +70,9 @@ function createIslandRouterRunner() {
 						'Firmware Version: 2.3.2',
 					].join('\n'),
 				)
-			case 'show-clock':
+			case 'show clock':
 				return createResult(request, ['show clock'], '2026-05-02 15:55:00 PDT')
-			case 'show-interface-summary':
+			case 'show interface summary':
 				return createResult(
 					request,
 					['show interface summary'],
@@ -81,7 +82,7 @@ function createIslandRouterRunner() {
 						'en0        up     1G     full    LAN uplink',
 					].join('\n'),
 				)
-			case 'show-ip-neighbors':
+			case 'show ip neighbors':
 				return createResult(
 					request,
 					['show ip neighbors'],
@@ -91,7 +92,7 @@ function createIslandRouterRunner() {
 						'192.168.0.52  00:11:22:33:44:55  en0        reachable',
 					].join('\n'),
 				)
-			case 'show-ip-sockets':
+			case 'show ip sockets':
 				return createResult(
 					request,
 					['show ip sockets'],
@@ -101,7 +102,7 @@ function createIslandRouterRunner() {
 						'tcp       192.168.0.1:22      192.168.0.20:51514   established',
 					].join('\n'),
 				)
-			case 'show-stats':
+			case 'show stats':
 				return createResult(
 					request,
 					['show stats'],
@@ -114,26 +115,26 @@ function createIslandRouterRunner() {
 						'en0        1200000   2400000   1000        1500        0          1          37%',
 					].join('\n'),
 				)
-			case 'show-interface':
+			case 'show interface':
 				return createResult(
 					request,
-					['show interface ' + request.interfaceName],
+					['show interface ' + String(request.params?.['interfaceName'])],
 					[
-						'Interface: ' + request.interfaceName,
+						'Interface: ' + String(request.params?.['interfaceName']),
 						'Link State: up',
 						'Speed: 1G',
 					].join('\n'),
 				)
-			case 'show-ip-interface':
+			case 'show ip interface':
 				return createResult(
 					request,
-					['show ip interface ' + request.interfaceName],
+					['show ip interface ' + String(request.params?.['interfaceName'])],
 					[
-						'Interface: ' + request.interfaceName,
+						'Interface: ' + String(request.params?.['interfaceName']),
 						'Address: 192.168.0.1/24',
 					].join('\n'),
 				)
-			case 'show-log':
+			case 'show log':
 				return createResult(
 					request,
 					['show log'],
@@ -142,7 +143,7 @@ function createIslandRouterRunner() {
 						'2026/05/04-13:17:58.001 4 pe-link: en1 carrier down',
 					].join('\n'),
 				)
-			case 'show-running-config':
+			case 'show running-config':
 				return createResult(
 					request,
 					['show running-config'],
@@ -153,23 +154,23 @@ function createIslandRouterRunner() {
 						'ip address 192.168.0.1/24',
 					].join('\n'),
 				)
-			case 'show-running-config-differences':
+			case 'show running-config differences':
 				return createResult(
 					request,
 					['show running-config differences'],
 					'No differences found.',
 				)
-			case 'show-ip-dhcp':
+			case 'show ip dhcp-reservations':
 				return createResult(
 					request,
-					['show ip dhcp'],
+					['show ip dhcp-reservations'],
 					[
 						'IP Address    MAC Address        Host Name  Interface',
 						'------------  -----------------  ---------  ---------',
 						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
 					].join('\n'),
 				)
-			case 'show-ip-routes':
+			case 'show ip routes':
 				return createResult(
 					request,
 					['show ip routes'],
@@ -179,32 +180,57 @@ function createIslandRouterRunner() {
 						'default          203.0.113.1   en1        static    1',
 					].join('\n'),
 				)
-			case 'show-ip-recommendations':
+			case 'show ip recommendations':
 				return createResult(
 					request,
 					['show ip recommendations'],
 					'No IP recommendations at this time.',
 				)
-			case 'clear-dhcp-client':
+			case 'clear dhcp-client':
 				return createResult(
 					request,
 					['clear dhcp-client'],
 					'DHCP client renewal requested.',
 				)
-			case 'clear-log':
+			case 'clear log':
 				return createResult(request, ['clear log'], 'Log buffer cleared.')
-			case 'write-memory':
+			case 'write memory':
 				return createResult(
 					request,
 					['write memory'],
 					'Running configuration saved.',
 				)
-			default: {
-				const _exhaustive: never = request
-				throw new Error(
-					'Unhandled fake Island router MCP request: ' + String(_exhaustive),
+			case 'ip dhcp-reserve':
+			case 'no ip dhcp-reserve':
+			case 'interface ip autoconfig':
+			case 'interface description':
+			case 'no interface description':
+			case 'syslog server':
+			case 'no syslog server':
+			case 'ip port-forward':
+			case 'show startup-config':
+			case 'show interface transceivers':
+			case 'show syslog':
+			case 'show ntp':
+			case 'show users':
+			case 'show vpns':
+			case 'show hardware':
+			case 'show free-space':
+			case 'show packages':
+			case 'show dumps':
+			case 'show public-key':
+			case 'show ssh-client-keys':
+			case 'show config authorized-keys':
+			case 'show config known-hosts':
+			case 'ping':
+				return createResult(
+					request,
+					renderIslandRouterCommand({
+						id: request.id,
+						params: request.params,
+					}).commandLines,
+					`${request.id} output`,
 				)
-			}
 		}
 	}
 }
@@ -414,12 +440,13 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			tools.some((tool) => tool.name === 'bond_invoke_device_action'),
 		).toBe(true)
 		expect(tools.some((tool) => tool.name === 'router_get_status')).toBe(true)
+		expect(tools.some((tool) => tool.name === 'router_run_command')).toBe(true)
 		expect(tools.some((tool) => tool.name === 'router_run_read_command')).toBe(
-			true,
+			false,
 		)
 		expect(
 			tools.some((tool) => tool.name === 'router_run_write_operation'),
-		).toBe(true)
+		).toBe(false)
 		expect(tools.some((tool) => tool.name === 'router_ping_host')).toBe(false)
 		expect(tools.some((tool) => tool.name === 'router_get_wan_config')).toBe(
 			false,
@@ -778,30 +805,29 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 				},
 			},
 		})
-		const routerNeighbors = await mcp.callTool('router_run_read_command', {
-			command: 'show ip neighbors',
+		const routerNeighbors = await mcp.callTool('router_run_command', {
+			commandId: 'show ip neighbors',
 		})
 		expect(routerNeighbors.structuredContent).toMatchObject({
-			command: 'show ip neighbors',
-			commandId: 'show-ip-neighbors',
+			commandId: 'show ip neighbors',
 			commandLines: expect.arrayContaining(['show ip neighbors']),
 		})
-		const interfaceDetails = await mcp.callTool('router_run_read_command', {
-			command: 'show interface <iface>',
-			interfaceName: 'en0',
+		const interfaceDetails = await mcp.callTool('router_run_command', {
+			commandId: 'show interface',
+			params: { interfaceName: 'en0' },
 		})
 		expect(interfaceDetails.structuredContent).toMatchObject({
-			command: 'show interface <iface>',
-			commandId: 'show-interface',
+			commandId: 'show interface',
+			params: { interfaceName: 'en0' },
 			commandLines: expect.arrayContaining(['show interface en0']),
 		})
-		const filteredLog = await mcp.callTool('router_run_read_command', {
-			command: 'show log',
+		const filteredLog = await mcp.callTool('router_run_command', {
+			commandId: 'show log',
 			query: 'carrier',
 			limit: 1,
 		})
 		expect(filteredLog.structuredContent).toMatchObject({
-			command: 'show log',
+			commandId: 'show log',
 			lines: ['2026/05/04-13:17:58.001 4 pe-link: en1 carrier down'],
 		})
 
@@ -867,60 +893,66 @@ test('mcp server exposes island router write tools when host verification is con
 
 	try {
 		const tools = mcp.listTools()
-		expect(tools.some((tool) => tool.name === 'router_run_write_operation')).toBe(
-			true,
+		expect(tools.some((tool) => tool.name === 'router_run_command')).toBe(true)
+		expect(
+			tools.some((tool) => tool.name === 'router_run_write_operation'),
+		).toBe(false)
+		expect(tools.some((tool) => tool.name === 'router_run_read_command')).toBe(
+			false,
 		)
 		expect(
 			tools.some((tool) => tool.name === 'router_renew_dhcp_clients'),
 		).toBe(false)
 
-		const writeOperationTool = tools.find(
-			(tool) => tool.name === 'router_run_write_operation',
+		const runCommandTool = tools.find(
+			(tool) => tool.name === 'router_run_command',
 		)
-		if (!writeOperationTool) {
-			throw new Error('Expected router_run_write_operation tool to be defined')
+		if (!runCommandTool) {
+			throw new Error('Expected router_run_command tool to be defined')
 		}
 		const writeProperties = (
-			writeOperationTool.inputSchema as {
+			runCommandTool.inputSchema as {
 				properties?: Record<string, Record<string, unknown>>
 			}
 		).properties
-		expect(writeProperties?.operation?.enum).toEqual([
-			'renew dhcp clients',
-			'clear log buffer',
-			'save running config',
-		])
-		expect(writeProperties?.acknowledgeHighRisk?.const).toBe(true)
-		expect(writeProperties?.confirmation?.const).toBe(
-			'I am highly certain running this guarded Island router write operation is necessary right now.',
+		expect(writeProperties?.commandId?.enum).toEqual(
+			expect.arrayContaining([
+				'show ip neighbors',
+				'clear dhcp-client',
+				'write memory',
+				'ip dhcp-reserve',
+				'interface description',
+			]),
 		)
+		expect(writeProperties?.confirmation?.const).toBe(
+			'I understand this allowlisted Island router command may affect live network behavior.',
+		)
+		expect(runCommandTool.annotations?.['destructiveHint']).toBeUndefined()
 
-		const renewResult = await mcp.callTool('router_run_write_operation', {
-			operation: 'renew dhcp clients',
-			acknowledgeHighRisk: true,
+		const renewResult = await mcp.callTool('router_run_command', {
+			commandId: 'clear dhcp-client',
 			reason:
 				'The uplink address changed and an immediate DHCP renewal is the explicit recovery step.',
 			confirmation:
-				'I am highly certain running this guarded Island router write operation is necessary right now.',
+				'I understand this allowlisted Island router command may affect live network behavior.',
 		})
 		expect(renewResult.structuredContent).toMatchObject({
-			operationId: 'renew-dhcp-clients',
-			commandId: 'clear-dhcp-client',
+			commandId: 'clear dhcp-client',
 			catalogEntry: {
-				operation: 'renew dhcp clients',
+				id: 'clear dhcp-client',
+				riskLevel: 'networkWrite',
 				blastRadius: expect.any(String),
 			},
 		})
 
 		await expect(
-			mcp.callTool('router_run_write_operation', {
-				operation: 'save running config',
-				acknowledgeHighRisk: true,
+			mcp.callTool('router_run_command', {
+				commandId: 'write memory',
 				reason:
 					'Persist the currently validated maintenance change before the scheduled reboot window.',
 				confirmation: 'wrong',
 			}),
-		).rejects.toThrow('requires the exact acknowledgement')
+		).rejects.toThrow('requires the exact confirmation')
 	} finally {
 		storage.close()
 	}

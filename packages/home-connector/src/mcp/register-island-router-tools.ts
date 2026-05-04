@@ -2,10 +2,9 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { type createIslandRouterAdapter } from '../adapters/island-router/index.ts'
 import {
-	islandRouterReadCommandStrings,
-	islandRouterWriteOperationStrings,
-	type IslandRouterReadCommand,
-	type IslandRouterWriteOperation,
+	islandRouterCommandCatalog,
+	islandRouterCommandIds,
+	type IslandRouterCommandId,
 } from '../adapters/island-router/types.ts'
 import {
 	buildToolInputSchema,
@@ -43,8 +42,21 @@ function structuredTextResult(
 	}
 }
 
-const routerWriteDangerNotice =
-	'HIGH RISK: this mutates a live router. Use it only when you are highly certain it is necessary and correct because mistakes can disrupt connectivity, destroy diagnostics, or persist a bad state with severe consequences.'
+const routerCommandDangerNotice =
+	'Write-risk catalog entries mutate a live router. Use them only when you are highly certain the command id, parameters, and blast-radius guidance are correct because mistakes can disrupt connectivity, destroy diagnostics, or persist a bad state with severe consequences.'
+
+const commandCatalogDescription = islandRouterCommandCatalog
+	.map((entry) => {
+		const params =
+			entry.params.length === 0
+				? 'no params'
+				: entry.params.map((param) => param.name).join(', ')
+		const persistence = entry.persistence.requiresWriteMemory
+			? '; persistence requires separate write memory command'
+			: ''
+		return `- ${entry.id}: ${entry.access}, risk=${entry.riskLevel}, context=${entry.context.mode}, params=${params}${persistence}`
+	})
+	.join('\n')
 
 export function registerIslandRouterHomeConnectorTools(input: {
 	registerTool: (
@@ -80,94 +92,47 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		},
 	)
 
-	const readCommandSchema = buildToolInputSchema({
-		command: z
-			.enum(islandRouterReadCommandStrings)
+	const commandSchema = buildToolInputSchema({
+		commandId: z
+			.enum(islandRouterCommandIds)
 			.describe(
-				'Exact documented Island CLI command string from the allowlisted catalog. Use show interface <iface> or show ip interface <iface> for interface-scoped reads.',
+				'Documented Island CLI command id/template from the allowlisted catalog. This field is not arbitrary CLI text.',
 			),
-		interfaceName: z
-			.string()
-			.min(1)
+		params: z
+			.record(z.string(), z.unknown())
 			.optional()
 			.describe(
-				'Required only when command is show interface <iface> or show ip interface <iface>.',
+				'Structured params required by the selected catalog entry. Values are validated and rendered as single CLI tokens or controlled quoted text.',
 			),
 		query: z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Optional Kody-side substring filter for show log output.'),
+			.describe(
+				'Optional Kody-side substring filter for catalog entries that support line filtering, such as show log and show syslog.',
+			),
 		limit: z
 			.number()
 			.int()
 			.min(1)
 			.max(10_000)
 			.optional()
-			.describe('Optional Kody-side maximum line count for show log output.'),
-		timeoutMs: z
-			.number()
-			.int()
-			.min(1000)
-			.max(60_000)
-			.optional()
-			.describe('Optional command timeout in milliseconds.'),
-	})
-
-	registerTool(
-		{
-			name: 'router_run_read_command',
-			title: 'Run Island Router Read Command',
-			description:
-				'Run one exact read-only Island CLI command from the typed allowlist. This is the command substrate for router packages; it does not accept arbitrary CLI text or hyphenated aliases.',
-			inputSchema: readCommandSchema.inputSchema,
-			sdkInputSchema: readCommandSchema.sdkInputSchema,
-			annotations: {
-				readOnlyHint: true,
-				idempotentHint: true,
-			},
-		},
-		async (args) => {
-			const result = await islandRouter.runReadCommand({
-				command: args['command'] as IslandRouterReadCommand,
-				interfaceName:
-					args['interfaceName'] == null
-						? undefined
-						: String(args['interfaceName']),
-				query: args['query'] == null ? undefined : String(args['query']),
-				limit: args['limit'] == null ? undefined : Number(args['limit']),
-				timeoutMs:
-					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
-			})
-			return structuredTextResult(
-				`Ran read-only Island router command ${result.command}.`,
-				result,
-			)
-		},
-	)
-
-	const writeOperationSchema = buildToolInputSchema({
-		operation: z
-			.enum(islandRouterWriteOperationStrings)
 			.describe(
-				'Explicit high-risk router operation entry. Each operation maps to one documented allowlisted Island CLI command and includes catalog blast-radius metadata in the result.',
-			),
-		acknowledgeHighRisk: z
-			.literal(true)
-			.describe(
-				'Must be true. Set this only when you are highly certain the requested router mutation is necessary and correct.',
+				'Optional Kody-side maximum line count for catalog entries that support line filtering.',
 			),
 		reason: z
 			.string()
 			.min(20)
 			.max(500)
+			.optional()
 			.describe(
-				'Short operator justification. Be specific about why this mutation is necessary right now.',
+				'Required for write-risk command ids. Be specific about why this router mutation is necessary right now.',
 			),
 		confirmation: z
-			.literal(islandRouter.writeAcknowledgements.runWriteOperation)
+			.literal(islandRouter.writeConfirmation)
+			.optional()
 			.describe(
-				'Exact confirmation phrase required by the tool. The tool rejects any other value.',
+				'Required for write-risk command ids. Must exactly match the connector-provided confirmation phrase.',
 			),
 		timeoutMs: z
 			.number()
@@ -180,26 +145,38 @@ export function registerIslandRouterHomeConnectorTools(input: {
 
 	registerTool(
 		{
-			name: 'router_run_write_operation',
-			title: 'Run Guarded Island Router Write Operation',
-			description: `${routerWriteDangerNotice} This accepts only explicit typed operation entries (${islandRouterWriteOperationStrings.join(', ')}), never arbitrary CLI text. Review the returned catalog entry for the command and blast radius.`,
-			inputSchema: writeOperationSchema.inputSchema,
-			sdkInputSchema: writeOperationSchema.sdkInputSchema,
-			annotations: {
-				destructiveHint: true,
-			},
+			name: 'router_run_command',
+			title: 'Run Island Router Catalog Command',
+			description: `${routerCommandDangerNotice}
+
+Runs one command from the typed Island router command catalog. It never accepts arbitrary CLI text. Each entry defines the exact CLI template, read/write access, risk level, required params and validators, CLI context, no/remove variant, persistence metadata, blast-radius guidance, and docs URL.
+
+No silent save: commands that change running config do not automatically run write memory. If persistence is required, run the separate write memory catalog command explicitly after reviewing the returned metadata.
+
+Catalog:
+${commandCatalogDescription}`,
+			inputSchema: commandSchema.inputSchema,
+			sdkInputSchema: commandSchema.sdkInputSchema,
 		},
 		async (args) => {
-			const result = await islandRouter.runWriteOperation({
-				operation: args['operation'] as IslandRouterWriteOperation,
-				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,
-				reason: String(args['reason'] ?? ''),
-				confirmation: String(args['confirmation'] ?? ''),
+			const result = await islandRouter.runCommand({
+				commandId: args['commandId'] as IslandRouterCommandId,
+				params:
+					args['params'] && typeof args['params'] === 'object'
+						? (args['params'] as Record<string, unknown>)
+						: undefined,
+				query: args['query'] == null ? undefined : String(args['query']),
+				limit: args['limit'] == null ? undefined : Number(args['limit']),
+				reason: args['reason'] == null ? undefined : String(args['reason']),
+				confirmation:
+					args['confirmation'] == null
+						? undefined
+						: String(args['confirmation']),
 				timeoutMs:
 					args['timeoutMs'] == null ? undefined : Number(args['timeoutMs']),
 			})
 			return structuredTextResult(
-				`Ran guarded Island router write operation ${result.catalogEntry.operation}.`,
+				`Ran Island router catalog command ${result.commandId}.`,
 				result,
 			)
 		},

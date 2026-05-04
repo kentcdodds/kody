@@ -93,13 +93,15 @@ Quick notes for getting a local kody environment running.
     `HOME_CONNECTOR_DB_PATH`.
   - Island router SSH diagnostics are optional. Set `ISLAND_ROUTER_HOST`,
     `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` to enable the
-    router status tool plus a compact exact-command substrate. Read commands are
-    selected from a typed allowlist of documented Island CLI command strings:
-    `show ip neighbors`, `show ip sockets`, `show stats`,
-    `show interface <iface>`, `show ip interface <iface>`, `show log`,
-    `show running-config`, `show running-config differences`, `show ip dhcp`,
-    `show ip routes`, and `show ip recommendations`. Log filtering and limits
-    are applied by Kody after `show log` returns.
+    router status tool plus `router_run_command`, a generic command executor
+    backed by a typed allowlisted catalog of documented Island CLI templates.
+    The catalog includes read commands such as `show version`,
+    `show interface summary`, `show ip neighbors`, `show ip routes`,
+    `show ip dhcp-reservations`, `show log`, `show syslog`, and `ping`, plus
+    guarded write-risk commands such as `clear dhcp-client`, `clear log`,
+    `write memory`, `ip dhcp-reserve`, interface-context updates, syslog server
+    updates, and port-forward creation. Log filtering and limits are applied by
+    Kody after filterable show commands return.
   - Prefer mounting the private key read-only into the container or host
     runtime, for example
     `-v /path/to/id_ed25519:/run/secrets/island-router-key:ro` plus
@@ -111,17 +113,20 @@ Quick notes for getting a local kody environment running.
     (preferred) or `ISLAND_ROUTER_HOST_FINGERPRINT`. When neither is set, the
     connector runs with SSH host verification disabled and reports a warning.
   - The Island router integration intentionally does not expose arbitrary
-    command execution over MCP. It uses a typed allowlist of documented CLI
-    commands.
-  - High-risk Island router write operations are available when SSH host verification
-    is configured with `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
-    `ISLAND_ROUTER_HOST_FINGERPRINT`. The allowlisted mutating entries are DHCP
-    client renewal (`clear dhcp-client`), log clearing (`clear log`), and config
-    save (`write memory`).
-  - These write operations exist for carefully scoped operational recovery only.
-    Their tool descriptions intentionally use strong language because mistakes
-    can disrupt connectivity, erase diagnostics, or persist a bad router state
-    with severe consequences. Agents must be highly certain before using them.
+    command execution over MCP. Every user-supplied value is validated and
+    rendered as a single CLI token or controlled quoted text from the catalog.
+  - Write-risk Island router catalog entries are available when SSH host
+    verification is configured with `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or
+    `ISLAND_ROUTER_HOST_FINGERPRINT`. They require a specific operator reason
+    and the exact connector confirmation phrase.
+  - No write command silently runs `write memory`. Catalog metadata tells callers
+    when a running-config change needs a separate explicit `write memory` command
+    to persist.
+  - These write-risk commands exist for carefully scoped operational recovery and
+    maintenance only. Their tool descriptions intentionally use strong language
+    because mistakes can disrupt connectivity, erase diagnostics, expose
+    services, or persist a bad router state with severe consequences. Agents must
+    be highly certain before using them.
   - Local operational routes live at `/health`, `/roku/status`, `/roku/setup`,
     `/lutron/status`, `/lutron/setup`, `/samsung-tv/status`, and
     `/samsung-tv/setup`.

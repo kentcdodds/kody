@@ -31,8 +31,8 @@ The connector exposes these local-device families:
 - Samsung TV / Frame discovery and control over mDNS, REST, and local WebSocket
   channels
 - Venstar WiFi thermostat status and control over the local REST API
-- Island router diagnostics over SSH using a typed command allowlist plus a tiny
-  opt-in set of high-risk write operations
+- Island router diagnostics and guarded writes over SSH using one typed command
+  catalog
 - Access Networks Unleashed / RUCKUS Unleashed WiFi controller reads and typed
   high-risk writes over the local AJAX management interface
 
@@ -123,48 +123,61 @@ user flow aligned with the other managed device integrations.
 
 The Island router adapter lives under
 `packages/home-connector/src/adapters/island-router/` and intentionally limits
-itself to typed allowlisted SSH operations from the connector host to the local
-router. The default posture is read-only diagnostics. A tiny set of mutating
-operations is available only when the connector runtime explicitly opts in, SSH
-host verification is configured, and the caller supplies strict per-operation
-acknowledgements. It is designed for situations where Kody only has network
-reachability to the router from the NAS or other machine running the home
-connector.
+itself to typed allowlisted SSH commands from the connector host to the local
+router. The default posture is read-only diagnostics. Write-risk catalog entries
+are available only when SSH host verification is configured and the caller
+supplies a strict reason plus exact confirmation phrase. It is designed for
+situations where Kody only has network reachability to the router from the NAS
+or other machine running the home connector.
 
-The adapter exposes a small command substrate:
+The adapter exposes a small Access-Networks-Unleashed-style surface:
 
 - `router_get_status` for connectivity/configuration readiness plus a compact
   status snapshot from `show version`, `show clock`, `show interface summary`,
   and `show ip neighbors`
-- `router_run_read_command` for exact read-only Island CLI command strings from
-  the typed catalog: `show ip neighbors`, `show ip sockets`, `show stats`,
-  `show interface <iface>`, `show ip interface <iface>`, `show log`,
-  `show running-config`, `show running-config differences`, `show ip dhcp`,
-  `show ip routes`, and `show ip recommendations`
-- `router_run_write_operation` for the explicit guarded operations
-  `renew dhcp clients`, `clear log buffer`, and `save running config`, mapped to
-  `clear dhcp-client`, `clear log`, and `write memory`
+- `router_run_command` for one command id/template from the typed command
+  catalog. It never accepts arbitrary CLI text. Each entry defines exact CLI
+  rendering, read/write access, risk level, required params and validators, CLI
+  context (`exec`, `configure terminal`, or `interface <iface>`), optional
+  no/remove variants, persistence metadata, blast-radius guidance, and a docs
+  URL when available.
+
+The catalog includes documented read commands such as `show clock`,
+`show version`, `show running-config`, `show startup-config`,
+`show interface summary`, `show interface`, `show ip interface`,
+`show ip neighbors`, `show ip dhcp-reservations`, `show log`, `show syslog`,
+`show stats`, and `ping`. It also includes guarded write entries such as
+`clear dhcp-client`, `clear log`, `write memory`, `ip dhcp-reserve`,
+`no ip dhcp-reserve`, selected interface-context commands, `syslog server`, and
+`ip port-forward`. Extremely destructive operations such as `clear everything`,
+`clear network`, rollback/update flows, SSH key regeneration, password changes,
+and backup/restore remain omitted.
 
 The adapter intentionally does not expose guessed aliases such as `show-ip-arp`,
 `show-ip-sessions`, or `show-log-recent`, nor unsupported public commands such
 as `show ip nat`, `show ip counters`, `show ip top`, or `show ip dns stats`.
-Higher-level router workflows are expected to live in packages that consume the
-command substrate.
+Higher-level router workflows are expected to live in packages that wrap the
+generic command substrate with typed helpers.
 
 The adapter explicitly does not expose:
 
 - arbitrary shell or CLI command execution over MCP
-- arbitrary mutating router commands beyond the explicit operation catalog
+- arbitrary mutating router commands beyond the explicit command catalog
 - password-based auth flows through MCP
 
-The write-capable operations are intentionally hard to use because mistakes can
+Write-risk catalog entries are intentionally hard to use because mistakes can
 have severe consequences. Agents must be highly certain before using them. The
 MCP surface requires:
 
 - SSH host verification via `known_hosts` or a pinned host fingerprint
-- typed operation inputs instead of free-form CLI
-- an operator reason and an exact acknowledgement phrase per operation
+- typed command ids plus structured params instead of free-form CLI
+- an operator reason and an exact confirmation phrase for write-risk entries
 - destructive tool annotations and warning-heavy descriptions
+
+Commands that change running configuration do not silently run `write memory`.
+When a catalog result reports `persistence.requiresWriteMemory=true`, callers
+must review the output and run the separate `write memory` catalog command
+explicitly if the change should persist across reboot.
 
 SSH transport is conservative:
 
