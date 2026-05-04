@@ -6,24 +6,11 @@ import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
-const inputSchema = z
-	.object({
-		package_id: z.string().min(1).optional(),
-		kody_id: z.string().min(1).optional(),
-		allow_force: z.boolean().optional().default(false),
-	})
-	.superRefine((value, ctx) => {
-		const idCount =
-			(value.package_id !== undefined ? 1 : 0) +
-			(value.kody_id !== undefined ? 1 : 0)
-		if (idCount !== 1) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ['package_id'],
-				message: 'Provide exactly one of `package_id` or `kody_id`.',
-			})
-		}
-	})
+const inputSchema = z.object({
+	package_id: z.string().min(1).optional(),
+	kody_id: z.string().min(1).optional(),
+	allow_force: z.boolean().optional().default(false),
+})
 
 const checkSchema = z.object({
 	kind: z.enum([

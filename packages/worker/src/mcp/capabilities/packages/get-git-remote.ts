@@ -10,25 +10,12 @@ import {
 } from '#worker/repo/artifacts.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
-const getGitRemoteInputSchema = z
-	.object({
-		package_id: z.string().min(1).optional(),
-		kody_id: z.string().min(1).optional(),
-		scope: z.enum(['read', 'write']).default('write'),
-		ttl_seconds: z.number().int().min(60).max(86_400).default(1800),
-	})
-	.superRefine((value, ctx) => {
-		const idCount =
-			(value.package_id !== undefined ? 1 : 0) +
-			(value.kody_id !== undefined ? 1 : 0)
-		if (idCount !== 1) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: ['package_id'],
-				message: 'Provide exactly one of `package_id` or `kody_id`.',
-			})
-		}
-	})
+const getGitRemoteInputSchema = z.object({
+	package_id: z.string().min(1).optional(),
+	kody_id: z.string().min(1).optional(),
+	scope: z.enum(['read', 'write']).default('write'),
+	ttl_seconds: z.number().int().min(60).max(86_400).default(1800),
+})
 
 const outputSchema = markSecretInputFields(
 	z.toJSONSchema(

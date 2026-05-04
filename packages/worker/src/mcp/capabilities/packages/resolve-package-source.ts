@@ -10,9 +10,7 @@ export type PackageSourceIdentity = {
 	kody_id?: string
 }
 
-export function requireExactlyOnePackageSourceIdentity(
-	input: PackageSourceIdentity,
-) {
+function requireExactlyOnePackageSourceIdentity(input: PackageSourceIdentity) {
 	const count =
 		(input.package_id !== undefined ? 1 : 0) +
 		(input.kody_id !== undefined ? 1 : 0)
