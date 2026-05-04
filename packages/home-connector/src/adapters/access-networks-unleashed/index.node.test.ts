@@ -358,9 +358,59 @@ test('request preserves last successful authentication on transient failure', as
 			}),
 		).rejects.toThrow('temporary network outage')
 
+		// A non-auth transport error must not be recorded as an authentication
+		// failure; the previous successful auth state is kept intact so the next
+		// retry does not look like the controller has bad credentials.
 		const adopted = adapter.getAdoptedController()
 		expect(adopted?.lastAuthenticatedAt).toBe(lastAuthenticatedAt)
-		expect(adopted?.lastAuthError).toBe('temporary network outage')
+		expect(adopted?.lastAuthError).toBeNull()
+	} finally {
+		storage.close()
+	}
+})
+
+test('request records lastAuthError when the underlying call is an auth failure', async () => {
+	const config = createConfig()
+	const state = createAppState()
+	const storage = createHomeConnectorStorage(config)
+	const adapter = createAccessNetworksUnleashedAdapter({
+		config,
+		state,
+		storage,
+		clientFactory: () => ({
+			async request() {
+				throw new Error('Access Networks Unleashed login was rejected.')
+			},
+		}),
+	})
+	using _server = installLoginAndCmdstat(() =>
+		response(
+			'<ajax-response><system name="Access Networks Unleashed"/></ajax-response>',
+		),
+	)
+
+	try {
+		await adapter.scan()
+		adapter.adoptController({ controllerId: '192.168.10.60' })
+		adapter.setCredentials({
+			controllerId: '192.168.10.60',
+			username: 'admin',
+			password: 'secret-password',
+		})
+
+		await expect(
+			adapter.request({
+				action: 'getstat',
+				comp: 'system',
+				xmlBody: '<sysinfo/>',
+				acknowledgeHighRisk: true,
+				reason: validReason,
+				confirmation: accessNetworksUnleashedRequestConfirmation,
+			}),
+		).rejects.toThrow('login was rejected')
+
+		const adopted = adapter.getAdoptedController()
+		expect(adopted?.lastAuthError).toMatch(/login was rejected/)
 	} finally {
 		storage.close()
 	}

@@ -79,6 +79,13 @@ function assertNonEmpty(value: string, field: string) {
 	return trimmed
 }
 
+function isAuthFailure(error: unknown) {
+	const message = error instanceof Error ? error.message : String(error)
+	return /\b(login was rejected|missing stored credentials|redirected after reauthentication|session has no base URL|did not return an admin redirect)\b/i.test(
+		message,
+	)
+}
+
 function assertWriteAllowed(
 	request: WriteOperationRequest,
 	expectedConfirmation: string,
@@ -339,13 +346,20 @@ export function createAccessNetworksUnleashedAdapter(input: {
 				})
 				return result
 			} catch (error) {
-				updateAccessNetworksUnleashedAuthStatus({
-					storage,
-					connectorId,
-					controllerId: adoptedController.controllerId,
-					lastAuthenticatedAt: adoptedController.lastAuthenticatedAt,
-					lastAuthError: error instanceof Error ? error.message : String(error),
-				})
+				// Only record authentication errors against the controller. Generic
+				// raw-request failures (malformed payload, unsupported component,
+				// device-side command rejection) should not appear later as bad
+				// credentials or a stale session.
+				if (isAuthFailure(error)) {
+					updateAccessNetworksUnleashedAuthStatus({
+						storage,
+						connectorId,
+						controllerId: adoptedController.controllerId,
+						lastAuthenticatedAt: adoptedController.lastAuthenticatedAt,
+						lastAuthError:
+							error instanceof Error ? error.message : String(error),
+					})
+				}
 				throw error
 			}
 		},
