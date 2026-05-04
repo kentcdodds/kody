@@ -198,9 +198,14 @@ now managed locally through the connector's SQLite database:
   request timeout for slower controllers or networks
 
 The adapter exposes read-only tools for controller status, access point
-inventory, active clients, WLAN/SSID configuration, and recent events. It also
-exposes a small typed write surface for client block/unblock, WLAN
-enable/disable, AP restart, and AP LED visibility changes.
+inventory, active and inactive clients, blocked clients, active/known/blocked
+rogue access points, WLAN/SSID configuration, AP groups, DPSKs, mesh topology,
+recent events, active alarms, raw syslog, per-VAP throughput, and per-WLAN-group
+and per-AP-group statistics. It also exposes a typed write surface for client
+block/unblock, WLAN enable/disable, WLAN passphrase changes, WLAN
+add/edit/clone/delete, WLAN-group add/clone/delete, AP restart, and AP LED
+visibility changes (including dedicated `hide_ap_leds` and `show_ap_leds`
+shortcuts).
 
 The write tools are deliberately warning-heavy. Each requires:
 

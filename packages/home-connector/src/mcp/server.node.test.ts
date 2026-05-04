@@ -711,6 +711,58 @@ function createFakeAccessNetworksUnleashedClient() {
 				},
 			]
 		},
+		async listBlockedClients() {
+			calls.push({ name: 'listBlockedClients', args: [] })
+			return [{ mac: 'aa:bb:cc:dd:ee:ff', type: 'single' }]
+		},
+		async listInactiveClients() {
+			calls.push({ name: 'listInactiveClients', args: [] })
+			return [{ mac: 'aa:bb:cc:dd:ee:ff', hostname: 'old-phone' }]
+		},
+		async listActiveRogues() {
+			calls.push({ name: 'listActiveRogues', args: [] })
+			return [{ mac: '11:22:33:44:55:66', ssid: 'Rogue Net' }]
+		},
+		async listKnownRogues(limit) {
+			calls.push({ name: 'listKnownRogues', args: [limit] })
+			return [{ mac: '11:22:33:44:55:66', recognized: true }]
+		},
+		async listBlockedRogues(limit) {
+			calls.push({ name: 'listBlockedRogues', args: [limit] })
+			return [{ mac: '11:22:33:44:55:66', blocked: true }]
+		},
+		async listApGroups() {
+			calls.push({ name: 'listApGroups', args: [] })
+			return [{ id: 1, name: 'System Default' }]
+		},
+		async listDpsks() {
+			calls.push({ name: 'listDpsks', args: [] })
+			return [{ id: '1', user: 'guest', mac: 'aa:bb:cc:dd:ee:ff' }]
+		},
+		async getMeshInfo() {
+			calls.push({ name: 'getMeshInfo', args: [] })
+			return { id: '1', name: 'Mesh-1', enabled: true }
+		},
+		async getAlarms(limit) {
+			calls.push({ name: 'getAlarms', args: [limit] })
+			return [{ id: '1', message: 'AP rebooted' }]
+		},
+		async getSyslog() {
+			calls.push({ name: 'getSyslog', args: [] })
+			return 'May 03 12:00:00 unleashed: line 1\nMay 03 12:00:01 unleashed: line 2'
+		},
+		async getVapStats() {
+			calls.push({ name: 'getVapStats', args: [] })
+			return [{ ssid: 'Main', tx_bytes: 1024 }]
+		},
+		async getWlanGroupStats() {
+			calls.push({ name: 'getWlanGroupStats', args: [] })
+			return [{ id: '1', name: 'System Default' }]
+		},
+		async getApGroupStats() {
+			calls.push({ name: 'getApGroupStats', args: [] })
+			return [{ id: '1', name: 'System Default' }]
+		},
 		async blockClient(macAddress) {
 			calls.push({ name: 'blockClient', args: [macAddress] })
 		},
@@ -719,6 +771,36 @@ function createFakeAccessNetworksUnleashedClient() {
 		},
 		async setWlanEnabled(name, enabled) {
 			calls.push({ name: 'setWlanEnabled', args: [name, enabled] })
+		},
+		async setWlanPassword(name, passphrase, saePassphrase) {
+			calls.push({
+				name: 'setWlanPassword',
+				args: [name, passphrase, saePassphrase],
+			})
+		},
+		async addWlan(input) {
+			calls.push({ name: 'addWlan', args: [input] })
+		},
+		async editWlan(input) {
+			calls.push({ name: 'editWlan', args: [input] })
+		},
+		async cloneWlan(sourceName, newName, newSsid) {
+			calls.push({ name: 'cloneWlan', args: [sourceName, newName, newSsid] })
+		},
+		async deleteWlan(name) {
+			calls.push({ name: 'deleteWlan', args: [name] })
+		},
+		async addWlanGroup(input) {
+			calls.push({ name: 'addWlanGroup', args: [input] })
+		},
+		async cloneWlanGroup(sourceName, newName, description) {
+			calls.push({
+				name: 'cloneWlanGroup',
+				args: [sourceName, newName, description],
+			})
+		},
+		async deleteWlanGroup(name) {
+			calls.push({ name: 'deleteWlanGroup', args: [name] })
 		},
 		async restartAccessPoint(macAddress) {
 			calls.push({ name: 'restartAccessPoint', args: [macAddress] })
@@ -1248,6 +1330,128 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
 			name: 'listEvents',
 			args: [1],
+		})
+
+		const accessNetworksBlocked = await mcp.callTool(
+			'access_networks_unleashed_list_blocked_clients',
+		)
+		expect(accessNetworksBlocked.structuredContent).toMatchObject({
+			clients: expect.arrayContaining([
+				expect.objectContaining({ mac: 'aa:bb:cc:dd:ee:ff' }),
+			]),
+		})
+
+		const accessNetworksAlarms = await mcp.callTool(
+			'access_networks_unleashed_get_alarms',
+			{ limit: 5 },
+		)
+		expect(accessNetworksAlarms.structuredContent).toMatchObject({
+			alarms: expect.arrayContaining([
+				expect.objectContaining({ message: 'AP rebooted' }),
+			]),
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'getAlarms',
+			args: [5],
+		})
+
+		const accessNetworksMesh = await mcp.callTool(
+			'access_networks_unleashed_get_mesh_info',
+		)
+		expect(accessNetworksMesh.structuredContent).toMatchObject({
+			mesh: expect.objectContaining({ enabled: true }),
+		})
+
+		const accessNetworksSyslog = await mcp.callTool(
+			'access_networks_unleashed_get_syslog',
+		)
+		expect(accessNetworksSyslog.structuredContent).toMatchObject({
+			syslog: expect.stringContaining('line'),
+		})
+
+		const accessNetworksUnblock = await mcp.callTool(
+			'access_networks_unleashed_unblock_client',
+			{
+				macAddress: 'AA-BB-CC-DD-EE-FF',
+				acknowledgeHighRisk: true,
+				reason:
+					'The client was previously blocked in error and must be allowed again.',
+				confirmation:
+					accessNetworksUnleashed.writeAcknowledgements.unblockClient,
+			},
+		)
+		expect(accessNetworksUnblock.structuredContent).toMatchObject({
+			operation: 'unblock-client',
+			target: 'aa:bb:cc:dd:ee:ff',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'unblockClient',
+			args: ['aa:bb:cc:dd:ee:ff'],
+		})
+
+		const accessNetworksDeleteWlan = await mcp.callTool(
+			'access_networks_unleashed_delete_wlan',
+			{
+				name: 'Main',
+				acknowledgeHighRisk: true,
+				reason:
+					'The Main WLAN must be removed because it is no longer needed.',
+				confirmation:
+					accessNetworksUnleashed.writeAcknowledgements.deleteWlan,
+			},
+		)
+		expect(accessNetworksDeleteWlan.structuredContent).toMatchObject({
+			operation: 'delete-wlan',
+			target: 'Main',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'deleteWlan',
+			args: ['Main'],
+		})
+
+		const accessNetworksAddWlan = await mcp.callTool(
+			'access_networks_unleashed_add_wlan',
+			{
+				ssid: 'NewNet',
+				passphrase: 'a-strong-passphrase',
+				acknowledgeHighRisk: true,
+				reason:
+					'Adding a guest WLAN is required to support the new visiting team.',
+				confirmation: accessNetworksUnleashed.writeAcknowledgements.addWlan,
+			},
+		)
+		expect(accessNetworksAddWlan.structuredContent).toMatchObject({
+			operation: 'add-wlan',
+			target: 'NewNet',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'addWlan',
+			args: [
+				expect.objectContaining({
+					ssid: 'NewNet',
+					passphrase: 'a-strong-passphrase',
+				}),
+			],
+		})
+
+		const accessNetworksHideLeds = await mcp.callTool(
+			'access_networks_unleashed_hide_ap_leds',
+			{
+				macAddress: '24:79:DE:AD:BE:EF',
+				acknowledgeHighRisk: true,
+				reason:
+					'AP LEDs need to be turned off because the AP is in a guest bedroom.',
+				confirmation:
+					accessNetworksUnleashed.writeAcknowledgements.hideAccessPointLeds,
+			},
+		)
+		expect(accessNetworksHideLeds.structuredContent).toMatchObject({
+			operation: 'hide-ap-leds',
+			target: '24:79:de:ad:be:ef',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'setAccessPointLeds',
+			args: ['24:79:de:ad:be:ef', false],
 		})
 
 		await mcp.callTool('bond_adopt_bridge', { bridgeId: 'MOCKBOND1' })
