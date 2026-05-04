@@ -2,6 +2,7 @@
 	"files": [],
 	"references": [
 		{ "path": "./tsconfig-tools.json" },
+		{ "path": "./packages/unleashed-wifi" },
 		{ "path": "./packages/worker/tsconfig-client.json" },
 		{ "path": "./packages/worker/tsconfig-worker.json" }
 	]

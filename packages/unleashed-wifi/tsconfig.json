@@ -1,0 +1,22 @@
+{
+	"extends": "@epic-web/config/typescript",
+	"compilerOptions": {
+		"composite": true,
+		"allowImportingTsExtensions": true,
+		"tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.unleashed-wifi.tsbuildinfo",
+		"target": "ES2023",
+		"lib": ["ES2023", "DOM"],
+		"module": "ESNext",
+		"types": [],
+		"moduleResolution": "bundler",
+		"verbatimModuleSyntax": true,
+		"moduleDetection": "force",
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"erasableSyntaxOnly": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true
+	},
+	"include": ["./src/**/*.ts", "./types/**/*.d.ts"],
+	"exclude": ["**/*.test.ts", "**/*.spec.ts"]
+}

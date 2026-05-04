@@ -30,6 +30,13 @@ export const sharedProjectConfig = {
 				find: /^#mcp\//,
 				replacement: `${resolve(rootDir, 'packages/worker/src/mcp')}/`,
 			},
+			{
+				find: 'kody:runtime',
+				replacement: resolve(
+					rootDir,
+					'packages/unleashed-wifi/test-support/kody-runtime-stub.ts',
+				),
+			},
 		],
 	},
 	oxc: {

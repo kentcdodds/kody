@@ -97,6 +97,7 @@
   "workspaces": [
     "packages/shared",
     "packages/home-connector",
+    "packages/unleashed-wifi",
     "packages/worker",
     "packages/mock-servers/*",
     "docs/talks/*"
