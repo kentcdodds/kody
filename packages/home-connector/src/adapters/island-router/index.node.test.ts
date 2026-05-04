@@ -1605,6 +1605,121 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 	).rejects.toThrow('positive integer')
 })
 
+test('island router adapter accepts raw CLI string aliases for allowlisted commands', async () => {
+	using _env = withTemporaryEnv({})
+	const config = createConfig()
+	const islandRouter = createIslandRouterAdapter({
+		config,
+		commandRunner: createFakeRunner(),
+	})
+	const acknowledgement =
+		islandRouter.writeAcknowledgements.runAllowlistedCliCommand
+	const reason =
+		'A targeted raw CLI alias is needed to run the documented show command directly during diagnosis.'
+
+	const aliasCases: Array<{
+		alias: string
+		expected: string
+		extra?: { host?: string; interfaceName?: string; limit?: number; lineCount?: number }
+		expectedCommandLine: string
+	}> = [
+		{
+			alias: 'show version',
+			expected: 'show-version',
+			expectedCommandLine: 'show version',
+		},
+		{
+			alias: 'SHOW   IP   TOP',
+			expected: 'show-ip-top',
+			expectedCommandLine: 'show ip top',
+		},
+		{
+			alias: 'show ip host',
+			expected: 'show-ip-host',
+			extra: { host: '192.168.0.52' },
+			expectedCommandLine: 'show ip host 192.168.0.52',
+		},
+		{
+			alias: 'show ip sessions',
+			expected: 'show-ip-sessions',
+			expectedCommandLine: 'show ip sessions',
+		},
+		{
+			alias: 'show ip nat',
+			expected: 'show-ip-nat',
+			expectedCommandLine: 'show ip nat',
+		},
+		{
+			alias: 'show ip dhcp',
+			expected: 'show-ip-dhcp',
+			expectedCommandLine: 'show ip dhcp',
+		},
+		{
+			alias: 'show ip arp',
+			expected: 'show-ip-arp',
+			expectedCommandLine: 'show ip arp',
+		},
+		{
+			alias: 'show ip interface',
+			expected: 'show-ip-interface',
+			extra: { interfaceName: 'en0' },
+			expectedCommandLine: 'show ip interface en0',
+		},
+		{
+			alias: 'show ip counters',
+			expected: 'show-ip-counters',
+			expectedCommandLine: 'show ip counters',
+		},
+		{
+			alias: 'show log',
+			expected: 'show-log-recent',
+			expectedCommandLine: 'show log',
+		},
+		{
+			alias: 'show log',
+			expected: 'show-log-recent',
+			extra: { lineCount: 50 },
+			expectedCommandLine: 'show log 50',
+		},
+		{
+			alias: 'show ip dns',
+			expected: 'show-ip-dns-stats',
+			expectedCommandLine: 'show ip dns',
+		},
+		{
+			alias: 'show-log',
+			expected: 'show-log-recent',
+			expectedCommandLine: 'show log',
+		},
+		{
+			alias: 'show-ip-dns',
+			expected: 'show-ip-dns-stats',
+			expectedCommandLine: 'show ip dns',
+		},
+	]
+
+	for (const { alias, expected, extra, expectedCommandLine } of aliasCases) {
+		const result = await islandRouter.runAllowlistedCliCommand({
+			command: alias as never,
+			acknowledgeHighRisk: true,
+			reason,
+			confirmation: acknowledgement,
+			...extra,
+		})
+		expect(result.command).toBe(expected)
+		expect(result.commandLines).toContain(expectedCommandLine)
+	}
+
+	await expect(
+		islandRouter.runAllowlistedCliCommand({
+			command: 'show ip everything' as never,
+			acknowledgeHighRisk: true,
+			reason,
+			confirmation: acknowledgement,
+		}),
+	).rejects.toThrow('Unhandled allowlisted CLI command')
+})
+
 test('island router adapter rejects write operations without host verification and exact confirmation', async () => {
 	using _env = withTemporaryEnv({})
 	createConfig()

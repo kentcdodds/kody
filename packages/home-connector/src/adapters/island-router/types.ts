@@ -834,6 +834,25 @@ export type IslandRouterAllowlistedCliCommand =
 	| 'show-log-recent'
 	| 'show-ip-dns-stats'
 
+export type IslandRouterAllowlistedCliCommandAlias =
+	| IslandRouterAllowlistedCliCommand
+	| 'show version'
+	| 'show clock'
+	| 'show interface summary'
+	| 'show interface'
+	| 'show ip interface'
+	| 'show ip top'
+	| 'show ip host'
+	| 'show ip sessions'
+	| 'show ip nat'
+	| 'show ip dhcp'
+	| 'show ip arp'
+	| 'show ip counters'
+	| 'show log'
+	| 'show-log'
+	| 'show ip dns'
+	| 'show-ip-dns'
+
 export type IslandRouterAllowlistedCliRawResult = {
 	rawOutput: string
 }

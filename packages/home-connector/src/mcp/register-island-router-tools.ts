@@ -1,7 +1,7 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { type createIslandRouterAdapter } from '../adapters/island-router/index.ts'
-import { type IslandRouterAllowlistedCliCommand } from '../adapters/island-router/types.ts'
+import { type IslandRouterAllowlistedCliCommandAlias } from '../adapters/island-router/types.ts'
 import {
 	buildToolInputSchema,
 	type ToolInputSchema,
@@ -890,22 +890,38 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		command: z
 			.enum([
 				'show-version',
+				'show version',
 				'show-clock',
+				'show clock',
 				'show-interface-summary',
+				'show interface summary',
 				'show-interface',
+				'show interface',
 				'show-ip-interface',
+				'show ip interface',
 				'show-ip-top',
+				'show ip top',
 				'show-ip-host',
+				'show ip host',
 				'show-ip-sessions',
+				'show ip sessions',
 				'show-ip-nat',
+				'show ip nat',
 				'show-ip-dhcp',
+				'show ip dhcp',
 				'show-ip-arp',
+				'show ip arp',
 				'show-ip-counters',
+				'show ip counters',
 				'show-log-recent',
+				'show-log',
+				'show log',
 				'show-ip-dns-stats',
+				'show-ip-dns',
+				'show ip dns',
 			])
 			.describe(
-				'Allowlisted read-only Island router CLI command alias. No arbitrary CLI execution is allowed.',
+				'Allowlisted read-only Island router CLI command. Accepts either the natural CLI form (e.g. "show ip top", "show log", "show ip dns") or the kebab-case alias (e.g. "show-ip-top", "show-log", "show-ip-dns"). No arbitrary CLI execution is allowed.',
 			),
 		interfaceName: z
 			.string()
@@ -978,7 +994,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 		},
 		async (args) => {
 			const result = await islandRouter.runAllowlistedCliCommand({
-				command: args['command'] as IslandRouterAllowlistedCliCommand,
+				command: args['command'] as IslandRouterAllowlistedCliCommandAlias,
 				interfaceName:
 					args['interfaceName'] == null
 						? undefined

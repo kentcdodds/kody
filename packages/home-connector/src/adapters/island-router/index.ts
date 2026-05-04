@@ -2,6 +2,7 @@ import { type HomeConnectorConfig } from '../../config.ts'
 import {
 	type IslandRouterActiveSessions,
 	type IslandRouterAllowlistedCliCommand,
+	type IslandRouterAllowlistedCliCommandAlias,
 	type IslandRouterAllowlistedCliCommandResult,
 	type IslandRouterBandwidthUsage,
 	type IslandRouterCommandRequest,
@@ -110,11 +111,66 @@ type SetWanFailoverRequest = WriteOperationRequest & {
 }
 
 type RunAllowlistedCliCommandRequest = WriteOperationRequest & {
-	command: IslandRouterAllowlistedCliCommand
+	command: IslandRouterAllowlistedCliCommandAlias
 	interfaceName?: string
 	host?: string
 	limit?: number
 	lineCount?: number
+}
+
+const islandRouterAllowlistedCliCommandAliases = {
+	'show-version': 'show-version',
+	'show version': 'show-version',
+	'show-clock': 'show-clock',
+	'show clock': 'show-clock',
+	'show-interface-summary': 'show-interface-summary',
+	'show interface summary': 'show-interface-summary',
+	'show-interface': 'show-interface',
+	'show interface': 'show-interface',
+	'show-ip-interface': 'show-ip-interface',
+	'show ip interface': 'show-ip-interface',
+	'show-ip-top': 'show-ip-top',
+	'show ip top': 'show-ip-top',
+	'show-ip-host': 'show-ip-host',
+	'show ip host': 'show-ip-host',
+	'show-ip-sessions': 'show-ip-sessions',
+	'show ip sessions': 'show-ip-sessions',
+	'show-ip-nat': 'show-ip-nat',
+	'show ip nat': 'show-ip-nat',
+	'show-ip-dhcp': 'show-ip-dhcp',
+	'show ip dhcp': 'show-ip-dhcp',
+	'show-ip-arp': 'show-ip-arp',
+	'show ip arp': 'show-ip-arp',
+	'show-ip-counters': 'show-ip-counters',
+	'show ip counters': 'show-ip-counters',
+	'show-log-recent': 'show-log-recent',
+	'show-log': 'show-log-recent',
+	'show log': 'show-log-recent',
+	'show-ip-dns-stats': 'show-ip-dns-stats',
+	'show-ip-dns': 'show-ip-dns-stats',
+	'show ip dns': 'show-ip-dns-stats',
+} as const satisfies Record<
+	IslandRouterAllowlistedCliCommandAlias,
+	IslandRouterAllowlistedCliCommand
+>
+
+function resolveIslandRouterAllowlistedCliCommand(
+	command: string,
+): IslandRouterAllowlistedCliCommand {
+	const normalized = command.trim().toLowerCase().replace(/\s+/gu, ' ')
+	const resolved = (
+		islandRouterAllowlistedCliCommandAliases as Record<
+			string,
+			IslandRouterAllowlistedCliCommand | undefined
+		>
+	)[normalized]
+	if (resolved) return resolved
+	const accepted = Object.keys(islandRouterAllowlistedCliCommandAliases)
+		.map((alias) => `"${alias}"`)
+		.join(', ')
+	throw new Error(
+		`Unhandled allowlisted CLI command: ${JSON.stringify(command)}. Accepted values are ${accepted}.`,
+	)
 }
 
 type SetDhcpReservationRequest = WriteOperationRequest & {
@@ -1029,6 +1085,9 @@ export function createIslandRouterAdapter(input: {
 			})
 		},
 		async runAllowlistedCliCommand(request: RunAllowlistedCliCommandRequest) {
+			const command = resolveIslandRouterAllowlistedCliCommand(
+				String(request.command ?? ''),
+			)
 			const requireHost = (field: string) =>
 				validateIslandRouterHost(
 					assertNonEmpty(request.host ?? '', field),
@@ -1050,7 +1109,7 @@ export function createIslandRouterAdapter(input: {
 				return value
 			}
 			let commandRequest: IslandRouterCommandRequest
-			switch (request.command) {
+			switch (command) {
 				case 'show-version':
 					commandRequest = { id: 'show-version' }
 					break
@@ -1153,7 +1212,7 @@ export function createIslandRouterAdapter(input: {
 			})
 
 			let parsedResult: IslandRouterAllowlistedCliCommandResult['result']
-			switch (request.command) {
+			switch (command) {
 				case 'show-version':
 					parsedResult = parseIslandRouterVersion(
 						result.stdout,
@@ -1195,7 +1254,7 @@ export function createIslandRouterAdapter(input: {
 					)
 					break
 				default: {
-					const _exhaustive: never = request.command
+					const _exhaustive: never = command
 					throw new Error(
 						`Unhandled allowlisted CLI parser: ${String(_exhaustive)}`,
 					)
@@ -1203,7 +1262,7 @@ export function createIslandRouterAdapter(input: {
 			}
 
 			return {
-				command: request.command,
+				command,
 				commandId:
 					result.commandId as IslandRouterAllowlistedCliCommandResult['commandId'],
 				commandLines: result.commandLines,
