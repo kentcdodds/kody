@@ -14,6 +14,7 @@ export const entitySourceRowSchema = z.object({
 	indexed_commit: z.string().nullable(),
 	manifest_path: z.string(),
 	source_root: z.string(),
+	last_external_check_at: z.string().nullable(),
 	created_at: z.string(),
 	updated_at: z.string(),
 })
@@ -332,6 +333,31 @@ export type RepoSessionPublishResult =
 			sessionBaseCommit: string
 			currentPublishedCommit: string | null
 			repairHint: 'repo_rebase_session'
+	  }
+
+export type RepoExternalPublishResult =
+	| {
+			status: 'already_published'
+			published_commit: string | null
+	  }
+	| {
+			status: 'not_fast_forward'
+			previous_commit: string
+			published_commit: string
+			message: string
+	  }
+	| {
+			status: 'checks_failed'
+			failed_checks: NonNullable<RepoSessionCheckStatus['results']>
+			manifest: AuthoredPackageJson
+			run_id: string
+	  }
+	| {
+			status: 'published'
+			previous_commit: string | null
+			published_commit: string
+			manifest: AuthoredPackageJson
+			checks: NonNullable<RepoSessionCheckStatus['results']>
 	  }
 
 export type RepoSourceBootstrapResult = {

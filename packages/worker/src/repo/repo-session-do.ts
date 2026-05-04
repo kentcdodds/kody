@@ -35,14 +35,11 @@ import {
 import { runRepoChecks } from './checks.ts'
 import { parseRepoManifest } from './manifest.ts'
 import {
-	hasPublishedRuntimeArtifacts,
-	writePublishedSourceSnapshot,
-} from '#worker/package-runtime/published-runtime-artifacts.ts'
-import {
 	type EntityKind,
 	type EntitySourceRow,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
+	type RepoExternalPublishResult,
 	type RepoSourceBootstrapResult,
 	type RepoSessionApplyEditsResult,
 	type RepoSessionCheckRun,
@@ -54,7 +51,10 @@ import {
 	type RepoSessionSearchResult,
 	type RepoSessionTreeResult,
 } from './types.ts'
-import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
+import {
+	finalizePublishedEntitySource,
+	publishFromExternalRef as publishExternalRefSource,
+} from './external-publish.ts'
 import {
 	type RepoGitCommand,
 	type RepoRunCommandsResult,
@@ -446,6 +446,27 @@ class RepoSessionBase extends DurableObject<Env> {
 		return [...new Uint8Array(digest)]
 			.map((byte) => byte.toString(16).padStart(2, '0'))
 			.join('')
+	}
+
+	private async isAncestorCommit(input: {
+		ancestor: string
+		descendant: string
+	}) {
+		if (input.ancestor === input.descendant) {
+			return true
+		}
+		const commits = await this.git.log({
+			dir: repoSessionWorkspacePrefix,
+			depth: 1000,
+		})
+		const commitIds = commits.map((commit) => commit.oid)
+		const descendantIndex = commitIds.indexOf(input.descendant)
+		const ancestorIndex = commitIds.indexOf(input.ancestor)
+		return (
+			descendantIndex >= 0 &&
+			ancestorIndex >= 0 &&
+			ancestorIndex >= descendantIndex
+		)
 	}
 
 	private async writeCheckStatus(status: RepoSessionCheckStatus) {
@@ -1367,69 +1388,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			source.manifest_path,
 			source.entity_kind,
 		)
-		// Persist the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream
-		// readers like loadPublishedEntitySource can resolve the freshly
-		// published commit without round-tripping to Artifacts. Without this,
-		// refreshSavedPackageProjection below, as well as every package-backed
-		// job run that reaches for the published snapshot, would throw
-		// "Published snapshot for source ... was not found" because no writer
-		// had stored the snapshot under the new commit.
-		//
-		// Collect the workspace files BEFORE advancing D1 so a failure to
-		// materialize the tree never leaves entity_sources.published_commit
-		// pointing at a commit whose snapshot we never wrote.
-		const shouldPersistSnapshot =
-			sessionHeadCommit != null && hasPublishedRuntimeArtifacts(this.env)
-		const snapshotFiles = shouldPersistSnapshot
-			? await this.collectWorkspaceFiles()
-			: null
-		await updateEntitySource(this.env.APP_DB, {
-			id: source.id,
-			userId: source.user_id,
-			publishedCommit: sessionHeadCommit,
-			manifestPath: source.manifest_path,
-			sourceRoot: source.source_root,
+		const snapshotFiles = await this.collectWorkspaceFiles()
+		await finalizePublishedEntitySource({
+			env: this.env,
+			source,
+			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
+			files: snapshotFiles,
+			baseUrl: source.source_root,
 		})
-		if (shouldPersistSnapshot && snapshotFiles != null && sessionHeadCommit) {
-			try {
-				await writePublishedSourceSnapshot({
-					env: this.env,
-					source: {
-						...source,
-						published_commit: sessionHeadCommit,
-					},
-					files: snapshotFiles,
-				})
-			} catch (snapshotError) {
-				// Preserve the original KV failure as the thrown error even if
-				// the compensating D1 revert also fails; surfacing the revert
-				// error would mask the real root cause and make the orphaned
-				// D1 row harder to diagnose.
-				try {
-					await updateEntitySource(this.env.APP_DB, {
-						id: source.id,
-						userId: source.user_id,
-						publishedCommit: source.published_commit,
-						manifestPath: source.manifest_path,
-						sourceRoot: source.source_root,
-					})
-				} catch (revertError) {
-					Sentry.captureException(revertError, {
-						tags: {
-							scope:
-								'repo-session.publishSession.revert-after-snapshot-failure',
-						},
-						extra: {
-							sessionId: input.sessionId,
-							sourceId: source.id,
-							previousPublishedCommit: source.published_commit,
-							attemptedPublishedCommit: sessionHeadCommit,
-						},
-					})
-				}
-				throw snapshotError
-			}
-		}
 		await updateRepoSession(this.env.APP_DB, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
@@ -1438,21 +1404,77 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointCommit: sessionHeadCommit,
 			lastCheckpointAt: nowIso(),
 		})
-		if (source.entity_kind === 'package') {
-			await refreshSavedPackageProjection({
-				env: this.env,
-				baseUrl: source.source_root,
-				userId: source.user_id,
-				packageId: source.entity_id,
-				sourceId: source.id,
-			})
-		}
 		return {
 			status: 'ok',
 			sessionId: sessionRow.id,
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
 			message: `Published session ${sessionRow.id} to ${source.repo_id}.`,
 		}
+	}
+
+	async publishFromExternalRef(input: {
+		sessionId: string
+		sourceId: string
+		userId: string
+		newCommit: string
+		expectedHead?: string | null
+		allowForce?: boolean
+		baseUrl?: string
+	}): Promise<RepoExternalPublishResult> {
+		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
+		if (!source || source.user_id !== input.userId) {
+			throw new Error('Repo source was not found for this user.')
+		}
+		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
+		const sourceInfo = await sourceRepo.info()
+		const sourceAccess = await ensureArtifactRepoRemote({
+			repo: sourceRepo,
+			scope: 'read',
+		})
+		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
+		if (input.expectedHead && input.expectedHead !== input.newCommit) {
+			throw new Error(
+				`Artifacts HEAD changed from "${input.expectedHead}" to "${input.newCommit}" before publish.`,
+			)
+		}
+		await this.resetWorkspace()
+		await this.workspace.mkdir(repoSessionWorkspacePrefix, {
+			recursive: true,
+		})
+		await this.git.clone({
+			dir: repoSessionWorkspacePrefix,
+			branch: targetBranch,
+			singleBranch: true,
+			...buildGitCloneAuth({
+				remote: sourceAccess.remote,
+				token: sourceAccess.token,
+			}),
+		})
+		await this.git.checkout({
+			dir: repoSessionWorkspacePrefix,
+			ref: input.newCommit,
+			force: true,
+		})
+		const files = await this.collectWorkspaceFiles()
+		const isFastForward =
+			!source.published_commit ||
+			(await this.isAncestorCommit({
+				ancestor: source.published_commit,
+				descendant: input.newCommit,
+			}))
+		return publishExternalRefSource({
+			env: this.env,
+			sourceId: source.id,
+			userId: input.userId,
+			newCommit: input.newCommit,
+			isFastForward,
+			allowForce: input.allowForce,
+			workspace: this.workspace,
+			files,
+			baseUrl: input.baseUrl ?? source.source_root,
+			manifestPath: source.manifest_path,
+			sourceRoot: source.source_root,
+		})
 	}
 }
 

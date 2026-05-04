@@ -17,6 +17,10 @@ function mapEntitySourceRow(row: Record<string, unknown>): EntitySourceRow {
 			row['indexed_commit'] == null ? null : String(row['indexed_commit']),
 		manifest_path: String(row['manifest_path']),
 		source_root: String(row['source_root']),
+		last_external_check_at:
+			row['last_external_check_at'] == null
+				? null
+				: String(row['last_external_check_at']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	})
@@ -104,6 +108,7 @@ export async function updateEntitySource(
 		indexedCommit?: string | null
 		manifestPath?: string
 		sourceRoot?: string
+		lastExternalCheckAt?: string | null
 	},
 ): Promise<boolean> {
 	const assignments: Array<string> = []
@@ -120,6 +125,9 @@ export async function updateEntitySource(
 		add('indexed_commit', input.indexedCommit)
 	if (input.manifestPath !== undefined) add('manifest_path', input.manifestPath)
 	if (input.sourceRoot !== undefined) add('source_root', input.sourceRoot)
+	if (input.lastExternalCheckAt !== undefined) {
+		add('last_external_check_at', input.lastExternalCheckAt)
+	}
 	add('updated_at', new Date().toISOString())
 	const result = await db
 		.prepare(
@@ -154,6 +162,25 @@ export async function upsertEntitySource(
 		return
 	}
 	await insertEntitySource(db, row)
+}
+
+export async function listEntitySourcesForExternalReconcile(
+	db: D1Database,
+	input: {
+		before: string
+		limit: number
+	},
+): Promise<Array<EntitySourceRow>> {
+	const { results } = await db
+		.prepare(
+			`SELECT * FROM entity_sources
+			WHERE last_external_check_at IS NULL OR last_external_check_at < ?
+			ORDER BY COALESCE(last_external_check_at, created_at) ASC
+			LIMIT ?`,
+		)
+		.bind(input.before, input.limit)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapEntitySourceRow)
 }
 
 export async function deleteEntitySource(

@@ -9,6 +9,7 @@ import {
 	type RepoSessionCheckStatus,
 	type RepoSessionDiscardResult,
 	type RepoSessionEdit,
+	type RepoExternalPublishResult,
 	type RepoSessionInfoResult,
 	type RepoSessionPublishResult,
 	type RepoSessionRebaseResult,
@@ -103,6 +104,15 @@ export type RepoSessionRpc = {
 		userId: string
 		force?: boolean
 	}) => Promise<RepoSessionPublishResult>
+	publishFromExternalRef: (payload: {
+		sessionId: string
+		sourceId: string
+		userId: string
+		newCommit: string
+		expectedHead?: string | null
+		allowForce?: boolean
+		baseUrl?: string
+	}) => Promise<RepoExternalPublishResult>
 }
 
 export function repoSessionRpc(env: Env, sessionId: string): RepoSessionRpc {
