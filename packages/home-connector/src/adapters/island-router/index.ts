@@ -1032,7 +1032,7 @@ export function createIslandRouterAdapter(input: {
 			const requireHost = (field: string) =>
 				validateIslandRouterHost(
 					assertNonEmpty(request.host ?? '', field),
-				).value
+				).normalizedValue
 			const requirePositiveInteger = (
 				field: string,
 				value: number | undefined,

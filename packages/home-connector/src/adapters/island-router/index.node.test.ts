@@ -1506,6 +1506,17 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		},
 		{
 			input: {
+				command: 'show-ip-arp-host',
+				host: '00-11-22-33-44-55',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show ip arp 00:11:22:33:44:55',
+			expectedCommandId: 'show-ip-arp',
+		},
+		{
+			input: {
 				command: 'show-ip-counters',
 				acknowledgeHighRisk: true,
 				reason,
