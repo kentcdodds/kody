@@ -3,16 +3,15 @@ import {
 	type IslandRouterCommandRequest,
 	type IslandRouterCommandResult,
 	type IslandRouterCommandRunner,
-	type IslandRouterReadCommand,
-	type IslandRouterReadCommandCatalogEntry,
-	type IslandRouterReadCommandResult,
+	type IslandRouterCommandId,
+	type IslandRouterRunCommandResult,
 	type IslandRouterStatus,
-	type IslandRouterWriteOperation,
-	type IslandRouterWriteOperationId,
-	type IslandRouterWriteOperationResult,
-	islandRouterReadCommandCatalog,
-	islandRouterWriteOperationCatalog,
+	islandRouterCommandConfirmation,
 } from './types.ts'
+import {
+	getIslandRouterCommandCatalogEntry,
+	renderIslandRouterCommand,
+} from './command-catalog.ts'
 import { createIslandRouterSshCommandRunner } from './ssh-client.ts'
 import {
 	didIslandRouterCommandSucceed,
@@ -24,33 +23,18 @@ import {
 } from './parsing.ts'
 import {
 	assertIslandRouterConfigured,
-	assertIslandRouterWriteConfigured,
 	getIslandRouterConfigStatus,
 } from './validation.ts'
 
-type WriteOperationRequest = {
-	timeoutMs?: number
-	acknowledgeHighRisk: boolean
-	reason: string
-	confirmation: string
-}
-
-type RunReadCommandRequest = {
-	command: IslandRouterReadCommand
-	interfaceName?: string
+type RunCommandRequest = {
+	commandId: IslandRouterCommandId
+	params?: Record<string, unknown>
 	query?: string
 	limit?: number
 	timeoutMs?: number
+	reason?: string
+	confirmation?: string
 }
-
-type RunWriteOperationRequest = WriteOperationRequest & {
-	operation: IslandRouterWriteOperation
-}
-
-const islandRouterWriteAcknowledgements = {
-	runWriteOperation:
-		'I am highly certain running this guarded Island router write operation is necessary right now.',
-} as const
 
 function normalizeLimit(value: number | undefined, fallback: number, max: number) {
 	if (value == null || !Number.isFinite(value)) return fallback
@@ -62,18 +46,6 @@ function normalizeTimeoutMs(config: HomeConnectorConfig, timeoutMs?: number) {
 		return config.islandRouterCommandTimeoutMs
 	}
 	return Math.max(1000, Math.trunc(timeoutMs))
-}
-
-function assertNonEmpty(value: string, field: string) {
-	const trimmed = value.trim()
-	if (trimmed.length === 0) {
-		throw new Error(`${field} must not be empty.`)
-	}
-	return trimmed
-}
-
-function normalizeInterfaceName(value: string) {
-	return assertNonEmpty(value, 'interfaceName')
 }
 
 function ensureSuccessfulCommand(
@@ -99,76 +71,6 @@ function ensureSuccessfulCommand(
 	return result
 }
 
-function assertWriteAcknowledgement(
-	received: string,
-	expected: string,
-	operationLabel: string,
-) {
-	if (received.trim() !== expected) {
-		throw new Error(
-			`${operationLabel} requires the exact acknowledgement: "${expected}"`,
-		)
-	}
-}
-
-function assertWriteReason(reason: string, operationLabel: string) {
-	const trimmed = reason.trim()
-	if (trimmed.length < 20) {
-		throw new Error(
-			`${operationLabel} requires a specific operator reason of at least 20 characters.`,
-		)
-	}
-}
-
-function getReadCommandCatalogEntry(command: IslandRouterReadCommand) {
-	const entry = islandRouterReadCommandCatalog.find(
-		(candidate) => candidate.command === command,
-	)
-	if (!entry) {
-		throw new Error(`Unsupported Island router read command: ${command}`)
-	}
-	return entry
-}
-
-function getWriteOperationCatalogEntry(operation: IslandRouterWriteOperation) {
-	const entry = islandRouterWriteOperationCatalog.find(
-		(candidate) => candidate.operation === operation,
-	)
-	if (!entry) {
-		throw new Error(`Unsupported Island router write operation: ${operation}`)
-	}
-	return entry
-}
-
-function assertReadCommandParams(input: {
-	catalogEntry: IslandRouterReadCommandCatalogEntry
-	request: RunReadCommandRequest
-}) {
-	const receivedParams = [
-		{
-			name: 'interfaceName',
-			value: input.request.interfaceName,
-		},
-		{
-			name: 'query',
-			value: input.request.query,
-		},
-		{
-			name: 'limit',
-			value: input.request.limit,
-		},
-	] as const
-	const unsupportedParams = receivedParams.flatMap((param) =>
-		param.value == null || input.catalogEntry.params.includes(param.name)
-			? []
-			: [param.name],
-	)
-	if (unsupportedParams.length === 0) return
-	throw new Error(
-		`${input.catalogEntry.command} does not accept parameter(s): ${unsupportedParams.join(', ')}.`,
-	)
-}
-
 function filterCommandLines(input: {
 	lines: Array<string>
 	query?: string
@@ -185,51 +87,35 @@ function filterCommandLines(input: {
 	return filtered.slice(0, limit)
 }
 
-async function runHighRiskCommand(input: {
+function assertWriteSafety(input: {
 	config: HomeConnectorConfig
-	runner: IslandRouterCommandRunner
-	timeoutMs?: number
-	operationId: IslandRouterWriteOperationId
-	commandRequest: IslandRouterCommandRequest
-	message: string
-	acknowledgeHighRisk: boolean
-	reason: string
-	confirmation: string
-	expectedAcknowledgement: string
+	commandId: IslandRouterCommandId
+	reason?: string
+	confirmation?: string
 }) {
-	assertIslandRouterWriteConfigured(input.config)
-	if (!input.acknowledgeHighRisk) {
+	const status = assertIslandRouterConfigured(input.config)
+	if (status.verificationMode === 'none') {
 		throw new Error(
-			`${input.message} requires acknowledgeHighRisk=true because this is a high-risk mutating router operation.`,
+			'Island router write commands require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',
 		)
 	}
-	assertWriteReason(input.reason, input.message)
-	assertWriteAcknowledgement(
-		input.confirmation,
-		input.expectedAcknowledgement,
-		input.message,
-	)
-	const timeoutMs = normalizeTimeoutMs(input.config, input.timeoutMs)
-	const commandRequest = {
-		...input.commandRequest,
-		timeoutMs,
-	} as IslandRouterCommandRequest
-	const result = ensureSuccessfulCommand(
-		await input.runner(commandRequest),
-		input.message,
-	)
-	return {
-		operationId: input.operationId,
-		commandId:
-			result.id as IslandRouterWriteOperationResult['commandId'],
-		commandLines: result.commandLines,
-		stdout: result.stdout,
-		stderr: result.stderr,
-		exitCode: result.exitCode,
-		signal: result.signal,
-		timedOut: result.timedOut,
-		durationMs: result.durationMs,
-	} satisfies IslandRouterWriteOperationResult
+	if (!status.writeCapabilitiesAvailable) {
+		const details = status.writeWarnings.filter(Boolean).join(' ')
+		throw new Error(
+			`Island router write commands are unavailable. ${details}`.trim(),
+		)
+	}
+	const reason = input.reason?.trim() ?? ''
+	if (reason.length < 20) {
+		throw new Error(
+			`Island router command ${input.commandId} requires a specific operator reason of at least 20 characters.`,
+		)
+	}
+	if ((input.confirmation ?? '').trim() !== islandRouterCommandConfirmation) {
+		throw new Error(
+			`Island router command ${input.commandId} requires the exact confirmation: "${islandRouterCommandConfirmation}"`,
+		)
+	}
 }
 
 export function createIslandRouterAdapter(input: {
@@ -251,7 +137,7 @@ export function createIslandRouterAdapter(input: {
 
 	return {
 		getConfigStatus,
-		writeAcknowledgements: islandRouterWriteAcknowledgements,
+		writeConfirmation: islandRouterCommandConfirmation,
 		async getStatus(): Promise<IslandRouterStatus> {
 			const configStatus = getConfigStatus()
 			if (!configStatus.configured) {
@@ -282,19 +168,19 @@ export function createIslandRouterAdapter(input: {
 			const [versionResult, clockResult, interfaceResult, neighborResult] =
 				await Promise.all([
 					runner({
-						id: 'show-version',
+						id: 'show version',
 						timeoutMs,
 					}),
 					runner({
-						id: 'show-clock',
+						id: 'show clock',
 						timeoutMs,
 					}),
 					runner({
-						id: 'show-interface-summary',
+						id: 'show interface summary',
 						timeoutMs,
 					}),
 					runner({
-						id: 'show-ip-neighbors',
+						id: 'show ip neighbors',
 						timeoutMs,
 					}),
 				])
@@ -355,76 +241,32 @@ export function createIslandRouterAdapter(input: {
 				errors,
 			}
 		},
-		async runReadCommand(
-			request: RunReadCommandRequest,
-		): Promise<IslandRouterReadCommandResult> {
-			const catalogEntry = getReadCommandCatalogEntry(request.command)
+		async runCommand(
+			request: RunCommandRequest,
+		): Promise<IslandRouterRunCommandResult> {
+			const catalogEntry = getIslandRouterCommandCatalogEntry(request.commandId)
 			const timeoutMs = normalizeTimeoutMs(config, request.timeoutMs)
-			assertReadCommandParams({
-				catalogEntry,
-				request,
-			})
 			assertIslandRouterConfigured(config)
-			let commandRequest: IslandRouterCommandRequest
-			switch (request.command) {
-				case 'show ip neighbors':
-					commandRequest = { id: 'show-ip-neighbors', timeoutMs }
-					break
-				case 'show ip sockets':
-					commandRequest = { id: 'show-ip-sockets', timeoutMs }
-					break
-				case 'show stats':
-					commandRequest = { id: 'show-stats', timeoutMs }
-					break
-				case 'show interface <iface>':
-					commandRequest = {
-						id: 'show-interface',
-						interfaceName: normalizeInterfaceName(
-							assertNonEmpty(request.interfaceName ?? '', 'interfaceName'),
-						),
-						timeoutMs,
-					}
-					break
-				case 'show ip interface <iface>':
-					commandRequest = {
-						id: 'show-ip-interface',
-						interfaceName: normalizeInterfaceName(
-							assertNonEmpty(request.interfaceName ?? '', 'interfaceName'),
-						),
-						timeoutMs,
-					}
-					break
-				case 'show log':
-					commandRequest = { id: 'show-log', timeoutMs }
-					break
-				case 'show running-config':
-					commandRequest = { id: 'show-running-config', timeoutMs }
-					break
-				case 'show running-config differences':
-					commandRequest = {
-						id: 'show-running-config-differences',
-						timeoutMs,
-					}
-					break
-				case 'show ip dhcp':
-					commandRequest = { id: 'show-ip-dhcp', timeoutMs }
-					break
-				case 'show ip routes':
-					commandRequest = { id: 'show-ip-routes', timeoutMs }
-					break
-				case 'show ip recommendations':
-					commandRequest = { id: 'show-ip-recommendations', timeoutMs }
-					break
-				default: {
-					const _exhaustive: never = request.command
-					throw new Error(
-						`Unhandled Island router read command: ${String(_exhaustive)}`,
-					)
-				}
+			if (catalogEntry.access === 'write') {
+				assertWriteSafety({
+					config,
+					commandId: request.commandId,
+					reason: request.reason,
+					confirmation: request.confirmation,
+				})
 			}
+			const rendered = renderIslandRouterCommand({
+				id: request.commandId,
+				params: request.params,
+			})
+			const commandRequest = {
+				id: request.commandId,
+				params: request.params,
+				timeoutMs,
+			} satisfies IslandRouterCommandRequest
 			const result = ensureSuccessfulCommand(
 				await getRunner()(commandRequest),
-				`Island router read command ${request.command}`,
+				`Island router command ${request.commandId}`,
 			)
 			const rawOutput = parseIslandRouterRawOutput(
 				result.stdout,
@@ -432,7 +274,7 @@ export function createIslandRouterAdapter(input: {
 			).rawOutput
 			const lines = rawOutput.length === 0 ? [] : rawOutput.split('\n')
 			const filteredLines =
-				request.command === 'show log'
+				catalogEntry.supportsLineFilter
 					? filterCommandLines({
 							lines,
 							query: request.query,
@@ -440,9 +282,9 @@ export function createIslandRouterAdapter(input: {
 						})
 					: lines
 			return {
-				command: request.command,
-				commandId: result.id as IslandRouterReadCommandResult['commandId'],
+				commandId: result.id,
 				catalogEntry,
+				params: rendered.normalizedParams,
 				commandLines: result.commandLines,
 				rawOutput,
 				filteredOutput: filteredLines.join('\n'),
@@ -453,47 +295,6 @@ export function createIslandRouterAdapter(input: {
 				signal: result.signal,
 				timedOut: result.timedOut,
 				durationMs: result.durationMs,
-			}
-		},
-		async runWriteOperation(request: RunWriteOperationRequest) {
-			const catalogEntry = getWriteOperationCatalogEntry(request.operation)
-			let operationId: IslandRouterWriteOperationId
-			let commandRequest: IslandRouterCommandRequest
-			switch (request.operation) {
-				case 'renew dhcp clients':
-					operationId = 'renew-dhcp-clients'
-					commandRequest = { id: 'clear-dhcp-client' }
-					break
-				case 'clear log buffer':
-					operationId = 'clear-log-buffer'
-					commandRequest = { id: 'clear-log' }
-					break
-				case 'save running config':
-					operationId = 'save-running-config'
-					commandRequest = { id: 'write-memory' }
-					break
-				default: {
-					const _exhaustive: never = request.operation
-					throw new Error(
-						`Unhandled Island router write operation: ${String(_exhaustive)}`,
-					)
-				}
-			}
-			return {
-				catalogEntry,
-				...(await runHighRiskCommand({
-					config,
-					runner: getRunner(),
-					timeoutMs: request.timeoutMs,
-					operationId,
-					commandRequest,
-					message: `Island router write operation ${request.operation}`,
-					acknowledgeHighRisk: request.acknowledgeHighRisk,
-					reason: request.reason,
-					confirmation: request.confirmation,
-					expectedAcknowledgement:
-						islandRouterWriteAcknowledgements.runWriteOperation,
-				})),
 			}
 		},
 	}

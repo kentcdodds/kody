@@ -9,7 +9,11 @@ import {
 	parseIslandRouterTrafficStats,
 	sanitizeIslandRouterOutput,
 } from './parsing.ts'
-import { type IslandRouterCommandRequest } from './types.ts'
+import {
+	islandRouterCommandCatalog,
+	type IslandRouterCommandRequest,
+} from './types.ts'
+import { renderIslandRouterCommand } from './command-catalog.ts'
 
 function withTemporaryEnv(values: Record<string, string | undefined>) {
 	const previousValues = Object.fromEntries(
@@ -75,7 +79,7 @@ function createResult(
 function createFakeRunner() {
 	return async (request: IslandRouterCommandRequest) => {
 		switch (request.id) {
-			case 'show-version':
+			case 'show version':
 				return createResult(
 					request,
 					['show version'],
@@ -84,9 +88,9 @@ function createFakeRunner() {
 						'Copyright 2004-2026 PerfTech, Inc.',
 					].join('\n'),
 				)
-			case 'show-clock':
+			case 'show clock':
 				return createResult(request, ['show clock'], '2026-05-04 13:20:00 PDT')
-			case 'show-interface-summary':
+			case 'show interface summary':
 				return createResult(
 					request,
 					['show interface summary'],
@@ -97,7 +101,7 @@ function createFakeRunner() {
 						'en1        down   2.5G   full    spare port',
 					].join('\n'),
 				)
-			case 'show-ip-neighbors':
+			case 'show ip neighbors':
 				return createResult(
 					request,
 					['show ip neighbors'],
@@ -107,7 +111,7 @@ function createFakeRunner() {
 						'192.168.0.52  00:11:22:33:44:55  en0        reachable',
 					].join('\n'),
 				)
-			case 'show-ip-sockets':
+			case 'show ip sockets':
 				return createResult(
 					request,
 					['show ip sockets'],
@@ -117,7 +121,7 @@ function createFakeRunner() {
 						'tcp       192.168.0.1:22       192.168.0.20:51514   established',
 					].join('\n'),
 				)
-			case 'show-stats':
+			case 'show stats':
 				return createResult(
 					request,
 					['show stats'],
@@ -130,28 +134,28 @@ function createFakeRunner() {
 						'en0        1200000   2400000   1000        1500        0          1          37%',
 					].join('\n'),
 				)
-			case 'show-interface':
+			case 'show interface':
 				return createResult(
 					request,
-					[`show interface ${request.interfaceName}`],
+					[`show interface ${String(request.params?.['interfaceName'])}`],
 					[
-						`Interface: ${request.interfaceName}`,
+						`Interface: ${String(request.params?.['interfaceName'])}`,
 						'Link State: up',
 						'Speed: 1G',
 						'Duplex: full',
 					].join('\n'),
 				)
-			case 'show-ip-interface':
+			case 'show ip interface':
 				return createResult(
 					request,
-					[`show ip interface ${request.interfaceName}`],
+					[`show ip interface ${String(request.params?.['interfaceName'])}`],
 					[
-						`Interface: ${request.interfaceName}`,
+						`Interface: ${String(request.params?.['interfaceName'])}`,
 						'Address: 192.168.0.1/24',
 						'DHCP Server: enabled',
 					].join('\n'),
 				)
-			case 'show-log':
+			case 'show log':
 				return createResult(
 					request,
 					['show log'],
@@ -160,7 +164,7 @@ function createFakeRunner() {
 						'2026/05/04-13:17:58.001 4 pe-link: en1 carrier down',
 					].join('\n'),
 				)
-			case 'show-running-config':
+			case 'show running-config':
 				return createResult(
 					request,
 					['show running-config'],
@@ -171,16 +175,16 @@ function createFakeRunner() {
 						'ip address 192.168.0.1/24',
 					].join('\n'),
 				)
-			case 'show-running-config-differences':
+			case 'show running-config differences':
 				return createResult(
 					request,
 					['show running-config differences'],
 					'No differences found.',
 				)
-			case 'show-ip-dhcp':
+			case 'show ip dhcp-reservations':
 				return createResult(
 					request,
-					['show ip dhcp'],
+					['show ip dhcp-reservations'],
 					[
 						'IP Address    MAC Address        Host Name  Type',
 						'------------  -----------------  ---------  -------',
@@ -192,7 +196,7 @@ function createFakeRunner() {
 						'192.168.0.52  00:11:22:33:44:55  nas-box    en0',
 					].join('\n'),
 				)
-			case 'show-ip-routes':
+			case 'show ip routes':
 				return createResult(
 					request,
 					['show ip routes'],
@@ -202,28 +206,83 @@ function createFakeRunner() {
 						'default          203.0.113.1   en1        static    1       yes',
 					].join('\n'),
 				)
-			case 'show-ip-recommendations':
+			case 'show ip recommendations':
 				return createResult(
 					request,
 					['show ip recommendations'],
 					'No IP recommendations at this time.',
 				)
-			case 'clear-dhcp-client':
+			case 'clear dhcp-client':
 				return createResult(
 					request,
 					['clear dhcp-client'],
 					'DHCP client renewal requested.',
 				)
-			case 'clear-log':
+			case 'clear log':
 				return createResult(request, ['clear log'], 'Log buffer cleared.')
-			case 'write-memory':
+			case 'write memory':
 				return createResult(
 					request,
 					['write memory'],
 					'Running configuration saved.',
 				)
+			case 'ip dhcp-reserve':
+				return createResult(
+					request,
+					renderIslandRouterCommand({
+						id: request.id,
+						params: request.params,
+					}).commandLines,
+					'DHCP reservation added.',
+				)
+			case 'no ip dhcp-reserve':
+				return createResult(
+					request,
+					renderIslandRouterCommand({
+						id: request.id,
+						params: request.params,
+					}).commandLines,
+					'DHCP reservation removed.',
+				)
+			case 'interface ip autoconfig':
+			case 'interface description':
+			case 'no interface description':
+			case 'syslog server':
+			case 'no syslog server':
+			case 'ip port-forward':
+				return createResult(
+					request,
+					renderIslandRouterCommand({
+						id: request.id,
+						params: request.params,
+					}).commandLines,
+					'Configuration updated.',
+				)
+			case 'show startup-config':
+			case 'show interface transceivers':
+			case 'show syslog':
+			case 'show ntp':
+			case 'show users':
+			case 'show vpns':
+			case 'show hardware':
+			case 'show free-space':
+			case 'show packages':
+			case 'show dumps':
+			case 'show public-key':
+			case 'show ssh-client-keys':
+			case 'show config authorized-keys':
+			case 'show config known-hosts':
+			case 'ping':
+				return createResult(
+					request,
+					renderIslandRouterCommand({
+						id: request.id,
+						params: request.params,
+					}).commandLines,
+					`${request.id} output`,
+				)
 			default: {
-				const _exhaustive: never = request
+				const _exhaustive: never = request.id
 				throw new Error(
 					`Unhandled fake Island router request: ${String(_exhaustive)}`,
 				)
@@ -274,7 +333,48 @@ test('island router adapter returns status with parsed interface speed and duple
 	)
 })
 
-test('island router read command substrate uses exact documented CLI command strings', async () => {
+test('island router command catalog covers documented command metadata', () => {
+	const catalogIds = islandRouterCommandCatalog.map((entry) => entry.id)
+	expect(catalogIds).toEqual(new Set(catalogIds).size === catalogIds.length ? catalogIds : [])
+	expect(catalogIds).toEqual(
+		expect.arrayContaining([
+			'show clock',
+			'show version',
+			'show running-config',
+			'show startup-config',
+			'show interface summary',
+			'show interface',
+			'show ip interface',
+			'show ip dhcp-reservations',
+			'show log',
+			'ping',
+			'clear dhcp-client',
+			'clear log',
+			'write memory',
+			'ip dhcp-reserve',
+			'no ip dhcp-reserve',
+			'interface ip autoconfig',
+			'interface description',
+			'no interface description',
+			'syslog server',
+			'ip port-forward',
+		]),
+	)
+
+	for (const entry of islandRouterCommandCatalog) {
+		expect(entry.cliTemplate).not.toMatch(/\s{2,}/)
+		expect(entry.blastRadius.length).toBeGreaterThan(0)
+		expect(entry.operatorGuidance.length).toBeGreaterThan(0)
+		if (entry.access === 'read') {
+			expect(entry.riskLevel).toBe('read')
+			expect(entry.persistence.requiresWriteMemory).toBe(false)
+		} else {
+			expect(entry.riskLevel).not.toBe('read')
+		}
+	}
+})
+
+test('island router command substrate renders documented read commands', async () => {
 	using _env = withTemporaryEnv({})
 	const recordedRequests: Array<IslandRouterCommandRequest> = []
 	const islandRouter = createIslandRouterAdapter({
@@ -287,76 +387,64 @@ test('island router read command substrate uses exact documented CLI command str
 
 	const cases = [
 		{
-			command: 'show ip neighbors',
-			expectedCommandId: 'show-ip-neighbors',
+			commandId: 'show ip neighbors',
 			expectedCommandLine: 'show ip neighbors',
 		},
 		{
-			command: 'show ip sockets',
-			expectedCommandId: 'show-ip-sockets',
+			commandId: 'show ip sockets',
 			expectedCommandLine: 'show ip sockets',
 		},
 		{
-			command: 'show stats',
-			expectedCommandId: 'show-stats',
+			commandId: 'show stats',
 			expectedCommandLine: 'show stats',
 		},
 		{
-			command: 'show interface <iface>',
-			interfaceName: 'en0',
-			expectedCommandId: 'show-interface',
+			commandId: 'show interface',
+			params: { interfaceName: 'en0' },
 			expectedCommandLine: 'show interface en0',
 		},
 		{
-			command: 'show ip interface <iface>',
-			interfaceName: 'en0',
-			expectedCommandId: 'show-ip-interface',
+			commandId: 'show ip interface',
+			params: { interfaceName: 'en0' },
 			expectedCommandLine: 'show ip interface en0',
 		},
 		{
-			command: 'show log',
+			commandId: 'show log',
 			query: 'lease',
 			limit: 1,
-			expectedCommandId: 'show-log',
 			expectedCommandLine: 'show log',
 		},
 		{
-			command: 'show running-config',
-			expectedCommandId: 'show-running-config',
+			commandId: 'show running-config',
 			expectedCommandLine: 'show running-config',
 		},
 		{
-			command: 'show running-config differences',
-			expectedCommandId: 'show-running-config-differences',
+			commandId: 'show running-config differences',
 			expectedCommandLine: 'show running-config differences',
 		},
 		{
-			command: 'show ip dhcp',
-			expectedCommandId: 'show-ip-dhcp',
-			expectedCommandLine: 'show ip dhcp',
+			commandId: 'show ip dhcp-reservations',
+			expectedCommandLine: 'show ip dhcp-reservations',
 		},
 		{
-			command: 'show ip routes',
-			expectedCommandId: 'show-ip-routes',
+			commandId: 'show ip routes',
 			expectedCommandLine: 'show ip routes',
 		},
 		{
-			command: 'show ip recommendations',
-			expectedCommandId: 'show-ip-recommendations',
+			commandId: 'show ip recommendations',
 			expectedCommandLine: 'show ip recommendations',
 		},
 	] as const
 
 	for (const routerCommand of cases) {
-		const result = await islandRouter.runReadCommand(routerCommand)
-		expect(result.command).toBe(routerCommand.command)
-		expect(result.commandId).toBe(routerCommand.expectedCommandId)
+		const result = await islandRouter.runCommand(routerCommand)
+		expect(result.commandId).toBe(routerCommand.commandId)
 		expect(result.commandLines).toContain(routerCommand.expectedCommandLine)
-		expect(result.catalogEntry.command).toBe(routerCommand.command)
+		expect(result.catalogEntry.id).toBe(routerCommand.commandId)
 	}
 
-	const logResult = await islandRouter.runReadCommand({
-		command: 'show log',
+	const logResult = await islandRouter.runCommand({
+		commandId: 'show log',
 		query: 'carrier',
 		limit: 1,
 	})
@@ -368,7 +456,7 @@ test('island router read command substrate uses exact documented CLI command str
 	)
 })
 
-test('island router read command substrate rejects aliases and missing scoped params', async () => {
+test('island router command substrate rejects aliases, bad params, and injection attempts', async () => {
 	using _env = withTemporaryEnv({})
 	const islandRouter = createIslandRouterAdapter({
 		config: createConfig(),
@@ -376,30 +464,89 @@ test('island router read command substrate rejects aliases and missing scoped pa
 	})
 
 	await expect(
-		islandRouter.runReadCommand({
-			command: 'show-ip-arp' as never,
+		islandRouter.runCommand({
+			commandId: 'show-ip-arp' as never,
 		}),
-	).rejects.toThrow('Unsupported Island router read command')
+	).rejects.toThrow('Unsupported Island router command id')
 	await expect(
-		islandRouter.runReadCommand({
-			command: 'show interface <iface>',
+		islandRouter.runCommand({
+			commandId: 'show interface',
 		}),
 	).rejects.toThrow('interfaceName')
 	await expect(
-		islandRouter.runReadCommand({
-			command: 'show ip neighbors',
-			query: '192.168.0.52',
+		islandRouter.runCommand({
+			commandId: 'show ip neighbors',
+			params: { query: '192.168.0.52' },
 		}),
 	).rejects.toThrow('does not accept parameter(s): query')
 	await expect(
-		islandRouter.runReadCommand({
-			command: 'show ip routes',
-			interfaceName: 'en0',
+		islandRouter.runCommand({
+			commandId: 'show ip routes',
+			params: { interfaceName: 'en0' },
 		}),
 	).rejects.toThrow('does not accept parameter(s): interfaceName')
+	await expect(
+		islandRouter.runCommand({
+			commandId: 'show interface',
+			params: { interfaceName: 'en0; write memory' },
+		}),
+	).rejects.toThrow('single Island interface token')
+	await expect(
+		islandRouter.runCommand({
+			commandId: 'ip dhcp-reserve',
+			params: {
+				ipAddress: '192.168.0.52 && reload',
+				macAddress: '00:11:22:33:44:55',
+			},
+			reason:
+				'The operator verified this DHCP reservation is needed for this exact MAC address.',
+			confirmation: islandRouter.writeConfirmation,
+		}),
+	).rejects.toThrow('valid IPv4 address')
+	await expect(
+		islandRouter.runCommand({
+			commandId: 'ip dhcp-reserve',
+			params: {
+				ipAddress: '192.168.0.52',
+				macAddress: '00:11:22:33:44:55;reload',
+			},
+			reason:
+				'The operator verified this DHCP reservation is needed for this exact MAC address.',
+			confirmation: islandRouter.writeConfirmation,
+		}),
+	).rejects.toThrow('valid MAC address')
+	await expect(
+		islandRouter.runCommand({
+			commandId: 'ping',
+			params: { host: 'router.local;reload' },
+		}),
+	).rejects.toThrow('valid IP address or hostname')
+	await expect(
+		islandRouter.runCommand({
+			commandId: 'ip port-forward',
+			params: {
+				protocol: 'tcp',
+				publicPort: '70000',
+				target: 'island',
+				destinationPort: '443',
+			},
+			reason:
+				'The operator verified this port-forward is required and safe for this target.',
+			confirmation: islandRouter.writeConfirmation,
+		}),
+	).rejects.toThrow('between 1 and 65535')
+	await expect(
+		islandRouter.runCommand({
+			commandId: 'interface ip autoconfig',
+			params: { interfaceName: 'en0', mode: 'wan;reload' },
+			reason:
+				'The operator verified this interface mode change is required and safe.',
+			confirmation: islandRouter.writeConfirmation,
+		}),
+	).rejects.toThrow('must be one of')
 })
 
-test('island router read command substrate rejects incomplete SSH configuration', async () => {
+test('island router command substrate rejects incomplete SSH configuration', async () => {
 	using _env = withTemporaryEnv({})
 	createConfig()
 	process.env.ISLAND_ROUTER_HOST = ''
@@ -409,13 +556,13 @@ test('island router read command substrate rejects incomplete SSH configuration'
 	})
 
 	await expect(
-		islandRouter.runReadCommand({
-			command: 'show ip neighbors',
+		islandRouter.runCommand({
+			commandId: 'show ip neighbors',
 		}),
 	).rejects.toThrow('Island router SSH diagnostics are not configured')
 })
 
-test('island router guarded write operations require verification and exact acknowledgement', async () => {
+test('island router write commands require verification, reason, and exact confirmation', async () => {
 	using _env = withTemporaryEnv({})
 	const islandRouter = createIslandRouterAdapter({
 		config: createConfig(),
@@ -424,23 +571,22 @@ test('island router guarded write operations require verification and exact ackn
 	const reason =
 		'The operator verified this specific router mutation is required for recovery right now.'
 
-	for (const operation of [
-		'renew dhcp clients',
-		'clear log buffer',
-		'save running config',
+	for (const commandId of [
+		'clear dhcp-client',
+		'clear log',
+		'write memory',
 	] as const) {
-		const result = await islandRouter.runWriteOperation({
-			operation,
-			acknowledgeHighRisk: true,
+		const result = await islandRouter.runCommand({
+			commandId,
 			reason,
-			confirmation: islandRouter.writeAcknowledgements.runWriteOperation,
+			confirmation: islandRouter.writeConfirmation,
 		})
 		expect(result.catalogEntry).toMatchObject({
-			operation,
-			riskLevel: 'high',
+			id: commandId,
 			blastRadius: expect.any(String),
 		})
-		expect(result.commandLines).toContain(result.catalogEntry.command)
+		expect(result.catalogEntry.access).toBe('write')
+		expect(result.commandLines).toContain(result.catalogEntry.cliTemplate)
 	}
 
 	createConfig()
@@ -450,11 +596,10 @@ test('island router guarded write operations require verification and exact ackn
 		commandRunner: createFakeRunner(),
 	})
 	await expect(
-		unverifiedRouter.runWriteOperation({
-			operation: 'renew dhcp clients',
-			acknowledgeHighRisk: true,
+		unverifiedRouter.runCommand({
+			commandId: 'clear dhcp-client',
 			reason,
-			confirmation: unverifiedRouter.writeAcknowledgements.runWriteOperation,
+			confirmation: unverifiedRouter.writeConfirmation,
 		}),
 	).rejects.toThrow('SSH host verification')
 
@@ -463,29 +608,97 @@ test('island router guarded write operations require verification and exact ackn
 		commandRunner: createFakeRunner(),
 	})
 	await expect(
-		verifiedRouter.runWriteOperation({
-			operation: 'save running config',
-			acknowledgeHighRisk: false,
+		verifiedRouter.runCommand({
+			commandId: 'write memory',
 			reason,
-			confirmation: verifiedRouter.writeAcknowledgements.runWriteOperation,
+			confirmation: undefined,
 		}),
-	).rejects.toThrow('acknowledgeHighRisk=true')
+	).rejects.toThrow('exact confirmation')
 	await expect(
-		verifiedRouter.runWriteOperation({
-			operation: 'save running config',
-			acknowledgeHighRisk: true,
-			reason: 'too short',
-			confirmation: verifiedRouter.writeAcknowledgements.runWriteOperation,
-		}),
-	).rejects.toThrow('specific operator reason')
-	await expect(
-		verifiedRouter.runWriteOperation({
-			operation: 'save running config',
-			acknowledgeHighRisk: true,
+		verifiedRouter.runCommand({
+			commandId: 'write memory',
 			reason,
 			confirmation: 'wrong',
 		}),
-	).rejects.toThrow('exact acknowledgement')
+	).rejects.toThrow('exact confirmation')
+	await expect(
+		verifiedRouter.runCommand({
+			commandId: 'write memory',
+			reason: 'too short',
+			confirmation: verifiedRouter.writeConfirmation,
+		}),
+	).rejects.toThrow('specific operator reason')
+})
+
+test('island router write command rendering uses catalog contexts without automatic write memory', async () => {
+	using _env = withTemporaryEnv({})
+	const recordedRequests: Array<IslandRouterCommandRequest> = []
+	const islandRouter = createIslandRouterAdapter({
+		config: createConfig(),
+		commandRunner: async (request) => {
+			recordedRequests.push(request)
+			return await createFakeRunner()(request)
+		},
+	})
+	const reason =
+		'The operator verified this exact catalog command and parameters are required.'
+
+	const dhcpReservation = await islandRouter.runCommand({
+		commandId: 'ip dhcp-reserve',
+		params: {
+			ipAddress: '192.168.0.52',
+			macAddress: '00-11-22-33-44-55',
+		},
+		reason,
+		confirmation: islandRouter.writeConfirmation,
+	})
+	expect(dhcpReservation.commandLines).toEqual([
+		'terminal length 0',
+		'configure terminal',
+		'ip dhcp-reserve 192.168.0.52 00:11:22:33:44:55',
+		'end',
+	])
+	expect(dhcpReservation.params).toEqual({
+		ipAddress: '192.168.0.52',
+		macAddress: '00:11:22:33:44:55',
+	})
+	expect(dhcpReservation.catalogEntry.persistence.requiresWriteMemory).toBe(true)
+	expect(dhcpReservation.commandLines).not.toContain('write memory')
+
+	const interfaceDescription = await islandRouter.runCommand({
+		commandId: 'interface description',
+		params: {
+			interfaceName: 'en0',
+			description: 'LAN uplink',
+		},
+		reason,
+		confirmation: islandRouter.writeConfirmation,
+	})
+	expect(interfaceDescription.commandLines).toEqual([
+		'terminal length 0',
+		'configure terminal',
+		'interface en0',
+		'description "LAN uplink"',
+		'end',
+	])
+
+	const portForward = await islandRouter.runCommand({
+		commandId: 'ip port-forward',
+		params: {
+			protocol: 'tcp',
+			publicPort: '8443',
+			target: 'island',
+			destinationPort: '443',
+		},
+		reason,
+		confirmation: islandRouter.writeConfirmation,
+	})
+	expect(portForward.commandLines).toContain(
+		'ip port-forward tcp 8443 island 443',
+	)
+	expect(recordedRequests.map((request) => request.id)).not.toContain(
+		'renew-dhcp-clients' as never,
+	)
 })
 
 test('parsers handle documented Island command output shapes used by status and packages', () => {

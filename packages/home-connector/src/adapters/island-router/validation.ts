@@ -128,13 +128,13 @@ export function getIslandRouterConfigStatus(
 		writeWarnings: [
 			...(verificationMode === 'none'
 				? [
-						'Island router write operations require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',
+						'Island router write-risk commands require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',
 					]
 				: []),
 			...(verificationConfigValid
 				? []
 				: [
-						'Island router write operations remain unavailable until SSH host verification is configured correctly.',
+						'Island router write-risk commands remain unavailable until SSH host verification is configured correctly.',
 					]),
 		],
 	}
@@ -166,13 +166,13 @@ export function assertIslandRouterWriteConfigured(config: HomeConnectorConfig) {
 	const status = assertIslandRouterConfigured(config)
 	if (status.verificationMode === 'none') {
 		throw new Error(
-			'Island router write operations require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',
+			'Island router write-risk commands require SSH host verification. Set ISLAND_ROUTER_KNOWN_HOSTS_PATH or ISLAND_ROUTER_HOST_FINGERPRINT before using them.',
 		)
 	}
 	if (!status.writeCapabilitiesAvailable) {
 		const details = status.writeWarnings.filter(Boolean).join(' ')
 		throw new Error(
-			`Island router write operations are unavailable. ${details}`.trim(),
+			`Island router write-risk commands are unavailable. ${details}`.trim(),
 		)
 	}
 	return status

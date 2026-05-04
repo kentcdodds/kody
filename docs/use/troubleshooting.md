@@ -34,25 +34,25 @@ If Island router diagnostics tools are missing or return configuration errors,
 verify that the home connector runtime has `ISLAND_ROUTER_HOST`,
 `ISLAND_ROUTER_USERNAME`, and `ISLAND_ROUTER_PRIVATE_KEY_PATH` set, and prefer
 either `ISLAND_ROUTER_KNOWN_HOSTS_PATH` or `ISLAND_ROUTER_HOST_FINGERPRINT` for
-host verification. The connector never exposes arbitrary router command
-execution. It exposes router status, one read-only command substrate with exact
-Island CLI command strings, and one high-risk write-operation substrate. Write
-operations require SSH host verification, explicit risk acknowledgement, and an
-exact confirmation phrase because mistakes can have severe consequences.
+host verification. The connector exposes `router_get_status` and
+`router_run_command`. It never accepts arbitrary router CLI text; every command
+must be selected from the connector's typed catalog, and every parameter is
+validated before rendering.
 
-The read command substrate accepts only this documented command catalog:
+The command catalog includes read entries such as:
 
-- `show ip neighbors`
-- `show ip sockets` (router local/control-plane sockets, not LAN client sessions)
-- `show stats`
-- `show interface <iface>`
-- `show ip interface <iface>`
-- `show log` with optional Kody-side filtering/line limiting
-- `show running-config`
-- `show running-config differences`
-- `show ip dhcp`
-- `show ip routes`
-- `show ip recommendations`
+- `show version`, `show clock`, `show hardware`
+- `show interface summary`, `show interface`, `show interface transceivers`
+- `show ip interface`, `show ip neighbors`, `show ip sockets`
+- `show ip dhcp-reservations`, `show ip routes`, `show ip recommendations`
+- `show log` and `show syslog` with optional Kody-side filtering/line limiting
+- `show running-config`, `show running-config differences`, `show startup-config`
+- `show ntp`, `show users`, `show vpns`, `show stats`, and `ping`
+
+Write-risk catalog entries require SSH host verification, a specific operator
+reason, and the exact connector confirmation phrase. Commands that change
+running config do not automatically run `write memory`; the catalog metadata
+states when persistence needs a separate explicit `write memory` command.
 
 If a router command returns Island help, usage, or unknown-command output, the
 connector treats that as unsupported or inconclusive output instead of trying to

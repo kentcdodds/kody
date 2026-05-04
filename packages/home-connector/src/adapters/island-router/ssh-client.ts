@@ -12,6 +12,7 @@ import {
 	type IslandRouterCommandRequest,
 	type IslandRouterCommandResult,
 } from './types.ts'
+import { renderIslandRouterCommand } from './command-catalog.ts'
 
 type LocalCommandResult = {
 	stdout: string
@@ -236,64 +237,11 @@ function createSshArgs(
 	]
 }
 
-function assertSingleCliLine(value: string, field: string) {
-	const trimmed = value.trim()
-	if (trimmed.length === 0) {
-		throw new Error(`${field} must not be empty.`)
-	}
-	if (/[\u0000-\u001f\u007f]/u.test(trimmed)) {
-		throw new Error(`${field} must not contain control characters.`)
-	}
-	return trimmed
-}
-
 function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
-	switch (request.id) {
-		case 'show-version':
-			return ['show version']
-		case 'show-clock':
-			return ['show clock']
-		case 'show-stats':
-			return ['show stats']
-		case 'show-running-config':
-			return ['show running-config']
-		case 'show-running-config-differences':
-			return ['show running-config differences']
-		case 'show-interface-summary':
-			return ['show interface summary']
-		case 'show-interface':
-			return [
-				`show interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
-			]
-		case 'show-ip-interface':
-			return [
-				`show ip interface ${assertSingleCliLine(request.interfaceName, 'interfaceName')}`,
-			]
-		case 'show-ip-routes':
-			return ['show ip routes']
-		case 'show-ip-neighbors':
-			return ['show ip neighbors']
-		case 'show-ip-sockets':
-			return ['show ip sockets']
-		case 'show-log':
-			return ['show log']
-		case 'show-ip-dhcp':
-			return ['show ip dhcp']
-		case 'show-ip-recommendations':
-			return ['show ip recommendations']
-		case 'clear-dhcp-client':
-			return ['clear dhcp-client']
-		case 'clear-log':
-			return ['clear log']
-		case 'write-memory':
-			return ['write memory']
-		default: {
-			const _exhaustive: never = request
-			throw new Error(
-				`Unhandled Island router command request: ${String(_exhaustive)}`,
-			)
-		}
-	}
+	return renderIslandRouterCommand({
+		id: request.id,
+		params: request.params,
+	}).commandLines
 }
 
 function writeCommandLines(child: ChildProcess, commandLines: Array<string>) {

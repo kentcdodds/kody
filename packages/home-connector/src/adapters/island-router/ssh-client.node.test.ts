@@ -57,7 +57,7 @@ test('ssh runner explicitly disables host verification when no known-host or fin
 	try {
 		const runner = createIslandRouterSshCommandRunner(config)
 		await runner({
-			id: 'show-version',
+			id: 'show version',
 			timeoutMs: 1000,
 		})
 		const args = await readFile(argsPath, 'utf8')
@@ -105,7 +105,7 @@ test('ssh runner treats completed Island CLI sessions with exit code 1 as succes
 	try {
 		const runner = createIslandRouterSshCommandRunner(config)
 		const result = await runner({
-			id: 'show-version',
+			id: 'show version',
 			timeoutMs: 1000,
 		})
 		expect(result.exitCode).toBe(0)
@@ -145,7 +145,7 @@ test('ssh runner keeps genuine exit-code-1 failures detectable', async () => {
 	try {
 		const runner = createIslandRouterSshCommandRunner(config)
 		const result = await runner({
-			id: 'show-version',
+			id: 'show version',
 			timeoutMs: 1000,
 		})
 		expect(result.exitCode).toBe(1)
