@@ -150,10 +150,10 @@ function renderAccessNetworksUnleashedStatusPage(input: {
 					<p class="muted">
 						Scan for controllers, review adoption and auth readiness, and
 						inspect the latest discovery probe diagnostics. Live device state is
-						no longer fetched from this page; use the saved
-						<code>@kentcdodds/unleashed-wifi</code> Kody package, which wraps
-						the generic
-						<code>access_networks_unleashed_request</code> capability.
+						no longer fetched from this page; the connector now exposes a single
+						generic
+						<code>access_networks_unleashed_request</code> capability that
+						higher-level callers can wrap as needed.
 					</p>
 					<p>
 						<a href="${routes.accessNetworksUnleashedSetup.pattern}"

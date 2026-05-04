@@ -216,10 +216,11 @@ otherwise disrupt local connectivity. Each call requires:
 - an operator reason of at least 20 characters
 - the exact confirmation phrase rejected for any other value
 
-Higher-level Unleashed flows (list APs, list clients, edit WLANs, block
-clients, restart APs, etc.) live in the saved Kody package
-[`@kentcdodds/unleashed-wifi`](../../../packages/unleashed-wifi/README.md),
-which wraps `home_access_networks_unleashed_request` through `kody:runtime`.
+Higher-level Unleashed flows (list APs, list clients, edit WLANs, block clients,
+restart APs, etc.) are intended to live in saved Kody packages that wrap
+`home_access_networks_unleashed_request` through `kody:runtime`. The home
+connector itself does not expose any typed Unleashed CLI or per-operation
+capabilities.
 
 ## Local persistence
 
