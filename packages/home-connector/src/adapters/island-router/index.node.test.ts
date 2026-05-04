@@ -579,26 +579,6 @@ function createFakeRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
-			case 'show-ip-top':
-				return {
-					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.limit === undefined
-							? 'show ip top'
-							: `show ip top ${request.limit}`,
-					],
-					stdout: [
-						'IP Address    Bytes In  Bytes Out',
-						'------------  --------  ---------',
-						'192.168.0.52  1200000   2400000',
-					].join('\n'),
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
 			case 'show-ip-host':
 				return {
 					id: request.id,
@@ -607,22 +587,6 @@ function createFakeRunner() {
 						`show ip host ${request.host}`,
 					],
 					stdout: `Host stats for ${request.host}: rx=120 tx=240`,
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
-			case 'show-ip-sessions':
-				return {
-					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.host === undefined
-							? 'show ip sessions'
-							: `show ip sessions ${request.host}`,
-					],
-					stdout: 'Protocol  Source              Destination',
 					stderr: '',
 					exitCode: 0,
 					signal: null,
@@ -661,38 +625,11 @@ function createFakeRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
-			case 'show-ip-arp':
-				return {
-					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.host === undefined
-							? 'show ip arp'
-							: `show ip arp ${request.host}`,
-					],
-					stdout: 'ARP table contents',
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
 			case 'show-ip-counters':
 				return {
 					id: request.id,
 					commandLines: ['terminal length 0', 'show ip counters'],
 					stdout: 'Interface counters',
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
-			case 'show-ip-dns-stats':
-				return {
-					id: request.id,
-					commandLines: ['terminal length 0', 'show ip dns'],
-					stdout: 'DNS stats and cache',
 					stderr: '',
 					exitCode: 0,
 					signal: null,
@@ -1390,27 +1327,6 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 	}> = [
 		{
 			input: {
-				command: 'show-ip-top',
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show ip top',
-			expectedCommandId: 'show-ip-top',
-		},
-		{
-			input: {
-				command: 'show-ip-top',
-				limit: 5,
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show ip top 5',
-			expectedCommandId: 'show-ip-top',
-		},
-		{
-			input: {
 				command: 'show-ip-host',
 				host: '192.168.0.52',
 				acknowledgeHighRisk: true,
@@ -1419,27 +1335,6 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 			},
 			expectedCommandLine: 'show ip host 192.168.0.52',
 			expectedCommandId: 'show-ip-host',
-		},
-		{
-			input: {
-				command: 'show-ip-sessions',
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show ip sessions',
-			expectedCommandId: 'show-ip-sessions',
-		},
-		{
-			input: {
-				command: 'show-ip-sessions',
-				host: '192.168.0.52',
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show ip sessions 192.168.0.52',
-			expectedCommandId: 'show-ip-sessions',
 		},
 		{
 			input: {
@@ -1485,35 +1380,14 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		},
 		{
 			input: {
-				command: 'show-ip-arp',
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show ip arp',
-			expectedCommandId: 'show-ip-arp',
-		},
-		{
-			input: {
-				command: 'show-ip-arp',
-				host: '00:11:22:33:44:55',
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show ip arp 00:11:22:33:44:55',
-			expectedCommandId: 'show-ip-arp',
-		},
-		{
-			input: {
-				command: 'show-ip-arp',
+				command: 'show-ip-dhcp',
 				host: '00-11-22-33-44-55',
 				acknowledgeHighRisk: true,
 				reason,
 				confirmation: acknowledgement,
 			},
-			expectedCommandLine: 'show ip arp 00:11:22:33:44:55',
-			expectedCommandId: 'show-ip-arp',
+			expectedCommandLine: 'show ip dhcp 00:11:22:33:44:55',
+			expectedCommandId: 'show-ip-dhcp',
 		},
 		{
 			input: {
@@ -1546,16 +1420,6 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 			expectedCommandLine: 'show log 25',
 			expectedCommandId: 'show-log-recent',
 		},
-		{
-			input: {
-				command: 'show-ip-dns-stats',
-				acknowledgeHighRisk: true,
-				reason,
-				confirmation: acknowledgement,
-			},
-			expectedCommandLine: 'show ip dns',
-			expectedCommandId: 'show-ip-dns-stats',
-		},
 	]
 
 	for (const { input, expectedCommandLine, expectedCommandId } of cases) {
@@ -1585,15 +1449,6 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 			confirmation: acknowledgement,
 		}),
 	).rejects.toThrow('Host must be')
-	await expect(
-		islandRouter.runAllowlistedCliCommand({
-			command: 'show-ip-top',
-			limit: -1,
-			acknowledgeHighRisk: true,
-			reason,
-			confirmation: acknowledgement,
-		}),
-	).rejects.toThrow('positive integer')
 	await expect(
 		islandRouter.runAllowlistedCliCommand({
 			command: 'show-log-recent',
@@ -1968,14 +1823,10 @@ test('island router adapter accepts real CLI transcripts that exit with code 1',
 					durationMs: 10,
 				}
 			case 'show-log-recent':
-			case 'show-ip-top':
 			case 'show-ip-host':
-			case 'show-ip-sessions':
 			case 'show-ip-nat-translations':
 			case 'show-ip-dhcp':
-			case 'show-ip-arp':
 			case 'show-ip-counters':
-			case 'show-ip-dns-stats':
 				return {
 					id: request.id,
 					commandLines: ['terminal length 0', 'show ip stub'],

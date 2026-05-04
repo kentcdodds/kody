@@ -113,7 +113,6 @@ type RunAllowlistedCliCommandRequest = WriteOperationRequest & {
 	command: IslandRouterAllowlistedCliCommand
 	interfaceName?: string
 	host?: string
-	limit?: number
 	lineCount?: number
 }
 
@@ -1076,25 +1075,10 @@ export function createIslandRouterAdapter(input: {
 						),
 					}
 					break
-				case 'show-ip-top':
-					commandRequest = {
-						id: 'show-ip-top',
-						limit:
-							request.limit === undefined
-								? undefined
-								: requirePositiveInteger('limit', request.limit),
-					}
-					break
 				case 'show-ip-host':
 					commandRequest = {
 						id: 'show-ip-host',
 						host: requireHost('host'),
-					}
-					break
-				case 'show-ip-sessions':
-					commandRequest = {
-						id: 'show-ip-sessions',
-						host: request.host === undefined ? undefined : requireHost('host'),
 					}
 					break
 				case 'show-ip-nat':
@@ -1109,12 +1093,6 @@ export function createIslandRouterAdapter(input: {
 						host: request.host === undefined ? undefined : requireHost('host'),
 					}
 					break
-				case 'show-ip-arp':
-					commandRequest = {
-						id: 'show-ip-arp',
-						host: request.host === undefined ? undefined : requireHost('host'),
-					}
-					break
 				case 'show-ip-counters':
 					commandRequest = { id: 'show-ip-counters' }
 					break
@@ -1126,9 +1104,6 @@ export function createIslandRouterAdapter(input: {
 								? undefined
 								: requirePositiveInteger('lineCount', request.lineCount),
 					}
-					break
-				case 'show-ip-dns-stats':
-					commandRequest = { id: 'show-ip-dns-stats' }
 					break
 				default: {
 					const _exhaustive: never = request.command
@@ -1180,15 +1155,11 @@ export function createIslandRouterAdapter(input: {
 						result.commandLines,
 					)
 					break
-				case 'show-ip-top':
 				case 'show-ip-host':
-				case 'show-ip-sessions':
 				case 'show-ip-nat':
 				case 'show-ip-dhcp':
-				case 'show-ip-arp':
 				case 'show-ip-counters':
 				case 'show-log-recent':
-				case 'show-ip-dns-stats':
 					parsedResult = parseIslandRouterRawOutput(
 						result.stdout,
 						result.commandLines,

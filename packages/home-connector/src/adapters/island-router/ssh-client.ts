@@ -378,26 +378,8 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 							'lineCount',
 						)}`,
 					]
-		case 'show-ip-top':
-			return request.limit === undefined
-				? ['show ip top']
-				: [
-						`show ip top ${assertPositiveIntegerCliArgument(
-							request.limit,
-							'limit',
-						)}`,
-					]
 		case 'show-ip-host':
 			return [`show ip host ${assertHostCliArgument(request.host, 'host')}`]
-		case 'show-ip-sessions':
-			return request.host === undefined
-				? ['show ip sessions']
-				: [
-						`show ip sessions ${assertHostCliArgument(
-							request.host,
-							'host',
-						)}`,
-					]
 		case 'show-ip-nat-translations':
 			return request.host === undefined
 				? ['show ip nat']
@@ -410,16 +392,8 @@ function getCommandLines(request: IslandRouterCommandRequest): Array<string> {
 				: [
 						`show ip dhcp ${assertHostCliArgument(request.host, 'host')}`,
 					]
-		case 'show-ip-arp':
-			return request.host === undefined
-				? ['show ip arp']
-				: [
-						`show ip arp ${assertHostCliArgument(request.host, 'host')}`,
-					]
 		case 'show-ip-counters':
 			return ['show ip counters']
-		case 'show-ip-dns-stats':
-			return ['show ip dns']
 		case 'ping':
 			return [`ping ${assertSingleCliLine(request.host, 'host')}`]
 		case 'force-wan-failover':
