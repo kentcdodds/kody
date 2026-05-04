@@ -894,15 +894,11 @@ export function registerIslandRouterHomeConnectorTools(input: {
 				'show-interface-summary',
 				'show-interface',
 				'show-ip-interface',
-				'show-ip-top',
 				'show-ip-host',
-				'show-ip-sessions',
 				'show-ip-nat',
 				'show-ip-dhcp',
-				'show-ip-arp',
 				'show-ip-counters',
 				'show-log-recent',
-				'show-ip-dns-stats',
 			])
 			.describe(
 				'Allowlisted read-only Island router CLI command alias. No arbitrary CLI execution is allowed.',
@@ -919,16 +915,7 @@ export function registerIslandRouterHomeConnectorTools(input: {
 			.min(1)
 			.optional()
 			.describe(
-				'Optional IPv4, IPv6, MAC, or hostname. Required for show-ip-host. Optional filter for show-ip-sessions, show-ip-nat, show-ip-dhcp, and show-ip-arp.',
-			),
-		limit: z
-			.number()
-			.int()
-			.min(1)
-			.max(1000)
-			.optional()
-			.describe(
-				'Optional positive integer limit for show-ip-top to cap the number of returned hosts.',
+				'Optional IPv4, IPv6, MAC, or hostname. Required for show-ip-host. Optional filter for show-ip-nat and show-ip-dhcp.',
 			),
 		lineCount: z
 			.number()
@@ -984,7 +971,6 @@ export function registerIslandRouterHomeConnectorTools(input: {
 						? undefined
 						: String(args['interfaceName']),
 				host: args['host'] == null ? undefined : String(args['host']),
-				limit: args['limit'] == null ? undefined : Number(args['limit']),
 				lineCount:
 					args['lineCount'] == null ? undefined : Number(args['lineCount']),
 				acknowledgeHighRisk: args['acknowledgeHighRisk'] === true,

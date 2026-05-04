@@ -64,14 +64,10 @@ export type IslandRouterCommandId =
 	| 'show-snmp'
 	| 'show-log'
 	| 'show-log-recent'
-	| 'show-ip-top'
 	| 'show-ip-host'
-	| 'show-ip-sessions'
 	| 'show-ip-nat-translations'
 	| 'show-ip-dhcp'
-	| 'show-ip-arp'
 	| 'show-ip-counters'
-	| 'show-ip-dns-stats'
 	| 'ping'
 	| 'force-wan-failover'
 	| 'set-dhcp-reservation'
@@ -263,18 +259,8 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
-			id: 'show-ip-top'
-			limit?: number
-			timeoutMs?: number
-	  }
-	| {
 			id: 'show-ip-host'
 			host: string
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-sessions'
-			host?: string
 			timeoutMs?: number
 	  }
 	| {
@@ -288,16 +274,7 @@ export type IslandRouterCommandRequest =
 			timeoutMs?: number
 	  }
 	| {
-			id: 'show-ip-arp'
-			host?: string
-			timeoutMs?: number
-	  }
-	| {
 			id: 'show-ip-counters'
-			timeoutMs?: number
-	  }
-	| {
-			id: 'show-ip-dns-stats'
 			timeoutMs?: number
 	  }
 	| {
@@ -824,15 +801,11 @@ export type IslandRouterAllowlistedCliCommand =
 	| 'show-interface-summary'
 	| 'show-interface'
 	| 'show-ip-interface'
-	| 'show-ip-top'
 	| 'show-ip-host'
-	| 'show-ip-sessions'
 	| 'show-ip-nat'
 	| 'show-ip-dhcp'
-	| 'show-ip-arp'
 	| 'show-ip-counters'
 	| 'show-log-recent'
-	| 'show-ip-dns-stats'
 
 export type IslandRouterAllowlistedCliRawResult = {
 	rawOutput: string
@@ -847,15 +820,11 @@ export type IslandRouterAllowlistedCliCommandResult = {
 		| 'show-interface-summary'
 		| 'show-interface'
 		| 'show-ip-interface'
-		| 'show-ip-top'
 		| 'show-ip-host'
-		| 'show-ip-sessions'
 		| 'show-ip-nat-translations'
 		| 'show-ip-dhcp'
-		| 'show-ip-arp'
 		| 'show-ip-counters'
 		| 'show-log-recent'
-		| 'show-ip-dns-stats'
 	>
 	commandLines: Array<string>
 	result:

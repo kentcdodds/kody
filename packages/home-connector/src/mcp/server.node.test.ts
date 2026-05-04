@@ -499,22 +499,6 @@ function createIslandRouterRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
-			case 'show-ip-top':
-				return {
-					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.limit === undefined
-							? 'show ip top'
-							: `show ip top ${request.limit}`,
-					],
-					stdout: 'IP Address    Bytes In  Bytes Out',
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
 			case 'show-ip-host':
 				return {
 					id: request.id,
@@ -523,22 +507,6 @@ function createIslandRouterRunner() {
 						`show ip host ${request.host}`,
 					],
 					stdout: `Host stats for ${request.host}`,
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
-			case 'show-ip-sessions':
-				return {
-					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.host === undefined
-							? 'show ip sessions'
-							: `show ip sessions ${request.host}`,
-					],
-					stdout: 'Active sessions',
 					stderr: '',
 					exitCode: 0,
 					signal: null,
@@ -577,38 +545,11 @@ function createIslandRouterRunner() {
 					timedOut: false,
 					durationMs: 10,
 				}
-			case 'show-ip-arp':
-				return {
-					id: request.id,
-					commandLines: [
-						'terminal length 0',
-						request.host === undefined
-							? 'show ip arp'
-							: `show ip arp ${request.host}`,
-					],
-					stdout: 'ARP table',
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
 			case 'show-ip-counters':
 				return {
 					id: request.id,
 					commandLines: ['terminal length 0', 'show ip counters'],
 					stdout: 'IP counters',
-					stderr: '',
-					exitCode: 0,
-					signal: null,
-					timedOut: false,
-					durationMs: 10,
-				}
-			case 'show-ip-dns-stats':
-				return {
-					id: request.id,
-					commandLines: ['terminal length 0', 'show ip dns'],
-					stdout: 'DNS stats',
 					stderr: '',
 					exitCode: 0,
 					signal: null,
