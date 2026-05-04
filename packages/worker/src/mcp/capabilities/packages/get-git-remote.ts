@@ -4,8 +4,8 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
-	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
+	parseArtifactTokenSecret,
 	resolveArtifactSourceRepo,
 } from '#worker/repo/artifacts.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
@@ -76,8 +76,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 				throw new Error('Artifact repo remote URL is unavailable.')
 			}
 			const token = await repo.createToken(args.scope, args.ttl_seconds)
-			const gitAuth = buildArtifactsGitAuth({ token: token.plaintext })
-			const gitExtraHeader = `Authorization: Bearer ${gitAuth.password}`
+			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = source.entity_id
 			return {
 				remote: info.remote,

@@ -239,7 +239,6 @@ function createArtifactsRestBinding(env: Env) {
 			await requestArtifactsEnvelope(client, {
 				method: 'DELETE',
 				path: `${basePath}/tokens/${encodeURIComponent(idOrPlaintext)}`,
-				treat404AsNull: true,
 			})
 		},
 		fork: async (target) => {
