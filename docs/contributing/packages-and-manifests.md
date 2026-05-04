@@ -188,15 +188,42 @@ Retriever implementations should truncate or paginate before returning.
 
 ## Repo-backed workflow
 
-Package source is edited and published through the repo session capabilities.
+Package source is edited and published through repo-backed flows.
 
 - prefer `repo_run_commands` for package changes
 - `repo_run_commands` accepts a newline-separated parsed git-command string, not
   arbitrary shell; keep agent-facing guidance aligned with the deployed
   capability schema
+- use `package_get_git_remote` and `package_publish_external_push` when a human
+  or autonomous agent should drive a normal git client directly against the
+  package's Cloudflare Artifacts repo
 - open repo sessions by package identity when possible
 - for an existing package, treat the repo snapshot as the durable source of
   truth
+
+## External Artifacts pushes
+
+Saved package source repos are real Cloudflare Artifacts git repositories.
+`package_get_git_remote` mints a short-lived read or write token for the
+canonical source repo and returns both a plain remote URL and setup commands
+that use `http.extraHeader` for secret-bearing credentials.
+
+After a direct `git push`, `package_publish_external_push` resolves the
+package's default-branch HEAD, opens a transient repo session checkout at that
+commit, and uses `publishFromExternalRef` to run the same package checks before
+advancing `entity_sources.published_commit`. Check failures return the failed
+checks and do not mutate D1, KV snapshots, published bundle artifacts, package
+projections, or vectors. Non-fast-forward external heads are refused unless the
+caller passes `allow_force: true`.
+
+The scheduled reconcile job in
+`packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
+pushed-but-unpublished commits. Every five minutes it scans a small batch of
+stale `entity_sources` rows, compares Artifacts HEAD with `published_commit`,
+and calls the same external publish path when they differ.
+`entity_sources.last_external_check_at` throttles the scan. At 03:00 UTC the job
+also asks each checked repo to revoke expired Artifacts tokens through
+`revokeStaleArtifactsTokens`.
 
 ## Search and discovery
 

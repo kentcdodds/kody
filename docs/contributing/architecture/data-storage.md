@@ -111,6 +111,50 @@ Operational notes:
   arbitrary shell syntax, and package runtime bundles are loaded from published
   artifacts rather than a mounted checkout.
 
+### Direct Artifacts git publishes
+
+Saved package source can also be edited through Artifacts git remotes directly.
+`package_get_git_remote` resolves package identity to `entity_sources`, mints a
+short-lived Artifacts repo token, and returns both a plain remote and setup
+commands that pass the token through `http.extraHeader`.
+
+After an external `git push`, `package_publish_external_push` reconciles the
+current Artifacts default-branch HEAD with `entity_sources.published_commit`.
+The RepoSession Durable Object clones that commit, checks that it is a
+fast-forward unless `allow_force` is set, runs `runRepoChecks(...)`, and then
+calls `publishFromExternalRef(...)`.
+
+`publishFromExternalRef(...)` owns the post-receive publish transaction:
+
+- run manifest, dependency, bundle, typecheck, and lint checks before mutation
+- advance `entity_sources.published_commit`
+- write the `PublishedSourceSnapshot` and manifest snapshot to
+  `BUNDLE_ARTIFACTS_KV`
+- roll the D1 commit pointer back if KV snapshot persistence fails
+- rebuild saved package projections, bundle artifacts, vector search entries,
+  retriever manifests, package jobs, and services through
+  `refreshSavedPackageProjection(...)`
+
+The same helper is used by the existing repo-session publish path after it has
+pushed the session commit to the source Artifacts repo.
+
+### Reconcile cron
+
+`packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
+external pushes that were not followed by an explicit
+`package_publish_external_push` call. The Worker scheduled handler runs every
+five minutes (`wrangler.jsonc` `*/5 * * * *`), selects a small batch of stale
+`entity_sources` rows by `last_external_check_at`, resolves the Artifacts
+default-branch HEAD, and calls the same external publish path when HEAD differs
+from `published_commit`.
+
+The reconcile loop is idempotent: if another caller publishes the same commit
+first, the publish path returns `already_published`. Check failures and
+non-fast-forward results leave D1/KV untouched and are counted in the one-line
+metrics log. Once per day during the 03:00 UTC cron window, reconcile also calls
+`revokeStaleArtifactsTokens(...)` for checked repos to clean up expired
+Artifacts tokens.
+
 Production note:
 
 - Released `wrangler` `4.83.0` warns that the documented Artifacts Worker
