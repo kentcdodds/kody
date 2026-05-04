@@ -372,6 +372,25 @@ test('get syslog extracts text from xmsg/res body', async () => {
 	expect(syslog).toContain('line2')
 })
 
+test('list blocked clients returns empty when no ACL list is present', async () => {
+	const config = createConfig()
+	installFetch(loginHandler(), (href, init) => {
+		if (href.endsWith('/_conf.jsp')) {
+			const body = String(init?.body ?? '')
+			if (body.includes("comp='acl-list'")) {
+				return response('<ajax-response><acl-list/></ajax-response>')
+			}
+		}
+		return null
+	})
+
+	const blocked = await createAccessNetworksUnleashedAjaxClient({
+		config,
+		controller: createController(),
+	}).listBlockedClients()
+	expect(blocked).toEqual([])
+})
+
 test('list blocked clients ignores ACLs whose id is not 1', async () => {
 	const config = createConfig()
 	installFetch(loginHandler(), (href, init) => {
