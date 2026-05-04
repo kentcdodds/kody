@@ -107,7 +107,7 @@ export async function publishFromExternalRef(input: {
 	sourceId: string
 	userId: string
 	newCommit: string
-	isFastForward: boolean
+	isFastForward(input: { previousCommit: string }): Promise<boolean>
 	allowForce?: boolean
 	workspace: RepoPublishWorkspace
 	files: Record<string, string>
@@ -126,7 +126,13 @@ export async function publishFromExternalRef(input: {
 			published_commit: source.published_commit,
 		}
 	}
-	if (source.published_commit && !input.allowForce && !input.isFastForward) {
+	if (
+		source.published_commit &&
+		!input.allowForce &&
+		!(await input.isFastForward({
+			previousCommit: source.published_commit,
+		}))
+	) {
 		return {
 			status: 'not_fast_forward',
 			previous_commit: source.published_commit,

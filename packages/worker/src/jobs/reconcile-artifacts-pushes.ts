@@ -115,11 +115,22 @@ export async function reconcileArtifactsPushes(input: {
 				repoId: source.repo_id,
 				error: error instanceof Error ? error.message : String(error),
 			})
-			await updateEntitySource(input.env.APP_DB, {
-				id: source.id,
-				userId: source.user_id,
-				lastExternalCheckAt: now.toISOString(),
-			})
+			try {
+				await updateEntitySource(input.env.APP_DB, {
+					id: source.id,
+					userId: source.user_id,
+					lastExternalCheckAt: now.toISOString(),
+				})
+			} catch (updateError) {
+				console.warn('reconcile_artifacts_pushes cursor update failed', {
+					sourceId: source.id,
+					repoId: source.repo_id,
+					error:
+						updateError instanceof Error
+							? updateError.message
+							: String(updateError),
+				})
+			}
 		}
 	}
 	console.info('reconcile_artifacts_pushes', result)

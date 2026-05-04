@@ -1460,18 +1460,16 @@ class RepoSessionBase extends DurableObject<Env> {
 			force: true,
 		})
 		const files = await this.collectWorkspaceFiles()
-		const isFastForward =
-			!source.published_commit ||
-			(await this.isAncestorCommit({
-				ancestor: source.published_commit,
-				descendant: input.newCommit,
-			}))
 		return publishExternalRefSource({
 			env: this.env,
 			sourceId: source.id,
 			userId: input.userId,
 			newCommit: input.newCommit,
-			isFastForward,
+			isFastForward: async ({ previousCommit }) =>
+				await this.isAncestorCommit({
+					ancestor: previousCommit,
+					descendant: input.newCommit,
+				}),
 			allowForce: input.allowForce,
 			workspace: this.workspace,
 			files,

@@ -90,7 +90,7 @@ test('does not fail publish when package projection refresh fails after commit a
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-new',
-		isFastForward: true,
+		isFastForward: async () => true,
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
@@ -122,7 +122,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-new',
-		isFastForward: true,
+		isFastForward: async () => true,
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
@@ -147,7 +147,7 @@ test('returns no-op when commit is already current', async () => {
 			sourceId: 'source-1',
 			userId: 'user-1',
 			newCommit: 'commit-old',
-			isFastForward: true,
+			isFastForward: async () => true,
 			workspace: workspace(),
 			files: {},
 			baseUrl: 'https://kody.test',
@@ -168,7 +168,7 @@ test('refuses non-fast-forward publish unless allowForce is true', async () => {
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-rewritten',
-		isFastForward: false,
+		isFastForward: async () => false,
 		workspace: workspace(),
 		files: {},
 		baseUrl: 'https://kody.test',
@@ -202,7 +202,7 @@ test('allows non-fast-forward publish when allowForce is true', async () => {
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-rewritten',
-		isFastForward: false,
+		isFastForward: async () => false,
 		allowForce: true,
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
@@ -226,6 +226,33 @@ test('allows non-fast-forward publish when allowForce is true', async () => {
 	)
 })
 
+test('rechecks fast-forward against the latest source row before publishing', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(
+		source({ published_commit: 'commit-concurrent' }),
+	)
+
+	const result = await publishFromExternalRef({
+		env: { APP_DB: {} } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+		isFastForward: async (previousCommit) => previousCommit === 'commit-old',
+		workspace: workspace(),
+		files: {},
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(result).toEqual({
+		status: 'not_fast_forward',
+		previous_commit: 'commit-concurrent',
+		published_commit: 'commit-new',
+		message:
+			'The external Artifacts HEAD is not a descendant of the current published commit. Retry with allow_force to publish it.',
+	})
+	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+})
+
 test('check failure leaves D1 untouched', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
@@ -246,7 +273,7 @@ test('check failure leaves D1 untouched', async () => {
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-new',
-		isFastForward: true,
+		isFastForward: async () => true,
 		workspace: workspace(),
 		files: {},
 		baseUrl: 'https://kody.test',
@@ -287,7 +314,7 @@ test('projection refresh failure does not fail an already-committed publish', as
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-new',
-		isFastForward: true,
+		isFastForward: async () => true,
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',

@@ -34,8 +34,8 @@ export async function insertEntitySource(
 		.prepare(
 			`INSERT INTO entity_sources (
 				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit,
-				manifest_path, source_root, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				manifest_path, source_root, last_external_check_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -47,6 +47,7 @@ export async function insertEntitySource(
 			row.indexed_commit,
 			row.manifest_path,
 			row.source_root,
+			row.last_external_check_at,
 			row.created_at,
 			row.updated_at,
 		)

@@ -137,6 +137,40 @@ test('records reconcile checks even when a source fails', async () => {
 	)
 })
 
+test('continues the batch when recording a failed source check also fails', async () => {
+	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([
+		source(),
+		source({
+			id: 'source-2',
+			repo_id: 'repo-2',
+			published_commit: 'commit-current',
+		}),
+	])
+	mockModule.resolveArtifactSourceHead
+		.mockRejectedValueOnce(new Error('boom'))
+		.mockResolvedValueOnce({ branch: 'main', commit: 'commit-current' })
+	mockModule.updateEntitySource
+		.mockRejectedValueOnce(new Error('d1 unavailable'))
+		.mockResolvedValueOnce(true)
+
+	const result = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+	})
+
+	expect(result).toEqual({
+		checked: 2,
+		published: 0,
+		alreadyPublished: 1,
+		checksFailed: 0,
+		notFastForward: 0,
+		errors: 1,
+		tokensRevoked: 0,
+	})
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(2)
+})
+
 test('runs token cleanup during the 03:00 UTC cron window', async () => {
 	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
