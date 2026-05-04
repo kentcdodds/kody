@@ -239,6 +239,7 @@ function createArtifactsRestBinding(env: Env) {
 			await requestArtifactsEnvelope(client, {
 				method: 'DELETE',
 				path: `${basePath}/tokens/${encodeURIComponent(idOrPlaintext)}`,
+				treat404AsNull: true,
 			})
 		},
 		fork: async (target) => {
@@ -635,23 +636,9 @@ export async function resolveSessionRepo(
 
 export async function resolveArtifactSourceHead(env: Env, repoId: string) {
 	const repo = await resolveArtifactSourceRepo(env, repoId)
-	const info = await repo.info()
-	if (!info?.remote) {
-		throw new Error('Artifact repo remote URL is unavailable.')
-	}
-	const token = await repo.createToken('read', 300)
-	const auth = buildArtifactsGitAuth({ token: token.plaintext })
-	const refs = await git.listServerRefs({
-		http,
-		url: info.remote,
-		prefix: `refs/heads/${info.defaultBranch}`,
-		onAuth: () => auth,
-	})
-	const ref = refs.find(
-		(entry) => entry.ref === `refs/heads/${info.defaultBranch}`,
-	)
+	const ref = await resolveArtifactDefaultBranchHead({ repo })
 	return {
-		branch: info.defaultBranch,
-		commit: ref?.oid ?? null,
+		branch: ref?.defaultBranch ?? 'main',
+		commit: ref?.commit ?? null,
 	}
 }

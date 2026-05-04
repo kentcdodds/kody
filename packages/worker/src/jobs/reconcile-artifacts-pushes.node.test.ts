@@ -87,8 +87,16 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://kody.test',
 		now: new Date('2026-05-04T02:00:00.000Z'),
+		staleAfterMinutes: 10,
 	})
 
+	expect(mockModule.listEntitySourcesForExternalReconcile).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			before: '2026-05-04T01:50:00.000Z',
+			limit: 50,
+		},
+	)
 	expect(result).toEqual({
 		checked: 2,
 		published: 1,
@@ -106,6 +114,27 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 		}),
 	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledTimes(2)
+})
+
+test('records reconcile checks even when a source fails', async () => {
+	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([source()])
+	mockModule.resolveArtifactSourceHead.mockRejectedValueOnce(new Error('boom'))
+
+	const result = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+	})
+
+	expect(result.errors).toBe(1)
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			id: 'source-1',
+			userId: 'user-1',
+			lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
+		},
+	)
 })
 
 test('runs token cleanup during the 03:00 UTC cron window', async () => {

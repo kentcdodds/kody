@@ -186,8 +186,11 @@ edit it with a normal git client without round-tripping each file change through
    # edit files
    git add .
    git commit -m "fix: update package behavior"
-   git -c http.extraHeader='Authorization: Bearer art_v1_...' push origin HEAD:main
+   git -c http.extraHeader='Authorization: Bearer art_v1_...' push origin HEAD:<defaultBranch>
    ```
+
+   Use the default branch returned by `package_get_git_remote` for
+   `<defaultBranch>`.
 
 3. Publish the pushed Artifacts HEAD:
 
@@ -198,11 +201,11 @@ edit it with a normal git client without round-tripping each file change through
    ```
 
    Call `package_publish_external_push`. Kody checks the pushed tree server-side
-   before advancing `entity_sources.published_commit`, writing the published
-   source snapshot, rebuilding package bundle artifacts, and refreshing search
+   before recording the new published version, writing the published source
+   snapshot, rebuilding package bundle artifacts, and refreshing search
    projections. If the pushed HEAD is already current, the tool returns
    `already_published`. If checks fail, it returns `checks_failed` with the
-   failed check entries and leaves D1/KV untouched.
+   failed check entries and leaves the underlying storage state unchanged.
 
 Choose the narrowest token scope that fits the task. Use `read` for inspection
 or local diffing, and `write` only when the git client needs to push. Keep TTLs

@@ -19,8 +19,8 @@ export type ReconcileArtifactsPushesResult = {
 const defaultBatchSize = 50
 const defaultStaleAfterMinutes = 5
 
-function minutesAgoIso(minutes: number) {
-	return new Date(Date.now() - minutes * 60_000).toISOString()
+function minutesAgoIso(now: Date, minutes: number) {
+	return new Date(now.getTime() - minutes * 60_000).toISOString()
 }
 
 function shouldRunDailyTokenCleanup(now: Date) {
@@ -39,6 +39,7 @@ export async function reconcileArtifactsPushes(input: {
 		input.env.APP_DB,
 		{
 			before: minutesAgoIso(
+				now,
 				input.staleAfterMinutes ?? defaultStaleAfterMinutes,
 			),
 			limit: input.batchSize ?? defaultBatchSize,
@@ -113,6 +114,11 @@ export async function reconcileArtifactsPushes(input: {
 				sourceId: source.id,
 				repoId: source.repo_id,
 				error: error instanceof Error ? error.message : String(error),
+			})
+			await updateEntitySource(input.env.APP_DB, {
+				id: source.id,
+				userId: source.user_id,
+				lastExternalCheckAt: now.toISOString(),
 			})
 		}
 	}

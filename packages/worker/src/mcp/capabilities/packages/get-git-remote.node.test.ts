@@ -115,6 +115,7 @@ test('returns a write remote token expiring within the requested ttl', async () 
 		'Authorization: Bearer art_v1_write_token',
 	)
 	expect(result.setup_commands[0]).toContain('-c http.extraHeader=')
+	expect(result.setup_commands[1]).toBe(`cd 'package-1'`)
 })
 
 test('rejects a package source owned by another user', async () => {

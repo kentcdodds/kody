@@ -1,3 +1,4 @@
+import { CloudflareApiError } from '#mcp/cloudflare/cloudflare-rest-client.ts'
 import { resolveArtifactSourceRepo } from './artifacts.ts'
 
 export async function revokeStaleArtifactsTokens(
@@ -20,7 +21,13 @@ export async function revokeStaleArtifactsTokens(
 		if (new Date(token.expiresAt) >= input.keepAfter) {
 			continue
 		}
-		await repo.revokeToken(token.id)
+		try {
+			await repo.revokeToken(token.id)
+		} catch (error) {
+			if (!(error instanceof CloudflareApiError && error.status === 404)) {
+				throw error
+			}
+		}
 		revoked += 1
 	}
 	return {

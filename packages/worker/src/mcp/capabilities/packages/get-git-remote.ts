@@ -41,7 +41,7 @@ const outputSchema = markSecretInputFields(
 			setup_commands: z.array(z.string()),
 		}),
 	) as Record<string, unknown>,
-	['authenticated_remote', 'git_extra_header'],
+	['authenticated_remote', 'git_extra_header', 'setup_commands'],
 ) as Record<string, unknown>
 
 function shellQuote(value: string) {
@@ -90,6 +90,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 				expires_at: token.expiresAt,
 				setup_commands: [
 					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(info.remote)} ${shellQuote(cloneDirectory)}`,
+					`cd ${shellQuote(cloneDirectory)}`,
 					`git remote add kody ${shellQuote(info.remote)}`,
 					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} push kody HEAD:${shellQuote(info.defaultBranch ?? 'main')}`,
 				],

@@ -70,13 +70,35 @@ export async function finalizePublishedEntitySource(
 		}
 	}
 	if (input.source.entity_kind === 'package') {
-		await refreshSavedPackageProjection({
-			env: input.env,
-			baseUrl: input.baseUrl ?? input.source.source_root,
-			userId: input.source.user_id,
-			packageId: input.source.entity_id,
-			sourceId: input.source.id,
-		})
+		try {
+			await refreshSavedPackageProjection({
+				env: input.env,
+				baseUrl: input.baseUrl ?? input.source.source_root,
+				userId: input.source.user_id,
+				packageId: input.source.entity_id,
+				sourceId: input.source.id,
+			})
+		} catch (projectionError) {
+			Sentry.captureException(projectionError, {
+				tags: {
+					scope: 'repo.publishFromExternalRef.refresh-package-projection',
+				},
+				extra: {
+					sourceId: input.source.id,
+					packageId: input.source.entity_id,
+					publishedCommit: input.publishedCommit,
+				},
+			})
+			console.warn('publish_from_external_ref projection refresh failed', {
+				sourceId: input.source.id,
+				packageId: input.source.entity_id,
+				publishedCommit: input.publishedCommit,
+				error:
+					projectionError instanceof Error
+						? projectionError.message
+						: String(projectionError),
+			})
+		}
 	}
 }
 

@@ -70,6 +70,41 @@ beforeEach(() => {
 	mockModule.refreshSavedPackageProjection.mockClear()
 })
 
+test('does not fail publish when package projection refresh fails after commit advance', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		manifest: {
+			name: '@scope/demo',
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'demo', description: 'Demo' },
+		},
+	})
+	mockModule.refreshSavedPackageProjection.mockRejectedValueOnce(
+		new Error('projection failed'),
+	)
+
+	const result = await publishFromExternalRef({
+		env: { APP_DB: {} } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+		isFastForward: true,
+		workspace: workspace(),
+		files: { 'package.json': '{}' },
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(result.status).toBe('published')
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			publishedCommit: 'commit-new',
+		}),
+	)
+})
+
 test('publishes an external fast-forward ref after checks pass', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.runRepoChecks.mockResolvedValue({
@@ -188,4 +223,41 @@ test('check failure leaves D1 untouched', async () => {
 		run_id: 'run-1',
 	})
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+})
+
+test('projection refresh failure does not fail an already-committed publish', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		manifest: {
+			name: '@scope/demo',
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'demo', description: 'Demo' },
+		},
+	})
+	mockModule.refreshSavedPackageProjection.mockRejectedValueOnce(
+		new Error('projection unavailable'),
+	)
+
+	const result = await publishFromExternalRef({
+		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+		isFastForward: true,
+		workspace: workspace(),
+		files: { 'package.json': '{}' },
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(result.status).toBe('published')
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			publishedCommit: 'commit-new',
+		}),
+	)
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()
 })

@@ -92,6 +92,12 @@ const mockModule = vi.hoisted(() => {
 		updateEntitySource: vi.fn(async () => undefined),
 		resolveSessionRepo: vi.fn(),
 		resolveArtifactSourceRepo: vi.fn(),
+		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
+			defaultBranch: 'main',
+			commit: 'commit-published-new',
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+		})),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
 		runRepoChecks: vi.fn(async () => ({
 			ok: true,
@@ -182,6 +188,8 @@ vi.mock('./artifacts.ts', async () => {
 			mockModule.resolveSessionRepo(...args),
 		resolveArtifactSourceRepo: (...args: Array<unknown>) =>
 			mockModule.resolveArtifactSourceRepo(...args),
+		resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
+			mockModule.resolveArtifactDefaultBranchHead(...args),
 	}
 })
 

@@ -18,6 +18,7 @@ import {
 	type ArtifactRepoInfo,
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
+	resolveArtifactDefaultBranchHead,
 	resolveArtifactSourceRepo,
 	resolveSessionRepo,
 } from './artifacts.ts'
@@ -1432,10 +1433,15 @@ class RepoSessionBase extends DurableObject<Env> {
 			scope: 'read',
 		})
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
-		if (input.expectedHead && input.expectedHead !== input.newCommit) {
-			throw new Error(
-				`Artifacts HEAD changed from "${input.expectedHead}" to "${input.newCommit}" before publish.`,
-			)
+		if (input.expectedHead) {
+			const currentHead = await resolveArtifactDefaultBranchHead({
+				repo: sourceRepo,
+			})
+			if (currentHead?.commit !== input.expectedHead) {
+				throw new Error(
+					`Artifacts HEAD changed from "${input.expectedHead}" to "${currentHead?.commit ?? 'unknown'}" before publish.`,
+				)
+			}
 		}
 		await this.resetWorkspace()
 		await this.workspace.mkdir(repoSessionWorkspacePrefix, {
@@ -1472,8 +1478,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			workspace: this.workspace,
 			files,
 			baseUrl: input.baseUrl ?? source.source_root,
-			manifestPath: source.manifest_path,
-			sourceRoot: source.source_root,
+			manifestPath: resolveRepoWorkspacePath(
+				source.manifest_path,
+				repoSessionWorkspacePrefix,
+			),
+			sourceRoot: resolveRepoWorkspacePath(
+				source.source_root || repoSessionWorkspacePrefix,
+				repoSessionWorkspacePrefix,
+			),
 		})
 	}
 }
