@@ -3,6 +3,7 @@ import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type ConnectorConfig } from '#mcp/capabilities/values/connector-shared.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
+import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'
 import {
 	type AuthoredPackageJson,
 	type PackageJobSchedule,
@@ -114,6 +115,11 @@ export type SlimSearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hostedUrl: string | null
+			readmeSnippet: {
+				path: string
+				snippet: string
+				truncated: boolean
+			} | null
 			nextStep?: string
 	  }
 	| {
@@ -230,6 +236,11 @@ export type SearchEntityDetailStructured =
 				timeoutMs: number | null
 				maxResults: number | null
 			}>
+			readme: {
+				path: string
+				content: string
+				truncated: boolean
+			} | null
 	  }
 	| {
 			kind: 'entity'
@@ -330,6 +341,11 @@ export type SearchMatch =
 			description: string
 			tags: Array<string>
 			hasApp: boolean
+			readmeSnippet?: {
+				path: string
+				snippet: string
+				truncated: boolean
+			} | null
 	  }
 	| {
 			type: 'value'
@@ -572,6 +588,11 @@ function formatMatchBlock(match: SearchMatch, baseUrl: string) {
 			`**Tags:** ${match.tags.length > 0 ? match.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
 			`**Has app:** ${match.hasApp ? 'yes' : 'no'}`,
 			...(hostedUrl ? [`**Hosted URL:** \`${hostedUrl}\``] : []),
+			...(match.readmeSnippet
+				? [
+						`**README (${match.readmeSnippet.path}):** ${escapeMarkdownText(match.readmeSnippet.snippet)}${match.readmeSnippet.truncated ? ' _(truncated)_' : ''}`,
+					]
+				: []),
 		]
 	}
 	if (match.type === 'value') {
@@ -669,6 +690,13 @@ export function toSlimStructuredMatches(input: {
 				hasApp: match.hasApp,
 				hostedUrl: match.hasApp
 					? buildPackageHostedUrl(input.baseUrl, match.kodyId)
+					: null,
+				readmeSnippet: match.readmeSnippet
+					? {
+							path: match.readmeSnippet.path,
+							snippet: match.readmeSnippet.snippet,
+							truncated: match.readmeSnippet.truncated,
+						}
 					: null,
 				nextStep,
 			}
@@ -847,6 +875,9 @@ export function formatEntityDetailMarkdown(
 			maxResults: retriever.maxResults ?? null,
 		}))
 		const appEntry = detail.manifest.kody.app?.entry ?? null
+		const readme = buildPackageReadmeDetail({
+			files: detail.files,
+		})
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',
@@ -914,6 +945,17 @@ export function formatEntityDetailMarkdown(
 				)
 			}
 		}
+		if (readme) {
+			lines.push(
+				'',
+				`## README (\`${readme.path}\`)`,
+				'',
+				readme.content,
+				...(readme.truncated
+					? ['', '> README content was truncated for this detail response.']
+					: []),
+			)
+		}
 		return {
 			markdown: lines.join('\n'),
 			structured: {
@@ -936,6 +978,7 @@ export function formatEntityDetailMarkdown(
 				exports: exportDetails,
 				jobs,
 				retrievers,
+				readme,
 			} satisfies SearchEntityDetailStructured,
 		}
 	}

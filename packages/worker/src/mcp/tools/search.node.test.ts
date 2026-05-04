@@ -3,6 +3,7 @@ import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-regi
 import { buildConnectorValueName } from '#mcp/capabilities/values/connector-shared.ts'
 import {
 	buildSavedPackageSearchRows,
+	enrichSearchMatchesWithPackageReadmes,
 	loadDownHomeConnectorStatus,
 	loadOptionalSearchRows,
 	resolveSearchMemoryContext,
@@ -27,6 +28,10 @@ const sourceMocks = vi.hoisted(() => ({
 	loadPackageSourceBySourceId: vi.fn(),
 }))
 
+const packageRepoMocks = vi.hoisted(() => ({
+	getSavedPackageByKodyId: vi.fn(),
+}))
+
 vi.mock('#worker/package-registry/source.ts', async () => {
 	const actual = await vi.importActual<
 		typeof import('#worker/package-registry/source.ts')
@@ -37,6 +42,17 @@ vi.mock('#worker/package-registry/source.ts', async () => {
 			sourceMocks.loadPackageManifestBySourceId(...args),
 		loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 			sourceMocks.loadPackageSourceBySourceId(...args),
+	}
+})
+
+vi.mock('#worker/package-registry/repo.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/package-registry/repo.ts')
+	>('#worker/package-registry/repo.ts')
+	return {
+		...actual,
+		getSavedPackageByKodyId: (...args: Array<unknown>) =>
+			packageRepoMocks.getSavedPackageByKodyId(...args),
 	}
 })
 
@@ -177,6 +193,73 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				name: 'alpha-secret',
 			}),
 		]),
+	)
+})
+
+test('package README enrichment adds snippets onto ranked package matches', async () => {
+	packageRepoMocks.getSavedPackageByKodyId.mockResolvedValue({
+		id: 'package-spotify',
+		userId: 'user-1',
+		name: '@kody/spotify-playback',
+		kodyId: 'spotify-playback',
+		description: 'Saved package for Spotify playback controls.',
+		tags: ['spotify', 'playback'],
+		searchText: 'spotify playback remote package',
+		sourceId: 'source-spotify',
+		hasApp: true,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+	sourceMocks.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {} as never,
+		source: {} as never,
+		files: {
+			'README.md': `# Spotify playback
+
+Playback controls, queue helpers, and maintenance notes for the hosted remote.
+`,
+			'package.json': '{}',
+		},
+	})
+
+	const matches = await enrichSearchMatchesWithPackageReadmes({
+		env: {
+			APP_DB: {},
+		} as Env,
+		baseUrl: 'http://localhost',
+		userId: 'user-1',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-spotify',
+				kodyId: 'spotify-playback',
+				name: '@kody/spotify-playback',
+				title: '@kody/spotify-playback',
+				description: 'Saved package for Spotify playback controls.',
+				tags: ['spotify', 'playback'],
+				hasApp: true,
+			},
+		],
+	})
+
+	expect(matches).toEqual([
+		expect.objectContaining({
+			type: 'package',
+			kodyId: 'spotify-playback',
+			readmeSnippet: {
+				path: 'README.md',
+				snippet:
+					'Playback controls, queue helpers, and maintenance notes for the hosted remote.',
+				truncated: false,
+			},
+		}),
+	])
+	expect(sourceMocks.loadPackageSourceBySourceId).toHaveBeenCalledWith(
+		expect.objectContaining({
+			baseUrl: 'http://localhost',
+			userId: 'user-1',
+			sourceId: 'source-spotify',
+		}),
 	)
 })
 

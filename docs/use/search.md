@@ -61,6 +61,11 @@ behavior work without user-scoped data.
 
 Package search hits summarize whether the package has an app surface and, when
 they do, include a direct `open_generated_ui({ kody_id: "..." })` hint.
+When a saved package includes a root `README` file, ranked search hits include a
+short README excerpt so agents can quickly see usage notes, examples, or
+maintenance caveats without separately inspecting the package repo. Exact
+package detail (`entity: "my-package:package"`) includes the README content, or
+a substantial leading section when the README is long.
 Connector hits also include operational details such as the token URL, API base
 URL, required hosts, and related stored value/secret names so common
 setup/debugging work can often proceed without an immediate detail lookup.
