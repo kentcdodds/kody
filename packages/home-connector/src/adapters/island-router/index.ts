@@ -261,7 +261,10 @@ export function createIslandRouterAdapter(input: {
 			})
 			const commandRequest = {
 				id: request.commandId,
-				params: request.params,
+				params:
+					Object.keys(rendered.normalizedParams).length === 0
+						? undefined
+						: rendered.normalizedParams,
 				timeoutMs,
 			} satisfies IslandRouterCommandRequest
 			const result = ensureSuccessfulCommand(

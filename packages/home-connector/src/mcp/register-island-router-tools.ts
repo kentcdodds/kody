@@ -157,9 +157,6 @@ Catalog:
 ${commandCatalogDescription}`,
 			inputSchema: commandSchema.inputSchema,
 			sdkInputSchema: commandSchema.sdkInputSchema,
-			annotations: {
-				destructiveHint: true,
-			},
 		},
 		async (args) => {
 			const result = await islandRouter.runCommand({

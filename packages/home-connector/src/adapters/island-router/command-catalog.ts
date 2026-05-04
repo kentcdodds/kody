@@ -85,6 +85,7 @@ export type IslandRouterCommandParam = {
 	required: true
 	values?: ReadonlyArray<string>
 	maxLength?: number
+	renderAsBracketedHost?: true
 }
 
 export type IslandRouterCommandCatalogEntry = {
@@ -205,6 +206,13 @@ const hostParam = {
 	description: 'Hostname or IP address rendered as one CLI token.',
 	validator: 'host',
 	required: true,
+} as const satisfies IslandRouterCommandParam
+
+const bracketedHostParam = {
+	...hostParam,
+	description:
+		'Hostname or IP address rendered as one CLI token. IPv6 literals are bracketed for host:port commands.',
+	renderAsBracketedHost: true,
 } as const satisfies IslandRouterCommandParam
 
 const portParam = {
@@ -506,7 +514,7 @@ export const islandRouterCommandCatalog = [
 		cliTemplate: 'syslog server {host}:{port}',
 		riskLevel: 'lowWrite',
 		context: { mode: 'configureTerminal' },
-		params: [hostParam, portParam],
+		params: [bracketedHostParam, portParam],
 		noVariantId: 'no syslog server',
 		requiresWriteMemory: true,
 		blastRadius:
@@ -520,7 +528,7 @@ export const islandRouterCommandCatalog = [
 		cliTemplate: 'no syslog server {host}:{port}',
 		riskLevel: 'lowWrite',
 		context: { mode: 'configureTerminal' },
-		params: [hostParam, portParam],
+		params: [bracketedHostParam, portParam],
 		requiresWriteMemory: true,
 		blastRadius:
 			'Stops forwarding logs to the specified external syslog server.',
@@ -669,7 +677,7 @@ function normalizeQuotedText(value: unknown, param: IslandRouterCommandParam) {
 	if (/["\\]/.test(trimmed)) {
 		throw new Error(`${param.name} must not contain quotes or backslashes.`)
 	}
-	return `"${trimmed}"`
+	return trimmed
 }
 
 function normalizeMacAddressOrIsland(value: unknown, name: string) {
@@ -708,11 +716,20 @@ function normalizeParam(value: unknown, param: IslandRouterCommandParam) {
 function renderTemplate(
 	template: string,
 	normalizedParams: Record<string, string>,
+	paramDefinitions: ReadonlyArray<IslandRouterCommandParam>,
 ) {
+	const paramsByName = new Map(paramDefinitions.map((param) => [param.name, param]))
 	return template.replaceAll(/\{([a-zA-Z][a-zA-Z0-9]*)\}/g, (_, name: string) => {
 		const value = normalizedParams[name]
 		if (value == null) {
 			throw new Error(`Missing rendered Island router command parameter: ${name}`)
+		}
+		const param = paramsByName.get(name)
+		if (param?.validator === 'quotedText') {
+			return `"${value}"`
+		}
+		if (param?.renderAsBracketedHost && value.includes(':')) {
+			return `[${value}]`
 		}
 		return value
 	})
@@ -742,7 +759,7 @@ export function renderIslandRouterCommand(input: {
 		normalizedParams[param.name] = normalizeParam(params[param.name], param)
 	}
 
-	const command = renderTemplate(entry.cliTemplate, normalizedParams)
+	const command = renderTemplate(entry.cliTemplate, normalizedParams, entry.params)
 	switch (entry.context.mode) {
 		case 'exec':
 			return {

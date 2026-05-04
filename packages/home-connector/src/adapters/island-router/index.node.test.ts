@@ -682,6 +682,26 @@ test('island router write command rendering uses catalog contexts without automa
 		'end',
 	])
 
+	const syslogServer = await islandRouter.runCommand({
+		commandId: 'syslog server',
+		params: {
+			host: '2001:db8::1',
+			port: '514',
+		},
+		reason,
+		confirmation: islandRouter.writeConfirmation,
+	})
+	expect(syslogServer.commandLines).toEqual([
+		'terminal length 0',
+		'configure terminal',
+		'syslog server [2001:db8::1]:514',
+		'end',
+	])
+	expect(syslogServer.params).toEqual({
+		host: '2001:db8::1',
+		port: '514',
+	})
+
 	const portForward = await islandRouter.runCommand({
 		commandId: 'ip port-forward',
 		params: {
@@ -695,6 +715,24 @@ test('island router write command rendering uses catalog contexts without automa
 	})
 	expect(portForward.commandLines).toContain(
 		'ip port-forward tcp 8443 island 443',
+	)
+	expect(recordedRequests).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				id: 'ip dhcp-reserve',
+				params: {
+					ipAddress: '192.168.0.52',
+					macAddress: '00:11:22:33:44:55',
+				},
+			}),
+			expect.objectContaining({
+				id: 'syslog server',
+				params: {
+					host: '2001:db8::1',
+					port: '514',
+				},
+			}),
+		]),
 	)
 	expect(recordedRequests.map((request) => request.id)).not.toContain(
 		'renew-dhcp-clients' as never,

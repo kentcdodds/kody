@@ -927,6 +927,7 @@ test('mcp server exposes island router write tools when host verification is con
 		expect(writeProperties?.confirmation?.const).toBe(
 			'I understand this allowlisted Island router command may affect live network behavior.',
 		)
+		expect(runCommandTool.annotations?.['destructiveHint']).toBeUndefined()
 
 		const renewResult = await mcp.callTool('router_run_command', {
 			commandId: 'clear dhcp-client',
