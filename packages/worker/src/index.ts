@@ -364,16 +364,14 @@ const workerHandler = {
 	async scheduled(
 		controller: ScheduledController,
 		env: Env,
-		ctx: ExecutionContext,
+		_ctx: ExecutionContext,
 	) {
 		const baseUrl = env.APP_BASE_URL ?? 'https://kody.local'
-		ctx.waitUntil(
-			reconcileArtifactsPushes({
-				env,
-				baseUrl,
-				now: new Date(controller.scheduledTime),
-			}),
-		)
+		await reconcileArtifactsPushes({
+			env,
+			baseUrl,
+			now: new Date(controller.scheduledTime),
+		})
 	},
 } satisfies ExportedHandler<Env>
 
