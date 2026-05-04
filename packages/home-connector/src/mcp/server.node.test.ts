@@ -1332,6 +1332,128 @@ test('mcp server exposes Samsung tools and executes samsung_list_devices', async
 			args: [1],
 		})
 
+		const accessNetworksBlocked = await mcp.callTool(
+			'access_networks_unleashed_list_blocked_clients',
+		)
+		expect(accessNetworksBlocked.structuredContent).toMatchObject({
+			clients: expect.arrayContaining([
+				expect.objectContaining({ mac: 'aa:bb:cc:dd:ee:ff' }),
+			]),
+		})
+
+		const accessNetworksAlarms = await mcp.callTool(
+			'access_networks_unleashed_get_alarms',
+			{ limit: 5 },
+		)
+		expect(accessNetworksAlarms.structuredContent).toMatchObject({
+			alarms: expect.arrayContaining([
+				expect.objectContaining({ message: 'AP rebooted' }),
+			]),
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'getAlarms',
+			args: [5],
+		})
+
+		const accessNetworksMesh = await mcp.callTool(
+			'access_networks_unleashed_get_mesh_info',
+		)
+		expect(accessNetworksMesh.structuredContent).toMatchObject({
+			mesh: expect.objectContaining({ enabled: true }),
+		})
+
+		const accessNetworksSyslog = await mcp.callTool(
+			'access_networks_unleashed_get_syslog',
+		)
+		expect(accessNetworksSyslog.structuredContent).toMatchObject({
+			syslog: expect.stringContaining('line'),
+		})
+
+		const accessNetworksUnblock = await mcp.callTool(
+			'access_networks_unleashed_unblock_client',
+			{
+				macAddress: 'AA-BB-CC-DD-EE-FF',
+				acknowledgeHighRisk: true,
+				reason:
+					'The client was previously blocked in error and must be allowed again.',
+				confirmation:
+					accessNetworksUnleashed.writeAcknowledgements.unblockClient,
+			},
+		)
+		expect(accessNetworksUnblock.structuredContent).toMatchObject({
+			operation: 'unblock-client',
+			target: 'aa:bb:cc:dd:ee:ff',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'unblockClient',
+			args: ['aa:bb:cc:dd:ee:ff'],
+		})
+
+		const accessNetworksDeleteWlan = await mcp.callTool(
+			'access_networks_unleashed_delete_wlan',
+			{
+				name: 'Main',
+				acknowledgeHighRisk: true,
+				reason:
+					'The Main WLAN must be removed because it is no longer needed.',
+				confirmation:
+					accessNetworksUnleashed.writeAcknowledgements.deleteWlan,
+			},
+		)
+		expect(accessNetworksDeleteWlan.structuredContent).toMatchObject({
+			operation: 'delete-wlan',
+			target: 'Main',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'deleteWlan',
+			args: ['Main'],
+		})
+
+		const accessNetworksAddWlan = await mcp.callTool(
+			'access_networks_unleashed_add_wlan',
+			{
+				ssid: 'NewNet',
+				passphrase: 'a-strong-passphrase',
+				acknowledgeHighRisk: true,
+				reason:
+					'Adding a guest WLAN is required to support the new visiting team.',
+				confirmation: accessNetworksUnleashed.writeAcknowledgements.addWlan,
+			},
+		)
+		expect(accessNetworksAddWlan.structuredContent).toMatchObject({
+			operation: 'add-wlan',
+			target: 'NewNet',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'addWlan',
+			args: [
+				expect.objectContaining({
+					ssid: 'NewNet',
+					passphrase: 'a-strong-passphrase',
+				}),
+			],
+		})
+
+		const accessNetworksHideLeds = await mcp.callTool(
+			'access_networks_unleashed_hide_ap_leds',
+			{
+				macAddress: '24:79:DE:AD:BE:EF',
+				acknowledgeHighRisk: true,
+				reason:
+					'AP LEDs need to be turned off because the AP is in a guest bedroom.',
+				confirmation:
+					accessNetworksUnleashed.writeAcknowledgements.hideAccessPointLeds,
+			},
+		)
+		expect(accessNetworksHideLeds.structuredContent).toMatchObject({
+			operation: 'hide-ap-leds',
+			target: '24:79:de:ad:be:ef',
+		})
+		expect(fakeAccessNetworksUnleashed.calls).toContainEqual({
+			name: 'setAccessPointLeds',
+			args: ['24:79:de:ad:be:ef', false],
+		})
+
 		await mcp.callTool('bond_adopt_bridge', { bridgeId: 'MOCKBOND1' })
 		bond.setToken('MOCKBOND1', 'mock-bond-token')
 		const bondDevices = await mcp.callTool('bond_list_devices', {
