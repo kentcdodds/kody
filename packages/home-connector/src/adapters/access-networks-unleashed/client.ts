@@ -70,21 +70,6 @@ function extractCsrfToken(text: string) {
 	return match?.[1] ?? null
 }
 
-export function normalizeAccessNetworksUnleashedMacAddress(value: string) {
-	const cleaned = value
-		.trim()
-		.toLowerCase()
-		.replace(/[^0-9a-f]/g, '')
-	if (cleaned.length !== 12) {
-		throw new Error('macAddress must be a valid 12-hex-digit MAC address.')
-	}
-	const octets = cleaned.match(/.{2}/g)
-	if (!octets) {
-		throw new Error('macAddress must be a valid MAC address.')
-	}
-	return octets.join(':')
-}
-
 export function createAccessNetworksUnleashedAjaxClient(input: {
 	config: HomeConnectorConfig
 	controller: AccessNetworksUnleashedPersistedController
@@ -143,7 +128,13 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		return response
 	}
 
-	async function login(allowInsecureTls: boolean) {
+	// Login uses the controller-wide TLS setting. The per-request override on
+	// `client.request(...)` only applies to the actual _cmdstat.jsp post; the
+	// session-establishment hops are concurrency-shared (see ensureSession),
+	// so the first caller's per-request override would otherwise silently win
+	// for every concurrent caller.
+	async function login() {
+		const allowInsecureTls = config.accessNetworksUnleashedAllowInsecureTls
 		const credentials = requireConfig()
 		let csrfToken: string | null = null
 		const head = await rawRequest(
@@ -200,9 +191,9 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		state.csrfToken = csrfToken
 	}
 
-	async function ensureSession(allowInsecureTls: boolean) {
+	async function ensureSession() {
 		if (state.baseUrl) return
-		loginPromise ??= login(allowInsecureTls).finally(() => {
+		loginPromise ??= login().finally(() => {
 			loginPromise = null
 		})
 		await loginPromise
@@ -225,7 +216,7 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		allowInsecureTls: boolean,
 		redirectCount = 0,
 	): Promise<string> {
-		await ensureSession(allowInsecureTls)
+		await ensureSession()
 		if (!state.baseUrl) {
 			throw new Error('Access Networks Unleashed session has no base URL.')
 		}

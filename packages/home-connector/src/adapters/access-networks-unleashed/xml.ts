@@ -151,11 +151,15 @@ function readNode(cursor: ParseCursor): XmlNode | null {
 	const children: Array<XmlNode> = []
 	while (cursor.index < cursor.source.length) {
 		if (cursor.source.startsWith(`</${name}`, cursor.index)) {
-			skipUntil(cursor, '>')
-			break
+			const afterName = cursor.source[cursor.index + 2 + name.length] ?? ''
+			if (afterName === '>' || /\s/.test(afterName)) {
+				skipUntil(cursor, '>')
+				break
+			}
 		}
 		if (cursor.source.startsWith('</', cursor.index)) {
-			skipUntil(cursor, '>')
+			// Closing tag for an outer element. Leave it intact so the outer
+			// parser can consume it and exit cleanly.
 			break
 		}
 		const child = readNode(cursor)
