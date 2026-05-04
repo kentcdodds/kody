@@ -19,7 +19,6 @@
     "multicast-dns": "^7.2.3",
     "multicast-dns-service-types": "^1.1.0",
     "remix": "^3.0.0-beta.0",
-    "undici": "^8.2.0",
     "zod": "^4.3.6"
   }
 }

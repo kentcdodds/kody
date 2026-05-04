@@ -1,9 +1,9 @@
-import { Agent } from 'undici'
 import { type HomeConnectorConfig } from '../../config.ts'
 import {
 	setAccessNetworksUnleashedDiscoveryDiagnostics,
 	type HomeConnectorState,
 } from '../../state.ts'
+import { fetchAccessNetworksUnleashed } from './http.ts'
 import {
 	type AccessNetworksUnleashedDiscoveredController,
 	type AccessNetworksUnleashedDiscoveryDiagnostics,
@@ -78,32 +78,20 @@ function tryExpandScanCidr(cidr: string): Array<string> {
 	}
 }
 
-function createDispatcher(config: HomeConnectorConfig) {
-	if (!config.accessNetworksUnleashedAllowInsecureTls) return undefined
-	return new Agent({
-		connect: {
-			rejectUnauthorized: false,
-		},
-	})
-}
-
 async function fetchWithTimeout(input: {
 	url: string
 	timeoutMs: number
-	dispatcher?: Agent
+	allowInsecureTls: boolean
 }) {
-	const controller = new AbortController()
-	const timeout = setTimeout(() => controller.abort(), input.timeoutMs)
-	try {
-		return await fetch(input.url, {
+	return await fetchAccessNetworksUnleashed({
+		url: input.url,
+		timeoutMs: input.timeoutMs,
+		allowInsecureTls: input.allowInsecureTls,
+		init: {
 			method: 'GET',
 			redirect: 'manual',
-			signal: controller.signal,
-			...(input.dispatcher ? { dispatcher: input.dispatcher } : {}),
-		} as RequestInit)
-	} finally {
-		clearTimeout(timeout)
-	}
+		},
+	})
 }
 
 function buildProbeUrls(host: string) {
@@ -183,7 +171,6 @@ async function probeHost(input: {
 	host: string
 	index: number
 	config: HomeConnectorConfig
-	dispatcher?: Agent
 }): Promise<{
 	controller: AccessNetworksUnleashedDiscoveredController | null
 	diagnostic: AccessNetworksUnleashedProbeDiagnostic
@@ -197,7 +184,7 @@ async function probeHost(input: {
 					input.config.accessNetworksUnleashedRequestTimeoutMs,
 					2_500,
 				),
-				dispatcher: input.dispatcher,
+				allowInsecureTls: input.config.accessNetworksUnleashedAllowInsecureTls,
 			})
 			const body = await response.text().catch(() => '')
 			const match = matchControllerResponse({
@@ -264,7 +251,6 @@ async function discoverControllers(
 	for (const cidr of config.accessNetworksUnleashedScanCidrs) {
 		targets.push(...tryExpandScanCidr(cidr))
 	}
-	const dispatcher = createDispatcher(config)
 	const concurrency = Math.max(1, Math.min(targets.length, 64))
 	const diagnostics: Array<AccessNetworksUnleashedProbeDiagnostic> = []
 	const controllers = new Map<
@@ -283,7 +269,6 @@ async function discoverControllers(
 				host,
 				index,
 				config,
-				...(dispatcher ? { dispatcher } : {}),
 			})
 			diagnostics.push(result.diagnostic)
 			if (result.controller) {
@@ -293,9 +278,6 @@ async function discoverControllers(
 	}
 
 	await Promise.all(Array.from({ length: concurrency }, () => worker()))
-	if (dispatcher) {
-		await dispatcher.close()
-	}
 	const summary: AccessNetworksUnleashedSubnetProbeSummary = {
 		cidrs: config.accessNetworksUnleashedScanCidrs,
 		hostsProbed: targets.length,

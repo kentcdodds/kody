@@ -1,5 +1,5 @@
-import { Agent } from 'undici'
 import { type HomeConnectorConfig } from '../../config.ts'
+import { fetchAccessNetworksUnleashed } from './http.ts'
 import {
 	type AccessNetworksUnleashedClient,
 	type AccessNetworksUnleashedPersistedController,
@@ -190,30 +190,18 @@ function extractCsrfToken(text: string) {
 	return match?.[1] ?? null
 }
 
-function createDispatcher(config: HomeConnectorConfig) {
-	if (!config.accessNetworksUnleashedAllowInsecureTls) return undefined
-	return new Agent({
-		connect: {
-			rejectUnauthorized: !config.accessNetworksUnleashedAllowInsecureTls,
-		},
-	})
-}
-
 async function fetchWithTimeout(input: {
 	url: string
 	init?: RequestInit
 	timeoutMs: number
+	allowInsecureTls: boolean
 }) {
-	const controller = new AbortController()
-	const timeout = setTimeout(() => controller.abort(), input.timeoutMs)
-	try {
-		return await fetch(input.url, {
-			...input.init,
-			signal: controller.signal,
-		})
-	} finally {
-		clearTimeout(timeout)
-	}
+	return await fetchAccessNetworksUnleashed({
+		url: input.url,
+		init: input.init,
+		timeoutMs: input.timeoutMs,
+		allowInsecureTls: input.allowInsecureTls,
+	})
 }
 
 export function createAccessNetworksUnleashedAjaxClient(input: {
@@ -227,7 +215,6 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		csrfToken: null,
 		cookie: null,
 	}
-	const dispatcher = createDispatcher(config)
 	let loginPromise: Promise<void> | null = null
 
 	function requireConfig() {
@@ -263,12 +250,11 @@ export function createAccessNetworksUnleashedAjaxClient(input: {
 		const response = await fetchWithTimeout({
 			url,
 			timeoutMs,
+			allowInsecureTls: config.accessNetworksUnleashedAllowInsecureTls,
 			init: {
 				...init,
 				headers,
 				redirect: 'manual',
-				// Undici-specific option used only by Node fetch.
-				dispatcher,
 			} as RequestInit,
 		})
 		state.cookie = collectCookies(response.headers, state.cookie)
