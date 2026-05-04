@@ -1527,6 +1527,16 @@ test('island router adapter runs the expanded allowlisted CLI command set with p
 		{
 			input: {
 				command: 'show-log-recent',
+				acknowledgeHighRisk: true,
+				reason,
+				confirmation: acknowledgement,
+			},
+			expectedCommandLine: 'show log',
+			expectedCommandId: 'show-log-recent',
+		},
+		{
+			input: {
+				command: 'show-log-recent',
 				lineCount: 25,
 				acknowledgeHighRisk: true,
 				reason,
